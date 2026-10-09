@@ -13,6 +13,10 @@
 # que dans l'environnement d'un processus lancé à la main se perd au premier redémarrage.
 set -euo pipefail
 
+# Le runtime de Solera, pour que le script marche depuis un shell non interactif
+# (une unité systemd, un agent) où node n'est pas sur le PATH.
+export PATH="$HOME/.local/share/solera/node/current/bin:$HOME/.local/share/solera-dev/agents/bin:$PATH"
+
 export SOLERA_DATA_DIR="${SOLERA_DATA_DIR:-$HOME/.local/share/solera-dev}"
 export SOLERA_CONFIG="${SOLERA_CONFIG:-$SOLERA_DATA_DIR/config.toml}"
 export SOLERA_PORT="${SOLERA_PORT:-7417}"

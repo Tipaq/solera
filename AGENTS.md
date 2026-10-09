@@ -49,6 +49,19 @@ Deux endroits où « sillage » subsiste légitimement, et qu'on ne touche pas :
 **Ne jamais toucher à `~/.local/share/sillage` ni à l'unité `sillage.service`.** Ce n'est
 pas notre produit, et les données qui s'y trouvent sont celles du travail quotidien.
 
+Les deux instances de Solera sont des unités systemd utilisateur, `solera` et
+`solera-dev`, écrites à la main dans `~/.config/systemd/user/` — pas par `install.sh`,
+qui rendrait un nom de service fixe et écraserait celui de Sillage.
+
+**Publier une version** : la stable tourne depuis le worktree `~/projects/solera-stable`
+sur la branche `stable`. Donc :
+
+```sh
+git -C ~/projects/solera-stable merge main && \
+  (cd ~/projects/solera-stable && pnpm build) && \
+  systemctl --user restart solera
+```
+
 Le dev se lance par `scripts/dev.sh`, et seulement par lui : les variables
 `SOLERA_DATA_DIR`, `SOLERA_CONFIG`, `SOLERA_PORT` sont posées là et nulle part ailleurs.
 Ne jamais lancer `pnpm dev` à la main avec un environnement improvisé — c'est comme ça
