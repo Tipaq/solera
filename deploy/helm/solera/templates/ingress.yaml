@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "sillage.fullname" . }}
+  name: {{ include "solera.fullname" . }}
   labels:
-    {{- include "sillage.labels" . | nindent 4 }}
+    {{- include "solera.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -30,7 +30,7 @@ spec:
             pathType: {{ .Values.ingress.pathType }}
             backend:
               service:
-                name: {{ include "sillage.fullname" . }}
+                name: {{ include "solera.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
 {{- end }}

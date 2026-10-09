@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { AppearancePrefs } from '@sillage/protocol'
+import type { AppearancePrefs } from '@solera/protocol'
 import {
   APPEARANCE_SETTINGS,
   applyAppearance,

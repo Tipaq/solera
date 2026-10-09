@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { FsEntryDto, FsListingDto } from '@sillage/protocol'
+import type { FsEntryDto, FsListingDto } from '@solera/protocol'
 import { api } from './api'
 
 export function useDirectoryListing(path: string | null, showHidden: boolean) {

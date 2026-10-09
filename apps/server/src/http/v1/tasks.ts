@@ -8,7 +8,7 @@ import {
   projects,
   type ApiTokenRow,
   type ConversationRow,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   DEFAULT_REPLY_DEADLINE_SEC,
   V1_NOISY_EVENT_TYPES,
@@ -19,7 +19,7 @@ import {
   taskReplyBodySchema,
   taskSteerBodySchema,
   type TaskEventsPageDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { WebhookService } from '../../webhooks/service.js'
 import type { AgentRegistry } from '../../agents/registry.js'
 import { createConversation } from '../../conversations/create.js'

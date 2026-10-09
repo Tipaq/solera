@@ -4,7 +4,7 @@ import { copyFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import type { FileState } from '@sillage/protocol'
+import type { FileState } from '@solera/protocol'
 
 const run = promisify(execFile)
 
@@ -232,7 +232,7 @@ export async function cloneRepository(
 }
 
 /**
- * Inscrit le helper de credentials de Sillage dans la configuration locale du dépôt.
+ * Inscrit le helper de credentials de Solera dans la configuration locale du dépôt.
  *
  * Local et non global : deux comptes de la même instance clonent chacun avec leur
  * propre identifiant de propriétaire, et une configuration globale n'en porterait qu'un.
@@ -449,7 +449,7 @@ export async function readWorkingDiff(cwd: string): Promise<WorkingDiff | null> 
   if (!status) return null
 
   const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
-  const scratchIndex = join(tmpdir(), `sillage-index-${randomUUID()}`)
+  const scratchIndex = join(tmpdir(), `solera-index-${randomUUID()}`)
 
   try {
     // On part d'une copie de l'index courant pour ne pas voir comme « ajoutés » des

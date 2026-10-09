@@ -1,4 +1,4 @@
-import type { AttachmentDto } from '@sillage/protocol'
+import type { AttachmentDto } from '@solera/protocol'
 
 /**
  * Message en cours de rédaction, par conversation.

@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
-import { appSettings, type Db } from '@sillage/db'
-import { cronScheduleSchema, type AppSettingsDto } from '@sillage/protocol'
+import { appSettings, type Db } from '@solera/db'
+import { cronScheduleSchema, type AppSettingsDto } from '@solera/protocol'
 import type { Config } from '../config.js'
 
 export type AppSettings = AppSettingsDto

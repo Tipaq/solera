@@ -1,12 +1,12 @@
 import { and, asc, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, worktrees } from '@sillage/db'
+import { projects, worktrees } from '@solera/db'
 import {
   EFFORT_FIELD,
   type AgentConfig,
   type TaskAgentDto,
   type TaskProjectDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import { readGitStatus } from '../../git.js'
 import type { AppContext } from '../context.js'

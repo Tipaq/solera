@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useMemo } from 'react'
-import type { LibrarySkillDto } from '@sillage/protocol'
+import type { LibrarySkillDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { useTranslate } from '../../lib/i18n'

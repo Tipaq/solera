@@ -1,6 +1,6 @@
 import { ShieldAlert, SlidersHorizontal } from 'lucide-react'
 import { useState } from 'react'
-import { agentKindSchema, defaultConfigFor, type AgentConfig, type AgentKind } from '@sillage/protocol'
+import { agentKindSchema, defaultConfigFor, type AgentConfig, type AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import type { SettingGroup } from '../components/chat/ComposerSettings'

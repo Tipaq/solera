@@ -1,11 +1,11 @@
-# Copier vers ~/.config/sillage/config.toml
+# Copier vers ~/.config/solera/config.toml
 # Tous les champs sont optionnels : un fichier absent équivaut à ces valeurs.
 # En revanche un fichier présent mais invalide fait échouer le démarrage, pour ne pas
 # tourner avec des réglages que tu crois appliqués.
 
 [server]
 host = "127.0.0.1"
-port = 7317
+port = 7517
 
 [limits]
 # Une session Claude coûte 400 à 500 Mo de RSS. C'est le plafond qui compte vraiment.

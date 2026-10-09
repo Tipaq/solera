@@ -1,4 +1,4 @@
-import type { FileContentDto } from '@sillage/protocol'
+import type { FileContentDto } from '@solera/protocol'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 

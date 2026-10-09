@@ -9,9 +9,9 @@ import type {
   McpServerStatus,
   PermissionOption,
   PlanFollowUpOption,
-  SillageEvent,
+  SoleraEvent,
   SlashCommandDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { locale, translate } from './i18n'
 
 /**
@@ -127,13 +127,13 @@ export interface NoticeItem {
 export interface PlanProgressItem {
   kind: 'plan_progress'
   id: string
-  items: Extract<SillageEvent, { type: 'plan.updated' }>['items']
+  items: Extract<SoleraEvent, { type: 'plan.updated' }>['items']
 }
 
 export interface DiffItem {
   kind: 'diff'
   id: string
-  files: Extract<SillageEvent, { type: 'diff.updated' }>['files']
+  files: Extract<SoleraEvent, { type: 'diff.updated' }>['files']
   patch?: string
 }
 
@@ -192,7 +192,7 @@ export interface QueuedMessage {
 }
 
 /**
- * Message d'une autre session que Sillage a retenu au lieu de relancer celle-ci.
+ * Message d'une autre session que Solera a retenu au lieu de relancer celle-ci.
  *
  * Hors de `items` pour la même raison que la file : l'agent ne l'a pas lu. `text` est
  * l'enveloppe complète, à lire avec `parseSessionMessage`.
@@ -307,7 +307,7 @@ export interface ChatState {
    * Remplacée et jamais complétée, comme `background` et `loops` : le CLI publie
    * l'inventaire entier à chaque changement. Contient aussi les serveurs venus de sa
    * propre configuration, marqués `external`, que l'utilisateur subit sans les avoir
-   * déclarés dans Sillage et doit pouvoir voir échouer.
+   * déclarés dans Solera et doit pouvoir voir échouer.
    */
   mcp: McpServerStatus[]
   /**
@@ -742,7 +742,7 @@ function closePendingTasks(state: ChatState): void {
  * frame quand la pensée est révélée. L'y mettre effaçait chaque valeur avant qu'elle
  * soit rendue, et le compteur ne s'affichait jamais.
  */
-const THINKING_ENDED_BY = new Set<SillageEvent['type']>([
+const THINKING_ENDED_BY = new Set<SoleraEvent['type']>([
   'message.started',
   'message.delta',
   'message.completed',
@@ -767,11 +767,11 @@ export function applyEvent(
   state: ChatState,
   seq: number,
   ts: number,
-  event: SillageEvent,
+  event: SoleraEvent,
 ): ChatState {
   // Un tour se reconnaît à ce qu'il produit, pas seulement à son marqueur d'ouverture.
   //
-  // `turn.started` n'est émis que quand Sillage envoie un message, alors que
+  // `turn.started` n'est émis que quand Solera envoie un message, alors que
   // `turn.completed` l'est à chaque `result` du CLI : un redémarrage de session laisse
   // donc des complétions orphelines, et le fil se croyait au repos pendant que l'agent
   // travaillait, sans bouton Stop ni indicateur d'activité. Du texte qui arrive ou un

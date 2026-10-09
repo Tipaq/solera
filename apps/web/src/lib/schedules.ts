@@ -6,7 +6,7 @@ import type {
   ScheduleOverlapPolicy,
   ScheduledRunDto,
   ScheduledTaskDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { api } from './api'
 import { locale, translate, type MessageKey } from './i18n'
 

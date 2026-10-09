@@ -18,7 +18,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { memo, useState, type ReactNode } from 'react'
-import { isSpawnTool, type ToolOutputDto } from '@sillage/protocol'
+import { isSpawnTool, type ToolOutputDto } from '@solera/protocol'
 import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { useTranslate } from '../../lib/i18n'

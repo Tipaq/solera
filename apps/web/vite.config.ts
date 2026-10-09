@@ -4,12 +4,12 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
-const SERVER_PORT = process.env.SILLAGE_PORT ?? '7317'
+const SERVER_PORT = process.env.SOLERA_PORT ?? '7417'
 
 // Même résolution que apps/server/tsup.config.ts : tag fourni par la CI de
 // release, describe git en build local, `dev` hors dépôt.
 function resolveVersion(): string {
-  if (process.env.SILLAGE_VERSION) return process.env.SILLAGE_VERSION.replace(/^v/, '')
+  if (process.env.SOLERA_VERSION) return process.env.SOLERA_VERSION.replace(/^v/, '')
   try {
     return execSync('git describe --tags --always --dirty', { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
@@ -44,8 +44,8 @@ export default defineConfig({
       // c'est le service worker qui le charge à l'exécution.
       includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'push-sw.js'],
       manifest: {
-        name: 'Sillage',
-        short_name: 'Sillage',
+        name: 'Solera',
+        short_name: 'Solera',
         description: 'Plateforme de développement agentique self-hosted et multi-CLI',
         lang: 'fr',
         start_url: '/',
@@ -78,7 +78,7 @@ export default defineConfig({
     }),
   ],
   server: {
-    port: 5317,
+    port: 5417,
     proxy: {
       '/api': {
         target: `http://127.0.0.1:${SERVER_PORT}`,

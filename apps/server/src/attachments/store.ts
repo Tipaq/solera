@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { extname, join } from 'node:path'
 import { and, eq, inArray, isNull, lt } from 'drizzle-orm'
-import { attachments, type Db } from '@sillage/db'
-import { INLINE_IMAGE_TYPES, type AttachmentDto } from '@sillage/protocol'
+import { attachments, type Db } from '@solera/db'
+import { INLINE_IMAGE_TYPES, type AttachmentDto } from '@solera/protocol'
 
 /** Une pièce jointe jamais envoyée est un déchet : on la ramasse au bout d'un jour. */
 const ORPHAN_TTL_MS = 24 * 60 * 60 * 1000

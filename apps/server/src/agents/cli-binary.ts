@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { promisify } from 'node:util'
-import type { AgentAvailabilityDto, AgentKind } from '@sillage/protocol'
+import type { AgentAvailabilityDto, AgentKind } from '@solera/protocol'
 import { CachedProbe } from './cached-probe.js'
 
 const run = promisify(execFile)
@@ -10,12 +10,12 @@ const run = promisify(execFile)
 /**
  * Résolution et sonde des CLI agents installés sur la machine.
  *
- * Sillage ne transporte plus les binaires : ils viennent du système, donc leur présence
+ * Solera ne transporte plus les binaires : ils viennent du système, donc leur présence
  * et leur version cessent d'être garanties par la release et deviennent une information
  * à afficher. Un CLI absent doit se voir dans l'interface, pas se découvrir à l'échec du
  * premier tour.
  *
- * Deux sources, dans cet ordre : le préfixe où Sillage installe les CLI qu'il gère, puis
+ * Deux sources, dans cet ordre : le préfixe où Solera installe les CLI qu'il gère, puis
  * `process.env.PATH`. Jamais une liste de dossiers écrite en dur : l'unité systemd pose
  * déjà un `PATH` explicite parce que celui d'un service est minimal, et c'est ce même
  * `PATH` que `spawn` consultera. Résoudre ailleurs annoncerait des CLI que le daemon
@@ -65,10 +65,10 @@ export function resolveBinary(binary: string, managedDir?: string): string | nul
   // workspace des conversations, donc le réglage n'aurait pas de sens : on refuse.
   if (binary.includes('/')) return null
 
-  // Ce que Sillage a installé passe avant le PATH du système. L'ordre suit l'intention :
+  // Ce que Solera a installé passe avant le PATH du système. L'ordre suit l'intention :
   // un CLI n'atterrit ici que parce que quelqu'un l'a demandé depuis l'interface, alors
   // qu'un CLI du PATH peut n'être là que par accident d'environnement. C'est aussi la
-  // seule façon d'honorer « installer une version précise pour Sillage » quand le
+  // seule façon d'honorer « installer une version précise pour Solera » quand le
   // système en porte déjà une autre.
   if (managedDir) {
     const managed = join(managedDir, 'bin', binary)
@@ -87,7 +87,7 @@ export function resolveBinary(binary: string, managedDir?: string): string | nul
  * Version annoncée par `--version`, réduite au numéro.
  *
  * Les CLI habillent leur version différemment (« 2.1.0 (Claude Code) »,
- * « codex-cli 0.5.1 »), et Sillage n'a pas à connaître chaque format : on retient le
+ * « codex-cli 0.5.1 »), et Solera n'a pas à connaître chaque format : on retient le
  * premier groupe qui ressemble à une version, et à défaut la ligne telle quelle.
  * Null quand le binaire n'a rien répondu d'exploitable : présent vaut mieux
  * qu'introuvable, même sans numéro.
@@ -127,7 +127,7 @@ export class CliBinary {
     private readonly kind: AgentKind,
     readonly configured: string,
     private readonly enabled: boolean,
-    /** Préfixe npm des CLI que Sillage installe lui-même. */
+    /** Préfixe npm des CLI que Solera installe lui-même. */
     readonly managedDir: string,
   ) {
     this.cache = new CachedProbe(TTL_MS, async () => ({
@@ -183,7 +183,7 @@ export class CliBinary {
       ...base,
       installed: true,
       // D'où vient le binaire, pour que l'écran puisse le dire : entre un CLI du système
-      // et un que Sillage a posé, l'utilisateur n'a aucun moyen de deviner lequel tourne.
+      // et un que Solera a posé, l'utilisateur n'a aucun moyen de deviner lequel tourne.
       managed: status.path.startsWith(this.managedDir),
       path: status.path,
       version: status.version,

@@ -1,5 +1,5 @@
 {
-  "name": "sillage",
+  "name": "solera",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -12,7 +12,7 @@
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
     "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm --filter @sillage/server test",
+    "test": "pnpm --filter @solera/server test",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
@@ -20,14 +20,14 @@
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
-    "db:generate": "pnpm --filter @sillage/db generate",
-    "db:migrate": "pnpm --filter @sillage/server migrate",
-    "user:create": "pnpm --filter @sillage/server user:create",
+    "db:generate": "pnpm --filter @solera/db generate",
+    "db:migrate": "pnpm --filter @solera/server migrate",
+    "user:create": "pnpm --filter @solera/server user:create",
     "codex:types": "node scripts/codex-types.mjs",
     "codex:types:check": "node scripts/codex-types.mjs --check",
     "opencode:types": "node scripts/opencode-types.mjs",
     "opencode:types:check": "node scripts/opencode-types.mjs --check",
-    "lint": "pnpm --filter @sillage/web lint"
+    "lint": "pnpm --filter @solera/web lint"
   },
   "devDependencies": {
     "openapi-typescript": "^7.13.0",

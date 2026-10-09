@@ -2,12 +2,12 @@ import { z } from 'zod'
 import { agentConfigSchema, type AgentConfig } from './agent-config.js'
 import { conversationStatusSchema } from './api.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
-import { agentKindSchema, type AgentKind, type SillageEvent } from './events.js'
+import { agentKindSchema, type AgentKind, type SoleraEvent } from './events.js'
 
 /**
  * L'API publique, celle que pilotent les clients machine.
  *
- * Elle parle tâche là où le reste de Sillage parle conversation : c'est le même objet,
+ * Elle parle tâche là où le reste de Solera parle conversation : c'est le même objet,
  * dans la même table et le même journal, mais un appelant distant n'a pas à connaître
  * les DTO de l'interface, qui bougent au rythme des écrans. Cette traduction est le
  * prix d'un contrat stable.
@@ -155,7 +155,7 @@ export interface TaskPendingDto {
   requestId: string
   requestedAt: number
   /** La demande telle qu'elle a été journalisée, pour n'avoir rien à retraduire. */
-  event: SillageEvent
+  event: SoleraEvent
 }
 
 /**
@@ -199,7 +199,7 @@ export interface TaskDto extends TaskSummaryDto {
 
 export interface TaskEventsPageDto {
   taskId: string
-  events: { seq: number; ts: number; event: SillageEvent }[]
+  events: { seq: number; ts: number; event: SoleraEvent }[]
   /** Curseur à repasser en `after` au prochain appel. */
   nextAfter: number
   hasMore: boolean
@@ -252,7 +252,7 @@ export interface WebhookPayload {
    */
   backgroundJobs?: number
   /** task.awaiting_input */
-  pending?: { kind: TaskPendingDto['kind']; requestId: string; event: SillageEvent }
+  pending?: { kind: TaskPendingDto['kind']; requestId: string; event: SoleraEvent }
   /** Échéance de réponse, absente quand la tâche n'en a pas. */
   replyDeadlineAt?: number
   /** task.failed */
@@ -306,7 +306,7 @@ export const OVERRIDABLE_CONFIG_FIELDS: Record<AgentKind, readonly string[]> = {
  */
 export function isPermissiveConfig(config: AgentConfig): boolean {
   if (config.agent === 'claude') return config.permissionMode === 'bypassPermissions'
-  // La sentinelle compte comme permissive : sans règle posée par Sillage, opencode
+  // La sentinelle compte comme permissive : sans règle posée par Solera, opencode
   // laisse faire, sauf réglage du poste que rien ici ne permet de connaître.
   if (config.agent === 'opencode') {
     return config.permissions.edit !== 'ask' && config.permissions.edit !== 'deny' &&

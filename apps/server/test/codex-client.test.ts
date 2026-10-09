@@ -46,7 +46,7 @@ test('stdout non JSON ou null ne casse pas le transport', async (t) => {
 
 test('binaire absent : rejet immédiat et une seule notification de mort', async () => {
   let exits = 0
-  const client = new CodexAppServerClient({ binary: '/nonexistent/sillage-codex-fixture', onExit: () => { exits++ } })
+  const client = new CodexAppServerClient({ binary: '/nonexistent/solera-codex-fixture', onExit: () => { exits++ } })
   await assert.rejects(client.initialize({ name: 'test', version: '1', title: null }), /ENOENT/)
   await setTimeout(0)
   assert.equal(exits, 1)

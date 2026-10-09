@@ -1,4 +1,4 @@
-import type { JournalEntry, SillageEvent } from '@sillage/protocol'
+import type { JournalEntry, SoleraEvent } from '@solera/protocol'
 
 /**
  * Regroupe les deltas d'une page de journal relue.
@@ -35,10 +35,10 @@ import type { JournalEntry, SillageEvent } from '@sillage/protocol'
  * Le direct n'y passe pas : un delta fusionné n'a de sens que sur un journal déjà écrit.
  */
 
-type TextDelta = Extract<SillageEvent, { type: 'message.delta' | 'thinking.delta' }>
+type TextDelta = Extract<SoleraEvent, { type: 'message.delta' | 'thinking.delta' }>
 
 /** Les deux seuls types dont le fold concatène le texte au lieu de le remplacer. */
-function textDelta(event: SillageEvent): TextDelta | null {
+function textDelta(event: SoleraEvent): TextDelta | null {
   return event.type === 'message.delta' || event.type === 'thinking.delta' ? event : null
 }
 

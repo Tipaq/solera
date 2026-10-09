@@ -8,7 +8,7 @@ import {
   type AgentKind,
   type ApiScope,
   type ApiTokenDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import {
   Badge,
   Banner,

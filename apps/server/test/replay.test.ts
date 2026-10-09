@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
-import type { JournalEntry, SillageEvent } from '@sillage/protocol'
+import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
+import type { JournalEntry, SoleraEvent } from '@solera/protocol'
 import { coalesceDeltas } from '../src/events/coalesce.js'
 import { EventLog } from '../src/events/event-log.js'
 import { MAX_OUTPUT_BYTES } from '../src/events/tool-output.js'
@@ -12,27 +12,27 @@ Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr'
 const { applyEvent, emptyChatState } = await import('../../web/src/lib/chat-fold.js')
 type ChatState = ReturnType<typeof emptyChatState>
 
-const user = (messageId: string, text: string): SillageEvent =>
+const user = (messageId: string, text: string): SoleraEvent =>
   ({ type: 'message.completed', messageId, role: 'user', blocks: [{ type: 'text', text }], parentToolCallId: null })
-const said = (messageId: string, text: string): SillageEvent =>
+const said = (messageId: string, text: string): SoleraEvent =>
   ({ type: 'message.completed', messageId, role: 'assistant', blocks: [{ type: 'text', text }], parentToolCallId: null })
-const typing = (messageId: string, text: string): SillageEvent =>
+const typing = (messageId: string, text: string): SoleraEvent =>
   ({ type: 'message.delta', messageId, text, parentToolCallId: null })
-const bash = (toolCallId: string, command: string): SillageEvent =>
+const bash = (toolCallId: string, command: string): SoleraEvent =>
   ({ type: 'tool.started', toolCallId, name: 'Bash', input: { command }, parentToolCallId: null })
-const chunk = (toolCallId: string, text: string): SillageEvent => ({ type: 'tool.output_delta', toolCallId, chunk: text })
-const done = (toolCallId: string, output: string): SillageEvent =>
+const chunk = (toolCallId: string, text: string): SoleraEvent => ({ type: 'tool.output_delta', toolCallId, chunk: text })
+const done = (toolCallId: string, output: string): SoleraEvent =>
   ({ type: 'tool.completed', toolCallId, output, isError: false, durationMs: 5 })
-const diff = (patch: string): SillageEvent =>
+const diff = (patch: string): SoleraEvent =>
   ({ type: 'diff.updated', patch, files: [{ path: 'a.ts', added: patch.length, removed: 0 }] })
-const commands = (...names: string[]): SillageEvent =>
+const commands = (...names: string[]): SoleraEvent =>
   ({ type: 'commands.updated', commands: names.map((name) => ({ name, description: '', argumentHint: '', aliases: [] })) })
-const mcp = (state: 'pending' | 'connected'): SillageEvent =>
+const mcp = (state: 'pending' | 'connected'): SoleraEvent =>
   ({ type: 'mcp.updated', servers: [{ name: 'docs', state, tools: [], error: null, external: false }] })
-const skills = (...names: string[]): SillageEvent =>
+const skills = (...names: string[]): SoleraEvent =>
   ({ type: 'skills.updated', skills: names.map((name) => ({ name, description: '' })) })
-const turnStart: SillageEvent = { type: 'turn.started' }
-const turnEnd: SillageEvent = {
+const turnStart: SoleraEvent = { type: 'turn.started' }
+const turnEnd: SoleraEvent = {
   type: 'turn.completed', stopReason: 'end_turn', costUsd: 0.01, inputTokens: 1, outputTokens: 1,
   cacheCreationTokens: 0, cacheReadTokens: 0,
 }
@@ -42,7 +42,7 @@ const turnEnd: SillageEvent = {
  * un appel interrompu sans `tool.completed`, un identifiant d'appel réutilisé après sa
  * fin, un appel encore en cours, des deltas de texte que la page fusionne.
  */
-const JOURNAL: SillageEvent[] = [
+const JOURNAL: SoleraEvent[] = [
   turnStart,
   user('u1', 'Lance les tests'),
   commands('a'),
@@ -77,7 +77,7 @@ const JOURNAL: SillageEvent[] = [
   chunk('t3', 'toujours en cours'),
 ]
 
-function openJournal(events: SillageEvent[] = JOURNAL): { log: EventLog; close: () => void } {
+function openJournal(events: SoleraEvent[] = JOURNAL): { log: EventLog; close: () => void } {
   const { db, sqlite } = openDatabase(':memory:')
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
@@ -151,8 +151,8 @@ test('relecture : ce que la suite rend caduc n’est pas envoyé', () => {
   try {
     const { received } = replay(log, emptyChatState(), 0, { rows: 5000, bytes: 8_000_000 })
     const events = received.map((entry) => entry.event)
-    const of = <T extends SillageEvent['type']>(type: T) =>
-      events.filter((event): event is Extract<SillageEvent, { type: T }> => event.type === type)
+    const of = <T extends SoleraEvent['type']>(type: T) =>
+      events.filter((event): event is Extract<SoleraEvent, { type: T }> => event.type === type)
 
     // La sortie de t1 tient dans son `tool.completed` ; celle de t2, interrompu, et celle
     // de t3, en cours, n'existent que par leurs deltas. Le t1 relancé aussi.

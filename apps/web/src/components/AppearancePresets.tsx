@@ -4,7 +4,7 @@ import type { Theme } from '../lib/theme'
 import { cx } from './ui'
 
 const PRESETS = [
-  { name: 'sillage', tint: 1 },
+  { name: 'solera', tint: 1 },
   { name: 'soft', tint: 0.25 },
   { name: 'neutral', tint: 0 },
 ] as const

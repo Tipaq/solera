@@ -21,7 +21,7 @@ Les changements portent sur les corrections prioritaires, le board mobile et la 
 
 Validation : typecheck et lint frontend, build de production, `pnpm test:codex-ui` et nouveau `pnpm test:ui`. Ce dernier crée sa propre instance temporaire, désactive les CLI, vérifie les brouillons et les interactions puis supprime ses données. Les parcours ont aussi été inspectés en clair et sombre, et la version compilée a été ouverte via le nom Tailscale. Pas de validation sur Safari/iPhone physique.
 
-La démo utilise le service utilisateur temporaire `sillage-ui-preview`, le port 7519 et les données séparées de `/tmp/sillage-ui-audit/data`. Son frontend est une copie du build dans `/tmp/sillage-ui-audit/web`. Elle ne remplace pas l’instance principale. Pour la retirer : arrêter cette unité utilisateur et désactiver l’exposition Tailscale du port 7519.
+La démo utilise le service utilisateur temporaire `solera-ui-preview`, le port 7519 et les données séparées de `/tmp/solera-ui-audit/data`. Son frontend est une copie du build dans `/tmp/solera-ui-audit/web`. Elle ne remplace pas l’instance principale. Pour la retirer : arrêter cette unité utilisateur et désactiver l’exposition Tailscale du port 7519.
 
 ## Deuxième passe : navigation, démarrage et réglages
 
@@ -52,7 +52,7 @@ L’aperçu isolé utilise désormais le PATH du compte de développement pour t
 - La colonne actuelle devient un menu dans l’en-tête. Le statut reste visible et les cinq destinations sont accessibles sans occuper une section entière. Les actions de reprise et la dernière note remontent ainsi sur téléphone.
 - La note la plus récente est affichée avant un historique dépliable. Une note en cours de rédaction est conservée par carte et par compte dans l’onglet, y compris après rechargement. L’échec d’une publication conserve la saisie et affiche une erreur. Une publication lente ne supprime pas une nouvelle note déjà commencée ; rouvrir la carte pendant cette publication ne permet pas de la lancer en double. Les erreurs de chargement et de suppression ont aussi un retour visible.
 - Les panneaux de carte et de workspace contiennent le focus lorsqu’ils occupent l’écran mobile. Échap ferme le panneau et le focus revient à l’ouverture, avec un repli vers la navigation si la carte a quitté la colonne visible. Les menus superposés gardent leur propre gestion d’Échap ; la recherche de fichiers, l’éditeur et le terminal conservent leurs raccourcis. Le passage entre mobile et ordinateur garde le même élément d’éditeur monté. La gestion s’appuie sur FocusScope, déjà présent via Radix et désormais déclaré comme dépendance directe.
-- Les ambiances « Sillage », « Discret » et « Neutre » proposent trois doses de couleur pour les fonds. Elles conservent la couleur d’accent, la luminosité et les réglages de lecture. Les réglages fins restent disponibles dans une section repliée. Le thème sombre contrasté conserve son seul réglage utile, la luminosité. Aucun préréglage n’est appliqué automatiquement aux préférences existantes.
+- Les ambiances « Solera », « Discret » et « Neutre » proposent trois doses de couleur pour les fonds. Elles conservent la couleur d’accent, la luminosité et les réglages de lecture. Les réglages fins restent disponibles dans une section repliée. Le thème sombre contrasté conserve son seul réglage utile, la luminosité. Aucun préréglage n’est appliqué automatiquement aux préférences existantes.
 
 ![Carte en lecture sur téléphone](third-card-light-mobile.png)
 

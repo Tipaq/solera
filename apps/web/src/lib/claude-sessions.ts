@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ClaudeSessionsDto, ClaudeSyncDto, ConversationDto } from '@sillage/protocol'
+import type { ClaudeSessionsDto, ClaudeSyncDto, ConversationDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

@@ -1,6 +1,6 @@
 import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { Secret } from '@sillage/protocol'
+import type { Secret } from '@solera/protocol'
 import {
   Badge,
   Banner,

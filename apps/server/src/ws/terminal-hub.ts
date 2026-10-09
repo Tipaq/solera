@@ -3,7 +3,7 @@ import type { WebSocket } from 'ws'
 import {
   terminalClientMessageSchema,
   type TerminalServerMessage,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { TerminalError, type TerminalManager } from '../terminals/terminal-manager.js'
 import type { AppContext } from '../http/context.js'
 import { visibleProject } from '../http/routes/projects.js'

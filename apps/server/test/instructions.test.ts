@@ -7,8 +7,8 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
-import type { InstructionsDto, ProjectDto, ProjectInstructionsDto } from '@sillage/protocol'
+import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
+import type { InstructionsDto, ProjectDto, ProjectInstructionsDto } from '@solera/protocol'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
@@ -19,7 +19,7 @@ import { claudeMdExcludes, instructionsAppendix } from '../src/instructions/stor
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 
 async function harness(t: TestContext, { admin = true } = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-instructions-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-instructions-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const workspace = join(dir, 'workspace')
   await mkdir(workspace)
@@ -47,8 +47,8 @@ async function harness(t: TestContext, { admin = true } = {}) {
   t.after(() => app.close())
 
   const mcp = (name: string, args: object = {}) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'c' },
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'c' },
       encoding: 'utf8', timeout: 10000,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n',
     })
@@ -57,8 +57,8 @@ async function harness(t: TestContext, { admin = true } = {}) {
   }
   const project = async () =>
     (await app.inject({ url: '/api/projects/project/instructions' })).json<ProjectInstructionsDto>()
-  const appendix = (mode: 'sillage' | 'repo', sillageMcp = true) =>
-    instructionsAppendix(db, { projectId: 'project', mode, sillageMcp })
+  const appendix = (mode: 'solera' | 'repo', soleraMcp = true) =>
+    instructionsAppendix(db, { projectId: 'project', mode, soleraMcp })
 
   return { db, app, workspace, mcp, project, appendix }
 }
@@ -67,8 +67,8 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
   const { app, project, appendix } = await harness(t)
 
   // Rien à dire, et pas d'outil pour retenir : rien n'est injecté.
-  assert.equal(appendix('sillage', false), null)
-  assert.match(appendix('sillage') ?? '', /edit_instructions/)
+  assert.equal(appendix('solera', false), null)
+  assert.match(appendix('solera') ?? '', /edit_instructions/)
 
   const global = await app.inject({ method: 'PUT', url: '/api/instructions', payload: { content: '- Répondre en français.' } })
   assert.equal(global.statusCode, 200, global.body)
@@ -78,10 +78,10 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
   assert.equal(patched.statusCode, 200, patched.body)
   // Écrire le contenu d'un projet d'avant le réglage fixe son mode.
   assert.equal(patched.json<ProjectInstructionsDto>().modeChosen, true)
-  assert.equal((await project()).mode, 'sillage')
+  assert.equal((await project()).mode, 'solera')
 
-  const text = appendix('sillage') ?? ''
-  assert.match(text, /# SILLAGE\.md/)
+  const text = appendix('solera') ?? ''
+  assert.match(text, /# SOLERA\.md/)
   assert.match(text, /Pour tous les projets\n\n- Répondre en français\./)
   assert.match(text, /Pour ce projet\n\n- Tests avec `pnpm test`\./)
 
@@ -94,7 +94,7 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
 test("projet d'avant le réglage : suit son dépôt, puis migre sans toucher aux fichiers", async (t) => {
   const { app, workspace, project } = await harness(t)
 
-  assert.equal((await project()).mode, 'sillage')
+  assert.equal((await project()).mode, 'solera')
   await writeFile(join(workspace, 'CLAUDE.md'), '# Consignes\n\nNe jamais pousser sur main.\n')
   const legacy = await project()
   assert.equal(legacy.mode, 'repo')
@@ -118,10 +118,10 @@ test("projet d'avant le réglage : suit son dépôt, puis migre sans toucher aux
   // La migration : contenu importé et mode basculé d'un geste, fichiers intacts.
   const migrated = await app.inject({
     method: 'PATCH', url: '/api/projects/project/instructions',
-    payload: { mode: 'sillage', content: 'Ne jamais pousser sur main.' },
+    payload: { mode: 'solera', content: 'Ne jamais pousser sur main.' },
   })
   assert.equal(migrated.statusCode, 200, migrated.body)
-  assert.equal(migrated.json<ProjectInstructionsDto>().mode, 'sillage')
+  assert.equal(migrated.json<ProjectInstructionsDto>().mode, 'solera')
   assert.equal(await readFile(join(workspace, 'CLAUDE.md'), 'utf8'), '# Consignes\n\nNe jamais pousser sur main.\n')
 })
 
@@ -137,11 +137,11 @@ test('création : le mode suit le dossier, sauf choix explicite', async (t) => {
     return response.json<ProjectDto>().instructionsMode
   }
 
-  assert.equal(await create('vide', join(workspace, 'vide')), 'sillage')
+  assert.equal(await create('vide', join(workspace, 'vide')), 'solera')
   await mkdir(join(workspace, 'avec'))
   await writeFile(join(workspace, 'avec', 'AGENTS.md'), 'x')
   assert.equal(await create('avec', join(workspace, 'avec')), 'repo')
-  assert.equal(await create('choisi', join(workspace, 'avec'), 'sillage'), 'sillage')
+  assert.equal(await create('choisi', join(workspace, 'avec'), 'solera'), 'solera')
 })
 
 test('outils MCP : lire, éditer, réécrire, comme un fichier', async (t) => {
@@ -176,10 +176,10 @@ test('outils MCP : lire, éditer, réécrire, comme un fichier', async (t) => {
 
   const after = await project()
   assert.deepEqual(after.author, { kind: 'session', conversationId: 'c', projectId: 'project', title: 'Session qui retient' })
-  // La première écriture a fixé le mode : un AGENTS.md apparu ensuite ne fait pas taire SILLAGE.md.
+  // La première écriture a fixé le mode : un AGENTS.md apparu ensuite ne fait pas taire SOLERA.md.
   assert.equal(after.modeChosen, true)
   await writeFile(join(workspace, 'AGENTS.md'), 'x')
-  assert.equal((await project()).mode, 'sillage')
+  assert.equal((await project()).mode, 'solera')
 
   // Global, pour un administrateur.
   assert.equal(mcp('write_instructions', { content: '- Tutoyer.', scope: 'global' }).isError, undefined)

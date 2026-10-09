@@ -15,8 +15,8 @@ import {
   projects,
   runMigrations,
   users,
-} from '@sillage/db'
-import { parseSessionMessage, type AgentConfig, type AgentModelDto } from '@sillage/protocol'
+} from '@solera/db'
+import { parseSessionMessage, type AgentConfig, type AgentModelDto } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
@@ -45,7 +45,7 @@ const CATALOG: Record<string, AgentModelDto[]> = {
 }
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-agent-requests-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-agent-requests-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
@@ -79,8 +79,8 @@ async function harness(t: TestContext) {
 
   /** Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. */
   const mcp = async (from: string, name: string, args: object) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from },
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: from },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })

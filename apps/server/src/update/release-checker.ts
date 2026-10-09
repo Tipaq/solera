@@ -1,8 +1,17 @@
-import type { ReleaseNote, VersionInfo } from '@sillage/protocol'
+import type { ReleaseNote, VersionInfo } from '@solera/protocol'
 import { detectChannel } from './channel.js'
 import { CURRENT_VERSION, compareVersions, parseVersion } from './version.js'
 
-const GITHUB_REPO = 'MarlBurroW/sillage'
+/**
+ * Dépôt GitHub dont on lit les releases pour proposer une mise à jour.
+ *
+ * Vide par défaut, et c'est voulu : Solera descend de Sillage mais ne publie pas
+ * encore ses propres releases. Laisser l'ancien dépôt ici ferait proposer
+ * l'installation de Sillage par-dessus Solera, c'est-à-dire l'écrasement du fork
+ * par son parent. `SOLERA_UPDATE_REPO=Tipaq/solera` rallumera la vérification le
+ * jour où ce dépôt publiera.
+ */
+const GITHUB_REPO = process.env.SOLERA_UPDATE_REPO ?? ''
 
 const CACHE_TTL_MS = 60 * 60 * 1000
 
@@ -79,13 +88,21 @@ export class ReleaseChecker {
   }
 
   private async doRefresh(): Promise<void> {
+    if (GITHUB_REPO === '') {
+      // Vérification éteinte : pas d'erreur à signaler, simplement aucune release
+      // connue, donc aucune mise à jour proposée.
+      this.releases = []
+      this.fetchedAt = Date.now()
+      this.checkError = null
+      return
+    }
     try {
       const res = await fetch(
         `https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=30`,
         {
           headers: {
             accept: 'application/vnd.github+json',
-            'user-agent': 'sillage-update-checker',
+            'user-agent': 'solera-update-checker',
           },
           signal: AbortSignal.timeout(10_000),
         },

@@ -1,7 +1,7 @@
 import { CalendarClock, ChevronRight, Plus } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import type { ConversationDto, ScheduledTaskDto } from '@sillage/protocol'
+import type { ConversationDto, ScheduledTaskDto } from '@solera/protocol'
 import { relativeDate } from '../lib/dates'
 import { useTranslate } from '../lib/i18n'
 import { SCHEDULE_STATE_LABELS, scheduleState, type ScheduleState } from '../lib/schedules'

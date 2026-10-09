@@ -1,6 +1,6 @@
 import { Trash2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { CardNoteDto } from '@sillage/protocol'
+import type { CardNoteDto } from '@solera/protocol'
 import { useAddCardNote, useCardNotes, useCardNoteSaving, useDeleteCardNote } from '../../lib/cards'
 import { useCardNoteDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'

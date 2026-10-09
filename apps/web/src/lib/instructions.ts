@@ -5,11 +5,11 @@ import type {
   ProjectInstructionsDto,
   RepoInstructionFile,
   RepoInstructionFileDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { api } from './api'
 
 /**
- * SILLAGE.md : la partie globale et celle d'un projet.
+ * SOLERA.md : la partie globale et celle d'un projet.
  *
  * Relu à chaque ouverture plutôt que gardé longtemps : un agent peut y avoir ajouté une
  * consigne par les outils MCP depuis la dernière visite.
@@ -63,7 +63,7 @@ export function useWriteRepoInstructions(projectId: string) {
 }
 
 /**
- * Le texte qu'importe la migration : les fichiers du dépôt à la suite de ce que SILLAGE.md
+ * Le texte qu'importe la migration : les fichiers du dépôt à la suite de ce que SOLERA.md
  * porte déjà. Deux fichiers au contenu identique, comme un `AGENTS.md` qui n'est qu'un
  * lien vers `CLAUDE.md`, ne comptent qu'une fois.
  */

@@ -17,7 +17,7 @@ import {
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
   type ScheduledTaskDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
 import type { SettingGroup } from '../chat/ComposerSettings'

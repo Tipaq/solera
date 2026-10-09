@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
-import type { SillageEvent } from '@sillage/protocol'
+import type { SoleraEvent } from '@solera/protocol'
 import {
   openDatabase,
   users,
@@ -19,7 +19,7 @@ import {
   mcpServers,
   scheduledRuns,
   scheduledTasks,
-} from '@sillage/db'
+} from '@solera/db'
 import { hashPassword } from '../auth/passwords.js'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
@@ -28,14 +28,14 @@ import { migrationsFolder, runPendingMigrations } from '../migrations.js'
  * Peuple une instance dédiée aux captures d'écran du site : un compte, deux projets,
  * des conversations aux journaux rejouables et un board de cartes, le tout en anglais.
  *
- * À lancer sur un SILLAGE_DATA_DIR qui n'est PAS celui de la production : le script
+ * À lancer sur un SOLERA_DATA_DIR qui n'est PAS celui de la production : le script
  * vide les tables avant d'écrire. Il peut tourner avant ou après le démarrage du
  * serveur ; après, les statuts « running » et « awaiting_input » survivent jusqu'au
  * prochain redémarrage, ce qui est exactement la fenêtre des captures.
  */
 
 const DEMO_USERNAME = 'alex'
-const DEMO_PASSWORD = 'sillage-demo'
+const DEMO_PASSWORD = 'solera-demo'
 
 const CLAUDE_TOOLS = [
   'Task',
@@ -449,15 +449,15 @@ export function ForecastCard({ forecast, showAge }: { forecast: Forecast; showAg
 interface SeededEvent {
   /** Décalage en secondes par rapport au début de la conversation. */
   at: number
-  event: SillageEvent
+  event: SoleraEvent
 }
 
 async function main(): Promise<void> {
   const config = loadConfig()
   const dataDir = config.paths.data
-  if (dataDir === join(process.env.HOME ?? '', '.local/share/sillage')) {
+  if (dataDir === join(process.env.HOME ?? '', '.local/share/solera')) {
     throw new Error(
-      'Refusing to seed the default data dir. Point SILLAGE_DATA_DIR at a demo dir.',
+      'Refusing to seed the default data dir. Point SOLERA_DATA_DIR at a demo dir.',
     )
   }
 
@@ -677,7 +677,7 @@ async function main(): Promise<void> {
     permissionMode: 'manual',
     additionalDirectories: [],
     mcpServers: [],
-    sillageMcp: true,
+    soleraMcp: true,
     strictMcp: false,
   }
   const codexConfig = {
@@ -691,7 +691,7 @@ async function main(): Promise<void> {
     profile: null,
     additionalDirectories: [],
     mcpServers: [],
-    sillageMcp: true,
+    soleraMcp: true,
   }
 
   const toolCallIds = { read: 'toolu_demo_read_forecast', grep: 'toolu_demo_grep_fetch', edit: 'toolu_demo_edit_forecast', write: 'toolu_demo_write_cache', bash: 'toolu_demo_bash_test', edit2: 'toolu_demo_edit_citylist' }
@@ -1288,9 +1288,9 @@ All 6 forecast tests pass, including the two new offline cases.`,
         blocks: [
           {
             type: 'text',
-            text: `[Tâche planifiée Sillage « CLI release watch » — tir du ${date}]
+            text: `[Tâche planifiée Solera « CLI release watch » — tir du ${date}]
 
-Tu tournes seul, dans une session neuve ouverte par le planificateur de Sillage : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de 20 min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.
+Tu tournes seul, dans une session neuve ouverte par le planificateur de Solera : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de 20 min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.
 
 ${previous ? `Tir précédent : ${previous}, terminé normalement.\nSa dernière réponse :\n> No new release. Claude Code 2.1.288 and Codex 0.157.1 are current.` : "C'est le premier tir de cette tâche."}
 

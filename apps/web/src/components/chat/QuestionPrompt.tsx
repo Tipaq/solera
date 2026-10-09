@@ -1,6 +1,6 @@
 import { Check, MessageCircleQuestion } from 'lucide-react'
 import { useState } from 'react'
-import type { AgentQuestion } from '@sillage/protocol'
+import type { AgentQuestion } from '@solera/protocol'
 import type { QuestionItem } from '../../lib/chat-fold'
 import { answerQuestion } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'

@@ -5,7 +5,7 @@ import {
   HEARTBEAT_INTERVAL_MS,
   clientMessageSchema,
   type ServerMessage,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
 import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'

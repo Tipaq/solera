@@ -9,7 +9,7 @@ import {
   type InstructionsMode,
   type ProjectInstructionsDto,
   type RepoInstructionFile,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { locale, useTranslate } from '../../lib/i18n'
 import {
@@ -180,7 +180,7 @@ export function GlobalInstructions() {
 /**
  * La partie projet : où elle vit, et son contenu selon ce choix.
  *
- * En mode dépôt avec des fichiers déjà là, le passage dans Sillage est proposé ici et
+ * En mode dépôt avec des fichiers déjà là, le passage dans Solera est proposé ici et
  * nulle part ailleurs : c'est l'endroit où l'on vient relire ses consignes, et rien ne
  * presse un projet qui marche tel qu'il est.
  */
@@ -192,7 +192,7 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
   if (!data) return null
 
   const modes: Choice<InstructionsMode>[] = [
-    { value: 'sillage', label: t('instructions.mode.sillage'), hint: t('instructions.mode.sillage.hint') },
+    { value: 'solera', label: t('instructions.mode.solera'), hint: t('instructions.mode.solera.hint') },
     { value: 'repo', label: t('instructions.mode.repo'), hint: t('instructions.mode.repo.hint') },
   ]
   const fileNames = data.repoFiles.map((file) => file.path).join(', ')
@@ -218,7 +218,7 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
-      {data.mode === 'sillage' ? (
+      {data.mode === 'solera' ? (
         <>
           {data.repoFiles.length > 0 ? (
             <p className="text-xs text-ink-faint">{t('instructions.masked', { files: fileNames })}</p>
@@ -246,7 +246,7 @@ export function ProjectInstructions({ projectId }: { projectId: string }) {
         busy={update.isPending}
         onConfirm={() =>
           update.mutate(
-            { mode: 'sillage', content: mergedForImport(data.content, data.repoFiles) },
+            { mode: 'solera', content: mergedForImport(data.content, data.repoFiles) },
             { onSuccess: () => setMigrating(false) },
           )
         }
@@ -307,7 +307,7 @@ function RepoFileEditor({ projectId, data }: { projectId: string; data: ProjectI
 }
 
 /**
- * Les deux parties de SILLAGE.md depuis une conversation, sans la quitter.
+ * Les deux parties de SOLERA.md depuis une conversation, sans la quitter.
  *
  * Le projet d'abord : c'est ce qu'on vient relire en travaillant dessus.
  */
@@ -392,7 +392,7 @@ export function InstructionsModeSelect({
       onChange={onChange}
       options={[
         { value: 'auto', label: t('instructions.mode.auto'), hint: t('instructions.mode.auto.hint') },
-        { value: 'sillage', label: t('instructions.mode.sillage'), hint: t('instructions.mode.sillage.hint') },
+        { value: 'solera', label: t('instructions.mode.solera'), hint: t('instructions.mode.solera.hint') },
         { value: 'repo', label: t('instructions.mode.repo'), hint: t('instructions.mode.repo.hint') },
       ]}
     />

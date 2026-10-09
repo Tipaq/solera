@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorktreeDto } from '@sillage/protocol'
+import type { WorktreeDto } from '@solera/protocol'
 import { api } from './api'
 
 const worktreesKey = (projectId: string) => ['worktrees', projectId]

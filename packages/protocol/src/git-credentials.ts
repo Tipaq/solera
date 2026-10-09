@@ -9,7 +9,7 @@ import { instructionsModeSchema } from './instructions.js'
  * geste d'utilisateur, alors que les secrets sont réservés aux administrateurs.
  *
  * Le jeton ne sert pas qu'au clone. Il est aussi ce qui rend possible le `push` d'un
- * agent, par un helper que Sillage inscrit dans le dépôt cloné.
+ * agent, par un helper que Solera inscrit dans le dépôt cloné.
  */
 
 /** Hôte seul, tel que git le présentera au helper : ni schéma, ni port, ni chemin. */
@@ -59,7 +59,7 @@ export interface GitRepoDto {
 
 export interface GitRepoListDto {
   repos: GitRepoDto[]
-  /** Vrai quand la forge a plus de dépôts que Sillage n'en a rapatriés. */
+  /** Vrai quand la forge a plus de dépôts que Solera n'en a rapatriés. */
   truncated: boolean
 }
 
@@ -90,7 +90,7 @@ export interface CloneJobDto {
   projectId: string | null
   /**
    * Même forme qu'une erreur d'API : un code que le client traduit, et un message
-   * anglais de repli. Les échecs que Sillage ne sait pas nommer portent le texte brut
+   * anglais de repli. Les échecs que Solera ne sait pas nommer portent le texte brut
    * de git, qui reste plus précis que ne le serait une reformulation.
    */
   error: { code: string; message: string } | null

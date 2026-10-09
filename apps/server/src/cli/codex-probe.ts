@@ -2,13 +2,13 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_CODEX_CONFIG, type SillageEvent } from '@sillage/protocol'
+import { DEFAULT_CODEX_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { CodexRunner } from '../agents/codex/runner.js'
 
 /** Sonde manuelle : un vrai tour court sur le compte Codex, jamais exécuté en CI. */
-const cwd = await mkdtemp(join(tmpdir(), 'sillage-codex-probe-'))
+const cwd = await mkdtemp(join(tmpdir(), 'solera-codex-probe-'))
 const blocking = process.argv.includes('--blocking')
-const events: SillageEvent[] = []
+const events: SoleraEvent[] = []
 let answered = false
 let answering: Promise<boolean> | null = null
 let finish: () => void = () => {}
@@ -18,7 +18,7 @@ const runner = new CodexRunner({
   binary: process.env.CODEX_BIN ?? 'codex', resumeSessionId: null,
   config: { ...DEFAULT_CODEX_CONFIG, model: process.env.CODEX_MODEL ?? 'gpt-6-astra',
     reasoningEffort: 'low', collaborationMode: blocking ? 'plan' : 'default',
-    sandbox: 'read-only', askForApproval: 'never', sillageMcp: false },
+    sandbox: 'read-only', askForApproval: 'never', soleraMcp: false },
   projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
   setAgentSessionId: () => {}, updateConfig: () => {},
   openPermissionRequest: () => 'probe-permission', closePermissionRequest: () => {},

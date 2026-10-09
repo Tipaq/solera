@@ -17,7 +17,7 @@ import type { SessionManager } from '../sessions/session-manager.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { registerTerminalHub } from '../ws/terminal-hub.js'
 import { registerWebSocketHub } from '../ws/hub.js'
-import { MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
+import { MAX_ATTACHMENT_BYTES } from '@solera/protocol'
 import type { AppContext } from './context.js'
 import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
@@ -93,7 +93,7 @@ export async function buildApp(
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
-      level: process.env.SILLAGE_LOG_LEVEL ?? 'info',
+      level: process.env.SOLERA_LOG_LEVEL ?? 'info',
       transport:
         process.env.NODE_ENV === 'production'
           ? undefined
@@ -106,7 +106,7 @@ export async function buildApp(
   registerErrorHandler(app)
 
   /**
-   * Rien ne compressait sur le chemin : ni Sillage, ni le nginx qui le précède, dont le
+   * Rien ne compressait sur le chemin : ni Solera, ni le nginx qui le précède, dont le
    * `gzip_types` par défaut ne couvre que `text/html`. Une conversation longue relit son
    * journal en clair, 32 Mo pour la plus lourde, ce qui se voit surtout depuis
    * l'extérieur où la montante de la maison est le facteur limitant.

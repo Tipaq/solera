@@ -1,4 +1,4 @@
-import type { CardColumn } from '@sillage/protocol'
+import type { CardColumn } from '@solera/protocol'
 import { translate, type MessageKey } from '../../lib/i18n'
 
 const LABELS: Record<CardColumn, MessageKey> = {

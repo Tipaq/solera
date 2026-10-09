@@ -1,8 +1,8 @@
-# Sillage
+# Solera
 
 Plateforme de développement agentique self-hosted et multi-CLI.
 
-Le sillage, c'est la trace qu'un navire laisse derrière lui. Ici, c'est le journal
+Le solera, c'est la trace qu'un navire laisse derrière lui. Ici, c'est le journal
 ordonné et rejouable de tout ce que font tes agents, et c'est aussi la propriété
 technique centrale du produit : rien de ce qui se passe n'est perdu si le réseau tombe.
 
@@ -12,7 +12,7 @@ technique centrale du produit : rien de ce qui se passe n'est perdu si le résea
 
 | Sujet | Décision |
 |---|---|
-| Nom | Sillage |
+| Nom | Solera |
 | Modèle multi-utilisateur | Cercle de confiance : comptes séparés, ressources partageables, pas d'isolation système |
 | Credentials CLI | Ceux de l'hôte (`~/.claude`, `~/.codex`), partagés par tous les utilisateurs |
 | Backend | Node 22 + TypeScript + Fastify |
@@ -66,10 +66,10 @@ Règles qui en découlent, non négociables :
 
 Explicitement hors périmètre, pour éviter la dérive :
 
-- Pas d'exécution d'agents dans le cloud ni sur des machines distantes. Sillage pilote
+- Pas d'exécution d'agents dans le cloud ni sur des machines distantes. Solera pilote
   les CLI installés sur son propre hôte.
 - Pas de sandboxing des agents. On s'en remet aux modes de permission des CLI.
-- Pas d'éditeur de code intégré. Sillage est un client de conversation, pas un IDE.
+- Pas d'éditeur de code intégré. Solera est un client de conversation, pas un IDE.
 - Pas de facturation, quotas ou reporting de coûts par utilisateur en v1 (le coût total
   par conversation est affiché, sans agrégation).
 - Pas de collaboration temps réel à plusieurs sur une même conversation en v1. Deux
@@ -137,7 +137,7 @@ mobile, un message part deux fois dès que le réseau hésite.
                               │  HTTPS + WSS
                               ▼
       ┌──────────────────────────────────────────────┐
-      │  sillage-daemon  (Node 22, un seul process)  │
+      │  solera-daemon  (Node 22, un seul process)  │
       │                                              │
       │   Fastify  ──  routes REST + WS + statique   │
       │   SessionManager  ── supervise les runners   │
@@ -176,7 +176,7 @@ journal. Aucune conversation ne reste bloquée dans un état « en cours » mens
 ## 4. Modèle de données
 
 SQLite en mode WAL, `synchronous = NORMAL`, `busy_timeout = 5000`. Un seul fichier
-`sillage.db` dans le répertoire de données.
+`solera.db` dans le répertoire de données.
 
 ```sql
 -- Utilisateurs et sessions d'authentification
@@ -366,7 +366,7 @@ Défini une fois en Zod dans `packages/protocol`, importé par le serveur et par
 C'est le contrat de I3.
 
 ```ts
-type SillageEvent =
+type SoleraEvent =
   // Cycle de vie
   | { type: 'session.started';   agent: AgentKind; agentSessionId: string;
                                  model: string; cwd: string; tools: string[] }
@@ -539,7 +539,7 @@ Ce que l'opt-in ne garantit pas : que l'API accepte la requête rapide. Sur un c
 sans crédits d'usage, elle la refuse, le CLI repasse en vitesse normale pour ce tour
 et le dit dans une `notification` par tour (« Fast mode disabled · usage credits
 exhausted »), relayée en `agent.notice` ; l'état reste `on`. Vérifié par
-`pnpm --filter @sillage/server claude:probe`, qui rejoue toute la chaîne en trois
+`pnpm --filter @solera/server claude:probe`, qui rejoue toute la chaîne en trois
 tours et coûte deux vrais tours plus un au tarif rapide.
 
 ### Traduction des événements
@@ -623,7 +623,7 @@ Le chemin a été trouvé en sondant le binaire installé, aucune documentation 
 - `initialize` doit déclarer la capacité **`experimentalApi`**. Sans elle, `turn/start`
   répond `collaborationMode requires experimentalApi capability` ;
 - `collaborationMode/list` renvoie les préréglages (`Plan`, `Default`), avec leur nom
-  d'affichage. La liste vient donc du CLI, elle n'est pas écrite dans Sillage ;
+  d'affichage. La liste vient donc du CLI, elle n'est pas écrite dans Solera ;
 - `turn/start.collaborationMode` porte le mode, tour par tour, comme le modèle et le
   sandbox. `thread/settings/updated` le confirme en retour.
 
@@ -639,7 +639,7 @@ généré. Rien n'est retranscrit à la main. Une version de Codex qui ne conna�
 `collaborationMode/list` fait simplement disparaître le sélecteur, plutôt que d'offrir un
 réglage sans effet.
 
-Vérifié de bout en bout sur les deux modes, à travers Sillage : en `plan`, la même demande
+Vérifié de bout en bout sur les deux modes, à travers Solera : en `plan`, la même demande
 produit un `question.requested` normalisé et l'interface affiche des boutons de choix ; en
 `default`, elle produit une liste en texte. La réponse renvoyée au CLI clôt bien la
 demande (`question.resolved`), et le tour se termine ensuite.
@@ -814,13 +814,13 @@ différence sur mobile, où le socket est tué dès que l'écran s'éteint.
 
 1. **Racine du projet.** L'agent travaille directement dans `workspace_path`.
 2. **Worktree existant.** Liste des worktrees connus du projet, avec leur branche.
-3. **Nouveau worktree.** Nom de branche et ref de base. Sillage exécute
+3. **Nouveau worktree.** Nom de branche et ref de base. Solera exécute
    `git worktree add <path> -b <name> <baseRef>` avec `<path>` sous
    `<données>/worktrees/<project_id>/<name>`.
 
-On ne délègue pas à `claude --worktree`, parce que Codex ne l'a pas et que Sillage doit
+On ne délègue pas à `claude --worktree`, parce que Codex ne l'a pas et que Solera doit
 savoir où sont les worktrees pour les lister et les nettoyer. La gestion est donc côté
-Sillage, identique pour les deux CLI.
+Solera, identique pour les deux CLI.
 
 La suppression d'un worktree affiche d'abord le résultat de `git status --porcelain` dans
 ce worktree. S'il y a des modifications non commitées, la suppression exige une
@@ -1072,7 +1072,7 @@ la fin du tour, un à la fois, et peut être retiré avant son départ.
 La file vit côté serveur et non dans le CLI, parce qu'un message poussé en cours de tour
 y est repris tout de suite. C'est exactement ce que fait le geste d'inflexion décrit plus
 bas, et ce n'est pas ce qu'on attend d'un envoi ordinaire : le déterminisme vient donc de
-Sillage, et le comportement par défaut est identique pour les deux CLI.
+Solera, et le comportement par défaut est identique pour les deux CLI.
 
 Elle est en mémoire : un message qui n'a jamais atteint le CLI n'a pas à survivre à un
 redémarrage. Le journal, lui, porte de quoi les clore proprement à la reprise
@@ -1150,7 +1150,7 @@ le fil sous forme de séparateur discret.
 **Mentions `@`.** Taper `@` ouvre une liste de fichiers du répertoire de travail
 (`GET /api/projects/:id/files`), avec correspondance par sous-séquence : `wsx` retrouve
 `web/src/index.tsx`. La recherche s'appuie sur `git ls-files --cached --others
---exclude-standard`, avec un parcours de repli hors dépôt. Elle est faite par Sillage et
+--exclude-standard`, avec un parcours de repli hors dépôt. Elle est faite par Solera et
 non déléguée à un CLI : il faudrait sinon un process lancé rien que pour compléter une
 saisie, et rien ne serait proposé sur une conversation pas encore démarrée.
 
@@ -1206,7 +1206,7 @@ installé renvoie aujourd'hui `five_hour`, `seven_day`, `seven_day_opus`,
 `seven_day_sonnet`, `seven_day_oauth_apps`, plus une dizaine de clés encore nulles aux
 noms de code (`tangelo`, `iguana_necktie`, `cinder_cove`...), et un tableau
 `model_scoped` où la sortie de Fable a fait apparaître sa propre jauge. Figer une liste
-côté Sillage obligerait à rebuilder à chaque nouveauté et masquerait en silence tout ce
+côté Solera obligerait à rebuilder à chaque nouveauté et masquerait en silence tout ce
 qui n'aurait pas été prévu.
 
 La lecture parcourt donc tout ce qui est là, retient ce qui a la forme d'une fenêtre
@@ -1362,7 +1362,7 @@ dessous, qui sert alors de fond réel.
 Accessibilité : contraste AA minimum sur tous les couples texte/fond des thèmes livrés,
 cibles tactiles de 44 px minimum, et respect de `prefers-reduced-motion`.
 
-**Palette de coloration syntaxique, choisie dans les réglages.** Dix palettes (Sillage,
+**Palette de coloration syntaxique, choisie dans les réglages.** Dix palettes (Solera,
 Océan, Nuit, Agrume, Cerise, Forêt, Sable, Ardoise, Sobre, Encre), chacune en clair et en
 sombre, mémorisées sur l'appareil comme le thème. Chacune ne
 redéfinit que les sept jetons `--sg-syn-*` : le reste de l'interface ne bouge pas, et
@@ -1546,7 +1546,7 @@ message que le journal n'aurait pas. Trois conséquences, toutes livrées avec :
   introuvable), la reconstruction complète ;
 - les suppressions sont explicites, une table virtuelle FTS5 ne recevant aucun
   `ON DELETE CASCADE` : conversation supprimée, projet supprimé et ses fils en cascade ;
-- `pnpm --filter @sillage/server search:reindex` vide et rejoue. C'est ce chemin qui
+- `pnpm --filter @solera/server search:reindex` vide et rejoue. C'est ce chemin qui
   rattrapera l'existant le jour où le contenu indexé changera.
 
 Ce qui est indexé : les blocs de texte des `message.completed` du fil principal, rien
@@ -1836,7 +1836,7 @@ que de maquiller :
 | `fileChange` (Codex) | le diff unifié produit par le CLI, complet |
 
 Le diff des extraits Claude est calculé ici, par plus longue sous-séquence commune sur les
-lignes : c'est le seul endroit où Sillage doit *calculer* un diff, git le fournissant
+lignes : c'est le seul endroit où Solera doit *calculer* un diff, git le fournissant
 partout ailleurs. Au-delà de 2000 lignes, la comparaison est abandonnée au profit d'un
 remplacement intégral, qui est vrai et ne coûte rien. Une création ou une suppression n'a
 qu'un côté : les deux CLI donnent alors le contenu brut, enveloppé ici dans la forme que
@@ -1941,9 +1941,9 @@ l'onglet étant fermé.
 - Cookie de session opaque de 32 octets, seul son SHA-256 est stocké. Durée 30 jours,
   prolongée à chaque usage.
 - Pas d'inscription ouverte. Le premier compte est créé par une commande
-  `pnpm sillage user:create`, les suivants par un administrateur depuis `/settings/users`.
+  `pnpm solera user:create`, les suivants par un administrateur depuis `/settings/users`.
 - Limitation de débit sur `/api/auth/login` : 5 tentatives par minute et par IP.
-- Pas de 2FA en v1. Sillage doit être derrière un reverse proxy ou un VPN, ce qui est
+- Pas de 2FA en v1. Solera doit être derrière un reverse proxy ou un VPN, ce qui est
   documenté dans le README.
 
 **Autorisation.** Un utilisateur voit un projet s'il en est propriétaire ou si sa
@@ -1979,11 +1979,11 @@ permission sont réservées au propriétaire de la conversation, et l'événemen
 ## 15. Déploiement
 
 ```
-~/.local/share/sillage/
-  sillage.db
+~/.local/share/solera/
+  solera.db
   attachments/
   worktrees/
-~/.config/sillage/config.toml
+~/.config/solera/config.toml
 ```
 
 `config.toml` :
@@ -1991,7 +1991,7 @@ permission sont réservées au propriétaire de la conversation, et l'événemen
 ```toml
 [server]
 host = "127.0.0.1"
-port = 7317
+port = 7517
 
 [limits]
 max_concurrent_sessions = 3
@@ -2020,30 +2020,30 @@ Trois modes d'installation :
 
 1. **Installeur (`install.sh`)**, le mode de référence. Télécharge le tarball de la
    release (bundle serveur + frontend + node_modules natifs précompilés) dans
-   `~/.local/share/sillage/app/releases/vX.Y.Z`, bascule un lien `current` atomique,
-   rend l'unité systemd depuis `deploy/sillage.service.tmpl` et démarre le service.
-   L'unité pose `SILLAGE_INSTALL_DIR`, ce qui active la mise à jour intégrée :
+   `~/.local/share/solera/app/releases/vX.Y.Z`, bascule un lien `current` atomique,
+   rend l'unité systemd depuis `deploy/solera.service.tmpl` et démarre le service.
+   L'unité pose `SOLERA_INSTALL_DIR`, ce qui active la mise à jour intégrée :
    l'écran À propos affiche la version installée, les nouveautés publiées depuis, et
    un administrateur peut mettre à jour en un clic (téléchargement, bascule du lien,
    redémarrage via systemd, `Restart=always`).
-2. **Docker** (`ghcr.io/marlburrow/sillage`), sans CLI agent embarqué : ils s'installent
+2. **Docker** (`ghcr.io/tipaq/solera`), sans CLI agent embarqué : ils s'installent
    depuis l'interface dans le volume de données. Credentials et projets montés depuis
-   l'hôte. `SILLAGE_UPDATE_CHANNEL=docker` désactive la mise à
+   l'hôte. `SOLERA_UPDATE_CHANNEL=docker` désactive la mise à
    jour intégrée : l'UI affiche la commande `docker pull` à la place.
 3. **Depuis les sources**, pour le développement (`pnpm dev`) ou un déploiement manuel.
 
 Les releases sont des tags git `vX.Y.Z` : la CI construit tarballs Linux x64/arm64,
 image Docker multi-arch et release GitHub à notes générées. La version est figée dans
-les bundles à la compilation (`SILLAGE_VERSION`), exposée par `/api/health` et
+les bundles à la compilation (`SOLERA_VERSION`), exposée par `/api/health` et
 `/api/system/version`.
 
-Variables d'environnement reconnues : `SILLAGE_HOST` et `SILLAGE_PORT` (priment sur le
-TOML), `SILLAGE_CONFIG`, `SILLAGE_DATA_DIR`, `SILLAGE_WEB_ROOT`, `SILLAGE_MIGRATIONS`,
-`SILLAGE_INSTALL_DIR`, `SILLAGE_UPDATE_CHANNEL`. Le TOML accepte les clés en snake_case
+Variables d'environnement reconnues : `SOLERA_HOST` et `SOLERA_PORT` (priment sur le
+TOML), `SOLERA_CONFIG`, `SOLERA_DATA_DIR`, `SOLERA_WEB_ROOT`, `SOLERA_MIGRATIONS`,
+`SOLERA_INSTALL_DIR`, `SOLERA_UPDATE_CHANNEL`. Le TOML accepte les clés en snake_case
 comme en camelCase.
 
 L'exposition à l'extérieur se fait par Caddy ou par un tunnel (Tailscale, Cloudflare
-Tunnel). Sillage n'écoute pas sur `0.0.0.0` par défaut (hors Docker) et ne gère pas TLS
+Tunnel). Solera n'écoute pas sur `0.0.0.0` par défaut (hors Docker) et ne gère pas TLS
 lui-même.
 
 ---
@@ -2051,7 +2051,7 @@ lui-même.
 ## 16. Arborescence
 
 ```
-sillage/
+solera/
   apps/
     server/
       src/
@@ -2103,7 +2103,7 @@ détection de dérive (`pnpm codex:types:check`), réglages Codex dans la barre 
 Critère de recette atteint : une conversation Codex produit les mêmes événements
 normalisés qu'une conversation Claude, permissions comprises.
 
-Différences constatées à l'usage, qui ne sont pas des manques de Sillage :
+Différences constatées à l'usage, qui ne sont pas des manques de Solera :
 
 - Codex accepte modèle, effort, approbation et sandbox **à chaque tour**, donc un
   changement de réglage n'y demande jamais de relancer le process, contrairement à
@@ -2245,7 +2245,7 @@ qui hérite de l'historique jusqu'à ce point, sans toucher à l'originale.
 | Claude Code | `forkSession(id, { upToMessageId })` | message de transcript |
 | Codex | `thread/fork` puis `thread/rollback { numTurns }` sur le fork | tour |
 
-Vérifié de bout en bout des deux côtés, à travers Sillage : après un fork juste avant le
+Vérifié de bout en bout des deux côtés, à travers Solera : après un fork juste avant le
 second message, la branche répond « POMME » et l'originale « POMME, BANANE ». Le journal
 de la branche s'arrête exactement au point de coupe.
 

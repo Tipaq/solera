@@ -2,8 +2,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import webpush from 'web-push'
-import { pushSubscriptions, type Db } from '@sillage/db'
-import type { PushPayload } from '@sillage/protocol'
+import { pushSubscriptions, type Db } from '@solera/db'
+import type { PushPayload } from '@solera/protocol'
 
 /**
  * Notifications Web Push.
@@ -25,7 +25,7 @@ const KEYS_FILE = 'vapid.json'
  * peut joindre l'opérateur ; il n'est jamais résolu, et une instance auto-hébergée n'a
  * pas d'adresse publique à donner.
  */
-const VAPID_SUBJECT = 'mailto:sillage@localhost'
+const VAPID_SUBJECT = 'mailto:solera@localhost'
 
 interface VapidKeys {
   publicKey: string

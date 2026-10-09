@@ -1,7 +1,7 @@
-import type { SillageEvent } from '@sillage/protocol'
+import type { SoleraEvent } from '@solera/protocol'
 import type { RunnerContext } from './types.js'
 
-type ErrorEvent = Extract<SillageEvent, { type: 'error' }>
+type ErrorEvent = Extract<SoleraEvent, { type: 'error' }>
 
 /**
  * Raconte au journal la mort d'un runner : la panne s'il y en a une, puis la fin de
@@ -23,6 +23,6 @@ export function journalDeath(ctx: Pick<RunnerContext, 'emit'>, error: ErrorEvent
     if (error) ctx.emit(error)
     ctx.emit({ type: 'session.ended', reason: 'interrupted' })
   } catch (err) {
-    console.error('sillage: fin de session non journalisée', err)
+    console.error('solera: fin de session non journalisée', err)
   }
 }

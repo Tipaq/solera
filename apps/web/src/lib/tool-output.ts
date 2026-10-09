@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { ToolOutputDto } from '@sillage/protocol'
+import type { ToolOutputDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

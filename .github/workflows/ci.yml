@@ -32,7 +32,7 @@ jobs:
     # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :
     # l'archive construite comme en release, puis install.sh et l'agent launchd sur un
     # Mac Apple Silicon. L'archive reste en artefact, pour un essai sur une vraie machine
-    # avec SILLAGE_ARCHIVE.
+    # avec SOLERA_ARCHIVE.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +49,7 @@ jobs:
         run: echo "version=ci-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - run: pnpm build
         env:
-          SILLAGE_VERSION: ${{ steps.build.outputs.version }}
+          SOLERA_VERSION: ${{ steps.build.outputs.version }}
       - uses: ./.github/actions/runtime-archive
         id: archive
         with:
@@ -58,12 +58,12 @@ jobs:
           arch: arm64
       - uses: actions/upload-artifact@v4
         with:
-          name: sillage-darwin-arm64
+          name: solera-darwin-arm64
           path: ${{ steps.archive.outputs.archive }}
           if-no-files-found: error
       - run: scripts/macos-install-check.sh "${{ steps.archive.outputs.archive }}"
       - name: Service state and log, on failure
         if: failure()
         run: |
-          launchctl print "gui/$(id -u)/io.github.marlburrow.sillage" || true
-          tail -n 100 ~/.local/share/sillage/logs/sillage.log || true
+          launchctl print "gui/$(id -u)/io.github.tipaq.solera" || true
+          tail -n 100 ~/.local/share/solera/logs/solera.log || true

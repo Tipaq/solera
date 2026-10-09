@@ -13,7 +13,7 @@ import { useEffect, useSyncExternalStore } from 'react'
  * n'y travaille pas en ce moment, ce qui suit le compte d'un poste à l'autre.
  */
 
-const KEY = 'sillage.projectView'
+const KEY = 'solera.projectView'
 
 export type ProjectView = 'board' | 'draft'
 

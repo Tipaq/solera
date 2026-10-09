@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { ProjectDto } from '@sillage/protocol'
+import type { ProjectDto } from '@solera/protocol'
 import { useTranslate } from '../lib/i18n'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { scoreMatch } from '../lib/search'
@@ -25,7 +25,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const list = useRef<HTMLDivElement>(null)
-  const storageKey = `sillage.pinnedProjects:${userId}`
+  const storageKey = `solera.pinnedProjects:${userId}`
   const [pins, setPins] = useState<string[]>(() => {
     try {
       const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]')

@@ -1,6 +1,6 @@
 # Bibliothèque de skills : plan d'implémentation
 
-Une bibliothèque de skills tenue par Sillage, livrée à Claude Code, à Codex et à OpenCode
+Une bibliothèque de skills tenue par Solera, livrée à Claude Code, à Codex et à OpenCode
 comme des skills natifs : invocables en `/nom` et `$nom`, déclenchés par leur description,
 sans rien écrire dans `~/.claude`, `~/.codex` ni `~/.config/opencode`. Même principe que le registre MCP :
 déclarés une fois, transmis à chaque lancement, et une conversation reprise dans un CLI
@@ -11,7 +11,7 @@ Décisions validées le 2026-10-04 :
 - deux portées, **globale** (admins) et **projet** (propriétaire du projet) ;
 - un seul interrupteur par conversation, pas un par skill ;
 - pas de masquage d'un skill global dans un seul projet (voir « Limites ») ;
-- côté Claude, plugins nommés `sillage` (global) et `projet` (projet).
+- côté Claude, plugins nommés `solera` (global) et `projet` (projet).
 
 **Lots 1, 2 et 3 livrés** le 2026-10-04, fusionnés dans `main` après le travail des
 autres sessions qui y attendait. La recette du lot 1 a tourné sur un serveur jetable avec de vraies
@@ -26,7 +26,7 @@ dans `/tmp/skill-probe`, à rejouer si une version de CLI change le comportement
 
 **Claude, option `plugins` du SDK.**
 
-- Un skill de plugin s'appelle `sillage:nom`, avec l'alias `nom` : `/nom` fonctionne.
+- Un skill de plugin s'appelle `solera:nom`, avec l'alias `nom` : `/nom` fonctionne.
   Déclenchement par la description et substitution de `$ARGUMENTS` fonctionnent.
 - Lire un fichier annexe du skill (`references/`, `scripts/`) déclenche `canUseTool` si
   le dossier n'est pas dans `additionalDirectories`. À travers un lien symbolique, **les
@@ -82,11 +82,11 @@ quel de racine Codex. Un seul jeu de fichiers pour les deux CLI.
 
 ```
 <data>/skill-library/
-  global/sillage/skills/<nom>/SKILL.md …              plugin « sillage »
+  global/solera/skills/<nom>/SKILL.md …              plugin « solera »
   projects/<projectId>/projet/skills/<nom>/SKILL.md …  plugin « projet »
   disabled/<skillId>/                                  hors de toute racine livrée
   .staging/                                            transit des écritures atomiques
-$XDG_CACHE_HOME/sillage/skill-sources/<sourceId>/      clones, régénérables (lot 3)
+$XDG_CACHE_HOME/solera/skill-sources/<sourceId>/      clones, régénérables (lot 3)
 ```
 
 - Aucun manifeste : Claude nomme le plugin d'après son dossier, et Codex garde les noms
@@ -149,9 +149,9 @@ skill_sources
 ### Configuration
 
 - `AgentConfig` : `skillLibrary: z.boolean().default(true)` pour Claude et pour Codex,
-  sur le modèle de `sillageMcp` (`packages/protocol/src/agent-config.ts:33`).
+  sur le modèle de `soleraMcp` (`packages/protocol/src/agent-config.ts:33`).
 - `config.toml` : `[skills] library = true`, interrupteur d'instance comme
-  `mcp.sillage_server`.
+  `mcp.solera_server`.
 - `Paths` (`apps/server/src/config.ts:81`) : `skillLibrary` et `skillSourcesCache`.
 
 ## Livraison aux CLI
@@ -326,7 +326,7 @@ GET    /api/skill-sources/search?q=            skills.sh
 **Conversation** :
 
 - interrupteur « Bibliothèque de skills » ajouté dans `components/chat/agent-settings.tsx`
-  pour les deux CLI, à côté du MCP Sillage. Le même hook alimente le composer, les
+  pour les deux CLI, à côté du MCP Solera. Le même hook alimente le composer, les
   défauts du compte et ceux du projet ;
 - rien d'autre à faire dans le composer : les skills arrivent dans `/` par le catalogue
   de commandes de Claude et dans `$` par `skills/list`.
@@ -422,7 +422,7 @@ Ce qui a été fait, et ce qui diffère du découpage ci-dessous :
   skill renommé à l'installation (frontmatter réécrit) aurait une mise à jour fantôme.
   La migration a été régénérée plutôt que doublée, la branche n'étant alors fusionnée
   nulle part ;
-- clones de profondeur 1 sous `$XDG_CACHE_HOME/sillage/<empreinte du dossier de
+- clones de profondeur 1 sous `$XDG_CACHE_HOME/solera/<empreinte du dossier de
   données>/skill-sources` : deux instances sur une machine (un serveur de test à côté du
   daemon) ont les mêmes identifiants de sources préconfigurées et ne doivent pas
   rafraîchir le même clone ;
@@ -479,7 +479,7 @@ Codex. Installer un skill d'un dépôt privé avec les identifiants git d'un adm
 - **Pas de masquage d'un skill global dans un seul projet.** Les deux CLI lisent une
   racine entière. Exclure un skill pour un projet demanderait une vue générée par
   projet, ou le filtre `skills` du SDK, qui masquerait aussi les skills personnels.
-- **Hors de Sillage, les skills de la bibliothèque n'existent pas** : une conversation
+- **Hors de Solera, les skills de la bibliothèque n'existent pas** : une conversation
   reprise dans le CLI natif ne les a pas, comme pour les serveurs MCP.
 - **La protection en écriture n'est qu'un garde-fou** : les règles `deny` arrêtent
   `Edit` et `Write`, pas une redirection Bash.

@@ -1,6 +1,6 @@
 # Intégration Codex
 
-Sillage utilise `codex app-server` sur stdio. Les bindings sont générés avec
+Solera utilise `codex app-server` sur stdio. Les bindings sont générés avec
 **codex-cli 0.153.2**. La référence générale est la
 [documentation officielle App Server](https://learn.chatgpt.com/docs/app-server).
 Les champs récents, notamment `agentMessage.questions`, sont vérifiés dans les types
@@ -56,7 +56,7 @@ pnpm typecheck
 pnpm build
 ```
 
-La sonde manuelle `pnpm --filter @sillage/server codex:probe` utilise un vrai compte
+La sonde manuelle `pnpm --filter @solera/server codex:probe` utilise un vrai compte
 Codex pour poser une question, y répondre et vérifier la confirmation du modèle.
 Elle consomme un court tour, n'est pas exécutée en CI, et accepte `CODEX_BIN` et
 `CODEX_MODEL` pour choisir le binaire et le modèle. Ajouter `--blocking` vérifie

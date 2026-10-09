@@ -1,5 +1,5 @@
 import { FileText, Loader, X } from 'lucide-react'
-import type { AttachmentDto } from '@sillage/protocol'
+import type { AttachmentDto } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { IconButton, cx } from '../ui'
 

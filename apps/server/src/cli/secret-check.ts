@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { mcpServers, openDatabase } from '@sillage/db'
+import { mcpServers, openDatabase } from '@solera/db'
 import { resolveMcpServers, secretsUsedBy } from '../agents/mcp-registry.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
 import { loadOrCreateKey } from '../secrets/cipher.js'
@@ -18,7 +18,7 @@ import { SecretStore } from '../secrets/store.js'
  * l'en-tête transmis, et qu'un secret manquant écarte le serveur en le nommant.
  */
 
-const dir = mkdtempSync(join(tmpdir(), 'sillage-secret-'))
+const dir = mkdtempSync(join(tmpdir(), 'solera-secret-'))
 const { db } = openDatabase(join(dir, 'check.db'))
 runPendingMigrations(db, migrationsFolder())
 

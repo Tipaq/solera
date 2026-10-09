@@ -1,5 +1,5 @@
-import { conversations, projects } from '@sillage/db'
-import type { ServiceDto, ServicesDto } from '@sillage/protocol'
+import { conversations, projects } from '@solera/db'
+import type { ServiceDto, ServicesDto } from '@solera/protocol'
 import type { FastifyInstance } from 'fastify'
 import { readProcessHost } from '../../services/ownership.js'
 import { processOrigins } from '../../services/origins.js'
@@ -35,7 +35,7 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
         id: entry.id, pid: entry.pid, name: entry.name, cwd: entry.cwd, ports: entry.ports,
         startedAt: entry.startedAt, memoryBytes: entry.memoryBytes,
         parentPid: entry.parentPid, parentName: entry.parentName,
-        relation: entry.relation, stopsWithSillage: entry.stopsWithSillage, launcher: entry.launcher,
+        relation: entry.relation, stopsWithSolera: entry.stopsWithSolera, launcher: entry.launcher,
         projectId: project?.id ?? null, projectName: project?.name ?? null,
         conversationId: linked?.id ?? null, conversationTitle: linked?.title ?? null,
         origin: entry.origin ? entry.origin.conversationId ? 'agent' : 'terminal' : 'unknown',

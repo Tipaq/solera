@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { PushStatusDto } from '@sillage/protocol'
+import type { PushStatusDto } from '@solera/protocol'
 import { api } from './api'
 import { translate } from './i18n'
 

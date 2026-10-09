@@ -1,5 +1,5 @@
-import type { ConversationRow } from '@sillage/db'
-import type { ConversationMetrics } from '@sillage/protocol'
+import type { ConversationRow } from '@solera/db'
+import type { ConversationMetrics } from '@solera/protocol'
 
 /**
  * Les colonnes du relevé, isolées pour que la diffusion de statut n'ait pas à lire la

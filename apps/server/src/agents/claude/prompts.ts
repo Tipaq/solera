@@ -3,7 +3,7 @@ import type {
   ExitPlanModeInput,
 } from '@anthropic-ai/claude-agent-sdk/sdk-tools'
 import { z } from 'zod'
-import type { AgentQuestion } from '@sillage/protocol'
+import type { AgentQuestion } from '@solera/protocol'
 
 /**
  * Traduction des deux outils par lesquels Claude Code interroge l'utilisateur.

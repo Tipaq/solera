@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { TranscriptionDto } from '@sillage/protocol'
+import type { TranscriptionDto } from '@solera/protocol'
 import { ApiRequestError } from './api'
 import { useAppSettings } from './app-settings'
 import { locale, translate, translateError } from './i18n'

@@ -5,8 +5,8 @@ import type {
   ElicitationValue,
   ConversationDto,
   JournalPageDto,
-  SillageEvent,
-} from '@sillage/protocol'
+  SoleraEvent,
+} from '@solera/protocol'
 import { api } from './api'
 import { uuidv4 } from './uuid'
 
@@ -337,7 +337,7 @@ export function decidePlan(
   })
 }
 
-export type JournalPage = { seq: number; ts: number; event: SillageEvent }[]
+export type JournalPage = { seq: number; ts: number; event: SoleraEvent }[]
 
 /**
  * Rattrapage complet depuis un curseur. La route est paginée, donc on boucle
@@ -373,7 +373,7 @@ export async function fetchJournal(
         page.entries.map((entry) => ({
           seq: entry.seq,
           ts: entry.ts,
-          event: entry.event as SillageEvent,
+          event: entry.event as SoleraEvent,
         })),
       )
     }

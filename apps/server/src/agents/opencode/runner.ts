@@ -9,7 +9,7 @@ import {
   type McpServer,
   type McpServerStatus,
   type OpencodeConfig,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type {
   Command,
   Config,
@@ -22,7 +22,7 @@ import type {
   ResponseBody,
   Session,
   ToolPart,
-} from '@sillage/opencode-bindings'
+} from '@solera/opencode-bindings'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -104,7 +104,7 @@ export class OpencodeRunner implements AgentRunner {
   private mcpFailures: McpServerStatus[] = []
   private lastMcpPayload: string | null = null
   private readonly interactions: PendingInteractions
-  /** Demande native (`per_…`, `que_…`) vers l'identifiant de la demande Sillage. */
+  /** Demande native (`per_…`, `que_…`) vers l'identifiant de la demande Solera. */
   private readonly nativeRequests = new Map<string, string>()
   /** Demandes qu'opencode a closes de lui-même : il n'y a plus rien à lui répondre. */
   private readonly settledNatively = new Set<string>()
@@ -174,7 +174,7 @@ export class OpencodeRunner implements AgentRunner {
     this.mcpServers = servers
     this.mcpFailures = failures
 
-    // Le projet tient ses consignes dans SILLAGE.md, qui arrive par `system` : lire
+    // Le projet tient ses consignes dans SOLERA.md, qui arrive par `system` : lire
     // aussi l'`AGENTS.md` du dépôt les doublerait. opencode n'a pas d'interrupteur plus
     // fin : celui-ci coupe aussi l'`opencode.json` et le dossier `.opencode/` du
     // projet. Les consignes du poste (`~/.config/opencode/AGENTS.md`) restent lues.
@@ -267,7 +267,7 @@ export class OpencodeRunner implements AgentRunner {
 
   /**
    * Publie les commandes en `/`. opencode y range aussi les skills (`source: skill`),
-   * ceux de la bibliothèque de Sillage compris : il n'y a donc pas d'inventaire de
+   * ceux de la bibliothèque de Solera compris : il n'y a donc pas d'inventaire de
    * compétences à part, contrairement à Codex.
    */
   private async publishCommands(): Promise<void> {
@@ -550,7 +550,7 @@ export class OpencodeRunner implements AgentRunner {
     const { part } = event.properties
     if (!this.inTree(part.sessionID)) return
     const message = this.messages.get(part.messageID)
-    // Les parts d'un message utilisateur sont l'écho de ce que Sillage a déjà
+    // Les parts d'un message utilisateur sont l'écho de ce que Solera a déjà
     // journalisé à l'envoi, celles d'un résumé de compaction ne se montrent pas.
     if (message?.role !== 'assistant' || message.summary) return
     const parent = this.parentOf(part.sessionID)

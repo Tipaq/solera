@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_CLAUDE_CONFIG, type ClaudeConfig } from '@sillage/protocol'
+import { DEFAULT_CLAUDE_CONFIG, type ClaudeConfig } from '@solera/protocol'
 import { flagSettings, liveFlagSettings } from '../src/agents/claude/flag-settings.js'
 
 const config = (fields: Partial<ClaudeConfig>): ClaudeConfig => ({ ...DEFAULT_CLAUDE_CONFIG, ...fields })

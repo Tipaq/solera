@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { SKILL_MAIN_FILE, skillNameSchema, type LocalSkillDto, type LocalSkillOrigin } from '@sillage/protocol'
+import { SKILL_MAIN_FILE, skillNameSchema, type LocalSkillDto, type LocalSkillOrigin } from '@solera/protocol'
 import { parseSkillMarkdown } from './frontmatter.js'
 
 /**

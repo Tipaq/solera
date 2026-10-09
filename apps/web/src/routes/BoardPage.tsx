@@ -23,7 +23,7 @@ import {
 import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'

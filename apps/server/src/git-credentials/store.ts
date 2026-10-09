@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq } from 'drizzle-orm'
-import { gitCredentials, type Db } from '@sillage/db'
+import { gitCredentials, type Db } from '@solera/db'
 import { decryptValue, encryptValue } from '../secrets/cipher.js'
 
 export interface GitCredential {
@@ -13,8 +13,8 @@ export interface GitCredential {
 /**
  * Jetons d'accès aux forges git, un par hôte et par utilisateur.
  *
- * Sillage s'en sert pour cloner. Les `fetch` et `push` lancés par un agent ou depuis un
- * terminal ne passent pas par ici : c'est `sillage-git-credential.mjs`, déclaré dans le
+ * Solera s'en sert pour cloner. Les `fetch` et `push` lancés par un agent ou depuis un
+ * terminal ne passent pas par ici : c'est `solera-git-credential.mjs`, déclaré dans le
  * `.git/config` du dépôt, qui lit les mêmes lignes au moment où git les réclame.
  */
 export class GitCredentialStore {

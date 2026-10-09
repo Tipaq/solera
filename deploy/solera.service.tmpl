@@ -4,7 +4,7 @@
 # façon fiable dans les lignes Environment= des vieux systemd.
 
 [Unit]
-Description=Sillage, plateforme de developpement agentique
+Description=Solera, plateforme de developpement agentique
 After=network.target
 # Un demarrage qui echoue tout de suite echouera aussi la fois suivante : cinq essais
 # suffisent a le montrer. Sans cette limite, `Restart=always` boucle indefiniment et
@@ -20,10 +20,10 @@ Type=simple
 WorkingDirectory=__INSTALL_DIR__/current
 ExecStart=__NODE__ --max-old-space-size=256 __INSTALL_DIR__/current/server/main.js
 Environment=NODE_ENV=production
-Environment=SILLAGE_WEB_ROOT=__INSTALL_DIR__/current/web
+Environment=SOLERA_WEB_ROOT=__INSTALL_DIR__/current/web
 # Permet au serveur de savoir qu'il tourne sous le layout de l'installeur, et
 # donc d'offrir la mise à jour intégrée depuis l'interface.
-Environment=SILLAGE_INSTALL_DIR=__INSTALL_DIR__
+Environment=SOLERA_INSTALL_DIR=__INSTALL_DIR__
 # Le PATH d'une unite systemd est minimal et n'inclut ni ~/.local/bin ni les binaires
 # npm globaux : sans cette ligne, aucun CLI agent n'est trouvable depuis le service.
 Environment=PATH=__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOME__/.bun/bin:/usr/local/bin:/usr/bin:/bin
@@ -36,19 +36,19 @@ RestartSec=2
 # la machine entiere manquer de memoire. Les process agent sont ses enfants, et les
 # serveurs de dev qu'ils lancent (vite, bun : plusieurs Go piece) aussi. Un plafond fixe
 # ne convient a aucune machine : a 2G, puis a 12G sur une machine de 62 Go, le
-# ralentissement figeait le daemon lui-meme (etat D) sans rien tuer, et Sillage devenait
+# ralentissement figeait le daemon lui-meme (etat D) sans rien tuer, et Solera devenait
 # injoignable. D'ou une part de la RAM installee.
-# Pour une autre valeur : `systemctl --user edit sillage`, puis [Service] MemoryHigh=...
+# Pour une autre valeur : `systemctl --user edit solera`, puis [Service] MemoryHigh=...
 # Ce fichier complementaire survit aux reinstallations, celui-ci est reecrit par install.sh.
 MemoryHigh=75%
 
 # Le journal, et non un fichier. Devant un service qui ne démarre pas, le premier
-# réflexe est `journalctl --user -u sillage` : y trouver les messages de systemd sans
+# réflexe est `journalctl --user -u solera` : y trouver les messages de systemd sans
 # la moindre trace applicative fait chercher la panne au mauvais endroit. systemd gère
 # déjà rotation et rétention, ce qu'un `append:` ne fait pas.
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=sillage
+SyslogIdentifier=solera
 
 [Install]
 WantedBy=default.target

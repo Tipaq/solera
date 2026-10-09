@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { openDatabase } from '@sillage/db'
+import { openDatabase } from '@solera/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
 import { WebhookService } from './webhooks/service.js'

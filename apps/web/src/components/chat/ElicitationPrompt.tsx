@@ -1,6 +1,6 @@
 import { ExternalLink, Plug } from 'lucide-react'
 import { useState } from 'react'
-import type { ElicitationField, ElicitationValue } from '@sillage/protocol'
+import type { ElicitationField, ElicitationValue } from '@solera/protocol'
 import type { ElicitationItem } from '../../lib/chat-fold'
 import { answerElicitation } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'

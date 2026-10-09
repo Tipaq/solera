@@ -1,4 +1,4 @@
-import type { Db } from '@sillage/db'
+import type { Db } from '@solera/db'
 import type { FastifyBaseLogger } from 'fastify'
 import type { AttachmentStore } from '../attachments/store.js'
 import { purgeIdempotencyKeys } from '../auth/api-tokens.js'

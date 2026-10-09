@@ -12,7 +12,7 @@ import {
   fileWriteBodySchema,
   filesExistBodySchema,
   type FileContentDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { resolveInside } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError, notFound } from '../errors.js'
@@ -114,7 +114,7 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
      * Parmi les chemins proposés, ceux qui désignent un fichier de ce workspace.
      *
      * Le fil s'en sert pour ne rendre cliquable que ce qui s'ouvrira vraiment. Une forme
-     * de chemin ne prouve rien : `text/plain`, `@sillage/protocol` ou `fs/promises` en
+     * de chemin ne prouve rien : `text/plain`, `@solera/protocol` ou `fs/promises` en
      * ont une, et un lien qui mène à une erreur vaut moins que du texte.
      *
      * `POST` pour une lecture, parce que la liste tient mal dans une URL et qu'elle est

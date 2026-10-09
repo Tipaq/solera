@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { updateUserSettingsBodySchema, type UserSettingsDto } from '@sillage/protocol'
+import { updateUserSettingsBodySchema, type UserSettingsDto } from '@solera/protocol'
 import {
   readUserSettings,
   writeAppearance,

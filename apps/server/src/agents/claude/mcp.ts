@@ -1,8 +1,8 @@
 import type { McpServerConfig, McpServerStatus as SdkMcpServerStatus } from '@anthropic-ai/claude-agent-sdk'
-import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
+import type { McpServer, McpServerState, McpServerStatus } from '@solera/protocol'
 
 /**
- * Traduction du registre Sillage vers ce que le SDK Claude attend, et retour.
+ * Traduction du registre Solera vers ce que le SDK Claude attend, et retour.
  *
  * Les serveurs partent en mémoire, jamais sur le disque : le SDK les annonce ensuite
  * avec `scope: 'dynamic'`, ce qui est aussi le seul moyen de les distinguer de ceux

@@ -1,4 +1,4 @@
-import type { GitRepoDto } from '@sillage/protocol'
+import type { GitRepoDto } from '@solera/protocol'
 import { subsequenceGaps } from '../subsequence.js'
 
 /**
@@ -23,7 +23,7 @@ const MAX_PAGES = 10
  *
  * Assez long pour qu'une session de création de projet ne rappelle pas l'API à chaque
  * ouverture du formulaire, assez court pour qu'un dépôt créé à l'instant apparaisse
- * sans qu'il faille redémarrer Sillage.
+ * sans qu'il faille redémarrer Solera.
  */
 const CACHE_TTL_MS = 5 * 60 * 1000
 
@@ -116,7 +116,7 @@ async function fetchPage(token: string, page: number): Promise<GitHubRepo[]> {
       authorization: `Bearer ${token}`,
       accept: 'application/vnd.github+json',
       'x-github-api-version': '2022-11-28',
-      'user-agent': 'sillage',
+      'user-agent': 'solera',
     },
   })
 
@@ -162,7 +162,7 @@ function filter(repos: GitRepoDto[], query: string): GitRepoDto[] {
 }
 
 function rank(repo: GitRepoDto, query: string): number | null {
-  // Le nom seul d'abord : qui tape « sillage » cherche `moi/sillage`, pas un dépôt dont
+  // Le nom seul d'abord : qui tape « solera » cherche `moi/solera`, pas un dépôt dont
   // le propriétaire contient ces lettres. Le nom complet ne sert qu'ensuite, pour que
   // « marl/sil » reste possible.
   const onName = subsequenceGaps(repo.name, query)

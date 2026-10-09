@@ -1,6 +1,6 @@
 import { GitBranch, Globe, Lock } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { parseRemoteUrl, type GitRepoDto } from '@sillage/protocol'
+import { parseRemoteUrl, type GitRepoDto } from '@solera/protocol'
 import { Link } from 'react-router-dom'
 import { ApiRequestError } from '../lib/api'
 import { GITHUB_HOST, useGitCredentials } from '../lib/git-credentials'
@@ -21,7 +21,7 @@ import { Banner, Button, Field, Select, type SelectOption } from './ui'
  *
  * Le champ reste modifiable ensuite : deux dépôts homonymes chez deux propriétaires
  * différents ne peuvent pas cohabiter dans le même dossier parent, et c'est à
- * l'utilisateur de trancher, pas à Sillage de renommer dans son dos.
+ * l'utilisateur de trancher, pas à Solera de renommer dans son dos.
  */
 function directoryFromUrl(url: string): string {
   return parseRemoteUrl(url)?.repo ?? ''

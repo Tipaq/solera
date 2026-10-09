@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, GitBranch, GitCommitHorizontal, Loader, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommitDto, WorkingDiffDto } from '@sillage/protocol'
+import type { CommitDto, WorkingDiffDto } from '@solera/protocol'
 import { api } from '../../lib/api'
 import { workspaceApiBase } from '../../lib/workspace-scope'
 import { COMMIT_PAGE, useCommitDiff, useCommits } from '../../lib/commits'

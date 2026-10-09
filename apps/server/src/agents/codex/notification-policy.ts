@@ -1,4 +1,4 @@
-import type { ServerNotification } from '@sillage/codex-bindings'
+import type { ServerNotification } from '@solera/codex-bindings'
 
 /** Chaque notification ajoutée par une régénération exige une décision explicite. */
 export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore' | undefined> = {

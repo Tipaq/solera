@@ -1,4 +1,4 @@
-import type { AgentSkillDto, SlashCommandDto } from '@sillage/protocol'
+import type { AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 
 /**
  * Une entrée proposée sous le sigle en cours de saisie.

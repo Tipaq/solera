@@ -3,7 +3,7 @@ import type { components, operations } from './openapi.js'
 /**
  * Noms courts des schémas dont l'adaptateur opencode se sert.
  *
- * Écrit à la main, contrairement à `openapi.d.ts` : c'est la liste de ce que Sillage
+ * Écrit à la main, contrairement à `openapi.d.ts` : c'est la liste de ce que Solera
  * tient pour acquis dans l'API. Un schéma renommé ou retiré par une nouvelle version
  * d'opencode casse la compilation ici, à un endroit qui dit pourquoi.
  *

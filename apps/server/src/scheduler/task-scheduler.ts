@@ -8,8 +8,8 @@ import {
   scheduledTasks,
   type ScheduledRunRow,
   type ScheduledTaskRow,
-} from '@sillage/db'
-import { nextScheduleRun, parseAgentConfig, type ScheduleRunTrigger } from '@sillage/protocol'
+} from '@solera/db'
+import { nextScheduleRun, parseAgentConfig, type ScheduleRunTrigger } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
 import type { EventLog } from '../events/event-log.js'
@@ -304,7 +304,7 @@ export class TaskScheduler {
       }
 
       if (thread.status === 'interrupted') {
-        this.close(run, 'failed', now, 'Tir interrompu avant sa fin (arrêt manuel ou redémarrage de Sillage).')
+        this.close(run, 'failed', now, 'Tir interrompu avant sa fin (arrêt manuel ou redémarrage de Solera).')
       } else if (thread.status === 'error' || verdict?.event.type === 'error') {
         const message = verdict?.event.type === 'error' ? verdict.event.message : 'Le CLI a terminé en erreur.'
         this.close(run, 'failed', now, message)
@@ -357,7 +357,7 @@ const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
  * Le premier message d'un tir : ce que l'agent doit savoir de sa situation, puis le
  * prompt de la tâche.
  *
- * Rédigé pour le modèle, en français comme le reste de ce que Sillage injecte. Il dit
+ * Rédigé pour le modèle, en français comme le reste de ce que Solera injecte. Il dit
  * d'abord que personne n'est au clavier : un agent qui pose une question ou attend une
  * permission resterait suspendu jusqu'à la durée maximale, pour rien.
  *
@@ -382,9 +382,9 @@ export function buildRunPrompt(input: {
   const previousSummary = previous?.summary ?? ''
 
   const header = [
-    `[Tâche planifiée Sillage « ${task.name} » — tir du ${date}${trigger === 'manual' ? ', lancé à la main' : ''}]`,
+    `[Tâche planifiée Solera « ${task.name} » — tir du ${date}${trigger === 'manual' ? ', lancé à la main' : ''}]`,
     '',
-    `Tu tournes seul, dans une session neuve ouverte par le planificateur de Sillage : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de ${task.maxDurationMinutes} min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.`,
+    `Tu tournes seul, dans une session neuve ouverte par le planificateur de Solera : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de ${task.maxDurationMinutes} min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.`,
     '',
   ]
 

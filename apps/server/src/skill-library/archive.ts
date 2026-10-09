@@ -1,5 +1,5 @@
 import { unzipSync, zipSync, type Zippable } from 'fflate'
-import { SKILL_MAIN_FILE } from '@sillage/protocol'
+import { SKILL_MAIN_FILE } from '@solera/protocol'
 import { badRequest } from '../http/errors.js'
 import { assertSkillFilePath } from './validate.js'
 

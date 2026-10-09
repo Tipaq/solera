@@ -1,4 +1,4 @@
-/** Processus encore rattachés à l'exécution de Sillage, avec ou sans port. */
+/** Processus encore rattachés à l'exécution de Solera, avec ou sans port. */
 export interface ServiceDto {
   id: string
   pid: number
@@ -6,7 +6,7 @@ export interface ServiceDto {
   parentPid: number
   parentName: string | null
   relation: 'descendant' | 'service-group'
-  stopsWithSillage: boolean
+  stopsWithSolera: boolean
   launcher: boolean
   cwd: string | null
   ports: number[]

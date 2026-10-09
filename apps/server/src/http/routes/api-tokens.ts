@@ -1,12 +1,12 @@
 import { and, eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { apiTokens, projects } from '@sillage/db'
+import { apiTokens, projects } from '@solera/db'
 import {
   createApiTokenBodySchema,
   isPermissiveConfig,
   updateApiTokenBodySchema,
   type CreatedApiTokenDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
   apiTokenToDto,

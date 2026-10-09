@@ -1,6 +1,6 @@
 import { KeyRound, ShieldCheck, Trash2, UserPlus, UserRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { UserDto } from '@sillage/protocol'
+import type { UserDto } from '@solera/protocol'
 import {
   Badge,
   Banner,
@@ -32,7 +32,7 @@ const errorOf = (error: unknown): string | null =>
 /**
  * Gestion des comptes de l'instance.
  *
- * Rappel du modèle : un compte donne l'accès à Sillage, pas une isolation. Tous les
+ * Rappel du modèle : un compte donne l'accès à Solera, pas une isolation. Tous les
  * agents tournent sous le même utilisateur système et partagent tes credentials CLI.
  */
 export function UsersSettingsPage() {

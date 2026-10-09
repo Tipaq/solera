@@ -7,7 +7,7 @@ import {
   type Db,
   type ScheduledRunRow,
   type ScheduledTaskRow,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   nextScheduleRun,
   parseAgentConfig,
@@ -18,7 +18,7 @@ import {
   type ScheduleOverlapPolicy,
   type ScheduledRunDto,
   type ScheduledTaskDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { badRequest } from '../http/errors.js'
 
 /**

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@sillage/protocol'
+import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@solera/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import { projectCwd } from '../../workspace.js'
@@ -48,7 +48,7 @@ export function registerAgentRoutes(
   /**
    * Présence et version des CLI, tous agents confondus.
    *
-   * Sillage ne transporte plus les binaires : ils viennent du système, donc l'écran doit
+   * Solera ne transporte plus les binaires : ils viennent du système, donc l'écran doit
    * pouvoir dire lequel manque et pourquoi plutôt que de proposer un agent que le serveur
    * échouerait à lancer. `?refresh=1` force la sonde, pour le bouton de rafraîchissement
    * après une installation faite à côté.
@@ -71,7 +71,7 @@ export function registerAgentRoutes(
   })
 
   /**
-   * Installe la version testée d'un CLI dans le préfixe que Sillage gère.
+   * Installe la version testée d'un CLI dans le préfixe que Solera gère.
    *
    * Répond avant la fin : le paquet pèse plusieurs centaines de mégaoctets, et attendre
    * dans la requête la ferait dépendre de la patience d'un proxy. L'avancement se lit

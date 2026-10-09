@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { agentConfigSchema, type AgentConfig, type ConversationDto } from '@sillage/protocol'
+import { agentConfigSchema, type AgentConfig, type ConversationDto } from '@solera/protocol'
 import { api } from './api'
 
 interface Snapshot {

@@ -6,16 +6,16 @@ import { join } from 'node:path'
  * Chiffrement au repos du dépôt de secrets et des credentials git.
  *
  * Ce que ça protège : une base copiée, une sauvegarde, un dump SQL qui fuiterait. La
- * clé vit à côté de la base mais dans un autre fichier, donc emporter `sillage.db`
+ * clé vit à côté de la base mais dans un autre fichier, donc emporter `solera.db`
  * seul ne suffit plus.
  *
  * Ce que ça ne protège pas, et qu'il vaut mieux dire que laisser croire : quelqu'un
  * qui lit le disque du serveur lit aussi la clé. C'est un chiffrement au repos, pas un
- * coffre-fort, et Sillage doit de toute façon pouvoir déchiffrer sans intervention
+ * coffre-fort, et Solera doit de toute façon pouvoir déchiffrer sans intervention
  * humaine pour lancer un serveur MCP au réveil d'une conversation.
  *
- * `sillage-git-credential.mjs` réimplémente le déchiffrement plutôt que d'importer ce
- * module : il est lancé par git, pas par Sillage, et reste volontairement hors du graphe
+ * `solera-git-credential.mjs` réimplémente le déchiffrement plutôt que d'importer ce
+ * module : il est lancé par git, pas par Solera, et reste volontairement hors du graphe
  * de modules du serveur. Toute évolution du format doit être répercutée là-bas.
  */
 

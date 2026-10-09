@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Loader, RefreshCw, X } from 'lucide-react'
 import { useState } from 'react'
-import type { AgentKind } from '@sillage/protocol'
+import type { AgentKind } from '@solera/protocol'
 import { AGENT_LABELS } from '../AgentIcon'
 import { locale, useTranslate } from '../../lib/i18n'
 import { useAgentUsage, useRefreshUsage } from '../../lib/usage'

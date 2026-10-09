@@ -11,8 +11,8 @@ import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { openDatabase, runMigrations, users, projects, conversations, worktrees } from '@sillage/db'
-import type { ServiceDto, ServicesDto } from '@sillage/protocol'
+import { openDatabase, runMigrations, users, projects, conversations, worktrees } from '@solera/db'
+import type { ServiceDto, ServicesDto } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerServiceRoutes } from '../src/http/routes/services.js'
@@ -21,7 +21,7 @@ import { processIdentity, scanServiceProcesses, stopServiceProcess } from '../sr
 import { executionLink, readProcessHost, type ProcessNode, type ProcessHost } from '../src/services/ownership.js'
 
 async function directory(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-services-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-services-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   return dir
 }
@@ -63,7 +63,7 @@ test('identité /proc : noms avec espaces et parenthèses', () => {
 })
 
 test('parenté et cgroups : tmux exclu, orphelin pris en charge, autres unités autonomes', () => {
-  const group = '/user.slice/user@1001.service/app.slice/sillage.service'
+  const group = '/user.slice/user@1001.service/app.slice/solera.service'
   const host: ProcessHost = { pid: 100, cgroup: group, stopsWithService: true }
   const make = (pid: number, parent: number, name = 'node', cgroup = group): ProcessNode => ({ pid, parent, name, cgroup, start: String(pid) })
   const nodes = new Map([
@@ -114,10 +114,10 @@ test('parenté réelle, commandes sans port, origine héritée et refus des proc
   assert.equal((await scanServiceProcesses(restored)).some((entry) => entry.pid === pid), false)
 })
 
-test('un vrai serveur tmux ne suffit pas à rattacher ses tâches, même avec le marqueur Sillage', { skip: process.platform !== 'linux' }, async (t) => {
+test('un vrai serveur tmux ne suffit pas à rattacher ses tâches, même avec le marqueur Solera', { skip: process.platform !== 'linux' }, async (t) => {
   const exec = promisify(execFile)
   try { await exec('tmux', ['-V']) } catch { t.skip('tmux absent'); return }
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-services-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-services-'))
   const origins = new ProcessOrigins(dir)
   const socket = join(dir, 'tmux.sock')
   const pidFile = join(dir, 'worker.pid')
@@ -146,7 +146,7 @@ test('orphelin réel : cgroup systemd et arrêt malgré un subreaper non dumpabl
   const exec = promisify(execFile)
   try { await exec('systemctl', ['--user', 'show', '--property=Version']) }
   catch { t.skip('gestionnaire systemd utilisateur absent'); return }
-  const unit = `sillage-process-test-${randomUUID()}`
+  const unit = `solera-process-test-${randomUUID()}`
   t.after(async () => { await exec('systemctl', ['--user', 'stop', unit]).catch(() => {}) })
   const result = await exec('systemd-run', [
     '--user', '--wait', '--pipe', '--collect', `--unit=${unit}`,

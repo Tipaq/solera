@@ -1,10 +1,10 @@
-# Audit de l’interface Sillage — 16 septembre 2026
+# Audit de l’interface Solera — 16 septembre 2026
 
 Revue globale des usages et de l’aspect visuel, sur le commit `37f6113`.
 
 Huit passes de corrections sont réalisées : conversation et mobile ; navigation, démarrage et réglages ; lecture des cartes, notes et ambiances visuelles ; édition de fichiers et reprise après erreur ; navigation et confort de l’IDE ; téléchargement des fichiers ; en-têtes de projets ; réparation des favoris. Voir le [récapitulatif et les captures après modification](IMPLEMENTATION.md). Les constats ci-dessous décrivent l’état initial, avant ces changements.
 
-**Diagnostic.** Sillage possède une identité cohérente et de bons composants. Le gain principal viendrait d’une meilleure hiérarchie : retrouver le travail à reprendre, comprendre ce qui attend une réponse, lire les changements avec la conversation et accéder aux commandes sur téléphone. Une refonte progressive des écrans clés me paraît plus utile qu’un changement complet de style.
+**Diagnostic.** Solera possède une identité cohérente et de bons composants. Le gain principal viendrait d’une meilleure hiérarchie : retrouver le travail à reprendre, comprendre ce qui attend une réponse, lire les changements avec la conversation et accéder aux commandes sur téléphone. Une refonte progressive des écrans clés me paraît plus utile qu’un changement complet de style.
 
 **Périmètre et méthode.** Frontend compilé depuis les sources actuelles, instance de démonstration séparée et données du seeder du dépôt. Parcours conversation, autorisation, nouvelle conversation, board, détail de carte, apparence, navigation et panneau de travail. Captures en 1440 × 900 et 390 × 844, thèmes clair et sombre. Interactions vérifiées avec Chromium/Playwright, dont le clavier, les réglages du message et la fermeture d’une carte modifiée. Le constat initial a été établi sans modifier le code applicatif ni les données de l’instance principale.
 
@@ -92,7 +92,7 @@ Sources : `apps/web/src/routes/HomePage.tsx`, ligne 14 ; `apps/web/src/component
 
 **7. Recomposer l’en-tête et la saisie pour le téléphone.**
 
-Le téléphone affiche une barre « Sillage », puis une seconde barre de conversation. Dans la capture, elles prennent ensemble environ **112 px**. Malgré cela, le titre est tronqué et le projet n’est pas visible directement. En bas, le nom du modèle et le mode peuvent devenir « claude-s… » et « Dem… ». Le chevron qui permet de découvrir les réglages est masqué au repos.
+Le téléphone affiche une barre « Solera », puis une seconde barre de conversation. Dans la capture, elles prennent ensemble environ **112 px**. Malgré cela, le titre est tronqué et le projet n’est pas visible directement. En bas, le nom du modèle et le mode peuvent devenir « claude-s… » et « Dem… ». Le chevron qui permet de découvrir les réglages est masqué au repos.
 
 ![Conversation mobile actuelle](mobile-chat-dark.png)
 

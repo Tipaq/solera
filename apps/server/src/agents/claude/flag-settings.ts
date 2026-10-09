@@ -1,5 +1,5 @@
 import type { Query, Settings } from '@anthropic-ai/claude-agent-sdk'
-import type { ClaudeConfig } from '@sillage/protocol'
+import type { ClaudeConfig } from '@solera/protocol'
 
 /**
  * La couche « flag » des réglages du CLI, celle de `--settings` au lancement et
@@ -13,7 +13,7 @@ import type { ClaudeConfig } from '@sillage/protocol'
  * configuration ne dit rien, pour laisser le CLI à son défaut.
  *
  * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement, comme
- * le masque des consignes du dépôt quand le projet tient les siennes dans SILLAGE.md et
+ * le masque des consignes du dépôt quand le projet tient les siennes dans SOLERA.md et
  * le dossier de mémoire. `applyFlagSettings` ne retire que les clés qu'on lui passe à
  * `null` : ne jamais nommer `permissions`, `claudeMdExcludes` ni `autoMemoryDirectory`
  * à chaud suffit à les garder.
@@ -31,7 +31,7 @@ export function flagSettings(
     ...(config.advisorModel ? { advisorModel: config.advisorModel } : {}),
     ...(deny.length > 0 ? { permissions: { deny } } : {}),
     ...(excludes.length > 0 ? { claudeMdExcludes: excludes } : {}),
-    // La mémoire automatique de Claude, rangée chez Sillage pour que Codex la partage et
+    // La mémoire automatique de Claude, rangée chez Solera pour que Codex la partage et
     // que l'interface la montre. Claude l'écrit comme la sienne, sans permission.
     ...(memoryDir ? { autoMemoryDirectory: memoryDir } : {}),
   }

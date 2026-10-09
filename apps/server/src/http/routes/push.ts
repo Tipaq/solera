@@ -3,7 +3,7 @@ import {
   pushSubscribeBodySchema,
   pushUnsubscribeBodySchema,
   type PushStatusDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { PushService } from '../../push/push-service.js'
 import { requireUser } from '../require-user.js'
 

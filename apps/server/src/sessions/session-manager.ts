@@ -8,15 +8,15 @@ import {
   projects,
   type ConversationRow,
   type Db,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   parseAgentConfig,
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
   type PushPayload,
-  type SillageEvent,
-} from '@sillage/protocol'
+  type SoleraEvent,
+} from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
@@ -88,7 +88,7 @@ const DEDUPE_TTL_MS = 5 * 60 * 1000
  * reviendrait à n'être lu par personne. Ne sont retenus que les moments où l'agent
  * réclame une décision, et la fin d'un tour, qu'on ne peut pas deviner de loin.
  */
-const NOTIFIABLE: Partial<Record<SillageEvent['type'], string>> = {
+const NOTIFIABLE: Partial<Record<SoleraEvent['type'], string>> = {
   'permission.requested': 'Une autorisation est demandée',
   'question.requested': "L'agent te demande de choisir",
   'elicitation.requested': 'Un service demande une saisie',
@@ -504,7 +504,7 @@ export class SessionManager {
    * Rien de ce qui se passe ici ne doit interrompre un agent (invariant I1), d'où
    * l'absence de propagation d'erreur.
    */
-  private async notifyIfAway(conversationId: string, event: SillageEvent): Promise<void> {
+  private async notifyIfAway(conversationId: string, event: SoleraEvent): Promise<void> {
     const notifier = this.notifier
     const title = NOTIFIABLE[event.type]
     if (!notifier || !title) return
@@ -720,7 +720,7 @@ export class SessionManager {
       cwd,
       config,
       // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
-      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Sillage
+      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera
       // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
@@ -733,13 +733,13 @@ export class SessionManager {
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
       },
-      // Le serveur de Sillage passe en dernier : l'ordre départage deux serveurs qui
+      // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
       // l'emporter sur celui que la plateforme ajoute d'elle-même.
       resolveMcpServers: (current) => {
         const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers)
         const builtin = builtinMcpServer({
-          enabled: this.config.mcp.sillageServer,
+          enabled: this.config.mcp.soleraServer,
           config: current,
           databasePath: this.config.paths.database,
           projectId: conversation.projectId,
@@ -751,26 +751,26 @@ export class SessionManager {
 
       // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
       // dit « pas d'autre serveur que ceux que j'ai déclarés », ce qui parle des outils
-      // et non de ce que Sillage raconte de son propre état.
+      // et non de ce que Solera raconte de son propre état.
       //
-      // SILLAGE.md passe devant et hors de ces interrupteurs : ce sont les consignes de
-      // l'utilisateur, pas un apport de Sillage qu'on choisirait de couper.
+      // SOLERA.md passe devant et hors de ces interrupteurs : ce sont les consignes de
+      // l'utilisateur, pas un apport de Solera qu'on choisirait de couper.
       projectOverview: (current) => {
-        const sillageMcp = builtinMcpEnabled(this.config.mcp.sillageServer, current)
+        const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
         const parts = [
           instructionsAppendix(this.db, {
             projectId: conversation.projectId,
             mode: instructions()?.mode ?? 'repo',
-            sillageMcp,
+            soleraMcp,
           }),
           // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
           // ce qu'on leur dit.
-          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), sillageMcp) : null,
-          this.config.mcp.sillageServer && current.sillageMcp
+          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), soleraMcp) : null,
+          this.config.mcp.soleraServer && current.soleraMcp
             ? projectOverview(this.db, {
                 projectId: conversation.projectId,
                 conversationId,
-                sillageMcp,
+                soleraMcp,
               })
             : null,
         ].filter((part) => part !== null)
@@ -779,7 +779,7 @@ export class SessionManager {
       memoryDir,
       maskedInstructionRoots: () => {
         const current = instructions()
-        return current?.mode === 'sillage' ? [current.workspacePath, cwd] : []
+        return current?.mode === 'solera' ? [current.workspacePath, cwd] : []
       },
       skillRoots: (current) =>
         this.config.skills.library && current.skillLibrary
@@ -787,7 +787,7 @@ export class SessionManager {
           : [],
       resumeSessionId: conversation.agentSessionId,
 
-      emit: (event: SillageEvent, raw?: unknown) => {
+      emit: (event: SoleraEvent, raw?: unknown) => {
         this.log.append(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
         // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations et

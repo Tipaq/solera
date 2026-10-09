@@ -4,8 +4,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
-import { conversations, projects, worktrees, type ConversationRow, type Db } from '@sillage/db'
-import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@sillage/protocol'
+import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
+import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
 import { HttpError, notFound } from './http/errors.js'
 
 /**

@@ -3,7 +3,7 @@ import {
   updateAppSettingsBodySchema,
   type AppSettingsDto,
   type ArchiveRunDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { runArchivePass } from '../../conversations/auto-archive.js'
 import { ARCHIVE_JOB } from '../../scheduler/jobs.js'
 import type { Scheduler } from '../../scheduler/scheduler.js'

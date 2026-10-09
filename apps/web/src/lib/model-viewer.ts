@@ -42,7 +42,7 @@ import type { WorkspaceScope } from './workspace-scope'
  * permet à `LoadingManager` de la remplacer par la vraie URL, à côté du fichier
  * principal.
  */
-const RESOURCE_PREFIX = 'sillage-resource:'
+const RESOURCE_PREFIX = 'solera-resource:'
 
 export interface ModelStats {
   meshes: number

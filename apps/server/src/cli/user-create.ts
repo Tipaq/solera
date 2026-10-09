@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { count, eq } from 'drizzle-orm'
-import { openDatabase, users } from '@sillage/db'
+import { openDatabase, users } from '@solera/db'
 import { hashPassword } from '../auth/passwords.js'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'

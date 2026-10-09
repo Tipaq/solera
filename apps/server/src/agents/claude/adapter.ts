@@ -10,7 +10,7 @@ import {
   type EditDiffDto,
   type FastModeAvailabilityDto,
   type ProjectCommandsDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'

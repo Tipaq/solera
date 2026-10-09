@@ -1,6 +1,6 @@
 import { GitBranch, Library, MoreHorizontal, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import type { SkillSearchResultDto, SkillSourceDto } from '@sillage/protocol'
+import type { SkillSearchResultDto, SkillSourceDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate } from '../../lib/dates'
 import { locale, useTranslate } from '../../lib/i18n'

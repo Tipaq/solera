@@ -40,7 +40,7 @@ export class ClaudeModelCatalog {
 
   /**
    * Le binaire est résolu à chaque sonde, jamais retenu à la construction : c'est ce qui
-   * fait honorer le préfixe des CLI que Sillage installe lui-même, et le réglage
+   * fait honorer le préfixe des CLI que Solera installe lui-même, et le réglage
    * `agents.claude.binary`, y compris pour un CLI installé pendant que le daemon tourne.
    */
   constructor(private readonly executable: () => Promise<string>) {}

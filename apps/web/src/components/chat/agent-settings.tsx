@@ -14,7 +14,7 @@ import {
   type McpServerStatus,
   type OpencodePermission,
   type OpencodePermissions,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { catalogModel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
@@ -137,7 +137,7 @@ function ultracodeOptions(t: Translate): SettingChoice<UltracodeChoice>[] {
 }
 
 /**
- * La bibliothèque de skills de Sillage, livrée ou non à la session. Un choix à deux
+ * La bibliothèque de skills de Solera, livrée ou non à la session. Un choix à deux
  * valeurs plutôt qu'une case, pour se ranger avec les autres réglages du panneau.
  */
 type LibraryChoice = 'on' | 'off'
@@ -170,7 +170,7 @@ function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']
 
 /**
  * Règle d'opencode pour une famille d'outils, dans son vocabulaire : demander, laisser
- * faire, refuser. La sentinelle `CLI_DEFAULT` est un état réel, celui où Sillage ne pose
+ * faire, refuser. La sentinelle `CLI_DEFAULT` est un état réel, celui où Solera ne pose
  * aucune règle et où l'`opencode.json` du poste décide : elle a son entrée, comme la
  * politique d'approbation de Codex.
  */
@@ -489,7 +489,7 @@ export function useAgentSettings({
     ]
   }, [effortOptions, opencode, t])
 
-  // L'approbation peut être un objet granulaire, que Sillage n'édite pas : il est
+  // L'approbation peut être un objet granulaire, que Solera n'édite pas : il est
   // alors affiché comme une option non modifiable plutôt que comme un select vide.
   const approval = config.agent === 'codex' ? config.askForApproval : CLI_DEFAULT
   const granular = typeof approval !== 'string'
@@ -558,14 +558,14 @@ export function useAgentSettings({
   // React Query et ne repart pas à chaque conversation ouverte.
   const mcpRegistry = useMcpServers().data
   // Absent quand l'instance a coupé la bibliothèque : un réglage sans effet n'a pas à
-  // occuper le panneau, comme le serveur MCP de Sillage.
+  // occuper le panneau, comme le serveur MCP de Solera.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
   // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
   // s'afficher d'abord puis de disparaître sous le curseur.
-  const sillageAvailable = mcpRegistry?.sillageServer === true
+  const soleraAvailable = mcpRegistry?.soleraServer === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -729,8 +729,8 @@ export function useAgentSettings({
         inventory={mcpInventory}
         selected={claude.mcpServers}
         onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
-        sillage={sillageAvailable ? claude.sillageMcp : null}
-        onSillageChange={(sillageMcp) => onConfigChange({ ...claude, sillageMcp })}
+        solera={soleraAvailable ? claude.soleraMcp : null}
+        onSoleraChange={(soleraMcp) => onConfigChange({ ...claude, soleraMcp })}
         strict={claude.strictMcp}
         onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
         disabled={disabled}
@@ -831,8 +831,8 @@ export function useAgentSettings({
         inventory={mcpInventory}
         selected={codex.mcpServers}
         onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
-        sillage={sillageAvailable ? codex.sillageMcp : null}
-        onSillageChange={(sillageMcp) => onConfigChange({ ...codex, sillageMcp })}
+        solera={soleraAvailable ? codex.soleraMcp : null}
+        onSoleraChange={(soleraMcp) => onConfigChange({ ...codex, soleraMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}
@@ -950,8 +950,8 @@ export function useAgentSettings({
         inventory={mcpInventory}
         selected={opencode.mcpServers}
         onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
-        sillage={sillageAvailable ? opencode.sillageMcp : null}
-        onSillageChange={(sillageMcp) => onConfigChange({ ...opencode, sillageMcp })}
+        solera={soleraAvailable ? opencode.soleraMcp : null}
+        onSoleraChange={(soleraMcp) => onConfigChange({ ...opencode, soleraMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
-import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
+import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import type { Config } from '../config.js'
 import { processOrigins } from '../services/origins.js'
 

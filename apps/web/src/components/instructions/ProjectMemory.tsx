@@ -1,6 +1,6 @@
 import { Brain, ChevronRight, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type MemoryFileDto } from '@sillage/protocol'
+import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type MemoryFileDto } from '@solera/protocol'
 import { locale, useTranslate } from '../../lib/i18n'
 import {
   memoryDescription,

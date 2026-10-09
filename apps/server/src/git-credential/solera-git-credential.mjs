@@ -1,17 +1,17 @@
 /**
- * Helper de credentials git de Sillage.
+ * Helper de credentials git de Solera.
  *
- * Git l'interroge chaque fois qu'un dépôt cloné par Sillage a besoin de s'authentifier :
+ * Git l'interroge chaque fois qu'un dépôt cloné par Solera a besoin de s'authentifier :
  * le `fetch` d'un agent, le `push` que tu lances dans un terminal, le clone lui-même.
  * Il reçoit l'hôte sur son entrée standard et rend le couple utilisateur / jeton.
  *
  * En `.mjs` plutôt qu'en TypeScript compilé, comme le serveur MCP intégré : le process
- * est lancé par git, pas par Sillage, et le garder hors du graphe de modules du serveur
+ * est lancé par git, pas par Solera, et le garder hors du graphe de modules du serveur
  * évite qu'il n'embarque un jour la moitié de l'application par un import distrait.
  *
  * Il lit la base et déchiffre lui-même, plutôt que de recevoir un jeton par son
  * environnement ou d'appeler l'API HTTP. Rien à faire circuler, rien à écrire en clair
- * sur le disque, et révoquer une credential dans Sillage prend effet au prochain appel
+ * sur le disque, et révoquer une credential dans Solera prend effet au prochain appel
  * de git. Le format de chiffrement est celui de `secrets/cipher.ts`, réimplémenté ici :
  * toute évolution là-bas doit être répercutée ici.
  */
@@ -29,10 +29,10 @@ function argValue(name) {
 
 /**
  * L'opération est le dernier argument, et pas le premier : git l'ajoute à la fin de la
- * commande configurée, derrière les arguments que Sillage y a mis.
+ * commande configurée, derrière les arguments que Solera y a mis.
  *
  * Il n'attend une réponse que pour `get`. `store` et `erase` doivent être acceptés en
- * silence : les credentials vivent dans Sillage, et git n'a rien à y écrire ni à en
+ * silence : les credentials vivent dans Solera, et git n'a rien à y écrire ni à en
  * effacer. Sortir en erreur ferait échouer l'opération git elle-même.
  */
 const operation = process.argv[process.argv.length - 1]
@@ -63,7 +63,7 @@ const databasePath = argValue('--db')
 const keyPath = argValue('--key')
 const ownerId = argValue('--owner')
 if (!databasePath || !keyPath || !ownerId) {
-  console.error('sillage-git-credential : --db, --key et --owner sont requis.')
+  console.error('solera-git-credential : --db, --key et --owner sont requis.')
   process.exit(1)
 }
 
@@ -95,7 +95,7 @@ try {
   // une clé qui ne correspond pas à la base. Le dire, sinon git affiche un banal refus
   // d'authentification et la vraie cause reste introuvable.
   console.error(
-    `sillage-git-credential : la credential de ${hostname} ne se déchiffre pas (${err.message}). ` +
+    `solera-git-credential : la credential de ${hostname} ne se déchiffre pas (${err.message}). ` +
       'La clé de chiffrement ne correspond pas à la base.',
   )
   process.exit(1)

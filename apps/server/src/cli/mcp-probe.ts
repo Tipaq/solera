@@ -6,8 +6,8 @@ import {
   DEFAULT_CODEX_CONFIG,
   type AgentConfig,
   type McpServer,
-  type SillageEvent,
-} from '@sillage/protocol'
+  type SoleraEvent,
+} from '@solera/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import { CodexRunner } from '../agents/codex/runner.js'
 import type { AgentRunner, RunnerContext } from '../agents/types.js'
@@ -16,14 +16,14 @@ import type { AgentRunner, RunnerContext } from '../agents/types.js'
  * Sonde de bout en bout du chemin MCP, sur le vrai code des runners.
  *
  * Ce que la sonde vérifie ne se déduit d'aucune documentation : que les serveurs
- * déclarés dans Sillage arrivent bien jusqu'au CLI, et surtout qu'ils survivent à une
+ * déclarés dans Solera arrivent bien jusqu'au CLI, et surtout qu'ils survivent à une
  * reprise de session, cas où Codex les perd si la configuration n'est pas repassée.
  *
  * Ne remplace pas un test : elle lance de vrais CLI, coûte un vrai tour de modèle et
  * demande des CLI authentifiés. Elle se lance à la main, quand on touche à ce chemin.
  */
 
-const PROBE_NAME = 'sillage_probe'
+const PROBE_NAME = 'solera_probe'
 
 const probeServer: McpServer = {
   id: randomUUID(),
@@ -61,10 +61,10 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [probeServer], failures: [] }),
     skillRoots: () => [],
-    emit: (event: SillageEvent) => {
+    emit: (event: SoleraEvent) => {
       if (event.type === 'mcp.updated') {
         for (const server of event.servers) {
-          const origin = server.external ? 'externe' : 'sillage'
+          const origin = server.external ? 'externe' : 'solera'
           seen.push(`${server.name}:${server.state}:${origin}:${server.tools.length}outils`)
         }
       }

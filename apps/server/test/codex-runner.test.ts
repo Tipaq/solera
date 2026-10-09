@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_CODEX_CONFIG, sillageEventSchema } from '@sillage/protocol'
+import { DEFAULT_CODEX_CONFIG, soleraEventSchema } from '@solera/protocol'
 import { CodexRunner } from '../src/agents/codex/runner.js'
 import { runnerFixture, asyncMessage, context, done, fixture, itemEvent } from './codex-support.js'
 
@@ -24,7 +24,7 @@ test('questions Astra interactives, non bloquantes et encore répondables après
   assert.equal(turns[1].params.clientUserMessageId, question.requestId)
   assert.match(turns[1].params.input[0].text, /Which color\?\nGreen/)
   assert.ok(f.events.some((event) => event.type === 'question.resolved' && event.status === 'answered'))
-  for (const event of f.events) sillageEventSchema.parse(event)
+  for (const event of f.events) soleraEventSchema.parse(event)
 })
 
 test('questions concurrentes et serverRequest/resolved ciblé avec ids natifs distincts', async (t) => {
@@ -81,7 +81,7 @@ test('plans, outils récents, événements inconnus et clôtures orphelines rest
   assert.equal(notices.length, 2)
   assert.equal(notices[0]!.id, notices[1]!.id)
   assert.equal(f.events.filter((event) => event.type === 'turn.completed').length, 1)
-  for (const event of f.events) sillageEventSchema.parse(event)
+  for (const event of f.events) soleraEventSchema.parse(event)
 })
 
 test('la fin d’un sous-agent ne termine pas le tour principal', async (t) => {
@@ -118,7 +118,7 @@ test('un message à un sous-agent terminé ne le remet pas en cours, un nouveau 
   assert.deepEqual(running(), { type: 'background.updated', tasks: [{ id: 'child', kind: 'agent', description: 'Inspector' }] })
   await f.emit([done('child-turn-2', 'child')])
   assert.deepEqual(running(), { type: 'background.updated', tasks: [] })
-  for (const event of f.events) sillageEventSchema.parse(event)
+  for (const event of f.events) soleraEventSchema.parse(event)
 })
 
 test('la fin du parent ne supprime pas une question encore attendue par son sous-agent', async (t) => {

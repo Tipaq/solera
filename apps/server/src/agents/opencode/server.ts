@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
-import type { Config, Event } from '@sillage/opencode-bindings'
+import type { Config, Event } from '@solera/opencode-bindings'
 
 /**
  * Un `opencode serve` et le client HTTP qui lui parle.

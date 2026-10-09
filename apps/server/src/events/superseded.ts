@@ -1,4 +1,4 @@
-import type { SillageEvent } from '@sillage/protocol'
+import type { SoleraEvent } from '@solera/protocol'
 
 /**
  * Ce que la suite d'un journal rend caduc à la relecture.
@@ -35,7 +35,7 @@ const REPLACED = new Set<string>(['commands.updated', 'skills.updated', 'mcp.upd
 const DIFF_BOUNDARIES = new Set<string>(['turn.started', 'turn.completed'])
 
 /** Les seuls types qui renseignent l'index : le reste du journal n'y change rien. */
-export const INDEXED_TYPES: SillageEvent['type'][] = [
+export const INDEXED_TYPES: SoleraEvent['type'][] = [
   'tool.completed',
   'diff.updated',
   'turn.started',

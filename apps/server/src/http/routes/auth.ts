@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { users } from '@sillage/db'
-import { loginBodySchema, type CurrentUser } from '@sillage/protocol'
+import { users } from '@solera/db'
+import { loginBodySchema, type CurrentUser } from '@solera/protocol'
 import { verifyPassword } from '../../auth/passwords.js'
 import {
   createSession,

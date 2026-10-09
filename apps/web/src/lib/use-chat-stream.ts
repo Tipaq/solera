@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, ConversationStatus, SillageEvent } from '@sillage/protocol'
+import type { AgentConfig, ConversationStatus, SoleraEvent } from '@solera/protocol'
 import { applyEvent, emptyChatState, isAwaitingUser, type ChatState } from './chat-fold'
 import { fetchJournal } from './conversations'
 import { wsClient } from './ws-client'
@@ -54,7 +54,7 @@ export function useChatStream(
   // L'état vit dans une ref : le fold doit voir la valeur courante, pas celle
   // capturée à la création de l'abonnement.
   const stateRef = useRef<ChatState>(emptyChatState())
-  const pending = useRef<{ seq: number; ts: number; event: SillageEvent }[]>([])
+  const pending = useRef<{ seq: number; ts: number; event: SoleraEvent }[]>([])
   const flushTimer = useRef<number | null>(null)
   /**
    * Dernier `seq` reçu, qui n'est pas `state.lastSeq`.
@@ -107,7 +107,7 @@ export function useChatStream(
       flushTimer.current = window.setTimeout(flush, FLUSH_INTERVAL_MS)
     }
 
-    const enqueue = (seq: number, ts: number, event: SillageEvent) => {
+    const enqueue = (seq: number, ts: number, event: SoleraEvent) => {
       cursor.current = Math.max(cursor.current, seq)
       pending.current.push({ seq, ts, event })
       scheduleFlush()

@@ -1,4 +1,4 @@
-import { openDatabase } from '@sillage/db'
+import { openDatabase } from '@solera/db'
 import { loadConfig } from '../config.js'
 import { migrationsFolder, runPendingMigrations } from '../migrations.js'
 import { rebuild } from '../search/search-index.js'

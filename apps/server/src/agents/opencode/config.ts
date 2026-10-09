@@ -1,12 +1,12 @@
 import { join } from 'node:path'
-import type { Config, MCPStatus, PermissionConfig } from '@sillage/opencode-bindings'
-import type { McpServer, McpServerState, McpServerStatus, OpencodeConfig } from '@sillage/protocol'
+import type { Config, MCPStatus, PermissionConfig } from '@solera/opencode-bindings'
+import type { McpServer, McpServerState, McpServerStatus, OpencodeConfig } from '@solera/protocol'
 
 /**
  * Traduction d'une configuration de conversation vers celle d'opencode.
  *
  * opencode ne règle rien par session : permissions, serveurs MCP et dossiers de skills
- * se lisent dans sa configuration, au lancement. Sillage les pose donc dans
+ * se lisent dans sa configuration, au lancement. Solera les pose donc dans
  * `OPENCODE_CONFIG_CONTENT`, qui se fusionne par-dessus l'`opencode.json` de
  * l'utilisateur sans y toucher. La contrepartie est qu'en changer relance le serveur,
  * ce que `sameLaunchConfig` sert à décider.
@@ -34,18 +34,18 @@ function toMcpEntry(server: McpServer): McpEntry {
     }
   }
   // opencode ne distingue pas `http` de `sse` : il essaie l'un puis l'autre. `oauth`
-  // coupé, sans quoi il tente une découverte OAuth sur un serveur dont Sillage fournit
+  // coupé, sans quoi il tente une découverte OAuth sur un serveur dont Solera fournit
   // déjà les en-têtes.
   return { type: 'remote', url: transport.url, headers: transport.headers, oauth: false, enabled: true }
 }
 
 /**
- * Les règles posées par Sillage. Une famille en `CLI_DEFAULT` est omise : la fusion
+ * Les règles posées par Solera. Une famille en `CLI_DEFAULT` est omise : la fusion
  * laisse alors parler la règle du poste.
  *
  * `external_directory` ne reçoit que des motifs précis, jamais de `*` : la règle
  * générale d'opencode (demander hors du répertoire de travail) reste celle du poste,
- * Sillage n'ouvre que ce qu'il fournit lui-même.
+ * Solera n'ouvre que ce qu'il fournit lui-même.
  */
 function toPermission({ config, skillRoots, readableDirs }: LaunchInputs): PermissionConfig {
   const { edit, bash, webfetch } = config.permissions

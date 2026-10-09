@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, InstructionsMode } from '@sillage/protocol'
+import type { AgentKind, CardColumn, InstructionsMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -69,7 +69,7 @@ export const projects = sqliteTable(
      */
     position: integer('position').notNull().default(0),
     /**
-     * Où vivent les consignes du projet : dans Sillage (`sillage`), injectées aux deux
+     * Où vivent les consignes du projet : dans Solera (`solera`), injectées aux deux
      * CLI pendant que les `CLAUDE.md` et `AGENTS.md` du dépôt sont masqués, ou dans le
      * dépôt (`repo`), que les CLI lisent d'eux-mêmes. Fixé à la création ; null pour
      * les projets d'avant, résolu d'après le dossier (voir `instructions/store.ts`).
@@ -82,7 +82,7 @@ export const projects = sqliteTable(
 )
 
 /**
- * SILLAGE.md : des consignes tenues par Sillage, communes à Claude et à Codex, injectées
+ * SOLERA.md : des consignes tenues par Solera, communes à Claude et à Codex, injectées
  * dans le prompt système de chaque session. Une ligne globale (`id` = `global`, sans
  * projet) et une par projet (`id` = l'identifiant du projet).
  *
@@ -510,7 +510,7 @@ export const conversations = sqliteTable(
  * Tâches planifiées : un prompt que le daemon rejoue à cadence fixe, chaque tir dans une
  * session neuve.
  *
- * Portées par Sillage parce qu'aucun CLI n'a de planificateur local durable : le
+ * Portées par Solera parce qu'aucun CLI n'a de planificateur local durable : le
  * `CronCreate` de Claude meurt avec sa session, Codex n'en a pas. Le daemon, lui,
  * tourne en permanence.
  */
@@ -670,7 +670,7 @@ export const events = sqliteTable(
     seq: integer('seq').notNull(),
     ts: timestamp('ts').notNull(),
     type: text('type').notNull(),
-    /** JSON SillageEvent. */
+    /** JSON SoleraEvent. */
     payload: text('payload').notNull(),
     /** JSON natif du CLI, conservé pour les renderers d'outils spécialisés. */
     raw: text('raw'),
@@ -789,7 +789,7 @@ export const userSettings = sqliteTable('user_settings', {
  *
  * Déclarés une fois ici, activés conversation par conversation via `mcpServers` de
  * l'`AgentConfig`. Rien n'est écrit dans `~/.claude.json` ni dans le `config.toml` de
- * Codex : Sillage transmet ces serveurs en mémoire à chaque lancement de session, et
+ * Codex : Solera transmet ces serveurs en mémoire à chaque lancement de session, et
  * ne devient donc pas copropriétaire de fichiers qu'il n'a pas écrits. Conséquence
  * assumée : une conversation reprise dans un CLI natif n'a pas ces serveurs.
  */
@@ -834,7 +834,7 @@ export const skillSources = sqliteTable('skill_sources', {
 })
 
 /**
- * Bibliothèque de skills : ce que Sillage livre aux CLI comme des skills natifs.
+ * Bibliothèque de skills : ce que Solera livre aux CLI comme des skills natifs.
  *
  * Le contenu vit sur le disque, sous `<data>/skill-library`, et c'est lui qui fait foi :
  * description et corps se relisent dans le `SKILL.md`. Cette table porte ce que le disque
@@ -954,7 +954,7 @@ export const apiTokens = sqliteTable(
     /**
      * Secret HMAC des livraisons, en clair : le serveur doit pouvoir signer, donc le
      * chiffrer avec une clé posée à côté de la base ne protégerait de rien. Il ne donne
-     * aucun accès à Sillage, seulement la capacité de forger des livraisons vers
+     * aucun accès à Solera, seulement la capacité de forger des livraisons vers
      * l'endpoint du consommateur, qui exige aussi de connaître l'URL.
      */
     webhookSecret: text('webhook_secret'),

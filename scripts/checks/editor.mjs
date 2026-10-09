@@ -31,7 +31,7 @@ export async function checkEditor({ page, context, base, project }) {
   const recovery = panel.locator('details').filter({ hasText: 'Brouillons conservés' })
   await recovery.getByRole('button', { name: 'package.json', exact: true }).waitFor()
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.evaluate(() => localStorage.setItem('sillage.panelTree', '1'))
+  await page.evaluate(() => localStorage.setItem('solera.panelTree', '1'))
   await page.reload()
   await panel.getByRole('button', { name: 'Brouillons conservés (1)', exact: true }).click()
   await recovery.getByRole('button', { name: 'package.json', exact: true }).click()
@@ -132,7 +132,7 @@ export async function checkEditor({ page, context, base, project }) {
   await page.evaluate(() => {
     window.uiOriginalSetItem = Storage.prototype.setItem
     Storage.prototype.setItem = function (key, value) {
-      if (key.startsWith('sillage.fileDraft:')) throw new DOMException('QuotaExceededError')
+      if (key.startsWith('solera.fileDraft:')) throw new DOMException('QuotaExceededError')
       return window.uiOriginalSetItem.call(this, key, value)
     }
   })

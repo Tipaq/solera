@@ -4,7 +4,7 @@ import {
   putGitCredentialBodySchema,
   type GitCredentialListDto,
   type GitRepoListDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { GITHUB_HOST, GitHubError, type GitHubRepoCatalog } from '../../git-credentials/github.js'
 import type { GitCredentialStore } from '../../git-credentials/store.js'
 import { HttpError, badRequest, notFound } from '../errors.js'
@@ -88,7 +88,7 @@ export function registerGitCredentialRoutes(
     try {
       return await catalog.search(user.id, credential.token, q ?? '')
     } catch (err) {
-      // Un jeton refusé ou un quota épuisé n'est pas une panne de Sillage : le code
+      // Un jeton refusé ou un quota épuisé n'est pas une panne de Solera : le code
       // distingue les cas, pour que l'interface dise quoi corriger.
       if (err instanceof GitHubError) {
         throw new HttpError(502, err.code, err.message, err.params)

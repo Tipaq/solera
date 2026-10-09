@@ -21,7 +21,7 @@ import {
   type ConversationStatus,
   type McpServerStatus,
   type SlashCommandDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { useNavigate } from 'react-router-dom'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
@@ -146,7 +146,7 @@ interface ComposerProps {
     skills: string[],
   ): Promise<void>
   /**
-   * Exécute une commande que Sillage traite lui-même plutôt que de la transmettre au
+   * Exécute une commande que Solera traite lui-même plutôt que de la transmettre au
    * CLI comme du texte (`NATIVE_SLASH_COMMANDS`).
    *
    * Absent quand l'appelant n'a pas cette plomberie, un fil pas encore créé par
@@ -528,12 +528,12 @@ export function Composer({
   }
 
   /**
-   * Envoi ordinaire, ou exécution par Sillage quand le message se réduit à l'une des
+   * Envoi ordinaire, ou exécution par Solera quand le message se réduit à l'une des
    * commandes dont il possède déjà la plomberie.
    *
    * Deux cas repassent la main au CLI, qui sait de toute façon lire ses propres
    * commandes. Des arguments, que la plomberie maison ne transporte pas : `/compact`
-   * accepte des consignes de résumé dont la route de Sillage n'a que faire, et les
+   * accepte des consignes de résumé dont la route de Solera n'a que faire, et les
    * perdre en silence serait pire que de laisser passer la ligne entière. Une pièce
    * jointe, qui n'aurait nulle part où aller.
    */

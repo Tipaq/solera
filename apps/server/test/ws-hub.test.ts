@@ -7,8 +7,8 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projects, runMigrations, users } from '@sillage/db'
-import type { ServerMessage } from '@sillage/protocol'
+import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
+import type { ServerMessage } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
 import type { PushService } from '../src/push/push-service.js'
@@ -27,7 +27,7 @@ import { registerV1Routes } from '../src/http/v1/index.js'
 import { LIST_ROUTES, registerWebSocketHub } from '../src/ws/hub.js'
 
 async function database(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-ws-hub-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-ws-hub-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))

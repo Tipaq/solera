@@ -3,14 +3,14 @@ import { mkdtemp, copyFile, chmod, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TestContext } from 'node:test'
-import { DEFAULT_OPENCODE_CONFIG, type SillageEvent, type ConversationStatus } from '@sillage/protocol'
+import { DEFAULT_OPENCODE_CONFIG, type SoleraEvent, type ConversationStatus } from '@solera/protocol'
 import type { RunnerContext } from '../src/agents/types.js'
 import { OpencodeRunner } from '../src/agents/opencode/runner.js'
 
 export const ROOT = 'ses_root'
 
 export async function fixture(t: TestContext) {
-  const cwd = await mkdtemp(join(tmpdir(), 'sillage-opencode-test-'))
+  const cwd = await mkdtemp(join(tmpdir(), 'solera-opencode-test-'))
   const binary = join(cwd, 'opencode.mjs')
   await copyFile(new URL('./fixtures/opencode-server.mjs', import.meta.url), binary)
   await chmod(binary, 0o700)
@@ -30,7 +30,7 @@ export async function fixture(t: TestContext) {
 }
 
 export function context(overrides: Partial<RunnerContext> = {}) {
-  const events: SillageEvent[] = []
+  const events: SoleraEvent[] = []
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {
@@ -61,7 +61,7 @@ export async function runnerFixture(t: TestContext, overrides: Partial<RunnerCon
   const runner = new OpencodeRunner(state.ctx)
   transport.onClose(() => runner.stop())
   await runner.start()
-  const count = (type: SillageEvent['type']) => state.events.filter((event) => event.type === type).length
+  const count = (type: SoleraEvent['type']) => state.events.filter((event) => event.type === type).length
   return {
     ...state, ...transport, runner, count,
     /** Envoie un message dont le faux serveur joue le scénario. */

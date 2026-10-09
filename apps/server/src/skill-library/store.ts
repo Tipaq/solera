@@ -13,7 +13,7 @@ import {
 } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { and, asc, eq, or } from 'drizzle-orm'
-import { librarySkills, skillSources, type Db, type LibrarySkillRow } from '@sillage/db'
+import { librarySkills, skillSources, type Db, type LibrarySkillRow } from '@solera/db'
 import {
   SKILL_MAIN_FILE,
   SKILL_TEXT_FILE_MAX_BYTES,
@@ -26,7 +26,7 @@ import {
   type LibrarySkillProblem,
   type LibrarySkillScope,
   type UpdateLibrarySkillBody,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { badRequest, conflict, notFound } from '../http/errors.js'
 import { writeSkillArchive } from './archive.js'
 import { compatNotes } from './compat.js'

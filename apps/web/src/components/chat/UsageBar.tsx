@@ -1,4 +1,4 @@
-import type { UsageWindow } from '@sillage/protocol'
+import type { UsageWindow } from '@solera/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'
 

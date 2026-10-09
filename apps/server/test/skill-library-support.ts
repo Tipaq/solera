@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import multipart from '@fastify/multipart'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { openDatabase, projects, runMigrations, users } from '@sillage/db'
+import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerSkillLibraryRoutes } from '../src/http/routes/skill-library.js'
@@ -20,7 +20,7 @@ import { SkillLibrary } from '../src/skill-library/store.js'
  * membre et un étranger ; deux projets partagés et un privé, tous au propriétaire.
  */
 export function harness(t: TestContext) {
-  const dir = mkdtempSync(join(tmpdir(), 'sillage-skills-'))
+  const dir = mkdtempSync(join(tmpdir(), 'solera-skills-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
@@ -62,7 +62,7 @@ export async function http(t: TestContext) {
     app.inject({ method, url, payload: payload as object, headers: { 'x-user': user } })
   /** Envoi d'un fichier, comme le fait le navigateur. */
   const upload = (user: string, url: string, filename: string, content: Uint8Array) => {
-    const boundary = `----sillage${randomUUID()}`
+    const boundary = `----solera${randomUUID()}`
     const head = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`
     return app.inject({
       method: 'POST',

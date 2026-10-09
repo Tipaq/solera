@@ -1,5 +1,5 @@
-import type { EditDiffDto } from '@sillage/protocol'
-import type { FileUpdateChange, ThreadItem } from '@sillage/codex-bindings/v2'
+import type { EditDiffDto } from '@solera/protocol'
+import type { FileUpdateChange, ThreadItem } from '@solera/codex-bindings/v2'
 import { additionDiff, deletionDiff } from '../../diff-lines.js'
 import { toWorkspacePath } from '../paths.js'
 

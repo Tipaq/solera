@@ -6,7 +6,7 @@ import {
   VIEWABLE_DOCUMENT_TYPES,
   VIEWABLE_IMAGE_TYPES,
   VIEWABLE_MEDIA_TYPES,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { useEditorDocument, useEditorDraftPaths } from '../../lib/editor-documents'
 import { useCurrentUser } from '../../lib/session'
 import {
@@ -33,7 +33,7 @@ import { MediaView } from './MediaView'
 const ModelView = lazy(() => import('./ModelView').then((m) => ({ default: m.ModelView })))
 
 /** Type de transfert du glisser-déposer des onglets, distinct de celui de l'arborescence. */
-const TAB_DRAG_TYPE = 'application/x-sillage-tab'
+const TAB_DRAG_TYPE = 'application/x-solera-tab'
 
 /** Onglets ouverts, et le fichier actif en dessous. */
 export function EditorPane({ scope }: { scope: string }) {

@@ -1,10 +1,10 @@
-# Valeurs par défaut du chart Sillage.
-# Sillage garde tout son état dans une base SQLite : il tourne en un seul
+# Valeurs par défaut du chart Solera.
+# Solera garde tout son état dans une base SQLite : il tourne en un seul
 # exemplaire, jamais deux. Les réglages qui le garantissent (replicas figé à 1,
 # stratégie Recreate) ne sont volontairement pas exposés ici.
 
 image:
-  repository: ghcr.io/marlburrow/sillage
+  repository: ghcr.io/tipaq/solera
   # Vide = le appVersion du Chart (0.14.0). Préfère un tag précis à `latest` :
   # avec `latest` et pullPolicy IfNotPresent, un pod recréé peut repartir sur
   # l'image déjà en cache du nœud, donc sur une version plus ancienne.
@@ -18,7 +18,7 @@ fullnameOverride: ""
 
 service:
   type: ClusterIP
-  port: 7317
+  port: 7517
 
 ingress:
   enabled: false
@@ -27,19 +27,19 @@ ingress:
   # charge par personne.
   className: nginx
   annotations: {}
-    # Sillage garde des WebSockets ouverts (flux des sessions, terminaux PTY).
+    # Solera garde des WebSockets ouverts (flux des sessions, terminaux PTY).
     # Le timeout par défaut d'ingress-nginx est de 60 s et coupe les sessions
     # inactives : décommente si tu vois des reconnexions intempestives.
     # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     # nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-  host: sillage.example.com
+  host: solera.example.com
   path: /
   pathType: Prefix
   tls:
     enabled: false
     # Nom du Secret de type kubernetes.io/tls. Ce cluster n'a pas cert-manager :
     # crée-le à la main (`kubectl create secret tls ...`) ou installe cert-manager.
-    secretName: sillage-tls
+    secretName: solera-tls
 
 # --- Stockage -----------------------------------------------------------------
 # Renseigne storageClass, surtout pour le volume `data`, et choisis du stockage
@@ -76,7 +76,7 @@ storage:
     size: 2Gi
     existingClaim: ""
 
-  # Tes dépôts git, sur lesquels pointent les projets Sillage.
+  # Tes dépôts git, sur lesquels pointent les projets Solera.
   workspace:
     enabled: false
     storageClass: ""
@@ -85,7 +85,7 @@ storage:
     existingClaim: ""
 
 # --- Configuration applicative -------------------------------------------------
-# Rendu dans un ConfigMap et passé via SILLAGE_CONFIG. Laisse vide pour t'en
+# Rendu dans un ConfigMap et passé via SOLERA_CONFIG. Laisse vide pour t'en
 # remettre aux valeurs par défaut du serveur.
 # Un fichier présent mais invalide fait échouer le démarrage, volontairement.
 config: ""

@@ -3,8 +3,8 @@ import type {
   ConversationStatus,
   ElicitationAction,
   ElicitationValue,
-  SillageEvent,
-} from '@sillage/protocol'
+  SoleraEvent,
+} from '@solera/protocol'
 import type { ResolvedMcpServers } from './mcp-registry.js'
 
 export interface PermissionDecision {
@@ -49,7 +49,7 @@ export interface RunnerContext {
    * Exécutable du CLI, déjà résolu en chemin absolu quand il a pu l'être.
    *
    * Ne jamais le re-résoudre ni réécrire en dur le nom du binaire dans un runner : sous
-   * systemd le PATH est minimal, et la résolution tient compte du préfixe où Sillage
+   * systemd le PATH est minimal, et la résolution tient compte du préfixe où Solera
    * installe les CLI qu'il gère, que `spawn` ne connaît pas. Reste le nom configuré
    * quand rien n'a été trouvé, pour que l'échec porte le nom demandé.
    */
@@ -61,10 +61,10 @@ export interface RunnerContext {
   /**
    * Résout la configuration d'une conversation en serveurs MCP : les identifiants du
    * registre qu'elle active, moins les désactivés et les disparus, plus le serveur que
-   * Sillage monte lui-même.
+   * Solera monte lui-même.
    *
    * Prend la configuration entière et non la seule liste d'identifiants, parce que le
-   * serveur de Sillage n'en a pas : il dépend de `sillageMcp` et de `strictMcp`, qui
+   * serveur de Solera n'en a pas : il dépend de `soleraMcp` et de `strictMcp`, qui
    * changent à chaud comme le reste.
    *
    * Fonction et non tableau figé : Codex doit rejouer la liste à chaque reprise de
@@ -74,7 +74,7 @@ export interface RunnerContext {
   resolveMcpServers(config: AgentConfig): ResolvedMcpServers
   /**
    * Ce qui se passe sur le projet, à injecter au démarrage de la session. Null quand il
-   * n'y a rien à dire, ou que l'utilisateur a coupé les apports de Sillage.
+   * n'y a rien à dire, ou que l'utilisateur a coupé les apports de Solera.
    *
    * Le seul élément de contexte qui arrive sans que l'agent l'ait demandé : les outils
    * du serveur MCP répondent quand on les interroge, encore faut-il y penser.
@@ -82,7 +82,7 @@ export interface RunnerContext {
   projectOverview(config: AgentConfig): string | null
   /**
    * Dossiers dont les `CLAUDE.md` et `AGENTS.md` sont à masquer au CLI, parce que le
-   * projet garde ses consignes dans Sillage (SILLAGE.md) et qu'elles arrivent déjà par
+   * projet garde ses consignes dans Solera (SOLERA.md) et qu'elles arrivent déjà par
    * `projectOverview`. Vide quand le projet les garde dans son dépôt.
    *
    * Lu au lancement seulement : changer de mode vaut pour les sessions suivantes.
@@ -107,7 +107,7 @@ export interface RunnerContext {
   /** Identifiant de session natif à reprendre, null pour une nouvelle session. */
   resumeSessionId: string | null
   /** Écrit dans le journal puis diffuse. `raw` conserve le message natif du CLI. */
-  emit(event: SillageEvent, raw?: unknown): void
+  emit(event: SoleraEvent, raw?: unknown): void
   setStatus(status: ConversationStatus): void
   /** Mémorise l'identifiant natif dès que le CLI l'annonce, pour pouvoir reprendre. */
   setAgentSessionId(sessionId: string): void

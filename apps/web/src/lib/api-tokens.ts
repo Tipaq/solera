@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentKind, ApiScope, ApiTokenDto, CreatedApiTokenDto } from '@sillage/protocol'
+import type { AgentKind, ApiScope, ApiTokenDto, CreatedApiTokenDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

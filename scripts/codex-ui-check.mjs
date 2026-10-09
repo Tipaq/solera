@@ -47,7 +47,7 @@ try {
       window.$RefreshReg$ = () => {}
       window.$RefreshSig$ = () => (type) => type
       window.__vite_plugin_react_preamble_installed__ = true
-      localStorage.setItem('sillage.locale', 'fr')
+      localStorage.setItem('solera.locale', 'fr')
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default

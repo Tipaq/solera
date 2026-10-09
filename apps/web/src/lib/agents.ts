@@ -8,14 +8,14 @@ import {
   type AgentKind,
   type AgentModelDto,
   type AgentModelsDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { translate } from './i18n'
 import { api } from './api'
 
 /**
  * Présence et version des CLI sur la machine du serveur.
  *
- * Sillage ne transporte plus les binaires : un agent dont le CLI manque ne doit pas être
+ * Solera ne transporte plus les binaires : un agent dont le CLI manque ne doit pas être
  * proposé, sans quoi l'utilisateur découvre l'absence à l'échec de son premier message.
  */
 export function useAgentAvailability() {
@@ -61,7 +61,7 @@ export function unavailableReason(entry: AgentAvailabilityDto | undefined): stri
 }
 
 /**
- * Écart entre la version installée et celle que Sillage vise, à afficher comme un
+ * Écart entre la version installée et celle que Solera vise, à afficher comme un
  * avertissement. Null quand elles sont compatibles, ou qu'il n'y a rien à comparer.
  *
  * L'écart n'empêche rien et ne grise aucune carte : il se signale, et l'installation de
@@ -78,7 +78,7 @@ export function versionMismatch(entry: AgentAvailabilityDto | undefined): string
 /**
  * Modèles déclarés par le CLI installé, sous la forme commune du protocole. Rien
  * n'est codé en dur : mettre à jour le CLI suffit à faire apparaître ses nouveaux
- * modèles, sans toucher à Sillage.
+ * modèles, sans toucher à Solera.
  */
 export function useAgentModels(agent: AgentKind, enabled = true) {
   return useQuery({

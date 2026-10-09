@@ -96,7 +96,7 @@ const projectCreationFields = {
   name: z.string().min(1).max(120),
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
-  /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Sillage sinon. */
+  /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Solera sinon. */
   instructionsMode: instructionsModeSchema.optional(),
 }
 
@@ -503,7 +503,7 @@ export interface WorktreeDto {
   path: string
   baseRef: string
   createdAt: number
-  /** Null si le dossier a disparu du disque en dehors de Sillage. */
+  /** Null si le dossier a disparu du disque en dehors de Solera. */
   git: { branch: string; isDirty: boolean } | null
   /** Nombre de conversations qui l'utilisent, pour prévenir avant suppression. */
   conversationCount: number
@@ -577,7 +577,7 @@ export const commitHashSchema = z.string().regex(/^[0-9a-f]{7,40}$/)
 
 /**
  * Une session commencée avec le CLI Claude Code dans le dossier du projet, pas encore
- * rattachée à une conversation Sillage. L'import n'en fait pas une copie : Sillage
+ * rattachée à une conversation Solera. L'import n'en fait pas une copie : Solera
  * retient l'identifiant natif et reconstruit son journal depuis le transcript, puis
  * chaque tour reprend la même session côté CLI.
  */
@@ -609,7 +609,7 @@ export interface AgentEffortDto {
 
 /**
  * Un modèle tel que le CLI installé le déclare, sous une forme commune aux CLI.
- * Rien n'est codé en dur côté Sillage : une mise à jour du CLI fait apparaître ses
+ * Rien n'est codé en dur côté Solera : une mise à jour du CLI fait apparaître ses
  * nouveaux modèles sans rebuild, et l'UI construit les mêmes sélecteurs pour tous.
  */
 export interface AgentModelDto {
@@ -665,7 +665,7 @@ export interface ClaudeAccountDto {
 
 /**
  * Un mode de collaboration proposé par Codex, tel que `collaborationMode/list` le
- * déclare. Le nom affiché vient du CLI : Sillage ne traduit pas « Plan » en autre chose.
+ * déclare. Le nom affiché vient du CLI : Solera ne traduit pas « Plan » en autre chose.
  */
 export interface CodexModeDto {
   mode: CodexMode
@@ -705,7 +705,7 @@ export interface AgentModelsDto {
 }
 
 /**
- * Ce que Sillage trouve d'un CLI sur la machine, pour un agent donné.
+ * Ce que Solera trouve d'un CLI sur la machine, pour un agent donné.
  *
  * L'écran s'en sert pour ne pas proposer un agent que le serveur ne saurait pas lancer :
  * le CLI n'est plus embarqué dans la release, donc son absence est un état normal et
@@ -721,14 +721,14 @@ export interface AgentAvailabilityDto {
   /** Faux quand la configuration désactive l'agent : rien n'a alors été sondé. */
   enabled: boolean
   installed: boolean
-  /** Vrai quand c'est Sillage qui l'a installé, faux quand il vient du PATH système. */
+  /** Vrai quand c'est Solera qui l'a installé, faux quand il vient du PATH système. */
   managed: boolean
   /** Chemin absolu réellement lancé ; null quand introuvable. */
   path: string | null
   version: string | null
   /** Pourquoi l'agent est indisponible ; null quand il l'est. */
   reason: 'disabled' | 'not_on_path' | 'not_executable' | null
-  /** Version que Sillage vise pour cette release, et que l'installation poserait. */
+  /** Version que Solera vise pour cette release, et que l'installation poserait. */
   preferredVersion: string
   install: CliInstallStateDto
 }
@@ -1127,14 +1127,14 @@ export const updateMcpServerBodySchema = z
 export interface McpServerListDto {
   servers: McpServer[]
   /**
-   * L'instance monte le serveur MCP de Sillage dans les conversations.
+   * L'instance monte le serveur MCP de Solera dans les conversations.
    *
    * Porté par cette liste plutôt que par un point d'entrée de capacités : c'est la même
    * question que celle des serveurs déclarés, posée au même moment, et le composeur a
    * besoin des deux réponses pour dessiner un seul contrôle. À faux, l'entrée disparaît
    * de l'interface au lieu d'y rester grisée.
    */
-  sillageServer: boolean
+  soleraServer: boolean
 }
 
 // Erreurs

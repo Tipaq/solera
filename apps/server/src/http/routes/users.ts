@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { and, count, eq, gt, ne } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { authSessions, conversations, projects, users } from '@sillage/db'
-import { createUserBodySchema, updateUserBodySchema, type UserDto } from '@sillage/protocol'
+import { authSessions, conversations, projects, users } from '@solera/db'
+import { createUserBodySchema, updateUserBodySchema, type UserDto } from '@solera/protocol'
 import { hashPassword, verifyPassword } from '../../auth/passwords.js'
 import { SESSION_COOKIE, sessionTokenHash } from '../../auth/sessions.js'
 import type { AppContext } from '../context.js'
@@ -12,7 +12,7 @@ import { requireAdmin, requireUser } from '../require-user.js'
 /**
  * Administration des comptes.
  *
- * Sillage fonctionne en cercle de confiance : un administrateur peut créer et
+ * Solera fonctionne en cercle de confiance : un administrateur peut créer et
  * supprimer des comptes, mais tous les agents tournent sous le même utilisateur
  * système. Cet écran gère l'accès à l'instance, pas des privilèges d'exécution.
  */

@@ -1,4 +1,4 @@
-import type { ApiTokenRow, Db, UserRow } from '@sillage/db'
+import type { ApiTokenRow, Db, UserRow } from '@solera/db'
 import type { Config } from '../config.js'
 
 export interface AppContext {

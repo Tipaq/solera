@@ -1,7 +1,7 @@
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { useEffect, useRef, useState } from 'react'
-import type { TerminalClientMessage, TerminalServerMessage } from '@sillage/protocol'
+import type { TerminalClientMessage, TerminalServerMessage } from '@solera/protocol'
 import { cx } from '../ui'
 import '@xterm/xterm/css/xterm.css'
 import { translate, useTranslate } from '../../lib/i18n'

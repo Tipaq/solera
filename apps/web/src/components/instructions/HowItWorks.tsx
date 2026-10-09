@@ -27,7 +27,7 @@ export function HowItWorks({ items }: { items: MessageKey[] }) {
 
 export const INSTRUCTIONS_HELP: MessageKey[] = [
   'instructions.how.injected',
-  'instructions.how.sillage',
+  'instructions.how.solera',
   'instructions.how.repo',
   'instructions.how.agents',
   'instructions.how.timing',

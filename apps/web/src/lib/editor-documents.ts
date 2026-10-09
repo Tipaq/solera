@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import type { FileContentDto } from '@sillage/protocol'
+import type { FileContentDto } from '@solera/protocol'
 import { ApiRequestError } from './api'
 import { readFile, writeFile } from './files-io'
 import { translate } from './i18n'
@@ -17,7 +17,7 @@ interface Document {
 }
 
 const EMPTY: Document = { file: null, content: '', loading: false, saving: false, conflict: false, error: null, persisted: true, revision: 0 }
-const PREFIX = 'sillage.fileDraft:'
+const PREFIX = 'solera.fileDraft:'
 const documents = new Map<string, Document>()
 const listeners = new Set<() => void>()
 const recovered = new Set<string>()

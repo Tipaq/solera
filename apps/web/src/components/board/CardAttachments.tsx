@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Download, FileText, Paperclip, Plus, Trash2, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
+import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@solera/protocol'
 import { api } from '../../lib/api'
 import { formatBytes, uploadAttachment } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'

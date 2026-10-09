@@ -2,18 +2,18 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { MEMORY_INDEX_FILE, memoryFileSchema, type MemoryFileDto } from '@sillage/protocol'
+import { MEMORY_INDEX_FILE, memoryFileSchema, type MemoryFileDto } from '@solera/protocol'
 
 /**
  * Mémoire des agents, un dossier par projet sous `<data>/memory/projects/<id>`.
  *
  * Au format de la mémoire automatique de Claude Code, parce que c'est Claude qui l'écrit
- * nativement : Sillage lui passe ce dossier en `autoMemoryDirectory` (sondé sur Claude
+ * nativement : Solera lui passe ce dossier en `autoMemoryDirectory` (sondé sur Claude
  * Code 2.1.286, les écritures y passent sans permission, comme dans le dossier par
  * défaut). Un dossier par projet et non par répertoire de travail, comme le fait Claude
  * seul : les worktrees d'un projet partagent ce qu'ils apprennent.
  *
- * Le serveur MCP y écrit aussi pour Codex (`write_memory` dans `mcp/sillage-mcp.mjs`) :
+ * Le serveur MCP y écrit aussi pour Codex (`write_memory` dans `mcp/solera-mcp.mjs`) :
  * les deux doivent rester d'accord sur la forme des noms et sur la tenue de l'index.
  */
 
@@ -44,7 +44,7 @@ function hasNotes(dir: string): boolean {
  * Le dossier de mémoire du projet, créé au besoin, avec la mémoire que Claude tenait
  * déjà pour ce workspace importée la première fois.
  *
- * Copiée et non déplacée : l'original reste là pour une session lancée hors de Sillage.
+ * Copiée et non déplacée : l'original reste là pour une session lancée hors de Solera.
  * L'import n'a lieu que dans un dossier encore vide, et une seule fois, d'où la trace :
  * sans elle, une mémoire vidée à la main se remplirait de nouveau au lancement suivant.
  */
@@ -114,14 +114,14 @@ export async function deleteMemoryFile(dir: string, file: string): Promise<void>
  * lire et écrire les notes. Claude n'en a pas besoin, il charge l'index de lui-même.
  * Null quand il n'y a ni index ni moyen d'écrire : rien à dire.
  */
-export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string | null {
+export function memoryAppendixForCodex(dir: string, soleraMcp: boolean): string | null {
   let index = ''
   try {
     index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
   } catch {
     // Pas encore d'index.
   }
-  if (!index && !sillageMcp) return null
+  if (!index && !soleraMcp) return null
   if (index.length > MAX_INJECTED_INDEX_CHARS) {
     index = `${index.slice(0, MAX_INJECTED_INDEX_CHARS)}\n… (index tronqué, la suite est dans ${MEMORY_INDEX_FILE})`
   }
@@ -130,9 +130,9 @@ export function memoryAppendixForCodex(dir: string, sillageMcp: boolean): string
     `# Mémoire du projet\n\nNotes que les sessions précédentes, quel que soit leur CLI, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
     index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'La mémoire est encore vide.',
   ]
-  if (sillageMcp) {
+  if (soleraMcp) {
     parts.push(
-      "Pour retenir un fait qui servira aux sessions suivantes et que le dépôt ne dit pas (une préférence de l'utilisateur, une décision, un piège rencontré), écris une note avec `write_memory` du serveur `sillage` : un fichier markdown avec un en-tête `name`, `description` et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. Corrige ou retire une note fausse avec `write_memory` et `delete_memory`. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SILLAGE.md.",
+      "Pour retenir un fait qui servira aux sessions suivantes et que le dépôt ne dit pas (une préférence de l'utilisateur, une décision, un piège rencontré), écris une note avec `write_memory` du serveur `solera` : un fichier markdown avec un en-tête `name`, `description` et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. Corrige ou retire une note fausse avec `write_memory` et `delete_memory`. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SOLERA.md.",
     )
   }
   return parts.join('\n\n')

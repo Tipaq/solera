@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { secrets, type Db } from '@sillage/db'
+import { secrets, type Db } from '@solera/db'
 import { decryptValue, encryptValue } from './cipher.js'
 
 /**

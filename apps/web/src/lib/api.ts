@@ -1,4 +1,4 @@
-import type { ApiError } from '@sillage/protocol'
+import type { ApiError } from '@solera/protocol'
 import { translate, translateError } from './i18n'
 
 /**

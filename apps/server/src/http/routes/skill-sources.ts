@@ -11,7 +11,7 @@ import {
   type SkillSourceDto,
   type SkillSourceListDto,
   type SourceSkillPreviewDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { z } from 'zod'
 import { credentialEnv } from '../../git-credential/helper.js'
 import { comparableUrl, normalizeSourceUrl, type SkillSources } from '../../skill-library/sources.js'

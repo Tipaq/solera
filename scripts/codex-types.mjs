@@ -27,7 +27,7 @@ const root = join(fileURLToPath(import.meta.url), '../..')
 const target = join(root, 'packages/codex-bindings/src')
 const check = process.argv.includes('--check')
 
-/** Fichiers écrits par Sillage, à préserver et à exclure de la comparaison. */
+/** Fichiers écrits par Solera, à préserver et à exclure de la comparaison. */
 const HAND_WRITTEN = new Set(['README.md'])
 
 function listFiles(dir, prefix = '') {
@@ -55,7 +55,7 @@ function generateInto(dir) {
 const version = execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim()
 
 if (!check) {
-  const staging = mkdtempSync(join(tmpdir(), 'sillage-codex-'))
+  const staging = mkdtempSync(join(tmpdir(), 'solera-codex-'))
   try {
     generateInto(staging)
     // On repart d'un dossier propre : un type supprimé côté Codex doit disparaître ici
@@ -71,7 +71,7 @@ if (!check) {
   process.exit(0)
 }
 
-const staging = mkdtempSync(join(tmpdir(), 'sillage-codex-check-'))
+const staging = mkdtempSync(join(tmpdir(), 'solera-codex-check-'))
 try {
   generateInto(staging)
 

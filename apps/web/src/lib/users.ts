@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { UserDto } from '@sillage/protocol'
+import type { UserDto } from '@solera/protocol'
 import { api } from './api'
 
 const USERS_KEY = ['users']

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { strToU8, unzipSync, zipSync } from 'fflate'
-import type { LibrarySkillDetailDto, LibrarySkillDto, LibrarySkillFileDto, LocalSkillListDto } from '@sillage/protocol'
+import type { LibrarySkillDetailDto, LibrarySkillDto, LibrarySkillFileDto, LocalSkillListDto } from '@solera/protocol'
 import { readSkillArchive } from '../src/skill-library/archive.js'
 import { scanLocalSkills } from '../src/skill-library/local-scan.js'
 import { createSkill, harness, http } from './skill-library-support.js'
@@ -56,7 +56,7 @@ test('fichiers annexes : texte édité, binaire décrit, SKILL.md et évasions r
   assert.equal((await call('member', 'PUT', `${base}/files/notes.md`, { content: 'x' })).statusCode, 403)
 
   assert.equal((await call('admin', 'DELETE', `${base}/files/references/guide.md`)).statusCode, 204)
-  assert.ok(!existsSync(join(root, 'global/sillage/skills/deploy/references')), 'le dossier vidé part avec')
+  assert.ok(!existsSync(join(root, 'global/solera/skills/deploy/references')), 'le dossier vidé part avec')
   assert.equal((await call('admin', 'DELETE', `${base}/files/references/guide.md`)).statusCode, 404)
 })
 
@@ -155,7 +155,7 @@ test('reprise : admin pour la machine, membres pour le dépôt, rien hors du sca
   const review = admin.skills.find((skill) => skill.name === 'review')!
   const adopted = await call('admin', 'POST', '/api/skill-library/adopt', { scope: 'global', projectId: null, path: review.path })
   assert.equal(adopted.statusCode, 201)
-  assert.equal(readFileSync(join(root, 'global/sillage/skills/review/notes.md'), 'utf8'), 'notes')
+  assert.equal(readFileSync(join(root, 'global/solera/skills/review/notes.md'), 'utf8'), 'notes')
   assert.ok(existsSync(review.path), 'l’original reste en place')
 
   // Un nom invalide se reprend sous un nom choisi.

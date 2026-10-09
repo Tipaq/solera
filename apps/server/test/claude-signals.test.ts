@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import { sillageEventSchema } from '@sillage/protocol'
+import { soleraEventSchema } from '@solera/protocol'
 import { describeFastMode, describePluginErrors, translateSignal } from '../src/agents/claude/signals.js'
 
 /** Les champs communs à tout message du SDK, que les cas ne répètent pas. */
@@ -45,7 +45,7 @@ test('les signaux du CLI deviennent des avis valides, à repère stable quand il
   if (denied?.type !== 'agent.notice') return
   assert.equal(denied.message, 'Appel de Bash refusé automatiquement : destructive command.')
 
-  for (const event of [notification, retry, refusal, denied]) sillageEventSchema.parse(event)
+  for (const event of [notification, retry, refusal, denied]) soleraEventSchema.parse(event)
 })
 
 test('les messages informatifs de niveau info restent muets, les autres parlent', () => {
@@ -105,7 +105,7 @@ test('le mode rapide ne parle qu’aux changements qui concernent la conversatio
   const stopped = describeFastMode('off', 'sdk_opt_in_required', false, 'on')
   assert.equal(stopped?.message, 'Mode rapide désactivé.')
 
-  for (const event of [on, cooldown, blocked, stopped]) sillageEventSchema.parse(event)
+  for (const event of [on, cooldown, blocked, stopped]) soleraEventSchema.parse(event)
 })
 
 test('une remise à zéro dit ce qui l’a causée, et garde la phrase générale sans motif', () => {
@@ -122,11 +122,11 @@ test('une remise à zéro dit ce qui l’a causée, et garde la phrase général
 test('les plugins refusés au chargement deviennent un seul avis, rien quand tout passe', () => {
   assert.equal(describePluginErrors(undefined), null)
   assert.equal(describePluginErrors([]), null)
-  const one = describePluginErrors([{ plugin: 'sillage-lib', type: 'manifest', message: 'invalid manifest', path: '/tmp/lib' }])
+  const one = describePluginErrors([{ plugin: 'solera-lib', type: 'manifest', message: 'invalid manifest', path: '/tmp/lib' }])
   assert.equal(one?.id, 'plugin-errors')
   assert.equal(one?.level, 'warning')
-  assert.match(one?.message ?? '', /sillage-lib \(\/tmp\/lib\) : invalid manifest/)
-  assert.ok(sillageEventSchema.safeParse(one).success)
+  assert.match(one?.message ?? '', /solera-lib \(\/tmp\/lib\) : invalid manifest/)
+  assert.ok(soleraEventSchema.safeParse(one).success)
   const two = describePluginErrors([
     { plugin: 'a', type: 'x', message: 'boom' },
     { plugin: 'b', type: 'y', message: 'bang' },

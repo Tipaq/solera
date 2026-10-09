@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import type { ModeKind } from '@sillage/codex-bindings'
-import type { AskForApproval, SandboxMode } from '@sillage/codex-bindings/v2'
+import type { ModeKind } from '@solera/codex-bindings'
+import type { AskForApproval, SandboxMode } from '@solera/codex-bindings/v2'
 
 /**
  * Réglages d'une conversation, par CLI.
@@ -23,17 +23,17 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
- * Monte le serveur MCP de Sillage, qui ouvre à l'agent l'historique du projet.
+ * Monte le serveur MCP de Solera, qui ouvre à l'agent l'historique du projet.
  *
  * Vrai par défaut : c'est ce que la plateforme apporte de plus qu'un lancement direct du
  * CLI. Décochable par conversation pour le sujet où cette mémoire n'aide pas, et
  * coupable pour l'instance entière dans `config.toml`. Commun aux deux CLI, le serveur
  * ne devant rien à l'un ni à l'autre.
  */
-const sillageMcpSchema = z.boolean().default(true)
+const soleraMcpSchema = z.boolean().default(true)
 
 /**
- * Livre la bibliothèque de skills de Sillage, globale et du projet, à la session.
+ * Livre la bibliothèque de skills de Solera, globale et du projet, à la session.
  *
  * Un seul interrupteur, pas un par skill : un skill qu'on n'invoque pas ne coûte que sa
  * description dans le contexte. Coupable pour l'instance dans `config.toml`. Côté
@@ -50,11 +50,11 @@ export const claudeConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
-  sillageMcp: sillageMcpSchema,
+  soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
   /**
    * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
-   * connecteurs claude.ai) pour ne garder que ceux de Sillage.
+   * connecteurs claude.ai) pour ne garder que ceux de Solera.
    *
    * Faux par défaut : activer l'isolation d'office ferait disparaître sans prévenir des
    * serveurs que l'utilisateur a déclarés lui-même. Propre à Claude, Codex n'ayant pas
@@ -106,8 +106,8 @@ export const claudeConfigSchema = z.object({
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
 /**
- * Les valeurs Codex ci-dessous ne sont pas choisies par Sillage : elles doivent
- * refléter `@sillage/codex-bindings`, généré par le binaire installé. Les
+ * Les valeurs Codex ci-dessous ne sont pas choisies par Solera : elles doivent
+ * refléter `@solera/codex-bindings`, généré par le binaire installé. Les
  * assertions de type en fin de fichier échouent à la compilation si elles divergent,
  * ce qui rend impossible une recopie approximative comme celle qui traînait ici.
  */
@@ -137,7 +137,7 @@ export const codexApprovalSchema = z.union([
 ])
 
 /**
- * Ce que Sillage accepte dans une configuration de conversation : le protocole, plus
+ * Ce que Solera accepte dans une configuration de conversation : le protocole, plus
  * la sentinelle `CLI_DEFAULT`.
  *
  * `thread/start` et `turn/start` déclarent `approvalPolicy` nullable, et un null y
@@ -169,7 +169,7 @@ export const codexEffortSchema = z.string()
 /**
  * Mode de collaboration Codex, l'équivalent du mode Plan de Claude.
  *
- * Ce n'est pas une invention de Sillage : le mode est porté par `turn/start`, derrière
+ * Ce n'est pas une invention de Solera : le mode est porté par `turn/start`, derrière
  * la capacité `experimentalApi`, et c'est lui qui décide des outils accessibles au
  * modèle. En `default`, `request_user_input` est refusé par le routeur du CLI, donc
  * l'agent ne peut pas poser de question à choix : il se rabat sur une liste écrite
@@ -191,7 +191,7 @@ export const codexConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
-  sillageMcp: sillageMcpSchema,
+  soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
@@ -199,7 +199,7 @@ export type CodexConfig = z.infer<typeof codexConfigSchema>
 /**
  * Règle d'opencode pour une famille d'outils : demander, laisser faire, refuser.
  *
- * La chaîne vide est la sentinelle `CLI_DEFAULT` : Sillage ne pose alors aucune règle
+ * La chaîne vide est la sentinelle `CLI_DEFAULT` : Solera ne pose alors aucune règle
  * et celle de l'`opencode.json` de l'utilisateur s'applique (à défaut, opencode laisse
  * faire). Les valeurs sont celles de `PermissionActionConfig` dans l'OpenAPI.
  */
@@ -207,7 +207,7 @@ export const opencodePermissionSchema = z.enum(['', 'ask', 'allow', 'deny'])
 export type OpencodePermission = z.infer<typeof opencodePermissionSchema>
 
 /**
- * Les familles d'outils que Sillage règle. opencode en connaît d'autres (`read`,
+ * Les familles d'outils que Solera règle. opencode en connaît d'autres (`read`,
  * `task`, `skill`…) : elles gardent la règle du CLI, les exposer toutes ferait un écran
  * de réglages que personne ne lit.
  */
@@ -237,7 +237,7 @@ export const opencodeConfigSchema = z.object({
   additionalDirectories: z.array(z.string()).default([]),
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
-  sillageMcp: sillageMcpSchema,
+  soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
 })
 export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
@@ -265,7 +265,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   permissionMode: 'manual',
   additionalDirectories: [],
   mcpServers: [],
-  sillageMcp: true,
+  soleraMcp: true,
   skillLibrary: true,
   strictMcp: false,
   fastMode: false,
@@ -287,7 +287,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   profile: null,
   additionalDirectories: [],
   mcpServers: [],
-  sillageMcp: true,
+  soleraMcp: true,
   skillLibrary: true,
 }
 
@@ -296,12 +296,12 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   model: CLI_DEFAULT,
   variant: CLI_DEFAULT,
   primaryAgent: 'build',
-  // opencode laisse tout faire par défaut. Sillage part de « demander » pour ce qui
+  // opencode laisse tout faire par défaut. Solera part de « demander » pour ce qui
   // écrit ou exécute, comme le mode manuel de Claude et le `on-request` de Codex.
   permissions: { edit: 'ask', bash: 'ask', webfetch: CLI_DEFAULT },
   additionalDirectories: [],
   mcpServers: [],
-  sillageMcp: true,
+  soleraMcp: true,
   skillLibrary: true,
 }
 

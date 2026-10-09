@@ -13,7 +13,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE: ghcr.io/marlburrow/sillage
+  IMAGE: ghcr.io/tipaq/solera
 
 jobs:
   tarball:
@@ -43,7 +43,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
         env:
-          SILLAGE_VERSION: ${{ github.ref_name }}
+          SOLERA_VERSION: ${{ github.ref_name }}
       - uses: ./.github/actions/runtime-archive
         id: archive
         with:
@@ -79,7 +79,7 @@ jobs:
         with:
           context: .
           platforms: linux/${{ matrix.arch }}
-          build-args: SILLAGE_VERSION=${{ github.ref_name }}
+          build-args: SOLERA_VERSION=${{ github.ref_name }}
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}

@@ -12,12 +12,12 @@ import type {
   LibrarySkillScope,
   LocalSkillListDto,
   UpdateLibrarySkillBody,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { api, ApiRequestError } from './api'
 import { translate, translateError } from './i18n'
 
 /**
- * Bibliothèque de skills de Sillage, livrée aux CLI comme des skills natifs.
+ * Bibliothèque de skills de Solera, livrée aux CLI comme des skills natifs.
  *
  * Toutes les requêtes partagent la racine `skill-library` : une écriture, quelle qu'elle
  * soit, invalide tout. Les listes sont courtes, et un skill renommé ou déplacé change à

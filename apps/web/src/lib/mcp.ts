@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { McpServer, McpServerListDto, McpTransport } from '@sillage/protocol'
+import type { McpServer, McpServerListDto, McpTransport } from '@solera/protocol'
 import { api } from './api'
 
 /**

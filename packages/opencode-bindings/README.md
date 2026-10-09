@@ -1,8 +1,8 @@
-# @sillage/opencode-bindings
+# @solera/opencode-bindings
 
 Bindings TypeScript de l'API HTTP d'`opencode serve`, générés depuis l'OpenAPI que le
 binaire installé publie sur `GET /doc` (`pnpm opencode:types`). Paquet à part pour la
-même raison que `@sillage/codex-bindings` : `@sillage/protocol` reste neutre vis-à-vis
+même raison que `@solera/codex-bindings` : `@solera/protocol` reste neutre vis-à-vis
 des CLI.
 
 Généré avec **opencode 1.18.25**.

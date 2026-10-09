@@ -3,7 +3,7 @@ import type {
   FastModeState,
   SDKMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { SillageEvent } from '@sillage/protocol'
+import type { SoleraEvent } from '@solera/protocol'
 
 /**
  * Signaux du CLI qui ne sont ni du contenu ni une étape du tour, traduits en avis.
@@ -18,7 +18,7 @@ import type { SillageEvent } from '@sillage/protocol'
  * l'adaptateur Codex : le journal porte la phrase, pas un code à traduire.
  */
 
-type Notice = Extract<SillageEvent, { type: 'agent.notice' }>
+type Notice = Extract<SoleraEvent, { type: 'agent.notice' }>
 
 function notice(
   code: string,
@@ -55,7 +55,7 @@ const RESET_MESSAGES: Record<string, string> = {
  * Appelée en dernier recours par le runner, après les messages qu'il traite lui-même :
  * ce qui revient null ici est réellement ignoré, et volontairement.
  */
-export function translateSignal(message: SDKMessage): SillageEvent | null {
+export function translateSignal(message: SDKMessage): SoleraEvent | null {
   if (message.type === 'prompt_suggestion') {
     return { type: 'suggestion.updated', text: message.suggestion }
   }
@@ -225,7 +225,7 @@ export interface PluginLoadError {
 /**
  * Les plugins que le CLI n'a pas pu charger, d'après l'`init`.
  *
- * Sillage lui passe sa bibliothèque de skills sous forme de plugins : sans cet avis, un
+ * Solera lui passe sa bibliothèque de skills sous forme de plugins : sans cet avis, un
  * plugin refusé fait seulement disparaître ses skills de la liste, sans rien qui dise
  * pourquoi. Un seul identifiant, pour que le fil montre le dernier état ; null quand
  * tout s'est chargé.

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import { events } from '@sillage/db'
+import { events } from '@solera/db'
 
 /**
  * Sorties d'outils volumineuses, retirées d'une page de journal relue.

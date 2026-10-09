@@ -28,7 +28,7 @@ interface WorktreeSelectProps {
 }
 
 /**
- * Choix du répertoire de travail d'une conversation. Sillage gère les worktrees
+ * Choix du répertoire de travail d'une conversation. Solera gère les worktrees
  * lui-même pour que le comportement soit identique entre Claude et Codex.
  */
 export function WorktreeSelect({

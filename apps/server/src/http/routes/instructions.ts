@@ -2,7 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, type ProjectRow, type UserRow } from '@sillage/db'
+import { projects, type ProjectRow, type UserRow } from '@solera/db'
 import {
   updateInstructionsBodySchema,
   updateProjectInstructionsBodySchema,
@@ -10,7 +10,7 @@ import {
   type InstructionsDto,
   type ProjectInstructionsDto,
   type RepoInstructionFileDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import {
   instructionsAuthor,
   readInstructions,
@@ -24,7 +24,7 @@ import { requireUser } from '../require-user.js'
 import { visibleProject } from './projects.js'
 
 /**
- * SILLAGE.md, édité depuis l'interface.
+ * SOLERA.md, édité depuis l'interface.
  *
  * Mêmes droits que la bibliothèque de skills : tout compte lit la partie globale et
  * seuls les administrateurs l'écrivent, puisqu'elle entre dans toutes les sessions de
@@ -94,7 +94,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
   /**
    * Change le mode, le contenu, ou les deux d'un coup : c'est ce que fait la migration
    * depuis les fichiers du dépôt, qui importe leur texte et bascule dans le même geste.
-   * Écrire le contenu d'un projet d'avant le réglage fixe son mode à `sillage`, faute de
+   * Écrire le contenu d'un projet d'avant le réglage fixe son mode à `solera`, faute de
    * quoi un `AGENTS.md` apparu plus tard ferait taire ce qui vient d'être écrit.
    */
   app.patch('/api/projects/:id/instructions', async (request): Promise<ProjectInstructionsDto> => {
@@ -104,7 +104,7 @@ export function registerInstructionRoutes(app: FastifyInstance, ctx: AppContext)
     const body = updateProjectInstructionsBodySchema.parse(request.body)
 
     const mode =
-      body.mode ?? (body.content !== undefined && project.instructionsMode === null ? 'sillage' : null)
+      body.mode ?? (body.content !== undefined && project.instructionsMode === null ? 'solera' : null)
     if (mode && mode !== project.instructionsMode) {
       ctx.db.update(projects).set({ instructionsMode: mode }).where(eq(projects.id, project.id)).run()
       project = { ...project, instructionsMode: mode }

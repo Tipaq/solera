@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
-import type { FileState, TreeEntryDto } from '@sillage/protocol'
+import type { FileState, TreeEntryDto } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { referenceInComposer } from '../../lib/composer-ref'
 import { openTab, useEditorTabs } from '../../lib/editor-tabs'
@@ -69,7 +69,7 @@ const STATES: Record<FileState, { letter: string; tone: string }> = {
 const INDENT_PX = 12
 
 /** Type de transfert du glisser-déposer : il porte le chemin de l'entrée déplacée. */
-const DRAG_TYPE = 'application/x-sillage-path'
+const DRAG_TYPE = 'application/x-solera-path'
 
 /** Saisie en cours dans l'arborescence : création d'une entrée, ou renommage. */
 type Draft =

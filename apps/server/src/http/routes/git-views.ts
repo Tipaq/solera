@@ -5,7 +5,7 @@ import {
   type CommitDiffDto,
   type CommitListDto,
   type WorkingDiffDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import {
   readCommitDiff,
   readCommits,

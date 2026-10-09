@@ -45,7 +45,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import {
   useAllConversations,
   useArchiveConversation,
@@ -377,7 +377,7 @@ export function AppShell() {
         >
           <MobileNavigationButton />
           <Logo size={18} className="text-accent" />
-          <span className="font-medium">Sillage</span>
+          <span className="font-medium">Solera</span>
         </header>
         ) : null}
 
@@ -493,7 +493,7 @@ function Sidebar({
     <div className="flex h-full flex-col">
       <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
         <Logo size={20} className="text-accent" />
-        <span className="text-[0.9375rem] font-semibold tracking-tight">Sillage</span>
+        <span className="text-[0.9375rem] font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
             `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
             généré qui tranche, pas celui de la chaîne de classes. Les deux boutons

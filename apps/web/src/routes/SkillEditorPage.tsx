@@ -18,7 +18,7 @@ import {
   skillNameSchema,
   type LibrarySkillDetailDto,
   type SkillCompatNote,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { CodeEditor } from '../components/panel/CodeEditor'
 import { useSkillPermissions, type SkillDestination } from '../components/skills/permissions'
 import { DescriptionField, NameField, SkillDialog } from '../components/skills/SkillDialog'

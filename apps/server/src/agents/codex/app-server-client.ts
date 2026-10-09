@@ -5,7 +5,7 @@ import type {
   InitializeParams,
   InitializeResponse,
   RequestId,
-} from '@sillage/codex-bindings'
+} from '@solera/codex-bindings'
 
 /**
  * Méthodes et paramètres tirés de l'union générée : un nom de méthode inexistant ou

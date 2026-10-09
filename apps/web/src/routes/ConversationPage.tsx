@@ -19,7 +19,7 @@ import {
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { AGENT_CAPABILITIES } from '@sillage/protocol'
+import { AGENT_CAPABILITIES } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
@@ -507,7 +507,7 @@ export function ConversationPage() {
   }, [])
 
   /**
-   * Rattrape les tours faits au CLI Claude Code hors de Sillage.
+   * Rattrape les tours faits au CLI Claude Code hors de Solera.
    *
    * Le CLI relit toujours le transcript complet, mais le journal est sa propre copie :
    * sans ce rattrapage à l'ouverture, une session poursuivie au terminal s'afficherait
@@ -793,7 +793,7 @@ export function ConversationPage() {
   }
 
   /**
-   * Commandes que Sillage exécute lui-même, lancées depuis le composer.
+   * Commandes que Solera exécute lui-même, lancées depuis le composer.
    *
    * L'erreur remonte au champ de saisie, qui rend la commande telle quelle, plutôt qu'à
    * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.

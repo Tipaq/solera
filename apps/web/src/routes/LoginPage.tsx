@@ -32,7 +32,7 @@ export function LoginPage() {
             <Logo size={34} className="text-accent-ink" />
           </span>
           <div className="text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Sillage</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Solera</h1>
             <p className="mt-1 text-sm text-ink-faint">{t('login.subtitle')}</p>
           </div>
         </div>

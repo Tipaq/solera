@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
-# Sillage installer for Linux (x64 / arm64) with systemd, WSL2 on Windows included, and
+# Solera installer for Linux (x64 / arm64) with systemd, WSL2 on Windows included, and
 # for macOS on Apple Silicon with launchd.
 #
-#   curl -fsSL https://raw.githubusercontent.com/MarlBurroW/sillage/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Tipaq/solera/main/install.sh | bash
 #
 # Idempotent: run it again to update to the latest release. Pin a version with
-# SILLAGE_VERSION=1.2.3, or install an archive already on disk (a CI build) with
-# SILLAGE_ARCHIVE=path/to/sillage-*.tar.gz. Everything lives under ~/.local/share/sillage;
+# SOLERA_VERSION=1.2.3, or install an archive already on disk (a CI build) with
+# SOLERA_ARCHIVE=path/to/solera-*.tar.gz. Everything lives under ~/.local/share/solera;
 # the application itself under app/releases/<version> with an atomic `current` symlink,
 # which is also what the in-app updater manages.
 #
-# Without Node.js 22+ on the PATH, a private Node LTS goes to ~/.local/share/sillage/node,
+# Without Node.js 22+ on the PATH, a private Node LTS goes to ~/.local/share/solera/node,
 # used by the service alone. Under WSL2 the script also enables systemd if needed and
-# adds a "Sillage" Start menu entry plus a sign-in entry that keeps WSL running
-# (SILLAGE_WSL_AUTOSTART=yes|no answers that question in advance). On macOS the service
+# adds a "Solera" Start menu entry plus a sign-in entry that keeps WSL running
+# (SOLERA_WSL_AUTOSTART=yes|no answers that question in advance). On macOS the service
 # is a launchd agent rather than a systemd unit, and logs to a file under logs/.
 
 # One block, so that bash reads the whole script before running any of it. Under
@@ -25,8 +25,8 @@
 
 set -euo pipefail
 
-REPO="MarlBurroW/sillage"
-DATA_DIR="${SILLAGE_DATA_DIR:-$HOME/.local/share/sillage}"
+REPO="Tipaq/solera"
+DATA_DIR="${SOLERA_DATA_DIR:-$HOME/.local/share/solera}"
 APP_DIR="$DATA_DIR/app"
 NODE_DIR="$DATA_DIR/node"
 UNIT_DIR="$HOME/.config/systemd/user"
@@ -67,7 +67,7 @@ case "$PLATFORM-$(uname -m)" in
   # A terminal running under Rosetta reports x86_64 on Apple Silicon too: ask the hardware.
   darwin-x86_64)
     [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ] \
-      || fail "Intel Macs are not supported: Sillage for macOS needs Apple Silicon."
+      || fail "Intel Macs are not supported: Solera for macOS needs Apple Silicon."
     ARCH="arm64" ;;
   *) fail "unsupported architecture: $(uname -m) (x86_64 and aarch64 on Linux, Apple Silicon on macOS)" ;;
 esac
@@ -100,10 +100,10 @@ command -v tar  >/dev/null || fail "tar is required$(apt_hint tar)."
 if [ "$PLATFORM" = "darwin" ]; then
   # /usr/bin/git exists on every Mac, but only as a stub until the Command Line Tools are
   # installed: run it rather than look for it.
-  git --version >/dev/null 2>&1 || fail "git is required, Sillage drives git repositories.
+  git --version >/dev/null 2>&1 || fail "git is required, Solera drives git repositories.
   Install the Command Line Tools (xcode-select --install) and run this script again."
 else
-  command -v git >/dev/null || fail "git is required, Sillage drives git repositories$(apt_hint git)."
+  command -v git >/dev/null || fail "git is required, Solera drives git repositories$(apt_hint git)."
 fi
 
 # sha256_check — checks the `<sum>  <file>` lines on stdin. macOS has shasum only.
@@ -125,7 +125,7 @@ swap_link() {
 if [ "$IS_WSL" = "yes" ] && [ "$(cat /proc/1/comm 2>/dev/null)" != "systemd" ]; then
   RESTART_HINT="restart WSL (in PowerShell: wsl --shutdown), reopen your distribution
   and run this installer again."
-  ask "systemd is off in this WSL distribution and Sillage runs as a systemd service. Enable it in /etc/wsl.conf (uses sudo)? [Y/n]" yes \
+  ask "systemd is off in this WSL distribution and Solera runs as a systemd service. Enable it in /etc/wsl.conf (uses sudo)? [Y/n]" yes \
     || fail "add these two lines to /etc/wsl.conf:
   [boot]
   systemd=true
@@ -171,7 +171,7 @@ install_private_node() {
   version="${version%%-"$PLATFORM"-*}"
 
   if [ ! -x "$NODE_DIR/$version/bin/node" ]; then
-    say "Downloading Node.js $version, for Sillage only (nothing changes system-wide)…"
+    say "Downloading Node.js $version, for Solera only (nothing changes system-wide)…"
     curl -fL --progress-bar -o "$TMP/$file" "$base/$file" || return 1
     printf '%s\n' "$sums" | grep "  $file\$" | (cd "$TMP" && sha256_check) \
       || fail "Node.js archive checksum mismatch: $base/$file"
@@ -192,7 +192,7 @@ if SYSTEM_NODE="$(host_command node)" && usable_node "$SYSTEM_NODE"; then
   NODE_BIN="$SYSTEM_NODE"
 else
   if [ -n "$SYSTEM_NODE" ]; then
-    say "note: $SYSTEM_NODE ($("$SYSTEM_NODE" -v 2>/dev/null || echo '?')) is older than 22.14 or not built for $ARCH. Sillage gets its own Node."
+    say "note: $SYSTEM_NODE ($("$SYSTEM_NODE" -v 2>/dev/null || echo '?')) is older than 22.14 or not built for $ARCH. Solera gets its own Node."
   fi
   if ! install_private_node; then
     [ -x "$NODE_DIR/current/bin/node" ] \
@@ -205,20 +205,20 @@ else
   export PATH="$NODE_DIR/current/bin:$PATH"
 fi
 
-host_command claude >/dev/null || say "note: 'claude' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
-host_command codex  >/dev/null || say "note: 'codex' CLI not found on PATH. Sillage can install it for you from the web interface; you will still need to authenticate it."
-host_command opencode >/dev/null || [ -x "$HOME/.opencode/bin/opencode" ] || say "note: 'opencode' CLI not found. Sillage can install it for you from the web interface; its free models need no account."
+host_command claude >/dev/null || say "note: 'claude' CLI not found on PATH. Solera can install it for you from the web interface; you will still need to authenticate it."
+host_command codex  >/dev/null || say "note: 'codex' CLI not found on PATH. Solera can install it for you from the web interface; you will still need to authenticate it."
+host_command opencode >/dev/null || [ -x "$HOME/.opencode/bin/opencode" ] || say "note: 'opencode' CLI not found. Solera can install it for you from the web interface; its free models need no account."
 
 # --- resolve version ---------------------------------------------------------
 
-if [ -n "${SILLAGE_ARCHIVE:-}" ]; then
-  [ -f "$SILLAGE_ARCHIVE" ] || fail "archive not found: $SILLAGE_ARCHIVE"
+if [ -n "${SOLERA_ARCHIVE:-}" ]; then
+  [ -f "$SOLERA_ARCHIVE" ] || fail "archive not found: $SOLERA_ARCHIVE"
   # The version the archive was built as, a CI build included: it names the release
   # directory, and tells the in-app updater whether a release is newer.
-  VERSION="$(tar -xzOf "$SILLAGE_ARCHIVE" sillage/VERSION 2>/dev/null)" && [ -n "$VERSION" ] \
-    || fail "not a Sillage archive (no sillage/VERSION inside): $SILLAGE_ARCHIVE"
-elif [ -n "${SILLAGE_VERSION:-}" ]; then
-  VERSION="${SILLAGE_VERSION#v}"
+  VERSION="$(tar -xzOf "$SOLERA_ARCHIVE" solera/VERSION 2>/dev/null)" && [ -n "$VERSION" ] \
+    || fail "not a Solera archive (no solera/VERSION inside): $SOLERA_ARCHIVE"
+elif [ -n "${SOLERA_VERSION:-}" ]; then
+  VERSION="${SOLERA_VERSION#v}"
 else
   say "Resolving latest release…"
   VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
@@ -229,19 +229,19 @@ fi
 RELEASE_DIR="$APP_DIR/releases/v$VERSION"
 
 if [ -f "$APP_DIR/current/VERSION" ] && [ "$(cat "$APP_DIR/current/VERSION")" = "$VERSION" ]; then
-  say "Sillage $VERSION is already installed."
+  say "Solera $VERSION is already installed."
 else
   # --- download & unpack -----------------------------------------------------
 
-  if [ -n "${SILLAGE_ARCHIVE:-}" ]; then
-    cp "$SILLAGE_ARCHIVE" "$TMP/sillage.tar.gz"
+  if [ -n "${SOLERA_ARCHIVE:-}" ]; then
+    cp "$SOLERA_ARCHIVE" "$TMP/solera.tar.gz"
   else
-    TARBALL_URL="https://github.com/$REPO/releases/download/v$VERSION/sillage-v$VERSION-$PLATFORM-$ARCH.tar.gz"
+    TARBALL_URL="https://github.com/$REPO/releases/download/v$VERSION/solera-v$VERSION-$PLATFORM-$ARCH.tar.gz"
 
-    say "Downloading Sillage $VERSION ($PLATFORM-$ARCH)…"
+    say "Downloading Solera $VERSION ($PLATFORM-$ARCH)…"
     # A 404 is worth its own message: releases older than macOS support have no archive
     # for it, and "download failed" would send the user looking for a network problem.
-    HTTP_CODE="$(curl -L --progress-bar -o "$TMP/sillage.tar.gz" -w '%{http_code}' "$TARBALL_URL")" || HTTP_CODE=""
+    HTTP_CODE="$(curl -L --progress-bar -o "$TMP/solera.tar.gz" -w '%{http_code}' "$TARBALL_URL")" || HTTP_CODE=""
     case "$HTTP_CODE" in
       200) ;;
       404) fail "release v$VERSION has no $PLATFORM-$ARCH archive: $TARBALL_URL" ;;
@@ -253,13 +253,13 @@ else
   mkdir -p "$APP_DIR/releases"
   rm -rf "$RELEASE_DIR" "$APP_DIR/releases/.staging"
   mkdir -p "$APP_DIR/releases/.staging"
-  tar -xzf "$TMP/sillage.tar.gz" --strip-components=1 -C "$APP_DIR/releases/.staging"
+  tar -xzf "$TMP/solera.tar.gz" --strip-components=1 -C "$APP_DIR/releases/.staging"
   mv "$APP_DIR/releases/.staging" "$RELEASE_DIR"
 
   swap_link "releases/v$VERSION" "$APP_DIR/current"
   say "Version $VERSION activated."
 
-  # Keep the three most recent releases, the active one always: a pinned SILLAGE_VERSION
+  # Keep the three most recent releases, the active one always: a pinned SOLERA_VERSION
   # may be older than the rest. Numeric sort on each field rather than GNU `sort -V`, and
   # `tail -n +4` rather than `head -n -3`, which BSD head lacks. Like the in-app updater,
   # only vX.Y.Z directories are counted: a CI build stays until removed by hand. grep
@@ -317,17 +317,17 @@ if [ "$PLATFORM" = "darwin" ]; then
   # A launchd agent of the login session: it starts when the user logs in and keeps
   # running with every Terminal window closed. No lingering to enable, but nothing runs
   # while the Mac sleeps.
-  LABEL="io.github.marlburrow.sillage"
+  LABEL="io.github.tipaq.solera"
   PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
   DOMAIN="gui/$(id -u)"
-  LOG_FILE="$DATA_DIR/logs/sillage.log"
-  # launchd sets neither a shell nor a locale for the terminals Sillage opens: those of
+  LOG_FILE="$DATA_DIR/logs/solera.log"
+  # launchd sets neither a shell nor a locale for the terminals Solera opens: those of
   # the installer's session, the locale if UTF-8, are the user's choice.
   SERVICE_SHELL="${SHELL:-/bin/zsh}"
   case "${LANG:-}" in *UTF-8*|*utf8*) SERVICE_LANG="$LANG" ;; *) SERVICE_LANG="en_US.UTF-8" ;; esac
 
   mkdir -p "$HOME/Library/LaunchAgents" "$DATA_DIR/logs"
-  render_service sillage.plist.tmpl > "$PLIST"
+  render_service solera.plist.tmpl > "$PLIST"
 
   say "Starting the service…"
   # bootout then bootstrap, for launchd to reread the plist: kickstart would restart the
@@ -344,33 +344,33 @@ if [ "$PLATFORM" = "darwin" ]; then
     fi
     sleep 1
   done
-  [ "$LOADED" = "yes" ] || fail "launchd refused the Sillage agent: $(cat "$TMP/launchctl.err")
+  [ "$LOADED" = "yes" ] || fail "launchd refused the Solera agent: $(cat "$TMP/launchctl.err")
   Over SSH, someone must be logged in to the Mac's desktop: the agent runs in that session."
 else
   mkdir -p "$UNIT_DIR"
-  render_service sillage.service.tmpl > "$UNIT_DIR/sillage.service"
+  render_service solera.service.tmpl > "$UNIT_DIR/solera.service"
 
   say "Starting the service…"
   systemctl --user daemon-reload
-  systemctl --user enable --now sillage.service
+  systemctl --user enable --now solera.service
   # enable --now is a no-op when already running: restart to pick up the new version.
-  systemctl --user restart sillage.service
+  systemctl --user restart solera.service
 fi
 
 # Without lingering, systemd stops user services when the last session closes: on a
-# remote box Sillage would go down on every SSH logout. Enable it rather than suggest
+# remote box Solera would go down on every SSH logout. Enable it rather than suggest
 # it — one more line in the installer output protects nobody. Recent systemd lets a user
 # enable it for their own account without root.
 #
-# Under WSL it also starts Sillage as soon as the distribution boots, whoever boots it,
+# Under WSL it also starts Solera as soon as the distribution boots, whoever boots it,
 # and a WSL user has a sudo password but no reason to have it cached: ask for it there.
 SUDO_LINGER=(sudo -n)
 if [ "$IS_WSL" = "yes" ] && has_tty; then SUDO_LINGER=(sudo); fi
 if [ "$PLATFORM" = "linux" ] && ! loginctl show-user "$USER" 2>/dev/null | grep -q '^Linger=yes'; then
-  say "Enabling lingering so Sillage survives logout…"
+  say "Enabling lingering so Solera survives logout…"
   loginctl enable-linger "$USER" 2>/dev/null \
     || "${SUDO_LINGER[@]}" loginctl enable-linger "$USER" 2>/dev/null \
-    || say "warning: could not enable lingering. Sillage will stop when you log out.
+    || say "warning: could not enable lingering. Solera will stop when you log out.
     Run it yourself:  sudo loginctl enable-linger $USER"
 fi
 
@@ -379,9 +379,9 @@ fi
 # `Done.` only means something once checked. The installer used to announce success
 # while the service was crash-looping and no account existed: two failures, no signal.
 
-# Follow the configured port when there is one; 7317 otherwise.
-PORT=7317
-CONFIG_FILE="${SILLAGE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/sillage/config.toml}"
+# Follow the configured port when there is one; 7517 otherwise.
+PORT=7517
+CONFIG_FILE="${SOLERA_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/solera/config.toml}"
 if [ -f "$CONFIG_FILE" ]; then
   CONFIGURED_PORT="$(sed -nE 's/^[[:space:]]*port[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' "$CONFIG_FILE" | head -1)"
   if [ -n "$CONFIGURED_PORT" ]; then PORT="$CONFIGURED_PORT"; fi
@@ -391,7 +391,7 @@ fi
 # calling it a failure, or a slow machine reports a false negative.
 # Braces before a non-ASCII character: in a UTF-8 locale, macOS's bash 3.2 takes the "…"
 # for the end of the variable name, and stops on an unbound variable.
-say "Checking that Sillage answers on port ${PORT}…"
+say "Checking that Solera answers on port ${PORT}…"
 HEALTHY="no"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fs -m 2 -o /dev/null "http://127.0.0.1:$PORT/api/health"; then
@@ -402,15 +402,15 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do
 done
 
 if [ "$HEALTHY" != "yes" ]; then
-  printf '\033[1;31merror:\033[0m %s\n' "Sillage does not answer on http://127.0.0.1:$PORT." >&2
+  printf '\033[1;31merror:\033[0m %s\n' "Solera does not answer on http://127.0.0.1:$PORT." >&2
   say "Service state:"
   if [ "$PLATFORM" = "darwin" ]; then
     launchctl print "$DOMAIN/$LABEL" 2>/dev/null \
       | grep -E '^[[:space:]]*(state|pid|runs|last exit code) =' || true
     say "Application log:  tail -n 50 $LOG_FILE"
   else
-    systemctl --user --no-pager --lines=0 status sillage.service || true
-    say "Application log:  journalctl --user -u sillage -n 50 --no-pager"
+    systemctl --user --no-pager --lines=0 status solera.service || true
+    say "Application log:  journalctl --user -u solera -n 50 --no-pager"
   fi
   exit 1
 fi
@@ -432,7 +432,7 @@ user_count() {
   (cd "$APP_DIR/current" && node -e 'try {
     const db = require("better-sqlite3")(process.argv[1], { readonly: true, fileMustExist: true })
     process.stdout.write(String(db.prepare("select count(*) as c from users").get().c))
-  } catch { process.stdout.write("?") }' "$DATA_DIR/sillage.db" 2>/dev/null) || echo '?'
+  } catch { process.stdout.write("?") }' "$DATA_DIR/solera.db" 2>/dev/null) || echo '?'
 }
 
 ACCOUNT_CREATED="no"
@@ -456,10 +456,10 @@ fi
 # --- Windows integration (WSL) -----------------------------------------------
 
 # WSL stops a distribution about 15 seconds after the last process started from Windows
-# exits, systemd services included: closing the terminal would take Sillage down with
+# exits, systemd services included: closing the terminal would take Solera down with
 # it. A keeper started from Windows holds the distribution open. Two shortcuts start it:
 # one in the Startup folder (at Windows sign-in), one in the Start menu that also opens
-# Sillage in the browser.
+# Solera in the browser.
 
 # Windows programs go through WSL interop. They are normally on the PATH, but
 # `[interop] appendWindowsPath=false` removes them: fall back to their usual location.
@@ -497,7 +497,7 @@ $arguments = "-d $distro -- `"$keeper`""
 # On the Windows side: the Start menu draws it while WSL is stopped.
 $icon = ''
 if ($iconSource) {
-  $icon = Join-Path $env:LOCALAPPDATA 'Sillage\sillage.ico'
+  $icon = Join-Path $env:LOCALAPPDATA 'Solera\solera.ico'
   New-Item -ItemType Directory -Force -Path (Split-Path $icon) | Out-Null
   Copy-Item -LiteralPath $iconSource -Destination $icon -Force
 }
@@ -511,10 +511,10 @@ function Set-Shortcut([string]$path, [string]$extra, [string]$description) {
   if ($icon) { $link.IconLocation = "$icon,0" }
   $link.Save()
 }
-$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Sillage.lnk'
-$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Sillage.lnk'
-Set-Shortcut $menu ' --open' 'Open Sillage'
-if ($autostart) { Set-Shortcut $startup '' 'Keeps WSL running so that Sillage stays reachable' }
+$menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Solera.lnk'
+$startup = Join-Path ([Environment]::GetFolderPath('Startup')) 'Solera.lnk'
+Set-Shortcut $menu ' --open' 'Open Solera'
+if ($autostart) { Set-Shortcut $startup '' 'Keeps WSL running so that Solera stays reachable' }
 elseif (Test-Path $startup) { Remove-Item $startup }
 # The Start menu entry itself, as a click would: the first launch goes the way every
 # later one will. Started from here, it still outlives the WSL session of the installer.
@@ -548,9 +548,9 @@ if [ "$IS_WSL" = "yes" ]; then
   mkdir -p "$DATA_DIR/wsl"
   cat > "$KEEPER.tmp" <<EOF
 #!/bin/sh
-# Started from Windows by the "Sillage" shortcuts that install.sh creates, and rewritten
+# Started from Windows by the "Solera" shortcuts that install.sh creates, and rewritten
 # by each run of it. WSL stops a distribution once nothing started from Windows runs in
-# it any more, systemd services included: this process keeps Sillage up with every
+# it any more, systemd services included: this process keeps Solera up with every
 # terminal closed.
 
 if [ "\${1:-}" = "--open" ]; then
@@ -574,12 +574,12 @@ EOF
 
   if [ -z "${WSL_DISTRO_NAME:-}" ] || ! POWERSHELL="$(win_exe powershell.exe)"; then
     say "warning: Windows is not reachable from this shell (WSL interop disabled?), so no
-    Start menu entry was created. Sillage stops about 15 seconds after the last WSL
+    Start menu entry was created. Solera stops about 15 seconds after the last WSL
     terminal closes. Run this installer again from a regular WSL terminal to fix it."
   else
-    case "${SILLAGE_WSL_AUTOSTART:-}" in
-      yes|no) WIN_AUTOSTART="$SILLAGE_WSL_AUTOSTART" ;;
-      *) if ask "Start Sillage when you sign in to Windows? [Y/n]" yes; then WIN_AUTOSTART="yes"; else WIN_AUTOSTART="no"; fi ;;
+    case "${SOLERA_WSL_AUTOSTART:-}" in
+      yes|no) WIN_AUTOSTART="$SOLERA_WSL_AUTOSTART" ;;
+      *) if ask "Start Solera when you sign in to Windows? [Y/n]" yes; then WIN_AUTOSTART="yes"; else WIN_AUTOSTART="no"; fi ;;
     esac
     # Opening the browser only makes sense for someone sitting at the machine.
     LAUNCH="no"
@@ -587,8 +587,8 @@ EOF
 
     ICON_SOURCE=""
     if [ -f "$APP_DIR/current/web/icon-192.png" ]; then
-      make_ico "$APP_DIR/current/web/icon-192.png" "$DATA_DIR/wsl/sillage.ico"
-      ICON_SOURCE="$(wslpath -w "$DATA_DIR/wsl/sillage.ico")"
+      make_ico "$APP_DIR/current/web/icon-192.png" "$DATA_DIR/wsl/solera.ico"
+      ICON_SOURCE="$(wslpath -w "$DATA_DIR/wsl/solera.ico")"
     fi
 
     PS_SCRIPT="\$distro = $(ps_quote "$WSL_DISTRO_NAME")
@@ -614,7 +614,7 @@ $(ps_shortcuts)"
       sleep 1
     done
     if [ "$WIN_CODE" != "200" ]; then
-      say "warning: Sillage answers inside WSL but not on http://localhost:$PORT from Windows.
+      say "warning: Solera answers inside WSL but not on http://localhost:$PORT from Windows.
     Check that localhostForwarding is not disabled in %UserProfile%\\.wslconfig, and that
     no Windows program already listens on port $PORT."
     fi
@@ -624,21 +624,21 @@ fi
 if [ "$IS_WSL" = "yes" ]; then
   say "Done. Open http://localhost:$PORT in your Windows browser."
   if [ "$WIN_LINKS" = "yes" ]; then
-    say "\"Sillage\" in the Start menu opens it too, and starts it if WSL was stopped."
-    has_tty || say "Open it from the Start menu once: until then, Sillage stops when WSL does."
+    say "\"Solera\" in the Start menu opens it too, and starts it if WSL was stopped."
+    has_tty || say "Open it from the Start menu once: until then, Solera stops when WSL does."
   fi
 elif [ "$PLATFORM" = "darwin" ]; then
-  say "Done. Sillage is listening on http://localhost:$PORT and starts with your session."
+  say "Done. Solera is listening on http://localhost:$PORT and starts with your session."
   # With the account just created, the browser goes straight to the login page.
   if [ "$ACCOUNT_CREATED" = "yes" ]; then open "http://localhost:$PORT/" || true; fi
 else
-  say "Done. Sillage is listening on http://127.0.0.1:$PORT"
+  say "Done. Solera is listening on http://127.0.0.1:$PORT"
 fi
 if [ "$PLATFORM" = "darwin" ]; then
   say "Logs:  tail -f $LOG_FILE"
   say "Stop:  launchctl bootout $DOMAIN/$LABEL  (re-running this script starts it again)"
 else
-  say "Logs:  journalctl --user -u sillage -f"
+  say "Logs:  journalctl --user -u solera -f"
 fi
 say "Update later by re-running this script, or from the web UI (Settings > About)."
 

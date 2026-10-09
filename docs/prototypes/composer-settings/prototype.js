@@ -1,4 +1,4 @@
-// Maquette autonome : données illustratives, aucune requête vers Sillage ou un CLI.
+// Maquette autonome : données illustratives, aucune requête vers Solera ou un CLI.
 const icons = {
   sparkles: '<path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/>',
   brain: '<path d="M12 5a3 3 0 0 0-5.7-1A4 4 0 0 0 3 10a4 4 0 0 0 1 7 4 4 0 0 0 8 1Zm0 0a3 3 0 0 1 5.7-1A4 4 0 0 1 21 10a4 4 0 0 1-1 7 4 4 0 0 1-8 1M7 9l-1 3m11-3 1 3M8 17l-1-2m9 2 1-2"/>',
@@ -36,8 +36,8 @@ const catalogs = {
   ],
 };
 const configurations = {
-  codex: { model: 'codex', effort: 'high', mode: 'default', approval: 'on-request', sandbox: 'workspace-write', sillage: true, docs: false },
-  claude: { model: 'opus', effort: 'high', permission: 'manual', sillage: true, docs: false },
+  codex: { model: 'codex', effort: 'high', mode: 'default', approval: 'on-request', sandbox: 'workspace-write', solera: true, docs: false },
+  claude: { model: 'opus', effort: 'high', permission: 'manual', solera: true, docs: false },
 };
 const $ = (id) => document.getElementById(id);
 const dialog = $('settings-dialog');
@@ -95,7 +95,7 @@ function renderToolbar() {
   if (state().approval === 'never') warnings.push('Approbations : jamais');
   if (state().sandbox === 'danger-full-access') warnings.push('Accès total');
   if (state().permission === 'bypassPermissions') warnings.push('Tout autoriser');
-  const count = Number(state().sillage) + Number(state().docs);
+  const count = Number(state().solera) + Number(state().docs);
   $('context-trigger').innerHTML = `<span>${plan ? 'Plan' : 'Standard'} · MCP ${count}</span>${warnings.map((label) => `<span class="warning">${label}</span>`).join('')}`;
   $('context-trigger').setAttribute('aria-label', `Tous les réglages, ${plan ? 'Plan' : 'Standard'}, ${count} MCP${warnings.length ? `, ${warnings.join(', ')}` : ''}`);
 }
@@ -117,7 +117,7 @@ function renderDialog() {
   $('dialog-title').textContent = all ? 'Tous les réglages' : visible[0].label;
   $('dialog-description').textContent = all ? 'Ajuste plusieurs choix sans quitter ce panneau.' : 'Choisis une valeur pour revenir au message.';
   $('dialog-footer').hidden = !all;
-  $('dialog-body').innerHTML = visible.map((group) => renderGroup(group, all && group.compact)).join('') + (all ? `<section class="setting-section"><h3 class="section-title">Outils MCP</h3>${[['sillage', 'Sillage'], ['docs', 'Documentation (exemple)']].map(([key, label]) => `<button class="mcp-toggle" role="switch" aria-checked="${state()[key]}" data-toggle="${key}"><span>${label}</span><span class="toggle" aria-hidden="true"></span></button>`).join('')}</section>` : '');
+  $('dialog-body').innerHTML = visible.map((group) => renderGroup(group, all && group.compact)).join('') + (all ? `<section class="setting-section"><h3 class="section-title">Outils MCP</h3>${[['solera', 'Solera'], ['docs', 'Documentation (exemple)']].map(([key, label]) => `<button class="mcp-toggle" role="switch" aria-checked="${state()[key]}" data-toggle="${key}"><span>${label}</span><span class="toggle" aria-hidden="true"></span></button>`).join('')}</section>` : '');
 }
 
 function positionDialog() {

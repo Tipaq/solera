@@ -1,13 +1,13 @@
 # Couverture des fonctionnalités Claude Code — 17 septembre 2026
 
-Revue de ce que Sillage expose du CLI Claude Code, comparé à ce que le CLI et le SDK
+Revue de ce que Solera expose du CLI Claude Code, comparé à ce que le CLI et le SDK
 offrent aujourd'hui. Sur le commit `74e3391`, arbre de travail non commité compris.
 
 **Diagnostic.** Le socle est complet : tout ce qui fait une conversation (modèle,
 effort, permissions, plan, questions, MCP, sous-agents, tâches de fond, boucles,
 compaction, steer, fork, import) est couvert et à jour. Ce qui manque tient en trois
 familles : quelques **réglages de session** apparus depuis (mode Fast, style de sortie,
-advisor), une dizaine de **signaux que le CLI émet et que Sillage avale** (notifications,
+advisor), une dizaine de **signaux que le CLI émet et que Solera avale** (notifications,
 tentatives de reconnexion à l'API, refus du modèle, refus automatiques de permission),
 et deux fonctions plus lourdes qu'on peut couvrir ou non (rewind des fichiers, dialogues
 utilisateur). Aucun manque n'est bloquant ; le plus visible est le mode Fast, et le plus
@@ -28,20 +28,20 @@ pour compter les `session.started` par tour. Aucun code applicatif modifié.
 | CLI `@anthropic-ai/claude-code` | 2.1.263 | 2.1.273 | 2.1.220 |
 | SDK `@anthropic-ai/claude-agent-sdk` | 0.3.220 | 0.3.273 | — |
 
-Le diff des types entre les deux SDK fait 2 700 lignes. Rien de ce sur quoi Sillage
+Le diff des types entre les deux SDK fait 2 700 lignes. Rien de ce sur quoi Solera
 s'appuie n'a bougé : `priority` sur les messages (steer), `session_crons` dans le hook
 Stop (boucles), `forwardSubagentText`, `usage_EXPERIMENTAL…`, `supportsFastMode`. Deux
-requêtes de contrôle disparaissent, `get_plan` et `get_workspace_diff`, que Sillage
+requêtes de contrôle disparaissent, `get_plan` et `get_workspace_diff`, que Solera
 n'utilise pas. Le bump est donc sans risque connu, et il apporte des choses utiles
 listées plus bas (hooks `PreModelSwitch`/`PostModelSwitch`, `context_usage` et
 `usage_report` sur `result`, `capabilities` et `effort` effectif sur `init`,
 `permissionPrompts: 'none'`, `reloadOutputStyles()`).
 
-Correctifs du CLI entre 2.1.263 et 2.1.273 qui touchent directement Sillage :
+Correctifs du CLI entre 2.1.263 et 2.1.273 qui touchent directement Solera :
 
 - 2.1.265 : plus de tour parasite « Continue from where you left off. » à la reprise
   d'une session après `/compact` ou une autre commande locale. C'est le chemin que
-  Sillage prend quand un réglage impose un redémarrage.
+  Solera prend quand un réglage impose un redémarrage.
 - 2.1.265 : un `cd` dans Bash persiste d'un tour à l'autre en session SDK.
 - 2.1.269 : les sessions headless ne se déclarent plus « en attente » pendant qu'un
   sous-agent de fond tourne encore.
@@ -54,7 +54,7 @@ Vérifié dans le runner, l'adaptateur et le composer. Rien à faire ici.
 
 | Domaine | Couverture |
 |---|---|
-| Réglages | modèle (catalogue lu au CLI), effort `low`…`max` par modèle, six modes de permission, dossiers additionnels, serveurs MCP du registre + serveur Sillage + isolation stricte ; tout est appliqué à chaud sauf `strictMcp` et l'entrée/sortie de `bypassPermissions`, qui relancent en reprise |
+| Réglages | modèle (catalogue lu au CLI), effort `low`…`max` par modèle, six modes de permission, dossiers additionnels, serveurs MCP du registre + serveur Solera + isolation stricte ; tout est appliqué à chaud sauf `strictMcp` et l'entrée/sortie de `bypassPermissions`, qui relancent en reprise |
 | Interactions | permissions avec les règles proposées par le CLI (`once` / session / toujours), questions à choix (`AskUserQuestion`), validation de plan avec choix du mode de suite, élicitation MCP (formulaire et URL) |
 | Flux | texte et réflexion en delta, compteur de réflexion, appels et résultats d'outils, sous-agents avec leur fil complet, `file.edited` pour `Write`/`Edit`/`NotebookEdit` |
 | Tour | steer par `priority: 'next'`, interruption avec filet de fermeture, compaction manuelle et automatique (début, frontière, échec), erreurs de tour, quota épuisé |
@@ -66,7 +66,7 @@ Vérifié dans le runner, l'adaptateur et le composer. Rien à faire ici.
 
 Classé par ce que ça coûte de ne pas l'avoir, pas par ce que ça coûte de le faire.
 
-### A. Signaux du CLI que Sillage ignore
+### A. Signaux du CLI que Solera ignore
 
 Le `switch` du runner a un `default` qui jette ce qu'il ne connaît pas. C'est
 volontaire et documenté, mais la liste de ce qui tombe dedans a grandi. Tout ce qui
@@ -77,7 +77,7 @@ suit a une forme stable dans le SDK installé et pourrait alimenter `agent.notic
 |---|---|
 | `system/notification` | Les avis du CLI : « Fast mode disabled · usage credits exhausted » (un par tour), « serveur MCP déconnecté, reconnexion abandonnée » (2.1.273), « un serveur MCP demande une authentification ». Ils partent dans le vide. |
 | `system/api_retry` | Tentative n/max, délai, statut HTTP. Une API surchargée qui retente pendant deux minutes ressemble à un tour figé. |
-| `system/model_refusal_fallback`, `model_refusal_no_fallback` | Le modèle a refusé et le CLI a basculé (ou non) : catégorie, modèle de repli, messages rétractés. Sillage ne dit rien, le fil s'arrête ou repart sans explication. |
+| `system/model_refusal_fallback`, `model_refusal_no_fallback` | Le modèle a refusé et le CLI a basculé (ou non) : catégorie, modèle de repli, messages rétractés. Solera ne dit rien, le fil s'arrête ou repart sans explication. |
 | `system/permission_denied` | Refus automatique par le classifieur du mode `auto`, par `dontAsk` ou par une règle, avec la raison. Il ne reste qu'un résultat d'outil en erreur. |
 | `system/informational` | Messages de hooks et avis de niveau `notice` / `suggestion` / `warning`, dont un Stop hook qui a bloqué la suite. |
 | `tool_use_summary` | Résumé d'un lot d'outils rédigé par le CLI. Tout indiqué pour l'en-tête d'un groupe replié sur mobile. |
@@ -88,10 +88,10 @@ suit a une forme stable dans le SDK installé et pourrait alimenter `agent.notic
 Un cas à vérifier plutôt qu'à affirmer : un message `user` dont le contenu est une
 liste de blocs sans `tool_result` est ignoré par le runner. C'est la forme probable
 des messages venus d'une autre session (`SendMessage` entre sessions de la même
-machine, ce que Sillage héberge justement) et des canaux MCP. S'ils passent par là,
+machine, ce que Solera héberge justement) et des canaux MCP. S'ils passent par là,
 ils n'apparaissent pas au journal.
 
-### B. Réglages de session que le CLI a et que Sillage n'offre pas
+### B. Réglages de session que le CLI a et que Solera n'offre pas
 
 **Mode Fast.** Même modèle, réponses jusqu'à 2,5× plus rapides, tarif $10/$50 par
 MTok, sur Opus 5 et Opus 4.8 seulement. Sur un abonnement, c'est facturé en crédits
@@ -109,7 +109,7 @@ Ce que la sonde a mesuré sur ce poste, compte Claude Max :
 | `applyFlagSettings({ fastMode: null })` | retour à `off` |
 | modèles avec `supportsFastMode` | `default` (Opus) et `opus[1m]` ; ni Fable, ni Sonnet, ni Haiku |
 
-Donc : c'est le SDK qui doit opter, un `/fast` tapé dans Sillage répond « non
+Donc : c'est le SDK qui doit opter, un `/fast` tapé dans Solera répond « non
 disponible » (la commande est déjà cachée de la palette pour une autre raison) ; la
 bascule se fait à chaud par la même requête que l'effort ; l'état est lisible sur
 `init` et sur chaque `result` (`fast_mode_state`, dont le `cooldown`). Ce que la
@@ -143,7 +143,7 @@ sans les regarder.
 **Sous-agents nommés.** `supportedAgents()` en liste cinq ici (`claude`, `Explore`,
 `general-purpose`, `Plan`, `statusline-setup`), plus ceux du projet sous
 `.claude/agents/`. Le CLI accepte `@agent` dans le texte et le propose à la frappe ;
-Sillage ne les connaît pas. Même mécanique que les commandes `/`.
+Solera ne les connaît pas. Même mécanique que les commandes `/`.
 
 **Réflexion.** Option `thinking` (adaptative, budget fixe, coupée) et
 `setMaxThinkingTokens`. Sur les modèles récents la réflexion est adaptative et pilotée
@@ -153,14 +153,14 @@ par l'effort, déjà exposé : redondant pour l'usage courant.
 `allowedTools` / `disallowedTools`, `fallbackModel`, `planModeInstructions`. Le bac à
 sable et les règles d'outils viennent des `settings.json` du poste, que le SDK charge
 par défaut (`settingSources` omis = tout) : ils s'appliquent donc déjà, sans réglage
-par conversation. Codex a un sélecteur de bac à sable dans Sillage, Claude non ; c'est
+par conversation. Codex a un sélecteur de bac à sable dans Solera, Claude non ; c'est
 une asymétrie acceptable tant que personne ne la demande.
 
 ### C. Deux fonctions plus lourdes, à trancher
 
 **Rewind des fichiers.** `/rewind` dans le CLI : `enableFileCheckpointing` au lancement,
 puis `rewindFiles(userMessageId)` ramène les fichiers à leur état au message choisi.
-Sillage sait forker une conversation à un point du fil mais pas remettre le disque
+Solera sait forker une conversation à un point du fil mais pas remettre le disque
 dans l'état de ce point. C'est la fonction la plus demandée du CLI qui manque ; elle
 touche le journal (il faut l'`uuid` du message utilisateur), le panneau de fichiers
 et les worktrees.
@@ -176,8 +176,8 @@ défaut de chaque dialogue. L'ensemble des `dialogKind` est ouvert et n'est pas
 Remote Control (écarté après mesure, SPEC §11), Teleport, sessions cloud et
 self-hosted runner, tout ce qui est propre au terminal (mode plein écran, panneau
 `/diff`, `/focus`, `/recap`, correcteur, raccourcis, thèmes), `claude agents`, la
-dictée du CLI (Sillage a la sienne), `/desktop`, `/ide`. Les plugins et les
-compétences s'installent sur le disque du CLI et sont chargés par défaut : Sillage
+dictée du CLI (Solera a la sienne), `/desktop`, `/ide`. Les plugins et les
+compétences s'installent sur le disque du CLI et sont chargés par défaut : Solera
 les subit correctement sans UI dédiée, et pourrait au plus offrir un « recharger »
 (`reloadPlugins()`, `reloadSkills()`). Ultracode, Workflow et Monitor sont des outils
 du modèle, visibles par les tâches de fond : rien à faire.
@@ -218,7 +218,7 @@ Les ampleurs sont des estimations de périmètre, pas des engagements de délai.
 Tout ce qui précède est fait, sauf le rewind des fichiers, écarté par l'utilisateur,
 et les dialogues utilisateur, dont les sortes ne sont pas énumérables sans sonde.
 
-- SDK 0.3.273 et cible CLI 2.1.273. Rien de ce que Sillage utilise n'a bougé.
+- SDK 0.3.273 et cible CLI 2.1.273. Rien de ce que Solera utilise n'a bougé.
 - Les signaux du CLI sont traduits en `agent.notice` dans `signals.ts`, module pur et
   testé : notifications, tentatives d'API, refus du modèle, refus automatiques,
   messages de hooks, remise à zéro de conversation.
@@ -236,7 +236,7 @@ et les dialogues utilisateur, dont les sortes ne sont pas énumérables sans son
 - Les sous-agents nommés arrivent dans le catalogue (`agents`), sans proposition à la
   frappe pour l'instant : le composer était en cours de refonte par une autre session.
 
-Vérifié de bout en bout par `pnpm --filter @sillage/server claude:probe`, trois tours
+Vérifié de bout en bout par `pnpm --filter @solera/server claude:probe`, trois tours
 minuscules sur le CLI 2.1.263 avec le SDK 0.3.273 : un seul `session.started` pour
 trois tours, le style `Concise` accepté au lancement, la bascule à chaud
 `applyConfig({ fastMode: true })` acceptée, l'avis « Mode rapide activé » au tour
@@ -245,7 +245,7 @@ refusé la requête rapide faute de crédits d'usage : le CLI l'a redit dans une
 `notification` (« Fast mode disabled · usage credits exhausted »), relayée dans le fil,
 et le tour s'est fait à vitesse normale. C'est le comportement documenté, et la raison
 pour laquelle le réglage est proposé même quand la première requête peut échouer :
-Sillage ne peut pas le savoir avant, la vérification de disponibilité passe.
+Solera ne peut pas le savoir avant, la vérification de disponibilité passe.
 
 ## Sondes
 
@@ -283,15 +283,15 @@ toucher au binaire du système.
 | CLI `@anthropic-ai/claude-code` | 2.1.286 | 2.1.291 (`stable` : 2.1.285, `next` : 2.1.292) | 2.1.273 → **2.1.291** |
 | SDK `@anthropic-ai/claude-agent-sdk` | 0.3.273 | 0.3.291 | 0.3.273 → **0.3.291** |
 
-Rien de ce que Sillage utilise n'a bougé dans le SDK : le typecheck passe sans
+Rien de ce que Solera utilise n'a bougé dans le SDK : le typecheck passe sans
 retouche. Les outils `TaskOutput` (retiré en 2.1.276) et `REPL` sortent des schémas
-d'outils ; Sillage ne les traitait pas à part.
+d'outils ; Solera ne les traitait pas à part.
 
-### Ce qui touchait Sillage, et ce qui a été fait
+### Ce qui touchait Solera, et ce qui a été fait
 
 - **Ultracode n'est plus un niveau d'effort (2.1.284).** Il n'impose plus `xhigh` et
   tient à tout niveau ; en revanche un `effortLevel` qui change le niveau sans la clé
-  `ultracode` l'éteint. Sillage envoyait l'effort seul : changer l'effort d'une
+  `ultracode` l'éteint. Solera envoyait l'effort seul : changer l'effort d'une
   conversation en Ultracode l'éteignait côté CLI pendant que le composer l'affichait
   allumé. Sondé sur 2.1.286 et 2.1.291 par `getSettings().applied` (méthode présente à
   l'exécution, absente du type public). Corrigé : `liveFlagSettings` renvoie
@@ -308,19 +308,19 @@ d'outils ; Sillage ne les traitait pas à part.
   `[1m]`, puis par l'identifiant résolu.
 - **Deux signaux de plus.** `conversation_reset` porte son `trigger` (`clear`,
   `plan_mode_exit`, `fresh_session`, `onboarding`), traduit en phrase ; l'`init`
-  porte `plugin_errors`, relayé en un avis qui ne revient qu'au changement. Sillage
+  porte `plugin_errors`, relayé en un avis qui ne revient qu'au changement. Solera
   charge sa bibliothèque de skills comme plugins : un refus y était muet.
 
-### Ce qui touche Sillage sans code
+### Ce qui touche Solera sans code
 
 - **Limite des commandes de fond (2.1.285, 2.1.288).** Une commande lancée avec
   `run_in_background` s'arrête au bout de 30 min par défaut, 2 h au plus, dans les
   sessions « non surveillées ». Le CLI range dans cette catégorie toute session SDK
-  qui ne se déclare pas Desktop ou VS Code, donc celles de Sillage. À trancher : carte
+  qui ne se déclare pas Desktop ou VS Code, donc celles de Solera. À trancher : carte
   #12.
 - **AGENTS.md lu par Claude (2.1.277)** : déjà couvert, `claudeMdExcludes` masque les
-  deux fichiers en mode SILLAGE.md (sondé le 5 octobre, `docs/sillage-md.md`).
-- **Mode de permission par défaut à `auto`** quand la session n'en donne aucun : Sillage
+  deux fichiers en mode SOLERA.md (sondé le 5 octobre, `docs/solera-md.md`).
+- **Mode de permission par défaut à `auto`** quand la session n'en donne aucun : Solera
   en passe toujours un.
 - **Opus 5.5 et Sonnet 5.5** : le catalogue est lu au CLI, ils sont apparus seuls.
 - Correctifs SDK qui profitent directement : un message envoyé en priorité ne coupe
@@ -337,7 +337,7 @@ d'outils ; Sillage ne les traitait pas à part.
   #14.
 - `prewarm()` / `claim()` (alpha) : un CLI démarré d'avance, lié ensuite à une session.
   Gagnerait le démarrage d'une conversation, mais impose de figer à l'avance tout ce
-  que Sillage passe au lancement (MCP, plugins, hooks).
+  que Solera passe au lancement (MCP, plugins, hooks).
 - MCP Apps (`readMcpResource`, `_meta.ui`, alpha) : rendre les widgets HTML des
   serveurs MCP, en bac à sable.
 - `mcpServer` sur les demandes de permission (serveur et provenance d'un outil

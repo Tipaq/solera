@@ -2,20 +2,20 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
-import { conversations, instructions, users, type Db, type InstructionsRow } from '@sillage/db'
+import { conversations, instructions, users, type Db, type InstructionsRow } from '@solera/db'
 import {
   REPO_INSTRUCTION_FILES,
   type InstructionsAuthorDto,
   type InstructionsMode,
   type RepoInstructionFile,
   type RepoInstructionFileDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 
 /**
- * SILLAGE.md : lecture, écriture, et ce qu'on en injecte aux CLI.
+ * SOLERA.md : lecture, écriture, et ce qu'on en injecte aux CLI.
  *
  * Le contenu vit en base, une ligne `global` et une par projet. Le serveur MCP y écrit
- * aussi, de son côté (`edit_instructions` et `write_instructions` dans `mcp/sillage-mcp.mjs`) : les deux doivent
+ * aussi, de son côté (`edit_instructions` et `write_instructions` dans `mcp/solera-mcp.mjs`) : les deux doivent
  * rester d'accord sur la forme des lignes et sur la résolution du mode.
  */
 
@@ -42,7 +42,7 @@ export async function readRepoInstructionFiles(
  * Le mode en vigueur pour un projet.
  *
  * Un projet d'avant le réglage n'en a pas : il garde ce qu'il faisait, c'est-à-dire les
- * fichiers du dépôt quand il en a. Sans fichier, Sillage ne change rien non plus, la
+ * fichiers du dépôt quand il en a. Sans fichier, Solera ne change rien non plus, la
  * partie projet étant vide ; c'est la première écriture qui fixe alors le mode.
  */
 export function resolveInstructionsMode(project: {
@@ -50,7 +50,7 @@ export function resolveInstructionsMode(project: {
   workspacePath: string
 }): InstructionsMode {
   if (project.instructionsMode) return project.instructionsMode
-  return repoInstructionFiles(project.workspacePath).length > 0 ? 'repo' : 'sillage'
+  return repoInstructionFiles(project.workspacePath).length > 0 ? 'repo' : 'solera'
 }
 
 export function readInstructions(db: Db, projectId: string | null): InstructionsRow | undefined {
@@ -122,12 +122,12 @@ export function instructionsAuthor(
 interface AppendixInput {
   projectId: string
   mode: InstructionsMode
-  /** L'agent a-t-il les outils SILLAGE.md du serveur MCP sous la main. */
-  sillageMcp: boolean
+  /** L'agent a-t-il les outils SOLERA.md du serveur MCP sous la main. */
+  soleraMcp: boolean
 }
 
 /**
- * Le bloc SILLAGE.md à ajouter au prompt système, ou null quand il n'y a rien à dire.
+ * Le bloc SOLERA.md à ajouter au prompt système, ou null quand il n'y a rien à dire.
  *
  * Le rappel des outils part même quand les deux parties sont vides : c'est le seul moyen
  * pour un agent d'apprendre qu'il peut tenir ces consignes, et les outils MCP ne sont pas
@@ -136,22 +136,22 @@ interface AppendixInput {
 export function instructionsAppendix(db: Db, input: AppendixInput): string | null {
   const global = readInstructions(db, null)?.content.trim() ?? ''
   const project =
-    input.mode === 'sillage' ? (readInstructions(db, input.projectId)?.content.trim() ?? '') : ''
+    input.mode === 'solera' ? (readInstructions(db, input.projectId)?.content.trim() ?? '') : ''
 
   const parts: string[] = []
   if (global || project) {
     parts.push(
-      "# SILLAGE.md\n\nConsignes de l'utilisateur tenues dans Sillage, communes à Claude, à Codex et à OpenCode. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
+      "# SOLERA.md\n\nConsignes de l'utilisateur tenues dans Solera, communes à Claude, à Codex et à OpenCode. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
     )
     if (global) parts.push(`## Pour tous les projets\n\n${global}`)
     if (project) parts.push(`## Pour ce projet\n\n${project}`)
   }
 
-  if (input.sillageMcp) {
+  if (input.soleraMcp) {
     parts.push(
-      input.mode === 'sillage'
-        ? "SILLAGE.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `sillage`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, quel que soit leur CLI. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire du projet."
-        : "Les consignes de ce projet vivent dans le `AGENTS.md` ou le `CLAUDE.md` de son dépôt : c'est là qu'une consigne propre au projet se retient, avec tes outils de fichiers. Les outils SILLAGE.md du serveur `sillage` (`read_instructions`, `edit_instructions`, `write_instructions`) ne servent qu'à la partie valable pour tous les projets.",
+      input.mode === 'solera'
+        ? "SOLERA.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `solera`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, quel que soit leur CLI. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire du projet."
+        : "Les consignes de ce projet vivent dans le `AGENTS.md` ou le `CLAUDE.md` de son dépôt : c'est là qu'une consigne propre au projet se retient, avec tes outils de fichiers. Les outils SOLERA.md du serveur `solera` (`read_instructions`, `edit_instructions`, `write_instructions`) ne servent qu'à la partie valable pour tous les projets.",
     )
   }
 

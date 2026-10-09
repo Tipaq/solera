@@ -3,7 +3,7 @@ import {
   SEARCH_MIN_QUERY,
   SEARCH_RESULT_LIMIT,
   type SearchMessageDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { searchMessages } from '../../search/search-messages.js'
 import type { AppContext } from '../context.js'
 import { requireUser } from '../require-user.js'

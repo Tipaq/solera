@@ -3,12 +3,12 @@ import { eq, isNotNull, min } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { getSessionInfo, listSessions } from '@anthropic-ai/claude-agent-sdk'
-import { conversations, projects, type ConversationRow } from '@sillage/db'
+import { conversations, projects, type ConversationRow } from '@solera/db'
 import {
   readProjectDefaults,
   type ClaudeSessionsDto,
   type ClaudeSyncDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import {
   TRANSCRIPT_RAW_FORMAT,
@@ -27,14 +27,14 @@ import type { AppContext } from '../context.js'
 import { conversationToDto } from './conversations.js'
 
 /**
- * Reprise dans Sillage de sessions commencées avec le CLI Claude Code.
+ * Reprise dans Solera de sessions commencées avec le CLI Claude Code.
  *
  * Le daemon partage le compte et le disque du CLI : les transcripts de
  * `~/.claude/projects` sont directement lisibles, et `resume` continue une session
  * quel que soit l'outil qui l'a ouverte. Importer revient donc à créer une
  * conversation portant l'identifiant natif, et à reconstruire le journal depuis le
  * transcript (invariant I2). Rien n'est dupliqué côté CLI : les tours faits ensuite
- * dans Sillage s'écrivent dans le même fichier, et `claude --resume` les montre.
+ * dans Solera s'écrivent dans le même fichier, et `claude --resume` les montre.
  *
  * La seule contrainte reste de ne pas piloter la même session des deux côtés en même
  * temps ; la resynchronisation rattrape l'affichage après un passage par le CLI, elle
@@ -222,8 +222,8 @@ export function registerClaudeSessionRoutes(
    * Rattrape dans le journal les tours faits au CLI depuis le dernier point commun.
    *
    * Appelée à l'ouverture d'une conversation Claude : le CLI relit toujours le
-   * transcript complet, mais le journal de Sillage est sa propre copie, et sans ce
-   * rattrapage l'affichage ignorerait ce qui s'est passé hors de Sillage.
+   * transcript complet, mais le journal de Solera est sa propre copie, et sans ce
+   * rattrapage l'affichage ignorerait ce qui s'est passé hors de Solera.
    */
   app.post('/api/conversations/:id/claude-sync', async (request): Promise<ClaudeSyncDto> => {
     const user = requireUser(request)

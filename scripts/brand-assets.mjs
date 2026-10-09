@@ -36,10 +36,10 @@ try {
     <rect width="1200" height="630" fill="#112b2a"/>
     <g transform="translate(85 145) scale(1.5)" fill="#a6d8cc">${paths}</g>
     <g font-family="Arial, sans-serif">
-      <text x="278" y="260" fill="#ffffff" font-size="92" font-weight="700" letter-spacing="-3">sillage</text>
+      <text x="278" y="260" fill="#ffffff" font-size="92" font-weight="700" letter-spacing="-3">solera</text>
       <text x="96" y="373" fill="#dcece8" font-size="30">Plateforme de développement agentique self-hosted</text>
       <text x="96" y="426" fill="#a6c5bf" font-size="26">Claude Code, Codex et OpenCode dans une seule interface.</text>
-      <text x="96" y="552" fill="#a6c5bf" font-size="22">github.com/MarlBurroW/sillage</text>
+      <text x="96" y="552" fill="#a6c5bf" font-size="22">github.com/Tipaq/solera</text>
     </g>
   </svg>`
   await render('apps/web/public/og.png', 1200, 630, og)

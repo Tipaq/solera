@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import { useState } from 'react'
-import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
 import { useCreateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { EditDiffDto } from '@sillage/protocol'
+import type { EditDiffDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

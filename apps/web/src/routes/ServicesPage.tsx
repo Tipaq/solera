@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUpRight, RefreshCw, Server, Square } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { ServicesDto } from '@sillage/protocol'
+import type { ServicesDto } from '@solera/protocol'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { Badge, Banner, Button, EmptyState, IconButton, Select } from '../components/ui'
 import { api } from '../lib/api'
@@ -82,7 +82,7 @@ export function ServicesPage() {
                         <div className="flex flex-col gap-1 text-xs text-ink-soft">
                           <span>{t(service.relation === 'service-group' ? 'services.serviceGroup' : 'services.descendant')}</span>
                           <span>{t('services.parent', { name: service.parentName ?? '—', pid: service.parentPid })}</span>
-                          <span className="text-ink-faint">{t(service.stopsWithSillage ? 'services.stopsWithSillage' : 'services.shutdownUnknown')}</span>
+                          <span className="text-ink-faint">{t(service.stopsWithSolera ? 'services.stopsWithSolera' : 'services.shutdownUnknown')}</span>
                         </div>
                         <div className="flex min-w-0 flex-col gap-1 text-sm">
                           {service.projectId ? <Link to={`/p/${service.projectId}`} className="w-fit font-medium text-ink-soft hover:text-accent">{service.projectName}</Link>

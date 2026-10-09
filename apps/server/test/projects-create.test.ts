@@ -6,8 +6,8 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { openDatabase, runMigrations, users } from '@sillage/db'
-import { slugifyProjectName, type ProjectDto } from '@sillage/protocol'
+import { openDatabase, runMigrations, users } from '@solera/db'
+import { slugifyProjectName, type ProjectDto } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
@@ -18,7 +18,7 @@ import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { readUserSettings } from '../src/settings/user-settings.js'
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-projects-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-projects-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
@@ -44,7 +44,7 @@ async function harness(t: TestContext) {
 
 test('slug : accents, espaces et ponctuation', () => {
   assert.equal(slugifyProjectName('Mon Projet Été'), 'mon-projet-ete')
-  assert.equal(slugifyProjectName('  --Sillage v2 (beta)!  '), 'sillage-v2-beta')
+  assert.equal(slugifyProjectName('  --Solera v2 (beta)!  '), 'solera-v2-beta')
   assert.equal(slugifyProjectName('déjà-vu'), 'deja-vu')
   assert.equal(slugifyProjectName('...'), '')
 })

@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { eq } from 'drizzle-orm'
-import { librarySkills, projects, skillSources } from '@sillage/db'
-import type { LibrarySkillDto } from '@sillage/protocol'
+import { librarySkills, projects, skillSources } from '@solera/db'
+import type { LibrarySkillDto } from '@solera/protocol'
 import { skillLibraryLaunchOptions } from '../src/agents/claude/skill-library.js'
 import { compatNotes } from '../src/skill-library/compat.js'
 import { parseSkillMarkdown, updateSkillMarkdown } from '../src/skill-library/frontmatter.js'
@@ -17,10 +17,10 @@ test('un skill créé est un plugin Claude et une racine Codex, sans rien à moi
   const { library, root, changes } = harness(t)
   const skill = create(library)
 
-  const dir = join(root, 'global/sillage/skills/deploy')
+  const dir = join(root, 'global/solera/skills/deploy')
   // Pas de manifeste : Claude prend le nom du dossier, et Codex préfixerait sinon chaque
   // skill du nom du plugin.
-  assert.ok(!existsSync(join(root, 'global/sillage/.claude-plugin')))
+  assert.ok(!existsSync(join(root, 'global/solera/.claude-plugin')))
   assert.equal(readFileSync(join(dir, 'SKILL.md'), 'utf8'), '---\nname: deploy\ndescription: Use when deploying.\n---\n\nRun it.')
   assert.deepEqual(listFiles(join(root, '.staging')), [], 'la zone de transit est vidée')
   assert.equal(skill.description, 'Use when deploying.')
@@ -28,7 +28,7 @@ test('un skill créé est un plugin Claude et une racine Codex, sans rien à moi
   assert.deepEqual(changes, [null])
 
   const roots = library.layout.rootsFor('p1')
-  assert.deepEqual(roots, [join(root, 'global/sillage'), join(root, 'projects/p1/projet')])
+  assert.deepEqual(roots, [join(root, 'global/solera'), join(root, 'projects/p1/projet')])
   // Une portée vide existe quand même, `skills/` compris : sans lui, un skill ajouté
   // en cours de session ne serait jamais vu par Claude.
   assert.ok(existsSync(join(root, 'projects/p1/projet/skills')))
@@ -49,26 +49,26 @@ test('un nom ne vaut qu’une fois sur ce qu’une conversation voit', (t) => {
 test('un dossier déposé à la main n’est pas écrasé', (t) => {
   const { library, root } = harness(t)
   library.layout.ensureScope('global', null)
-  mkdirSync(join(root, 'global/sillage/skills/deploy'))
+  mkdirSync(join(root, 'global/solera/skills/deploy'))
   assert.throws(() => create(library), { code: 'skill_directory_exists' })
 })
 
 test('renommer, désactiver et changer de portée déplacent le dossier et gardent le frontmatter', (t) => {
   const { library, root, changes } = harness(t)
   const skill = create(library)
-  const path = join(root, 'global/sillage/skills/deploy/SKILL.md')
+  const path = join(root, 'global/solera/skills/deploy/SKILL.md')
   writeFileSync(path, '---\nname: deploy\n# à garder\nallowed-tools: Bash\ndescription: Use when deploying.\n---\n\nRun it.')
 
   let row = library.row(skill.id)
   let updated = library.update(row, { name: 'ship', description: 'Use when shipping.' })
-  const shipped = readFileSync(join(root, 'global/sillage/skills/ship/SKILL.md'), 'utf8')
+  const shipped = readFileSync(join(root, 'global/solera/skills/ship/SKILL.md'), 'utf8')
   assert.equal(shipped, '---\nname: ship\n# à garder\nallowed-tools: Bash\ndescription: Use when shipping.\n---\n\nRun it.')
-  assert.ok(!existsSync(join(root, 'global/sillage/skills/deploy')))
+  assert.ok(!existsSync(join(root, 'global/solera/skills/deploy')))
   assert.equal(updated.problem, null)
 
   row = library.row(skill.id)
   library.update(row, { enabled: false })
-  assert.ok(!existsSync(join(root, 'global/sillage/skills/ship')))
+  assert.ok(!existsSync(join(root, 'global/solera/skills/ship')))
   assert.ok(existsSync(join(root, 'disabled', skill.id, 'SKILL.md')))
   assert.equal(library.list(null)[0]!.enabled, false)
 
@@ -87,19 +87,19 @@ test('un refus ne laisse pas un skill réécrit à son ancienne place', (t) => {
   const skill = create(library)
   create(library, { name: 'ship' })
   assert.throws(() => library.update(library.row(skill.id), { name: 'ship', body: 'Changed.' }), { code: 'skill_name_taken' })
-  assert.match(readFileSync(join(root, 'global/sillage/skills/deploy/SKILL.md'), 'utf8'), /Run it\.$/)
+  assert.match(readFileSync(join(root, 'global/solera/skills/deploy/SKILL.md'), 'utf8'), /Run it\.$/)
 })
 
 test('le disque fait foi : dossier disparu, fichier illisible, nom divergent', (t) => {
   const { library, root } = harness(t)
   const skill = create(library)
-  const path = join(root, 'global/sillage/skills/deploy/SKILL.md')
+  const path = join(root, 'global/solera/skills/deploy/SKILL.md')
 
   writeFileSync(path, 'pas de frontmatter')
   assert.equal(library.list(null)[0]!.problem, 'skill_unreadable')
   writeFileSync(path, '---\nname: autre\ndescription: x\n---\n')
   assert.equal(library.list(null)[0]!.problem, 'skill_name_mismatch')
-  rmSync(join(root, 'global/sillage/skills/deploy'), { recursive: true })
+  rmSync(join(root, 'global/solera/skills/deploy'), { recursive: true })
   assert.equal(library.list(null)[0]!.problem, 'skill_missing')
   assert.throws(() => library.update(library.row(skill.id), { body: 'x' }), { code: 'skill_missing' })
   // Supprimer reste possible, c'est la sortie d'un skill dont le dossier a disparu.
@@ -110,7 +110,7 @@ test('le disque fait foi : dossier disparu, fichier illisible, nom divergent', (
 test('un skill installé se sait modifié localement', (t) => {
   const { library, root, db } = harness(t)
   const skill = create(library)
-  const dir = join(root, 'global/sillage/skills/deploy')
+  const dir = join(root, 'global/solera/skills/deploy')
   db.insert(skillSources).values({ id: 'src', name: 'src', url: 'https://example.invalid/x.git', createdAt: 1, updatedAt: 1 }).run()
   db.update(librarySkills)
     .set({ sourceId: 'src', sourcePath: 'skills/deploy', sourceCommit: 'abc', installedHash: contentHash(dir, listFiles(dir)) })
@@ -142,7 +142,7 @@ test('les liens symboliques ne sont pas listés', (t) => {
   const { library, root, dir } = harness(t)
   create(library)
   writeFileSync(join(dir, 'outside.txt'), 'secret')
-  symlinkSync(join(dir, 'outside.txt'), join(root, 'global/sillage/skills/deploy/link.txt'))
+  symlinkSync(join(dir, 'outside.txt'), join(root, 'global/solera/skills/deploy/link.txt'))
   assert.deepEqual(library.detail(library.row(library.list(null)[0]!.id)).files, ['SKILL.md'])
 })
 

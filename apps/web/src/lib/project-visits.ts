@@ -6,7 +6,7 @@ type Visit = { projectId: string; path: string }
 /** Historique de navigation local au compte, jamais celui des mises à jour des agents. */
 export function useProjectVisits(userId: string) {
   const { pathname } = useLocation()
-  const key = `sillage.projectVisits:${userId}`
+  const key = `solera.projectVisits:${userId}`
   const [revision, setRevision] = useState(0)
   const visits = useMemo((): Visit[] => {
     void revision // Invalidation après une écriture locale.

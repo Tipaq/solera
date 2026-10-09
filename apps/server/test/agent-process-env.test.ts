@@ -11,9 +11,9 @@ test('les commandes des agents ne reçoivent pas le NODE_ENV du serveur', (t) =>
   })
   process.env.NODE_ENV = 'production'
 
-  const env = agentProcessEnv({ SILLAGE_TEST_ORIGIN: 'conversation' })
+  const env = agentProcessEnv({ SOLERA_TEST_ORIGIN: 'conversation' })
   const child = JSON.parse(execFileSync(process.execPath, ['-e',
-    'console.log(JSON.stringify({ mode: process.env.NODE_ENV ?? null, origin: process.env.SILLAGE_TEST_ORIGIN, path: process.env.PATH }))',
+    'console.log(JSON.stringify({ mode: process.env.NODE_ENV ?? null, origin: process.env.SOLERA_TEST_ORIGIN, path: process.env.PATH }))',
   ], { env, encoding: 'utf8' }))
   assert.equal(child.mode, null)
   assert.equal(child.origin, 'conversation')

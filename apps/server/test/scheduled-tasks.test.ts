@@ -14,14 +14,14 @@ import {
   scheduledRuns,
   scheduledTasks,
   users,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   DEFAULT_CLAUDE_CONFIG,
   nextScheduleRun,
   type AgentConfig,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -33,7 +33,7 @@ import type { SessionManager } from '../src/sessions/session-manager.js'
 const MINUTE = 60_000
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-scheduled-tasks-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-scheduled-tasks-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
@@ -66,7 +66,7 @@ async function harness(t: TestContext) {
   } as unknown as AgentRegistry
   const config = {
     paths: { worktrees: join(dir, 'worktrees') },
-    server: { publicUrl: 'https://sillage.example/' },
+    server: { publicUrl: 'https://solera.example/' },
   } as unknown as Config
   const log = new EventLog(db)
   const scheduler = new TaskScheduler({ db, config }, sessions, registry, log)
@@ -135,10 +135,10 @@ test('buildRunPrompt tells the agent it runs alone and hands over the previous r
     trigger: 'manual',
     firedAt: Date.now(),
     previous: { startedAt: Date.now() - MINUTE, status: 'succeeded', conversationId: 'c1', summary: 'Rien de neuf.', error: null },
-    publicUrl: 'https://sillage.example/',
+    publicUrl: 'https://solera.example/',
   })
   assert.match(next, /lancé à la main/)
-  assert.match(next, /https:\/\/sillage\.example\/p\/p\/c\/c1/)
+  assert.match(next, /https:\/\/solera\.example\/p\/p\/c\/c1/)
   assert.match(next, /> Rien de neuf\./)
   assert.match(next, /Compare à Rien de neuf\. \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}\)\./)
 })
@@ -277,8 +277,8 @@ test('schedule_task creates a task from a session, within the agent guard rails'
   const requests = new AgentRequests({ db, config }, sessions, registry)
 
   const mcp = async (from: string, args: object) => {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from },
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: from },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })

@@ -4,14 +4,14 @@ import {
   PREFERRED_CLI_RELEASES,
   type AgentKind,
   type CliInstallStateDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 
 /**
- * Installation des CLI agents par Sillage lui-même.
+ * Installation des CLI agents par Solera lui-même.
  *
  * Les binaires ne viennent plus de la release, donc un serveur fraîchement installé peut
  * n'avoir aucun CLI. Plutôt que de renvoyer l'utilisateur à un terminal qu'il n'a pas
- * toujours (image Docker, machine distante), Sillage sait poser la version qu'il vise, dans un préfixe npm qui lui appartient.
+ * toujours (image Docker, machine distante), Solera sait poser la version qu'il vise, dans un préfixe npm qui lui appartient.
  *
  * En tâche de fond, et non dans la requête : le paquet pèse plusieurs centaines de
  * mégaoctets, et une installation qui tient dans le temps d'une requête HTTP tiendrait
@@ -92,7 +92,7 @@ export class CliInstaller {
 
   private npm(pkg: string, version: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // `--prefix` plutôt que la configuration npm de l'utilisateur : Sillage installe
+      // `--prefix` plutôt que la configuration npm de l'utilisateur : Solera installe
       // chez lui, et ne doit pas déplacer ce qui est déjà installé sur le système.
       // `--no-fund --no-audit` parce que rien ne lit cette sortie.
       const child = execFile(

@@ -1,4 +1,4 @@
-import type { ProjectDto } from '@sillage/protocol'
+import type { ProjectDto } from '@solera/protocol'
 import { cx } from './ui'
 
 /**

@@ -1,9 +1,9 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "sillage.fullname" . }}
+  name: {{ include "solera.fullname" . }}
   labels:
-    {{- include "sillage.labels" . | nindent 4 }}
+    {{- include "solera.labels" . | nindent 4 }}
 spec:
   # Un seul exemplaire, et pas de valeur exposée pour en demander plus : l'état
   # vit dans une base SQLite sur un volume ReadWriteOnce. Deux pods qui l'ouvrent
@@ -17,11 +17,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "sillage.selectorLabels" . | nindent 6 }}
+      {{- include "solera.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "sillage.selectorLabels" . | nindent 8 }}
+        {{- include "solera.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
       annotations:
         {{- if .Values.config }}
@@ -41,31 +41,31 @@ spec:
       # laisser le temps de se terminer proprement plutôt que les tuer à 30 s.
       terminationGracePeriodSeconds: 60
       containers:
-        - name: sillage
+        - name: solera
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           env:
             # Sans bind sur 0.0.0.0, le Service ne joindrait jamais le conteneur.
-            - name: SILLAGE_HOST
+            - name: SOLERA_HOST
               value: "0.0.0.0"
-            - name: SILLAGE_PORT
-              value: "7317"
-            - name: SILLAGE_DATA_DIR
-              value: /home/node/.local/share/sillage
-            - name: SILLAGE_LOG_LEVEL
+            - name: SOLERA_PORT
+              value: "7517"
+            - name: SOLERA_DATA_DIR
+              value: /home/node/.local/share/solera
+            - name: SOLERA_LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
             {{- if .Values.config }}
-            - name: SILLAGE_CONFIG
-              value: /etc/sillage/config.toml
+            - name: SOLERA_CONFIG
+              value: /etc/solera/config.toml
             {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
             - name: http
-              containerPort: 7317
+              containerPort: 7517
               protocol: TCP
           # /api/health et non /health : toute route inconnue retombe sur le
           # SPA, qui répond 200 avec du HTML. Une sonde sur /health passerait
@@ -88,7 +88,7 @@ spec:
           volumeMounts:
             {{- if .Values.storage.data.enabled }}
             - name: data
-              mountPath: /home/node/.local/share/sillage
+              mountPath: /home/node/.local/share/solera
             {{- end }}
             {{- if .Values.storage.home.enabled }}
             # Montés en sous-chemins d'un même volume plutôt que sur /home/node
@@ -112,29 +112,29 @@ spec:
             {{- end }}
             {{- if .Values.config }}
             - name: config
-              mountPath: /etc/sillage
+              mountPath: /etc/solera
               readOnly: true
             {{- end }}
       volumes:
         {{- if .Values.storage.data.enabled }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "data") }}
+            claimName: {{ include "solera.claimName" (dict "ctx" . "vol" "data") }}
         {{- end }}
         {{- if .Values.storage.home.enabled }}
         - name: home
           persistentVolumeClaim:
-            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "home") }}
+            claimName: {{ include "solera.claimName" (dict "ctx" . "vol" "home") }}
         {{- end }}
         {{- if .Values.storage.workspace.enabled }}
         - name: workspace
           persistentVolumeClaim:
-            claimName: {{ include "sillage.claimName" (dict "ctx" . "vol" "workspace") }}
+            claimName: {{ include "solera.claimName" (dict "ctx" . "vol" "workspace") }}
         {{- end }}
         {{- if .Values.config }}
         - name: config
           configMap:
-            name: {{ include "sillage.fullname" . }}-config
+            name: {{ include "solera.fullname" . }}-config
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

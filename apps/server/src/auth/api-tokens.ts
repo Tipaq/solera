@@ -1,12 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { and, asc, eq, lt } from 'drizzle-orm'
-import { apiIdempotency, apiTokens, users, type ApiTokenRow, type Db, type UserRow } from '@sillage/db'
+import { apiIdempotency, apiTokens, users, type ApiTokenRow, type Db, type UserRow } from '@solera/db'
 import {
   API_TOKEN_PREFIX,
   type AgentKind,
   type ApiScope,
   type ApiTokenDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 
 /**
  * Le secret fait 32 octets d'aléa : assez d'entropie pour qu'un SHA-256 suffise, là où

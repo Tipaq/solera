@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentKind, AgentUsage } from '@sillage/protocol'
+import type { AgentKind, AgentUsage } from '@solera/protocol'
 import { api } from './api'
 
 const usageKey = (agent: AgentKind) => ['usage', agent]

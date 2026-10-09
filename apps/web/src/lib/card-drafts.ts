@@ -52,11 +52,11 @@ function createDraftStore<T>(prefix: string, valid: (value: unknown) => value is
   }
 }
 
-export const useCardDraft = createDraftStore<CardDraft>('sillage.cardDraft', (value): value is CardDraft =>
+export const useCardDraft = createDraftStore<CardDraft>('solera.cardDraft', (value): value is CardDraft =>
   typeof value === 'object' && value !== null && 'title' in value && 'description' in value &&
   typeof value.title === 'string' && typeof value.description === 'string',
 )
 
-export const useCardNoteDraft = createDraftStore<CardNoteDraft>('sillage.cardNoteDraft', (value): value is CardNoteDraft =>
+export const useCardNoteDraft = createDraftStore<CardNoteDraft>('solera.cardNoteDraft', (value): value is CardNoteDraft =>
   typeof value === 'object' && value !== null && 'body' in value && typeof value.body === 'string',
 )

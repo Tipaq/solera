@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AppSettingsDto, ArchiveRunDto } from '@sillage/protocol'
+import type { AppSettingsDto, ArchiveRunDto } from '@solera/protocol'
 import { api } from './api'
 
 const APP_SETTINGS_KEY = ['app-settings']

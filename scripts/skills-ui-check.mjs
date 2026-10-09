@@ -26,7 +26,7 @@ async function mount(page) {
     window.$RefreshReg$ = () => {}
     window.$RefreshSig$ = () => (type) => type
     window.__vite_plugin_react_preamble_installed__ = true
-    localStorage.setItem('sillage.locale', 'fr')
+    localStorage.setItem('solera.locale', 'fr')
     document.documentElement.dataset.theme = 'dark'
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
@@ -102,7 +102,7 @@ try {
     await inventory.getByRole('button', { name: /Dans la session/ }).click()
     await inventory.getByText('commande-23', { exact: true }).scrollIntoViewIfNeeded()
     assert.ok(await manage.isVisible())
-    await page.screenshot({ path: `/tmp/sillage-skills-composer-${viewport.width}.png` })
+    await page.screenshot({ path: `/tmp/solera-skills-composer-${viewport.width}.png` })
     await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Ajouter un skill', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Depuis un catalogue…' }).click()
@@ -120,7 +120,7 @@ try {
     await filter.fill('design-24')
     await dialog.getByRole('checkbox', { name: 'Sélectionner design-24', exact: true }).check()
     await filter.fill('')
-    await page.screenshot({ path: `/tmp/sillage-skills-catalog-${viewport.width}.png` })
+    await page.screenshot({ path: `/tmp/solera-skills-catalog-${viewport.width}.png` })
     await dialog.getByRole('button', { name: 'Installer la sélection (11)', exact: true }).click()
     await dialog.getByRole('button', { name: 'Installer la sélection (1)', exact: true }).waitFor()
     assert.equal(installed.length, 10)

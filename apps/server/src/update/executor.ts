@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
-import type { UpdateStatus } from '@sillage/protocol'
+import type { UpdateStatus } from '@solera/protocol'
 import type { FastifyBaseLogger } from 'fastify'
 import { detectChannel, installDir } from './channel.js'
 import { CURRENT_VERSION, compareVersions } from './version.js'
@@ -16,7 +16,7 @@ const execFileAsync = promisify(execFile)
 /**
  * Applique une mise à jour sur le layout de l'installeur :
  *
- *   $SILLAGE_INSTALL_DIR/
+ *   $SOLERA_INSTALL_DIR/
  *   ├── releases/vX.Y.Z/     un arbre autonome par version (node_modules inclus)
  *   └── current -> releases/vX.Y.Z
  *
@@ -90,7 +90,7 @@ export class UpdateExecutor {
 
     try {
       await mkdir(tmpDir, { recursive: true })
-      const archive = join(tmpDir, `sillage-v${target}.tar.gz`)
+      const archive = join(tmpDir, `solera-v${target}.tar.gz`)
 
       this.append(`Téléchargement de la version ${target}…`)
       const res = await fetch(assetUrl, { redirect: 'follow' })
@@ -104,7 +104,7 @@ export class UpdateExecutor {
       this.append('Extraction…')
       await rm(stagingDir, { recursive: true, force: true })
       await mkdir(stagingDir, { recursive: true })
-      // L'archive a un dossier racine `sillage/` : on l'aplatit dans le dossier
+      // L'archive a un dossier racine `solera/` : on l'aplatit dans le dossier
       // de transit, renommé en dossier de release seulement une fois complet.
       await execFileAsync('tar', ['-xzf', archive, '--strip-components=1', '-C', stagingDir])
       await this.ensureNativeModules(stagingDir)
@@ -203,7 +203,7 @@ export class UpdateExecutor {
         return
       }
       try {
-        const child = spawn('systemctl', ['--user', 'restart', 'sillage.service'], {
+        const child = spawn('systemctl', ['--user', 'restart', 'solera.service'], {
           detached: true,
           stdio: 'ignore',
         })

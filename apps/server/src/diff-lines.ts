@@ -1,7 +1,7 @@
 /**
  * Diff unifié entre deux textes, ligne à ligne.
  *
- * Écrit ici plutôt qu'ajouté en dépendance : c'est le seul endroit où Sillage doit
+ * Écrit ici plutôt qu'ajouté en dépendance : c'est le seul endroit où Solera doit
  * *calculer* un diff, git le fournissant partout ailleurs. Le format produit est
  * exactement celui que git émet, donc le même analyseur le rend côté client.
  */

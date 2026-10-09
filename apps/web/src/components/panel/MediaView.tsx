@@ -1,4 +1,4 @@
-import { isAudioType } from '@sillage/protocol'
+import { isAudioType } from '@solera/protocol'
 import { rawFileUrl } from '../../lib/files-io'
 import type { WorkspaceScope } from '../../lib/workspace-scope'
 

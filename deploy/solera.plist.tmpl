@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Agent launchd utilisateur (macOS), le pendant de sillage.service.tmpl, rendu par
+  Agent launchd utilisateur (macOS), le pendant de solera.service.tmpl, rendu par
   install.sh dans ~/Library/LaunchAgents. Les placeholders __NODE__, __NODE_DIR__,
   __INSTALL_DIR__, __DATA_DIR__, __HOME__, __SHELL__ et __LANG__ y deviennent des valeurs
   absolues : launchd n'étend ni ~ ni les variables d'environnement.
@@ -9,7 +9,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.github.marlburrow.sillage</string>
+  <string>io.github.tipaq.solera</string>
 
   <key>ProgramArguments</key>
   <array>
@@ -24,16 +24,16 @@
   <dict>
     <key>NODE_ENV</key>
     <string>production</string>
-    <key>SILLAGE_WEB_ROOT</key>
+    <key>SOLERA_WEB_ROOT</key>
     <string>__INSTALL_DIR__/current/web</string>
     <!-- Comme sous systemd : signale le layout de l'installeur, donc la mise à jour intégrée. -->
-    <key>SILLAGE_INSTALL_DIR</key>
+    <key>SOLERA_INSTALL_DIR</key>
     <string>__INSTALL_DIR__</string>
     <!-- Le PATH de launchd s'arrête à /usr/bin:/bin:/usr/sbin:/sbin : ni Homebrew, ni
          ~/.local/bin, ni les binaires npm globaux, donc aucun CLI agent trouvable. -->
     <key>PATH</key>
     <string>__NODE_DIR__:__HOME__/.local/bin:__HOME__/.npm-global/bin:__HOME__/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <!-- Le shell des terminaux de Sillage, et une locale : launchd n'en pose aucune, et
+    <!-- Le shell des terminaux de Solera, et une locale : launchd n'en pose aucune, et
          sans elle zsh affiche les accents en séquences d'octets. Repris tous deux du
          shell qui a lancé l'installeur. -->
     <key>SHELL</key>
@@ -57,8 +57,8 @@
 
   <!-- Pas de journal système à consulter comme sous systemd : un fichier, sans rotation. -->
   <key>StandardOutPath</key>
-  <string>__DATA_DIR__/logs/sillage.log</string>
+  <string>__DATA_DIR__/logs/solera.log</string>
   <key>StandardErrorPath</key>
-  <string>__DATA_DIR__/logs/sillage.log</string>
+  <string>__DATA_DIR__/logs/solera.log</string>
 </dict>
 </plist>

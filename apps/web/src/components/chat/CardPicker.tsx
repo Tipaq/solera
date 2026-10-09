@@ -1,6 +1,6 @@
 import { SquareKanban } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import type { CardLinkDto } from '@sillage/protocol'
+import type { CardLinkDto } from '@solera/protocol'
 import { columnLabel } from '../board/columns'
 import { cx } from '../ui'
 import { useTranslate } from '../../lib/i18n'

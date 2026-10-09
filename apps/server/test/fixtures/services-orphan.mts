@@ -10,7 +10,7 @@ import { readProcessHost } from '../../src/services/ownership.ts'
 import { scanServiceProcesses, stopServiceProcess } from '../../src/services/processes.ts'
 const host = await readProcessHost()
 assert.equal(host.stopsWithService, true)
-const data = await mkdtemp(join(tmpdir(), 'sillage-group-check-'))
+const data = await mkdtemp(join(tmpdir(), 'solera-group-check-'))
 try {
   const origins = new ProcessOrigins(data)
   const child = spawn(process.execPath, ['-e', `
@@ -24,7 +24,7 @@ try {
   const service = (await scanServiceProcesses(origins)).find((entry) => entry.pid === pid)
   assert.ok(service)
   assert.equal(service.relation, 'service-group')
-  assert.equal(service.stopsWithSillage, true)
+  assert.equal(service.stopsWithSolera, true)
   assert.equal(stopServiceProcess(service, origins, host), true)
   await delay(100)
   assert.equal((await scanServiceProcesses(origins)).some((entry) => entry.pid === pid), false)

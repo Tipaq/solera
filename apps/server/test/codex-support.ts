@@ -3,12 +3,12 @@ import { mkdtemp, copyFile, chmod, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { TestContext } from 'node:test'
-import { DEFAULT_CODEX_CONFIG, type SillageEvent, type ConversationStatus } from '@sillage/protocol'
+import { DEFAULT_CODEX_CONFIG, type SoleraEvent, type ConversationStatus } from '@solera/protocol'
 import type { RunnerContext } from '../src/agents/types.js'
 import { CodexRunner } from '../src/agents/codex/runner.js'
 
 export async function fixture(t: TestContext) {
-  const cwd = await mkdtemp(join(tmpdir(), 'sillage-codex-test-'))
+  const cwd = await mkdtemp(join(tmpdir(), 'solera-codex-test-'))
   const binary = join(cwd, 'codex.mjs')
   await copyFile(new URL('./fixtures/codex-app-server.mjs', import.meta.url), binary)
   await chmod(binary, 0o700)
@@ -23,7 +23,7 @@ export async function fixture(t: TestContext) {
 }
 
 export function context(overrides: Partial<RunnerContext> = {}) {
-  const events: SillageEvent[] = []
+  const events: SoleraEvent[] = []
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {

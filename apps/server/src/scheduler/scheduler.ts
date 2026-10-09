@@ -12,7 +12,7 @@ export interface ScheduledJob {
 /**
  * Les travaux périodiques du serveur.
  *
- * Sillage a longtemps fait ses ménages une seule fois, au démarrage de `main`. Sur une
+ * Solera a longtemps fait ses ménages une seule fois, au démarrage de `main`. Sur une
  * instance qui tient des semaines sans redémarrer, cela revient à ne jamais les faire.
  *
  * Un motif cron plutôt qu'un intervalle : « toutes les vingt-quatre heures » se compte

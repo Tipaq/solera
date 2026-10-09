@@ -1,6 +1,6 @@
 apiVersion: v2
-name: sillage
-description: Sillage, plateforme de développement agentique (Fastify + SQLite + CLI agents)
+name: solera
+description: Solera, plateforme de développement agentique (Fastify + SQLite + CLI agents)
 type: application
 
 # Version du chart : à incrémenter à chaque changement des templates.
@@ -8,14 +8,14 @@ version: 0.3.0
 # Version applicative par défaut, sert de tag d'image quand image.tag est vide.
 appVersion: "0.16.0"
 
-home: https://github.com/MarlBurroW/sillage
+home: https://github.com/Tipaq/solera
 sources:
-  - https://github.com/MarlBurroW/sillage
+  - https://github.com/Tipaq/solera
 keywords:
-  - sillage
+  - solera
   - agents
   - claude
   - codex
   - opencode
 maintainers:
-  - name: MarlBurroW
+  - name: Tipaq

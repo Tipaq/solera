@@ -10,7 +10,7 @@ import {
   type FileState,
   type TreeListingDto,
   type TreeSearchDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { readFileStates } from '../../git.js'
 import {
   createEntry,

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect } from 'react'
-import type { TreeListingDto, TreeSearchDto } from '@sillage/protocol'
+import type { TreeListingDto, TreeSearchDto } from '@solera/protocol'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 import { wsClient } from './ws-client'
@@ -17,7 +17,7 @@ import { wsClient } from './ws-client'
  */
 export function useTreeLevel(scope: WorkspaceScope, path: string, enabled: boolean) {
   // Suivi sur le disque tant que ce niveau est affiché : c'est ce qui rattrape les
-  // écritures que Sillage ne fait pas lui-même, celles d'un terminal du panneau comme
+  // écritures que Solera ne fait pas lui-même, celles d'un terminal du panneau comme
   // celles d'un éditeur ouvert à côté. Voir `useTreeSync` pour la relecture.
   useEffect(() => {
     if (!enabled) return

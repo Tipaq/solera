@@ -1,10 +1,10 @@
 import { readFileSync, statSync } from 'node:fs'
 import { extname, isAbsolute, resolve } from 'node:path'
-import { VIEWABLE_IMAGE_TYPES, type SillageEvent } from '@sillage/protocol'
-import type { ThreadItem } from '@sillage/codex-bindings/v2'
+import { VIEWABLE_IMAGE_TYPES, type SoleraEvent } from '@solera/protocol'
+import type { ThreadItem } from '@solera/codex-bindings/v2'
 import { toWorkspacePath } from '../paths.js'
 
-type ToolStart = Extract<SillageEvent, { type: 'tool.started' }>
+type ToolStart = Extract<SoleraEvent, { type: 'tool.started' }>
 
 /** Exhaustivité à la compilation, repli lisible si le CLI est plus récent au runtime. */
 function futureItem(item: never): ThreadItem {
@@ -74,7 +74,7 @@ function imageViewOutput(cwd: string, path: string): unknown {
   }
 }
 
-export function startedItem(item: ThreadItem, parentToolCallId: string | null): SillageEvent[] {
+export function startedItem(item: ThreadItem, parentToolCallId: string | null): SoleraEvent[] {
   if (item.type === 'contextCompaction') return [{ type: 'context.compaction_started' }]
   const action = tool(item)
   return action ? [{ type: 'tool.started', toolCallId: item.id, ...action, parentToolCallId } satisfies ToolStart] : []
@@ -82,8 +82,8 @@ export function startedItem(item: ThreadItem, parentToolCallId: string | null): 
 
 export function completedItem(
   item: ThreadItem, cwd: string, durationMs: number, parentToolCallId: string | null,
-): SillageEvent[] {
-  const finish = (output: unknown, isError = false, duration = durationMs): SillageEvent => ({
+): SoleraEvent[] {
+  const finish = (output: unknown, isError = false, duration = durationMs): SoleraEvent => ({
     type: 'tool.completed', toolCallId: item.id, output, isError, durationMs: duration,
   })
   switch (item.type) {
@@ -100,7 +100,7 @@ export function completedItem(
     case 'commandExecution': return [finish(item.aggregatedOutput, item.status === 'failed' || item.status === 'declined', item.durationMs ?? durationMs)]
     case 'fileChange': return [
       finish(item.changes, item.status === 'failed' || item.status === 'declined'),
-      ...(item.status === 'completed' ? item.changes.map((change): SillageEvent => ({
+      ...(item.status === 'completed' ? item.changes.map((change): SoleraEvent => ({
         type: 'file.edited', toolCallId: item.id, path: toWorkspacePath(cwd, change.path),
         action: change.kind.type === 'add' ? 'created' : change.kind.type === 'delete' ? 'deleted' : 'modified',
       })) : []),
@@ -116,7 +116,7 @@ export function completedItem(
       ...(item.result && !item.failure ? [{
         type: 'message.completed', messageId: `image-${item.id}`, role: 'assistant', parentToolCallId,
         blocks: [{ type: 'image', mimeType: 'image/png', url: `data:image/png;base64,${item.result}` }],
-      } satisfies SillageEvent] : []),
+      } satisfies SoleraEvent] : []),
     ]
     case 'sleep': return [finish({ durationMs: item.durationMs })]
     case 'functionCallOutput': return [finish(item.output)]

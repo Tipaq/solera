@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm'
-import type { Db } from '@sillage/db'
+import type { Db } from '@solera/db'
 
 /**
  * Index de recherche plein texte sur les messages.

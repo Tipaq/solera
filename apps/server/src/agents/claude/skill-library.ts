@@ -4,11 +4,11 @@ import type { SdkPluginConfig } from '@anthropic-ai/claude-agent-sdk'
  * Ce que la bibliothèque de skills ajoute au lancement de Claude Code.
  *
  * Chaque racine est un plugin local : ses skills deviennent des commandes natives
- * (`/sillage:nom`, alias `/nom`), que le modèle déclenche aussi par leur description.
+ * (`/solera:nom`, alias `/nom`), que le modèle déclenche aussi par leur description.
  * Rien n'est écrit dans `~/.claude`.
  *
  * Trois choses, toutes relevées par sonde :
- * - `skipMcpDiscovery` : un plugin peut déclarer des serveurs MCP, et ceux de Sillage
+ * - `skipMcpDiscovery` : un plugin peut déclarer des serveurs MCP, et ceux de Solera
  *   passent par son registre, pas par là ;
  * - les racines en répertoires autorisés : sans elles, lire un fichier annexe d'un skill
  *   (`references/`, `scripts/`) déclenche une demande de permission ;

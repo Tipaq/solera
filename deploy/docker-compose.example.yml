@@ -10,35 +10,35 @@
 # dans le conteneur via `docker exec`.
 #
 # Premier compte (administrateur d'office) :
-#   docker compose exec -it sillage node /app/server/cli/user-create.js
+#   docker compose exec -it solera node /app/server/cli/user-create.js
 #
 # Mise à jour : changer le tag de l'image puis `docker compose up -d --pull always`.
 
 services:
-  sillage:
-    image: ghcr.io/marlburrow/sillage:latest
-    container_name: sillage
+  solera:
+    image: ghcr.io/tipaq/solera:latest
+    container_name: solera
     restart: unless-stopped
     ports:
       # Le serveur ne gère pas TLS : n'exposez ce port qu'en local ou derrière
       # un reverse proxy / VPN, jamais directement sur Internet.
-      - "127.0.0.1:7317:7317"
+      - "127.0.0.1:7517:7517"
     volumes:
       # Base, pièces jointes, worktrees, logs, et les CLIs agents installés depuis
       # l'interface. Volume obligatoire : sans lui, les CLIs seraient à réinstaller
       # à chaque remplacement du conteneur.
-      - sillage-data:/home/node/.local/share/sillage
+      - solera-data:/home/node/.local/share/solera
       # Config optionnelle (config.toml).
-      - sillage-config:/home/node/.config/sillage
+      - solera-config:/home/node/.config/solera
       # Credentials des CLIs agents, partagés avec l'hôte.
       - ~/.claude:/home/node/.claude
       - ~/.codex:/home/node/.codex
       # OpenCode y garde ses identifiants et ses sessions : sans ce volume, une
       # conversation ne se reprendrait pas après le remplacement du conteneur.
       - ~/.local/share/opencode:/home/node/.local/share/opencode
-      # Vos dépôts : les projets créés dans Sillage pointent sur ces chemins.
+      # Vos dépôts : les projets créés dans Solera pointent sur ces chemins.
       - ~/projects:/home/node/workspace
 
 volumes:
-  sillage-data:
-  sillage-config:
+  solera-data:
+  solera-config:

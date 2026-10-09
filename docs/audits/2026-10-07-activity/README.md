@@ -2,7 +2,7 @@
 
 Le titre de la session devient le premier niveau de lecture ; le projet reste visible sous chaque titre. La barre latérale affiche directement les quatre premières sessions actives, avec les attentes en tête, puis un accès à la liste complète. Le repli global reste disponible.
 
-Dans la vue globale, les sections distinguent les demandes à débloquer, le travail en cours et les fins de tour. Le statut est aligné à droite sur ordinateur et rejoint le projet sous le titre sur téléphone. La sélection utilise un fond neutre et un liseré, pour ne pas concurrencer les attentes. Les couleurs et la police restent celles du thème Sillage.
+Dans la vue globale, les sections distinguent les demandes à débloquer, le travail en cours et les fins de tour. Le statut est aligné à droite sur ordinateur et rejoint le projet sous le titre sur téléphone. La sélection utilise un fond neutre et un liseré, pour ne pas concurrencer les attentes. Les couleurs et la police restent celles du thème Solera.
 
 Vérifications : `NODE_ENV=development pnpm typecheck`, `NODE_ENV=development pnpm test` (142 tests), `NODE_ENV=development pnpm lint`, `NODE_ENV=development node scripts/activity-ui-check.mjs`.
 

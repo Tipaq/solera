@@ -22,7 +22,7 @@ import {
   type ProjectAgentDefaults,
   type ProjectDto,
   type ProjectVisibility,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import { ProjectSkills } from '../components/skills/ProjectSkills'

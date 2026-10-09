@@ -1,6 +1,6 @@
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
-import { VIEWABLE_IMAGE_TYPES } from '@sillage/protocol'
+import { VIEWABLE_IMAGE_TYPES } from '@solera/protocol'
 import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
@@ -24,7 +24,7 @@ const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
  *
  * Le mode approximatif de linkify-it lie tout ce qui ressemble à `nom.tld` sans schéma,
  * or `.md`, `.sh`, `.io` ou `.ts` sont de vrais domaines de premier niveau : « CLAUDE.md »
- * devenait un lien vers `http://claude.md`, un domaine que Sillage ne contrôle pas. Dans
+ * devenait un lien vers `http://claude.md`, un domaine que Solera ne contrôle pas. Dans
  * un outil où l'on cite des fichiers à longueur de message, c'est la règle qui se trompe
  * le plus souvent, et elle se trompe vers l'extérieur.
  *
@@ -78,7 +78,7 @@ md.core.ruler.push('sg_task_lists', (state) => {
  * Filtre grossier et volontairement large : il ne tranche pas, il évite seulement
  * d'envoyer des commandes shell et des URL. C'est le workspace qui dit ensuite ce qui
  * est un fichier, parce que la forme ne prouve rien : `text/plain`, `fs/promises` et
- * `@sillage/protocol` ressemblent tous à des chemins.
+ * `@solera/protocol` ressemblent tous à des chemins.
  *
  * Le suffixe `:12` ou `:12:5` des sorties de `grep` est toléré et retiré : le chemin
  * qu'il désigne existe, seule la position ne se transmet pas à l'éditeur.
@@ -169,7 +169,7 @@ function isViewableImage(path: string): boolean {
  *
  * Un lien ou une image dont la cible est un chemin non confirmé est marqué `data-sg-drop` :
  * il sera rendu en texte. Un `<a href="/home/…">` est lu par le navigateur comme un
- * chemin du site : le clic sortirait de Sillage vers une page qui n'existe pas. Du texte
+ * chemin du site : le clic sortirait de Solera vers une page qui n'existe pas. Du texte
  * inerte vaut mieux qu'un lien qui emmène ailleurs — c'est la même règle que
  * `fuzzyLink: false`.
  */
@@ -240,7 +240,7 @@ function markFilePaths(md: MarkdownIt): void {
   })
 
   /**
-   * Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Sillage. Ceux qui
+   * Les liens sortants ne doivent pas pouvoir manipuler l'onglet de Solera. Ceux qui
    * désignent un fichier deviennent des boutons, comme les chemins cités.
    */
   md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {

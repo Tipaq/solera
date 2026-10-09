@@ -1,16 +1,16 @@
 import type { AgentKind } from './events.js'
 
 /**
- * Le paquet npm de chaque CLI, et la version que cette release de Sillage vise.
+ * Le paquet npm de chaque CLI, et la version que cette release de Solera vise.
  *
- * Sillage ne transporte plus les binaires : ils viennent du système, donc leur version
+ * Solera ne transporte plus les binaires : ils viennent du système, donc leur version
  * n'est plus figée par la release et les écarts de comportement deviennent visibles pour
  * l'utilisateur. Ce tableau est ce à quoi on compare, pour pouvoir le dire plutôt que de
  * le subir.
  *
  * « Préférée » et non « testée » : on ne vérifie pas chaque version de chaque CLI, et
  * prétendre le contraire ferait passer pour garanti ce qui ne l'est pas. C'est la version
- * sur laquelle Sillage est développé, celle que l'installation posera, et celle dont on
+ * sur laquelle Solera est développé, celle que l'installation posera, et celle dont on
  * s'écarte à ses risques.
  *
  * À bumper délibérément. Un numéro qu'on relève sans regarder ne vaut pas mieux que pas
@@ -49,7 +49,7 @@ function compare(a: Parsed, b: Parsed): number {
 }
 
 /**
- * La version installée est-elle compatible avec celle que Sillage vise ?
+ * La version installée est-elle compatible avec celle que Solera vise ?
  *
  * Sémantique du caret npm, plutôt qu'une règle inventée ici : c'est déjà celle que
  * l'écosystème applique, et elle épouse les deux façons de versionner qu'on rencontre.

@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { eq } from 'drizzle-orm'
-import { openDatabase, projects, runMigrations, users } from '@sillage/db'
-import type { ProjectDto } from '@sillage/protocol'
+import { openDatabase, projects, runMigrations, users } from '@solera/db'
+import type { ProjectDto } from '@solera/protocol'
 import { projectOverview } from '../src/agents/overview.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
@@ -22,7 +22,7 @@ const SVG = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" view
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-project-image-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-project-image-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
@@ -42,7 +42,7 @@ async function harness(t: TestContext) {
   t.after(() => app.close())
 
   const upload = (content: Buffer | string) => {
-    const boundary = 'sillage-test'
+    const boundary = 'solera-test'
     const payload = Buffer.concat([
       Buffer.from(`--${boundary}\r\ncontent-disposition: form-data; name="file"; filename="logo"\r\ncontent-type: application/octet-stream\r\n\r\n`),
       Buffer.from(content),
@@ -56,16 +56,16 @@ async function harness(t: TestContext) {
   const listed = async () => (await app.inject({ url: '/api/projects' })).json<ProjectDto[]>()[0]!
 
   const mcp = (args: object) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'c' },
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'c' },
       encoding: 'utf8', timeout: 10000,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'set_project_image', arguments: args } }) + '\n',
     })
     assert.equal(run.status, 0, run.stderr)
     return JSON.parse(run.stdout).result as { content: { text: string }[]; isError?: boolean }
   }
-  const overview = (sillageMcp = true) =>
-    projectOverview(db, { projectId: 'project', conversationId: 'c', sillageMcp })
+  const overview = (soleraMcp = true) =>
+    projectOverview(db, { projectId: 'project', conversationId: 'c', soleraMcp })
 
   return { dir, app, upload, listed, mcp, overview }
 }

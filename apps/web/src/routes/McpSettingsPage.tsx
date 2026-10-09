@@ -1,6 +1,6 @@
 import { Plug, Plus, Trash2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { McpServer, McpTransport } from '@sillage/protocol'
+import type { McpServer, McpTransport } from '@solera/protocol'
 import {
   Badge,
   Banner,

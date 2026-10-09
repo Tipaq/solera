@@ -1,7 +1,7 @@
 import { ChevronDown, GitBranch, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CARD_COLUMNS, type CardColumn, type CardDto } from '@sillage/protocol'
+import { CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
 import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
 import { useCardSaving, useDeleteCard, useUpdateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'

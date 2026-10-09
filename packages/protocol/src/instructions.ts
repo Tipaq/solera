@@ -1,16 +1,16 @@
 import { z } from 'zod'
 
 /**
- * SILLAGE.md : des consignes tenues par Sillage et injectées dans le prompt système des
+ * SOLERA.md : des consignes tenues par Solera et injectées dans le prompt système des
  * deux CLI, une partie globale et une par projet.
  *
- * Un projet garde ses consignes soit dans Sillage, soit dans son dépôt. En mode
- * `sillage`, les `CLAUDE.md` et `AGENTS.md` du workspace sont masqués aux CLI sans être
+ * Un projet garde ses consignes soit dans Solera, soit dans son dépôt. En mode
+ * `solera`, les `CLAUDE.md` et `AGENTS.md` du workspace sont masqués aux CLI sans être
  * touchés sur le disque : les garder lus en plus doublerait les consignes. En mode
  * `repo`, la partie projet est le fichier du dépôt, que les CLI lisent d'eux-mêmes, et
- * Sillage n'y ajoute rien. La partie globale vaut dans les deux cas.
+ * Solera n'y ajoute rien. La partie globale vaut dans les deux cas.
  */
-export const instructionsModeSchema = z.enum(['sillage', 'repo'])
+export const instructionsModeSchema = z.enum(['solera', 'repo'])
 export type InstructionsMode = z.infer<typeof instructionsModeSchema>
 
 /**
@@ -23,7 +23,7 @@ export const repoInstructionFileSchema = z.enum(REPO_INSTRUCTION_FILES)
 export type RepoInstructionFile = z.infer<typeof repoInstructionFileSchema>
 
 /**
- * Plafond d'une partie de SILLAGE.md. Elle entre dans le contexte de chaque session : au
+ * Plafond d'une partie de SOLERA.md. Elle entre dans le contexte de chaque session : au
  * delà, elle pèse plus qu'elle n'oriente. Un `CLAUDE.md` copieux importé tient dedans.
  */
 export const MAX_INSTRUCTIONS_CHARS = 40_000
@@ -31,7 +31,7 @@ export const MAX_INSTRUCTIONS_CHARS = 40_000
 /** Plafond d'écriture d'un fichier de consignes du dépôt depuis l'interface. */
 export const MAX_REPO_INSTRUCTIONS_CHARS = 200_000
 
-/** Dernière main sur une partie de SILLAGE.md. */
+/** Dernière main sur une partie de SOLERA.md. */
 export type InstructionsAuthorDto =
   | { kind: 'user'; name: string }
   | { kind: 'session'; conversationId: string; projectId: string | null; title: string | null }

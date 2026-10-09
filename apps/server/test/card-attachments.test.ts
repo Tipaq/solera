@@ -8,8 +8,8 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { eq } from 'drizzle-orm'
-import { attachments, cards, openDatabase, projects, runMigrations, users } from '@sillage/db'
-import { MAX_ATTACHMENT_BYTES } from '@sillage/protocol'
+import { attachments, cards, openDatabase, projects, runMigrations, users } from '@solera/db'
+import { MAX_ATTACHMENT_BYTES } from '@solera/protocol'
 import { AttachmentStore } from '../src/attachments/store.js'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
@@ -17,7 +17,7 @@ import { registerCardRoutes } from '../src/http/routes/cards.js'
 import { registerAttachmentRoutes } from '../src/http/routes/attachments.js'
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-card-files-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-card-files-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
@@ -69,8 +69,8 @@ test('ticket files: upload, project permissions, agent read, orphan protection a
 
   db.update(attachments).set({ createdAt: 1 }).where(eq(attachments.id, file.id)).run()
   assert.equal(await store.purgeOrphans(), 0, 'An old ticket attachment is not an abandoned upload')
-  const mcp = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-    env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project' }, encoding: 'utf8',
+  const mcp = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+    env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project' }, encoding: 'utf8',
     input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'read_card', arguments: { number: card.number } } }) + '\n', timeout: 10000,
   })
   assert.equal(mcp.status, 0, mcp.stderr)

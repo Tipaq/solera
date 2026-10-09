@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { runMigrations, type Db } from '@sillage/db'
+import { runMigrations, type Db } from '@solera/db'
 
 /** Un dossier de migrations Drizzle valide contient toujours ce fichier. */
 const JOURNAL = join('meta', '_journal.json')
@@ -11,7 +11,7 @@ const JOURNAL = join('meta', '_journal.json')
  * profondeur relative, qui diffère entre dist/main.js et dist/cli/*.js.
  */
 export function migrationsFolder(): string {
-  const fromEnv = process.env.SILLAGE_MIGRATIONS
+  const fromEnv = process.env.SOLERA_MIGRATIONS
   if (fromEnv) return fromEnv
 
   const suffixes = ['migrations', join('packages', 'db', 'migrations')]
@@ -29,7 +29,7 @@ export function migrationsFolder(): string {
 
   throw new Error(
     `Dossier de migrations introuvable depuis ${import.meta.dirname}. ` +
-      'Lancer `pnpm db:generate` puis rebuilder, ou définir SILLAGE_MIGRATIONS.',
+      'Lancer `pnpm db:generate` puis rebuilder, ou définir SOLERA_MIGRATIONS.',
   )
 }
 

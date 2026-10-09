@@ -15,7 +15,7 @@ export interface AgentCapabilities {
   /** Le CLI soumet ses plans à validation avant d'exécuter (`plan.review_requested`). */
   planReview: boolean
   /**
-   * Le CLI persiste ses sessions locales dans un format que Sillage sait relire :
+   * Le CLI persiste ses sessions locales dans un format que Solera sait relire :
    * import de sessions commencées au CLI, et resynchronisation du journal après un
    * passage par lui.
    */

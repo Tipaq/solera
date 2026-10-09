@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
-import { conversations, projects, worktrees, type ApiTokenRow, type ProjectRow } from '@sillage/db'
+import { conversations, projects, worktrees, type ApiTokenRow, type ProjectRow } from '@solera/db'
 import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
 
@@ -97,7 +97,7 @@ export function assertWorktreeBelongs(
 /**
  * Racine publique de l'instance, pour le lien qu'un agent fera suivre à un humain.
  *
- * Déduite de la requête par défaut, parce que Sillage s'atteint aussi bien par son nom
+ * Déduite de la requête par défaut, parce que Solera s'atteint aussi bien par son nom
  * de domaine que par son adresse locale et que figer l'un rendrait l'autre inutilisable.
  * Mais l'en-tête `Host` vient de l'appelant : `server.publicUrl` existe pour qui ne veut
  * pas qu'un jeton puisse fabriquer un lien vers un autre site.

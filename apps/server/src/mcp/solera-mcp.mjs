@@ -1,7 +1,7 @@
 /**
- * Serveur MCP de Sillage : rend au CLI ce que la plateforme sait et qu'il ignore.
+ * Serveur MCP de Solera : rend au CLI ce que la plateforme sait et qu'il ignore.
  *
- * Un CLI redémarre amnésique à chaque conversation, alors que Sillage garde le journal
+ * Un CLI redémarre amnésique à chaque conversation, alors que Solera garde le journal
  * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
  * mémoire et cet état, cadrés au projet courant.
  *
@@ -9,7 +9,7 @@
  * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
  * par le daemon. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
- * clic. Et SILLAGE.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
+ * clic. Et SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
  * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. La frontière est là et pas ailleurs : un agent peut
  * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
  * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
@@ -22,7 +22,7 @@
  * cours du destinataire ou en le réveillant (`apps/server/src/sessions/session-relay.ts`).
  *
  * En `.mjs` plutôt qu'en TypeScript compilé, comme la sonde : le process est lancé par
- * le CLI, pas par Sillage, et le garder hors du graphe de modules du serveur évite
+ * le CLI, pas par Solera, et le garder hors du graphe de modules du serveur évite
  * qu'il n'embarque un jour la moitié de l'application par un import distrait. Sa seule
  * dépendance est `better-sqlite3`, déjà présente.
  *
@@ -38,12 +38,12 @@ import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
 import { join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
-const DB_PATH = process.env.SILLAGE_MCP_DB
-const PROJECT_ID = process.env.SILLAGE_MCP_PROJECT
+const DB_PATH = process.env.SOLERA_MCP_DB
+const PROJECT_ID = process.env.SOLERA_MCP_PROJECT
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
-const CURRENT_CONVERSATION = process.env.SILLAGE_MCP_CONVERSATION ?? ''
+const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
 /** Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. */
-const MEMORY_DIR = process.env.SILLAGE_MCP_MEMORY ?? ''
+const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -169,7 +169,7 @@ function sniffProjectImage(buffer) {
   return null
 }
 
-/** Plafond d'une partie de SILLAGE.md, d'accord avec `MAX_INSTRUCTIONS_CHARS` du protocole. */
+/** Plafond d'une partie de SOLERA.md, d'accord avec `MAX_INSTRUCTIONS_CHARS` du protocole. */
 const MAX_INSTRUCTIONS_CHARS = 40000
 
 /**
@@ -183,11 +183,11 @@ const MAX_MEMORY_FILE_CHARS = 100000
 /** Doit rester d'accord avec `REPO_INSTRUCTION_FILES` du protocole. */
 const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
 
-const log = (msg) => process.stderr.write(`[sillage-mcp] ${msg}\n`)
+const log = (msg) => process.stderr.write(`[solera-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
 if (!DB_PATH || !PROJECT_ID) {
-  log('SILLAGE_MCP_DB et SILLAGE_MCP_PROJECT sont requis')
+  log('SOLERA_MCP_DB et SOLERA_MCP_PROJECT sont requis')
   process.exit(1)
 }
 
@@ -218,7 +218,7 @@ const TOOLS = [
   {
     name: 'search_history',
     description:
-      "Cherche dans les conversations passées de ce projet sur Sillage, celles menées avec ce CLI comme avec les autres. Rend une liste de conversations avec un extrait, pas leur contenu : utiliser read_conversation ensuite pour en lire une. Appelle cet outil avant de conclure qu'un sujet est neuf, quand une décision semble avoir déjà été prise, quand un bug ressemble à du déjà-vu, ou quand l'utilisateur fait référence à un travail antérieur.",
+      "Cherche dans les conversations passées de ce projet sur Solera, celles menées avec ce CLI comme avec les autres. Rend une liste de conversations avec un extrait, pas leur contenu : utiliser read_conversation ensuite pour en lire une. Appelle cet outil avant de conclure qu'un sujet est neuf, quand une décision semble avoir déjà été prise, quand un bug ressemble à du déjà-vu, ou quand l'utilisateur fait référence à un travail antérieur.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -356,7 +356,7 @@ const TOOLS = [
   {
     name: 'start_session',
     description:
-      "Lance une nouvelle conversation Sillage dans ce projet, que l'utilisateur suit et reprend comme les autres. Sert quand l'utilisateur te demande de confier un travail à une autre session (« lance ça dans une autre session », « lance une session Codex en effort max pour… »), ou de traiter une carte du board à part. Pas pour ce que tu découvres seul sans qu'on te l'ait demandé : crée plutôt une carte avec create_card. Pas non plus pour un travail qui sert ta propre tâche : tes sous-agents sont faits pour ça. La nouvelle session ne connaît rien de ce fil : `prompt` doit se suffire. Elle démarre avec les réglages par défaut du projet pour ce CLI (permissions comprises), modèle et effort en plus si tu les donnes. Rend son identifiant : enchaîne avec notify_when_done si tu dois reprendre quand elle aura fini.",
+      "Lance une nouvelle conversation Solera dans ce projet, que l'utilisateur suit et reprend comme les autres. Sert quand l'utilisateur te demande de confier un travail à une autre session (« lance ça dans une autre session », « lance une session Codex en effort max pour… »), ou de traiter une carte du board à part. Pas pour ce que tu découvres seul sans qu'on te l'ait demandé : crée plutôt une carte avec create_card. Pas non plus pour un travail qui sert ta propre tâche : tes sous-agents sont faits pour ça. La nouvelle session ne connaît rien de ce fil : `prompt` doit se suffire. Elle démarre avec les réglages par défaut du projet pour ce CLI (permissions comprises), modèle et effort en plus si tu les donnes. Rend son identifiant : enchaîne avec notify_when_done si tu dois reprendre quand elle aura fini.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -366,7 +366,7 @@ const TOOLS = [
         },
         title: {
           type: 'string',
-          description: 'Titre de la conversation dans Sillage. Omettre pour le laisser venir de la mission.',
+          description: 'Titre de la conversation dans Solera. Omettre pour le laisser venir de la mission.',
         },
         agent: {
           type: 'string',
@@ -399,7 +399,7 @@ const TOOLS = [
   {
     name: 'schedule_task',
     description:
-      "Crée une tâche planifiée dans ce projet : Sillage rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
+      "Crée une tâche planifiée dans ce projet : Solera rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -409,7 +409,7 @@ const TOOLS = [
         },
         prompt: {
           type: 'string',
-          description: `La consigne rejouée à chaque tir, en markdown, ${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule, la session ne connaissant rien de ce fil : quoi vérifier, où, quoi faire d'une trouvaille (ouvrir une carte, écrire un rapport), et quoi ne pas toucher. Sillage y ajoute la date du tir, la date et le lien du tir précédent et sa dernière réponse ; \`{{date}}\`, \`{{previous_run_date}}\`, \`{{previous_run_url}}\` et \`{{previous_run_summary}}\` les placent où tu veux.`,
+          description: `La consigne rejouée à chaque tir, en markdown, ${MAX_SCHEDULE_PROMPT_CHARS} caractères au plus. Elle doit se comprendre seule, la session ne connaissant rien de ce fil : quoi vérifier, où, quoi faire d'une trouvaille (ouvrir une carte, écrire un rapport), et quoi ne pas toucher. Solera y ajoute la date du tir, la date et le lien du tir précédent et sa dernière réponse ; \`{{date}}\`, \`{{previous_run_date}}\`, \`{{previous_run_url}}\` et \`{{previous_run_summary}}\` les placent où tu veux.`,
         },
         every_minutes: {
           type: 'integer',
@@ -469,7 +469,7 @@ const TOOLS = [
   {
     name: 'set_project_image',
     description:
-      "Pose ou remplace l'image de ce projet dans Sillage, celle qui le fait reconnaître d'un coup d'œil dans la navigation. Elle s'affiche en tout petit, dans un carré : préfère une icône ou un logo sans texte à une bannière. Sources, dans l'ordre : un logo ou une icône déjà dans le dépôt ; à défaut un SVG simple que tu dessines pour évoquer le projet, ou une image générée si tu as un outil pour ça, et dans ces deux cas passe `provisional: true`. Appelle aussi cet outil quand le projet gagne un vrai logo ou en change, pour que l'image suive.",
+      "Pose ou remplace l'image de ce projet dans Solera, celle qui le fait reconnaître d'un coup d'œil dans la navigation. Elle s'affiche en tout petit, dans un carré : préfère une icône ou un logo sans texte à une bannière. Sources, dans l'ordre : un logo ou une icône déjà dans le dépôt ; à défaut un SVG simple que tu dessines pour évoquer le projet, ou une image générée si tu as un outil pour ça, et dans ces deux cas passe `provisional: true`. Appelle aussi cet outil quand le projet gagne un vrai logo ou en change, pour que l'image suive.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -490,7 +490,7 @@ const TOOLS = [
   {
     name: 'send_session_message',
     description:
-      "Envoie un message à une autre conversation de ce projet, identifiée par le `id` rendu par list_sessions ou find_file_edits. Sillage le lui remet dans quelques secondes : injecté dans son tour si elle travaille, sinon en la relançant pour qu'elle le lise. Sa réponse, si elle en fait une, te parvient de la même façon. Sert quand la coordination ne peut pas attendre l'utilisateur : prévenir qu'on va toucher à un fichier qu'elle modifie, lui demander de libérer l'arbre ou une branche, lui signaler qu'un travail dont elle dépend est fini, lui poser une question sur un choix qu'elle a fait. Pas pour bavarder ni pour rendre compte : chaque message coûte un tour à son destinataire. Si tu attends une réponse pour continuer, termine ton tour après l'envoi plutôt que d'attendre en boucle ; la réponse te relancera.",
+      "Envoie un message à une autre conversation de ce projet, identifiée par le `id` rendu par list_sessions ou find_file_edits. Solera le lui remet dans quelques secondes : injecté dans son tour si elle travaille, sinon en la relançant pour qu'elle le lise. Sa réponse, si elle en fait une, te parvient de la même façon. Sert quand la coordination ne peut pas attendre l'utilisateur : prévenir qu'on va toucher à un fichier qu'elle modifie, lui demander de libérer l'arbre ou une branche, lui signaler qu'un travail dont elle dépend est fini, lui poser une question sur un choix qu'elle a fait. Pas pour bavarder ni pour rendre compte : chaque message coûte un tour à son destinataire. Si tu attends une réponse pour continuer, termine ton tour après l'envoi plutôt que d'attendre en boucle ; la réponse te relancera.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -505,7 +505,7 @@ const TOOLS = [
         reply_to: {
           type: 'string',
           description:
-            "Identifiant du message auquel tu réponds, quand c'en est une. Il figure dans le message reçu. Permet à Sillage de borner un échange qui tournerait en rond.",
+            "Identifiant du message auquel tu réponds, quand c'en est une. Il figure dans le message reçu. Permet à Solera de borner un échange qui tournerait en rond.",
         },
       },
       required: ['to', 'body'],
@@ -514,7 +514,7 @@ const TOOLS = [
   {
     name: 'broadcast_session_message',
     description:
-      "Annonce un message à toutes les autres conversations de ce projet qui travaillent en ce moment, et à elles seules : celles au repos ne sont pas relancées. Sert aux gestes qui touchent tout le monde : redémarrer le service Sillage ou un serveur de dev partagé, changer de branche ou faire un rebase sur l'arbre commun, régénérer des fichiers que d'autres lisent. Les destinataires n'y répondent pas. Pour une question à une session précise, utiliser send_session_message.",
+      "Annonce un message à toutes les autres conversations de ce projet qui travaillent en ce moment, et à elles seules : celles au repos ne sont pas relancées. Sert aux gestes qui touchent tout le monde : redémarrer le service Solera ou un serveur de dev partagé, changer de branche ou faire un rebase sur l'arbre commun, régénérer des fichiers que d'autres lisent. Les destinataires n'y répondent pas. Pour une question à une session précise, utiliser send_session_message.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -529,7 +529,7 @@ const TOOLS = [
   {
     name: 'notify_when_done',
     description:
-      "Demande à être prévenu quand une autre conversation de ce projet aura fini de travailler : plus de tour en cours, ni de travail de fond, ni de boucle. Sillage te relance alors avec son état et son dernier message. Sert quand tu dépends de son travail, ou qu'elle occupe un fichier ou l'arbre dont tu as besoin : appelle cet outil puis termine ton tour, au lieu de rappeler list_sessions en boucle. La surveillance expire au bout de 24 heures.",
+      "Demande à être prévenu quand une autre conversation de ce projet aura fini de travailler : plus de tour en cours, ni de travail de fond, ni de boucle. Solera te relance alors avec son état et son dernier message. Sert quand tu dépends de son travail, ou qu'elle occupe un fichier ou l'arbre dont tu as besoin : appelle cet outil puis termine ton tour, au lieu de rappeler list_sessions en boucle. La surveillance expire au bout de 24 heures.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -544,7 +544,7 @@ const TOOLS = [
   {
     name: 'read_session_messages',
     description:
-      "Relit les messages échangés entre cette conversation et les autres sessions du projet, reçus comme envoyés, avec leur état de remise. Les messages reçus arrivent d'eux-mêmes dans le fil : cet outil sert à les retrouver après une compaction, à voir si un message envoyé a été remis, ou à lire un message que Sillage a retenu sans réveiller la session.",
+      "Relit les messages échangés entre cette conversation et les autres sessions du projet, reçus comme envoyés, avec leur état de remise. Les messages reçus arrivent d'eux-mêmes dans le fil : cet outil sert à les retrouver après une compaction, à voir si un message envoyé a été remis, ou à lire un message que Solera a retenu sans réveiller la session.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -558,7 +558,7 @@ const TOOLS = [
   {
     name: 'read_instructions',
     description:
-      "Lit SILLAGE.md, les consignes que Sillage injecte dans le prompt de chaque session, quel que soit son CLI : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
+      "Lit SOLERA.md, les consignes que Solera injecte dans le prompt de chaque session, quel que soit son CLI : la partie de ce projet ou la partie globale. Ce que ton prompt en contient date du démarrage de la session ; lis la version courante avant de la modifier.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -574,7 +574,7 @@ const TOOLS = [
   {
     name: 'edit_instructions',
     description:
-      "Modifie SILLAGE.md comme l'outil d'édition de fichiers : remplace un passage exact par un autre. `old_text` doit apparaître une seule fois, sauf avec `replace_all`. Lis d'abord avec read_instructions. Sert à ajouter, corriger ou retirer une consigne quand l'utilisateur le demande, ou à retenir une consigne durable qu'il te donne (« retiens que… », « à partir de maintenant… ») ; pas pour ce qui ne vaut que pour la tâche en cours. Prend effet aux sessions qui démarrent ensuite.",
+      "Modifie SOLERA.md comme l'outil d'édition de fichiers : remplace un passage exact par un autre. `old_text` doit apparaître une seule fois, sauf avec `replace_all`. Lis d'abord avec read_instructions. Sert à ajouter, corriger ou retirer une consigne quand l'utilisateur le demande, ou à retenir une consigne durable qu'il te donne (« retiens que… », « à partir de maintenant… ») ; pas pour ce qui ne vaut que pour la tâche en cours. Prend effet aux sessions qui démarrent ensuite.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -597,7 +597,7 @@ const TOOLS = [
   {
     name: 'write_instructions',
     description:
-      "Réécrit entièrement une partie de SILLAGE.md, comme on réécrit un fichier : le contenu donné remplace tout l'existant. Pour une retouche, préfère edit_instructions. Lis d'abord avec read_instructions, pour ne pas effacer ce qui y était.",
+      "Réécrit entièrement une partie de SOLERA.md, comme on réécrit un fichier : le contenu donné remplace tout l'existant. Pour une retouche, préfère edit_instructions. Lis d'abord avec read_instructions, pour ne pas effacer ce qui y était.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -621,7 +621,7 @@ const TOOLS = [
   {
     name: 'write_memory',
     description:
-      "Écrit une note dans la mémoire de ce projet, comme on écrit un fichier : le contenu remplace la note s'il y en a une. Sert à retenir ce qui servira aux sessions suivantes et que le dépôt ne dit pas : une préférence de l'utilisateur, une décision et sa raison, un piège rencontré, une ressource externe. Une note commence par un en-tête `---` avec `name`, `description` (une ligne, sert à juger de sa pertinence) et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. L'index `MEMORY.md` gagne seul une ligne pour une note nouvelle ; il s'écrit aussi directement. Mets à jour une note existante plutôt que d'en créer une seconde sur le même sujet. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SILLAGE.md.",
+      "Écrit une note dans la mémoire de ce projet, comme on écrit un fichier : le contenu remplace la note s'il y en a une. Sert à retenir ce qui servira aux sessions suivantes et que le dépôt ne dit pas : une préférence de l'utilisateur, une décision et sa raison, un piège rencontré, une ressource externe. Une note commence par un en-tête `---` avec `name`, `description` (une ligne, sert à juger de sa pertinence) et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. L'index `MEMORY.md` gagne seul une ligne pour une note nouvelle ; il s'écrit aussi directement. Mets à jour une note existante plutôt que d'en créer une seconde sur le même sujet. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SOLERA.md.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -646,7 +646,7 @@ const TOOLS = [
   {
     name: 'count_active_sessions',
     description:
-      "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Sillage, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
+      "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Solera, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
     inputSchema: { type: 'object', properties: {} },
   },
 ]
@@ -1316,7 +1316,7 @@ function projectInstructionsMode() {
       return false
     }
   })
-  return { mode: hasFile ? 'repo' : 'sillage', chosen: false }
+  return { mode: hasFile ? 'repo' : 'solera', chosen: false }
 }
 
 /** Le compte qui a ouvert cette conversation est-il administrateur. */
@@ -1331,7 +1331,7 @@ function conversationOwnerIsAdmin() {
   return Boolean(row?.admin)
 }
 
-/** La partie de SILLAGE.md visée, telle qu'elle est en base. */
+/** La partie de SOLERA.md visée, telle qu'elle est en base. */
 function readInstructionsRow(projectId) {
   return db
     .prepare('SELECT content, updated_at AS updatedAt FROM instructions WHERE id = ?')
@@ -1339,7 +1339,7 @@ function readInstructionsRow(projectId) {
 }
 
 /**
- * Réécrit une partie de SILLAGE.md d'après sa version courante, dans une transaction :
+ * Réécrit une partie de SOLERA.md d'après sa version courante, dans une transaction :
  * une édition calculée sur un contenu qu'une autre session vient de changer ne doit pas
  * effacer ce changement. `transform` rend le nouveau contenu, ou une chaîne d'erreur
  * dans `{ error }`.
@@ -1353,7 +1353,7 @@ function saveInstructions(projectId, transform, fixMode) {
     if (typeof result !== 'string') return result
     if (result.length > MAX_INSTRUCTIONS_CHARS) {
       return {
-        error: `SILLAGE.md dépasserait ${MAX_INSTRUCTIONS_CHARS} caractères dans cette portée (${result.length}). Elle entre dans le contexte de chaque session : resserre-la.`,
+        error: `SOLERA.md dépasserait ${MAX_INSTRUCTIONS_CHARS} caractères dans cette portée (${result.length}). Elle entre dans le contexte de chaque session : resserre-la.`,
       }
     }
 
@@ -1370,7 +1370,7 @@ function saveInstructions(projectId, transform, fixMode) {
       .run(id, projectId, result, Date.now(), CURRENT_CONVERSATION || null)
     if (fixMode) {
       write
-        .prepare(`UPDATE projects SET instructions_mode = 'sillage' WHERE id = ? AND instructions_mode IS NULL`)
+        .prepare(`UPDATE projects SET instructions_mode = 'solera' WHERE id = ? AND instructions_mode IS NULL`)
         .run(PROJECT_ID)
     }
     return { content: result }
@@ -1387,7 +1387,7 @@ function instructionsTarget(args, writing) {
     if (writing && !conversationOwnerIsAdmin()) {
       return {
         refusal:
-          "La partie globale de SILLAGE.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
+          "La partie globale de SOLERA.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
       }
     }
     return { scope, projectId: null, fixMode: false }
@@ -1397,7 +1397,7 @@ function instructionsTarget(args, writing) {
   if (mode === 'repo') {
     return {
       refusal:
-        "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SILLAGE.md ne servent pour lui qu'à la partie globale (`scope: global`).",
+        "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SOLERA.md ne servent pour lui qu'à la partie globale (`scope: global`).",
     }
   }
   return { scope, projectId: PROJECT_ID, fixMode: !chosen }
@@ -1747,8 +1747,8 @@ async function requestDaemon(kind, payload) {
   return {
     ...text(
       kind === 'start_session'
-        ? "Sillage n'a pas encore fini de lancer la session (le CLI met du temps à démarrer, ou le service ne tourne pas). Ne relance pas la demande : vérifie avec list_sessions dans un moment."
-        : "Sillage n'a pas répondu à temps : le service ne tourne peut-être pas. Réessaie plus tard.",
+        ? "Solera n'a pas encore fini de lancer la session (le CLI met du temps à démarrer, ou le service ne tourne pas). Ne relance pas la demande : vérifie avec list_sessions dans un moment."
+        : "Solera n'a pas répondu à temps : le service ne tourne peut-être pas. Réessaie plus tard.",
     ),
     isError: true,
   }
@@ -1829,7 +1829,7 @@ async function callTool(name, args) {
     if (!card) {
       return {
         ...text(
-          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Sillage, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
+          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Solera, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
         ),
         isError: true,
       }
@@ -1926,7 +1926,7 @@ async function callTool(name, args) {
       )
     }
     return text(
-      `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle est ${STATUS_LABELS[peer.status] ?? peer.status} : Sillage va la relancer pour qu'elle le lise. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
+      `Message ${id} déposé pour « ${peer.title} » (${peer.agent}). Elle est ${STATUS_LABELS[peer.status] ?? peer.status} : Solera va la relancer pour qu'elle le lise. Si tu attends sa réponse, termine ton tour : elle te relancera.`,
     )
   }
 
@@ -1954,7 +1954,7 @@ async function callTool(name, args) {
     const target = typeof args?.session === 'string' ? args.session.trim() : ''
     if (!target) return { ...text('Le paramètre `session` est requis.'), isError: true }
     if (!CURRENT_CONVERSATION) {
-      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas qui prévenir."), isError: true }
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas qui prévenir."), isError: true }
     }
     if (target === CURRENT_CONVERSATION) {
       return { ...text("C'est l'identifiant de cette conversation-ci."), isError: true }
@@ -1991,7 +1991,7 @@ async function callTool(name, args) {
 
   if (name === 'create_card' || name === 'start_session' || name === 'list_models' || name === 'schedule_task') {
     if (!CURRENT_CONVERSATION) {
-      return { ...text("Cette session ne sait pas qui elle est : Sillage ne saurait pas pour qui agir."), isError: true }
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
     }
     if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
       return { ...text('Le paramètre `title` est requis.'), isError: true }
@@ -2080,8 +2080,8 @@ async function callTool(name, args) {
     const target = instructionsTarget(args, false)
     if (target.refusal) return { ...text(target.refusal), isError: true }
     const row = readInstructionsRow(target.projectId)
-    if (!row?.content.trim()) return text(`SILLAGE.md, ${scopeLabel(target.scope)} : vide.`)
-    return text(`SILLAGE.md, ${scopeLabel(target.scope)} (${row.content.length} caractères) :\n\n${row.content}`)
+    if (!row?.content.trim()) return text(`SOLERA.md, ${scopeLabel(target.scope)} : vide.`)
+    return text(`SOLERA.md, ${scopeLabel(target.scope)} (${row.content.length} caractères) :\n\n${row.content}`)
   }
 
   if (name === 'edit_instructions' || name === 'write_instructions') {
@@ -2105,7 +2105,7 @@ async function callTool(name, args) {
         }
         const count = current.split(oldText).length - 1
         if (count === 0) {
-          return { error: "`old_text` n'apparaît pas dans SILLAGE.md. Relis la version courante avec read_instructions : elle a pu changer depuis le début de la session." }
+          return { error: "`old_text` n'apparaît pas dans SOLERA.md. Relis la version courante avec read_instructions : elle a pu changer depuis le début de la session." }
         }
         if (count > 1 && args?.replace_all !== true) {
           return { error: `\`old_text\` apparaît ${count} fois. Donne plus de contexte pour n'en désigner qu'une, ou passe \`replace_all: true\`.` }
@@ -2117,7 +2117,7 @@ async function callTool(name, args) {
     const result = saveInstructions(target.projectId, transform, target.fixMode)
     if (result.error) return { ...text(result.error), isError: true }
     return text(
-      `SILLAGE.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, quel que soit leur CLI (OpenCode dès son prochain message) ; l'utilisateur voit la modification dans Sillage.`,
+      `SOLERA.md mis à jour (${scopeLabel(target.scope)}, ${result.content.length} caractères). Vaut pour les sessions qui démarrent ensuite, quel que soit leur CLI (OpenCode dès son prochain message) ; l'utilisateur voit la modification dans Solera.`,
     )
   }
 
@@ -2145,7 +2145,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         // La version demandée par le client : le CLI décide, pas nous.
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'sillage', version: '1' },
+        serverInfo: { name: 'solera', version: '1' },
       },
     })
     return

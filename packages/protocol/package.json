@@ -1,5 +1,5 @@
 {
-  "name": "@sillage/protocol",
+  "name": "@solera/protocol",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@sillage/codex-bindings": "workspace:*",
+    "@solera/codex-bindings": "workspace:*",
     "croner": "^10.0.1",
     "zod": "^3.24.1"
   }

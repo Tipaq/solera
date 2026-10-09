@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
-import type { AgentUsage, UsageWindow } from '@sillage/protocol'
-import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@sillage/codex-bindings/v2'
+import type { AgentUsage, UsageWindow } from '@solera/protocol'
+import type { GetAccountRateLimitsResponse, RateLimitSnapshot } from '@solera/codex-bindings/v2'
 import { CachedProbe } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { CodexAppServerClient } from './app-server-client.js'
@@ -27,7 +27,7 @@ function toWindow(
     id,
     label: prefix ? `${prefix} · ${label}` : label,
     utilization: window.usedPercent / 100,
-    // Le protocole compte en secondes, tout le reste de Sillage en millisecondes.
+    // Le protocole compte en secondes, tout le reste de Solera en millisecondes.
     resetsAt: window.resetsAt === null ? null : window.resetsAt * 1000,
   }
 }

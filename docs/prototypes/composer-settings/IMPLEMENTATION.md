@@ -2,7 +2,7 @@
 
 La proposition a été retenue le 17 septembre 2026. L’utilisateur change surtout le modèle et l’effort ; ces deux réglages ont chacun un accès direct, avec leur valeur lisible sur mobile. Le choix se fait en deux interactions. La vue complète reste ouverte entre les modifications et présente les options sans sous-écrans, puis les contrôles MCP.
 
-[Essayer la version intégrée via Tailscale](http://marldev.tail710c78.ts.net:7521/) — compte de démonstration `alex`, mot de passe `sillage-demo`.
+[Essayer la version intégrée via Tailscale](http://marldev.tail710c78.ts.net:7521/) — compte de démonstration `alex`, mot de passe `solera-demo`.
 
 Le catalogue, les niveaux disponibles et les replis continuent de venir de `useAgentSettings`. Les valeurs enregistrées hors catalogue restent lisibles. La recherche apparaît au-delà de huit modèles. Un modèle sans effort masque le raccourci correspondant ; le changement de modèle conserve ou adapte l’effort selon ses capacités. Les permissions propres à Claude et Codex, les indications de configuration encore en vigueur et l’inventaire MCP externe sont conservés.
 
@@ -22,21 +22,21 @@ Envoyer, infléchir et exécuter une commande native depuis le composer attenden
 - Dimensions exercées : 1440 × 900, 390 × 844, 320 × 640 et 667 × 375. Pas de débordement horizontal ni d’exception navigateur dans ces parcours.
 - Les permissions étendues et le mode Plan n’augmentent plus la hauteur du composer ; leur détail reste annoncé par le bouton des réglages. Vérifié également sur l’aperçu compilé à 390 et 1440 px.
 - `pnpm test:ui` et `pnpm test:codex-ui` passent, ainsi que le typecheck et le lint web.
-- Build de production dans `/tmp/sillage-composer-app/web`. Les avertissements déjà présents sur `::highlight`, CodeMirror et la taille des bundles restent présents.
+- Build de production dans `/tmp/solera-composer-app/web`. Les avertissements déjà présents sur `::highlight`, CodeMirror et la taille des bundles restent présents.
 - Aperçu compilé contrôlé avec le vrai catalogue, en clair et sombre. Les interactions de cette vérification visuelle restent dans une nouvelle conversation non envoyée. HTTP 200 et index servi identique au build.
 
 Le clavier et Safari sur un iPhone physique restent à essayer. La simulation du viewport ne remplace pas ce contrôle.
 
 ## Aperçu
 
-L’unité utilisateur `sillage-composer-app-preview` sert le frontend compilé sur `127.0.0.1:7521` via Vite preview. Son API et ses WebSockets sont dirigés vers l’instance de démonstration existante sur le port 7519, avec sa base séparée. La maquette initiale reste sur le port 7520.
+L’unité utilisateur `solera-composer-app-preview` sert le frontend compilé sur `127.0.0.1:7521` via Vite preview. Son API et ses WebSockets sont dirigés vers l’instance de démonstration existante sur le port 7519, avec sa base séparée. La maquette initiale reste sur le port 7520.
 
-L’interface compacte a été déployée sur l’instance principale le 17 septembre 2026 à 02:53 (Paris), sans redémarrage du serveur. Le build testé remplace atomiquement le dossier web ; les anciens assets restent disponibles pour les onglets ouverts. Les 40 fichiers contrôlés via l’URL publique correspondent au build, et le PID du serveur est inchangé. La provenance et le dossier de retour arrière sont consignés dans `~/.local/share/sillage/app/deployed-composer-web.json`.
+L’interface compacte a été déployée sur l’instance principale le 17 septembre 2026 à 02:53 (Paris), sans redémarrage du serveur. Le build testé remplace atomiquement le dossier web ; les anciens assets restent disponibles pour les onglets ouverts. Les 40 fichiers contrôlés via l’URL publique correspondent au build, et le PID du serveur est inchangé. La provenance et le dossier de retour arrière sont consignés dans `~/.local/share/solera/app/deployed-composer-web.json`.
 
 Pour retirer cet aperçu :
 
 ```sh
-systemctl --user stop sillage-composer-app-preview
+systemctl --user stop solera-composer-app-preview
 sudo tailscale serve --http=7521 off
 ```
 

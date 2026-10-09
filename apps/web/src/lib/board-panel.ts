@@ -1,13 +1,13 @@
 /**
  * Largeur du tiroir de détail d'une carte, publiée en variable CSS.
  *
- * Séparée de celle du panneau d'outils d'une conversation (`sillage.sheetWidth`) parce
+ * Séparée de celle du panneau d'outils d'une conversation (`solera.sheetWidth`) parce
  * que les deux ne servent pas la même chose : celui-là doit loger un explorateur et un
  * éditeur côte à côte, celui-ci une description et une liste de sessions. Partager la
  * valeur ferait qu'élargir l'un élargit l'autre sans qu'on l'ait demandé.
  */
 
-const WIDTH_KEY = 'sillage.cardPanelWidth'
+const WIDTH_KEY = 'solera.cardPanelWidth'
 
 /** En deçà, le titre d'une session et sa branche ne tiennent plus sur une ligne. */
 const MIN_WIDTH = 480

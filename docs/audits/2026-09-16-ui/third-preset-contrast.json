@@ -1,6 +1,6 @@
 {
   "light": {
-    "Sillage": {
+    "Solera": {
       "canvas": 5.15,
       "surface": 5.47,
       "sunken": 4.73,
@@ -20,7 +20,7 @@
     }
   },
   "dark": {
-    "Sillage": {
+    "Solera": {
       "canvas": 6.65,
       "surface": 6.1,
       "sunken": 6.93,

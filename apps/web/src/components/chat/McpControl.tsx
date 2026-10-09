@@ -2,7 +2,7 @@ import { TooltipButton } from '../ui/Tooltip'
 import { PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import type { McpServer, McpServerStatus } from '@sillage/protocol'
+import type { McpServer, McpServerStatus } from '@solera/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
 import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
 
@@ -14,7 +14,7 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
  * réglages pour comprendre ce que le CLI a réellement chargé.
  *
  * C'est cette même question qui justifie d'y montrer les serveurs venus du CLI, que
- * Sillage n'a pas déclarés et ne peut pas régler. Les taire donnait un composeur qui
+ * Solera n'a pas déclarés et ne peut pas régler. Les taire donnait un composeur qui
  * annonçait « Aucun » à une session où l'agent disposait déjà de sept outils : le
  * réglage disait vrai sur ce qu'il contrôle, et faux sur ce qui est chargé.
  *
@@ -25,7 +25,7 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
 
 export interface McpControlProps {
   presentation?: 'menu' | 'panel'
-  /** Registre de Sillage : le seul que ce contrôle peut activer ou désactiver. */
+  /** Registre de Solera : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
   /**
    * Inventaire que le CLI rapporte pour la session en cours.
@@ -37,14 +37,14 @@ export interface McpControlProps {
   selected: string[]
   onSelectedChange: (ids: string[]) => void
   /**
-   * Serveur MCP de Sillage, ou null quand l'instance ne le monte pas du tout.
+   * Serveur MCP de Solera, ou null quand l'instance ne le monte pas du tout.
    *
    * Null fait disparaître la ligne au lieu de la griser : un réglage visible mais
    * inopérant pousse à chercher pourquoi il ne fait rien, là où son absence se lit
    * comme une instance qui n'a pas cette fonction.
    */
-  sillage: boolean | null
-  onSillageChange: (enabled: boolean) => void
+  solera: boolean | null
+  onSoleraChange: (enabled: boolean) => void
   /** Null pour Codex, qui n'a pas d'isolation à régler. */
   strict: boolean | null
   onStrictChange: (strict: boolean) => void
@@ -57,8 +57,8 @@ export function McpControl({
   inventory,
   selected,
   onSelectedChange,
-  sillage,
-  onSillageChange,
+  solera,
+  onSoleraChange,
   strict,
   onStrictChange,
   disabled = false,
@@ -81,17 +81,17 @@ export function McpControl({
   }
 
   // `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce
-  // que j'ai déclaré », et le serveur de Sillage tombe avec les autres. La case reste
+  // que j'ai déclaré », et le serveur de Solera tombe avec les autres. La case reste
   // affichée pour que son état se lise, mais devient inerte tant que l'isolation dure.
-  const sillageActive = sillage === true && strict !== true
+  const soleraActive = solera === true && strict !== true
 
   const items = (
     <>
-      {sillage === null ? null : (
+      {solera === null ? null : (
         <>
           <CheckboxItem
-            checked={sillage}
-            onCheckedChange={onSillageChange}
+            checked={solera}
+            onCheckedChange={onSoleraChange}
             disabled={disabled || strict === true}
           >
             <span className="flex flex-col">
@@ -111,7 +111,7 @@ export function McpControl({
         <>
           {/* L'intitulé n'apparaît que s'il y a de quoi le distinguer d'autre chose :
               sans serveur du CLI, une seule section n'a pas besoin d'être nommée. */}
-          {external.length > 0 ? <MenuLabel>{t('composer.mcp.sillage')}</MenuLabel> : null}
+          {external.length > 0 ? <MenuLabel>{t('composer.mcp.solera')}</MenuLabel> : null}
           {servers.map((server) => (
             <CheckboxItem
               key={server.id}
@@ -134,7 +134,7 @@ export function McpControl({
           <MenuLabel>{t('composer.mcp.fromCli')}</MenuLabel>
           {external.map((server) => (
             // Une ligne inerte plutôt qu'une case grisée : une case, même désactivée,
-            // laisse croire qu'elle deviendra cochable, alors que Sillage ne pourra
+            // laisse croire qu'elle deviendra cochable, alors que Solera ne pourra
             // jamais régler un serveur qu'il n'a pas déclaré.
             <div
               key={server.name}
@@ -175,10 +175,10 @@ export function McpControl({
   // Une pastille d'icône et de compte plutôt qu'un sélecteur nommé : la question
   // « avec quels outils » se lit d'un coup d'œil et ne mérite pas d'occuper la barre
   // à hauteur des réglages qu'on change à chaque tour.
-  // Le serveur de Sillage compte comme les autres tant que le CLI n'a pas répondu :
+  // Le serveur de Solera compte comme les autres tant que le CLI n'a pas répondu :
   // c'en est un, il expose des outils, et l'omettre ferait afficher « aucun » à une
   // conversation qui démarrera pourtant avec une mémoire du projet.
-  const configured = selected.length + (sillageActive ? 1 : 0)
+  const configured = selected.length + (soleraActive ? 1 : 0)
   const summary = mcpSummary(configured, inventory.length)
   const count = inventory.length > 0 ? inventory.length : configured
 
@@ -253,7 +253,7 @@ function ToolCount({ count }: { count: number | undefined }) {
  *
  * Compte ce que la session a réellement chargé dès que le CLI l'a dit, et non ce que
  * la configuration décrit : c'est la question à laquelle ce contrôle sert à répondre,
- * et les serveurs du CLI en font partie sans que Sillage les ait déclarés. Une
+ * et les serveurs du CLI en font partie sans que Solera les ait déclarés. Une
  * conversation au repos n'a pas d'inventaire, le compte configuré prend alors le
  * relais faute de mieux.
  *

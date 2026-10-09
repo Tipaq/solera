@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
-import { userSettings, type Db } from '@sillage/db'
+import { userSettings, type Db } from '@solera/db'
 import {
   storedUserSettingsSchema,
   type AgentConfig,
   type AppearancePrefs,
   type UserSettingsDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 
 export type UserSettings = UserSettingsDto
 

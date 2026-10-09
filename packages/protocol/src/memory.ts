@@ -4,10 +4,10 @@ import { z } from 'zod'
  * Mémoire d'un projet : les notes que les agents prennent eux-mêmes, au format de la
  * mémoire automatique de Claude Code (`MEMORY.md` en index, une note par fichier).
  *
- * À distinguer de SILLAGE.md : les consignes sont des règles qu'on donne aux agents, la
- * mémoire est ce qu'ils ont appris en route. Claude l'écrit nativement, Sillage ne fait
+ * À distinguer de SOLERA.md : les consignes sont des règles qu'on donne aux agents, la
+ * mémoire est ce qu'ils ont appris en route. Claude l'écrit nativement, Solera ne fait
  * que déplacer son dossier (`autoMemoryDirectory`) ; Codex la reçoit en début de session
- * et l'écrit par les outils MCP de Sillage.
+ * et l'écrit par les outils MCP de Solera.
  */
 export const MEMORY_INDEX_FILE = 'MEMORY.md'
 

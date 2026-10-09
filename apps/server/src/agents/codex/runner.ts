@@ -11,8 +11,8 @@ import {
   type ContentBlock,
   type McpServer,
   type McpServerStatus,
-} from '@sillage/protocol'
-import type { CollaborationMode, RequestId } from '@sillage/codex-bindings'
+} from '@solera/protocol'
+import type { CollaborationMode, RequestId } from '@solera/codex-bindings'
 import type {
   AccountRateLimitsUpdatedNotification,
   AskForApproval,
@@ -61,7 +61,7 @@ import type {
   TurnStartParams,
   TurnStartResponse,
   UserInput,
-} from '@sillage/codex-bindings/v2'
+} from '@solera/codex-bindings/v2'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -119,7 +119,7 @@ const INTERRUPT_GRACE_MS = 15_000
  * viennent du module commun.
  *
  * Codex accepte un chemin local pour les images (`localImage`), là où Claude exige du
- * base64 : c'est le protocole de chacun qui décide, pas une préférence de Sillage.
+ * base64 : c'est le protocole de chacun qui décide, pas une préférence de Solera.
  */
 function buildUserInput(
   text: string,
@@ -244,7 +244,7 @@ export class CodexRunner implements AgentRunner {
   }
 
   /**
-   * `sandbox` est une chaîne côté configuration Sillage, mais une union objet dans le
+   * `sandbox` est une chaîne côté configuration Solera, mais une union objet dans le
    * protocole. La traduction vit ici, à partir des types générés.
    */
   private sandboxPolicy(): SandboxPolicy {
@@ -298,7 +298,7 @@ export class CodexRunner implements AgentRunner {
       ...toCodexThreadConfig(this.mcpServers),
       // Rend aussi les questions structurées disponibles en mode de travail normal.
       'features.default_mode_request_user_input': true,
-      // Le projet tient ses consignes dans SILLAGE.md, qui arrive par
+      // Le projet tient ses consignes dans SOLERA.md, qui arrive par
       // `developerInstructions` : lire aussi l'`AGENTS.md` du dépôt les doublerait. Zéro
       // coupe les seuls fichiers du projet, le `AGENTS.md` de `CODEX_HOME` reste lu
       // (sondé sur codex-cli 0.157.1).
@@ -312,7 +312,7 @@ export class CodexRunner implements AgentRunner {
     // configuration MCP.
     const developerInstructions = [
       this.ctx.projectOverview(this.config),
-      'Sillage displays structured user questions as interactive forms. When asking the user to choose or clarify, use the available request_user_input or request_user_input_async tool instead of listing choices in a plain message. Never treat a suggested option as a submitted answer.',
+      'Solera displays structured user questions as interactive forms. When asking the user to choose or clarify, use the available request_user_input or request_user_input_async tool instead of listing choices in a plain message. Never treat a suggested option as a submitted answer.',
     ].filter(Boolean).join('\n\n')
 
     const started = this.ctx.resumeSessionId
@@ -326,7 +326,7 @@ export class CodexRunner implements AgentRunner {
           developerInstructions,
           // Sans lui, la réponse embarque tout l'historique du fil, images en base64
           // comprises : 48 Mo constatés le 2026-09-27, de quoi faire tomber le daemon en
-          // OOM à chaque reprise. Sillage tient déjà son propre journal et n'en lit rien.
+          // OOM à chaque reprise. Solera tient déjà son propre journal et n'en lit rien.
           excludeTurns: true,
         })
       : await this.client.call<ThreadStartResponse, 'thread/start'>('thread/start', {
@@ -419,7 +419,7 @@ export class CodexRunner implements AgentRunner {
    * Publie l'inventaire MCP du thread.
    *
    * Interrogé avec `threadId` : sans lui, l'app-server ne répond que les serveurs de la
-   * configuration de l'utilisateur, et les surcharges posées par Sillage restent
+   * configuration de l'utilisateur, et les surcharges posées par Solera restent
    * invisibles. C'est la contrepartie de ne rien écrire dans son `config.toml`.
    *
    * Codex annonce un démarrage par serveur, et chaque annonce relit l'inventaire

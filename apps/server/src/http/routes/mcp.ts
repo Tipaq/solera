@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { mcpServers } from '@sillage/db'
+import { mcpServers } from '@solera/db'
 import {
   createMcpServerBodySchema,
   isReservedMcpServerName,
   updateMcpServerBodySchema,
   type McpServer,
   type McpServerListDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { rowToMcpServer } from '../../agents/mcp-registry.js'
 import type { AppContext } from '../context.js'
 import { conflict, notFound } from '../errors.js'
@@ -36,12 +36,12 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
    * code que l'interface sait traduire plutôt qu'une erreur de contrainte.
    */
   const requireFreeName = (name: string, exceptId?: string): void => {
-    // Le serveur que Sillage monte lui-même n'est pas dans cette table, donc l'unicité
+    // Le serveur que Solera monte lui-même n'est pas dans cette table, donc l'unicité
     // de la base ne le protège pas : une entrée homonyme prendrait sa place dans la
     // configuration transmise au CLI, et l'agent perdrait l'accès à l'historique sans
     // qu'aucune erreur ne le signale.
     if (isReservedMcpServerName(name)) {
-      throw conflict('mcp_server_name_reserved', 'The name {name} is reserved by Sillage.', {
+      throw conflict('mcp_server_name_reserved', 'The name {name} is reserved by Solera.', {
         name,
       })
     }
@@ -61,7 +61,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/api/mcp/servers', async (request): Promise<McpServerListDto> => {
     requireUser(request)
-    return { servers: listAll(), sillageServer: ctx.config.mcp.sillageServer }
+    return { servers: listAll(), soleraServer: ctx.config.mcp.soleraServer }
   })
 
   app.post('/api/mcp/servers', async (request, reply): Promise<McpServer> => {

@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import type { ConversationDto, ProjectDto } from '@sillage/protocol'
+import type { ConversationDto, ProjectDto } from '@solera/protocol'
 import { useCurrentUser } from './session'
 
-const storageKey = (userId: string) => `sillage.lastContext:${userId}`
+const storageKey = (userId: string) => `solera.lastContext:${userId}`
 const contextPattern = /^\/p\/([\w-]+)\/(board|c\/([\w-]+))(?:\?[^#]*)?$/
 
 /** Un ancien favori ne doit pas renvoyer vers un projet supprimé ou devenu privé. */

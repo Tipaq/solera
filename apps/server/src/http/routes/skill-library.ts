@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { LibrarySkillRow, UserRow } from '@sillage/db'
+import type { LibrarySkillRow, UserRow } from '@solera/db'
 import {
   MAX_ATTACHMENT_BYTES,
   adoptLibrarySkillBodySchema,
@@ -15,7 +15,7 @@ import {
   type LibrarySkillListDto,
   type LibrarySkillScope,
   type LocalSkillListDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { z } from 'zod'
 import { readSkillArchive } from '../../skill-library/archive.js'
 import { scanLocalSkills } from '../../skill-library/local-scan.js'

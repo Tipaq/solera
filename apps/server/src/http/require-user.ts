@@ -1,6 +1,6 @@
-import type { ApiTokenRow, UserRow } from '@sillage/db'
+import type { ApiTokenRow, UserRow } from '@solera/db'
 import type { FastifyRequest } from 'fastify'
-import type { ApiScope } from '@sillage/protocol'
+import type { ApiScope } from '@solera/protocol'
 import { forbidden, unauthorized } from './errors.js'
 
 export function requireUser(request: FastifyRequest): UserRow {

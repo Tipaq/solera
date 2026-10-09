@@ -42,13 +42,13 @@ base temporaire avec les agents désactivés. Les avertissements de build sur
 ## Aperçu temporaire
 
 Une instance de démonstration séparée, avec des données fictives et les agents
-désactivés, tourne pendant 24 h sous l'unité utilisateur `sillage-board-preview`.
+désactivés, tourne pendant 24 h sous l'unité utilisateur `solera-board-preview`.
 Elle est exposée uniquement via Tailscale sur le port 7620. Connexion de démonstration :
-`alex` / `sillage-demo`. L'instance principale n'a pas été redéployée.
+`alex` / `solera-demo`. L'instance principale n'a pas été redéployée.
 
 Pour fermer cet aperçu :
 
 ```sh
-systemctl --user stop sillage-board-preview
+systemctl --user stop solera-board-preview
 sudo tailscale serve --http=7620 off
 ```

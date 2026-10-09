@@ -27,7 +27,7 @@ export const apiScopeSchema = z.enum([
 export type ApiScope = z.infer<typeof apiScopeSchema>
 
 /** Préfixe en clair, pour qu'un jeton trouvé dans un fichier de configuration se reconnaisse. */
-export const API_TOKEN_PREFIX = 'sillage_pat_'
+export const API_TOKEN_PREFIX = 'solera_pat_'
 
 export interface ApiTokenDto {
   id: string

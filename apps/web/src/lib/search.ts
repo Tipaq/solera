@@ -5,7 +5,7 @@ import {
   SEARCH_MARK_OPEN,
   SEARCH_MIN_QUERY,
   type SearchMessageDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { api } from './api'
 
 /** Frappe moyenne : en dessous, on interroge le serveur à chaque lettre pour rien. */

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
+import type { UpdateStatus, VersionInfo } from '@solera/protocol'
 import { api } from './api'
 import { useCurrentUser } from './session'
 

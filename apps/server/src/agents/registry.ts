@@ -6,7 +6,7 @@ import type {
   AgentUsage,
   EditDiffDto,
   ProjectCommandsDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import { ClaudeAdapter } from './claude/adapter.js'
@@ -33,7 +33,7 @@ export interface DescribeEditArgs {
 }
 
 /**
- * Tout ce qu'un CLI apporte à Sillage, réuni derrière une seule porte (invariant I3).
+ * Tout ce qu'un CLI apporte à Solera, réuni derrière une seule porte (invariant I3).
  *
  * Le reste du serveur ne branche jamais sur le type d'agent : il demande l'adaptateur
  * au registre et lui parle. Ajouter un CLI, c'est écrire une implémentation de cette
@@ -51,7 +51,7 @@ export interface AgentAdapter {
    */
   readonly binary: string
   /**
-   * Le CLI sur la machine : résolution sur le PATH, présence et version. Sillage ne
+   * Le CLI sur la machine : résolution sur le PATH, présence et version. Solera ne
    * transporte plus les binaires, donc l'absence est un état normal que l'interface
    * doit pouvoir montrer.
    */

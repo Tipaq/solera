@@ -1,7 +1,7 @@
 import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sillage/protocol'
+import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'

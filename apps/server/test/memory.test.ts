@@ -7,8 +7,8 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { openDatabase, projects, runMigrations, users } from '@sillage/db'
-import type { ProjectMemoryDto } from '@sillage/protocol'
+import { openDatabase, projects, runMigrations, users } from '@solera/db'
+import type { ProjectMemoryDto } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerMemoryRoutes } from '../src/http/routes/memory.js'
@@ -20,7 +20,7 @@ import {
 } from '../src/memory/store.js'
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-memory-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-memory-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   // La mémoire Claude d'avant, dans un CLAUDE_CONFIG_DIR jetable.
   const previous = process.env.CLAUDE_CONFIG_DIR
@@ -50,8 +50,8 @@ async function harness(t: TestContext) {
 
   const memoryDir = projectMemoryDir(root, 'project')
   const mcp = (name: string, args: object = {}) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: 'c', SILLAGE_MCP_MEMORY: memoryDir },
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'c', SOLERA_MCP_MEMORY: memoryDir },
       encoding: 'utf8', timeout: 10000,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n',
     })
@@ -76,7 +76,7 @@ test('premier lancement : la mémoire Claude du workspace est copiée, une seule
   const listed = await memory()
   assert.deepEqual(listed.files.map((file) => file.file), ['MEMORY.md', 'ancienne.md'])
   assert.equal(listed.importedFrom?.dir, native)
-  // L'original reste, pour une session lancée hors de Sillage.
+  // L'original reste, pour une session lancée hors de Solera.
   assert.equal(await readFile(join(native, 'ancienne.md'), 'utf8'), 'Une note d’avant.')
 
   // Vidée à la main, elle ne se remplit pas de nouveau.

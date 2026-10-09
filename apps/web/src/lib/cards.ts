@@ -1,5 +1,5 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@sillage/protocol'
+import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@solera/protocol'
 import { api } from './api'
 
 const cardsKey = (projectId: string) => ['cards', projectId]

@@ -1,5 +1,5 @@
 import { Flame, Snowflake } from 'lucide-react'
-import type { AgentKind } from '@sillage/protocol'
+import type { AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '../ui'

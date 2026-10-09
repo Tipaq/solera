@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { skillSources, type Db } from '@sillage/db'
+import { skillSources, type Db } from '@solera/db'
 import type {
   LibrarySkillDto,
   LibrarySkillListDto,
@@ -11,7 +11,7 @@ import type {
   SkillSourceCatalogDto,
   SkillSourceDto,
   SourceSkillPreviewDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { normalizeSourceUrl } from '../src/skill-library/sources.js'
 import { http } from './skill-library-support.js'
 
@@ -138,10 +138,10 @@ test('mise à jour : signalée au rafraîchissement, montrée en diff, appliqué
   const applied = (await call('admin', 'POST', `/api/skill-library/${renamed.id}/update`)).json() as LibrarySkillDto
   assert.equal(applied.updateAvailable, false)
   assert.equal(applied.origin!.commit, second)
-  const main = readFileSync(join(root, 'global/sillage/skills/gamma/SKILL.md'), 'utf8')
+  const main = readFileSync(join(root, 'global/solera/skills/gamma/SKILL.md'), 'utf8')
   assert.match(main, /^---\nname: gamma\n/)
   assert.match(main, /Beta 2, with more care\./)
-  assert.ok(existsSync(join(root, 'global/sillage/skills/gamma/references/notes.md')))
+  assert.ok(existsSync(join(root, 'global/solera/skills/gamma/references/notes.md')))
 })
 
 test('modification locale : signalée, puis écrasée par la mise à jour', async (t) => {
@@ -182,8 +182,8 @@ test('un dépôt qui est lui-même un skill, sans emporter son .git', async (t) 
   const catalog = (await call('admin', 'GET', '/api/skill-sources/solo/catalog')).json() as SkillSourceCatalogDto
   assert.deepEqual(catalog.skills.map((skill) => [skill.path, skill.name]), [['', 'solo']])
   assert.equal((await call('admin', 'POST', '/api/skill-sources/solo/install', { path: '', scope: 'global' })).statusCode, 201)
-  assert.ok(existsSync(join(root, 'global/sillage/skills/solo/SKILL.md')))
-  assert.ok(!existsSync(join(root, 'global/sillage/skills/solo/.git')))
+  assert.ok(existsSync(join(root, 'global/solera/skills/solo/SKILL.md')))
+  assert.ok(!existsSync(join(root, 'global/solera/skills/solo/.git')))
 })
 
 test('rafraîchissement raté : erreur gardée sur la source, catalogue précédent intact', async (t) => {

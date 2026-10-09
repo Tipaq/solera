@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # L'installeur est aussi servi depuis le site : l'URL courte
-      # marlburrow.github.io/sillage/install.sh reste valable.
+      # tipaq.github.io/solera/install.sh reste valable.
       - run: cp install.sh site/install.sh
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

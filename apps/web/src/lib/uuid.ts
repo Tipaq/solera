@@ -1,6 +1,6 @@
 /**
  * `crypto.randomUUID` est réservé aux contextes sécurisés (https ou localhost).
- * Sillage est conçu pour être ouvert depuis un téléphone sur `http://<ip-locale>`,
+ * Solera est conçu pour être ouvert depuis un téléphone sur `http://<ip-locale>`,
  * qui n'en est pas un : l'appel direct y lève une TypeError.
  *
  * `crypto.getRandomValues`, lui, est disponible partout.

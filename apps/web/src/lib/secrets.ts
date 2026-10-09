@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { SecretListDto } from '@sillage/protocol'
+import type { SecretListDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

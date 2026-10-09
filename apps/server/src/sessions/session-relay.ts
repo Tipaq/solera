@@ -8,8 +8,8 @@ import {
   sessionWatches,
   type Db,
   type SessionMessageRow,
-} from '@sillage/db'
-import { formatSessionMessage } from '@sillage/protocol'
+} from '@solera/db'
+import { formatSessionMessage } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from './session-manager.js'
 
@@ -39,7 +39,7 @@ const POLL_MS = 2000
  * passé ce seuil le message est retenu, et le fil du destinataire le montre pour qu'une
  * personne le remette ou l'écarte.
  *
- * Doit rester d'accord avec `apps/server/src/mcp/sillage-mcp.mjs`, qui prévient
+ * Doit rester d'accord avec `apps/server/src/mcp/solera-mcp.mjs`, qui prévient
  * l'expéditeur au moment de l'envoi.
  */
 export const MAX_HOPS = 6

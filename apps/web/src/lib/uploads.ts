@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES } from '@sillage/protocol'
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES } from '@solera/protocol'
 import { formatBytes } from './attachments'
 import { translate, translateError } from './i18n'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'

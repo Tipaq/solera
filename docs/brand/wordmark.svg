@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" width="340" height="72" role="img" aria-label="Sillage">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 72" width="340" height="72" role="img" aria-label="Solera">
   <!--
     En-tête du dépôt. Rendu par GitHub comme une image, donc sans accès aux jetons du
     thème : les deux modes sont portés par une requête de préférence, que le navigateur
@@ -32,6 +32,6 @@
   <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
   </g>
 
-  <text class="word" x="60" y="34">Sillage</text>
+  <text class="word" x="60" y="34">Solera</text>
   <text class="sub" x="61" y="54">Plateforme de développement agentique</text>
 </svg>

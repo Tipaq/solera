@@ -23,9 +23,9 @@ Maquette autonome du 17 septembre 2026, préparée après consultation du compos
 
 ## Portée de la maquette
 
-`index.html`, `prototype.css` et `prototype.js` fonctionnent sans dépendance. Les modèles, niveaux et serveurs MCP sont illustratifs. Les choix vivent uniquement en mémoire dans cette page ; aucune requête ne part vers une API Sillage ou un agent. L’envoi, les pièces jointes et la dictée sont désactivés. Le menu d’agent et le changement de thème permettent de comparer les rendus.
+`index.html`, `prototype.css` et `prototype.js` fonctionnent sans dépendance. Les modèles, niveaux et serveurs MCP sont illustratifs. Les choix vivent uniquement en mémoire dans cette page ; aucune requête ne part vers une API Solera ou un agent. L’envoi, les pièces jointes et la dictée sont désactivés. Le menu d’agent et le changement de thème permettent de comparer les rendus.
 
-Pour l’intégration, conserver les données et règles de `useAgentSettings` dans `apps/web/src/components/chat/agent-settings.tsx` : catalogue réel, niveaux disponibles, repli de l’effort au changement de modèle, valeurs enregistrées et différence entre configuration choisie et appliquée. Les accès rapides viendraient dans `ComposerSettings.tsx`, et le panneau à deux étages de `SettingsPanel.tsx` deviendrait une vue à plat. Les permissions de Claude et celles de Codex gardent leurs différences. L’inventaire MCP conserve aussi la distinction entre serveurs gérés par Sillage et serveurs externes.
+Pour l’intégration, conserver les données et règles de `useAgentSettings` dans `apps/web/src/components/chat/agent-settings.tsx` : catalogue réel, niveaux disponibles, repli de l’effort au changement de modèle, valeurs enregistrées et différence entre configuration choisie et appliquée. Les accès rapides viendraient dans `ComposerSettings.tsx`, et le panneau à deux étages de `SettingsPanel.tsx` deviendrait une vue à plat. Les permissions de Claude et celles de Codex gardent leurs différences. L’inventaire MCP conserve aussi la distinction entre serveurs gérés par Solera et serveurs externes.
 
 ## Vérification
 
@@ -35,11 +35,11 @@ Safari sur un iPhone physique et son clavier virtuel restent à essayer. Cette v
 
 ## Service d’aperçu
 
-Unité utilisateur temporaire `sillage-composer-preview`, serveur Python lié à `127.0.0.1:7520`, racine limitée à ce dossier. L’exposition Tailscale est privée. La réponse HTTP et le contenu servi ont été contrôlés avec `curl` et `cmp`.
+Unité utilisateur temporaire `solera-composer-preview`, serveur Python lié à `127.0.0.1:7520`, racine limitée à ce dossier. L’exposition Tailscale est privée. La réponse HTTP et le contenu servi ont été contrôlés avec `curl` et `cmp`.
 
 Pour retirer l’aperçu :
 
 ```sh
-systemctl --user stop sillage-composer-preview
+systemctl --user stop solera-composer-preview
 sudo tailscale serve --http=7520 off
 ```

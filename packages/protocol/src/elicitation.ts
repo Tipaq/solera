@@ -3,7 +3,7 @@ import type {
   McpElicitationPrimitiveSchema,
   McpElicitationSchema,
   McpServerElicitationAction,
-} from '@sillage/codex-bindings/v2'
+} from '@solera/codex-bindings/v2'
 
 /**
  * Élicitations MCP : un serveur MCP réclame une saisie à l'utilisateur.

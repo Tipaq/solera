@@ -1,6 +1,6 @@
 import { BookOpen, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { LibrarySkillDto, LocalSkillOrigin } from '@sillage/protocol'
+import type { LibrarySkillDto, LocalSkillOrigin } from '@solera/protocol'
 import { translate, useTranslate, type MessageKey } from '../../lib/i18n'
 import { Badge } from '../ui'
 

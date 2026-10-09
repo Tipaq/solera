@@ -29,8 +29,8 @@ const models = [
   { value: 'none', displayName: 'Sans réflexion', description: 'Sans niveau configurable', hint: null, isDefault: false, efforts: [], defaultEffort: null },
 ]
 const initial = {
-  codex: { agent: 'codex', model: 'alpha', reasoningEffort: 'high', askForApproval: 'on-request', collaborationMode: 'default', sandbox: 'workspace-write', sillageMcp: true, mcpServers: [] },
-  claude: { agent: 'claude', model: 'alpha', effort: 'high', permissionMode: 'manual', strictMcp: false, sillageMcp: true, mcpServers: [] },
+  codex: { agent: 'codex', model: 'alpha', reasoningEffort: 'high', askForApproval: 'on-request', collaborationMode: 'default', sandbox: 'workspace-write', soleraMcp: true, mcpServers: [] },
+  claude: { agent: 'claude', model: 'alpha', effort: 'high', permissionMode: 'manual', strictMcp: false, soleraMcp: true, mcpServers: [] },
 }
 
 async function mount(page) {
@@ -41,7 +41,7 @@ async function mount(page) {
     window.$RefreshReg$ = () => {}
     window.$RefreshSig$ = () => (type) => type
     window.__vite_plugin_react_preamble_installed__ = true
-    localStorage.setItem('sillage.locale', 'fr')
+    localStorage.setItem('solera.locale', 'fr')
     document.documentElement.dataset.theme = 'light'
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
@@ -112,7 +112,7 @@ try {
       const path = new URL(request.url()).pathname
       const id = path.split('/')[3]
       if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
-      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], sillageServer: true } })
+      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], soleraServer: true } })
       if (path.endsWith('/messages')) {
         messages.push({ text: request.postDataJSON().text, config: structuredClone(stored[id]) })
         return route.fulfill({ json: { ok: true } })

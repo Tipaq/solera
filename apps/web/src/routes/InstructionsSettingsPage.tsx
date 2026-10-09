@@ -5,7 +5,7 @@ import { useTranslate } from '../lib/i18n'
 import { SectionHeader } from './SettingsPage'
 
 /**
- * La partie globale de SILLAGE.md : injectée dans toutes les sessions de l'instance,
+ * La partie globale de SOLERA.md : injectée dans toutes les sessions de l'instance,
  * Claude comme Codex. Celle d'un projet se règle sur la page du projet.
  */
 export function InstructionsSettingsPage() {

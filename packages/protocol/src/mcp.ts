@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 /**
- * Serveurs MCP déclarés dans Sillage.
+ * Serveurs MCP déclarés dans Solera.
  *
  * Un seul modèle pour les deux CLI, parce que la déclaration est la même partout : un
  * transport, de quoi joindre le serveur, et de quoi l'authentifier. Ce qui diffère est
@@ -24,12 +24,12 @@ export const mcpServerNameSchema = z
   .regex(/^[a-zA-Z0-9_-]+$/)
 
 /**
- * Nom du serveur MCP que Sillage monte lui-même dans chaque conversation.
+ * Nom du serveur MCP que Solera monte lui-même dans chaque conversation.
  *
  * Réservé : une entrée du registre qui porterait ce nom prendrait sa place dans la
  * table que les deux CLI construisent par nom, et le remplacerait en silence.
  */
-export const BUILTIN_MCP_SERVER_NAME = 'sillage'
+export const BUILTIN_MCP_SERVER_NAME = 'solera'
 
 /**
  * Vérifié à l'écriture du registre et non dans `mcpServerNameSchema` : le schéma relit
@@ -45,7 +45,7 @@ const stdioTransportSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
   /**
-   * S'ajoute à l'environnement du serveur Sillage, ne le remplace pas : un serveur MCP
+   * S'ajoute à l'environnement du serveur Solera, ne le remplace pas : un serveur MCP
    * garde `HOME` et `PATH` sans qu'on ait à les recopier ici. Relevé sur les deux CLI.
    */
   env: z.record(z.string()).default({}),
@@ -90,7 +90,7 @@ export const mcpServerStateSchema = z.enum([
   'pending',
   'connected',
   'failed',
-  /** Le serveur répond mais réclame une authentification que Sillage ne sait pas mener. */
+  /** Le serveur répond mais réclame une authentification que Solera ne sait pas mener. */
   'needs-auth',
   'disabled',
 ])
@@ -107,8 +107,8 @@ export const mcpServerStatusSchema = z.object({
   error: z.string().nullable().default(null),
   /**
    * Serveur venu du disque du CLI (`~/.claude.json`, `config.toml`, connecteurs
-   * claude.ai) et non de Sillage. L'interface doit le montrer sans proposer de
-   * l'éditer : Sillage n'en est pas propriétaire.
+   * claude.ai) et non de Solera. L'interface doit le montrer sans proposer de
+   * l'éditer : Solera n'en est pas propriétaire.
    */
   external: z.boolean().default(false),
 })

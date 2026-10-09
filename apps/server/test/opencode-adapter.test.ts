@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_OPENCODE_CONFIG, agentConfigSchema, isPermissiveConfig, parseAgentConfig } from '@sillage/protocol'
+import { DEFAULT_OPENCODE_CONFIG, agentConfigSchema, isPermissiveConfig, parseAgentConfig } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
 import { OpencodeAdapter } from '../src/agents/opencode/adapter.js'

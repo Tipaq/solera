@@ -12,7 +12,7 @@ export interface ProcessNode {
 
 export interface ProcessHost {
   pid: number
-  /** Seulement une unité dont Sillage est bien le processus principal. */
+  /** Seulement une unité dont Solera est bien le processus principal. */
   cgroup: string | null
   stopsWithService: boolean
 }
@@ -35,7 +35,7 @@ export function executionLink(pid: number, nodes: ReadonlyMap<number, ProcessNod
   let current: ProcessNode | undefined = first
   while (current && current.pid !== host.pid && !visited.has(current.pid)) {
     visited.add(current.pid)
-    // Même un tmux resté dans le cgroup de Sillage est hors de cette vue.
+    // Même un tmux resté dans le cgroup de Solera est hors de cette vue.
     if (/^(?:tmux(?:[: ].*)?|screen(?:-\d.*)?)$/.test(current.name)) return null
     if (current.name === 'systemd') break
     if (current.parent === host.pid) return 'descendant'

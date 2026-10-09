@@ -13,7 +13,7 @@ export interface ServiceProcess {
   parentPid: number
   parentName: string | null
   relation: 'descendant' | 'service-group'
-  stopsWithSillage: boolean
+  stopsWithSolera: boolean
   /** Les agents et shells porteurs se pilotent depuis leur interface dédiée. */
   launcher: boolean
   cwd: string | null
@@ -65,7 +65,7 @@ function inheritedOrigin(pid: number, nodes: ReadonlyMap<number, ObservedProcess
   return null
 }
 
-/** L'origine sert à nommer le projet, jamais à décider qu'un processus dépend de Sillage. */
+/** L'origine sert à nommer le projet, jamais à décider qu'un processus dépend de Solera. */
 export async function scanServiceProcesses(origins: ProcessOrigins): Promise<ServiceProcess[]> {
   const [tcp, tcp6, uptime, bootId, hz, entries, host] = await Promise.all([
     readFile('/proc/net/tcp', 'utf8').catch(() => ''),
@@ -122,7 +122,7 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
           id: `${bootId.trim()}:${node.pid}:${node.start}`, pid: node.pid, name: node.name,
           parentPid: node.parent, parentName: nodes.get(node.parent)?.name ?? null,
           relation: executionLink(node.pid, nodes, host)!,
-          stopsWithSillage: host.stopsWithService && node.cgroup === host.cgroup,
+          stopsWithSolera: host.stopsWithService && node.cgroup === host.cgroup,
           launcher: node.parent === host.pid,
           cwd, ports: [...ports].sort((a, b) => a - b),
           startedAt: Math.round(bootTime + Number(node.start) / hz * 1000),

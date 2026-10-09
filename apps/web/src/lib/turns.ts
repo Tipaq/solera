@@ -1,4 +1,4 @@
-import { parseSessionMessage } from '@sillage/protocol'
+import { parseSessionMessage } from '@solera/protocol'
 import type { ChatItem, MessageItem } from './chat-fold'
 
 /** Un tour de conversation, tel que la réglette de repères le représente. */

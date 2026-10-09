@@ -1,4 +1,4 @@
-import type { LibrarySkillScope } from '@sillage/protocol'
+import type { LibrarySkillScope } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
 import { useCurrentUser } from '../../lib/session'

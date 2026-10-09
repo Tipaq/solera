@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * Capture les écrans du site depuis une instance de démo déjà lancée et seedée
- * (voir `apps/server/src/cli/demo-seed.ts`, puis `pnpm --filter @sillage/server
+ * (voir `apps/server/src/cli/demo-seed.ts`, puis `pnpm --filter @solera/server
  * search:reindex` pour que la palette de recherche ait des résultats).
  *
- *   SILLAGE_URL=http://127.0.0.1:7517 node scripts/screenshots.mjs
- *   SILLAGE_SHOTS=schedule node scripts/screenshots.mjs   # une partie des vues seulement
+ *   SOLERA_URL=http://127.0.0.1:7517 node scripts/screenshots.mjs
+ *   SOLERA_SHOTS=schedule node scripts/screenshots.mjs   # une partie des vues seulement
  *
  * Chaque vue sort en deux versions, `<nom>-dark.png` et `<nom>-light.png`, dans
  * `site/screenshots/`. Locale forcée en anglais : le site est en anglais.
@@ -15,9 +15,9 @@ import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const BASE_URL = process.env.SILLAGE_URL ?? 'http://127.0.0.1:7517'
-const USERNAME = process.env.SILLAGE_DEMO_USER ?? 'alex'
-const PASSWORD = process.env.SILLAGE_DEMO_PASSWORD ?? 'sillage-demo'
+const BASE_URL = process.env.SOLERA_URL ?? 'http://127.0.0.1:7517'
+const USERNAME = process.env.SOLERA_DEMO_USER ?? 'alex'
+const PASSWORD = process.env.SOLERA_DEMO_PASSWORD ?? 'solera-demo'
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'site', 'screenshots')
 
 // Palette du site : réglages natifs relevés sur la capture de référence.
@@ -131,7 +131,7 @@ function buildShots(t) {
       name: 'panel-files',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      storage: { 'sillage.panelOpen': '1' },
+      storage: { 'solera.panelOpen': '1' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
         const panel = page.locator('[data-panel="workspace"]')
@@ -147,7 +147,7 @@ function buildShots(t) {
       name: 'panel-git',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      storage: { 'sillage.panelOpen': '1' },
+      storage: { 'solera.panelOpen': '1' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
         const panel = page.locator('[data-panel="workspace"]')
@@ -189,10 +189,10 @@ async function captureTheme(browser, theme, shots) {
     serviceWorkers: 'block',
   })
   await context.addInitScript(({ theme, values }) => {
-    localStorage.setItem('sillage.theme', theme)
+    localStorage.setItem('solera.theme', theme)
     document.documentElement.dataset.theme = theme
     for (const [key, value] of Object.entries(values)) {
-      localStorage.setItem(`sillage.${key}`, String(value))
+      localStorage.setItem(`solera.${key}`, String(value))
     }
   }, { theme, values: APPEARANCE })
 
@@ -207,7 +207,7 @@ async function captureTheme(browser, theme, shots) {
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
   // Le compte fait foi après connexion : garder sa copie et le cache synchrones.
   const settings = await context.request.patch(`${BASE_URL}/api/me/settings`, {
-    data: { appearance: { theme, syntax: 'sillage', values: APPEARANCE } },
+    data: { appearance: { theme, syntax: 'solera', values: APPEARANCE } },
   })
   if (!settings.ok()) throw new Error(`Appearance update failed: ${settings.status()}`)
   for (const shot of shots.filter((s) => !s.anonymous)) {
@@ -226,9 +226,9 @@ async function main() {
     data: { username: USERNAME, password: PASSWORD },
   })
   if (!login.ok()) throw new Error(`Login failed: ${login.status()} ${await login.text()}`)
-  // `SILLAGE_SHOTS=schedule,board` ne refait que ces vues : les autres captures ne
+  // `SOLERA_SHOTS=schedule,board` ne refait que ces vues : les autres captures ne
   // bougent pas pour une section ajoutée au site.
-  const only = process.env.SILLAGE_SHOTS?.split(',').map((name) => name.trim()).filter(Boolean)
+  const only = process.env.SOLERA_SHOTS?.split(',').map((name) => name.trim()).filter(Boolean)
   const shots = buildShots(await resolveTargets(probe)).filter((shot) => !only || only.includes(shot.name))
   await probe.close()
 

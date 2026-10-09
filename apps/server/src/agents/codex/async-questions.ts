@@ -1,5 +1,5 @@
-import type { AgentQuestion } from '@sillage/protocol'
-import type { ThreadItem } from '@sillage/codex-bindings/v2'
+import type { AgentQuestion } from '@solera/protocol'
+import type { ThreadItem } from '@solera/codex-bindings/v2'
 import type { QuestionAnswer, RunnerContext } from '../types.js'
 
 type AgentMessage = Extract<ThreadItem, { type: 'agentMessage' }>

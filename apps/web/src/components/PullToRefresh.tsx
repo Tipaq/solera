@@ -16,7 +16,7 @@ const BADGE_PX = 36
 /**
  * « Tirer pour rafraîchir » sur une zone qui défile.
  *
- * Une PWA installée n'a pas celui du navigateur, et le document de Sillage ne défile
+ * Une PWA installée n'a pas celui du navigateur, et le document de Solera ne défile
  * jamais (voir `index.css`) : le geste n'existait donc nulle part sur téléphone.
  *
  * Les écouteurs sont posés à la main : React enregistre `touchmove` en passif, et seul

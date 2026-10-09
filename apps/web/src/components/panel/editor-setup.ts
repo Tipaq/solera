@@ -8,7 +8,7 @@ import { EditorView } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
 /**
- * Habillage de CodeMirror par les jetons de Sillage.
+ * Habillage de CodeMirror par les jetons de Solera.
  *
  * Un thème importé (`one-dark` et consorts) jurerait avec le reste : les couleurs
  * viennent des mêmes variables que la coloration des blocs de code du fil, donc
@@ -53,7 +53,7 @@ export const editorTheme = EditorView.theme({
   /*
    * Panneau de recherche. CodeMirror l'habille en champs et boutons natifs, blancs
    * quel que soit le thème : il jurait avec le reste et devenait illisible en sombre.
-   * Les règles ci-dessous reprennent les mêmes jetons que les contrôles de Sillage.
+   * Les règles ci-dessous reprennent les mêmes jetons que les contrôles de Solera.
    */
   '.cm-panels': {
     backgroundColor: 'var(--sg-surface-high)',

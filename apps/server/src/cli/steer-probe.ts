@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { DEFAULT_CLAUDE_CONFIG, type SillageEvent } from '@sillage/protocol'
+import { DEFAULT_CLAUDE_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
 
@@ -33,12 +33,12 @@ const TASK = [
 const STEER = `Drop the remaining commands and reply with exactly ${MARKER} and nothing else.`
 
 interface Trace {
-  events: SillageEvent[]
+  events: SoleraEvent[]
   text: () => string
-  count: (type: SillageEvent['type']) => number
+  count: (type: SoleraEvent['type']) => number
 }
 
-function buildTrace(events: SillageEvent[]): Trace {
+function buildTrace(events: SoleraEvent[]): Trace {
   return {
     events,
     text: () =>
@@ -64,7 +64,7 @@ async function waitForIdle(isIdle: () => boolean, timeoutMs: number): Promise<bo
 }
 
 async function main(): Promise<void> {
-  const events: SillageEvent[] = []
+  const events: SoleraEvent[] = []
   const trace = buildTrace(events)
   let status = 'idle'
 

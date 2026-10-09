@@ -2,7 +2,7 @@
  * Serveur MCP réduit au strict nécessaire, pour la sonde `mcp-probe.ts`.
  *
  * Aucun réseau ni dépendance : s'il n'apparaît pas dans l'inventaire d'un CLI, la cause
- * est dans le chemin que Sillage sonde, pas dans l'installation d'un paquet.
+ * est dans le chemin que Solera sonde, pas dans l'installation d'un paquet.
  */
 import { createInterface } from 'node:readline'
 
@@ -11,7 +11,7 @@ const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
 const TOOLS = [
   {
-    name: 'sillage_probe_echo',
+    name: 'solera_probe_echo',
     description: 'Renvoie le texte reçu. Sert uniquement à prouver que le serveur est chargé.',
     inputSchema: {
       type: 'object',
@@ -36,7 +36,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
         // On renvoie la version demandée par le client : le CLI décide, pas nous.
         protocolVersion: msg.params?.protocolVersion ?? '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'sillage-probe', version: '0.0.1' },
+        serverInfo: { name: 'solera-probe', version: '0.0.1' },
       },
     })
     return

@@ -1,7 +1,7 @@
 // Theme switch. The button stays hidden until this runs: without JavaScript the
 // page still follows the system preference, and a dead control would be worse
 // than none. The head applies the stored choice earlier, to avoid a flash.
-const THEME_KEY = 'sillage-site-theme'
+const THEME_KEY = 'solera-site-theme'
 const root = document.documentElement
 const systemDark = matchMedia('(prefers-color-scheme: dark)')
 const themeToggle = document.querySelector('[data-theme-toggle]')
@@ -55,7 +55,7 @@ document.querySelectorAll('.site-background, .section-background').forEach((back
 
 // Latest release from GitHub. The page stays complete without it: the
 // unauthenticated API is capped at 60 requests per hour and per IP.
-fetch('https://api.github.com/repos/MarlBurroW/sillage/releases/latest')
+fetch('https://api.github.com/repos/Tipaq/solera/releases/latest')
   .then((res) => (res.ok ? res.json() : null))
   .then((release) => {
     if (!release?.tag_name) return

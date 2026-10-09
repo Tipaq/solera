@@ -1,6 +1,6 @@
 import { KeyRound, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import type { GitCredential } from '@sillage/protocol'
+import type { GitCredential } from '@solera/protocol'
 import {
   Banner,
   Button,

@@ -1,4 +1,4 @@
-import { isSpawnTool } from '@sillage/protocol'
+import { isSpawnTool } from '@solera/protocol'
 import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
 
 /**

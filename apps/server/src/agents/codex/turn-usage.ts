@@ -1,4 +1,4 @@
-import type { ThreadTokenUsageUpdatedNotification, TokenUsageBreakdown } from '@sillage/codex-bindings/v2'
+import type { ThreadTokenUsageUpdatedNotification, TokenUsageBreakdown } from '@solera/codex-bindings/v2'
 
 /** Le total natif est cumulatif ; le journal attend la consommation de chaque tour. */
 export class CodexTurnUsage {

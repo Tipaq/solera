@@ -1,5 +1,5 @@
 import { and, eq, exists, gte, isNull, lt, or, sql } from 'drizzle-orm'
-import { conversationReads, conversations, type Db } from '@sillage/db'
+import { conversationReads, conversations, type Db } from '@solera/db'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
 

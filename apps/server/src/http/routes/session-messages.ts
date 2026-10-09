@@ -1,13 +1,13 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations } from '@sillage/db'
+import { conversations } from '@solera/db'
 import type { SessionRelay } from '../../sessions/session-relay.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Ce qu'une personne peut faire d'un message de session que Sillage a retenu : le
+ * Ce qu'une personne peut faire d'un message de session que Solera a retenu : le
  * remettre malgré les garde-fous, ou l'écarter.
  *
  * Réservé à la propriétaire de la conversation destinataire, comme l'envoi d'un

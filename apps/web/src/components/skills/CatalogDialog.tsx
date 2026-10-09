@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Library, X } from 'lucide-react'
 import { useState } from 'react'
-import { skillNameSchema, type LibrarySkillScope, type SourceSkillDto } from '@sillage/protocol'
+import { skillNameSchema, type LibrarySkillScope, type SourceSkillDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import {

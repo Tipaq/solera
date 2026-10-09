@@ -4,7 +4,7 @@ import {
   usableSlashCommands,
   type ProjectCommandsDto,
   type SlashCommandDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { CachedProbeMap } from '../cached-probe.js'
 import { withControlSession } from './control-session.js'
 

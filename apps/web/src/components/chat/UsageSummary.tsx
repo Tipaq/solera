@@ -1,4 +1,4 @@
-import type { ClaudeAccountDto } from '@sillage/protocol'
+import type { ClaudeAccountDto } from '@solera/protocol'
 import type { RateLimitState } from '../../lib/chat-fold'
 import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatTokens } from '../../lib/tokens'

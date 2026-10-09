@@ -3,8 +3,8 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { openDatabase } from '@sillage/db'
-import type { ThreadItem, ThreadTokenUsageUpdatedNotification } from '@sillage/codex-bindings/v2'
+import { openDatabase } from '@solera/db'
+import type { ThreadItem, ThreadTokenUsageUpdatedNotification } from '@solera/codex-bindings/v2'
 import { CodexAsyncQuestions } from '../src/agents/codex/async-questions.js'
 import { CodexTurnUsage } from '../src/agents/codex/turn-usage.js'
 import { startedItem, completedItem } from '../src/agents/codex/item-events.js'
@@ -77,7 +77,7 @@ test('recherche, images, sommeil, compaction et revue ont un rendu normalisé', 
 })
 
 test('une image vue par Codex est jointe en base64, dans la forme du Read de Claude', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'sillage-view-'))
+  const dir = mkdtempSync(join(tmpdir(), 'solera-view-'))
   const png = Buffer.from('89504e470d0a1a0a', 'hex')
   writeFileSync(join(dir, 'shot.png'), png)
   const [event] = completedItem({ type: 'imageView', id: 'view', path: 'shot.png' }, dir, 10, null)

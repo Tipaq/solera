@@ -6,12 +6,12 @@ import {
   type ConversationMetrics,
   type ConversationStatus,
   type ServerMessage,
-  type SillageEvent,
-} from '@sillage/protocol'
+  type SoleraEvent,
+} from '@solera/protocol'
 import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scope'
 
 export interface StreamListener {
-  onEvent(seq: number, ts: number, event: SillageEvent): void
+  onEvent(seq: number, ts: number, event: SoleraEvent): void
   /**
    * `appliedConfig` est la configuration sous laquelle le CLI tourne, `null` à froid.
    * Elle diverge de celle enregistrée tant qu'un réglage inapplicable en vol attend son
@@ -317,7 +317,7 @@ class WsClient {
     if (message.t === 'pong') return
 
     if (message.t === 'error') {
-      console.warn('[sillage] websocket:', message.code, message.message)
+      console.warn('[solera] websocket:', message.code, message.message)
       return
     }
 

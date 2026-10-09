@@ -4,13 +4,13 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseToml } from 'smol-toml'
 import { z } from 'zod'
-import { cronScheduleSchema } from '@sillage/protocol'
+import { cronScheduleSchema } from '@solera/protocol'
 
 const configSchema = z.object({
   server: z
     .object({
       host: z.string().default('127.0.0.1'),
-      port: z.number().int().min(1).max(65535).default(7317),
+      port: z.number().int().min(1).max(65535).default(7517),
       /**
        * Racine publique de l'instance, pour les liens que l'API met dans ses réponses.
        *
@@ -54,22 +54,22 @@ const configSchema = z.object({
   mcp: z
     .object({
       /**
-       * Monte le serveur MCP de Sillage dans les conversations, qui ouvre à l'agent
+       * Monte le serveur MCP de Solera dans les conversations, qui ouvre à l'agent
        * l'historique du projet.
        *
        * Vrai par défaut, et coupable ici pour toute l'instance : certains ne veulent de
-       * Sillage qu'une interface à Claude Code et Codex, sans les capacités que la
+       * Solera qu'une interface à Claude Code et Codex, sans les capacités que la
        * plateforme ajoute par-dessus. À faux, l'entrée disparaît aussi de l'interface,
        * un réglage visible mais inopérant valant moins que pas de réglage du tout.
        */
-      sillageServer: z.boolean().default(true),
+      soleraServer: z.boolean().default(true),
     })
     .default({}),
   skills: z
     .object({
       /**
-       * Livre la bibliothèque de skills de Sillage aux sessions. Coupable ici pour toute
-       * l'instance, par le même raisonnement que `mcp.sillageServer`.
+       * Livre la bibliothèque de skills de Solera aux sessions. Coupable ici pour toute
+       * l'instance, par le même raisonnement que `mcp.soleraServer`.
        */
       library: z.boolean().default(true),
     })
@@ -96,7 +96,7 @@ export interface Paths {
   database: string
   attachments: string
   /**
-   * Préfixe npm où Sillage installe les CLI qu'il gère lui-même.
+   * Préfixe npm où Solera installe les CLI qu'il gère lui-même.
    *
    * Sous le répertoire de données, et non ailleurs : en Docker c'est déjà le volume
    * monté, donc les CLI survivent au remplacement du conteneur sans qu'il faille en
@@ -140,10 +140,10 @@ function xdg(envVar: string, fallback: string): string {
 }
 
 function resolvePaths(): Paths {
-  const data = process.env.SILLAGE_DATA_DIR ?? join(xdg('XDG_DATA_HOME', '.local/share'), 'sillage')
+  const data = process.env.SOLERA_DATA_DIR ?? join(xdg('XDG_DATA_HOME', '.local/share'), 'solera')
   return {
     data,
-    database: join(data, 'sillage.db'),
+    database: join(data, 'solera.db'),
     attachments: join(data, 'attachments'),
     agents: join(data, 'agents'),
     worktrees: join(data, 'worktrees'),
@@ -155,11 +155,11 @@ function resolvePaths(): Paths {
     // ne doivent pas rafraîchir le même clone en même temps.
     skillSourcesCache: join(
       xdg('XDG_CACHE_HOME', '.cache'),
-      'sillage',
+      'solera',
       createHash('sha256').update(data).digest('hex').slice(0, 12),
       'skill-sources',
     ),
-    webRoot: process.env.SILLAGE_WEB_ROOT ?? join(import.meta.dirname, '../../web/dist'),
+    webRoot: process.env.SOLERA_WEB_ROOT ?? join(import.meta.dirname, '../../web/dist'),
   }
 }
 
@@ -170,7 +170,7 @@ function resolvePaths(): Paths {
  */
 export function loadConfig(): Config {
   const configPath =
-    process.env.SILLAGE_CONFIG ?? join(xdg('XDG_CONFIG_HOME', '.config'), 'sillage/config.toml')
+    process.env.SOLERA_CONFIG ?? join(xdg('XDG_CONFIG_HOME', '.config'), 'solera/config.toml')
 
   let raw: unknown = {}
   try {
@@ -190,13 +190,13 @@ export function loadConfig(): Config {
   const config = parsed.data
 
   // En conteneur, écrire un fichier TOML pour changer l'adresse d'écoute est
-  // disproportionné : l'image Docker fixe SILLAGE_HOST=0.0.0.0 et l'utilisateur
+  // disproportionné : l'image Docker fixe SOLERA_HOST=0.0.0.0 et l'utilisateur
   // ajuste le port par variable d'environnement.
-  if (process.env.SILLAGE_HOST) config.server.host = process.env.SILLAGE_HOST
-  if (process.env.SILLAGE_PORT) {
-    const port = Number(process.env.SILLAGE_PORT)
+  if (process.env.SOLERA_HOST) config.server.host = process.env.SOLERA_HOST
+  if (process.env.SOLERA_PORT) {
+    const port = Number(process.env.SOLERA_PORT)
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error(`SILLAGE_PORT invalide: ${process.env.SILLAGE_PORT}`)
+      throw new Error(`SOLERA_PORT invalide: ${process.env.SOLERA_PORT}`)
     }
     config.server.port = port
   }

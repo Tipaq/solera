@@ -1,11 +1,11 @@
 import { inArray } from 'drizzle-orm'
-import { mcpServers, type Db, type McpServerRow } from '@sillage/db'
+import { mcpServers, type Db, type McpServerRow } from '@solera/db'
 import {
   applySecrets,
   mcpTransportSchema,
   type McpServer,
   type McpServerStatus,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { SecretStore } from '../secrets/store.js'
 
 /**
@@ -121,7 +121,7 @@ export function resolveMcpServers(
 /**
  * Serveurs écartés, sous la forme que l'inventaire attend.
  *
- * `external: false` : ce sont bien des serveurs de Sillage, c'est justement pour ça
+ * `external: false` : ce sont bien des serveurs de Solera, c'est justement pour ça
  * qu'ils doivent se corriger depuis l'écran des secrets.
  */
 export function failedStatuses(failures: ResolvedMcpServers['failures']): McpServerStatus[] {

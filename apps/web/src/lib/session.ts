@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CurrentUser } from '@sillage/protocol'
+import type { CurrentUser } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
 
 const ME_KEY = ['auth', 'me']

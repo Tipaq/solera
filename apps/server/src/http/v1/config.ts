@@ -1,4 +1,4 @@
-import type { ApiTokenRow, ProjectRow } from '@sillage/db'
+import type { ApiTokenRow, ProjectRow } from '@solera/db'
 import {
   isPermissiveConfig,
   mergeAgentConfig,
@@ -7,7 +7,7 @@ import {
   type AgentDefaults,
   type AgentKind,
   type CreateTaskBody,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import { badRequest } from '../errors.js'
 

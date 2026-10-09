@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { mcpServers } from '@sillage/db'
-import { putSecretBodySchema, secretNameSchema, type SecretListDto } from '@sillage/protocol'
+import { mcpServers } from '@solera/db'
+import { putSecretBodySchema, secretNameSchema, type SecretListDto } from '@solera/protocol'
 import { secretsUsedBy } from '../../agents/mcp-registry.js'
 import type { SecretStore } from '../../secrets/store.js'
 import type { AppContext } from '../context.js'

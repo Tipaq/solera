@@ -4,7 +4,7 @@ import { basename, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { randomUUID } from 'node:crypto'
 import { asc, eq } from 'drizzle-orm'
-import { skillSources, type Db, type LibrarySkillRow, type SkillSourceRow } from '@sillage/db'
+import { skillSources, type Db, type LibrarySkillRow, type SkillSourceRow } from '@solera/db'
 import {
   SKILL_MAIN_FILE,
   parseRemoteUrl,
@@ -13,7 +13,7 @@ import {
   type SkillSourceDto,
   type SourceSkillPreviewDto,
   type UpdateSkillSourceBody,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { badRequest, conflict, notFound } from '../http/errors.js'
 import { compatNotes } from './compat.js'
 import { parseSkillMarkdown } from './frontmatter.js'

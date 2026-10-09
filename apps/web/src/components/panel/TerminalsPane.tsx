@@ -1,7 +1,7 @@
 import { TooltipButton } from '../ui/Tooltip'
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@sillage/protocol'
+import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'

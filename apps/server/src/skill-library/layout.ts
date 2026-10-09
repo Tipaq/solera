@@ -1,31 +1,31 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { LibrarySkillScope } from '@sillage/protocol'
+import type { LibrarySkillScope } from '@solera/protocol'
 
 /**
  * Disposition de la bibliothèque de skills sur le disque.
  *
  * ```
- * <racine>/global/sillage/skills/<nom>/SKILL.md …
+ * <racine>/global/solera/skills/<nom>/SKILL.md …
  * <racine>/projects/<projectId>/projet/skills/<nom>/SKILL.md …
  * <racine>/disabled/<skillId>/                    hors de toute racine livrée
  * ```
  *
- * `global/sillage` et `projects/<id>/projet` sont des plugins Claude Code, et leur
+ * `global/solera` et `projects/<id>/projet` sont des plugins Claude Code, et leur
  * dossier `skills/` sert tel quel de racine Codex : un seul jeu de fichiers pour les deux
  * CLI. Trois choix, tous relevés par sonde :
  *
  * - Aucun manifeste `.claude-plugin/plugin.json`. Claude n'en a pas besoin et prend le
- *   nom du dossier, d'où `sillage` et `projet`. Codex, lui, lit ce manifeste quand il
+ *   nom du dossier, d'où `solera` et `projet`. Codex, lui, lit ce manifeste quand il
  *   le trouve au-dessus d'une racine, et préfixe alors chaque skill du nom du plugin :
  *   `$projet:nom` au lieu de `$nom`, que le composer ne retrouve plus en tapant `$nom`.
  * - Aucun lien symbolique. Claude demande la permission de lire un fichier atteint par
  *   un lien tant que les deux côtés ne sont pas dans ses répertoires autorisés.
- * - Le nom du plugin devient le préfixe des commandes Claude (`/sillage:nom`), que
+ * - Le nom du plugin devient le préfixe des commandes Claude (`/solera:nom`), que
  *   l'alias `/nom` rend le plus souvent invisible.
  */
 
-export const GLOBAL_PLUGIN_NAME = 'sillage'
+export const GLOBAL_PLUGIN_NAME = 'solera'
 export const PROJECT_PLUGIN_NAME = 'projet'
 
 /**

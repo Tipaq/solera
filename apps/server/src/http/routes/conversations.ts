@@ -9,7 +9,7 @@ import {
   projects,
   writeTransaction,
   type ConversationRow,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   createConversationBodySchema,
   editDiffQuerySchema,
@@ -31,7 +31,7 @@ import {
   type EditDiffDto,
   type JournalPageDto,
   type ToolOutputDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'

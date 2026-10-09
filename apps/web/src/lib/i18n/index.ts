@@ -8,7 +8,7 @@ export type { MessageKey } from './catalog-en'
 /**
  * Traduction des textes de l'interface.
  *
- * Un catalogue typé plutôt qu'une bibliothèque : Sillage n'a que deux langues, et le
+ * Un catalogue typé plutôt qu'une bibliothèque : Solera n'a que deux langues, et le
  * compilateur est ici un meilleur garde-fou qu'un runtime. Une clé inconnue ne compile
  * pas, une traduction oubliée non plus, alors qu'un `t('typo')` passerait en silence
  * avec i18next et n'apparaîtrait qu'à l'écran.
@@ -17,7 +17,7 @@ export type { MessageKey } from './catalog-en'
  * immédiat. Il est donc à refaire sur chaque appareil, ce qui est le prix assumé.
  */
 
-const STORAGE_KEY = 'sillage.locale'
+const STORAGE_KEY = 'solera.locale'
 
 /** Repli quand la langue du système n'est pas couverte, et quand une clé manque. */
 const FALLBACK: Locale = 'en'

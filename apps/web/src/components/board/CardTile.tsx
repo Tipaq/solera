@@ -1,7 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
-import type { CardDto } from '@sillage/protocol'
+import type { CardDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { cx } from '../ui'

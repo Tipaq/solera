@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { SillageEvent } from '@sillage/protocol'
+import type { SoleraEvent } from '@solera/protocol'
 
 // Le fold est indépendant de React ; seul le choix initial de langue lit le navigateur.
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr' }, configurable: true })
 const { applyEvent, emptyChatState, isAwaitingUser } = await import('../../web/src/lib/chat-fold.js')
 
-const fold = (events: SillageEvent[]) => events.reduce((state, event, index) =>
+const fold = (events: SoleraEvent[]) => events.reduce((state, event, index) =>
   applyEvent(state, index + 1, index * 100, event), emptyChatState())
 
 test('rejeu : une question asynchrone garde ses choix sans bloquer l’activité', () => {
-  const events: SillageEvent[] = [
+  const events: SoleraEvent[] = [
     { type: 'turn.started' },
     { type: 'question.requested', requestId: 'async', blocking: false, questions: [{
       id: '0', header: '', question: 'Couleur ?', options: [{ label: 'Vert', description: '', preview: null }],
@@ -41,7 +41,7 @@ test('anciens journaux bloquants et fin de plan faisant autorité sur les deltas
 })
 
 test('plans et diffs se mettent à jour sans doublon, les sorties restent visibles pendant un outil', () => {
-  const events: SillageEvent[] = [
+  const events: SoleraEvent[] = [
     { type: 'turn.started' },
     { type: 'plan.updated', items: [{ text: 'Inspecter', status: 'in_progress' }] },
     { type: 'plan.updated', items: [{ text: 'Inspecter', status: 'completed' }] },

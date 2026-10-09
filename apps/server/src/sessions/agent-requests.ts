@@ -13,7 +13,7 @@ import {
   type AgentRequestRow,
   type ConversationRow,
   type ProjectRow,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   DEFAULT_SCHEDULE_DURATION_MINUTES,
   MAX_SCHEDULE_DURATION_MINUTES,
@@ -30,7 +30,7 @@ import {
   type AgentConfig,
   type AgentKind,
   type AgentModelDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
@@ -147,7 +147,7 @@ export class AgentRequests {
 
       for (const request of pending) {
         if (request.createdAt < Date.now() - STALE_MS) {
-          this.settle(request.id, "Demande expirée : Sillage ne l'a pas traitée à temps.", true)
+          this.settle(request.id, "Demande expirée : Solera ne l'a pas traitée à temps.", true)
           continue
         }
         await this.handle(request)
@@ -266,7 +266,7 @@ export class AgentRequests {
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
       describePermissions(config),
-      "L'utilisateur la voit dans Sillage. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire.",
+      "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire.",
     ]
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }

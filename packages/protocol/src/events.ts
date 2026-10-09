@@ -148,7 +148,7 @@ export const loopSchema = z.object({
 })
 export type Loop = z.infer<typeof loopSchema>
 
-export const sillageEventSchema = z.discriminatedUnion('type', [
+export const soleraEventSchema = z.discriminatedUnion('type', [
   // Cycle de vie
   z.object({
     type: z.literal('session.started'),
@@ -332,7 +332,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Message d'une autre session que Sillage n'a pas remis.
+   * Message d'une autre session que Solera n'a pas remis.
    *
    * Le relais relance une session au repos pour lui remettre un message, sauf quand un
    * échange tourne en rond ou qu'elle a déjà été trop relancée sans personne : il le
@@ -499,7 +499,7 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
    * entière dès qu'elle bouge, et elle bouge en cours de session, une compétence
    * pouvant être découverte quand l'agent descend dans un sous-répertoire.
    *
-   * Déjà réduite à ce que Sillage sait proposer : le filtrage se fait à la source, où
+   * Déjà réduite à ce que Solera sait proposer : le filtrage se fait à la source, où
    * l'on sait de quel CLI vient la liste.
    */
   z.object({
@@ -537,10 +537,10 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Une consigne est entrée dans la session sans que Sillage l'ait envoyée : le CLI l'a
+   * Une consigne est entrée dans la session sans que Solera l'ait envoyée : le CLI l'a
    * réinjectée lui-même, une boucle arrivée à échéance étant le cas courant.
    *
-   * Reconnue à ce que le CLI la livre en texte, là où les messages de Sillage sont
+   * Reconnue à ce que le CLI la livre en texte, là où les messages de Solera sont
    * toujours des blocs et ceux du CLI des résultats d'outils. C'est ce que compte le
    * nombre d'itérations d'une boucle, faute de compteur côté CLI.
    */
@@ -694,13 +694,13 @@ export const sillageEventSchema = z.discriminatedUnion('type', [
   }),
 ])
 
-export type SillageEvent = z.infer<typeof sillageEventSchema>
-export type SillageEventType = SillageEvent['type']
+export type SoleraEvent = z.infer<typeof soleraEventSchema>
+export type SoleraEventType = SoleraEvent['type']
 
 /** Un événement tel qu'il sort du journal : le payload plus sa position et sa date. */
 export interface JournalEntry {
   conversationId: string
   seq: number
   ts: number
-  event: SillageEvent
+  event: SoleraEvent
 }

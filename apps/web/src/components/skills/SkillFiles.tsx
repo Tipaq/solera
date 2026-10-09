@@ -1,6 +1,6 @@
 import { FileCode2, FilePlus2, Save, Trash2, Upload, X } from 'lucide-react'
 import { useRef, useState, type ChangeEvent } from 'react'
-import { SKILL_MAIN_FILE, skillFilePathSchema, type LibrarySkillDetailDto } from '@sillage/protocol'
+import { SKILL_MAIN_FILE, skillFilePathSchema, type LibrarySkillDetailDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { formatBytes } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'
@@ -18,7 +18,7 @@ const errorOf = (error: unknown): string | null => (error instanceof ApiRequestE
  * Les fichiers annexes d'un skill : `scripts/`, `references/`, `assets/`. Le modèle ne
  * les lit qu'à la demande, quand les instructions de `SKILL.md` y renvoient.
  *
- * Un fichier s'ouvre sous la liste, dans le même éditeur que le reste de Sillage. Un
+ * Un fichier s'ouvre sous la liste, dans le même éditeur que le reste de Solera. Un
  * binaire ou un fichier trop lourd est seulement décrit.
  */
 export function SkillFiles({ skill, canWrite }: { skill: LibrarySkillDetailDto; canWrite: boolean }) {

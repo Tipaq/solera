@@ -1,25 +1,25 @@
-# Sillage Helm chart
+# Solera Helm chart
 
-Deploys Sillage on Kubernetes from the `ghcr.io/marlburrow/sillage` image. It is
+Deploys Solera on Kubernetes from the `ghcr.io/tipaq/solera` image. It is
 the same deployment as `deploy/docker-compose.example.yml`: same volumes, same
 constraints.
 
 ## Install
 
 ```bash
-helm install sillage ./deploy/helm/sillage \
-  --namespace sillage --create-namespace \
+helm install solera ./deploy/helm/solera \
+  --namespace solera --create-namespace \
   --set storage.data.storageClass=<a-block-storage-class> \
   --set storage.home.storageClass=<a-block-storage-class> \
   --set ingress.enabled=true \
-  --set ingress.host=sillage.example.com
+  --set ingress.host=solera.example.com
 ```
 
 Then create the first account, which is admin. The command reads stdin, hence
 the `-it`:
 
 ```bash
-kubectl -n sillage exec -it deploy/sillage -- node /app/server/cli/user-create.js
+kubectl -n solera exec -it deploy/solera -- node /app/server/cli/user-create.js
 ```
 
 ## What it deploys
@@ -27,7 +27,7 @@ kubectl -n sillage exec -it deploy/sillage -- node /app/server/cli/user-create.j
 | Object | Role |
 |---|---|
 | `Deployment` | one replica, `Recreate` strategy |
-| `Service` | ClusterIP on 7317 |
+| `Service` | ClusterIP on 7517 |
 | `PersistentVolumeClaim` ×1–3 | `data` (required), `home`, `workspace` |
 | `ConfigMap` | `config.toml`, only when `config` is set |
 | `Ingress` | optional |
@@ -46,7 +46,7 @@ when several StorageClasses are marked as default, Kubernetes reports nothing an
 silently picks the most recently created one. Name a block storage class
 explicitly.
 
-**The agent CLIs are not in the image.** They weigh several hundred MB each (OpenCode alone, 353 MB). Sillage
+**The agent CLIs are not in the image.** They weigh several hundred MB each (OpenCode alone, 353 MB). Solera
 installs the ones you use from the UI, into the `data` volume, so they survive
 pod replacement. You then authenticate them from inside the pod
 (`kubectl exec -it ... -- bash`); the `home` volume keeps their credentials
@@ -57,7 +57,7 @@ sessions) across restarts.
 API (update check), the agent APIs and the browsers' Web Push endpoints. A strict
 NetworkPolicy will break CLI installation.
 
-**Sillage does not do TLS.** Terminate it at the ingress. The server runs with
+**Solera does not do TLS.** Terminate it at the ingress. The server runs with
 `trustProxy`, so it trusts `X-Forwarded-*` headers: do not expose the Service
 directly.
 
@@ -87,7 +87,7 @@ Every other value is commented in `values.yaml`.
 ## Upgrade
 
 ```bash
-helm upgrade sillage ./deploy/helm/sillage --reuse-values --set image.tag=0.14.0
+helm upgrade solera ./deploy/helm/solera --reuse-values --set image.tag=0.14.0
 ```
 
 Schema migrations run at server startup, before the port opens, so no init Job is

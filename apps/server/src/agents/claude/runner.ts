@@ -24,7 +24,7 @@ import {
   type ContentBlock,
   type McpServerStatus,
   type PlanFollowUpOption,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { failedStatuses } from '../mcp-registry.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
@@ -269,7 +269,7 @@ export class ClaudeRunner implements AgentRunner {
         includePartialMessages: true,
         // Sans ça le SDK ne transmet des sous-agents que leurs appels d'outils, de
         // quoi faire battre un compteur mais pas de quoi rendre leur fil : ni
-        // raisonnement, ni messages intermédiaires. Sillage les affiche comme des
+        // raisonnement, ni messages intermédiaires. Solera les affiche comme des
         // conversations à part entière, donc il lui faut tout.
         forwardSubagentText: true,
         abortController: this.abort,
@@ -295,7 +295,7 @@ export class ClaudeRunner implements AgentRunner {
     })
 
     // Le niveau des travaux de fond appartient au process : le CLI n'en annonce rien
-    // au démarrage, il n'émet qu'aux changements. Sillage pose donc le zéro lui-même,
+    // au démarrage, il n'émet qu'aux changements. Solera pose donc le zéro lui-même,
     // sans quoi une relecture du journal garderait allumés les travaux du process
     // précédent, qui sont morts avec lui.
     this.ctx.emit({ type: 'background.updated', tasks: [] })
@@ -358,7 +358,7 @@ export class ClaudeRunner implements AgentRunner {
    * Ouvre un tour s'il n'y en a pas déjà un.
    *
    * Claude Code n'annonce pas le début d'un tour, contrairement à Codex : le SDK émet
-   * `result` à chaque fin, mais rien à l'ouverture. Un tour que Sillage n'a pas
+   * `result` à chaque fin, mais rien à l'ouverture. Un tour que Solera n'a pas
    * déclenché (reprise de session, relance après un réglage appliqué à chaud) ne
    * passait donc par aucun `setStatus('running')`, et la conversation restait `idle`
    * en base pendant tout le travail. Le fil ouvert s'en sortait en repliant son
@@ -450,7 +450,7 @@ export class ClaudeRunner implements AgentRunner {
         }
         if (message.subtype === 'status') {
           // Le CLI annonce lui-même qu'il compacte, que la compaction ait été demandée
-          // depuis Sillage ou déclenchée toute seule par le seuil d'auto-compaction.
+          // depuis Solera ou déclenchée toute seule par le seuil d'auto-compaction.
           if (message.status === 'compacting') {
             this.ctx.emit({ type: 'context.compaction_started' }, message)
           }
@@ -763,7 +763,7 @@ export class ClaudeRunner implements AgentRunner {
             rateLimit: {
               type: info.rateLimitType ?? 'unknown',
               status: info.status,
-              // `resetsAt` est en secondes côté CLI, le reste de Sillage compte en
+              // `resetsAt` est en secondes côté CLI, le reste de Solera compte en
               // millisecondes : convertir ici évite une date en 1970 dans l'UI.
               utilization: info.utilization ?? null,
               resetsAt: info.resetsAt === undefined ? null : info.resetsAt * 1000,
@@ -889,7 +889,7 @@ export class ClaudeRunner implements AgentRunner {
               ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),
             })
           } else {
-            resolve({ behavior: 'deny', message: 'Refusé depuis Sillage.' })
+            resolve({ behavior: 'deny', message: 'Refusé depuis Solera.' })
           }
         },
       )
@@ -993,7 +993,7 @@ export class ClaudeRunner implements AgentRunner {
   /**
    * Publie l'inventaire MCP tel que le CLI le voit.
    *
-   * Interrogé plutôt que déduit de ce que Sillage a transmis : c'est la seule façon de
+   * Interrogé plutôt que déduit de ce que Solera a transmis : c'est la seule façon de
    * savoir qu'un serveur a échoué à démarrer, et la seule qui montre aussi ceux venus
    * du disque du CLI, que l'utilisateur subit sans les avoir déclarés ici.
    */

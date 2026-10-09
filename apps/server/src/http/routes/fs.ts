@@ -3,7 +3,7 @@ import { access, mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { browseQuerySchema, mkdirBodySchema, type FsEntryDto, type FsListingDto } from '@sillage/protocol'
+import { browseQuerySchema, mkdirBodySchema, type FsEntryDto, type FsListingDto } from '@solera/protocol'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 

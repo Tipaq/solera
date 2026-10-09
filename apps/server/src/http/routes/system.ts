@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { UpdateStatus, VersionInfo } from '@sillage/protocol'
+import type { UpdateStatus, VersionInfo } from '@solera/protocol'
 import { UpdateError, UpdateExecutor } from '../../update/executor.js'
 import { ReleaseChecker } from '../../update/release-checker.js'
 import { HttpError } from '../errors.js'

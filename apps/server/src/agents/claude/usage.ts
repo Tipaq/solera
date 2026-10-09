@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import type { AgentUsage, UsageWindow } from '@sillage/protocol'
+import type { AgentUsage, UsageWindow } from '@solera/protocol'
 import { CachedProbe } from '../cached-probe.js'
 import { USAGE_CACHE_TTL_MS } from '../usage-cache.js'
 import { withControlSession } from './control-session.js'
@@ -45,7 +45,7 @@ function toWindow(id: string, label: string, value: unknown): UsageWindow | null
   return {
     id,
     label,
-    // Le CLI compte en pourcentage, le reste de Sillage en ratio.
+    // Le CLI compte en pourcentage, le reste de Solera en ratio.
     utilization: hasUtilization ? (fields.utilization as number) / 100 : null,
     resetsAt: Number.isFinite(resetsAt) ? resetsAt : null,
   }

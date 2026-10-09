@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sillage/protocol'
+import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@solera/protocol'
 
 /**
- * Le serveur MCP de Sillage, monté d'office dans chaque conversation.
+ * Le serveur MCP de Solera, monté d'office dans chaque conversation.
  *
  * Ce n'est pas une ligne de `mcp_servers` : personne ne l'a déclaré, il n'a ni commande
  * à saisir ni secret à garder, et son nom est réservé pour qu'aucune entrée du registre
@@ -13,11 +13,11 @@ import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sill
  *
  * Activé par défaut, désactivable à trois niveaux : la conversation, pour le temps d'un
  * sujet ; le défaut des nouvelles conversations, dans les réglages ; l'instance entière,
- * dans `config.toml`, pour qui ne veut de Sillage qu'une interface aux CLI.
+ * dans `config.toml`, pour qui ne veut de Solera qu'une interface aux CLI.
  */
 
 /** Identifiant distinct de ceux du registre, qui sont des UUID. */
-export const BUILTIN_MCP_SERVER_ID = 'builtin:sillage'
+export const BUILTIN_MCP_SERVER_ID = 'builtin:solera'
 
 /**
  * Le fichier du serveur, selon qu'on tourne sur les sources ou sur le bundle.
@@ -29,12 +29,12 @@ export const BUILTIN_MCP_SERVER_ID = 'builtin:sillage'
  */
 function resolveEntry(): string {
   const candidates = [
-    join(import.meta.dirname, '../mcp/sillage-mcp.mjs'),
-    join(import.meta.dirname, 'mcp/sillage-mcp.mjs'),
+    join(import.meta.dirname, '../mcp/solera-mcp.mjs'),
+    join(import.meta.dirname, 'mcp/solera-mcp.mjs'),
   ]
   const found = candidates.find((path) => existsSync(path))
   if (!found) {
-    throw new Error(`Serveur MCP Sillage introuvable (cherché : ${candidates.join(', ')})`)
+    throw new Error(`Serveur MCP Solera introuvable (cherché : ${candidates.join(', ')})`)
   }
   return found
 }
@@ -57,7 +57,7 @@ export interface BuiltinMcpParams {
  * j'ai déclaré » et se contredirait à garder une exception maison.
  */
 export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolean {
-  if (!enabled || !config.sillageMcp) return false
+  if (!enabled || !config.soleraMcp) return false
   return !(config.agent === 'claude' && config.strictMcp)
 }
 
@@ -79,10 +79,10 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
       // aucun jeton à recevoir, et l'environnement d'un process reste lisible par
       // quiconque a un shell sur la machine.
       env: {
-        SILLAGE_MCP_DB: databasePath,
-        SILLAGE_MCP_PROJECT: projectId,
-        SILLAGE_MCP_CONVERSATION: conversationId,
-        SILLAGE_MCP_MEMORY: memoryDir,
+        SOLERA_MCP_DB: databasePath,
+        SOLERA_MCP_PROJECT: projectId,
+        SOLERA_MCP_CONVERSATION: conversationId,
+        SOLERA_MCP_MEMORY: memoryDir,
       },
     },
     createdAt: 0,

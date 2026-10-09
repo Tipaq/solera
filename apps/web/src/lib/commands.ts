@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { AgentKind, ProjectCommandsDto } from '@sillage/protocol'
+import type { AgentKind, ProjectCommandsDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

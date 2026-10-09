@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { conversationStatusSchema, type ConversationMetrics } from './api.js'
 import type { AgentConfig } from './agent-config.js'
-import type { SillageEvent } from './events.js'
+import type { SoleraEvent } from './events.js'
 
 /**
  * Une seule connexion WebSocket par onglet, multiplexée sur plusieurs conversations
@@ -46,7 +46,7 @@ export type ServerMessage =
       conversationId: string
       seq: number
       ts: number
-      event: SillageEvent
+      event: SoleraEvent
     }
   | {
       t: 'status'
@@ -125,7 +125,7 @@ export type ServerMessage =
    * demanderait de retarder les dossiers calmes derrière celui qui s'agite.
    *
    * Ce que le rafraîchissement de fin de tour ne voit pas passe par ici : un terminal
-   * du panneau, un éditeur hors de Sillage, une autre conversation sur le même
+   * du panneau, un éditeur hors de Solera, une autre conversation sur le même
    * worktree.
    */
   | { t: 'tree-changed'; scope: 'conversation' | 'project'; id: string; path: string }

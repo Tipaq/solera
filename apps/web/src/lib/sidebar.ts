@@ -9,9 +9,9 @@ import { useSyncExternalStore } from 'react'
  * le thème : ces vues ne sont pas dans la même branche que la sidebar.
  */
 
-const HIDDEN_KEY = 'sillage.sidebarHidden'
-const WIDTH_KEY = 'sillage.sidebarWidth'
-const DETAILED_KEY = 'sillage.sidebarDetailed'
+const HIDDEN_KEY = 'solera.sidebarHidden'
+const WIDTH_KEY = 'solera.sidebarWidth'
+const DETAILED_KEY = 'solera.sidebarDetailed'
 
 /**
  * En deçà, un titre de conversation ne tient plus sur une ligne utile ; au-delà, la

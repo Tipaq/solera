@@ -1,6 +1,6 @@
-# SILLAGE.md : des consignes communes à Claude, Codex et OpenCode
+# SOLERA.md : des consignes communes à Claude, Codex et OpenCode
 
-Des consignes tenues par Sillage et injectées dans le prompt système de chaque session,
+Des consignes tenues par Solera et injectées dans le prompt système de chaque session,
 quel que soit son CLI : une partie **globale** (administrateurs) et une par **projet**
 (propriétaire). Éditables depuis la page du projet, les réglages (`/settings/consignes`)
 et l'en-tête d'une conversation, sans passer par l'éditeur de fichiers.
@@ -9,20 +9,20 @@ et l'en-tête d'une conversation, sans passer par l'éditeur de fichiers.
 
 Chaque projet a un mode, choisi à la création (`instructionsMode`) et modifiable ensuite :
 
-- **`sillage`** : le texte est en base (table `instructions`) et injecté à chaque CLI. Les
+- **`solera`** : le texte est en base (table `instructions`) et injecté à chaque CLI. Les
   `CLAUDE.md`, `CLAUDE.local.md` et `AGENTS.md` du workspace et du worktree sont masqués
   aux agents, sans être touchés sur le disque : les garder lus doublerait les consignes.
 - **`repo`** : la partie projet est le `AGENTS.md` (ou `CLAUDE.md`) du dépôt, que les CLI
   lisent d'eux-mêmes. L'interface édite ce fichier directement, `AGENTS.md` par défaut.
-  Sillage n'injecte que la partie globale.
+  Solera n'injecte que la partie globale.
 
 Sans choix à la création, le serveur regarde le dossier : `repo` s'il porte déjà un de
-ces fichiers, `sillage` sinon. Les projets d'avant le réglage n'ont pas de mode (null) et
-gardent ce comportement résolu à la volée ; la première écriture de contenu Sillage fixe
-leur mode à `sillage`, pour qu'un `AGENTS.md` apparu ensuite ne le fasse pas taire.
+ces fichiers, `solera` sinon. Les projets d'avant le réglage n'ont pas de mode (null) et
+gardent ce comportement résolu à la volée ; la première écriture de contenu Solera fixe
+leur mode à `solera`, pour qu'un `AGENTS.md` apparu ensuite ne le fasse pas taire.
 
 La migration d'un projet existant n'est proposée que dans son panneau de consignes : un
-bouton importe le texte des fichiers du dépôt et bascule en mode `sillage` d'un geste.
+bouton importe le texte des fichiers du dépôt et bascule en mode `solera` d'un geste.
 Les fichiers restent dans le dépôt ; revenir au mode `repo` les réactive.
 
 ## Ce que les sondes ont établi
@@ -44,10 +44,10 @@ Sondé le 2026-10-05 sur opencode 1.18.25.
 
 ## Les agents peuvent y écrire
 
-Le serveur MCP `sillage` traite SILLAGE.md comme un fichier : `read_instructions` le lit,
+Le serveur MCP `solera` traite SOLERA.md comme un fichier : `read_instructions` le lit,
 `edit_instructions` remplace un passage exact (comme l'outil Edit, `old_text` vide pour
 ajouter à la fin), `write_instructions` le réécrit entièrement. Partie projet en mode
-`sillage` seulement, partie globale en écriture pour une conversation d'administrateur.
+`solera` seulement, partie globale en écriture pour une conversation d'administrateur.
 Chaque écriture se fait dans une transaction sur la version courante, et l'interface
 affiche la dernière main (personne ou session). En mode `repo`, les outils renvoient
 l'agent vers le fichier du dépôt, qu'il modifie avec ses propres outils.
@@ -73,7 +73,7 @@ Ces consignes guident les agents ; elles ne configurent pas le VPN elles-mêmes.
 
 `apps/server/test/instructions.test.ts` couvre routes, modes, migration et l'outil MCP.
 La recette avec de vrais CLI a tourné sur un serveur jetable (`/tmp/smd-e2e`, port 7402) :
-9 vérifications sur 9, injection globale et projet, masque en mode `sillage`, mode
+9 vérifications sur 9, injection globale et projet, masque en mode `solera`, mode
 `repo` intact, consigne retenue par Claude reçue par la session Codex suivante.
 
 # Mémoire du projet

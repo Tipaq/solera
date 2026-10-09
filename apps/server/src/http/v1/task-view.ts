@@ -1,12 +1,12 @@
-import type { ConversationRow } from '@sillage/db'
+import type { ConversationRow } from '@solera/db'
 import {
   parseAgentConfig,
-  type SillageEvent,
+  type SoleraEvent,
   type TaskActivityDto,
   type TaskDto,
   type TaskPendingDto,
   type TaskSummaryDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { EventLog } from '../../events/event-log.js'
 
 /**
@@ -52,7 +52,7 @@ const RESOLVED_TYPES = new Set([
 ])
 
 /** Texte d'un message assistant, blocs de réflexion et d'outils retirés. */
-function messageText(event: Extract<SillageEvent, { type: 'message.completed' }>): string {
+function messageText(event: Extract<SoleraEvent, { type: 'message.completed' }>): string {
   return event.blocks
     .filter((block) => block.type === 'text')
     .map((block) => block.text)
@@ -109,14 +109,14 @@ function digest(log: EventLog, conversationId: string): Digest {
     }
 
     if (RESOLVED_TYPES.has(event.type)) {
-      const resolved = event as Extract<SillageEvent, { requestId: string }>
+      const resolved = event as Extract<SoleraEvent, { requestId: string }>
       resolvedRequests.add(resolved.requestId)
       continue
     }
 
     const kind = PROMPT_KIND_BY_TYPE[event.type]
     if (!kind || pending) continue
-    const requested = event as Extract<SillageEvent, { requestId: string }>
+    const requested = event as Extract<SoleraEvent, { requestId: string }>
     if (resolvedRequests.has(requested.requestId)) continue
     pending = { kind, requestId: requested.requestId, requestedAt: entry.ts, event }
   }

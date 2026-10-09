@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cards, conversations, projectImages, worktrees, type Db } from '@sillage/db'
+import { cards, conversations, projectImages, worktrees, type Db } from '@solera/db'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -12,7 +12,7 @@ import { cards, conversations, projectImages, worktrees, type Db } from '@sillag
  * Calculé et non stocké. Une note écrite quelque part et jamais relue vieillit et finit
  * par tromper avec l'autorité d'une note ; recalculer à chaque démarrage coûte une
  * requête et ne peut pas mentir. Les consignes durables ont leur place à part, dans
- * SILLAGE.md (`instructions/store.ts`), que l'utilisateur relit et taille lui-même.
+ * SOLERA.md (`instructions/store.ts`), que l'utilisateur relit et taille lui-même.
  *
  * Le projet entier et non le seul worktree, contrairement à `find_file_edits` : ici on
  * cherche à savoir quels chantiers sont ouverts, et un chantier sur une autre branche
@@ -36,8 +36,8 @@ const RECENT_MS = 3 * 24 * 60 * 60 * 1000
 interface OverviewInput {
   projectId: string
   conversationId: string
-  /** L'agent a-t-il les outils du serveur MCP de Sillage sous la main. */
-  sillageMcp: boolean
+  /** L'agent a-t-il les outils du serveur MCP de Solera sous la main. */
+  soleraMcp: boolean
 }
 
 interface Row {
@@ -117,7 +117,7 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
     )
   }
 
-  if (input.sillageMcp) {
+  if (input.soleraMcp) {
     lines.push(
       `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. La colonne d'une carte, elle, se change dans l'interface et jamais par toi.`,
     )
@@ -146,7 +146,7 @@ const COLUMN_WORDS: Record<string, string> = {
  * dire, pas plus qu'un agent sans l'outil pour agir.
  */
 function imageReminder(db: Db, input: OverviewInput): string | null {
-  if (!input.sillageMcp) return null
+  if (!input.soleraMcp) return null
 
   const image = db
     .select({ provisional: projectImages.provisional })
@@ -155,11 +155,11 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
     .get()
 
   if (!image) {
-    return "Ce projet n'a pas d'image dans Sillage, alors que c'est elle qui permet à l'utilisateur de le reconnaître d'un coup d'œil parmi les autres. Sans détourner le travail demandé, par exemple une fois qu'il est fini, donne-lui en une avec `set_project_image`. Cherche d'abord un logo ou une icône dans le dépôt : favicon, `logo.*`, `icon.*`, dossiers `public`, `assets` ou `static`, image en tête du README. S'il n'y en a pas, dessine un SVG simple qui évoque le projet, ou génère une image si tu as un outil pour ça, et pose-la avec `provisional: true` : les sessions suivantes sauront qu'elle attend un vrai logo."
+    return "Ce projet n'a pas d'image dans Solera, alors que c'est elle qui permet à l'utilisateur de le reconnaître d'un coup d'œil parmi les autres. Sans détourner le travail demandé, par exemple une fois qu'il est fini, donne-lui en une avec `set_project_image`. Cherche d'abord un logo ou une icône dans le dépôt : favicon, `logo.*`, `icon.*`, dossiers `public`, `assets` ou `static`, image en tête du README. S'il n'y en a pas, dessine un SVG simple qui évoque le projet, ou génère une image si tu as un outil pour ça, et pose-la avec `provisional: true` : les sessions suivantes sauront qu'elle attend un vrai logo."
   }
 
   if (image.provisional) {
-    return "L'image de ce projet dans Sillage est provisoire : elle a été posée faute de logo. Dès que le projet en a un vrai, et en particulier si c'est toi qui le crées ou l'ajoutes, remplace-la avec `set_project_image`."
+    return "L'image de ce projet dans Solera est provisoire : elle a été posée faute de logo. Dès que le projet en a un vrai, et en particulier si c'est toi qui le crées ou l'ajoutes, remplace-la avec `set_project_image`."
   }
 
   return null
@@ -219,7 +219,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
 
   const parts = briefing ? [briefing] : []
   parts.push(
-    `Autres sessions Sillage sur ce projet, ${working.length > 0 ? `dont ${working.length} en cours` : 'aucune en cours'} :`,
+    `Autres sessions Solera sur ce projet, ${working.length > 0 ? `dont ${working.length} en cours` : 'aucune en cours'} :`,
     rows.map((row) => describe(row, now)).join('\n'),
   )
 
@@ -229,9 +229,9 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
     )
   }
 
-  if (input.sillageMcp) {
+  if (input.soleraMcp) {
     parts.push(
-      'Les outils du serveur `sillage` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session.',
+      'Les outils du serveur `solera` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session.',
     )
   }
 

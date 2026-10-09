@@ -1,4 +1,4 @@
-import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@sillage/protocol'
+import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
 import { translate } from './i18n'
 

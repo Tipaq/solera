@@ -9,8 +9,8 @@ import {
   type CodexModeDto,
   type EditDiffDto,
   type ProjectCommandsDto,
-} from '@sillage/protocol'
-import type { CollaborationModeMask, ThreadForkResponse } from '@sillage/codex-bindings/v2'
+} from '@solera/protocol'
+import type { CollaborationModeMask, ThreadForkResponse } from '@solera/codex-bindings/v2'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
@@ -49,7 +49,7 @@ export class CodexAdapter implements AgentAdapter {
     this.binary = config.agents.codex.binary
     this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
     // Le nom configuré ne suffit pas : `spawn` ne connaît que le PATH, alors que le
-    // préfixe des CLI installés par Sillage l'emporte. Sonder le nom nu ferait lister
+    // préfixe des CLI installés par Solera l'emporte. Sonder le nom nu ferait lister
     // les modèles d'une version que les conversations, elles, n'utilisent pas.
     this.catalog = new CodexModelCatalog(() => this.cli.executable())
     this.usageReader = new CodexUsageReader(() => this.cli.executable())

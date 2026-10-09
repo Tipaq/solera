@@ -1,7 +1,7 @@
 import { FileArchive, FilePlus2, FolderInput, HardDrive, Library, Plus } from 'lucide-react'
 import { useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { skillDescriptionSchema, skillNameSchema, type LibrarySkillScope } from '@sillage/protocol'
+import { skillDescriptionSchema, skillNameSchema, type LibrarySkillScope } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateLibrarySkill, useImportLibrarySkill } from '../../lib/skill-library'

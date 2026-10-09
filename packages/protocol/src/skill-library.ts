@@ -1,10 +1,10 @@
 import { z } from 'zod'
 
 /**
- * Bibliothèque de skills tenue par Sillage, livrée aux CLI comme des skills natifs.
+ * Bibliothèque de skills tenue par Solera, livrée aux CLI comme des skills natifs.
  *
  * À ne pas confondre avec `skills.ts`, qui décrit l'inventaire qu'un CLI publie de
- * lui-même. Ici, c'est Sillage qui possède les fichiers : il les range sur son disque et
+ * lui-même. Ici, c'est Solera qui possède les fichiers : il les range sur son disque et
  * les transmet à chaque lancement, sans rien écrire dans `~/.claude` ni dans `~/.codex`.
  * Une fois livrés, ils réapparaissent dans cet inventaire comme n'importe quel autre.
  */
@@ -59,7 +59,7 @@ export type SkillCompatNote = z.infer<typeof skillCompatNoteSchema>
 /**
  * Pourquoi un skill de la bibliothèque n'est pas livrable tel quel.
  *
- * Le disque fait foi, et quelqu'un peut y avoir touché sans passer par Sillage : un
+ * Le disque fait foi, et quelqu'un peut y avoir touché sans passer par Solera : un
  * dossier disparu, un `SKILL.md` illisible, ou un `name` qui ne correspond plus au
  * dossier, que les CLI départagent chacun à sa façon.
  */

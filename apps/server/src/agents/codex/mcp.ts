@@ -1,14 +1,14 @@
 import type {
   McpServerStatus as CodexMcpServerStatus,
   ThreadStartParams,
-} from '@sillage/codex-bindings/v2'
-import type { McpServer, McpServerState, McpServerStatus } from '@sillage/protocol'
+} from '@solera/codex-bindings/v2'
+import type { McpServer, McpServerState, McpServerStatus } from '@solera/protocol'
 
 /**
- * Traduction du registre Sillage vers la configuration que Codex accepte, et retour.
+ * Traduction du registre Solera vers la configuration que Codex accepte, et retour.
  *
  * Codex ne lit les serveurs MCP que depuis sa configuration : il n'a pas d'équivalent
- * de `setMcpServers`. Sillage les pose en surcharge de thread plutôt que d'écrire dans
+ * de `setMcpServers`. Solera les pose en surcharge de thread plutôt que d'écrire dans
  * `~/.codex/config.toml`, ce qui laisse le fichier de l'utilisateur intact et rend
  * l'activation par conversation possible.
  */
@@ -71,7 +71,7 @@ export function fromCodexMcpStatus(
   return statuses.map((status) => {
     const latest = startup.get(status.name)
     // Le serveur figure dans l'inventaire sans annonce de démarrage : il est en place
-    // depuis avant que Sillage n'écoute. `connected` plutôt que `pending`, qui
+    // depuis avant que Solera n'écoute. `connected` plutôt que `pending`, qui
     // laisserait un serveur fonctionnel affiché comme en cours de lancement.
     const state = status.authStatus === 'notLoggedIn'
       ? 'needs-auth'

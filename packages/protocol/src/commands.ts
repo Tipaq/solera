@@ -6,7 +6,7 @@ import { z } from 'zod'
  * Elles ne sont pas déduites d'un catalogue écrit ici : chaque CLI publie les siennes,
  * et la liste dépend du poste et du projet autant que de la version. Les compétences
  * découvertes en cours de route, les commandes de projet et celles des extensions y
- * entrent sans que Sillage ait à les connaître.
+ * entrent sans que Solera ait à les connaître.
  */
 export const slashCommandSchema = z.object({
   /** Sans la barre oblique, telle que le CLI la nomme. */
@@ -31,9 +31,9 @@ export interface ProjectCommandsDto {
 }
 
 /**
- * Commandes que Sillage exécute lui-même au lieu de les transmettre comme du texte.
+ * Commandes que Solera exécute lui-même au lieu de les transmettre comme du texte.
  *
- * Le CLI sait déjà les faire, mais par un chemin que Sillage a dû doubler pour ses
+ * Le CLI sait déjà les faire, mais par un chemin que Solera a dû doubler pour ses
  * propres boutons. Passer par la plomberie maison plutôt que par la frappe donne le
  * même retour visuel des deux côtés : la même bannière de compaction, la même erreur,
  * le même bouton grisé pendant l'opération.
@@ -44,14 +44,14 @@ export const NATIVE_SLASH_COMMANDS = new Set(['compact'])
  * Commandes retirées de la liste proposée.
  *
  * Trois motifs, et rien d'autre. Elles ne servent qu'au harnais qui les a lancées
- * (`__remote-workflow`), elles s'adressent au terminal que Sillage n'a pas (`color`
+ * (`__remote-workflow`), elles s'adressent au terminal que Solera n'a pas (`color`
  * repeint une barre de saisie absente, `heapdump` écrit sur le bureau de la machine
- * serveur), ou elles déplacent sous Sillage un état dont il rend compte : `/clear`
+ * serveur), ou elles déplacent sous Solera un état dont il rend compte : `/clear`
  * échange la session du CLI sans que le journal en sache rien, et `/model`, `/effort`,
  * `/fast`, `/output-style`, `/advisor` et `/config` changent la configuration appliquée
  * pendant que les réglages du composer continuent d'afficher l'ancienne.
  *
- * Les commandes que Sillage double sans les contredire ne sont pas ici : `/usage` et
+ * Les commandes que Solera double sans les contredire ne sont pas ici : `/usage` et
  * `/context` répondent par du texte, et rien ne se désynchronise à les lire deux fois.
  */
 const HIDDEN_SLASH_COMMANDS = new Set([

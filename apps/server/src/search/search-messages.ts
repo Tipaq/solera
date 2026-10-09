@@ -1,11 +1,11 @@
 import { sql } from 'drizzle-orm'
-import type { Db } from '@sillage/db'
+import type { Db } from '@solera/db'
 import {
   SEARCH_MARK_CLOSE,
   SEARCH_MARK_OPEN,
   type AgentKind,
   type SearchMessageDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 
 /**
  * Traduit une saisie libre en requête FTS5.

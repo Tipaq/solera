@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { ProjectMemoryDto } from '@sillage/protocol'
+import type { ProjectMemoryDto } from '@solera/protocol'
 import { api } from './api'
 
 /** Relue à chaque ouverture : les agents y écrivent sans passer par l'interface. */

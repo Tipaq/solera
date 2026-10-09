@@ -6,8 +6,8 @@ import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projects, runMigrations, sessionMessages, users } from '@sillage/db'
-import { formatSessionMessage, parseSessionMessage } from '@sillage/protocol'
+import { conversations, openDatabase, projects, runMigrations, sessionMessages, users } from '@solera/db'
+import { formatSessionMessage, parseSessionMessage } from '@solera/protocol'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { SessionRelay } from '../src/sessions/session-relay.js'
 import { EventLog } from '../src/events/event-log.js'
@@ -15,7 +15,7 @@ import { EventLog } from '../src/events/event-log.js'
 type Status = 'idle' | 'running' | 'awaiting_input' | 'interrupted' | 'error'
 
 async function harness(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'sillage-session-messages-'))
+  const dir = await mkdtemp(join(tmpdir(), 'solera-session-messages-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
@@ -33,8 +33,8 @@ async function harness(t: TestContext) {
     }).run()
 
   const mcp = (from: string, name: string, args: object) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/sillage-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SILLAGE_MCP_DB: dbPath, SILLAGE_MCP_PROJECT: 'project', SILLAGE_MCP_CONVERSATION: from },
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: from },
       encoding: 'utf8', timeout: 10000,
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n',
     })
@@ -183,7 +183,7 @@ test('a broadcast reaches only the sessions at work, and never wakes one', async
   conversation('c', 'running')
   conversation('idle', 'idle')
 
-  const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Sillage dans 2 min.' }).content[0].text
+  const reply = mcp('a', 'broadcast_session_message', { body: 'Je redémarre Solera dans 2 min.' }).content[0].text
   assert.match(reply, /2 session/)
   // `c` a fini entre l'annonce et la remise.
   setStatus('c', 'idle')
@@ -275,9 +275,9 @@ test('the envelope survives quotes and a body that quotes the tag', () => {
   const envelope = {
     kind: 'message' as const,
     from: 'x', title: 'Titre "piégé" <b>', agent: 'codex', messageId: 'm',
-    body: 'cite </sillage-session-message> au milieu\net sur deux lignes',
+    body: 'cite </solera-session-message> au milieu\net sur deux lignes',
   }
   assert.deepEqual(parseSessionMessage(formatSessionMessage(envelope)), envelope)
   assert.equal(parseSessionMessage('Un message ordinaire'), null)
-  assert.equal(parseSessionMessage('<sillage-session-message from="x">\nsans fermeture'), null)
+  assert.equal(parseSessionMessage('<solera-session-message from="x">\nsans fermeture'), null)
 })

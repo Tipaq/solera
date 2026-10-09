@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AgentKind, McpServerStatus } from '@sillage/protocol'
+import type { AgentKind, McpServerStatus } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'

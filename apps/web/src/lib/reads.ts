@@ -1,6 +1,6 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
-import type { ConversationDto } from '@sillage/protocol'
+import type { ConversationDto } from '@solera/protocol'
 import { api } from './api'
 import { liveSeq, subscribeStatus } from './conversation-status'
 
@@ -85,7 +85,7 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
     let attemptedAt = 0
 
     const send = async () => {
-      // Un onglet en arrière-plan continue de battre. Sans ce test, laisser Sillage
+      // Un onglet en arrière-plan continue de battre. Sans ce test, laisser Solera
       // ouvert sur une conversation pendant qu'un agent y travaille la marquerait lue
       // en continu, et c'est exactement la situation que le non-lu doit couvrir.
       if (document.visibilityState !== 'visible') return
@@ -108,7 +108,7 @@ export function useTrackRead(conversationId: string | undefined, lastSeq: number
         confirmed = result.lastReadSeq
         applyReadCursor(queryClient, conversationId, result.lastReadSeq)
       } catch (error) {
-        console.warn('[sillage] curseur de lecture non enregistré, nouvel essai :', error)
+        console.warn('[solera] curseur de lecture non enregistré, nouvel essai :', error)
       } finally {
         inFlight = false
       }

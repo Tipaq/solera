@@ -8,18 +8,18 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
  * l'information par les props traverserait la vue entière pour un booléen.
  */
 
-const OPEN_KEY = 'sillage.panelOpen'
+const OPEN_KEY = 'solera.panelOpen'
 /**
- * Clé distincte de l'ancienne `sillage.panelWidth` : la largeur ne veut plus dire la
+ * Clé distincte de l'ancienne `solera.panelWidth` : la largeur ne veut plus dire la
  * même chose. Elle réglait une colonne prise au fil, où l'on avait intérêt à être
  * étroit ; elle règle maintenant une feuille posée dessus, qui ne lui coûte rien.
  * Reprendre l'ancienne valeur aurait rouvert le panneau aussi étroit qu'avant.
  */
-const WIDTH_KEY = 'sillage.sheetWidth'
-const DOCKED_WIDTH_KEY = 'sillage.panelDockedWidth'
-const EXPANDED_KEY = 'sillage.panelExpanded'
-const TREE_KEY = 'sillage.panelTree'
-const TREE_WIDTH_KEY = 'sillage.treeWidth'
+const WIDTH_KEY = 'solera.sheetWidth'
+const DOCKED_WIDTH_KEY = 'solera.panelDockedWidth'
+const EXPANDED_KEY = 'solera.panelExpanded'
+const TREE_KEY = 'solera.panelTree'
+const TREE_WIDTH_KEY = 'solera.treeWidth'
 
 /** En deçà, l'arborescence et l'éditeur ne tiennent plus côte à côte. */
 const MIN_WIDTH = 280

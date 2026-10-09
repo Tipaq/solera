@@ -75,7 +75,7 @@ function generate(openapi, dir) {
 }
 
 const version = execFileSync(binary, ['--version'], { encoding: 'utf8' }).trim()
-const staging = mkdtempSync(join(tmpdir(), 'sillage-opencode-'))
+const staging = mkdtempSync(join(tmpdir(), 'solera-opencode-'))
 try {
   const fresh = generate(await fetchOpenApi(staging), staging)
 

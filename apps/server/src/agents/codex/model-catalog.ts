@@ -1,4 +1,4 @@
-import type { CollaborationModeMask, Model, ModelListResponse } from '@sillage/codex-bindings/v2'
+import type { CollaborationModeMask, Model, ModelListResponse } from '@solera/codex-bindings/v2'
 import { CachedProbe } from '../cached-probe.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
@@ -11,7 +11,7 @@ import { CLIENT_INFO } from './client-info.js'
  * même sonde, pour ne pas payer un second démarrage.
  *
  * Le binaire est résolu à chaque sonde et non retenu à la construction : c'est le seul
- * moyen d'honorer le préfixe où Sillage installe les CLI qu'il gère, et de voir le
+ * moyen d'honorer le préfixe où Solera installe les CLI qu'il gère, et de voir le
  * catalogue d'une version installée pendant que le daemon tourne.
  */
 

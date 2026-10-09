@@ -1,5 +1,5 @@
 import { TooltipButton } from '../ui/Tooltip'
-import { AGENT_CAPABILITIES, type AgentKind } from '@sillage/protocol'
+import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import type { BackgroundWork } from '../../lib/background'

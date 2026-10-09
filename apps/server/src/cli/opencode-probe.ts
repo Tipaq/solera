@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_OPENCODE_CONFIG, sillageEventSchema, type SillageEvent } from '@sillage/protocol'
+import { DEFAULT_OPENCODE_CONFIG, soleraEventSchema, type SoleraEvent } from '@solera/protocol'
 import { OpencodeRunner } from '../agents/opencode/runner.js'
 
 /**
@@ -12,24 +12,24 @@ import { OpencodeRunner } from '../agents/opencode/runner.js'
  * session créée reste dans la base d'opencode du poste : la sonde affiche son
  * identifiant, à supprimer avec `opencode session delete <id>`.
  */
-const cwd = await mkdtemp(join(tmpdir(), 'sillage-opencode-probe-'))
+const cwd = await mkdtemp(join(tmpdir(), 'solera-opencode-probe-'))
 await writeFile(join(cwd, 'note.txt'), 'hello\n')
 
-const events: SillageEvent[] = []
+const events: SoleraEvent[] = []
 let sessionId = ''
 let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
 const runner = new OpencodeRunner({
   conversationId: 'opencode-probe', cwd, attachmentsRoot: cwd,
   binary: process.env.OPENCODE_BIN ?? join(homedir(), '.opencode/bin/opencode'), resumeSessionId: null,
-  config: { ...DEFAULT_OPENCODE_CONFIG, model: process.env.OPENCODE_MODEL ?? 'opencode/big-pickle', sillageMcp: false },
+  config: { ...DEFAULT_OPENCODE_CONFIG, model: process.env.OPENCODE_MODEL ?? 'opencode/big-pickle', soleraMcp: false },
   projectOverview: () => 'The project codename is ZEPHYR-9.', maskedInstructionRoots: () => [], memoryDir: () => null,
   resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
   setAgentSessionId: (id) => { sessionId = id }, updateConfig: () => {},
   openPermissionRequest: () => `probe-permission-${events.length}`, closePermissionRequest: () => {},
   setStatus: (status) => { console.log(`status: ${status}`) },
   emit: (event) => {
-    events.push(sillageEventSchema.parse(event))
+    events.push(soleraEventSchema.parse(event))
     // Aucune sortie native : seulement le résultat de la sonde.
     if (!event.type.endsWith('.delta')) {
       console.log(event.type, event.type === 'tool.started' ? event.name : event.type === 'agent.notice' ? event.code : '')

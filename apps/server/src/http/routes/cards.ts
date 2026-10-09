@@ -16,7 +16,7 @@ import {
   type CardRow,
   type Db,
   type ProjectRow,
-} from '@sillage/db'
+} from '@solera/db'
 import {
   MAX_ATTACHMENT_BYTES,
   createCardBodySchema,
@@ -29,7 +29,7 @@ import {
   type CardDto,
   type CardLinkDto,
   type CardNoteDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'

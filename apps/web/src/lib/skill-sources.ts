@@ -10,7 +10,7 @@ import type {
   SkillSourceListDto,
   SourceSkillPreviewDto,
   UpdateSkillSourceBody,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { api } from './api'
 
 /**

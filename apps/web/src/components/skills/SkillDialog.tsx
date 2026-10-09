@@ -1,7 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
-import { skillNameSchema } from '@sillage/protocol'
+import { skillNameSchema } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { Button, Field, IconButton } from '../ui'
 

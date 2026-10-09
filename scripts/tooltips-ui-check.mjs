@@ -13,7 +13,7 @@ import { chromium } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'sillage-ui-check-'))
+const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
 const processes = []
 let browser
 
@@ -51,11 +51,11 @@ try {
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = {
     ...process.env,
-    SILLAGE_PORT: String(apiPort),
-    SILLAGE_HOST: '127.0.0.1',
-    SILLAGE_CONFIG: config,
-    SILLAGE_DATA_DIR: join(data, 'data'),
-    SILLAGE_WEB_ROOT: join(data, 'web'),
+    SOLERA_PORT: String(apiPort),
+    SOLERA_HOST: '127.0.0.1',
+    SOLERA_CONFIG: config,
+    SOLERA_DATA_DIR: join(data, 'data'),
+    SOLERA_WEB_ROOT: join(data, 'web'),
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -69,9 +69,9 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
-    if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
+    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
   }, new URL(base).origin)
-  const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
+  const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const project = projects.find((entry) => entry.name === 'Nimbus')
@@ -111,11 +111,11 @@ try {
   assert.equal(await tooltip.textContent(), 'Ajouter un projet')
   const box = await tooltip.boundingBox()
   assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440)
-  await page.screenshot({ path: '/tmp/sillage-tooltips-desktop.png' })
+  await page.screenshot({ path: '/tmp/solera-tooltips-desktop.png' })
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
-  await mobile.addInitScript(() => localStorage.setItem('sillage.locale', 'fr'))
-  await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
+  await mobile.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
+  await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   const phone = await mobile.newPage()
   await phone.goto(`${base}/p/${project.id}/c/${hero.id}`)
   await phone.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).tap()
@@ -126,7 +126,7 @@ try {
   await phone.getByRole('button', { name: 'Fermer la navigation', exact: true }).waitFor({ state: 'hidden' })
   // Attendre la fin du glissement, même si le panneau est déjà aria-hidden.
   await delay(300)
-  await phone.screenshot({ path: '/tmp/sillage-tooltips-mobile.png' })
+  await phone.screenshot({ path: '/tmp/solera-tooltips-mobile.png' })
   await mobile.close()
   assert.deepEqual(errors, [])
   console.log('OK : survol, clavier, Échap, menus, liens et affichage mobile.')

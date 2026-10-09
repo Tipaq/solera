@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { slugifyProjectName } from '@sillage/protocol'
+import { slugifyProjectName } from '@solera/protocol'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
 import { useUserSettings } from '../lib/user-settings'

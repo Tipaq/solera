@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { ProjectRow, UserRow } from '@sillage/db'
-import { memoryFileSchema, writeMemoryFileBodySchema, type ProjectMemoryDto } from '@sillage/protocol'
+import type { ProjectRow, UserRow } from '@solera/db'
+import { memoryFileSchema, writeMemoryFileBodySchema, type ProjectMemoryDto } from '@solera/protocol'
 import {
   deleteMemoryFile,
   ensureProjectMemory,

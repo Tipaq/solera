@@ -18,7 +18,7 @@ import { checkMedia } from './checks/media.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
-const data = await mkdtemp(join(tmpdir(), 'sillage-ui-check-'))
+const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
 const processes = []
 let browser
 
@@ -56,11 +56,11 @@ try {
   await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
   const env = {
     ...process.env,
-    SILLAGE_PORT: String(apiPort),
-    SILLAGE_HOST: '127.0.0.1',
-    SILLAGE_CONFIG: config,
-    SILLAGE_DATA_DIR: join(data, 'data'),
-    SILLAGE_WEB_ROOT: join(data, 'web'),
+    SOLERA_PORT: String(apiPort),
+    SOLERA_HOST: '127.0.0.1',
+    SOLERA_CONFIG: config,
+    SOLERA_DATA_DIR: join(data, 'data'),
+    SOLERA_WEB_ROOT: join(data, 'web'),
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -74,9 +74,9 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
-    if (window === window.top && location.origin === origin) localStorage.setItem('sillage.locale', 'fr')
+    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
   }, new URL(base).origin)
-  const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'sillage-demo' } })
+  const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const project = projects.find((entry) => entry.name === 'Nimbus')
@@ -151,7 +151,7 @@ try {
   await page.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
   await description.waitFor()
   assert.equal(await description.inputValue(), newerDraft, 'Successful changes must be persisted by the API')
-  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('sillage.cardDraft:')).length), 0)
+  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardDraft:')).length), 0)
   const latestSession = card.conversations.filter((session) => !session.archivedAt).sort((a, b) => b.createdAt - a.createdAt)[0]
   assert.ok(latestSession)
   await page.getByRole('button', { name: 'Reprendre la session', exact: true }).click()
@@ -213,7 +213,7 @@ try {
   assert.equal(await page.getByText(noteA, { exact: true }).isVisible(), false, 'Older notes are collapsed')
   await page.getByText(/^Notes précédentes \(/).click()
   await page.getByText(noteA, { exact: true }).waitFor()
-  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('sillage.cardNoteDraft:')).length), 0)
+  assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardNoteDraft:')).length), 0)
   await page.reload()
   await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
   await page.getByText(noteB, { exact: true }).waitFor()
@@ -389,7 +389,7 @@ try {
   await page.waitForURL(`${board}?carte=2`)
   const currentUser = await (await context.request.get(base + '/api/auth/me')).json()
   await page.goto(base + '/settings/compte')
-  await page.evaluate(({ id }) => localStorage.setItem(`sillage.lastContext:${id}`, '/p/deleted/c/inaccessible'), currentUser)
+  await page.evaluate(({ id }) => localStorage.setItem(`solera.lastContext:${id}`, '/p/deleted/c/inaccessible'), currentUser)
   await page.goto(base + '/')
   await page.waitForURL(/\/p\/(?!deleted)[^/]+\/c\//)
   assert.notEqual(new URL(page.url()).pathname, '/p/deleted/c/inaccessible')
@@ -469,14 +469,14 @@ try {
   await page.keyboard.press('ArrowRight')
   const customHue = await hue.inputValue()
   await neutral.check()
-  assert.equal(await page.evaluate(() => localStorage.getItem('sillage.tint')), '0')
+  assert.equal(await page.evaluate(() => localStorage.getItem('solera.tint')), '0')
   assert.equal(await hue.inputValue(), customHue, 'A background preset preserves the accent hue')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px', 'A preset preserves reading settings')
   await page.reload()
   await neutral.waitFor()
   assert.equal(await neutral.isChecked(), true)
   await page.getByRole('radio', { name: 'Discret', exact: true }).check()
-  assert.equal(await page.evaluate(() => localStorage.getItem('sillage.tint')), '0.25')
+  assert.equal(await page.evaluate(() => localStorage.getItem('solera.tint')), '0.25')
   await page.getByRole('button', { name: 'Sombre contrasté', exact: true }).click()
   assert.equal(await page.getByRole('radio', { name: 'Discret', exact: true }).count(), 0)
   await page.getByRole('button', { name: 'Clair', exact: true }).click()
@@ -496,7 +496,7 @@ try {
   await otherPage.getByRole('heading', { name: 'Personnel', exact: true }).waitFor()
   assert.equal(await otherPage.getByRole('heading', { name: 'Administration', exact: true }).count(), 0)
   await otherPage.evaluate(({ id, path }) => {
-    localStorage.setItem(`sillage.lastContext:${id}`, path)
+    localStorage.setItem(`solera.lastContext:${id}`, path)
   }, { id: currentUser.id, path: `/p/${project.id}/board?carte=2` })
   await otherPage.goto(base + '/')
   const visibleProjects = await (await other.request.get(base + '/api/projects')).json()

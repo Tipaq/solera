@@ -42,8 +42,8 @@ mkdirSync(out, { recursive: true })
 cpSync(serverDist, join(out, 'server'), { recursive: true })
 cpSync(webDist, join(out, 'web'), { recursive: true })
 mkdirSync(join(out, 'deploy'), { recursive: true })
-cpSync(join(root, 'deploy/sillage.service.tmpl'), join(out, 'deploy/sillage.service.tmpl'))
-cpSync(join(root, 'deploy/sillage.plist.tmpl'), join(out, 'deploy/sillage.plist.tmpl'))
+cpSync(join(root, 'deploy/solera.service.tmpl'), join(out, 'deploy/solera.service.tmpl'))
+cpSync(join(root, 'deploy/solera.plist.tmpl'), join(out, 'deploy/solera.plist.tmpl'))
 cpSync(join(root, 'deploy/config.example.toml'), join(out, 'deploy/config.example.toml'))
 cpSync(join(root, 'install.sh'), join(out, 'install.sh'))
 
@@ -52,13 +52,13 @@ const dependencies = Object.fromEntries(
   Object.entries(serverPkg.dependencies).filter(([, spec]) => !spec.startsWith('workspace:')),
 )
 
-const version = (process.env.SILLAGE_VERSION ?? 'dev').replace(/^v/, '')
+const version = (process.env.SOLERA_VERSION ?? 'dev').replace(/^v/, '')
 writeFileSync(join(out, 'VERSION'), `${version}\n`)
 writeFileSync(
   join(out, 'package.json'),
   `${JSON.stringify(
     {
-      name: 'sillage-runtime',
+      name: 'solera-runtime',
       version,
       private: true,
       type: 'module',

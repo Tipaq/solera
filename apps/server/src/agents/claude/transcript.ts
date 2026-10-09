@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { ContentBlock, SillageEvent } from '@sillage/protocol'
+import type { ContentBlock, SoleraEvent } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
 
@@ -10,12 +10,12 @@ import { editedPath } from './file-edits.js'
  *
  * Le CLI persiste chaque session en JSONL sous
  * `$CLAUDE_CONFIG_DIR/projects/<slug-du-cwd>/<sessionId>.jsonl`. Importer une session
- * commencée hors de Sillage demande de reconstruire le journal depuis ce fichier
+ * commencée hors de Solera demande de reconstruire le journal depuis ce fichier
  * (invariant I2 : le journal est la seule source d'affichage), avec la même
  * traduction que le flux vivant de `ClaudeRunner.translate`.
  *
  * Ce n'est pas une copie : le CLI relit toujours le fichier complet à la reprise,
- * Sillage n'en tire que son affichage. Les `raw` conservent l'entrée de transcript,
+ * Solera n'en tire que son affichage. Les `raw` conservent l'entrée de transcript,
  * dont l'`uuid` sert de point de coupe à un fork ultérieur (invariant I3).
  */
 
@@ -28,7 +28,7 @@ export const TRANSCRIPT_RAW_FORMAT = 'claude-transcript@1'
 /** Ce que le journal reçoit pour une entrée traduite. */
 export interface TranslatedEvent {
   ts: number
-  event: SillageEvent
+  event: SoleraEvent
   raw?: unknown
 }
 

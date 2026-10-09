@@ -1,13 +1,13 @@
 import { CircleAlert, CircleCheck, KeyRound, Loader, Plug, PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { McpServerState, McpServerStatus } from '@sillage/protocol'
+import type { McpServerState, McpServerStatus } from '@solera/protocol'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { Badge, EmptyState } from '../ui'
 
 /**
  * Les serveurs MCP de la session, tels que le CLI les rapporte.
  *
- * Interrogés au CLI et non déduits de ce que Sillage a transmis : c'est la seule
+ * Interrogés au CLI et non déduits de ce que Solera a transmis : c'est la seule
  * surface qui peut dire qu'un serveur a échoué à démarrer. Sans elle, un serveur mal
  * configuré est indiscernable d'un modèle qui a choisi de ne pas s'en servir.
  *

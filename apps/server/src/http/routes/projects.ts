@@ -3,7 +3,7 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { cards, conversations, projectImages, projects, users, writeTransaction } from '@sillage/db'
+import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
 import {
   createProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
@@ -17,7 +17,7 @@ import {
   type CloneJobDto,
   type InstructionsMode,
   type ProjectDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { CloneJobs } from '../../clone-jobs.js'
@@ -145,7 +145,7 @@ export function registerProjectRoutes(
       // mode résolu à chaque lancement basculerait le jour où un agent crée un AGENTS.md.
       instructionsMode:
         fields.instructionsMode ??
-        (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'sillage'),
+        (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'solera'),
       ownerId,
       defaultConfig: null,
       position: (highest?.max ?? 0) + 1,
@@ -421,10 +421,10 @@ export function registerProjectRoutes(
     // Même raison pour l'index de recherche, que la cascade SQL n'atteint pas.
     for (const row of owned) dropConversation(ctx.db, row.id)
 
-    // Le workspace sur disque n'est jamais touché : Sillage pointe dessus, ne le possède
+    // Le workspace sur disque n'est jamais touché : Solera pointe dessus, ne le possède
     // pas. Les shells du projet, en revanche, tournent en son nom : on les ferme.
     terminals.closeForProject(id)
-    // Les skills du projet, eux, appartiennent à Sillage. Avant la cascade, qui efface
+    // Les skills du projet, eux, appartiennent à Solera. Avant la cascade, qui efface
     // les lignes dont on a besoin pour retrouver les skills désactivés.
     new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))

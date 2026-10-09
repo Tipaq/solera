@@ -30,19 +30,19 @@ export class ProcessOrigins {
   environment(projectId: string, conversationId: string | null): Record<string, string> {
     for (const [token, entry] of this.entries) {
       if (entry.projectId === projectId && entry.conversationId === conversationId) {
-        return { SILLAGE_PROCESS_ORIGIN: token }
+        return { SOLERA_PROCESS_ORIGIN: token }
       }
     }
     const token = randomUUID()
     const origin = { projectId, conversationId }
     writeFileSync(join(this.directory, `${token}.json`), JSON.stringify(origin), { mode: 0o600, flag: 'wx' })
     this.entries.set(token, origin)
-    return { SILLAGE_PROCESS_ORIGIN: token }
+    return { SOLERA_PROCESS_ORIGIN: token }
   }
 
   resolve(environment: string): Origin | null {
-    const token = environment.split('\0').find((entry) => entry.startsWith('SILLAGE_PROCESS_ORIGIN='))
-      ?.slice('SILLAGE_PROCESS_ORIGIN='.length)
+    const token = environment.split('\0').find((entry) => entry.startsWith('SOLERA_PROCESS_ORIGIN='))
+      ?.slice('SOLERA_PROCESS_ORIGIN='.length)
     return token ? this.entries.get(token) ?? null : null
   }
 }

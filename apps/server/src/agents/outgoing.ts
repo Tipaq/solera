@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@sillage/protocol'
+import type { ContentBlock } from '@solera/protocol'
 import type { OutgoingAttachment } from './types.js'
 
 /**

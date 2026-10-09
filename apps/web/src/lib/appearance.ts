@@ -17,11 +17,11 @@ export interface AppearanceSetting {
 }
 
 export const APPEARANCE_SETTINGS = {
-  hue: { key: 'sillage.hue', property: '--sg-hue', fallback: 275, min: 0, max: 360, step: 1 },
-  tint: { key: 'sillage.tint', property: '--sg-tint', fallback: 1, min: 0, max: 2.5, step: 0.05 },
+  hue: { key: 'solera.hue', property: '--sg-hue', fallback: 275, min: 0, max: 360, step: 1 },
+  tint: { key: 'solera.tint', property: '--sg-tint', fallback: 1, min: 0, max: 2.5, step: 0.05 },
   // Bornes volontairement étroites : au-delà, les surfaces rejoignent le texte et le
   // contraste s'effondre au lieu de simplement s'éclaircir.
-  lift: { key: 'sillage.lift', property: '--sg-lift', fallback: 0, min: -0.06, max: 0.12, step: 0.005 },
+  lift: { key: 'solera.lift', property: '--sg-lift', fallback: 0, min: -0.06, max: 0.12, step: 0.005 },
 
   /*
    * Confort de lecture du fil. Ces trois-là ne touchent qu'au texte des messages, pas
@@ -33,7 +33,7 @@ export const APPEARANCE_SETTINGS = {
    * que de devenir doux.
    */
   readingSize: {
-    key: 'sillage.readingSize',
+    key: 'solera.readingSize',
     property: '--sg-read-size',
     fallback: 0.9375,
     min: 0.8125,
@@ -41,7 +41,7 @@ export const APPEARANCE_SETTINGS = {
     step: 0.0625,
   },
   readingLeading: {
-    key: 'sillage.readingLeading',
+    key: 'solera.readingLeading',
     property: '--sg-read-leading',
     fallback: 1.65,
     min: 1.4,
@@ -49,7 +49,7 @@ export const APPEARANCE_SETTINGS = {
     step: 0.05,
   },
   readingSoftness: {
-    key: 'sillage.readingSoftness',
+    key: 'solera.readingSoftness',
     property: '--sg-read-softness',
     fallback: 0,
     min: 0,
@@ -64,7 +64,7 @@ export const APPEARANCE_SETTINGS = {
    * ne bougent pas, eux distinguent déjà les deux rôles sans réglage.
    */
   messageContrast: {
-    key: 'sillage.messageContrast',
+    key: 'solera.messageContrast',
     property: '--sg-message-contrast',
     fallback: 0.45,
     min: 0,

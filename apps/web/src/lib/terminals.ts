@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TerminalDto } from '@sillage/protocol'
+import type { TerminalDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

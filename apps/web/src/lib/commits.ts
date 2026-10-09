@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { CommitDiffDto, CommitListDto } from '@sillage/protocol'
+import type { CommitDiffDto, CommitListDto } from '@solera/protocol'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 

@@ -11,13 +11,13 @@ import { CliBinary } from '../src/agents/cli-binary.js'
  * « Installer » pendant une minute après une installation réussie.
  */
 test("un CLI installé après la sonde apparaît dès que la sonde est invalidée", async () => {
-  const managed = mkdtempSync(join(tmpdir(), 'sillage-cli-'))
-  const cli = new CliBinary('codex', 'sillage-test-absent-cli', true, managed)
+  const managed = mkdtempSync(join(tmpdir(), 'solera-cli-'))
+  const cli = new CliBinary('codex', 'solera-test-absent-cli', true, managed)
 
   assert.equal((await cli.status()).found, false)
 
   mkdirSync(join(managed, 'bin'))
-  const path = join(managed, 'bin', 'sillage-test-absent-cli')
+  const path = join(managed, 'bin', 'solera-test-absent-cli')
   writeFileSync(path, '#!/bin/sh\necho codex-cli 9.9.9\n')
   chmodSync(path, 0o755)
 

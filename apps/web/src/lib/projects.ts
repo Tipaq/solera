@@ -4,7 +4,7 @@ import {
   type CloneJobDto,
   type InstructionsMode,
   type ProjectDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import { ApiRequestError, api } from './api'
 import { translate, translateError } from './i18n'
 

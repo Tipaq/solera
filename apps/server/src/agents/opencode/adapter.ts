@@ -10,8 +10,8 @@ import {
   type AgentUsage,
   type EditDiffDto,
   type ProjectCommandsDto,
-} from '@sillage/protocol'
-import type { Message, Session } from '@sillage/opencode-bindings'
+} from '@solera/protocol'
+import type { Message, Session } from '@solera/opencode-bindings'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { CliBinary, resolveBinary } from '../cli-binary.js'
@@ -40,7 +40,7 @@ const INSTALLER_BINARY = join(homedir(), '.opencode/bin/opencode')
  * Le nom configuré, ou le chemin de l'installeur quand ce nom ne mène nulle part.
  *
  * Décidé une fois, à la construction : un opencode installé ensuite depuis l'interface
- * atterrit dans le préfixe de Sillage, que la résolution ordinaire consulte à chaque
+ * atterrit dans le préfixe de Solera, que la résolution ordinaire consulte à chaque
  * lancement.
  */
 function configuredBinary(binary: string, managedDir: string): string {

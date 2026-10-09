@@ -8,8 +8,8 @@ import {
   defaultConfigFor,
   type AgentConfig,
   type AgentKind,
-} from '@sillage/protocol'
-import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@sillage/protocol'
+} from '@solera/protocol'
+import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { MobileNavigationButton } from '../components/MobileNavigation'
@@ -436,7 +436,7 @@ export function DraftConversationPage() {
               // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
               // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
               // lisent sans session là où le CLI le permet (`draftCommands`). Le composer
-              // écarte lui-même celles que Sillage exécute (`/compact`) : sans fil, pas de
+              // écarte lui-même celles que Solera exécute (`/compact`) : sans fil, pas de
               // plomberie pour les porter.
               mcpInventory={NO_MCP_INVENTORY}
               commands={projectCommands?.commands ?? NO_COMMANDS}

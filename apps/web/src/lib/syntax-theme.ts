@@ -13,7 +13,7 @@ import { useSyncExternalStore } from 'react'
  */
 
 export const SYNTAX_THEMES = [
-  'sillage',
+  'solera',
   'ocean',
   'nuit',
   'agrume',
@@ -27,7 +27,7 @@ export const SYNTAX_THEMES = [
 export type SyntaxTheme = (typeof SYNTAX_THEMES)[number]
 
 export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, MessageKey> = {
-  sillage: 'syntax.theme.sillage',
+  solera: 'syntax.theme.solera',
   ocean: 'syntax.theme.ocean',
   nuit: 'syntax.theme.nuit',
   agrume: 'syntax.theme.agrume',
@@ -39,12 +39,12 @@ export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, MessageKey> = {
   encre: 'syntax.theme.encre',
 }
 
-const STORAGE_KEY = 'sillage.syntax'
+const STORAGE_KEY = 'solera.syntax'
 const listeners = new Set<() => void>()
 
 export function currentSyntaxTheme(): SyntaxTheme {
   const value = document.documentElement.dataset.syntax
-  return SYNTAX_THEMES.includes(value as SyntaxTheme) ? (value as SyntaxTheme) : 'sillage'
+  return SYNTAX_THEMES.includes(value as SyntaxTheme) ? (value as SyntaxTheme) : 'solera'
 }
 
 export function subscribeSyntaxTheme(listener: () => void): () => void {
@@ -55,7 +55,7 @@ export function subscribeSyntaxTheme(listener: () => void): () => void {
 export function applySyntaxTheme(next: SyntaxTheme): void {
   // La palette par défaut est celle qui vit dans `:root[data-theme=...]` : elle
   // s'obtient en retirant l'attribut, pas en dupliquant ses valeurs.
-  if (next === 'sillage') delete document.documentElement.dataset.syntax
+  if (next === 'solera') delete document.documentElement.dataset.syntax
   else document.documentElement.dataset.syntax = next
 
   localStorage.setItem(STORAGE_KEY, next)
@@ -66,7 +66,7 @@ export function useSyntaxTheme(): [SyntaxTheme, (theme: SyntaxTheme) => void] {
   const theme = useSyncExternalStore(
     subscribeSyntaxTheme,
     currentSyntaxTheme,
-    () => 'sillage' as SyntaxTheme,
+    () => 'solera' as SyntaxTheme,
   )
   return [theme, applySyntaxTheme]
 }

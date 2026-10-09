@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq, min } from 'drizzle-orm'
-import { conversations, type ConversationRow, type Db } from '@sillage/db'
-import type { AgentConfig, AgentKind } from '@sillage/protocol'
+import { conversations, type ConversationRow, type Db } from '@solera/db'
+import type { AgentConfig, AgentKind } from '@solera/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 

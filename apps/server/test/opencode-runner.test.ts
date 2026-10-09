@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { DEFAULT_OPENCODE_CONFIG, sillageEventSchema, type McpServer } from '@sillage/protocol'
+import { DEFAULT_OPENCODE_CONFIG, soleraEventSchema, type McpServer } from '@solera/protocol'
 import { OpencodeRunner } from '../src/agents/opencode/runner.js'
 import {
   ROOT, assistant, busy, context, delta, fixture, idle, part, runnerFixture, stepFinish, tool, until,
@@ -50,7 +50,7 @@ test('un tour : texte en deltas, outil normalisé, sortie en flux, édition, con
   // Le fork retrouve son point de coupe dans le payload natif de la clôture.
   assert.deepEqual(f.raw[f.events.indexOf(done!)], { sessionID: ROOT, messageID: 'msg_a' })
   assert.deepEqual(f.statuses.slice(-2), ['running', 'idle'])
-  for (const event of f.events) sillageEventSchema.parse(event)
+  for (const event of f.events) soleraEventSchema.parse(event)
 })
 
 test('lancement : session, modèle par défaut, inventaire MCP, commandes et corps du message', async (t) => {
@@ -266,7 +266,7 @@ test('panne de tour, plan, titre, compaction et événement inconnu', async (t) 
   assert.ok(!f.events.some((event) => event.type === 'message.completed' && event.blocks.some((block) => block.type === 'text' && block.text === 'Résumé')))
   const summarize = (await f.records()).find((record) => record.path.endsWith('/summarize'))!
   assert.deepEqual(summarize.body, { providerID: 'fixture', modelID: 'small' })
-  for (const event of f.events) sillageEventSchema.parse(event)
+  for (const event of f.events) soleraEventSchema.parse(event)
 })
 
 test('reprise : la session existante est rouverte, une session disparue fait échouer le lancement', async (t) => {

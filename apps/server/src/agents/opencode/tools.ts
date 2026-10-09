@@ -1,5 +1,5 @@
-import type { ToolPart } from '@sillage/opencode-bindings'
-import type { EditDiffDto, SillageEvent } from '@sillage/protocol'
+import type { ToolPart } from '@solera/opencode-bindings'
+import type { EditDiffDto, SoleraEvent } from '@solera/protocol'
 import { additionDiff } from '../../diff-lines.js'
 import { toWorkspacePath } from '../paths.js'
 
@@ -50,7 +50,7 @@ export const QUESTION_TOOL = 'question'
 /**
  * Nom et entrée d'un appel, tels que le journal les porte.
  *
- * opencode préfixe les outils d'un serveur MCP par son nom (`sillage_read_card`) : le
+ * opencode préfixe les outils d'un serveur MCP par son nom (`solera_read_card`) : le
  * préfixe redevient le `serveur/outil` que publient les deux autres adaptateurs. Seuls
  * les serveurs connus comptent, pour ne pas couper un outil intégré qui porterait un
  * tiret bas.
@@ -142,7 +142,7 @@ function patchedFiles(part: ToolPart): PatchedFile[] {
 }
 
 /** Les `file.edited` d'un appel terminé. */
-export function fileEdits(part: ToolPart, cwd: string): SillageEvent[] {
+export function fileEdits(part: ToolPart, cwd: string): SoleraEvent[] {
   return patchedFiles(part).map((file) => ({
     type: 'file.edited',
     toolCallId: part.callID,

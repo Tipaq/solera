@@ -21,8 +21,8 @@ function filledUser(cwd: string, env: NodeJS.ProcessEnv): string | undefined {
   return /^username=(.*)$/m.exec(out)?.[1]
 }
 
-test("le helper de Sillage passe devant ceux de la configuration globale, osxkeychain compris", async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'sillage-credential-'))
+test("le helper de Solera passe devant ceux de la configuration globale, osxkeychain compris", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'solera-credential-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
   // Ce que le git de macOS pose dans sa configuration système : un helper qui répond le
@@ -37,15 +37,15 @@ test("le helper de Sillage passe devant ceux de la configuration globale, osxkey
 
   // Le dépôt cloné : configuration locale, relue par tout git lancé ensuite. Écrite deux
   // fois, comme un second clone au même endroit, sans empiler les valeurs.
-  await setCredentialHelper(repo, answering('sillage'))
-  await setCredentialHelper(repo, answering('sillage'))
-  assert.equal(filledUser(repo, outside), 'sillage')
+  await setCredentialHelper(repo, answering('solera'))
+  await setCredentialHelper(repo, answering('solera'))
+  assert.equal(filledUser(repo, outside), 'solera')
   const local = execFileSync('git', ['config', '--local', '--get-all', 'credential.helper'], { cwd: repo, encoding: 'utf8' })
-  assert.deepEqual(local.replace(/\n$/, '').split('\n'), ['', answering('sillage')])
+  assert.deepEqual(local.replace(/\n$/, '').split('\n'), ['', answering('solera')])
 
   // Le clone : le dépôt n'existe pas encore, le helper passe par l'environnement.
   const bare = join(dir, 'bare')
   execFileSync('git', ['init', '-q', bare])
-  const env = { ...credentialEnv({ data: dir, database: join(dir, 'sillage.db') } as never, 'owner'), GIT_CONFIG_VALUE_1: answering('sillage') }
-  assert.equal(filledUser(bare, { ...outside, ...env }), 'sillage')
+  const env = { ...credentialEnv({ data: dir, database: join(dir, 'solera.db') } as never, 'owner'), GIT_CONFIG_VALUE_1: answering('solera') }
+  assert.equal(filledUser(bare, { ...outside, ...env }), 'solera')
 })

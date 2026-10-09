@@ -4,7 +4,7 @@ import type {
   ElicitationField,
   PermissionOption,
   PlanFollowUpOption,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type {
   ElicitationAnswer,
   PermissionDecision,
@@ -15,7 +15,7 @@ import type {
 
 /**
  * Suggestions par défaut d'une demande de permission. Communes aux CLI : ce sont les
- * gestes que Sillage sait rejouer, pas ceux du protocole natif, qui garde les siens
+ * gestes que Solera sait rejouer, pas ceux du protocole natif, qui garde les siens
  * dans la réponse construite par le runner.
  */
 const PERMISSION_SUGGESTIONS: PermissionOption[] = [

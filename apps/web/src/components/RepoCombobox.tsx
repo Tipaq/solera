@@ -1,6 +1,6 @@
 import { GitBranch, Globe, Lock } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
-import type { GitRepoDto } from '@sillage/protocol'
+import type { GitRepoDto } from '@solera/protocol'
 import { useGitRepos } from '../lib/git-credentials'
 import { useTranslate } from '../lib/i18n'
 import { cx } from './ui'

@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events'
 import { and, asc, desc, eq, gt, inArray, lte, sql } from 'drizzle-orm'
-import { conversations, events, writeTransaction, type Db } from '@sillage/db'
+import { conversations, events, writeTransaction, type Db } from '@solera/db'
 import {
-  sillageEventSchema,
+  soleraEventSchema,
   type BackgroundTask,
   type JournalEntry,
-  type SillageEvent,
-} from '@sillage/protocol'
+  type SoleraEvent,
+} from '@solera/protocol'
 import { indexConversation, indexMessage } from '../search/search-index.js'
 import {
   advanceIndex,
@@ -91,7 +91,7 @@ const TURN_COUNT = sql<number>`(
  * lire. Une liste fermée se relit ; une règle par la négative se serait retrouvée
  * fausse au premier type d'événement ajouté.
  */
-const NOTABLE = new Set<SillageEvent['type']>([
+const NOTABLE = new Set<SoleraEvent['type']>([
   'turn.completed',
   'error',
   'permission.requested',
@@ -129,7 +129,7 @@ export class EventLog {
    */
   append(
     conversationId: string,
-    event: SillageEvent,
+    event: SoleraEvent,
     raw?: unknown,
     rawFormat?: string,
   ): JournalEntry {
@@ -194,7 +194,7 @@ export class EventLog {
    */
   appendBatch(
     conversationId: string,
-    batch: { ts: number; event: SillageEvent; raw?: unknown }[],
+    batch: { ts: number; event: SoleraEvent; raw?: unknown }[],
     /** Provenance commune des `raw` du lot, quand ils viennent d'une même source. */
     rawFormat?: string,
   ): number {
@@ -828,9 +828,9 @@ export class EventLog {
    * l'ajout d'un champ : le journal est rejoué indéfiniment (invariant I2), donc une
    * ancienne forme doit continuer à produire un affichage juste plutôt qu'un `NaN`.
    */
-  private parseStored(seq: number, payload: string): SillageEvent {
+  private parseStored(seq: number, payload: string): SoleraEvent {
     const raw: unknown = JSON.parse(payload)
-    const parsed = sillageEventSchema.safeParse(raw)
+    const parsed = soleraEventSchema.safeParse(raw)
     if (parsed.success) return parsed.data
 
     // Un événement irrécupérable est remplacé par une erreur visible dans le fil :

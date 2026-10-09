@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { DEFAULT_CLAUDE_CONFIG, type SillageEvent } from '@sillage/protocol'
+import { DEFAULT_CLAUDE_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
 
@@ -33,7 +33,7 @@ async function waitForIdle(isIdle: () => boolean, timeoutMs: number): Promise<bo
   return false
 }
 
-function describe(event: SillageEvent): string | null {
+function describe(event: SoleraEvent): string | null {
   switch (event.type) {
     case 'session.started':
       return `session.started (${event.model})`
@@ -51,7 +51,7 @@ function describe(event: SillageEvent): string | null {
 }
 
 async function main(): Promise<void> {
-  const events: SillageEvent[] = []
+  const events: SoleraEvent[] = []
   let status = 'idle'
 
   const config = {
@@ -131,7 +131,7 @@ async function main(): Promise<void> {
   }
   await runner.stop()
 
-  const count = (type: SillageEvent['type']) => events.filter((event) => event.type === type).length
+  const count = (type: SoleraEvent['type']) => events.filter((event) => event.type === type).length
   const fastNotices = events.filter(
     (event) => event.type === 'agent.notice' && event.code === 'fast_mode',
   )

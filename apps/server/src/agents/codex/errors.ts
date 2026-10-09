@@ -1,10 +1,10 @@
-import type { CodexErrorInfo, TurnError } from '@sillage/codex-bindings/v2'
-import type { SillageEvent } from '@sillage/protocol'
+import type { CodexErrorInfo, TurnError } from '@solera/codex-bindings/v2'
+import type { SoleraEvent } from '@solera/protocol'
 
-type ErrorEvent = Extract<SillageEvent, { type: 'error' }>
+type ErrorEvent = Extract<SoleraEvent, { type: 'error' }>
 
 /**
- * Code Sillage d'une panne de tour Codex, à partir de `codexErrorInfo`.
+ * Code Solera d'une panne de tour Codex, à partir de `codexErrorInfo`.
  *
  * Le CLI nomme ses pannes en camelCase, parfois sous forme d'objet quand un statut
  * HTTP les accompagne. Le journal attend une chaîne stable et le web traduit sur
@@ -21,7 +21,7 @@ export function codexErrorCode(info: CodexErrorInfo | null): string {
 }
 
 /**
- * Codes qui, tels quels, se confondraient avec une erreur HTTP de Sillage : le web
+ * Codes qui, tels quels, se confondraient avec une erreur HTTP de Solera : le web
  * traduit `unauthorized` en « connexion requise », ce qui n'a rien à voir avec un
  * compte OpenAI refusé.
  */

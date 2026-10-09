@@ -1,4 +1,4 @@
-import { SKILL_MAIN_FILE, skillFilePathSchema } from '@sillage/protocol'
+import { SKILL_MAIN_FILE, skillFilePathSchema } from '@solera/protocol'
 import { badRequest } from '../http/errors.js'
 
 /**

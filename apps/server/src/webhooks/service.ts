@@ -7,8 +7,8 @@ import {
   webhookDeliveries,
   type ConversationRow,
   type Db,
-} from '@sillage/db'
-import type { JournalEntry, WebhookFailureReason, WebhookPayload } from '@sillage/protocol'
+} from '@solera/db'
+import type { JournalEntry, WebhookFailureReason, WebhookPayload } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 
@@ -441,8 +441,8 @@ export class WebhookService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Sillage-Signature': `t=${ts},v1=${signature}`,
-            'X-Sillage-Delivery': id,
+            'X-Solera-Signature': `t=${ts},v1=${signature}`,
+            'X-Solera-Delivery': id,
           },
           body,
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

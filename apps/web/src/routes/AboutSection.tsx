@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, RefreshCw } from 'lucide-react'
-import type { UpdatePhase } from '@sillage/protocol'
+import type { UpdatePhase } from '@solera/protocol'
 import { Markdown } from '../components/chat/Markdown'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ConfirmDialog } from '../components/ui'
 import { api } from '../lib/api'
@@ -117,7 +117,7 @@ export function AboutSection() {
               <div className="flex flex-col gap-2 text-sm">
                 <p className="text-ink-soft">{t('about.docker.instructions')}</p>
                 <pre className="overflow-x-auto rounded-md bg-surface-high px-3 py-2 font-mono text-xs">
-                  docker pull ghcr.io/marlburrow/sillage:{info.latest}
+                  docker pull ghcr.io/tipaq/solera:{info.latest}
                 </pre>
               </div>
             ) : info.channel === 'installer' ? (

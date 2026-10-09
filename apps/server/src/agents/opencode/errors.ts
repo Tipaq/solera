@@ -1,7 +1,7 @@
-import type { EventOf } from '@sillage/opencode-bindings'
-import type { SillageEvent } from '@sillage/protocol'
+import type { EventOf } from '@solera/opencode-bindings'
+import type { SoleraEvent } from '@solera/protocol'
 
-type ErrorEvent = Extract<SillageEvent, { type: 'error' }>
+type ErrorEvent = Extract<SoleraEvent, { type: 'error' }>
 
 export type SessionError = NonNullable<EventOf<'session.error'>['properties']['error']>
 

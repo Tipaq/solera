@@ -21,7 +21,7 @@ export function isMarkdownPath(path: string): boolean {
   return MARKDOWN_EXTENSIONS.has(languageFromPath(path))
 }
 
-const KEY = 'sillage.markdownView'
+const KEY = 'solera.markdownView'
 
 // Le rendu par défaut : un markdown ouvert depuis l'explorateur est presque toujours de la
 // documentation, qu'on vient lire.

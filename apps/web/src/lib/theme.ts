@@ -10,7 +10,7 @@ export const THEME_LABELS: Record<Theme, MessageKey> = {
   'dark-contrast': 'theme.darkContrast',
 }
 
-const STORAGE_KEY = 'sillage.theme'
+const STORAGE_KEY = 'solera.theme'
 const listeners = new Set<() => void>()
 
 /**

@@ -1,4 +1,4 @@
-import type { ConversationStatus } from '@sillage/protocol'
+import type { ConversationStatus } from '@solera/protocol'
 import type { BackgroundWork } from './background'
 import type { QueuedMessage } from './chat-fold'
 import { translate } from './i18n'

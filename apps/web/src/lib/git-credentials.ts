@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { GitCredentialListDto, GitRepoListDto } from '@sillage/protocol'
+import type { GitCredentialListDto, GitRepoListDto } from '@solera/protocol'
 import { api } from './api'
 
 /**

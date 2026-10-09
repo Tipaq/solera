@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, UserSettingsDto } from '@sillage/protocol'
+import type { AgentConfig, UserSettingsDto } from '@solera/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']

@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react'
-import type { AgentKind } from '@sillage/protocol'
+import type { AgentKind } from '@solera/protocol'
 import { translate } from '../lib/i18n'
 
 /** Couleurs de marque, appliquées partout où le logo apparaît. */
@@ -29,7 +29,7 @@ function ClaudeMark({ size }: { size: number }) {
 /**
  * Marque OpenAI, tracé issu de @lobehub/icons-static-svg (MIT).
  *
- * Usage nominatif : identifier quel CLI répond dans une conversation. Sillage n'est
+ * Usage nominatif : identifier quel CLI répond dans une conversation. Solera n'est
  * affilié ni à OpenAI ni à Anthropic, et ne se présente jamais comme tel.
  */
 function OpenAiMark({ size }: { size: number }) {
@@ -52,7 +52,7 @@ function OpenAiMark({ size }: { size: number }) {
  * Marque opencode : le cadre de son logo, redessiné à la main en deux rectangles (le
  * contour et le creux qu'il laisse en bas), sur la grille 24 des deux autres.
  *
- * Usage nominatif, comme pour OpenAI : dire quel CLI répond. Sillage n'est pas affilié
+ * Usage nominatif, comme pour OpenAI : dire quel CLI répond. Solera n'est pas affilié
  * à opencode.
  */
 function OpencodeMark({ size }: { size: number }) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@sillage/protocol'
+import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@solera/protocol'
 import { wsClient } from './ws-client'
 
 /**

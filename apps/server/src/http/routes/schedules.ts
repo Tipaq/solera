@@ -1,11 +1,11 @@
 import { asc, eq, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, scheduledTasks, type ScheduledTaskRow } from '@sillage/db'
+import { projects, scheduledTasks, type ScheduledTaskRow } from '@solera/db'
 import {
   createScheduledTaskBodySchema,
   updateScheduledTaskBodySchema,
   type ScheduledTaskDto,
-} from '@sillage/protocol'
+} from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { TaskScheduler } from '../../scheduler/task-scheduler.js'
 import {

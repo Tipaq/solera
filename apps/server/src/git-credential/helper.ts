@@ -21,8 +21,8 @@ import type { Paths } from '../config.js'
  */
 function resolveEntry(): string {
   const candidates = [
-    join(import.meta.dirname, 'sillage-git-credential.mjs'),
-    join(import.meta.dirname, 'git-credential/sillage-git-credential.mjs'),
+    join(import.meta.dirname, 'solera-git-credential.mjs'),
+    join(import.meta.dirname, 'git-credential/solera-git-credential.mjs'),
   ]
   const found = candidates.find((path) => existsSync(path))
   if (!found) {
@@ -63,7 +63,7 @@ export function credentialHelperCommand(paths: Paths, ownerId: string): string {
 }
 
 /**
- * Environnement d'un git lancé par Sillage sur un dépôt qui n'a pas encore sa
+ * Environnement d'un git lancé par Solera sur un dépôt qui n'a pas encore sa
  * configuration, c'est-à-dire au clone.
  *
  * `GIT_CONFIG_COUNT` plutôt que des `-c` en ligne de commande : même raison que
@@ -74,7 +74,7 @@ export function credentialHelperCommand(paths: Paths, ownerId: string): string {
  *
  * La valeur vide en tête vide la liste des helpers : git interroge sinon d'abord ceux des
  * configurations système et globale. Sur macOS, celle de git pose `osxkeychain` : le
- * trousseau répondrait avant Sillage, et garderait le jeton de Sillage après chaque succès.
+ * trousseau répondrait avant Solera, et garderait le jeton de Solera après chaque succès.
  */
 export function credentialEnv(paths: Paths, ownerId: string): NodeJS.ProcessEnv {
   return {

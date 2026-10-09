@@ -1,6 +1,6 @@
 import { Clock, FastForward, Paperclip, X } from 'lucide-react'
 import { useState } from 'react'
-import { parseSessionMessage } from '@sillage/protocol'
+import { parseSessionMessage } from '@solera/protocol'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
 import { IconButton, cx } from '../ui'

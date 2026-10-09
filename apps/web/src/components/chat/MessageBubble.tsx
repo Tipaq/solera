@@ -1,7 +1,7 @@
 import { Brain, ChevronRight, FileText, GitBranch, MessagesSquare } from 'lucide-react'
 import { memo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@sillage/protocol'
+import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'

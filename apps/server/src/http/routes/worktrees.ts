@@ -3,8 +3,8 @@ import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, worktrees, type ProjectRow, type WorktreeRow } from '@sillage/db'
-import { createWorktreeBodySchema, type WorktreeDto } from '@sillage/protocol'
+import { conversations, projects, worktrees, type ProjectRow, type WorktreeRow } from '@solera/db'
+import { createWorktreeBodySchema, type WorktreeDto } from '@solera/protocol'
 import { GitError, addWorktree, readGitStatus, removeWorktree } from '../../git.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { AppContext } from '../context.js'
@@ -12,7 +12,7 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Sillage gère les worktrees lui-même plutôt que de déléguer à `claude --worktree` :
+ * Solera gère les worktrees lui-même plutôt que de déléguer à `claude --worktree` :
  * Codex n'a pas d'équivalent, et il faut de toute façon savoir où ils sont pour les
  * lister et les nettoyer. La gestion est donc identique pour les deux CLI.
  */
@@ -106,7 +106,7 @@ export function registerWorktreeRoutes(
       await removeWorktree(project.workspacePath, row.path, force)
     } catch (err) {
       if (!(err instanceof GitError)) throw err
-      // Le dossier a pu disparaître hors de Sillage : on nettoie quand même la trace
+      // Le dossier a pu disparaître hors de Solera : on nettoie quand même la trace
       // plutôt que de laisser une entrée fantôme impossible à supprimer.
       await rm(row.path, { recursive: true, force: true }).catch(() => {})
     }

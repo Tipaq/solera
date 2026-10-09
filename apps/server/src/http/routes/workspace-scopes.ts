@@ -1,4 +1,4 @@
-import type { Db } from '@sillage/db'
+import type { Db } from '@solera/db'
 import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
 
 /**

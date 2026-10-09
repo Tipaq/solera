@@ -5,10 +5,10 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ printf "%s-%s" (include "sillage.fullname" $) $vol }}
+  name: {{ printf "%s-%s" (include "solera.fullname" $) $vol }}
   labels:
-    {{- include "sillage.labels" $ | nindent 4 }}
-    sillage.dev/volume: {{ $vol }}
+    {{- include "solera.labels" $ | nindent 4 }}
+    solera.dev/volume: {{ $vol }}
   annotations:
     # Le PVC survit à un `helm uninstall` : ces données ne se régénèrent pas.
     # Suppression explicite : kubectl delete pvc <nom>

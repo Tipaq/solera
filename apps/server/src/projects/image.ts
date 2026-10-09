@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
-import { projectImages, type Db } from '@sillage/db'
-import type { ProjectImageDto } from '@sillage/protocol'
+import { projectImages, type Db } from '@solera/db'
+import type { ProjectImageDto } from '@solera/protocol'
 
 /**
  * Type d'une image de projet, lu dans son contenu, ou null si ce n'en est pas une.
  *
- * Le serveur MCP refait le même tri de son côté (`apps/server/src/mcp/sillage-mcp.mjs`),
+ * Le serveur MCP refait le même tri de son côté (`apps/server/src/mcp/solera-mcp.mjs`),
  * faute de pouvoir importer ce module : les deux doivent rester d'accord.
  */
 export function sniffProjectImage(buffer: Buffer): string | null {

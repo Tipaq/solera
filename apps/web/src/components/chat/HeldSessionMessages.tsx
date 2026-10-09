@@ -1,7 +1,7 @@
 import { Hand, Send, X } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { parseSessionMessage } from '@sillage/protocol'
+import { parseSessionMessage } from '@solera/protocol'
 import type { HeldSessionMessage } from '../../lib/chat-fold'
 import { discardSessionMessage, releaseSessionMessage } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
@@ -9,7 +9,7 @@ import { Button, cx } from '../ui'
 import { Markdown } from './Markdown'
 
 /**
- * Messages d'autres sessions que Sillage a retenus au lieu de relancer celle-ci.
+ * Messages d'autres sessions que Solera a retenus au lieu de relancer celle-ci.
  *
  * Sous l'indicateur d'activité, comme la file : l'agent ne les a pas lus. Retenus parce
  * qu'un échange tournait en rond ou que la session avait déjà été trop relancée sans

@@ -1,4 +1,4 @@
-import type { SkillCompatNote } from '@sillage/protocol'
+import type { SkillCompatNote } from '@solera/protocol'
 
 /**
  * Ce qu'un skill fera différemment selon le CLI qui le charge.
