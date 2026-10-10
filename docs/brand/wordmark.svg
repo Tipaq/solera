@@ -8,9 +8,9 @@
     vectoriser le mot le figerait sans rien apporter.
   -->
   <style>
-    :root { --mark: #436e69; --word: #181d37; --sub: #797f99; }
+    :root { --mark: #2e5e43; --word: #181d37; --sub: #797f99; }
     @media (prefers-color-scheme: dark) {
-      :root { --mark: #a6d8cc; --word: #eceaf7; --sub: #9a97b5; }
+      :root { --mark: #7fbe98; --word: #eceaf7; --sub: #9a97b5; }
     }
     .word {
       font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;

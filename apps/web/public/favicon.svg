@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" fill="var(--mark)">
   <!-- Hors du document, le favicon suit le thème système plutôt que currentColor. -->
   <style>
-    :root { --mark: #b5762a; }
-    @media (prefers-color-scheme: dark) { :root { --mark: #e0a44f; } }
+    :root { --mark: #2e5e43; }
+    @media (prefers-color-scheme: dark) { :root { --mark: #7fbe98; } }
   </style>
   <path d="M70 19.36A40 40 0 1 1 30 19.36L37 31.48A26 26 0 1 0 63 31.48Z" />
   <path d="M33 2H67L50 26Z" />

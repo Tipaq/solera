@@ -26,10 +26,14 @@ ne régénère que les PNG, pas les copies SVG.
 
 ## Couleur et placement
 
-Le vert #436E69 est la couleur de la signature autonome et des icônes d’application.
+Le vert **sous-bois #2E5E43** est la couleur de la signature autonome et des icônes
+d’application, avec **#7FBE98** pour sa reprise sur fond sombre. Il a été choisi parmi
+huit verts pour évoquer la végétation sans virer au bleu — ce que faisait le #436E69
+hérité de Sillage — et pour garder le blanc lisible sur la tuile.
+
 Dans les interfaces, `currentColor` conserve la palette du site et les thèmes choisis
-par l’utilisateur. Les favicons suivent la préférence système clair/sombre, chacun avec
-son accent : ambre pour l’application, violet pour le site.
+par l’utilisateur. Les favicons suivent la préférence système clair/sombre : le vert de
+la marque pour l’application, le violet de sa propre palette pour le site.
 
 Conserver autour du symbole une marge d’au moins 10 % de sa largeur. La signature
 horizontale s’utilise à partir de 150 px ; en dessous, préférer le symbole seul.

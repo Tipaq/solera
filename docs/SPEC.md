@@ -1319,7 +1319,7 @@ qui s’y reverse : l’anneau est la solera, la recette qui ne bouge pas, et le
 ce qu’on y recomplète au lieu de le redemander.
 
 Dans l’interface, le symbole est tracé en `currentColor` et suit la teinte choisie dans
-les réglages. Les icônes autonomes le portent en blanc sur une tuile verte #436E69.
+les réglages. Les icônes autonomes le portent en blanc sur une tuile verte #2E5E43.
 
 Le tracé existe forcément en plusieurs exemplaires, parce qu'un favicon et un en-tête de
 README sont chargés comme des images et n'héritent d'aucun jeton : `docs/brand/README.md`
