@@ -26,24 +26,28 @@
   </script>
 </head>
 <body>
-  <!-- À CHANGER : ces trois rubans prolongeaient « L'écho », le logo de MarlBurroW. La
-       marque est maintenant la bague, et le motif ne la prolonge plus — il reste la
-       dernière trace visible de l'ancien dessin sur le site. -->
+  <!-- Le motif reprend la bague : des anneaux ouverts à grande échelle, débordant du
+       cadre, et les fils qui les prolongent. Les deux groupes gardent les noms attendus
+       par la feuille de style — .background-ribbons est rempli et contourné,
+       .background-threads n'est que contour. -->
   <div class="site-background" aria-hidden="true">
     <svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false">
       <defs>
-        <path id="background-ribbon" d="M-360 780H-160C460 780 260 80 880 80H1880V150H950C330 150 530 850-90 850H-360Z"/>
+        <!-- Anneau ouvert, centré sur l'origine : les `use` le posent à l'échelle et à
+             l'inclinaison voulues, ce qui évite d'écrire trois fois le même arc. -->
+        <path id="background-ring" d="M150 -259.81A300 300 0 1 1 -150 -259.81L-136 -235.56A272 272 0 1 0 136 -235.56Z"/>
+        <path id="background-thread" d="M210 -363.73A420 420 0 1 1 -210 -363.73"/>
       </defs>
       <g id="background-pattern">
         <g class="background-ribbons">
-          <use href="#background-ribbon"/>
-          <use href="#background-ribbon" transform="translate(180 100)"/>
-          <use href="#background-ribbon" transform="translate(360 200)"/>
+          <use href="#background-ring" transform="translate(250 430) rotate(-18)"/>
+          <use href="#background-ring" transform="translate(920 250) rotate(14) scale(1.35)"/>
+          <use href="#background-ring" transform="translate(1430 780) rotate(-42) scale(.78)"/>
         </g>
         <g class="background-threads">
-          <path d="M-360 815H-125C495 815 295 115 915 115H1880"/>
-          <path d="M-180 915H55C675 915 475 215 1095 215H2060"/>
-          <path d="M0 1015H235C855 1015 655 315 1275 315H2240"/>
+          <use href="#background-thread" transform="translate(250 430) rotate(-18)"/>
+          <use href="#background-thread" transform="translate(920 250) rotate(14) scale(1.35)"/>
+          <use href="#background-thread" transform="translate(1430 780) rotate(-42) scale(.78)"/>
         </g>
       </g>
     </svg>

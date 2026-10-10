@@ -2,11 +2,22 @@ name: Pages
 
 # Déploie le site vitrine (dossier site/) sur GitHub Pages.
 # Réglage requis une fois : Settings > Pages > Source = GitHub Actions.
+#
+# À CHANGER QUAND LE DÉPÔT PASSERA EN PUBLIC : le déclenchement automatique est
+# désarmé. Sur un dépôt privé, Pages demande un compte Pro, donc ce workflow échouait
+# à chaque push touchant le site — un échec permanent finit par masquer les vrais.
+# Il reste lançable à la main. Pour le réarmer, décommenter le bloc `push` ci-dessous,
+# et activer Settings > Pages > Source = GitHub Actions.
+#
+# Ne pas réarmer avant d'avoir ouvert le dépôt : le site publie des commandes
+# d'installation qui tirent install.sh depuis raw.githubusercontent.com, lequel répond
+# 404 tant que le dépôt est privé. Un site en ligne qui n'installe rien est pire que
+# pas de site.
 
 on:
-  push:
-    branches: [main]
-    paths: ['site/**', 'install.sh', '.github/workflows/pages.yml']
+  # push:
+  #   branches: [main]
+  #   paths: ['site/**', 'install.sh', '.github/workflows/pages.yml']
   workflow_dispatch:
 
 permissions:

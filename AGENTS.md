@@ -83,7 +83,9 @@ Tant qu'il est privé, trois choses ne marchent pas et c'est normal :
 - les one-liners d'installation du site tirent `install.sh` depuis
   `raw.githubusercontent.com`, qui répond 404 sur un dépôt privé ;
 - `pages.yml` ne peut pas déployer — GitHub Pages sur dépôt privé demande un compte Pro.
-  Le réglage *Settings > Pages > Source = GitHub Actions* n'a volontairement pas été fait ;
+  Son déclenchement sur `push` est donc commenté, pour qu'un échec permanent ne masque
+  pas les vrais ; il reste lançable à la main. Le réglage *Settings > Pages > Source =
+  GitHub Actions* n'a volontairement pas été fait ;
 - `release.yml` publierait sur `ghcr.io/tipaq/solera`, jamais déclenché pour l'instant.
 
 ## Chromium ne tourne pas sur cette machine
