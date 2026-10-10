@@ -21,7 +21,7 @@ import {
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
 import type { SettingGroup } from '../chat/ComposerSettings'
-import { Banner, Button, Field, IconButton, Select, cx } from '../ui'
+import { Banner, Button, Field, IconButton, Select, cx } from '@solera/ui'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
@@ -144,10 +144,10 @@ export function ScheduleDialog({
   return (
     <Dialog.Root open onOpenChange={(next) => { if (!next && !mutation.isPending) onClose() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[95dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl"
         >
           <header className="flex items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">

@@ -1,5 +1,5 @@
 import type { ContextState } from '../../lib/chat-fold'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /** Au-delà, la conversation approche de la compaction : le repère change de ton. */
 const WARN_RATIO = 0.75

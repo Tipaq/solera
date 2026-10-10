@@ -23,7 +23,7 @@ import { useCurrentUser } from '../lib/session'
 import { useVersionInfo } from '../lib/system'
 import { UpdateDot } from '../components/UpdateDot'
 import { useMediaQuery } from '../lib/viewport'
-import { cx } from '../components/ui'
+import { cx } from '@solera/ui'
 
 /**
  * Réglages, rangés par catégorie.
@@ -183,7 +183,7 @@ export function SettingsLayout() {
           if (entries.length === 0) return null
           return (
             <div key={group} className="mb-5">
-              {group !== 'about' ? <h2 className="mb-1.5 px-2.5 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">{t(`settings.group.${group}`)}</h2> : null}
+              {group !== 'about' ? <h2 className="mb-1.5 px-2.5 text-meta font-semibold tracking-wide text-ink-faint uppercase">{t(`settings.group.${group}`)}</h2> : null}
               <ul className="flex flex-col gap-1">
                 {entries.map((section) => (
                   <li key={section.to}>
@@ -221,7 +221,7 @@ export function SettingsLayout() {
 
         {/* Sans repère de version, « je ne vois pas la correction » ne se tranche pas :
             rien à l'écran ne dit quelle version tourne réellement. */}
-        <p className="mt-4 px-2.5 text-[0.6875rem] text-ink-faint">
+        <p className="mt-4 px-2.5 text-meta text-ink-faint">
           {t('settings.buildInfo', { version: __APP_VERSION__ })}{' '}
           <time dateTime={__BUILD_TIME__}>{new Date(__BUILD_TIME__).toLocaleString(locale())}</time>
         </p>

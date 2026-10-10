@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import type { SubAgent } from '../../lib/subagents'
 import { subAgentLabel } from '../../lib/subagents'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { ToolStatusIcon, formatDuration } from './ToolCall'
 
 /** Une seconde : au-delà le chronomètre paraît figé, en deçà il ne dit rien de plus. */
@@ -52,7 +52,7 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
 
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium text-ink">{subAgentLabel(agent)}</span>
-        <span className="truncate text-[0.6875rem] text-ink-faint">
+        <span className="truncate text-meta text-ink-faint">
           {/* Le type dit quel agent travaille, l'activité ce qu'il fait à l'instant :
               les deux tiennent sur la ligne et se complètent. */}
           {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
@@ -60,14 +60,14 @@ export function SubAgentRow({ agent, onSelect }: { agent: SubAgent; onSelect: ()
       </span>
 
       {agent.toolCount > 0 ? (
-        <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+        <span className="shrink-0 text-meta text-ink-faint">
           {t(agent.toolCount > 1 ? 'subagent.row.toolCount.other' : 'subagent.row.toolCount.one', {
             count: agent.toolCount,
           })}
         </span>
       ) : null}
 
-      <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+      <span className="shrink-0 text-meta tabular-nums text-ink-faint">
         {formatDuration(running ? elapsed : (agent.durationMs ?? elapsed))}
       </span>
 

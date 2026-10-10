@@ -7,7 +7,7 @@ import { parseUnifiedDiff } from '../../lib/diff'
 import { useTranslate } from '../../lib/i18n'
 import { shortCommit, useApplySkillUpdate, useSkillUpdate } from '../../lib/skill-sources'
 import { DiffHunks } from '../DiffHunks'
-import { Banner, Button, IconButton } from '../ui'
+import { Banner, Button, IconButton } from '@solera/ui'
 
 /**
  * Ce qu'une mise à jour changerait, avant de l'appliquer : le skill installé à gauche,
@@ -33,10 +33,10 @@ export function UpdateDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => { if (!next && !apply.isPending) onClose() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[92dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[85dvh] sm:w-[min(960px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(960px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl"
         >
           <header className="flex items-center gap-3 border-b border-line px-5 py-3">
             <div className="min-w-0 flex-1">

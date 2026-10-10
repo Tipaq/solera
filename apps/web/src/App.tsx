@@ -1,7 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { useCurrentUser } from './lib/session'
-import { DesignPage } from './routes/DesignPage'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
@@ -80,7 +79,6 @@ export function App() {
             <Route path="a-propos" element={<AboutSection />} />
           </Route>
           <Route path="/skills/:skillId" element={<SkillEditorPage />} />
-          <Route path="/design" element={<DesignPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

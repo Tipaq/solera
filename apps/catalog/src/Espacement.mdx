@@ -1,0 +1,28 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import { Densities } from './specimens'
+
+<Meta title="Fondations/Espacement" />
+
+# Espacement
+
+L'échelle Tailwind, sans valeur arbitraire. Les pas réellement utiles sont
+`0.5 1 1.5 2 2.5 3 4 5 6` ; le reste est du bruit.
+
+## Trois densités
+
+<Densities />
+
+Même contenu sur les trois lignes : seul l'espacement change. **On ne les mélange pas dans
+un même écran** — deux densités dans une même liste se remarquent immédiatement, même sans
+savoir pourquoi.
+
+`px-5 py-4` est le gabarit de `CardHeader` et `CardBody`. Une carte qui s'en écarte s'écarte
+de toutes les autres cartes de l'application.
+
+## Page
+
+| | |
+| --- | --- |
+| `p-4 md:p-8` | Marge de page : au doigt, puis au large |
+| `gap-4` | Entre sections, dans les réglages |
+| `gap-6` … `gap-8` | Entre sections, sur une page autonome |

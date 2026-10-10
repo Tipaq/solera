@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServicesDto } from '@solera/protocol'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Badge, Banner, Button, EmptyState, IconButton, Select } from '../components/ui'
+import { Badge, Banner, Button, EmptyState, IconButton, Select } from '@solera/ui'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/attachments'
 import { useTranslate } from '../lib/i18n'
@@ -41,7 +41,7 @@ export function ServicesPage() {
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6">
         <MobileNavigationButton />
         <Server size={19} className="shrink-0 text-ink-faint" />
-        <h1 className="text-base font-semibold">{t('services.title')}</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{t('services.title')}</h1>
         {query.data?.supported ? <Badge>{services.length}</Badge> : null}
         <div className="ml-auto">
           <IconButton label={t('services.refresh')} disabled={query.isFetching} onClick={() => { void query.refetch() }}>

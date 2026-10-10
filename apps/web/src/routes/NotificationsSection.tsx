@@ -1,4 +1,4 @@
-import { Card, CardBody } from '../components/ui'
+import { Card, CardBody } from '@solera/ui'
 import { PushControls } from '../components/PushControls'
 import { SectionHeader } from './SettingsPage'
 import { useTranslate } from '../lib/i18n'

@@ -7,7 +7,7 @@ import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
 import { useAppearance } from '../lib/appearance'
 import { LOCALES, LOCALE_LABELS, setLocale, useLocale, useTranslate } from '../lib/i18n'
 import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
-import { Card, CardBody, CardHeader, cx } from '../components/ui'
+import { Card, CardBody, CardHeader, cx } from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 
 const THEME_ICONS: Record<Theme, ReactNode> = {

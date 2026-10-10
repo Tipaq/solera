@@ -4,7 +4,7 @@ import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { useLogin } from '../lib/session'
 import { Logo } from '../components/Logo'
-import { Banner, Button, Card, CardBody, Field } from '../components/ui'
+import { Banner, Button, Card, CardBody, Field } from '@solera/ui'
 
 export function LoginPage() {
   const t = useTranslate()
@@ -28,11 +28,11 @@ export function LoginPage() {
     <div className="flex min-h-dvh items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-3">
-          <span className="gradient-accent shadow-float grid size-14 place-items-center rounded-2xl">
+          <span className="gradient-accent shadow-float grid size-14 place-items-center rounded-xl">
             <Logo size={34} className="text-accent-ink" />
           </span>
           <div className="text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Solera</h1>
+            <h1 className="text-lg font-semibold tracking-tight">Solera</h1>
             <p className="mt-1 text-sm text-ink-faint">{t('login.subtitle')}</p>
           </div>
         </div>

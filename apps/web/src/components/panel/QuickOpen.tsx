@@ -7,7 +7,7 @@ import { fileIconUrl } from '../../lib/file-icons'
 import { useCurrentUser } from '../../lib/session'
 import { useFileSearch } from '../../lib/tree'
 import { useTranslate } from '../../lib/i18n'
-import { Button, IconButton, cx } from '../ui'
+import { Button, IconButton, cx } from '@solera/ui'
 
 /** Ouverture au clavier dans le workspace courant, jamais dans un autre projet. */
 export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect }: {
@@ -61,7 +61,7 @@ export function QuickOpen({ scope, workspaceLabel, open, onOpenChange, onSelect 
 
   return <Dialog.Root open={open} onOpenChange={onOpenChange}>
     <Dialog.Portal>
-      <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px]" />
+      <Dialog.Overlay className="scrim z-40" />
       <Dialog.Content className="surface fixed top-[max(1rem,var(--sg-viewport-top,0px))] left-1/2 z-50 flex max-h-[min(36rem,80dvh)] w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 flex-col rounded-xl border border-line shadow-pop sm:top-24"
         onOpenAutoFocus={() => { selected.current = null }}
         onCloseAutoFocus={(event) => {

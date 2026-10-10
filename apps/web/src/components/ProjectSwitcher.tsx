@@ -1,4 +1,4 @@
-import { TooltipButton } from './ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import * as Dialog from '@radix-ui/react-dialog'
 import { Check, ChevronsUpDown, FolderPlus, Layers, Search, SlidersHorizontal, Star, X } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -8,7 +8,7 @@ import { useTranslate } from '../lib/i18n'
 import { projectViewPath, useProjectView } from '../lib/project-view'
 import { scoreMatch } from '../lib/search'
 import { ProjectAvatar } from './ProjectAvatar'
-import { cx, IconButton } from './ui'
+import { cx, IconButton } from '@solera/ui'
 
 export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, recent, userId, onNavigate }: {
   projects: ProjectDto[]
@@ -49,15 +49,15 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
       <Dialog.Trigger asChild>
         <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
           {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
-          <span className="min-w-0 flex-1"><span className="block text-[0.625rem] text-ink-faint">{t('shell.switcher.workspace')}</span><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
+          <span className="min-w-0 flex-1"><span className="block text-micro text-ink-faint">{t('shell.switcher.workspace')}</span><span className="block truncate text-sm font-semibold">{all ? t('shell.switcher.all') : selected?.name ?? t('shell.switcher.choose')}</span></span>
           <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
         </button>
       </Dialog.Trigger>
       {!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>}
       </div>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-        <Dialog.Content aria-describedby={undefined} className="fixed top-[10dvh] left-1/2 z-50 flex max-h-[80dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
+        <Dialog.Overlay className="scrim z-40" />
+        <Dialog.Content aria-describedby={undefined} className="fixed top-[10dvh] left-1/2 z-50 flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
           <div className="flex items-center justify-between px-4 pt-3"><Dialog.Title className="text-sm font-semibold">{t('shell.switcher.choose')}</Dialog.Title><Dialog.Close asChild><IconButton label={t('common.close')}><X size={16} /></IconButton></Dialog.Close></div>
           <div className="m-3 flex items-center gap-2 rounded-md border border-line bg-sunken px-3"><Search size={16} className="text-ink-faint" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
               const first = list.current?.querySelector<HTMLButtonElement>('[data-project-choice]')
@@ -74,7 +74,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
           }}>
             {!query.trim() && <button type="button" onClick={() => { onAll(); setOpen(false) }} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-sm hover:bg-surface-high"><Layers size={15} /><span className="flex-1 text-left">{t('shell.switcher.all')}</span>{all && <Check size={15} />}</button>}
             {groups.map((group) => group.entries.length > 0 && <div key={group.label}>
-              <p className="px-2 pt-3 pb-1 text-[0.6875rem] font-semibold text-ink-faint">{group.label}</p>
+              <p className="px-2 pt-3 pb-1 text-meta font-semibold text-ink-faint">{group.label}</p>
               {group.entries.map((project) => <ProjectChoice key={project.id} project={project} selected={!all && selected?.id === project.id} pinned={pins.includes(project.id)} onPin={() => togglePin(project.id)} onSelect={(fallback) => { onSelect(project, fallback); setOpen(false); setQuery('') }} />)}
             </div>)}
             {matches.length === 0 && <p role="status" className="px-2 py-6 text-center text-sm text-ink-faint">{t('shell.switcher.empty')}</p>}

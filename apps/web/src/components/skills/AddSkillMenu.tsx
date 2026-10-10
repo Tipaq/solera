@@ -5,7 +5,7 @@ import { skillDescriptionSchema, skillNameSchema, type LibrarySkillScope } from 
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateLibrarySkill, useImportLibrarySkill } from '../../lib/skill-library'
-import { Banner, Button, Menu, MenuItem } from '../ui'
+import { Banner, Button, Menu, MenuItem } from '@solera/ui'
 import { CatalogDialog } from './CatalogDialog'
 import { LocalSkillsDialog } from './LocalSkillsDialog'
 import { DescriptionField, NameField, SkillDialog } from './SkillDialog'

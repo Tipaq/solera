@@ -11,7 +11,7 @@ import {
   EmptyState,
   Field,
   Select,
-} from '../components/ui'
+} from '@solera/ui'
 import { AccountForm } from '../components/AccountForm'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'

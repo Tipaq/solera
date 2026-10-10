@@ -1,6 +1,6 @@
 import type { DiffHunk } from '../lib/diff'
 import { highlight, languageFromPath, useHighlighterReady } from '../lib/highlight'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /**
  * Les sections d'un diff unifié.
@@ -17,10 +17,10 @@ export function DiffHunks({ hunks, path }: { hunks: DiffHunk[]; path: string }) 
     <>
       {hunks.map((hunk) => (
         <div key={hunk.header} className="overflow-x-auto">
-          <p className="bg-surface-high px-2.5 py-1 font-mono text-[0.625rem] text-ink-faint">
+          <p className="bg-surface-high px-2.5 py-1 font-mono text-micro text-ink-faint">
             {hunk.header}
           </p>
-          <table className="w-full border-collapse font-mono text-[0.6875rem]">
+          <table className="w-full border-collapse font-mono text-meta">
             <tbody>
               {hunk.lines.map((line, index) => (
                 <tr

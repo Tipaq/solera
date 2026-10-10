@@ -4,7 +4,7 @@ import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide
 import type { CardDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /** Ce qui tient sous le titre sans transformer la tuile en fiche. */
 const EXCERPT_MAX = 120
@@ -43,7 +43,7 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
   const body = (
     <>
       <div className="flex items-baseline gap-1.5 pr-9 md:pr-5">
-        <span className="shrink-0 text-[0.6875rem] font-medium text-ink-faint">#{card.number}</span>
+        <span className="shrink-0 text-meta font-medium text-ink-faint">#{card.number}</span>
         <p className="min-w-0 flex-1 text-sm font-semibold leading-relaxed text-ink">{card.title}</p>
       </div>
 
@@ -54,7 +54,7 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
       ) : null}
 
       {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 ? (
-        <div className="mt-3 flex flex-wrap border-t border-line/60 pt-2.5 items-center gap-x-2.5 gap-y-1 text-[0.6875rem] text-ink-faint">
+        <div className="mt-3 flex flex-wrap border-t border-line/60 pt-2.5 items-center gap-x-2.5 gap-y-1 text-meta text-ink-faint">
           {agents.map((agent) => (
             <AgentIcon key={agent} agent={agent} size={11} />
           ))}

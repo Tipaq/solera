@@ -1,7 +1,7 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Check, Copy } from 'lucide-react'
 import { useCopy } from '../../lib/clipboard'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -24,7 +24,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
       title={title}
       onClick={() => copy(text)}
       className={cx(
-        'flex items-center gap-1 rounded-md px-1.5 py-1 text-[0.6875rem] transition-[color,opacity]',
+        'flex items-center gap-1 rounded-md px-1.5 py-1 text-meta transition-[color,opacity]',
         'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
         state === 'failed' ? 'text-critical' : 'text-ink-faint hover:text-ink',
       )}

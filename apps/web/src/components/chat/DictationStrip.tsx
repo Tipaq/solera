@@ -1,8 +1,8 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Bande affichée à la place du champ de saisie pendant une dictée : chrono, et des

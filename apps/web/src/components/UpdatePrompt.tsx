@@ -2,7 +2,7 @@ import { RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { useTranslate } from '../lib/i18n'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /**
  * Invite au rechargement quand une nouvelle version est installée.

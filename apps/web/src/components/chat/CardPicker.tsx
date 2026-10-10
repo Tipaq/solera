@@ -2,7 +2,7 @@ import { SquareKanban } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { CardLinkDto } from '@solera/protocol'
 import { columnLabel } from '../board/columns'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -67,7 +67,7 @@ export function CardPicker({
             <SquareKanban size={13} className="shrink-0 text-ink-faint" />
             <span className="shrink-0 text-ink-faint">#{card.number}</span>
             <span className="min-w-0 flex-1 truncate">{card.title}</span>
-            <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+            <span className="shrink-0 text-meta text-ink-faint">
               {columnLabel(card.column)}
             </span>
           </button>

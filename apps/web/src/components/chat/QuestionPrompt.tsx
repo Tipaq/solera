@@ -4,7 +4,7 @@ import type { AgentQuestion } from '@solera/protocol'
 import type { QuestionItem } from '../../lib/chat-fold'
 import { answerQuestion } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { Badge, Button, cx } from '../ui'
+import { Badge, Button, cx } from '@solera/ui'
 
 /**
  * Questions posées par l'agent.
@@ -101,7 +101,7 @@ export function QuestionPrompt({
       <div className="mt-3 flex flex-col gap-4">
         {item.questions.map((question) => (
           <fieldset key={question.id} className="min-w-0">
-            <legend className="text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+            <legend className="text-meta font-semibold tracking-wide text-ink-faint uppercase">
               {question.header}
             </legend>
             <p className="mt-1 text-sm text-ink">{question.question}</p>
@@ -137,7 +137,7 @@ export function QuestionPrompt({
                       <span className="block text-sm">{option.label}</span>
                       <span className="block text-xs text-ink-faint">{option.description}</span>
                       {option.preview ? (
-                        <pre className="mt-1.5 max-h-40 overflow-auto rounded border border-line bg-sunken p-2 font-mono text-[0.6875rem] whitespace-pre">
+                        <pre className="mt-1.5 max-h-40 overflow-auto rounded border border-line bg-sunken p-2 font-mono text-meta whitespace-pre">
                           {option.preview}
                         </pre>
                       ) : null}

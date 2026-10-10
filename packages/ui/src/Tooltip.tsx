@@ -1,6 +1,6 @@
 import * as RadixTooltip from '@radix-ui/react-tooltip'
 import { createContext, useContext, type ComponentPropsWithRef, type ReactElement, type ReactNode } from 'react'
-import { useMediaQuery } from '../../lib/viewport'
+import { useMediaQuery } from './use-media-query'
 
 const TooltipEnabled = createContext(true)
 

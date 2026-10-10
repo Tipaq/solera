@@ -12,7 +12,7 @@ import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
-import { Badge, Button, IconButton, Menu, MenuItem, cx } from '../ui'
+import { Badge, Button, IconButton, Menu, MenuItem, cx } from '@solera/ui'
 import { CardAttachments } from './CardAttachments'
 import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
@@ -163,7 +163,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         <div className="flex flex-col gap-4">
           {editVisible ? <CardEditor title={title} description={description} onChange={setDraft} /> : <>
             <div className="flex flex-col items-start gap-3 sm:flex-row">
-              <h2 className="min-w-0 flex-1 break-words text-2xl font-semibold leading-snug tracking-tight text-ink">{card.title}</h2>
+              <h2 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug tracking-tight text-ink">{card.title}</h2>
               <Button variant="secondary" size="sm" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>{t('board.card.edit')}</Button>
             </div>
             <div className="rounded-xl border border-line p-4">
@@ -204,7 +204,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
                       {session.title}
                     </span>
                     {session.worktreeName ? (
-                      <span className="flex shrink-0 items-center gap-1 font-mono text-[0.6875rem] text-ink-faint">
+                      <span className="flex shrink-0 items-center gap-1 font-mono text-meta text-ink-faint">
                         <GitBranch size={11} />
                         {session.worktreeName}
                       </span>
@@ -275,7 +275,7 @@ function CardLinkList({
               onClick={() => onSelect(link.number)}
               className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-sm text-ink-soft hover:bg-surface-high hover:text-ink"
             >
-              <span className="shrink-0 text-[0.6875rem] text-ink-faint">#{link.number}</span>
+              <span className="shrink-0 text-meta text-ink-faint">#{link.number}</span>
               <span className="min-w-0 flex-1 truncate">{link.title}</span>
               <ColumnDot column={link.column} />
             </button>

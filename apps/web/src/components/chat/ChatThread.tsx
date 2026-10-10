@@ -2,7 +2,7 @@ import type { RefObject } from 'react'
 import type { MessageItem } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
 import { translateError, useTranslate } from '../../lib/i18n'
-import { Banner, cx } from '../ui'
+import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -168,7 +168,7 @@ export function ChatThread({
             return (
               <div key={item.id} className="flex items-center gap-3 py-1">
                 <span className="h-px flex-1 bg-line" />
-                <span className="text-[0.6875rem] text-ink-faint">{item.text}</span>
+                <span className="text-meta text-ink-faint">{item.text}</span>
                 <span className="h-px flex-1 bg-line" />
               </div>
             )

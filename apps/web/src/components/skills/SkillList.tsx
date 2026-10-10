@@ -2,7 +2,7 @@ import { BookOpen, ChevronRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { LibrarySkillDto, LocalSkillOrigin } from '@solera/protocol'
 import { translate, useTranslate, type MessageKey } from '../../lib/i18n'
-import { Badge } from '../ui'
+import { Badge } from '@solera/ui'
 
 /**
  * Liste des skills de la bibliothèque. Chaque ligne mène à l'éditeur, qui porte les

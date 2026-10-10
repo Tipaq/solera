@@ -2,7 +2,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { useEffect, useRef, useState } from 'react'
 import type { TerminalClientMessage, TerminalServerMessage } from '@solera/protocol'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import '@xterm/xterm/css/xterm.css'
 import { translate, useTranslate } from '../../lib/i18n'
 
@@ -237,7 +237,7 @@ export function TerminalView({
       {message ? (
         <p
           className={cx(
-            'shrink-0 border-b px-2.5 py-1.5 text-[0.6875rem]',
+            'shrink-0 border-b px-2.5 py-1.5 text-meta',
             status === 'error'
               ? 'border-critical/40 bg-critical/12 text-critical'
               : 'border-line bg-surface-high text-ink-faint',
@@ -251,7 +251,7 @@ export function TerminalView({
           les gestes de glissement : sans elle, on ne peut rien copier. */}
       <div ref={host} className="sg-terminal min-h-0 min-w-0 flex-1 bg-sunken p-1.5" />
 
-      <p className="shrink-0 border-t border-line px-2.5 py-1 text-[0.625rem] text-ink-faint">
+      <p className="shrink-0 border-t border-line px-2.5 py-1 text-micro text-ink-faint">
         {t('terminal.shortcuts')}
       </p>
     </div>

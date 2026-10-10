@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { useUpdateUser } from '../lib/users'
-import { Banner, Button, Field } from './ui'
+import { Banner, Button, Field } from '@solera/ui'
 
 /**
  * Édition d'un compte : identifiant, nom affiché, mot de passe.

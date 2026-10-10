@@ -25,7 +25,7 @@ import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
 import { useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 
 /**
@@ -170,13 +170,13 @@ function OutputSlot({
 
   if (error) {
     return (
-      <p className="text-[0.6875rem] text-critical">{error.message || t('toolcall.output.error')}</p>
+      <p className="text-meta text-critical">{error.message || t('toolcall.output.error')}</p>
     )
   }
 
   if (!ready) {
     return (
-      <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+      <p className="flex items-center gap-1.5 text-meta text-ink-faint">
         <Loader size={11} className="animate-spin" />
         {t('toolcall.output.loading')}
       </p>
@@ -243,7 +243,7 @@ export const ToolCall = memo(function ToolCall({
 
         <ToolStatusIcon status={tool.status} />
         {tool.durationMs !== null ? (
-          <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+          <span className="shrink-0 text-meta text-ink-faint">
             {formatDuration(tool.durationMs)}
           </span>
         ) : null}
@@ -279,7 +279,7 @@ export const ToolCall = memo(function ToolCall({
           onClick={() => showSubAgent(tool.id)}
           className={cx(
             'flex w-full items-center gap-1.5 border-t border-line px-2.5 py-1.5',
-            'text-left text-[0.6875rem] text-ink-faint hover:text-accent',
+            'text-left text-meta text-ink-faint hover:text-accent',
           )}
         >
           <CornerDownRight size={11} className="shrink-0" />
@@ -311,7 +311,7 @@ function ViewSwitch({ raw, onChange }: { raw: boolean; onChange: (raw: boolean) 
           onClick={() => onChange(mode.value)}
           aria-pressed={raw === mode.value}
           className={cx(
-            'rounded px-2 py-0.5 text-[0.6875rem]',
+            'rounded px-2 py-0.5 text-meta',
             raw === mode.value ? 'bg-surface-high text-ink' : 'text-ink-faint hover:text-ink',
           )}
         >
@@ -334,7 +334,7 @@ function Payload({
   const t = useTranslate()
   return (
     <div className="flex flex-col gap-1">
-      <span className="text-[0.6875rem] font-medium tracking-wide text-ink-faint uppercase">
+      <span className="text-meta font-medium tracking-wide text-ink-faint uppercase">
         {label}
       </span>
       {content ? (
@@ -410,7 +410,7 @@ const ToolCallGroupInner = function ToolCallGroup({
         </span>
 
         {failed > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] font-medium text-critical">
+          <span className="shrink-0 text-meta font-medium text-critical">
             {t(
               failed > 1 ? 'toolcall.group.failed.other' : 'toolcall.group.failed.one',
               { count: failed },
@@ -418,7 +418,7 @@ const ToolCallGroupInner = function ToolCallGroup({
           </span>
         ) : null}
         {total > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] text-ink-faint">{formatDuration(total)}</span>
+          <span className="shrink-0 text-meta text-ink-faint">{formatDuration(total)}</span>
         ) : null}
       </button>
 

@@ -30,7 +30,7 @@ export function CardHeader({ title, description, icon, actions }: CardHeaderProp
         </span>
       ) : null}
       <div className="min-w-0 flex-1">
-        <h2 className="text-[0.9375rem] leading-tight font-semibold text-ink">{title}</h2>
+        <h2 className="text-heading leading-tight font-semibold text-ink">{title}</h2>
         {description ? <p className="mt-1 text-sm text-ink-faint">{description}</p> : null}
       </div>
       {actions ? <div className="shrink-0">{actions}</div> : null}

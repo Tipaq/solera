@@ -1,5 +1,5 @@
 import type { ProjectDto } from '@solera/protocol'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /**
  * Le repère visuel d'un projet : son image, ou à défaut sa pastille de couleur.

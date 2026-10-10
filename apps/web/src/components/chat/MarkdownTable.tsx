@@ -15,7 +15,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
   return (
     <div className="overflow-hidden rounded-md border border-line">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
-        <span className="min-w-0 flex-1 truncate text-[0.6875rem] text-ink-faint">
+        <span className="min-w-0 flex-1 truncate text-meta text-ink-faint">
           {/* La première ligne est l'en-tête : elle ne compte pas comme donnée. */}
           {Math.max(rows.length - 1, 0)} ligne{rows.length > 2 ? 's' : ''}
         </span>

@@ -1,6 +1,6 @@
 import { Archive, Play, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, cx } from '../components/ui'
+import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, cx } from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useRunArchivePass, useUpdateAppSettings } from '../lib/app-settings'

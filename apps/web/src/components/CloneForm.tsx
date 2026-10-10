@@ -14,7 +14,7 @@ import {
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
 import { RepoCombobox } from './RepoCombobox'
-import { Banner, Button, Field, Select, type SelectOption } from './ui'
+import { Banner, Button, Field, Select, type SelectOption } from '@solera/ui'
 
 /**
  * Nom de dossier que git choisirait pour cette URL, vide tant qu'elle n'en est pas une.

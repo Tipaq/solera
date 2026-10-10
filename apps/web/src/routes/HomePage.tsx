@@ -4,7 +4,7 @@ import { useProjects } from '../lib/projects'
 import { useAllConversations } from '../lib/conversations'
 import { useCurrentUser } from '../lib/session'
 import { lastContext } from '../lib/last-context'
-import { Button, EmptyState } from '../components/ui'
+import { Button, EmptyState } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 
 export function HomePage() {

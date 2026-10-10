@@ -2,7 +2,7 @@ import { Flame, Snowflake } from 'lucide-react'
 import type { AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Ce qui est toujours vrai d'une conversation, sous la barre de saisie : le CLI, la
@@ -29,7 +29,7 @@ export function ComposerStatus({
     <div
       className={cx(
         'mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-1',
-        'px-1.5 pt-2 text-[0.6875rem] text-ink-faint',
+        'px-1.5 pt-2 text-meta text-ink-faint',
       )}
     >
       <span className="flex items-center gap-1.5">

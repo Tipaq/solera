@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Signal, SignalFamily, SignalKind } from '../../lib/signals'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Le rendu commun des signaux d'une conversation.
@@ -66,7 +66,7 @@ export function SignalChip({ signal, onClick }: { signal: Signal; onClick?: () =
     </>
   )
   const className = cx(
-    'flex min-w-0 shrink items-center gap-1.5 text-[0.6875rem] font-medium',
+    'flex min-w-0 shrink items-center gap-1.5 text-meta font-medium',
     TEXT[signal.family],
   )
   const title = signal.detail || signal.label

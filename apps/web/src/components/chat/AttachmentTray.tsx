@@ -1,7 +1,7 @@
 import { FileText, Loader, X } from 'lucide-react'
 import type { AttachmentDto } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
-import { IconButton, cx } from '../ui'
+import { IconButton, cx } from '@solera/ui'
 
 /**
  * Pièces jointes en attente d'envoi, au-dessus de la saisie.
@@ -42,7 +42,7 @@ export function AttachmentTray({
 
           <span className="min-w-0">
             <span className="block max-w-40 truncate text-ink">{attachment.filename}</span>
-            <span className="block text-[0.6875rem] text-ink-faint">
+            <span className="block text-meta text-ink-faint">
               {formatBytes(attachment.sizeBytes)}
             </span>
           </span>

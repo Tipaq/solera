@@ -1,6 +1,6 @@
 import type { UsageWindow } from '@solera/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Une fenêtre de quota, telle que le CLI la déclare. Partagée par le panneau détaillé
@@ -67,7 +67,7 @@ export function UsageBar({ window }: { window: UsageWindow }) {
       </div>
 
       {reset ? (
-        <p className="text-[0.6875rem] text-ink-faint">{t('usage.reset.label', { reset })}</p>
+        <p className="text-meta text-ink-faint">{t('usage.reset.label', { reset })}</p>
       ) : null}
     </div>
   )

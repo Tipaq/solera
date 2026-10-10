@@ -1,8 +1,8 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Check, Search, X } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import type { SettingGroup } from './ComposerSettings'
 
 interface SettingsPanelProps {
@@ -106,7 +106,7 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
       {searchable ? (
         <label className="mb-2 flex min-h-11 items-center gap-2 rounded-md border border-line px-3 text-ink-faint">
           <Search size={16} className="shrink-0" />
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label={t('composer.settings.searchModels')} placeholder={t('composer.settings.searchModels')} className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none focus-visible:outline-2 focus-visible:outline-accent" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} aria-label={t('composer.settings.searchModels')} placeholder={t('composer.settings.searchModels')} className="min-w-0 flex-1 bg-transparent py-2 text-sm text-ink outline-none focus-visible:outline-2 focus-visible:outline-accent" />
         </label>
       ) : null}
       <div role="radiogroup" aria-label={group.label} className={cx(compact ? 'grid gap-1.5' : 'flex flex-col gap-1', compact && (options.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'))}>

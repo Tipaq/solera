@@ -1,11 +1,11 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
-import { Banner, Button, cx } from '../ui'
+import { Banner, Button, cx } from '@solera/ui'
 import { TerminalView } from './TerminalView'
 
 /**
@@ -81,7 +81,7 @@ export function TerminalsPane({
               className="flex items-baseline gap-1.5 text-xs"
             >
               {terminal.title}
-              <span className="text-[0.625rem] text-ink-faint">{dirLabel(terminal)}</span>
+              <span className="text-micro text-ink-faint">{dirLabel(terminal)}</span>
             </button>
             {/* Vivant ou terminé : sans ce repère, un onglet dont le shell est mort
                 ressemble à un onglet inactif. */}
@@ -156,7 +156,7 @@ export function TerminalsPane({
           son dernier état, et la relance rouvre un shell neuf au même endroit. */}
       {activeTerminal?.interrupted ? (
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface-high px-2.5 py-1.5">
-          <p className="text-[0.6875rem] text-ink-faint">{t('terminal.interrupted')}</p>
+          <p className="text-meta text-ink-faint">{t('terminal.interrupted')}</p>
           <Button
             size="sm"
             disabled={full || open.isPending}

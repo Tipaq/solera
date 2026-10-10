@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { PlanItem } from '../../lib/chat-fold'
 import { decidePlan } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { Badge, Button, cx } from '../ui'
+import { Badge, Button, cx } from '@solera/ui'
 import { Markdown } from './Markdown'
 
 export function PlanReview({

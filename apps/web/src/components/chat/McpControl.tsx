@@ -1,10 +1,10 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { McpServer, McpServerStatus } from '@solera/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
-import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '../ui'
+import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 
 /**
  * Serveurs MCP actifs sur la conversation, et l'isolation stricte de Claude.
@@ -96,7 +96,7 @@ export function McpControl({
           >
             <span className="flex flex-col">
               <span>{t('composer.mcp.builtin')}</span>
-              <span className="text-[0.6875rem] text-ink-faint">
+              <span className="text-meta text-ink-faint">
                 {t('composer.mcp.builtin.hint')}
               </span>
             </span>
@@ -144,7 +144,7 @@ export function McpControl({
               <ToolCount count={server.tools.length} />
             </div>
           ))}
-          <p className="px-2.5 pb-1 text-[0.6875rem] text-ink-faint">
+          <p className="px-2.5 pb-1 text-meta text-ink-faint">
             {t('composer.mcp.fromCli.hint')}
           </p>
         </>
@@ -156,7 +156,7 @@ export function McpControl({
           <CheckboxItem checked={strict} onCheckedChange={onStrictChange} disabled={disabled}>
             <span className="flex flex-col">
               <span>{t('composer.mcp.strict')}</span>
-              <span className="text-[0.6875rem] text-ink-faint">{t('composer.mcp.strict.hint')}</span>
+              <span className="text-meta text-ink-faint">{t('composer.mcp.strict.hint')}</span>
             </span>
           </CheckboxItem>
         </>
@@ -242,7 +242,7 @@ function ToolCount({ count }: { count: number | undefined }) {
   if (count === undefined || count === 0) return null
 
   return (
-    <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+    <span className="shrink-0 text-meta tabular-nums text-ink-faint">
       {t(count > 1 ? 'composer.mcp.tools.many' : 'composer.mcp.tools.one', { count })}
     </span>
   )

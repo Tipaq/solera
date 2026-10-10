@@ -6,7 +6,7 @@ import { useCardNoteDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { locale, translate, useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
-import { Button, IconButton } from '../ui'
+import { Button, IconButton } from '@solera/ui'
 
 /**
  * Le fil d'une carte : ce que les sessions y ont laissé, et ce qu'on y ajoute à la main.
@@ -103,7 +103,7 @@ function Note({
     <li
       className="group/note rounded-md border border-line bg-sunken px-2.5 py-2"
     >
-      <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+      <div className="flex items-center gap-1.5 text-meta text-ink-faint">
         {note.author.kind === 'agent' ? (
           <>
             <AgentIcon agent={note.author.agent} size={11} />

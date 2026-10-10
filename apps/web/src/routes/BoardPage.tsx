@@ -29,7 +29,7 @@ import { CardPanel } from '../components/board/CardPanel'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, cx } from '../components/ui'
+import { Button, EmptyState, IconButton, cx } from '@solera/ui'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
@@ -244,8 +244,8 @@ export function BoardPage() {
           )}
         >
           <MobileNavigationButton />
-          <div className="min-w-0"><p className="truncate text-xs text-ink-faint">{project.name}</p><h1 className="text-xl font-semibold tracking-tight">{t('project.board.title')}</h1></div>
-          <span className="rounded-full bg-surface-high px-1.5 py-0.5 text-[0.6875rem] text-ink-faint">
+          <div className="min-w-0"><p className="truncate text-xs text-ink-faint">{project.name}</p><h1 className="text-lg font-semibold tracking-tight">{t('project.board.title')}</h1></div>
+          <span className="rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-faint">
             {t('board.cardCount', { count: (cards ?? []).length })}
           </span>
           <div className="flex-1" />
@@ -319,7 +319,7 @@ export function BoardPage() {
                   )}
                 >
                   {columnLabel(column)}
-                  <span className="text-[0.6875rem] opacity-70">{count}</span>
+                  <span className="text-meta opacity-70">{count}</span>
                 </button>
               )
             })}
@@ -415,7 +415,7 @@ function BoardColumn({
 
   return (
     <section
-      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-2xl border border-line/60 bg-sunken/60 md:w-72 md:min-w-64 md:flex-1"
+      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-xl border border-line/60 bg-sunken/60 md:w-72 md:min-w-64 md:flex-1"
       aria-label={columnLabel(column)}
     >
       <header className="flex shrink-0 items-center gap-2.5 px-3.5 pt-3 pb-2.5">

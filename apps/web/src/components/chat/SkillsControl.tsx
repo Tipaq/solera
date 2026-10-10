@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { BookOpen, Search } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import { Link } from 'react-router-dom'

@@ -12,3 +12,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# Catalogue du design system, construit à la demande
+apps/catalog/storybook-static/

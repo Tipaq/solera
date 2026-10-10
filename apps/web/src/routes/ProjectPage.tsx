@@ -45,7 +45,7 @@ import {
   Select,
   type Choice,
   type SelectOption,
-} from '../components/ui'
+} from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
 import { useDeleteWorktree, useWorktrees } from '../lib/worktrees'

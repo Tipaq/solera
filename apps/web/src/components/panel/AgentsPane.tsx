@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
@@ -11,7 +11,7 @@ import { formatTokens } from '../../lib/tokens'
 import { buildRows } from '../../lib/tool-rows'
 import { ChatThread } from '../chat/ChatThread'
 import { SubAgentRow } from '../chat/SubAgentRow'
-import { EmptyState, cx } from '../ui'
+import { EmptyState, cx } from '@solera/ui'
 
 /**
  * Les sous-agents de la conversation : la liste, et le fil de celui qu'on consulte.
@@ -144,7 +144,7 @@ function BackgroundList({
 
   return (
     <section className="mb-1 flex flex-col gap-1">
-      <h2 className="px-1 text-[0.6875rem] font-medium uppercase tracking-wide text-ink-faint">
+      <h2 className="px-1 text-meta font-medium uppercase tracking-wide text-ink-faint">
         {t('panel.background.title')}
       </h2>
       {tasks.map((task) => {
@@ -161,7 +161,7 @@ function BackgroundList({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-ink">{task.description}</span>
-              <span className="block truncate text-[0.6875rem] text-ink-faint">
+              <span className="block truncate text-meta text-ink-faint">
                 {/* La famille dit quelle sorte de travail tourne, l'activité ce qu'il
                     fait à l'instant : les deux tiennent sur la ligne. */}
                 {task.activity
@@ -173,7 +173,7 @@ function BackgroundList({
             </span>
 
             {task.toolUses > 0 ? (
-              <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+              <span className="shrink-0 text-meta tabular-nums text-ink-faint">
                 {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
                   count: task.toolUses,
                 })}
@@ -225,7 +225,7 @@ function SubAgentThread({
         <Bot size={14} className={cx('shrink-0', agent.status === 'running' ? 'text-accent' : 'text-ink-faint')} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-ink">{subAgentLabel(agent)}</span>
-          <span className="block truncate text-[0.6875rem] text-ink-faint">
+          <span className="block truncate text-meta text-ink-faint">
             {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
           </span>
         </span>
@@ -233,7 +233,7 @@ function SubAgentThread({
         {/* Les tokens d'un sous-agent n'apparaissent nulle part ailleurs : ils ne
             comptent pas dans l'usage du tour, que seul l'agent principal alimente. */}
         {agent.totalTokens > 0 ? (
-          <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+          <span className="shrink-0 text-meta tabular-nums text-ink-faint">
             {t('subagent.tokens', { count: formatTokens(agent.totalTokens) })}
           </span>
         ) : null}

@@ -1,0 +1,12 @@
+<!--
+  Le canevas de Storybook est un iframe dont le fond est blanc par défaut : une story
+  en thème sombre y flottait sur du blanc, et le contraste qu'on vient juger était faux.
+  La règle suit le jeton, donc elle suit le thème choisi dans la barre d'outils.
+-->
+<style>
+  html,
+  body {
+    background-color: var(--sg-canvas);
+    color: var(--sg-ink);
+  }
+</style>

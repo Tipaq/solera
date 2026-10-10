@@ -5,7 +5,7 @@ import type { AgentKind } from '@solera/protocol'
 import { AGENT_LABELS } from '../AgentIcon'
 import { locale, useTranslate } from '../../lib/i18n'
 import { useAgentUsage, useRefreshUsage } from '../../lib/usage'
-import { Banner, IconButton, cx } from '../ui'
+import { Banner, IconButton, cx } from '@solera/ui'
 import { UsageBar, readAge } from './UsageBar'
 
 /**
@@ -91,18 +91,18 @@ function UsageContent({ agent }: { agent: AgentKind }) {
               <div className="flex flex-col gap-1 border-t border-line pt-3">
                 <div className="flex items-baseline gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate text-ink">{usage.credits.label}</span>
-                  <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+                  <span className="shrink-0 text-meta text-ink-faint">
                     {usage.credits.enabled ? t('usage.credits.enabled') : t('usage.credits.disabled')}
                   </span>
                 </div>
                 {usage.credits.detail ? (
-                  <p className="text-[0.6875rem] text-ink-faint">{usage.credits.detail}</p>
+                  <p className="text-meta text-ink-faint">{usage.credits.detail}</p>
                 ) : null}
               </div>
             ) : null}
 
             <p
-              className="text-[0.6875rem] text-ink-faint"
+              className="text-meta text-ink-faint"
               title={new Date(usage.fetchedAt).toLocaleString(locale())}
             >
               {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
@@ -126,12 +126,12 @@ export function UsagePanel({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           className={cx(
             'surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
             'inset-0 border-0',
-            'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[85dvh] sm:w-[min(26rem,92vw)]',
+            'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(26rem,92vw)]',
             'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
           )}
         >

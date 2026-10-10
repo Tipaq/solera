@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
@@ -25,7 +25,7 @@ import { useTranslate } from '../../lib/i18n'
 import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
-import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '../ui'
+import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { MediaView } from './MediaView'
 
@@ -229,7 +229,7 @@ function Tab({
         {/* L'italique dit que l'onglet ne survivra pas au fichier suivant. */}
         <span className="flex min-w-0 flex-col text-left">
           <span className={cx('max-w-40 truncate text-xs', preview && 'italic')}>{path.split('/').pop()}</span>
-          {showParent ? <span className="max-w-40 truncate text-[0.625rem] text-ink-faint">{path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '/'}</span> : null}
+          {showParent ? <span className="max-w-40 truncate text-micro text-ink-faint">{path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '/'}</span> : null}
         </span>
       </button>
 

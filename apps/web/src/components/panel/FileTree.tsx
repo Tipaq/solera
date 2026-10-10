@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import {
   AtSign,
   ChevronRight,
@@ -49,7 +49,7 @@ import {
   MenuItem,
   MenuSeparator,
   cx,
-} from '../ui'
+} from '@solera/ui'
 
 /**
  * Couleur et lettre par état git, dans le vocabulaire de `git status`.
@@ -231,7 +231,7 @@ export function FileTree({
             aria-label={t('filetree.search.label')}
             className={cx(
               'h-9 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
-              'text-[0.8125rem] text-ink placeholder:text-ink-faint',
+              'text-sm text-ink placeholder:text-ink-faint',
               'outline-none focus:border-accent',
             )}
           />
@@ -312,7 +312,7 @@ function UploadQueue({ scope }: { scope: string }) {
     <ul className="sticky bottom-0 z-10 mt-auto border-t border-line bg-surface px-2 py-1.5">
       {uploads.map((upload) => (
         <li key={upload.id} className="flex flex-col gap-0.5 py-0.5">
-          <div className="flex items-baseline gap-1.5 text-[0.6875rem]">
+          <div className="flex items-baseline gap-1.5 text-meta">
             <span
               className={cx(
                 'min-w-0 flex-1 truncate',
@@ -338,7 +338,7 @@ function UploadQueue({ scope }: { scope: string }) {
           </div>
 
           {upload.status === 'error' ? (
-            <p className="flex items-start gap-1 text-[0.6875rem] text-critical">
+            <p className="flex items-start gap-1 text-meta text-critical">
               <CircleAlert size={11} className="mt-0.5 shrink-0" />
               <span className="min-w-0">{upload.error}</span>
             </p>
@@ -416,15 +416,15 @@ function SearchResults({
         <li key={entry.path}>
           <EntryRow entry={entry} actions={actions}>
             <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
-              <span className="truncate text-[0.8125rem] text-ink-soft">{entry.name}</span>
-              <span className="truncate text-[0.6875rem] text-ink-faint">{entry.path}</span>
+              <span className="truncate text-sm text-ink-soft">{entry.name}</span>
+              <span className="truncate text-meta text-ink-faint">{entry.path}</span>
             </span>
           </EntryRow>
         </li>
       ))}
 
       {data.truncated ? (
-        <li className="px-2 py-1.5 text-[0.6875rem] text-ink-faint">
+        <li className="px-2 py-1.5 text-meta text-ink-faint">
           {t('filetree.search.truncated')}
         </li>
       ) : null}
@@ -819,7 +819,7 @@ function Entry({
               aria-expanded={entry.isDirectory ? open : undefined}
               aria-current={actions.activePath === entry.path ? true : undefined}
               className={cx(
-                'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-[0.8125rem]',
+                'flex h-7 min-w-0 flex-1 items-center gap-1.5 text-left text-sm',
                 'transition-colors group-hover/entry:bg-surface-high',
                 actions.activePath === entry.path && 'bg-accent-wash',
                 entry.state === 'ignored' ? 'text-ink-faint/60' : 'text-ink-soft',
@@ -848,7 +848,7 @@ function Entry({
               </span>
 
               {state?.letter ? (
-                <span className={cx('shrink-0 font-mono text-[0.625rem]', state.tone)}>
+                <span className={cx('shrink-0 font-mono text-micro', state.tone)}>
                   {state.letter}
                 </span>
               ) : null}
@@ -948,7 +948,7 @@ function NameInput({
           }
           if (event.key === 'Escape') onCancel()
         }}
-        className="h-6 min-w-0 flex-1 rounded border border-accent bg-sunken px-1 text-[0.8125rem] text-ink outline-none"
+        className="h-6 min-w-0 flex-1 rounded border border-accent bg-sunken px-1 text-sm text-ink outline-none"
       />
     </div>
   )

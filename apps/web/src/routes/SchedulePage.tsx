@@ -5,7 +5,7 @@ import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sole
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
-import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '../components/ui'
+import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -80,7 +80,7 @@ export function SchedulePage() {
         <MobileNavigationButton />
         <CalendarClock size={19} className="shrink-0 text-ink-faint" />
         <div className="min-w-0">
-          <h1 className="text-base font-semibold">{t('schedule.title')}</h1>
+          <h1 className="text-lg font-semibold tracking-tight">{t('schedule.title')}</h1>
           {project ? <p className="truncate text-xs text-ink-faint">{project.name}</p> : null}
         </div>
         {tasks.length > 0 ? <Badge>{tasks.length}</Badge> : null}

@@ -4,7 +4,7 @@ import type { ElicitationField, ElicitationValue } from '@solera/protocol'
 import type { ElicitationItem } from '../../lib/chat-fold'
 import { answerElicitation } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { Badge, Button, cx } from '../ui'
+import { Badge, Button, cx } from '@solera/ui'
 
 /**
  * Types d'input HTML correspondant aux formats de chaîne que MCP déclare. Ils
@@ -115,7 +115,7 @@ export function ElicitationPrompt({
         <Plug size={16} className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{item.title ?? t('elicitation.defaultTitle')}</p>
-          <p className="mt-0.5 text-[0.6875rem] text-ink-faint">
+          <p className="mt-0.5 text-meta text-ink-faint">
             {t('elicitation.mcpServer')} <span className="font-mono">{item.serverName}</span>
           </p>
         </div>

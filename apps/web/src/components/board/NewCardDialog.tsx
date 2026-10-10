@@ -6,7 +6,7 @@ import { useCreateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { useTranslate } from '../../lib/i18n'
-import { Button, IconButton, Select } from '../ui'
+import { Button, IconButton, Select } from '@solera/ui'
 import { CardEditor } from './CardEditor'
 import { columnLabel } from './columns'
 
@@ -25,8 +25,8 @@ export function NewCardDialog({ projectId, open, onClose, onCreated }: {
   }
   return <Dialog.Root open={open} onOpenChange={(next) => { if (!next && !create.isPending) onClose() }}>
     <Dialog.Portal>
-      <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
-      <Dialog.Content aria-describedby={undefined} className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[95dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl">
+      <Dialog.Overlay className="scrim z-40" />
+      <Dialog.Content aria-describedby={undefined} className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(640px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
         <header className="flex items-center justify-between border-b border-line px-5 py-4">
           <Dialog.Title className="text-lg font-semibold">{t('board.create.title')}</Dialog.Title>
           <IconButton label={t('board.panel.close')} disabled={create.isPending} onClick={onClose}><X size={18} /></IconButton>

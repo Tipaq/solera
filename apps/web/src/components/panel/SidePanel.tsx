@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import {
   Bot,
   FileCode,
@@ -41,7 +41,7 @@ import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
-import { IconButton, cx } from '../ui'
+import { IconButton, cx } from '@solera/ui'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
@@ -415,7 +415,7 @@ function Tab({
       {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
           dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
       {badge > 0 ? (
-        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-[0.625rem] font-semibold text-accent-ink">
+        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-accent-ink">
           {badge}
         </span>
       ) : null}

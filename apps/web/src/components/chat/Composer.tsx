@@ -1,4 +1,4 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
   useCallback,
@@ -33,7 +33,7 @@ import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
 import { useDictation, useSttEnabled } from '../../lib/stt'
 import { useTranslate } from '../../lib/i18n'
 import { matchCommands, matchSkills, type PickerEntry } from '../../lib/composer-tokens'
-import { ConfirmDialog, IconButton, cx } from '../ui'
+import { ConfirmDialog, IconButton, cx } from '@solera/ui'
 import { AttachmentTray } from './AttachmentTray'
 import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
@@ -765,7 +765,7 @@ export function Composer({
             placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
             className={cx(
               'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
-              'text-[0.9375rem] leading-relaxed text-ink outline-none',
+              'text-heading leading-relaxed text-ink outline-none',
               'placeholder:text-ink-faint disabled:opacity-60',
               variant === 'draft' && 'min-h-28',
               dictation.state === 'recording' && 'hidden',

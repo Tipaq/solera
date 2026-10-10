@@ -1,0 +1,75 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import { AccentOn, AccentTokens, Appearance, InkTokens, LineTokens, StatusTokens, SurfaceGradient, SurfaceTokens } from './specimens'
+
+<Meta title="Fondations/Couleur" />
+
+# Couleur
+
+Tous les jetons sont préfixés `--sg-`, définis dans `styles/tokens.css`, exposés à Tailwind
+dans `styles/index.css`. Les valeurs ci-dessous sont **résolues en direct** depuis le
+document : elles suivent le thème de la barre d'outils et les curseurs plus bas.
+
+Deux règles de nommage, pièges toutes les deux. La clé Tailwind et le jeton source ne
+portent jamais le même nom, sinon la variable s'auto-référence et devient invalide. Et
+aucun nom ne collisionne avec une échelle intégrée de Tailwind : nommer un jeton `base`
+écraserait silencieusement `text-base`.
+
+## Surfaces
+
+<SurfaceTokens />
+
+`.surface` et `bg-surface` ne sont pas interchangeables : `.surface` pose le dégradé
+signature par-dessus la couleur, `bg-surface` pose la couleur seule. C'est le seul endroit
+où l'on voit que le dégradé existe — séparés, les deux sont indiscernables.
+
+<SurfaceGradient />
+
+Le fond de l'application est **plat**, et ce n'est pas une simplification. Une application
+installée sur iOS remonte le viewport de la hauteur de la barre d'état : 894 px mesurés
+pour un écran de 956. La bande qui reste en bas est hors du viewport, donc hors d'atteinte
+de tout élément, `position: fixed` compris. Seul le fond de la racine, propagé au canevas
+du document, la peint — et un dégradé s'y serait toujours raccordé de travers, puisque le
+calque et la bande ne partagent ni la même hauteur ni la même origine.
+
+## Encres
+
+<InkTokens />
+
+`ink-faint` reste du texte à lire : sa luminosité est tenue au contraste AA, pas posée à
+vue. On n'atténue **jamais** un texte par `opacity` — le fond passerait au travers, et un
+même message ne se lirait pas pareil dans une bulle et hors d'elle. Pour atténuer, on
+mélange vers `ink-faint` en `oklch`, comme le fait `.sg-reading`.
+
+## Accent
+
+<AccentTokens />
+<AccentOn />
+
+## Statuts
+
+<StatusTokens />
+
+L'accent porte déjà quatre choses : le travail de fond, le tour en cours, la sélection et
+l'action principale. **Il est donc saturé** : tout rôle qui doit rester lisible à côté de
+lui prend une teinte absolue, qui ne suit pas `--sg-hue`. Les faire suivre la teinte du
+thème rapprocherait les rôles jusqu'à les confondre dès qu'on tourne le curseur.
+
+## Lignes
+
+<LineTokens />
+
+## Les trois réglages
+
+<Appearance />
+
+`hue` oriente la teinte, partagée avec l'accent. `tint` dose la chroma. `lift` décale la
+luminosité — et ne s'applique **qu'aux surfaces et aux bordures**. L'appliquer aussi au
+texte annulerait le gain : les deux bougeraient ensemble et le contraste resterait figé.
+
+Teinte et intensité sont neutralisées sur le thème contrasté, dont les surfaces sont
+strictement neutres, sans dégradé ni ombre.
+
+Un piège à connaître : la chroma perçue s'effondre dans les valeurs sombres. À L=0.21 il
+faut environ 0,06 de chroma pour qu'une surface se lise comme teintée et non comme grise.
+Les valeurs de `tokens.css` en tiennent compte — les diviser par deux « pour faire sobre »
+ne rend pas l'interface sobre, ça la rend grise.

@@ -4,7 +4,7 @@ import { agentKindSchema, defaultConfigFor, type AgentConfig, type AgentKind } f
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { useAgentSettings } from '../components/chat/agent-settings'
 import type { SettingGroup } from '../components/chat/ComposerSettings'
-import { Banner, Card, CardBody, CardHeader, ChoiceList, Select } from '../components/ui'
+import { Banner, Card, CardBody, CardHeader, ChoiceList, Select } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 import { useUpdateAgentDefault, useUserSettings } from '../lib/user-settings'
 import { SectionHeader } from './SettingsPage'

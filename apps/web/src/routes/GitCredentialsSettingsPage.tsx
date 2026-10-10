@@ -10,7 +10,7 @@ import {
   ConfirmDialog,
   EmptyState,
   Field,
-} from '../components/ui'
+} from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'

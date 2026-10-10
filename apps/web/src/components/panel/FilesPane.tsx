@@ -5,7 +5,7 @@ import { useCurrentUser } from '../../lib/session'
 import { restoreTreeWidth, setPanelTree, setTreeWidth, usePanelTree } from '../../lib/panel'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useTreeSync } from '../../lib/tree'
-import { Button, cx } from '../ui'
+import { Button, cx } from '@solera/ui'
 import { EditorPane } from './EditorPane'
 import { FileTree } from './FileTree'
 

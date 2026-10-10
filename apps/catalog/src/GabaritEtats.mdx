@@ -1,0 +1,53 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Gabarits/États" />
+
+# États
+
+## Focus
+
+`:focus-visible` est traité **une fois pour toute l'application** dans `index.css` :
+`outline: 2px solid var(--sg-accent)`, `outline-offset: 2px`. On ne le redéfinit pas
+localement, et on ne le retire jamais. Tabule dans n'importe quelle story pour le voir.
+
+## Désactivé
+
+```
+disabled:pointer-events-none disabled:opacity-45
+```
+
+C'est le **seul** endroit où l'opacité est admise comme atténuation, parce qu'un contrôle
+désactivé n'est pas un texte à lire.
+
+## Erreur de champ
+
+Bordure `border-critical`, message en `text-xs text-critical`, relié par `aria-describedby`,
+et `aria-invalid` posé sur le champ. `Field` le fait ; un `input` monté à la main doit tout
+refaire.
+
+## Chargement
+
+La zone **garde sa hauteur**, rien ne saute. Deux lignes qui pulsent, pas d'indicateur
+tournant en plein écran : ce qui va remplir cette place a déjà sa place, et la garder évite
+que la page saute quand la réponse arrive.
+
+## Vide
+
+`EmptyState`, avec une description qui dit **quoi faire**. « Aucun élément » ne dit rien.
+
+## Mouvement
+
+Les transitions portent sur des propriétés **nommées**, jamais sur `all` :
+
+| | |
+| --- | --- |
+| `transition-[background,border-color,filter,color] duration-150` | Un contrôle qui réagit |
+| `duration-200` | Un panneau qui s'ouvre |
+
+`prefers-reduced-motion: reduce` écrase tout à 0,01 ms, globalement. Une animation qui porte
+de l'information doit donc rester lisible à l'arrêt.
+
+Une règle tirée du code et qui vaut d'être retenue : **la place d'un élément conditionnel est
+réservée en permanence**. La coche de `ChoiceList` occupe ses 4 unités même absente, et le
+sélecteur de palette est une grille et non une liste qui s'enroule. Sans ça, choisir
+redistribue les autres options sous les yeux au moment du clic.

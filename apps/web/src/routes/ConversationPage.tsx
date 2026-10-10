@@ -1,4 +1,4 @@
-import { TooltipButton } from '../components/ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
@@ -37,7 +37,7 @@ import { UsagePanel } from '../components/chat/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
-import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '../components/ui'
+import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '@solera/ui'
 import {
   compactConversation,
   conversationsKey,
@@ -903,7 +903,7 @@ export function ConversationPage() {
             title={t('conversation.usage.title')}
             className={cx(
               'hidden shrink-0 items-center gap-1.5 rounded-full border border-line @min-[44rem]/thread:flex',
-              'bg-surface-high px-2 py-1 text-[0.6875rem] font-medium text-ink-soft',
+              'bg-surface-high px-2 py-1 text-meta font-medium text-ink-soft',
               'transition-colors hover:border-line-strong hover:text-ink',
             )}
           >
@@ -1005,10 +1005,10 @@ export function ConversationPage() {
         />
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
           <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+            <Dialog.Overlay className="scrim z-40" />
             <Dialog.Content
               aria-describedby={undefined}
-              className="surface fixed top-1/2 left-1/2 z-50 max-h-[85dvh] w-[min(30rem,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-line p-4 shadow-pop"
+              className="surface fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[min(30rem,92vw)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-line p-4 shadow-pop"
             >
               <div className="mb-3 flex items-center justify-between gap-3">
                 <Dialog.Title className="text-sm font-semibold">{t('conversation.meta.details')}</Dialog.Title>

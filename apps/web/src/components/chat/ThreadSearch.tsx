@@ -1,9 +1,9 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { findRanges, supportsHighlight } from '../../lib/find-in-page'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /** Noms des registres de surlignage, à tenir en accord avec `::highlight()` dans le CSS. */
 const ALL = 'sg-find'

@@ -2,7 +2,7 @@ import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { TurnMarker } from '../../lib/turns'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Réglette des tours, à gauche du fil.
@@ -141,14 +141,14 @@ export function ConversationMinimap({
                   'group-has-[:focus-visible]/tick:visible group-has-[:focus-visible]/tick:opacity-100',
                 )}
               >
-                <p className="text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+                <p className="text-meta font-semibold tracking-wide text-ink-faint uppercase">
                   {t('minimap.turn.you')}
                 </p>
                 <p className="mt-0.5 text-xs text-ink">{turn.user || t('minimap.turn.attachmentOnly')}</p>
 
                 {turn.assistant ? (
                   <>
-                    <p className="mt-2 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+                    <p className="mt-2 text-meta font-semibold tracking-wide text-ink-faint uppercase">
                       {agentLabel}
                     </p>
                     <p className="mt-0.5 text-xs text-ink-soft">{turn.assistant}</p>

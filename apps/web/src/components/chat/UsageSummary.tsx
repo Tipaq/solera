@@ -2,7 +2,7 @@ import type { ClaudeAccountDto } from '@solera/protocol'
 import type { RateLimitState } from '../../lib/chat-fold'
 import { locale, translate, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatTokens } from '../../lib/tokens'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /** Libellés des fenêtres de quota annoncées par le CLI. */
 const WINDOW_LABEL_KEYS: Record<string, MessageKey> = {

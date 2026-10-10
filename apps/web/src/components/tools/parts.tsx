@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { HighlightedCode } from '../chat/HighlightedCode'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Briques communes aux renderers d'outils.
@@ -24,11 +24,11 @@ export function Section({
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-2">
-        <span className="shrink-0 text-[0.6875rem] font-medium tracking-wide text-ink-faint uppercase">
+        <span className="shrink-0 text-meta font-medium tracking-wide text-ink-faint uppercase">
           {label}
         </span>
         {hint ? (
-          <span className="min-w-0 truncate font-mono text-[0.6875rem] text-ink-faint" title={hint}>
+          <span className="min-w-0 truncate font-mono text-meta text-ink-faint" title={hint}>
             {hint}
           </span>
         ) : null}

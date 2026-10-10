@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react'
 import { Menu } from 'lucide-react'
 import { useTranslate } from '../lib/i18n'
 import { useUpdateNotice } from '../lib/system'
-import { IconButton } from './ui'
+import { IconButton } from '@solera/ui'
 import { UpdateDot } from './UpdateDot'
 
 export const MobileNavigationContext = createContext<() => void>(() => {})

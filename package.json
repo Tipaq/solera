@@ -27,12 +27,17 @@
     "codex:types:check": "node scripts/codex-types.mjs --check",
     "opencode:types": "node scripts/opencode-types.mjs",
     "opencode:types:check": "node scripts/opencode-types.mjs --check",
-    "lint": "pnpm --filter @solera/web lint"
+    "ui:tokens": "node --experimental-strip-types scripts/ui-tokens.mjs",
+    "ui:tokens:check": "node --experimental-strip-types scripts/ui-tokens.mjs --check",
+    "lint": "eslint apps packages"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "eslint": "^10.8.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "openapi-typescript": "^7.13.0",
     "playwright": "^1.62.1",
-    "typescript": "^5.7.3"
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.65.0"
   }
 }

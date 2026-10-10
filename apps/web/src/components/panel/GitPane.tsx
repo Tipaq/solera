@@ -8,7 +8,7 @@ import { COMMIT_PAGE, useCommitDiff, useCommits } from '../../lib/commits'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { relativeDate } from '../../lib/dates'
 import { locale, useTranslate } from '../../lib/i18n'
-import { Banner, IconButton, cx } from '../ui'
+import { Banner, IconButton, cx } from '@solera/ui'
 import { FileDiff, SectionTitle } from './diff-parts'
 
 /**
@@ -111,7 +111,7 @@ function WorkingDiff({
       </SectionTitle>
 
       {data?.branch ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line/60 px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line/60 px-2.5 py-1.5 text-meta text-ink-faint">
           <span className="flex items-center gap-1 text-ink-soft">
             <GitBranch size={11} className="shrink-0" />
             {data.branch}
@@ -157,7 +157,7 @@ function WorkingDiff({
       ))}
 
       {data?.truncated ? (
-        <p className="px-2.5 py-2 text-[0.6875rem] text-caution">{t('changes.diff.truncated')}</p>
+        <p className="px-2.5 py-2 text-meta text-caution">{t('changes.diff.truncated')}</p>
       ) : null}
     </section>
   )
@@ -213,7 +213,7 @@ function Commits({
           type="button"
           onClick={onMore}
           disabled={isFetching}
-          className="w-full px-2.5 py-2 text-[0.6875rem] text-ink-faint underline hover:text-ink disabled:opacity-45"
+          className="w-full px-2.5 py-2 text-meta text-ink-faint underline hover:text-ink disabled:opacity-45"
         >
           {isFetching ? t('changes.commits.loading') : t('changes.commits.more')}
         </button>
@@ -248,23 +248,23 @@ function Commit({
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
         <GitCommitHorizontal size={12} className="shrink-0 text-ink-faint" />
-        <span className="shrink-0 font-mono text-[0.625rem] text-ink-faint">
+        <span className="shrink-0 font-mono text-micro text-ink-faint">
           {commit.shortHash}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-soft" title={commit.subject}>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={commit.subject}>
           {commit.subject}
         </span>
         {/* Le commit courant se signale : c'est celui contre lequel se lit le diff du
             répertoire de travail juste au-dessus. */}
         {isHead ? (
-          <span className="shrink-0 rounded-full bg-accent-wash px-1.5 py-0.5 text-[0.625rem] text-accent">
+          <span className="shrink-0 rounded-full bg-accent-wash px-1.5 py-0.5 text-micro text-accent">
             {t('changes.commits.head')}
           </span>
         ) : null}
-        <span className="hidden shrink-0 text-[0.625rem] text-ink-faint @min-[30rem]:inline">
+        <span className="hidden shrink-0 text-micro text-ink-faint @min-[30rem]:inline">
           {commit.author}
         </span>
-        <span className="shrink-0 text-[0.625rem] text-ink-faint">{relativeDate(commit.ts)}</span>
+        <span className="shrink-0 text-micro text-ink-faint">{relativeDate(commit.ts)}</span>
       </button>
 
       {open ? <CommitDiff scope={scope} hash={commit.hash} /> : null}
@@ -279,7 +279,7 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
 
   if (isPending) {
     return (
-      <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">
+      <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-meta text-ink-faint">
         <Loader size={11} className="animate-spin" />
         {t('changes.commits.diffLoading')}
       </p>
@@ -288,7 +288,7 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
 
   if (error) {
     return (
-      <p className="px-2.5 py-1.5 text-[0.6875rem] text-critical">
+      <p className="px-2.5 py-1.5 text-meta text-critical">
         {error instanceof Error ? error.message : t('changes.commits.error')}
       </p>
     )
@@ -299,7 +299,7 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
     // eux-mêmes, et la liste se lit comme une seule suite.
     <div className="border-t border-line/60 bg-sunken/40 pl-4">
       {files.length === 0 ? (
-        <p className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">
+        <p className="px-2.5 py-1.5 text-meta text-ink-faint">
           {t('changes.commits.diffEmpty')}
         </p>
       ) : null}
@@ -311,7 +311,7 @@ function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
       ))}
 
       {data?.truncated ? (
-        <p className="px-2.5 py-1.5 text-[0.6875rem] text-caution">{t('changes.diff.truncated')}</p>
+        <p className="px-2.5 py-1.5 text-meta text-caution">{t('changes.diff.truncated')}</p>
       ) : null}
     </div>
   )

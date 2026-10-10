@@ -5,7 +5,7 @@ import { parseSessionMessage, type ContentBlock, type SessionMessageEnvelope } f
 import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { CopyButton } from './CopyButton'
 import { Markdown } from './Markdown'
 
@@ -46,7 +46,7 @@ function MessageFooter({
   return (
     <div
       className={cx(
-        'flex items-center gap-1 px-1.5 text-[0.6875rem] text-ink-faint',
+        'flex items-center gap-1 px-1.5 text-meta text-ink-faint',
         align === 'end' && 'flex-row-reverse',
       )}
     >

@@ -14,7 +14,7 @@ import {
   IconButton,
   Select,
   cx,
-} from '../components/ui'
+} from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'

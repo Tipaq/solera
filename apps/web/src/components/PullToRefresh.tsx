@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /** Course de l'indicateur, après amortissement, qui déclenche le rafraîchissement. */
 const THRESHOLD_PX = 64

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { highlight, isHighlighterReady, loadHighlighter } from '../../lib/highlight'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Code coloré, dans un `<pre>`.

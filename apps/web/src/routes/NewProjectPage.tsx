@@ -30,7 +30,7 @@ import {
   Select,
   type Choice,
   type SelectOption,
-} from '../components/ui'
+} from '@solera/ui'
 
 type CreateMode = 'new' | 'existing' | 'clone'
 type Visibility = 'private' | 'shared'

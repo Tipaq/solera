@@ -2,7 +2,7 @@ import { Eye, Pencil } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /** Champs partagés par la création et l'édition, avec un aperçu qui conserve la saisie. */
 export function CardEditor({ title, description, onChange, disabled = false }: {

@@ -1,8 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import type { ReactNode } from 'react'
-import { useTranslate } from '../../lib/i18n'
 import { Button } from './Button'
 import { cx } from './cx'
+import { useUiLabels } from './labels'
 
 /**
  * Demande de confirmation avant une action qu'on ne devine pas.
@@ -31,18 +31,18 @@ export function ConfirmDialog({
   busy?: boolean
   children: ReactNode
 }) {
-  const t = useTranslate()
+  const labels = useUiLabels()
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           className={cx(
             'surface fixed top-1/2 left-1/2 z-50 w-[min(26rem,92vw)] -translate-x-1/2 -translate-y-1/2',
             'flex flex-col gap-3 rounded-lg border border-line p-4 shadow-pop',
           )}
         >
-          <Dialog.Title className="text-[0.9375rem] font-semibold tracking-tight">
+          <Dialog.Title className="text-heading font-semibold tracking-tight">
             {title}
           </Dialog.Title>
           <Dialog.Description asChild>
@@ -51,7 +51,7 @@ export function ConfirmDialog({
 
           <div className="mt-1 flex justify-end gap-2">
             <Dialog.Close asChild>
-              <Button variant="ghost">{t('dialog.cancel')}</Button>
+              <Button variant="ghost">{labels.cancel}</Button>
             </Dialog.Close>
             <Button
               variant={tone === 'critical' ? 'danger' : 'primary'}

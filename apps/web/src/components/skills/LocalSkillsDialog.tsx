@@ -6,7 +6,7 @@ import { skillNameSchema, type LibrarySkillScope, type LocalSkillDto } from '@so
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useAdoptLocalSkill, useLocalSkills } from '../../lib/skill-library'
-import { Badge, Banner, Button, EmptyState, IconButton } from '../ui'
+import { Badge, Banner, Button, EmptyState, IconButton } from '@solera/ui'
 import { NameField } from './SkillDialog'
 import { originLabel } from './SkillList'
 
@@ -35,10 +35,10 @@ export function LocalSkillsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(680px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(680px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl"
         >
           <header className="flex items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">{t('skills.local.title')}</Dialog.Title>

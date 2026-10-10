@@ -1,0 +1,71 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Principes" />
+
+# Design system de Solera
+
+Ce catalogue est la **référence de l'interface**. Il n'est pas livré avec Solera : rien
+ici n'est importé par l'application, et Vite n'embarque que ce qui est atteignable depuis
+son point d'entrée. C'est un outil de conception.
+
+Le document qui tranche vit dans `docs/design-system.md`. Le catalogue montre, le document
+décide. En cas de divergence, c'est le code qui est en dette — sauf si le code a raison,
+auquel cas on change le document d'abord, dans le même commit.
+
+## Quatre principes
+
+### L'espace porte la hiérarchie
+
+Avant la bordure et avant l'ombre. Quand une distinction peut se faire par l'écart plutôt
+que par un trait, elle se fait par l'écart. Deux bordures qui se touchent sont une de trop.
+
+### Aucune couleur en dur
+
+Trois thèmes et dix palettes lisent les mêmes jetons `--sg-*`. Une couleur littérale est
+juste dans un thème et fausse dans les deux autres. Trois exceptions seulement, toutes
+justifiées : les aperçus d'apparence, qui montrent un thème *autre* que celui en cours ;
+la couleur de marque de Claude ; et le voile des dialogues, qui est une occultation et non
+une couleur de thème.
+
+### L'habillage vit dans une primitive
+
+`components/ui/` est le seul endroit où l'on écrit l'habillage d'un contrôle. Ailleurs, on
+compose. Un `<button>` nu perd le focus visible, la cible tactile de 44 px et l'état
+désactivé que la primitive apporte.
+
+### Le doigt n'est pas une taille d'écran
+
+Un grand écran tactile existe. `md:` décide de la mise en page, `pointer-coarse:` décide
+de la taille des cibles. C'est pour ça que `Button size="sm"` fait
+`h-11 md:h-9 pointer-coarse:h-11` : petit au large *et* à la souris, jamais petit au doigt.
+
+## Trois couches, pas une
+
+`components/ui/` n'est pas tout le vocabulaire de l'interface.
+
+| Couche | Où | Ce qui la définit |
+| --- | --- | --- |
+| **Primitives** | `components/ui/` | Ne savent rien du produit. Un bouton, un champ, un menu. |
+| **Composants d'application** | `components/`, `components/chat/`, `components/tools/` | Connaissent le domaine : un CLI, un projet, une fenêtre de quota, un diff. `AgentIcon` est importé par quinze fichiers — plus que toute primitive sauf `Button`. |
+| **Motifs** | nulle part | Des chaînes de classes recopiées à la main. Certains ne méritent pas mieux ; d'autres devraient être des primitives et ne le sont pas. |
+
+La section **Motifs** de ce catalogue est un chantier et non une référence : elle montre
+les divergences telles qu'elles sont dans le code, pour qu'on les voie.
+
+## Se servir du catalogue
+
+La barre d'outils porte deux sélecteurs : le **thème** (clair, sombre, sombre contrasté)
+et la **palette de syntaxe** (dix). Une règle se vérifie dans les trois thèmes, pas
+seulement dans celui où l'on travaille — le thème contrasté annule notamment toutes les
+ombres, et un composant qui compte sur la sienne y est cassé.
+
+Les composants sont montés avec le contexte réel de l'application, et rien de plus :
+`QueryClientProvider`, `TooltipProvider`, un routeur. Un composant qui ne tient que parce
+qu'un parent lointain lui fournit quelque chose se voit donc tout de suite.
+
+## Ajouter une entrée
+
+Une primitive ajoutée à `components/ui/` reçoit sa story **dans le même commit**. Les
+stories sont posées à côté de ce qu'elles montrent, sous `src/`, donc couvertes par
+`pnpm typecheck` et par `eslint src` : une primitive renommée casse sa story tout de
+suite. Une primitive sans story est une primitive dont personne ne vérifie les états.

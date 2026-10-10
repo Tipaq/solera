@@ -22,7 +22,7 @@ import {
 } from '../../lib/instructions'
 import { Markdown } from '../chat/Markdown'
 import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
-import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '../ui'
+import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '@solera/ui'
 
 /**
  * Éditeur d'une partie de consignes : du markdown, un aperçu, un bouton d'enregistrement.
@@ -98,7 +98,7 @@ export function MarkdownEditor({
           placeholder={placeholder}
           spellCheck={false}
           onChange={(event) => setDraft(event.target.value)}
-          className="min-h-60 w-full resize-y rounded-md border border-line bg-sunken px-3 py-2 font-mono text-[0.8125rem] leading-relaxed text-ink outline-none placeholder:font-sans placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
+          className="min-h-60 w-full resize-y rounded-md border border-line bg-sunken px-3 py-2 font-mono text-code leading-relaxed text-ink outline-none placeholder:font-sans placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
         />
       )}
 
@@ -326,7 +326,7 @@ export function InstructionsDialog({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           className={cx(
             'surface fixed top-1/2 left-1/2 z-50 w-[min(48rem,94vw)] -translate-x-1/2 -translate-y-1/2',
@@ -335,7 +335,7 @@ export function InstructionsDialog({
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <Dialog.Title className="text-[0.9375rem] font-semibold tracking-tight">
+              <Dialog.Title className="text-heading font-semibold tracking-tight">
                 {t('instructions.dialog.title')}
               </Dialog.Title>
               <Dialog.Description className="mt-1 text-sm text-ink-faint">

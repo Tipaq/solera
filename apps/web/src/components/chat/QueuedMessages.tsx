@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { parseSessionMessage } from '@solera/protocol'
 import type { QueuedMessage } from '../../lib/chat-fold'
 import { cancelQueuedMessage, steerQueuedMessage } from '../../lib/conversations'
-import { IconButton, cx } from '../ui'
+import { IconButton, cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -50,7 +50,7 @@ export function QueuedMessages({
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <p className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+      <p className="flex items-center gap-1.5 text-meta text-ink-faint">
         <Clock size={11} />
         {messages.length === 1
           ? t('queued.waiting.one')
@@ -71,7 +71,7 @@ export function QueuedMessages({
           <div className="min-w-0">
             <QueuedText text={message.text} />
             {message.attachmentCount > 0 ? (
-              <p className="mt-1 flex items-center gap-1 text-[0.6875rem] text-ink-faint">
+              <p className="mt-1 flex items-center gap-1 text-meta text-ink-faint">
                 <Paperclip size={11} />
                 {t(
                   message.attachmentCount > 1
@@ -124,7 +124,7 @@ export function QueuedMessages({
       ))}
 
       {error ? (
-        <p role="alert" className="max-w-[85%] text-[0.6875rem] text-critical">
+        <p role="alert" className="max-w-[85%] text-meta text-critical">
           {error}
         </p>
       ) : null}
@@ -143,7 +143,7 @@ function QueuedText({ text }: { text: string }) {
 
   return (
     <>
-      <p className="text-[0.6875rem] text-ink-faint">
+      <p className="text-meta text-ink-faint">
         {t('sessionMessage.queued.from', { title: envelope.title || envelope.from })}
       </p>
       <p className="text-sm whitespace-pre-wrap text-ink-soft">{envelope.body}</p>

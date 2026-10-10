@@ -1,7 +1,7 @@
 import { useTranslate } from '../lib/i18n'
 import type { useAppearance } from '../lib/appearance'
 import type { Theme } from '../lib/theme'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 const PRESETS = [
   { name: 'solera', tint: 1 },

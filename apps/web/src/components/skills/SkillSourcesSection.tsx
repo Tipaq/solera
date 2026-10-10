@@ -13,7 +13,7 @@ import {
   useSkillSources,
   useUpdateSkillSource,
 } from '../../lib/skill-sources'
-import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, Field, IconButton, Menu, MenuItem, MenuSeparator } from '../ui'
+import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, Field, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 import { CatalogDialog } from './CatalogDialog'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)

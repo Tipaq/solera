@@ -3,7 +3,7 @@ import { HighlightedCode } from './chat/HighlightedCode'
 import { useTranslate } from '../lib/i18n'
 import { SYNTAX_THEMES, SYNTAX_THEME_LABELS, useSyntaxTheme } from '../lib/syntax-theme'
 import { useTheme } from '../lib/theme'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /**
  * Extrait d'aperçu.

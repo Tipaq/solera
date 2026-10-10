@@ -2,7 +2,7 @@ import { BookOpen } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
 import { useLocalSkills, useSkillLibrary } from '../../lib/skill-library'
-import { Badge, Banner, Card, CardBody, CardHeader } from '../ui'
+import { Badge, Banner, Card, CardBody, CardHeader } from '@solera/ui'
 import { AddSkillMenu } from './AddSkillMenu'
 import { SkillList, originLabel } from './SkillList'
 

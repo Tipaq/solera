@@ -6,7 +6,7 @@ import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { Markdown } from '../chat/Markdown'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { Code, Empty, Plain, Section } from './parts'
 import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
 

@@ -2,7 +2,7 @@ import { CircleAlert, CircleCheck, KeyRound, Loader, Plug, PlugZap } from 'lucid
 import type { ReactNode } from 'react'
 import type { McpServerState, McpServerStatus } from '@solera/protocol'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { Badge, EmptyState } from '../ui'
+import { Badge, EmptyState } from '@solera/ui'
 
 /**
  * Les serveurs MCP de la session, tels que le CLI les rapporte.
@@ -69,7 +69,7 @@ export function McpPane({ servers }: { servers: McpServerStatus[] }) {
 
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs text-ink">{server.name}</span>
-            <span className="block truncate text-[0.6875rem] text-ink-faint">
+            <span className="block truncate text-meta text-ink-faint">
               {/* L'erreur remplace l'état : quand un serveur échoue, sa raison vaut
                   mieux que le mot « en échec », déjà porté par l'icône. */}
               {server.error ?? t(STATE_LABELS[server.state])}
@@ -81,7 +81,7 @@ export function McpPane({ servers }: { servers: McpServerStatus[] }) {
           ) : null}
 
           {server.tools.length > 0 ? (
-            <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+            <span className="shrink-0 text-meta tabular-nums text-ink-faint">
               {t(server.tools.length > 1 ? 'panel.mcp.tools.many' : 'panel.mcp.tools.one', {
                 count: server.tools.length,
               })}

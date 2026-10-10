@@ -1,7 +1,7 @@
 import { FileCode } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { FileMatchDto } from '../../lib/files'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -67,7 +67,7 @@ export function MentionPicker({
           >
             <FileCode size={13} className="shrink-0 text-ink-faint" />
             <span className="shrink-0">{file.name}</span>
-            <span className="min-w-0 flex-1 truncate text-right font-mono text-[0.6875rem] text-ink-faint">
+            <span className="min-w-0 flex-1 truncate text-right font-mono text-meta text-ink-faint">
               {file.path}
             </span>
           </button>

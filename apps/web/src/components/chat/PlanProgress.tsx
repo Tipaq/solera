@@ -1,7 +1,7 @@
 import { Circle, CircleCheck, CircleDot } from 'lucide-react'
 import type { PlanProgressItem } from '../../lib/chat-fold'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 export function PlanProgress({ item }: { item: PlanProgressItem }) {
   const t = useTranslate()

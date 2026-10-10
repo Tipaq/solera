@@ -5,7 +5,7 @@ import { parseSessionMessage } from '@solera/protocol'
 import type { HeldSessionMessage } from '../../lib/chat-fold'
 import { discardSessionMessage, releaseSessionMessage } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { Button, cx } from '../ui'
+import { Button, cx } from '@solera/ui'
 import { Markdown } from './Markdown'
 
 /**
@@ -73,7 +73,7 @@ export function HeldSessionMessages({
                 <span className="min-w-0 truncate font-medium text-ink">{sender}</span>
               )}
             </p>
-            <p className="text-[0.6875rem] text-ink-faint">
+            <p className="text-meta text-ink-faint">
               {t(message.reason === 'loop' ? 'sessionMessage.held.loop' : 'sessionMessage.held.rate')}
             </p>
             <div className="text-ink-soft">
@@ -119,7 +119,7 @@ export function HeldSessionMessages({
       })}
 
       {error ? (
-        <p role="alert" className="max-w-[85%] text-[0.6875rem] text-critical">
+        <p role="alert" className="max-w-[85%] text-meta text-critical">
           {error}
         </p>
       ) : null}

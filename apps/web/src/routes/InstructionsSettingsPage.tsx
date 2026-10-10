@@ -1,6 +1,6 @@
 import { HowItWorks, INSTRUCTIONS_HELP } from '../components/instructions/HowItWorks'
 import { GlobalInstructions } from '../components/instructions/Instructions'
-import { Banner } from '../components/ui'
+import { Banner } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 import { SectionHeader } from './SettingsPage'
 

@@ -20,7 +20,7 @@ import {
   EmptyState,
   Field,
   Select,
-} from '../components/ui'
+} from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'

@@ -5,7 +5,7 @@ import { MAX_ATTACHMENT_BYTES, type AttachmentDto } from '@solera/protocol'
 import { api } from '../../lib/api'
 import { formatBytes, uploadAttachment } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'
-import { Button, IconButton, cx } from '../ui'
+import { Button, IconButton, cx } from '@solera/ui'
 
 export function CardAttachments({ cardId, projectId }: { cardId: string; projectId: string }) {
   const t = useTranslate()

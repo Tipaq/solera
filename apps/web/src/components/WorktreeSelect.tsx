@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { useBranches, useCreateWorktree, useWorktrees } from '../lib/worktrees'
-import { Banner, Button, ChoiceList, Field, Select, cx, type SelectOption } from './ui'
+import { Banner, Button, ChoiceList, Field, Select, cx, type SelectOption } from '@solera/ui'
 
 /** Valeur sentinelle : travailler dans le dossier du projet, sans worktree. */
 const ROOT = '__root__'

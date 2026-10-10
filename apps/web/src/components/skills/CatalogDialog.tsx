@@ -11,7 +11,7 @@ import {
   useSourceCatalog,
   useSourcePreview,
 } from '../../lib/skill-sources'
-import { Badge, Banner, Button, EmptyState, IconButton, Select, cx } from '../ui'
+import { Badge, Banner, Button, EmptyState, IconButton, Select, cx } from '@solera/ui'
 import { useSkillPermissions } from './permissions'
 import { NameField } from './SkillDialog'
 
@@ -102,10 +102,10 @@ export function CatalogDialog({
   return (
     <Dialog.Root open={open} onOpenChange={(next) => { if (!next) close() }}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/35 backdrop-blur-sm" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="surface fixed inset-x-0 bottom-0 z-50 flex h-[92dvh] flex-col rounded-t-2xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-[min(80dvh,760px)] sm:w-[min(1040px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl"
+          className="surface fixed inset-x-0 bottom-0 z-50 flex h-[90dvh] flex-col rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:h-[min(80dvh,760px)] sm:w-[min(1040px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl"
         >
           <header className="flex items-center gap-3 border-b border-line px-5 py-3">
             <Dialog.Title className="flex-1 text-lg font-semibold">{t('skills.catalog.title')}</Dialog.Title>
@@ -270,7 +270,7 @@ function SkillPreview({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <h3 className="font-mono text-base font-semibold">{skill.name}</h3>
+          <h3 className="font-mono text-heading font-semibold">{skill.name}</h3>
           <span className="font-mono text-xs text-ink-faint">{skill.path || '/'}</span>
         </div>
         {skill.scripts ? <div className="mb-3"><Banner tone="caution">{t('skills.compat.runs_scripts')}</Banner></div> : null}

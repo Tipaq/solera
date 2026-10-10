@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { ApiRequestError } from '../lib/api'
 import { breadcrumbSegments, useCreateDirectory, useDirectoryListing } from '../lib/fs'
 import { useTranslate } from '../lib/i18n'
-import { Badge, Banner, Button, IconButton, cx } from './ui'
+import { Badge, Banner, Button, IconButton, cx } from '@solera/ui'
 
 interface DirectoryPickerProps {
   open: boolean
@@ -75,7 +75,7 @@ export function DirectoryPicker({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           className={cx(
             'fixed z-50 flex flex-col overflow-hidden surface border-line shadow-pop',

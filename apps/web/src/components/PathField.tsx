@@ -1,7 +1,7 @@
 import { FolderSearch } from 'lucide-react'
 import { useId, useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 interface PathFieldProps {
   label: string

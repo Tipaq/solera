@@ -1,10 +1,10 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { Check, Copy, Download, WrapText } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useCopy } from '../../lib/clipboard'
 import { downloadText } from '../../lib/download'
 import { translate, useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 
 /**
@@ -78,7 +78,7 @@ export function CodeBlock({ language, code }: { language: string; code: string }
   return (
     <div className="overflow-hidden rounded-md border border-line bg-sunken">
       <div className="flex items-center gap-1 border-b border-line px-2 py-1">
-        <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem] text-ink-faint">
+        <span className="min-w-0 flex-1 truncate font-mono text-meta text-ink-faint">
           {language || t('code.language.plain')}
         </span>
 
@@ -111,7 +111,7 @@ export function CodeBlock({ language, code }: { language: string; code: string }
         code={code}
         language={language}
         wrap={wrap}
-        className="p-3 font-mono text-[0.8125rem] leading-relaxed"
+        className="p-3 font-mono text-code leading-relaxed"
       />
     </div>
   )

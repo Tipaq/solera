@@ -1,0 +1,29 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import { SyntaxSample } from './specimens'
+
+<Meta title="Fondations/Syntaxe" />
+
+# Coloration syntaxique
+
+Sept rôles, dix palettes, chacune en clair et en sombre. **Change la palette dans la barre
+d'outils** : l'extrait ci-dessous suit, et rien d'autre ne bouge.
+
+<SyntaxSample />
+
+Une palette ne redéfinit **que ces sept jetons**, jamais rien d'autre. C'est ce qui fait que
+tout ce qui affiche du code suit d'un coup — le fil, les appels d'outils, les diffs,
+l'éditeur — puisque tous lisent les mêmes jetons, et que le reste de l'interface ne bouge
+pas.
+
+La palette par défaut s'obtient en **retirant** l'attribut `data-syntax`, pas en dupliquant
+ses valeurs.
+
+Dans l'application, les sélecteurs ne sont pas ancrés sur `:root`, et c'est ce qui rend
+l'aperçu honnête : chaque bouton du sélecteur porte les deux attributs et montre donc les
+vraies couleurs de sa palette, sans que l'application en change.
+
+Le thème contrasté garde sa propre palette quoi qu'il arrive, relevée en luminosité. Son
+contraste est ce pour quoi on le choisit ; une palette d'ambiance l'annulerait.
+
+Les couleurs sont définies avec les jetons de thème plutôt qu'importées d'une feuille
+highlight.js toute faite, qui ignorerait le clair, le sombre et le contrasté.

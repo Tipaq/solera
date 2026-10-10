@@ -1,7 +1,7 @@
 import { RotateCcw } from 'lucide-react'
 import { APPEARANCE_SETTINGS, type AppearanceKey, type useAppearance } from '../lib/appearance'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
-import { Button, cx } from './ui'
+import { Button, cx } from '@solera/ui'
 
 const LABEL_KEYS: Record<AppearanceKey, { title: MessageKey; hint: MessageKey }> = {
   hue: { title: 'appearance.hue.title', hint: 'appearance.hue.hint' },

@@ -2,7 +2,7 @@ import { ChevronRight, Waves } from 'lucide-react'
 import { useState } from 'react'
 import type { TaskItem } from '../../lib/chat-fold'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { Markdown } from './Markdown'
 import { formatDuration } from './ToolCall'
 
@@ -34,13 +34,13 @@ export function TaskResult({ item }: { item: TaskItem }) {
 
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-ink">{item.description}</span>
-          <span className="block truncate text-[0.6875rem] text-ink-faint">
+          <span className="block truncate text-meta text-ink-faint">
             {t(STATUS_KEYS[item.status])}
           </span>
         </span>
 
         {item.durationMs !== null ? (
-          <span className="shrink-0 text-[0.6875rem] tabular-nums text-ink-faint">
+          <span className="shrink-0 text-meta tabular-nums text-ink-faint">
             {formatDuration(item.durationMs)}
           </span>
         ) : null}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from 'react'
+import { useEffect } from 'react'
 
 /**
  * Hauteur réellement visible, publiée dans `--sg-app-height`.
@@ -114,20 +114,8 @@ export function useVisualViewport(): void {
  * quand même monté, et une redirection montée est une redirection exécutée. La liste
  * de réglages en dépend, elle est la page entière au doigt et une colonne ailleurs.
  */
-export function useMediaQuery(query: string): boolean {
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      const list = window.matchMedia(query)
-      list.addEventListener('change', onChange)
-      return () => list.removeEventListener('change', onChange)
-    },
-    [query],
-  )
-
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(query).matches,
-    // Rendu serveur absent ici, mais `useSyncExternalStore` réclame l'instantané.
-    () => false,
-  )
-}
+/*
+ * Le hook vit dans `@solera/ui` : les primitives en dépendent, et il est générique.
+ * Réexporté ici pour que ses appelants le trouvent où ils l'ont toujours trouvé.
+ */
+export { useMediaQuery } from '@solera/ui'

@@ -8,7 +8,7 @@ import {
   useProjectMemory,
   useWriteMemoryFile,
 } from '../../lib/memory'
-import { Card, CardBody, CardHeader, ConfirmDialog, IconButton, cx } from '../ui'
+import { Card, CardBody, CardHeader, ConfirmDialog, IconButton, cx } from '@solera/ui'
 import { HowItWorks, MEMORY_HELP } from './HowItWorks'
 import { MarkdownEditor } from './Instructions'
 

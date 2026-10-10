@@ -5,7 +5,7 @@ import type { ConversationDto, ScheduledTaskDto } from '@solera/protocol'
 import { relativeDate } from '../lib/dates'
 import { useTranslate } from '../lib/i18n'
 import { SCHEDULE_STATE_LABELS, scheduleState, type ScheduleState } from '../lib/schedules'
-import { cx } from './ui'
+import { cx } from '@solera/ui'
 
 /** Tirs montrés sous une tâche ; le reste de l'historique est sur la page Planification. */
 const RUNS_SHOWN = 5
@@ -58,7 +58,7 @@ export function SidebarSchedules({
       <NavLink
         to={`/p/${projectId}/schedules`}
         onClick={onNavigate}
-        className="flex h-7 items-center gap-1.5 rounded px-1 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
+        className="flex h-7 items-center gap-1.5 rounded px-1 text-meta font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
       >
         <CalendarClock size={11} className="shrink-0" />
         <span className="flex-1">{t('schedule.sidebar.heading')}</span>
@@ -128,7 +128,7 @@ function TaskRow({
         <span aria-hidden className={cx('size-1.5 shrink-0 rounded-full', STATE_DOTS[state])} />
         <span className="sr-only">{t(SCHEDULE_STATE_LABELS[state])}</span>
         <span className="min-w-0 flex-1 truncate">{task.name}</span>
-        <span className="shrink-0 text-[0.6875rem] text-ink-faint">
+        <span className="shrink-0 text-meta text-ink-faint">
           {task.lastRunAt ? relativeDate(task.lastRunAt) : t('schedule.fact.never')}
         </span>
       </button>

@@ -7,7 +7,7 @@ import { languageFromPath } from '../../lib/highlight'
 import { locale, useTranslate } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { HighlightedCode } from '../chat/HighlightedCode'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { ACTIONS, SectionTitle } from './diff-parts'
 
 /** Heure seule : l'historique ne couvre qu'une conversation, jamais plusieurs jours d'affilée. */
@@ -79,13 +79,13 @@ function HistoryTurn({
           size={12}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        <span className="shrink-0 font-mono text-[0.625rem] text-ink-faint">
+        <span className="shrink-0 font-mono text-micro text-ink-faint">
           {formatTime(turn.ts)}
         </span>
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-soft" title={turn.label}>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={turn.label}>
           {turn.label}
         </span>
-        <span className="shrink-0 text-[0.625rem] text-ink-faint">
+        <span className="shrink-0 text-micro text-ink-faint">
           {turn.files.length > 1
             ? t('changes.files.countMany', { count: turn.files.length })
             : t('changes.files.countOne', { count: turn.files.length })}
@@ -141,7 +141,7 @@ function HistoryFile({
         </span>
         <span
           className={cx(
-            'min-w-0 flex-1 truncate text-[0.75rem]',
+            'min-w-0 flex-1 truncate text-xs',
             file.action === 'deleted' ? 'text-ink-faint line-through' : 'text-ink-soft',
           )}
           title={file.path}
@@ -151,7 +151,7 @@ function HistoryFile({
         {/* Le décompte n'apparaît que s'il y a plusieurs passes : afficher « 1 » sur
             chaque ligne n'apprendrait rien. */}
         {file.toolCallIds.length > 1 ? (
-          <span className="shrink-0 text-[0.625rem] text-ink-faint">
+          <span className="shrink-0 text-micro text-ink-faint">
             {t('changes.file.passes', { count: file.toolCallIds.length })}
           </span>
         ) : null}
@@ -175,7 +175,7 @@ function HistoryFile({
             <button
               type="button"
               onClick={() => onOpenFile(file.path)}
-              className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint underline hover:text-ink"
+              className="px-2.5 py-1.5 text-meta text-ink-faint underline hover:text-ink"
             >
               {t('changes.file.open')}
             </button>
@@ -205,7 +205,7 @@ function EditDiff({
 
   if (isPending) {
     return (
-      <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-[0.6875rem] text-ink-faint">
+      <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-meta text-ink-faint">
         <Loader size={11} className="animate-spin" />
         {t('changes.edit.loading')}
       </p>
@@ -214,7 +214,7 @@ function EditDiff({
 
   if (error || !data) {
     return (
-      <p className="px-2.5 py-1.5 text-[0.6875rem] text-critical">
+      <p className="px-2.5 py-1.5 text-meta text-critical">
         {error instanceof Error ? error.message : t('changes.edit.error')}
       </p>
     )
@@ -223,7 +223,7 @@ function EditDiff({
   return (
     <div>
       {rank === null && !data.partial && data.kind === 'patch' ? null : (
-        <p className="px-2.5 pt-1.5 text-[0.625rem] text-ink-faint">
+        <p className="px-2.5 pt-1.5 text-micro text-ink-faint">
           {[
             rank === null ? null : t('changes.edit.pass', { rank }),
             data.partial ? t('changes.edit.partial') : null,
@@ -244,7 +244,7 @@ function EditDiff({
         <HighlightedCode
           code={data.content}
           language={languageFromPath(path)}
-          className="px-2.5 py-1.5 font-mono text-[0.6875rem] text-ink-soft"
+          className="px-2.5 py-1.5 font-mono text-meta text-ink-soft"
         />
       ) : null}
     </div>

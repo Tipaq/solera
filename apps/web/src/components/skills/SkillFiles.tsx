@@ -6,7 +6,7 @@ import { formatBytes } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'
 import { useDeleteSkillFile, useSkillFile, useUploadSkillFile, useWriteSkillFile } from '../../lib/skill-library'
 import { CodeEditor } from '../panel/CodeEditor'
-import { Banner, Button, Card, CardBody, CardHeader, ConfirmDialog, Field, IconButton, cx } from '../ui'
+import { Banner, Button, Card, CardBody, CardHeader, ConfirmDialog, Field, IconButton, cx } from '@solera/ui'
 import { SkillDialog } from './SkillDialog'
 import { useEditorRevision } from './use-editor-revision'
 

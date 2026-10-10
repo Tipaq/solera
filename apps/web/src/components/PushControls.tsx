@@ -7,7 +7,7 @@ import {
   useUnsubscribePush,
   usePushStatus,
 } from '../lib/push'
-import { Banner, Button } from './ui'
+import { Banner, Button } from '@solera/ui'
 
 /**
  * Réglage des notifications système.

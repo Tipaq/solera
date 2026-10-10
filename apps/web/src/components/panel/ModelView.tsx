@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { ModelViewer, type ModelStats } from '../../lib/model-viewer'
 import type { WorkspaceScope } from '../../lib/workspace-scope'
-import { Banner, Button, IconButton } from '../ui'
+import { Banner, Button, IconButton } from '@solera/ui'
 
 /**
  * Modèle 3D du workspace, dans une scène WebGL. Chargé à la demande par l'éditeur :

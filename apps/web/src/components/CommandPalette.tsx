@@ -8,7 +8,7 @@ import { useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { scoreMatch, splitExcerpt, useMessageSearch } from '../lib/search'
 import { AgentIcon } from './AgentIcon'
-import { IconButton, cx } from './ui'
+import { IconButton, cx } from '@solera/ui'
 
 /** Conversations proposées : au-delà, la section contenu passe sous la ligne de flottaison. */
 const TITLE_LIMIT = 6
@@ -146,7 +146,7 @@ export function CommandPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content
           aria-label={t('search.dialog.label')}
           className={cx(
@@ -242,7 +242,7 @@ function Section({
   if (count === 0) return null
   return (
     <div className="mb-1">
-      <p className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+      <p className="px-2.5 pt-1.5 pb-1 text-meta font-semibold tracking-wide text-ink-faint uppercase">
         {label}
       </p>
       {children}
@@ -285,13 +285,13 @@ function Row({
         <span className="flex items-baseline gap-2">
           <span className="min-w-0 truncate text-sm">{conversation.title}</span>
           {project ? (
-            <span className="shrink-0 text-[0.6875rem] text-ink-faint">{project}</span>
+            <span className="shrink-0 text-meta text-ink-faint">{project}</span>
           ) : null}
         </span>
 
         {message ? (
           <span className="mt-0.5 block text-xs text-ink-faint">
-            <span className="mr-1.5 text-[0.6875rem]">
+            <span className="mr-1.5 text-meta">
               {message.role === 'user' ? t('search.role.user') : t('search.role.agent')}
             </span>
             {splitExcerpt(message.excerpt).map((part, index) =>

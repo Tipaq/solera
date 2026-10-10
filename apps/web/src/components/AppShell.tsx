@@ -1,4 +1,4 @@
-import { Tooltip, TooltipButton } from './ui/Tooltip'
+import { Tooltip, TooltipButton } from '@solera/ui'
 import {
   DndContext,
   MouseSensor,
@@ -113,7 +113,7 @@ import {
   MenuSwatch,
   MenuSwatchRow,
   cx,
-} from './ui'
+} from '@solera/ui'
 
 /** Le raccourci porte la touche que la plateforme utilise réellement. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
@@ -493,7 +493,7 @@ function Sidebar({
     <div className="flex h-full flex-col">
       <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
         <Logo size={20} className="text-accent" />
-        <span className="text-[0.9375rem] font-semibold tracking-tight">Solera</span>
+        <span className="text-heading font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
             `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
             généré qui tranche, pas celui de la chaîne de classes. Les deux boutons
@@ -523,7 +523,7 @@ function Sidebar({
         >
           <Search size={15} className="shrink-0" />
           <span className="flex-1">{t('shell.search')}</span>
-          <kbd className="hidden shrink-0 rounded border border-line px-1 text-[0.625rem] text-ink-faint md:block">
+          <kbd className="hidden shrink-0 rounded border border-line px-1 text-micro text-ink-faint md:block">
             {SEARCH_HINT}
           </kbd>
         </button>
@@ -566,7 +566,7 @@ function Sidebar({
               type="button"
               onClick={() => setFavoritesOpen((current) => !current)}
               aria-expanded={favoritesOpen}
-              className="flex w-full items-center gap-1 py-1 pr-1 pl-1.5 text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
+              className="flex w-full items-center gap-1 py-1 pr-1 pl-1.5 text-meta font-semibold tracking-wider text-ink-faint uppercase transition-colors hover:text-ink-soft"
             >
               <ChevronRight
                 size={11}
@@ -592,7 +592,7 @@ function Sidebar({
         ) : null}
 
         <div className="flex items-center justify-between py-1 pr-1 pl-2.5">
-          <span className="text-[0.6875rem] font-semibold tracking-wider text-ink-faint uppercase">
+          <span className="text-meta font-semibold tracking-wider text-ink-faint uppercase">
             {t(allProjects ? 'shell.projects.heading' : 'shell.switcher.sessions')}
           </span>
           <span className="flex items-center">
@@ -1171,7 +1171,7 @@ function ConversationRow({
           if (conversation.isOwner) setEditing(true)
         }}
         className={cx(
-          'flex min-w-0 flex-1 flex-col justify-center px-2 text-[0.8125rem]',
+          'flex min-w-0 flex-1 flex-col justify-center px-2 text-sm',
           'py-2',
         )}
       >
@@ -1194,7 +1194,7 @@ function ConversationRow({
             {conversation.origin ? (
               <span
                 title={t('shell.conversation.origin', { label: conversation.origin.label })}
-                className="rounded-full bg-accent-wash px-1 py-px text-[0.5625rem] font-semibold uppercase tracking-wide text-accent"
+                className="rounded-full bg-accent-wash px-1 py-px text-micro font-semibold uppercase tracking-wide text-accent"
               >
                 {t('shell.conversation.api')}
               </span>
@@ -1288,7 +1288,7 @@ function ConversationMetricsLine({ metrics }: { metrics: ConversationMetrics }) 
   const { context } = metrics
 
   return (
-    <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-[0.6875rem] whitespace-nowrap text-ink-faint tabular-nums">
+    <span className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden pl-[21px] text-meta whitespace-nowrap text-ink-faint tabular-nums">
       <span title={t('shell.conversation.turnsTitle')}>
         {t('shell.conversation.turns', { count: metrics.turnCount })}
       </span>

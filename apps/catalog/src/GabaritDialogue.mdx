@@ -1,0 +1,82 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Gabarits/Dialogue" />
+
+# Dialogue
+
+Un gabarit n'est pas une primitive : c'est une chaîne de classes à recopier, parce que
+l'abstraire coûterait plus qu'il ne rendrait. Il se montre donc en texte — c'est la seule
+façon de le comparer à ce qu'on vient d'écrire.
+
+## Le voile
+
+Un seul voile pour toute l'application, et ce n'est plus une chaîne à recopier mais un
+utilitaire :
+
+```
+scrim z-40
+```
+
+`.scrim` est déclaré dans `@solera/ui` à côté de `.surface`. La couche d'empilement, elle,
+reste au site d'appel : l'apparence d'une chose est dans la primitive, l'arrangement des
+choses est dans l'écran.
+
+Le voile est en noir littéral et non en jeton : c'est une **occultation**, pas une couleur
+de thème. Un voile teinté changerait d'opacité perçue d'un thème à l'autre.
+
+Il valait quatre choses différentes jusqu'ici — `black/35`, `/50`, `/60`, avec deux flous
+— réécrites à la main dans seize dialogues, et un seul des seize portait la valeur que ce
+document retenait. Les seize lisent maintenant le même utilitaire : l'intermédiaire, 50 %
+et un flou de 2 px, parce que `/35` ne détache pas assez une feuille sur fond clair et que
+`/60` assombrit l'écran plus que nécessaire pour un panneau de réglages.
+
+## La coque
+
+Feuille en bas au doigt, boîte centrée au large :
+
+```
+surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col
+rounded-t-xl border border-line shadow-pop
+sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2
+sm:w-[min(640px,calc(100vw-2rem))]
+sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl
+```
+
+La feuille part du bas au doigt parce que c'est là qu'est le pouce, et parce qu'un dialogue
+centré se retrouve sous le clavier.
+
+`max-h-[90dvh]` pour tous. Les valeurs de 84 à 95 dvh relevées dans le code ne recouvrent
+aucune intention : elles ont été posées une par une.
+
+## L'en-tête
+
+```
+flex items-center justify-between border-b border-line px-5 py-4
+```
+
+Titre en `text-heading font-semibold`. Le même partout, sinon deux dialogues ouverts l'un
+après l'autre ne se ressemblent pas.
+
+## Les largeurs
+
+La largeur `sm:` est le **seul paramètre libre** de la coque.
+
+| | |
+| --- | --- |
+| `560px` | Formulaire court |
+| `640px` | Par défaut |
+| `960px` – `1040px` | Dialogue qui montre du contenu |
+
+## Deux dérogations
+
+`ConfirmDialog` est centré même au doigt, en `rounded-lg` et 26 rem de large : un dialogue
+aussi court n'a pas besoin d'une feuille. C'est assumé.
+
+Une **palette de commandes** n'est pas un dialogue et garde son gabarit propre : ancrée en
+haut, parce qu'on y tape et que le clavier mobile occupe le bas de l'écran. Son rayon,
+lui, est le même : le pas `2xl` n'existe plus, faute d'avoir jamais rien valu d'autre que
+`rounded-xl` (voir *Fondations/Rayons*).
+
+En revanche `ProjectSwitcher` et `SidebarActivity` dérogent encore sans raison : centrés au
+doigt, et en `bg-surface` au lieu de `.surface`, donc sans le dégradé signature. Leur voile
+et leur hauteur sont alignés depuis le repli des gabarits.

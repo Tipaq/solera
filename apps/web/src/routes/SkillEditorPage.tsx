@@ -39,7 +39,7 @@ import {
   MenuItem,
   MenuSeparator,
   Select,
-} from '../components/ui'
+} from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import {
@@ -148,7 +148,7 @@ function SkillEditor({
       <header className="flex flex-wrap items-start gap-3">
         <div className="flex min-w-64 flex-1 flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-mono text-xl font-semibold tracking-tight">{skill.name}</h1>
+            <h1 className="font-mono text-lg font-semibold tracking-tight">{skill.name}</h1>
             <SkillBadges skill={skill} showScope />
           </div>
           <p className="text-sm text-ink-faint">

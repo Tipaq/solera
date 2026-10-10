@@ -14,7 +14,7 @@ import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
-import { Banner, Button, IconButton, cx } from '../components/ui'
+import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
@@ -82,7 +82,7 @@ function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) 
             ? t('draft.usage.titleWithPlan', { plan: usage.plan })
             : t('draft.usage.title')}
         </span>
-        <span className="text-[0.6875rem] text-ink-faint">
+        <span className="text-meta text-ink-faint">
           {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
         </span>
       </div>
@@ -277,7 +277,7 @@ export function DraftConversationPage() {
         <MobileNavigationButton />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{t('draft.title')}</p>
-          <div className="flex items-center gap-1.5 text-[0.6875rem] text-ink-faint">
+          <div className="flex items-center gap-1.5 text-meta text-ink-faint">
             <AgentIcon agent={agent} size={11} />
             <span>{project?.name ?? AGENT_LABELS[agent]}</span>
           </div>
@@ -311,7 +311,7 @@ export function DraftConversationPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
-            <h1 className="text-xl font-semibold tracking-tight">{t('draft.title')}</h1>
+            <h1 className="text-lg font-semibold tracking-tight">{t('draft.title')}</h1>
             <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
           </div>
 
@@ -484,7 +484,7 @@ export function DraftConversationPage() {
                         </span>
                       ) : null}
                     </span>
-                    <span className="shrink-0 text-right text-[0.6875rem] leading-tight text-ink-faint">
+                    <span className="shrink-0 text-right text-meta leading-tight text-ink-faint">
                       <time dateTime={new Date(session.lastModified).toISOString()}>
                         {formatDay(session.lastModified)}
                       </time>

@@ -2,7 +2,7 @@ import { Lightbulb, X } from 'lucide-react'
 import { useState } from 'react'
 import { prefillComposer } from '../../lib/composer-ref'
 import { useTranslate } from '../../lib/i18n'
-import { IconButton } from '../ui'
+import { IconButton } from '@solera/ui'
 
 /**
  * Le message suivant que le CLI prédit, proposé sous le fil, au-dessus de la saisie.
@@ -28,7 +28,7 @@ export function PromptSuggestion({ text, disabled }: { text: string; disabled: b
         title={t('suggestion.use')}
         className="min-w-0 flex-1 text-left text-sm text-ink-soft hover:text-ink disabled:pointer-events-none disabled:opacity-60"
       >
-        <span className="block text-[0.6875rem] text-ink-faint">{t('suggestion.label')}</span>
+        <span className="block text-meta text-ink-faint">{t('suggestion.label')}</span>
         <span className="line-clamp-3 whitespace-pre-wrap break-words">{text}</span>
       </button>
       <IconButton label={t('suggestion.dismiss')} onClick={() => setDismissed(text)}>

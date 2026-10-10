@@ -1,7 +1,7 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Navigation d'un tour à l'autre.

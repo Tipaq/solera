@@ -1,11 +1,11 @@
-import { TooltipButton } from '../ui/Tooltip'
+import { TooltipButton } from '@solera/ui'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Popover from '@radix-ui/react-popover'
 import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 import { SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
 
 /**
@@ -211,7 +211,7 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     <Dialog.Root open={open} onOpenChange={changeOpen}>
       <Dialog.Trigger asChild {...triggerEvents}>{trigger}</Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="scrim z-40" />
         <Dialog.Content ref={content} aria-describedby={undefined} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}
           className={cx('surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
             spacious && !sheet

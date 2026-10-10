@@ -4,7 +4,7 @@ import type { EditedFile } from '../../lib/chat-fold'
 import type { DiffFile } from '../../lib/diff'
 import { useTranslate } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
-import { cx } from '../ui'
+import { cx } from '@solera/ui'
 
 /**
  * Ce que les deux vues de changements ont en commun.
@@ -34,7 +34,7 @@ const DIFF_ACTIONS: Record<DiffFile['status'], EditedFile['action']> = {
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="surface sticky top-0 z-10 flex items-center gap-2 border-b border-line px-2.5 py-1.5">
-      <span className="flex-1 text-[0.6875rem] font-semibold tracking-wide text-ink-faint uppercase">
+      <span className="flex-1 text-meta font-semibold tracking-wide text-ink-faint uppercase">
         {children}
       </span>
       {action}
@@ -68,14 +68,14 @@ export function FileDiff({
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
         <span className={cx('shrink-0', action.tone)}>{action.icon}</span>
-        <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-ink-soft" title={file.path}>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={file.path}>
           {file.path}
         </span>
         {file.added > 0 ? (
-          <span className="shrink-0 font-mono text-[0.625rem] text-positive">+{file.added}</span>
+          <span className="shrink-0 font-mono text-micro text-positive">+{file.added}</span>
         ) : null}
         {file.removed > 0 ? (
-          <span className="shrink-0 font-mono text-[0.625rem] text-critical">-{file.removed}</span>
+          <span className="shrink-0 font-mono text-micro text-critical">-{file.removed}</span>
         ) : null}
       </button>
 
@@ -91,7 +91,7 @@ export function FileDiff({
             <button
               type="button"
               onClick={() => onOpenFile(file.path)}
-              className="px-2.5 py-1.5 text-[0.6875rem] text-ink-faint underline hover:text-ink"
+              className="px-2.5 py-1.5 text-meta text-ink-faint underline hover:text-ink"
             >
               {t('changes.file.open')}
             </button>

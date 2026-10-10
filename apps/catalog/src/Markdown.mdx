@@ -1,0 +1,31 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+import { MarkdownSample, ReadingSample } from './specimens'
+
+<Meta title="Fondations/Markdown" />
+
+# Markdown
+
+Le contenu markdown est injecté en HTML brut : Tailwind ne peut pas styler ces balises par
+utilitaires, elles sont donc traitées une seule fois dans `index.css`, sous `.sg-markdown`.
+
+<MarkdownSample />
+
+Deux détails qui ont une raison. `overflow-wrap: anywhere` est posé sur le conteneur et non
+sur `a` seul : une URL sans espace ne casse nulle part, elle élargit son conteneur et fait
+défiler la page entière de côté sur un écran étroit — et un chemin collé en texte brut
+produit exactement le même débordement.
+
+Les blocs délimités par des accents graves ne passent pas par cette feuille : ils sont
+rendus par `CodeBlock`, avec sa barre d'outils. Seuls les blocs indentés de quatre espaces
+tombent sur le `pre` ci-dessus.
+
+## Confort de lecture
+
+<ReadingSample />
+
+`.sg-reading` porte les trois réglages de l'utilisateur : la taille en `rem` pour rester
+indexée sur la préférence du navigateur, l'interligne sans unité, et une encre **mélangée**
+vers sa nuance atténuée plutôt qu'une opacité.
+
+Posé sur le texte des messages **uniquement** : agrandir la conversation ne doit pas déplacer
+la barre latérale ni la barre de saisie.
