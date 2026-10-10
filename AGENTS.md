@@ -73,12 +73,34 @@ qu'on finit avec une instance dont la configuration ne survit pas au redémarrag
 (`SOLERA_UPDATE_REPO` vide par défaut). C'est volontaire : pointer sur les releases
 d'upstream ferait proposer l'installation de Sillage par-dessus Solera.
 
+## Le dépôt
+
+`origin` est [Tipaq/solera](https://github.com/Tipaq/solera), **privé** pour l'instant,
+créé le 2026-10-10. `main` et `stable` y sont, la CI y passe.
+
+Tant qu'il est privé, trois choses ne marchent pas et c'est normal :
+
+- les one-liners d'installation du site tirent `install.sh` depuis
+  `raw.githubusercontent.com`, qui répond 404 sur un dépôt privé ;
+- `pages.yml` ne peut pas déployer — GitHub Pages sur dépôt privé demande un compte Pro.
+  Le réglage *Settings > Pages > Source = GitHub Actions* n'a volontairement pas été fait ;
+- `release.yml` publierait sur `ghcr.io/tipaq/solera`, jamais déclenché pour l'instant.
+
+## Chromium ne tourne pas sur cette machine
+
+`playwright install` pose bien le binaire, mais il lui manque `libnspr4` et `libnss3`,
+que seul `playwright install-deps` installe — par apt, donc avec un `sudo` qu'on n'a pas.
+
+Conséquence : tous les scripts `*-ui-check.mjs` et `screenshots.mjs` sont inutilisables
+ici. `brand-assets.mjs` a été basculé sur `@resvg/resvg-js`, un binaire autonome sans
+dépendance système, et tourne donc normalement.
+
 ## Ce qui reste à faire avant de montrer Solera à quiconque
 
-- **La marque.** `docs/brand/symbol.svg` et les icônes PNG dessinent « L'écho », le logo de
-  Marl. Il faut un symbole à nous, puis `node scripts/brand-assets.mjs`.
-- **Le site.** `site/index.html` raconte encore l'histoire de Sillage, avec une citation
-  signée et deux fichiers supprimés en référence (le film et l'avatar de l'auteur).
-  À réécrire entièrement, pas à retoucher.
-- **Les workflows GitHub.** `.github/workflows/release.yml` et `pages.yml` visent
-  `Tipaq/solera`, qui n'existe pas encore. Les relire avant le premier push.
+- **Le site.** Le gros a été repris, mais trois `À CHANGER` restent dans
+  `site/index.html` : le film annoncé n'a jamais été tourné (seul `film/poster.jpg`
+  existe), `avatar-tipaq.jpg` est absent, et les rubans de fond prolongent encore le
+  dessin de Marl alors que la marque est devenue la bague. La note « Where Solera comes
+  from » dit des faits vérifiables et attend d'être signée de tes propres mots.
+- **Ouvrir le dépôt**, puis activer Pages — dans cet ordre, sinon le site part avec des
+  commandes d'installation mortes.
