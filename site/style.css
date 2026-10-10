@@ -109,7 +109,7 @@ main > section { position: relative; }
   mask-image: linear-gradient(transparent, #000 18%, #000 82%, transparent);
 }
 main > section:nth-of-type(even) .section-background { scale: -1 1; }
-.background-waves {
+.background-rings {
   position: absolute;
   inset: -6%;
   width: 112%;
@@ -118,7 +118,7 @@ main > section:nth-of-type(even) .section-background { scale: -1 1; }
   mask-image: radial-gradient(ellipse at 48% 42%, rgb(0 0 0 / .12) 12%, #000 78%);
   animation: background-drift 28s ease-in-out infinite alternate;
 }
-.section-background .background-waves {
+.section-background .background-rings {
   inset: auto -6%;
   top: 50%;
   height: 112%;
@@ -126,9 +126,9 @@ main > section:nth-of-type(even) .section-background { scale: -1 1; }
   translate: 0 -50%;
   animation-delay: -14s;
 }
-/* Seules les ondes visibles bougent, pour ne pas animer toute la page à la fois. */
-.site-background:not([data-visible]) .background-waves,
-.section-background:not([data-visible]) .background-waves { animation-play-state: paused; }
+/* Seuls les anneaux visibles bougent, pour ne pas animer toute la page à la fois. */
+.site-background:not([data-visible]) .background-rings,
+.section-background:not([data-visible]) .background-rings { animation-play-state: paused; }
 .background-ribbons {
   fill: currentColor;
   fill-opacity: .035;
@@ -149,7 +149,7 @@ main > section:nth-of-type(even) .section-background { scale: -1 1; }
   .site-background, .section-background { opacity: .75; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .background-waves { animation: none; }
+  .background-rings { animation: none; }
 }
 @media print, (forced-colors: active) {
   .site-background, .section-background { display: none; }

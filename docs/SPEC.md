@@ -1314,8 +1314,9 @@ donc une vue ajoutée aujourd'hui s'applique aux conversations d'hier.
 
 ### 12.6 Design et thèmes
 
-**La marque : L’écho.** Trois ondes pleines et parallèles prolongent un mouvement :
-la trace du travail et la continuité des échanges.
+**La marque : la bague.** Un anneau ouvert en haut, et un chaton en triangle inversé
+qui s’y reverse : l’anneau est la solera, la recette qui ne bouge pas, et le triangle
+ce qu’on y recomplète au lieu de le redemander.
 
 Dans l’interface, le symbole est tracé en `currentColor` et suit la teinte choisie dans
 les réglages. Les icônes autonomes le portent en blanc sur une tuile verte #436E69.
