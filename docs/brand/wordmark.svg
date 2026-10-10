@@ -27,9 +27,8 @@
   </style>
 
   <g transform="translate(4 12) scale(.48)" fill="var(--mark)">
-  <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z" />
-  <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z" />
-  <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
+  <path d="M70 19.36A40 40 0 1 1 30 19.36L37 31.48A26 26 0 1 0 63 31.48Z" />
+  <path d="M33 2H67L50 26Z" />
   </g>
 
   <text class="word" x="60" y="34">Solera</text>

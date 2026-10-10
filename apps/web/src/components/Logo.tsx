@@ -1,6 +1,7 @@
 /**
- * L’écho : trois ondes parallèles prolongent le mouvement.
- * `currentColor` préserve la teinte choisie dans les réglages.
+ * La bague : un anneau ouvert en haut, et le chaton qui s’y reverse.
+ * L’anneau est la solera — la recette qui ne bouge pas ; le triangle inversé est
+ * ce qu’on y recomplète. `currentColor` préserve la teinte choisie dans les réglages.
  *
  * Le tracé de référence vit dans `docs/brand/symbol.svg`. Les copies autonomes
  * (favicons, site, signatures) doivent rester identiques ; les PNG se régénèrent
@@ -17,9 +18,8 @@ export function Logo({ size = 20, className }: { size?: number; className?: stri
       aria-hidden
       focusable="false"
     >
-      <path d="M4 79C28 79 20 21 46 21H59C35 21 43 79 17 79Z" />
-      <path d="M23 79C47 79 39 21 65 21H78C54 21 62 79 36 79Z" />
-      <path d="M42 79C66 79 58 21 84 21H97C73 21 81 79 55 79Z" />
+      <path d="M70 19.36A40 40 0 1 1 30 19.36L37 31.48A26 26 0 1 0 63 31.48Z" />
+      <path d="M33 2H67L50 26Z" />
     </svg>
   )
 }
