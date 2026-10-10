@@ -76,7 +76,7 @@ function HistoryTurn({
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-high"
       >
         <ChevronRight
-          size={12}
+          size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
         <span className="shrink-0 font-mono text-micro text-ink-faint">

@@ -139,7 +139,7 @@ export function ThreadSearch({
         'border-b border-line px-3 py-1.5',
       )}
     >
-      <Search size={15} className="shrink-0 text-ink-faint" />
+      <Search size={14} className="shrink-0 text-ink-faint" />
       <input
         ref={input}
         value={query}
@@ -169,7 +169,7 @@ export function ThreadSearch({
         aria-label={t('thread.search.previous')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
-        <ChevronUp size={15} />
+        <ChevronUp size={14} />
       </TooltipButton>
       <TooltipButton
         type="button"
@@ -178,7 +178,7 @@ export function ThreadSearch({
         aria-label={t('thread.search.next')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink disabled:opacity-40"
       >
-        <ChevronDown size={15} />
+        <ChevronDown size={14} />
       </TooltipButton>
       <TooltipButton
         type="button"
@@ -186,7 +186,7 @@ export function ThreadSearch({
         aria-label={t('thread.search.close')}
         className="flex size-7 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
       >
-        <X size={15} />
+        <X size={14} />
       </TooltipButton>
     </div>
   )

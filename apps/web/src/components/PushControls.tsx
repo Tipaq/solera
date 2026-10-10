@@ -47,7 +47,7 @@ export function PushControls() {
         <Button
           variant="secondary"
           size="sm"
-          icon={<BellOff size={15} />}
+          icon={<BellOff size={14} />}
           disabled={busy}
           onClick={() => unsubscribe.mutate()}
           className="self-start"
@@ -57,7 +57,7 @@ export function PushControls() {
       ) : (
         <Button
           size="sm"
-          icon={<Bell size={15} />}
+          icon={<Bell size={14} />}
           disabled={busy || !status}
           onClick={() => status && subscribe.mutate(status.publicKey)}
           className="self-start"

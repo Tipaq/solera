@@ -21,7 +21,7 @@ import {
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
 import type { SettingGroup } from '../chat/ComposerSettings'
-import { Banner, Button, Field, IconButton, Select, cx } from '@solera/ui'
+import { Banner, Button, Field, IconButton, Presets, SegmentedControl, Select } from '@solera/ui'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
@@ -154,7 +154,7 @@ export function ScheduleDialog({
               {t(task ? 'schedule.form.editTitle' : 'schedule.form.createTitle')}
             </Dialog.Title>
             <IconButton label={t('common.close')} disabled={mutation.isPending} onClick={onClose}>
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </header>
 
@@ -187,23 +187,15 @@ export function ScheduleDialog({
 
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('schedule.form.cadence')}</legend>
-                <div role="radiogroup" aria-label={t('schedule.form.cadence')} className="flex gap-1 rounded-md border border-line bg-sunken p-1">
-                  {kinds.map((entry) => (
-                    <button
-                      key={entry.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={kind === entry.value}
-                      onClick={() => setKind(entry.value)}
-                      className={cx(
-                        'min-h-9 flex-1 rounded px-2 text-sm transition-colors',
-                        kind === entry.value ? 'bg-surface-high font-medium text-ink' : 'text-ink-faint hover:text-ink-soft',
-                      )}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
+                {/* Quatrième copie du rail segmenté, et la seule à marquer l'option
+                    retenue en `bg-surface-high` — qui est la couleur du survol (§2). */}
+                <SegmentedControl
+                  label={t('schedule.form.cadence')}
+                  value={kind}
+                  onChange={setKind}
+                  className="flex"
+                  segments={kinds.map((entry) => ({ value: entry.value, label: entry.label }))}
+                />
 
                 {kind === 'interval' ? (
                   <div className="flex items-end gap-2">
@@ -239,23 +231,12 @@ export function ScheduleDialog({
                       error={cadence ? undefined : t('archiving.schedule.invalid')}
                       onChange={(event) => setCron(event.target.value)}
                     />
-                    <div className="flex flex-wrap gap-1.5">
-                      {CRON_PRESETS.map((preset) => (
-                        <button
-                          key={preset.expression}
-                          type="button"
-                          onClick={() => setCron(preset.expression)}
-                          className={cx(
-                            'rounded-md border px-2 py-0.5 text-xs transition-colors',
-                            preset.expression === cron
-                              ? 'border-accent bg-accent-wash text-ink'
-                              : 'border-line text-ink-faint hover:border-line-strong hover:text-ink-soft',
-                          )}
-                        >
-                          {t(preset.labelKey)}
-                        </button>
-                      ))}
-                    </div>
+                    <Presets
+                      label={t('schedule.form.cadence')}
+                      selected={cron}
+                      onSelect={setCron}
+                      presets={CRON_PRESETS.map((preset) => ({ key: preset.expression, label: t(preset.labelKey) }))}
+                    />
                   </>
                 ) : null}
 
@@ -343,7 +324,7 @@ function GroupField({ group }: { group: SettingGroup }) {
       <Select label={group.label} value={group.value} options={group.options} onChange={group.onChange} />
       {selected?.tone === 'caution' ? (
         <p className="flex items-start gap-1.5 text-xs text-caution">
-          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
           <span>{selected.hint}</span>
         </p>
       ) : null}

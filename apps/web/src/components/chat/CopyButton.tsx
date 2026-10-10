@@ -29,7 +29,7 @@ export function CopyButton({ text, label }: { text: string; label?: string }) {
         state === 'failed' ? 'text-critical' : 'text-ink-faint hover:text-ink',
       )}
     >
-      {state === 'copied' ? <Check size={13} /> : <Copy size={13} />}
+      {state === 'copied' ? <Check size={14} /> : <Copy size={14} />}
       {state === 'copied' ? t('common.copied') : state === 'failed' ? t('common.failed') : t('common.copy')}
     </TooltipButton>
   )

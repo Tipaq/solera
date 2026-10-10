@@ -4,9 +4,9 @@ import { useState } from 'react'
 import { Select, type SelectOption } from './Select'
 
 const AGENTS: SelectOption<string>[] = [
-  { value: 'claude', label: 'Claude Code', icon: <Sparkles size={15} />, hint: 'Agent SDK' },
-  { value: 'codex', label: 'Codex', icon: <Bot size={15} />, hint: 'app-server' },
-  { value: 'gemini', label: 'Gemini CLI', icon: <Bot size={15} />, disabled: true },
+  { value: 'claude', label: 'Claude Code', icon: <Sparkles size={16} />, hint: 'Agent SDK' },
+  { value: 'codex', label: 'Codex', icon: <Bot size={16} />, hint: 'app-server' },
+  { value: 'gemini', label: 'Gemini CLI', icon: <Bot size={16} />, disabled: true },
 ]
 
 const meta = {

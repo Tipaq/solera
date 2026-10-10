@@ -114,6 +114,10 @@ export function ConversationMinimap({
 
           return (
             <li key={turn.id} className="group/tick relative flex min-h-0 shrink items-center">
+              {/* `<button>` nu assumé : un trait de réglette n'est pas une action de
+                  l'écran, et la cible de 44 px qu'`IconButton` impose (§11) ferait de
+                  cette minimap une colonne plus haute que la conversation qu'elle
+                  résume. La zone cliquable reste le `li` au survol. */}
               <button
                 type="button"
                 onClick={() => onJump(turn.id)}
@@ -122,7 +126,9 @@ export function ConversationMinimap({
               >
                 <span
                   className={cx(
-                    'h-0.5 rounded-full transition-all',
+                    // Propriétés nommées plutôt que `all` (§13) : seules la largeur, la
+                    // couleur et l'opacité du trait bougent.
+                    'h-0.5 rounded-full transition-[width,background-color,opacity] duration-150',
                     visible ? 'w-4 bg-ink-soft' : 'w-3 bg-line-strong group-hover/tick:bg-ink-faint',
                     faded && !visible ? 'opacity-40' : null,
                   )}

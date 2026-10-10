@@ -54,16 +54,16 @@ export function WorktreeSelect({
     {
       value: ROOT,
       label: t('worktree.root.label'),
-      icon: <FolderTree size={15} />,
+      icon: <FolderTree size={16} />,
       hint: branchInfo?.current ? t('worktree.root.hint', { branch: branchInfo.current }) : undefined,
     },
     ...(worktrees ?? []).map((worktree) => ({
       value: worktree.id,
       label: worktree.name,
-      icon: <GitBranch size={15} />,
+      icon: <GitBranch size={16} />,
       hint: worktree.git?.isDirty ? t('worktree.dirty') : t('worktree.label'),
     })),
-    { value: NEW, label: t('worktree.new'), icon: <Plus size={15} /> },
+    { value: NEW, label: t('worktree.new'), icon: <Plus size={16} /> },
   ]
 
   const submit = () => {

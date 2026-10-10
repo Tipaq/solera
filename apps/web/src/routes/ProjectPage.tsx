@@ -65,13 +65,13 @@ function visibilityOptions(): SelectOption<ProjectVisibility>[] {
     {
       value: 'private',
       label: translate('project.visibility.private'),
-      icon: <Lock size={15} />,
+      icon: <Lock size={16} />,
       hint: translate('project.visibility.private.hint'),
     },
     {
       value: 'shared',
       label: translate('project.visibility.shared'),
-      icon: <Globe size={15} />,
+      icon: <Globe size={16} />,
       hint: translate('project.visibility.shared.hint'),
     },
   ]
@@ -281,7 +281,7 @@ function WorktreeList({ projectId, isRepository }: { projectId: string; isReposi
             <Button
               variant="danger"
               size="sm"
-              icon={<Trash2 size={15} />}
+              icon={<Trash2 size={14} />}
               disabled={deleteWorktree.isPending}
               onClick={() => {
                 const dirty = worktree.git?.isDirty === true
@@ -440,7 +440,7 @@ function GroupField({ group }: { group: SettingGroup }) {
       />
       {selected?.tone === 'caution' ? (
         <p className="flex items-start gap-1.5 text-xs text-caution">
-          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
           <span>{selected.hint}</span>
         </p>
       ) : null}
@@ -517,7 +517,7 @@ function ProjectSettings({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             disabled={!dirty || !name.trim() || updateProject.isPending}
-            icon={<Save size={15} />}
+            icon={<Save size={16} />}
             onClick={() =>
               updateProject.mutate({ id: projectId, name: name.trim(), workspacePath, visibility })
             }
@@ -545,7 +545,7 @@ function ProjectSettings({
         <Button
           variant="danger"
           size="sm"
-          icon={<Trash2 size={15} />}
+          icon={<Trash2 size={14} />}
           onClick={() => {
             if (!confirm(translate('project.settings.remove.confirm', { name: initialName }))) return
             deleteProject.mutate(projectId, { onSuccess: onDeleted })

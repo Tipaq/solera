@@ -22,7 +22,7 @@ import {
 } from '../../lib/instructions'
 import { Markdown } from '../chat/Markdown'
 import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
-import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, Select, cx, type Choice } from '@solera/ui'
+import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, SegmentedControl, Select, cx, type Choice } from '@solera/ui'
 
 /**
  * Éditeur d'une partie de consignes : du markdown, un aperçu, un bouton d'enregistrement.
@@ -63,23 +63,16 @@ export function MarkdownEditor({
   return (
     <div className="flex flex-col gap-2">
       {canEdit ? (
-        <div className="flex gap-1 self-end rounded-lg bg-sunken p-1">
-          {[false, true].map((on) => (
-            <button
-              key={String(on)}
-              type="button"
-              aria-pressed={preview === on}
-              onClick={() => setPreview(on)}
-              className={cx(
-                'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs',
-                preview === on ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink',
-              )}
-            >
-              {on ? <Eye size={13} /> : <Pencil size={13} />}
-              {t(on ? 'board.editor.preview' : 'board.editor.write')}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label={t('board.editor.mode')}
+          value={preview ? 'preview' : 'write'}
+          onChange={(value) => setPreview(value === 'preview')}
+          className="self-end"
+          segments={[
+            { value: 'write', label: t('board.editor.write'), icon: <Pencil size={14} /> },
+            { value: 'preview', label: t('board.editor.preview'), icon: <Eye size={14} /> },
+          ]}
+        />
       ) : null}
 
       {preview ? (
@@ -349,22 +342,16 @@ export function InstructionsDialog({
             </Dialog.Close>
           </div>
 
-          <div className="flex gap-1 self-start rounded-lg bg-sunken p-1">
-            {(['project', 'global'] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={tab === value}
-                onClick={() => setTab(value)}
-                className={cx(
-                  'rounded-md px-3 py-1.5 text-sm',
-                  tab === value ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink',
-                )}
-              >
-                {t(value === 'project' ? 'instructions.tab.project' : 'instructions.tab.global')}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label={t('instructions.dialog.title')}
+            value={tab}
+            onChange={setTab}
+            className="self-start"
+            segments={[
+              { value: 'project', label: t('instructions.tab.project') },
+              { value: 'global', label: t('instructions.tab.global') },
+            ]}
+          />
 
           {tab === 'project' ? <ProjectInstructions projectId={projectId} /> : <GlobalInstructions />}
           <p className="text-xs text-ink-faint">{t('instructions.dialog.timing')}</p>

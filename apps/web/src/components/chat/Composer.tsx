@@ -879,7 +879,7 @@ export function Composer({
                   'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
                 )}
               >
-                <Square size={13} fill="currentColor" />
+                <Square size={16} fill="currentColor" />
               </TooltipButton>
             ) : null}
 
@@ -897,7 +897,7 @@ export function Composer({
                 running && !canSend && 'hidden',
               )}
             >
-              <ArrowUp size={17} strokeWidth={2.5} />
+              <ArrowUp size={16} strokeWidth={2.5} />
             </TooltipButton>
           </div>
         </div>

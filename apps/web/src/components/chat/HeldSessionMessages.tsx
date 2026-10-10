@@ -60,7 +60,7 @@ export function HeldSessionMessages({
             )}
           >
             <p className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
-              <Hand size={13} className="shrink-0 text-ink-faint" />
+              <Hand size={14} className="shrink-0 text-ink-faint" />
               <span className="shrink-0">{t('sessionMessage.held.from')}</span>
               {envelope && projectId ? (
                 <Link

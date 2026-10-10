@@ -152,7 +152,7 @@ function CredentialCard({ credential }: { credential: GitCredential }) {
         <Button
           size="sm"
           variant="danger"
-          icon={<Trash2 size={15} />}
+          icon={<Trash2 size={14} />}
           onClick={() => setConfirming(true)}
         >
           {t('gitCredentials.action.delete')}

@@ -12,7 +12,7 @@ import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
-import { Badge, Button, IconButton, Menu, MenuItem, cx } from '@solera/ui'
+import { Badge, Button, IconButton, Menu, MenuItem, Tabs, cx } from '@solera/ui'
 import { CardAttachments } from './CardAttachments'
 import { CardEditor } from './CardEditor'
 import { CardNotes } from './CardNotes'
@@ -127,7 +127,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
           <button type="button" disabled={saving} aria-label={t('board.card.changeColumn', { column: columnLabel(card.column) })}
             className="flex min-h-11 items-center gap-1 rounded-md px-1 text-ink-faint hover:bg-surface-high md:min-h-9 pointer-coarse:min-h-11">
             <Badge tone={COLUMN_TONES[card.column]}>{columnLabel(card.column)}</Badge>
-            <ChevronDown size={13} />
+            <ChevronDown size={14} />
           </button>
         }>
           {CARD_COLUMNS.map((column) => (
@@ -139,7 +139,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         </Menu>
         <div className="flex-1" />
         <IconButton data-panel-initial-focus label={t('board.panel.close')} size="sm" onClick={onClose}>
-          <X size={15} />
+          <X size={14} />
         </IconButton>
       </header>
 
@@ -151,13 +151,11 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
         </Button>
         {dirty ? <p className="w-full text-xs text-ink-faint">{t('board.editor.saveBeforeLaunch')}</p> : null}
       </div>
-      <nav aria-label={t('board.card.sections')} className="flex shrink-0 gap-5 border-b border-line px-5">
-        {(['details', 'activity', 'sessions'] as const).map((value) => <button type="button" key={value} aria-pressed={tab === value} onClick={() => setTab(value)}
-          className={cx('flex min-h-12 items-center gap-2 border-b-2 text-sm font-medium transition-colors', tab === value ? 'border-accent text-accent' : 'border-transparent text-ink-faint hover:text-ink')}>
-          {t(value === 'details' ? 'board.card.details' : value === 'activity' ? 'board.card.activity' : 'board.card.sessions.title')}
-          {value !== 'details' ? <span className="rounded-md bg-sunken px-1.5 py-0.5 text-xs">{value === 'activity' ? card.noteCount : card.conversations.length}</span> : null}
-        </button>)}
-      </nav>
+      <Tabs label={t('board.card.sections')} value={tab} onChange={setTab} className="px-5" tabs={[
+        { value: 'details', label: t('board.card.details') },
+        { value: 'activity', label: t('board.card.activity'), count: card.noteCount },
+        { value: 'sessions', label: t('board.card.sessions.title'), count: card.conversations.length },
+      ]} />
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-6">
         {tab === 'details' ? <>
         <div className="flex flex-col gap-4">
@@ -194,7 +192,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
                     to={`/p/${projectId}/c/${session.id}`}
                     className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-high"
                   >
-                    <AgentIcon agent={session.agent} size={13} />
+                    <AgentIcon agent={session.agent} size={14} />
                     <span
                       className={cx(
                         'min-w-0 flex-1 truncate text-sm',
@@ -228,7 +226,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
           <IconButton label={t('board.card.remove')} size="sm" disabled={deleteCard.isPending} onClick={() => {
             if (!confirm(translate('board.card.remove.confirm', { number: card.number }))) return
             deleteCard.mutate(card.id, { onSuccess: onClose })
-          }}><Trash2 size={15} /></IconButton>
+          }}><Trash2 size={14} /></IconButton>
         </>}
         {deleteCard.isError ? <p role="alert" className="w-full text-sm text-critical">{t('board.files.error')}</p> : null}
       </footer>

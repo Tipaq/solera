@@ -52,14 +52,14 @@ export function AttachmentTray({
             size="sm"
             onClick={() => onRemove(attachment.id)}
           >
-            <X size={13} />
+            <X size={14} />
           </IconButton>
         </div>
       ))}
 
       {uploading > 0 ? (
         <span className="flex items-center gap-1.5 rounded-md border border-line bg-surface-high px-2 py-2 text-xs text-ink-faint">
-          <Loader size={13} className="animate-spin" />
+          <Loader size={14} className="animate-spin" />
           {uploading} en cours
         </span>
       ) : null}

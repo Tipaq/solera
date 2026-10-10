@@ -54,7 +54,7 @@ export function CardAttachments({ cardId, projectId }: { cardId: string; project
         {files.data?.length ? <ul className="flex flex-col gap-2">
           {files.data.map((file) => <li key={file.id} className="flex items-center gap-3 rounded-lg border border-line bg-sunken p-2">
             <a href={`/api/attachments/${file.id}`} target="_blank" rel="noreferrer" className="flex min-w-0 flex-1 items-center gap-3 text-sm hover:text-accent">
-              {file.inlineImage ? <img src={`/api/attachments/${file.id}`} alt="" className="size-12 shrink-0 rounded-md object-cover" /> : <FileText size={24} className="mx-3 shrink-0 text-ink-faint" />}
+              {file.inlineImage ? <img src={`/api/attachments/${file.id}`} alt="" className="size-12 shrink-0 rounded-md object-cover" /> : <FileText size={22} className="mx-3 shrink-0 text-ink-faint" />}
               <span className="min-w-0"><span className="block truncate">{file.filename}</span><span className="block text-xs text-ink-faint">{formatBytes(file.sizeBytes)}</span></span>
               <Download size={14} className="ml-auto shrink-0 text-ink-faint" />
             </a>

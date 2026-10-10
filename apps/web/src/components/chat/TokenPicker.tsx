@@ -68,7 +68,7 @@ export function TokenPicker({
               index === active ? 'bg-accent-wash text-ink' : 'text-ink-soft',
             )}
           >
-            <Terminal size={13} className="shrink-0 text-ink-faint" />
+            <Terminal size={14} className="shrink-0 text-ink-faint" />
             <span className="shrink-0 font-mono">
               {sigil}
               {entry.name}

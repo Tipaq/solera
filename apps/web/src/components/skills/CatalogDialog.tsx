@@ -110,7 +110,7 @@ export function CatalogDialog({
           <header className="flex items-center gap-3 border-b border-line px-5 py-3">
             <Dialog.Title className="flex-1 text-lg font-semibold">{t('skills.catalog.title')}</Dialog.Title>
             <IconButton label={t('skills.dialog.close')} onClick={close} disabled={busy}>
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </header>
 

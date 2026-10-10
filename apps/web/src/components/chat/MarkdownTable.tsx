@@ -23,7 +23,7 @@ export function MarkdownTable({ html, rows }: { html: string; rows: string[][] }
           label={t('markdown.table.downloadCsv')}
           onClick={() => downloadText('tableau.csv', toCsv(rows), 'text/csv')}
         >
-          <Sheet size={13} />
+          <Sheet size={14} />
         </ToolbarButton>
       </div>
 

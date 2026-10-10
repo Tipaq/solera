@@ -1,7 +1,7 @@
 import { FolderSearch } from 'lucide-react'
 import { useId, useState } from 'react'
 import { DirectoryPicker } from './DirectoryPicker'
-import { cx } from '@solera/ui'
+import { Button, cx } from '@solera/ui'
 
 interface PathFieldProps {
   label: string
@@ -61,18 +61,14 @@ export function PathField({
           />
         </div>
 
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          className="shrink-0"
           onClick={() => setPickerOpen(true)}
-          className={cx(
-            'tap-target flex shrink-0 items-center gap-2 rounded-md border border-line px-3',
-            'surface text-sm text-ink-soft transition-colors',
-            'hover:border-line-strong hover:text-ink',
-          )}
+          icon={<FolderSearch size={16} />}
         >
-          <FolderSearch size={16} />
           <span className="hidden sm:inline">Parcourir</span>
-        </button>
+        </Button>
       </div>
 
       {error ? (

@@ -44,7 +44,7 @@ export function SkillSourcesSection({ isAdmin }: { isAdmin: boolean }) {
           <p className="text-xs text-ink-faint">{t('skills.sources.description')}</p>
         </div>
         {isAdmin ? (
-          <Button size="sm" variant="secondary" icon={<Plus size={15} />} onClick={() => setAdding(!adding)}>
+          <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setAdding(!adding)}>
             {t('skills.sources.add')}
           </Button>
         ) : null}
@@ -90,7 +90,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
       <CardBody className="flex flex-col gap-2">
         <div className="flex items-start gap-3">
           <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-wash text-accent">
-            <GitBranch size={15} />
+            <GitBranch size={16} />
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -135,7 +135,7 @@ function SourceRow({ source, isAdmin, onBrowse }: { source: SkillSourceDto; isAd
                     {t(source.enabled ? 'skills.action.disable' : 'skills.action.enable')}
                   </MenuItem>
                   <MenuSeparator />
-                  <MenuItem icon={<Trash2 size={15} />} tone="critical" onSelect={() => setConfirming(true)}>
+                  <MenuItem icon={<Trash2 size={16} />} tone="critical" onSelect={() => setConfirming(true)}>
                     {t('skills.action.delete')}
                   </MenuItem>
                 </Menu>
@@ -261,7 +261,7 @@ function SkillsShSearch({ onOpen }: { onOpen: (browsing: Browsing) => void }) {
         <Field
           label={t('skills.search.label')}
           hint={t('skills.search.hint')}
-          icon={<Search size={15} />}
+          icon={<Search size={16} />}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('skills.search.placeholder')}

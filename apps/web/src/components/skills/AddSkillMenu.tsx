@@ -57,24 +57,24 @@ export function AddSkillMenu({ scope, projectId }: { scope: LibrarySkillScope; p
     <div className="flex flex-col items-end gap-2">
       <Menu
         trigger={
-          <Button size="sm" icon={<Plus size={15} />} disabled={importSkill.isPending}>
+          <Button size="sm" icon={<Plus size={14} />} disabled={importSkill.isPending}>
             {importSkill.isPending ? t('skills.add.importing') : t('skills.add.action')}
           </Button>
         }
       >
-        <MenuItem icon={<FilePlus2 size={15} />} onSelect={() => setCreating(true)}>
+        <MenuItem icon={<FilePlus2 size={16} />} onSelect={() => setCreating(true)}>
           {t('skills.add.new')}
         </MenuItem>
-        <MenuItem icon={<FileArchive size={15} />} onSelect={() => archiveInput.current?.click()}>
+        <MenuItem icon={<FileArchive size={16} />} onSelect={() => archiveInput.current?.click()}>
           {t('skills.add.archive')}
         </MenuItem>
-        <MenuItem icon={<FolderInput size={15} />} onSelect={() => folderInput.current?.click()}>
+        <MenuItem icon={<FolderInput size={16} />} onSelect={() => folderInput.current?.click()}>
           {t('skills.add.folder')}
         </MenuItem>
-        <MenuItem icon={<Library size={15} />} onSelect={() => setCataloging(true)}>
+        <MenuItem icon={<Library size={16} />} onSelect={() => setCataloging(true)}>
           {t('skills.add.catalog')}
         </MenuItem>
-        <MenuItem icon={<HardDrive size={15} />} onSelect={() => setBrowsing(true)}>
+        <MenuItem icon={<HardDrive size={16} />} onSelect={() => setBrowsing(true)}>
           {t('skills.add.local')}
         </MenuItem>
       </Menu>

@@ -1,6 +1,6 @@
 import { Archive, Play, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, cx } from '@solera/ui'
+import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Presets } from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useRunArchivePass, useUpdateAppSettings } from '../lib/app-settings'
@@ -99,23 +99,12 @@ export function ArchivingSettingsPage() {
                 onChange={(event) => setSchedule(event.target.value)}
               />
 
-              <div className="flex flex-wrap gap-1.5">
-                {PRESETS.map((preset) => (
-                  <button
-                    key={preset.schedule}
-                    type="button"
-                    onClick={() => setSchedule(preset.schedule)}
-                    className={cx(
-                      'rounded-md border px-2 py-0.5 text-xs transition-colors',
-                      preset.schedule === schedule
-                        ? 'border-accent bg-accent-wash text-ink'
-                        : 'border-line text-ink-faint hover:border-line-strong hover:text-ink-soft',
-                    )}
-                  >
-                    {t(preset.labelKey)}
-                  </button>
-                ))}
-              </div>
+              <Presets
+                label={t('archiving.schedule.label')}
+                selected={schedule}
+                onSelect={setSchedule}
+                presets={PRESETS.map((preset) => ({ key: preset.schedule, label: t(preset.labelKey) }))}
+              />
 
               {/* L'aperçu est calculé dans le navigateur : le dire évite qu'un décalage
                   avec le serveur passe pour un bug de l'archivage. */}

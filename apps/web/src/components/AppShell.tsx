@@ -352,7 +352,7 @@ export function AppShell() {
       {hidden ? (
         <div className="absolute top-2 left-2 z-30 hidden md:block">
           <IconButton data-sidebar-restore label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
-            <PanelLeft size={18} />
+            <PanelLeft size={16} />
           </IconButton>
         </div>
       ) : null}
@@ -500,12 +500,12 @@ function Sidebar({
             s'affichaient donc côte à côte sur mobile. */}
         <span className="ml-auto md:hidden">
           <IconButton label={t('shell.nav.close')} onClick={onClose}>
-            <X size={18} />
+            <X size={16} />
           </IconButton>
         </span>
         <span className="ml-auto hidden md:block">
           <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
-            <PanelLeftClose size={18} />
+            <PanelLeftClose size={16} />
           </IconButton>
         </span>
       </div>
@@ -521,7 +521,7 @@ function Sidebar({
             'text-ink-soft transition-colors hover:bg-surface-high hover:text-ink',
           )}
         >
-          <Search size={15} className="shrink-0" />
+          <Search size={16} className="shrink-0" />
           <span className="flex-1">{t('shell.search')}</span>
           <kbd className="hidden shrink-0 rounded border border-line px-1 text-micro text-ink-faint md:block">
             {SEARCH_HINT}
@@ -599,7 +599,7 @@ function Sidebar({
             {/* Le geste existe aussi au doigt, en tirant la liste vers le bas. Le bouton
                 reste pour la souris, et pour qui ignore le geste. */}
             <IconButton label={t('shell.refresh')} size="sm" onClick={refresh} aria-busy={refreshing}>
-              <RefreshCw size={15} className={cx(refreshing && 'animate-spin')} />
+              <RefreshCw size={14} className={cx(refreshing && 'animate-spin')} />
             </IconButton>
             {/* Un seul interrupteur pour toute la liste : le mode sert à comparer des
                 conversations entre elles, ce qu'un dépliage ligne à ligne interdit. */}
@@ -609,11 +609,11 @@ function Sidebar({
               onClick={() => setSidebarDetailed(!detailed)}
               className={detailed ? 'text-accent' : undefined}
             >
-              <ListTree size={15} />
+              <ListTree size={14} />
             </IconButton>
             <Tooltip label={t('shell.projects.add')}><NavLink to="/projects/new" onClick={onNavigate} aria-label={t('shell.projects.add')}
               className="inline-flex size-11 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink md:size-7 pointer-coarse:size-11">
-                <FolderPlus size={15} />
+                <FolderPlus size={14} />
             </NavLink></Tooltip>
           </span>
         </div>
@@ -810,7 +810,7 @@ function ProjectGroup({
           aria-expanded={open}
           className="flex size-11 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink md:size-6 pointer-coarse:size-11"
         >
-          <ChevronRight size={13} className={cx('transition-transform', open && 'rotate-90')} />
+          <ChevronRight size={14} className={cx('transition-transform', open && 'rotate-90')} />
         </TooltipButton>}
 
         {editing ? (
@@ -848,7 +848,7 @@ function ProjectGroup({
                 d'oublier un serveur de dev lancé depuis une session refermée depuis. */}
             {project.activeTerminals > 0 ? (
               <SquareTerminal
-                size={12}
+                size={11}
                 className="shrink-0 text-positive"
                 aria-label={t('shell.project.terminals')}
               />
@@ -857,7 +857,7 @@ function ProjectGroup({
                 mettrait un cadenas sur presque toutes les lignes. */}
             {project.visibility === 'shared' ? (
               <Users
-                size={12}
+                size={11}
                 className="shrink-0 text-ink-faint"
                 aria-label={t('shell.project.shared')}
               />
@@ -874,7 +874,7 @@ function ProjectGroup({
             isActive ? 'bg-surface-high text-ink' : 'text-ink-faint',
           )}
         >
-          <Plus size={15} />
+          <Plus size={14} />
         </NavLink></Tooltip>
 
         {project.isOwner ? (
@@ -885,7 +885,7 @@ function ProjectGroup({
                 size="sm"
                 className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
               >
-                <MoreHorizontal size={15} />
+                <MoreHorizontal size={14} />
               </IconButton>
             }
           >
@@ -951,7 +951,7 @@ function ProjectGroup({
                 isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
               )}
             >
-              <SquareKanban size={13} />{t('shell.project.board')}
+              <SquareKanban size={14} />{t('shell.project.board')}
             </NavLink>
             <NavLink
               to={`/p/${project.id}/schedules`}
@@ -961,7 +961,7 @@ function ProjectGroup({
                 isActive ? 'bg-surface-high font-medium text-ink' : 'text-ink-soft',
               )}
             >
-              <CalendarClock size={13} />{t('schedule.title')}
+              <CalendarClock size={14} />{t('schedule.title')}
             </NavLink>
           </li>
           {active.length > 0 ? (
@@ -1177,7 +1177,7 @@ function ConversationRow({
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-ink-faint">
-            <AgentIcon agent={conversation.agent} size={13} />
+            <AgentIcon agent={conversation.agent} size={14} />
           </span>
           <span className={cx('line-clamp-2 break-words', unread && 'font-medium')}>{conversation.title}</span>
           {/*
@@ -1230,7 +1230,7 @@ function ConversationRow({
               size="sm"
               className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
             >
-              <MoreHorizontal size={15} />
+              <MoreHorizontal size={14} />
             </IconButton>
           }
         >

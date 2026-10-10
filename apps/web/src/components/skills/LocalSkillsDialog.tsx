@@ -43,7 +43,7 @@ export function LocalSkillsDialog({
           <header className="flex items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">{t('skills.local.title')}</Dialog.Title>
             <IconButton label={t('skills.dialog.close')} onClick={onClose}>
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </header>
           <div className="flex min-h-0 flex-col gap-3 overflow-y-auto p-5">

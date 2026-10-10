@@ -109,7 +109,7 @@ export function UsersSettingsPage() {
                 {
                   value: 'admin',
                   label: t('users.role.admin.label'),
-                  icon: <ShieldCheck size={15} />,
+                  icon: <ShieldCheck size={16} />,
                   hint: t('users.role.admin.hint'),
                 },
               ]}
@@ -189,7 +189,7 @@ function UserCard({ user, isSelf }: { user: UserDto; isSelf: boolean }) {
               <Button
                 size="sm"
                 variant="danger"
-                icon={<Trash2 size={15} />}
+                icon={<Trash2 size={14} />}
                 disabled={deleteUser.isPending}
                 onClick={() => {
                   if (confirm(t('users.delete.confirm', { username: user.username }))) {

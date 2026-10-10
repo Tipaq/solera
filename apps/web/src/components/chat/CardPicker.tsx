@@ -64,7 +64,7 @@ export function CardPicker({
               index === active ? 'bg-accent-wash text-ink' : 'text-ink-soft',
             )}
           >
-            <SquareKanban size={13} className="shrink-0 text-ink-faint" />
+            <SquareKanban size={14} className="shrink-0 text-ink-faint" />
             <span className="shrink-0 text-ink-faint">#{card.number}</span>
             <span className="min-w-0 flex-1 truncate">{card.title}</span>
             <span className="shrink-0 text-meta text-ink-faint">

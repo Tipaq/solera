@@ -1,4 +1,4 @@
-import { TooltipButton } from '@solera/ui'
+import { Tabs, TooltipButton } from '@solera/ui'
 import { BookOpen, Search } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import { Link } from 'react-router-dom'
@@ -47,19 +47,19 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
 
   return <>
     <SettingsHeading title={t('composer.skills.title')} onClose={onClose} />
-    <div className="shrink-0 border-b border-line px-4 pb-3">
+    <div className="shrink-0 px-4">
       <Link to="/settings/skills" onClick={onClose} className="mb-3 flex min-h-11 items-center gap-2 text-sm text-accent"><BookOpen size={16} />{t('composer.skills.manage')}</Link>
       <label className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3">
-        <Search size={15} className="shrink-0 text-ink-faint" />
+        <Search size={16} className="shrink-0 text-ink-faint" />
         <input value={search} onChange={(event) => setSearch(event.target.value)} aria-label={t('composer.skills.search')}
           placeholder={t('composer.skills.search')} className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
       </label>
-      <div className="mt-3 flex gap-2" role="group" aria-label={t('composer.skills.title')}>
-        {(['library', 'reported'] as const).map((key) => <button key={key} type="button" aria-pressed={view === key} onClick={() => setView(key)}
-          className={`min-h-11 flex-1 border-b-2 px-2 text-sm ${view === key ? 'border-accent text-ink' : 'border-transparent text-ink-faint hover:text-ink'}`}>
-          {t(key === 'library' ? 'composer.skills.configured' : 'composer.skills.session')} <span className="text-ink-faint">({key === 'library' ? visibleLibrary.length : visibleReported.length})</span>
-        </button>)}
-      </div>
+      {/* Le soulignement des onglets fait office de bordure basse du bloc : la
+          `border-b` du conteneur tracerait une seconde ligne à douze pixels. */}
+      <Tabs label={t('composer.skills.title')} value={view} onChange={setView} layout="fill" className="mt-3 -mx-4 px-4" tabs={[
+        { value: 'library', label: t('composer.skills.configured'), count: visibleLibrary.length },
+        { value: 'reported', label: t('composer.skills.session'), count: visibleReported.length },
+      ]} />
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4">
       {view === 'library' ? <section>

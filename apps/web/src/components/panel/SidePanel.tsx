@@ -285,12 +285,12 @@ export function SidePanel({
                 <PanelLeft size={16} className={cx(treeOpen && 'text-accent')} />
               </IconButton>
               <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
-                <RefreshCw size={15} />
+                <RefreshCw size={14} />
               </IconButton>
             </>
           ) : null}
           <IconButton data-panel-initial-focus label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
-            <X size={17} />
+            <X size={16} />
           </IconButton>
         </div>
       </header>

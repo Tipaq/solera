@@ -77,7 +77,7 @@ export function SyntaxThemeControls() {
             {/* La coche occupe sa place même absente : la faire apparaître décalait
                 tout le reste de la case au moment du clic. */}
             <Check
-              size={13}
+              size={14}
               className={cx('shrink-0 text-accent', syntax === option ? '' : 'invisible')}
             />
           </button>

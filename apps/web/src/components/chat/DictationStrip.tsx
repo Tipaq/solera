@@ -111,7 +111,7 @@ export function DictationStrip({
           'bg-critical/12 text-critical transition-colors hover:bg-critical/20',
         )}
       >
-        <Square size={13} fill="currentColor" />
+        <Square size={14} fill="currentColor" />
       </TooltipButton>
     </div>
   )

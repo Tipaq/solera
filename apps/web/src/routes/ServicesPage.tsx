@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServicesDto } from '@solera/protocol'
 import { MobileNavigationButton } from '../components/MobileNavigation'
-import { Badge, Banner, Button, EmptyState, IconButton, Select } from '@solera/ui'
+import { Badge, Banner, Button, Card, CardBody, EmptyState, IconButton, Select } from '@solera/ui'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/attachments'
 import { useTranslate } from '../lib/i18n'
@@ -40,12 +40,12 @@ export function ServicesPage() {
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6">
         <MobileNavigationButton />
-        <Server size={19} className="shrink-0 text-ink-faint" />
+        <Server size={16} className="shrink-0 text-ink-faint" />
         <h1 className="text-lg font-semibold tracking-tight">{t('services.title')}</h1>
         {query.data?.supported ? <Badge>{services.length}</Badge> : null}
         <div className="ml-auto">
           <IconButton label={t('services.refresh')} disabled={query.isFetching} onClick={() => { void query.refetch() }}>
-            <RefreshCw size={17} />
+            <RefreshCw size={16} />
           </IconButton>
         </div>
       </header>
@@ -70,7 +70,7 @@ export function ServicesPage() {
                     const minutes = Math.max(0, Math.floor(((query.data?.scannedAt ?? service.startedAt) - service.startedAt) / 60000))
                     const duration = minutes < 60 ? t('services.minutes', { count: minutes }) : t('services.hours', { count: Math.floor(minutes / 60) })
                     return (
-                      <li key={service.id} className="surface flex min-w-0 flex-col gap-3 rounded-lg border border-line p-4">
+                      <li key={service.id} className="flex min-w-0"><Card className="flex min-w-0 flex-1 flex-col"><CardBody className="flex min-w-0 flex-1 flex-col gap-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span aria-hidden className="size-2 shrink-0 rounded-full bg-positive" />
                           <h2 className="min-w-0 break-all font-medium">{service.name}</h2>
@@ -97,10 +97,10 @@ export function ServicesPage() {
                         <div className="mt-auto flex flex-wrap items-center gap-2 border-t border-line pt-3 text-xs text-ink-faint">
                           <span title={new Date(service.startedAt).toLocaleString()}>{duration}</span>
                           <span aria-hidden>·</span><span>{formatBytes(service.memoryBytes)}</span>
-                          {service.canStop ? <Button className="ml-auto" variant="danger" size="sm" icon={<Square size={13} />} disabled={stop.isPending} onClick={() => stop.mutate(service.id)}>{t('services.stop')}</Button>
+                          {service.canStop ? <Button className="ml-auto" variant="danger" size="sm" icon={<Square size={14} />} disabled={stop.isPending} onClick={() => stop.mutate(service.id)}>{t('services.stop')}</Button>
                             : <span className="ml-auto" title={t(service.launcher ? 'services.launcherHint' : 'services.readOnlyHint')}>{t(service.launcher ? 'services.launcher' : 'services.readOnly')}</span>}
                         </div>
-                      </li>
+                      </CardBody></Card></li>
                     )
                   })}
                 </ul>}

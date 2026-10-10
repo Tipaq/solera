@@ -289,7 +289,7 @@ export function DraftConversationPage() {
           <Button
             variant="ghost"
             size="sm"
-            icon={<SquareKanban size={15} />}
+            icon={<SquareKanban size={14} />}
             onClick={() => navigate(`/p/${projectId}/board`)}
           >
             {t('draft.board')}
@@ -475,7 +475,7 @@ export function DraftConversationPage() {
                     onClick={() => void importAndOpen(session.sessionId)}
                     className="flex items-center gap-2.5 rounded-md border border-line px-3 py-2 text-left transition-colors hover:border-line-strong hover:bg-surface-high disabled:opacity-60"
                   >
-                    <History size={15} className="shrink-0 text-ink-faint" />
+                    <History size={16} className="shrink-0 text-ink-faint" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-ink">{session.title}</span>
                       {session.firstPrompt && session.firstPrompt !== session.title ? (

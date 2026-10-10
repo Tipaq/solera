@@ -243,7 +243,7 @@ function Tab({
         aria-label={t('editor.tab.close', { path })}
         className="flex size-11 items-center justify-center rounded text-ink-faint opacity-0 hover:text-ink group-hover/tab:opacity-100 focus-visible:opacity-100 md:size-6 pointer-coarse:size-11 pointer-coarse:opacity-100"
       >
-        <X size={12} />
+        <X size={14} />
       </TooltipButton>
     </div>
   )
@@ -281,7 +281,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
   if (mediaType) return <MediaView scope={scope} path={path} type={mediaType} />
   if (isModel) {
     return <Suspense fallback={<div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">
-      <Loader size={20} className="animate-spin" aria-label={t('editor.loading')} />
+      <Loader size={22} className="animate-spin" aria-label={t('editor.loading')} />
     </div>}>
       <ModelView scope={scope} path={path} />
     </Suspense>
@@ -292,7 +292,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
       <Banner>{error.message}</Banner>
       <Button size="sm" variant="ghost" className="mt-2" disabled={loading} onClick={() => void load()}>{t('editor.retry')}</Button>
     </div> : <div className="flex min-h-0 flex-1 items-center justify-center text-ink-faint">
-      <Loader size={20} className="animate-spin" aria-label={t('editor.loading')} />
+      <Loader size={22} className="animate-spin" aria-label={t('editor.loading')} />
     </div>
   }
 
@@ -347,12 +347,12 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         {dirty ? <p>{t(persisted ? 'editor.drafts.kept' : 'editor.drafts.memory')}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-1">
           {isMarkdown && view === 'preview' ? null : <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton>}
-          {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={13} /> : <Eye size={13} />}
+          {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={14} /> : <Eye size={14} />}
             onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}>
             {t(view === 'preview' ? 'editor.markdown.source' : 'editor.markdown.preview')}
           </Button> : null}
           {dirty && !conflict ? <Button size="sm" variant="ghost" aria-label={t('editor.discard')} title={t('editor.discard')} disabled={saving || loading} onClick={discard}>{t('editor.discard.short')}</Button> : null}
-          <Button size="sm" variant={dirty ? 'primary' : 'ghost'} icon={saving ? <Loader size={13} className="animate-spin" /> : <Save size={13} />}
+          <Button size="sm" variant={dirty ? 'primary' : 'ghost'} icon={saving ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
             disabled={!dirty || saving || loading || conflict} onClick={() => void save()}>{t(saving ? 'editor.saving' : 'editor.save')}</Button>
         </div>
       </div>

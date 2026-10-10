@@ -97,7 +97,7 @@ export function MenuCheckboxItem({
       )}
     >
       <DropdownMenu.ItemIndicator className="absolute left-2 flex items-center">
-        <Check size={13} />
+        <Check size={16} />
       </DropdownMenu.ItemIndicator>
       {children}
     </DropdownMenu.CheckboxItem>

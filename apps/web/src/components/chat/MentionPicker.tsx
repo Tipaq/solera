@@ -65,7 +65,7 @@ export function MentionPicker({
               index === active ? 'bg-accent-wash text-ink' : 'text-ink-soft',
             )}
           >
-            <FileCode size={13} className="shrink-0 text-ink-faint" />
+            <FileCode size={14} className="shrink-0 text-ink-faint" />
             <span className="shrink-0">{file.name}</span>
             <span className="min-w-0 flex-1 truncate text-right font-mono text-meta text-ink-faint">
               {file.path}

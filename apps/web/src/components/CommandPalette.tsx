@@ -169,7 +169,7 @@ export function CommandPalette({
               className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
             {searching && isFetching ? (
-              <Loader size={15} className="shrink-0 animate-spin text-ink-faint" />
+              <Loader size={16} className="shrink-0 animate-spin text-ink-faint" />
             ) : null}
 
             {/* Au doigt la palette occupe tout l'écran : il n'y a ni touche Échap ni
@@ -180,7 +180,7 @@ export function CommandPalette({
               className="sm:hidden"
               onClick={() => onOpenChange(false)}
             >
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </div>
 

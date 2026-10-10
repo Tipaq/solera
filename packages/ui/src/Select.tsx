@@ -114,7 +114,7 @@ export function Select<T extends string>({
                     ) : null}
                   </span>
                   <RadixSelect.ItemIndicator className="absolute right-2.5 text-accent">
-                    <Check size={15} />
+                    <Check size={16} />
                   </RadixSelect.ItemIndicator>
                 </RadixSelect.Item>
               ))}

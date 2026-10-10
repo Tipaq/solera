@@ -200,24 +200,24 @@ export function FileTree({
         {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
         <RootAction
           label={t('filetree.root.newFile')}
-          icon={<FilePlus2 size={13} />}
+          icon={<FilePlus2 size={14} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'file' })}
         />
         <RootAction
           label={t('filetree.root.newFolder')}
-          icon={<FolderPlus size={13} />}
+          icon={<FolderPlus size={14} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'directory' })}
         />
         <RootAction
           label={t('filetree.root.upload')}
-          icon={<Upload size={13} />}
+          icon={<Upload size={14} />}
           onClick={() => openPicker('')}
         />
       </div>
       <div className="flex items-center gap-1 px-2 pb-1.5">
         <div className="relative min-w-0 flex-1">
           <Search
-            size={13}
+            size={14}
             className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-faint"
           />
           <input
@@ -242,7 +242,7 @@ export function FileTree({
               aria-label={t('filetree.search.clear')}
               className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
             >
-              <X size={12} />
+              <X size={14} />
             </TooltipButton>
           ) : null}
         </div>
@@ -828,7 +828,7 @@ function Entry({
             >
               {entry.isDirectory ? (
                 <ChevronRight
-                  size={12}
+                  size={14}
                   className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
                 />
               ) : (

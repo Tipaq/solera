@@ -155,7 +155,7 @@ function SecretCard({ secret }: { secret: Secret }) {
         <Button
           size="sm"
           variant="danger"
-          icon={<Trash2 size={15} />}
+          icon={<Trash2 size={14} />}
           onClick={() => setConfirming(true)}
         >
           {t('secrets.action.delete')}

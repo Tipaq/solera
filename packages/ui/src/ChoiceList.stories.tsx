@@ -8,13 +8,13 @@ const SCOPES: Choice<string>[] = [
     value: 'worktree',
     label: 'Worktree dédié',
     hint: 'Une branche par session, isolée du dossier principal.',
-    icon: <GitBranch size={15} />,
+    icon: <GitBranch size={16} />,
   },
   {
     value: 'clone',
     label: 'Clone complet',
     hint: 'Un dossier séparé, plus lent à créer.',
-    icon: <Copy size={15} />,
+    icon: <Copy size={16} />,
   },
 ]
 

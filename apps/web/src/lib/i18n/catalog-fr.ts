@@ -87,6 +87,7 @@ export const fr: Catalog = {
   'settings.group.administration': 'Administration',
 
   'board.editor.saveBeforeLaunch': 'Enregistre les modifications avant de lancer une session.',
+  "board.editor.mode": "Mode d'édition",
   "board.editor.preview": "Aperçu",
   "board.editor.write": "Écrire",
   "board.editor.emptyPreview": "Rien à prévisualiser pour le moment.",

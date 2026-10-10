@@ -100,10 +100,10 @@ function summarize(name: string, input: unknown): ToolSummary | null {
  * n'existe pas.
  */
 export function ToolStatusIcon({ status }: { status: ToolItem['status'] }) {
-  if (status === 'running') return <Loader size={13} className="shrink-0 animate-spin text-accent" />
-  if (status === 'failed') return <CircleAlert size={13} className="shrink-0 text-critical" />
-  if (status === 'interrupted') return <CircleSlash size={13} className="shrink-0 text-ink-faint" />
-  return <CircleCheck size={13} className="shrink-0 text-positive" />
+  if (status === 'running') return <Loader size={14} className="shrink-0 animate-spin text-accent" />
+  if (status === 'failed') return <CircleAlert size={14} className="shrink-0 text-critical" />
+  if (status === 'interrupted') return <CircleSlash size={14} className="shrink-0 text-ink-faint" />
+  return <CircleCheck size={14} className="shrink-0 text-positive" />
 }
 
 /**

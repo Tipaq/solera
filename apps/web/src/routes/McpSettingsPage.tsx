@@ -339,7 +339,7 @@ function RowList({
             size="sm"
             onClick={() => onChange(rows.filter((other) => other.id !== row.id))}
           >
-            <X size={15} />
+            <X size={14} />
           </IconButton>
         </div>
       ))}
@@ -418,7 +418,7 @@ function ServerCard({ server, canEdit }: { server: McpServer; canEdit: boolean }
               <Button
                 size="sm"
                 variant="danger"
-                icon={<Trash2 size={15} />}
+                icon={<Trash2 size={14} />}
                 onClick={() => setConfirming(true)}
               >
                 {t('mcp.action.delete')}

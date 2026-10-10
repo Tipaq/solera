@@ -17,9 +17,9 @@ import { cx } from '@solera/ui'
 
 /** Icône et teinte par nature de changement. */
 export const ACTIONS: Record<EditedFile['action'], { icon: ReactNode; tone: string }> = {
-  created: { icon: <FilePlus2 size={12} />, tone: 'text-positive' },
-  modified: { icon: <Pencil size={12} />, tone: 'text-caution' },
-  deleted: { icon: <FileX2 size={12} />, tone: 'text-critical' },
+  created: { icon: <FilePlus2 size={14} />, tone: 'text-positive' },
+  modified: { icon: <Pencil size={14} />, tone: 'text-caution' },
+  deleted: { icon: <FileX2 size={14} />, tone: 'text-critical' },
 }
 
 /** Statuts d'un diff ramenés au vocabulaire des trois actions du journal. */
@@ -64,7 +64,7 @@ export function FileDiff({
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-high"
       >
         <ChevronRight
-          size={12}
+          size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
         <span className={cx('shrink-0', action.tone)}>{action.icon}</span>

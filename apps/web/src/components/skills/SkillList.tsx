@@ -23,12 +23,15 @@ export function SkillList({ skills, showScope = false }: { skills: LibrarySkillD
 function SkillRow({ skill, showScope }: { skill: LibrarySkillDto; showScope: boolean }) {
   const t = useTranslate()
   return (
+    // Carte écrite à la main, et c'est le seul site qui reste : celle-ci est un lien
+    // qui s'éclaire au survol, et `Card` n'a pas de variante interactive. Une seule
+    // occurrence ne justifie pas de l'ajouter — voir §14.
     <Link
       to={`/skills/${skill.id}`}
       className="surface flex items-start gap-3 rounded-lg border border-line px-4 py-3 transition-colors hover:border-line-strong"
     >
       <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-wash text-accent">
-        <BookOpen size={15} />
+        <BookOpen size={16} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="flex flex-wrap items-center gap-2">

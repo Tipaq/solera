@@ -67,7 +67,7 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
               {sessions}
             </span>
           ) : null}
-          {card.attachmentCount > 0 ? <span className="inline-flex items-center gap-1" title={t('board.files.title')}><Paperclip size={12} />{card.attachmentCount}</span> : null}
+          {card.attachmentCount > 0 ? <span className="inline-flex items-center gap-1" title={t('board.files.title')}><Paperclip size={11} />{card.attachmentCount}</span> : null}
           {links > 0 ? (
             <span
               className="inline-flex items-center gap-1"

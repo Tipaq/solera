@@ -126,7 +126,7 @@ function GroupField({ group }: { group: SettingGroup }) {
       />
       {selected?.tone === 'caution' ? (
         <p className="flex items-start gap-1.5 text-xs text-caution">
-          <ShieldAlert size={13} className="mt-0.5 shrink-0" />
+          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
           <span>{selected.hint}</span>
         </p>
       ) : null}

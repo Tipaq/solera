@@ -103,7 +103,7 @@ function WorkingDiff({
       <SectionTitle
         action={
           <IconButton label={t('changes.diff.recalculate')} size="sm" onClick={onRefresh}>
-            <RefreshCw size={13} className={cx(isFetching && 'animate-spin')} />
+            <RefreshCw size={14} className={cx(isFetching && 'animate-spin')} />
           </IconButton>
         }
       >
@@ -244,10 +244,10 @@ function Commit({
         title={new Date(commit.ts).toLocaleString(locale())}
       >
         <ChevronRight
-          size={12}
+          size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        <GitCommitHorizontal size={12} className="shrink-0 text-ink-faint" />
+        <GitCommitHorizontal size={14} className="shrink-0 text-ink-faint" />
         <span className="shrink-0 font-mono text-micro text-ink-faint">
           {commit.shortHash}
         </span>

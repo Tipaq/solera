@@ -135,7 +135,7 @@ function Note({
             remove.mutate(note.id)
           }}
         >
-          <Trash2 size={13} />
+          <Trash2 size={14} />
         </IconButton>
       </div>
       <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-ink-soft">{note.body}</p>

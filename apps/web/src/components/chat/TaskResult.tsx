@@ -30,7 +30,7 @@ export function TaskResult({ item }: { item: TaskItem }) {
           size={14}
           className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
         />
-        <Waves size={13} className={cx('shrink-0', item.status === 'failed' ? 'text-critical' : 'text-ink-faint')} />
+        <Waves size={14} className={cx('shrink-0', item.status === 'failed' ? 'text-critical' : 'text-ink-faint')} />
 
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-ink">{item.description}</span>

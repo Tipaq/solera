@@ -48,7 +48,7 @@ export function UpdateDialog({
               ) : null}
             </div>
             <IconButton label={t('skills.dialog.close')} disabled={apply.isPending} onClick={onClose}>
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </header>
 

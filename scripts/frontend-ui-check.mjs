@@ -169,16 +169,16 @@ try {
   const addNote = page.getByRole('button', { name: 'Ajouter une note', exact: true })
   const noteA = 'Une note à conserver après fermeture.'
   const noteB = 'Une deuxième note écrite pendant la publication.'
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await noteField.fill(noteA)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.reload()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await noteField.waitFor()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   const noteEndpoint = `**/api/cards/${card.id}/notes`
   await page.route(noteEndpoint, (route) => route.request().method() === 'POST'
@@ -186,7 +186,7 @@ try {
     : route.continue())
   await addNote.click()
   await page.getByRole('alert').filter({ hasText: 'La note n’a pas été enregistrée.' }).waitFor()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.unroute(noteEndpoint)
   let releaseNote, noteSent
@@ -201,7 +201,7 @@ try {
   await noteField.fill(noteB)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await page.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   releaseNote()
   await page.getByText(noteA, { exact: true }).waitFor()
@@ -215,7 +215,7 @@ try {
   await page.getByText(noteA, { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardNoteDraft:')).length), 0)
   await page.reload()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await page.getByText(noteB, { exact: true }).waitFor()
   console.log('OK : lecture de carte, brouillons de notes, échec de publication et dernière note en premier.')
 

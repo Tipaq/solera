@@ -46,7 +46,7 @@ export function SkillDialog({
           <header className="flex items-center justify-between border-b border-line px-5 py-4">
             <Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>
             <IconButton label={t('skills.dialog.close')} disabled={busy} onClick={onClose}>
-              <X size={18} />
+              <X size={16} />
             </IconButton>
           </header>
           <form className="flex min-h-0 flex-col" onSubmit={submit}>

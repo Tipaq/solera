@@ -17,11 +17,11 @@ import { Badge, EmptyState } from '@solera/ui'
  */
 
 const STATE_ICONS: Record<McpServerState, ReactNode> = {
-  pending: <Loader size={13} />,
-  connected: <CircleCheck size={13} />,
-  failed: <CircleAlert size={13} />,
-  'needs-auth': <KeyRound size={13} />,
-  disabled: <Plug size={13} />,
+  pending: <Loader size={14} />,
+  connected: <CircleCheck size={14} />,
+  failed: <CircleAlert size={14} />,
+  'needs-auth': <KeyRound size={14} />,
+  disabled: <Plug size={14} />,
 }
 
 const STATE_LABELS: Record<McpServerState, MessageKey> = {

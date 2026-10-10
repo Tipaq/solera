@@ -11,9 +11,9 @@ import { Card, CardBody, CardHeader, cx } from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 
 const THEME_ICONS: Record<Theme, ReactNode> = {
-  light: <Sun size={15} />,
-  dark: <Moon size={15} />,
-  'dark-contrast': <Contrast size={15} />,
+  light: <Sun size={16} />,
+  dark: <Moon size={16} />,
+  'dark-contrast': <Contrast size={16} />,
 }
 
 export function AppearanceSection() {

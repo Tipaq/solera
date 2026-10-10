@@ -49,7 +49,7 @@ export function ModelView({ scope, path }: { scope: WorkspaceScope; path: string
       <div className="relative min-h-0 min-w-0 flex-1 bg-canvas">
         <div ref={host} className="absolute inset-0 overflow-hidden" />
         {state.status === 'loading' ? <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-ink-faint">
-          <Loader size={20} className="animate-spin" aria-label={t('editor.model.loading')} />
+          <Loader size={22} className="animate-spin" aria-label={t('editor.model.loading')} />
         </div> : null}
         {state.status === 'error' ? <div className="absolute inset-x-0 top-0 p-3">
           <Banner>{t('editor.model.error')} {state.message}</Banner>

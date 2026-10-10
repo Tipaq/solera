@@ -41,13 +41,13 @@ function useVisibilityOptions(): SelectOption<Visibility>[] {
     {
       value: 'private',
       label: t('project.visibility.private'),
-      icon: <Lock size={15} />,
+      icon: <Lock size={16} />,
       hint: t('project.visibility.private.hint'),
     },
     {
       value: 'shared',
       label: t('project.visibility.shared'),
-      icon: <Globe size={15} />,
+      icon: <Globe size={16} />,
       hint: t('project.visibility.shared.hint'),
     },
   ]
@@ -63,19 +63,19 @@ export function NewProjectPage() {
       value: 'new',
       label: t('projects.create.mode.new'),
       hint: t('projects.create.mode.new.hint'),
-      icon: <FolderPlus size={15} />,
+      icon: <FolderPlus size={16} />,
     },
     {
       value: 'existing',
       label: t('projects.create.mode.existing'),
       hint: t('projects.create.mode.existing.hint'),
-      icon: <FolderOpen size={15} />,
+      icon: <FolderOpen size={16} />,
     },
     {
       value: 'clone',
       label: t('projects.create.mode.clone'),
       hint: t('projects.create.mode.clone.hint'),
-      icon: <GitBranch size={15} />,
+      icon: <GitBranch size={16} />,
     },
   ]
 

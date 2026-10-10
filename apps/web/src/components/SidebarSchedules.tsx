@@ -72,7 +72,7 @@ export function SidebarSchedules({
               onClick={onNavigate}
               className="flex min-h-11 items-center gap-1.5 rounded-md px-1 text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11"
             >
-              <Plus size={13} className="shrink-0" />
+              <Plus size={16} className="shrink-0" />
               <span className="min-w-0 flex-1 truncate">{t('schedule.sidebar.empty')}</span>
             </NavLink>
           </li>

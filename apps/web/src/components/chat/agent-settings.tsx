@@ -199,9 +199,9 @@ const opencodePermissionChoice = (value: OpencodePermission): OpencodePermission
 
 /** Les familles réglables, dans l'ordre du panneau, avec leur intitulé et leur icône. */
 const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageKey; icon: ReactElement }[] = [
-  { family: 'edit', label: 'composer.setting.opencodeEdit', icon: <FilePen size={15} /> },
-  { family: 'bash', label: 'composer.setting.opencodeBash', icon: <SquareTerminal size={15} /> },
-  { family: 'webfetch', label: 'composer.setting.opencodeWebfetch', icon: <Globe size={15} /> },
+  { family: 'edit', label: 'composer.setting.opencodeEdit', icon: <FilePen size={14} /> },
+  { family: 'bash', label: 'composer.setting.opencodeBash', icon: <SquareTerminal size={14} /> },
+  { family: 'webfetch', label: 'composer.setting.opencodeWebfetch', icon: <Globe size={14} /> },
 ]
 
 /**
@@ -582,7 +582,7 @@ export function useAgentSettings({
       setting({
         key: 'model',
         label: t('composer.setting.model'),
-        icon: <Sparkles size={15} />,
+        icon: <Sparkles size={14} />,
         options: modelOptions,
         value: resolvedModel,
         onChange: (model) =>
@@ -603,7 +603,7 @@ export function useAgentSettings({
             setting({
               key: 'effort',
               label: t('composer.setting.effort'),
-              icon: <Brain size={15} />,
+              icon: <Brain size={14} />,
               options: effortOptions,
               value: claude.effort,
               onChange: (effort) => {
@@ -620,7 +620,7 @@ export function useAgentSettings({
             setting({
               key: 'speed',
               label: t('composer.setting.speed'),
-              icon: <Zap size={15} />,
+              icon: <Zap size={14} />,
               options: speedOptionList,
               value: claude.fastMode ? 'fast' : 'standard',
               onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
@@ -632,7 +632,7 @@ export function useAgentSettings({
             setting({
               key: 'ultracode',
               label: t('composer.setting.ultracode'),
-              icon: <UsersRound size={15} />,
+              icon: <UsersRound size={14} />,
               options: ultracodeOptionList,
               value: claude.ultracode ? 'on' : 'off',
               // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
@@ -644,7 +644,7 @@ export function useAgentSettings({
       setting({
         key: 'permission',
         label: t('composer.setting.permission'),
-        icon: <ShieldCheck size={15} />,
+        icon: <ShieldCheck size={14} />,
         options: permissionOptionList,
         value: claude.permissionMode,
         onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
@@ -668,7 +668,7 @@ export function useAgentSettings({
             setting({
               key: 'outputStyle',
               label: t('composer.setting.outputStyle'),
-              icon: <MessageSquareText size={15} />,
+              icon: <MessageSquareText size={14} />,
               options: outputStyleOptions,
               value: claude.outputStyle || CLI_DEFAULT_CHOICE,
               onChange: (style) =>
@@ -681,7 +681,7 @@ export function useAgentSettings({
             setting({
               key: 'advisor',
               label: t('composer.setting.advisor'),
-              icon: <UserRoundSearch size={15} />,
+              icon: <UserRoundSearch size={14} />,
               options: advisorOptions,
               value: claude.advisorModel || CLI_DEFAULT_CHOICE,
               onChange: (model) =>
@@ -694,7 +694,7 @@ export function useAgentSettings({
             setting({
               key: 'skillLibrary',
               label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={15} />,
+              icon: <BookOpen size={14} />,
               options: libraryOptionList,
               value: libraryChoice(claude.skillLibrary),
               onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
@@ -741,7 +741,7 @@ export function useAgentSettings({
       setting({
         key: 'model',
         label: t('composer.setting.model'),
-        icon: <Sparkles size={15} />,
+        icon: <Sparkles size={14} />,
         options: modelOptions,
         value: resolvedModel,
         onChange: (model) =>
@@ -756,7 +756,7 @@ export function useAgentSettings({
             setting({
               key: 'mode',
               label: t('composer.setting.mode'),
-              icon: <Compass size={15} />,
+              icon: <Compass size={14} />,
               options: codexModeOptions,
               value: codex.collaborationMode,
               onChange: (collaborationMode) => onConfigChange({ ...codex, collaborationMode }),
@@ -768,7 +768,7 @@ export function useAgentSettings({
             setting({
               key: 'effort',
               label: t('composer.setting.effort'),
-              icon: <Brain size={15} />,
+              icon: <Brain size={14} />,
               options: effortOptions,
               value: resolvedEffort,
               onChange: (reasoningEffort) => onConfigChange({ ...codex, reasoningEffort }),
@@ -778,7 +778,7 @@ export function useAgentSettings({
       setting({
         key: 'approval',
         label: t('composer.setting.approval'),
-        icon: <ShieldCheck size={15} />,
+        icon: <ShieldCheck size={14} />,
         options: approvalOptions,
         value: approvalValue,
         onChange: (choice) => {
@@ -794,7 +794,7 @@ export function useAgentSettings({
       setting({
         key: 'sandbox',
         label: t('composer.setting.sandbox'),
-        icon: <Box size={15} />,
+        icon: <Box size={14} />,
         options: sandboxOptionList,
         value: codex.sandbox,
         onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
@@ -805,7 +805,7 @@ export function useAgentSettings({
             setting({
               key: 'skillLibrary',
               label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={15} />,
+              icon: <BookOpen size={14} />,
               options: libraryOptionList,
               value: libraryChoice(codex.skillLibrary),
               onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
@@ -846,7 +846,7 @@ export function useAgentSettings({
       setting({
         key: 'model',
         label: t('composer.setting.model'),
-        icon: <Sparkles size={15} />,
+        icon: <Sparkles size={14} />,
         options: modelOptions,
         value: resolvedModel,
         // Une variante que le nouveau modèle ne connaît pas retombe sur ses réglages
@@ -857,7 +857,7 @@ export function useAgentSettings({
       setting({
         key: 'mode',
         label: t('composer.setting.primaryAgent'),
-        icon: <Compass size={15} />,
+        icon: <Compass size={14} />,
         options: primaryAgentOptions,
         value: opencode.primaryAgent,
         onChange: (primaryAgent) => onConfigChange({ ...opencode, primaryAgent }),
@@ -867,7 +867,7 @@ export function useAgentSettings({
             setting({
               key: 'effort',
               label: t('composer.setting.variant'),
-              icon: <Brain size={15} />,
+              icon: <Brain size={14} />,
               options: variantOptions,
               value: variant,
               onChange: (choice) =>
@@ -908,7 +908,7 @@ export function useAgentSettings({
             setting({
               key: 'skillLibrary',
               label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={15} />,
+              icon: <BookOpen size={14} />,
               options: libraryOptionList,
               value: libraryChoice(opencode.skillLibrary),
               onChange: (choice) => onConfigChange({ ...opencode, skillLibrary: choice === 'on' }),

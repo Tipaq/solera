@@ -100,6 +100,7 @@ export const en = {
   'settings.group.administration': 'Administration',
 
   'board.editor.saveBeforeLaunch': 'Save your changes before starting a session.',
+  "board.editor.mode": "Editing mode",
   "board.editor.preview": "Preview",
   "board.editor.write": "Write",
   "board.editor.emptyPreview": "Nothing to preview yet.",

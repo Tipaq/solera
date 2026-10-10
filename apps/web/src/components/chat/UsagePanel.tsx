@@ -53,7 +53,7 @@ function UsageContent({ agent }: { agent: AgentKind }) {
         </IconButton>
         <Dialog.Close asChild>
           <IconButton label={t('usage.close')}>
-            <X size={18} />
+            <X size={16} />
           </IconButton>
         </Dialog.Close>
       </header>

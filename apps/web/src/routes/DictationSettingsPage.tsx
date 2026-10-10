@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import { KeyRound, Mic, RadioTower, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Select, cx } from '@solera/ui'
+import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Presets, Select } from '@solera/ui'
 import { SectionHeader } from './SettingsPage'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
@@ -110,27 +110,20 @@ export function DictationSettingsPage() {
         <CardHeader title={t('stt.provider.title')} icon={<Mic size={16} />} />
         <CardBody>
           <form onSubmit={submit} className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-1.5">
-              {PRESETS.map((preset) => (
-                <button
-                  key={preset.name}
-                  type="button"
-                  onClick={() => {
-                    setBaseUrl(preset.baseUrl)
-                    setModel(preset.model)
-                    setCleanupModel(preset.cleanupModel)
-                  }}
-                  className={cx(
-                    'rounded-md border px-2 py-0.5 text-xs transition-colors',
-                    preset.baseUrl === baseUrl && preset.model === model
-                      ? 'border-accent bg-accent-wash text-ink'
-                      : 'border-line text-ink-faint hover:border-line-strong hover:text-ink-soft',
-                  )}
-                >
-                  {preset.name}
-                </button>
-              ))}
-            </div>
+            <Presets
+              label={t('stt.provider.title')}
+              // Retenu quand le couple adresse + modèle correspond : le modèle de
+              // nettoyage se règle ensuite à part, et ne décide pas du fournisseur.
+              selected={PRESETS.find((preset) => preset.baseUrl === baseUrl && preset.model === model)?.name}
+              presets={PRESETS.map((preset) => ({ key: preset.name, label: preset.name }))}
+              onSelect={(name) => {
+                const preset = PRESETS.find((entry) => entry.name === name)
+                if (!preset) return
+                setBaseUrl(preset.baseUrl)
+                setModel(preset.model)
+                setCleanupModel(preset.cleanupModel)
+              }}
+            />
 
             <Field
               label={t('stt.baseUrl.label')}

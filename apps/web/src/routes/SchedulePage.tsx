@@ -5,7 +5,7 @@ import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@sole
 import { AgentIcon } from '../components/AgentIcon'
 import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
-import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
+import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
@@ -78,14 +78,14 @@ export function SchedulePage() {
         )}
       >
         <MobileNavigationButton />
-        <CalendarClock size={19} className="shrink-0 text-ink-faint" />
+        <CalendarClock size={16} className="shrink-0 text-ink-faint" />
         <div className="min-w-0">
           <h1 className="text-lg font-semibold tracking-tight">{t('schedule.title')}</h1>
           {project ? <p className="truncate text-xs text-ink-faint">{project.name}</p> : null}
         </div>
         {tasks.length > 0 ? <Badge>{tasks.length}</Badge> : null}
         <div className="ml-auto">
-          <Button size="sm" icon={<Plus size={15} />} disabled={!project} onClick={() => setEditing('new')}>
+          <Button size="sm" icon={<Plus size={14} />} disabled={!project} onClick={() => setEditing('new')}>
             {t('schedule.new')}
           </Button>
         </div>
@@ -138,7 +138,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const error = update.error ?? run.error ?? remove.error
 
   return (
-    <li className="surface flex min-w-0 flex-col gap-3 rounded-lg border border-line p-4" data-schedule={task.name}>
+    <li className="flex min-w-0" data-schedule={task.name}><Card className="flex min-w-0 flex-1 flex-col"><CardBody className="flex min-w-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <AgentIcon agent={task.agent} size={16} />
         <h2 className="min-w-0 flex-1 font-medium break-words">{task.name}</h2>
@@ -207,7 +207,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
           onClick={() => setHistoryOpen((current) => !current)}
           className="flex min-h-9 items-center gap-1 rounded px-1 text-xs text-ink-faint transition-colors hover:text-ink-soft"
         >
-          <ChevronRight size={12} className={cx('transition-transform', historyOpen && 'rotate-90')} />
+          <ChevronRight size={14} className={cx('transition-transform', historyOpen && 'rotate-90')} />
           {t('schedule.history', { count: task.runs.length })}
         </button>
         {historyOpen ? (
@@ -234,7 +234,7 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
       >
         <p>{t('schedule.delete.body')}</p>
       </ConfirmDialog>
-    </li>
+    </CardBody></Card></li>
   )
 }
 
@@ -270,7 +270,7 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
           className={cx(className, 'transition-colors hover:bg-surface-high hover:text-ink')}
         >
           {body}
-          <ArrowUpRight size={13} className="ml-auto shrink-0" />
+          <ArrowUpRight size={14} className="ml-auto shrink-0" />
         </Link>
       ) : (
         <div className={className}>{body}</div>

@@ -270,12 +270,12 @@ interface TodoState {
   tone: string
 }
 
-const WAITING: TodoState = { icon: <Circle size={12} />, tone: 'text-ink-faint' }
+const WAITING: TodoState = { icon: <Circle size={14} />, tone: 'text-ink-faint' }
 
 const TODO_STATES: Record<string, TodoState> = {
   pending: WAITING,
-  in_progress: { icon: <CircleDot size={12} />, tone: 'text-accent' },
-  completed: { icon: <CircleCheck size={12} />, tone: 'text-positive' },
+  in_progress: { icon: <CircleDot size={14} />, tone: 'text-accent' },
+  completed: { icon: <CircleCheck size={14} />, tone: 'text-positive' },
 }
 
 const todos: ToolView = (tool) => {

@@ -172,30 +172,30 @@ function SkillEditor({
                   {t('skills.editor.discard')}
                 </Button>
               ) : null}
-              <Button size="sm" icon={<Save size={15} />} disabled={!dirty || !valid || update.isPending} onClick={save}>
+              <Button size="sm" icon={<Save size={14} />} disabled={!dirty || !valid || update.isPending} onClick={save}>
                 {update.isPending ? t('skills.editor.saving') : t('skills.editor.save')}
               </Button>
             </>
           ) : null}
-          <Menu trigger={<IconButton label={t('skills.editor.actions')}><MoreHorizontal size={18} /></IconButton>}>
+          <Menu trigger={<IconButton label={t('skills.editor.actions')}><MoreHorizontal size={16} /></IconButton>}>
             {canWrite ? (
-              <MenuItem icon={<Power size={15} />} onSelect={() => update.mutate({ id: skill.id, enabled: !skill.enabled })}>
+              <MenuItem icon={<Power size={16} />} onSelect={() => update.mutate({ id: skill.id, enabled: !skill.enabled })}>
                 {t(skill.enabled ? 'skills.action.disable' : 'skills.action.enable')}
               </MenuItem>
             ) : null}
-            <MenuItem icon={<Download size={15} />} onSelect={() => { window.location.href = exportUrl(skill.id) }}>
+            <MenuItem icon={<Download size={16} />} onSelect={() => { window.location.href = exportUrl(skill.id) }}>
               {t('skills.action.export')}
             </MenuItem>
-            <MenuItem icon={<Copy size={15} />} disabled={permissions.destinations.length === 0} onSelect={() => setDialog('duplicate')}>
+            <MenuItem icon={<Copy size={16} />} disabled={permissions.destinations.length === 0} onSelect={() => setDialog('duplicate')}>
               {t('skills.action.duplicate')}
             </MenuItem>
             {canWrite ? (
               <>
-                <MenuItem icon={<FolderInput size={15} />} disabled={elsewhere.length === 0 || dirty} onSelect={() => setDialog('move')}>
+                <MenuItem icon={<FolderInput size={16} />} disabled={elsewhere.length === 0 || dirty} onSelect={() => setDialog('move')}>
                   {t('skills.action.move')}
                 </MenuItem>
                 <MenuSeparator />
-                <MenuItem icon={<Trash2 size={15} />} tone="critical" onSelect={() => setDialog('delete')}>
+                <MenuItem icon={<Trash2 size={16} />} tone="critical" onSelect={() => setDialog('delete')}>
                   {t('skills.action.delete')}
                 </MenuItem>
               </>

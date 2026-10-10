@@ -283,7 +283,7 @@ export function BoardPage() {
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
-            <Search size={15} className="shrink-0 text-ink-faint" />
+            <Search size={16} className="shrink-0 text-ink-faint" />
             <input type="search" value={query} onChange={(event) => {
               const value = event.target.value
               setQuery(value)
@@ -493,7 +493,7 @@ function BoardColumn({
         </SortableContext>
 
         {cards.length === 0 && !adding ? (
-          <button type="button" onClick={() => setAdding(true)} className="mx-1 flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line p-4 text-xs text-ink-faint hover:border-line-strong hover:text-ink"><Plus size={18} />{t('board.card.new')}</button>
+          <button type="button" onClick={() => setAdding(true)} className="mx-1 flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line p-4 text-xs text-ink-faint hover:border-line-strong hover:text-ink"><Plus size={22} />{t('board.card.new')}</button>
         ) : null}
       </div>
     </section>

@@ -88,7 +88,7 @@ export function RepoCombobox({
             'transition-colors focus-within:border-accent hover:border-line-strong',
           )}
         >
-          <GitBranch size={15} className="shrink-0 text-ink-faint" />
+          <GitBranch size={16} className="shrink-0 text-ink-faint" />
           <input
             id={id}
             role="combobox"
@@ -139,9 +139,9 @@ export function RepoCombobox({
                   )}
                 >
                   {repo.isPrivate ? (
-                    <Lock size={13} className="shrink-0 text-ink-faint" />
+                    <Lock size={14} className="shrink-0 text-ink-faint" />
                   ) : (
-                    <Globe size={13} className="shrink-0 text-ink-faint" />
+                    <Globe size={14} className="shrink-0 text-ink-faint" />
                   )}
                   <span className="shrink-0 font-medium">{repo.name}</span>
                   <span className="min-w-0 flex-1 truncate text-right text-xs text-ink-faint">

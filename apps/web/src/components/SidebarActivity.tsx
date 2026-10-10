@@ -8,7 +8,7 @@ import { isUnread } from '../lib/reads'
 import { useTranslate } from '../lib/i18n'
 import { AgentIcon } from './AgentIcon'
 import { ProjectAvatar } from './ProjectAvatar'
-import { cx, IconButton } from '@solera/ui'
+import { cx, IconButton, Tabs } from '@solera/ui'
 
 type ActivityEntry = {
   conversation: ConversationDto
@@ -74,18 +74,18 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
       <div className="mb-2 flex shrink-0 flex-col border-b border-line pb-2" role="group" aria-label={t('shell.activity.label')}>
         <div className="flex items-center gap-1">
           <IconButton size="sm" label={t(collapsed ? 'shell.overview.expand' : 'shell.overview.collapse')} onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed} aria-controls="global-activity-projects">
-            <ChevronRight size={13} className={cx('transition-transform', !collapsed && 'rotate-90')} />
+            <ChevronRight size={14} className={cx('transition-transform', !collapsed && 'rotate-90')} />
           </IconButton>
           <button type="button" onClick={() => show()} aria-haspopup="dialog" className="flex min-h-11 md:min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-xs hover:bg-surface-high">
             <span className="font-semibold text-ink-soft">{t('shell.overview.heading')}</span>
             <span className={cx('ml-auto flex items-center gap-1.5 rounded-full px-2 py-1 tabular-nums', running.length > 0 ? 'bg-accent-wash text-accent' : 'text-ink-faint')}>
               {running.length > 0 && <RunningDot />}{t('shell.overview.runningCount', { count: running.length })}
             </span>
-            <ArrowUpRight size={12} className="shrink-0 text-ink-faint" />
+            <ArrowUpRight size={14} className="shrink-0 text-ink-faint" />
           </button>
         </div>
         {awaiting.length > 0 && <button type="button" onClick={() => show('awaiting')} className="flex min-h-11 md:min-h-9 items-center gap-2 rounded-md px-2 text-xs text-caution hover:bg-surface-high">
-          <MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}<ChevronRight size={12} className="ml-auto" />
+          <MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}<ChevronRight size={14} className="ml-auto" />
         </button>}
         {!collapsed && <div id="global-activity-projects" className="max-h-[32dvh] overflow-y-auto">
           {rows(active.slice(0, 4), true)}
@@ -95,7 +95,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
           <button type="button" onClick={() => show()} className="min-h-11 md:min-h-8 rounded px-1 text-left text-meta text-ink-faint hover:bg-surface-high hover:text-ink">
             {t(!collapsed && active.length > 4 ? 'shell.overview.moreActive' : 'shell.overview.show', { count: active.length - 4 })}
           </button>
-          <button type="button" onClick={() => show('unread')} aria-label={t('shell.overview.unreadCount', { count: unread.length })} className="flex min-h-11 md:min-h-8 items-center gap-1 rounded px-1 text-xs tabular-nums text-ink-faint hover:bg-surface-high hover:text-ink"><Inbox size={13} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
+          <button type="button" onClick={() => show('unread')} aria-label={t('shell.overview.unreadCount', { count: unread.length })} className="flex min-h-11 md:min-h-8 items-center gap-1 rounded px-1 text-xs tabular-nums text-ink-faint hover:bg-surface-high hover:text-ink"><Inbox size={14} />{t('shell.overview.unreadCount', { count: unread.length })}</button>
         </div>
       </div>
       <div id="sidebar-activity-results" className="min-h-0 flex-1 overflow-y-auto pb-4">{children}</div>
@@ -106,17 +106,20 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
           <Dialog.Content onCloseAutoFocus={(event) => {
             event.preventDefault()
             returnFocus.current?.focus()
-          }} className="fixed top-[8dvh] left-1/2 z-50 flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
+          }}
+          /* Le gabarit de dialogue du §9 : feuille en bas au doigt, boîte centrée au
+             large. Il était centré même au doigt, et en `bg-surface` — donc sans le
+             dégradé signature que porte `.surface`. */
+          className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col overflow-hidden rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(672px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
             <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-4 pb-3">
               <div><Dialog.Title className="text-heading font-semibold">{t('shell.overview.overview')}</Dialog.Title><Dialog.Description className="mt-1 text-xs text-ink-faint">{t('shell.overview.scope')}</Dialog.Description></div>
-              <Dialog.Close asChild><IconButton label={t('common.close')}><X size={17} /></IconButton></Dialog.Close>
+              <Dialog.Close asChild><IconButton label={t('common.close')}><X size={16} /></IconButton></Dialog.Close>
             </div>
-            <div className="flex shrink-0 gap-1 border-b border-line px-4" role="group" aria-label={t('shell.overview.overview')}>
-              {(['all', 'awaiting', 'unread'] as const).map((item) => <button type="button" key={item} aria-pressed={view === item} onClick={() => setView(item)} className={cx('min-h-11 flex flex-1 items-center justify-center gap-2 border-b-2 px-1 py-2 text-xs transition-colors', view === item ? 'border-accent font-semibold text-ink' : 'border-transparent text-ink-faint hover:text-ink')}>
-                {t(item === 'all' ? 'shell.overview.all' : item === 'awaiting' ? 'shell.activity.awaiting' : 'shell.activity.unread')}
-                {item !== 'all' && <span className={cx('rounded px-1.5 py-0.5 tabular-nums', item === 'awaiting' && awaiting.length > 0 ? 'bg-caution/10 text-caution' : 'bg-surface-high text-ink-soft')}>{item === 'awaiting' ? awaiting.length : unread.length}</span>}
-              </button>)}
-            </div>
+            <Tabs label={t('shell.overview.overview')} value={view} onChange={setView} layout="fill" className="px-4" tabs={[
+              { value: 'all', label: t('shell.overview.all') },
+              { value: 'awaiting', label: t('shell.activity.awaiting'), count: awaiting.length, tone: awaiting.length > 0 ? 'caution' : 'neutral' },
+              { value: 'unread', label: t('shell.activity.unread'), count: unread.length },
+            ]} />
             <div className="min-h-0 overflow-y-auto px-4 py-4 space-y-5">
               {view !== 'unread' && awaiting.length > 0 && <section aria-label={t('shell.activity.awaiting')}>
                 <h2 className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold text-caution"><MessageCircleQuestion size={14} />{t('shell.overview.awaitingCount', { count: awaiting.length })}</h2>
@@ -151,7 +154,7 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
       : entry.status === 'error' ? t('shell.overview.error')
         : entry.status === 'interrupted' ? t('shell.overview.interrupted') : entry.settledAt ? t('shell.overview.done') : null
   const status = label && <span className={cx('inline-flex shrink-0 items-center gap-1.5 text-meta', entry.awaiting ? 'text-caution' : entry.status === 'error' ? 'text-critical' : entry.running ? 'text-accent' : 'text-ink-faint')}>
-    {entry.awaiting ? <MessageCircleQuestion size={12} /> : entry.running ? <RunningDot /> : entry.settledAt && entry.status === 'idle' ? <Check size={12} /> : null}{label}
+    {entry.awaiting ? <MessageCircleQuestion size={11} /> : entry.running ? <RunningDot /> : entry.settledAt && entry.status === 'idle' ? <Check size={11} /> : null}{label}
   </span>
   return <li>
     <NavLink to={`/p/${entry.conversation.projectId}/c/${entry.conversation.id}`} onClick={onNavigate} className={({ isActive }) => cx('flex items-start gap-2 border-l-2 px-2 py-2.5 hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent', entry.awaiting ? 'border-caution' : isActive ? 'border-accent' : 'border-transparent', isActive && 'bg-surface-high')}>
@@ -164,7 +167,7 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
           {compact && <span className={entry.running && entry.status !== 'running' ? '' : 'sr-only'}>{status}</span>}
         </span>
       </span>
-      {compact ? <span className="mt-1 shrink-0" title={label ?? undefined}>{entry.awaiting ? <MessageCircleQuestion size={12} className="text-caution" /> : <RunningDot />}</span> : <span className="hidden pt-0.5 sm:block">{status}</span>}
+      {compact ? <span className="mt-1 shrink-0" title={label ?? undefined}>{entry.awaiting ? <MessageCircleQuestion size={11} className="text-caution" /> : <RunningDot />}</span> : <span className="hidden pt-0.5 sm:block">{status}</span>}
     </NavLink>
   </li>
 }

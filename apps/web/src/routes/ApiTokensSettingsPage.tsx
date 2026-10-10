@@ -157,7 +157,7 @@ function CopyableSecret({ label, value }: { label: string; value: string }) {
         </code>
         <Button
           size="sm"
-          icon={copied ? <Check size={15} /> : <Copy size={15} />}
+          icon={copied ? <Check size={14} /> : <Copy size={14} />}
           onClick={() => void copy()}
         >
           {copied ? t('apiTokens.secret.copied') : t('apiTokens.secret.copy')}
@@ -246,7 +246,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
               options={AGENTS.map((kind) => ({
                 value: kind,
                 label: AGENT_LABELS[kind],
-                icon: <AgentIcon agent={kind} size={13} />,
+                icon: <AgentIcon agent={kind} size={16} />,
               }))}
             />
             <Select
@@ -416,7 +416,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
           <Button
             size="sm"
             variant="danger"
-            icon={<Trash2 size={15} />}
+            icon={<Trash2 size={14} />}
             onClick={() => setConfirming('delete')}
           >
             {t('apiTokens.action.delete')}
@@ -425,7 +425,7 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
           <Button
             size="sm"
             variant="danger"
-            icon={<Unplug size={15} />}
+            icon={<Unplug size={14} />}
             onClick={() => setConfirming('revoke')}
           >
             {t('apiTokens.action.revoke')}

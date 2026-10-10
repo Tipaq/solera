@@ -87,22 +87,22 @@ export function CodeBlock({ language, code }: { language: string; code: string }
           active={wrap}
           onClick={() => setWrap((value) => !value)}
         >
-          <WrapText size={13} />
+          <WrapText size={14} />
         </ToolbarButton>
         <ToolbarButton
           label={t('code.download')}
           onClick={() => downloadText(filenameFor(language), code, 'text/plain')}
         >
-          <Download size={13} />
+          <Download size={14} />
         </ToolbarButton>
         <ToolbarButton
           label={state === 'failed' ? t('code.copy.failed') : t('code.copy')}
           onClick={() => copy(code)}
         >
           {state === 'copied' ? (
-            <Check size={13} className="text-positive" />
+            <Check size={14} className="text-positive" />
           ) : (
-            <Copy size={13} className={state === 'failed' ? 'text-critical' : undefined} />
+            <Copy size={14} className={state === 'failed' ? 'text-critical' : undefined} />
           )}
         </ToolbarButton>
       </div>

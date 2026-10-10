@@ -55,13 +55,13 @@ export function CloneForm() {
     {
       value: 'private',
       label: t('project.visibility.private'),
-      icon: <Lock size={15} />,
+      icon: <Lock size={16} />,
       hint: t('project.visibility.private.hint'),
     },
     {
       value: 'shared',
       label: t('project.visibility.shared'),
-      icon: <Globe size={15} />,
+      icon: <Globe size={16} />,
       hint: t('project.visibility.shared.hint'),
     },
   ]
@@ -111,7 +111,7 @@ export function CloneForm() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between text-sm text-ink-soft">
           <span className="flex items-center gap-2">
-            <GitBranch size={15} className="text-ink-faint" />
+            <GitBranch size={16} className="text-ink-faint" />
             {job.phase || t('clone.phase.starting')}
           </span>
           {job.percent === null ? null : <span className="font-mono text-xs">{job.percent} %</span>}

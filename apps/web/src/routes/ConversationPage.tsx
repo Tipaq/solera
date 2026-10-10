@@ -873,7 +873,7 @@ export function ConversationPage() {
             title={AGENT_LABELS[conversation.agent]}
             className="flex size-8 shrink-0 items-center justify-center"
           >
-            <AgentIcon agent={conversation.agent} size={20} />
+            <AgentIcon agent={conversation.agent} size={22} />
           </span>
 
           <div className="min-w-0 flex-1">
@@ -896,7 +896,8 @@ export function ConversationPage() {
           <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
 
           {/* La consommation appartient au compte, pas à la conversation : le panneau
-              reste le même quel que soit le fil ouvert. */}
+              reste le même quel que soit le fil ouvert. `<button>` nu assumé : c'est une
+              pastille, un repère qu'on peut ouvrir, et `Button` est à coins carrés. */}
           <button
             type="button"
             onClick={() => setUsageOpen(true)}
@@ -907,7 +908,7 @@ export function ConversationPage() {
               'transition-colors hover:border-line-strong hover:text-ink',
             )}
           >
-            <GaugeCircle size={13} />
+            <GaugeCircle size={11} />
             {/* Réduit à son icône au doigt : la consommation doit rester joignable
                 depuis un téléphone, c'est le libellé qui prend la place, pas le bouton. */}
             <span className="hidden md:inline">{t('conversation.usage.label')}</span>
@@ -923,10 +924,10 @@ export function ConversationPage() {
             {/* Les consignes se relisent et se retouchent souvent en travaillant : un
                 geste, sans quitter le fil ni passer par l'éditeur. */}
             <IconButton label={t('conversation.instructions')} onClick={() => setInstructionsOpen(true)}>
-              <FileText size={18} />
+              <FileText size={16} />
             </IconButton>
             <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
-              <Search size={18} />
+              <Search size={16} />
             </IconButton>
             {isOwner ? (
               <IconButton
@@ -940,13 +941,13 @@ export function ConversationPage() {
                 disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
                 onClick={() => void compact()}
               >
-                <Shrink size={18} />
+                <Shrink size={16} />
               </IconButton>
             ) : null}
           </span>
 
           <span className="hidden @min-[44rem]/thread:contents">
-            <Menu trigger={<IconButton label={t('conversation.actions')}><MoreHorizontal size={18} /></IconButton>}>
+            <Menu trigger={<IconButton label={t('conversation.actions')}><MoreHorizontal size={16} /></IconButton>}>
               <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
                 {t('conversation.meta.details')}
               </MenuItem>
@@ -956,7 +957,7 @@ export function ConversationPage() {
             <Menu
               trigger={
                 <IconButton label={t('conversation.actions')}>
-                  <MoreHorizontal size={18} />
+                  <MoreHorizontal size={16} />
                 </IconButton>
               }
             >
@@ -994,7 +995,7 @@ export function ConversationPage() {
             label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
             onClick={() => setPanelOpen(!panel.open)}
           >
-            <PanelRight size={18} className={cx(panel.open && 'text-accent')} />
+            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         </header>
 
@@ -1013,7 +1014,7 @@ export function ConversationPage() {
               <div className="mb-3 flex items-center justify-between gap-3">
                 <Dialog.Title className="text-sm font-semibold">{t('conversation.meta.details')}</Dialog.Title>
                 <Dialog.Close asChild>
-                  <IconButton label={t('common.close')}><X size={18} /></IconButton>
+                  <IconButton label={t('common.close')}><X size={16} /></IconButton>
                 </Dialog.Close>
               </div>
               <p className="mb-3 break-words text-sm text-ink-soft">{conversation.title}</p>
@@ -1023,7 +1024,7 @@ export function ConversationPage() {
                 </Meta>
 
                 <Meta
-                  icon={worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
+                  icon={worktree ? <GitBranch size={11} /> : <FolderTree size={11} />}
                   title={
                     worktree
                       ? t('conversation.meta.worktree', { name: worktree.name })
@@ -1042,7 +1043,7 @@ export function ConversationPage() {
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.branchOf', { title: origin.title })}
                   >
-                    <GitBranch size={10} />
+                    <GitBranch size={11} />
                     <span className="max-w-32 truncate">{origin.title}</span>
                   </Link>
                 ) : null}
@@ -1056,7 +1057,7 @@ export function ConversationPage() {
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.card', { title: conversation.card.title })}
                   >
-                    <SquareKanban size={10} />
+                    <SquareKanban size={11} />
                     <span>#{conversation.card.number}</span>
                   </Link>
                 ) : null}
@@ -1069,7 +1070,7 @@ export function ConversationPage() {
                     couperait la phrase au milieu. Elle se lit entière ou ne sert à rien. */}
                 {conversation.origin ? (
                   <span className="flex min-w-0 items-center gap-1 rounded-full bg-accent-wash px-1.5 py-0.5 text-accent">
-                    <Terminal size={10} />
+                    <Terminal size={11} />
                     {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
                   </span>
                 ) : null}

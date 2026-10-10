@@ -88,10 +88,10 @@ const KIND_ALIASES: Record<string, BackgroundFamily | undefined> = {
 }
 
 const KIND_ICONS: Record<BackgroundFamily, ReactNode> = {
-  workflow: <Waves size={13} />,
-  shell: <SquareTerminal size={13} />,
-  subagent: <Bot size={13} />,
-  monitor: <Radio size={13} />,
+  workflow: <Waves size={14} />,
+  shell: <SquareTerminal size={14} />,
+  subagent: <Bot size={14} />,
+  monitor: <Radio size={14} />,
 }
 
 const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
@@ -157,7 +157,7 @@ function BackgroundList({
             className="flex items-center gap-2 rounded-md border border-line bg-surface-high px-2 py-1.5"
           >
             <span className="shrink-0 text-accent">
-              {family ? KIND_ICONS[family] : <Waves size={13} />}
+              {family ? KIND_ICONS[family] : <Waves size={14} />}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs text-ink">{task.description}</span>
@@ -220,7 +220,7 @@ function SubAgentThread({
           aria-label={t('subagent.pane.back')}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
         >
-          <ArrowLeft size={15} />
+          <ArrowLeft size={14} />
         </TooltipButton>
         <Bot size={14} className={cx('shrink-0', agent.status === 'running' ? 'text-accent' : 'text-ink-faint')} />
         <span className="min-w-0 flex-1">

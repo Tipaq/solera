@@ -99,7 +99,7 @@ export function QueuedMessages({
               }
               className="text-accent hover:bg-accent-wash hover:text-accent"
             >
-              <FastForward size={15} />
+              <FastForward size={14} />
             </IconButton>
           ) : null}
 

@@ -94,17 +94,17 @@ export function DirectoryPicker({
               disabled={!current}
               onClick={() => setCreating(true)}
             >
-              <FolderPlus size={18} />
+              <FolderPlus size={16} />
             </IconButton>
             <IconButton
               label={showHidden ? t('directoryPicker.hidden.hide') : t('directoryPicker.hidden.show')}
               onClick={() => setShowHidden((value) => !value)}
             >
-              {showHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+              {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
             </IconButton>
             <Dialog.Close asChild>
               <IconButton label={t('common.close')}>
-                <X size={18} />
+                <X size={16} />
               </IconButton>
             </Dialog.Close>
           </header>
@@ -117,7 +117,7 @@ export function DirectoryPicker({
                 onClick={() => setPath(root.path)}
                 className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft hover:bg-surface-high hover:text-ink"
               >
-                {root.label === 'Accueil' ? <Home size={12} /> : null}
+                {root.label === 'Accueil' ? <Home size={14} /> : null}
                 {root.label}
               </button>
             ))}
@@ -169,9 +169,9 @@ export function DirectoryPicker({
                 disabled={!entry.readable}
                 trailing={
                   entry.readable ? (
-                    <ChevronRight size={15} className="text-ink-faint" />
+                    <ChevronRight size={14} className="text-ink-faint" />
                   ) : (
-                    <Lock size={13} className="text-ink-faint" />
+                    <Lock size={14} className="text-ink-faint" />
                   )
                 }
                 onClick={() => setPath(entry.path)}

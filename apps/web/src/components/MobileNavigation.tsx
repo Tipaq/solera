@@ -23,7 +23,7 @@ export function MobileNavigationButton() {
       className="md:hidden"
     >
       <span className="relative">
-        <Menu size={20} />
+        <Menu size={16} />
         {updateNotice ? <UpdateDot /> : null}
       </span>
     </IconButton>

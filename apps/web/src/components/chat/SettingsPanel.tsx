@@ -1,4 +1,4 @@
-import { TooltipButton } from '@solera/ui'
+import { Button, TooltipButton } from '@solera/ui'
 import { Check, Search, X } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
@@ -46,9 +46,7 @@ export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClo
       {feedback ? <div className="shrink-0 border-t border-line px-3 pt-2">{feedback}</div> : null}
       <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-line px-4 pt-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
         <p className="text-xs text-ink-faint">{t('composer.settings.immediate')}</p>
-        <button type="button" onClick={onDone} className="min-h-11 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-accent-ink hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-          {t('composer.settings.done')}
-        </button>
+        <Button className="shrink-0" onClick={onDone}>{t('composer.settings.done')}</Button>
       </footer>
     </>
   )
@@ -60,7 +58,7 @@ export function SettingsHeading({ title, onClose }: { title: string; onClose: ()
     <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line py-2 pr-2 pl-4">
       <h2 tabIndex={-1} data-settings-heading className="text-sm font-semibold outline-none">{title}</h2>
       <TooltipButton type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
-        <X size={18} />
+        <X size={16} />
       </TooltipButton>
     </header>
   )

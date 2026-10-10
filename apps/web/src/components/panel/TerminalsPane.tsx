@@ -98,7 +98,7 @@ export function TerminalsPane({
               aria-label={t('terminal.tab.close', { title: terminal.title })}
               className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/term:opacity-100"
             >
-              <X size={12} />
+              <X size={14} />
             </TooltipButton>
           </div>
         ))}
@@ -113,7 +113,7 @@ export function TerminalsPane({
           title={full ? t('terminal.max', { max: MAX_TERMINALS_PER_PROJECT }) : t('terminal.new')}
           className="flex size-8 shrink-0 items-center justify-center text-ink-faint hover:text-ink disabled:opacity-40"
         >
-          {open.isPending ? <Loader size={13} className="animate-spin" /> : <Plus size={14} />}
+          {open.isPending ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
         </TooltipButton>
       </div>
 

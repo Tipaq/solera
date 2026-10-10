@@ -67,7 +67,7 @@ function MessageFooter({
             'text-ink-faint hover:text-ink',
           )}
         >
-          <GitBranch size={13} />
+          <GitBranch size={14} />
           {t('message.fork.action')}
         </button>
       ) : null}
@@ -194,7 +194,7 @@ function PeerMessage({
     <div className="group flex flex-col items-start gap-0.5">
       <div className="sg-bubble flex min-w-0 max-w-[85%] flex-col gap-2 rounded-lg rounded-bl-sm border border-dashed border-accent/50 bg-accent-wash/40 px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
-          <MessagesSquare size={13} className="shrink-0 text-accent" />
+          <MessagesSquare size={14} className="shrink-0 text-accent" />
           <span className="shrink-0">{t(PEER_LABELS[envelope.kind])}</span>
           {projectId ? (
             <Link
@@ -291,10 +291,10 @@ function ThinkingBlock({ text }: { text: string }) {
         className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs text-ink-faint"
       >
         <ChevronRight
-          size={13}
+          size={14}
           className={cx('shrink-0 transition-transform', open && 'rotate-90')}
         />
-        <Brain size={13} className="shrink-0" />
+        <Brain size={14} className="shrink-0" />
         <span>{t('message.thinking.label')}</span>
       </button>
       {open ? (

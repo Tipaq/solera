@@ -301,16 +301,26 @@ seule porte obligatoirement son intitulé (`IconButton` l'impose par son type).
 
 | `size` | Où |
 | --- | --- |
-| `11` | Dans une pastille, un badge, une étiquette `text-meta` |
-| `14` | Densité dense : ligne de liste, arbre, barre d'outils |
-| `16` | Densité courante : bouton, en-tête de carte, menu |
-| `22` | Emphase : icône d'`EmptyState` |
+| `11` | Dans une pastille, un badge, une étiquette `text-meta` ; un marqueur d'état posé contre un texte |
+| `14` | Densité dense : ligne de liste, arbre, barre d'outils, `IconButton size="sm"`, `Button size="sm"` |
+| `16` | Densité courante : `Button`, `IconButton`, en-tête de carte, `MenuItem`, option de `Select` ou de `ChoiceList`, en-tête de page, champ |
+| `22` | Emphase : icône d'`EmptyState`, grand espace vide, attente centrée |
 
 Les pas intermédiaires (`12`, `13`, `15`, `17`, `18`, `19`, `20`) sont à replier. Quatre
 valeurs à un pixel d'écart ne produisent aucune hiérarchie, seulement du désalignement
 entre deux lignes voisines. **Ce repli se juge à l'œil, composant par composant** : une
 icône qui passe de 15 à 16 dans une ligne serrée peut la faire grandir d'un pixel. Ce
 n'est pas un `sed`.
+
+La colonne « Où » a été précisée le 2026-10-10, au moment de replier les 229 occurrences
+hors échelle : « bouton » et « menu » ne suffisaient pas à trancher, puisque la taille
+d'un contrôle décide de celle de son icône. La règle qui a servi, et qui vaut pour la
+suite : **c'est le conteneur qui dicte, pas l'icône** — la densité du contrôle ou de la
+ligne où elle se pose, et non ce qu'elle représente. Un même glyphe vaut donc 11 dans une
+pastille et 16 dans un `MenuItem`.
+
+`Logo` et `AgentIcon` ne sont pas des icônes mais des **marques** : elles portent un
+`size` libre, réglé sur la place qu'on leur fait, et ne comptent pas dans cette échelle.
 
 ## 9. Surfaces flottantes
 
@@ -383,6 +393,9 @@ n'écrit pas un bouton à la main.**
 | `Field` | Champ texte avec intitulé, aide, erreur, `aria-describedby` câblé | Un `input` nu |
 | `Select` | Choix parmi beaucoup, avec icône et aide par option | Le `<select>` natif, qui ne sait pas les porter |
 | `ChoiceList` | Choix parmi **quelques-uns**, dépliés. Sémantique `radiogroup` | `Select` — au-delà d'une demi-douzaine d'options, c'est `Select` |
+| `Tabs` | Navigation entre les vues d'un même panneau, `role="tablist"`. `layout` : `fill` (largeur partagée) ou `start` | `SegmentedControl` : les onglets changent de vue, le rail segmenté change un réglage |
+| `SegmentedControl` | Choix exclusif entre deux ou trois états d'une zone, repliés dans un rail creusé | `ChoiceList` — au-delà de trois, ou si les options demandent une explication |
+| `Presets` | Valeurs toutes faites qui remplissent le champ au-dessus. Pas un choix exclusif : le champ reste saisissable | `SegmentedControl`, qui lui exclut |
 | `Menu` + `MenuItem` / `MenuCheckboxItem` / `MenuLabel` / `MenuSeparator` / `MenuSwatch` | Menu déroulant, `role="menu"` | `Popover` |
 | `Popover` | Panneau ancré à contenu libre | `Menu` : son roving tabindex est réservé aux `menuitem`, un bouton ordinaire posé dedans devient cliquable à la souris seulement |
 | `ContextMenu` | Clic droit et appui long, positionné au curseur | `Menu` ouvert à la main : il se place sous un déclencheur et ignore l'appui long |
@@ -428,10 +441,27 @@ La troisième est le chantier : voir §14.
 
 ### Quand un `<button>` nu est légitime
 
-Trois cas, et ils sont les seuls : la primitive elle-même ; une **ligne de liste
-entièrement cliquable**, qui n'est pas un bouton d'action et porte son propre habillage ;
-un élément dont Radix exige la maîtrise via `asChild`. Partout ailleurs, un `<button>`
-nu perd le focus visible, la cible tactile et l'état désactivé que la primitive apporte.
+Le relevé de 86 `<button>` nus du §14 a été lu un par un le 2026-10-10. Il en reste 74,
+et l'estimation « ~70 sur 86 à replier » était fausse dans l'autre sens : **la grande
+majorité est légitime**, parce qu'un `<button>` y porte une surface qui n'est pas un
+bouton. Les cas, dans l'ordre de fréquence :
+
+| Cas | Pourquoi la primitive ne convient pas | Exemples |
+| --- | --- | --- |
+| **Ligne entièrement cliquable** — ligne de liste, tuile, nœud d'arbre, onglet de fichier | La ligne porte son habillage, sa sélection et sa densité ; un `Button` y mettrait un cadre dans un cadre | `CardTile`, `FileTree`, `EditorPane`, `ProjectSwitcher` |
+| **Option d'une liste** — `role="option"`, `role="radio"`, `role="switch"` | Le rôle ARIA décide de l'habillage et de la navigation au clavier | `CommandPalette`, `MentionPicker`, `QuestionPrompt` |
+| **En-tête de dépliage** — `aria-expanded` sur toute la largeur | C'est une surface qui s'ouvre, pas une action qu'on déclenche | `HistoryPane`, `GitPane`, `TaskResult`, `MessageBubble` |
+| **Déclencheur Radix** via `asChild` | Radix exige la maîtrise de l'élément, et le contenu dépasse ce qu'une variante porte | `ProjectSwitcher`, `Menu`, `CardPanel` |
+| **Action en toutes lettres dans une phrase** | Un mot souligné au milieu d'un texte ; un `Button` casserait la phrase | `Composer` (« réessayer »), `CardAttachments`, `diff-parts` |
+| **Pastille** — `rounded-full border px-3 py-1.5` | `Button` est à coins carrés, et la pastille est un repère, pas une commande | `ConversationPage` (consommation, « messages précédents »), `UpdatePrompt` |
+| **La primitive elle-même** | — | `packages/ui` |
+
+Partout ailleurs, un `<button>` nu perd le focus visible, la cible tactile et l'état
+désactivé que la primitive apporte, et il faut le replier.
+
+Deux des lignes ci-dessus sont des **motifs qui mériteraient une primitive** et n'en ont
+pas : la pastille (3 copies, 3 habillages) et l'action en toutes lettres (5 copies). Elles
+sont listées au §14.
 
 ## 11. Tactile et responsive
 
@@ -501,16 +531,14 @@ mécanique au plus délicat.
 
 | Écart | Ampleur | §    |
 | --- | --- | --- |
-| `<button>` nus là où une primitive conviendrait | ~70 sur 86 | §10 |
 | Rayons posés à l'œil plutôt que par rôle | à trier | §5 |
-| Tailles d'icônes intermédiaires à replier sur quatre pas | ~240 | §8 |
-| `transition-all` dans la minimap, au lieu de propriétés nommées | 1 | §13 |
-| Cartes refaites à la main (`rounded-* border border-line` + surface) | 38 à trier | §10 |
+| Bordures en tirets : 8 copies, 2 rayons, 3 teintes, 3 fonds | 8 | §10 |
+| La pastille, motif sans primitive | 3 | §10 |
+| L'action en toutes lettres dans une phrase, motif sans primitive | 5 | §10 |
+| Grille d'options exclusives (langue, thème, palette) en `aria-pressed` | 3 | §10 |
 
-Les trois lignes marquées « à trier » — rayons, icônes, cartes — se jugent à l'œil,
-composant par composant, et ne se passent pas en lot. Les ~240 tailles d'icônes sont le
-relevé réel (15 ×96, 13 ×69, 18 ×26, 12 ×26, et une queue de 10 à 34), contre 286 déjà
-dans l'échelle ; l'estimation à 330 du premier relevé comptait large.
+La ligne « à trier » qui reste — les rayons — se juge à l'œil, composant par composant,
+et ne se passe pas en lot.
 
 ### Ce qui est fermé
 
@@ -525,13 +553,49 @@ Replié le 2026-10-10, dans le même chantier que les jetons générés :
 | `ProjectSwitcher` et `SidebarActivity`, voile en `z-50` | 2 | `scrim z-40`, comme les quatorze autres |
 | `rounded-2xl` sans jeton, à la même valeur que `rounded-xl` | 8 | Le pas n'existe plus ; `tokens.ts` est la source de l'échelle |
 
+Replié le 2026-10-10, dans le chantier des icônes, des cartes et des boutons nus :
+
+| Écart | Ampleur | Ce qui le tient désormais |
+| --- | --- | --- |
+| Tailles d'icônes hors des quatre pas | 229 | Il n'en reste **aucune** dans `apps/web` ni dans `packages/ui`. `Logo` et `AgentIcon` sont des marques et non des icônes (§8) |
+| `Tabs` recopié trois fois, trois états actifs, trois hauteurs | 3 | La primitive `Tabs`, en `role="tablist"` avec `tabindex` tournant |
+| `SegmentedControl` recopié **quatre** fois (le quatrième, `ScheduleDialog`, marquait l'option retenue en `surface-high`, couleur du survol) | 4 | La primitive `SegmentedControl`, en `shadow-card` et 44 px au doigt |
+| Rangée de valeurs toutes faites recopiée trois fois, 22 px de haut | 3 | La primitive `Presets` |
+| `transition-all` dans la minimap | 1 | `transition-[width,background-color,opacity]` |
+| `ProjectSwitcher` et `SidebarActivity` centrés au doigt et en `bg-surface` | 2 | Le gabarit de dialogue du §9, et `.surface` |
+| `<button>` nus repliés | 12 sur 86 | Le reste est légitime, et le §10 dit désormais pourquoi |
+| Cartes refaites à la main | 2 sur 38 | `ServicesPage` et `SchedulePage` prennent `Card` + `CardBody`. Le tri des 36 autres est au paragraphe suivant |
+
+### Les 38 « cartes » refaites à la main, après lecture
+
+Deux seulement en étaient. Le relevé comptait par chaîne de classes, et
+`rounded-lg border border-line` sert à quatre choses différentes :
+
+| Ce que c'est vraiment | Combien | Pourquoi ce n'est pas `Card` |
+| --- | --- | --- |
+| Surface flottante — liste d'un combobox, aperçu de mention, infobulle de minimap, dialogue | 10 | `shadow-float`/`shadow-pop` et un positionnement absolu : c'est le §9, pas une carte |
+| Cadre de champ — barre de recherche, saisie de chemin | 3 | `bg-sunken` : un champ est creusé, une carte est élevée |
+| Ligne de liste ou tuile | 6 | Elles vivent dans une liste et n'ont ni en-tête ni corps |
+| Encadré, dépliage, aperçu, zone de dépôt | 17 | `bg-surface/60`, `bg-canvas`, `border-dashed` : des blocs secondaires dans un flux, pas des blocs de contenu titrés |
+
+Une seule reste discutable : `SkillList`, une carte qui est un lien et s'éclaire au
+survol. `Card` n'a pas de variante interactive, et un seul site ne la justifie pas.
+
+La variante en tirets qu'on attendait pour `Card` **n'a pas été dessinée** : les 8
+bordures en tirets du code ne sont pas des cartes. Elles disent toutes « pas encore
+réel » — une zone de dépôt, un message en file, une suggestion, une colonne vide — et
+trois d'entre elles sont des bulles de conversation, qui ont leur propre forme. Le motif
+mérite une primitive, mais ce n'est pas `Card`.
+
 Il reste **une** valeur de taille arbitraire dans tout `apps/web` : le `text-[0.5625rem]`
 du badge d'`AppShell`, 9 px, le seul pas qui ne corresponde à aucun jeton. À trancher
 avant d'activer la règle de lint du §6, qui échouerait dessus.
 
-### Deux primitives manquantes
+### Deux primitives manquantes — dessinées le 2026-10-10
 
-L'audit d'usage en a sorti deux, et toutes deux sont recopiées trois fois :
+Ce qui suit est le relevé qui les a fait naître ; il est gardé parce qu'il porte les
+décisions. `Tabs` et `SegmentedControl` vivent maintenant dans `packages/ui`, et une
+troisième, `Presets`, est sortie du même tri.
 
 **`SegmentedControl`** — `CardEditor`, `Instructions` (deux fois). C'est le motif le plus
 mûr : les trois copies portent exactement le même habillage, à la taille des entrées

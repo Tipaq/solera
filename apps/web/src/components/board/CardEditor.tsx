@@ -2,7 +2,7 @@ import { Eye, Pencil } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
-import { cx } from '@solera/ui'
+import { SegmentedControl } from '@solera/ui'
 
 /** Champs partagés par la création et l'édition, avec un aperçu qui conserve la saisie. */
 export function CardEditor({ title, description, onChange, disabled = false }: {
@@ -26,12 +26,11 @@ export function CardEditor({ title, description, onChange, disabled = false }: {
       <div className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label htmlFor={descriptionId} className="text-sm font-medium text-ink-soft">{t('board.card.description')}</label>
-          <div className="flex gap-1 rounded-lg bg-sunken p-1">
-            {[false, true].map((value) => <button key={String(value)} type="button" aria-pressed={preview === value}
-              onClick={() => setPreview(value)} className={cx('flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs', preview === value ? 'surface text-ink shadow-sm' : 'text-ink-faint hover:text-ink')}>
-              {value ? <Eye size={13} /> : <Pencil size={13} />}{t(value ? 'board.editor.preview' : 'board.editor.write')}
-            </button>)}
-          </div>
+          <SegmentedControl label={t('board.editor.mode')} value={preview ? 'preview' : 'write'}
+            onChange={(value) => setPreview(value === 'preview')} segments={[
+              { value: 'write', label: t('board.editor.write'), icon: <Pencil size={14} /> },
+              { value: 'preview', label: t('board.editor.preview'), icon: <Eye size={14} /> },
+            ]} />
         </div>
         {preview ? <div className="min-h-56 rounded-xl border border-line px-4 py-3 text-sm"><Markdown text={description || t('board.editor.emptyPreview')} /></div> :
           <textarea id={descriptionId} value={description} disabled={disabled} rows={10} maxLength={20000}

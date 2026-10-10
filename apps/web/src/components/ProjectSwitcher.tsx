@@ -46,6 +46,8 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
   return (
     <Dialog.Root open={open} onOpenChange={(value) => { setOpen(value); if (!value) setQuery('') }}>
       <div className="mb-2 flex items-center gap-1">
+      {/* `<button>` nu assumé : Radix exige la maîtrise du déclencheur via `asChild`,
+          et aucune variante de `Button` ne porte un avatar, deux lignes et un chevron. */}
       <Dialog.Trigger asChild>
         <button type="button" aria-label={t('shell.switcher.choose')} className="flex min-h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line bg-surface-high px-3 text-left hover:border-ink-faint">
           {all ? <Layers size={16} /> : <ProjectAvatar project={selected} className="size-5" />}
@@ -57,7 +59,10 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
       </div>
       <Dialog.Portal>
         <Dialog.Overlay className="scrim z-40" />
-        <Dialog.Content aria-describedby={undefined} className="fixed top-[10dvh] left-1/2 z-50 flex max-h-[90dvh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float">
+        {/* Le gabarit de dialogue du §9 : feuille en bas au doigt, boîte centrée au
+            large. Il était centré même au doigt, et en `bg-surface` — donc sans le
+            dégradé signature que porte `.surface`. */}
+        <Dialog.Content aria-describedby={undefined} className="surface fixed inset-x-0 bottom-0 z-50 flex max-h-[90dvh] flex-col overflow-hidden rounded-t-xl border border-line shadow-pop sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(448px,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
           <div className="flex items-center justify-between px-4 pt-3"><Dialog.Title className="text-sm font-semibold">{t('shell.switcher.choose')}</Dialog.Title><Dialog.Close asChild><IconButton label={t('common.close')}><X size={16} /></IconButton></Dialog.Close></div>
           <div className="m-3 flex items-center gap-2 rounded-md border border-line bg-sunken px-3"><Search size={16} className="text-ink-faint" /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => {
               const first = list.current?.querySelector<HTMLButtonElement>('[data-project-choice]')
@@ -72,14 +77,14 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
             event.preventDefault()
             choices[(index + (event.key === 'ArrowDown' ? 1 : choices.length - 1)) % choices.length]?.focus()
           }}>
-            {!query.trim() && <button type="button" onClick={() => { onAll(); setOpen(false) }} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-sm hover:bg-surface-high"><Layers size={15} /><span className="flex-1 text-left">{t('shell.switcher.all')}</span>{all && <Check size={15} />}</button>}
+            {!query.trim() && <button type="button" onClick={() => { onAll(); setOpen(false) }} className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-sm hover:bg-surface-high"><Layers size={16} /><span className="flex-1 text-left">{t('shell.switcher.all')}</span>{all && <Check size={16} />}</button>}
             {groups.map((group) => group.entries.length > 0 && <div key={group.label}>
               <p className="px-2 pt-3 pb-1 text-meta font-semibold text-ink-faint">{group.label}</p>
               {group.entries.map((project) => <ProjectChoice key={project.id} project={project} selected={!all && selected?.id === project.id} pinned={pins.includes(project.id)} onPin={() => togglePin(project.id)} onSelect={(fallback) => { onSelect(project, fallback); setOpen(false); setQuery('') }} />)}
             </div>)}
             {matches.length === 0 && <p role="status" className="px-2 py-6 text-center text-sm text-ink-faint">{t('shell.switcher.empty')}</p>}
           </div>
-          <button type="button" onClick={() => { navigate('/projects/new'); setOpen(false); onNavigate() }} className="flex min-h-11 shrink-0 items-center gap-2 border-t border-line px-4 text-sm text-ink-soft hover:bg-surface-high"><FolderPlus size={15} />{t('projects.create.title')}</button>
+          <button type="button" onClick={() => { navigate('/projects/new'); setOpen(false); onNavigate() }} className="flex min-h-11 shrink-0 items-center gap-2 border-t border-line px-4 text-sm text-ink-soft hover:bg-surface-high"><FolderPlus size={16} />{t('projects.create.title')}</button>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

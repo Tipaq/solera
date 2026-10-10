@@ -147,7 +147,7 @@ export function AboutSection() {
                     className="flex shrink-0 items-center gap-1 text-xs text-ink-faint hover:text-ink"
                   >
                     {new Date(release.publishedAt).toLocaleDateString(locale())}
-                    <ExternalLink size={12} />
+                    <ExternalLink size={14} />
                   </a>
                 </header>
                 <Markdown text={release.body} />

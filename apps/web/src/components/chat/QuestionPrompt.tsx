@@ -110,6 +110,10 @@ export function QuestionPrompt({
               {question.options.map((option) => {
                 const selected = (answers[question.id] ?? []).includes(option.label)
                 return (
+                  // `<button>` nu assumé : une option de choix, à coche ou à pastille
+                  // selon `multiSelect`. `ChoiceList` ne sait pas le choix multiple, et
+                  // porte sa coche à droite là où celle-ci précède l'intitulé pour dire
+                  // d'un coup d'œil combien de réponses sont attendues.
                   <button
                     key={option.label}
                     type="button"

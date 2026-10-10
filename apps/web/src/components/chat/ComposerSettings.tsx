@@ -122,7 +122,7 @@ export function ComposerSettings({ groups, summary, mcp, feedback, disabled = fa
                 >
                   <span className="hidden shrink-0 text-accent @min-[22rem]:inline-flex">{group.icon}</span>
                   <span className="min-w-0 flex-1 truncate text-left">{value}</span>
-                  <ChevronDown size={12} className="shrink-0 text-ink-faint" />
+                  <ChevronDown size={14} className="shrink-0 text-ink-faint" />
                 </TooltipButton>
               }
             >
