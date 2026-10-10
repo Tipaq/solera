@@ -26,7 +26,9 @@
   </script>
 </head>
 <body>
-  <!-- Les trois rubans prolongent le logo, sans entrer dans le contenu de la page. -->
+  <!-- À CHANGER : ces trois rubans prolongeaient « L'écho », le logo de MarlBurroW. La
+       marque est maintenant la bague, et le motif ne la prolonge plus — il reste la
+       dernière trace visible de l'ancien dessin sur le site. -->
   <div class="site-background" aria-hidden="true">
     <svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false">
       <defs>
@@ -91,6 +93,10 @@
         </div>
       </div>
       <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/Tipaq/solera/releases/latest">Releases ↗</a></div>
+      <!-- À CHANGER : film/solera-film.mp4 n'existe pas dans le dépôt — seul le poster
+           est là. Tant que la vidéo n'est pas tournée, le lecteur reste vide et le texte
+           décrit un film qui n'existe pas. Tourner le film, ou retirer cette figure (et
+           avec elle les styles .hero-film / .film-* et le code data-film de main.js). -->
       <figure class="hero-shot hero-film" id="film">
         <div class="film-frame">
           <video controls preload="none" playsinline poster="film/poster.jpg" width="1920" height="1080" data-film>
@@ -449,37 +455,43 @@ curl -fsSL https://raw.githubusercontent.com/Tipaq/solera/main/install.sh | bash
 
     <section class="why" id="why" aria-labelledby="why-title">
       <div class="section-background" aria-hidden="true"><svg class="background-waves" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
-      <h2 id="why-title">Why I built Solera</h2>
+      <h2 id="why-title">Where Solera comes from</h2>
+      <!-- À RELIRE ET À SIGNER : ce bloc dit d'où vient le projet, pas pourquoi tu l'as
+           repris. Le texte précédent était le récit de MarlBurroW à la première personne,
+           conservé tel quel par le renommage et signé « Tipaq » : c'était faux. Il a été
+           remplacé par des faits vérifiables. Mets tes propres mots à la place quand tu
+           veux une note personnelle — mais ne reprends pas l'ancienne. -->
       <figure class="founder-note">
         <blockquote>
-          <p class="founder-lede">I wanted one place, on a server I own, that I could open from my phone and keep working.</p>
+          <p class="founder-lede">Solera is a fork of Sillage, a workspace for coding agents written by MarlBurroW and released under the MIT licence.</p>
           <div class="founder-story">
             <p>
-              That was the starting point: pick up a project wherever I happen to be,
-              without carrying a laptop or keeping track of a dozen terminals.
+              The fork was taken on 9 October 2026. Everything Solera started from is his
+              work, and his copyright stays in the LICENSE file. Solera is not a mirror of
+              it: upstream is kept as a source of ideas, read-only, and nothing is merged
+              or cherry-picked from it. What is useful gets reimplemented on Solera's own
+              terms.
             </p>
             <p>
-              I wanted to keep the agents I already used. Solera runs Claude Code,
-              Codex and OpenCode through their native interfaces, keeping their tools
-              and permission flows. Each has its own adapter; OpenCode also brings
-              access to the providers and local models it supports.
+              The idea it inherits is worth stating plainly: one place, on a server you
+              own, that you can open from any device and keep working in. Solera runs
+              Claude Code, Codex and OpenCode through their native interfaces, keeping
+              their tools and permission flows, and gives them a shared workspace —
+              projects, a board, instructions and memory — so a session can find out what
+              the others are doing and leave context for whoever picks the work up next.
             </p>
             <p>
-              What grew around them is a shared workspace: projects, a board,
-              instructions and memory. An agent can find out what other sessions are
-              doing, read earlier decisions and leave context for whoever picks up
-              the work next, even when they use a different CLI.
-            </p>
-            <p>
-              Solera is built with AI, heavily. Claude Code and Codex wrote most of
-              the code, much of it from inside Solera itself, often from a phone.
-              The tool and the way I work on it grew together.
+              The name is the sherry ageing system: the old barrel is topped up from the
+              younger one, the recipe never moves, and what has proven itself is put back
+              in instead of being asked for again.
             </p>
           </div>
         </blockquote>
         <figcaption class="founder-signature">
+          <!-- À CHANGER : avatar-tipaq.jpg n'existe pas dans le dépôt, l'image est cassée.
+               Dépose le fichier ou retire cette balise. -->
           <img class="founder-avatar" src="avatar-tipaq.jpg" width="56" height="56" loading="lazy" alt="">
-          <span><a href="https://github.com/Tipaq">Tipaq</a><span class="founder-role">Creator of Solera</span></span>
+          <span><a href="https://github.com/Tipaq">Tipaq</a><span class="founder-role">Maintainer of Solera</span></span>
         </figcaption>
       </figure>
     </section>
