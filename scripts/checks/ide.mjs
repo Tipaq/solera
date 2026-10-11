@@ -16,6 +16,15 @@ export async function checkIde({ page, context, base, project }) {
     await page.waitForFunction((path) => document.activeElement?.closest('[data-editor-file]')?.getAttribute('data-editor-file') === path, path)
   }
   const pos = panel.getByRole('button', { name: /^Ligne \d+, colonne \d+\. Aller à la ligne$/ })
+  // CodeMirror ne rend que les lignes visibles : juste après une annulation, le texte
+  // lu peut n'être qu'un fragment de ce qui est revenu. On attend qu'il se stabilise
+  // avant de comparer, sinon l'assertion départage un rendu en cours.
+  const settled = async (expected) => {
+    for (let i = 0; i < 100; i++) {
+      if ((await code.innerText()).trimEnd() === expected) return
+      await page.waitForTimeout(50)
+    }
+  }
 
   await openFile('vite.config.ts')
   const original = await code.innerText()
@@ -49,7 +58,7 @@ export async function checkIde({ page, context, base, project }) {
   assert.equal(await pos.getAttribute('aria-label'), location, 'Returning to a file restores the selection')
   await page.waitForFunction((scroll) => Math.abs(document.querySelector('[data-panel="workspace"] .cm-scroller').scrollTop - scroll) < 30, scroll)
   await page.keyboard.press('Control+z')
-  await page.waitForFunction(() => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes('defineConfig'))
+  await settled(original.trimEnd())
   assert.equal((await code.innerText()).trimEnd(), original.trimEnd(), 'Undo must survive changing files')
   await page.keyboard.press('Control+Shift+z')
   await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
@@ -58,7 +67,7 @@ export async function checkIde({ page, context, base, project }) {
   await code.waitFor()
   await code.focus()
   await page.keyboard.press('Control+z')
-  await page.waitForFunction(() => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes('defineConfig'))
+  await settled(original.trimEnd())
   assert.equal((await code.innerText()).trimEnd(), original.trimEnd(), 'Undo must survive closing the workspace')
   console.log('OK : ouverture rapide ⌘/Ctrl P, recherche dans le fichier, ligne, curseur, défilement et annulation conservés.')
 
@@ -85,6 +94,10 @@ export async function checkIde({ page, context, base, project }) {
   await picker.waitFor({ state: 'hidden' })
   assert.equal(await panel.getAttribute('data-fullscreen'), 'true')
   await panel.getByRole('button', { name: 'Quitter le plein écran', exact: true }).focus()
+  // Au clavier, le premier Échap ferme l'aide du bouton avant le plein écran.
+  await page.getByRole('tooltip').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
   assert.equal(await panel.getAttribute('data-fullscreen'), null, 'Escape outside the editor exits full screen first')
   assert.equal(await panel.isVisible(), true)

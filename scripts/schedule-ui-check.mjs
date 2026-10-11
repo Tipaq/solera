@@ -76,7 +76,9 @@ try {
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())
   const api = async (path) => (await context.request.get(`${base}${path}`)).json()
-  const project = (await api('/api/projects')).find((entry) => entry.name === 'Nimbus')
+  // Un projet sans tâche semée : le fil de démonstration en pose une sur Nimbus, et
+  // la page ne serait donc jamais vide ni réduite à la tâche créée ici.
+  const project = (await api('/api/projects')).find((entry) => entry.name === 'Atlas API')
   const schedules = async () => (await api('/api/schedules')).filter((task) => task.projectId === project.id)
   /** Attend qu'un état de la tâche soit vrai, le temps d'un tir réel. */
   const until = async (label, predicate, timeoutMs) => {

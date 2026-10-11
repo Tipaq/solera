@@ -37,7 +37,9 @@ async function mount(page) {
     const { MemoryRouter } = await import(source.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
     const { SkillsControl } = await import('/src/components/chat/SkillsControl.tsx')
     const { AddSkillMenu } = await import('/src/components/skills/AddSkillMenu.tsx')
-    const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
+    // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
+    // source transformée du composant, comme pour les autres dépendances.
+    const { TooltipProvider } = await import(source.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1])
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const commands = Array.from({ length: 24 }, (_, i) => ({ name: `commande-${i}`, description: 'Une description de commande très longue. '.repeat(30) }))
     const content = React.createElement('div', { className: 'p-6 flex gap-6' },
@@ -99,7 +101,8 @@ try {
     assert.ok((await summary.boundingBox()).height < 110)
     await summary.click()
     assert.equal(await inventory.locator('details').first().getAttribute('open'), '')
-    await inventory.getByRole('button', { name: /Dans la session/ }).click()
+    // Rail segmenté depuis que les onglets sont unifiés : un `tab`, plus un bouton.
+    await inventory.getByRole('tab', { name: /^Dans la session/ }).click()
     await inventory.getByText('commande-23', { exact: true }).scrollIntoViewIfNeeded()
     assert.ok(await manage.isVisible())
     await page.screenshot({ path: `/tmp/solera-skills-composer-${viewport.width}.png` })

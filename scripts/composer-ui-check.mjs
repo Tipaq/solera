@@ -53,7 +53,10 @@ async function mount(page) {
     const routerModule = composerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
     const { MemoryRouter } = await import(routerModule)
     const { Composer } = await import('/src/components/chat/Composer.tsx')
-    const { TooltipProvider } = await import('/src/components/ui/Tooltip.tsx')
+    // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
+    // source transformée du composer, comme pour les autres dépendances.
+    const uiModule = composerSource.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1]
+    const { TooltipProvider } = await import(uiModule)
     const { useConversationConfig } = await import('/src/lib/conversation-config.ts')
     const { useConversation } = await import('/src/lib/conversations.ts')
     const { useVisualViewport } = await import('/src/lib/viewport.ts')
@@ -225,6 +228,10 @@ try {
 
     await model().focus()
     await page.keyboard.press('Enter')
+    // La feuille prend le focus après son ouverture : une touche envoyée avant se perd
+    // hors de la liste, et l'Entrée suivante rouvre au lieu de choisir.
+    await dialog.waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'radio')
     await page.keyboard.press('End')
     assert.equal(await dialog.isVisible(), true)
     await page.keyboard.press('Enter')

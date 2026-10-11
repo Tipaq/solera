@@ -338,11 +338,14 @@ try {
   const activity = page.getByRole('group', { name: 'Suivi des conversations', exact: true })
   await activity.waitFor()
   const all = await (await context.request.get(`${base}/api/conversations`)).json()
-  const candidate = all.find((entry) => !entry.archivedAt && entry.status === 'idle')
+  // Hors tir planifié : la sidebar ne suit que les conversations menées à la main.
+  const candidate = all.find((entry) => !entry.archivedAt && !entry.scheduleId && entry.status === 'idle')
   assert.ok(candidate)
   await activity.getByRole('button', { name: /Voir toute l’activité/ }).click()
   const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
-  const awaiting = overview.getByRole('button', { name: /à débloquer$/ })
+  // Les filtres sont une liste d'onglets depuis qu'ils partagent le rail segmenté :
+  // intitulé fixe et compteur en pastille, et plus un bouton « n à débloquer ».
+  const awaiting = overview.getByRole('tab', { name: /^À débloquer/ })
   const before = Number((await awaiting.innerText()).match(/\d+/)[0])
   await awaiting.click()
   const result = overview
@@ -357,7 +360,8 @@ try {
   assert.equal(Number((await awaiting.innerText()).match(/\d+/)[0]), before + 1)
   pushStatus('running')
   await candidateLink.waitFor({ state: 'hidden' })
-  await overview.getByRole('button', { name: /en cours$/ }).click()
+  // Plus d'onglet « en cours » : la vue d'ensemble porte la section des fils actifs.
+  await overview.getByRole('tab', { name: 'Ensemble', exact: true }).click()
   await candidateLink.waitFor()
   pushStatus('idle')
   await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`).waitFor()
@@ -368,7 +372,7 @@ try {
 
   const unreadEntry = all.find((entry) => !entry.archivedAt && entry.lastNotableSeq > entry.lastReadSeq)
   assert.ok(unreadEntry)
-  await overview.getByRole('button', { name: /non lues$/ }).click()
+  await overview.getByRole('tab', { name: /^Non lues/ }).click()
   const unreadLink = result.locator(`a[href="/p/${unreadEntry.projectId}/c/${unreadEntry.id}"]`)
   await unreadLink.click()
   await page.waitForURL(`**/c/${unreadEntry.id}`)
@@ -419,13 +423,12 @@ try {
   await page.keyboard.press('ArrowRight')
   assert.equal(await codex.isChecked(), true, 'Agent selection must support arrow keys')
   assert.equal(await message.inputValue(), 'Un brouillon qui doit rester en changeant d’agent.')
-  const usage = page.locator('details').filter({ has: page.locator('summary').filter({ hasText: 'Consommation du compte' }) })
-  await usage.getByText('Session · 95 %', { exact: true }).waitFor()
-  assert.equal(await usage.getAttribute('open'), null)
-  assert.equal(await usage.getByText('Session · 95 %', { exact: true }).isVisible(), true, 'A nearly exhausted quota must be visible while collapsed')
-  await usage.locator('summary').click()
-  await usage.getByText(/Remise à zéro/).waitFor()
-  await usage.locator('summary').click()
+  // Plus de volet à déplier : le brouillon montre les jauges en clair, intitulé et
+  // taux côte à côte, et la remise à zéro sous la barre.
+  const usage = page.locator('section').filter({ hasText: 'Consommation du compte' }).last()
+  await usage.getByText('Session', { exact: true }).waitFor()
+  assert.equal(await usage.getByText('95 %', { exact: true }).isVisible(), true, 'A nearly exhausted quota must be visible')
+  await usage.getByText(/^Remise à zéro/).first().waitFor()
 
   let submitted
   await page.route(`**/api/projects/${project.id}/conversations`, async (route) => {
@@ -455,8 +458,14 @@ try {
   const size = page.getByRole('slider', { name: 'Taille du texte', exact: true })
   assert.equal(await size.getAttribute('aria-valuetext'), '15 px')
   await size.focus()
+  // L'enregistrement sur le compte est différé d'une demi-seconde, le temps que le
+  // curseur se pose. Recharger avant son départ ferait réappliquer l'ancienne copie
+  // du compte : c'est elle qui fait foi, pas le cache local.
+  const settingsSaved = page.waitForResponse((response) =>
+    response.url().endsWith('/api/me/settings') && response.request().method() === 'PATCH')
   await page.keyboard.press('ArrowRight')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')
+  await settingsSaved
   await page.reload()
   await size.waitFor()
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')

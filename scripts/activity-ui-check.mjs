@@ -135,9 +135,10 @@ try {
   await overview.getByRole('link', { name: /Compiler la nouvelle interface.*En arrière-plan/ }).waitFor()
   pushStatus('activity-a', 'error')
   await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).getByRole('link', { name: /Compiler la nouvelle interface.*En erreur/ }).waitFor()
-  await overview.getByRole('button', { name: 'À débloquer 2', exact: true }).click()
+  // Rail segmenté depuis l'unification des onglets : des `tab`, plus des boutons.
+  await overview.getByRole('tab', { name: 'À débloquer 2', exact: true }).click()
   assert.equal(await overview.getByRole('link').count(), 2)
-  await overview.getByRole('button', { name: 'Non lues 6', exact: true }).click()
+  await overview.getByRole('tab', { name: 'Non lues 6', exact: true }).click()
   assert.equal(await overview.getByRole('link').count(), 6)
   await overview.getByRole('button', { name: 'Fermer', exact: true }).click()
   // Une nouvelle conversation, lancée depuis un autre client, rejoint le total.
