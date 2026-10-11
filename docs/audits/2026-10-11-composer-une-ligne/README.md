@@ -1,8 +1,9 @@
 # Composer en une seule rangée — maquettes
 
 Rendues par `scripts/composer-prototypes.mjs` depuis
-`apps/web/src/components/chat/ComposerRowPrototypes.tsx` (maquette jetable, à
-supprimer une fois la disposition portée dans le vrai composer).
+`apps/web/src/components/chat/ComposerRowPrototypes.tsx`, l'un et l'autre supprimés
+avec la carte #5 une fois la disposition portée dans le vrai composer. Ces images
+restent : elles datent la décision, et le code vivant est maintenant la référence.
 
 Chaque bloc a son image, dans `ordinateur/` (820 px) et `telephone/` (390 px) : une
 planche entière fait plus de trois mille pixels de haut, et toute visionneuse qui
@@ -32,8 +33,14 @@ l'ajuste à l'écran la rend illisible. Les quatre fichiers `ordinateur-*.png` e
 | `12-menu-modele-plus` | tout le catalogue du CLI |
 | `13-modale-contexte` | ce que la jauge ouvre |
 
-## Ce qui reste à trancher
+## Ce qui a été tranché en portant
 
-- `Réglages de la session` : sous-menu partout, ou feuille complète au téléphone ?
-- Compacter : depuis la modale de contexte seulement, ou aussi depuis le menu de la conversation comme aujourd'hui ?
-- En mode infléchir, arrêter n'est plus accessible tant qu'un brouillon est en cours. `Échap` pour vider le champ ?
+- `Réglages de la session` : ni sous-menu ni feuille à part, mais une seule surface qui
+  navigue entre quatre vues, la même au large et au doigt.
+- Compacter : depuis la modale de contexte **et** depuis le menu de la conversation,
+  qui le porte toujours.
+- `Échap` pour vider le champ : toujours pas tranché, et non implémenté.
+
+Trois replis ne figurent pas sur ces images, faute d'avoir été mesurés avant : sous
+352 px de barre, le chevron de la puce du modèle et la jauge tombent, et c'est le pire
+cas — mode Plan, mise en file, brouillon pendant un tour — qui l'impose.
