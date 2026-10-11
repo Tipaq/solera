@@ -1,12 +1,9 @@
-import { TooltipButton } from '@solera/ui'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Popover from '@radix-ui/react-popover'
-import { ChevronDown, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { useTranslate } from '../../lib/i18n'
+import type { MessageKey, MessageParams } from '../../lib/i18n'
 import { useMediaQuery } from '../../lib/viewport'
 import { cx } from '@solera/ui'
-import { SettingOptions, SettingsHeading, SettingsPanel } from './SettingsPanel'
 
 /**
  * Marque une valeur qui retire un garde-fou. Absente quand il n'y a rien à signaler :
@@ -72,96 +69,64 @@ export interface SummarySegment {
   tone?: SettingTone
 }
 
-interface ComposerSettingsProps {
-  groups: SettingGroup[]
-  summary: SummarySegment[]
-  mcp?: ReactNode
-  feedback?: ReactNode
-  disabled?: boolean
-  inputRef: RefObject<HTMLTextAreaElement | null>
+/**
+ * Ce qu'un coup d'œil doit dire des réglages sans ouvrir le menu.
+ *
+ * Calculé ici et non dans le composer : la règle — ce qui sort du défaut mérite une
+ * pastille, un garde-fou baissé la met à l'ambre — appartient aux réglages, et le
+ * bouton qui la porte a changé de place une fois déjà.
+ */
+export interface SettingsStatus {
+  /** Les réglages hors défaut, en toutes lettres. Vide : rien à signaler. */
+  labels: string[]
+  /** Un garde-fou est baissé, par opposition à un simple mode non standard. */
+  caution: boolean
+  /**
+   * Le mode Plan, nommé, ou null.
+   *
+   * Il garde une étiquette en toutes lettres dans la rangée, là où les autres se
+   * contentent de la pastille : il change ce que l'agent a le droit de faire pendant
+   * qu'on écrit, et ça ne se découvre pas en ouvrant un menu.
+   */
+  plan: string | null
+  /** Tous les réglages en vigueur, pour l'intitulé accessible du bouton. */
+  summary: string
 }
 
-export function ComposerSettings({ groups, summary, mcp, feedback, disabled = false, inputRef }: ComposerSettingsProps) {
-  const t = useTranslate()
-  const quick = ['model', 'effort'].flatMap((key) => groups.find((group) => group.key === key) ?? [])
+export function settingsStatus(
+  groups: SettingGroup[],
+  summary: SummarySegment[],
+  t: (key: MessageKey, params?: MessageParams) => string,
+): SettingsStatus {
   const warnings = summary.filter((segment) => segment.tone === 'caution')
-  const plan = groups.find((group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan')
-  const statusLabels = [
-    ...(plan ? [plan.options.find((option) => option.value === plan.value)?.label ?? plan.value] : []),
+  const plan = groups.find(
+    (group) => (group.key === 'mode' || group.key === 'permission') && group.value === 'plan',
+  )
+  const planLabel = plan
+    ? (plan.options.find((option) => option.value === plan.value)?.label ?? plan.value)
+    : null
+  const labels = [
+    ...(planLabel ? [planLabel] : []),
     ...warnings.map((segment) => {
       const group = groups.find((group) => group.key === segment.key)
       return group ? t('composer.settings.quick', { setting: group.label, value: segment.label }) : segment.label
     }),
   ]
-  const summaryLabel = [
-    ...summary.filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key).map((segment) => segment.label),
-    ...statusLabels,
-  ].join(' · ')
-
-  return (
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-1.5">
-        {quick.map((group) => {
-          const value = group.options.find((option) => option.value === group.value)?.label || group.value || t('composer.select.default')
-          const label = t('composer.settings.quick', { setting: group.label, value })
-          return (
-            <SettingsSurface
-              key={group.key}
-              label={group.label}
-              inputRef={inputRef}
-              disabled={disabled}
-              quick
-              trigger={
-                <TooltipButton type="button" disabled={disabled} aria-label={label} title={label}
-                  className={cx(
-                    'flex min-h-11 min-w-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs @min-[34rem]:max-w-80 @min-[34rem]:flex-initial',
-                    'hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent',
-                    'data-[state=open]:border-accent/50 data-[state=open]:bg-accent-wash disabled:pointer-events-none disabled:opacity-45',
-                    group.key === 'model' ? 'flex-[1.3] font-medium text-ink' : 'flex-1 text-ink-soft',
-                  )}
-                >
-                  <span className="hidden shrink-0 text-accent @min-[22rem]:inline-flex">{group.icon}</span>
-                  <span className="min-w-0 flex-1 truncate text-left">{value}</span>
-                  <ChevronDown size={14} className="shrink-0 text-ink-faint" />
-                </TooltipButton>
-              }
-            >
-              {(close) => (
-                <>
-                  <SettingsHeading title={group.label} onClose={() => close()} />
-                  <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
-                    {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
-                    <SettingOptions group={group} disabled={disabled} onPick={(value) => { group.onChange(value); close(true) }} />
-                  </div>
-                </>
-              )}
-            </SettingsSurface>
-          )
-        })}
-        <SettingsSurface
-          label={t('composer.settings.title')}
-          inputRef={inputRef}
-          disabled={disabled}
-          trigger={
-            <TooltipButton type="button" disabled={disabled}
-              aria-label={t('composer.settings.label', { summary: summaryLabel })}
-              title={[t('composer.settings.all'), ...statusLabels].join(' · ')}
-              className="relative ml-auto flex size-11 shrink-0 items-center justify-center rounded-md text-ink-soft hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent data-[state=open]:bg-accent-wash disabled:pointer-events-none disabled:opacity-45"
-            >
-              <SlidersHorizontal size={16} />
-              {statusLabels.length > 0 ? <span aria-hidden className={cx('absolute right-2 top-2 size-1.5 rounded-full', warnings.length > 0 ? 'bg-caution' : 'bg-accent')} /> : null}
-            </TooltipButton>
-          }
-        >
-          {(close) => <SettingsPanel groups={groups} disabled={disabled} extra={mcp} feedback={feedback} onDone={() => close(true)} onClose={() => close()} />}
-        </SettingsSurface>
-      </div>
-    </div>
-  )
+  return {
+    labels,
+    caution: warnings.length > 0,
+    plan: planLabel,
+    summary: [
+      ...summary
+        .filter((segment) => segment.tone !== 'caution' && segment.key !== plan?.key)
+        .map((segment) => segment.label),
+      ...labels,
+    ].join(' · '),
+  }
 }
 
 /** Même contenu, ancré sur ordinateur et dans une feuille sur écran tactile. */
-export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, spacious = false, align, onOpenChange }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
@@ -169,6 +134,14 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   disabled: boolean
   quick?: boolean
   spacious?: boolean
+  /** Côté par lequel le panneau s'aligne sur son déclencheur, à défaut du sien. */
+  align?: 'start' | 'end'
+  /**
+   * Ouverture et fermeture, pour un contenu qui a sa propre navigation : une surface
+   * refermée doit rouvrir sur sa première vue, et elle se ferme aussi par Échap ou par
+   * un clic au-dehors, que `close` ne voit pas passer.
+   */
+  onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
@@ -181,10 +154,12 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   const changeOpen = (next: boolean) => {
     if (next) resumeTyping.current = false
     setOpen(next)
+    onOpenChange?.(next)
   }
   const close = (resume = false) => {
     resumeTyping.current = resume && wasTyping.current
     setOpen(false)
+    onOpenChange?.(false)
   }
   const triggerEvents = {
     onPointerDown: () => { wasTyping.current = document.activeElement === inputRef.current },
@@ -192,11 +167,16 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
   }
   const onOpenAutoFocus = (event: Event) => {
     event.preventDefault()
+    // Le panneau est lu sur la cible de l'événement, que Radix émet dessus, et non sur
+    // la ref : celle-ci n'est pas toujours posée quand l'événement part, et le panneau
+    // s'ouvrait alors sans que rien ne prenne le focus — les flèches ne faisaient plus
+    // rien, par intermittence.
+    const panel = (event.target as HTMLElement | null) ?? content.current
     // Ne pas focaliser la recherche sur téléphone : cela ferait monter le clavier.
     const target = quick
-      ? content.current?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), [role="radio"][tabindex="0"]')
+      ? panel?.querySelector<HTMLElement>('[role="radio"][aria-checked="true"]:not(:disabled), [role="radio"][tabindex="0"]')
       : null
-    const focus = target ?? content.current?.querySelector<HTMLElement>('[data-settings-heading]')
+    const focus = target ?? panel?.querySelector<HTMLElement>('[data-settings-heading]')
     focus?.focus({ preventScroll: true })
   }
   const onCloseAutoFocus = (event: Event) => {
@@ -233,7 +213,7 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     <Popover.Root open={open} onOpenChange={changeOpen}>
       <Popover.Trigger asChild {...triggerEvents}>{trigger}</Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content ref={content} side="top" align={quick ? 'start' : 'end'} sideOffset={8} collisionPadding={12}
+        <Popover.Content ref={content} side="top" align={align ?? (quick ? 'start' : 'end')} sideOffset={8} collisionPadding={12}
           aria-label={label} onOpenAutoFocus={onOpenAutoFocus} onCloseAutoFocus={onCloseAutoFocus}
           className={cx('surface z-50 flex flex-col overflow-hidden rounded-xl border border-line shadow-pop outline-none', quick ? 'w-[min(23rem,var(--radix-popover-content-available-width))]' : 'w-[min(28rem,var(--radix-popover-content-available-width))]')}
           style={{ maxHeight: 'var(--radix-popover-content-available-height)' }}

@@ -1,37 +1,30 @@
-import { Tabs, TooltipButton } from '@solera/ui'
+import { Tabs } from '@solera/ui'
 import { BookOpen, Search } from 'lucide-react'
-import { useState, type RefObject } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useSkillLibrary } from '../../lib/skill-library'
-import { SettingsSurface } from './ComposerSettings'
 import { SettingsHeading } from './SettingsPanel'
 
-interface SkillsControlProps {
+/**
+ * Inventaire des skills et des commandes de la session, montré dans le menu « + ».
+ *
+ * Deux listes et non une : ce que la bibliothèque de Solera livrera au prochain
+ * lancement, et ce que le CLI déclare avoir. Le catalogue configuré ne prouve pas que
+ * le CLI l'a déjà chargé, et les confondre faisait annoncer des skills absents.
+ */
+interface SkillsInventoryProps {
   projectId?: string
   config: AgentConfig
   skills: AgentSkillDto[]
   commands: SlashCommandDto[]
-  inputRef: RefObject<HTMLTextAreaElement | null>
+  /** Revenir à la racine du menu « + », d'où cette vue a été ouverte. */
+  onBack: () => void
+  onClose: () => void
 }
 
-/** Le catalogue configuré ne prouve pas que le CLI l'a déjà chargé. */
-export function SkillsControl({ inputRef, ...props }: SkillsControlProps) {
-  const t = useTranslate()
-  return (
-    <SettingsSurface label={t('composer.skills.title')} inputRef={inputRef} disabled={false} spacious
-      trigger={<TooltipButton type="button" aria-label={t('composer.skills.title')} title={t('composer.skills.title')}
-        className="flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-ink-faint hover:bg-surface-high hover:text-ink md:min-h-8 pointer-coarse:min-h-11">
-        <BookOpen size={14} /><span>{t('composer.skills.title')}</span>
-      </TooltipButton>}
-    >
-      {(close) => <SkillsInventory {...props} onClose={close} />}
-    </SettingsSurface>
-  )
-}
-
-function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<SkillsControlProps, 'inputRef'> & { onClose: () => void }) {
+export function SkillsInventory({ projectId, config, skills, commands, onBack, onClose }: SkillsInventoryProps) {
   const t = useTranslate()
   const [search, setSearch] = useState('')
   const [view, setView] = useState<'library' | 'reported'>('library')
@@ -46,7 +39,7 @@ function SkillsInventory({ projectId, config, skills, commands, onClose }: Omit<
   const visibleReported = reported.filter(matches)
 
   return <>
-    <SettingsHeading title={t('composer.skills.title')} onClose={onClose} />
+    <SettingsHeading title={t('composer.skills.title')} onBack={onBack} onClose={onClose} />
     <div className="shrink-0 px-4">
       <Link to="/settings/skills" onClick={onClose} className="mb-3 flex min-h-11 items-center gap-2 text-sm text-accent"><BookOpen size={16} />{t('composer.skills.manage')}</Link>
       <label className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3">

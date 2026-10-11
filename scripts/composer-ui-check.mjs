@@ -63,22 +63,29 @@ async function mount(page) {
     const { api } = await import('/src/lib/api.ts')
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     window.client = client
+    // `steered` garde ce que l'envoi a infléchi plutôt qu'envoyé : c'est la seule
+    // façon de distinguer les deux gestes, le bouton étant le même.
+    window.steered = []
     function Harness() {
       const [id, setId] = React.useState('codex')
       const [disabled, setDisabled] = React.useState(false)
+      const [status, setStatus] = React.useState('idle')
       useVisualViewport()
       const { data } = useConversation(id)
       const settings = useConversationConfig(data)
       window.setConversation = setId
       window.setReadOnly = setDisabled
+      window.setStatus = setStatus
       window.settings = settings
       if (!settings.config) return null
       return React.createElement(Composer, {
-        key: id, config: settings.config, draftKey: `composer-test-${id}`, status: 'idle', disabled,
+        key: id, config: settings.config, draftKey: `composer-test-${id}`, status, disabled,
         commands: [], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
+        context: { usedTokens: 38_000, maxTokens: 200_000, ratio: 0.19 },
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
+        onSteer: async (text) => { window.steered.push(text) },
         onInterrupt: () => {},
       })
     }
@@ -138,16 +145,59 @@ try {
     })
     await mount(page)
     const field = page.getByPlaceholder('Écris ton message...')
-    const full = page.getByRole('button', { name: /^Réglages de la conversation,/ })
+    // Tout ce qui a quitté la rangée vit derrière le « + » : joindre, les skills, les
+    // serveurs MCP et les réglages. Sa pastille porte ce qui sort du défaut.
+    const plus = page.getByRole('button', { name: /^Joindre, skills, serveurs, réglages/ })
     const model = () => page.getByRole('button', { name: /^Modèle :/ })
-    const effort = () => page.getByRole('button', { name: /^Effort de réflexion :/ })
     const dialog = page.getByRole('dialog')
-    const openAll = async () => { await full.click(); await dialog.waitFor() }
-    const close = async () => { await page.getByRole('button', { name: 'Terminé', exact: true }).click(); await dialog.waitFor({ state: 'hidden' }) }
-    for (const button of [model(), effort(), full]) {
-      const bounds = await button.boundingBox()
-      assert.ok(bounds.width >= 44 && bounds.height >= 44)
+    const row = page.locator('[data-composer-row]')
+    // L'effort a quitté la barre : il se règle dans le menu du modèle, avec lui, parce
+    // que les niveaux proposés dépendent du modèle choisi.
+    const efforts = () => page.getByRole('radiogroup', { name: 'Effort de réflexion', exact: true })
+    const openModel = async () => { await model().click(); await dialog.waitFor() }
+    // Radix rend le focus à son déclencheur après la fermeture, et ce retour est
+    // asynchrone : ouvrir un autre panneau avant qu'il soit fait le refermait aussitôt.
+    const settle = async () => { await dialog.waitFor({ state: 'hidden' }); await delay(80) }
+    const escape = async () => { await page.keyboard.press('Escape'); await settle() }
+    const chosenEffort = async () => {
+      await openModel()
+      const label = (await efforts().getByRole('radio', { checked: true }).textContent()).trim()
+      await escape()
+      return label
     }
+    const openAll = async () => {
+      await plus.click()
+      await dialog.waitFor()
+      await page.getByRole('button', { name: /^Réglages de la session/ }).click()
+      await page.getByRole('button', { name: 'Terminé', exact: true }).waitFor()
+    }
+    const close = async () => { await page.getByRole('button', { name: 'Terminé', exact: true }).click(); await settle() }
+
+    /**
+     * La rangée tient dans le cadre, et l'envoi avec elle.
+     *
+     * Mesuré et non jugé à l'œil : quelques pixels de débordement poussent l'envoi
+     * hors du cadre sans que ça se voie sur une capture.
+     */
+    const fits = async (where, width = viewport.width) => {
+      const bounds = await row.evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }))
+      assert.ok(bounds.scroll <= bounds.client, `La rangée déborde ${where} (${bounds.scroll} > ${bounds.client})`)
+      const send = page.getByRole('button', { name: /^(Envoyer le message|Infléchir le tour en cours|Mettre le message en file)$/ })
+      if (await send.count() > 0) {
+        const box = await send.boundingBox()
+        assert.ok(box.x + box.width <= width + 1, `L'envoi sort du cadre ${where}`)
+      }
+    }
+
+    // La cible tactile ne se mesure qu'au doigt : au large et à la souris, la rangée
+    // descend à 36 px, c'est la règle du catalogue (`md:` et `pointer-coarse:`).
+    const tall = viewport.width < 700 ? 44 : 36
+    for (const button of [model(), plus]) {
+      const bounds = await button.boundingBox()
+      assert.ok(bounds.height >= tall, `Cible trop basse : ${bounds.height}`)
+    }
+    assert.ok((await plus.boundingBox()).width >= tall)
+    await fits('au repos')
 
     await field.fill('Brouillon conservé')
     await field.evaluate((node) => node.setSelectionRange(3, 9))
@@ -155,16 +205,20 @@ try {
     hold = new Promise((resolve) => { release = resolve })
     await model().click()
     await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
-    await dialog.waitFor({ state: 'hidden' })
+    await settle()
     await page.getByRole('button', { name: 'Modèle : Modèle Beta', exact: true }).waitFor()
-    assert.equal(await effort().getAttribute('aria-label'), 'Effort de réflexion : Moyen', 'Effort falls back immediately')
     if (viewport.width >= 700) {
       await page.waitForFunction(() => document.activeElement.tagName === 'TEXTAREA')
       assert.deepEqual(await field.evaluate((node) => [node.selectionStart, node.selectionEnd]), [3, 9])
     } else assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
-    await effort().click()
-    await page.getByRole('radio', { name: /^Faible/ }).click()
-    await page.getByRole('button', { name: 'Effort de réflexion : Faible', exact: true }).waitFor()
+    assert.equal(await chosenEffort(), 'Moyen', 'Effort falls back immediately')
+    // L'effort s'applique sans fermer : seul le choix du modèle referme, les niveaux
+    // proposés n'étant plus les mêmes après.
+    await openModel()
+    await efforts().getByRole('radio', { name: 'Faible', exact: true }).click()
+    await efforts().getByRole('radio', { name: 'Faible', exact: true }).and(page.locator('[aria-checked="true"]')).waitFor()
+    assert.equal(await dialog.isVisible(), true, 'Choisir un niveau ne referme pas le menu du modèle')
+    await escape()
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
     assert.equal(messages.length, 0, 'Sending waits for the pending settings')
     release()
@@ -193,19 +247,24 @@ try {
     assert.equal(stored.codex.collaborationMode, 'plan')
     assert.equal(stored.codex.askForApproval, 'never')
     assert.deepEqual(stored.codex.mcpServers, ['docs'])
-    assert.match(await full.getAttribute('aria-label'), /Accès total/)
+    assert.match(await plus.getAttribute('aria-label'), /Accès total/)
     if (viewport.width >= 700) {
-      await full.hover()
+      await plus.hover()
       await page.getByRole('tooltip').waitFor()
       assert.match(await page.getByRole('tooltip').textContent(), /Plan.*Approbations : Jamais.*Accès total/)
       await page.keyboard.press('Escape')
       await page.mouse.move(0, 0)
     }
+    // L'étiquette du mode Plan et la pastille du « + » tiennent dans la rangée : ce
+    // qui sort du défaut se lit sans rien ajouter sous le champ.
     assert.equal((await page.locator('form').boundingBox()).height, compactHeight, 'Permission indicators do not add a row')
+    await page.getByText('Plan', { exact: true }).first().waitFor()
+    await fits('en mode Plan')
 
     failNext = true
-    await effort().click()
-    await page.getByRole('radio', { name: /^Moyen/ }).click()
+    await openModel()
+    await efforts().getByRole('radio', { name: 'Moyen', exact: true }).click()
+    await escape()
     await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
@@ -235,9 +294,11 @@ try {
     await page.keyboard.press('End')
     assert.equal(await dialog.isVisible(), true)
     await page.keyboard.press('Enter')
-    await dialog.waitFor({ state: 'hidden' })
-    assert.equal(await effort().count(), 0)
+    await settle()
     assert.equal(await field.inputValue(), 'Encore un brouillon')
+    await openModel()
+    assert.equal(await efforts().count(), 0, 'Un modèle sans niveaux ne montre pas de rail vide')
+    await escape()
     await page.evaluate(() => window.settings.flush())
 
     if (viewport.width === 1440) {
@@ -252,10 +313,10 @@ try {
         await window.settings.flush()
       })
       await page.getByRole('button', { name: 'Modèle : saved-model', exact: true }).waitFor()
-      await model().click()
+      await openModel()
       await page.getByRole('searchbox', { name: 'Rechercher un modèle', exact: true }).fill('Archive 9')
-      assert.equal(await page.getByRole('radio').count(), 1)
-      await page.keyboard.press('Escape')
+      assert.equal(await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio').count(), 1)
+      await escape()
       await openAll()
       const approval = page.getByRole('radiogroup', { name: 'Approbations', exact: true })
       assert.equal(await approval.getByRole('radio', { name: /^Granulaire/ }).isDisabled(), true)
@@ -301,22 +362,113 @@ try {
     await close()
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
-    assert.match(await full.getAttribute('aria-label'), /Tout autoriser/)
+    assert.match(await plus.getAttribute('aria-label'), /Tout autoriser/)
     if (viewport.width >= 700) {
-      await full.hover()
+      await plus.hover()
       await page.getByRole('tooltip').waitFor()
       assert.match(await page.getByRole('tooltip').textContent(), /Tout autoriser/)
       await page.keyboard.press('Escape')
       await page.mouse.move(0, 0)
     }
+    // Le menu « + » : tout ce qui a quitté la rangée doit s'y retrouver, et chaque
+    // vue doit pouvoir revenir à la racine sans refermer la surface.
+    await plus.click()
+    await dialog.waitFor()
+    const attach = page.getByRole('button', { name: 'Joindre un fichier', exact: true })
+    assert.ok((await attach.boundingBox()).height >= 44, 'Une entrée de menu reste une cible au doigt')
+    await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
+    await page.getByRole('switch', { name: /^Mémoire et coordination/ }).waitFor()
+    await page.getByRole('button', { name: 'Retour', exact: true }).click()
+    await page.getByRole('button', { name: 'Skills et commandes', exact: true }).click()
+    await page.getByRole('textbox', { name: 'Rechercher un skill…', exact: true }).waitFor()
+    await page.getByRole('button', { name: 'Retour', exact: true }).click()
+    await attach.waitFor()
+    await escape()
+    // Rouvrir rend la racine : un panneau qui se souvient de sa branche fait manquer
+    // les trois autres.
+    await plus.click()
+    await dialog.waitFor()
+    await attach.waitFor()
+    await escape()
+
+    /*
+     * Les quatre états du bouton de droite (carte #5). Infléchir est le défaut : avec
+     * un brouillon en cours, l'envoi l'emporte sur l'arrêt. La mise en file est le
+     * seul cas où les deux coexistent, et l'horloge est alors le seul signe visible
+     * que le départ est différé.
+     */
+    const send = page.getByRole('button', { name: 'Envoyer le message', exact: true })
+    const steer = page.getByRole('button', { name: 'Infléchir le tour en cours', exact: true })
+    const queue = page.getByRole('button', { name: 'Mettre le message en file', exact: true })
+    const stop = page.getByRole('button', { name: "Interrompre l'agent", exact: true })
+
+    await field.fill('')
+    assert.equal(await send.isDisabled(), true, 'Au repos, rien de tapé : la flèche est grisée')
+    assert.equal(await stop.count(), 0)
+
+    await page.evaluate(() => window.setStatus('running'))
+    await stop.waitFor()
+    assert.equal(await send.count() + await steer.count() + await queue.count(), 0, 'Tour en cours, rien de tapé : le carré seul')
+    await fits('pendant un tour')
+
+    await field.fill('Plutôt en TypeScript.')
+    await steer.waitFor()
+    assert.equal(await stop.count(), 0, "Infléchir l'emporte sur arrêter tant qu'il y a un brouillon")
+    await fits('pendant un tour, un message tapé')
+    await steer.click()
+    await page.waitForFunction(() => window.steered.length === 1)
+    assert.equal(await field.inputValue(), '')
+
+    await page.evaluate(() => window.settings.change({ ...window.settings.config, queueMessages: true }))
+    await field.fill('Plutôt en TypeScript.')
+    await queue.waitFor()
+    await stop.waitFor()
+    await fits('pendant un tour, mise en file')
+    await queue.click()
+    await page.waitForFunction((count) => window.steered.length === count, 1)
+    assert.equal(await page.evaluate(() => window.steered.length), 1, 'La mise en file ne passe pas par le steer')
+
+    await page.evaluate(() => window.setStatus('idle'))
+    await page.evaluate(() => window.settings.change({ ...window.settings.config, queueMessages: false }))
+    await page.evaluate(() => window.settings.flush())
+    await field.fill('')
+
+    if (viewport.width === 1440) {
+      /*
+       * Le pire cas de la rangée, à toutes les largeurs : le mode Plan garde son
+       * étiquette, la mise en file fait coexister le carré et la flèche, et un
+       * brouillon occupe le champ. C'est le téléphone qui décide, où la rangée ne
+       * dispose que de 346 px, mais un débordement peut apparaître à n'importe quel
+       * seuil de repli : la mesure balaie l'intervalle au lieu de parier dessus.
+       */
+      await page.evaluate(async () => {
+        window.settings.change({ ...window.settings.config, permissionMode: 'plan', queueMessages: true })
+        await window.settings.flush()
+      })
+      await page.evaluate(() => window.setStatus('running'))
+      await field.fill('Plutôt en TypeScript, et garde le test existant.')
+      await page.getByRole('button', { name: 'Mettre le message en file', exact: true }).waitFor()
+      for (let width = 320; width <= 1440; width += 16) {
+        await page.setViewportSize({ width, height: 844 })
+        await fits(`à ${width} px, dans le pire cas`, width)
+      }
+      await page.setViewportSize(viewport)
+      await page.evaluate(() => window.setStatus('idle'))
+      await field.fill('')
+      await page.evaluate(async () => {
+        window.settings.change({ ...window.settings.config, permissionMode: 'bypassPermissions', queueMessages: false })
+        await window.settings.flush()
+      })
+    }
+
     await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.evaluate(() => window.setReadOnly(true))
     await page.waitForFunction(() => document.querySelector('button[aria-label^="Modèle :"]').disabled)
     assert.equal(await model().isDisabled(), true)
-    assert.equal(await full.isDisabled(), true)
+    assert.equal(await plus.isDisabled(), true)
     assert.deepEqual(errors, [])
-    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, bounds`)
+    console.log(`OK ${viewport.width}×${viewport.height}: quick choices, ordered saves, send waits, retry, draft, Claude/Codex, MCP, send states, bounds`)
     await context.close()
   }
 } finally {

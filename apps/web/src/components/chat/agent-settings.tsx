@@ -26,7 +26,7 @@ import {
   type SettingOption,
   type SummarySegment,
 } from './ComposerSettings'
-import { McpControl, type McpControlProps } from './McpControl'
+import { McpControl, mcpSummaryOf, type McpControlProps } from './McpControl'
 
 /**
  * Réglages d'une configuration d'agent, sous la forme de catégories d'options.
@@ -282,6 +282,8 @@ export interface AgentSettings {
   mcp: ReactNode
   /** Les mêmes contrôles MCP, dépliés dans la vue complète du composer. */
   mcpPanel: ReactNode
+  /** Résumé des serveurs, pour l'entrée de menu qui mène au contrôle. */
+  mcpSummary: string
   /** Le CLI n'a pas répondu : la liste des modèles se réduit à ce qui est enregistré. */
   catalogError: Error | null
 }
@@ -1001,5 +1003,12 @@ export function useAgentSettings({
     )
   }
 
-  return { groups, summary, mcp, mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null, catalogError }
+  return {
+    groups,
+    summary,
+    mcp,
+    mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null,
+    mcpSummary: mcp ? mcpSummaryOf(mcp.props) : '',
+    catalogError,
+  }
 }

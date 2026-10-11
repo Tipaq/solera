@@ -33,17 +33,23 @@ async function mount(page) {
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
     const hookSource = await (await fetch('/src/lib/skill-library.ts')).text()
     const { QueryClient, QueryClientProvider } = await import(hookSource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1])
-    const source = await (await fetch('/src/components/chat/SkillsControl.tsx')).text()
+    const source = await (await fetch('/src/components/chat/SkillsInventory.tsx')).text()
     const { MemoryRouter } = await import(source.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
-    const { SkillsControl } = await import('/src/components/chat/SkillsControl.tsx')
+    const { SkillsInventory } = await import('/src/components/chat/SkillsInventory.tsx')
     const { AddSkillMenu } = await import('/src/components/skills/AddSkillMenu.tsx')
     // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
     // source transformée du composant, comme pour les autres dépendances.
     const { TooltipProvider } = await import(source.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1])
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const commands = Array.from({ length: 24 }, (_, i) => ({ name: `commande-${i}`, description: 'Une description de commande très longue. '.repeat(30) }))
-    const content = React.createElement('div', { className: 'p-6 flex gap-6' },
-      React.createElement(SkillsControl, { config: { agent: 'claude', skillLibrary: true }, commands, skills: [], inputRef: { current: null } }),
+    // L'inventaire vit maintenant dans le menu « + » du composer : un panneau de
+    // 28 rem au large, une feuille au doigt. Il est monté ici à cette largeur et sans
+    // son déclencheur, le chemin qui y mène étant vérifié par `test:composer-ui`.
+    const content = React.createElement('div', { className: 'p-6 flex items-start gap-6' },
+      React.createElement('div', {
+        'data-inventory': '',
+        className: 'surface flex h-[32rem] w-[min(28rem,100%)] flex-col overflow-hidden rounded-xl border border-line',
+      }, React.createElement(SkillsInventory, { config: { agent: 'claude', skillLibrary: true }, commands, skills: [], onBack: () => {}, onClose: () => {} })),
       React.createElement(AddSkillMenu, { scope: 'global', projectId: null }))
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, content))))
   })
@@ -89,11 +95,8 @@ try {
       return send({})
     })
     await mount(page)
-    await page.getByRole('button', { name: 'Skills', exact: true }).click()
-    const inventory = page.getByRole('dialog', { name: 'Skills', exact: true })
+    const inventory = page.locator('[data-inventory]')
     await inventory.waitFor()
-    const box = await inventory.boundingBox()
-    if (viewport.width > 700) assert.ok(box.width >= 800)
     const manage = inventory.getByRole('link', { name: 'Gérer la bibliothèque' })
     assert.ok(await manage.isVisible())
     const summary = inventory.locator('summary').first()
@@ -106,7 +109,6 @@ try {
     await inventory.getByText('commande-23', { exact: true }).scrollIntoViewIfNeeded()
     assert.ok(await manage.isVisible())
     await page.screenshot({ path: `/tmp/solera-skills-composer-${viewport.width}.png` })
-    await page.keyboard.press('Escape')
     await page.getByRole('button', { name: 'Ajouter un skill', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Depuis un catalogue…' }).click()
     const dialog = page.getByRole('dialog', { name: 'Catalogues de skills' })

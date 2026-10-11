@@ -81,10 +81,8 @@ export function McpControl({
   }
 
   // `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce
-  // que j'ai déclaré », et le serveur de Solera tombe avec les autres. La case reste
+  // que j'ai déclaré », et le serveur de Solera tombe avec les autres. Sa case reste
   // affichée pour que son état se lise, mais devient inerte tant que l'isolation dure.
-  const soleraActive = solera === true && strict !== true
-
   const items = (
     <>
       {solera === null ? null : (
@@ -175,10 +173,7 @@ export function McpControl({
   // Une pastille d'icône et de compte plutôt qu'un sélecteur nommé : la question
   // « avec quels outils » se lit d'un coup d'œil et ne mérite pas d'occuper la barre
   // à hauteur des réglages qu'on change à chaque tour.
-  // Le serveur de Solera compte comme les autres tant que le CLI n'a pas répondu :
-  // c'en est un, il expose des outils, et l'omettre ferait afficher « aucun » à une
-  // conversation qui démarrera pourtant avec une mémoire du projet.
-  const configured = selected.length + (soleraActive ? 1 : 0)
+  const configured = configuredCount(solera, strict, selected)
   const summary = mcpSummary(configured, inventory.length)
   const count = inventory.length > 0 ? inventory.length : configured
 
@@ -246,6 +241,25 @@ function ToolCount({ count }: { count: number | undefined }) {
       {t(count > 1 ? 'composer.mcp.tools.many' : 'composer.mcp.tools.one', { count })}
     </span>
   )
+}
+
+/**
+ * Serveurs que la configuration décrit.
+ *
+ * Le serveur de Solera compte comme les autres : c'en est un, il expose des outils, et
+ * l'omettre ferait afficher « aucun » à une conversation qui démarrera pourtant avec
+ * une mémoire du projet. L'isolation stricte le fait tomber avec les autres.
+ */
+function configuredCount(solera: boolean | null, strict: boolean | null, selected: string[]): number {
+  return selected.length + (solera === true && strict !== true ? 1 : 0)
+}
+
+/**
+ * Le même résumé, pour qui montre le contrôle derrière une entrée de menu plutôt que
+ * derrière sa propre pastille : la règle de comptage ne se recopie pas.
+ */
+export function mcpSummaryOf({ inventory, selected, solera, strict }: McpControlProps): string {
+  return mcpSummary(configuredCount(solera, strict, selected), inventory.length)
 }
 
 /**

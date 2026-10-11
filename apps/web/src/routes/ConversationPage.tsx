@@ -1304,6 +1304,8 @@ export function ConversationPage() {
             status={stream.status}
             disabled={!isOwner}
             context={stream.state.context}
+            onCompact={isOwner ? () => void compact() : undefined}
+            canCompact={!compacting && !stream.state.compacting && stream.status === 'idle'}
             onSteer={canSteer ? steer : undefined}
             onSend={send}
             onCommand={runCommand}

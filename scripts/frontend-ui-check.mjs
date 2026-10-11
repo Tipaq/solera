@@ -317,11 +317,40 @@ try {
   await page.waitForFunction(() => Math.round(document.querySelector('[data-panel="workspace"]').getBoundingClientRect().width) === innerWidth)
   await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: /Réglages de la conversation,/ }).click()
-  await page.getByRole('dialog', { name: 'Réglages de la conversation', exact: true }).waitFor()
+  // Joindre, les skills, les serveurs et les réglages ont quitté la rangée : ils sont
+  // derrière le « + », dont la surface navigue entre quatre vues.
+  const plus = page.getByRole('button', { name: /^Joindre, skills, serveurs, réglages/ })
+  await plus.click()
+  const plusSheet = page.getByRole('dialog', { name: 'Ajouter et régler', exact: true })
+  await plusSheet.waitFor()
+  // La cible tactile survit au déménagement : l'entrée du menu fait ses 44 px.
+  assert.equal(await plusSheet.getByRole('button', { name: 'Joindre un fichier', exact: true })
+    .evaluate((node) => node.getBoundingClientRect().height >= 44), true)
+  for (const entry of ['Skills et commandes', 'Serveurs MCP', 'Réglages de la session']) {
+    await plusSheet.getByRole('button', { name: new RegExp(`^${entry}`) }).waitFor()
+  }
+  // Les réglages complets sont au bout du chemin, titre et pied compris.
+  await plusSheet.getByRole('button', { name: /^Réglages de la session/ }).click()
+  const settings = page.getByRole('dialog', { name: 'Réglages de la conversation', exact: true })
+  await settings.waitFor()
+  await settings.getByRole('button', { name: 'Terminé', exact: true }).waitFor()
   await page.keyboard.press('Escape')
-  assert.equal(await page.getByRole('button', { name: 'Joindre un fichier', exact: true }).evaluate((node) => node.getBoundingClientRect().height >= 44), true)
+  await settings.waitFor({ state: 'hidden' })
+  assert.equal(await plus.evaluate((node) => node.getBoundingClientRect().height >= 44), true)
+  // L'effort a rejoint le menu du modèle ; la puce du modèle reste dans la rangée.
+  assert.equal(await page.getByRole('button', { name: /^Effort de réflexion/ }).count(), 0)
+  await page.getByRole('button', { name: /^Modèle :/ }).waitFor()
   console.log('OK : conversation et panneau côte à côte, agrandissement, repli mobile et réglages accessibles.')
+
+  // Au doigt, la rangée garde ses 44 px même au large : `md:` rétrécit le « + » que
+  // la requête `pointer-coarse` doit ramener à la cible tactile.
+  const touch = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block', hasTouch: true, storageState: await context.storageState() })
+  const touchPage = await touch.newPage()
+  await touchPage.goto(`${base}/p/${project.id}/c/${hero.id}`)
+  const touchPlus = touchPage.getByRole('button', { name: /^Joindre, skills, serveurs, réglages/ })
+  await touchPlus.waitFor()
+  assert.equal(await touchPlus.evaluate((node) => node.getBoundingClientRect().height >= 44), true)
+  await touch.close()
 
   for (const width of [320, 390, 768, 1024, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 })

@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { ArrowUp, Clock, Loader2, Mic, Paperclip, Square } from 'lucide-react'
+import { ArrowUp, Clock, Loader2, Mic, Square } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -26,7 +26,7 @@ import { useNavigate } from 'react-router-dom'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerPrefill, useComposerReferences } from '../../lib/composer-ref'
-import { ContextMeter } from './ContextMeter'
+import { ContextButton } from './ContextMeter'
 import { discardAttachment, uploadAttachment } from '../../lib/attachments'
 import { useCardSuggestions } from '../../lib/cards'
 import { useFileSuggestions, type FileMatchDto } from '../../lib/files'
@@ -38,8 +38,9 @@ import { AttachmentTray } from './AttachmentTray'
 import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
-import { ComposerSettings } from './ComposerSettings'
-import { SkillsControl } from './SkillsControl'
+import { settingsStatus } from './ComposerSettings'
+import { ComposerPlusMenu } from './ComposerPlusMenu'
+import { ModelControl } from './ModelControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
 
@@ -160,6 +161,18 @@ interface ComposerProps {
   /** Occupation de la fenêtre de contexte, absente tant qu'aucun tour n'a eu lieu. */
   context?: ContextState | null
   /**
+   * Compacte la conversation, depuis le détail qu'ouvre la jauge.
+   *
+   * Absent là où le geste n'existe pas : conversation qu'on ne fait que lire, ou
+   * composer sans fil derrière lui. La jauge s'ouvre quand même, elle dit l'état.
+   */
+  onCompact?(): void
+  /**
+   * Faux pendant un tour ou une compaction déjà lancée : le contexte bouge encore, et
+   * le résumer au milieu porterait sur un état que l'agent est en train de changer.
+   */
+  canCompact?: boolean
+  /**
    * Infléchit le tour en cours, là où le CLI le permet.
    *
    * C'est ce que fait l'envoi pendant un tour, sauf si la conversation a choisi la
@@ -218,6 +231,8 @@ export function Composer({
   configError,
   onConfigRetry,
   context,
+  onCompact,
+  canCompact = false,
   onSteer,
   initialText = '',
   variant = 'thread',
@@ -262,7 +277,7 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
-  const { groups, summary, mcp, mcpPanel, catalogError } = useAgentSettings({
+  const { groups, summary, mcpPanel, mcpSummary, catalogError } = useAgentSettings({
     config,
     onConfigChange,
     appliedConfig,
@@ -675,6 +690,15 @@ export function Composer({
     }
   }
 
+  // Ce que la rangée doit montrer des réglages sans ouvrir le menu : la pastille du
+  // « + », et le mode Plan en toutes lettres.
+  const settings = settingsStatus(groups, summary, t)
+  const modelGroup = groups.find((group) => group.key === 'model')
+  const modelLabel =
+    modelGroup?.options.find((option) => option.value === modelGroup.value)?.label ||
+    modelGroup?.value ||
+    ''
+
   const configFeedback = configError ? (
     <div role="alert" className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-xs text-critical">
       <span>{t('composer.settings.saveError')} {configError}</span>
@@ -786,17 +810,10 @@ export function Composer({
             )}
           />
 
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div className="flex min-w-0 basis-full items-center border-b border-line pb-1">
-              <ComposerSettings
-                groups={groups}
-                summary={summary}
-                mcp={mcpPanel}
-                feedback={configFeedback}
-                disabled={disabled}
-                inputRef={textarea}
-              />
-            </div>
+          {/* Une seule rangée : « + » et la dictée à gauche, le modèle, la jauge et
+              l'envoi à droite. Ce qui a quitté la barre vit dans le menu « + », et
+              rien n'en est perdu — l'inventaire est dans la carte #5. */}
+          <div data-composer-row className="flex items-center gap-1 @min-[22rem]:gap-1.5">
             {/* Pas de `capture` : iOS propose alors lui-même l'appareil photo, la
                 photothèque et les fichiers, ce qu'un `capture` forcé interdirait. */}
             <input
@@ -811,15 +828,24 @@ export function Composer({
                 event.target.value = ''
               }}
             />
-            <IconButton
-              label={t('composer.attach.label')}
-              size="sm"
-              disabled={disabled || attachments.length >= MAX_ATTACHMENTS_PER_MESSAGE}
-              onClick={() => filePicker.current?.click()}
-            >
-              <Paperclip size={16} />
-            </IconButton>
 
+            <ComposerPlusMenu
+              groups={groups}
+              status={settings}
+              mcp={mcpPanel}
+              mcpSummary={mcpSummary}
+              feedback={configFeedback}
+              disabled={disabled}
+              inputRef={textarea}
+              onAttach={() => filePicker.current?.click()}
+              canAttach={attachments.length < MAX_ATTACHMENTS_PER_MESSAGE}
+              projectId={projectId}
+              config={config}
+              skills={skills}
+              commands={commands}
+            />
+
+            {/* Dehors, et pas dans le menu : c'est l'action la plus fréquente au doigt. */}
             <IconButton
               label={
                 dictation.state === 'recording'
@@ -844,9 +870,6 @@ export function Composer({
               )}
             </IconButton>
 
-            {mcp}
-            <SkillsControl projectId={projectId} config={config} skills={skills} commands={commands} inputRef={textarea} />
-
             <ConfirmDialog
               open={sttNotice}
               onOpenChange={setSttNotice}
@@ -857,54 +880,72 @@ export function Composer({
               <p>{t('composer.dictate.unconfigured.body')}</p>
             </ConfirmDialog>
 
-            <span className="ml-auto flex items-center">
-              {context ? <ContextMeter context={context} /> : null}
-            </span>
-
-            {/* Le carré d'arrêt n'accompagne l'envoi que lorsque celui-ci met en
-                file : le message attend alors la fin du tour, et arrêter reste une
-                action utile pendant qu'on écrit. Quand l'envoi infléchit, les deux
-                gestes se contredisent, et c'est l'envoi qui l'emporte — comme sur
-                claude.ai, où arrêter demande de vider le champ. */}
-            {running && (!canSend || queueing) ? (
-              <TooltipButton
-                type="button"
-                onClick={onInterrupt}
-                aria-label={t('composer.interrupt')}
-                title={t('composer.interrupt')}
-                className={cx(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                  'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
-                )}
-              >
-                <Square size={16} fill="currentColor" />
-              </TooltipButton>
-            ) : null}
-
-            {/* L'horloge est le seul signe visible que le départ est différé : sans
-                elle, infléchir et mettre en file auraient exactement la même tête. */}
-            <span className="relative inline-flex shrink-0">
-              <TooltipButton
-                type="submit"
-                disabled={!canSend}
-                aria-label={queueing ? t('composer.send.queue') : steering ? t('composer.steer.aria') : t('composer.send.aria')}
-                title={queueing ? t('composer.send.queue.hint') : steering ? t('composer.steer.hint') : t('composer.send.aria')}
-                className={cx(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                  'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
-                  'disabled:pointer-events-none disabled:opacity-35',
-                  // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
-                  // ne s'affiche que s'il y a réellement quelque chose à envoyer.
-                  running && !canSend && 'hidden',
-                )}
-              >
-                <ArrowUp size={16} strokeWidth={2.5} />
-              </TooltipButton>
-              {queueing && canSend ? (
-                <span aria-hidden className="pointer-events-none absolute top-0 right-0 flex size-4 items-center justify-center rounded-full border border-surface bg-surface-high text-ink-soft">
-                  <Clock size={10} />
+            <span className="ml-auto flex min-w-0 items-center gap-1 @min-[22rem]:gap-1.5">
+              {/* Le mode Plan garde son nom en toutes lettres : il change ce que
+                  l'agent a le droit de faire pendant qu'on écrit, et la pastille du
+                  « + » dit qu'il se passe quelque chose sans dire quoi. */}
+              {settings.plan ? (
+                <span className="flex min-h-11 shrink-0 items-center rounded-md border border-caution/40 bg-caution/10 px-2 text-xs font-medium text-caution md:min-h-9 pointer-coarse:min-h-11">
+                  {settings.plan}
                 </span>
               ) : null}
+
+              <ModelControl agent={config.agent} groups={groups} disabled={disabled} inputRef={textarea} />
+
+              {context ? (
+                <ContextButton
+                  context={context}
+                  model={modelLabel}
+                  onCompact={onCompact}
+                  canCompact={canCompact}
+                />
+              ) : null}
+
+              {/* Le carré d'arrêt n'accompagne l'envoi que lorsque celui-ci met en
+                  file : le message attend alors la fin du tour, et arrêter reste une
+                  action utile pendant qu'on écrit. Quand l'envoi infléchit, les deux
+                  gestes se contredisent, et c'est l'envoi qui l'emporte — comme sur
+                  claude.ai, où arrêter demande de vider le champ. */}
+              {running && (!canSend || queueing) ? (
+                <TooltipButton
+                  type="button"
+                  onClick={onInterrupt}
+                  aria-label={t('composer.interrupt')}
+                  title={t('composer.interrupt')}
+                  className={cx(
+                    'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
+                    'border border-line bg-surface-high text-ink transition-colors hover:border-line-strong',
+                  )}
+                >
+                  <Square size={16} fill="currentColor" />
+                </TooltipButton>
+              ) : null}
+
+              {/* L'horloge est le seul signe visible que le départ est différé : sans
+                  elle, infléchir et mettre en file auraient exactement la même tête. */}
+              <span className="relative inline-flex shrink-0">
+                <TooltipButton
+                  type="submit"
+                  disabled={!canSend}
+                  aria-label={queueing ? t('composer.send.queue') : steering ? t('composer.steer.aria') : t('composer.send.aria')}
+                  title={queueing ? t('composer.send.queue.hint') : steering ? t('composer.steer.hint') : t('composer.send.aria')}
+                  className={cx(
+                    'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
+                    'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
+                    'disabled:pointer-events-none disabled:opacity-35',
+                    // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
+                    // ne s'affiche que s'il y a réellement quelque chose à envoyer.
+                    running && !canSend && 'hidden',
+                  )}
+                >
+                  <ArrowUp size={16} strokeWidth={2.5} />
+                </TooltipButton>
+                {queueing && canSend ? (
+                  <span aria-hidden className="pointer-events-none absolute top-0 right-0 flex size-4 items-center justify-center rounded-full border border-surface bg-surface-high text-ink-soft">
+                    <Clock size={10} />
+                  </span>
+                ) : null}
+              </span>
             </span>
           </div>
         </div>

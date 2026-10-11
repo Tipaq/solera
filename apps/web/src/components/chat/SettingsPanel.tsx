@@ -1,5 +1,5 @@
 import { Button, TooltipButton } from '@solera/ui'
-import { Check, Search, X } from 'lucide-react'
+import { Check, ChevronLeft, Search, X } from 'lucide-react'
 import { useId, useRef, useState, type ReactNode } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '@solera/ui'
@@ -11,12 +11,14 @@ interface SettingsPanelProps {
   /** MCP est un choix multiple, rendu après les choix uniques. */
   extra?: ReactNode
   feedback?: ReactNode
+  /** Présent quand le panneau est une vue parmi d'autres, atteinte depuis le menu « + ». */
+  onBack?: () => void
   onDone: () => void
   onClose: () => void
 }
 
 /** Vue complète : les choix s'appliquent sans fermer le panneau. */
-export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ groups, disabled, extra, feedback, onBack, onDone, onClose }: SettingsPanelProps) {
   const t = useTranslate()
   const ordered = [
     ...groups.filter((group) => group.key === 'model'),
@@ -25,7 +27,7 @@ export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClo
   ]
   return (
     <>
-      <SettingsHeading title={t('composer.settings.title')} onClose={onClose} />
+      <SettingsHeading title={t('composer.settings.title')} onBack={onBack} onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4">
         {ordered.map((group) => (
           <section key={group.key} className="border-b border-line py-4 last:border-0">
@@ -52,11 +54,18 @@ export function SettingsPanel({ groups, disabled, extra, feedback, onDone, onClo
   )
 }
 
-export function SettingsHeading({ title, onClose }: { title: string; onClose: () => void }) {
+export function SettingsHeading({ title, onBack, onClose }: { title: string; onBack?: () => void; onClose: () => void }) {
   const t = useTranslate()
   return (
-    <header className="flex shrink-0 items-center justify-between gap-2 border-b border-line py-2 pr-2 pl-4">
-      <h2 tabIndex={-1} data-settings-heading className="text-sm font-semibold outline-none">{title}</h2>
+    <header className={cx('flex shrink-0 items-center justify-between gap-2 border-b border-line py-2 pr-2', onBack ? 'pl-1' : 'pl-4')}>
+      {/* Revenir, et non fermer : la vue est une branche du menu « + », et la refermer
+          pour y retourner coûterait deux gestes au lieu d'un. */}
+      {onBack ? (
+        <TooltipButton type="button" onClick={onBack} aria-label={t('composer.settings.back')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+          <ChevronLeft size={16} />
+        </TooltipButton>
+      ) : null}
+      <h2 tabIndex={-1} data-settings-heading className="min-w-0 flex-1 truncate text-sm font-semibold outline-none">{title}</h2>
       <TooltipButton type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
         <X size={16} />
       </TooltipButton>
