@@ -138,13 +138,63 @@ Les deux instances de Solera sont des unités systemd utilisateur, `solera` et
 `solera-dev`, écrites à la main dans `~/.config/systemd/user/` — pas par `install.sh`,
 qui rendrait un nom de service fixe et écraserait celui de Sillage.
 
-**Publier une version** : la stable tourne depuis le worktree `~/projects/solera-stable`
-sur la branche `stable`. Donc :
+**Publier une version.** `solera.service` ne tourne **pas** depuis le worktree : il
+tourne depuis le layout de l'installeur, `~/.local/share/solera/app/current`, un lien
+vers `releases/<version>`. Construire dans `~/projects/solera-stable` et redémarrer le
+service ne change donc rien à ce qui est servi — c'est ce que disait cette section
+jusqu'au 2026-10-11, et ça a fait croire à un déploiement qui n'avait pas eu lieu.
+
+Le worktree reste la source : on y fusionne et on y construit, puis on **stage** un
+arbre d'exécution et on bascule le lien.
 
 ```sh
-git -C ~/projects/solera-stable merge main && \
-  (cd ~/projects/solera-stable && pnpm build) && \
-  systemctl --user restart solera
+V=v$(git -C ~/projects/solera-stable describe --tags --always | sed 's/^v//')
+APP=~/.local/share/solera/app
+git -C ~/projects/solera-stable merge --ff-only main
+(cd ~/projects/solera-stable && pnpm build && SOLERA_VERSION=$V node scripts/stage-runtime.mjs "$APP/releases/$V")
+```
+
+`stage-runtime.mjs` laisse les dépendances runtime externes : il faut matérialiser
+`node_modules` dans l'arbre staged. **Tant que les dépendances de `apps/server` n'ont pas
+bougé**, les copier en liens durs depuis la release en place évite de recompiler les
+modules natifs, ce que cette machine ne sait pas faire (ni `make` ni `cc`, et sudo est
+verrouillé) :
+
+```sh
+cp -al "$APP/releases/<ancienne>/node_modules" "$APP/releases/$V/node_modules"
+cp "$APP/releases/<ancienne>/package-lock.json" "$APP/releases/$V/"
+```
+
+Stager **dans** `$APP/releases` et non dans `/tmp` : les liens durs ne traversent pas
+les systèmes de fichiers. Si les dépendances ont changé, il faut un vrai
+`npm install --omit=dev` dans l'arbre, et c'est là que cette machine bloque.
+
+Éprouver l'arbre sur un port et des données à part avant de basculer. `NODE_ENV` doit
+valoir `production`, sinon le serveur cherche `pino-pretty`, absent d'un arbre sans
+devDependencies, et meurt au démarrage :
+
+```sh
+NODE_ENV=production SOLERA_PORT=7619 SOLERA_DATA_DIR=/tmp/solera-smoke \
+  SOLERA_WEB_ROOT="$APP/releases/$V/web" \
+  ~/.local/share/solera/node/current/bin/node "$APP/releases/$V/server/main.js"
+```
+
+Puis basculer, d'un seul geste :
+
+```sh
+ln -sfn "releases/$V" "$APP/current.tmp" && mv -T "$APP/current.tmp" "$APP/current"
+systemctl --user restart solera
+```
+
+**Le redémarrage tue les sessions d'agent en cours**, celle qui publie comprise : elles
+sont des process enfants du service. Détacher la commande (`setsid`) pour qu'elle ne
+meure pas à mi-chemin.
+
+Pour vérifier qu'une publication a bien eu lieu, comparer l'empreinte du bundle servi à
+celle du disque — un `is-active` ne dit rien :
+
+```sh
+curl -s http://127.0.0.1:7517/ | grep -o 'assets/index-[^"]*\.js'
 ```
 
 Le dev se lance par `scripts/dev.sh`, et seulement par lui : les variables
