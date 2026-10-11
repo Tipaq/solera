@@ -2,7 +2,16 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { Copy, Lock, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from './Button'
-import { Menu, MenuCheckboxItem, MenuItem, MenuLabel, MenuSeparator } from './Menu'
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuItem,
+  MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuSub,
+} from './Menu'
 
 const meta = {
   title: 'Primitives/Menu',
@@ -46,4 +55,41 @@ function Demo() {
 
 export const Complet: Story = {
   render: () => <Demo />,
+}
+
+/**
+ * Un réglage par sous-menu : sa valeur se lit sur l'entrée, et l'ouvrir ne sert qu'à
+ * en changer. Pas de titre ni de croix à chaque niveau — on revient sur le parent,
+ * qui reste visible. Au doigt, où rien ne peut s'ouvrir à côté, c'est une pile de
+ * vues qu'il faut.
+ */
+function Reglages() {
+  const [permission, setPermission] = useState('ask')
+  const [queue, setQueue] = useState(false)
+  return (
+    <Menu align="start" trigger={<Button variant="secondary">Réglages</Button>}>
+      <MenuSub label="Permissions" value={permission === 'ask' ? 'Demander' : 'Tout autoriser'}>
+        <MenuRadioGroup value={permission} onValueChange={setPermission}>
+          <MenuRadioItem value="ask" hint="Chaque outil est soumis à ton accord">
+            Demander
+          </MenuRadioItem>
+          <MenuRadioItem value="all" hint="Aucun garde-fou" tone="caution">
+            Tout autoriser
+          </MenuRadioItem>
+        </MenuRadioGroup>
+      </MenuSub>
+      <MenuSeparator />
+      <MenuCheckboxItem appearance="switch" checked={queue} onCheckedChange={setQueue}>
+        <span className="flex flex-col">
+          <span>Mettre les messages en file</span>
+          <span className="text-meta text-ink-faint">Attendre la fin du tour</span>
+        </span>
+      </MenuCheckboxItem>
+    </Menu>
+  )
+}
+
+export const SousMenus: Story = {
+  name: 'Sous-menus et interrupteurs',
+  render: () => <Reglages />,
 }

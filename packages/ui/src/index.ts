@@ -11,7 +11,10 @@ export {
   MenuCheckboxItem,
   MenuItem,
   MenuLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
+  MenuSub,
   MenuSwatch,
   MenuSwatchRow,
 } from './Menu'
@@ -19,6 +22,7 @@ export { Popover } from './Popover'
 export { Presets, type Preset } from './Presets'
 export { SegmentedControl, type Segment } from './SegmentedControl'
 export { Select, type SelectOption } from './Select'
+export { SwitchRow } from './SwitchRow'
 export { Tabs, type Tab } from './Tabs'
 /*
  * `Tooltip` était la seule primitive absente du baril, et une trentaine de fichiers

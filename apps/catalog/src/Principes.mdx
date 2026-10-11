@@ -75,6 +75,12 @@ ressemblent :
 - `SegmentedControl` quand les options s'excluent et tiennent en trois ; `Tabs` quand
   elles changent de vue et non de réglage ; `Presets` quand elles remplissent un champ
   qui reste saisissable.
+- `SwitchRow` pour ce qui s'allume, et seulement pour ça : un choix entre deux valeurs
+  *nommées* — infléchir ou mettre en file — reste une `ChoiceList`, parce que chacune des
+  deux mérite sa phrase.
+- `MenuSub` pour un réglage qu'on ouvre depuis un menu : sa valeur se lit sur l'entrée,
+  et le sous-menu n'a besoin ni de titre ni de croix. Au doigt, où rien ne peut s'ouvrir
+  à côté, c'est une pile de vues qu'il faut, chacune avec son retour.
 - `Menu` pour un menu, `Popover` pour un panneau libre : le roving tabindex de `Menu` est
   réservé aux `menuitem`, et un bouton ordinaire posé dedans devient cliquable à la
   souris seulement.
