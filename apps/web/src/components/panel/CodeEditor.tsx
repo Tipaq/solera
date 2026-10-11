@@ -168,6 +168,11 @@ export function CodeEditor({
       : EditorState.create({ doc: content.current, extensions })
 
     const editor = new EditorView({ state, parent, scrollTo: reusable ? cached.scroll : undefined })
+    // Un éditeur détruit avant d'avoir été mesuré n'a jamais défilé : son instantané
+    // dirait « en haut » et écraserait la position réelle du document. C'est le cas du
+    // premier montage que React double en développement.
+    let measured = false
+    editor.requestMeasure({ read: () => { measured = true } })
     current.current = editor
     position(state)
 
@@ -182,7 +187,8 @@ export function CodeEditor({
     return () => {
       cancelled = true
       sessions.delete(sessionKey)
-      sessions.set(sessionKey, { state: editor.state, scroll: editor.scrollSnapshot(), revision })
+      const scroll = measured || !cached ? editor.scrollSnapshot() : cached.scroll
+      sessions.set(sessionKey, { state: editor.state, scroll, revision })
       if (sessions.size > MAX_SESSIONS) sessions.delete(sessions.keys().next().value!)
       current.current = null
       editor.destroy()
