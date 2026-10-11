@@ -329,13 +329,15 @@ try {
   for (const entry of ['Skills et commandes', 'Serveurs MCP', 'Réglages de la session']) {
     await plusSheet.getByRole('button', { name: new RegExp(`^${entry}`) }).waitFor()
   }
-  // Les réglages complets sont au bout du chemin, titre et pied compris.
+  // Les réglages s'ouvrent en menu — une ligne par catégorie, sa valeur à droite — et
+  // chaque catégorie ouvre ses options dans la même surface.
   await plusSheet.getByRole('button', { name: /^Réglages de la session/ }).click()
-  const settings = page.getByRole('dialog', { name: 'Réglages de la conversation', exact: true })
-  await settings.waitFor()
-  await settings.getByRole('button', { name: 'Terminé', exact: true }).waitFor()
+  const settingsMenu = page.getByRole('dialog', { name: 'Réglages de la session', exact: true })
+  await settingsMenu.getByRole('button', { name: /^Permissions/ }).click()
+  const permissions = page.getByRole('dialog', { name: 'Permissions', exact: true })
+  await permissions.getByRole('radio', { name: /^Demander/ }).waitFor()
   await page.keyboard.press('Escape')
-  await settings.waitFor({ state: 'hidden' })
+  await permissions.waitFor({ state: 'hidden' })
   assert.equal(await plus.evaluate((node) => node.getBoundingClientRect().height >= 44), true)
   // L'effort a rejoint le menu du modèle ; la puce du modèle reste dans la rangée.
   assert.equal(await page.getByRole('button', { name: /^Effort de réflexion/ }).count(), 0)

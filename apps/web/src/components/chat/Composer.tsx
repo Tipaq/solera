@@ -277,7 +277,7 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
-  const { groups, summary, mcpPanel, mcpSummary, catalogError } = useAgentSettings({
+  const { groups, summary, mcpPanel, mcpItems, mcpSummary, catalogError } = useAgentSettings({
     config,
     onConfigChange,
     appliedConfig,
@@ -833,8 +833,8 @@ export function Composer({
               groups={groups}
               status={settings}
               mcp={mcpPanel}
+              mcpItems={mcpItems}
               mcpSummary={mcpSummary}
-              feedback={configFeedback}
               disabled={disabled}
               inputRef={textarea}
               onAttach={() => filePicker.current?.click()}

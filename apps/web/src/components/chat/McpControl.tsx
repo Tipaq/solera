@@ -1,4 +1,4 @@
-import { TooltipButton } from '@solera/ui'
+import { SwitchRow, TooltipButton } from '@solera/ui'
 import { PlugZap } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -24,7 +24,12 @@ import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '@solera/ui
  */
 
 export interface McpControlProps {
-  presentation?: 'menu' | 'panel'
+  /**
+   * `menu` porte sa propre pastille, `panel` rend les mêmes choix en contrôles
+   * ordinaires, `items` ne rend que les entrées — pour un sous-menu qui les accueille
+   * dans le menu d'un autre bouton.
+   */
+  presentation?: 'menu' | 'panel' | 'items'
   /** Registre de Solera : le seul que ce contrôle peut activer ou désactiver. */
   servers: McpServer[]
   /**
@@ -178,6 +183,7 @@ export function McpControl({
   const count = inventory.length > 0 ? inventory.length : configured
 
   if (presentation === 'panel') return <div>{items}</div>
+  if (presentation === 'items') return items
 
   return (
     <Menu
@@ -216,17 +222,9 @@ function McpSwitch({ checked, onCheckedChange, disabled, children }: {
   disabled?: boolean
   children: ReactNode
 }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} disabled={disabled}
-      onClick={() => onCheckedChange(!checked)}
-      className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm text-ink-soft hover:bg-accent-wash focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-45"
-    >
-      <span className="min-w-0 flex-1 wrap-anywhere">{children}</span>
-      <span aria-hidden className={cx('flex h-5 w-8 shrink-0 items-center rounded-full p-0.5', checked ? 'justify-end bg-accent' : 'bg-line-strong')}>
-        <span className="size-4 rounded-full bg-surface" />
-      </span>
-    </button>
-  )
+  // L'intitulé de ces lignes est déjà composé — nom, compte d'outils, phrase — par le
+  // contenu que le menu et le panneau partagent : il passe entier comme intitulé.
+  return <SwitchRow checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} label={children} />
 }
 
 function McpDivider() { return <div className="my-2 h-px bg-line" /> }

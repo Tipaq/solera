@@ -80,7 +80,7 @@ async function mount(page) {
       if (!settings.config) return null
       return React.createElement(Composer, {
         key: id, config: settings.config, draftKey: `composer-test-${id}`, status, disabled,
-        commands: [], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
+        commands: [{ name: '/compact', description: 'Déclarée par le CLI' }], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
         context: { usedTokens: 38_000, maxTokens: 200_000, ratio: 0.19 },
@@ -123,6 +123,9 @@ try {
       const id = path.split('/')[3]
       if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
       if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], soleraServer: true } })
+      // La bibliothèque de skills : son interrupteur de session vit avec la liste
+      // qu'il commande, dans le menu des skills.
+      if (path === '/api/skill-library') return route.fulfill({ json: { enabled: true, skills: [{ id: 'dataviz', name: 'dataviz', description: 'Graphiques et palettes', scope: 'global', projectId: null, enabled: true, problem: null }] } })
       if (path.endsWith('/messages')) {
         messages.push({ text: request.postDataJSON().text, config: structuredClone(stored[id]) })
         return route.fulfill({ json: { ok: true } })
@@ -155,23 +158,85 @@ try {
     // que les niveaux proposés dépendent du modèle choisi.
     const efforts = () => page.getByRole('radiogroup', { name: 'Effort de réflexion', exact: true })
     const openModel = async () => { await model().click(); await dialog.waitFor() }
+    // La puce a les deux mêmes présentations que le « + » : menu au pointeur, panneau
+    // au doigt. L'effort y est un sous-menu d'un côté, un rail déplié de l'autre.
+    const menuNow = () =>
+      page.evaluate(() => !matchMedia('(max-width: 34rem), (pointer: coarse)').matches)
+    const menuGone = () => page.getByRole('menu').first().waitFor({ state: 'hidden' })
+    const pickModel = async (name) => {
+      const asMenu = await menuNow()
+      await model().click()
+      if (asMenu) {
+        await page.getByRole('menuitemradio', { name }).click()
+        await menuGone()
+      } else {
+        await dialog.waitFor()
+        await page.getByRole('radio', { name }).click()
+        await settle()
+      }
+    }
+    const pickEffort = async (name) => {
+      const asMenu = await menuNow()
+      await model().click()
+      if (asMenu) {
+        await page.getByRole('menuitem', { name: /^Effort de réflexion/ }).click()
+        await page.getByRole('menuitemradio', { name }).click()
+        await menuGone()
+      } else {
+        await dialog.waitFor()
+        await efforts().getByRole('radio', { name }).click()
+        await efforts().getByRole('radio', { name }).and(page.locator('[aria-checked="true"]')).waitFor()
+        // Au doigt, le rail s'applique sans refermer : seul le modèle referme.
+        assert.equal(await dialog.isVisible(), true, 'Choisir un niveau ne referme pas le panneau du modèle')
+        await escape()
+      }
+    }
     // Radix rend le focus à son déclencheur après la fermeture, et ce retour est
     // asynchrone : ouvrir un autre panneau avant qu'il soit fait le refermait aussitôt.
     const settle = async () => { await dialog.waitFor({ state: 'hidden' }); await delay(80) }
     const escape = async () => { await page.keyboard.press('Escape'); await settle() }
+    /** Le niveau en vigueur, lu là où la présentation l'écrit. */
     const chosenEffort = async () => {
-      await openModel()
+      const asMenu = await menuNow()
+      await model().click()
+      if (asMenu) {
+        // La valeur se lit sur l'entrée qui ouvre le sous-menu, sans l'ouvrir.
+        const entry = page.getByRole('menuitem', { name: /^Effort de réflexion/ })
+        const label = (await entry.textContent()).replace('Effort de réflexion', '').trim()
+        await page.keyboard.press('Escape')
+        await menuGone()
+        return label
+      }
+      await dialog.waitFor()
       const label = (await efforts().getByRole('radio', { checked: true }).textContent()).trim()
       await escape()
       return label
     }
-    const openAll = async () => {
+    // Deux présentations du « + », comme pour la puce. La bascule se relit à chaque
+    // usage : un test change de viewport en cours de route.
+    const submenus = viewport.width >= 700
+    // Il n'y a plus de panneau « tous les réglages » : chaque catégorie s'ouvre pour
+    // elle-même, par son sous-menu au pointeur et par sa vue au doigt.
+    const openSetting = async (label) => {
+      const asMenu = await menuNow()
       await plus.click()
-      await dialog.waitFor()
-      await page.getByRole('button', { name: /^Réglages de la session/ }).click()
-      await page.getByRole('button', { name: 'Terminé', exact: true }).waitFor()
+      const entry = (name) => page.getByRole(asMenu ? 'menuitem' : 'button', { name })
+      if (!asMenu) await dialog.waitFor()
+      await entry(/^Réglages de la session/).click()
+      await entry(new RegExp(`^${label}`)).click()
     }
-    const close = async () => { await page.getByRole('button', { name: 'Terminé', exact: true }).click(); await settle() }
+    /** Choisit une option d'un réglage, depuis la rangée, et rend la main au repos. */
+    const pick = async (label, option) => {
+      const asMenu = await menuNow()
+      await openSetting(label)
+      if (asMenu) {
+        await page.getByRole('menuitemradio', { name: option }).click()
+        await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+      } else {
+        await page.getByRole('radio', { name: option }).click()
+        await escape()
+      }
+    }
 
     /**
      * La rangée tient dans le cadre, et l'envoi avec elle.
@@ -203,22 +268,14 @@ try {
     await field.evaluate((node) => node.setSelectionRange(3, 9))
     let release
     hold = new Promise((resolve) => { release = resolve })
-    await model().click()
-    await page.getByRole('radio', { name: /^Modèle Beta/ }).click()
-    await settle()
+    await pickModel(/^Modèle Beta/)
     await page.getByRole('button', { name: 'Modèle : Modèle Beta', exact: true }).waitFor()
     if (viewport.width >= 700) {
       await page.waitForFunction(() => document.activeElement.tagName === 'TEXTAREA')
       assert.deepEqual(await field.evaluate((node) => [node.selectionStart, node.selectionEnd]), [3, 9])
     } else assert.notEqual(await page.evaluate(() => document.activeElement.tagName), 'TEXTAREA')
     assert.equal(await chosenEffort(), 'Moyen', 'Effort falls back immediately')
-    // L'effort s'applique sans fermer : seul le choix du modèle referme, les niveaux
-    // proposés n'étant plus les mêmes après.
-    await openModel()
-    await efforts().getByRole('radio', { name: 'Faible', exact: true }).click()
-    await efforts().getByRole('radio', { name: 'Faible', exact: true }).and(page.locator('[aria-checked="true"]')).waitFor()
-    assert.equal(await dialog.isVisible(), true, 'Choisir un niveau ne referme pas le menu du modèle')
-    await escape()
+    await pickEffort('Faible')
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
     assert.equal(messages.length, 0, 'Sending waits for the pending settings')
     release()
@@ -230,18 +287,33 @@ try {
 
     await field.fill('Encore un brouillon')
     const compactHeight = (await page.locator('form').boundingBox()).height
-    await openAll()
-    await page.getByRole('radio', { name: /^Modèle Alpha/ }).click()
-    await page.getByRole('radio', { name: 'Élevé', exact: true }).click()
-    await page.getByRole('radio', { name: 'Plan', exact: true }).click()
-    await page.getByRole('radio', { name: /^Accès total/ }).click()
-    await page.getByRole('radio', { name: /^Jamais/ }).click()
-    await page.getByRole('switch', { name: 'Documentation', exact: true }).click()
-    assert.equal(await dialog.isVisible(), true)
-    assert.equal(await page.getByRole('switch', { name: 'CLI externe' }).count(), 0)
-    const panelBounds = await dialog.boundingBox()
-    assert.ok(panelBounds.y >= 0 && panelBounds.y + panelBounds.height <= viewport.height + 1)
-    await close()
+    await pick('Modèle', /^Modèle Alpha/)
+    await pick('Effort de réflexion', 'Élevé')
+    await pick('Mode', 'Plan')
+    await pick('Bac à sable', /^Accès total/)
+    await pick('Approbations', /^Jamais/)
+    // Les serveurs MCP sont un choix multiple : leur menu reste ouvert, et ceux que
+    // le CLI déclare lui-même n'y sont pas réglables.
+    await plus.click()
+    if (submenus) {
+      await page.getByRole('menuitem', { name: /^Serveurs MCP/ }).click()
+      const server = page.getByRole('menuitemcheckbox', { name: 'Documentation', exact: true })
+      await server.click()
+      assert.equal(await server.getAttribute('aria-checked'), 'true')
+      assert.equal(await page.getByRole('menuitemcheckbox', { name: 'CLI externe' }).count(), 0)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+    } else {
+      await dialog.waitFor()
+      await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
+      await page.getByRole('switch', { name: 'Documentation', exact: true }).click()
+      assert.equal(await dialog.isVisible(), true)
+      assert.equal(await page.getByRole('switch', { name: 'CLI externe' }).count(), 0)
+      const panelBounds = await dialog.boundingBox()
+      assert.ok(panelBounds.y >= 0 && panelBounds.y + panelBounds.height <= viewport.height + 1)
+      await escape()
+    }
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.codex.collaborationMode, 'plan')
@@ -262,9 +334,7 @@ try {
     await fits('en mode Plan')
 
     failNext = true
-    await openModel()
-    await efforts().getByRole('radio', { name: 'Moyen', exact: true }).click()
-    await escape()
+    await pickEffort('Moyen')
     await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
     assert.equal(await field.inputValue(), 'Encore un brouillon')
     await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
@@ -275,30 +345,53 @@ try {
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.codex.reasoningEffort, 'medium')
 
-    await openAll()
+    // L'échec d'enregistrement et sa reprise se lisent dans le composer, au-dessus de
+    // la rangée : le menu qui a servi à choisir est refermé depuis longtemps.
     failNext = true
-    await page.getByRole('radio', { name: 'Faible', exact: true }).click()
-    await dialog.getByRole('alert').waitFor()
-    await dialog.getByRole('button', { name: 'Réessayer', exact: true }).click()
-    await dialog.getByRole('alert').waitFor({ state: 'hidden' })
-    assert.equal(await dialog.isVisible(), true, 'Retry does not leave the complete panel')
-    await close()
+    await pick('Effort de réflexion', 'Faible')
+    await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
+    await page.getByRole('button', { name: 'Réessayer', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor({ state: 'hidden' })
     await page.evaluate(() => window.settings.flush())
 
+    // Au clavier : la liste prend le focus dès l'ouverture, et le dernier modèle —
+    // celui qui n'a pas de niveaux — se choisit sans toucher la souris.
+    const keyboardMenu = await menuNow()
     await model().focus()
     await page.keyboard.press('Enter')
-    // La feuille prend le focus après son ouverture : une touche envoyée avant se perd
-    // hors de la liste, et l'Entrée suivante rouvre au lieu de choisir.
-    await dialog.waitFor()
-    await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'radio')
-    await page.keyboard.press('End')
-    assert.equal(await dialog.isVisible(), true)
-    await page.keyboard.press('Enter')
-    await settle()
+    if (keyboardMenu) {
+      await page.getByRole('menu').first().waitFor()
+      await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'menuitemradio')
+      // Les flèches parcourent les modèles, depuis celui qui est en vigueur.
+      await delay(120)
+      await page.keyboard.press('ArrowDown')
+      await delay(60)
+      await page.keyboard.press('ArrowDown')
+      await page.waitForFunction(() => document.activeElement?.textContent?.startsWith('Sans'))
+      await page.keyboard.press('Enter')
+      await menuGone()
+    } else {
+      // La feuille prend le focus après son ouverture : une touche envoyée avant se
+      // perd hors de la liste, et l'Entrée suivante rouvre au lieu de choisir.
+      await dialog.waitFor()
+      await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'radio')
+      await page.keyboard.press('End')
+      assert.equal(await dialog.isVisible(), true)
+      await page.keyboard.press('Enter')
+      await settle()
+    }
     assert.equal(await field.inputValue(), 'Encore un brouillon')
-    await openModel()
-    assert.equal(await efforts().count(), 0, 'Un modèle sans niveaux ne montre pas de rail vide')
-    await escape()
+    await model().click()
+    if (keyboardMenu) {
+      assert.equal(await page.getByRole('menuitem', { name: /^Effort de réflexion/ }).count(), 0,
+        'Un modèle sans niveaux ne montre pas de réglage d\'effort')
+      await page.keyboard.press('Escape')
+      await menuGone()
+    } else {
+      await dialog.waitFor()
+      assert.equal(await efforts().count(), 0, 'Un modèle sans niveaux ne montre pas de rail vide')
+      await escape()
+    }
     await page.evaluate(() => window.settings.flush())
 
     if (viewport.width === 1440) {
@@ -313,16 +406,39 @@ try {
         await window.settings.flush()
       })
       await page.getByRole('button', { name: 'Modèle : saved-model', exact: true }).waitFor()
-      await openModel()
-      await page.getByRole('searchbox', { name: 'Rechercher un modèle', exact: true }).fill('Archive 9')
-      assert.equal(await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio').count(), 1)
-      await escape()
-      await openAll()
+      // La puce ne montre que les modèles courants ; le catalogue entier est derrière
+      // « Plus de modèles… » — un tiroir au pointeur, une vue cherchable au doigt.
+      if (await menuNow()) {
+        await model().click()
+        await page.getByRole('menuitem', { name: /^Plus de modèles/ }).click()
+        await page.getByRole('menuitemradio', { name: 'Archive 9', exact: true }).waitFor()
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Escape')
+        await menuGone()
+      } else {
+        await openModel()
+        await page.getByRole('button', { name: /^Plus de modèles/ }).click()
+        await page.getByRole('searchbox', { name: 'Rechercher un modèle', exact: true }).fill('Archive 9')
+        assert.equal(await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio').count(), 1)
+        await escape()
+      }
+      // Une approbation granulaire, posée hors de Solera, se lit sans être modifiable.
+      if (submenus) {
+        await plus.click()
+        await page.getByRole('menuitem', { name: /^Réglages de la session/ }).click()
+        await page.getByRole('menuitem', { name: /^Approbations/ }).click()
+        assert.equal(await page.getByRole('menuitemradio', { name: /^Granulaire/ }).isDisabled(), true)
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Escape')
+        await page.keyboard.press('Escape')
+        await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+      }
+      // Au doigt, la vue d'un réglage tient le focus et suit le viewport visuel.
+      await page.setViewportSize({ width: 390, height: 844 })
+      await openSetting('Approbations')
       const approval = page.getByRole('radiogroup', { name: 'Approbations', exact: true })
       assert.equal(await approval.getByRole('radio', { name: /^Granulaire/ }).isDisabled(), true)
       assert.equal(await approval.getByRole('radio', { name: /^Défaut du CLI/ }).getAttribute('tabindex'), '0')
-      await page.setViewportSize({ width: 390, height: 844 })
-      await page.getByRole('dialog', { name: 'Réglages de la conversation', exact: true }).waitFor()
       for (let i = 0; i < 18; i++) {
         await page.keyboard.press('Tab')
         assert.equal(await page.evaluate(() => document.querySelector('[role="dialog"]').contains(document.activeElement)), true)
@@ -338,13 +454,11 @@ try {
         document.documentElement.style.removeProperty('--sg-app-height')
         document.documentElement.style.removeProperty('--sg-viewport-top')
       })
-      await close()
+      await escape()
       await page.setViewportSize(viewport)
 
       hold = new Promise((resolve) => { release = resolve })
-      await openAll()
-      await page.getByRole('radio', { name: /^Sur demande/ }).click()
-      await close()
+      await pick('Approbations', /^Sur demande/)
       await page.evaluate(() => window.setConversation('claude'))
       await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
       release()
@@ -354,12 +468,27 @@ try {
 
     await page.evaluate(() => window.setConversation('claude'))
     await model().waitFor()
-    await openAll()
-    await page.getByRole('radio', { name: /^Tout autoriser/ }).click()
+    await pick('Permissions', /^Tout autoriser/)
+    // Ce que la session applique encore se lit à côté du choix qui attend la relance.
+    await openSetting('Permissions')
     await page.getByText('En vigueur : Demander', { exact: true }).waitFor()
-    await page.getByRole('switch', { name: /^N'utiliser que les serveurs/ }).click()
-    assert.equal(await page.getByRole('switch', { name: /^Mémoire et coordination/ }).isDisabled(), true)
-    await close()
+    await page.keyboard.press('Escape')
+    await settle()
+    await plus.click()
+    if (submenus) {
+      await page.getByRole('menuitem', { name: /^Serveurs MCP/ }).click()
+      await page.getByRole('menuitemcheckbox', { name: /^N'utiliser que les serveurs/ }).click()
+      assert.equal(await page.getByRole('menuitemcheckbox', { name: /^Mémoire et coordination/ }).isDisabled(), true)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+    } else {
+      await dialog.waitFor()
+      await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
+      await page.getByRole('switch', { name: /^N'utiliser que les serveurs/ }).click()
+      assert.equal(await page.getByRole('switch', { name: /^Mémoire et coordination/ }).isDisabled(), true)
+      await escape()
+    }
     await page.evaluate(() => window.settings.flush())
     assert.equal(stored.claude.strictMcp, true)
     assert.match(await plus.getAttribute('aria-label'), /Tout autoriser/)
@@ -370,26 +499,60 @@ try {
       await page.keyboard.press('Escape')
       await page.mouse.move(0, 0)
     }
-    // Le menu « + » : tout ce qui a quitté la rangée doit s'y retrouver, et chaque
-    // vue doit pouvoir revenir à la racine sans refermer la surface.
-    await plus.click()
-    await dialog.waitFor()
-    const attach = page.getByRole('button', { name: 'Joindre un fichier', exact: true })
-    assert.ok((await attach.boundingBox()).height >= 44, 'Une entrée de menu reste une cible au doigt')
-    await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
-    await page.getByRole('switch', { name: /^Mémoire et coordination/ }).waitFor()
-    await page.getByRole('button', { name: 'Retour', exact: true }).click()
-    await page.getByRole('button', { name: 'Skills et commandes', exact: true }).click()
-    await page.getByRole('textbox', { name: 'Rechercher un skill…', exact: true }).waitFor()
-    await page.getByRole('button', { name: 'Retour', exact: true }).click()
-    await attach.waitFor()
-    await escape()
-    // Rouvrir rend la racine : un panneau qui se souvient de sa branche fait manquer
-    // les trois autres.
-    await plus.click()
-    await dialog.waitFor()
-    await attach.waitFor()
-    await escape()
+    // Le menu « + » : tout ce qui a quitté la rangée doit s'y retrouver.
+    if (submenus) {
+      // Au pointeur, chaque réglage ouvre son sous-menu à côté : ni titre ni croix à
+      // chaque niveau, et le parent reste visible.
+      await plus.click()
+      await page.getByRole('menuitem', { name: 'Joindre un fichier', exact: true }).waitFor()
+      await page.getByRole('menuitem', { name: /^Serveurs MCP/ }).click()
+      await page.getByRole('menuitemcheckbox', { name: /^Mémoire et coordination/ }).waitFor()
+      await page.getByRole('menuitem', { name: /^Réglages de la session/ }).click()
+      await page.getByRole('menuitem', { name: /^Permissions/ }).click()
+      // La valeur en vigueur se lit sur l'entrée qui ouvre le sous-menu, et la coche
+      // la confirme dedans : « Tout autoriser » vient d'être choisi plus haut.
+      await page.getByRole('menuitemradio', { name: /^Demander/ }).waitFor()
+      const checked = page.getByRole('menuitemradio', { checked: true })
+      assert.equal(await checked.count(), 1)
+      assert.match(await checked.textContent(), /^Tout autoriser/)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').waitFor({ state: 'hidden' })
+      // Les skills ont leur sous-menu, et le réglage de session qui les livre y vit
+      // avec eux : c'est le même sujet que la liste qu'il commande.
+      await plus.click()
+      await page.getByRole('menuitem', { name: /^Skills et commandes/ }).click()
+      await page.getByRole('menuitemcheckbox', { name: /^Bibliothèque de skills/ }).waitFor()
+      await page.getByRole('menuitem', { name: /^Dans la session/ }).click()
+      await page.getByText('Déclarée par le CLI').waitFor()
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+    } else {
+      // Au doigt, les vues s'empilent dans une seule surface, et chacune revient à la
+      // racine sans la refermer.
+      await plus.click()
+      await dialog.waitFor()
+      const attach = page.getByRole('button', { name: 'Joindre un fichier', exact: true })
+      assert.ok((await attach.boundingBox()).height >= 44, 'Une entrée de menu reste une cible au doigt')
+      await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
+      await page.getByRole('switch', { name: /^Mémoire et coordination/ }).waitFor()
+      await page.getByRole('button', { name: 'Retour', exact: true }).click()
+      await page.getByRole('button', { name: 'Skills et commandes', exact: true }).click()
+      await page.getByRole('textbox', { name: 'Rechercher un skill…', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Retour', exact: true }).click()
+      await attach.waitFor()
+      await escape()
+      // Rouvrir rend la racine : un panneau qui se souvient de sa branche fait manquer
+      // les trois autres.
+      await plus.click()
+      await dialog.waitFor()
+      await attach.waitFor()
+      await escape()
+    }
 
     /*
      * Les quatre états du bouton de droite (carte #5). Infléchir est le défaut : avec

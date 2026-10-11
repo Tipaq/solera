@@ -27,6 +27,7 @@ import {
   type SummarySegment,
 } from './ComposerSettings'
 import { McpControl, mcpSummaryOf, type McpControlProps } from './McpControl'
+import { modelIdName, shortModelLabel, shortModelName } from './ModelControl'
 
 /**
  * Réglages d'une configuration d'agent, sous la forme de catégories d'options.
@@ -237,7 +238,9 @@ function defaultModelLabel(
 ): string | null {
   if (!row.hint) return null
   const alias = models.find((model) => !model.isDefault && model.hint === row.hint)
-  return alias ? t('composer.model.defaultNamed', { model: alias.displayName }) : null
+  return alias
+    ? t('composer.model.defaultNamed', { model: shortModelName(alias.hint, alias.displayName) })
+    : null
 }
 
 /**
@@ -282,6 +285,8 @@ export interface AgentSettings {
   mcp: ReactNode
   /** Les mêmes contrôles MCP, dépliés dans la vue complète du composer. */
   mcpPanel: ReactNode
+  /** Les mêmes encore, en entrées de menu, pour le sous-menu du pointeur. */
+  mcpItems: ReactNode
   /** Résumé des serveurs, pour l'entrée de menu qui mène au contrôle. */
   mcpSummary: string
   /** Le CLI n'a pas répondu : la liste des modèles se réduit à ce qui est enregistré. */
@@ -340,15 +345,20 @@ export function useAgentSettings({
     const models = catalog?.models ?? []
     const known = models.map((model) => {
       const named = model.isDefault ? defaultModelLabel(models, model, t) : null
+      // Le nom court dit la famille et la génération — « Opus 5 » — là où le libellé
+      // du CLI porte la variante de contexte ou la mention « recommandé ». Quand il
+      // est lu sur l'identifiant, celui-ci n'a plus à être répété en dessous.
+      const fromId = modelIdName(model.hint)
       return {
         value: model.value,
         label: named ?? model.displayName,
+        short: named ?? fromId ?? shortModelLabel(model.displayName),
         // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
         // dit pas quelle génération va effectivement répondre. Le rappel « par
         // défaut » ne sert que si le libellé n'a pas déjà pu le dire.
         hint: [
           model.description,
-          model.hint,
+          fromId ? null : model.hint,
           !named && model.isDefault ? t('composer.model.default') : null,
         ]
           .filter(Boolean)
@@ -365,6 +375,7 @@ export function useAgentSettings({
       known.unshift({
         value: config.model,
         label: listed?.displayName ?? config.model,
+        short: shortModelName(listed?.hint, listed?.displayName ?? config.model),
         hint: [listed ? config.model : null, t('composer.select.saved')].filter(Boolean).join(' · '),
       })
     }
@@ -639,6 +650,7 @@ export function useAgentSettings({
         ? [
             setting({
               key: 'speed',
+              toggle: { on: 'fast', label: t('composer.speed.toggle') },
               label: t('composer.setting.speed'),
               icon: <Zap size={14} />,
               options: speedOptionList,
@@ -651,6 +663,7 @@ export function useAgentSettings({
         ? [
             setting({
               key: 'ultracode',
+              toggle: { on: 'on' },
               label: t('composer.setting.ultracode'),
               icon: <UsersRound size={14} />,
               options: ultracodeOptionList,
@@ -713,6 +726,7 @@ export function useAgentSettings({
         ? [
             setting({
               key: 'skillLibrary',
+              toggle: { on: 'on' },
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={14} />,
               options: libraryOptionList,
@@ -733,6 +747,7 @@ export function useAgentSettings({
         : []),
       setting({
         key: 'queue',
+        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
         label: t('composer.setting.queue'),
         icon: <Clock size={14} />,
         options: queueOptionList,
@@ -832,6 +847,7 @@ export function useAgentSettings({
         ? [
             setting({
               key: 'skillLibrary',
+              toggle: { on: 'on' },
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={14} />,
               options: libraryOptionList,
@@ -842,6 +858,7 @@ export function useAgentSettings({
         : []),
       setting({
         key: 'queue',
+        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
         label: t('composer.setting.queue'),
         icon: <Clock size={14} />,
         options: queueOptionList,
@@ -943,6 +960,7 @@ export function useAgentSettings({
         ? [
             setting({
               key: 'skillLibrary',
+              toggle: { on: 'on' },
               label: t('composer.setting.skillLibrary'),
               icon: <BookOpen size={14} />,
               options: libraryOptionList,
@@ -961,6 +979,7 @@ export function useAgentSettings({
         : []),
       setting({
         key: 'queue',
+        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
         label: t('composer.setting.queue'),
         icon: <Clock size={14} />,
         options: queueOptionList,
@@ -1008,6 +1027,7 @@ export function useAgentSettings({
     summary,
     mcp,
     mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null,
+    mcpItems: mcp ? cloneElement(mcp, { presentation: 'items' }) : null,
     mcpSummary: mcp ? mcpSummaryOf(mcp.props) : '',
     catalogError,
   }

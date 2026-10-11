@@ -35,8 +35,26 @@ l'ajuste à l'écran la rend illisible. Les quatre fichiers `ordinateur-*.png` e
 
 ## Ce qui a été tranché en portant
 
-- `Réglages de la session` : ni sous-menu ni feuille à part, mais une seule surface qui
-  navigue entre quatre vues, la même au large et au doigt.
+- `Réglages de la session` : une ligne par catégorie avec sa valeur à droite, et les
+  interrupteurs pour ce qui s'allume, comme ces images. **Le panneau « tous les
+  réglages » n'existe plus** : tout s'atteint par les menus, le modèle et l'effort
+  compris, et la maquette de septembre qui le dessinait n'a plus d'objet.
+- Les skills ont leur menu, et l'interrupteur qui livre la bibliothèque à la session y
+  vit avec la liste qu'il commande, plutôt qu'avec les réglages.
+- La puce du modèle est celle du bloc 11, sans en-tête. « Plus de modèles… »
+  n'apparaît qu'au-delà de huit modèles : Claude Code n'en annonce que cinq, et en
+  replier deux aurait caché la moitié du catalogue derrière un geste.
+- Les noms de modèles sont lus sur l'identifiant canonique — `claude-opus-5-5[1m]`
+  donne « Opus 5.5 » — et non sur le libellé du CLI, qui dit « Opus (1M context) » ou
+  « Default (recommended) » : la rangée n'a pas la place de la variante de contexte, et
+  ces libellés taisent la génération qui répond.
+- Les menus n'ont pas d'en-tête, comme ces images. Au pointeur, ce sont de vrais
+  sous-menus — ils s'ouvrent à côté de leur parent et se referment seuls. Au doigt,
+  où un troisième niveau n'a nulle part où s'ouvrir, les vues s'empilent dans une
+  seule surface et chacune porte son retour.
+- Les deux vues qui ne sont pas des listes — l'inventaire des skills, les réglages au
+  complet — s'ouvrent en boîte au pointeur : une recherche et un défilement ne tiennent
+  pas dans un menu.
 - Compacter : depuis la modale de contexte **et** depuis le menu de la conversation,
   qui le porte toujours.
 - `Échap` pour vider le champ : toujours pas tranché, et non implémenté.

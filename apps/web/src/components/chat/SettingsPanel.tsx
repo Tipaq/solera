@@ -1,60 +1,20 @@
-import { Button, TooltipButton } from '@solera/ui'
+import { TooltipButton, cx } from '@solera/ui'
 import { Check, ChevronLeft, Search, X } from 'lucide-react'
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useTranslate } from '../../lib/i18n'
-import { cx } from '@solera/ui'
 import type { SettingGroup } from './ComposerSettings'
 
-interface SettingsPanelProps {
-  groups: SettingGroup[]
-  disabled?: boolean
-  /** MCP est un choix multiple, rendu après les choix uniques. */
-  extra?: ReactNode
-  feedback?: ReactNode
-  /** Présent quand le panneau est une vue parmi d'autres, atteinte depuis le menu « + ». */
+/**
+ * L'en-tête et la liste d'options d'un réglage, partagées par les deux présentations
+ * du composer : la pile de vues au doigt, et le panneau de la puce du modèle.
+ */
+
+export function SettingsHeading({ title, onBack, onClose }: {
+  title: string
   onBack?: () => void
-  onDone: () => void
-  onClose: () => void
-}
-
-/** Vue complète : les choix s'appliquent sans fermer le panneau. */
-export function SettingsPanel({ groups, disabled, extra, feedback, onBack, onDone, onClose }: SettingsPanelProps) {
-  const t = useTranslate()
-  const ordered = [
-    ...groups.filter((group) => group.key === 'model'),
-    ...groups.filter((group) => group.key === 'effort'),
-    ...groups.filter((group) => group.key !== 'model' && group.key !== 'effort'),
-  ]
-  return (
-    <>
-      <SettingsHeading title={t('composer.settings.title')} onBack={onBack} onClose={onClose} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4">
-        {ordered.map((group) => (
-          <section key={group.key} className="border-b border-line py-4 last:border-0">
-            <h3 className="mb-2 flex items-center gap-2 text-xs font-medium text-ink-soft">
-              {group.icon}{group.label}
-            </h3>
-            {group.notice ? <p className="mb-2 text-xs text-caution">{group.notice}</p> : null}
-            <SettingOptions group={group} disabled={disabled} compact={group.key === 'effort' || group.key === 'mode'} onPick={group.onChange} />
-          </section>
-        ))}
-        {extra ? (
-          <section className="py-4">
-            <h3 className="mb-2 text-xs font-medium text-ink-soft">{t('cliDefaults.mcp.label')}</h3>
-            {extra}
-          </section>
-        ) : null}
-      </div>
-      {feedback ? <div className="shrink-0 border-t border-line px-3 pt-2">{feedback}</div> : null}
-      <footer className="flex shrink-0 items-center justify-between gap-4 border-t border-line px-4 pt-3 pb-[max(0.75rem,var(--sg-safe-bottom))]">
-        <p className="text-xs text-ink-faint">{t('composer.settings.immediate')}</p>
-        <Button className="shrink-0" onClick={onDone}>{t('composer.settings.done')}</Button>
-      </footer>
-    </>
-  )
-}
-
-export function SettingsHeading({ title, onBack, onClose }: { title: string; onBack?: () => void; onClose: () => void }) {
+  /** Absente quand la surface se ferme autrement : un menu, une feuille qu'on tire. */
+  onClose?: () => void
+}) {
   const t = useTranslate()
   return (
     <header className={cx('flex shrink-0 items-center justify-between gap-2 border-b border-line py-2 pr-2', onBack ? 'pl-1' : 'pl-4')}>
@@ -66,19 +26,26 @@ export function SettingsHeading({ title, onBack, onClose }: { title: string; onB
         </TooltipButton>
       ) : null}
       <h2 tabIndex={-1} data-settings-heading className="min-w-0 flex-1 truncate text-sm font-semibold outline-none">{title}</h2>
-      <TooltipButton type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
-        <X size={16} />
-      </TooltipButton>
+      {onClose ? (
+        <TooltipButton type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+          <X size={16} />
+        </TooltipButton>
+      ) : null}
     </header>
   )
 }
 
 /** Flèches pour parcourir ; Entrée/Espace pour choisir, sans fermeture accidentelle. */
-export function SettingOptions({ group, onPick, disabled = false, compact = false }: {
+export function SettingOptions({ group, onPick, disabled = false, compact = false, quietHint = false }: {
   group: SettingGroup
   onPick: (value: string) => void
   disabled?: boolean
   compact?: boolean
+  /**
+   * L'explication du choix retenu reste annoncée, sans s'écrire sous le rail : dans un
+   * menu court, cette ligne ajoute une hauteur que le rail seul dit déjà.
+   */
+  quietHint?: boolean
 }) {
   const t = useTranslate()
   const id = useId()
@@ -148,7 +115,7 @@ export function SettingOptions({ group, onPick, disabled = false, compact = fals
         })}
       </div>
       {options.length === 0 ? <p className="px-3 py-4 text-sm text-ink-faint">{t('composer.settings.empty')}</p> : null}
-      {compact && selected?.hint ? <p id={`${id}-hint`} className="mt-2 text-xs text-ink-faint">{selected.hint}</p> : null}
+      {compact && selected?.hint ? <p id={`${id}-hint`} className={quietHint ? 'sr-only' : 'mt-2 text-xs text-ink-faint'}>{selected.hint}</p> : null}
     </>
   )
 }

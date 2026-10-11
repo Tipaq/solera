@@ -107,10 +107,18 @@ export const AGENT_LABELS: Record<AgentKind, string> = Object.fromEntries(
 ) as Record<AgentKind, string>
 
 /** Repère visuel du CLI d'une conversation. */
-export function AgentIcon({ agent, size = 14 }: { agent: AgentKind; size?: number }) {
+export function AgentIcon({ agent, size = 14, decorative = false }: {
+  agent: AgentKind
+  size?: number
+  /**
+   * Muet, pour une liste dont l'en-tête nomme déjà le CLI : répété sur chaque ligne,
+   * le nom de la marque s'intercale dans l'intitulé de chaque option.
+   */
+  decorative?: boolean
+}) {
   const { label, Mark } = AGENT_META[agent]
   return (
-    <span aria-label={label} className="inline-flex">
+    <span aria-label={decorative ? undefined : label} className="inline-flex">
       <Mark size={size} />
     </span>
   )

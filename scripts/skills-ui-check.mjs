@@ -73,6 +73,7 @@ try {
     const installed = []
     const attempts = []
     await page.route('**/__skills_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+    const enabledSkills = new Map()
     await page.route('**/api/**', async (route) => {
       const url = new URL(route.request().url())
       const send = (json, status = 200) => route.fulfill({ status, json })
@@ -91,7 +92,14 @@ try {
         installed.push(body.path)
         return send({ id: skill.path, name: body.name ?? skill.name })
       }
-      if (url.pathname === '/api/skill-library') return send({ enabled: true, skills: catalog.map((item) => ({ ...item, id: item.path, scope: 'global', enabled: true })) })
+      if (url.pathname === '/api/skill-library') return send({ enabled: true, skills: catalog.map((item) => ({ ...item, id: item.path, scope: 'global', enabled: enabledSkills.get(item.path) !== false })) })
+      // Allumer un skill depuis l'inventaire écrit dans la bibliothèque, pas dans la
+      // conversation : la liste relue doit montrer le nouvel état.
+      if (url.pathname.startsWith('/api/skill-library/') && route.request().method() === 'PATCH') {
+        const id = decodeURIComponent(url.pathname.slice('/api/skill-library/'.length))
+        enabledSkills.set(id, route.request().postDataJSON().enabled)
+        return send({ id })
+      }
       return send({})
     })
     await mount(page)
@@ -99,13 +107,19 @@ try {
     await inventory.waitFor()
     const manage = inventory.getByRole('link', { name: 'Gérer la bibliothèque' })
     assert.ok(await manage.isVisible())
+    // Les deux listes se suivent dans le même défilement, chacune sous son intitulé :
+    // la bibliothèque, dont chaque skill s'allume, puis ce que le CLI annonce.
+    const skill = inventory.getByRole('switch', { name: /^design-00/ })
+    await skill.waitFor()
+    assert.equal(await skill.getAttribute('aria-checked'), 'true')
+    assert.ok((await skill.boundingBox()).height < 110)
+    await skill.click()
+    await inventory.getByRole('switch', { name: /^design-00/ }).and(page.locator('[aria-checked="false"]')).waitFor()
     const summary = inventory.locator('summary').first()
-    await summary.waitFor()
+    await summary.scrollIntoViewIfNeeded()
     assert.ok((await summary.boundingBox()).height < 110)
     await summary.click()
     assert.equal(await inventory.locator('details').first().getAttribute('open'), '')
-    // Rail segmenté depuis que les onglets sont unifiés : un `tab`, plus un bouton.
-    await inventory.getByRole('tab', { name: /^Dans la session/ }).click()
     await inventory.getByText('commande-23', { exact: true }).scrollIntoViewIfNeeded()
     assert.ok(await manage.isVisible())
     await page.screenshot({ path: `/tmp/solera-skills-composer-${viewport.width}.png` })
