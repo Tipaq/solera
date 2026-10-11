@@ -10,7 +10,7 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
-import { SESSION_COOKIE, resolveSession } from '../auth/sessions.js'
+import { resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
 import type { SessionManager } from '../sessions/session-manager.js'
@@ -134,7 +134,7 @@ export async function buildApp(
 
     // Repli sur le cookie même en présence d'un en-tête `Authorization` : un proxy ou
     // une extension qui en ajoute un ne doit pas rendre l'interface inutilisable.
-    const token = request.cookies[SESSION_COOKIE]
+    const token = request.cookies[ctx.config.sessionCookie]
     if (!token) return
     const user = await resolveSession(ctx.db, token)
     if (user) request.user = user

@@ -89,7 +89,21 @@ const configSchema = z.object({
     .default({}),
 })
 
-export type Config = z.infer<typeof configSchema> & { paths: Paths }
+export type Config = z.infer<typeof configSchema> & {
+  paths: Paths
+  /**
+   * Nom du cookie de session, propre au répertoire de données.
+   *
+   * Un cookie ne distingue pas les ports : deux instances sur la même machine — le
+   * daemon et un serveur d'essai — se voient sous le même nom d'hôte et partageaient
+   * donc le même cookie. Se connecter à l'une déconnectait l'autre, chacune recevant
+   * un jeton que sa base ne connaît pas. Le suffixe les sépare sans rien à configurer.
+   *
+   * Même raisonnement et même clé que le cache des sources de skills : c'est le
+   * répertoire de données qui identifie une instance.
+   */
+  sessionCookie: string
+}
 
 export interface Paths {
   data: string
@@ -201,5 +215,10 @@ export function loadConfig(): Config {
     config.server.port = port
   }
 
-  return { ...config, paths: resolvePaths() }
+  const paths = resolvePaths()
+  return {
+    ...config,
+    paths,
+    sessionCookie: `solera_session_${createHash('sha256').update(paths.data).digest('hex').slice(0, 8)}`,
+  }
 }

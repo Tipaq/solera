@@ -6,7 +6,6 @@ import { verifyPassword } from '../../auth/passwords.js'
 import {
   createSession,
   destroySession,
-  SESSION_COOKIE,
   SESSION_TTL_MS,
 } from '../../auth/sessions.js'
 import type { AppContext } from '../context.js'
@@ -89,7 +88,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
     const { token } = await createSession(ctx.db, row.id, request.headers['user-agent'])
     throttle.clear(request.ip)
 
-    reply.setCookie(SESSION_COOKIE, token, {
+    reply.setCookie(ctx.config.sessionCookie, token, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',
@@ -101,9 +100,9 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: AppContext): void 
   })
 
   app.post('/api/auth/logout', async (request, reply) => {
-    const token = request.cookies[SESSION_COOKIE]
+    const token = request.cookies[ctx.config.sessionCookie]
     if (token) await destroySession(ctx.db, token)
-    reply.clearCookie(SESSION_COOKIE, {
+    reply.clearCookie(ctx.config.sessionCookie, {
       path: '/',
       httpOnly: true,
       sameSite: 'lax',

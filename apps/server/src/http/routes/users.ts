@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { authSessions, conversations, projects, users } from '@solera/db'
 import { createUserBodySchema, updateUserBodySchema, type UserDto } from '@solera/protocol'
 import { hashPassword, verifyPassword } from '../../auth/passwords.js'
-import { SESSION_COOKIE, sessionTokenHash } from '../../auth/sessions.js'
+import { sessionTokenHash } from '../../auth/sessions.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
@@ -178,7 +178,7 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
     // session courante survit : se déconnecter soi-même en changeant son mot de passe
     // serait une punition, pas une protection.
     if (patch.passwordHash) {
-      const current = request.cookies[SESSION_COOKIE]
+      const current = request.cookies[ctx.config.sessionCookie]
       const keep = current ? sessionTokenHash(current) : null
       ctx.db
         .delete(authSessions)

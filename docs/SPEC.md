@@ -2140,6 +2140,12 @@ Deux points à retenir :
   Un `Secure` global casserait l'accès en clair, son absence priverait l'accès chiffré
   de la protection. `trustProxy` est actif, donc `request.protocol` suit
   `X-Forwarded-Proto`.
+- **Le nom du cookie de session porte l'empreinte du répertoire de données**
+  (`solera_session_<8 hex>`). Un cookie ne distingue pas les ports : deux instances sur
+  la même machine — le daemon et un serveur d'essai — se voient sous le même nom d'hôte,
+  et sous un seul nom de cookie se connecter à l'une déconnectait l'autre, chacune
+  recevant un jeton que sa base ne connaît pas. Même clé d'identité que le cache des
+  sources de skills.
 - **Le fil n'est pas virtualisé.** À la place, les lignes sont mémoïsées et le fold
   produit un nouvel objet uniquement pour l'élément modifié, ce qui limite chaque lot
   de deltas au redessin d'un seul message. C'est l'essentiel du gain sans le risque

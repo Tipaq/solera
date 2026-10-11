@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto'
 import { eq, lt } from 'drizzle-orm'
 import { authSessions, users, type Db, type UserRow } from '@solera/db'
 
-export const SESSION_COOKIE = 'solera_session'
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000
 /** En dessous de ce reste de validité, on prolonge la session à l'usage. */
 const RENEW_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000
