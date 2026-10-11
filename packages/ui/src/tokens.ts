@@ -219,10 +219,22 @@ export const DENSITIES = [
  * et une icône se dimensionne par rapport au texte qu'elle accompagne.
  */
 export const ICON_SIZES = [
-  { size: 11, role: 'Dans une pastille, un badge, une étiquette `text-meta`' },
-  { size: 14, role: "Densité dense : ligne de liste, arbre, barre d'outils" },
-  { size: 16, role: 'Densité courante : bouton, en-tête de carte, menu' },
-  { size: 22, role: "Emphase : icône d'état vide" },
+  {
+    size: 11,
+    role: "Dans une pastille, un badge, une étiquette `text-meta` ; un marqueur d'état posé contre un texte",
+  },
+  {
+    size: 14,
+    role: "Densité dense : ligne de liste, arbre, barre d'outils, `IconButton size=\"sm\"`, `Button size=\"sm\"`",
+  },
+  {
+    size: 16,
+    role: "Densité courante : `Button`, `IconButton`, en-tête de carte, `MenuItem`, option de `Select` ou de `ChoiceList`, en-tête de page, champ",
+  },
+  {
+    size: 22,
+    role: "Emphase : icône d'état vide, grand espace vide, attente centrée",
+  },
 ] as const
 
 /** Six couches de `z-index`, nommées par ce qu'elles empilent. Aucune autre valeur. */

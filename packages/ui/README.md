@@ -43,6 +43,7 @@ déclarer `@source` vers ses sources, sinon aucune classe des primitives n'est g
 
 ## La règle
 
-Les règles de conception vivent dans `docs/design-system.md`, et le catalogue qui les
-montre est dans `apps/catalog`. Une primitive ajoutée ici reçoit sa story dans le même
-commit.
+Les règles de conception vivent dans le catalogue, `apps/catalog/src/*.mdx` — ses pages
+sont du markdown, lisibles sans ouvrir un navigateur. Les valeurs des échelles statiques
+vivent dans `src/tokens.ts`, et nulle part ailleurs. Une primitive ajoutée ici reçoit sa
+story dans le même commit.

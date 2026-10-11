@@ -8,9 +8,12 @@ Ce catalogue est la **référence de l'interface**. Il n'est pas livré avec Sol
 ici n'est importé par l'application, et Vite n'embarque que ce qui est atteignable depuis
 son point d'entrée. C'est un outil de conception.
 
-Le document qui tranche vit dans `docs/design-system.md`. Le catalogue montre, le document
-décide. En cas de divergence, c'est le code qui est en dette — sauf si le code a raison,
-auquel cas on change le document d'abord, dans le même commit.
+**C'est la seule référence.** Il n'y a pas de document parallèle : il y en a eu un, et
+ses tables de valeurs ont fini en troisième exemplaire d'échelles qui ne disaient plus la
+même chose. Les valeurs vivent dans `packages/ui/src/tokens.ts`, d'où le CSS est généré
+et que ces pages lisent ; les raisons vivent ici. En cas de divergence avec le code,
+c'est le code qui est en dette — sauf si le code a raison, auquel cas on change la page
+d'abord, dans le même commit.
 
 ## Quatre principes
 
@@ -29,9 +32,12 @@ une couleur de thème.
 
 ### L'habillage vit dans une primitive
 
-`components/ui/` est le seul endroit où l'on écrit l'habillage d'un contrôle. Ailleurs, on
+`packages/ui` est le seul endroit où l'on écrit l'habillage d'un contrôle. Ailleurs, on
 compose. Un `<button>` nu perd le focus visible, la cible tactile de 44 px et l'état
 désactivé que la primitive apporte.
+
+Voir plus bas **quand un `<button>` nu est légitime** : la règle a des exceptions, elles
+sont nommées, et elles ne sont pas « quand c'est plus rapide ».
 
 ### Le doigt n'est pas une taille d'écran
 
@@ -41,16 +47,60 @@ de la taille des cibles. C'est pour ça que `Button size="sm"` fait
 
 ## Trois couches, pas une
 
-`components/ui/` n'est pas tout le vocabulaire de l'interface.
+`packages/ui` n'est pas tout le vocabulaire de l'interface.
 
 | Couche | Où | Ce qui la définit |
 | --- | --- | --- |
-| **Primitives** | `components/ui/` | Ne savent rien du produit. Un bouton, un champ, un menu. |
+| **Primitives** | `packages/ui` | Ne savent rien du produit. Un bouton, un champ, un menu. |
 | **Composants d'application** | `components/`, `components/chat/`, `components/tools/` | Connaissent le domaine : un CLI, un projet, une fenêtre de quota, un diff. `AgentIcon` est importé par quinze fichiers — plus que toute primitive sauf `Button`. |
 | **Motifs** | nulle part | Des chaînes de classes recopiées à la main. Certains ne méritent pas mieux ; d'autres devraient être des primitives et ne le sont pas. |
 
 La section **Motifs** de ce catalogue est un chantier et non une référence : elle montre
 les divergences telles qu'elles sont dans le code, pour qu'on les voie.
+
+## Laquelle choisir quand deux se ressemblent
+
+Chaque primitive a sa page, qui dit ce qu'elle **est** : ses variantes, ses états, son
+API. Ce qu'une page ne peut pas montrer, c'est **laquelle prendre** quand deux se
+ressemblent :
+
+- `IconButton`, et non `Button icon=`, quand il n'y a pas de texte. Son `label` est
+  obligatoire, et c'est le type qui l'impose.
+- `Card`, et non un `div` bordé. Si c'en est une, c'est `Card`.
+- `Field`, et non un `input` nu : il câble l'intitulé, l'aide, l'erreur et
+  l'`aria-describedby`.
+- `Select` au-delà d'une demi-douzaine d'options, `ChoiceList` en deçà — déplier ce qu'on
+  peut choisir évite une ouverture, mais pas à vingt options. Le `<select>` natif ne sait
+  porter ni icône ni aide par option.
+- `SegmentedControl` quand les options s'excluent et tiennent en trois ; `Tabs` quand
+  elles changent de vue et non de réglage ; `Presets` quand elles remplissent un champ
+  qui reste saisissable.
+- `Menu` pour un menu, `Popover` pour un panneau libre : le roving tabindex de `Menu` est
+  réservé aux `menuitem`, et un bouton ordinaire posé dedans devient cliquable à la
+  souris seulement.
+- `ContextMenu` pour le clic droit et l'appui long. `Menu` se place sous un déclencheur
+  et ignore l'appui long.
+- `Tooltip` n'est jamais un intitulé : une infobulle n'existe pas au doigt.
+- `cx`, et non `clsx` : il n'apporte rien de plus.
+
+## Quand un `<button>` nu est légitime
+
+Les 86 `<button>` nus de l'application ont été lus un par un le 2026-10-10. Il en reste
+74, et le relevé qui annonçait « ~70 à replier » se trompait dans l'autre sens : **la
+grande majorité est légitime**, parce que le `<button>` y porte une surface qui n'est pas
+un bouton.
+
+| Cas | Pourquoi la primitive ne convient pas | Exemples |
+| --- | --- | --- |
+| **Ligne entièrement cliquable** — ligne de liste, tuile, nœud d'arbre, onglet de fichier | La ligne porte son habillage, sa sélection et sa densité ; un `Button` y mettrait un cadre dans un cadre | `CardTile`, `FileTree`, `EditorPane` |
+| **Option d'une liste** — `role="option"`, `role="radio"`, `role="switch"` | Le rôle ARIA décide de l'habillage et de la navigation au clavier | `CommandPalette`, `MentionPicker`, `QuestionPrompt` |
+| **En-tête de dépliage** — `aria-expanded` sur toute la largeur | C'est une surface qui s'ouvre, pas une action qu'on déclenche | `HistoryPane`, `GitPane`, `TaskResult` |
+| **Déclencheur Radix** via `asChild` | Radix exige la maîtrise de l'élément, et le contenu dépasse ce qu'une variante porte | `ProjectSwitcher`, `Menu`, `CardPanel` |
+| **Action en toutes lettres dans une phrase** | Un mot souligné au milieu d'un texte ; un `Button` casserait la phrase | `Composer` (« réessayer »), `CardAttachments` |
+| **Pastille** — `rounded-full border px-3 py-1.5` | `Button` est à coins carrés, et la pastille est un repère, pas une commande | `ConversationPage`, `UpdatePrompt` |
+
+Partout ailleurs, il faut le replier. Les deux dernières lignes sont des **motifs qui
+mériteraient une primitive** et n'en ont pas.
 
 ## Se servir du catalogue
 
@@ -65,7 +115,7 @@ qu'un parent lointain lui fournit quelque chose se voit donc tout de suite.
 
 ## Ajouter une entrée
 
-Une primitive ajoutée à `components/ui/` reçoit sa story **dans le même commit**. Les
+Une primitive ajoutée à `packages/ui` reçoit sa story **dans le même commit**. Les
 stories sont posées à côté de ce qu'elles montrent, sous `src/`, donc couvertes par
 `pnpm typecheck` et par `eslint src` : une primitive renommée casse sa story tout de
 suite. Une primitive sans story est une primitive dont personne ne vérifie les états.

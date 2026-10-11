@@ -38,12 +38,26 @@ Deux endroits où « sillage » subsiste légitimement, et qu'on ne touche pas :
   fichier de migration ou son contenu change les empreintes et casse toute base existante.
 - `LICENSE` — le copyright de l'auteur original.
 
-## L'interface suit un document, pas le goût du moment
+## L'interface a une référence, et une seule
 
-`docs/design-system.md` est la référence normative de l'interface web : jetons, échelle
-typographique, rayons, densités, gabarit de dialogue, primitives. **À lire avant de
-toucher à un composant**, et à modifier dans le même commit quand on change une règle —
-si le code et le document divergent, c'est le code qui est en dette.
+**Le catalogue, `apps/catalog/src/`.** Ses pages sont du markdown — `Principes.mdx`, les
+*Fondations*, les *Gabarits* — donc lisibles comme n'importe quel fichier, sans ouvrir un
+navigateur. **À lire avant de toucher à un composant**, et à modifier dans le même commit
+quand on change une règle : si le code et le catalogue divergent, c'est le code qui est
+en dette — sauf si le code a raison, auquel cas on change la page d'abord.
+
+Il y avait un second document, `docs/design-system.md`, supprimé le 2026-10-11. Deux
+normes sur le même sujet en font bientôt deux normes différentes : ses tables de rayons
+avaient déjà fini en troisième exemplaire, et les trois ne disaient pas la même chose. Ce
+qu'il portait d'unique est dans `Principes.mdx` et `Mouvement.mdx` ; ce qu'il listait
+d'écarts restants est sur le board.
+
+**Une valeur se change dans `packages/ui/src/tokens.ts`, et nulle part ailleurs.**
+
+L'interface est **bilingue de structure** : aucune chaîne en dur dans un composant, tout
+passe par `t('clé')` (`apps/web/src/lib/i18n`). Une chaîne écrite en français dans du
+JSX est un bug, pas un raccourci — et le français est plus long que l'anglais, donc
+c'est lui qui fait déborder un libellé de bouton.
 
 Le design system est un **paquet**, `@solera/ui` : les primitives, les jetons, la
 feuille partagée. Il ne dépend pas de `@solera/web`, donc il ne *peut pas* importer du
@@ -77,8 +91,30 @@ rassembler, et porter la documentation.
 
 **Une primitive ajoutée à `packages/ui` reçoit sa story dans le même commit.**
 
-Le document porte un relevé des écarts restants (§14) : c'est le chantier en cours, pas
-une liste de vœux.
+### Où vit quoi
+
+| Fichier | Contenu |
+| --- | --- |
+| `packages/ui/src/tokens.ts` | **La source des échelles statiques** : polices, rayons, pas de texte, densités, ombres, tailles d'icônes, couches. Valeur *et* rôle de chaque pas |
+| `packages/ui/src/styles/tokens.css` | Les jetons `--sg-*`, les trois thèmes, les dix palettes de syntaxe |
+| `packages/ui/src/styles/index.css` | Le mapping vers Tailwind, la base et les utilitaires partagés |
+| `packages/ui/src/styles/scales.generated.css` | **Généré.** Ne pas éditer |
+| `packages/ui/src/*.tsx` | Les primitives, et leurs stories à côté |
+| `packages/ui/src/labels.tsx` | Les deux libellés que les primitives portent, fournis par l'application |
+| `apps/web/src/styles/index.css` | L'entrée : Tailwind, le paquet, les sources à scanner |
+| `apps/web/src/styles/app.css` | Les règles propres à Solera : géométrie, fil, markdown |
+| `apps/web/src/lib/theme.ts` | L'application du thème, et la recopie du canevas dans `theme-color` |
+| `apps/web/src/lib/appearance.ts` | Les trois réglages d'apparence |
+| `apps/catalog/.storybook/` | La configuration du catalogue : sources, thème, langue, providers |
+| `apps/catalog/src/*.mdx` | **Les règles** : principes, fondations, gabarits |
+| `apps/catalog/src/specimens.tsx` | Les grilles visuelles des fondations, sans prose |
+| `scripts/chromium-deps.sh` | Pose Chromium sans sudo, pour capturer le catalogue |
+| `docs/brand/README.md` | Le symbole, ses exemplaires, et la règle de mise à jour |
+
+`docs/SPEC.md` §12.6 décrit l'ancien jeu de jetons (`--bg-base`, `--fg-primary`,
+`--accent-subtle`, `--gradient-canvas`…), un thème personnalisé et un fond à deux halos :
+rien de tout cela n'existe plus dans le code. Le catalogue le remplace sur le sujet du
+design, et §12.6 doit y renvoyer.
 
 ## Les trois instances de la machine
 
