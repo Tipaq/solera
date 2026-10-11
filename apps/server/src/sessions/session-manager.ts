@@ -1069,9 +1069,11 @@ export class SessionManager {
    * Infléchit le tour en cours plutôt que d'ouvrir le suivant.
    *
    * Retourne false quand ce n'est pas possible : CLI sans équivalent, session arrêtée,
-   * ou tour déjà terminé entre l'affichage du bouton et le clic. L'appelant le dit
-   * alors franchement, plutôt que de basculer en file d'attente dans le dos de
-   * l'utilisateur : les deux gestes ne produisent pas le même résultat.
+   * ou tour déjà terminé entre l'affichage du bouton et le clic. Le refus est net, et
+   * c'est l'appelant qui décide de la suite : le composer, pour qui infléchir est le
+   * comportement ordinaire de l'envoi pendant un tour, renvoie alors le message par la
+   * route d'envoi — ce n'est pas un autre geste, c'est le même qui tombe sur un tour
+   * fermé. Replier ici, à l'aveugle, priverait les autres appelants du choix.
    */
   async steer(
     conversationId: string,

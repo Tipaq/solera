@@ -48,6 +48,7 @@ import {
   useAllConversations,
   useConversation,
 } from '../lib/conversations'
+import { ApiRequestError } from '../lib/api'
 import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
@@ -814,6 +815,14 @@ export function ConversationPage() {
     void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
   }
 
+  /**
+   * Envoi pendant un tour, infléchi plutôt que mis en file.
+   *
+   * Le tour peut se terminer entre le rendu du bouton et le clic : le serveur refuse
+   * alors franchement, et l'envoi ordinaire prend le relais. Depuis qu'infléchir est
+   * le comportement par défaut de l'envoi, ce repli n'est plus un changement de geste
+   * dans le dos de l'utilisateur — c'est le même geste, qui tombe sur un tour fermé.
+   */
   const steer = async (
     text: string,
     attachmentIds: string[],
@@ -821,7 +830,13 @@ export function ConversationPage() {
     skills: string[],
   ) => {
     await flushConfig()
-    await steerConversation(conversationId, text, attachmentIds, mentions, skills)
+    try {
+      await steerConversation(conversationId, text, attachmentIds, mentions, skills)
+    } catch (err) {
+      if (!(err instanceof ApiRequestError) || err.code !== 'steer_unavailable') throw err
+      await sendMessage(conversationId, text, attachmentIds, mentions, skills)
+      void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
+    }
   }
 
   // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête

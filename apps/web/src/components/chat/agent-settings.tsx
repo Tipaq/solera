@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -150,6 +150,23 @@ function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
 }
 
 const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
+
+/**
+ * Ce que l'envoi fait d'un message tapé pendant un tour : l'y pousser, ou le faire
+ * attendre. Deux valeurs nommées plutôt qu'une case à cocher, parce que les deux
+ * comportements méritent chacun leur phrase — l'un peut couper l'agent, l'autre peut
+ * laisser le message attendre longtemps.
+ */
+type QueueChoice = 'steer' | 'queue'
+
+function queueOptions(t: Translate): SettingChoice<QueueChoice>[] {
+  return [
+    { value: 'steer', label: t('composer.queue.steer'), hint: t('composer.queue.steer.hint') },
+    { value: 'queue', label: t('composer.queue.queue'), hint: t('composer.queue.queue.hint') },
+  ]
+}
+
+const queueChoice = (queued: boolean): QueueChoice => (queued ? 'queue' : 'steer')
 
 function codexSandboxOptions(t: Translate): SettingChoice<CodexConfig['sandbox']>[] {
   return [
@@ -571,6 +588,7 @@ export function useAgentSettings({
   const sandboxOptionList = codexSandboxOptions(t)
   const speedOptionList = speedOptions(t)
   const ultracodeOptionList = ultracodeOptions(t)
+  const queueOptionList = queueOptions(t)
   const opencodePermissionList = opencodePermissionOptions(t)
 
   let groups: SettingGroup[] = []
@@ -711,6 +729,14 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      setting({
+        key: 'queue',
+        label: t('composer.setting.queue'),
+        icon: <Clock size={14} />,
+        options: queueOptionList,
+        value: queueChoice(claude.queueMessages),
+        onChange: (choice) => onConfigChange({ ...claude, queueMessages: choice === 'queue' }),
+      }),
     ]
 
     summary = [
@@ -812,6 +838,14 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      setting({
+        key: 'queue',
+        label: t('composer.setting.queue'),
+        icon: <Clock size={14} />,
+        options: queueOptionList,
+        value: queueChoice(codex.queueMessages),
+        onChange: (choice) => onConfigChange({ ...codex, queueMessages: choice === 'queue' }),
+      }),
     ]
 
     // Les levées d'approbation et de bac à sable restent visibles simultanément.
@@ -923,6 +957,14 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      setting({
+        key: 'queue',
+        label: t('composer.setting.queue'),
+        icon: <Clock size={14} />,
+        options: queueOptionList,
+        value: queueChoice(opencode.queueMessages),
+        onChange: (choice) => onConfigChange({ ...opencode, queueMessages: choice === 'queue' }),
+      }),
     ]
 
     // Le résumé nomme la famille : « Autoriser » seul ne dirait pas quoi. Une famille

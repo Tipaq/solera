@@ -42,6 +42,22 @@ const soleraMcpSchema = z.boolean().default(true)
  */
 const skillLibrarySchema = z.boolean().default(true)
 
+/**
+ * Fait attendre la fin du tour aux messages envoyés pendant qu'il tourne, au lieu de
+ * les y pousser.
+ *
+ * Faux par défaut : infléchir est le comportement ordinaire de l'envoi, et son pire
+ * cas — un message qui arrive trop tard pour le tour en cours — est exactement ce que
+ * la file produit de toute façon. Le réglage existe pour qui préfère écrire la suite
+ * sans risquer de couper l'agent, et c'est le seul cas où le composer montre à la fois
+ * le carré d'arrêt et la flèche.
+ *
+ * Réglage d'interface : le serveur le transporte et le conserve, aucun runner ne le
+ * lit. Il vit dans la configuration de la conversation parce que c'est là que se
+ * règle tout ce qui vaut pour une conversation et pas pour l'instance.
+ */
+const queueMessagesSchema = z.boolean().default(false)
+
 export const claudeConfigSchema = z.object({
   agent: z.literal('claude'),
   model: z.string(),
@@ -52,6 +68,7 @@ export const claudeConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
+  queueMessages: queueMessagesSchema,
   /**
    * Ignore les serveurs déclarés sur le disque du CLI (`~/.claude.json`, `.mcp.json`,
    * connecteurs claude.ai) pour ne garder que ceux de Solera.
@@ -193,6 +210,7 @@ export const codexConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
+  queueMessages: queueMessagesSchema,
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -239,6 +257,7 @@ export const opencodeConfigSchema = z.object({
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
   skillLibrary: skillLibrarySchema,
+  queueMessages: queueMessagesSchema,
 })
 export type OpencodeConfig = z.infer<typeof opencodeConfigSchema>
 
@@ -267,6 +286,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   mcpServers: [],
   soleraMcp: true,
   skillLibrary: true,
+  queueMessages: false,
   strictMcp: false,
   fastMode: false,
   ultracode: false,
@@ -289,6 +309,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   mcpServers: [],
   soleraMcp: true,
   skillLibrary: true,
+  queueMessages: false,
 }
 
 export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
@@ -303,6 +324,7 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   mcpServers: [],
   soleraMcp: true,
   skillLibrary: true,
+  queueMessages: false,
 }
 
 /**

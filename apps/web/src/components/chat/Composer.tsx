@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { ArrowUp, FastForward, Loader2, Mic, Paperclip, Square } from 'lucide-react'
+import { ArrowUp, Clock, Loader2, Mic, Paperclip, Square } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -162,7 +162,9 @@ interface ComposerProps {
   /**
    * Infléchit le tour en cours, là où le CLI le permet.
    *
-   * Absent sinon : le bouton ne s'affiche pas plutôt que d'être proposé puis refusé.
+   * C'est ce que fait l'envoi pendant un tour, sauf si la conversation a choisi la
+   * file. Absent là où le geste n'existe pas — CLI sans équivalent, conversation en
+   * lecture seule : l'envoi retombe alors sur la file, comme avant.
    */
   onSteer?(
     text: string,
@@ -471,9 +473,21 @@ export function Composer({
     })
   }
 
-  // Envoyer reste possible pendant un tour : le serveur met alors le message en file
-  // et l'affiche sous l'indicateur d'activité, plutôt que de refuser la saisie.
+  // Envoyer reste possible pendant un tour : le message rejoint le tour en cours, ou
+  // la file, plutôt que de voir la saisie refusée.
   const canSend = (text.trim().length > 0 || attachments.length > 0) && !sending && !disabled
+
+  /**
+   * Ce que l'envoi fait d'un message tapé pendant un tour.
+   *
+   * Infléchir est le défaut : le message est pris dans le tour ouvert, et son pire cas
+   * — arriver après la dernière frontière de lot d'outils, donc ouvrir le tour suivant
+   * — est exactement ce que la file produit de toute façon. On retombe sur la file
+   * quand la conversation l'a choisi, et quand infléchir n'est pas offert : CLI sans
+   * l'équivalent, ou conversation qu'on ne fait que lire.
+   */
+  const queueing = running && (config.queueMessages || !onSteer)
+  const steering = running && !queueing
 
   /**
    * Envoie le contenu du champ par l'action donnée.
@@ -545,7 +559,7 @@ export function Composer({
       attachments.length === 0 &&
       NATIVE_SLASH_COMMANDS.has(parsed.name)
     if (native && onCommand) return submit(() => onCommand(parsed.name))
-    return submit(onSend)
+    return submit(steering && onSteer ? onSteer : onSend)
   }
 
   const addFiles = async (chosen: File[]) => {
@@ -847,28 +861,12 @@ export function Composer({
               {context ? <ContextMeter context={context} /> : null}
             </span>
 
-            {/* Les deux boutons coexistent pendant un tour : on doit pouvoir arrêter
-                l'agent sans perdre le message qu'on vient de taper, et l'envoyer sans
-                avoir à l'arrêter. */}
-            {/* Infléchir n'est proposé que pendant un tour, et seulement là où le CLI
-                sait le faire : le message est pris en compte immédiatement, au lieu
-                d'attendre la fin comme le fait la file. */}
-            {running && onSteer && canSend ? (
-              <TooltipButton
-                type="button"
-                onClick={() => void submit(onSteer)}
-                aria-label={t('composer.steer.aria')}
-                title={t('composer.steer.hint')}
-                className={cx(
-                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                  'border border-accent text-accent transition-colors hover:bg-accent-wash',
-                )}
-              >
-                <FastForward size={16} />
-              </TooltipButton>
-            ) : null}
-
-            {running ? (
+            {/* Le carré d'arrêt n'accompagne l'envoi que lorsque celui-ci met en
+                file : le message attend alors la fin du tour, et arrêter reste une
+                action utile pendant qu'on écrit. Quand l'envoi infléchit, les deux
+                gestes se contredisent, et c'est l'envoi qui l'emporte — comme sur
+                claude.ai, où arrêter demande de vider le champ. */}
+            {running && (!canSend || queueing) ? (
               <TooltipButton
                 type="button"
                 onClick={onInterrupt}
@@ -883,22 +881,31 @@ export function Composer({
               </TooltipButton>
             ) : null}
 
-            <TooltipButton
-              type="submit"
-              disabled={!canSend}
-              aria-label={running ? t('composer.send.queue') : t('composer.send.aria')}
-              title={running ? t('composer.send.queue.hint') : t('composer.send.aria')}
-              className={cx(
-                'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
-                'disabled:pointer-events-none disabled:opacity-35',
-                // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
-                // ne s'affiche que s'il y a réellement quelque chose à mettre en file.
-                running && !canSend && 'hidden',
-              )}
-            >
-              <ArrowUp size={16} strokeWidth={2.5} />
-            </TooltipButton>
+            {/* L'horloge est le seul signe visible que le départ est différé : sans
+                elle, infléchir et mettre en file auraient exactement la même tête. */}
+            <span className="relative inline-flex shrink-0">
+              <TooltipButton
+                type="submit"
+                disabled={!canSend}
+                aria-label={queueing ? t('composer.send.queue') : steering ? t('composer.steer.aria') : t('composer.send.aria')}
+                title={queueing ? t('composer.send.queue.hint') : steering ? t('composer.steer.hint') : t('composer.send.aria')}
+                className={cx(
+                  'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
+                  'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
+                  'disabled:pointer-events-none disabled:opacity-35',
+                  // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
+                  // ne s'affiche que s'il y a réellement quelque chose à envoyer.
+                  running && !canSend && 'hidden',
+                )}
+              >
+                <ArrowUp size={16} strokeWidth={2.5} />
+              </TooltipButton>
+              {queueing && canSend ? (
+                <span aria-hidden className="pointer-events-none absolute top-0 right-0 flex size-4 items-center justify-center rounded-full border border-surface bg-surface-high text-ink-soft">
+                  <Clock size={10} />
+                </span>
+              ) : null}
+            </span>
           </div>
         </div>
       </form>
