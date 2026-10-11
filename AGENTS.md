@@ -89,6 +89,10 @@ dans `packages/ui`, celles des composants d'application dans `apps/web` — parc
 primitive renommée casse alors sa story au `typecheck`. Le catalogue ne fait que les
 rassembler, et porter la documentation.
 
+`pnpm build` ne le construit donc pas — il reste hors du chemin de release, pour qu'un
+Storybook cassé ne fasse pas échouer une publication qui ne l'embarque pas. La CI le
+construit à part, par `pnpm build:catalog`.
+
 **Une primitive ajoutée à `packages/ui` reçoit sa story dans le même commit.**
 
 ### Où vit quoi

@@ -30,6 +30,11 @@ jobs:
       - run: pnpm test
       - run: pnpm lint
       - run: pnpm build
+      # Hors de `pnpm build` : le catalogue ne part dans aucune release, et un
+      # Storybook cassé ne doit pas faire échouer une publication. Mais il se
+      # construit quand même ici, sinon une config ou un .mdx cassé n'apparaîtrait
+      # qu'au prochain `dev` de quelqu'un.
+      - run: pnpm build:catalog
 
   macos:
     # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :

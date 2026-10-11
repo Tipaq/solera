@@ -10,7 +10,8 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter \"./apps/*\" dev",
-    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" build",
+    "build": "pnpm --filter \"./packages/*\" build && pnpm --filter \"./apps/*\" --filter '!@solera/catalog' build",
+    "build:catalog": "pnpm --filter @solera/catalog build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @solera/server test",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
