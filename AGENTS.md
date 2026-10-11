@@ -145,62 +145,94 @@ service ne change donc rien à ce qui est servi — c'est ce que disait cette se
 jusqu'au 2026-10-11, et ça a fait croire à un déploiement qui n'avait pas eu lieu.
 
 Le worktree reste la source : on y fusionne et on y construit, puis on **stage** un
-arbre d'exécution et on bascule le lien.
+arbre d'exécution et on bascule le lien. Les quatre étapes ci-dessous sont dans cet
+ordre pour une raison, et la publication du 2026-10-11 (`v0.16.0-20-g70b0852`) dit
+laquelle : la bascule a eu lieu sur une release sans `node_modules`, le serveur est
+mort au démarrage sur `ERR_MODULE_NOT_FOUND: drizzle-orm`, systemd a abandonné après
+cinq essais, et l'agent qui publiait était déjà mort — tué par son propre
+`restart` — donc personne n'a vu l'échec. Tim a réparé à la main.
+
+**1. La release doit être complète avant la bascule.**
 
 ```sh
 V=v$(git -C ~/projects/solera-stable describe --tags --always | sed 's/^v//')
 APP=~/.local/share/solera/app
+PREV=$(basename "$(readlink "$APP/current")")   # à garder : c'est le retour arrière
 git -C ~/projects/solera-stable merge --ff-only main
 (cd ~/projects/solera-stable && pnpm build && SOLERA_VERSION=$V node scripts/stage-runtime.mjs "$APP/releases/$V")
 ```
 
-`stage-runtime.mjs` laisse les dépendances runtime externes : il faut matérialiser
-`node_modules` dans l'arbre staged. **Tant que les dépendances de `apps/server` n'ont pas
-bougé**, les copier en liens durs depuis la release en place évite de recompiler les
-modules natifs, ce que cette machine ne sait pas faire (ni `make` ni `cc`, et sudo est
-verrouillé) :
+`stage-runtime.mjs` laisse les dépendances runtime externes : l'arbre staged n'a pas de
+`node_modules`, il faut les y matérialiser. **D'abord vérifier que les dépendances du
+serveur n'ont pas bougé** — si ce diff n'est pas vide, on s'arrête et on prévient Tim,
+parce qu'il faut alors un vrai `npm install --omit=dev` et que cette machine ne sait pas
+compiler les modules natifs (ni `make` ni `cc`, et sudo est verrouillé) :
 
 ```sh
-cp -al "$APP/releases/<ancienne>/node_modules" "$APP/releases/$V/node_modules"
-cp "$APP/releases/<ancienne>/package-lock.json" "$APP/releases/$V/"
+git -C ~/projects/solera-stable diff "$PREV".."$V" -- apps/server/package.json
+```
+
+Vide : on recopie en liens durs depuis la release en place, ce qui évite la compilation.
+
+```sh
+cp -al "$APP/releases/$PREV/node_modules" "$APP/releases/$V/node_modules"
+cp "$APP/releases/$PREV/package-lock.json" "$APP/releases/$V/"
+test -d "$APP/releases/$V/node_modules/drizzle-orm"   # la release est-elle complète ?
 ```
 
 Stager **dans** `$APP/releases` et non dans `/tmp` : les liens durs ne traversent pas
-les systèmes de fichiers. Si les dépendances ont changé, il faut un vrai
-`npm install --omit=dev` dans l'arbre, et c'est là que cette machine bloque.
+les systèmes de fichiers, et un `cp -al` qui échoue à mi-chemin laisse exactement l'arbre
+incomplet qui a cassé le service.
 
-Éprouver l'arbre sur un port et des données à part avant de basculer. `NODE_ENV` doit
-valoir `production`, sinon le serveur cherche `pino-pretty`, absent d'un arbre sans
-devDependencies, et meurt au démarrage :
+**2. Éprouver l'arbre sur un port et des données à part.** Pas de bascule sans un
+`/api/health` qui répond. `NODE_ENV` doit valoir `production`, sinon le serveur cherche
+`pino-pretty`, absent d'un arbre sans devDependencies, et meurt au démarrage :
 
 ```sh
 NODE_ENV=production SOLERA_PORT=7619 SOLERA_DATA_DIR=/tmp/solera-smoke \
   SOLERA_WEB_ROOT="$APP/releases/$V/web" \
-  ~/.local/share/solera/node/current/bin/node "$APP/releases/$V/server/main.js"
+  ~/.local/share/solera/node/current/bin/node "$APP/releases/$V/server/main.js" &
+curl -sf http://127.0.0.1:7619/api/health   # doit répondre avant d'aller plus loin
 ```
 
-Puis basculer, d'un seul geste :
+**3. Prévenir Tim avant de basculer**, parce que le redémarrage va le couper de la
+session : les agents sont des process enfants du service. Lui donner les deux commandes
+dont il aura besoin seul — la vérification et le retour arrière :
 
 ```sh
-ln -sfn "releases/$V" "$APP/current.tmp" && mv -T "$APP/current.tmp" "$APP/current"
-systemctl --user restart solera
+curl -s http://127.0.0.1:7517/api/health
+ln -sfn "releases/$PREV" "$APP/current.tmp" && mv -T "$APP/current.tmp" "$APP/current" && systemctl --user restart solera
 ```
 
-**Le redémarrage tue les sessions d'agent en cours**, celle qui publie comprise : elles
-sont des process enfants du service. Détacher la commande (`setsid`) pour qu'elle ne
-meure pas à mi-chemin.
+**4. Basculer et redémarrer en une seule commande détachée**, pour qu'elle survive à la
+mort de la session qui l'a lancée. Détachée *et* enchaînée : une bascule faite dans une
+commande et un redémarrage dans la suivante laisse un lien neuf devant un service qui
+tourne encore sur l'ancien code, et la seconde commande peut ne jamais partir.
+
+```sh
+setsid sh -c 'ln -sfn "releases/'"$V"'" "'"$APP"'/current.tmp" \
+  && mv -T "'"$APP"'/current.tmp" "'"$APP"'/current" \
+  && systemctl --user restart solera' >/dev/null 2>&1 < /dev/null &
+```
 
 Pour vérifier qu'une publication a bien eu lieu, comparer l'empreinte du bundle servi à
-celle du disque — un `is-active` ne dit rien :
+celle du disque — un `is-active` ne dit rien, et un service en échec répété non plus :
 
 ```sh
 curl -s http://127.0.0.1:7517/ | grep -o 'assets/index-[^"]*\.js'
+systemctl --user status solera --no-pager | head -5
 ```
 
 Le dev se lance par `scripts/dev.sh`, et seulement par lui : les variables
 `SOLERA_DATA_DIR`, `SOLERA_CONFIG`, `SOLERA_PORT` sont posées là et nulle part ailleurs.
 Ne jamais lancer `pnpm dev` à la main avec un environnement improvisé — c'est comme ça
 qu'on finit avec une instance dont la configuration ne survit pas au redémarrage.
+
+**Un paquet du workspace qui change demande `pnpm install` puis `systemctl --user
+restart solera-dev`.** Le `vite` d'une instance ouverte depuis des jours garde en cache
+la version pré-optimisée d'un paquet lié et sert alors un mélange d'ancien et de neuf.
+Le symptôme ne ressemble pas à sa cause : `does not provide an export named 'Tabs'` sur
+un `@solera/ui` qui exporte bien `Tabs`, par exemple.
 
 ## Le garde-porte WSL
 
