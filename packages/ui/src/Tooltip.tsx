@@ -20,6 +20,8 @@ export function Tooltip({ label, children }: { label: string; children: ReactEle
     <RadixTooltip.Root>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
+        {/* Le calque flottant ne capte pas le pointeur : voir la règle sur
+            `[data-radix-popper-content-wrapper]` dans `styles/index.css`. */}
         <RadixTooltip.Content side="top" sideOffset={6} collisionPadding={8}
           className="surface z-[100] max-w-[min(22rem,calc(100vw-1rem))] rounded-md border border-line px-2.5 py-1.5 text-xs leading-relaxed text-ink shadow-pop">
           {label}

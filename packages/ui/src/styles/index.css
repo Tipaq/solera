@@ -141,6 +141,16 @@
   }
 }
 
+/*
+ * Une aide ne contient rien à cliquer, et son calque flottant déborde du bouton qui
+ * la porte. Celle qui reste ouverte parce que son bouton a gardé le focus — au retour
+ * d'un menu, par exemple — bloquait alors le clic sur le voisin. Radix ne pose
+ * `pointer-events` que sur le contenu : c'est l'enveloppe de placement qui interceptait.
+ */
+[data-radix-popper-content-wrapper]:has(> [role='tooltip']) {
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
