@@ -1146,12 +1146,18 @@ export function ConversationPage() {
                 fait sur des hauteurs mesurées, qu'un fil absent de la mise en page
                 n'aurait pas. L'apparition est fondue, la disparition immédiate : au
                 changement de conversation, ce qui s'efface est le fil précédent. */}
+            {/* La gouttière est portée par l'enveloppe, hors de la largeur maximale, et
+                non par le bloc lui-même : un `px` à l'intérieur de `max-w-3xl` rognait le
+                fil de sa valeur, et les messages finissaient plus étroits que la barre de
+                saisie, qui porte la même largeur. Les deux gouttières sont désormais
+                écrites pareil, ici et dans `Composer`. */}
             <div
               className={cx(
-                'mx-auto flex max-w-3xl flex-col gap-3 p-3 md:p-6 @min-[40rem]:px-12',
+                'px-3 @min-[40rem]:px-12',
                 placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
               )}
             >
+            <div className="mx-auto flex max-w-3xl flex-col gap-3 py-3 md:py-6">
               {stream.error ? <Banner>{stream.error}</Banner> : null}
               {actionError ? <Banner>{actionError}</Banner> : null}
     
@@ -1211,6 +1217,7 @@ export function ConversationPage() {
                 <PromptSuggestion text={stream.state.suggestion} disabled={!isOwner} />
               ) : null}
             </div>
+            </div>
           </div>
 
           {/* Posée dans la zone de fil et non dans la colonne entière : centrée sur
@@ -1263,11 +1270,16 @@ export function ConversationPage() {
             forment un bloc. `TurnActivity` dit la même activité un peu plus haut, mais
             depuis le fil, donc il sort de l'écran dès qu'on remonte ; cette rangée reste.
           */}
-          <SignalRow
-            signals={signals}
-            onSelect={() => setPanelOpen(true)}
-            className="mx-auto max-w-3xl px-1.5 pb-2"
-          />
+          {/* Même gouttière que le fil et que le composer, puis le retrait de 1,5 qui
+              aligne la rangée sur le contenu de la carte de saisie, dont le cadre porte
+              ce même retrait. */}
+          <div className="px-3 @min-[40rem]:px-12">
+            <SignalRow
+              signals={signals}
+              onSelect={() => setPanelOpen(true)}
+              className="mx-auto max-w-3xl px-1.5 pb-2"
+            />
+          </div>
 
           <Composer
             key={conversationId}

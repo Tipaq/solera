@@ -671,7 +671,7 @@ export function Composer({
   return (
     // L'encoche est portée par la page (`pb-safe`), pas ici : deux `env()` empilés
     // creuseraient un vide de deux encoches.
-    <div className={cx('shrink-0', variant === 'thread' && 'px-3 pt-1 pb-6')}>
+    <div className={cx('shrink-0', variant === 'thread' && 'px-3 pt-1 pb-6 @min-[40rem]:px-12')}>
       <form
         onSubmit={(event) => {
           event.preventDefault()
