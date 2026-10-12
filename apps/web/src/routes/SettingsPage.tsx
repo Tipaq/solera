@@ -8,6 +8,7 @@ import {
   Info,
   GitBranch,
   KeyRound,
+  Library,
   Mic,
   Palette,
   Plug,
@@ -125,6 +126,14 @@ const SECTIONS: Section[] = [
     labelKey: 'settings.section.stt',
     descriptionKey: 'settings.section.stt.description',
     icon: <Mic size={16} />,
+    adminOnly: true,
+  },
+  {
+    to: 'savoir',
+    group: 'administration',
+    labelKey: 'settings.section.vault',
+    descriptionKey: 'settings.section.vault.description',
+    icon: <Library size={16} />,
     adminOnly: true,
   },
   {

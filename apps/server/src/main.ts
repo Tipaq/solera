@@ -20,6 +20,7 @@ import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
+import { VaultIndex } from './vault/index-service.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -61,6 +62,9 @@ async function main(): Promise<void> {
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
+  // L'index du vault : construit avant l'application, qui expose ses routes, et
+  // rattrapé après elle, faute de logger avant.
+  const vault = new VaultIndex(db, config)
   const app = await buildApp(
     { db, config },
     log,
@@ -75,6 +79,7 @@ async function main(): Promise<void> {
     scheduler,
     relay,
     tasks,
+    vault,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -95,6 +100,26 @@ async function main(): Promise<void> {
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
   tasks.start(app.log)
+
+  /**
+   * Le rattrapage de l'index du vault, lancé sans l'attendre.
+   *
+   * Le vault se modifie ailleurs — un autre éditeur, le téléphone — et c'est au
+   * démarrage qu'on rattrape : `git diff` entre le commit que l'index reflète et
+   * `HEAD` dit exactement ce qui a bougé. Rien ne doit en dépendre pour écouter : un
+   * index en retard rend des faits en retard, un serveur qui n'écoute pas ne rend
+   * rien du tout.
+   */
+  void vault
+    .sync()
+    .then((run) => {
+      if (run.skipped === undefined) {
+        app.log.info({ indexed: run.indexed, removed: run.removed, full: run.full }, 'index du vault a jour')
+      }
+    })
+    .catch((err: unknown) => {
+      app.log.error({ err }, 'indexation du vault en echec')
+    })
 
   await app.listen({ host: config.server.host, port: config.server.port })
 

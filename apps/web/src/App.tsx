@@ -13,6 +13,7 @@ import { SchedulePage } from './routes/SchedulePage'
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
+import { VaultSettingsPage } from './routes/VaultSettingsPage'
 import { AppearanceSection } from './routes/AppearanceSection'
 import { CliDefaultsSettingsPage } from './routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from './routes/DictationSettingsPage'
@@ -73,6 +74,7 @@ export function App() {
             <Route path="git" element={<GitCredentialsSettingsPage />} />
             <Route path="secrets" element={<SecretsSettingsPage />} />
             <Route path="dictee" element={<DictationSettingsPage />} />
+            <Route path="savoir" element={<VaultSettingsPage />} />
             <Route path="archivage" element={<ArchivingSettingsPage />} />
             <Route path="sessions" element={<SessionsSettingsPage />} />
             <Route path="comptes" element={<UsersSettingsPage />} />
