@@ -3,7 +3,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
-import { MobileNavigationButton } from '../components/MobileNavigation'
+import { HeaderBand } from '../components/HeaderBand'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
@@ -21,7 +21,6 @@ import {
   useUpdateSchedule,
   type ScheduleState,
 } from '../lib/schedules'
-import { useSidebarHidden } from '../lib/sidebar'
 
 const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'critical' | 'positive'> = {
   running: 'accent',
@@ -57,7 +56,6 @@ const RUN_DOTS: Record<ScheduleRunStatus, string> = {
 export function SchedulePage() {
   const { projectId } = useParams()
   const t = useTranslate()
-  const sidebarHidden = useSidebarHidden()
   const { data: projects } = useProjects()
   const { data: schedules, isPending, isError } = useSchedules()
   const project = projects?.find((entry) => entry.id === projectId)
@@ -71,17 +69,11 @@ export function SchedulePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header
-        className={cx(
-          'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-3 md:px-6',
-          sidebarHidden && 'md:pl-14',
-        )}
-      >
-        <MobileNavigationButton />
+      <HeaderBand>
         <CalendarClock size={16} className="shrink-0 text-ink-faint" />
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight">{t('schedule.title')}</h1>
           {project ? <p className="truncate text-xs text-ink-faint">{project.name}</p> : null}
+          <h1 className="truncate text-sm font-medium">{t('schedule.title')}</h1>
         </div>
         {tasks.length > 0 ? <Badge>{tasks.length}</Badge> : null}
         <div className="ml-auto">
@@ -89,7 +81,7 @@ export function SchedulePage() {
             {t('schedule.new')}
           </Button>
         </div>
-      </header>
+      </HeaderBand>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">

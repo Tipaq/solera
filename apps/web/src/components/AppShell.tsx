@@ -26,7 +26,6 @@ import {
   LogOut,
   MoreHorizontal,
   Palette,
-  PanelLeft,
   PanelLeftClose,
   Pencil,
   Plus,
@@ -100,7 +99,8 @@ import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
 import { UpdateDot } from './UpdateDot'
 import { useUpdateNotice } from '../lib/system'
-import { MobileNavigationButton, MobileNavigationContext } from './MobileNavigation'
+import { MobileNavigationContext } from './MobileNavigation'
+import { HeaderBand } from './HeaderBand'
 import { PullToRefresh } from './PullToRefresh'
 import {
   Banner,
@@ -298,7 +298,7 @@ export function AppShell() {
           // reste à voir derrière lui.
           'absolute inset-y-0 left-0 z-30 w-full shrink-0',
           'md:w-[var(--sidebar-desktop-width)]',
-          'surface border-r border-line pt-safe',
+          'surface border-r border-line',
           // Sur mobile, la sidebar est en surimpression : une translation suffit à la
           // faire entrer et sortir. Sur grand écran elle occupe une colonne du flex,
           // donc c'est la marge qui doit se refermer, sinon translater ne ferait que
@@ -349,14 +349,6 @@ export function AppShell() {
         )}
       </aside>
 
-      {hidden ? (
-        <div className="absolute top-2 left-2 z-30 hidden md:block">
-          <IconButton data-sidebar-restore label={t('shell.nav.show')} onClick={() => setSidebarHidden(false)}>
-            <PanelLeft size={16} />
-          </IconButton>
-        </div>
-      ) : null}
-
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <UpdatePrompt />
 
@@ -366,19 +358,18 @@ export function AppShell() {
           sur toute la hauteur de l'écran. */}
       <div
         inert={!wide && navOpen}
-        className={cx('flex min-w-0 flex-1 flex-col', contextualHeader && 'pt-safe md:pt-0')}
+        className="flex min-w-0 flex-1 flex-col"
       >
+        {/* Les vues qui ont leur propre segment de bande le rendent elles-mêmes ; les
+            autres reçoivent celui-ci. Il ne s'efface sur grand écran que si la colonne
+            de gauche est dépliée : sinon il porterait seul le bouton qui la ramène. */}
         {!contextualHeader ? (
-        <header
-          className={cx(
-            'header-bar flex shrink-0 items-center gap-1 px-2',
-            'border-b border-line bg-canvas/85 backdrop-blur-md md:hidden',
-          )}
-        >
-          <MobileNavigationButton />
-          <Logo size={18} className="text-accent" />
-          <span className="font-medium">Solera</span>
-        </header>
+          <HeaderBand className={cx('bg-canvas/85 backdrop-blur-md', !hidden && 'md:hidden')}>
+            <span className="flex items-center gap-1.5 md:hidden">
+              <Logo size={18} className="text-accent" />
+              <span className="font-medium">Solera</span>
+            </span>
+          </HeaderBand>
         ) : null}
 
         {/* Le calque racine ne défile plus : chaque vue porte son propre défilement.
@@ -491,7 +482,7 @@ function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-[var(--header-height)] shrink-0 items-center gap-2 px-4">
+      <HeaderBand zone="nav" className="px-4">
         <Logo size={20} className="text-accent" />
         <span className="text-heading font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
@@ -508,7 +499,7 @@ function Sidebar({
             <PanelLeftClose size={16} />
           </IconButton>
         </span>
-      </div>
+      </HeaderBand>
 
       <div className="shrink-0 px-2 pb-1">
         {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait

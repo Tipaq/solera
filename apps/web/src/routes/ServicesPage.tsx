@@ -3,7 +3,7 @@ import { ArrowUpRight, RefreshCw, Server, Square } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { ServicesDto } from '@solera/protocol'
-import { MobileNavigationButton } from '../components/MobileNavigation'
+import { HeaderBand } from '../components/HeaderBand'
 import { Badge, Banner, Button, Card, CardBody, EmptyState, IconButton, Select } from '@solera/ui'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/attachments'
@@ -38,17 +38,16 @@ export function ServicesPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="flex shrink-0 items-center gap-3 border-b border-line px-4 py-3 md:px-6">
-        <MobileNavigationButton />
+      <HeaderBand>
         <Server size={16} className="shrink-0 text-ink-faint" />
-        <h1 className="text-lg font-semibold tracking-tight">{t('services.title')}</h1>
+        <h1 className="truncate text-sm font-medium">{t('services.title')}</h1>
         {query.data?.supported ? <Badge>{services.length}</Badge> : null}
         <div className="ml-auto">
           <IconButton label={t('services.refresh')} disabled={query.isFetching} onClick={() => { void query.refetch() }}>
             <RefreshCw size={16} />
           </IconButton>
         </div>
-      </header>
+      </HeaderBand>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-5">
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">

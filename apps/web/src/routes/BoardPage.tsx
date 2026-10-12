@@ -26,7 +26,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
-import { MobileNavigationButton } from '../components/MobileNavigation'
+import { HeaderBand } from '../components/HeaderBand'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '@solera/ui'
@@ -35,7 +35,6 @@ import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useMediaQuery } from '../lib/viewport'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
@@ -92,7 +91,6 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
-  const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
@@ -237,19 +235,20 @@ export function BoardPage() {
     // lieu de descendre jusqu'en bas. `relative` porte le tiroir, posé en absolu.
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header
-          className={cx(
-            'flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-4',
-            sidebarHidden && 'md:pl-14',
-          )}
-        >
-          <MobileNavigationButton />
-          <div className="min-w-0"><p className="truncate text-xs text-ink-faint">{project.name}</p><h1 className="text-lg font-semibold tracking-tight">{t('project.board.title')}</h1></div>
-          <span className="rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-faint">
+        <HeaderBand>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs text-ink-faint">{project.name}</p>
+            <h1 className="truncate text-sm font-medium">{t('project.board.title')}</h1>
+          </div>
+          <span className="shrink-0 rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-faint">
             {t('board.cardCount', { count: (cards ?? []).length })}
           </span>
-          <div className="flex-1" />
-          <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>{t('board.create.title')}</Button>
+          {/* Au doigt la bande ne tient pas quatre libellés : l'icône suffit, et le
+              nom reste porté par le bouton — une icône seule ne dit pas ce qu'elle
+              fait, ni à l'œil ni à un lecteur d'écran. */}
+          <Button size="sm" aria-label={t('board.create.title')} icon={<Plus size={16} />} onClick={() => setCreating(true)}>
+            <span className="hidden sm:inline">{t('board.create.title')}</span>
+          </Button>
           {wide && hasClosed ? (
             <Button
               variant="ghost"
@@ -279,7 +278,7 @@ export function BoardPage() {
           >
             <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
           </IconButton>
-        </header>
+        </HeaderBand>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">

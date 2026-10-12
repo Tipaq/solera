@@ -12,7 +12,7 @@ import {
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
-import { MobileNavigationButton } from '../components/MobileNavigation'
+import { HeaderBand } from '../components/HeaderBand'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { WorktreeSelect } from '../components/WorktreeSelect'
@@ -31,7 +31,6 @@ import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
 import { setPanelOpen, usePanelPresence } from '../lib/panel'
-import { useSidebarHidden } from '../lib/sidebar'
 import { useAgentUsage } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
@@ -111,7 +110,6 @@ export function DraftConversationPage() {
   const [params] = useSearchParams()
   const { data: conversations } = useAllConversations()
   const createConversation = useCreateConversation(projectId ?? '')
-  const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
 
   // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
@@ -266,21 +264,13 @@ export function DraftConversationPage() {
           {t('conversation.drop.attach')}
         </div>
       ) : null}
-      <header
-        className={cx(
-          'flex shrink-0 items-center gap-2 border-b border-line px-2 py-2',
-          // Place réservée au bouton de réaffichage de la navigation, qui se pose dans
-          // ce coin quand la sidebar est repliée.
-          sidebarHidden && 'md:pl-14',
-        )}
-      >
-        <MobileNavigationButton />
+      <HeaderBand>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{t('draft.title')}</p>
-          <div className="flex items-center gap-1.5 text-meta text-ink-faint">
+          <div className="flex items-center gap-1.5 text-xs text-ink-faint">
             <AgentIcon agent={agent} size={11} />
-            <span>{project?.name ?? AGENT_LABELS[agent]}</span>
+            <span className="truncate">{project?.name ?? AGENT_LABELS[agent]}</span>
           </div>
+          <p className="truncate text-sm font-medium">{t('draft.title')}</p>
         </div>
         {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
             et la liste des cartes est la réponse. Le lien manque à cet endroit précis
@@ -306,7 +296,7 @@ export function DraftConversationPage() {
             <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
           </IconButton>
         ) : null}
-      </header>
+      </HeaderBand>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
