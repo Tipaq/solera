@@ -857,6 +857,70 @@ export const treeSearchQuerySchema = z.object({
   q: z.string().min(1).max(200),
 })
 
+/**
+ * Recherche par contenu dans le répertoire de travail.
+ *
+ * Les quatre drapeaux sont ceux de VS Code, et se lisent dans le même ordre :
+ * respecter la casse, mot entier, expression régulière, puis le filtre de chemins.
+ * `include` et `exclude` acceptent une liste de motifs séparés par des virgules —
+ * `apps/**, packages/**` — parce que c'est la forme qu'on tape, et non une par champ.
+ */
+export const contentSearchQuerySchema = z.object({
+  q: z.string().min(1).max(500),
+  // `coerce` : une requête GET ne transporte que des chaînes, et `'false'` est vrai.
+  caseSensitive: z.enum(['0', '1']).default('0'),
+  wholeWord: z.enum(['0', '1']).default('0'),
+  regex: z.enum(['0', '1']).default('0'),
+  include: z.string().max(500).default(''),
+  exclude: z.string().max(500).default(''),
+})
+
+export interface ContentMatchDto {
+  /** Numéro de ligne, à partir de 1, comme l'affiche un éditeur. */
+  line: number
+  /** La ligne, éventuellement rognée autour de la première correspondance. */
+  text: string
+  /** Décalages `[début, fin)` du surlignage dans `text`. */
+  ranges: [number, number][]
+  /** Caractères retirés en tête de `text`, pour que le rognage se voie. */
+  trimmedStart?: number
+}
+
+export interface ContentFileDto {
+  path: string
+  matches: ContentMatchDto[]
+  /** Nombre réel de correspondances, quand la liste en montre moins. */
+  total: number
+}
+
+export interface ContentSearchDto {
+  files: ContentFileDto[]
+  totalMatches: number
+  /**
+   * Vrai quand la marche s'est arrêtée avant d'avoir tout vu. Sans ça, une recherche
+   * bornée affiche « 40 résultats » là où il y en avait mille, sans le dire.
+   */
+  truncated: boolean
+  /** Message d'erreur de l'expression régulière, quand elle ne compile pas. */
+  invalidRegex?: string
+}
+
+/**
+ * Remplacement en masse, sur exactement le même critère que la recherche.
+ *
+ * Même schéma, à la chaîne de remplacement près : la liste affichée **est**
+ * l'aperçu, et deux critères distincts feraient écrire autre chose que ce qui est
+ * montré.
+ */
+export const contentReplaceBodySchema = contentSearchQuerySchema.extend({
+  replacement: z.string().max(500),
+})
+
+export interface ContentReplaceDto {
+  files: number
+  matches: number
+}
+
 export interface TreeSearchDto {
   entries: TreeEntryDto[]
   /**

@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { Check, Code2, Download, Eye, Loader, MoreHorizontal, Save, Search, X } from 'lucide-react'
+import { Archive, Code2, Download, Eye, Link2, Loader, MoreHorizontal, PanelLeft, Save, Search, Trash2, Undo2, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
@@ -12,12 +12,17 @@ import { useCurrentUser } from '../../lib/session'
 import {
   activateTab,
   closeOtherTabs,
+  closeSavedTabs,
   closeTab,
   openTab,
   pinTab,
+  reopenLastClosedTab,
   reorderTabs,
   useEditorTabs,
+  useHasClosedTabs,
 } from '../../lib/editor-tabs'
+import { copyText } from '../../lib/clipboard'
+import { clearReveal, useRevealTarget } from '../../lib/editor-reveal'
 import { fileIconUrl } from '../../lib/file-icons'
 import { languageFromPath } from '../../lib/highlight'
 import { downloadFile, rawFileUrl } from '../../lib/files-io'
@@ -25,7 +30,7 @@ import { useTranslate } from '../../lib/i18n'
 import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
-import { Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
+import { Banner, Button, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { MediaView } from './MediaView'
 
@@ -35,17 +40,33 @@ const ModelView = lazy(() => import('./ModelView').then((m) => ({ default: m.Mod
 /** Type de transfert du glisser-déposer des onglets, distinct de celui de l'arborescence. */
 const TAB_DRAG_TYPE = 'application/x-solera-tab'
 
+/** Le raccourci de la réouverture, écrit comme le clavier de la machine. */
+const REOPEN_HINT = navigator.userAgent.includes('Mac') ? '⇧⌘T' : 'Ctrl ⇧ T'
+
 /** Onglets ouverts, et le fichier actif en dessous. */
-export function EditorPane({ scope }: { scope: string }) {
+export function EditorPane({ scope, treeOpen, onShowTree }: {
+  scope: string
+  /** L'arborescence est repliée : la rangée d'onglets porte alors de quoi la ramener. */
+  treeOpen: boolean
+  onShowTree: () => void
+}) {
   const { data: user } = useCurrentUser()
-  return user ? <UserEditorPane key={`${user.id}:${scope}`} userId={user.id} scope={scope} /> : null
+  return user ? (
+    <UserEditorPane key={`${user.id}:${scope}`} userId={user.id} scope={scope} treeOpen={treeOpen} onShowTree={onShowTree} />
+  ) : null
 }
 
-function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
+function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
+  userId: string
+  scope: string
+  treeOpen: boolean
+  onShowTree: () => void
+}) {
   const { paths, active, preview } = useEditorTabs(scope)
   const drafts = useEditorDraftPaths(userId, scope)
   const closedDrafts = drafts.filter((path) => !paths.includes(path))
   const t = useTranslate()
+  const hasClosed = useHasClosedTabs(scope)
   const tabList = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const node = tabList.current
@@ -67,8 +88,31 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
           </div>
         </details>
       ) : null}
-      {paths.length === 0 ? <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p> : <>
+      {/*
+        La rangée du haut existe même sans onglet, quand l'arborescence est repliée.
+        Le bouton qui la ramène vit dedans, et la rangée ne naissait qu'avec le premier
+        fichier ouvert : replier l'arbre sur un éditeur vide laissait donc un panneau
+        qui dit « clique sur un fichier dans l'arborescence » sans aucun moyen d'y
+        retourner.
+      */}
+      {paths.length === 0 ? (
+        <>
+          {treeOpen ? null : (
+            <div className="flex shrink-0 items-center gap-1 border-b border-line px-1">
+              <IconButton size="sm" label={t('panel.tree.show')} onClick={onShowTree}>
+                <PanelLeft size={14} />
+              </IconButton>
+            </div>
+          )}
+          <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p>
+        </>
+      ) : <>
       <div className="flex shrink-0 items-center border-b border-line">
+        {treeOpen ? null : (
+          <IconButton size="sm" label={t('panel.tree.show')} onClick={onShowTree}>
+            <PanelLeft size={14} />
+          </IconButton>
+        )}
         <div ref={tabList} data-file-tabs className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto">
           {paths.map((path, index) => (
             <Tab
@@ -103,21 +147,42 @@ function UserEditorPane({ userId, scope }: { userId: string; scope: string }) {
             </TooltipButton>
           }
         >
-          <MenuLabel>{t('editor.tabs.open')}</MenuLabel>
-          <div className="max-h-60 max-w-[min(28rem,85vw)] overflow-auto">
-            {paths.map((path) => <MenuItem key={path} icon={active === path ? <Check size={14} /> : undefined}
-              onSelect={() => activateTab(scope, path)}><span className="truncate">{path}{drafts.includes(path) ? ' •' : ''}</span></MenuItem>)}
-          </div>
-          <MenuSeparator />
+          {/* La liste des fichiers ouverts a quitté ce menu : la rangée les montre
+              déjà et défile, et un menu qui redit la barre au-dessus de lui ne sert
+              qu'à la masquer. Ne restent que les gestes. */}
+          <MenuItem icon={<X size={14} />} disabled={active === null} onSelect={() => { if (active) closeTab(scope, active) }}>
+            {t('editor.tabs.close')}
+          </MenuItem>
           <MenuItem
-            icon={<X size={14} />}
+            icon={<Archive size={14} />}
             disabled={active === null || paths.length < 2}
             onSelect={() => closeOtherTabs(scope, active)}
           >
             {t('editor.tabs.closeOthers')}
           </MenuItem>
-          <MenuItem icon={<X size={14} />} onSelect={() => closeOtherTabs(scope, null)}>
+          {/* Les brouillons restent : c'est toute la différence avec « tout fermer »,
+              et la seule raison de choisir ce geste plutôt que l'autre. */}
+          <MenuItem
+            icon={<Archive size={14} />}
+            disabled={paths.every((path) => drafts.includes(path))}
+            onSelect={() => closeSavedTabs(scope, drafts)}
+          >
+            {t('editor.tabs.closeSaved')}
+          </MenuItem>
+          <MenuItem icon={<Trash2 size={14} />} disabled={paths.length === 0} onSelect={() => closeOtherTabs(scope, null)}>
             {t('editor.tabs.closeAll')}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            icon={<Undo2 size={14} />}
+            shortcut={REOPEN_HINT}
+            disabled={!hasClosed}
+            onSelect={() => reopenLastClosedTab(scope)}
+          >
+            {t('editor.tabs.reopen')}
+          </MenuItem>
+          <MenuItem icon={<Link2 size={14} />} disabled={active === null} onSelect={() => { if (active) void copyText(active) }}>
+            {t('editor.tabs.copyPath')}
           </MenuItem>
         </Menu>
       </div>
@@ -251,6 +316,9 @@ function Tab({
 
 function FileView({ userId, scope, path }: { userId: string; scope: string; path: string }) {
   const editor = useRef<CodeEditorHandle>(null)
+  // La vue *Recherche* désigne une ligne : l'éditeur la montre, qu'il vienne d'ouvrir
+  // le fichier ou qu'il l'ait déjà sous les yeux.
+  const reveal = useRevealTarget(scope, path)
   const [position, setPosition] = useState({ line: 1, column: 1 })
   const { document, dirty, load, save, edit } = useEditorDocument(userId, scope, path)
   const { file, content, error, conflict, loading, saving, persisted, revision } = document
@@ -326,6 +394,8 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
             sessionKey={JSON.stringify([userId, scope, path])}
             revision={revision}
             onPosition={(line, column) => setPosition({ line, column })}
+            reveal={reveal}
+            onRevealed={() => clearReveal(scope)}
             initial={content}
             path={file.path}
             onChange={(value) => { edit(value); pinTab(scope, path) }}

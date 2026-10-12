@@ -1,22 +1,7 @@
 import { TooltipButton } from '@solera/ui'
-import {
-  Bot,
-  FileCode,
-  GitCompare,
-  History,
-  Maximize2,
-  Expand,
-  Minimize2,
-  Search,
-  Columns2,
-  PanelLeft,
-  PlugZap,
-  RefreshCw,
-  SquareTerminal,
-  X,
-} from 'lucide-react'
+import { Bot, ChevronLeft, FileCode, GitCompare, Search, SquareTerminal, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AgentKind, McpServerStatus } from '@solera/protocol'
+import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
 import { openTab } from '../../lib/editor-tabs'
@@ -30,7 +15,6 @@ import {
   setPanelTree,
   setPanelWidth,
   usePanelTab,
-  usePanelTree,
   useSelectedSubAgent,
   type PanelTab,
 } from '../../lib/panel'
@@ -45,10 +29,10 @@ import { IconButton, cx } from '@solera/ui'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
-import { HistoryPane } from './HistoryPane'
-import { McpPane } from './McpPane'
+import { SearchPane } from './SearchPane'
 import { TerminalsPane } from './TerminalsPane'
 import { QuickOpen } from './QuickOpen'
+import { HeaderBand } from '../HeaderBand'
 
 /**
  * Panneau latéral droit.
@@ -73,7 +57,6 @@ export function SidePanel({
   turnRunning = false,
   subAgents = [],
   background = [],
-  mcpServers = [],
   open,
   docked = false,
   canDock = false,
@@ -88,7 +71,6 @@ export function SidePanel({
   turnRunning?: boolean
   subAgents?: SubAgent[]
   background?: BackgroundWork[]
-  mcpServers?: McpServerStatus[]
   /** Faux pendant la sortie : le panneau est encore monté, mais s'en va. */
   open: boolean
   docked?: boolean
@@ -105,9 +87,7 @@ export function SidePanel({
   const chosenTab = usePanelTab()
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide.
-  const tab: PanelTab =
-    conversationId || !['history', 'agents', 'mcp'].includes(chosenTab) ? chosenTab : 'files'
-  const treeOpen = usePanelTree()
+  const tab: PanelTab = conversationId || chosenTab !== 'agents' ? chosenTab : 'files'
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -152,6 +132,39 @@ export function SidePanel({
    * Le panneau est collé au bord droit de la fenêtre : sa largeur vaut donc la
    * distance du pointeur à ce bord, sans décalage à mémoriser au début du geste.
    */
+  /**
+   * Les trois géométries, dans l'ordre où on les veut : accolé au fil, posé en
+   * feuille par-dessus, puis sorti de la coque.
+   *
+   * Elles se réglaient à trois boutons de l'en-tête du panneau, qui n'existe plus. Le
+   * bord est leur place : c'est déjà lui qui règle la largeur, et passer d'une
+   * géométrie à l'autre, c'est la même question. Le nom de la poignée annonce où le
+   * prochain geste mène, faute de quoi un double-clic serait une surprise.
+   */
+  const geometries: ('docked' | 'sheet' | 'fullscreen')[] = [
+    ...(canDock ? (['docked'] as const) : []),
+    'sheet',
+    'fullscreen',
+  ]
+  const geometry = fullscreen ? 'fullscreen' : docked ? 'docked' : 'sheet'
+  const nextGeometry = geometries[(geometries.indexOf(geometry) + 1) % geometries.length] ?? 'sheet'
+  const goTo = (next: 'docked' | 'sheet' | 'fullscreen') => {
+    setFullscreen(next === 'fullscreen')
+    if (next !== 'fullscreen') setPanelExpanded(next === 'sheet')
+  }
+  /**
+   * Le double-clic ne fait que la bascule du milieu — accoler ou poser par-dessus.
+   *
+   * Le plein écran est laissé au clavier, qui parcourt les trois : en plein écran la
+   * poignée n'existe plus, puisqu'il n'y a plus de largeur à régler, et un double-clic
+   * qui y mène serait un geste sans retour par le même chemin. On en sort par le
+   * retour de la bande, qui est là pour ça.
+   */
+  const toggleGeometry = () => {
+    if (fullscreen) return setFullscreen(false)
+    if (canDock) setPanelExpanded(docked)
+  }
+
   const handle = resizeHandle({
     widthAt: (clientX) => window.innerWidth - clientX,
     current: () => aside.current?.getBoundingClientRect().width ?? null,
@@ -198,102 +211,52 @@ export function SidePanel({
         entered && open ? 'translate-x-0' : 'translate-x-full',
       )}
     >
-      {/* Pas d'encoche haute ici : même en plein écran, le panneau se pose sous
-          l'en-tête de la coque, qui la réserve déjà. La réserver deux fois creusait
-          59 px de vide au milieu de l'écran. */}
-      {/* `@container` : les onglets se réduisent à leurs icônes selon la largeur du
-          panneau, et non celle de la fenêtre, puisqu'il se redimensionne. */}
-      <header className="@container flex h-[var(--header-height)] shrink-0 items-center border-b border-line px-1.5">
-        {fullscreen ? <span title={workspaceLabel} className="mr-2 hidden max-w-60 truncate border-r border-line pr-3 pl-2 text-xs font-medium text-ink-soft md:block">{workspaceLabel}</span> : null}
-        {/* La liste défile plutôt que de pousser les actions hors de l'écran : au
-            doigt, les onglets nommés chassaient la croix de fermeture du panneau,
-            qui devenait alors impossible à refermer. */}
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto">
-          <Tab
-            icon={<FileCode size={14} />}
-            label={t('panel.tab.files')}
-            active={tab === 'files'}
-            onSelect={() => setPanelTab('files')}
-          />
-          <Tab
-            icon={<GitCompare size={14} />}
-            label={t('panel.tab.git')}
-            active={tab === 'git'}
-            onSelect={() => setPanelTab('git')}
-          />
-          {conversationId ? (
-            <Tab
-              icon={<History size={14} />}
-              label={t('panel.tab.history')}
-              active={tab === 'history'}
-              onSelect={() => setPanelTab('history')}
-            />
-          ) : null}
-          <Tab
-            icon={<SquareTerminal size={14} />}
-            label={t('panel.tab.terminals')}
-            active={tab === 'terminals'}
-            onSelect={() => setPanelTab('terminals')}
-          />
-          {conversationId ? (
-            <>
-              <Tab
-                icon={<Bot size={14} />}
-                label={t('panel.tab.agents')}
-                badge={
-                  subAgents.filter((agent) => agent.status === 'running').length + background.length
-                }
-                active={tab === 'agents'}
-                onSelect={() => setPanelTab('agents')}
-              />
-              <Tab
-                icon={<PlugZap size={14} />}
-                label={t('panel.tab.mcp')}
-                // Seuls les serveurs en défaut se comptent : une pastille sur un
-                // inventaire sain crierait en permanence pour ne rien dire.
-                badge={
-                  mcpServers.filter((s) => s.state === 'failed' || s.state === 'needs-auth').length
-                }
-                active={tab === 'mcp'}
-                onSelect={() => setPanelTab('mcp')}
-              />
-            </>
-          ) : null}
-        </div>
-
-        <div className="flex shrink-0 items-center gap-0.5 pl-1">
-          {canDock && !fullscreen ? (
-            <IconButton
-              label={t(docked ? 'panel.expand' : 'panel.dock')}
-              size="sm"
-              onClick={() => setPanelExpanded(docked)}
-            >
-              {docked ? <Maximize2 size={16} /> : <Columns2 size={16} />}
+      {/*
+        Le panneau n'a plus d'en-tête : il n'est que son contenu, et ses vues vivent
+        dans la bande du haut, sur le segment qui le surplombe. Six icônes y étaient
+        posées en dur — fermeture, recherche, arborescence, relire, accoler, plein
+        écran : la fermeture est au bouton du fil, juste à côté ; la recherche et
+        l'arborescence sont rendues à la vue *Fichiers*, les seules qu'elles
+        concernent ; la géométrie se règle à la poignée du bord.
+      */}
+      {modal ? (
+        /* Quand le panneau recouvre l'écran, c'est lui qui porte le segment de la vue :
+           il n'y a plus de fil derrière lui pour dire où l'on est, ni par où sortir. */
+        <HeaderBand zone="panel">
+          {/* La maquette du téléphone montre un retour *et* une croix. Les deux
+              feraient la même chose hors plein écran — revenir au fil, c'est fermer le
+              panneau — et deux boutons pour un geste se lisent comme deux gestes. Le
+              retour ne sert donc qu'à sortir du plein écran, qui a bien un état
+              intermédiaire où revenir. */}
+          {fullscreen ? (
+            <IconButton label={t('panel.fullscreen.exit')} onClick={() => setFullscreen(false)}>
+              <ChevronLeft size={18} />
             </IconButton>
           ) : null}
-          {wide || fullscreen ? <IconButton size="sm" label={t(fullscreen ? 'panel.fullscreen.exit' : 'panel.fullscreen.enter')} onClick={() => setFullscreen((value) => !value)}>
-            {fullscreen ? <Minimize2 size={16} /> : <Expand size={16} />}
-          </IconButton> : null}
-          {tab === 'files' ? (
-            <>
-              <IconButton size="sm" label={t('editor.quickOpen.title')} aria-keyshortcuts="Control+P Meta+P" onClick={() => setQuickOpen(true)}><Search size={16} /></IconButton>
-              <IconButton
-                label={treeOpen ? t('panel.tree.hide') : t('panel.tree.show')}
-                size="sm"
-                onClick={() => setPanelTree(!treeOpen)}
-              >
-                <PanelLeft size={16} className={cx(treeOpen && 'text-accent')} />
-              </IconButton>
-              <IconButton label={t('panel.tree.refresh')} size="sm" onClick={refresh}>
-                <RefreshCw size={14} />
-              </IconButton>
-            </>
-          ) : null}
-          <IconButton data-panel-initial-focus label={t('panel.close')} size="sm" onClick={() => setPanelOpen(false)}>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={workspaceLabel}>
+            {workspaceLabel}
+          </span>
+          <IconButton data-panel-initial-focus label={t('panel.close')} onClick={() => setPanelOpen(false)}>
             <X size={16} />
           </IconButton>
-        </div>
-      </header>
+        </HeaderBand>
+      ) : null}
+
+      {/* `@container` : les noms des vues tombent selon la largeur du panneau, et non
+          celle de la fenêtre, puisqu'il se redimensionne. */}
+      <ViewBar
+        band={!modal}
+        /*
+         * « Fermer » a quitté le panneau parce que le bouton du fil est juste à côté —
+         * ce qui n'est vrai que lorsque le panneau est accolé. Posé en feuille, il
+         * recouvre le bout de la bande du fil, et donc le bouton qui le referme : il
+         * garde alors le sien, au même endroit, contre le même bord.
+         */
+        closable={!modal && !docked}
+        tab={tab}
+        hasConversation={Boolean(conversationId)}
+        agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
+      />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
           replier ni l'arborescence, ni perdre sa position de défilement, ni faire
@@ -304,7 +267,7 @@ export function SidePanel({
           tab === 'files' ? 'flex' : 'hidden',
         )}
       >
-        <FilesPane scope={scope} />
+        <FilesPane scope={scope} label={workspaceLabel} />
       </div>
 
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
@@ -313,13 +276,19 @@ export function SidePanel({
         <GitPane scope={scope} turnRunning={turnRunning} onOpenFile={openInFiles} />
       ) : null}
 
-      {tab === 'history' && conversationId ? (
-        <HistoryPane
-          conversationId={conversationId}
-          turns={editTurns}
-          onOpenFile={openInFiles}
-        />
-      ) : null}
+      {/* Montée même derrière une autre vue, comme les fichiers : cliquer un résultat
+          bascule sur l'éditeur, et revenir à la recherche doit retrouver la frappe,
+          les drapeaux, les filtres et les résultats — pas un champ vide. */}
+      <div
+        className={cx(
+          'min-h-0 min-w-0 flex-1 overflow-hidden',
+          tab === 'search' ? 'flex' : 'hidden',
+        )}
+      >
+        <div className="min-h-0 min-w-0 flex-1">
+          <SearchPane scope={scope} onOpenFile={openInFiles} />
+        </div>
+      </div>
 
       {/* Monté dès que le panneau existe, et non seulement quand l'onglet est actif :
           un shell qui compile ne doit pas être coupé parce qu'on regarde le diff. */}
@@ -344,26 +313,33 @@ export function SidePanel({
       {tab === 'agents' && conversationId && agent ? (
         <AgentsPane
           conversationId={conversationId}
+          scope={scope}
           agent={agent}
           agents={subAgents}
           background={background}
+          editTurns={editTurns}
           selectedId={selectedSubAgent}
+          onOpenFile={openInFiles}
         />
       ) : null}
-
-      {/* Même raison que les sous-agents : son contenu vient du journal, rien ne se
-          perd à ne le monter que lorsqu'on le regarde. */}
-      {tab === 'mcp' ? <McpPane servers={mcpServers} /> : null}
 
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}
       <div
         role="separator"
         aria-orientation="vertical"
-        aria-label={t('panel.resize.aria')}
+        aria-label={t('panel.resize.aria', { next: t(`panel.geometry.${nextGeometry}`) })}
         tabIndex={0}
         onPointerDown={handle.onPointerDown}
-        onKeyDown={handle.onKeyDown}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            goTo(nextGeometry)
+            return
+          }
+          handle.onKeyDown(event)
+        }}
+        onDoubleClick={toggleGeometry}
         className={cx(
           'absolute inset-y-0 -left-1 hidden w-2 cursor-col-resize',
           !fullscreen && 'md:block',
@@ -378,11 +354,77 @@ export function SidePanel({
   )
 }
 
+/**
+ * Les cinq vues, dans la bande.
+ *
+ * Elles sont nommées tant qu'il y a la place, et les noms tombent **tous ensemble**
+ * sous 30 rem : une rangée où seul l'onglet actif garde son nom change de largeur à
+ * chaque choix, et les quatre autres deviennent des devinettes. Quand le panneau
+ * recouvre l'écran, l'actif garde le sien — la bande au-dessus dit déjà où l'on est,
+ * mais c'est le seul repère écrit qui reste de la vue elle-même.
+ *
+ * Le trait sépare les quatre vues du répertoire de la seule qui regarde la session.
+ */
+function ViewBar({ band, closable, tab, hasConversation, agentBadge }: {
+  /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
+  band: boolean
+  /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
+  closable: boolean
+  tab: PanelTab
+  hasConversation: boolean
+  agentBadge: number
+}) {
+  const t = useTranslate()
+  const views = (
+    <>
+      <Tab icon={<FileCode size={15} />} label={t('panel.tab.files')} keepLabel={!band}
+        active={tab === 'files'} onSelect={() => setPanelTab('files')} />
+      <Tab icon={<Search size={15} />} label={t('panel.tab.search')} keepLabel={!band}
+        active={tab === 'search'} onSelect={() => setPanelTab('search')} />
+      <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
+        active={tab === 'git'} onSelect={() => setPanelTab('git')} />
+      <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
+        active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+      {hasConversation ? (
+        <>
+          <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" />
+          <Tab icon={<Bot size={15} />} label={t('panel.tab.agents')} keepLabel={!band}
+            badge={agentBadge} active={tab === 'agents'} onSelect={() => setPanelTab('agents')} />
+        </>
+      ) : null}
+    </>
+  )
+
+  // La liste défile plutôt que de pousser les vues hors du cadre : sous 30 rem elles
+  // sont réduites à leurs icônes, mais un panneau de 20 rem n'en tient toujours que
+  // quatre.
+  const inner = 'flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto'
+
+  const close = closable ? (
+    <IconButton data-panel-initial-focus size="sm" label={t('panel.close')} onClick={() => setPanelOpen(false)}>
+      <X size={16} />
+    </IconButton>
+  ) : null
+
+  return band ? (
+    <HeaderBand zone="panel" className="@container">
+      <div className={inner}>{views}</div>
+      {close}
+    </HeaderBand>
+  ) : (
+    <div className="@container flex h-[var(--header-height)] shrink-0 items-center border-b border-line px-2">
+      <div className={inner}>{views}</div>
+      {close}
+    </div>
+  )
+}
+
 function Tab({
   icon,
   label,
   active,
   badge = 0,
+  keepLabel = false,
   onSelect,
 }: {
   icon: ReactNode
@@ -390,6 +432,8 @@ function Tab({
   active: boolean
   /** Décompte affiché sur l'onglet. Zéro n'affiche rien. */
   badge?: number
+  /** Garde son nom à l'étroit quand il est actif : le cas du panneau qui recouvre. */
+  keepLabel?: boolean
   onSelect: () => void
 }) {
   const t = useTranslate()
@@ -408,10 +452,9 @@ function Tab({
       )}
     >
       <span className="shrink-0">{icon}</span>
-      {/* Les noms demandent plus de place que n'en offrent un téléphone ou la largeur
-          par défaut du panneau : en dessous, seul l'onglet actif garde le sien, ce qui
-          dit où l'on est sans que la liste ait à défiler. */}
-      <span className={cx(active ? '' : '@max-[34rem]:hidden')}>{label}</span>
+      {/* Jamais cachés par principe : ils tombent quand la place manque, et tous à la
+          fois, pour que la rangée ne change pas de forme à chaque choix. */}
+      <span className={cx(keepLabel && active ? null : '@max-[30rem]:hidden')}>{label}</span>
       {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
           dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
       {badge > 0 ? (

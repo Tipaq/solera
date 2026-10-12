@@ -29,6 +29,24 @@ interface Tabs {
 const EMPTY: Tabs = { paths: [], active: null, preview: null }
 
 const byConversation = new Map<string, Tabs>()
+
+/**
+ * Les derniers onglets fermés, du plus ancien au plus récent.
+ *
+ * Fermer est le geste qu'on regrette : un `⌘W` de trop, ou un « tout fermer » lancé
+ * sur la mauvaise barre. La pile est bornée parce qu'au-delà de quelques pas, on ne
+ * sait plus ce qu'on rouvre — et parce qu'un chemin mémorisé peut désigner un fichier
+ * que l'agent a supprimé entre-temps.
+ */
+const RECENTLY_CLOSED = 10
+const closedByConversation = new Map<string, string[]>()
+
+function remember(conversationId: string, paths: string[]): void {
+  if (paths.length === 0) return
+  const kept = [...(closedByConversation.get(conversationId) ?? []).filter((path) => !paths.includes(path)), ...paths]
+  closedByConversation.set(conversationId, kept.slice(-RECENTLY_CLOSED))
+}
+
 const listeners = new Set<() => void>()
 
 function emit(): void {
@@ -123,6 +141,7 @@ export function reorderTabs(conversationId: string, from: string, toIndex: numbe
 export function closeOtherTabs(conversationId: string, keep: string | null): void {
   const current = byConversation.get(conversationId) ?? EMPTY
   const paths = keep === null ? [] : [keep]
+  remember(conversationId, current.paths.filter((path) => path !== keep))
   byConversation.set(conversationId, {
     paths,
     active: keep,
@@ -136,6 +155,7 @@ export function closeTab(conversationId: string, path: string): void {
   const index = current.paths.indexOf(path)
   if (index === -1) return
 
+  remember(conversationId, [path])
   const paths = current.paths.filter((entry) => entry !== path)
   byConversation.set(conversationId, {
     paths,
@@ -146,4 +166,46 @@ export function closeTab(conversationId: string, path: string): void {
     preview: current.preview === path ? null : current.preview,
   })
   emit()
+}
+
+/**
+ * Ferme les onglets qui n'ont rien à perdre.
+ *
+ * Les brouillons restent : ce sont les seuls dont la fermeture coûte quelque chose, et
+ * c'est exactement la raison pour laquelle on lance ce geste plutôt que « tout
+ * fermer ». L'éditeur passe la liste parce que les brouillons vivent dans son magasin,
+ * par utilisateur, et que celui-ci n'en sait rien.
+ */
+export function closeSavedTabs(conversationId: string, dirtyPaths: string[]): void {
+  const current = byConversation.get(conversationId) ?? EMPTY
+  const paths = current.paths.filter((path) => dirtyPaths.includes(path))
+  if (paths.length === current.paths.length) return
+
+  remember(conversationId, current.paths.filter((path) => !dirtyPaths.includes(path)))
+  byConversation.set(conversationId, {
+    paths,
+    active: current.active && paths.includes(current.active) ? current.active : (paths[0] ?? null),
+    preview: current.preview && paths.includes(current.preview) ? current.preview : null,
+  })
+  emit()
+}
+
+/** Rouvre le dernier onglet fermé, et rend son chemin. */
+export function reopenLastClosedTab(conversationId: string): string | null {
+  const closed = closedByConversation.get(conversationId) ?? []
+  const path = closed.at(-1)
+  if (!path) return null
+
+  closedByConversation.set(conversationId, closed.slice(0, -1))
+  openTab(conversationId, path)
+  return path
+}
+
+/** Vrai s'il reste quelque chose à rouvrir : l'entrée de menu se grise sinon. */
+export function useHasClosedTabs(conversationId: string): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => (closedByConversation.get(conversationId) ?? []).length > 0,
+    () => false,
+  )
 }

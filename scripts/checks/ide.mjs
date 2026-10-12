@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { closePanelButton } from './panel.mjs'
 
 /** Navigation IDE et continuité du contexte d'édition, dans la démo temporaire. */
 export async function checkIde({ page, context, base, project }) {
@@ -9,8 +10,23 @@ export async function checkIde({ page, context, base, project }) {
   const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
   const input = picker.getByRole('combobox', { name: 'Nom ou chemin du fichier', exact: true })
   const code = panel.locator('.cm-content')
+  // Les trois géométries se règlent à la poignée depuis que le panneau n'a plus
+  // d'en-tête : accolé, posé par-dessus, puis sorti de la coque.
+  const grip = page.getByRole('separator', { name: /^Largeur du panneau/ })
+  const toFullscreen = async () => {
+    await grip.focus()
+    for (let i = 0; i < 3 && (await panel.getAttribute('data-fullscreen')) === null; i++) await page.keyboard.press('Enter')
+  }
+  // L'ouverture rapide n'a plus de bouton : le panneau n'a plus d'en-tête où le
+  // poser, et la vue *Recherche* fait le même travail à la vue de tous. Reste le
+  // raccourci, que le panneau n'écoute que s'il vient de chez lui.
+  const openPicker = async () => {
+    await panel.focus()
+    await page.keyboard.press('Control+p')
+    await picker.waitFor()
+  }
   const openFile = async (path) => {
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+    await openPicker()
     await input.fill(path)
     await picker.getByRole('option', { name: path, exact: true }).click()
     await page.waitForFunction((path) => document.activeElement?.closest('[data-editor-file]')?.getAttribute('data-editor-file') === path, path)
@@ -61,7 +77,7 @@ export async function checkIde({ page, context, base, project }) {
   await settled(original.trimEnd())
   assert.equal((await code.innerText()).trimEnd(), original.trimEnd(), 'Undo must survive changing files')
   await page.keyboard.press('Control+Shift+z')
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   await code.waitFor()
@@ -72,7 +88,7 @@ export async function checkIde({ page, context, base, project }) {
   console.log('OK : ouverture rapide ⌘/Ctrl P, recherche dans le fichier, ligne, curseur, défilement et annulation conservés.')
 
   await code.evaluate(node => { window.ideCodeNode = node })
-  await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran', exact: true }).click()
+  await toFullscreen()
   await page.waitForFunction(() => {
     const bounds = document.querySelector('[data-panel="workspace"]').getBoundingClientRect()
     return Math.round(bounds.width) === innerWidth && Math.round(bounds.x) === 0
@@ -82,7 +98,7 @@ export async function checkIde({ page, context, base, project }) {
   assert.equal(Math.round(full.height), 900)
   await panel.getByText('Nimbus · workspace', { exact: true }).waitFor()
   assert.equal(await code.evaluate(node => node === window.ideCodeNode), true)
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
+  await (await closePanelButton(page)).focus()
   for (let i = 0; i < 8; i++) {
     await page.keyboard.press('Tab')
     assert.equal(await page.evaluate(() => Boolean(document.activeElement?.closest('[data-panel="workspace"]'))), true)
@@ -124,11 +140,18 @@ export async function checkIde({ page, context, base, project }) {
   await selectedTab.focus()
   await page.keyboard.press('Home')
   assert.equal(await tabs.locator('[data-editor-tab]').first().getAttribute('aria-pressed'), 'true')
+  // La liste des fichiers ouverts a quitté le « ⋯ » : la rangée les porte déjà et
+  // défile. Le menu ne garde que les gestes, et l'onglet s'active où il est.
+  await tabs.locator('[data-editor-tab]').filter({ hasText: 'ui-check' }).first().click()
+  await panel.locator('[data-editor-file="ui-check/package.json"]').waitFor()
   await panel.getByRole('button', { name: 'Actions des onglets', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'ui-check/package.json', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Fermer cet onglet', exact: true }).click()
+  await panel.locator('[data-editor-file="ui-check/package.json"]').waitFor({ state: 'detached' })
+  await panel.getByRole('button', { name: 'Actions des onglets', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Rouvrir le dernier fermé', exact: true }).click()
   await panel.locator('[data-editor-file="ui-check/package.json"]').waitFor()
 
-  await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+  await openPicker()
   await input.fill('zzzz-ui-no-such-file')
   await picker.getByText('Aucun fichier trouvé.', { exact: true }).waitFor()
   const searchRoute = `**/api/projects/${project.id}/tree/search?q=ui-network-failure`
@@ -143,7 +166,7 @@ export async function checkIde({ page, context, base, project }) {
 
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 })
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
+    await openPicker()
     await input.fill('CityList')
     await picker.getByRole('option', { name: 'src/components/CityList.tsx', exact: true }).click()
     await panel.locator('[data-editor-file="src/components/CityList.tsx"]').waitFor()
@@ -159,7 +182,7 @@ export async function checkIde({ page, context, base, project }) {
     const term = panel.locator('.xterm').first()
     await term.waitFor()
     await term.evaluate(node => { window.ideTerminalNode = node })
-    await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran', exact: true }).click()
+    await toFullscreen()
     await panel.getByRole('button', { name: 'Git', exact: true }).click()
     await panel.getByRole('button', { name: 'Terminaux', exact: true }).click()
     assert.equal(await term.evaluate(node => node === window.ideTerminalNode), true, 'Fullscreen and Git must retain the terminal DOM')
@@ -169,7 +192,7 @@ export async function checkIde({ page, context, base, project }) {
   } finally {
     assert.ok((await context.request.delete(`${base}/api/projects/${project.id}/terminals/${terminal.id}`)).ok())
   }
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   console.log('OK : ouverture et palette de 320 à 1440 px, terminal conservé en plein écran et au passage par Git.')
 }

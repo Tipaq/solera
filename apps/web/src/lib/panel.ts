@@ -121,7 +121,16 @@ export function setPanelOpen(next: boolean): void {
   for (const listener of listeners) listener()
 }
 
-export type PanelTab = 'files' | 'git' | 'history' | 'terminals' | 'agents' | 'mcp'
+/**
+ * Les cinq vues du panneau : Fichiers · Recherche · Git · Terminaux │ Agent.
+ *
+ * `history` et `mcp` ont disparu le 2026-10-11. L'historique est devenu la section
+ * « Ses écritures » de la vue Agent — c'est la même chose vue par fichier plutôt que
+ * par tour. Les serveurs MCP sont descendus dans le « + » du composer, où leur liste
+ * vivait déjà : une vue et une entrée de menu pour une seule fonction, dont une
+ * moitié ne servait qu'à regarder.
+ */
+export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents'
 
 /**
  * Onglet affiché et sous-agent consulté.

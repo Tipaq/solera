@@ -307,7 +307,7 @@ export async function deleteEntry(root: string, relativePath: string): Promise<v
  * pour trouver un fichier est autre chose : `node_modules` seul pèse plus que tout le
  * reste du dépôt réuni, et ses résultats ne sont jamais ceux qu'on cherche.
  */
-const SEARCH_SKIP = new Set([
+export const SEARCH_SKIP = new Set([
   '.git',
   'node_modules',
   'dist',

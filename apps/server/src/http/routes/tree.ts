@@ -4,14 +4,19 @@ import {
   createEntryBodySchema,
   deleteEntryBodySchema,
   moveEntryBodySchema,
+  contentReplaceBodySchema,
+  contentSearchQuerySchema,
   treeQuerySchema,
   treeSearchQuerySchema,
   uploadQuerySchema,
+  type ContentReplaceDto,
+  type ContentSearchDto,
   type FileState,
   type TreeListingDto,
   type TreeSearchDto,
 } from '@solera/protocol'
 import { readFileStates } from '../../git.js'
+import { replaceContent, searchContent, type SearchCriteria } from '../../search/search-files.js'
 import {
   createEntry,
   deleteEntry,
@@ -107,6 +112,40 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
     })
 
     /**
+     * Recherche dans le **contenu** des fichiers.
+     *
+     * Distincte de la recherche par nom : elle lit chaque fichier au lieu de traverser
+     * des noms, et ses plafonds n'ont rien à voir. La vue les présente côte à côte,
+     * mais ce sont deux marches, dont l'une peut être tronquée sans l'autre.
+     */
+    app.get(`${base}/search/content`, async (request): Promise<ContentSearchDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const query = contentSearchQuerySchema.parse(request.query)
+
+      const cwd = cwdOf(ctx.db, id, user.id)
+      return searchContent(cwd, criteriaOf(query))
+    })
+
+    /**
+     * Remplacement en masse, sur le même critère que la recherche.
+     *
+     * `POST` et non `PUT` : ce n'est pas l'écriture d'une ressource nommée, c'est une
+     * commande dont l'effet dépend de l'état du disque au moment où elle passe. Rien
+     * n'est journalisé, comme pour les autres manipulations d'entrées : un fichier est
+     * l'état vivant du disque, pas un événement (l'invariant I2 ne porte que sur la
+     * conversation).
+     */
+    app.post(`${base}/search/replace`, async (request): Promise<ContentReplaceDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const body = contentReplaceBodySchema.parse(request.body)
+
+      const cwd = cwdOf(ctx.db, id, user.id)
+      return replaceContent(cwd, criteriaOf(body), body.replacement)
+    })
+
+    /**
      * Manipulations d'entrées.
      *
      * Rien n'est journalisé : un fichier est l'état vivant du disque, pas un événement
@@ -171,5 +210,24 @@ export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void 
       await deleteEntry(cwd, body.path)
       return reply.status(204).send()
     })
+  }
+}
+
+/** Le schéma transporte des `'0'` / `'1'`, parce qu'une requête GET n'a que des chaînes. */
+function criteriaOf(query: {
+  q: string
+  caseSensitive: '0' | '1'
+  wholeWord: '0' | '1'
+  regex: '0' | '1'
+  include: string
+  exclude: string
+}): SearchCriteria {
+  return {
+    query: query.q,
+    caseSensitive: query.caseSensitive === '1',
+    wholeWord: query.wholeWord === '1',
+    regex: query.regex === '1',
+    include: query.include,
+    exclude: query.exclude,
   }
 }

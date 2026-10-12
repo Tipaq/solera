@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { closePanelButton } from './panel.mjs'
 
 /** Parcours réel de l'éditeur, dans le workspace de démonstration temporaire du test UI. */
 export async function checkEditor({ page, context, base, project }) {
@@ -8,6 +9,15 @@ export async function checkEditor({ page, context, base, project }) {
   const panel = page.locator('[data-panel="workspace"]')
   const showTree = panel.getByRole('button', { name: "Afficher l'arborescence", exact: true })
   if (await showTree.count()) await showTree.click()
+
+  // Replier l'arborescence alors qu'aucun fichier n'est ouvert doit laisser de quoi la
+  // ramener : c'est l'état où l'éditeur dit « clique sur un fichier dans
+  // l'arborescence », et le bouton vivait dans une rangée d'onglets qui n'existe pas
+  // encore à ce moment-là.
+  await panel.getByRole('button', { name: "Masquer l'arborescence", exact: true }).click()
+  await panel.getByText('Aucun fichier ouvert.', { exact: false }).first().waitFor()
+  await showTree.click()
+  await panel.getByRole('button', { name: "Masquer l'arborescence", exact: true }).waitFor()
   const endpoint = `${base}/api/projects/${project.id}/file`
   const read = async (path = 'package.json') => (await context.request.get(endpoint + '?path=' + encodeURIComponent(path))).json()
   const original = await read()
@@ -58,7 +68,7 @@ export async function checkEditor({ page, context, base, project }) {
   await panel.getByRole('button', { name: 'Réessayer', exact: true }).click()
   await intercepted
   await code.fill(draftB)
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   await waitText('"uiCheck": "b"')
@@ -164,7 +174,7 @@ export async function checkEditor({ page, context, base, project }) {
     assert.ok(box.x >= 0 && box.x + box.width <= width + 1, `Save button outside the viewport at ${width}px`)
     if (width < 768) assert.ok(box.height >= 44)
   }
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   console.log('OK : reprise après erreur de lecture, stockage indisponible signalé, commandes de l’éditeur accessibles sur mobile.')
 }

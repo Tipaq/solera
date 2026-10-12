@@ -23,7 +23,11 @@ import { FileTree } from './FileTree'
 /** À tenir en accord avec les seuils `@min-[35rem]` et `@max-[35rem]` ci-dessous. */
 const NARROW_PX = 560
 
-export function FilesPane({ scope }: { scope: string }) {
+export function FilesPane({ scope, label }: {
+  scope: string
+  /** Le dossier du workspace, écrit en tête de colonne. */
+  label: string
+}) {
   const t = useTranslate()
   const treeOpen = usePanelTree()
   const { data: user } = useCurrentUser()
@@ -82,7 +86,7 @@ export function FilesPane({ scope }: { scope: string }) {
               {t('editor.drafts.recover', { count: drafts.length })}
             </Button>
           </div> : null}
-          <FileTree scope={scope} onOpenFile={closeIfOverlaid} />
+          <FileTree scope={scope} label={label} onOpenFile={closeIfOverlaid} onCollapse={() => setPanelTree(false)} />
         </div>
       ) : null}
 
@@ -109,7 +113,7 @@ export function FilesPane({ scope }: { scope: string }) {
       {/* `min-w-0` : sans lui, un enfant flex se dimensionne sur son contenu, et
           l'éditeur imposait sa largeur au panneau au lieu de défiler dedans. */}
       <div className={cx('min-h-0 min-w-0 flex-1', treeOpen && '@max-[35rem]:invisible')}>
-        <EditorPane scope={scope} />
+        <EditorPane scope={scope} treeOpen={treeOpen} onShowTree={() => setPanelTree(true)} />
       </div>
     </div>
   )

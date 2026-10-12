@@ -6,14 +6,16 @@ import {
   Download,
   FilePlus2,
   FileSymlink,
+  FolderGit2,
   FolderPlus,
   Loader,
+  X,
   MoreHorizontal,
+  PanelLeftClose,
   Pencil,
-  Search,
+  RefreshCw,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import type { FileState, TreeEntryDto } from '@solera/protocol'
@@ -30,7 +32,7 @@ import {
 import { fileIconUrl } from '../../lib/file-icons'
 import { downloadFile } from '../../lib/files-io'
 import { translate, useTranslate } from '../../lib/i18n'
-import { useFileSearch, useRefreshTree, useTreeLevel } from '../../lib/tree'
+import { useRefreshTree, useTreeLevel } from '../../lib/tree'
 import {
   carriesExternalFiles,
   dismissUpload,
@@ -78,16 +80,21 @@ type Draft =
 
 export function FileTree({
   scope,
+  label,
   onOpenFile,
+  onCollapse,
 }: {
   scope: string
+  /** Le dossier du workspace, écrit en tête de colonne : projet, et worktree s'il y en a un. */
+  label: string
   /** Referme la colonne quand elle recouvre l'éditeur : sinon le fichier ouvert reste caché. */
   onOpenFile: () => void
+  /** Replie la colonne. Posé ici depuis que le panneau n'a plus d'en-tête à le porter. */
+  onCollapse: () => void
 }) {
   const t = useTranslate()
   const { active: activePath } = useEditorTabs(scope)
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [query, setQuery] = useState('')
   /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
   const [pendingDelete, setPendingDelete] = useState<TreeEntryDto | null>(null)
   const create = useCreateEntry(scope)
@@ -143,8 +150,6 @@ export function FileTree({
     onPickFiles: openPicker,
   }
 
-  const searching = query.trim().length >= 2
-
   return (
     // Toute la colonne accepte les fichiers : viser une ligne de 28 pixels à la souris
     // est déjà difficile, au doigt c'est perdu d'avance. Ce qui ne tombe sur aucun
@@ -195,9 +200,34 @@ export function FileTree({
         }}
       />
 
-      <div className="flex items-center gap-1 px-2 pb-1">
-        <span className="min-w-0 flex-1 text-xs font-medium text-ink-soft">{t('filetree.title')}</span>
-        {/* Le dossier racine n'a pas de ligne à survoler : ses actions vivent ici. */}
+      {/*
+        L'en-tête de la colonne : où l'on est, et les quatre gestes qui portent sur la
+        racine. Le champ de filtre a quitté cet endroit le 2026-10-11 — chercher est
+        devenu une vue du panneau, qui a ses propres résultats et son propre
+        défilement, au lieu de replier l'arbre sous les yeux de qui le lisait.
+      */}
+      <div className="flex items-center gap-0.5 px-2 pb-1">
+        {/* Le dossier racine n'a pas de ligne à survoler : son menu est son nom. */}
+        <Menu
+          align="start"
+          trigger={
+            <TooltipButton
+              type="button"
+              aria-label={t('filetree.root.menu')}
+              title={label}
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-1 text-left text-ink-soft hover:bg-surface-high hover:text-ink"
+            >
+              <FolderGit2 size={13} className="shrink-0" />
+              <span className="min-w-0 truncate text-xs font-semibold tracking-wide uppercase">{label}</span>
+            </TooltipButton>
+          }
+        >
+          {/* Le glisser-déposer n'existe pas au doigt : sans cette entrée, envoyer un
+              fichier à la racine n'aurait aucune voie sur un téléphone. */}
+          <MenuItem icon={<Upload size={14} />} onSelect={() => openPicker('')}>
+            {t('filetree.root.upload')}
+          </MenuItem>
+        </Menu>
         <RootAction
           label={t('filetree.root.newFile')}
           icon={<FilePlus2 size={14} />}
@@ -208,46 +238,11 @@ export function FileTree({
           icon={<FolderPlus size={14} />}
           onClick={() => setDraft({ mode: 'create', parent: '', kind: 'directory' })}
         />
-        <RootAction
-          label={t('filetree.root.upload')}
-          icon={<Upload size={14} />}
-          onClick={() => openPicker('')}
-        />
-      </div>
-      <div className="flex items-center gap-1 px-2 pb-1.5">
-        <div className="relative min-w-0 flex-1">
-          <Search
-            size={14}
-            className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-ink-faint"
-          />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery('')
-            }}
-            placeholder={t('filetree.search.placeholder')}
-            aria-label={t('filetree.search.label')}
-            className={cx(
-              'h-9 w-full rounded-md border border-line bg-sunken pr-6 pl-7',
-              'text-sm text-ink placeholder:text-ink-faint',
-              'outline-none focus:border-accent',
-            )}
-          />
-          {query ? (
-            <TooltipButton
-              type="button"
-              onClick={() => setQuery('')}
-              aria-label={t('filetree.search.clear')}
-              className="absolute top-1/2 right-1 -translate-y-1/2 rounded p-0.5 text-ink-faint hover:text-ink"
-            >
-              <X size={14} />
-            </TooltipButton>
-          ) : null}
-        </div>
-
-
+        {/* Les niveaux dépliés sont veillés côté serveur et se relisent seuls : ce
+            bouton rattrape ce qu'aucune veille ne signale — un fichier apparu dans un
+            dossier replié, ou un répertoire remplacé sous les pieds de la veille. */}
+        <RootAction label={t('panel.tree.refresh')} icon={<RefreshCw size={14} />} onClick={refresh} />
+        <RootAction label={t('panel.tree.hide')} icon={<PanelLeftClose size={14} />} onClick={onCollapse} />
       </div>
 
       {error ? (
@@ -256,14 +251,7 @@ export function FileTree({
         </p>
       ) : null}
 
-      {/* La recherche remplace l'arborescence au lieu de la filtrer sur place : replier
-          et déplier des dossiers pour suivre un résultat ferait perdre le fil, et les
-          niveaux dépliés doivent être retrouvés intacts en effaçant la recherche. */}
-      {searching ? (
-        <SearchResults scope={scope} query={query} actions={actions} />
-      ) : (
-        <Level path="" depth={0} expanded actions={actions} />
-      )}
+      <Level path="" depth={0} expanded actions={actions} />
 
       <UploadQueue scope={scope} />
 
@@ -377,61 +365,6 @@ function statusOf(upload: UploadItem): string {
 }
 
 /** Résultats plats : un chemin complet dit mieux d'où vient un fichier qu'une indentation. */
-function SearchResults({
-  scope,
-  query,
-  actions,
-}: {
-  scope: string
-  query: string
-  actions: Actions
-}) {
-  const t = useTranslate()
-  const { data, isPending, error } = useFileSearch(scope, query)
-
-  if (error) {
-    return (
-      <p className="px-2 py-1.5 text-xs text-critical">
-        {error instanceof Error ? error.message : t('filetree.search.error')}
-      </p>
-    )
-  }
-
-  if (isPending) {
-    return (
-      <p className="flex items-center gap-1.5 px-2 py-1.5 text-xs text-ink-faint">
-        <Loader size={11} className="animate-spin" />
-        {t('filetree.search.loading')}
-      </p>
-    )
-  }
-
-  if (data.entries.length === 0) {
-    return <p className="px-2 py-1.5 text-xs text-ink-faint">{t('filetree.search.empty')}</p>
-  }
-
-  return (
-    <ul>
-      {data.entries.map((entry) => (
-        <li key={entry.path}>
-          <EntryRow entry={entry} actions={actions}>
-            <span className="flex min-w-0 flex-1 flex-col text-left leading-tight">
-              <span className="truncate text-sm text-ink-soft">{entry.name}</span>
-              <span className="truncate text-meta text-ink-faint">{entry.path}</span>
-            </span>
-          </EntryRow>
-        </li>
-      ))}
-
-      {data.truncated ? (
-        <li className="px-2 py-1.5 text-meta text-ink-faint">
-          {t('filetree.search.truncated')}
-        </li>
-      ) : null}
-    </ul>
-  )
-}
-
 function RootAction({
   label,
   icon,
@@ -637,51 +570,6 @@ function entryActions(entry: TreeEntryDto, actions: Actions, expand: () => void)
 /** La séparation isole les créations du reste : elles n'agissent pas sur l'entrée visée. */
 function separatorAfter(entry: TreeEntryDto): string {
   return entry.isDirectory ? 'upload' : 'reference'
-}
-
-/**
- * Ligne d'un résultat de recherche.
- *
- * Plus simple qu'une ligne d'arborescence : ni chevron, ni glisser-déposer, ni
- * décalage, puisqu'il n'y a pas de niveau à représenter.
- */
-function EntryRow({
-  entry,
-  actions,
-  children,
-}: {
-  entry: TreeEntryDto
-  actions: Actions
-  children: ReactNode
-}) {
-  return (
-    <ContextMenu
-      trigger={
-        <button
-          type="button"
-          aria-current={actions.activePath === entry.path ? true : undefined}
-          onClick={() => {
-            openTab(actions.scope, entry.path, { preview: true })
-            actions.onOpenFile()
-          }}
-          onDoubleClick={() => {
-            openTab(actions.scope, entry.path)
-            actions.onOpenFile()
-          }}
-          className={cx(
-            'flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left',
-            'transition-colors hover:bg-surface-high',
-            actions.activePath === entry.path && 'bg-accent-wash',
-          )}
-        >
-          <img src={fileIconUrl(entry.name, false)} alt="" aria-hidden className="size-4 shrink-0" />
-          {children}
-        </button>
-      }
-    >
-      <EntryMenuItems entry={entry} actions={actions} expand={() => {}} />
-    </ContextMenu>
-  )
 }
 
 function EntryMenuItems({

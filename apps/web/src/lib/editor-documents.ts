@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react'
 import type { FileContentDto } from '@solera/protocol'
 import { ApiRequestError } from './api'
 import { readFile, writeFile } from './files-io'
+import { recordManualSave } from './manual-edits'
 import { translate } from './i18n'
 
 interface Document {
@@ -94,6 +95,10 @@ async function save(key: string, scope: string, path: string, force: boolean) {
     // Avancer la version enregistrée, en gardant la saisie courante. Une réponse
     // lente peut arriver après un changement d'onglet ou de nouvelles frappes.
     update(key, { file: { ...before.file, content: before.content, fingerprint }, conflict: false })
+    // Le panneau marque « réécrit à la main » les fichiers repris après l'agent : il
+    // n'a aucun autre moyen de l'apprendre, une écriture d'éditeur n'étant pas un
+    // événement de conversation.
+    recordManualSave(scope, path)
   } catch (error) {
     if (error instanceof ApiRequestError && error.code === 'stale_write') update(key, { conflict: true })
     else update(key, { error: { kind: 'write', message: error instanceof Error ? error.message : translate('editor.error.write') } })

@@ -8,7 +8,9 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { closePanelButton } from './checks/panel.mjs'
 import { checkEditor } from './checks/editor.mjs'
+import { checkSearch } from './checks/search.mjs'
 import { checkIde } from './checks/ide.mjs'
 import { checkDownloads } from './checks/downloads.mjs'
 import { checkFavorites } from './checks/favorites.mjs'
@@ -260,14 +262,16 @@ try {
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const workspace = page.getByRole('dialog', { name: 'Panneau du workspace', exact: true })
   await workspace.waitFor()
-  const showTree = workspace.getByRole('button', { name: "Afficher l'arborescence", exact: true })
-  if (await showTree.count()) await showTree.click()
-  const searchFile = workspace.getByRole('searchbox', { name: 'Chercher un fichier', exact: true })
+  // La recherche est une vue du panneau depuis le 2026-10-11 : le champ de filtre de
+  // l'arborescence a disparu, et ses résultats ont leur propre liste.
+  await workspace.getByRole('button', { name: 'Recherche', exact: true }).click()
+  const searchFile = workspace.getByRole('searchbox', { name: 'Chercher dans le répertoire de travail', exact: true })
   await searchFile.fill('README')
   await page.keyboard.press('Escape')
   assert.equal(await workspace.isVisible(), true, 'Escape in file search must not close the workspace')
   assert.equal(await searchFile.inputValue(), '')
-  await workspace.getByText('README.md', { exact: true }).first().click()
+  await searchFile.fill('README')
+  await workspace.locator('[data-search-results]').getByText('README.md', { exact: true }).first().click()
   await workspace.getByRole('button', { name: 'Source', exact: true }).click()
   const code = page.locator('[data-panel="workspace"] .cm-content').first()
   await code.waitFor()
@@ -279,7 +283,7 @@ try {
   assert.equal(await code.evaluate((node) => node === window.uiEditorNode), true)
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await code.evaluate((node) => node === window.uiEditorNode), true, 'Resizing must retain the editor DOM')
-  await workspace.getByRole('button', { name: 'Fermer le panneau', exact: true }).focus()
+  await (await closePanelButton(page)).focus()
   // Au clavier, le premier Échap ferme l'aide du bouton avant le panneau.
   await page.getByRole('tooltip').waitFor()
   await page.keyboard.press('Escape')
@@ -290,9 +294,10 @@ try {
 
   await checkEditor({ page, context, base, project })
   await checkIde({ page, context, base, project })
+  await checkSearch({ page, base, project })
   await checkMedia({ page, context, base, project })
   // Le contrôle multimédia laisse le panneau ouvert ; repartir du board seul.
-  await page.locator('[data-panel="workspace"]').getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await checkDownloads({ page, context, base, project, hero, data })
   await checkFavorites({ page, context, base, project, hero })
 
@@ -301,7 +306,10 @@ try {
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const panel = page.locator('[data-panel="workspace"]')
-  await panel.getByRole('button', { name: 'Agrandir le panneau', exact: true }).waitFor()
+  // Accoler et élargir se règlent à la poignée depuis que le panneau n'a plus
+  // d'en-tête pour les porter.
+  const grip = page.getByRole('separator', { name: /^Largeur du panneau/ })
+  await grip.waitFor()
   const composer = page.locator('form').filter({ has: page.getByPlaceholder('Écris ton message...') })
   await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-panel="workspace"]')).translate === '0px')
   const docked = await panel.boundingBox()
@@ -309,13 +317,20 @@ try {
   assert.ok(composerBounds.width >= 400 && docked.width >= 320)
   assert.ok(composerBounds.x + composerBounds.width <= docked.x + 1, 'The panel must not cover the conversation')
   await panel.getByRole('button', { name: 'Git', exact: true }).click()
-  await panel.getByRole('button', { name: 'Agrandir le panneau', exact: true }).click()
-  assert.ok((await panel.boundingBox()).width > docked.width)
+  await grip.dblclick()
+  assert.ok((await panel.boundingBox()).width > docked.width, 'Double-clicking the grip lays the panel over the thread')
   assert.equal(await panel.getByRole('button', { name: 'Git', exact: true }).getAttribute('aria-pressed'), 'true')
-  await panel.getByRole('button', { name: 'Afficher à côté de la conversation', exact: true }).click()
+  // Le clavier, lui, parcourt les trois : le plein écran n'est pas au double-clic,
+  // parce qu'on n'en revient pas par la poignée, qui n'y existe plus.
+  await grip.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await panel.getAttribute('data-fullscreen'), 'true')
+  await panel.getByRole('button', { name: 'Quitter le plein écran', exact: true }).click()
+  assert.equal(await panel.getAttribute('data-fullscreen'), null)
+  await grip.dblclick()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.waitForFunction(() => Math.round(document.querySelector('[data-panel="workspace"]').getBoundingClientRect().width) === innerWidth)
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   // Joindre, les skills, les serveurs et les réglages ont quitté la rangée : ils sont
   // derrière le « + », dont la surface navigue entre quatre vues.

@@ -15,7 +15,7 @@ import {
   indentOnInput,
   indentUnit,
 } from '@codemirror/language'
-import { useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react'
 import { translate } from '../../lib/i18n'
 import { editorHighlight, editorTheme, loadLanguage } from './editor-setup'
 
@@ -75,6 +75,8 @@ export function CodeEditor({
   revision,
   onPosition,
   readOnly = false,
+  reveal = null,
+  onRevealed,
   ref,
 }: {
   initial: string
@@ -86,6 +88,15 @@ export function CodeEditor({
   onPosition: (line: number, column: number) => void
   /** Pour qui peut lire sans pouvoir modifier : le texte se parcourt et se cherche. */
   readOnly?: boolean
+  /**
+   * Ligne à montrer, demandée du dehors — un résultat de recherche, par exemple.
+   *
+   * Le jeton distingue deux demandes sur la même ligne : sans lui, recliquer le même
+   * résultat après avoir fait défiler le fichier ne ramènerait nulle part.
+   */
+  reveal?: { line: number; token: number } | null
+  /** Appelé une fois la ligne montrée, pour que la demande ne se rejoue pas. */
+  onRevealed?: () => void
   ref?: Ref<CodeEditorHandle>
 }) {
   const host = useRef<HTMLDivElement>(null)
@@ -194,6 +205,26 @@ export function CodeEditor({
       editor.destroy()
     }
   }, [path, sessionKey, revision, readOnly])
+
+  /**
+   * Après le montage, et non pendant : l'éditeur n'est mesuré qu'une fois dans le
+   * document, et un défilement demandé avant la mesure se pose sur une hauteur nulle.
+   * `requestMeasure` attend ce moment-là, qu'on vienne d'ouvrir le fichier ou qu'il
+   * fût déjà sous les yeux.
+   */
+  useEffect(() => {
+    const editor = current.current
+    if (!editor || !reveal) return
+    onRevealed?.()
+    const line = editor.state.doc.line(Math.min(Math.max(1, reveal.line), editor.state.doc.lines))
+    editor.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    })
+    editor.requestMeasure({
+      read: () => editor.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'center' }) }),
+    })
+  }, [reveal, onRevealed])
 
   return <div ref={host} className="h-full overflow-hidden" />
 }

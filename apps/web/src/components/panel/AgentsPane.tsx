@@ -9,31 +9,46 @@ import { clearSubAgent, showSubAgent } from '../../lib/panel'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { formatTokens } from '../../lib/tokens'
 import { buildRows } from '../../lib/tool-rows'
+import type { EditTurn } from '../../lib/chat-fold'
+import { AgentWritings } from './AgentWritings'
 import { ChatThread } from '../chat/ChatThread'
 import { SubAgentRow } from '../chat/SubAgentRow'
 import { EmptyState, cx } from '@solera/ui'
 
 /**
- * Les sous-agents de la conversation : la liste, et le fil de celui qu'on consulte.
+ * Tout ce que l'agent fait faire : ses sous-agents, ses travaux de fond, ses écritures.
  *
- * Le fil est rendu par le même composant que le fil principal. Un sous-agent est une
- * conversation comme une autre, avec ses messages, sa réflexion et ses appels : lui
- * donner un rendu à part obligerait à tenir deux vues en accord pour un seul contenu.
+ * Les trois répondent à la même question — qu'est-ce qui tourne, ou a tourné, sous ce
+ * fil — et c'est pourquoi l'onglet *Historique* a été dissous ici le 2026-10-11 : il
+ * n'avait sa propre place que parce que personne n'avait remarqué qu'il la partageait.
+ *
+ * Le fil d'un sous-agent est rendu par le même composant que le fil principal. Un
+ * sous-agent est une conversation comme une autre, avec ses messages, sa réflexion et
+ * ses appels : lui donner un rendu à part obligerait à tenir deux vues en accord pour
+ * un seul contenu.
  */
 export function AgentsPane({
   conversationId,
+  scope,
   agent,
   agents,
   background,
+  editTurns,
   selectedId,
+  onOpenFile,
 }: {
   conversationId: string
+  /** Répertoire de travail du fil, pour les reprises à la main de ses écritures. */
+  scope: string
   /** CLI de la conversation : c'est lui qui dit si un travail de fond s'arrête. */
   agent: AgentKind
   agents: SubAgent[]
   /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
   background: BackgroundWork[]
+  /** Les tours qui ont écrit, regroupés par fichier dans « Ses écritures ». */
+  editTurns: EditTurn[]
   selectedId: string | null
+  onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
   const selected = agents.find((agent) => agent.id === selectedId) ?? null
@@ -44,10 +59,13 @@ export function AgentsPane({
     )
   }
 
-  if (agents.length === 0 && background.length === 0) {
+  if (agents.length === 0 && background.length === 0 && editTurns.length === 0) {
     return (
-      <div className="flex min-h-0 flex-1 items-center p-4">
+      /* Centré comme celui des terminaux : deux vues voisines du même panneau n'ont
+         aucune raison de poser leur message vide à deux endroits différents. */
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
         <EmptyState
+          icon={<Bot size={22} />}
           title={t('subagent.pane.empty.title')}
           description={t('subagent.pane.empty.description')}
         />
@@ -56,13 +74,30 @@ export function AgentsPane({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-safe">
+      {agents.length > 0 ? (
+        <section className="p-2 pb-1">
+          <h3 className="px-0.5 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
+            {t('subagent.pane.title', { count: agents.length })}
+          </h3>
+          <div className="flex flex-col gap-1">
+            {agents.map((agent) => (
+              <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
+                <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <BackgroundList conversationId={conversationId} agent={agent} tasks={background} />
-      {agents.map((agent) => (
-        <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
-          <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
-        </div>
-      ))}
+
+      <AgentWritings
+        conversationId={conversationId}
+        scope={scope}
+        turns={editTurns}
+        onOpenFile={onOpenFile}
+      />
     </div>
   )
 }
@@ -143,10 +178,10 @@ function BackgroundList({
   }
 
   return (
-    <section className="mb-1 flex flex-col gap-1">
-      <h2 className="px-1 text-meta font-medium uppercase tracking-wide text-ink-faint">
-        {t('panel.background.title')}
-      </h2>
+    <section className="flex flex-col gap-1 p-2 pt-1 pb-1">
+      <h3 className="px-0.5 text-micro font-semibold tracking-wide text-ink-faint uppercase">
+        {t('panel.background.title', { count: tasks.length })}
+      </h3>
       {tasks.map((task) => {
         // Un type inconnu s'affiche tel qu'il est venu plutôt que d'être rangé de
         // force dans une famille : le CLI en ajoute au fil des versions.

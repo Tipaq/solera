@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
+import { closePanelButton } from './panel.mjs'
 
 /** Vrais téléchargements du navigateur, uniquement dans la démo temporaire. */
 export async function checkDownloads({ page, context, base, project, hero, data }) {
@@ -67,10 +68,17 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   const panel = page.locator('[data-panel="workspace"]')
-  await panel.getByRole('button', { name: 'Afficher l’IDE en plein écran', exact: true }).click()
+  // Plein écran et ouverture rapide n'ont plus de bouton : la géométrie se règle à la
+  // poignée, et l'ouverture rapide à son raccourci. Le panneau n'a plus d'en-tête où
+  // les poser.
+  const grip = page.getByRole('separator', { name: /^Largeur du panneau/ })
+  await grip.focus()
+  for (let i = 0; i < 3 && (await panel.getAttribute('data-fullscreen')) === null; i++) await page.keyboard.press('Enter')
   const openFile = async (path) => {
-    await panel.getByRole('button', { name: 'Ouvrir un fichier', exact: true }).click()
     const picker = page.getByRole('dialog', { name: 'Ouvrir un fichier', exact: true })
+    await panel.focus()
+    await page.keyboard.press('Control+p')
+    await picker.waitFor()
     await picker.getByRole('combobox').fill(path)
     await picker.getByRole('option', { name: path, exact: true }).click()
     await panel.locator('[data-editor-file]').filter({ visible: true }).waitFor()
@@ -115,7 +123,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   }
   await page.setViewportSize({ width: 1440, height: 900 })
   await panel.getByRole('button', { name: 'Quitter le plein écran', exact: true }).click()
-  await panel.getByRole('button', { name: 'Fermer le panneau', exact: true }).click()
+  await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
   console.log('OK : téléchargements via les deux menus et l’éditeur, images/PDF/binaire, brouillon préservé et mobile.')
 }
