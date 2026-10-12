@@ -175,12 +175,13 @@ export const en = {
   'conversation.meta.project': 'project',
   'conversation.meta.branchOf': 'Branch of "{title}"',
   'conversation.meta.apiControlled': 'External session driven by {label}',
-  'conversation.meta.details': 'Session details',
+  'conversation.meta.details': 'Conversation details',
   'conversation.meta.hide': 'Hide details',
   'conversation.meta.show': 'Show details',
   'conversation.usage.title': 'Account usage',
   'conversation.usage.label': 'Usage',
-  'conversation.search': 'Search the conversation',
+  'conversation.agent.running': '{agent} — turn running',
+  'conversation.search': 'Search the thread',
   'conversation.instructions': 'Instructions (SOLERA.md)',
   'conversation.compact.running': 'Compacting...',
   'conversation.compact.action': 'Compact the context',
@@ -773,11 +774,11 @@ export const en = {
   'about.confirm.title': 'Update to {version}?',
   'about.confirm.action': 'Update',
   'about.confirm.body': 'The service will be unavailable for a few seconds during the restart. Running conversations will be interrupted and will resume with the next message.',
-
-  // Arborescence de fichiers
   'filetree.search.placeholder': 'Search files...',
   'filetree.search.label': 'Search files',
   'filetree.search.clear': 'Clear search',
+
+  // Arborescence de fichiers
   'filetree.root.newFile': 'New file at root',
   'filetree.root.newFolder': 'New folder at root',
   'filetree.root.upload': 'Upload files to root',

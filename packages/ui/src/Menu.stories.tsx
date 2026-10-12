@@ -36,7 +36,7 @@ function Demo() {
       <MenuItem icon={<Pencil size={14} />} onSelect={() => undefined}>
         Renommer
       </MenuItem>
-      <MenuItem icon={<Copy size={14} />} onSelect={() => undefined}>
+      <MenuItem icon={<Copy size={14} />} shortcut="⌘D" onSelect={() => undefined}>
         Dupliquer
       </MenuItem>
       <MenuCheckboxItem checked={pinned} onCheckedChange={setPinned}>

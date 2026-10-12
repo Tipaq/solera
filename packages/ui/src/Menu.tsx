@@ -45,6 +45,14 @@ interface MenuItemProps {
    * croire qu'elle n'existe pas.
    */
   disabled?: boolean
+  /**
+   * Le raccourci clavier de l'action, aligné à droite.
+   *
+   * Écrit ici plutôt que dans l'intitulé : c'est la seule façon qu'une entrée de menu
+   * apprenne son raccourci à qui ne le connaît pas, et le menu devient alors ce qui
+   * rend inutile de l'ouvrir.
+   */
+  shortcut?: string
   children: ReactNode
 }
 
@@ -53,6 +61,7 @@ export function MenuItem({
   onSelect,
   tone = 'neutral',
   disabled = false,
+  shortcut,
   children,
 }: MenuItemProps) {
   return (
@@ -68,7 +77,12 @@ export function MenuItem({
       )}
     >
       {icon ? <span className="shrink-0">{icon}</span> : null}
-      {children}
+      <span className="min-w-0 flex-1">{children}</span>
+      {/* `aria-hidden` : le raccourci est un rappel pour l'œil, et l'inclure dans le
+          nom accessible ferait lire « Rouvrir le dernier fermé Ctrl ⇧ T ». */}
+      {shortcut ? (
+        <kbd aria-hidden className="shrink-0 rounded border border-line px-1 font-sans text-micro text-ink-faint">{shortcut}</kbd>
+      ) : null}
     </DropdownMenu.Item>
   )
 }

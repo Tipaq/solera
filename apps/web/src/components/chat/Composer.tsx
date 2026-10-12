@@ -173,6 +173,12 @@ interface ComposerProps {
    */
   canCompact?: boolean
   /**
+   * Chercher dans le fil et ouvrir ses détails, descendus de la barre du haut dans
+   * le « + ». Absents du brouillon, qui n'a pas encore de fil à fouiller.
+   */
+  onFind?(): void
+  onDetails?(): void
+  /**
    * Infléchit le tour en cours, là où le CLI le permet.
    *
    * C'est ce que fait l'envoi pendant un tour, sauf si la conversation a choisi la
@@ -233,6 +239,8 @@ export function Composer({
   context,
   onCompact,
   canCompact = false,
+  onFind,
+  onDetails,
   onSteer,
   initialText = '',
   variant = 'thread',
@@ -843,6 +851,8 @@ export function Composer({
               config={config}
               skills={skills}
               commands={commands}
+              onFind={onFind}
+              onDetails={onDetails}
             />
 
             {/* Dehors, et pas dans le menu : c'est l'action la plus fréquente au doigt. */}

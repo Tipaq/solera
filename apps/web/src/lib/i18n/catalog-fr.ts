@@ -161,12 +161,13 @@ export const fr: Catalog = {
   'conversation.meta.project': 'projet',
   'conversation.meta.branchOf': 'Branche de « {title} »',
   'conversation.meta.apiControlled': 'Session externe pilotée par {label}',
-  'conversation.meta.details': 'Détails de la session',
+  'conversation.meta.details': 'Détails de la conversation',
   'conversation.meta.hide': 'Masquer les détails',
   'conversation.meta.show': 'Afficher les détails',
   'conversation.usage.title': 'Consommation du compte',
   'conversation.usage.label': 'Utilisation',
-  'conversation.search': 'Rechercher dans la conversation',
+  'conversation.agent.running': '{agent} — tour en cours',
+  'conversation.search': 'Chercher dans le fil',
   'conversation.instructions': 'Consignes (SOLERA.md)',
   'conversation.compact.running': 'Compaction en cours...',
   'conversation.compact.action': 'Compacter le contexte',
@@ -761,11 +762,11 @@ export const fr: Catalog = {
   'about.confirm.title': 'Mettre à jour vers {version} ?',
   'about.confirm.action': 'Mettre à jour',
   'about.confirm.body': "Le service sera indisponible quelques secondes pendant le redémarrage. Les conversations en cours d'exécution seront interrompues et reprendront au prochain message.",
-
-  // Arborescence de fichiers
   'filetree.search.placeholder': 'Chercher un fichier...',
   'filetree.search.label': 'Chercher un fichier',
   'filetree.search.clear': 'Effacer la recherche',
+
+  // Arborescence de fichiers
   'filetree.root.newFile': 'Nouveau fichier à la racine',
   'filetree.root.newFolder': 'Nouveau dossier à la racine',
   'filetree.root.upload': 'Téléverser des fichiers à la racine',

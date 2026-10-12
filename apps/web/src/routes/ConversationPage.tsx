@@ -2,18 +2,13 @@ import { TooltipButton } from '@solera/ui'
 import * as Dialog from '@radix-ui/react-dialog'
 import {
   ArrowDown,
-  Info,
   X,
-  FileText,
   FolderTree,
   GaugeCircle,
   GitBranch,
   SquareKanban,
   Loader,
-  MoreHorizontal,
   PanelRight,
-  Search,
-  Shrink,
   Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -22,9 +17,9 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
+import { HeaderBand } from '../components/HeaderBand'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
-import { MobileNavigationButton } from '../components/MobileNavigation'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { PromptSuggestion } from '../components/chat/PromptSuggestion'
@@ -37,7 +32,7 @@ import { UsagePanel } from '../components/chat/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
-import { Banner, ConfirmDialog, EmptyState, IconButton, Menu, MenuItem, cx } from '@solera/ui'
+import { Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import {
   compactConversation,
   conversationsKey,
@@ -53,12 +48,10 @@ import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
-import { InstructionsDialog } from '../components/instructions/Instructions'
 import { clearSubAgent, setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
-import { useSidebarHidden } from '../lib/sidebar'
 import { describeActivity, type MessageItem } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
 import { buildLoops, type ArmedLoop } from '../lib/loops'
@@ -275,7 +268,6 @@ export function ConversationPage() {
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
-  const [instructionsOpen, setInstructionsOpen] = useState(false)
 
   /** Nombre de lignes montées, en partant de la fin. Voir `thread-window`. */
   const [windowSize, setWindowSize] = useState(INITIAL_WINDOW_ROWS)
@@ -336,7 +328,6 @@ export function ConversationPage() {
   const hasAnchor = Number.isInteger(anchorSeq) && anchorSeq > 0
   const anchored = useRef<number | null>(null)
   const activity = describeActivity(stream.state)
-  const sidebarHidden = useSidebarHidden()
   const panel = usePanelPresence()
   const panelLayout = usePanelLayout()
   const { data: projects } = useProjects()
@@ -872,23 +863,29 @@ export function ConversationPage() {
           </div>
         ) : null}
 
-        <header
-          className={cx(
-            'surface sticky top-0 z-10 flex shrink-0 items-center gap-1.5',
-            'border-b border-line px-2 py-2 @min-[44rem]/thread:gap-3 @min-[44rem]/thread:px-4',
-            // Le bouton de réaffichage de la navigation se pose dans ce coin : sans place
-            // réservée, il recouvre l'icône du CLI.
-            sidebarHidden && 'md:pl-14',
-          )}
-        >
-          <MobileNavigationButton />
+        <HeaderBand className="surface sticky top-0 z-10">
+          {/*
+            L'identité, et rien d'autre : le projet au-dessus, le titre dessous, et
+            l'icône du CLI qui porte l'anneau du tour en cours. Deux éléments disaient
+            « Claude » et « il travaille » ; un seul suffit.
+          */}
           <span
             role="img"
-            aria-label={AGENT_LABELS[conversation.agent]}
+            aria-label={
+              stream.state.turnRunning
+                ? t('conversation.agent.running', { agent: AGENT_LABELS[conversation.agent] })
+                : AGENT_LABELS[conversation.agent]
+            }
             title={AGENT_LABELS[conversation.agent]}
-            className="flex size-8 shrink-0 items-center justify-center"
+            className="relative flex size-7 shrink-0 items-center justify-center"
           >
-            <AgentIcon agent={conversation.agent} size={22} />
+            {stream.state.turnRunning ? (
+              <span
+                aria-hidden
+                className="absolute inset-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent [animation-duration:1.4s]"
+              />
+            ) : null}
+            <AgentIcon agent={conversation.agent} size={18} />
           </span>
 
           <div className="min-w-0 flex-1">
@@ -899,9 +896,29 @@ export function ConversationPage() {
               {projects?.find((project) => project.id === conversation.projectId)?.name}
             </Link>
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
-
-
           </div>
+
+          {/*
+            Où l'agent écrit. L'information était enterrée dans la modale des détails,
+            alors que c'est la plus utile de la barre : deux fils voisins d'un même
+            projet sont indiscernables sans elle.
+          */}
+          <span
+            className={cx(
+              'hidden shrink-0 items-center gap-1 rounded-md bg-surface-high px-1.5 py-0.5',
+              'text-micro text-ink-soft @min-[44rem]/thread:flex',
+            )}
+            title={
+              worktree
+                ? t('conversation.meta.worktree', { name: worktree.name })
+                : t('conversation.meta.projectFolder')
+            }
+          >
+            {worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
+            <span className="max-w-40 truncate">
+              {worktree ? (worktree.git?.branch ?? worktree.name) : t('conversation.meta.project')}
+            </span>
+          </span>
 
           {/*
             L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
@@ -909,98 +926,6 @@ export function ConversationPage() {
             est visible en même temps que lui, et le répéter ici l'afficherait deux fois.
           */}
           <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
-
-          {/* La consommation appartient au compte, pas à la conversation : le panneau
-              reste le même quel que soit le fil ouvert. `<button>` nu assumé : c'est une
-              pastille, un repère qu'on peut ouvrir, et `Button` est à coins carrés. */}
-          <button
-            type="button"
-            onClick={() => setUsageOpen(true)}
-            title={t('conversation.usage.title')}
-            className={cx(
-              'hidden shrink-0 items-center gap-1.5 rounded-full border border-line @min-[44rem]/thread:flex',
-              'bg-surface-high px-2 py-1 text-meta font-medium text-ink-soft',
-              'transition-colors hover:border-line-strong hover:text-ink',
-            )}
-          >
-            <GaugeCircle size={11} />
-            {/* Réduit à son icône au doigt : la consommation doit rester joignable
-                depuis un téléphone, c'est le libellé qui prend la place, pas le bouton. */}
-            <span className="hidden md:inline">{t('conversation.usage.label')}</span>
-          </button>
-
-          {/* Sur grand écran les deux actions sont posées directement : elles sont peu
-              nombreuses, et un menu qui n'en cache que deux coûte un clic pour rien.
-              Au doigt la place manque, elles repassent derrière les trois points.
-
-              Lire une conversation partagée donne le droit d'y chercher : seule la
-              compaction touche à l'état du fil, et elle reste au propriétaire. */}
-          <span className="hidden @min-[44rem]/thread:contents">
-            {/* Les consignes se relisent et se retouchent souvent en travaillant : un
-                geste, sans quitter le fil ni passer par l'éditeur. */}
-            <IconButton label={t('conversation.instructions')} onClick={() => setInstructionsOpen(true)}>
-              <FileText size={16} />
-            </IconButton>
-            <IconButton label={t('conversation.search')} onClick={() => setFindOpen(true)}>
-              <Search size={16} />
-            </IconButton>
-            {isOwner ? (
-              <IconButton
-                label={
-                  compacting || stream.state.compacting
-                    ? t('conversation.compact.running')
-                    : t('conversation.compact.action')
-                }
-                // Le contexte bouge encore pendant un tour : compacter au milieu
-                // résumerait un état que l'agent est en train de changer.
-                disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
-                onClick={() => void compact()}
-              >
-                <Shrink size={16} />
-              </IconButton>
-            ) : null}
-          </span>
-
-          <span className="hidden @min-[44rem]/thread:contents">
-            <Menu trigger={<IconButton label={t('conversation.actions')}><MoreHorizontal size={16} /></IconButton>}>
-              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
-                {t('conversation.meta.details')}
-              </MenuItem>
-            </Menu>
-          </span>
-          <span className="shrink-0 @min-[44rem]/thread:hidden">
-            <Menu
-              trigger={
-                <IconButton label={t('conversation.actions')}>
-                  <MoreHorizontal size={16} />
-                </IconButton>
-              }
-            >
-              <MenuItem icon={<Info size={14} />} onSelect={() => setMetaOpen(true)}>
-                {t('conversation.meta.details')}
-              </MenuItem>
-              <MenuItem icon={<GaugeCircle size={14} />} onSelect={() => setUsageOpen(true)}>
-                {t('conversation.usage.label')}
-              </MenuItem>
-              <MenuItem icon={<FileText size={14} />} onSelect={() => setInstructionsOpen(true)}>
-                {t('conversation.instructions')}
-              </MenuItem>
-              <MenuItem icon={<Search size={14} />} onSelect={() => setFindOpen(true)}>
-                {t('conversation.search')}
-              </MenuItem>
-              {isOwner ? (
-                <MenuItem
-                  icon={<Shrink size={14} />}
-                  disabled={compacting || stream.state.compacting || stream.status !== 'idle'}
-                  onSelect={() => void compact()}
-                >
-                  {compacting || stream.state.compacting
-                    ? t('conversation.compact.running')
-                    : t('conversation.compact.action')}
-                </MenuItem>
-              ) : null}
-            </Menu>
-          </span>
 
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
@@ -1012,13 +937,8 @@ export function ConversationPage() {
           >
             <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
           </IconButton>
-        </header>
+        </HeaderBand>
 
-        <InstructionsDialog
-          open={instructionsOpen}
-          onOpenChange={setInstructionsOpen}
-          projectId={conversation.projectId}
-        />
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
           <Dialog.Portal>
             <Dialog.Overlay className="scrim z-40" />
@@ -1092,6 +1012,13 @@ export function ConversationPage() {
 
                 {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
                     et lui seul porte le détail des tokens de cache. */}
+                {/* La consommation appartient au compte et non au fil : elle a quitté
+                    la barre, où elle se répétait d'une conversation à l'autre. Son
+                    détail s'ouvre depuis le résumé qui la porte déjà ici. */}
+                <Button variant="ghost" size="sm" icon={<GaugeCircle size={14} />} onClick={() => setUsageOpen(true)}>
+                  {t('conversation.usage.label')}
+                </Button>
+
                 <UsageSummary
                   account={catalog?.account}
                   rateLimit={stream.state.rateLimit}
@@ -1305,6 +1232,8 @@ export function ConversationPage() {
             disabled={!isOwner}
             context={stream.state.context}
             onCompact={isOwner ? () => void compact() : undefined}
+            onFind={() => setFindOpen(true)}
+            onDetails={() => setMetaOpen(true)}
             canCompact={!compacting && !stream.state.compacting && stream.status === 'idle'}
             onSteer={canSteer ? steer : undefined}
             onSend={send}
@@ -1344,7 +1273,6 @@ export function ConversationPage() {
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
             background={background}
-            mcpServers={stream.state.mcp}
             open={panel.open}
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}

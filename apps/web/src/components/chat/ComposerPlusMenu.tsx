@@ -11,7 +11,7 @@ import {
   cx,
   useMediaQuery,
 } from '@solera/ui'
-import { BookOpen, ChevronRight, Paperclip, PlugZap, Plus, SlidersHorizontal } from 'lucide-react'
+import { BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
 import { useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
@@ -69,7 +69,19 @@ interface ComposerPlusMenuProps {
   config: AgentConfig
   skills: AgentSkillDto[]
   commands: SlashCommandDto[]
+  /**
+   * Chercher dans le fil et consulter ses détails, descendus de la barre du haut.
+   *
+   * Ils fouillent et décrivent la session ouverte, exactement comme les skills et les
+   * serveurs qui vivaient déjà ici ; la barre, elle, ne garde que ce qui se lit sans
+   * être ouvert. Absents du brouillon, qui n'a encore ni fil ni détails.
+   */
+  onFind?: () => void
+  onDetails?: () => void
 }
+
+/** Le raccourci de la recherche dans le fil, écrit comme le clavier de la machine. */
+const FIND_HINT = navigator.userAgent.includes('Mac') ? '⌘ F' : 'Ctrl F'
 
 export function ComposerPlusMenu(props: ComposerPlusMenuProps) {
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
@@ -112,7 +124,7 @@ function PlusTrigger({ status, disabled, ...rest }: {
  * l'inventaire des skills et les réglages au complet, s'ouvrent en boîte : elles
  * portent une recherche, un défilement et des sections, qu'un menu ne sait pas tenir.
  */
-function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands }: ComposerPlusMenuProps) {
+function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands, onFind, onDetails }: ComposerPlusMenuProps) {
   const t = useTranslate()
   const settingsGroups = groups.filter((group) => !IN_SKILLS_MENU.includes(group.key))
   const librarySetting = groups.find((group) => group.key === 'skillLibrary')
@@ -130,6 +142,17 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
       <MenuSub icon={<PlugZap size={16} />} label={t('composer.plus.mcp')} value={mcpSummary}>
         {mcpItems}
       </MenuSub>
+      {onFind || onDetails ? <MenuSeparator /> : null}
+      {onFind ? (
+        <MenuItem icon={<Search size={16} />} shortcut={FIND_HINT} onSelect={onFind}>
+          {t('conversation.search')}
+        </MenuItem>
+      ) : null}
+      {onDetails ? (
+        <MenuItem icon={<Info size={16} />} onSelect={onDetails}>
+          {t('conversation.meta.details')}
+        </MenuItem>
+      ) : null}
       <MenuSeparator />
       <MenuSub icon={<SlidersHorizontal size={16} />} label={t('composer.plus.settings')} value={status.plan ?? undefined}>
         {lists.map((group) => {
@@ -195,6 +218,8 @@ function PlusSheet({
   config,
   skills,
   commands,
+  onFind,
+  onDetails,
 }: ComposerPlusMenuProps) {
   const t = useTranslate()
   const [view, setView] = useState<View>('root')
@@ -253,6 +278,19 @@ function PlusSheet({
                 <Entry icon={<PlugZap size={16} />} submenu value={mcpSummary} onClick={() => setView('mcp')}>
                   {t('composer.plus.mcp')}
                 </Entry>
+                {/* Pas de raccourci écrit sur cette pile : elle ne s'ouvre qu'au doigt,
+                    où il n'y a pas de clavier pour le jouer. */}
+                {onFind || onDetails ? <div className="my-1 h-px bg-line" /> : null}
+                {onFind ? (
+                  <Entry icon={<Search size={16} />} onClick={() => { close(); onFind() }}>
+                    {t('conversation.search')}
+                  </Entry>
+                ) : null}
+                {onDetails ? (
+                  <Entry icon={<Info size={16} />} onClick={() => { close(); onDetails() }}>
+                    {t('conversation.meta.details')}
+                  </Entry>
+                ) : null}
                 <div className="my-1 h-px bg-line" />
                 <Entry
                   icon={<SlidersHorizontal size={16} />}
