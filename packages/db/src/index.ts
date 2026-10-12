@@ -8,8 +8,13 @@ import * as schema from './schema.js'
 export * as schema from './schema.js'
 export * from './schema.js'
 
-export type Db = BetterSQLite3Database<typeof schema>
 export type SqliteHandle = InstanceType<typeof Database>
+/**
+ * `$client` fait partie du type : c'est `drizzle()` qui le pose, et toutes les bases de
+ * l'application sortent d'`openDatabase`. Les migrations en ont besoin pour parler à la
+ * connexion elle-même, hors de toute transaction.
+ */
+export type Db = BetterSQLite3Database<typeof schema> & { $client: SqliteHandle }
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 
 /**
@@ -45,6 +50,37 @@ export function openDatabase(file: string): { db: Db; sqlite: SqliteHandle } {
   return { db, sqlite }
 }
 
+/**
+ * Applique les migrations en attente, **clés étrangères désactivées**.
+ *
+ * SQLite ne sait pas retirer un `NOT NULL` ni changer une contrainte : une migration qui
+ * le demande recrée la table — copier, `DROP`, renommer. Drizzle écrit alors un
+ * `PRAGMA foreign_keys=OFF` en tête du fichier, et c'est un piège : **ce pragma est un
+ * non-opérant à l'intérieur d'une transaction**, et le migrateur de Drizzle entoure
+ * tout le lot d'un `BEGIN`. Il ne désactive donc rien. Le `DROP TABLE` de la table mère
+ * part avec les clés toujours actives, et chaque enfant en `ON DELETE CASCADE` est vidé
+ * sans un mot — le journal des conversations, leurs pièces jointes, leurs demandes de
+ * permission. La migration réussit, la base est cohérente, et l'historique n'est plus là.
+ *
+ * Posé ici, hors de toute transaction, le pragma prend effet pour de bon. `foreign_key_check`
+ * ensuite, parce qu'une recréation fautive ne doit pas passer inaperçue sous prétexte
+ * qu'on vient de taire le contrôle.
+ */
 export function runMigrations(db: Db, migrationsFolder: string): void {
-  migrate(db, { migrationsFolder })
+  const sqlite = db.$client
+  sqlite.pragma('foreign_keys = OFF')
+  try {
+    migrate(db, { migrationsFolder })
+  } finally {
+    sqlite.pragma('foreign_keys = ON')
+  }
+
+  const broken = sqlite.pragma('foreign_key_check') as { table: string }[]
+  if (broken.length > 0) {
+    const tables = [...new Set(broken.map((row) => row.table))].join(', ')
+    throw new Error(
+      `Migrations appliquées, mais les clés étrangères ne tiennent plus (${tables}). ` +
+        'La base n\'est pas démarrable en l\'état : restaurer la sauvegarde d\'avant migration.',
+    )
+  }
 }
