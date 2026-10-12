@@ -28,16 +28,23 @@ export function projectMemoryDir(root: string, projectId: string): string {
 }
 
 /**
- * La mémoire des fils libres : une seule, commune à tous.
+ * La mémoire des fils libres d'un compte : une seule pour tous ses fils, et une par
+ * compte.
  *
  * Un dossier par fil ne retiendrait rien — on ouvre un fil libre pour une question et
  * on n'y revient pas — alors que ce qu'un agent y apprend est précisément ce qui ne
  * relève d'aucun projet : qui est l'utilisateur, comment il travaille, ce qu'il a déjà
  * corrigé. C'est donc une mémoire personnelle, et elle a sa place à elle plutôt que
  * dans `projects/`, où elle se ferait prendre pour un projet.
+ *
+ * **Personnelle veut dire par compte.** Sans le segment `<userId>`, une instance à
+ * plusieurs comptes versait ce que l'agent apprend de l'un dans les sessions de l'autre
+ * — et sans rien d'autre pour le dire qu'un agent qui sait des choses qu'on ne lui a
+ * jamais apprises. Un projet partagé a un propriétaire et des droits ; « qui est
+ * l'utilisateur » n'en a pas, il n'y a que son compte.
  */
-export function freeThreadMemoryDir(root: string): string {
-  const dir = join(root, 'threads')
+export function freeThreadMemoryDir(root: string, userId: string): string {
+  const dir = join(root, 'threads', userId)
   mkdirSync(dir, { recursive: true })
   return dir
 }

@@ -140,8 +140,10 @@ function SkillEditor({
   // l'accueil et rouvre les réglages sur sa section. Pour un skill de projet, ce
   // sont les réglages du projet — `/p/:id` est devenu son tableau de bord.
   const back = () => {
+    // Quitter, c'est quitter la page : ouvrir la modale sans naviguer laissait l'éditeur
+    // dessous, et après une suppression, sur `/skills/<id supprimé>`.
+    navigate(skill.scope === 'global' ? '/' : `/p/${skill.projectId}/settings`)
     if (skill.scope === 'global') openSettings('skills')
-    else navigate(`/p/${skill.projectId}/settings`)
   }
   const backLabel =
     skill.scope === 'global'

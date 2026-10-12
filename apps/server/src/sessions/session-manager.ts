@@ -719,7 +719,7 @@ export class SessionManager {
     // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
     const memoryDir = () =>
       projectId === null
-        ? freeThreadMemoryDir(this.config.paths.memory)
+        ? freeThreadMemoryDir(this.config.paths.memory, conversation.userId)
         : ensureProjectMemory(
             this.config.paths.memory,
             projectId,
@@ -767,7 +767,11 @@ export class SessionManager {
       // SOLERA.md passe devant et hors de ces interrupteurs : ce sont les consignes de
       // l'utilisateur, pas un apport de Solera qu'on choisirait de couper.
       projectOverview: (current) => {
-        const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
+        // `builtinMcpServer` refuse aussi de partir sans projet : annoncer le serveur
+        // à l'agent alors qu'il n'est pas monté, c'est lui faire appeler des outils qui
+        // n'existent pas et lire son échec comme le sien. Carte #16 pour le fond.
+        const soleraMcp =
+          projectId !== null && builtinMcpEnabled(this.config.mcp.soleraServer, current)
         const parts = [
           instructionsAppendix(this.db, {
             projectId,

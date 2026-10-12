@@ -33,6 +33,10 @@ import { conversationWorkspace, projectWorkspace, resolveInside } from '../works
  */
 export const LIST_ROUTES = new Set([
   'POST /api/projects/:id/conversations',
+  // Les fils libres : ouvrir, et ranger après coup. Sans elles, un fil né dans un onglet
+  // ou rangé depuis le téléphone restait là où il était dans les autres.
+  'POST /api/conversations',
+  'POST /api/conversations/:id/project',
   'POST /api/v1/projects/:id/tasks',
   'POST /api/projects/:id/conversations/order',
   'POST /api/projects/:id/claude-sessions/:sessionId/import',

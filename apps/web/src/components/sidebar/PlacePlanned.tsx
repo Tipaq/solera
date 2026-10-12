@@ -119,8 +119,11 @@ function TaskLine({ task, project, onNavigate }: {
 
   return (
     <li>
+      {/* Une tâche sans projet se lit sur la page *Planifiées*, qui les porte toutes :
+          composer `/p/null/schedules` donnerait une adresse qui se charge et ne trouve
+          rien. `scheduled_tasks.project_id` est nullable depuis la migration 0032. */}
       <NavLink
-        to={`/p/${task.projectId}/schedules`}
+        to={task.projectId ? `/p/${task.projectId}/schedules` : '/schedules'}
         onClick={onNavigate}
         title={`${task.name} · ${t(SCHEDULE_STATE_LABELS[state])}`}
         className={({ isActive }) => cx(

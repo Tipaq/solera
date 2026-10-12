@@ -1,15 +1,13 @@
 import { PanelLeftClose, Plus, Search, X } from 'lucide-react'
 import { useMemo, useRef } from 'react'
-import { useMatch, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAllConversations } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects, useReorderProjects } from '../../lib/projects'
-import { useProjectVisits } from '../../lib/project-visits'
 import { isUnread } from '../../lib/reads'
 import { useSchedules } from '../../lib/schedules'
-import { useCurrentUser } from '../../lib/session'
 import { useSidebarPlace, type Place } from '../../lib/sidebar'
 import { useMediaQuery } from '../../lib/viewport'
 import { HeaderBand } from '../HeaderBand'
@@ -52,13 +50,10 @@ export function Sidebar({
   const wide = useMediaQuery('(min-width: 48rem)')
   const display = useDisplaySettings()
   const place = useSidebarPlace()
-  const { data: user } = useCurrentUser()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
   const reorderProjects = useReorderProjects()
-  const routeProjectId = useMatch('/p/:projectId/*')?.params.projectId
-  const visits = useProjectVisits(user?.id ?? '')
   const scroller = useRef<HTMLDivElement>(null)
   useStatusFeed()
   const { refreshing, refresh } = useRefreshLists()
@@ -73,15 +68,6 @@ export function Sidebar({
     () => attended.filter((entry) => !entry.archivedAt),
     [attended],
   )
-
-  /**
-   * Le projet vers lequel retombent les gestes qui en demandent un : celui de la route,
-   * sinon le dernier visité, sinon le premier. Ni une sélection ni un mode — le
-   * `ProjectSwitcher` qui en faisait un état a disparu.
-   */
-  const fallbackProject = projects?.find((project) => project.id === routeProjectId)
-    ?? projects?.find((project) => project.id === visits[0]?.projectId)
-    ?? projects?.[0]
 
   const places: PlaceSpec[] = [
     {
@@ -148,15 +134,16 @@ export function Sidebar({
           </kbd>
         </button>
 
-        {/* Sobre, sans pastille ni chevron : la destination se choisit sur la page du
-            fil neuf, pas avant. C'est le geste le plus fréquent de l'application, il n'a
-            besoin d'aucune décision préalable — seulement d'être toujours au même
-            endroit. */}
+        {/* Sobre, sans pastille ni chevron, et **sans projet** : un fil neuf n'appartient
+            à rien, sa destination se choisit sur sa page. Il retombait sur le dernier
+            projet visité, faute de fils libres dans la branche qui l'a écrit — et sur la
+            page de création de projet quand il n'y en avait aucun, c'est-à-dire que le
+            geste le plus fréquent de l'application ouvrait un formulaire. */}
         <button
           type="button"
           onClick={() => {
             onNavigate()
-            navigate(fallbackProject ? `/p/${fallbackProject.id}/c/new` : '/projects/new')
+            navigate('/c/new')
           }}
           className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink-soft transition-colors hover:bg-surface-high hover:text-ink md:h-9 pointer-coarse:h-11"
         >
