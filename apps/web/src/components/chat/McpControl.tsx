@@ -1,10 +1,30 @@
 import { SwitchRow, TooltipButton } from '@solera/ui'
-import { PlugZap } from 'lucide-react'
+import { PlugZap, Plus } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import type { McpServer, McpServerStatus } from '@solera/protocol'
-import { translate, useTranslate } from '../../lib/i18n'
-import { Menu, MenuCheckboxItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
+import type { McpServer, McpServerState, McpServerStatus } from '@solera/protocol'
+import { translate, useTranslate, type MessageKey } from '../../lib/i18n'
+import { setMcpRegistryOpen } from '../../lib/mcp-registry'
+import { Menu, MenuCheckboxItem, MenuSeparator, cx } from '@solera/ui'
+
+/**
+ * La pastille d'état, et rien d'autre : un mot y suffirait mal, et l'état se lit
+ * d'abord à la couleur quand on survole une liste de huit serveurs.
+ */
+const STATE_TONES: Record<McpServerState, string> = {
+  pending: 'bg-ink-faint',
+  connected: 'bg-positive',
+  failed: 'bg-critical',
+  'needs-auth': 'bg-caution',
+  disabled: 'bg-ink-faint/50',
+}
+
+const STATE_LABELS: Record<McpServerState, MessageKey> = {
+  pending: 'composer.mcp.state.pending',
+  connected: 'composer.mcp.state.connected',
+  failed: 'composer.mcp.state.failed',
+  'needs-auth': 'composer.mcp.state.needsAuth',
+  disabled: 'composer.mcp.state.disabled',
+}
 
 /**
  * Serveurs MCP actifs sur la conversation, et l'isolation stricte de Claude.
@@ -88,70 +108,109 @@ export function McpControl({
   // `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce
   // que j'ai déclaré », et le serveur de Solera tombe avec les autres. Sa case reste
   // affichée pour que son état se lise, mais devient inerte tant que l'isolation dure.
+  /**
+   * Une ligne par serveur, quelle que soit sa provenance.
+   *
+   * Les serveurs venus du CLI étaient listés à part, en lignes inertes : ils restent
+   * inertes — Solera ne peut pas régler ce qu'il n'a pas déclaré — mais ils se lisent
+   * dans la même colonne, avec le même état et le même compte d'outils. La question
+   * posée ici est « avec quels outils cet agent travaille », et elle ne distingue pas
+   * d'où ils viennent.
+   */
+  const row = (entry: {
+    key: string
+    name: string
+    hint: string
+    state: McpServerState | undefined
+    tools: number | undefined
+    checked: boolean
+    onCheckedChange?: (checked: boolean) => void
+    disabled?: boolean
+  }) => {
+    const label = (
+      <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          aria-hidden
+          className={cx('size-2 shrink-0 rounded-full', entry.state ? STATE_TONES[entry.state] : 'bg-ink-faint/40')}
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{entry.name}</span>
+          <span className="truncate text-meta text-ink-faint">{entry.hint}</span>
+        </span>
+        <ToolCount count={entry.tools} />
+      </span>
+    )
+
+    // Une ligne inerte plutôt qu'une bascule grisée : une bascule, même éteinte,
+    // laisse croire qu'elle deviendra manœuvrable, alors que Solera ne pourra jamais
+    // régler un serveur qu'il n'a pas déclaré.
+    if (!entry.onCheckedChange) {
+      return (
+        <div key={entry.key} className="flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-ink-faint">
+          {label}
+        </div>
+      )
+    }
+
+    return (
+      <CheckboxItem
+        key={entry.key}
+        checked={entry.checked}
+        onCheckedChange={entry.onCheckedChange}
+        disabled={entry.disabled}
+      >
+        {label}
+      </CheckboxItem>
+    )
+  }
+
+  const statusByName = new Map(inventory.map((server) => [server.name.toLowerCase(), server]))
+  const statusOf = (name: string) => statusByName.get(name.toLowerCase())
+  const hintOf = (origin: string, status: McpServerStatus | undefined) =>
+    [origin, status?.error ?? (status ? t(STATE_LABELS[status.state]) : null)].filter(Boolean).join(' · ')
+
   const items = (
     <>
       {solera === null ? null : (
-        <>
-          <CheckboxItem
-            checked={solera}
-            onCheckedChange={onSoleraChange}
-            disabled={disabled || strict === true}
-          >
-            <span className="flex flex-col">
-              <span>{t('composer.mcp.builtin')}</span>
-              <span className="text-meta text-ink-faint">
-                {t('composer.mcp.builtin.hint')}
-              </span>
-            </span>
-          </CheckboxItem>
-          <Separator />
-        </>
+        row({
+          key: 'solera',
+          name: t('composer.mcp.builtin'),
+          hint: hintOf(t('composer.mcp.origin.builtin'), statusOf('solera')),
+          state: statusOf('solera')?.state,
+          tools: toolsByName.get('solera'),
+          checked: solera,
+          onCheckedChange: onSoleraChange,
+          disabled: disabled || strict === true,
+        })
       )}
 
-      {servers.length === 0 ? (
+      {servers.length === 0 && external.length === 0 ? (
         <p className="px-2.5 py-2 text-xs text-ink-faint">{t('composer.mcp.empty')}</p>
-      ) : (
-        <>
-          {/* L'intitulé n'apparaît que s'il y a de quoi le distinguer d'autre chose :
-              sans serveur du CLI, une seule section n'a pas besoin d'être nommée. */}
-          {external.length > 0 ? <MenuLabel>{t('composer.mcp.solera')}</MenuLabel> : null}
-          {servers.map((server) => (
-            <CheckboxItem
-              key={server.id}
-              checked={active.has(server.id)}
-              onCheckedChange={(checked) => toggle(server.id, checked)}
-              disabled={disabled || !server.enabled}
-            >
-              <span className="flex min-w-0 flex-1 items-baseline gap-2">
-                <span className="min-w-0 truncate">{server.name}</span>
-                <ToolCount count={toolsByName.get(server.name)} />
-              </span>
-            </CheckboxItem>
-          ))}
-        </>
+      ) : null}
+
+      {servers.map((server) =>
+        row({
+          key: server.id,
+          name: server.name,
+          hint: hintOf(t('composer.mcp.origin.solera'), statusOf(server.name)),
+          state: server.enabled ? statusOf(server.name)?.state : 'disabled',
+          tools: toolsByName.get(server.name),
+          checked: active.has(server.id),
+          onCheckedChange: (checked) => toggle(server.id, checked),
+          disabled: disabled || !server.enabled,
+        }),
       )}
 
-      {external.length > 0 ? (
-        <>
-          <Separator />
-          <MenuLabel>{t('composer.mcp.fromCli')}</MenuLabel>
-          {external.map((server) => (
-            // Une ligne inerte plutôt qu'une case grisée : une case, même désactivée,
-            // laisse croire qu'elle deviendra cochable, alors que Solera ne pourra
-            // jamais régler un serveur qu'il n'a pas déclaré.
-            <div
-              key={server.name}
-              className="flex items-baseline gap-2 rounded-md px-2.5 py-1.5 text-sm text-ink-faint"
-            >
-              <span className="min-w-0 flex-1 truncate">{server.name}</span>
-              <ToolCount count={server.tools.length} />
-            </div>
-          ))}
-          <p className="px-2.5 pb-1 text-meta text-ink-faint">
-            {t('composer.mcp.fromCli.hint')}
-          </p>
-        </>
-      ) : null}
+      {external.map((server) =>
+        row({
+          key: `cli:${server.name}`,
+          name: server.name,
+          hint: hintOf(t('composer.mcp.origin.cli'), server),
+          state: server.state,
+          tools: server.tools.length,
+          checked: true,
+        }),
+      )}
 
       {strict === null ? null : (
         <>
@@ -166,12 +225,16 @@ export function McpControl({
       )}
 
       <Separator />
-      <Link
-        to="/settings/mcp"
-        className="flex min-h-11 items-center rounded-md px-2.5 py-2 text-sm text-ink-soft hover:bg-accent-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+      {/* Le seul chemin vers l'écriture : ajouter, régler ou retirer un serveur se
+          fait dans la modale, et nulle part ailleurs. */}
+      <button
+        type="button"
+        onClick={() => setMcpRegistryOpen(true)}
+        className="flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-ink-soft hover:bg-accent-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
       >
+        <Plus size={16} className="shrink-0" />
         {t('composer.mcp.manage')}
-      </Link>
+      </button>
     </>
   )
 

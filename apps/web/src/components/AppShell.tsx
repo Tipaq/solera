@@ -101,6 +101,7 @@ import { UpdateDot } from './UpdateDot'
 import { useUpdateNotice } from '../lib/system'
 import { MobileNavigationContext } from './MobileNavigation'
 import { HeaderBand } from './HeaderBand'
+import { McpRegistryDialog } from './mcp/McpRegistryDialog'
 import { PullToRefresh } from './PullToRefresh'
 import {
   Banner,
@@ -350,6 +351,9 @@ export function AppShell() {
       </aside>
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      {/* Montée ici et pas dans le composer : elle s'ouvre depuis le « + », donc depuis
+          un menu, et un dialogue rendu dans un menu meurt avec lui à la sélection. */}
+      <McpRegistryDialog />
       <UpdatePrompt />
 
       {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,

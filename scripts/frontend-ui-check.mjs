@@ -346,6 +346,24 @@ try {
   for (const entry of ['Skills et commandes', 'Serveurs MCP', 'Réglages de la session']) {
     await plusSheet.getByRole('button', { name: new RegExp(`^${entry}`) }).waitFor()
   }
+  // Les serveurs MCP ont quitté le panneau : leur liste vit ici, et l'écriture dans
+  // une modale montée par la coque — un dialogue rendu dans un menu mourrait avec lui.
+  await plusSheet.getByRole('button', { name: /^Serveurs MCP/ }).click()
+  await page.getByRole('button', { name: /^Ajouter ou régler un serveur/ }).click()
+  const registry = page.getByRole('dialog', { name: 'Gérer les serveurs MCP', exact: true })
+  await registry.waitFor()
+  await registry.getByRole('button', { name: 'Déclarer le serveur', exact: true }).waitFor()
+  await registry.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await registry.waitFor({ state: 'hidden' })
+  // La surface du « + » est restée dessous, sur sa vue MCP — fermer la modale y
+  // ramène, et c'est bien ce qu'on veut. Le contrôle suivant repart de sa racine.
+  const mcpView = page.getByRole('dialog', { name: 'Serveurs MCP', exact: true })
+  await mcpView.waitFor()
+  await page.keyboard.press('Escape')
+  await mcpView.waitFor({ state: 'hidden' })
+  await plus.click()
+  await plusSheet.waitFor()
+
   // Les réglages s'ouvrent en menu — une ligne par catégorie, sa valeur à droite — et
   // chaque catégorie ouvre ses options dans la même surface.
   await plusSheet.getByRole('button', { name: /^Réglages de la session/ }).click()

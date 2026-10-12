@@ -297,19 +297,21 @@ try {
     await plus.click()
     if (submenus) {
       await page.getByRole('menuitem', { name: /^Serveurs MCP/ }).click()
-      const server = page.getByRole('menuitemcheckbox', { name: 'Documentation', exact: true })
+      // La ligne porte maintenant sa provenance et son état sous le nom : le nom
+      // accessible les reprend, et ne peut plus être comparé au mot seul.
+      const server = page.getByRole('menuitemcheckbox', { name: /^Documentation/ })
       await server.click()
       assert.equal(await server.getAttribute('aria-checked'), 'true')
-      assert.equal(await page.getByRole('menuitemcheckbox', { name: 'CLI externe' }).count(), 0)
+      assert.equal(await page.getByRole('menuitemcheckbox', { name: /^CLI externe/ }).count(), 0)
       await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
       await page.getByRole('menu').first().waitFor({ state: 'hidden' })
     } else {
       await dialog.waitFor()
       await page.getByRole('button', { name: /^Serveurs MCP/ }).click()
-      await page.getByRole('switch', { name: 'Documentation', exact: true }).click()
+      await page.getByRole('switch', { name: /^Documentation/ }).click()
       assert.equal(await dialog.isVisible(), true)
-      assert.equal(await page.getByRole('switch', { name: 'CLI externe' }).count(), 0)
+      assert.equal(await page.getByRole('switch', { name: /^CLI externe/ }).count(), 0)
       const panelBounds = await dialog.boundingBox()
       assert.ok(panelBounds.y >= 0 && panelBounds.y + panelBounds.height <= viewport.height + 1)
       await escape()
