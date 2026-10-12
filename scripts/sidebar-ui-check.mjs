@@ -82,63 +82,83 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-09-19-sidebar')
   await mkdir(shots, { recursive: true })
-  // Une longue liste pour vérifier le défilement, sans toucher à la base réelle.
+  // Une longue liste pour vérifier le défilement et le « N autres sessions… », sans
+  // toucher à la base réelle.
   await page.route('**/api/conversations', async (route) => {
     const response = await route.fetch()
     const entries = await response.json()
-    await route.fulfill({ json: [...entries, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, favorite: false, archivedAt: null }))] })
+    // `idle` et lues : une session active ne figure pas dans le groupe de son projet,
+    // elle est déjà dans l'activité au-dessus.
+    await route.fulfill({ json: [...entries, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }))] })
   })
-  await page.route('**/api/projects', async (route) => {
-    const response = await route.fetch()
-    const entries = await response.json()
-    await route.fulfill({ json: [...entries, ...Array.from({ length: 40 }, (_, i) => ({ ...project, id: `project-${i}`, name: `Projet ${i + 1}` }))] })
-  })
+
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
-  const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
-  const switcher = page.getByRole('button', { name: 'Changer de projet', exact: true })
-  await switcher.waitFor()
-  await nav.getByRole('button', { name: /Voir les .* sessions/ }).click()
-  await nav.getByRole('link', { name: /Session de travail 30/ }).waitFor()
-  const before = await switcher.boundingBox()
-  await page.locator('#sidebar-activity-results').evaluate((el) => { el.scrollTop = el.scrollHeight })
-  assert.deepEqual(await switcher.boundingBox(), before)
-  assert.equal(await nav.getByRole('button', { name: /^\d+ à débloquer$/ }).isVisible(), true)
-  await nav.getByRole('button', { name: 'Réduire la liste' }).click()
-  assert.equal(await nav.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
-  await switcher.click()
-  const dialog = page.getByRole('dialog', { name: 'Changer de projet' })
-  const search = dialog.getByRole('textbox', { name: 'Rechercher un projet…' })
-  await search.fill('atlas')
-  await dialog.getByRole('button', { name: 'Épingler Atlas API', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Atlas API', exact: true }).click()
-  await page.waitForURL(/\/p\/[^/]+\/(c\/new|board)$/)
-  await switcher.filter({ hasText: 'Atlas API' }).waitFor()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Nimbus', exact: true }).click()
-  await page.waitForURL(`**/c/${hero.id}`)
-  await page.reload()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Désépingler Atlas API', exact: true }).waitFor()
-  await search.fill('introuvablexyz')
-  await dialog.getByRole('status').filter({ hasText: 'Aucun projet trouvé' }).waitFor()
-  await search.fill('')
-  await page.screenshot({ path: join(shots, 'project-switcher.png') })
-  await dialog.getByRole('button', { name: 'Tous les projets', exact: true }).click()
-  await nav.getByRole('link', { name: 'Atlas API', exact: true }).waitFor()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Nimbus', exact: true }).click()
-  await page.screenshot({ path: join(shots, 'focused-desktop.png') })
+  const places = page.getByRole('navigation', { name: 'Lieux' })
+  const column = page.locator('aside')
+  await places.waitFor()
+
+  // Les lieux : une liste verticale, toujours visible, et le compte en une ligne.
+  for (const name of ['Fils', 'Projets', 'Planifiées']) {
+    await places.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
+  }
+  // L'activité est fixe : faire défiler la zone basse ne la déplace pas.
+  const activity = column.getByRole('group', { name: 'Suivi des conversations' })
+  await activity.waitFor()
+  const before = await activity.boundingBox()
+
+  // Lieu *Fils* : l'historique daté. Une tranche au moins porte des lignes.
+  await places.getByRole('button', { name: /^Fils/ }).click()
+  await column.getByRole('heading', { name: /Aujourd’hui|Hier|7 derniers jours|Plus ancien/ }).first().waitFor()
+  await column.getByRole('button', { name: 'Tout l’historique…' }).waitFor()
+
+  // Lieu *Projets* : l'arbre, le centre suit, et la conversation ouverte reste ouverte.
+  await places.getByRole('button', { name: /^Projets/ }).click()
+  await column.getByRole('link', { name: /^Board/ }).first().waitFor()
+  await column.getByRole('link', { name: 'Nouveau projet…' }).waitFor()
+  const more = column.getByRole('button', { name: /autres sessions…$/ })
+  await more.click()
+  await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
+  assert.deepEqual(await activity.boundingBox(), before, 'l’activité doit rester fixe')
+  await column.getByRole('button', { name: 'Réduire la liste' }).click()
+  assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
+  await page.screenshot({ path: join(shots, 'lieu-projets.png') })
+
+  // Lieu *Planifiées* : les tâches par échéance, tous projets confondus.
+  await places.getByRole('button', { name: /^Planifiées/ }).click()
+  await column.getByRole('heading', { name: /Aujourd’hui|Cette semaine|Plus tard|En sommeil/ }).first()
+    .or(column.getByText('Aucune tâche planifiée')).waitFor()
+
+  // La modale d'activité : quatre filtres qui portent leur compte, plus un par projet.
+  await activity.getByRole('button', { name: /^Activité/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Activité globale' })
+  for (const name of ['Tout', 'À débloquer', 'En cours', 'Non lues']) {
+    await dialog.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
+  }
+  await dialog.getByRole('button', { name: 'Tous les projets' }).click()
+  await page.getByRole('menuitem', { name: 'Nimbus' }).click()
+  await page.screenshot({ path: join(shots, 'modale-activite.png') })
+  await page.keyboard.press('Escape')
+
+  // Le menu du compte : Services et Réglages y sont entrés, la colonne n'en garde qu'une.
+  assert.equal(await column.getByRole('link', { name: 'Services' }).count(), 0)
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Services' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Réglages' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Se déconnecter' }).waitFor()
+  await page.screenshot({ path: join(shots, 'menu-compte.png') })
+  await page.keyboard.press('Escape')
+
+  // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
-  await switcher.click()
-  await dialog.getByRole('textbox').fill('Docs')
-  await page.screenshot({ path: join(shots, 'project-switcher-mobile.png') })
-  await dialog.getByRole('textbox').press('ArrowDown')
-  await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).waitFor()
+  await places.waitFor()
+  // Le tiroir entre par une translation : capturer avant la fin la montre à moitié sortie.
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: join(shots, 'tiroir-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+
   assert.deepEqual(errors, [])
-  console.log('OK : navigation projet/session, recherche, épingles persistantes, vue globale, longue liste, activité fixe, mobile.')
+  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
