@@ -401,10 +401,18 @@ function toLinkDto(row: {
  */
 export function readTree(db: Db): VaultTreeDto {
   const notes = db
-    .select({ path: vaultNotes.path, folder: vaultNotes.folder, title: vaultNotes.title })
+    .select({
+      path: vaultNotes.path,
+      folder: vaultNotes.folder,
+      title: vaultNotes.title,
+      incoming: incomingDegree.as('incoming'),
+    })
     .from(vaultNotes)
     .orderBy(vaultNotes.path)
     .all()
 
-  return { folders: listFolders(db), notes }
+  return {
+    folders: listFolders(db),
+    notes: notes.map((note) => ({ ...note, incoming: Number(note.incoming ?? 0) })),
+  }
 }

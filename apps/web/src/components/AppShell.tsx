@@ -47,9 +47,11 @@ export function AppShell() {
   const dashboardRoute = useMatch('/p/:projectId')
   const projectsRoute = useMatch('/projects')
   const plannedRoute = useMatch('/schedules')
+  const vaultRoute = useMatch('/vault/*')
+  const vaultRootRoute = useMatch('/vault')
   const contextualHeader = Boolean(
     conversationRoute || freeConversationRoute || boardRoute || servicesRoute || schedulesRoute
-    || dashboardRoute || projectsRoute || plannedRoute,
+    || dashboardRoute || projectsRoute || plannedRoute || vaultRoute || vaultRootRoute,
   )
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()

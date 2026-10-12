@@ -177,14 +177,115 @@ try {
   const drafts = await (await context.request.get(`${base}/api/vault/notes?filter=drafts`)).json()
   assert.deepEqual(drafts.map((entry) => entry.path), ['Ébauche.md'], 'Une ébauche est une note sans dossier')
 
+
+  // ── Le lieu Savoir, la page du vault, l'éditeur et le panneau ───────────────────
+
+  // Les réglages sont une modale : tant qu'elle est ouverte, la colonne est derrière.
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  // Le lieu est allumé par défaut : la colonne doit le porter sans rien régler.
+  await page.locator('[aria-label="Lieux"]').getByRole('button', { name: 'Savoir', exact: true }).click()
+  await page.waitForURL('**/vault')
+
+  // La colonne dit ce qui réclame, et les comptes viennent de l'index.
+  await page.getByRole('link', { name: /^Ébauches/ }).waitFor()
+  await page.getByRole('link', { name: /^Sans lien entrant/ }).waitFor()
+  await page.getByRole('link', { name: /^Carrefours/ }).waitFor()
+  // Récentes : la porte réelle du lieu. Le degré entrant suit le titre, pour qui range.
+  await page.getByRole('link', { name: /^Disparue/ }).waitFor()
+
+  // L'atelier ouvre sur la dernière note touchée, pas sur un choix à faire.
+  await page.getByRole('heading', { level: 1 }).waitFor()
+  await page.locator('.cm-content').waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '06-atelier-sombre.png') })
+
+  // Une note ouverte depuis la colonne : son titre et son dossier sont dans la bande.
+  await page.getByRole('link', { name: /^Rapprochement\b/ }).first().click()
+  await page.waitForURL('**/vault/note/Produit/Rapprochement.md')
+  await page.getByRole('heading', { level: 1, name: /Produit\s+Rapprochement/ }).waitFor()
+  // Cinq notes la citent : la pastille le dit, et c'est un fait du texte.
+  await page.getByText('5 liens entrants', { exact: true }).waitFor()
+
+  // Le panneau s'ouvre depuis la bande de la note, et retient son état.
+  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+
+  // Liens montre l'inversion exacte des liens sortants.
+  await page.getByRole('button', { name: 'Liens, 5 entrants', exact: true }).click()
+  await page.getByRole('heading', { name: 'Qui cite cette note (5)', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Ce qu’elle cite (0)', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '07-panneau-liens-sombre.png') })
+
+  // Rapprochements : la vue existe, son calcul n'est pas là, et elle le dit.
+  await page.getByRole('button', { name: 'Rapprochements', exact: true }).click()
+  await page.getByText('Les rapprochements ne sont pas encore calculés.', { exact: true }).waitFor()
+
+  // Historique : ce que git raconte de cette note.
+  await page.getByRole('button', { name: 'Historique', exact: true }).click()
+  await page.getByText('le vault d’essai', { exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '08-panneau-historique-sombre.png') })
+
+  // L'écriture au centre, et l'enregistrement à la pause de frappe.
+  const editor = page.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('\nUne phrase tapée dans l’atelier.\n')
+  // L'index relit la note : l'historique doit alors dire qu'elle n'est plus committée.
+  await page.getByText('Modifiée depuis le dernier commit. Enregistrer n’est pas committer.', { exact: true }).waitFor()
+
+  // `[[` ouvre le sélecteur de note, et le lien devient un fait dès l'enregistrement.
+  await page.keyboard.type('Voir [[Atel')
+  await page.getByRole('option', { name: /Atelier/ }).first().click()
+  await page.getByRole('button', { name: /^Liens/ }).click()
+  await page.getByRole('heading', { name: 'Ce qu’elle cite (1)', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '09-lien-ecrit-sombre.png') })
+
+  // Le lien écrit se suit d'un clic : c'est le geste qui fait du vault un atelier.
+  await page.locator('.cm-vault-link').first().click()
+  await page.waitForURL('**/vault/note/Produit/Atelier.md')
+
+  // Créer dans un dossier : le titre se tape dans l'arbre, et la note hérite du dossier.
+  await page.getByRole('button', { name: 'Notes', exact: true }).click()
+  const folder = page.getByRole('button', { name: /^Journal/ })
+  await folder.hover()
+  await page.getByRole('button', { name: 'Nouvelle note dans « Journal »', exact: true }).click()
+  await page.getByPlaceholder('Titre de la note').fill('Note née dans l’arbre')
+  await page.keyboard.press('Enter')
+  await page.waitForURL('**/vault/note/Journal/Note%20n%C3%A9e%20dans%20l%E2%80%99arbre.md')
+  await page.getByRole('heading', { level: 1, name: /Journal\s+Note née dans l’arbre/ }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '10-panneau-arbre-sombre.png') })
+
+  // Parcourir : les colonnes qu'on trie, quand on range plutôt qu'on écrit.
+  await page.getByRole('link', { name: /^Sans lien entrant/ }).click()
+  await page.waitForURL('**/vault/parcourir?liste=orphans')
+  await page.getByRole('columnheader', { name: /Entrants/ }).waitFor()
+  await page.getByRole('cell', { name: 'Note née dans l’arbre' }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, '11-parcourir-sombre.png') })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+  await page.screenshot({ animations: 'disabled', path: join(shots, '12-parcourir-clair.png') })
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+
+  // Le tri se demande à la colonne, et change l'ordre des lignes.
+  const firstCell = () => page.locator('tbody tr').first().locator('td').first().innerText()
+  const byRecency = await firstCell()
+  await page.getByRole('table').getByRole('button', { name: 'Note', exact: true }).click()
+  assert.notEqual(await firstCell(), byRecency, 'Trier par titre doit changer la première ligne')
+
+
   // Mobile : l'écran tient sans débordement horizontal.
   await page.setViewportSize({ width: 390, height: 844 })
   await delay(350)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
-  await page.screenshot({ animations: 'disabled', path: join(shots, '05-reglage-mobile-sombre.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, '13-parcourir-mobile-sombre.png') })
+
+  // La page du vault au doigt : l'écriture occupe l'écran, le panneau le recouvre.
+  await page.goto(`${base}/vault/note/Produit/Atelier.md`)
+  await page.locator('.cm-content').waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  await page.screenshot({ animations: 'disabled', path: join(shots, '14-atelier-mobile-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : chemin refusé si relatif, index lancé au changement de chemin, cinq comptes, réindexation et liens entrants.')
+  console.log('OK : réglage du vault, lieu Savoir, atelier, [[lien]] écrit puis suivi, panneau (Liens, Historique, arbre), création dans un dossier, Parcourir trié, et les deux écrans au doigt.')
 } finally {
   await browser?.close()
   for (const child of children.reverse()) {

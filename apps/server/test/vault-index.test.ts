@@ -556,7 +556,7 @@ test('l’arbre du vault ne montre que les dossiers où des notes vivent', async
   const { db, vault, write, config } = await harness(t)
   const app = await routes(t, db, vault, config)
 
-  await write('Produit/Atelier.md', '# Atelier\n')
+  await write('Produit/Atelier.md', '# Atelier\n\nVoir [[Chantiers]].\n')
   await write('Produit/Idées/Chantiers.md', '# Chantiers\n')
   await write('Ébauche.md', 'Rien encore.\n')
   await vault.reindex()
@@ -569,6 +569,9 @@ test('l’arbre du vault ne montre que les dossiers où des notes vivent', async
     'Produit/Idées/Chantiers.md',
     'Ébauche.md',
   ])
+  // Le degré entrant accompagne chaque note : c'est par lui que le sélecteur de `[[`
+  // classe ses propositions, les carrefours d'abord.
+  assert.deepEqual(tree.notes.map((note) => note.incoming), [0, 1, 0])
 })
 
 test('sans vault réglé, les routes qui touchent au disque le disent', async (t) => {

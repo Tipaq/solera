@@ -137,7 +137,12 @@ export interface VaultReindexDto {
  */
 export interface VaultTreeDto {
   folders: VaultFolderDto[]
-  notes: { path: string; folder: string; title: string }[]
+  /**
+   * Le degré entrant accompagne chaque note, et ce n'est pas un ornement : c'est par
+   * lui que le sélecteur de `[[` classe ses propositions — les carrefours d'abord,
+   * parce que c'est là qu'on veut accrocher.
+   */
+  notes: { path: string; folder: string; title: string; incoming: number }[]
 }
 
 /** Le texte d'une note, pour l'éditeur. */

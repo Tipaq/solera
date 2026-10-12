@@ -18,6 +18,8 @@ import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
 import { SchedulesPage } from './routes/SchedulesPage'
 import { SkillEditorPage } from './routes/SkillEditorPage'
+import { VaultBrowsePage } from './routes/VaultBrowsePage'
+import { VaultPage } from './routes/VaultPage'
 
 /**
  * Les anciennes adresses des réglages, qui ne sont plus des pages.
@@ -71,6 +73,10 @@ export function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
+          {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note. */}
+          <Route path="/vault/parcourir" element={<VaultBrowsePage />} />
+          <Route path="/vault/note/*" element={<VaultPage />} />
+          <Route path="/vault" element={<VaultPage />} />
           <Route path="/services" element={<ServicesPage />} />
           {/* La porte d'un projet est son tableau de bord ; les réglages, qui
               l'occupaient, sont passés dans son `⋯`. */}
