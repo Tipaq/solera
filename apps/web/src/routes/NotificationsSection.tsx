@@ -1,6 +1,6 @@
 import { Card, CardBody } from '@solera/ui'
 import { PushControls } from '../components/PushControls'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { useTranslate } from '../lib/i18n'
 
 export function NotificationsSection() {

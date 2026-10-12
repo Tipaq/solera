@@ -1,9 +1,9 @@
 import { useMutation } from '@tanstack/react-query'
+import { showSettingsSection } from '../lib/settings-dialog'
 import { KeyRound, Mic, RadioTower, ShieldCheck, Sparkles } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Presets, Select } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
 import { useTranslate } from '../lib/i18n'
@@ -158,9 +158,13 @@ export function DictationSettingsPage() {
             ) : (
               <Banner tone="info">
                 {t('stt.secret.none')}{' '}
-                <Link to="/settings/secrets" className="underline">
+                <button
+                  type="button"
+                  onClick={() => showSettingsSection('secrets')}
+                  className="underline"
+                >
                   {t('stt.secret.manage')}
-                </Link>
+                </button>
               </Banner>
             )}
 

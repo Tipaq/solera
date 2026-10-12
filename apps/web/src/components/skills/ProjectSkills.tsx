@@ -1,5 +1,5 @@
 import { BookOpen } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { openSettings } from '../../lib/settings-dialog'
 import { useTranslate } from '../../lib/i18n'
 import { useLocalSkills, useSkillLibrary } from '../../lib/skill-library'
 import { Badge, Banner, Card, CardBody, CardHeader } from '@solera/ui'
@@ -40,9 +40,13 @@ export function ProjectSkills({ projectId, isOwner }: { projectId: string; isOwn
         )}
         <p className="text-xs text-ink-faint">
           {t('skills.project.globals', { count: globals })}{' '}
-          <Link to="/settings/skills" className="text-accent hover:underline">
+          <button
+            type="button"
+            onClick={() => openSettings('skills')}
+            className="text-accent hover:underline"
+          >
             {t('skills.project.globals.link')}
-          </Link>
+          </button>
         </p>
 
         {repository.length > 0 ? (

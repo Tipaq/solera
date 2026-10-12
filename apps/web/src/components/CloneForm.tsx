@@ -2,6 +2,7 @@ import { GitBranch, Globe, Lock } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { parseRemoteUrl, type GitRepoDto } from '@solera/protocol'
 import { Link } from 'react-router-dom'
+import { openSettings } from '../lib/settings-dialog'
 import { ApiRequestError } from '../lib/api'
 import { GITHUB_HOST, useGitCredentials } from '../lib/git-credentials'
 import { translateError, useTranslate } from '../lib/i18n'
@@ -149,9 +150,9 @@ export function CloneForm() {
           {targetHost
             ? t('clone.private.notice.host', { host: targetHost })
             : t('clone.private.notice')}{' '}
-          <Link to="/settings/git" className="underline">
+          <button type="button" onClick={() => openSettings('git')} className="underline">
             {t('clone.private.link')}
-          </Link>
+          </button>
         </Banner>
       ) : null}
 
@@ -200,9 +201,9 @@ export function CloneForm() {
           {/* L'échec d'authentification est le seul dont la réparation est à un clic
               d'ici : y mener vaut mieux que de laisser chercher dans les réglages. */}
           {job.error.code === 'clone_auth_failed' ? (
-            <Link to="/settings/git" className="underline">
+            <button type="button" onClick={() => openSettings('git')} className="underline">
               {t('clone.private.link')}
-            </Link>
+            </button>
           ) : null}
         </Banner>
       ) : null}

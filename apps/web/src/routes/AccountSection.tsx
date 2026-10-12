@@ -2,7 +2,7 @@ import { ShieldCheck } from 'lucide-react'
 import { AccountForm } from '../components/AccountForm'
 import { useCurrentUser } from '../lib/session'
 import { Badge, Card, CardBody } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 export function AccountSection() {
   const { data: user } = useCurrentUser()

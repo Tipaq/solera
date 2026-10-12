@@ -6,7 +6,7 @@ import { Banner, EmptyState } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'
 import { useSkillLibrary } from '../lib/skill-library'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 /**
  * Bibliothèque de skills globale : livrée à toutes les conversations de l'instance.

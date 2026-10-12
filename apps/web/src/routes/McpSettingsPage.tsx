@@ -1,6 +1,6 @@
 import { useTranslate } from '../lib/i18n'
 import { McpRegistry } from '../components/mcp/McpRegistry'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 /**
  * La section *Serveurs MCP* des réglages.

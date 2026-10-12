@@ -12,7 +12,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   skillDescriptionSchema,
   skillNameSchema,
@@ -50,6 +50,7 @@ import {
   useUpdateLibrarySkill,
 } from '../lib/skill-library'
 import { shortCommit } from '../lib/skill-sources'
+import { openSettings } from '../lib/settings-dialog'
 
 const errorOf = (error: unknown): string | null => (error instanceof ApiRequestError ? error.message : null)
 
@@ -72,7 +73,15 @@ export function SkillEditorPage() {
       <EmptyState
         icon={<BookOpen size={22} />}
         title={t('skills.editor.notFound')}
-        action={<Link to="/settings/skills" className="text-sm text-accent hover:underline">{t('skills.editor.backGlobal')}</Link>}
+        action={
+          <button
+            type="button"
+            onClick={() => openSettings('skills')}
+            className="text-sm text-accent hover:underline"
+          >
+            {t('skills.editor.backGlobal')}
+          </button>
+        }
       />
     )
   }
@@ -127,7 +136,13 @@ function SkillEditor({
     editor.reset()
   }
 
-  const back = skill.scope === 'global' ? '/settings/skills' : `/p/${skill.projectId}/settings`
+  // La bibliothèque globale n'est plus une page : quitter un skill global rend
+  // l'accueil et rouvre les réglages sur sa section. Pour un skill de projet, ce
+  // sont les réglages du projet — `/p/:id` est devenu son tableau de bord.
+  const back = () => {
+    if (skill.scope === 'global') openSettings('skills')
+    else navigate(`/p/${skill.projectId}/settings`)
+  }
   const backLabel =
     skill.scope === 'global'
       ? t('skills.editor.backGlobal')
@@ -138,10 +153,14 @@ function SkillEditor({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 md:p-8">
-      <Link to={back} className="flex items-center gap-1 self-start text-sm text-ink-faint hover:text-ink">
+      <button
+        type="button"
+        onClick={back}
+        className="flex items-center gap-1 self-start text-sm text-ink-faint hover:text-ink"
+      >
         <ArrowLeft size={14} />
         {backLabel}
-      </Link>
+      </button>
 
       {/* La largeur minimale du titre renvoie les boutons à la ligne au doigt, plutôt
           que d'écraser la phrase d'invocation dans une colonne de trois mots. */}
@@ -275,7 +294,7 @@ function SkillEditor({
         confirmLabel={t('skills.delete.confirm')}
         tone="critical"
         busy={remove.isPending}
-        onConfirm={() => remove.mutate(skill.id, { onSuccess: () => navigate(back) })}
+        onConfirm={() => remove.mutate(skill.id, { onSuccess: back })}
       >
         {t('skills.delete.body')}
       </ConfirmDialog>

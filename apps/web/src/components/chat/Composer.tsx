@@ -1,4 +1,5 @@
 import { TooltipButton } from '@solera/ui'
+import { openSettings } from '../../lib/settings-dialog'
 import { ArrowUp, Clock, Loader2, Mic, Square } from 'lucide-react'
 import {
   useCallback,
@@ -22,7 +23,6 @@ import {
   type McpServerStatus,
   type SlashCommandDto,
 } from '@solera/protocol'
-import { useNavigate } from 'react-router-dom'
 import type { ContextState } from '../../lib/chat-fold'
 import { readDraft, saveDraft } from '../../lib/composer-drafts'
 import { useComposerDrops, useComposerPrefill, useComposerReferences } from '../../lib/composer-ref'
@@ -441,7 +441,6 @@ export function Composer({
   // Le micro reste visible quand rien n'est configuré : un bouton absent ne dit pas
   // que la fonction existe, la dialog explique et mène aux réglages.
   const [sttNotice, setSttNotice] = useState(false)
-  const navigate = useNavigate()
 
   // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
   // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
@@ -885,7 +884,7 @@ export function Composer({
               onOpenChange={setSttNotice}
               title={t('composer.dictate.unconfigured.title')}
               confirmLabel={t('composer.dictate.unconfigured.action')}
-              onConfirm={() => navigate('/settings/dictee')}
+              onConfirm={() => openSettings('dictee')}
             >
               <p>{t('composer.dictate.unconfigured.body')}</p>
             </ConfirmDialog>
