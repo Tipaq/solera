@@ -1,7 +1,7 @@
 import { MenuCheckboxItem, MenuItem, MenuLabel, MenuSeparator, MenuSub, SwitchRow } from '@solera/ui'
+import { openSettings } from '../../lib/settings-dialog'
 import { BookOpen, Search } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { useSkillLibrary, useUpdateLibrarySkill } from '../../lib/skill-library'
@@ -93,10 +93,10 @@ export function SkillsInventory({ projectId, config, skills, commands, library: 
     {/* En pied, comme la maquette : c'est une sortie du composer vers un autre écran,
         pas une des lignes qu'on vient lire. */}
     <div className="shrink-0 border-t border-line px-2 pt-1 pb-[max(0.25rem,var(--sg-safe-bottom))]">
-      <Link to="/settings/skills" onClick={onClose}
-        className="flex min-h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-soft hover:bg-accent-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+      <button type="button" onClick={() => { onClose?.(); openSettings('skills') }}
+        className="flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-soft hover:bg-accent-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
         <BookOpen size={16} className="shrink-0" />{t('composer.skills.manage')}
-      </Link>
+      </button>
     </div>
   </>
 }
@@ -140,7 +140,6 @@ function InventoryRow({ name, description, scope }: { name: string; description:
  */
 export function SkillsMenu({ projectId, config, skills, commands, library: librarySetting }: SkillsInventoryProps) {
   const t = useTranslate()
-  const navigate = useNavigate()
   const library = useSkillLibrary(projectId ?? null)
   const update = useUpdateLibrarySkill()
   const configured = (library.data?.skills ?? []).filter((skill) => !skill.problem)
@@ -187,7 +186,7 @@ export function SkillsMenu({ projectId, config, skills, commands, library: libra
         ? <p className="px-2.5 py-1.5 text-meta text-ink-faint">{t('composer.skills.notReported')}</p>
         : null}
     </MenuSub>
-    <MenuItem icon={<BookOpen size={16} />} onSelect={() => navigate('/settings/skills')}>
+    <MenuItem icon={<BookOpen size={16} />} onSelect={() => openSettings('skills')}>
       {t('composer.skills.manage')}
     </MenuItem>
   </>

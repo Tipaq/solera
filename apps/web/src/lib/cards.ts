@@ -1,6 +1,13 @@
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { CardColumn, CardDto, CardLinkDto, CardNoteDto } from '@solera/protocol'
+import type {
+  CardColumn,
+  CardDto,
+  CardLinkDto,
+  CardNoteDto,
+  CardSearchDto,
+} from '@solera/protocol'
 import { api } from './api'
+import { useDebounced } from './search'
 
 const cardsKey = (projectId: string) => ['cards', projectId]
 
@@ -9,6 +16,23 @@ export function useCards(projectId: string | undefined) {
     queryKey: cardsKey(projectId ?? ''),
     queryFn: () => api.get<CardDto[]>(`/api/projects/${projectId}/cards`),
     enabled: Boolean(projectId),
+    staleTime: 15_000,
+  })
+}
+
+/**
+ * Les cartes de tous les projets visibles, pour la palette.
+ *
+ * Sans saisie, les dernières touchées : la palette au repos propose ce qu'on rouvre.
+ * La frappe est amortie comme la recherche dans les messages — une requête par lettre
+ * traverse tous les projets pour un résultat qu'on ne lit pas encore.
+ */
+export function useCardSearch(query: string, enabled: boolean) {
+  const settled = useDebounced(query.trim())
+  return useQuery({
+    queryKey: ['card-search', settled],
+    queryFn: () => api.get<CardSearchDto>(`/api/cards/search?q=${encodeURIComponent(settled)}`),
+    enabled,
     staleTime: 15_000,
   })
 }

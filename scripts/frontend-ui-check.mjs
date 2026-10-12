@@ -68,6 +68,16 @@ try {
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
   const base = `http://127.0.0.1:${webPort}`
+
+  /**
+   * Les réglages ne sont plus une page : l'ancienne adresse ouvre la modale et rend
+   * la main à l'accueil. C'est le seul chemin que cette suite a pour l'ouvrir tant que
+   * le menu du compte n'est pas porté.
+   */
+  const openSettings = async (target, section) => {
+    await target.goto(`${base}/settings/${section}`)
+    await target.getByRole('dialog', { name: 'Réglages', exact: true }).waitFor()
+  }
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
@@ -450,15 +460,15 @@ try {
   const heroPath = `/p/${project.id}/c/${hero.id}`
   await page.goto(base + heroPath)
   await page.locator('textarea').waitFor()
-  await page.goto(base + '/settings/compte')
+  await page.goto(base + '/projects/new')
   await page.goto(base + '/')
   await page.waitForURL(base + heroPath)
   await openCard(2)
-  await page.goto(base + '/settings/compte')
+  await page.goto(base + '/projects/new')
   await page.goto(base + '/')
   await page.waitForURL(`${board}?carte=2`)
   const currentUser = await (await context.request.get(base + '/api/auth/me')).json()
-  await page.goto(base + '/settings/compte')
+  await page.goto(base + '/projects/new')
   await page.evaluate(({ id }) => localStorage.setItem(`solera.lastContext:${id}`, '/p/deleted/c/inaccessible'), currentUser)
   await page.goto(base + '/')
   await page.waitForURL(/\/p\/(?!deleted)[^/]+\/c\//)
@@ -517,10 +527,10 @@ try {
   }
   console.log('OK : choix de l’agent au clavier, brouillon conservé, quotas visibles et envoi accessible.')
 
-  await page.goto(base + '/settings/apparence')
-  await page.getByRole('heading', { name: 'Personnel', exact: true }).waitFor()
-  await page.getByRole('heading', { name: 'Agents et projets', exact: true }).waitFor()
-  await page.getByRole('heading', { name: 'Administration', exact: true }).waitFor()
+  await openSettings(page, 'apparence')
+  for (const group of ['Toi', 'Les agents', "L'instance"]) {
+    await page.getByRole('heading', { name: group, exact: true }).waitFor()
+  }
   const size = page.getByRole('slider', { name: 'Taille du texte', exact: true })
   assert.equal(await size.getAttribute('aria-valuetext'), '15 px')
   await size.focus()
@@ -532,7 +542,7 @@ try {
   await page.keyboard.press('ArrowRight')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')
   await settingsSaved
-  await page.reload()
+  await openSettings(page, 'apparence')
   await size.waitFor()
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')
 
@@ -547,7 +557,7 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem('solera.tint')), '0')
   assert.equal(await hue.inputValue(), customHue, 'A background preset preserves the accent hue')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px', 'A preset preserves reading settings')
-  await page.reload()
+  await openSettings(page, 'apparence')
   await neutral.waitFor()
   assert.equal(await neutral.isChecked(), true)
   await page.getByRole('radio', { name: 'Discret', exact: true }).check()
@@ -558,6 +568,40 @@ try {
   assert.equal(await page.getByRole('radio', { name: 'Discret', exact: true }).isChecked(), true)
   console.log('OK : ambiances persistantes, teinte et lecture conservées, thème contrasté respecté.')
 
+  // Le réglage Affichage : ce qu'on décroche de la colonne tient d'un chargement à
+  // l'autre, et les deux lieux figés n'ont pas d'interrupteur à tenter.
+  await openSettings(page, 'affichage')
+  const settings = page.getByRole('dialog', { name: 'Réglages', exact: true })
+  await settings.getByRole('heading', { name: 'Affichage', exact: true }).waitFor()
+  const skillsPlace = settings.getByRole('switch', { name: /^Skills/ })
+  assert.equal(await skillsPlace.getAttribute('aria-checked'), 'true')
+  await skillsPlace.click()
+  assert.equal(await page.evaluate(() => localStorage.getItem('solera.display.skills')), '0')
+  assert.equal(await settings.getByRole('switch', { name: /^Fils/ }).count(), 0, 'Fils ne se décroche pas')
+  await openSettings(page, 'affichage')
+  assert.equal(await settings.getByRole('switch', { name: /^Skills/ }).getAttribute('aria-checked'), 'false')
+  await settings.getByRole('button', { name: 'Fermer les réglages', exact: true }).first().click()
+  await settings.waitFor({ state: 'hidden' })
+  console.log('OK : réglages en modale, trois groupes, réglage Affichage persistant.')
+
+  // La palette élargie : au repos elle propose ce qu'on rouvre et les gestes, à la
+  // frappe elle groupe par famille, et un préfixe va droit à l'une d'elles.
+  await page.goto(`${base}/p/${project.id}/board`)
+  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).waitFor()
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog', { name: 'Rechercher', exact: true })
+  await palette.getByText('Reprendre', { exact: true }).waitFor()
+  await palette.getByText('Gestes', { exact: true }).waitFor()
+  await palette.getByRole('button', { name: /^Ouvrir les réglages/ }).waitFor()
+  await palette.getByRole('textbox').fill('#')
+  await palette.getByText('Cartes', { exact: true }).waitFor()
+  assert.equal(await palette.getByText('Gestes', { exact: true }).count(), 0,
+    'Un préfixe ne laisse que sa famille')
+  await palette.getByRole('textbox').fill('')
+  await page.keyboard.press('Escape')
+  await palette.waitFor({ state: 'hidden' })
+  console.log('OK : palette au repos, groupée par famille, et ses préfixes.')
+
   const createdUser = await context.request.post(base + '/api/users', { data: { username: 'ui-reader', displayName: 'UI Reader', password: 'ui-test-password', isAdmin: false } })
   assert.ok(createdUser.ok())
   const other = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block', storageState: await context.storageState() })
@@ -567,9 +611,11 @@ try {
   assert.equal((await other.request.get(`${base}/api/conversations/${hero.id}/file/download?path=package.json`)).status(), 404)
   const otherPage = await other.newPage()
   otherPage.on('pageerror', (error) => errors.push(error.message))
-  await otherPage.goto(base + '/settings/compte')
-  await otherPage.getByRole('heading', { name: 'Personnel', exact: true }).waitFor()
-  assert.equal(await otherPage.getByRole('heading', { name: 'Administration', exact: true }).count(), 0)
+  await openSettings(otherPage, 'compte')
+  await otherPage.getByRole('heading', { name: 'Toi', exact: true }).waitFor()
+  assert.equal(await otherPage.getByRole('button', { name: 'Comptes', exact: true }).count(), 0,
+    'Une section réservée aux administrateurs ne figure pas dans la liste')
+  await otherPage.getByRole('button', { name: 'Fermer les réglages', exact: true }).first().click()
   await otherPage.evaluate(({ id, path }) => {
     localStorage.setItem(`solera.lastContext:${id}`, path)
   }, { id: currentUser.id, path: `/p/${project.id}/board?carte=2` })

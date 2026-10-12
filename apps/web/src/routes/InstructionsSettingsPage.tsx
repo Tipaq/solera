@@ -2,7 +2,7 @@ import { HowItWorks, INSTRUCTIONS_HELP } from '../components/instructions/HowItW
 import { GlobalInstructions } from '../components/instructions/Instructions'
 import { Banner } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 /**
  * La partie globale de SOLERA.md : injectée dans toutes les sessions de l'instance,

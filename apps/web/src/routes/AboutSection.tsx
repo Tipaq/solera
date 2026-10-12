@@ -12,7 +12,7 @@ import {
   useUpdateStatus,
   useVersionInfo,
 } from '../lib/system'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 const PHASE_LABEL_KEYS: Record<UpdatePhase, MessageKey> = {
   idle: 'about.update.phase.idle',
