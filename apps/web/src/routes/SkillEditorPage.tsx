@@ -127,7 +127,7 @@ function SkillEditor({
     editor.reset()
   }
 
-  const back = skill.scope === 'global' ? '/settings/skills' : `/p/${skill.projectId}`
+  const back = skill.scope === 'global' ? '/settings/skills' : `/p/${skill.projectId}/settings`
   const backLabel =
     skill.scope === 'global'
       ? t('skills.editor.backGlobal')

@@ -199,7 +199,14 @@ export function AppShell() {
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
   const schedulesRoute = useMatch('/p/:projectId/schedules')
-  const contextualHeader = Boolean(conversationRoute || boardRoute || servicesRoute || schedulesRoute)
+  // Les trois pages de lieu portent leur propre segment de bande, comme le board.
+  const dashboardRoute = useMatch('/p/:projectId')
+  const projectsRoute = useMatch('/projects')
+  const allSchedulesRoute = useMatch('/schedules')
+  const contextualHeader = Boolean(
+    conversationRoute || boardRoute || servicesRoute || schedulesRoute ||
+    dashboardRoute || projectsRoute || allSchedulesRoute,
+  )
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()
   useFileDropGuard()
@@ -909,7 +916,7 @@ function ProjectGroup({
               icon={<SlidersHorizontal size={14} />}
               onSelect={() => {
                 onNavigate()
-                navigate(`/p/${project.id}`)
+                navigate(`/p/${project.id}/settings`)
               }}
             >
               {t('shell.project.settings')}

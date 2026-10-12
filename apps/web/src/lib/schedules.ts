@@ -4,6 +4,7 @@ import type {
   AgentKind,
   ScheduleCadence,
   ScheduleOverlapPolicy,
+  ScheduleRunStatus,
   ScheduledRunDto,
   ScheduledTaskDto,
 } from '@solera/protocol'
@@ -98,9 +99,43 @@ export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
   waiting: 'schedule.state.waiting',
 }
 
+/**
+ * Le dernier tir qui dit quelque chose de la tâche.
+ *
+ * Les sautés sont écartés : ils signalent un chevauchement, pas une santé. Une ligne
+ * resserrée n'a la place que d'un verdict, et c'est celui-là.
+ */
+export function lastRun(task: ScheduledTaskDto): ScheduledRunDto | undefined {
+  return task.runs.find((run) => run.status !== 'skipped')
+}
+
+export const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
+  running: 'schedule.run.running',
+  succeeded: 'schedule.run.succeeded',
+  failed: 'schedule.run.failed',
+  timed_out: 'schedule.run.timedOut',
+  skipped: 'schedule.run.skipped',
+}
+
+export const RUN_DOTS: Record<ScheduleRunStatus, string> = {
+  running: 'bg-accent animate-pulse',
+  succeeded: 'bg-positive',
+  failed: 'bg-critical',
+  timed_out: 'bg-caution',
+  skipped: 'bg-line-strong',
+}
+
+/** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
+export const RUN_TONES: Record<ScheduleRunStatus, 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'> = {
+  running: 'accent',
+  succeeded: 'positive',
+  failed: 'critical',
+  timed_out: 'caution',
+  skipped: 'neutral',
+}
+
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
-  // Les tirs sautés ne disent rien de la santé de la tâche : on lit le dernier vrai.
-  const last = task.runs.find((run) => run.status !== 'skipped')
+  const last = lastRun(task)
   if (last?.status === 'running') return 'running'
   if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'

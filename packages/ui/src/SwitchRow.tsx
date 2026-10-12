@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cx } from './cx'
+import { SwitchTrack } from './Switch'
 
 /**
  * Une ligne de liste qui s'allume ou s'éteint : un intitulé, sa phrase d'explication,
@@ -52,15 +53,7 @@ export function SwitchRow({
         <span className="block text-sm text-ink">{label}</span>
         {description ? <span className="mt-0.5 block text-meta text-ink-faint">{description}</span> : null}
       </span>
-      <span
-        aria-hidden
-        className={cx(
-          'flex h-5 w-8 shrink-0 items-center rounded-full p-0.5 transition-colors',
-          checked ? 'justify-end bg-accent' : 'bg-line-strong',
-        )}
-      >
-        <span className="size-4 rounded-full bg-surface" />
-      </span>
+      <SwitchTrack checked={checked} />
     </button>
   )
 }

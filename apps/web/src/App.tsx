@@ -7,9 +7,12 @@ import { HomePage } from './routes/HomePage'
 import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
+import { ProjectDashboardPage } from './routes/ProjectDashboardPage'
 import { ProjectPage } from './routes/ProjectPage'
+import { ProjectsPage } from './routes/ProjectsPage'
 import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
+import { SchedulesPage } from './routes/SchedulesPage'
 import { AboutSection } from './routes/AboutSection'
 import { AccountSection } from './routes/AccountSection'
 import { ArchivingSettingsPage } from './routes/ArchivingSettingsPage'
@@ -52,9 +55,14 @@ export function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
+          <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/services" element={<ServicesPage />} />
-          <Route path="/p/:projectId" element={<ProjectPage />} />
+          {/* La porte d'un projet est son tableau de bord ; les réglages, qui
+              l'occupaient, sont passés dans son `⋯`. */}
+          <Route path="/p/:projectId" element={<ProjectDashboardPage />} />
+          <Route path="/p/:projectId/settings" element={<ProjectPage />} />
           <Route path="/p/:projectId/board" element={<BoardPage />} />
           <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}

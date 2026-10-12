@@ -181,6 +181,20 @@ export interface ProjectImageDto {
   provisional: boolean
 }
 
+/**
+ * L'état du dépôt d'un workspace, tel que les listes l'affichent : la branche, et de
+ * quoi écrire « main +4 −1 » sans aller chercher le diff.
+ */
+export interface GitSummaryDto {
+  branch: string
+  isDirty: boolean
+  /** Fichiers que `git status` signale, suivis ou non. */
+  changedFiles: number
+  /** Lignes gagnées et perdues depuis `HEAD`. */
+  added: number
+  removed: number
+}
+
 export interface ProjectDto {
   id: string
   name: string
@@ -203,7 +217,7 @@ export interface ProjectDto {
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
-  git: { branch: string; isDirty: boolean } | null
+  git: GitSummaryDto | null
 }
 
 // Pièces jointes
@@ -504,7 +518,7 @@ export interface WorktreeDto {
   baseRef: string
   createdAt: number
   /** Null si le dossier a disparu du disque en dehors de Solera. */
-  git: { branch: string; isDirty: boolean } | null
+  git: GitSummaryDto | null
   /** Nombre de conversations qui l'utilisent, pour prévenir avant suppression. */
   conversationCount: number
 }

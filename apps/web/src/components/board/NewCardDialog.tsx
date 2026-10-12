@@ -10,14 +10,16 @@ import { Button, IconButton, Select } from '@solera/ui'
 import { CardEditor } from './CardEditor'
 import { columnLabel } from './columns'
 
-export function NewCardDialog({ projectId, open, onClose, onCreated }: {
+export function NewCardDialog({ projectId, open, onClose, onCreated, column: initialColumn = 'todo' }: {
   projectId: string; open: boolean; onClose: () => void; onCreated: (card: CardDto) => void
+  /** Colonne présélectionnée, quand on crée depuis l'en-tête de l'une d'elles. */
+  column?: CardColumn
 }) {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', `new:${projectId}`)
   const value = draft ?? { title: '', description: '' }
-  const [column, setColumn] = useState<CardColumn>('todo')
+  const [column, setColumn] = useState<CardColumn>(initialColumn)
   const create = useCreateCard(projectId)
   const submit = () => {
     if (!value.title.trim() || create.isPending) return

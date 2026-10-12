@@ -55,7 +55,7 @@ export function ProjectSwitcher({ projects, selected, all, onAll, onSelect, rece
           <ChevronsUpDown size={14} className="shrink-0 text-ink-faint" />
         </button>
       </Dialog.Trigger>
-      {!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>}
+      {!all && selected && <IconButton label={t('shell.project.settings')} onClick={() => { navigate(`/p/${selected.id}/settings`); onNavigate() }}><SlidersHorizontal size={16} /></IconButton>}
       </div>
       <Dialog.Portal>
         <Dialog.Overlay className="scrim z-40" />
