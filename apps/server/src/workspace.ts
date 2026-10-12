@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs'
+import { createWriteStream, mkdirSync } from 'node:fs'
 import { mkdir, readdir, rename, rm, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -34,15 +34,35 @@ export function conversationWorkspace(db: Db, conversationId: string, userId: st
       visibility: projects.visibility,
     })
     .from(conversations)
-    .innerJoin(projects, eq(projects.id, conversations.projectId))
+    // Jointure externe : un fil libre n'a pas de projet, et une jointure interne le
+    // rendrait introuvable au lieu de le rendre sans dossier.
+    .leftJoin(projects, eq(projects.id, conversations.projectId))
     .where(eq(conversations.id, conversationId))
     .get()
 
   if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
+  if (row.conversation.projectId === null) throw noWorkspace()
   if (row.ownerId !== userId && row.visibility !== 'shared') {
     throw notFound('conversation_not_found', 'Conversation not found.')
   }
-  return resolveConversationCwd(db, row.conversation)
+  const cwd = resolveConversationCwd(db, row.conversation)
+  if (cwd === null) throw noWorkspace()
+  return cwd
+}
+
+/**
+ * Ce que répondent les routes du panneau à un fil libre : il n'a pas de dossier.
+ *
+ * Un 400 et non un 404 : la conversation existe bel et bien, c'est la question qui n'a
+ * pas de sens pour elle. L'interface ne pose d'ailleurs pas la question — elle ne
+ * montre que *Agent* — mais la route est le garde-fou, pas l'interface.
+ */
+export function noWorkspace(): HttpError {
+  return new HttpError(
+    400,
+    'conversation_without_workspace',
+    'This conversation has no working directory.',
+  )
 }
 
 /**
@@ -83,7 +103,15 @@ export function projectCwd(
   return worktree.removedAt ? workspace : worktree.path
 }
 
-export function resolveConversationCwd(db: Db, conversation: ConversationRow): string {
+/**
+ * Répertoire de travail d'une conversation, ou `null` quand elle n'en a pas.
+ *
+ * `null` est le cas du fil libre, et il n'est pas une erreur : c'est à l'appelant de
+ * dire ce qu'il en fait — le gestionnaire de sessions lui donne un dossier vide à lui,
+ * les routes du panneau refusent.
+ */
+export function resolveConversationCwd(db: Db, conversation: ConversationRow): string | null {
+  if (conversation.projectId === null) return null
   if (conversation.worktreeId) {
     const worktree = db
       .select()
@@ -93,9 +121,27 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
     if (worktree && !worktree.removedAt) return worktree.path
   }
 
-  const project = db.select().from(projects).where(eq(projects.id, conversation.projectId)).get()
+  const projectId = conversation.projectId
+  const project = db.select().from(projects).where(eq(projects.id, projectId)).get()
   if (!project) throw notFound('project_not_found', 'Project not found.')
   return project.workspacePath
+}
+
+/**
+ * Le dossier où le CLI d'une conversation tourne réellement.
+ *
+ * Distinct de `resolveConversationCwd` : un fil libre n'a pas de répertoire de travail
+ * au sens du produit — l'interface ne lui montre ni fichiers, ni git, ni terminaux —
+ * mais un process se lance toujours quelque part. On lui donne un dossier vide à lui,
+ * sous `<data>/threads/<id>`, plutôt que le home, qui offrirait la machine entière à
+ * lire à un agent dont l'interface annonce qu'il n'a pas de dossier.
+ */
+export function agentCwd(db: Db, threadsRoot: string, conversation: ConversationRow): string {
+  const cwd = resolveConversationCwd(db, conversation)
+  if (cwd !== null) return cwd
+  const thread = resolve(threadsRoot, conversation.id)
+  mkdirSync(thread, { recursive: true })
+  return thread
 }
 
 /**

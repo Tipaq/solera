@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { Loader, MessageSquare, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { conversationPath } from '../lib/conversation-route'
 import { SEARCH_MIN_QUERY, type ConversationDto, type SearchMessageDto } from '@solera/protocol'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
@@ -22,7 +23,7 @@ interface Entry {
 }
 
 function toEntry(conversation: ConversationDto, message?: SearchMessageDto): Entry {
-  const base = `/p/${conversation.projectId}/c/${conversation.id}`
+  const base = conversationPath(conversation)
   return {
     key: message ? `m-${conversation.id}-${message.seq}` : `c-${conversation.id}`,
     // Le `seq` ouvre le fil sur le message trouvé plutôt qu'en haut.
@@ -70,6 +71,20 @@ export function CommandPalette({
     [projects],
   )
 
+  /**
+   * Ce qui se lit sous le titre d'un fil : son projet, ou le fait qu'il n'en a pas.
+   *
+   * Les fils libres ne sont pas un cas particulier à taire — c'est le premier groupe de
+   * la liste, et la palette doit pouvoir les y chercher comme les autres.
+   */
+  const groupName = useCallback(
+    (conversation: ConversationDto): string | undefined =>
+      conversation.projectId === null
+        ? t('destination.none')
+        : projectNames.get(conversation.projectId),
+    [projectNames, t],
+  )
+
   const titleMatches = useMemo((): ConversationDto[] => {
     const all = conversations ?? []
     const trimmed = query.trim()
@@ -82,7 +97,7 @@ export function CommandPalette({
 
     return all
       .map((conversation) => {
-        const name = projectNames.get(conversation.projectId) ?? ''
+        const name = groupName(conversation) ?? ''
         const score = scoreMatch(`${conversation.title} ${name}`, trimmed)
         return score === null ? null : { conversation, score }
       })
@@ -90,7 +105,7 @@ export function CommandPalette({
       .sort((a, b) => b.score - a.score)
       .slice(0, TITLE_LIMIT)
       .map((entry) => entry.conversation)
-  }, [conversations, projectNames, query])
+  }, [conversations, groupName, query])
 
   const messageMatches = useMemo((): Entry[] => {
     const byId = new Map((conversations ?? []).map((entry) => [entry.id, entry]))
@@ -193,7 +208,7 @@ export function CommandPalette({
                 <Row
                   key={entry.key}
                   entry={entry}
-                  project={projectNames.get(entry.conversation.projectId)}
+                  project={groupName(entry.conversation)}
                   activeRow={active === index}
                   onHover={() => setActive(index)}
                   onSelect={() => go(entry)}
@@ -207,7 +222,7 @@ export function CommandPalette({
                   <Row
                     key={entry.key}
                     entry={entry}
-                    project={projectNames.get(entry.conversation.projectId)}
+                    project={groupName(entry.conversation)}
                     activeRow={active === titleEntries.length + index}
                     onHover={() => setActive(titleEntries.length + index)}
                     onSelect={() => go(entry)}

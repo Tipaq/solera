@@ -118,6 +118,15 @@ export interface Paths {
    */
   agents: string
   worktrees: string
+  /**
+   * Dossier de travail des fils libres, un sous-dossier vide par conversation.
+   *
+   * Un fil sans projet n'a pas de répertoire de travail — c'est sa définition — mais un
+   * CLI se lance toujours quelque part, et le lancer dans le home donnerait à l'agent
+   * la machine entière à lire. On lui donne donc un dossier à lui, vide et jetable,
+   * que l'interface n'expose jamais : ni fichiers, ni git, ni terminaux.
+   */
+  threads: string
   logs: string
   /** Bibliothèque de skills, voir `skill-library/layout.ts`. */
   skillLibrary: string
@@ -161,6 +170,7 @@ function resolvePaths(): Paths {
     attachments: join(data, 'attachments'),
     agents: join(data, 'agents'),
     worktrees: join(data, 'worktrees'),
+    threads: join(data, 'threads'),
     logs: join(data, 'logs'),
     skillLibrary: join(data, 'skill-library'),
     memory: join(data, 'memory'),

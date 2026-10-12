@@ -75,7 +75,10 @@ export function registerTaskRoutes(
     const rows = ctx.db
       .select({ conversation: conversations })
       .from(conversations)
-      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      // Externe : un fil libre n'a pas de projet, et une jointure interne le rendrait
+      // invisible à l'API. La liste blanche du jeton l'écarte d'elle-même, `projects.id`
+      // valant alors NULL.
+      .leftJoin(projects, eq(projects.id, conversations.projectId))
       .where(
         and(
           eq(conversations.userId, filter.userId),

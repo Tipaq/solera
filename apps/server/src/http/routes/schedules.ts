@@ -1,4 +1,4 @@
-import { asc, eq, or } from 'drizzle-orm'
+import { and, asc, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { projects, scheduledTasks, type ScheduledTaskRow } from '@solera/db'
 import {
@@ -45,8 +45,10 @@ export function registerScheduleRoutes(
   const loadWritable = (taskId: string, userId: string): ScheduledTaskRow => {
     const task = ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
     if (!task) throw notFound('schedule_not_found', 'Scheduled task not found.')
-    const project = loadProject(task.projectId, userId)
-    if (task.userId !== userId && project.ownerId !== userId) {
+    // Sans projet, il n'y a pas de propriétaire de projet pour partager l'écriture :
+    // reste le créateur de la tâche, et lui seul.
+    const owner = task.projectId === null ? null : loadProject(task.projectId, userId).ownerId
+    if (task.userId !== userId && owner !== userId) {
       throw forbidden('schedule_write_forbidden', 'Only the task creator or the project owner can change it.')
     }
     return task
@@ -60,8 +62,16 @@ export function registerScheduleRoutes(
     const rows = ctx.db
       .select({ task: scheduledTasks })
       .from(scheduledTasks)
-      .innerJoin(projects, eq(projects.id, scheduledTasks.projectId))
-      .where(or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')))
+      // Externe : une tâche sans projet n'appartient qu'à son créateur, et une jointure
+      // interne la ferait disparaître de la liste au lieu de la ranger à part.
+      .leftJoin(projects, eq(projects.id, scheduledTasks.projectId))
+      .where(
+        or(
+          eq(projects.ownerId, user.id),
+          eq(projects.visibility, 'shared'),
+          and(isNull(scheduledTasks.projectId), eq(scheduledTasks.userId, user.id)),
+        ),
+      )
       .orderBy(asc(scheduledTasks.createdAt))
       .all()
     return tasksToDto(

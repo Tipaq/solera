@@ -43,6 +43,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
+import { conversationPath, useOpenConversationId } from '../lib/conversation-route'
+import { ArrangeConversationMenu } from './ArrangeConversation'
 import { Outlet } from 'react-router-dom'
 import type { ConversationDto, ConversationMetrics, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import {
@@ -195,7 +197,7 @@ export function AppShell() {
   const hidden = useSidebarHidden()
   const aside = useRef<HTMLElement>(null)
   const wide = useMediaQuery('(min-width: 48rem)')
-  const conversationRoute = useMatch('/p/:projectId/c/:conversationId')
+  const conversationRoute = useOpenConversationId() !== undefined
   const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
   const schedulesRoute = useMatch('/p/:projectId/schedules')
@@ -727,7 +729,7 @@ function ProjectGroup({
   // tour dans un projet fermé ne se signalerait nulle part. Le fil ouvert en est exclu
   // comme il l'est de sa propre ligne, sinon replier le projet qu'on lit l'allumerait
   // à chaque fin de tour, le temps que le curseur reparte.
-  const openConversationId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
+  const openConversationId = useOpenConversationId()
   const hasUnread = useHasUnread(active, openConversationId)
 
   const [showAll, setShowAll] = useState(false)
@@ -1069,7 +1071,7 @@ function ConversationRow({
   const setArchived = useArchiveConversation()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
-  const openMatch = useMatch('/p/:projectId/c/:conversationId')
+  const openConversationId = useOpenConversationId()
   const projectView = useProjectView(conversation.projectId)
   const [editing, setEditing] = useState(false)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
@@ -1122,7 +1124,7 @@ function ConversationRow({
     )
   }
 
-  const isActive = openMatch?.params.conversationId === conversation.id
+  const isActive = openConversationId === conversation.id
   /*
     Le non-lu se dit par l'encre et la graisse, pas par un troisième point : la ligne en
     tient deux au plus, et une pastille de plus ferait concurrence à des signaux qui,
@@ -1158,7 +1160,7 @@ function ConversationRow({
       )}
     >
       <NavLink
-        to={`/p/${conversation.projectId}/c/${conversation.id}`}
+        to={conversationPath(conversation)}
         title={conversation.title}
         onClick={onNavigate}
         onDoubleClick={(event) => {
@@ -1238,6 +1240,12 @@ function ConversationRow({
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
           </MenuItem>
+          {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
+              c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de
+              tâche planifiée reste où sa tâche l'a mis. */}
+          {conversation.scheduleId === null ? (
+            <ArrangeConversationMenu conversation={conversation} />
+          ) : null}
           <MenuItem
             icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
             onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
@@ -1251,7 +1259,7 @@ function ConversationRow({
             onSelect={() => {
               if (!confirm(t('shell.conversation.deleteConfirm', { title: conversation.title })))
                 return
-              const wasOpen = openMatch?.params.conversationId === conversation.id
+              const wasOpen = openConversationId === conversation.id
               remove.mutate(conversation.id, {
                 // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer,
                 // et retomber là où ce projet s'ouvre d'habitude : un repli de secours

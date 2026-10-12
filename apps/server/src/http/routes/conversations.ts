@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, min, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNull, min, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   cards,
@@ -12,6 +12,8 @@ import {
 } from '@solera/db'
 import {
   createConversationBodySchema,
+  createFreeConversationBodySchema,
+  moveConversationBodySchema,
   editDiffQuerySchema,
   elicitationAnswerBodySchema,
   forkConversationBodySchema,
@@ -36,6 +38,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import { conversationVisibleTo, inProject } from '../../conversations/scope.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
@@ -179,16 +182,13 @@ export function registerConversationRoutes(
   /** Lecture : propriétaire du projet ou projet partagé. Écriture : propriétaire du fil. */
   const loadReadable = async (conversationId: string, userId: string) => {
     const row = ctx.db
-      .select({ conversation: conversations, ownerId: projects.ownerId, visibility: projects.visibility })
+      .select({ conversation: conversations })
       .from(conversations)
-      .innerJoin(projects, eq(projects.id, conversations.projectId))
-      .where(eq(conversations.id, conversationId))
+      .leftJoin(projects, eq(projects.id, conversations.projectId))
+      .where(and(eq(conversations.id, conversationId), conversationVisibleTo(userId)))
       .get()
 
     if (!row) throw notFound('conversation_not_found', 'Conversation not found.')
-    if (row.ownerId !== userId && row.visibility !== 'shared') {
-      throw notFound('conversation_not_found', 'Conversation not found.')
-    }
     return row.conversation
   }
 
@@ -221,7 +221,7 @@ export function registerConversationRoutes(
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
-      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
         conversationReads,
         and(
@@ -239,7 +239,7 @@ export function registerConversationRoutes(
       // Les archivées comprises, la sidebar les rangeant elle-même dans sa section
       // repliée. Deux requêtes séparées coûteraient un aller-retour à chaque dépliage,
       // et un désarchivage ne pourrait plus se voir sans recharger les deux.
-      .where(or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')))
+      .where(conversationVisibleTo(user.id))
       .orderBy(desc(conversations.pinned), asc(conversations.position))
       .all()
 
@@ -370,6 +370,47 @@ export function registerConversationRoutes(
   })
 
   /**
+   * Ouvrir un fil libre, qui n'appartient à aucun projet.
+   *
+   * Route à part et non un `projectId` optionnel sur celle du projet : le chemin dit
+   * déjà ce qui est visé, et la route du projet porte des contrôles — le worktree, la
+   * carte, l'avancement du board — qui n'ont ici aucun objet.
+   */
+  app.post('/api/conversations', async (request, reply) => {
+    const user = requireUser(request)
+    const body = createFreeConversationBodySchema.parse(request.body)
+
+    if (body.config.agent !== body.agent) {
+      throw badRequest('config_agent_mismatch', 'The configuration does not match the selected CLI.')
+    }
+
+    const config = await registry.adapter(body.agent).resolveDefaults(body.config)
+
+    const firstMessage = body.firstMessage
+    const row = await createConversation(ctx.db, sessions, {
+      projectId: null,
+      userId: user.id,
+      agent: body.agent,
+      config,
+      worktreeId: null,
+      cardId: null,
+      title: body.title,
+      origin: null,
+      firstMessage: firstMessage && {
+        clientMessageId: firstMessage.clientMessageId,
+        text: firstMessage.text,
+        attachments: resolveAttachments(user.id, firstMessage.attachmentIds),
+        mentions: firstMessage.mentions,
+        skills: firstMessage.skills,
+      },
+    })
+
+    if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
+
+    return reply.status(201).send(conversationToDto(row, user.id, 0, null, false))
+  })
+
+  /**
    * Ordre manuel des conversations d'un projet. Le client envoie la liste complète
    * telle qu'elle doit s'afficher : réécrire les positions en bloc évite les trous et
    * les égalités qu'un déplacement unitaire finirait par produire.
@@ -445,7 +486,7 @@ export function registerConversationRoutes(
     const [lowest] = ctx.db
       .select({ min: min(conversations.position) })
       .from(conversations)
-      .where(eq(conversations.projectId, source.projectId))
+      .where(inProject(source.projectId))
       .all()
 
     const now = Date.now()
@@ -650,7 +691,17 @@ export function registerConversationRoutes(
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
 
     if (body.cardId !== undefined) {
-      if (body.cardId) assertCardInProject(ctx, body.cardId, conversation.projectId)
+      // Une carte appartient à un projet, donc un fil libre n'en traite aucune : la
+      // rattacher demanderait d'abord de le ranger.
+      if (body.cardId) {
+        if (conversation.projectId === null) {
+          throw badRequest(
+            'conversation_without_project',
+            'A conversation without a project cannot handle a card.',
+          )
+        }
+        assertCardInProject(ctx, body.cardId, conversation.projectId)
+      }
       patch.cardId = body.cardId
       // Rattacher après coup ne fait pas avancer la carte : le geste dit « cette
       // session traitait déjà ce travail », il ne lance rien.
@@ -672,6 +723,69 @@ export function registerConversationRoutes(
     if (body.config !== undefined) await sessions.reloadConfig(id)
 
     return { ok: true }
+  })
+
+  /**
+   * *Ranger…* — la destination d'une conversation, choisie après coup.
+   *
+   * Trois choses partent avec le déplacement, parce qu'elles appartenaient au projet
+   * qu'on quitte : le worktree, la carte, et la session native du CLI. Cette dernière
+   * est le prix à payer et il se paie une fois : un CLI retrouve ses sessions par leur
+   * répertoire de travail, et celui-ci vient de changer — un `--resume` pointerait sur
+   * un dossier où il n'y a rien. Le journal de Solera, lui, est intact : c'est ce que
+   * la personne relit, et le fil ne perd pas une ligne.
+   *
+   * Refusé pendant un tour : le CLI tourne alors dans l'ancien dossier, et lui changer
+   * sa destination sous les pieds ne se rattraperait pas.
+   */
+  app.post('/api/conversations/:id/project', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = moveConversationBodySchema.parse(request.body)
+    const conversation = await loadWritable(id, user.id)
+
+    if (conversation.projectId === body.projectId) {
+      return conversationToDto(conversation, user.id, readCursor(id, user.id), readCardLink(ctx, conversation.cardId), isFavorite(id, user.id))
+    }
+    if (conversation.status === 'running' || conversation.status === 'awaiting_input') {
+      throw badRequest('conversation_busy', 'A conversation cannot be moved while a turn is running.')
+    }
+    if (conversation.scheduleId) {
+      throw badRequest('conversation_scheduled', 'A scheduled run stays where its task put it.')
+    }
+
+    if (body.projectId !== null) {
+      const project = ctx.db.select().from(projects).where(eq(projects.id, body.projectId)).get()
+      if (!project) throw notFound('project_not_found', 'Project not found.')
+      if (project.ownerId !== user.id && project.visibility !== 'shared') {
+        throw notFound('project_not_found', 'Project not found.')
+      }
+    }
+
+    const [lowest] = ctx.db
+      .select({ min: min(conversations.position) })
+      .from(conversations)
+      .where(inProject(body.projectId))
+      .all()
+
+    // Avant d'écrire : un runner encore chaud garde son répertoire de travail en
+    // mémoire, et le tour suivant partirait du dossier qu'on vient de quitter. Le refus
+    // dit qu'un tour a démarré entre-temps.
+    if (!(await sessions.releaseRunner(id))) {
+      throw badRequest('conversation_busy', 'A conversation cannot be moved while a turn is running.')
+    }
+
+    const patch: Partial<ConversationRow> = {
+      projectId: body.projectId,
+      worktreeId: null,
+      cardId: null,
+      agentSessionId: null,
+      position: (lowest?.min ?? 0) - 1,
+      updatedAt: Date.now(),
+    }
+    ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
+    const moved = { ...conversation, ...patch }
+    return conversationToDto(moved, user.id, readCursor(id, user.id), null, isFavorite(id, user.id))
   })
 
   app.delete('/api/conversations/:id', async (request, reply) => {
@@ -927,15 +1041,10 @@ export function readConversationState(
 /** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */
 export function canReadConversation(ctx: AppContext, conversationId: string, userId: string): boolean {
   const row = ctx.db
-    .select({ ownerId: projects.ownerId, visibility: projects.visibility })
+    .select({ id: conversations.id })
     .from(conversations)
-    .innerJoin(projects, eq(projects.id, conversations.projectId))
-    .where(
-      and(
-        eq(conversations.id, conversationId),
-        or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared')),
-      ),
-    )
+    .leftJoin(projects, eq(projects.id, conversations.projectId))
+    .where(and(eq(conversations.id, conversationId), conversationVisibleTo(userId)))
     .get()
   return row !== undefined
 }

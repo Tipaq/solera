@@ -168,7 +168,7 @@ export interface TaskPendingDto {
  */
 export interface TaskSummaryDto {
   id: string
-  projectId: string
+  projectId: string | null
   worktreeId: string | null
   title: string
   status: z.infer<typeof conversationStatusSchema>
@@ -234,7 +234,7 @@ export type WebhookFailureReason = 'runner_failed' | 'reply_deadline_exceeded' |
 export interface WebhookPayload {
   type: WebhookEventType
   taskId: string
-  projectId: string
+  projectId: string | null
   seq: number
   ts: number
   clientMessageId: string | null

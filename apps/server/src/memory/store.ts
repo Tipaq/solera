@@ -28,6 +28,21 @@ export function projectMemoryDir(root: string, projectId: string): string {
 }
 
 /**
+ * La mémoire des fils libres : une seule, commune à tous.
+ *
+ * Un dossier par fil ne retiendrait rien — on ouvre un fil libre pour une question et
+ * on n'y revient pas — alors que ce qu'un agent y apprend est précisément ce qui ne
+ * relève d'aucun projet : qui est l'utilisateur, comment il travaille, ce qu'il a déjà
+ * corrigé. C'est donc une mémoire personnelle, et elle a sa place à elle plutôt que
+ * dans `projects/`, où elle se ferait prendre pour un projet.
+ */
+export function freeThreadMemoryDir(root: string): string {
+  const dir = join(root, 'threads')
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+/**
  * Le dossier où Claude Code range seul la mémoire d'un répertoire de travail : le chemin
  * dont chaque caractère hors lettres et chiffres devient un tiret.
  */

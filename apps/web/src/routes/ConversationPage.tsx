@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
@@ -155,7 +156,7 @@ export function ConversationPage() {
   // Comme tous les hooks, il doit rester avant le premier retour anticipé. La sonde
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
-  const { data: worktrees } = useWorktrees(conversation?.projectId)
+  const { data: worktrees } = useWorktrees(conversation?.projectId ?? undefined)
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
   const { data: allConversations } = useAllConversations()
@@ -746,7 +747,7 @@ export function ConversationPage() {
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
           .join('\n\n')
-        navigate(`/p/${branch.projectId}/c/${branch.id}`, { state: { draft } })
+        navigate(conversationPath(branch), { state: { draft } })
       } catch (err) {
         setActionError(err instanceof Error ? err.message : t('conversation.fork.error'))
       } finally {
@@ -889,12 +890,18 @@ export function ConversationPage() {
           </span>
 
           <div className="min-w-0 flex-1">
-            <Link
-              to={`/p/${conversation.projectId}`}
-              className="block w-fit max-w-full truncate rounded-sm text-xs text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              {projects?.find((project) => project.id === conversation.projectId)?.name}
-            </Link>
+            {/* Un fil libre n'a pas de projet à remonter : la ligne dit alors qu'il n'en
+                a pas, plutôt que de rester vide ou de pointer vers `/p/null`. */}
+            {conversation.projectId === null ? (
+              <span className="block truncate text-xs text-ink-faint">{t('destination.none')}</span>
+            ) : (
+              <Link
+                to={`/p/${conversation.projectId}`}
+                className="block w-fit max-w-full truncate rounded-sm text-xs text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                {projects?.find((project) => project.id === conversation.projectId)?.name}
+              </Link>
+            )}
             <p className="truncate text-sm font-medium" title={conversation.title}>{conversation.title}</p>
           </div>
 
@@ -903,22 +910,26 @@ export function ConversationPage() {
             alors que c'est la plus utile de la barre : deux fils voisins d'un même
             projet sont indiscernables sans elle.
           */}
-          <span
-            className={cx(
-              'hidden shrink-0 items-center gap-1 rounded-md bg-surface-high px-1.5 py-0.5',
-              'text-micro text-ink-soft @min-[44rem]/thread:flex',
-            )}
-            title={
-              worktree
-                ? t('conversation.meta.worktree', { name: worktree.name })
-                : t('conversation.meta.projectFolder')
-            }
-          >
-            {worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
-            <span className="max-w-40 truncate">
-              {worktree ? (worktree.git?.branch ?? worktree.name) : t('conversation.meta.project')}
+          {/* Rien à dire sur un fil libre : il n'écrit nulle part, et une pastille
+              « dossier du projet » y mentirait. */}
+          {conversation.projectId === null ? null : (
+            <span
+              className={cx(
+                'hidden shrink-0 items-center gap-1 rounded-md bg-surface-high px-1.5 py-0.5',
+                'text-micro text-ink-soft @min-[44rem]/thread:flex',
+              )}
+              title={
+                worktree
+                  ? t('conversation.meta.worktree', { name: worktree.name })
+                  : t('conversation.meta.projectFolder')
+              }
+            >
+              {worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
+              <span className="max-w-40 truncate">
+                {worktree ? (worktree.git?.branch ?? worktree.name) : t('conversation.meta.project')}
+              </span>
             </span>
-          </span>
+          )}
 
           {/*
             L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un
@@ -979,7 +990,7 @@ export function ConversationPage() {
                     l'originale a été supprimée, la référence devenant orpheline. */}
                 {origin ? (
                   <Link
-                    to={`/p/${origin.projectId}/c/${origin.id}`}
+                    to={conversationPath(origin)}
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.branchOf', { title: origin.title })}
                   >
@@ -1251,7 +1262,7 @@ export function ConversationPage() {
             commands={stream.state.commands}
             skills={stream.state.skills}
             appliedConfig={stream.appliedConfig}
-            projectId={conversation.projectId}
+            projectId={conversation.projectId ?? undefined}
             worktreeId={conversation.worktreeId}
             footer={
               <ComposerStatus

@@ -20,7 +20,7 @@ import {
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import { readUserSettings } from '../../settings/user-settings.js'
-import { resolveConversationCwd } from '../../workspace.js'
+import { agentCwd } from '../../workspace.js'
 import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
@@ -243,7 +243,7 @@ export function registerClaudeSessionRoutes(
       return { imported: 0 }
     }
 
-    const cwd = resolveConversationCwd(ctx.db, conversation)
+    const cwd = agentCwd(ctx.db, ctx.config.paths.threads, conversation)
     const entries = await readTranscript(cwd, conversation.agentSessionId)
     if (entries.length === 0) return { imported: 0 }
 

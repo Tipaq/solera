@@ -3,7 +3,8 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 interface Origin {
-  projectId: string
+  /** Null pour un fil libre, qui n'appartient à aucun projet. */
+  projectId: string | null
   conversationId: string | null
 }
 
@@ -19,7 +20,7 @@ export class ProcessOrigins {
       if (!file.endsWith('.json')) continue
       try {
         const origin = JSON.parse(readFileSync(join(this.directory, file), 'utf8')) as Origin
-        if (typeof origin.projectId === 'string' &&
+        if ((origin.projectId === null || typeof origin.projectId === 'string') &&
           (origin.conversationId === null || typeof origin.conversationId === 'string')) {
           this.entries.set(file.slice(0, -5), origin)
         }
@@ -27,7 +28,7 @@ export class ProcessOrigins {
     }
   }
 
-  environment(projectId: string, conversationId: string | null): Record<string, string> {
+  environment(projectId: string | null, conversationId: string | null): Record<string, string> {
     for (const [token, entry] of this.entries) {
       if (entry.projectId === projectId && entry.conversationId === conversationId) {
         return { SOLERA_PROCESS_ORIGIN: token }
