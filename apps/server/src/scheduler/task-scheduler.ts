@@ -97,7 +97,9 @@ export class TaskScheduler {
     const due = this.ctx.db
       .select({ task: scheduledTasks })
       .from(scheduledTasks)
-      .innerJoin(projects, eq(projects.id, scheduledTasks.projectId))
+      // Externe : une tâche sans projet n'a pas de projet qui pourrait être rangé, et une
+      // jointure interne l'empêcherait simplement de partir, sans rien dire.
+      .leftJoin(projects, eq(projects.id, scheduledTasks.projectId))
       .where(
         and(
           eq(scheduledTasks.enabled, true),

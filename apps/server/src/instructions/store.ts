@@ -120,7 +120,8 @@ export function instructionsAuthor(
 }
 
 interface AppendixInput {
-  projectId: string
+  /** Null pour un fil libre : seules les consignes globales le concernent. */
+  projectId: string | null
   mode: InstructionsMode
   /** L'agent a-t-il les outils SOLERA.md du serveur MCP sous la main. */
   soleraMcp: boolean
@@ -136,7 +137,9 @@ interface AppendixInput {
 export function instructionsAppendix(db: Db, input: AppendixInput): string | null {
   const global = readInstructions(db, null)?.content.trim() ?? ''
   const project =
-    input.mode === 'solera' ? (readInstructions(db, input.projectId)?.content.trim() ?? '') : ''
+    input.mode === 'solera' && input.projectId !== null
+      ? (readInstructions(db, input.projectId)?.content.trim() ?? '')
+      : ''
 
   const parts: string[] = []
   if (global || project) {

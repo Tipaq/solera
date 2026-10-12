@@ -7,7 +7,7 @@ import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { Banner, Card, CardBody, CardHeader, ChoiceList, Select } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 import { useUpdateAgentDefault, useUserSettings } from '../lib/user-settings'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 
 /**
  * Avec quoi les prochaines conversations s'ouvrent.

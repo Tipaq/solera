@@ -49,6 +49,10 @@ import { HeaderBand } from '../HeaderBand'
  * c'est là que l'agent écrit. En vue projet (Board, brouillon), aucune conversation
  * n'existe : Fichiers, Git et Terminaux opèrent sur le workspace du projet, et les
  * onglets propres à une session (Historique, Agents, MCP) ne sont pas proposés.
+ *
+ * Sur un fil libre, il ne reste qu'*Agent*. Non parce qu'on cache les autres vues, mais
+ * parce qu'elles n'ont pas d'objet : un fil sans projet n'a pas de répertoire de
+ * travail, donc rien à parcourir, rien à comparer, nulle part où ouvrir un shell.
  */
 export function SidePanel({
   projectId,
@@ -63,7 +67,8 @@ export function SidePanel({
   canDock = false,
   workspaceName,
 }: {
-  projectId: string
+  /** Null sur un fil libre : il n'y a alors pas de répertoire de travail du tout. */
+  projectId: string | null
   /** Absente en vue projet : le panneau se réduit alors aux onglets de répertoire. */
   conversationId?: string
   /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
@@ -81,14 +86,23 @@ export function SidePanel({
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
-  const scope = conversationId ?? projectScope(projectId)
+  // Un fil libre n'a pas de dossier : les quatre vues de répertoire n'ont pas d'objet.
+  const hasWorkspace = projectId !== null
+  const scope = conversationId ?? projectScope(projectId ?? '')
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
-  const workspaceLabel = [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+  const workspaceLabel = hasWorkspace
+    ? [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+    : t('panel.noWorkspace')
   const chosenTab = usePanelTab()
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
-  // retombe sur les fichiers plutôt que d'afficher un panneau vide.
-  const tab: PanelTab = conversationId || chosenTab !== 'agents' ? chosenTab : 'files'
+  // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
+  // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
+  const tab: PanelTab = !hasWorkspace
+    ? 'agents'
+    : conversationId || chosenTab !== 'agents'
+      ? chosenTab
+      : 'files'
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -274,6 +288,7 @@ export function SidePanel({
          */
         closable={!modal && !docked}
         tab={tab}
+        hasWorkspace={hasWorkspace}
         hasConversation={Boolean(conversationId)}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
       />
@@ -281,51 +296,57 @@ export function SidePanel({
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
           replier ni l'arborescence, ni perdre sa position de défilement, ni faire
           relire son fichier à l'éditeur. */}
-      <div
-        className={cx(
-          'min-h-0 min-w-0 flex-1 overflow-hidden pb-safe',
-          tab === 'files' ? 'flex' : 'hidden',
-        )}
-      >
-        <FilesPane scope={scope} label={workspaceLabel} />
-      </div>
+      {hasWorkspace ? (
+        <div
+          className={cx(
+            'min-h-0 min-w-0 flex-1 overflow-hidden pb-safe',
+            tab === 'files' ? 'flex' : 'hidden',
+          )}
+        >
+          <FilesPane scope={scope} label={workspaceLabel} />
+        </div>
+      ) : null}
 
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
           journal ou d'une lecture git relancée à l'affichage, rien ne s'y perd. */}
-      {tab === 'git' ? (
+      {hasWorkspace && tab === 'git' ? (
         <GitPane scope={scope} turnRunning={turnRunning} onOpenFile={openInFiles} />
       ) : null}
 
       {/* Montée même derrière une autre vue, comme les fichiers : cliquer un résultat
           bascule sur l'éditeur, et revenir à la recherche doit retrouver la frappe,
           les drapeaux, les filtres et les résultats — pas un champ vide. */}
-      <div
-        className={cx(
-          'min-h-0 min-w-0 flex-1 overflow-hidden',
-          tab === 'search' ? 'flex' : 'hidden',
-        )}
-      >
-        <div className="min-h-0 min-w-0 flex-1">
-          <SearchPane scope={scope} onOpenFile={openInFiles} />
+      {hasWorkspace ? (
+        <div
+          className={cx(
+            'min-h-0 min-w-0 flex-1 overflow-hidden',
+            tab === 'search' ? 'flex' : 'hidden',
+          )}
+        >
+          <div className="min-h-0 min-w-0 flex-1">
+            <SearchPane scope={scope} onOpenFile={openInFiles} />
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Monté dès que le panneau existe, et non seulement quand l'onglet est actif :
           un shell qui compile ne doit pas être coupé parce qu'on regarde le diff. */}
-      <div
-        className={cx(
-          'min-h-0 min-w-0 flex-1 overflow-hidden',
-          tab === 'terminals' ? 'flex' : 'hidden',
-        )}
-      >
-        <div className="min-h-0 min-w-0 flex-1">
-          <TerminalsPane
-            projectId={projectId}
-            conversationId={conversationId}
-            visible={tab === 'terminals'}
-          />
+      {hasWorkspace ? (
+        <div
+          className={cx(
+            'min-h-0 min-w-0 flex-1 overflow-hidden',
+            tab === 'terminals' ? 'flex' : 'hidden',
+          )}
+        >
+          <div className="min-h-0 min-w-0 flex-1">
+            <TerminalsPane
+              projectId={projectId}
+              conversationId={conversationId}
+              visible={tab === 'terminals'}
+            />
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
           rien de vivant, tout son contenu vient du journal, et ses chronomètres n'ont
@@ -384,30 +405,37 @@ export function SidePanel({
  * mais c'est le seul repère écrit qui reste de la vue elle-même.
  *
  * Le trait sépare les quatre vues du répertoire de la seule qui regarde la session.
+ * Sur un fil libre il ne reste que la seconde, et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasConversation, agentBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
   closable: boolean
   tab: PanelTab
+  /** Faux sur un fil libre : les quatre vues de répertoire n'ont rien à montrer. */
+  hasWorkspace: boolean
   hasConversation: boolean
   agentBadge: number
 }) {
   const t = useTranslate()
   const views = (
     <>
-      <Tab icon={<FileCode size={15} />} label={t('panel.tab.files')} keepLabel={!band}
-        active={tab === 'files'} onSelect={() => setPanelTab('files')} />
-      <Tab icon={<Search size={15} />} label={t('panel.tab.search')} keepLabel={!band}
-        active={tab === 'search'} onSelect={() => setPanelTab('search')} />
-      <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
-        active={tab === 'git'} onSelect={() => setPanelTab('git')} />
-      <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
-        active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+      {hasWorkspace ? (
+        <>
+          <Tab icon={<FileCode size={15} />} label={t('panel.tab.files')} keepLabel={!band}
+            active={tab === 'files'} onSelect={() => setPanelTab('files')} />
+          <Tab icon={<Search size={15} />} label={t('panel.tab.search')} keepLabel={!band}
+            active={tab === 'search'} onSelect={() => setPanelTab('search')} />
+          <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
+            active={tab === 'git'} onSelect={() => setPanelTab('git')} />
+          <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
+            active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+        </>
+      ) : null}
       {hasConversation ? (
         <>
-          <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" />
+          {hasWorkspace ? <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" /> : null}
           <Tab icon={<Bot size={15} />} label={t('panel.tab.agents')} keepLabel={!band}
             badge={agentBadge} active={tab === 'agents'} onSelect={() => setPanelTab('agents')} />
         </>

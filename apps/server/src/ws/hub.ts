@@ -22,32 +22,36 @@ import { conversationWorkspace, projectWorkspace, resolveInside } from '../works
  * créée ailleurs, elle, finissait par apparaître, mais seulement parce que son premier
  * statut trahissait un identifiant inconnu.
  *
- * `personal` ne prévient que les onglets du compte appelant : un signet ne regarde
- * personne d'autre. Le curseur de lecture n'y figure pas : il avance toutes les deux
- * secondes pendant un tour, et chaque onglet relirait la liste à ce rythme.
+ * Toutes changent la liste pour tout le monde. Il y avait une seconde portée, `personal`,
+ * qui ne prévenait que les onglets du compte appelant — elle n'existait que pour les
+ * favoris, qui ont quitté la colonne, et avec eux leurs routes. Le curseur de lecture
+ * n'y figure pas : il avance toutes les deux secondes pendant un tour, et chaque onglet
+ * relirait la liste à ce rythme.
  *
  * Le planificateur et les webhooks créent sans passer par une route : le premier statut
  * de la session suffit alors à la révéler.
  */
-export const LIST_ROUTES: Record<string, 'shared' | 'personal'> = {
-  'POST /api/projects/:id/conversations': 'shared',
-  'POST /api/v1/projects/:id/tasks': 'shared',
-  'POST /api/projects/:id/conversations/order': 'shared',
-  'POST /api/projects/:id/claude-sessions/:sessionId/import': 'shared',
-  'POST /api/conversations/:id/fork': 'shared',
-  'PATCH /api/conversations/:id': 'shared',
-  'DELETE /api/conversations/:id': 'shared',
-  'PUT /api/conversations/:id/favorite': 'personal',
-  'DELETE /api/conversations/:id/favorite': 'personal',
-  'POST /api/projects': 'shared',
-  'POST /api/projects/order': 'shared',
-  'PATCH /api/projects/:id': 'shared',
-  'DELETE /api/projects/:id': 'shared',
-  'POST /api/projects/:id/schedules': 'shared',
-  'PATCH /api/schedules/:id': 'shared',
-  'DELETE /api/schedules/:id': 'shared',
-  'POST /api/schedules/:id/run': 'shared',
-}
+export const LIST_ROUTES = new Set([
+  'POST /api/projects/:id/conversations',
+  // Les fils libres : ouvrir, et ranger après coup. Sans elles, un fil né dans un onglet
+  // ou rangé depuis le téléphone restait là où il était dans les autres.
+  'POST /api/conversations',
+  'POST /api/conversations/:id/project',
+  'POST /api/v1/projects/:id/tasks',
+  'POST /api/projects/:id/conversations/order',
+  'POST /api/projects/:id/claude-sessions/:sessionId/import',
+  'POST /api/conversations/:id/fork',
+  'PATCH /api/conversations/:id',
+  'DELETE /api/conversations/:id',
+  'POST /api/projects',
+  'POST /api/projects/order',
+  'PATCH /api/projects/:id',
+  'DELETE /api/projects/:id',
+  'POST /api/projects/:id/schedules',
+  'PATCH /api/schedules/:id',
+  'DELETE /api/schedules/:id',
+  'POST /api/schedules/:id/run',
+])
 
 /**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
@@ -259,10 +263,6 @@ class Connection {
     this.send({ t: 'lists-changed' })
   }
 
-  belongsTo(userId: string): boolean {
-    return this.userId === userId
-  }
-
   markAlive(): void {
     this.alive = true
   }
@@ -375,14 +375,8 @@ export async function registerWebSocketHub(
   // d'une route au démarrage, pas à sa déclaration.
   app.addHook('onResponse', async (request, reply) => {
     if (reply.statusCode >= 400) return
-    const reach = LIST_ROUTES[`${request.method} ${request.routeOptions.url}`]
-    if (!reach) return
-    const userId = request.user?.id
-    for (const connection of connections) {
-      if (reach === 'shared' || (userId !== undefined && connection.belongsTo(userId))) {
-        connection.notifyListsChanged()
-      }
-    }
+    if (!LIST_ROUTES.has(`${request.method} ${request.routeOptions.url}`)) return
+    for (const connection of connections) connection.notifyListsChanged()
   })
 
   // Sur mobile, un socket tué par la mise en veille reste ouvert côté serveur sans

@@ -13,7 +13,7 @@ import {
   Select,
 } from '@solera/ui'
 import { AccountForm } from '../components/AccountForm'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { useCurrentUser } from '../lib/session'

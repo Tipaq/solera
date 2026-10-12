@@ -1,16 +1,19 @@
 import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { ScheduleRunStatus, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
+import { conversationPath } from '../lib/conversation-route'
+import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { HeaderBand } from '../components/HeaderBand'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
-import { locale, useTranslate, type MessageKey } from '../lib/i18n'
+import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import {
+  RUN_DOTS,
+  RUN_LABELS,
   SCHEDULE_STATE_LABELS,
   describeCadence,
   formatDateTime,
@@ -28,22 +31,6 @@ const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'critical' | 'po
   failed: 'critical',
   done: 'neutral',
   waiting: 'positive',
-}
-
-const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
-  running: 'schedule.run.running',
-  succeeded: 'schedule.run.succeeded',
-  failed: 'schedule.run.failed',
-  timed_out: 'schedule.run.timedOut',
-  skipped: 'schedule.run.skipped',
-}
-
-const RUN_DOTS: Record<ScheduleRunStatus, string> = {
-  running: 'bg-accent animate-pulse',
-  succeeded: 'bg-positive',
-  failed: 'bg-critical',
-  timed_out: 'bg-caution',
-  skipped: 'bg-line-strong',
 }
 
 /**
@@ -239,7 +226,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string }) {
+function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string | null }) {
   const t = useTranslate()
   const body = (
     <>
@@ -258,7 +245,7 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
     <li>
       {run.conversationId ? (
         <Link
-          to={`/p/${projectId}/c/${run.conversationId}`}
+          to={conversationPath({ id: run.conversationId, projectId })}
           className={cx(className, 'transition-colors hover:bg-surface-high hover:text-ink')}
         >
           {body}

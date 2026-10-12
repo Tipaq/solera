@@ -15,6 +15,7 @@ import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
+import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
@@ -109,7 +110,7 @@ export function DraftConversationPage() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const { data: conversations } = useAllConversations()
-  const createConversation = useCreateConversation(projectId ?? '')
+  const createConversation = useCreateConversation(projectId ?? null)
   const panel = usePanelPresence()
 
   // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
@@ -231,8 +232,6 @@ export function DraftConversationPage() {
     mentions: string[],
     skills: string[],
   ) => {
-    if (!projectId) return
-
     const created = await createConversation.mutateAsync({
       agent,
       config: effective,
@@ -246,7 +245,9 @@ export function DraftConversationPage() {
 
     // `replace` : revenir en arrière ne doit pas ramener sur un brouillon qui n'a
     // plus lieu d'être.
-    navigate(`/p/${projectId}/c/${created.id}`, { replace: true })
+    navigate(projectId ? `/p/${projectId}/c/${created.id}` : `/c/${created.id}`, {
+      replace: true,
+    })
   }
 
   return (
@@ -268,7 +269,7 @@ export function DraftConversationPage() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 text-xs text-ink-faint">
             <AgentIcon agent={agent} size={11} />
-            <span className="truncate">{project?.name ?? AGENT_LABELS[agent]}</span>
+            <span className="truncate">{project?.name ?? t('destination.none')}</span>
           </div>
           <p className="truncate text-sm font-medium">{t('draft.title')}</p>
         </div>
@@ -302,7 +303,40 @@ export function DraftConversationPage() {
         <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
             <h1 className="text-lg font-semibold tracking-tight">{t('draft.title')}</h1>
-            <p className="text-sm text-ink-faint">{t('draft.subtitle')}</p>
+            <p className="text-sm text-ink-faint">
+              {projectId ? t('draft.subtitle') : t('draft.subtitle.free')}
+            </p>
+          </div>
+
+          {/* Premier contrôle de la page : c'est lui qui fait apparaître ou disparaître
+              le reste. Changer de destination change d'URL plutôt que d'état local —
+              tout ce qui suit est lu par projet (worktrees, cartes, sessions du dossier,
+              préréglages), et une page qui reste sur `/p/<ancien>` pendant que le
+              formulaire parle d'un autre projet finit par en mélanger deux.
+
+              La branche à côté, et non en dessous : les deux disent le même chose — où
+              l'on travaille — et l'une n'existe que si l'autre est remplie. */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DestinationSelect
+              value={projectId ?? null}
+              disabled={createConversation.isPending}
+              onChange={(next) => {
+                const search = params.get('agent') ? `?agent=${params.get('agent')}` : ''
+                navigate(next ? `/p/${next}/c/new${search}` : `/c/new${search}`, { replace: true })
+              }}
+            />
+            {projectId ? (
+              <WorktreeSelect
+                projectId={projectId}
+                value={effectiveWorktreeId}
+                onChange={(next) => {
+                  setWorktreeTouched(true)
+                  setWorktreeId(next)
+                }}
+                isRepository={project?.git !== null && project !== undefined}
+                suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
+              />
+            ) : null}
           </div>
 
           {/* Radios natifs : choix compact, avec navigation au clavier par flèches. */}
@@ -397,19 +431,6 @@ export function DraftConversationPage() {
                 <X size={14} />
               </IconButton>
             </div>
-          ) : null}
-
-          {projectId ? (
-            <WorktreeSelect
-              projectId={projectId}
-              value={effectiveWorktreeId}
-              onChange={(next) => {
-                setWorktreeTouched(true)
-                setWorktreeId(next)
-              }}
-              isRepository={project?.git !== null && project !== undefined}
-              suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
-            />
           ) : null}
 
           {cardPending ? null : (

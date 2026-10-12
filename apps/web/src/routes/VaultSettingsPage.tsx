@@ -1,7 +1,7 @@
 import { FolderTree, Library, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Badge, Banner, Button, Card, CardBody, CardHeader, EmptyState } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { PathField } from '../components/PathField'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'

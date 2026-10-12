@@ -15,7 +15,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 
 const KEY = 'solera.projectView'
 
-export type ProjectView = 'board' | 'draft'
+export type ProjectView = 'dashboard' | 'board' | 'draft'
 
 function read(): Record<string, ProjectView> {
   try {
@@ -26,7 +26,8 @@ function read(): Record<string, ProjectView> {
     // produirait un chemin qui ne mène nulle part.
     return Object.fromEntries(
       Object.entries(parsed as Record<string, unknown>).filter(
-        (entry): entry is [string, ProjectView] => entry[1] === 'board' || entry[1] === 'draft',
+        (entry): entry is [string, ProjectView] =>
+          entry[1] === 'dashboard' || entry[1] === 'board' || entry[1] === 'draft',
       ),
     )
   } catch {
@@ -44,11 +45,18 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function useProjectView(projectId: string): ProjectView {
+/**
+ * `null` pour un fil libre : il n'a pas de projet dont on retiendrait l'écran d'accueil.
+ *
+ * Le défaut est le **tableau de bord**, la porte d'un projet. Il valait « conversation
+ * neuve » tant que `/p/:id` n'était qu'un formulaire de réglages : ouvrir un projet
+ * jamais visité posait alors un fil vide devant soi, au lieu de ce qui y réclame.
+ */
+export function useProjectView(projectId: string | null): ProjectView {
   return useSyncExternalStore(
     subscribe,
-    () => views[projectId] ?? 'draft',
-    () => 'draft',
+    () => (projectId === null ? 'draft' : (views[projectId] ?? 'dashboard')),
+    () => 'dashboard',
   )
 }
 
@@ -79,7 +87,14 @@ export function useRememberProjectView(
   }, [projectId, view])
 }
 
-/** Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui. */
-export function projectViewPath(projectId: string, view: ProjectView): string {
-  return view === 'board' ? `/p/${projectId}/board` : `/p/${projectId}/c/new`
+/**
+ * Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui.
+ *
+ * `null` est le fil libre, qui n'a pas de projet où retomber : son équivalent est la
+ * conversation neuve sans destination.
+ */
+export function projectViewPath(projectId: string | null, view: ProjectView): string {
+  if (projectId === null) return '/c/new'
+  if (view === 'board') return `/p/${projectId}/board`
+  return view === 'draft' ? `/p/${projectId}/c/new` : `/p/${projectId}`
 }

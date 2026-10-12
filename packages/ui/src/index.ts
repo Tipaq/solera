@@ -22,6 +22,7 @@ export { Popover } from './Popover'
 export { Presets, type Preset } from './Presets'
 export { SegmentedControl, type Segment } from './SegmentedControl'
 export { Select, type SelectOption } from './Select'
+export { Switch, SwitchTrack } from './Switch'
 export { SwitchRow } from './SwitchRow'
 export { Tabs, type Tab } from './Tabs'
 /*

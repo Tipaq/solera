@@ -12,7 +12,7 @@ import {
   EmptyState,
   Field,
 } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
 import { useDeleteSecret, usePutSecret, useSecrets } from '../lib/secrets'

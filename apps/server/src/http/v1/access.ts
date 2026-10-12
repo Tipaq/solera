@@ -68,6 +68,13 @@ export function loadTaskForToken(
   if (!conversation || conversation.userId !== userId) {
     throw notFound('task_not_found', 'Task not found.')
   }
+  // Un fil libre n'est dans aucun projet : un jeton qui restreint sa liste ne peut pas
+  // l'atteindre, puisqu'aucun des projets qu'il nomme ne le contient. Un jeton sans
+  // liste voit ce que son utilisateur voit, fils libres compris.
+  if (conversation.projectId === null) {
+    if (allowedProjectIds(token).length > 0) throw notFound('task_not_found', 'Task not found.')
+    return conversation
+  }
   try {
     loadProjectForToken(ctx, token, userId, conversation.projectId)
   } catch {

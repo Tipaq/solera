@@ -44,7 +44,13 @@ export interface BuiltinMcpParams {
   enabled: boolean
   config: AgentConfig
   databasePath: string
-  projectId: string
+  /**
+   * Projet de la conversation, ou null pour un fil libre — et le serveur ne part alors
+   * pas : tous ses outils parlent d'un projet (le board, ses sessions, ses consignes,
+   * ses demandes d'agent) et il refuse de démarrer sans `SOLERA_MCP_PROJECT`. Claude
+   * garde sa mémoire, qui passe par `autoMemoryDirectory` et non par ce serveur.
+   */
+  projectId: string | null
   conversationId: string
   /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
   memoryDir: string
@@ -64,6 +70,7 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
   const { enabled, config, databasePath, projectId, conversationId, memoryDir } = params
   if (!builtinMcpEnabled(enabled, config)) return null
+  if (projectId === null) return null
 
   return {
     id: BUILTIN_MCP_SERVER_ID,

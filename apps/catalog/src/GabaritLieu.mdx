@@ -1,0 +1,63 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Gabarits/La page d'un lieu" />
+
+# La page d'un lieu
+
+Un lieu de la colonne de gauche est une **destination** : il ouvre une page au centre.
+Trois existent — le tableau de bord d'un projet, *Projets*, *Planifiées* — et elles
+partagent un gabarit, arrêté le 2026-10-12 après dix-neuf tours de maquettes
+(`docs/audits/2026-10-11-colonne/`, tours 12, 16 et 19).
+
+## Trois étages, et c'est l'ordre qui les justifie
+
+| étage | ce qu'il porte |
+| --- | --- |
+| **le bandeau** | ce qui **réclame** — et rien d'autre |
+| **le corps** | ce qui est **en cours**, repris de la vue qui en est la référence |
+| **le pied** | ce qui **reviendra tout seul** : la planification |
+
+## Le bandeau dit une demande, jamais un inventaire
+
+C'est la règle qui décide de son contenu, et elle tranche seule la plupart des cas :
+
+> « 7 cartes » décrit ce qui **existe**. « 1 attend ta réponse depuis 1 h » décrit ce
+> qu'on a **à faire**.
+
+Un tableau de bord n'est utile qu'au second. Conséquence directe et non négociable :
+**une tuile à zéro disparaît**. Elle ne se grise pas, elle ne s'écrit pas « 0 » — elle
+n'est pas rendue, et le bandeau rétrécit. Quand il n'en reste aucune, c'est une phrase
+qui le dit : « Rien ne réclame ici. »
+
+Le composant est `DemandTile` (`apps/web/src/components/places/`), et il n'a pas de
+rendu vide : c'est l'appelant qui l'omet. Trois teintes, qui ne sont pas décoratives —
+**caution** pour ce qui attend un humain, **accent** pour ce qui tourne tout seul,
+**neutral** pour un état qu'on constate sans qu'il presse.
+
+## Le corps ne réinvente pas la vue dont il est le résumé
+
+Le board du tableau de bord est **celui de l'application** : mêmes colonnes creusées
+(`rounded-xl border-line/60 bg-sunken/60`), même pastille de teinte, même compte en
+pilule, mêmes tuiles `CardTile`. Seule la **densité** change — trois cartes par colonne,
+puis « 2 de plus… ».
+
+C'est la seule règle qui compte ici, parce que c'est elle qui est tentante à enfreindre :
+un résumé qui redessine ses propres tuiles finit par mentir sur le board qu'on ouvre en
+cliquant dessus. Le glissement, lui, reste au board plein — les tuiles sont rendues
+`disabled`, ce qui leur retire leur poignée.
+
+## En lignes, pas en cartes, dès qu'on compare
+
+La page Projets est en lignes : on compare mieux huit projets sur une colonne alignée
+que sur une grille. L'œil descend une colonne et lit huit branches, là où une grille lui
+fait refaire le chemin dans chaque carte. La grille revient quand les éléments ne se
+comparent pas — ce qui est le cas des quatre tuiles du bandeau, qui disent quatre choses
+différentes.
+
+## Au doigt
+
+Les quatre tuiles passent en 2 × 2, le board défile à l'horizontale — une colonne et
+demie visible, ce qui se dit sans légende — et la planification reste en lignes,
+resserrée. Les tableaux perdent leurs colonnes secondaires par `sm:table-cell` et
+`md:table-cell`, dans cet ordre : la cible avant la fréquence, parce qu'on sait
+généralement de quoi on parle et rarement quand ça tombe.

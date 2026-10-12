@@ -22,7 +22,7 @@ import {
   Select,
 } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAgentModels, effortsFor } from '../lib/agents'
 import {

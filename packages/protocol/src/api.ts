@@ -181,6 +181,20 @@ export interface ProjectImageDto {
   provisional: boolean
 }
 
+/**
+ * L'état du dépôt d'un workspace, tel que les listes l'affichent : la branche, et de
+ * quoi écrire « main +4 −1 » sans aller chercher le diff.
+ */
+export interface GitSummaryDto {
+  branch: string
+  isDirty: boolean
+  /** Fichiers que `git status` signale, suivis ou non. */
+  changedFiles: number
+  /** Lignes gagnées et perdues depuis `HEAD`. */
+  added: number
+  removed: number
+}
+
 export interface ProjectDto {
   id: string
   name: string
@@ -203,7 +217,7 @@ export interface ProjectDto {
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */
-  git: { branch: string; isDirty: boolean } | null
+  git: GitSummaryDto | null
 }
 
 // Pièces jointes
@@ -289,6 +303,19 @@ export const createConversationBodySchema = z.object({
   firstMessage: messagePayloadSchema.optional(),
 })
 
+/**
+ * Ouvrir un fil libre : même corps, sans ce qui suppose un répertoire de travail.
+ *
+ * Ni worktree ni carte, et ce n'est pas un oubli : les deux appartiennent à un projet,
+ * et une conversation qui n'en a pas ne peut désigner ni l'un ni l'autre. Les refuser
+ * ici plutôt que de les ignorer en silence, pour qu'un appelant qui les envoie sache
+ * que son geste n'a pas eu lieu.
+ */
+export const createFreeConversationBodySchema = createConversationBodySchema.omit({
+  worktreeId: true,
+  cardId: true,
+})
+
 /** Ordre manuel des conversations d'un projet, du haut vers le bas. */
 export const reorderConversationsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
@@ -305,6 +332,18 @@ export const updateConversationBodySchema = z
     cardId: z.string().uuid().nullable(),
   })
   .partial()
+
+/**
+ * *Ranger…* : la destination d'une conversation, changée après coup.
+ *
+ * `null` la sort de son projet et en refait un fil libre. Le geste est séparé de
+ * `PATCH` parce qu'il n'est pas de la même nature : les autres champs décrivent la
+ * conversation, celui-ci la déplace, et le déplacement emporte avec lui le worktree,
+ * la carte et le répertoire de travail.
+ */
+export const moveConversationBodySchema = z.object({
+  projectId: z.string().uuid().nullable(),
+})
 
 export const sendMessageBodySchema = messagePayloadSchema
 
@@ -400,7 +439,8 @@ export interface ConversationMetrics {
 
 export interface ConversationDto {
   id: string
-  projectId: string
+  /** Null pour un fil libre : une conversation n'appartient à un projet que si on l'y a rangée. */
+  projectId: string | null
   worktreeId: string | null
   /**
    * Carte que cette conversation traite, null quand elle n'en traite aucune.
@@ -436,12 +476,6 @@ export interface ConversationDto {
   outputTokens: number
   metrics: ConversationMetrics
   pinned: boolean
-  /**
-   * Signet du compte appelant, comme `lastReadSeq` et `isOwner` : dérivé du demandeur,
-   * pas de la conversation. Deux comptes qui voient le même fil partagé n'ont pas les
-   * mêmes favoris.
-   */
-  favorite: boolean
   position: number
   archivedAt: number | null
   createdAt: number
@@ -504,7 +538,7 @@ export interface WorktreeDto {
   baseRef: string
   createdAt: number
   /** Null si le dossier a disparu du disque en dehors de Solera. */
-  git: { branch: string; isDirty: boolean } | null
+  git: GitSummaryDto | null
   /** Nombre de conversations qui l'utilisent, pour prévenir avant suppression. */
   conversationCount: number
 }

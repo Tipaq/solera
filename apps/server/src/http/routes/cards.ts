@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, count, eq, inArray, max, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   attachments,
@@ -29,12 +29,16 @@ import {
   type CardDto,
   type CardLinkDto,
   type CardNoteDto,
+  type CardSearchDto,
 } from '@solera/protocol'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 const MENTION_LIMIT = 20
+
+/** Cartes rendues à la palette : au-delà, aucune famille de résultats n'est lisible. */
+const SEARCH_LIMIT = 20
 
 /**
  * Le board : les cartes d'un projet, c'est-à-dire le travail à faire, distinct des
@@ -225,6 +229,51 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       .all()
 
     return buildDtos(id, rows)
+  })
+
+  /**
+   * Cartes de tous les projets visibles, pour la palette.
+   *
+   * Le board lit projet par projet, ce qui va quand on l'a sous les yeux ; la palette
+   * cherche sans projet courant et ferait autrement une requête par projet à chaque
+   * frappe. Sans saisie, les dernières touchées : la palette au repos propose ce qu'on
+   * rouvre.
+   */
+  app.get('/api/cards/search', async (request) => {
+    const user = requireUser(request)
+    const { q } = request.query as { q?: string }
+    const query = (q ?? '').trim()
+
+    const rows = ctx.db
+      .select({
+        id: cards.id,
+        projectId: cards.projectId,
+        number: cards.number,
+        title: cards.title,
+        column: cards.column,
+        updatedAt: cards.updatedAt,
+      })
+      .from(cards)
+      .innerJoin(projects, eq(projects.id, cards.projectId))
+      .where(
+        and(
+          // La visibilité se vérifie ici et pas ailleurs : la requête traverse tous
+          // les projets, et une carte d'un projet privé d'un autre compte n'a rien à
+          // faire dans la palette.
+          or(eq(projects.ownerId, user.id), eq(projects.visibility, 'shared')),
+          query.length === 0
+            ? undefined
+            : // Le numéro se cherche par préfixe et le titre par sous-chaîne : taper
+              // « 13 » veut dire la carte 13, pas toutes celles qui contiennent un 13.
+              sql`(${cards.title} LIKE ${`%${query}%`} COLLATE NOCASE
+                   OR CAST(${cards.number} AS TEXT) LIKE ${`${query}%`})`,
+        ),
+      )
+      .orderBy(desc(cards.updatedAt))
+      .limit(SEARCH_LIMIT)
+      .all()
+
+    return { cards: rows } satisfies CardSearchDto
   })
 
   /**

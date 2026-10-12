@@ -74,7 +74,6 @@ async function hub(t: TestContext, warm: string[] = []) {
   // Déclarées avant le hub, comme dans `buildApp` : le hook doit s'y appliquer quand même.
   app.patch('/api/conversations/:id', async (request, reply) =>
     (request.params as { id: string }).id === 'missing' ? reply.code(404).send({}) : { ok: true })
-  app.put('/api/conversations/:id/favorite', async () => ({ favorite: true }))
   app.post('/api/conversations/:id/read', async () => ({ lastReadSeq: 1 }))
 
   await registerWebSocketHub(app, ctx, {} as EventLog, sessions, {} as PushService)
@@ -125,18 +124,6 @@ test('un échec ne prévient personne', async (t) => {
   assert.equal(listsChanged(owner), 0)
 })
 
-test('un signet ne prévient que les onglets de son compte', async (t) => {
-  const { app, connect } = await hub(t)
-  const owner = await connect('owner')
-  const other = await connect('other')
-
-  await app.inject({ method: 'PUT', url: '/api/conversations/c1/favorite', headers: { 'x-user': 'owner' } })
-  await settle()
-
-  assert.equal(listsChanged(owner), 1)
-  assert.equal(listsChanged(other), 0)
-})
-
 test('le curseur de lecture ne fait pas relire la liste', async (t) => {
   const { app, connect } = await hub(t)
   const owner = await connect('owner')
@@ -185,7 +172,7 @@ test('chaque route de LIST_ROUTES existe', async (t) => {
   await app.ready()
   t.after(() => app.close())
 
-  for (const key of Object.keys(LIST_ROUTES)) {
+  for (const key of LIST_ROUTES) {
     const [method, url] = key.split(' ') as [string, string]
     assert.ok(app.hasRoute({ method: method as 'GET', url }), `route absente : ${key}`)
   }

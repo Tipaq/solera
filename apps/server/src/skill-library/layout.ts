@@ -73,8 +73,10 @@ export class SkillLibraryLayout {
    * `reloadSkills()`. Une portée vide au lancement doit donc exister quand même, pour
    * qu'un skill créé en cours de session y soit trouvé.
    */
-  rootsFor(projectId: string): string[] {
-    return [this.ensureScope('global', null), this.ensureScope('project', projectId)]
+  rootsFor(projectId: string | null): string[] {
+    const global = this.ensureScope('global', null)
+    // Un fil libre n'a que la portée globale : il n'y a pas de projet dont il hériterait.
+    return projectId === null ? [global] : [global, this.ensureScope('project', projectId)]
   }
 
   /** Crée la racine d'une portée si elle manque, et la rend. */

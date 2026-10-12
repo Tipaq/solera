@@ -22,7 +22,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
-import { ensureProjectMemory, memoryAppendixForCodex } from '../memory/store.js'
+import { ensureProjectMemory, freeThreadMemoryDir, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type {
@@ -40,7 +40,7 @@ import type { EventLog } from '../events/event-log.js'
 import { conversationMetrics } from '../conversations/metrics.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
-import { resolveConversationCwd, resolveMention } from '../workspace.js'
+import { agentCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -288,9 +288,16 @@ export class SessionManager {
     return this.resolveCwd(this.loadConversation(conversationId))
   }
 
-  /** Répertoire de travail : le worktree s'il y en a un, sinon la racine du projet. */
+  /**
+   * Répertoire de travail : le worktree s'il y en a un, sinon la racine du projet.
+   *
+   * Un fil libre n'a ni l'un ni l'autre, et pourtant un CLI se lance toujours quelque
+   * part : il reçoit un dossier vide à lui, sous `<data>/threads/<id>`. Le lancer dans
+   * le home donnerait la machine entière à lire à un agent dont l'interface annonce
+   * justement qu'il n'a pas de dossier.
+   */
   private resolveCwd(conversation: ConversationRow): string {
-    return resolveConversationCwd(this.db, conversation)
+    return agentCwd(this.db, this.config.paths.threads, conversation)
   }
 
   private setStatus(conversationId: string, status: ConversationStatus): void {
@@ -698,22 +705,26 @@ export class SessionManager {
     const cwd = this.resolveCwd(conversation)
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
+    const projectId = conversation.projectId
     const instructions = () => {
+      if (projectId === null) return null
       const project = this.db
         .select({ instructionsMode: projects.instructionsMode, workspacePath: projects.workspacePath })
         .from(projects)
-        .where(eq(projects.id, conversation.projectId))
+        .where(eq(projects.id, projectId))
         .get()
       return project ? { ...project, mode: resolveInstructionsMode(project) } : null
     }
     // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
     // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
     const memoryDir = () =>
-      ensureProjectMemory(
-        this.config.paths.memory,
-        conversation.projectId,
-        instructions()?.workspacePath ?? cwd,
-      )
+      projectId === null
+        ? freeThreadMemoryDir(this.config.paths.memory, conversation.userId)
+        : ensureProjectMemory(
+            this.config.paths.memory,
+            projectId,
+            instructions()?.workspacePath ?? cwd,
+          )
 
     return {
       conversationId,
@@ -726,7 +737,7 @@ export class SessionManager {
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
       processEnv: {
-        ...processOrigins(this.config.paths.data).environment(conversation.projectId, conversationId),
+        ...processOrigins(this.config.paths.data).environment(projectId, conversationId),
         // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
         // personne qui l'a ouvert (sondé sur 2.1.291). Les autres CLI l'ignorent.
         ...(conversation.scheduleId && conversation.agent === 'claude'
@@ -742,7 +753,7 @@ export class SessionManager {
           enabled: this.config.mcp.soleraServer,
           config: current,
           databasePath: this.config.paths.database,
-          projectId: conversation.projectId,
+          projectId,
           conversationId,
           memoryDir: memoryDir(),
         })
@@ -756,19 +767,25 @@ export class SessionManager {
       // SOLERA.md passe devant et hors de ces interrupteurs : ce sont les consignes de
       // l'utilisateur, pas un apport de Solera qu'on choisirait de couper.
       projectOverview: (current) => {
-        const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
+        // `builtinMcpServer` refuse aussi de partir sans projet : annoncer le serveur
+        // à l'agent alors qu'il n'est pas monté, c'est lui faire appeler des outils qui
+        // n'existent pas et lire son échec comme le sien. Carte #16 pour le fond.
+        const soleraMcp =
+          projectId !== null && builtinMcpEnabled(this.config.mcp.soleraServer, current)
         const parts = [
           instructionsAppendix(this.db, {
-            projectId: conversation.projectId,
-            mode: instructions()?.mode ?? 'repo',
+            projectId,
+            // Un fil libre n'a pas de dépôt où un AGENTS.md pourrait vivre : ses
+            // consignes ne peuvent être que celles de Solera.
+            mode: projectId === null ? 'solera' : (instructions()?.mode ?? 'repo'),
             soleraMcp,
           }),
           // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
           // ce qu'on leur dit.
           conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), soleraMcp) : null,
-          this.config.mcp.soleraServer && current.soleraMcp
+          this.config.mcp.soleraServer && current.soleraMcp && projectId !== null
             ? projectOverview(this.db, {
-                projectId: conversation.projectId,
+                projectId,
                 conversationId,
                 soleraMcp,
               })
@@ -783,7 +800,7 @@ export class SessionManager {
       },
       skillRoots: (current) =>
         this.config.skills.library && current.skillLibrary
-          ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(conversation.projectId)
+          ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
           : [],
       resumeSessionId: conversation.agentSessionId,
 

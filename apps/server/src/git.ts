@@ -23,23 +23,47 @@ async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promis
 export interface GitStatus {
   branch: string
   isDirty: boolean
+  /** Fichiers que `git status` signale, suivis ou non : « 4 non commités ». */
+  changedFiles: number
+  /** Lignes gagnées et perdues depuis `HEAD`, zéro quand l'arbre est propre. */
+  added: number
+  removed: number
+}
+
+/** `12 files changed, 40 insertions(+), 7 deletions(-)`, dont on ne garde que les deux chiffres. */
+function parseShortstat(line: string): { added: number; removed: number } {
+  const added = /(\d+) insertion/.exec(line)
+  const removed = /(\d+) deletion/.exec(line)
+  return { added: Number(added?.[1] ?? 0), removed: Number(removed?.[1] ?? 0) }
 }
 
 /**
  * Retourne null si le chemin n'est pas un dépôt git, ce qui est un cas normal :
  * un projet peut pointer sur un dossier quelconque.
+ *
+ * Le volume du diff part avec le reste plutôt qu'à la demande : la page Projets le
+ * montre sur chaque ligne, et une seconde requête par projet rendrait la liste
+ * dépendante d'autant d'allers-retours qu'elle a de lignes. `git diff HEAD` échoue
+ * sur un dépôt sans commit, cas où l'on s'en tient à zéro.
  */
 export async function readGitStatus(cwd: string): Promise<GitStatus | null> {
   try {
     const inside = (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim()
     if (inside !== 'true') return null
 
-    const [branch, porcelain] = await Promise.all([
+    const [branch, porcelain, shortstat] = await Promise.all([
       git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']),
       git(cwd, ['status', '--porcelain']),
+      git(cwd, ['diff', '--shortstat', 'HEAD']).catch(() => ''),
     ])
 
-    return { branch: branch.trim(), isDirty: porcelain.trim().length > 0 }
+    const changedFiles = porcelain.split('\n').filter((line) => line.trim().length > 0).length
+    return {
+      branch: branch.trim(),
+      isDirty: changedFiles > 0,
+      changedFiles,
+      ...parseShortstat(shortstat),
+    }
   } catch {
     return null
   }

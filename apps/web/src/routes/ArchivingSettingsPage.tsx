@@ -1,7 +1,7 @@
 import { Archive, Play, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field, Presets } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useRunArchivePass, useUpdateAppSettings } from '../lib/app-settings'
 import { cronNextRuns, cronToHuman } from '../lib/cron'

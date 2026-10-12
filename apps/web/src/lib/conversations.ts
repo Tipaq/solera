@@ -10,7 +10,8 @@ import type {
 import { api } from './api'
 import { uuidv4 } from './uuid'
 
-export const conversationsKey = (projectId: string) => ['conversations', projectId]
+/** `null` est la clé des fils libres : ils forment leur propre groupe, pas un projet. */
+export const conversationsKey = (projectId: string | null) => ['conversations', projectId]
 const ALL_CONVERSATIONS_KEY = ['conversations', 'all']
 
 /** Toutes les conversations visibles, pour la sidebar. Une requête, pas une par projet. */
@@ -89,57 +90,6 @@ export function useArchiveConversation() {
   })
 }
 
-/**
- * Signet personnel, posé ou retiré.
- *
- * Appliqué localement avant la réponse : l'étoile est un geste de navigation, et la
- * voir se remplir un aller-retour plus tard donne l'impression d'un clic manqué. Les
- * deux listes en cache sont retouchées, la sidebar lisant l'une et une page de projet
- * l'autre.
- */
-export function useToggleFavorite() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: ({ id, favorite }: { id: string; favorite: boolean }) =>
-      favorite
-        ? api.put<{ favorite: boolean }>(`/api/conversations/${id}/favorite`, {})
-        : api.delete<{ favorite: boolean }>(`/api/conversations/${id}/favorite`),
-
-    onMutate: async ({ id, favorite }) => {
-      await queryClient.cancelQueries({ queryKey: ['conversations'] })
-      const previous = queryClient.getQueriesData<ConversationDto[]>({ queryKey: ['conversations'] })
-
-      for (const [key, list] of previous) {
-        if (!list) continue
-        queryClient.setQueryData(
-          key,
-          list.map((entry) => (entry.id === id ? { ...entry, favorite } : entry)),
-        )
-      }
-
-      return { previous }
-    },
-
-    onError: (_error, { id }, context) => {
-      // Une lecture ou un changement de statut peut arriver pendant la requête.
-      // Revenir sur le signet ne doit pas remettre toute la liste à son ancien état.
-      for (const [key, list] of context?.previous ?? []) {
-        const previous = list?.find((entry) => entry.id === id)
-        if (!previous) continue
-        queryClient.setQueryData<ConversationDto[]>(key, (current) =>
-          current?.map((entry) => entry.id === id ? { ...entry, favorite: previous.favorite } : entry),
-        )
-      }
-    },
-
-    onSettled: (_result, _error, { id }) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['conversations'] }),
-      queryClient.invalidateQueries({ queryKey: ['conversation', id] }),
-    ]),
-  })
-}
-
 export function useConversations(projectId: string | undefined) {
   return useQuery({
     queryKey: conversationsKey(projectId ?? ''),
@@ -157,7 +107,15 @@ export function useConversation(conversationId: string | undefined) {
   })
 }
 
-export function useCreateConversation(projectId: string) {
+/**
+ * Ouvre une conversation, dans un projet ou libre.
+ *
+ * `null` vise la route sans projet, qui ne prend ni worktree ni carte : les deux
+ * appartiennent à un projet, et un fil libre n'en désigne aucun. Un seul hook plutôt que
+ * deux, parce que la page de brouillon est la même et que sa destination se change d'un
+ * sélecteur, sans rien remonter.
+ */
+export function useCreateConversation(projectId: string | null) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: {
@@ -177,16 +135,44 @@ export function useCreateConversation(projectId: string) {
         skills: string[]
       }
     }) =>
-      api.post<ConversationDto>(`/api/projects/${projectId}/conversations`, {
-        worktreeId: null,
-        cardId: null,
-        ...input,
-      }),
+      projectId === null
+        ? api.post<ConversationDto>('/api/conversations', {
+            agent: input.agent,
+            config: input.config,
+            title: input.title,
+            firstMessage: input.firstMessage,
+          })
+        : api.post<ConversationDto>(`/api/projects/${projectId}/conversations`, {
+            worktreeId: null,
+            cardId: null,
+            ...input,
+          }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['projects'] })
       // Lancer depuis une carte lui ajoute une session et peut la faire changer de
       // colonne : le board affiché derrière serait faux sans cette relecture.
+      void queryClient.invalidateQueries({ queryKey: ['cards'] })
+    },
+  })
+}
+
+/**
+ * *Ranger…* : la destination d'une conversation, choisie après coup.
+ *
+ * `null` la ressort de son projet. Le serveur détache au passage le worktree, la carte
+ * et la session native du CLI — le répertoire de travail a changé, et ce qui s'y
+ * rapportait ne suit pas.
+ */
+export function useMoveConversation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, projectId }: { id: string; projectId: string | null }) =>
+      api.post<ConversationDto>(`/api/conversations/${id}/project`, { projectId }),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
+      void queryClient.invalidateQueries({ queryKey: ['projects'] })
       void queryClient.invalidateQueries({ queryKey: ['cards'] })
     },
   })

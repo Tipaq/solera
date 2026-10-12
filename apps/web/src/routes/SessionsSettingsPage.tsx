@@ -1,7 +1,7 @@
 import { Cpu, ShieldCheck } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Banner, Button, Card, CardBody, CardHeader, EmptyState, Field } from '@solera/ui'
-import { SectionHeader } from './SettingsPage'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAppSettings, useUpdateAppSettings } from '../lib/app-settings'
 import { useTranslate } from '../lib/i18n'

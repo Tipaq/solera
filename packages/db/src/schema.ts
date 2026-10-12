@@ -362,9 +362,20 @@ export const conversations = sqliteTable(
   'conversations',
   {
     id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Projet auquel ce fil appartient, ou NULL : un fil libre n'appartient à rien.
+     *
+     * On ouvre une conversation parce qu'on a une question ; savoir qu'elle relève d'un
+     * projet vient après, parfois jamais. Le rangement est un geste séparé et tardif
+     * (`Ranger…`), et ne rien ranger reste une réponse valable.
+     *
+     * Nullable plutôt qu'un projet « personnel » caché, et c'est le point : un projet,
+     * c'est un répertoire de travail, et un fil libre n'en a pas. Un faux projet aurait
+     * donné un vrai dossier à l'insu de tout le monde — fichiers, git, terminaux —
+     * alors qu'ici le type dit l'absence, et chaque chemin qui supposait un dossier
+     * cesse de compiler au lieu de marcher en silence.
+     */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** NULL signifie que l'agent travaille à la racine du projet. */
     worktreeId: text('worktree_id').references(() => worktrees.id),
     /**
@@ -518,9 +529,8 @@ export const scheduledTasks = sqliteTable(
   'scheduled_tasks',
   {
     id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Projet visé, ou NULL : une tâche planifiée n'a pas besoin de projet non plus. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
     userId: text('user_id')
       .notNull()
@@ -625,33 +635,6 @@ export const conversationReads = sqliteTable(
     /** Ne recule jamais : l'écriture prend le maximum avec la valeur déjà en base. */
     lastReadSeq: integer('last_read_seq').notNull().default(0),
     updatedAt: timestamp('updated_at').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
-)
-
-/**
- * Les fils qu'un compte a mis en favori.
- *
- * Une table plutôt qu'une colonne, comme `conversation_reads` et pour la même raison :
- * un favori appartient à celui qui l'a posé, pas à la conversation. Sur un projet
- * partagé, la sidebar de chacun doit pouvoir garder ses propres signets sans imposer
- * les siens aux autres — ce que fait déjà `conversations.pinned`, qui est un épinglage
- * du fil et reste distinct.
- *
- * Purement une aide à la navigation : l'archivage automatique n'en tient pas compte,
- * un fil marqué puis terminé se range comme les autres.
- */
-export const conversationFavorites = sqliteTable(
-  'conversation_favorites',
-  {
-    conversationId: text('conversation_id')
-      .notNull()
-      .references(() => conversations.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    /** Ordre de la section « Favoris », du plus récemment marqué au plus ancien. */
-    createdAt: timestamp('created_at').notNull(),
   },
   (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
 )
@@ -1133,7 +1116,6 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
-export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect

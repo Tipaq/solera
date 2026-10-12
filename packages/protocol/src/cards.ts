@@ -185,3 +185,23 @@ export function cardBranchName(number: number, title: string): string {
     .replace(/-+$/, '')
   return slug.length > 0 ? `feat/${number}-${slug}` : `feat/${number}`
 }
+
+/**
+ * Une carte telle que la palette l'affiche, tous projets confondus.
+ *
+ * Distincte de `CardDto` : la palette n'a besoin que de quoi écrire une ligne et y
+ * mener. Les sessions, les notes et les backlinks d'une carte pèsent quatre requêtes
+ * chacun, et personne ne les lit dans une liste de résultats.
+ */
+export interface CardSearchEntryDto {
+  id: string
+  projectId: string
+  number: number
+  title: string
+  column: CardColumn
+  updatedAt: number
+}
+
+export interface CardSearchDto {
+  cards: CardSearchEntryDto[]
+}

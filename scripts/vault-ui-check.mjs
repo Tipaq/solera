@@ -120,8 +120,10 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
+  // Les réglages sont une modale, et `/settings/<section>` est l'ancienne adresse qui
+  // l'ouvre : la viser vérifie les deux d'un coup.
   await page.goto(`${base}/settings/savoir`)
-  await page.getByRole('heading', { name: 'Le vault', exact: true }).waitFor()
+  await page.getByRole('heading', { name: 'Savoir', exact: true }).waitFor()
   await page.getByText('Pas encore de vault, donc rien à indexer.', { exact: true }).waitFor()
 
   const shots = join(root, 'docs/audits/2026-10-12-savoir/portage')

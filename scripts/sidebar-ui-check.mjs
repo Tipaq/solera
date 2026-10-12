@@ -82,63 +82,122 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-09-19-sidebar')
   await mkdir(shots, { recursive: true })
-  // Une longue liste pour vérifier le défilement, sans toucher à la base réelle.
+  // Une longue liste pour vérifier le défilement et le « N autres sessions… », sans
+  // toucher à la base réelle.
   await page.route('**/api/conversations', async (route) => {
     const response = await route.fetch()
     const entries = await response.json()
-    await route.fulfill({ json: [...entries, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, favorite: false, archivedAt: null }))] })
+    // `idle` et lues : une session active ne figure pas dans le groupe de son projet,
+    // elle est déjà dans l'activité au-dessus.
+    // Un fil libre : il n'appartient à aucun projet, et c'est le groupe *Sans projet*
+    // qui doit lui donner un domicile dans la colonne.
+    const free = { ...hero, id: 'fixture-libre', projectId: null, title: 'Fil sans projet', status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }
+    await route.fulfill({ json: [...entries, free, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }))] })
   })
-  await page.route('**/api/projects', async (route) => {
-    const response = await route.fetch()
-    const entries = await response.json()
-    await route.fulfill({ json: [...entries, ...Array.from({ length: 40 }, (_, i) => ({ ...project, id: `project-${i}`, name: `Projet ${i + 1}` }))] })
-  })
+
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
-  const nav = page.getByRole('navigation').filter({ has: page.getByRole('group', { name: 'Suivi des conversations' }) })
-  const switcher = page.getByRole('button', { name: 'Changer de projet', exact: true })
-  await switcher.waitFor()
-  await nav.getByRole('button', { name: /Voir les .* sessions/ }).click()
-  await nav.getByRole('link', { name: /Session de travail 30/ }).waitFor()
-  const before = await switcher.boundingBox()
-  await page.locator('#sidebar-activity-results').evaluate((el) => { el.scrollTop = el.scrollHeight })
-  assert.deepEqual(await switcher.boundingBox(), before)
-  assert.equal(await nav.getByRole('button', { name: /^\d+ à débloquer$/ }).isVisible(), true)
-  await nav.getByRole('button', { name: 'Réduire la liste' }).click()
-  assert.equal(await nav.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
-  await switcher.click()
-  const dialog = page.getByRole('dialog', { name: 'Changer de projet' })
-  const search = dialog.getByRole('textbox', { name: 'Rechercher un projet…' })
-  await search.fill('atlas')
-  await dialog.getByRole('button', { name: 'Épingler Atlas API', exact: true }).click()
-  await dialog.getByRole('button', { name: 'Atlas API', exact: true }).click()
-  await page.waitForURL(/\/p\/[^/]+\/(c\/new|board)$/)
-  await switcher.filter({ hasText: 'Atlas API' }).waitFor()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Nimbus', exact: true }).click()
+  const places = page.getByRole('navigation', { name: 'Lieux' })
+  const column = page.locator('aside')
+  await places.waitFor()
+
+  // Les lieux : une liste verticale, toujours visible, et le compte en une ligne.
+  for (const name of ['Fils', 'Projets', 'Planifiées']) {
+    await places.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
+  }
+  // L'activité est fixe : faire défiler la zone basse ne la déplace pas.
+  const activity = column.getByRole('group', { name: 'Suivi des conversations' })
+  await activity.waitFor()
+  // Attendre qu'elle soit remplie avant de la mesurer : ses lignes viennent du socket,
+  // qui arrive après le premier rendu, et une mesure prise sur « Aucune session en
+  // cours » ne vaut rien pour la comparaison d'après.
+  await activity.getByRole('link').first().waitFor()
+  const before = await activity.boundingBox()
+
+  // Lieu *Fils* : l'historique daté. Une tranche au moins porte des lignes.
+  await places.getByRole('button', { name: /^Fils/ }).click()
+  await column.getByRole('heading', { name: /Aujourd’hui|Hier|7 derniers jours|Plus ancien/ }).first().waitFor()
+  await column.getByRole('button', { name: 'Tout l’historique…' }).waitFor()
+
+  // Lieu *Projets* : l'arbre, le centre suit, et la conversation ouverte reste ouverte.
+  await places.getByRole('button', { name: /^Projets/ }).click()
+  await column.getByRole('link', { name: /^Board/ }).first().waitFor()
+  await column.getByRole('link', { name: 'Nouveau projet…' }).waitFor()
+  const more = column.getByRole('button', { name: /autres sessions…$/ })
+  await more.click()
+  await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
+  assert.deepEqual(await activity.boundingBox(), before, 'l’activité doit rester fixe')
+  await column.getByRole('button', { name: 'Réduire la liste' }).click()
+  assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
+
+  // *Sans projet* ouvre la liste, avant les projets : une boîte de réception, et non un
+  // cas particulier qu'on range en bas. Son lien n'a pas de segment de projet — écrire
+  // `/p/null/c/<id>` donnerait une adresse qui se charge et ne trouve rien.
+  const free = column.getByRole('button', { name: 'Sans projet', exact: true })
+  await free.waitFor()
+  assert.equal(await column.locator(`a[href="/c/fixture-libre"]`).count(), 1)
+  assert.equal(await column.locator('a[href^="/p/null/"]').count(), 0)
+  const order = await column.evaluate((node) => {
+    const groups = [...node.querySelectorAll('li')].filter((item) => item.querySelector(':scope > div'))
+    return groups[0]?.textContent?.startsWith('Sans projet') ?? false
+  })
+  assert.equal(order, true, '*Sans projet* doit être le premier groupe')
+  // La zone basse est la seule partie qui défile : la remonter avant la capture, sinon
+  // l'image s'ouvre là où le dépli l'a laissée et le premier groupe est hors champ.
+  await column.evaluate((node) => {
+    for (const child of node.querySelectorAll('*')) if (child.scrollTop > 0) child.scrollTop = 0
+  })
+  await page.screenshot({ path: join(shots, 'lieu-projets.png') })
+
+  // La ligne d'un projet ouvre sa porte, et sa porte est le tableau de bord. Elle a
+  // ouvert une conversation neuve vide tant que `/p/:id` n'était qu'un formulaire de
+  // réglages : le défaut de `useProjectView` datait d'avant le tableau de bord.
+  const projectRow = column.getByRole('link', { name: project.name }).first()
+  assert.equal(await projectRow.getAttribute('href'), `/p/${project.id}`)
+  await projectRow.click()
+  await page.waitForURL(`**/p/${project.id}`)
+  assert.equal(await page.locator('textarea').count(), 0, 'un projet ne s’ouvre pas sur un fil vide')
+
+  // Et une ligne de conversation ouvre bien sa conversation, pas un fil neuf.
+  const conversationRow = column.locator(`a[href$="/c/${hero.id}"]`).first()
+  await conversationRow.click()
   await page.waitForURL(`**/c/${hero.id}`)
-  await page.reload()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Désépingler Atlas API', exact: true }).waitFor()
-  await search.fill('introuvablexyz')
-  await dialog.getByRole('status').filter({ hasText: 'Aucun projet trouvé' }).waitFor()
-  await search.fill('')
-  await page.screenshot({ path: join(shots, 'project-switcher.png') })
-  await dialog.getByRole('button', { name: 'Tous les projets', exact: true }).click()
-  await nav.getByRole('link', { name: 'Atlas API', exact: true }).waitFor()
-  await switcher.click()
-  await dialog.getByRole('button', { name: 'Nimbus', exact: true }).click()
-  await page.screenshot({ path: join(shots, 'focused-desktop.png') })
+
+  // Lieu *Planifiées* : les tâches par échéance, tous projets confondus.
+  await places.getByRole('button', { name: /^Planifiées/ }).click()
+  await column.getByRole('heading', { name: /Aujourd’hui|Cette semaine|Plus tard|En sommeil/ }).first()
+    .or(column.getByText('Aucune tâche planifiée')).waitFor()
+
+  // La modale d'activité : quatre filtres qui portent leur compte, plus un par projet.
+  await activity.getByRole('button', { name: /^Activité/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'Activité globale' })
+  for (const name of ['Tout', 'À débloquer', 'En cours', 'Non lues']) {
+    await dialog.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
+  }
+  await dialog.getByRole('button', { name: 'Tous les projets' }).click()
+  await page.getByRole('menuitem', { name: 'Nimbus' }).click()
+  await page.screenshot({ path: join(shots, 'modale-activite.png') })
+  await page.keyboard.press('Escape')
+
+  // Le menu du compte : Services et Réglages y sont entrés, la colonne n'en garde qu'une.
+  assert.equal(await column.getByRole('link', { name: 'Services' }).count(), 0)
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Services' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Réglages' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Se déconnecter' }).waitFor()
+  await page.screenshot({ path: join(shots, 'menu-compte.png') })
+  await page.keyboard.press('Escape')
+
+  // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
-  await switcher.click()
-  await dialog.getByRole('textbox').fill('Docs')
-  await page.screenshot({ path: join(shots, 'project-switcher-mobile.png') })
-  await dialog.getByRole('textbox').press('ArrowDown')
-  await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).waitFor()
+  await places.waitFor()
+  // Le tiroir entre par une translation : capturer avant la fin la montre à moitié sortie.
+  await page.waitForTimeout(400)
+  await page.screenshot({ path: join(shots, 'tiroir-mobile.png') })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+
   assert.deepEqual(errors, [])
-  console.log('OK : navigation projet/session, recherche, épingles persistantes, vue globale, longue liste, activité fixe, mobile.')
+  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

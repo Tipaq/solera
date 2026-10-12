@@ -538,6 +538,11 @@ export class AgentRequests {
     if (title.length > 200) throw new Refusal('Titre trop long (200 caractères au plus).')
     if (description.length > 20000) throw new Refusal('Description trop longue (20 000 caractères au plus).')
 
+    // Le board appartient à un projet : un fil libre n'en a pas, et il n'y a donc nulle
+    // part où poser la carte tant qu'il n'est pas rangé.
+    if (requester.projectId === null) {
+      throw new Refusal("Cette conversation n'appartient à aucun projet : il n'y a pas de board où créer une carte.")
+    }
     const card = createCard(this.ctx.db, requester.projectId, requester.userId, {
       title,
       description,
