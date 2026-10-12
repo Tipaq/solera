@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn } from '../../lib/chat-fold'
-import { openTab } from '../../lib/editor-tabs'
+import { openTab, useEditorTabs } from '../../lib/editor-tabs'
 import { useTranslate } from '../../lib/i18n'
 import {
   restorePanelWidth,
@@ -15,6 +15,7 @@ import {
   setPanelTree,
   setPanelWidth,
   usePanelTab,
+  usePanelTree,
   useSelectedSubAgent,
   type PanelTab,
 } from '../../lib/panel'
@@ -102,6 +103,22 @@ export function SidePanel({
   const wasRunning = useRef(turnRunning)
   const wide = useMediaQuery('(min-width: 48rem)')
   const modal = !wide || fullscreen
+  const treeOpen = usePanelTree()
+  const { active: openFile } = useEditorTabs(scope)
+
+  /**
+   * Ce que la bande du panneau annonce quand il recouvre l'écran.
+   *
+   * Le répertoire de travail tant qu'on parcourt, le fichier dès qu'on en lit un : au
+   * téléphone, l'arbre et l'éditeur ne tiennent pas côte à côte, et la bande est le
+   * seul endroit qui dise lequel des deux on regarde. Le retour ramène à l'arbre,
+   * comme on remonte d'un dossier.
+   */
+  // Seulement là où l'arbre et l'éditeur ne tiennent pas ensemble. Sur un panneau
+  // large, même sorti de la coque, le répertoire reste le bon titre : le nom du
+  // fichier est déjà sur son onglet, deux lignes plus bas.
+  const readingFile = !wide && tab === 'files' && !treeOpen && Boolean(openFile)
+  const bandTitle = readingFile && openFile ? (openFile.split('/').pop() ?? openFile) : workspaceLabel
 
   /** Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé. */
   const openInFiles = (path: string) => {
@@ -223,18 +240,21 @@ export function SidePanel({
         /* Quand le panneau recouvre l'écran, c'est lui qui porte le segment de la vue :
            il n'y a plus de fil derrière lui pour dire où l'on est, ni par où sortir. */
         <HeaderBand zone="panel">
-          {/* La maquette du téléphone montre un retour *et* une croix. Les deux
-              feraient la même chose hors plein écran — revenir au fil, c'est fermer le
-              panneau — et deux boutons pour un geste se lisent comme deux gestes. Le
-              retour ne sert donc qu'à sortir du plein écran, qui a bien un état
-              intermédiaire où revenir. */}
+          {/* Le retour ne s'affiche que s'il y a où revenir : à l'arbre quand on lit
+              un fichier, à la fenêtre quand on est sorti de la coque. Ailleurs il
+              ferait la même chose que la croix, et deux boutons pour un geste se
+              lisent comme deux gestes. */}
           {fullscreen ? (
             <IconButton label={t('panel.fullscreen.exit')} onClick={() => setFullscreen(false)}>
               <ChevronLeft size={18} />
             </IconButton>
+          ) : readingFile ? (
+            <IconButton label={t('panel.tree.show')} onClick={() => setPanelTree(true)}>
+              <ChevronLeft size={18} />
+            </IconButton>
           ) : null}
-          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={workspaceLabel}>
-            {workspaceLabel}
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={readingFile && openFile ? openFile : workspaceLabel}>
+            {bandTitle}
           </span>
           <IconButton data-panel-initial-focus label={t('panel.close')} onClick={() => setPanelOpen(false)}>
             <X size={16} />

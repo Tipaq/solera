@@ -57,12 +57,23 @@ function pulses(signal: Signal): boolean {
   return signal.family === 'working'
 }
 
-export function SignalChip({ signal, onClick }: { signal: Signal; onClick?: () => void }) {
+export function SignalChip({ signal, onClick, labelClassName }: {
+  signal: Signal
+  onClick?: () => void
+  /**
+   * Replie l'intitulé là où la place manque — la barre du haut sur un téléphone.
+   *
+   * Posé par l'appelant et non ici : c'est lui qui connaît le conteneur dont la
+   * largeur décide, et le signal ne sait pas où il est rendu. Le nom reste porté par
+   * le `title` et par l'infobulle, l'icône et la couleur disent le reste.
+   */
+  labelClassName?: string
+}) {
   const Icon = ICONS[signal.kind]
   const content = (
     <>
       <Icon size={11} className={cx('shrink-0', pulses(signal) && 'animate-pulse')} />
-      <span className="truncate">{signal.label}</span>
+      <span className={cx('truncate', labelClassName)}>{signal.label}</span>
     </>
   )
   const className = cx(
@@ -98,11 +109,14 @@ export function SignalRow({
   signals,
   onSelect,
   className,
+  labelClassName,
 }: {
   signals: Signal[]
   /** Appelé pour les signaux qui mènent quelque part. Les autres restent inertes. */
   onSelect?: (kind: SignalKind) => void
   className?: string
+  /** Voir `SignalChip` : replie les intitulés là où la place manque. */
+  labelClassName?: string
 }) {
   if (signals.length === 0) return null
 
@@ -112,6 +126,7 @@ export function SignalRow({
         <SignalChip
           key={signal.kind}
           signal={signal}
+          labelClassName={labelClassName}
           onClick={onSelect && OPENS_PANEL.has(signal.kind) ? () => onSelect(signal.kind) : undefined}
         />
       ))}

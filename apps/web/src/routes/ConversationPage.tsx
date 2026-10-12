@@ -925,7 +925,12 @@ export function ConversationPage() {
             tour interrompu, une liaison coupée. Le reste vit au-dessus du composer, qui
             est visible en même temps que lui, et le répéter ici l'afficherait deux fois.
           */}
-          <SignalRow signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))} />
+          {/* Au téléphone, le signal se réduit à son icône : la bande n'a pas la place
+              d'une phrase, et c'est l'identité qui doit garder la sienne. */}
+          <SignalRow
+            signals={signals.filter((signal) => HEADER_SIGNALS.has(signal.kind))}
+            labelClassName="@max-[44rem]/thread:hidden"
+          />
 
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
