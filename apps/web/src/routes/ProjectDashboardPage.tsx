@@ -73,7 +73,8 @@ export function ProjectDashboardPage() {
   const project = projects?.find((entry) => entry.id === projectId)
   // Le tableau de bord n'est pas une vue du projet au sens de `project-view` : c'est
   // sa porte. Retenir « board » ou « brouillon » reste le fait des deux autres.
-  useRememberProjectView(projectId, null)
+  // Le tableau de bord se retient comme les deux autres : on revient là où on pilote.
+  useRememberProjectView(projectId, 'dashboard')
 
   const mine = useMemo(
     () => (conversations ?? []).filter((entry) => entry.projectId === projectId),

@@ -148,6 +148,20 @@ try {
   })
   await page.screenshot({ path: join(shots, 'lieu-projets.png') })
 
+  // La ligne d'un projet ouvre sa porte, et sa porte est le tableau de bord. Elle a
+  // ouvert une conversation neuve vide tant que `/p/:id` n'était qu'un formulaire de
+  // réglages : le défaut de `useProjectView` datait d'avant le tableau de bord.
+  const projectRow = column.getByRole('link', { name: project.name }).first()
+  assert.equal(await projectRow.getAttribute('href'), `/p/${project.id}`)
+  await projectRow.click()
+  await page.waitForURL(`**/p/${project.id}`)
+  assert.equal(await page.locator('textarea').count(), 0, 'un projet ne s’ouvre pas sur un fil vide')
+
+  // Et une ligne de conversation ouvre bien sa conversation, pas un fil neuf.
+  const conversationRow = column.locator(`a[href$="/c/${hero.id}"]`).first()
+  await conversationRow.click()
+  await page.waitForURL(`**/c/${hero.id}`)
+
   // Lieu *Planifiées* : les tâches par échéance, tous projets confondus.
   await places.getByRole('button', { name: /^Planifiées/ }).click()
   await column.getByRole('heading', { name: /Aujourd’hui|Cette semaine|Plus tard|En sommeil/ }).first()
