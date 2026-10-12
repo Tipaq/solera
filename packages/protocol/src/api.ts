@@ -476,12 +476,6 @@ export interface ConversationDto {
   outputTokens: number
   metrics: ConversationMetrics
   pinned: boolean
-  /**
-   * Signet du compte appelant, comme `lastReadSeq` et `isOwner` : dérivé du demandeur,
-   * pas de la conversation. Deux comptes qui voient le même fil partagé n'ont pas les
-   * mêmes favoris.
-   */
-  favorite: boolean
   position: number
   archivedAt: number | null
   createdAt: number

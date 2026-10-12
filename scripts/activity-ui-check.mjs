@@ -95,7 +95,7 @@ try {
     { id: 'activity-g', projectId: project.id, title: 'Relire les migrations SQLite', status: 'running' },
     { id: 'activity-h', projectId: atlas.id, title: 'Mesurer le temps de réponse', status: 'running' },
     { id: 'activity-i', projectId: docs.id, title: 'Reprendre la page Principes', status: 'running' },
-  ].map((entry) => ({ ...hero, archivedAt: null, favorite: false, lastNotableSeq: 5, lastReadSeq: 0, ...entry }))
+  ].map((entry) => ({ ...hero, archivedAt: null, lastNotableSeq: 5, lastReadSeq: 0, ...entry }))
   await page.route('**/api/projects', async (route) => route.fulfill({ json: [...projects, extraProject] }))
   await page.route('**/api/conversations', async (route) => route.fulfill({ json: fixtures }))
   let socket

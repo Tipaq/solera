@@ -91,8 +91,8 @@ try {
     // elle est déjà dans l'activité au-dessus.
     // Un fil libre : il n'appartient à aucun projet, et c'est le groupe *Sans projet*
     // qui doit lui donner un domicile dans la colonne.
-    const free = { ...hero, id: 'fixture-libre', projectId: null, title: 'Fil sans projet', status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }
-    await route.fulfill({ json: [...entries, free, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }))] })
+    const free = { ...hero, id: 'fixture-libre', projectId: null, title: 'Fil sans projet', status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }
+    await route.fulfill({ json: [...entries, free, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }))] })
   })
 
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)

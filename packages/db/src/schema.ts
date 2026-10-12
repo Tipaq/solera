@@ -640,33 +640,6 @@ export const conversationReads = sqliteTable(
 )
 
 /**
- * Les fils qu'un compte a mis en favori.
- *
- * Une table plutôt qu'une colonne, comme `conversation_reads` et pour la même raison :
- * un favori appartient à celui qui l'a posé, pas à la conversation. Sur un projet
- * partagé, la sidebar de chacun doit pouvoir garder ses propres signets sans imposer
- * les siens aux autres — ce que fait déjà `conversations.pinned`, qui est un épinglage
- * du fil et reste distinct.
- *
- * Purement une aide à la navigation : l'archivage automatique n'en tient pas compte,
- * un fil marqué puis terminé se range comme les autres.
- */
-export const conversationFavorites = sqliteTable(
-  'conversation_favorites',
-  {
-    conversationId: text('conversation_id')
-      .notNull()
-      .references(() => conversations.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    /** Ordre de la section « Favoris », du plus récemment marqué au plus ancien. */
-    createdAt: timestamp('created_at').notNull(),
-  },
-  (t) => [primaryKey({ columns: [t.conversationId, t.userId] })],
-)
-
-/**
  * Le journal (invariant I2). `seq` est strictement croissant et sans trou par
  * conversation. WITHOUT ROWID parce que la clé primaire composite est déjà l'ordre
  * de lecture naturel.
@@ -1052,7 +1025,6 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
-export type ConversationFavoriteRow = typeof conversationFavorites.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect

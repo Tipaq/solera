@@ -90,57 +90,6 @@ export function useArchiveConversation() {
   })
 }
 
-/**
- * Signet personnel, posé ou retiré.
- *
- * Appliqué localement avant la réponse : l'étoile est un geste de navigation, et la
- * voir se remplir un aller-retour plus tard donne l'impression d'un clic manqué. Les
- * deux listes en cache sont retouchées, la sidebar lisant l'une et une page de projet
- * l'autre.
- */
-export function useToggleFavorite() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: ({ id, favorite }: { id: string; favorite: boolean }) =>
-      favorite
-        ? api.put<{ favorite: boolean }>(`/api/conversations/${id}/favorite`, {})
-        : api.delete<{ favorite: boolean }>(`/api/conversations/${id}/favorite`),
-
-    onMutate: async ({ id, favorite }) => {
-      await queryClient.cancelQueries({ queryKey: ['conversations'] })
-      const previous = queryClient.getQueriesData<ConversationDto[]>({ queryKey: ['conversations'] })
-
-      for (const [key, list] of previous) {
-        if (!list) continue
-        queryClient.setQueryData(
-          key,
-          list.map((entry) => (entry.id === id ? { ...entry, favorite } : entry)),
-        )
-      }
-
-      return { previous }
-    },
-
-    onError: (_error, { id }, context) => {
-      // Une lecture ou un changement de statut peut arriver pendant la requête.
-      // Revenir sur le signet ne doit pas remettre toute la liste à son ancien état.
-      for (const [key, list] of context?.previous ?? []) {
-        const previous = list?.find((entry) => entry.id === id)
-        if (!previous) continue
-        queryClient.setQueryData<ConversationDto[]>(key, (current) =>
-          current?.map((entry) => entry.id === id ? { ...entry, favorite: previous.favorite } : entry),
-        )
-      }
-    },
-
-    onSettled: (_result, _error, { id }) => Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['conversations'] }),
-      queryClient.invalidateQueries({ queryKey: ['conversation', id] }),
-    ]),
-  })
-}
-
 export function useConversations(projectId: string | undefined) {
   return useQuery({
     queryKey: conversationsKey(projectId ?? ''),
