@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import type { CardDto, ConversationDto, ProjectDto } from '@solera/protocol'
-import { liveBackground, liveStatus, subscribeStatus } from './conversation-status'
+import type { CardDto, ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
+import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from './conversation-status'
+import { isUnread } from './reads'
 
 /**
  * Ce que les pages de lieu lisent d'une conversation : son statut vivant, et non celui
@@ -12,8 +13,13 @@ import { liveBackground, liveStatus, subscribeStatus } from './conversation-stat
  */
 export interface LiveConversation {
   conversation: ConversationDto
+  status: ConversationStatus
   running: boolean
   awaiting: boolean
+  /** Non lue : des messages ont été poussés depuis la dernière visite. */
+  unread: boolean
+  /** Quand elle s'est posée, pour écrire son ancienneté. */
+  settledAt: number
   /** Depuis quand elle est dans cet état : la dernière écriture du journal. */
   since: number
 }
@@ -27,26 +33,61 @@ export interface LiveConversation {
  * Une session rangée qui travaille encore reste comptée — c'est elle qui réclame, pas
  * son classement.
  */
-export function useLiveConversations(conversations: ConversationDto[]): LiveConversation[] {
+export function useLiveConversations(
+  conversations: ConversationDto[],
+  /** La conversation ouverte, qui n'est jamais « non lue » : on est dedans. */
+  openId?: string,
+): LiveConversation[] {
   const snapshot = () =>
     JSON.stringify(
       conversations.map((entry) => ({
         status: liveStatus(entry.id) ?? entry.status,
         background: liveBackground(entry.id) > 0,
+        unread: entry.id !== openId && isUnread(entry, liveSeq(entry.id)),
+        settledAt: liveSettledAt(entry.id),
       })),
     )
   const serialized = useSyncExternalStore(subscribeStatus, snapshot, snapshot)
 
   return useMemo(() => {
-    const states = JSON.parse(serialized) as { status: string; background: boolean }[]
+    const states = JSON.parse(serialized) as {
+      status: ConversationStatus
+      background: boolean
+      unread: boolean
+      settledAt: number
+    }[]
     return conversations.flatMap((conversation, index) => {
       const state = states[index]!
       const awaiting = state.status === 'awaiting_input'
       const running = !awaiting && (state.status === 'running' || state.background)
+      // Une session archivée qui travaille encore compte bien dans le total global.
       if (conversation.archivedAt && !running && !awaiting) return []
-      return [{ conversation, running, awaiting, since: conversation.updatedAt }]
+      return [{
+        conversation,
+        status: state.status,
+        running,
+        awaiting,
+        unread: state.unread,
+        settledAt: state.settledAt,
+        since: conversation.updatedAt,
+      }]
     })
   }, [conversations, serialized])
+}
+
+/**
+ * Les identifiants de ce qui travaille ou attend, pour **ne pas** les lister deux fois.
+ *
+ * La zone basse de la colonne s'en sert à l'envers des autres appelants : ces sessions
+ * sont déjà dans l'activité, juste au-dessus, et les répéter était le défaut corrigé au
+ * cinquième tour des maquettes.
+ */
+export function useActiveIds(conversations: ConversationDto[]): Set<string> {
+  const live = useLiveConversations(conversations)
+  return useMemo(
+    () => new Set(live.filter((entry) => entry.running || entry.awaiting).map((entry) => entry.conversation.id)),
+    [live],
+  )
 }
 
 /**
