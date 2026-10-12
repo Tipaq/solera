@@ -109,7 +109,8 @@ export interface ScheduledRunDto {
 
 export interface ScheduledTaskDto {
   id: string
-  projectId: string
+  /** Null quand la tâche ne vise aucun projet, comme un fil libre. */
+  projectId: string | null
   userId: string
   name: string
   agent: AgentKind

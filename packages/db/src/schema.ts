@@ -362,9 +362,20 @@ export const conversations = sqliteTable(
   'conversations',
   {
     id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Projet auquel ce fil appartient, ou NULL : un fil libre n'appartient à rien.
+     *
+     * On ouvre une conversation parce qu'on a une question ; savoir qu'elle relève d'un
+     * projet vient après, parfois jamais. Le rangement est un geste séparé et tardif
+     * (`Ranger…`), et ne rien ranger reste une réponse valable.
+     *
+     * Nullable plutôt qu'un projet « personnel » caché, et c'est le point : un projet,
+     * c'est un répertoire de travail, et un fil libre n'en a pas. Un faux projet aurait
+     * donné un vrai dossier à l'insu de tout le monde — fichiers, git, terminaux —
+     * alors qu'ici le type dit l'absence, et chaque chemin qui supposait un dossier
+     * cesse de compiler au lieu de marcher en silence.
+     */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** NULL signifie que l'agent travaille à la racine du projet. */
     worktreeId: text('worktree_id').references(() => worktrees.id),
     /**
@@ -518,9 +529,8 @@ export const scheduledTasks = sqliteTable(
   'scheduled_tasks',
   {
     id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Projet visé, ou NULL : une tâche planifiée n'a pas besoin de projet non plus. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
     userId: text('user_id')
       .notNull()

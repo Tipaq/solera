@@ -1,7 +1,8 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArrowUpRight, Check, ChevronRight, Inbox, MessageCircleQuestion, X } from 'lucide-react'
-import { NavLink, useMatch } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
+import { conversationPath, useOpenConversationId } from '../lib/conversation-route'
 import type { ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
 import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from '../lib/conversation-status'
 import { isUnread } from '../lib/reads'
@@ -32,7 +33,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>('all')
   const returnFocus = useRef<HTMLElement | null>(null)
-  const openId = useMatch('/p/:projectId/c/:conversationId')?.params.conversationId
+  const openId = useOpenConversationId()
   // Un instantané primitif évite un rendu pour chaque jeton ou métrique reçue.
   const snapshot = () => JSON.stringify(conversations.map((entry) => ({
     status: liveStatus(entry.id) ?? entry.status,
@@ -157,7 +158,7 @@ function ActivityRow({ entry, project, onNavigate, compact = false }: { entry: A
     {entry.awaiting ? <MessageCircleQuestion size={11} /> : entry.running ? <RunningDot /> : entry.settledAt && entry.status === 'idle' ? <Check size={11} /> : null}{label}
   </span>
   return <li>
-    <NavLink to={`/p/${entry.conversation.projectId}/c/${entry.conversation.id}`} onClick={onNavigate} className={({ isActive }) => cx('flex items-start gap-2 border-l-2 px-2 py-2.5 hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent', entry.awaiting ? 'border-caution' : isActive ? 'border-accent' : 'border-transparent', isActive && 'bg-surface-high')}>
+    <NavLink to={conversationPath(entry.conversation)} onClick={onNavigate} className={({ isActive }) => cx('flex items-start gap-2 border-l-2 px-2 py-2.5 hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent', entry.awaiting ? 'border-caution' : isActive ? 'border-accent' : 'border-transparent', isActive && 'bg-surface-high')}>
       <span className="mt-0.5 shrink-0 text-ink-faint"><AgentIcon agent={entry.conversation.agent} size={compact ? 13 : 15} /></span>
       <span className="min-w-0 flex-1">
         <span className={cx('block break-words font-medium leading-snug text-ink', compact ? 'line-clamp-2 text-xs' : 'text-sm')}>{entry.conversation.title}</span>

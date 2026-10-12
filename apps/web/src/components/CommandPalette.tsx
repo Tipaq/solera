@@ -14,8 +14,9 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { SEARCH_MIN_QUERY } from '@solera/protocol'
+import { SEARCH_MIN_QUERY, type ConversationDto } from '@solera/protocol'
 import { useCardSearch } from '../lib/cards'
+import { conversationPath } from '../lib/conversation-route'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
@@ -162,6 +163,19 @@ export function CommandPalette({
 
   const sections = useMemo(() => visibleSections(user?.isAdmin), [user?.isAdmin])
 
+  /**
+   * Ce qui se lit à droite de la ligne d'un fil : son projet, ou le fait qu'il n'en a
+   * pas. Les fils libres ne sont pas un cas à taire — c'est le premier groupe de la
+   * colonne, et la palette doit les y désigner comme les autres.
+   */
+  const groupName = useCallback(
+    (conversation: ConversationDto): string | undefined =>
+      conversation.projectId === null
+        ? t('destination.none')
+        : projectNames.get(conversation.projectId),
+    [projectNames, t],
+  )
+
   /** Les gestes, et tout ce qui s'exécute plutôt que de s'ouvrir. */
   const commands = useMemo((): Item[] => {
     const entries: Item[] = [
@@ -169,7 +183,9 @@ export function CommandPalette({
         key: 'cmd-new-conversation',
         icon: <Plus size={14} />,
         label: t('palette.action.newConversation'),
-        run: () => go(projectId ? `/p/${projectId}/c/new` : '/'),
+        // Sans projet sous les yeux, c'est un fil libre : il n'appartient à rien, et
+        // c'est le défaut depuis la carte #14. Plus besoin de retomber sur l'accueil.
+        run: () => go(projectId ? `/p/${projectId}/c/new` : '/c/new'),
       },
       {
         key: 'cmd-new-project',
@@ -232,8 +248,8 @@ export function CommandPalette({
         key: `c-${conversation.id}`,
         icon: <AgentIcon agent={conversation.agent} size={14} />,
         label: conversation.title,
-        meta: projectNames.get(conversation.projectId),
-        run: () => go(`/p/${conversation.projectId}/c/${conversation.id}`),
+        meta: groupName(conversation),
+        run: () => go(conversationPath(conversation)),
       }))
 
     const cardItems = (): Item[] =>
@@ -317,7 +333,7 @@ export function CommandPalette({
             key: `m-${message.conversationId}-${message.seq}`,
             icon: <MessageSquare size={14} />,
             label: conversation?.title ?? '',
-            meta: conversation ? projectNames.get(conversation.projectId) : undefined,
+            meta: conversation ? groupName(conversation) : undefined,
             excerpt: (
               <>
                 <span className="mr-1.5 text-meta">
@@ -338,7 +354,9 @@ export function CommandPalette({
             ),
             // Le `seq` ouvre le fil sur le message trouvé plutôt qu'en haut.
             run: () =>
-              go(`/p/${conversation?.projectId}/c/${message.conversationId}?seq=${message.seq}`),
+              go(
+                `${conversationPath({ id: message.conversationId, projectId: conversation?.projectId ?? null })}?seq=${message.seq}`,
+              ),
           }
         })
       : []
@@ -360,8 +378,9 @@ export function CommandPalette({
       key: `t-${task.id}`,
       icon: <CalendarClock size={14} />,
       label: task.name,
-      meta: projectNames.get(task.projectId),
-      run: () => go(`/p/${task.projectId}/schedules`),
+      // Une tâche sans projet ne se lit que sur la page Planifiées, qui les porte toutes.
+      meta: task.projectId ? projectNames.get(task.projectId) : t('destination.none'),
+      run: () => go(task.projectId ? `/p/${task.projectId}/schedules` : '/schedules'),
     }))
 
     return [
@@ -385,6 +404,7 @@ export function CommandPalette({
     expanded,
     files,
     go,
+    groupName,
     messages,
     prefix,
     projectNames,
@@ -467,7 +487,7 @@ export function CommandPalette({
             </IconButton>
           </div>
 
-          <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5 pb-safe">
             {groups.map((group) => (
               <div key={group.id} className="mb-1">
                 <div className="flex items-baseline gap-2 px-2.5 pt-1.5 pb-1">

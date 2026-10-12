@@ -105,7 +105,9 @@ export function SchedulesPage() {
                     key={task.id}
                     task={task}
                     project={projects?.find((entry) => entry.id === task.projectId)}
-                    onOpen={() => navigate(`/p/${task.projectId}/schedules`)}
+                    onOpen={
+                      task.projectId ? () => navigate(`/p/${task.projectId}/schedules`) : null
+                    }
                   />
                 ))}
               </tbody>
@@ -128,7 +130,8 @@ function TaskRow({
 }: {
   task: ScheduledTaskDto
   project: ProjectDto | undefined
-  onOpen: () => void
+  /** `null` quand la tâche n'a pas de projet : il n'y a alors aucune page où l'ouvrir. */
+  onOpen: (() => void) | null
 }) {
   const t = useTranslate()
   const update = useUpdateSchedule()
@@ -137,18 +140,26 @@ function TaskRow({
   return (
     <tr className={cx('border-t border-line/60', !task.enabled && 'text-ink-faint')}>
       <td className="min-w-0 p-0">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex min-h-11 w-full items-center rounded px-2 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
-        >
-          <span className="min-w-0 truncate">{task.name}</span>
-        </button>
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="flex min-h-11 w-full items-center rounded px-2 text-left hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span className="min-w-0 truncate">{task.name}</span>
+          </button>
+        ) : (
+          <span className="flex min-h-11 w-full items-center px-2">
+            <span className="min-w-0 truncate">{task.name}</span>
+          </span>
+        )}
       </td>
       <td className="hidden px-2 sm:table-cell">
         <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
           <ProjectAvatar project={project} />
-          <span className="max-w-32 truncate">{project?.name ?? t('shell.overview.unknown')}</span>
+          <span className="max-w-32 truncate">
+            {project?.name ?? (task.projectId ? t('shell.overview.unknown') : t('destination.none'))}
+          </span>
         </span>
       </td>
       <td className="hidden max-w-48 truncate px-2 text-xs text-ink-soft md:table-cell">

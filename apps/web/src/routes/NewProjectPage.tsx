@@ -6,10 +6,10 @@ import {
   Lock,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { slugifyProjectName } from '@solera/protocol'
 import { ApiRequestError } from '../lib/api'
 import { useCreateProject } from '../lib/projects'
+import { useAdoptAfterCreate } from '../lib/adopt'
 import { useUserSettings } from '../lib/user-settings'
 import { CloneForm } from '../components/CloneForm'
 import { PathField } from '../components/PathField'
@@ -114,9 +114,9 @@ export function NewProjectPage() {
  * donc qu'un champ à remplir.
  */
 function NewFolderForm() {
+  const openCreated = useAdoptAfterCreate()
   const t = useTranslate()
   const createProject = useCreateProject()
-  const navigate = useNavigate()
   const { data: settings } = useUserSettings()
   const visibilityOptions = useVisibilityOptions()
 
@@ -148,7 +148,7 @@ function NewFolderForm() {
         ...instructionsModeField(instructionsMode),
       },
       {
-        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
+        onSuccess: (project) => openCreated(project.id),
       },
     )
   }
@@ -201,9 +201,9 @@ function NewFolderForm() {
 
 /** Un dossier déjà présent, n'importe où sur la machine : rien n'est créé. */
 function ExistingFolderForm() {
+  const openCreated = useAdoptAfterCreate()
   const t = useTranslate()
   const createProject = useCreateProject()
-  const navigate = useNavigate()
   const visibilityOptions = useVisibilityOptions()
 
   const [name, setName] = useState('')
@@ -216,7 +216,7 @@ function ExistingFolderForm() {
     createProject.mutate(
       { name: name.trim(), workspacePath, visibility, ...instructionsModeField(instructionsMode) },
       {
-        onSuccess: (project) => navigate(`/p/${project.id}/c/new`),
+        onSuccess: (project) => openCreated(project.id),
       },
     )
   }

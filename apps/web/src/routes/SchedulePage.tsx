@@ -1,6 +1,7 @@
 import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { conversationPath } from '../lib/conversation-route'
 import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { HeaderBand } from '../components/HeaderBand'
@@ -225,7 +226,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string }) {
+function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string | null }) {
   const t = useTranslate()
   const body = (
     <>
@@ -244,7 +245,7 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string })
     <li>
       {run.conversationId ? (
         <Link
-          to={`/p/${projectId}/c/${run.conversationId}`}
+          to={conversationPath({ id: run.conversationId, projectId })}
           className={cx(className, 'transition-colors hover:bg-surface-high hover:text-ink')}
         >
           {body}

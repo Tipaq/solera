@@ -81,6 +81,10 @@ export function App() {
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
+          {/* Les fils libres, hors de tout projet : mêmes pages, sans le segment qui
+              nomme un projet qu'ils n'ont pas. */}
+          <Route path="/c/new" element={<DraftConversationPage />} />
+          <Route path="/c/:conversationId" element={<ConversationPage />} />
           <Route path="/skills/:skillId" element={<SkillEditorPage />} />
         </Route>
         <Route path="/settings" element={<LegacySettingsRoute />} />

@@ -44,10 +44,11 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-export function useProjectView(projectId: string): ProjectView {
+/** `null` pour un fil libre : il n'a pas de projet dont on retiendrait l'écran d'accueil. */
+export function useProjectView(projectId: string | null): ProjectView {
   return useSyncExternalStore(
     subscribe,
-    () => views[projectId] ?? 'draft',
+    () => (projectId === null ? 'draft' : (views[projectId] ?? 'draft')),
     () => 'draft',
   )
 }
@@ -79,7 +80,13 @@ export function useRememberProjectView(
   }, [projectId, view])
 }
 
-/** Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui. */
-export function projectViewPath(projectId: string, view: ProjectView): string {
+/**
+ * Chemin d'accueil d'un projet, d'après ce qui a été retenu pour lui.
+ *
+ * `null` est le fil libre, qui n'a pas de projet où retomber : son équivalent est la
+ * conversation neuve sans destination.
+ */
+export function projectViewPath(projectId: string | null, view: ProjectView): string {
+  if (projectId === null) return '/c/new'
   return view === 'board' ? `/p/${projectId}/board` : `/p/${projectId}/c/new`
 }

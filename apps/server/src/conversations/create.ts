@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq, min } from 'drizzle-orm'
 import { conversations, type ConversationRow, type Db } from '@solera/db'
+import { inProject } from './scope.js'
 import type { AgentConfig, AgentKind } from '@solera/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
@@ -21,7 +22,8 @@ export function provisionalTitle(firstMessage: string | undefined): string {
 }
 
 export interface CreateConversationInput {
-  projectId: string
+  /** Null pour un fil libre, qui n'appartient à aucun projet. */
+  projectId: string | null
   userId: string
   agent: AgentKind
   /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
@@ -64,7 +66,7 @@ export async function createConversation(
   const [lowest] = db
     .select({ min: min(conversations.position) })
     .from(conversations)
-    .where(eq(conversations.projectId, input.projectId))
+    .where(inProject(input.projectId))
     .all()
 
   const now = Date.now()
