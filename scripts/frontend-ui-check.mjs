@@ -11,6 +11,7 @@ import { chromium } from 'playwright'
 import { closePanelButton } from './checks/panel.mjs'
 import { checkEditor } from './checks/editor.mjs'
 import { checkSearch } from './checks/search.mjs'
+import { checkImage } from './checks/image.mjs'
 import { checkIde } from './checks/ide.mjs'
 import { checkDownloads } from './checks/downloads.mjs'
 import { checkFavorites } from './checks/favorites.mjs'
@@ -295,6 +296,7 @@ try {
   await checkEditor({ page, context, base, project })
   await checkIde({ page, context, base, project })
   await checkSearch({ page, base, project })
+  await checkImage({ page, base, project })
   await checkMedia({ page, context, base, project })
   // Le contrôle multimédia laisse le panneau ouvert ; repartir du board seul.
   await (await closePanelButton(page)).click()

@@ -32,6 +32,7 @@ import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
+import { ImageView } from './ImageView'
 import { MediaView } from './MediaView'
 
 /** Chargé à la demande : le visualiseur entraîne `three`, plus lourd que tout le reste. */
@@ -340,11 +341,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
     void load(true)
   }
 
-  if (isImage) {
-    return <div data-editor-file={path} tabIndex={-1} className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4 outline-none">
-      <img src={rawFileUrl(scope, path)} alt={path} className="max-h-full max-w-full object-contain" />
-    </div>
-  }
+  if (isImage) return <ImageView scope={scope} path={path} />
   if (isDocument) return <iframe data-editor-file={path} src={rawFileUrl(scope, path)} title={path} className="min-h-0 min-w-0 flex-1 border-0 bg-canvas" />
   if (mediaType) return <MediaView scope={scope} path={path} type={mediaType} />
   if (isModel) {
