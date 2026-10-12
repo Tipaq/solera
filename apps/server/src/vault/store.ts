@@ -16,6 +16,7 @@ import {
   type VaultNoteDto,
   type VaultNoteFactsDto,
   type VaultNoteFilter,
+  type VaultTreeDto,
 } from '@solera/protocol'
 import { buildResolver, targetKey } from './resolve.js'
 import type { NoteRecord } from './scan.js'
@@ -389,4 +390,21 @@ function toLinkDto(row: {
     anchor: row.anchor,
     line: row.line,
   }
+}
+
+/**
+ * L'arbre du vault, à plat.
+ *
+ * Les dossiers viennent de `listFolders`, donc de ce que les notes déclarent : un
+ * dossier vide n'existe pas dans l'index, et c'est cohérent — l'index lit des notes,
+ * pas des dossiers. Un dossier qu'on vient de créer apparaît avec sa première note.
+ */
+export function readTree(db: Db): VaultTreeDto {
+  const notes = db
+    .select({ path: vaultNotes.path, folder: vaultNotes.folder, title: vaultNotes.title })
+    .from(vaultNotes)
+    .orderBy(vaultNotes.path)
+    .all()
+
+  return { folders: listFolders(db), notes }
 }

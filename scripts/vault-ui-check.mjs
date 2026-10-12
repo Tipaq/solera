@@ -168,7 +168,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, '04-reindexation-sombre.png') })
 
   // Les faits du texte, tels que l'API les rend : c'est ce que le panneau lira.
-  const facts = await (await context.request.get(`${base}/api/vault/notes/Produit/Rapprochement.md`)).json()
+  const facts = await (await context.request.get(`${base}/api/vault/note?path=${encodeURIComponent('Produit/Rapprochement.md')}`)).json()
   assert.deepEqual(
     facts.incoming.map((link) => link.path).sort(),
     ['Idées/Chantiers.md', 'Idées/Index.md', 'Journal/2026-10-12.md', 'Journal/2026-10-13.md', 'Produit/Atelier.md'],

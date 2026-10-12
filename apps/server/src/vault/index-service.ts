@@ -4,7 +4,7 @@ import type { VaultStateDto } from '@solera/protocol'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { changesSince, headCommit } from './git.js'
-import { listNotePaths, readNotes } from './scan.js'
+import { listNotePaths, readNote, readNotes } from './scan.js'
 import { applyBatch, clearIndex, readCounts, readIndexState } from './store.js'
 
 /**
@@ -141,6 +141,38 @@ export class VaultIndex {
       full: true,
     })
     return { ...applied, full: true }
+  }
+
+  /**
+   * Relit **une** note, après une écriture passée par Solera.
+   *
+   * Le SHA reflété n'est pas touché : l'index reflète toujours ce commit, plus une
+   * modification locale que le `git status` du prochain démarrage rattrapera de toute
+   * façon. Le réécrire ici prétendrait refléter un commit qui ne contient pas cette
+   * écriture.
+   *
+   * Sérialisé comme les passes complètes, et pour la même raison : la résolution des
+   * liens est une fonction de l'ensemble des notes.
+   */
+  indexNote(path: string): Promise<void> {
+    return this.serialize(async () => {
+      const root = this.root()
+      if (root === null) return
+
+      const stored = readIndexState(this.db)
+      const since = stored?.path === root ? stored.commitSha : null
+      const record = await readNote(root, path)
+
+      applyBatch(this.db, {
+        root,
+        upserts: record ? [record] : [],
+        // Le fichier a disparu entre l'écriture et la relecture : c'est le disque qui
+        // fait foi, donc la note sort de l'index.
+        removals: record ? [] : [path],
+        commitSha: since,
+        full: false,
+      })
+    })
   }
 
   /** Jette l'index sans le refaire, quand le vault n'est plus réglé. */

@@ -127,3 +127,83 @@ export interface VaultReindexDto {
   indexed: number
   removed: number
 }
+
+/**
+ * L'arbre du vault, à plat : les dossiers d'un côté, les notes de l'autre.
+ *
+ * À plat et non imbriqué : la vue *Notes* du panneau replie les dossiers un par un, et
+ * un arbre imbriqué obligerait à le parcourir en entier pour retrouver une note dont on
+ * connaît le chemin. L'imbrication se refait côté interface, où elle sert à l'affichage.
+ */
+export interface VaultTreeDto {
+  folders: VaultFolderDto[]
+  notes: { path: string; folder: string; title: string }[]
+}
+
+/** Le texte d'une note, pour l'éditeur. */
+export interface VaultNoteContentDto {
+  path: string
+  title: string
+  content: string
+  /**
+   * Empreinte du fichier au moment de la lecture, rendue à l'enregistrement.
+   *
+   * Le vault s'édite ailleurs — un autre éditeur, le téléphone, et demain un agent :
+   * sans cette comparaison, enregistrer écrase en silence ce qui a été écrit entre
+   * temps, et la perte ne se remarque pas.
+   */
+  fingerprint: string
+}
+
+export const vaultNotePathQuerySchema = z.object({
+  /** Chemin relatif à la racine du vault, séparateur `/`. */
+  path: z.string().min(1).max(1024),
+})
+
+export const vaultWriteNoteBodySchema = z.object({
+  path: z.string().min(1).max(1024),
+  content: z.string().max(2 * 1024 * 1024),
+  /**
+   * Empreinte reçue à la lecture. `null` force l'écriture : le choix explicite
+   * d'écraser, pris après qu'un conflit a été montré.
+   */
+  fingerprint: z.string().nullable(),
+})
+
+export interface VaultWriteNoteDto {
+  fingerprint: string
+  /** La note telle que l'index la relit juste après l'écriture. */
+  note: VaultNoteDto
+}
+
+/**
+ * Créer une note : un dossier et un titre, et c'est tout.
+ *
+ * Les deux chemins de création passent par là, parce que ce sont les deux moments d'un
+ * même geste : le `+` d'un dossier donne un dossier, l'**ébauche** n'en donne pas. Une
+ * ébauche n'a donc pas de droit à hériter, et aucun agent ne la voit — c'est à soi.
+ */
+export const vaultCreateNoteBodySchema = z.object({
+  /** Vide pour une ébauche. */
+  folder: z.string().max(512).default(''),
+  title: z.string().trim().min(1).max(200),
+})
+
+/** Un commit qui a touché une note. */
+export interface VaultNoteRevisionDto {
+  hash: string
+  subject: string
+  author: string
+  at: number
+}
+
+export interface VaultNoteHistoryDto {
+  /**
+   * `false` quand le vault n'est pas un dépôt git : il n'y a alors pas d'historique par
+   * note, et le dire vaut mieux qu'une liste vide qu'on prendrait pour une note neuve.
+   */
+  versioned: boolean
+  /** Vrai quand le fichier porte des modifications que l'historique ne connaît pas encore. */
+  uncommitted: boolean
+  revisions: VaultNoteRevisionDto[]
+}

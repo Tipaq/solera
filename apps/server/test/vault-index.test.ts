@@ -8,7 +8,15 @@ import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import Fastify from 'fastify'
 import { openDatabase, runMigrations, users, type Db } from '@solera/db'
-import type { VaultNoteDto, VaultNoteFactsDto, VaultStateDto } from '@solera/protocol'
+import type {
+  VaultNoteContentDto,
+  VaultNoteDto,
+  VaultNoteFactsDto,
+  VaultNoteHistoryDto,
+  VaultStateDto,
+  VaultTreeDto,
+  VaultWriteNoteDto,
+} from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerVaultRoutes } from '../src/http/routes/vault.js'
@@ -383,26 +391,16 @@ test('les routes rendent les faits depuis l’index, jamais depuis le disque', a
 
   const facts = await app.inject({
     method: 'GET',
-    url: `/api/vault/notes/${encodeURI('Produit/Rapprochement.md')}`,
+    url: `/api/vault/note?path=${encodeURIComponent('Produit/Rapprochement.md')}`,
   })
   assert.deepEqual(
     facts.json<VaultNoteFactsDto>().incoming.map((link) => link.path),
     ['Produit/Atelier.md'],
   )
 
-  const unknown = await app.inject({ method: 'GET', url: '/api/vault/notes/Jamais.md' })
+  const unknown = await app.inject({ method: 'GET', url: '/api/vault/note?path=Jamais.md' })
   assert.equal(unknown.statusCode, 404)
   assert.equal(unknown.json<{ error: { code: string } }>().error.code, 'vault_note_not_indexed')
-
-  // Le routeur réduit `a/../b.md` à `b.md` avant que la route ne le voie : la
-  // remontée n'ouvre donc pas une seconde adresse pour la même note. Le refus côté
-  // route reste, pour les appelants qui n'ont pas traversé le routeur.
-  const escaping = await app.inject({ method: 'GET', url: '/api/vault/notes/a/../b.md' })
-  assert.equal(escaping.statusCode, 404)
-
-  // Ce qui n'est pas une note n'a pas de faits du texte.
-  const notANote = await app.inject({ method: 'GET', url: '/api/vault/notes/Capture.png' })
-  assert.equal(notANote.statusCode, 400)
 })
 
 test('deux passes lancées ensemble ne se marchent pas sur la résolution', async (t) => {
@@ -415,4 +413,172 @@ test('deux passes lancées ensemble ne se marchent pas sur la résolution', asyn
   for (const run of runs) assert.equal(run.indexed, 2)
   assert.equal(readCounts(db).notes, 2)
   assert.equal(readCounts(db).brokenLinks, 0)
+})
+
+test('une note se lit sur le disque, et son écriture passe par l’index', async (t) => {
+  const { db, vault, write, config } = await harness(t)
+  const app = await routes(t, db, vault, config)
+
+  await write('Atelier.md', '# Atelier\n\nRien pour l’instant.\n')
+  await vault.reindex()
+
+  const read = await app.inject({ method: 'GET', url: '/api/vault/note/content?path=Atelier.md' })
+  assert.equal(read.statusCode, 200)
+  const opened = read.json<VaultNoteContentDto>()
+  assert.match(opened.content, /Rien pour l’instant/)
+  assert.equal(opened.title, 'Atelier')
+
+  // Un `[[lien]]` écrit doit être un fait dès la réponse : l'index relit la note avant
+  // que la route ne réponde.
+  const saved = await app.inject({
+    method: 'PUT',
+    url: '/api/vault/note/content',
+    payload: {
+      path: 'Atelier.md',
+      content: '# Atelier\n\nVoir [[Rapprochement]].\n',
+      fingerprint: opened.fingerprint,
+    },
+  })
+  assert.equal(saved.statusCode, 200)
+  assert.equal(saved.json<VaultWriteNoteDto>().note.outgoing, 1)
+  assert.equal(saved.json<VaultWriteNoteDto>().note.broken, 1)
+  assert.equal(readCounts(db).brokenLinks, 1)
+
+  // L'empreinte périmée arrête l'écriture : le vault s'édite ailleurs, et écraser en
+  // silence est la seule perte que cette couche puisse causer.
+  const stale = await app.inject({
+    method: 'PUT',
+    url: '/api/vault/note/content',
+    payload: { path: 'Atelier.md', content: 'écrasé', fingerprint: opened.fingerprint },
+  })
+  assert.equal(stale.statusCode, 409)
+  assert.equal(stale.json<{ error: { code: string } }>().error.code, 'vault_note_stale')
+
+  // `null` force, et c'est le choix explicite d'écraser.
+  const forced = await app.inject({
+    method: 'PUT',
+    url: '/api/vault/note/content',
+    payload: { path: 'Atelier.md', content: '# Atelier\n', fingerprint: null },
+  })
+  assert.equal(forced.statusCode, 200)
+  assert.equal(forced.json<VaultWriteNoteDto>().note.outgoing, 0)
+})
+
+test('un chemin qui sort du vault est refusé, en lecture comme en écriture', async (t) => {
+  const { db, vault, config } = await harness(t)
+  const app = await routes(t, db, vault, config)
+
+  for (const path of ['../dehors.md', 'Dossier/../../dehors.md', '/etc/passwd.md', 'Capture.png']) {
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/vault/note/content?path=${encodeURIComponent(path)}`,
+    })
+    assert.equal(read.statusCode, 400, path)
+
+    const written = await app.inject({
+      method: 'PUT',
+      url: '/api/vault/note/content',
+      payload: { path, content: 'x', fingerprint: null },
+    })
+    assert.equal(written.statusCode, 400, path)
+  }
+})
+
+test('créer une note : dans un dossier, ou en ébauche sans dossier', async (t) => {
+  const { db, vault, config } = await harness(t)
+  const app = await routes(t, db, vault, config)
+
+  const inFolder = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes',
+    payload: { folder: 'Produit', title: 'Le rapprochement' },
+  })
+  assert.equal(inFolder.statusCode, 201)
+  assert.equal(inFolder.json<VaultNoteDto>().path, 'Produit/Le rapprochement.md')
+  assert.equal(inFolder.json<VaultNoteDto>().folder, 'Produit')
+  // Le titre est le nom du fichier : une note dont le fichier s'appelle autrement ne
+  // se retrouve pas hors de Solera, et `[[Titre]]` ne la viserait pas.
+  assert.equal(inFolder.json<VaultNoteDto>().title, 'Le rapprochement')
+
+  const draft = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes',
+    payload: { title: 'Sans dossier' },
+  })
+  assert.equal(draft.json<VaultNoteDto>().folder, '', 'Une ébauche n’a pas de dossier')
+  assert.equal(readCounts(db).drafts, 1)
+
+  // Deux fois le même titre : le programme tranche plutôt que de renvoyer au formulaire.
+  const again = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes',
+    payload: { folder: 'Produit', title: 'Le rapprochement' },
+  })
+  assert.equal(again.json<VaultNoteDto>().path, 'Produit/Le rapprochement 2.md')
+
+  // Un titre qui porte une barre oblique ne crée pas de dossier à l'insu de qui l'écrit.
+  const slashed = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes',
+    payload: { title: 'a/b' },
+  })
+  assert.equal(slashed.json<VaultNoteDto>().path, 'a-b.md')
+})
+
+test('l’historique d’une note est celui de git, et dit quand il n’y en a pas', async (t) => {
+  const { db, vault, write, config, gitInit, commit } = await harness(t)
+  const app = await routes(t, db, vault, config)
+
+  await write('Atelier.md', '# Atelier\n')
+  await vault.reindex()
+
+  // Hors dépôt : pas d'historique du tout, ce qui ne se confond pas avec une note
+  // qu'aucun commit ne connaît.
+  const without = await app.inject({ method: 'GET', url: '/api/vault/note/history?path=Atelier.md' })
+  assert.equal(without.json<VaultNoteHistoryDto>().versioned, false)
+
+  gitInit()
+  commit('la note')
+  const versioned = await app.inject({ method: 'GET', url: '/api/vault/note/history?path=Atelier.md' })
+  const history = versioned.json<VaultNoteHistoryDto>()
+  assert.equal(history.versioned, true)
+  assert.equal(history.uncommitted, false)
+  assert.deepEqual(history.revisions.map((entry) => entry.subject), ['la note'])
+
+  await write('Atelier.md', '# Atelier\n\nUne ligne de plus.\n')
+  const dirty = await app.inject({ method: 'GET', url: '/api/vault/note/history?path=Atelier.md' })
+  // Enregistrer ne committe pas : une note modifiée le dit, au lieu de laisser croire
+  // que l'historique la contient.
+  assert.equal(dirty.json<VaultNoteHistoryDto>().uncommitted, true)
+})
+
+test('l’arbre du vault ne montre que les dossiers où des notes vivent', async (t) => {
+  const { db, vault, write, config } = await harness(t)
+  const app = await routes(t, db, vault, config)
+
+  await write('Produit/Atelier.md', '# Atelier\n')
+  await write('Produit/Idées/Chantiers.md', '# Chantiers\n')
+  await write('Ébauche.md', 'Rien encore.\n')
+  await vault.reindex()
+
+  const tree = (await app.inject({ method: 'GET', url: '/api/vault/tree' })).json<VaultTreeDto>()
+  assert.deepEqual(tree.folders.map((folder) => folder.path), ['Produit', 'Produit/Idées'])
+  assert.deepEqual(tree.folders.map((folder) => folder.notes), [1, 1])
+  assert.deepEqual(tree.notes.map((note) => note.path), [
+    'Produit/Atelier.md',
+    'Produit/Idées/Chantiers.md',
+    'Ébauche.md',
+  ])
+})
+
+test('sans vault réglé, les routes qui touchent au disque le disent', async (t) => {
+  const { db, vault, config } = await harness(t)
+  writeAppSettings(db, { vaultPath: '' })
+  const app = await routes(t, db, vault, config)
+
+  for (const url of ['/api/vault/note/content?path=a.md', '/api/vault/note/history?path=a.md']) {
+    const response = await app.inject({ method: 'GET', url })
+    assert.equal(response.statusCode, 400)
+    assert.equal(response.json<{ error: { code: string } }>().error.code, 'vault_unconfigured')
+  }
 })

@@ -172,3 +172,63 @@ function collectStatus(output: string, changed: Set<string>, removed: Set<string
     }
   }
 }
+
+/** Une révision d'une note : ce que `git log` dit d'un commit qui l'a touchée. */
+export interface NoteRevision {
+  hash: string
+  subject: string
+  author: string
+  at: number
+}
+
+/** Au-delà, on ne relit plus un historique, on l'explore — et ce n'est pas cette vue. */
+const MAX_REVISIONS = 50
+
+/**
+ * L'historique d'une note.
+ *
+ * `--follow` plutôt qu'un simple `log` : une note renommée garde son histoire, et c'est
+ * précisément ce qu'on vient chercher. Le prix est connu — `--follow` ne suit qu'un seul
+ * chemin à la fois — et il est juste ici, où l'on regarde une note.
+ */
+export async function noteHistory(root: string, path: string): Promise<NoteRevision[]> {
+  try {
+    const stdout = await git(root, [
+      'log',
+      `--max-count=${MAX_REVISIONS}`,
+      '--follow',
+      // Séparateurs improbables dans un sujet de commit, et `-z` pour borner les
+      // enregistrements : un sujet sur plusieurs lignes ne doit pas décaler la lecture.
+      '--format=%H%x1f%s%x1f%an%x1f%at',
+      '-z',
+      '--',
+      path,
+    ])
+
+    return stdout
+      .split('\0')
+      .filter((record) => record.length > 0)
+      .map((record) => record.split('\x1f'))
+      .filter((fields) => fields.length === 4)
+      .map((fields) => ({
+        hash: fields[0]!,
+        subject: fields[1]!,
+        author: fields[2]!,
+        at: Number(fields[3]) * 1000,
+      }))
+  } catch {
+    // Pas un dépôt, ou une note qu'aucun commit ne connaît : pas d'historique, et ce
+    // n'est pas une erreur.
+    return []
+  }
+}
+
+/** Vrai quand le fichier porte des modifications qu'aucun commit ne connaît encore. */
+export async function isUncommitted(root: string, path: string): Promise<boolean> {
+  try {
+    const stdout = await git(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--', path])
+    return stdout.split('\0').some((entry) => entry.length > 0 && entry[2] === ' ')
+  } catch {
+    return false
+  }
+}
