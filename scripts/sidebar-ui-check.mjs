@@ -89,7 +89,10 @@ try {
     const entries = await response.json()
     // `idle` et lues : une session active ne figure pas dans le groupe de son projet,
     // elle est déjà dans l'activité au-dessus.
-    await route.fulfill({ json: [...entries, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }))] })
+    // Un fil libre : il n'appartient à aucun projet, et c'est le groupe *Sans projet*
+    // qui doit lui donner un domicile dans la colonne.
+    const free = { ...hero, id: 'fixture-libre', projectId: null, title: 'Fil sans projet', status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }
+    await route.fulfill({ json: [...entries, free, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, favorite: false, archivedAt: null }))] })
   })
 
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
@@ -104,6 +107,10 @@ try {
   // L'activité est fixe : faire défiler la zone basse ne la déplace pas.
   const activity = column.getByRole('group', { name: 'Suivi des conversations' })
   await activity.waitFor()
+  // Attendre qu'elle soit remplie avant de la mesurer : ses lignes viennent du socket,
+  // qui arrive après le premier rendu, et une mesure prise sur « Aucune session en
+  // cours » ne vaut rien pour la comparaison d'après.
+  await activity.getByRole('link').first().waitFor()
   const before = await activity.boundingBox()
 
   // Lieu *Fils* : l'historique daté. Une tranche au moins porte des lignes.
@@ -121,6 +128,24 @@ try {
   assert.deepEqual(await activity.boundingBox(), before, 'l’activité doit rester fixe')
   await column.getByRole('button', { name: 'Réduire la liste' }).click()
   assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
+
+  // *Sans projet* ouvre la liste, avant les projets : une boîte de réception, et non un
+  // cas particulier qu'on range en bas. Son lien n'a pas de segment de projet — écrire
+  // `/p/null/c/<id>` donnerait une adresse qui se charge et ne trouve rien.
+  const free = column.getByRole('button', { name: 'Sans projet', exact: true })
+  await free.waitFor()
+  assert.equal(await column.locator(`a[href="/c/fixture-libre"]`).count(), 1)
+  assert.equal(await column.locator('a[href^="/p/null/"]').count(), 0)
+  const order = await column.evaluate((node) => {
+    const groups = [...node.querySelectorAll('li')].filter((item) => item.querySelector(':scope > div'))
+    return groups[0]?.textContent?.startsWith('Sans projet') ?? false
+  })
+  assert.equal(order, true, '*Sans projet* doit être le premier groupe')
+  // La zone basse est la seule partie qui défile : la remonter avant la capture, sinon
+  // l'image s'ouvre là où le dépli l'a laissée et le premier groupe est hors champ.
+  await column.evaluate((node) => {
+    for (const child of node.querySelectorAll('*')) if (child.scrollTop > 0) child.scrollTop = 0
+  })
   await page.screenshot({ path: join(shots, 'lieu-projets.png') })
 
   // Lieu *Planifiées* : les tâches par échéance, tous projets confondus.
