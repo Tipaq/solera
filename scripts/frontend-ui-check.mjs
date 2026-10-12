@@ -14,7 +14,7 @@ import { checkSearch } from './checks/search.mjs'
 import { checkImage } from './checks/image.mjs'
 import { checkIde } from './checks/ide.mjs'
 import { checkDownloads } from './checks/downloads.mjs'
-import { checkFavorites } from './checks/favorites.mjs'
+import { checkConversationInstructions } from './checks/conversation-instructions.mjs'
 import { checkMedia } from './checks/media.mjs'
 
 // Vrais composants et vraie API, dans une base temporaire. Aucun CLI n'est activé.
@@ -311,7 +311,7 @@ try {
   // Le contrôle multimédia laisse le panneau ouvert ; repartir du board seul.
   await (await closePanelButton(page)).click()
   await checkDownloads({ page, context, base, project, hero, data })
-  await checkFavorites({ page, context, base, project, hero })
+  await checkConversationInstructions({ page, context, base, project, hero })
 
 
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -404,57 +404,11 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Overflow at ${width}px`)
   }
 
-  // Les filtres partagent le vrai socket ; seules les transitions de test sont injectées.
-  let activitySocket
-  await page.routeWebSocket('**/api/ws', (socket) => {
-    activitySocket = socket
-    socket.connectToServer()
-  })
-  await page.goto(board)
-  const activity = page.getByRole('group', { name: 'Suivi des conversations', exact: true })
-  await activity.waitFor()
-  const all = await (await context.request.get(`${base}/api/conversations`)).json()
-  // Hors tir planifié : la sidebar ne suit que les conversations menées à la main.
-  const candidate = all.find((entry) => !entry.archivedAt && !entry.scheduleId && entry.status === 'idle')
-  assert.ok(candidate)
-  await activity.getByRole('button', { name: /Voir toute l’activité/ }).click()
-  const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
-  // Les filtres sont une liste d'onglets depuis qu'ils partagent le rail segmenté :
-  // intitulé fixe et compteur en pastille, et plus un bouton « n à débloquer ».
-  const awaiting = overview.getByRole('tab', { name: /^À débloquer/ })
-  const before = Number((await awaiting.innerText()).match(/\d+/)[0])
-  await awaiting.click()
-  const result = overview
-  const candidateLink = result.locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`)
-  assert.equal(await candidateLink.count(), 0)
-  const pushStatus = (status, background = 0) => activitySocket.send(JSON.stringify({
-    t: 'status', conversationId: candidate.id, status, background, loops: 0,
-    warm: true, appliedConfig: null, lastNotableSeq: candidate.lastNotableSeq, metrics: candidate.metrics,
-  }))
-  pushStatus('awaiting_input')
-  await candidateLink.waitFor()
-  assert.equal(Number((await awaiting.innerText()).match(/\d+/)[0]), before + 1)
-  pushStatus('running')
-  await candidateLink.waitFor({ state: 'hidden' })
-  // Plus d'onglet « en cours » : la vue d'ensemble porte la section des fils actifs.
-  await overview.getByRole('tab', { name: 'Ensemble', exact: true }).click()
-  await candidateLink.waitFor()
-  pushStatus('idle')
-  await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`).waitFor()
-  pushStatus('idle', 1)
-  await candidateLink.waitFor()
-  pushStatus('idle')
-  await overview.getByRole('region', { name: 'Viennent de s’arrêter', exact: true }).locator(`a[href="/p/${candidate.projectId}/c/${candidate.id}"]`).waitFor()
-
-  const unreadEntry = all.find((entry) => !entry.archivedAt && entry.lastNotableSeq > entry.lastReadSeq)
-  assert.ok(unreadEntry)
-  await overview.getByRole('tab', { name: /^Non lues/ }).click()
-  const unreadLink = result.locator(`a[href="/p/${unreadEntry.projectId}/c/${unreadEntry.id}"]`)
-  await unreadLink.click()
-  await page.waitForURL(`**/c/${unreadEntry.id}`)
-  await unreadLink.waitFor({ state: 'hidden' })
-  await overview.waitFor({ state: 'hidden' })
-  console.log('OK : filtres en direct, travaux de fond, lecture et retour aux projets.')
+  // L'activité et sa modale ne sont plus vérifiées ici : la carte #11 les a réécrites
+  // (quatre filtres croisés d'un projet, une ligne par session) et `activity-ui-check.mjs`
+  // les garde en entier, socket compris. Ce qui restait ici visait l'ancienne « Activité
+  // globale », ses onglets *Ensemble* et sa section *Viennent de s'arrêter*, qui n'existent
+  // plus. Une seule suite pour une seule interface.
 
   // La reprise ne traverse ni un compte ni un projet devenu inaccessible.
   const heroPath = `/p/${project.id}/c/${hero.id}`
