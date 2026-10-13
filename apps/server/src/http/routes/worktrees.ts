@@ -1,14 +1,13 @@
-import { randomUUID } from 'node:crypto'
 import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
 import { and, count, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, worktrees, type ProjectRow, type WorktreeRow } from '@solera/db'
+import { conversations, projects, worktrees, type ProjectRow } from '@solera/db'
 import { createWorktreeBodySchema, type WorktreeDto } from '@solera/protocol'
-import { GitError, addWorktree, readGitStatus, removeWorktree } from '../../git.js'
+import { GitError, readGitStatus, removeWorktree } from '../../git.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
+import { createWorktree } from '../../worktrees/create.js'
 import type { AppContext } from '../context.js'
-import { badRequest, conflict, forbidden, notFound } from '../errors.js'
+import { conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -117,57 +116,4 @@ export function registerWorktreeRoutes(
 
     return reply.status(204).send()
   })
-}
-
-/**
- * Crée un worktree du projet sur une branche, neuve ou existante.
- *
- * Partagé entre la route et les sessions lancées par un agent (`start_session`) : le
- * dossier, la réutilisation d'une branche et la ligne en base suivent la même règle.
- */
-export async function createWorktree(
-  ctx: AppContext,
-  project: ProjectRow,
-  userId: string,
-  name: string,
-  baseRef: string,
-): Promise<WorktreeRow> {
-  if (!(await readGitStatus(project.workspacePath))) {
-    throw badRequest('not_a_repository', 'This project is not a git repository.')
-  }
-
-  const existing = ctx.db
-    .select()
-    .from(worktrees)
-    .where(and(eq(worktrees.projectId, project.id), eq(worktrees.name, name)))
-    .get()
-  if (existing && !existing.removedAt) {
-    throw conflict('worktree_exists', 'Worktree {name} already exists.', { name })
-  }
-
-  // Les worktrees vivent dans le répertoire de données, pas dans le projet : ils ne
-  // doivent pas polluer l'arborescence que l'utilisateur voit dans son éditeur.
-  const path = join(ctx.config.paths.worktrees, project.id, name.replace(/\//g, '__'))
-  const { reusedBranch } = await addWorktree(project.workspacePath, path, name, baseRef).catch(
-    (err: unknown) => {
-      if (err instanceof GitError) throw badRequest('git_failed', err.message)
-      throw err
-    },
-  )
-
-  const row: WorktreeRow = {
-    id: randomUUID(),
-    projectId: project.id,
-    name,
-    path,
-    baseRef: reusedBranch ? name : baseRef,
-    createdBy: userId,
-    createdAt: Date.now(),
-    removedAt: null,
-  }
-
-  // Une entrée précédente supprimée porte le même nom : l'index unique l'interdirait.
-  if (existing) ctx.db.delete(worktrees).where(eq(worktrees.id, existing.id)).run()
-  ctx.db.insert(worktrees).values(row).run()
-  return row
 }

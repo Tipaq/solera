@@ -14,23 +14,21 @@ import {
   worktrees,
   writeTransaction,
   type CardRow,
-  type Db,
   type ProjectRow,
 } from '@solera/db'
 import {
   MAX_ATTACHMENT_BYTES,
   createCardBodySchema,
   createCardNoteBodySchema,
-  parseCardReferences,
   reorderCardsBodySchema,
   updateCardBodySchema,
-  type CardColumn,
   type CardConversationDto,
   type CardDto,
   type CardLinkDto,
   type CardNoteDto,
   type CardSearchDto,
 } from '@solera/protocol'
+import { createCard, syncCardReferences } from '../../cards/create.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -559,111 +557,6 @@ export function readNotes(ctx: AppContext, cardId: string): CardNoteDto[] {
             conversationTitle: row.conversationTitle ?? '',
           },
   }))
-}
-
-/**
- * Passe une carte de `todo` à `in_progress` au lancement de sa première session.
- *
- * Déclenchée par l'envoi du premier message, jamais par la détection d'une session
- * active : la colonne est une position choisie, et seul un geste la change. Une carte
- * déjà plus loin dans le workflow ne recule pas — relancer une session sur une carte
- * en relecture n'annule pas la relecture.
- */
-export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
-  ctx.db
-    .update(cards)
-    .set({ column: 'in_progress', updatedAt: Date.now() })
-    .where(and(eq(cards.id, cardId), eq(cards.column, 'todo')))
-    .run()
-}
-
-/**
- * Crée une carte en fin de colonne, avec ses backlinks.
- *
- * Partagée entre la route du board et les demandes des agents (`create_card`) : le
- * numéro et la position se calculent de la même façon, et deux copies auraient divergé.
- */
-export function createCard(
-  db: Db,
-  projectId: string,
-  userId: string,
-  body: { title: string; description: string; column: CardColumn },
-): CardRow {
-  const row = insertCard(db, projectId, userId, body)
-  syncCardReferences(db, row, row.description)
-  return row
-}
-
-function insertCard(
-  db: Db,
-  projectId: string,
-  userId: string,
-  body: { title: string; description: string; column: CardColumn },
-): CardRow {
-  const now = Date.now()
-  // Numéro et position se calculent dans la transaction qui insère : deux créations
-  // simultanées y liraient sinon le même maximum et se disputeraient l'unicité.
-  return writeTransaction(db, (tx) => {
-    const [highest] = tx
-      .select({ number: max(cards.number) })
-      .from(cards)
-      .where(eq(cards.projectId, projectId))
-      .all()
-    const [last] = tx
-      .select({ position: max(cards.position) })
-      .from(cards)
-      .where(and(eq(cards.projectId, projectId), eq(cards.column, body.column)))
-      .all()
-
-    const created = {
-      id: randomUUID(),
-      projectId,
-      number: (highest?.number ?? 0) + 1,
-      title: body.title,
-      description: body.description,
-      column: body.column,
-      // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
-      // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
-      position: (last?.position ?? 0) + 1,
-      createdBy: userId,
-      createdAt: now,
-      updatedAt: now,
-    }
-    tx.insert(cards).values(created).run()
-    return created
-  })
-}
-
-/**
- * Réécrit les backlinks d'une carte d'après sa description.
- *
- * Un `#12` qui ne désigne aucune carte du projet n'est pas une erreur : il reste dans
- * le texte et ne produit simplement pas de lien. Refuser l'enregistrement pour une
- * référence morte ferait d'une faute de frappe un blocage, alors que la description
- * est de la prose avant d'être une structure.
- */
-function syncCardReferences(db: Db, card: CardRow, description: string): void {
-  const numbers = parseCardReferences(description)
-  const targets =
-    numbers.length === 0
-      ? []
-      : db
-          .select({ id: cards.id })
-          .from(cards)
-          .where(and(eq(cards.projectId, card.projectId), inArray(cards.number, numbers)))
-          .all()
-          .map((row) => row.id)
-          // Une carte qui se cite elle-même n'apprend rien à personne.
-          .filter((id) => id !== card.id)
-
-  writeTransaction(db, (tx) => {
-    tx.delete(cardRefs).where(eq(cardRefs.sourceId, card.id)).run()
-    if (targets.length > 0) {
-      tx.insert(cardRefs)
-        .values(targets.map((targetId) => ({ sourceId: card.id, targetId })))
-        .run()
-    }
-  })
 }
 
 /** Vérifie qu'une carte existe dans ce projet, avant de lui rattacher une conversation. */

@@ -1,5 +1,6 @@
 import { and, eq, isNull, or, type SQL } from 'drizzle-orm'
 import { conversations, projects } from '@solera/db'
+import type { AppContext } from '../http/context.js'
 
 /**
  * « Les fils de ce projet », les fils libres compris quand `projectId` vaut null.
@@ -29,4 +30,15 @@ export function conversationVisibleTo(userId: string): SQL {
     eq(projects.visibility, 'shared'),
     and(isNull(conversations.projectId), eq(conversations.userId, userId)),
   )!
+}
+
+/** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */
+export function canReadConversation(ctx: AppContext, conversationId: string, userId: string): boolean {
+  const row = ctx.db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .leftJoin(projects, eq(projects.id, conversations.projectId))
+    .where(and(eq(conversations.id, conversationId), conversationVisibleTo(userId)))
+    .get()
+  return row !== undefined
 }

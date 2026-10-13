@@ -23,7 +23,7 @@ import type { SkillLibrary } from '../../skill-library/store.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { visibleProject } from './projects.js'
+import { visibleProject } from '../../projects/scope.js'
 
 /**
  * Bibliothèque de skills, livrée aux CLI comme des skills natifs.

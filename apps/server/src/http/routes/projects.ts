@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, isNull, max, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
 import {
@@ -30,6 +30,7 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
 import { writeProjectsDir } from '../../settings/user-settings.js'
+import { visibilityFilter } from '../../projects/scope.js'
 import {
   projectImageDto,
   readProjectImage,
@@ -38,23 +39,6 @@ import {
 } from '../../projects/image.js'
 import { SkillLibrary } from '../../skill-library/store.js'
 import { repoInstructionFiles } from '../../instructions/store.js'
-
-/**
- * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
- * Seul le propriétaire peut le modifier ou le supprimer.
- */
-function visibilityFilter(userId: string) {
-  return or(eq(projects.ownerId, userId), eq(projects.visibility, 'shared'))
-}
-
-/** Le projet, s'il est visible par cet utilisateur. Pour les routes hébergées ailleurs. */
-export function visibleProject(ctx: AppContext, projectId: string, userId: string) {
-  return ctx.db
-    .select()
-    .from(projects)
-    .where(and(eq(projects.id, projectId), visibilityFilter(userId)))
-    .get()
-}
 
 async function assertUsableWorkspace(path: string): Promise<string> {
   if (!isAbsolute(path)) {

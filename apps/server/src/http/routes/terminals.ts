@@ -7,7 +7,7 @@ import { TerminalError, type TerminalManager } from '../../terminals/terminal-ma
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { visibleProject } from './projects.js'
+import { visibleProject } from '../../projects/scope.js'
 
 /**
  * Cycle de vie des terminaux. La sortie, elle, passe par la socket dédiée.

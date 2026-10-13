@@ -27,8 +27,6 @@ import {
   updateConversationBodySchema,
   type CardLinkDto,
   type ConversationDto,
-  type ConversationMetrics,
-  type ConversationStatus,
   type EditDiffDto,
   type JournalPageDto,
   type ToolOutputDto,
@@ -36,12 +34,13 @@ import {
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
+import { advanceCardOnLaunch } from '../../cards/create.js'
 import { createConversation } from '../../conversations/create.js'
 import { conversationVisibleTo, inProject } from '../../conversations/scope.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { advanceCardOnLaunch, assertCardInProject, readCardLink } from './cards.js'
+import { assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -932,42 +931,4 @@ export function registerConversationRoutes(
     }
     return { ok: true }
   })
-}
-
-/** Statut et avancement courants, pour l'instantané envoyé à l'abonnement WebSocket. */
-export function readConversationState(
-  ctx: AppContext,
-  conversationId: string,
-): { status: ConversationStatus; lastNotableSeq: number; metrics: ConversationMetrics } | null {
-  const row = ctx.db
-    .select({
-      status: conversations.status,
-      lastNotableSeq: conversations.lastNotableSeq,
-      turnCount: conversations.turnCount,
-      journalBytes: conversations.journalBytes,
-      contextUsedTokens: conversations.contextUsedTokens,
-      contextMaxTokens: conversations.contextMaxTokens,
-      model: conversations.model,
-    })
-    .from(conversations)
-    .where(eq(conversations.id, conversationId))
-    .get()
-
-  if (!row) return null
-  return {
-    status: row.status,
-    lastNotableSeq: row.lastNotableSeq,
-    metrics: conversationMetrics(row),
-  }
-}
-
-/** Conversations visibles par un utilisateur, pour l'abonnement WebSocket. */
-export function canReadConversation(ctx: AppContext, conversationId: string, userId: string): boolean {
-  const row = ctx.db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .leftJoin(projects, eq(projects.id, conversations.projectId))
-    .where(and(eq(conversations.id, conversationId), conversationVisibleTo(userId)))
-    .get()
-  return row !== undefined
 }

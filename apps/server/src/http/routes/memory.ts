@@ -11,7 +11,7 @@ import {
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { visibleProject } from './projects.js'
+import { visibleProject } from '../../projects/scope.js'
 
 /**
  * La mémoire d'un projet, lue et corrigée depuis l'interface.

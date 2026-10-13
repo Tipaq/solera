@@ -32,13 +32,13 @@ import {
   type AgentModelDto,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
+import { advanceCardOnLaunch, createCard } from '../cards/create.js'
 import { createConversation } from '../conversations/create.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
-import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
-import { createWorktree } from '../http/routes/worktrees.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
+import { createWorktree } from '../worktrees/create.js'
 import type { SessionManager } from './session-manager.js'
 
 /**

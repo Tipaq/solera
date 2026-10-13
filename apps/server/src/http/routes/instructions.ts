@@ -21,7 +21,7 @@ import {
 import type { AppContext } from '../context.js'
 import { forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
-import { visibleProject } from './projects.js'
+import { visibleProject } from '../../projects/scope.js'
 
 /**
  * SOLERA.md, édité depuis l'interface.
