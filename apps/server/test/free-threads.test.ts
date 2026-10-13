@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,6 +8,7 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { and, eq } from 'drizzle-orm'
 import {
+  agentRequests,
   conversations,
   openDatabase,
   projects,
@@ -15,8 +17,13 @@ import {
   type ConversationRow,
 } from '@solera/db'
 import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
-import { HttpError } from '../src/http/errors.js'
+import type { AgentRegistry } from '../src/agents/registry.js'
+import type { Config } from '../src/config.js'
 import { conversationVisibleTo, inProject } from '../src/conversations/scope.js'
+import { EventLog } from '../src/events/event-log.js'
+import { HttpError } from '../src/http/errors.js'
+import { AgentRequests } from '../src/sessions/agent-requests.js'
+import type { SessionManager } from '../src/sessions/session-manager.js'
 import { agentCwd, conversationWorkspace, resolveConversationCwd } from '../src/workspace.js'
 
 /**
@@ -139,4 +146,71 @@ test('« les fils de ce projet » comprend le groupe des fils libres', async (t)
   // toujours vide, et la boîte de réception resterait désespérément propre.
   assert.deepEqual(ids(null), ['free'])
   assert.deepEqual(ids('private'), ['owned'])
+})
+
+test('un déplacement accordé s’applique au premier balayage où la conversation se tait', async (t) => {
+  const { db, thread } = await harness(t)
+  const free = thread('free', null, 'owner')
+  db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, free.id)).run()
+
+  const log = new EventLog(db)
+  // Le vrai gestionnaire refuse de relâcher un runner qui travaille, et c'est ce refus
+  // qui sert de condition de réessai au balayage.
+  const sessions = {
+    async releaseRunner(id: string) {
+      return db.select().from(conversations).where(eq(conversations.id, id)).get()?.status !== 'running'
+    },
+    statusBus: new EventEmitter(),
+  } as unknown as SessionManager
+  const requests = new AgentRequests(
+    { db, config: { mcp: { projectFiling: true } } as unknown as Config },
+    sessions,
+    {} as unknown as AgentRegistry,
+    log,
+  )
+
+  // L'état d'une demande déjà déposée et déjà accordée : l'agent a eu sa réponse
+  // (`settled_at`), l'utilisateur a cliqué (`accepted_at`), et rien n'est encore fait.
+  log.append(free.id, {
+    type: 'filing.requested',
+    requestId: 'r1',
+    conversationId: free.id,
+    conversationTitle: free.title,
+    projectId: 'private',
+    projectName: 'private',
+    worktree: null,
+    card: null,
+    resumable: false,
+  })
+  db.insert(agentRequests).values({
+    id: 'r1', projectId: 'private', conversationId: free.id, kind: 'move_conversation',
+    payload: JSON.stringify({ project: 'private' }), createdAt: 1,
+    settledAt: 2, result: 'Demande déposée.', isError: false, acceptedAt: 3,
+  }).run()
+
+  const projectOf = (id: string) =>
+    db.select({ projectId: conversations.projectId }).from(conversations).where(eq(conversations.id, id)).get()
+      ?.projectId ?? null
+  const resolutions = () =>
+    db.select().from(agentRequests).where(eq(agentRequests.id, 'r1')).all().map((row) => row.resolvedAt)
+
+  // Et pas avant : un tour tourne, le fil reste où il est et la demande reste ouverte.
+  await requests.sweep()
+  assert.equal(projectOf(free.id), null)
+  assert.deepEqual(resolutions(), [null])
+
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, free.id)).run()
+  await requests.sweep()
+  assert.equal(projectOf(free.id), 'private')
+  assert.ok(resolutions()[0])
+
+  // La résolution est dans le fil déplacé : c'est là que la demande s'affichait.
+  const resolved = log
+    .readForReplay(free.id, 0, { rows: 100, bytes: 1_000_000 })
+    .entries.map((entry) => entry.event)
+    .filter((event) => event.type === 'filing.resolved')
+  assert.deepEqual(
+    resolved.map((event) => (event.type === 'filing.resolved' ? event.decision : null)),
+    ['accepted'],
+  )
 })

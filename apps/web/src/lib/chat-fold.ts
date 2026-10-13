@@ -70,6 +70,28 @@ export interface PermissionItem {
   description: string | null
 }
 
+/**
+ * Un rangement qu'un agent demande, en attente ou déjà tranché.
+ *
+ * Ne bloque pas le tour, à la différence d'une permission : l'agent a continué son
+ * travail après avoir déposé la demande, et c'est pourquoi `isAwaitingUser` l'ignore.
+ */
+export interface FilingItem {
+  kind: 'filing'
+  id: string
+  /** Le fil déplacé : celui-ci, puisque la demande apparaît dans son journal. */
+  conversationId: string
+  conversationTitle: string
+  projectName: string
+  /** Ce que le déplacement détache, et qui reste dans le projet de départ. */
+  worktree: { name: string; dirtyFiles: number } | null
+  card: { number: number; title: string } | null
+  resumable: boolean
+  status: 'pending' | 'accepted' | 'refused' | 'impossible'
+  /** Code du motif d'un `impossible`, traduit à l'affichage. Null partout ailleurs. */
+  reason: string | null
+}
+
 /** Une question posée par l'agent, en attente ou déjà tranchée. */
 export interface QuestionItem {
   kind: 'question'
@@ -157,6 +179,7 @@ export type ChatItem =
   | MessageItem
   | ToolItem
   | PermissionItem
+  | FilingItem
   | QuestionItem
   | ElicitationItem
   | PlanItem
@@ -990,6 +1013,37 @@ export function applyEvent(
         replaceItem(state, index, {
           ...(state.items[index] as PermissionItem),
           status: event.decision === 'allowed' ? 'allowed' : event.decision,
+        })
+      }
+      break
+    }
+
+    case 'filing.requested': {
+      appendItem(state, {
+        kind: 'filing',
+        id: event.requestId,
+        conversationId: event.conversationId,
+        conversationTitle: event.conversationTitle,
+        projectName: event.projectName,
+        worktree: event.worktree,
+        card: event.card,
+        resumable: event.resumable,
+        status: 'pending',
+        reason: null,
+      })
+      break
+    }
+
+    case 'filing.resolved': {
+      const index = findLastIndex(
+        state.items,
+        (item) => item.kind === 'filing' && item.id === event.requestId,
+      )
+      if (index !== -1) {
+        replaceItem(state, index, {
+          ...(state.items[index] as FilingItem),
+          status: event.decision,
+          reason: event.reason ?? null,
         })
       }
       break

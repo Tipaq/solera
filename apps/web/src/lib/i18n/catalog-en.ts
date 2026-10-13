@@ -1386,6 +1386,27 @@ export const en = {
   'push.disable': 'Turn off on this device',
   'push.enable': 'Turn on on this device',
 
+  // Rangement demandé par un agent
+  'filing.title.pending': 'An agent asks to file this conversation under "{project}"',
+  'filing.title.past': 'Filing under "{project}"',
+  'filing.cost.worktree': 'The "{name}" worktree will be detached, and its work stays here.',
+  'filing.cost.worktreeDirty':
+    'The "{name}" worktree will be detached: its {files} uncommitted files stay here, in this project.',
+  'filing.cost.card': 'Card #{number} "{title}" will be detached.',
+  'filing.cost.resume':
+    "The CLI session won't be able to resume: the working directory changes, so the agent restarts without its context. The thread itself stays whole.",
+  'filing.accept': 'File it',
+  'filing.refuse': 'Leave it here',
+  'filing.status.accepted': 'Filed',
+  'filing.status.refused': 'Declined',
+  'filing.status.impossible': 'Impossible',
+  'filing.accepted.hint': 'The move happens as soon as this conversation stops working.',
+  'filing.ownerOnly': 'Only the conversation owner can file it.',
+  'filing.error.generic': 'Decision failed.',
+  'filing.reason.projectGone': 'The destination project no longer existed.',
+  'filing.reason.scheduled': 'A scheduled run stays where its task put it.',
+  'filing.reason.unknown': 'The move became impossible.',
+
   // Permissions (demandes de l'agent)
   'permission.status.allowed': 'Allowed',
   'permission.status.denied': 'Denied',
@@ -1798,6 +1819,12 @@ export const en = {
   'skills.project.repo.title': "In the repository",
   'skills.project.repo.hint': "Each folder is read directly by some CLIs, not all. \"Add a skill → From this machine\" brings them in for every CLI.",
   'composer.setting.skillLibrary': "Skill library",
+  'composer.setting.projectFiling': 'Project filing',
+  'composer.projectFiling.off': 'Declined',
+  'composer.projectFiling.off.hint': "The agent can neither declare a project nor ask for filing",
+  'composer.projectFiling.on': 'Granted',
+  'composer.projectFiling.on.hint':
+    'The agent can declare a project, and ask to file a conversation — which you grant with a click',
   'composer.skillLibrary.on': "Delivered",
   'composer.skillLibrary.on.hint': "Global and project skills from Solera are available",
   'composer.skillLibrary.off': "Off",

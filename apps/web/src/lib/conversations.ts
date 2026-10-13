@@ -254,6 +254,18 @@ export function decidePermission(
   })
 }
 
+/**
+ * Accorde ou refuse un rangement demandé par un agent. L'accord ne déplace pas : il pose
+ * la promesse, et le daemon l'applique dès que la conversation se tait.
+ */
+export function decideFiling(
+  conversationId: string,
+  requestId: string,
+  decision: 'accepted' | 'refused',
+): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/filings/${requestId}`, { decision })
+}
+
 export function answerQuestion(
   conversationId: string,
   requestId: string,

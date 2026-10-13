@@ -1,7 +1,6 @@
-import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { and, asc, count, eq, isNull, max, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
 import {
@@ -15,7 +14,6 @@ import {
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
-  type InstructionsMode,
   type ProjectDto,
 } from '@solera/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
@@ -37,7 +35,7 @@ import {
   writeProjectImage,
 } from '../../projects/image.js'
 import { SkillLibrary } from '../../skill-library/store.js'
-import { repoInstructionFiles } from '../../instructions/store.js'
+import { assertUsableWorkspace, insertProject } from '../../projects/create.js'
 
 /**
  * Un utilisateur voit un projet s'il en est propriétaire ou si le projet est partagé.
@@ -54,26 +52,6 @@ export function visibleProject(ctx: AppContext, projectId: string, userId: strin
     .from(projects)
     .where(and(eq(projects.id, projectId), visibilityFilter(userId)))
     .get()
-}
-
-async function assertUsableWorkspace(path: string): Promise<string> {
-  if (!isAbsolute(path)) {
-    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
-  }
-
-  const resolved = resolve(path)
-  let info
-  try {
-    info = await stat(resolved)
-  } catch {
-    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: resolved })
-  }
-
-  if (!info.isDirectory()) {
-    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: resolved })
-  }
-
-  return resolved
 }
 
 /**
@@ -122,40 +100,6 @@ export function registerProjectRoutes(
   cloneJobs: CloneJobs,
   terminals: TerminalManager,
 ): void {
-  /**
-   * En fin de liste : s'insérer au milieu déplacerait visuellement des projets que
-   * l'utilisateur avait rangés lui-même.
-   */
-  const insertProject = async (
-    ownerId: string,
-    fields: {
-      name: string
-      workspacePath: string
-      visibility: 'private' | 'shared'
-      color: string | null
-      instructionsMode: InstructionsMode | undefined
-    },
-  ) => {
-    const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
-
-    const row = {
-      id: randomUUID(),
-      ...fields,
-      // Fixé dès la création, faute de choix d'après ce que le dossier porte déjà : un
-      // mode résolu à chaque lancement basculerait le jour où un agent crée un AGENTS.md.
-      instructionsMode:
-        fields.instructionsMode ??
-        (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'solera'),
-      ownerId,
-      defaultConfig: null,
-      position: (highest?.max ?? 0) + 1,
-      archivedAt: null,
-      createdAt: Date.now(),
-    }
-    await ctx.db.insert(projects).values(row)
-    return row
-  }
-
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
       await ctx.db
@@ -246,7 +190,7 @@ export function registerProjectRoutes(
       writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
     }
 
-    const row = await insertProject(user.id, {
+    const row = await insertProject(ctx, user.id, {
       name: body.name,
       workspacePath,
       visibility: body.visibility,
@@ -300,7 +244,7 @@ export function registerProjectRoutes(
       env: credentialEnv(ctx.config.paths, user.id),
       helper: credentialHelperCommand(ctx.config.paths, user.id),
       createProject: async () => {
-        const row = await insertProject(user.id, {
+        const row = await insertProject(ctx, user.id, {
           name: body.name,
           workspacePath: destination,
           visibility: body.visibility,

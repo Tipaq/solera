@@ -4,6 +4,7 @@ import type { ChatRow } from '../../lib/tool-rows'
 import { translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { FilingPrompt } from './FilingPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
 import { PlanReview } from './PlanReview'
@@ -92,6 +93,15 @@ export function ChatThread({
                 key={item.id}
                 conversationId={conversationId}
                 permission={item}
+                canDecide={canDecide}
+              />
+            )
+          case 'filing':
+            return (
+              <FilingPrompt
+                key={item.id}
+                conversationId={conversationId}
+                filing={item}
                 canDecide={canDecide}
               />
             )

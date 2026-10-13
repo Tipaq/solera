@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, asc, desc, eq, isNull, min, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
+  agentRequests,
   cards,
   conversationReads,
   conversations,
@@ -15,6 +16,7 @@ import {
   moveConversationBodySchema,
   editDiffQuerySchema,
   elicitationAnswerBodySchema,
+  filingDecisionBodySchema,
   forkConversationBodySchema,
   markReadBodySchema,
   permissionDecisionBodySchema,
@@ -37,6 +39,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { createConversation } from '../../conversations/create.js'
+import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../../conversations/scope.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
@@ -651,31 +654,15 @@ export function registerConversationRoutes(
   /**
    * *Ranger…* — la destination d'une conversation, choisie après coup.
    *
-   * Trois choses partent avec le déplacement, parce qu'elles appartenaient au projet
-   * qu'on quitte : le worktree, la carte, et la session native du CLI. Cette dernière
-   * est le prix à payer et il se paie une fois : un CLI retrouve ses sessions par leur
-   * répertoire de travail, et celui-ci vient de changer — un `--resume` pointerait sur
-   * un dossier où il n'y a rien. Le journal de Solera, lui, est intact : c'est ce que
-   * la personne relit, et le fil ne perd pas une ligne.
-   *
-   * Refusé pendant un tour : le CLI tourne alors dans l'ancien dossier, et lui changer
-   * sa destination sous les pieds ne se rattraperait pas.
+   * Le déplacement lui-même vit dans `conversations/move.ts`, partagé avec le daemon
+   * qui applique les rangements qu'un agent a demandés. Ne reste ici que ce qui est
+   * propre à un clic : quel projet cet utilisateur a le droit de voir.
    */
   app.post('/api/conversations/:id/project', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = moveConversationBodySchema.parse(request.body)
     const conversation = await loadWritable(id, user.id)
-
-    if (conversation.projectId === body.projectId) {
-      return conversationToDto(conversation, user.id, readCursor(id, user.id), readCardLink(ctx, conversation.cardId))
-    }
-    if (conversation.status === 'running' || conversation.status === 'awaiting_input') {
-      throw badRequest('conversation_busy', 'A conversation cannot be moved while a turn is running.')
-    }
-    if (conversation.scheduleId) {
-      throw badRequest('conversation_scheduled', 'A scheduled run stays where its task put it.')
-    }
 
     if (body.projectId !== null) {
       const project = ctx.db.select().from(projects).where(eq(projects.id, body.projectId)).get()
@@ -685,30 +672,18 @@ export function registerConversationRoutes(
       }
     }
 
-    const [lowest] = ctx.db
-      .select({ min: min(conversations.position) })
-      .from(conversations)
-      .where(inProject(body.projectId))
-      .all()
-
-    // Avant d'écrire : un runner encore chaud garde son répertoire de travail en
-    // mémoire, et le tour suivant partirait du dossier qu'on vient de quitter. Le refus
-    // dit qu'un tour a démarré entre-temps.
-    if (!(await sessions.releaseRunner(id))) {
-      throw badRequest('conversation_busy', 'A conversation cannot be moved while a turn is running.')
+    const result = await moveConversation(ctx, sessions, conversation, body.projectId)
+    if (!result.ok) {
+      throw result.refusal === 'scheduled'
+        ? badRequest('conversation_scheduled', 'A scheduled run stays where its task put it.')
+        : badRequest('conversation_busy', 'A conversation cannot be moved while a turn is running.')
     }
-
-    const patch: Partial<ConversationRow> = {
-      projectId: body.projectId,
-      worktreeId: null,
-      cardId: null,
-      agentSessionId: null,
-      position: (lowest?.min ?? 0) - 1,
-      updatedAt: Date.now(),
-    }
-    ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
-    const moved = { ...conversation, ...patch }
-    return conversationToDto(moved, user.id, readCursor(id, user.id), null)
+    return conversationToDto(
+      result.row,
+      user.id,
+      readCursor(id, user.id),
+      result.moved ? null : readCardLink(ctx, conversation.cardId),
+    )
   })
 
   app.delete('/api/conversations/:id', async (request, reply) => {
@@ -837,6 +812,85 @@ export function registerConversationRoutes(
       // plutôt que de laisser l'UI attendre une réponse qui ne viendra pas.
       throw badRequest('permission_expired', 'This request has expired, the session has ended.')
     }
+    return { ok: true }
+  })
+
+  /**
+   * Accorde ou refuse un rangement qu'un agent a demandé.
+   *
+   * `:id` est la conversation **déplacée**, et `loadWritable` dit le reste : seul son
+   * propriétaire décide, et c'est dans son fil que la demande est apparue.
+   *
+   * Accordée, la route ne déplace rien : elle pose la promesse dans la ligne, et le
+   * balayage du daemon l'applique dès que la conversation se tait. Une session ne peut
+   * pas se ranger elle-même pendant son tour, et relâcher son runner ici tuerait le
+   * process CLI qui héberge l'appel en cours.
+   */
+  app.post('/api/conversations/:id/filings/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = filingDecisionBodySchema.parse(request.body)
+    await loadWritable(id, user.id)
+
+    const row = ctx.db
+      .select()
+      .from(agentRequests)
+      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'move_conversation')))
+      .get()
+    const filing = log.openFiling(id, requestId)
+    if (!row || !filing) throw notFound('filing_request_not_found', 'Filing request not found.')
+    if (row.resolvedAt !== null || row.acceptedAt !== null) {
+      throw badRequest('filing_already_decided', 'This filing request has already been decided.')
+    }
+
+    if (body.decision === 'refused') {
+      ctx.db
+        .update(agentRequests)
+        .set({ resolvedAt: Date.now() })
+        .where(eq(agentRequests.id, requestId))
+        .run()
+      log.append(id, {
+        type: 'filing.resolved',
+        requestId,
+        decision: 'refused',
+        decidedBy: user.id,
+        reason: null,
+      })
+      return { ok: true }
+    }
+
+    // Revérifié au clic et non au dépôt : le projet de destination a pu disparaître
+    // entre les deux. Ce qui reste du contrôle — un tour en cours, un worktree qui a
+    // changé — est l'affaire du balayage, qui réessaie.
+    const destination = ctx.db
+      .select({ ownerId: projects.ownerId, visibility: projects.visibility })
+      .from(projects)
+      .where(eq(projects.id, filing.projectId))
+      .get()
+    if (
+      !destination ||
+      (destination.ownerId !== user.id && destination.visibility !== 'shared')
+    ) {
+      ctx.db
+        .update(agentRequests)
+        .set({ resolvedAt: Date.now() })
+        .where(eq(agentRequests.id, requestId))
+        .run()
+      log.append(id, {
+        type: 'filing.resolved',
+        requestId,
+        decision: 'impossible',
+        decidedBy: user.id,
+        reason: 'project_not_found',
+      })
+      throw notFound('project_not_found', 'Project not found.')
+    }
+
+    ctx.db
+      .update(agentRequests)
+      .set({ acceptedAt: Date.now() })
+      .where(eq(agentRequests.id, requestId))
+      .run()
     return { ok: true }
   })
 

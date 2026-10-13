@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Clock, Compass, FilePen, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Compass, FilePen, FolderInput, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -151,6 +151,22 @@ function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
 }
 
 const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
+
+/**
+ * Le rangement de projet : déclarer un projet, et demander le déplacement d'une
+ * conversation. Deux valeurs comme les réglages voisins, et l'allumé porte le ton de
+ * mise en garde — c'est une portée qui agit au-dessus du projet où la session travaille.
+ */
+type FilingChoice = 'on' | 'off'
+
+function projectFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
+  return [
+    { value: 'off', label: t('composer.projectFiling.off'), hint: t('composer.projectFiling.off.hint') },
+    { value: 'on', label: t('composer.projectFiling.on'), hint: t('composer.projectFiling.on.hint'), tone: 'caution' },
+  ]
+}
+
+const filingChoice = (enabled: boolean): FilingChoice => (enabled ? 'on' : 'off')
 
 /**
  * Ce que l'envoi fait d'un message tapé pendant un tour : l'y pousser, ou le faire
@@ -591,11 +607,16 @@ export function useAgentSettings({
   // occuper le panneau, comme le serveur MCP de Solera.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
+  const filingOptionList = projectFilingOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
   // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
   // s'afficher d'abord puis de disparaître sous le curseur.
   const soleraAvailable = mcpRegistry?.soleraServer === true
+  // Les outils de rangement vivent dans le serveur MCP de Solera : l'entrée disparaît
+  // quand l'instance coupe l'un ou l'autre, un réglage inopérant valant moins que pas
+  // de réglage du tout.
+  const filingAvailable = soleraAvailable && mcpRegistry?.projectFiling === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -745,6 +766,25 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(filingAvailable
+        ? [
+            setting({
+              key: 'projectFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.projectFiling'),
+              icon: <FolderInput size={14} />,
+              options: filingOptionList,
+              value: filingChoice(claude.projectFiling),
+              onChange: (choice) => onConfigChange({ ...claude, projectFiling: choice === 'on' }),
+              // Les outils sont listés au lancement du serveur MCP : le changement
+              // attend la relance de la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'claude' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(claude.projectFiling), filingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
@@ -853,6 +893,25 @@ export function useAgentSettings({
               options: libraryOptionList,
               value: libraryChoice(codex.skillLibrary),
               onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
+            }),
+          ]
+        : []),
+      ...(filingAvailable
+        ? [
+            setting({
+              key: 'projectFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.projectFiling'),
+              icon: <FolderInput size={14} />,
+              options: filingOptionList,
+              value: filingChoice(codex.projectFiling),
+              onChange: (choice) => onConfigChange({ ...codex, projectFiling: choice === 'on' }),
+              // Les outils sont listés au lancement du serveur MCP : le changement
+              // attend la relance de la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'codex' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(codex.projectFiling), filingOptionList),
+                t,
+              ),
             }),
           ]
         : []),
@@ -972,6 +1031,25 @@ export function useAgentSettings({
                   libraryChoice(opencode.skillLibrary),
                   libraryOptionList,
                 ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(filingAvailable
+        ? [
+            setting({
+              key: 'projectFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.projectFiling'),
+              icon: <FolderInput size={14} />,
+              options: filingOptionList,
+              value: filingChoice(opencode.projectFiling),
+              onChange: (choice) => onConfigChange({ ...opencode, projectFiling: choice === 'on' }),
+              // Les outils sont listés au lancement du serveur MCP : le changement
+              // attend la relance de la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(applied ? filingChoice(applied.projectFiling) : undefined, filingChoice(opencode.projectFiling), filingOptionList),
                 t,
               ),
             }),

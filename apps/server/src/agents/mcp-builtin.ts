@@ -54,6 +54,14 @@ export interface BuiltinMcpParams {
   conversationId: string
   /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
   memoryDir: string
+  /**
+   * Ouvre les deux outils de rangement (`create_project`, `move_conversation`).
+   *
+   * Portée dédiée et non capacité par défaut : ces deux outils agissent au-dessus du
+   * projet où la session travaille. Le daemon revérifie de son côté, la base étant la
+   * seule autorité ; ici, c'est ce qui décide si les outils apparaissent du tout.
+   */
+  projectFiling: boolean
 }
 
 /**
@@ -68,7 +76,8 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
 }
 
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
-  const { enabled, config, databasePath, projectId, conversationId, memoryDir } = params
+  const { enabled, config, databasePath, projectId, conversationId, memoryDir, projectFiling } =
+    params
   if (!builtinMcpEnabled(enabled, config)) return null
   if (projectId === null) return null
 
@@ -90,6 +99,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SOLERA_MCP_PROJECT: projectId,
         SOLERA_MCP_CONVERSATION: conversationId,
         SOLERA_MCP_MEMORY: memoryDir,
+        ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
       },
     },
     createdAt: 0,

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { resolve, sep } from 'node:path'
 import { Cron } from 'croner'
-import { and, asc, count, eq, gt, isNull, ne } from 'drizzle-orm'
+import { and, asc, count, eq, gt, isNotNull, isNull, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -24,6 +25,7 @@ import {
   agentKindSchema,
   defaultConfigFor,
   formatSessionMessage,
+  parseAgentConfig,
   readProjectDefaults,
   scheduleCadenceSchema,
   type ScheduleCadence,
@@ -33,10 +35,15 @@ import {
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
+import { moveConversation } from '../conversations/move.js'
+import { conversationVisibleTo } from '../conversations/scope.js'
+import type { EventLog } from '../events/event-log.js'
+import { readGitStatus } from '../git.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { advanceCardOnLaunch, createCard } from '../http/routes/cards.js'
 import { createWorktree } from '../http/routes/worktrees.js'
+import { assertUsableWorkspace, insertProject } from '../projects/create.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import type { SessionManager } from './session-manager.js'
@@ -44,11 +51,18 @@ import type { SessionManager } from './session-manager.js'
 /**
  * Traite les demandes que les sessions adressent au daemon par le serveur MCP :
  * lancer une autre session, créer une carte, planifier une tâche, lire le catalogue des
- * modèles.
+ * modèles, déclarer un projet, demander le rangement d'une conversation.
  *
  * Le serveur MCP n'a que la base. Il dépose la demande et attend que ce balayage y
  * écrive le résultat ; plus court que celui du relais, parce qu'ici un agent est
  * suspendu à la réponse.
+ *
+ * Le rangement fait exception à ce rythme : l'agent apprend tout de suite que sa demande
+ * est déposée, et c'est un clic, plus tard, qui l'accorde. La promesse vit alors dans la
+ * ligne (`accepted_at`) et non en mémoire, pour survivre à un redémarrage du serveur, et
+ * c'est ce même balayage qui l'applique — il tente, et le refus de `releaseRunner`
+ * devient la condition de réessai : le déplacement a lieu dès que la conversation se
+ * tait.
  *
  * Toutes les réponses sont du texte rédigé pour le modèle, en français comme le reste
  * des outils : c'est lui qui les lit, et une erreur doit lui dire quoi corriger.
@@ -89,6 +103,24 @@ export const MIN_AGENT_SCHEDULE_MINUTES = 15
 export const MAX_AGENT_SCHEDULES_PER_PROJECT = 20
 
 /**
+ * Projets qu'une session peut déclarer en une heure.
+ *
+ * La borne sert ici et nulle part ailleurs, parce que `create_project` est la seule des
+ * deux écritures de rangement qui n'attend pas de clic : un agent pris dans une boucle
+ * d'erreur poserait cinquante projets avant que quiconque les voie. Le déplacement, lui,
+ * est tenu par son invariant — une demande en attente à la fois.
+ */
+export const PROJECTS_PER_HOUR = 1
+
+/** Les genres dont le résultat change une liste de l'interface. */
+const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
+  'start_session',
+  'create_card',
+  'create_project',
+  'move_conversation',
+])
+
+/**
  * Remplace les `{param}` d'un message d'erreur HTTP : les erreurs des fonctions
  * partagées avec les routes sont écrites pour l'API, le modèle les lit telles quelles.
  */
@@ -100,6 +132,20 @@ function describeError(err: unknown): string {
 }
 
 class Refusal extends Error {}
+
+/**
+ * Le fil que `move_conversation` déplace : celui que l'agent a nommé, ou le sien.
+ *
+ * Relu de la charge plutôt que stocké en colonne : c'est l'argument de l'outil, et la
+ * demande n'en normalise rien. Le dépôt et le balayage qui applique doivent lire la même
+ * chose, d'où cette fonction et non deux ternaires.
+ */
+function filingTargetId(request: AgentRequestRow): string {
+  const payload = JSON.parse(request.payload) as { conversation?: unknown }
+  return typeof payload.conversation === 'string' && payload.conversation.trim()
+    ? payload.conversation.trim()
+    : request.conversationId
+}
 
 interface StartSessionPayload {
   prompt?: unknown
@@ -120,6 +166,7 @@ export class AgentRequests {
     private readonly ctx: AppContext,
     private readonly sessions: SessionManager,
     private readonly registry: AgentRegistry,
+    private readonly log: EventLog,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -147,11 +194,13 @@ export class AgentRequests {
 
       for (const request of pending) {
         if (request.createdAt < Date.now() - STALE_MS) {
-          this.settle(request.id, "Demande expirée : Solera ne l'a pas traitée à temps.", true)
+          this.settle(request, "Demande expirée : Solera ne l'a pas traitée à temps.", true)
           continue
         }
         await this.handle(request)
       }
+
+      await this.applyFilings()
     } finally {
       this.busy = false
     }
@@ -180,28 +229,52 @@ export class AgentRequests {
 
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
-        this.settle(request.id, text, false, launchedId)
+        this.settle(request, text, false, launchedId)
       } else if (request.kind === 'schedule_task') {
-        this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
+        this.settle(request, await this.scheduleTask(requester, project, payload), false)
       } else if (request.kind === 'create_card') {
-        this.settle(request.id, this.createCard(requester, payload), false)
+        this.settle(request, this.createCard(requester, payload), false)
+      } else if (request.kind === 'create_project') {
+        this.settle(request, await this.createProject(request, requester, payload), false)
+      } else if (request.kind === 'move_conversation') {
+        this.settle(request, await this.requestFiling(request, requester, payload), false)
       } else {
-        this.settle(request.id, await this.listModels(requester, project, payload), false)
+        this.settle(request, await this.listModels(requester, project, payload), false)
       }
     } catch (err) {
       if (!(err instanceof Refusal) && !(err instanceof HttpError)) {
         this.logger?.warn({ err, request: request.id, kind: request.kind }, 'demande d’agent en échec')
       }
-      this.settle(request.id, describeError(err), true)
+      // Un rangement refusé d'entrée n'attend plus rien : sans cette clôture il tiendrait
+      // indéfiniment la place de l'unique demande en attente de la conversation.
+      if (request.kind === 'move_conversation') this.closeFiling(request.id)
+      this.settle(request, describeError(err), true)
     }
   }
 
-  private settle(id: string, result: string, isError: boolean, launchedId: string | null = null): void {
+  /**
+   * Écrit la réponse rendue à l'agent, et signale les listes que la demande a changées.
+   *
+   * `lists` plutôt que `lists-changed` du hub : ce dernier est posé par un hook indexé
+   * sur des URL de routes, que le daemon ne traverse pas. Sans ce signal, une carte ou un
+   * projet créés par un agent n'apparaissent qu'au prochain rechargement.
+   */
+  private settle(
+    request: AgentRequestRow,
+    result: string,
+    isError: boolean,
+    launchedId: string | null = null,
+  ): void {
     this.ctx.db
       .update(agentRequests)
       .set({ settledAt: Date.now(), result, isError, launchedConversationId: launchedId })
-      .where(eq(agentRequests.id, id))
+      .where(eq(agentRequests.id, request.id))
       .run()
+    if (!isError && CHANGES_LISTS.has(request.kind)) this.notifyLists(request.conversationId)
+  }
+
+  private notifyLists(conversationId: string): void {
+    this.sessions.statusBus.emit('lists', { conversationId })
   }
 
   // --- start_session -------------------------------------------------------------
@@ -564,6 +637,376 @@ export class AgentRequests {
       .run()
 
     return `Carte #${card.number} « ${card.title} » créée dans « à faire ». Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
+  }
+
+  // --- create_project ------------------------------------------------------------
+
+  /**
+   * Déclare un projet sur un dossier que l'agent a créé lui-même.
+   *
+   * Acte direct, sans accord préalable : c'est une ligne en base, et un archivage la
+   * défait. Solera ne crée ni ne supprime jamais le dossier — l'agent a déjà un shell,
+   * et le jour où Solera crée, elle devient responsable du nettoyage, qui est la question
+   * qu'on refuse d'ouvrir (`DELETE /api/projects/:id` ne touche pas au `workspacePath`).
+   */
+  private async createProject(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    this.assertFilingAllowed(requester)
+
+    const given = typeof payload.path === 'string' ? payload.path.trim() : ''
+    if (!given) {
+      throw new Refusal(
+        'Le paramètre `path` est requis : le chemin absolu du dossier du projet, que tu dois avoir créé avant.',
+      )
+    }
+
+    const [recent] = this.ctx.db
+      .select({ total: count() })
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.conversationId, requester.id),
+          eq(agentRequests.kind, 'create_project'),
+          eq(agentRequests.isError, false),
+          ne(agentRequests.id, request.id),
+          gt(agentRequests.createdAt, Date.now() - HOUR_MS),
+        ),
+      )
+      .all()
+    if ((recent?.total ?? 0) >= PROJECTS_PER_HOUR) {
+      throw new Refusal(
+        `Refusé : cette session a déjà déclaré ${PROJECTS_PER_HOUR} projet dans l'heure. Dis à l'utilisateur ce que tu voulais ranger, il créera le projet lui-même.`,
+      )
+    }
+
+    // Le dossier où cette personne range ses projets. Nul tant qu'elle n'en a créé aucun :
+    // le premier projet est le sien à faire, et on n'a alors aucune racine à vérifier.
+    const projectsDir = readUserSettings(this.ctx.db, requester.userId).projectsDir
+    if (!projectsDir) {
+      throw new Refusal(
+        "Refusé : cette instance n'a pas encore de dossier où elle range ses projets. Demande à l'utilisateur de créer ce premier projet lui-même, depuis Solera.",
+      )
+    }
+
+    const workspacePath = await assertUsableWorkspace(given).catch(() => {
+      throw new Refusal(
+        `Refusé : « ${given} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
+      )
+    })
+
+    // La garde de séparateur, et c'est tout son intérêt : sans elle `~/projets-a-moi`
+    // passerait pour un enfant de `~/projets`.
+    const resolved = resolve(projectsDir)
+    const root = resolved.endsWith(sep) ? resolved.slice(0, -sep.length) : resolved
+    if (workspacePath !== root && !workspacePath.startsWith(root + sep)) {
+      throw new Refusal(
+        `Refusé : « ${workspacePath} » est hors de ${root}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
+      )
+    }
+
+    const taken = this.ctx.db
+      .select({ name: projects.name })
+      .from(projects)
+      .where(eq(projects.workspacePath, workspacePath))
+      .get()
+    if (taken) {
+      throw new Refusal(`Refusé : ce dossier est déjà le projet « ${taken.name} ».`)
+    }
+
+    const name = typeof payload.name === 'string' && payload.name.trim()
+      ? payload.name.trim().slice(0, 200)
+      : (workspacePath.split(sep).filter(Boolean).at(-1) ?? workspacePath)
+
+    const row = await insertProject(this.ctx, requester.userId, {
+      name,
+      workspacePath,
+      // Privé, comme tout projet créé depuis l'interface : partager est un geste que son
+      // propriétaire fait, pas un défaut qu'un agent choisit.
+      visibility: 'private',
+      color: null,
+      // Déduit du contenu du dossier, comme dans la route : un AGENTS.md que l'agent y
+      // aurait posé donne `repo`, ce qui est juste.
+      instructionsMode: undefined,
+    })
+
+    return [
+      `Projet « ${row.name} » créé, id ${row.id}, sur ${row.workspacePath}.`,
+      `Consignes en mode ${row.instructionsMode}.`,
+      `Il est privé et vide : aucune conversation n'y est rangée. Pour y ranger celle-ci ou une autre : move_conversation avec project="${row.id}", que l'utilisateur accorde d'un clic.`,
+    ].join('\n')
+  }
+
+  // --- move_conversation ---------------------------------------------------------
+
+  /**
+   * Dépose une demande de rangement, et ne déplace rien.
+   *
+   * L'outil ne peut pas se contenter de déclarer que l'utilisateur l'a demandé : c'est
+   * invérifiable, et pour un rangement le pire cas ne se voit pas arriver, là où une
+   * session lancée de trop se voit. C'est donc le clic qui déplace — et c'est lui, en
+   * retour, qui autorise d'aller d'un projet vers un autre sans restriction.
+   */
+  private async requestFiling(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    this.assertFilingAllowed(requester)
+
+    const targetId =
+      typeof payload.conversation === 'string' && payload.conversation.trim()
+        ? payload.conversation.trim()
+        : requester.id
+    // Jointure externe : une jointure interne écarterait les fils libres, qui sont
+    // justement ce qu'on range le plus souvent.
+    const found = this.ctx.db
+      .select({ conversation: conversations })
+      .from(conversations)
+      .leftJoin(projects, eq(projects.id, conversations.projectId))
+      .where(and(eq(conversations.id, targetId), conversationVisibleTo(requester.userId)))
+      .get()
+    if (!found) {
+      throw new Refusal(
+        `Aucune conversation « ${targetId} » que cette session puisse voir. list_sessions et search_history donnent les identifiants.`,
+      )
+    }
+    const target = found.conversation
+
+    if (target.scheduleId) {
+      throw new Refusal("Refusé : cette conversation est un tir planifié, et reste où sa tâche l'a mis.")
+    }
+
+    const destinationId =
+      typeof payload.project === 'string' && payload.project.trim()
+        ? payload.project.trim()
+        : requester.projectId
+    if (!destinationId) {
+      throw new Refusal(
+        "Le paramètre `project` est requis : cette session n'appartient elle-même à aucun projet, il n'y a donc pas de destination à sous-entendre. create_project en déclare un.",
+      )
+    }
+    const destination = this.ctx.db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, destinationId))
+      .get()
+    // Visible pour qui accordera, c'est-à-dire le propriétaire du fil déplacé : lui
+    // demander de ranger dans un projet qu'il ne voit pas n'aurait aucun sens.
+    if (
+      !destination ||
+      (destination.ownerId !== target.userId && destination.visibility !== 'shared')
+    ) {
+      throw new Refusal(`Aucun projet « ${destinationId} » où ranger cette conversation.`)
+    }
+    if (target.projectId === destination.id) {
+      throw new Refusal(`Cette conversation est déjà rangée dans « ${destination.name} ».`)
+    }
+
+    // Une seule demande en attente à la fois, et c'est un invariant plutôt qu'un chiffre
+    // horaire : rien ne se désynchronise, et tant que l'utilisateur n'a pas répondu
+    // l'agent n'a rien à ajouter. Les demandes en attente se comptent sur les doigts,
+    // par construction : la charge se relit en mémoire plutôt qu'en SQL.
+    const waiting = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.kind, 'move_conversation'),
+          isNull(agentRequests.resolvedAt),
+          ne(agentRequests.id, request.id),
+        ),
+      )
+      .all()
+    for (const other of waiting) {
+      if (other.conversationId === requester.id) {
+        throw new Refusal(
+          "Refusé : cette session a déjà une demande de rangement en attente. Attends que l'utilisateur y réponde.",
+        )
+      }
+      if (filingTargetId(other) === target.id) {
+        throw new Refusal(
+          "Refusé : un rangement de cette conversation attend déjà une réponse de l'utilisateur.",
+        )
+      }
+    }
+
+    const price = await this.filingPrice(target)
+    this.log.append(target.id, {
+      type: 'filing.requested',
+      requestId: request.id,
+      conversationId: target.id,
+      conversationTitle: target.title,
+      projectId: destination.id,
+      projectName: destination.name,
+      ...price,
+    })
+    this.notifyLists(target.id)
+
+    const lines = [
+      target.id === requester.id
+        ? `Demande déposée : ranger cette conversation dans « ${destination.name} ».`
+        : `Demande déposée : ranger « ${target.title} » dans « ${destination.name} ».`,
+      "Elle attend un clic dans Solera, et rien n'est déplacé avant. Son propriétaire y voit le prix du déplacement : worktree et carte détachés, reprise du CLI perdue.",
+      target.id === requester.id
+        ? 'Accordée, le déplacement a lieu dès que ce tour est fini : la session redémarre dans le nouveau projet, avec ses outils, et sans la session native du CLI.'
+        : 'Accordée, le déplacement a lieu dès que cette conversation ne travaille plus.',
+      "N'en redépose pas : une seule demande de rangement peut attendre à la fois.",
+    ]
+    return lines.join('\n')
+  }
+
+  /**
+   * Ce que le déplacement coûte, tel que la demande l'affichera.
+   *
+   * On autorise et on annonce, mot pour mot la doctrine du `force` d'un worktree sale :
+   * le travail non commité ne bouge pas, il reste dans le projet de départ. Refuser dès
+   * qu'il y a un worktree aurait rendu indéplaçable toute session ayant travaillé dans un
+   * arbre, le détachement n'existant pas.
+   */
+  private async filingPrice(target: ConversationRow): Promise<{
+    worktree: { name: string; dirtyFiles: number } | null
+    card: { number: number; title: string } | null
+    resumable: boolean
+  }> {
+    const tree = target.worktreeId
+      ? (this.ctx.db
+          .select({ name: worktrees.name, path: worktrees.path })
+          .from(worktrees)
+          .where(eq(worktrees.id, target.worktreeId))
+          .get() ?? null)
+      : null
+    const status = tree ? await readGitStatus(tree.path).catch(() => null) : null
+    const card = target.cardId
+      ? (this.ctx.db
+          .select({ number: cards.number, title: cards.title })
+          .from(cards)
+          .where(eq(cards.id, target.cardId))
+          .get() ?? null)
+      : null
+
+    return {
+      worktree: tree ? { name: tree.name, dirtyFiles: status?.changedFiles ?? 0 } : null,
+      card,
+      resumable: target.agentSessionId !== null,
+    }
+  }
+
+  /**
+   * Applique les rangements accordés, dès que la conversation visée se tait.
+   *
+   * Le balayage tente, et le refus de `releaseRunner` est la condition de réessai : rien
+   * à ajouter à `settleIdle`, aucun état en mémoire. L'acceptation est revérifiée ici et
+   * non au dépôt — entre les deux, le projet de destination a pu disparaître.
+   */
+  private async applyFilings(): Promise<void> {
+    const accepted = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.kind, 'move_conversation'),
+          isNotNull(agentRequests.acceptedAt),
+          isNull(agentRequests.resolvedAt),
+        ),
+      )
+      .orderBy(asc(agentRequests.acceptedAt))
+      .all()
+
+    for (const request of accepted) {
+      const targetId = filingTargetId(request)
+      const target = this.ctx.db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, targetId))
+        .get()
+      const filing = this.log.openFiling(targetId, request.id)
+      // Le fil ou sa demande ont disparu : il n'y a plus de journal où écrire la suite.
+      if (!target || !filing) {
+        this.closeFiling(request.id)
+        continue
+      }
+
+      const destination = this.ctx.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, filing.projectId))
+        .get()
+      if (!destination) {
+        this.resolveFiling(request, target, 'impossible', 'project_not_found')
+        continue
+      }
+
+      const result = await moveConversation(this.ctx, this.sessions, target, destination.id)
+      if (!result.ok) {
+        // `busy` : un tour tourne, on retentera au prochain balayage. C'est tout le
+        // mécanisme d'attente, et il n'y en a pas d'autre.
+        if (result.refusal === 'busy') continue
+        this.resolveFiling(request, target, 'impossible', 'conversation_scheduled')
+        continue
+      }
+      this.resolveFiling(request, target, 'accepted', null)
+      this.logger?.info(
+        { conversation: target.id, project: destination.id, request: request.id },
+        'rangement accorde applique',
+      )
+    }
+  }
+
+  /**
+   * Écrit la résolution dans le fil déplacé, et ferme la demande.
+   *
+   * `reason` est un code et non une phrase : il part dans le journal, que l'interface
+   * relit dans la langue de son lecteur, là où tout le reste de ce module est du texte
+   * rédigé pour un modèle.
+   */
+  private resolveFiling(
+    request: AgentRequestRow,
+    target: ConversationRow,
+    decision: 'accepted' | 'impossible',
+    reason: 'project_not_found' | 'conversation_scheduled' | null,
+  ): void {
+    this.log.append(target.id, {
+      type: 'filing.resolved',
+      requestId: request.id,
+      decision,
+      // Seul le propriétaire du fil déplacé peut accorder : c'est donc lui, et la route
+      // n'a pas à nous le redire.
+      decidedBy: decision === 'accepted' ? target.userId : null,
+      reason,
+    })
+    this.closeFiling(request.id)
+    this.notifyLists(target.id)
+  }
+
+  /** La demande n'attend plus rien : ni l'agent, ni l'utilisateur, ni ce balayage. */
+  private closeFiling(id: string): void {
+    this.ctx.db
+      .update(agentRequests)
+      .set({ resolvedAt: Date.now() })
+      .where(eq(agentRequests.id, id))
+      .run()
+  }
+
+  /**
+   * Les deux outils de rangement sont une portée accordée, pas une capacité par défaut.
+   *
+   * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
+   * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
+   */
+  private assertFilingAllowed(requester: ConversationRow): void {
+    if (!this.ctx.config.mcp.projectFiling) {
+      throw new Refusal(
+        "Refusé : cette instance de Solera n'ouvre pas le rangement aux agents (`[mcp] project_filing` dans config.toml).",
+      )
+    }
+    if (!parseAgentConfig(requester.config).projectFiling) {
+      throw new Refusal(
+        "Refusé : le rangement de projet n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
+      )
+    }
   }
 
   // --- list_models ---------------------------------------------------------------

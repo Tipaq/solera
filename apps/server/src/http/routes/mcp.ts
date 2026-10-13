@@ -61,7 +61,11 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
 
   app.get('/api/mcp/servers', async (request): Promise<McpServerListDto> => {
     requireUser(request)
-    return { servers: listAll(), soleraServer: ctx.config.mcp.soleraServer }
+    return {
+      servers: listAll(),
+      soleraServer: ctx.config.mcp.soleraServer,
+      projectFiling: ctx.config.mcp.projectFiling,
+    }
   })
 
   app.post('/api/mcp/servers', async (request, reply): Promise<McpServer> => {

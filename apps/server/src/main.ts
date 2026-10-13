@@ -49,8 +49,8 @@ async function main(): Promise<void> {
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
-  // Lancements de sessions et cartes demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry)
+  // Lancements, cartes, projets et rangements demandés par les agents, par le serveur MCP.
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 

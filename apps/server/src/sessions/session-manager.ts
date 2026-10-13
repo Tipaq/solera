@@ -705,6 +705,11 @@ export class SessionManager {
     const cwd = this.resolveCwd(conversation)
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
+    //
+    // Invariant : tout changement de projet relâche le runner. Sans ça, cette constante
+    // mentirait — elle est capturée au démarrage alors que tout ce qui l'entoure est relu
+    // par appel. Les deux chemins de déplacement passent par `conversations/move.ts`, qui
+    // appelle `releaseRunner` avant d'écrire ; un troisième, un jour, devra en faire autant.
     const projectId = conversation.projectId
     const instructions = () => {
       if (projectId === null) return null
@@ -756,6 +761,7 @@ export class SessionManager {
           projectId,
           conversationId,
           memoryDir: memoryDir(),
+          projectFiling: this.config.mcp.projectFiling && current.projectFiling,
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },

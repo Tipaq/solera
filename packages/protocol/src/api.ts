@@ -365,6 +365,16 @@ export const forkConversationBodySchema = z.object({
   title: z.string().min(1).max(200).optional(),
 })
 
+/**
+ * Réponse à une demande de rangement déposée par un agent.
+ *
+ * Deux valeurs seulement : `impossible` n'est pas une décision mais un constat que le
+ * serveur fait de son côté, en revérifiant au moment du clic.
+ */
+export const filingDecisionBodySchema = z.object({
+  decision: z.enum(['accepted', 'refused']),
+})
+
 export const permissionDecisionBodySchema = z.object({
   decision: z.enum(['allowed', 'denied']),
   scope: z.enum(['once', 'session', 'always']).default('once'),
@@ -1233,6 +1243,8 @@ export interface McpServerListDto {
    * de l'interface au lieu d'y rester grisée.
    */
   soleraServer: boolean
+  /** Faux quand l'instance refuse les outils de rangement : l'entrée disparaît. */
+  projectFiling: boolean
 }
 
 // Erreurs
