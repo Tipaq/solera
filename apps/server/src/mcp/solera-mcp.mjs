@@ -30,6 +30,13 @@
  * jeton à faire circuler, pas de port à ouvrir : l'environnement ne porte qu'une portée,
  * jamais un secret. Ce n'est pas une frontière de sécurité pour autant, l'agent ayant
  * déjà un shell et le fichier sur le disque ; c'est le même accès, en plus commode.
+ *
+ * Il démarre aussi dans un fil libre, une conversation qui n'appartient à aucun projet,
+ * et n'expose alors qu'une poignée d'outils : ceux dont l'objet n'est pas un projet. Un
+ * fil libre a une mémoire, celle de son compte, et SOLERA.md garde pour lui sa partie
+ * globale ; le board, les sessions, le journal et les consignes de projet n'ont, eux,
+ * rien à désigner. Le serveur ne part donc plus que sur la base : c'est `SOLERA_MCP_DB`
+ * qui lui est indispensable, `SOLERA_MCP_PROJECT` qui est facultatif.
  */
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -39,10 +46,11 @@ import { join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SOLERA_MCP_DB
-const PROJECT_ID = process.env.SOLERA_MCP_PROJECT
+/** Projet de la conversation, ou null pour un fil libre : voir l'en-tête. */
+const PROJECT_ID = process.env.SOLERA_MCP_PROJECT || null
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
-/** Dossier de mémoire du projet, partagé avec la mémoire automatique de Claude. */
+/** Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la mémoire automatique de Claude. */
 const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
@@ -186,8 +194,8 @@ const REPO_INSTRUCTION_FILES = ['AGENTS.md', 'CLAUDE.md']
 const log = (msg) => process.stderr.write(`[solera-mcp] ${msg}\n`)
 const send = (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`)
 
-if (!DB_PATH || !PROJECT_ID) {
-  log('SOLERA_MCP_DB et SOLERA_MCP_PROJECT sont requis')
+if (!DB_PATH) {
+  log('SOLERA_MCP_DB est requis')
   process.exit(1)
 }
 
@@ -214,7 +222,7 @@ function writeDb() {
   return writable
 }
 
-const TOOLS = [
+const ALL_TOOLS = [
   {
     name: 'search_history',
     description:
@@ -650,6 +658,59 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
 ]
+
+/**
+ * Les outils qu'un fil libre voit : ceux dont l'objet n'est pas un projet.
+ *
+ * `create_project` et `move_conversation` sont ici avant d'exister — ils arrivent avec
+ * le rangement par l'agent, et c'est justement un fil libre qui en a besoin. Une liste
+ * de noms n'a pas à attendre le code : un nom de trop ne filtre rien.
+ *
+ * Liste filtrée, et non outils listés qui refusent à l'appel. C'est une divergence
+ * assumée du motif de la mémoire plus bas (« La mémoire n'est pas disponible dans cette
+ * session. ») : un refus à l'appel se paie une fois, vingt descriptions d'outils
+ * inutilisables se paient dans le prompt système de chaque fil libre, pour dix-neuf
+ * refus. Et la liste ne peut pas se périmer sous l'agent : ranger un fil redémarre son
+ * CLI, qui relit `tools/list` et découvre alors les outils du projet rejoint.
+ */
+const FREE_THREAD_TOOLS = new Set([
+  'create_project',
+  'move_conversation',
+  'read_memory',
+  'write_memory',
+  'delete_memory',
+  'read_instructions',
+  'edit_instructions',
+  'write_instructions',
+])
+
+/**
+ * Ce qu'un fil libre lit de ces outils : mêmes outils, autre portée.
+ *
+ * Sa mémoire est celle de son compte, une seule pour tous ses fils libres, et non celle
+ * d'un projet ; de SOLERA.md il ne reçoit et ne touche que la partie globale, `project`
+ * ne désignant rien. Une description qui lui parlerait de « ce projet » l'enverrait
+ * chercher ce qui n'existe pas, et le paramètre `scope` lui offrirait un choix dont une
+ * branche est toujours un refus.
+ */
+function forFreeThread(tool) {
+  if (tool.name.endsWith('_memory')) {
+    return { ...tool, description: tool.description.replaceAll('ce projet', 'tes fils libres') }
+  }
+  if (tool.name.endsWith('_instructions')) {
+    const { scope, ...properties } = tool.inputSchema.properties
+    return {
+      ...tool,
+      description: `${tool.description} Cette conversation n'appartenant à aucun projet, seule la partie globale de SOLERA.md lui est accessible.`,
+      inputSchema: { ...tool.inputSchema, properties },
+    }
+  }
+  return tool
+}
+
+const TOOLS = PROJECT_ID
+  ? ALL_TOOLS
+  : ALL_TOOLS.filter((tool) => FREE_THREAD_TOOLS.has(tool.name)).map(forFreeThread)
 
 /**
  * Traduit une saisie libre en requête FTS5.
@@ -1299,15 +1360,20 @@ function setProjectImage(mimeType, data, provisional) {
 }
 
 /**
- * Le mode de consignes du projet. Doit rester d'accord avec `resolveInstructionsMode` de
+ * Le mode de consignes du projet, ou null s'il n'y a pas de projet à interroger. Doit
+ * rester d'accord avec `resolveInstructionsMode` de
  * `apps/server/src/instructions/store.ts` : un projet d'avant le réglage suit son dépôt
  * s'il porte un fichier de consignes.
+ *
+ * Null et non un mode par défaut : rendre `repo` pour un projet introuvable ferait
+ * refuser l'outil en disant « ce projet garde ses consignes dans son dépôt », ce qui
+ * enverrait l'agent chercher un `AGENTS.md` dans un projet qui n'existe plus.
  */
 function projectInstructionsMode() {
   const project = db
     .prepare('SELECT instructions_mode AS mode, workspace_path AS path FROM projects WHERE id = ?')
     .get(PROJECT_ID)
-  if (!project) return { mode: 'repo', chosen: true }
+  if (!project) return null
   if (project.mode) return { mode: project.mode, chosen: true }
   const hasFile = REPO_INSTRUCTION_FILES.some((name) => {
     try {
@@ -1382,7 +1448,15 @@ function saveInstructions(projectId, transform, fixMode) {
  * globale est permis à tous, comme dans l'interface.
  */
 function instructionsTarget(args, writing) {
-  const scope = args?.scope === 'global' ? 'global' : 'project'
+  // Un fil libre n'a que la portée globale, et c'est aussi son défaut : `project` n'y
+  // désigne rien, et le paramètre ne lui est même pas proposé.
+  const scope = PROJECT_ID === null || args?.scope === 'global' ? 'global' : 'project'
+  if (PROJECT_ID === null && args?.scope === 'project') {
+    return {
+      refusal:
+        "Cette conversation n'appartient à aucun projet : il n'y a pas de partie de projet à lire ni à écrire. Ici les outils SOLERA.md ne valent que pour la partie globale (`scope: global`), celle qui entre dans toutes les sessions de l'instance.",
+    }
+  }
   if (scope === 'global') {
     if (writing && !conversationOwnerIsAdmin()) {
       return {
@@ -1393,7 +1467,11 @@ function instructionsTarget(args, writing) {
     return { scope, projectId: null, fixMode: false }
   }
 
-  const { mode, chosen } = projectInstructionsMode()
+  const project = projectInstructionsMode()
+  if (!project) {
+    return { refusal: "Ce projet n'existe plus dans Solera : ses consignes n'ont plus de support." }
+  }
+  const { mode, chosen } = project
   if (mode === 'repo') {
     return {
       refusal:
@@ -1404,6 +1482,12 @@ function instructionsTarget(args, writing) {
 }
 
 const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie de ce projet')
+
+/**
+ * De quelle mémoire on parle : un fil libre n'en partage aucune avec un projet, il a
+ * celle de son compte, commune à tous ses fils libres.
+ */
+const MEMORY_LABEL = PROJECT_ID ? 'du projet' : 'de tes fils libres'
 
 /** Les notes de la mémoire, index d'abord. */
 function memoryFiles() {
@@ -2033,7 +2117,7 @@ async function callTool(name, args) {
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire du projet, dans ${MEMORY_DIR} :`,
+            `Mémoire ${MEMORY_LABEL}, dans ${MEMORY_DIR} :`,
             index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
             `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
           ].join('\n\n'),
@@ -2072,7 +2156,7 @@ async function callTool(name, args) {
     writeFileSync(join(MEMORY_DIR, file), args.content)
     const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
     return text(
-      `Note « ${file} » écrite dans la mémoire du projet${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
+      `Note « ${file} » écrite dans la mémoire ${MEMORY_LABEL}${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
     )
   }
 
@@ -2124,7 +2208,7 @@ async function callTool(name, args) {
   return { ...text(`Outil inconnu : ${name}`), isError: true }
 }
 
-log(`prêt, projet=${PROJECT_ID}`)
+log(PROJECT_ID ? `prêt, projet=${PROJECT_ID}` : `prêt, fil libre, ${TOOLS.length} outils`)
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return

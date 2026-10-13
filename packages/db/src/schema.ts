@@ -334,9 +334,15 @@ export const agentRequests = sqliteTable(
   'agent_requests',
   {
     id: text('id').primaryKey(),
-    projectId: text('project_id')
-      .notNull()
-      .references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Projet de la session qui demande, ou NULL quand c'est un fil libre.
+     *
+     * Nullable depuis que le serveur MCP démarre sans projet : un fil libre a lui aussi
+     * des demandes à déposer, et elles ne parlent d'aucun projet. Les genres qui, eux,
+     * en exigent un le réclament à leur tour dans `handle()`, plutôt que la colonne pour
+     * tout le monde.
+     */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
     conversationId: text('conversation_id').notNull(),
     kind: text('kind', { enum: ['start_session', 'create_card', 'list_models', 'schedule_task'] }).notNull(),
