@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { SettingsDialog } from './components/settings/SettingsDialog'
@@ -18,8 +18,22 @@ import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
 import { SchedulesPage } from './routes/SchedulesPage'
 import { SkillEditorPage } from './routes/SkillEditorPage'
-import { VaultBrowsePage } from './routes/VaultBrowsePage'
-import { VaultPage } from './routes/VaultPage'
+
+/**
+ * Les deux pages du vault arrivent à part.
+ *
+ * Elles portent l'éditeur de note, donc CodeMirror, sa grammaire markdown et son
+ * autocomplétion : trois cents kilooctets qu'une instance sans vault ne téléchargerait
+ * jamais, et que le reste de l'application n'utilise pas. Le bundle principal frôlait
+ * déjà la limite de précache du service worker — 2 Mio — et les y laisser la faisait
+ * dépasser, ce qui **casse le build** au lieu de le ralentir.
+ *
+ * Même raison et même geste que pour le panneau du Travail, chargé à part lui aussi.
+ */
+const VaultPage = lazy(() => import('./routes/VaultPage').then((m) => ({ default: m.VaultPage })))
+const VaultBrowsePage = lazy(() =>
+  import('./routes/VaultBrowsePage').then((m) => ({ default: m.VaultBrowsePage })),
+)
 
 /**
  * Les anciennes adresses des réglages, qui ne sont plus des pages.
@@ -73,10 +87,12 @@ export function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
-          {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note. */}
-          <Route path="/vault/parcourir" element={<VaultBrowsePage />} />
-          <Route path="/vault/note/*" element={<VaultPage />} />
-          <Route path="/vault" element={<VaultPage />} />
+          {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
+              Pas de voile d'attente : la page arrive quand son code est là, plutôt que
+              de faire clignoter un écran vide entre deux notes. */}
+          <Route path="/vault/parcourir" element={<Suspense fallback={null}><VaultBrowsePage /></Suspense>} />
+          <Route path="/vault/note/*" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
+          <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/services" element={<ServicesPage />} />
           {/* La porte d'un projet est son tableau de bord ; les réglages, qui
               l'occupaient, sont passés dans son `⋯`. */}
