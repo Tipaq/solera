@@ -767,11 +767,12 @@ export class SessionManager {
       // SOLERA.md passe devant et hors de ces interrupteurs : ce sont les consignes de
       // l'utilisateur, pas un apport de Solera qu'on choisirait de couper.
       projectOverview: (current) => {
-        // `builtinMcpServer` refuse aussi de partir sans projet : annoncer le serveur
-        // à l'agent alors qu'il n'est pas monté, c'est lui faire appeler des outils qui
-        // n'existent pas et lire son échec comme le sien. Carte #16 pour le fond.
-        const soleraMcp =
-          projectId !== null && builtinMcpEnabled(this.config.mcp.soleraServer, current)
+        // La même condition que `builtinMcpServer`, et c'est ce qui compte : annoncer
+        // le serveur à l'agent alors qu'il n'est pas monté, c'est lui faire appeler des
+        // outils qui n'existent pas et lire son échec comme le sien. Un fil libre le
+        // monte désormais, avec moins d'outils — la mémoire et SOLERA.md, soit tout ce
+        // dont ces deux appendices parlent.
+        const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
         const parts = [
           instructionsAppendix(this.db, {
             projectId,
@@ -781,8 +782,11 @@ export class SessionManager {
             soleraMcp,
           }),
           // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
-          // ce qu'on leur dit.
-          conversation.agent !== 'claude' ? memoryAppendixForCodex(memoryDir(), soleraMcp) : null,
+          // ce qu'on leur dit — et sans le serveur MCP, un fil libre sous Codex avait un
+          // dossier de mémoire sans aucun moyen d'y écrire.
+          conversation.agent !== 'claude'
+            ? memoryAppendixForCodex(memoryDir(), soleraMcp, projectId === null ? 'account' : 'project')
+            : null,
           this.config.mcp.soleraServer && current.soleraMcp && projectId !== null
             ? projectOverview(this.db, {
                 projectId,

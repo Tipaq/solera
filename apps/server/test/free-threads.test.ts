@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,6 +9,7 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { and, eq } from 'drizzle-orm'
 import {
+  agentRequests,
   conversations,
   openDatabase,
   projects,
@@ -15,8 +18,12 @@ import {
   type ConversationRow,
 } from '@solera/db'
 import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
+import type { AgentRegistry } from '../src/agents/registry.js'
+import type { Config } from '../src/config.js'
 import { HttpError } from '../src/http/errors.js'
 import { conversationVisibleTo, inProject } from '../src/conversations/scope.js'
+import { AgentRequests } from '../src/sessions/agent-requests.js'
+import type { SessionManager } from '../src/sessions/session-manager.js'
 import { agentCwd, conversationWorkspace, resolveConversationCwd } from '../src/workspace.js'
 
 /**
@@ -139,4 +146,71 @@ test('« les fils de ce projet » comprend le groupe des fils libres', async (t)
   // toujours vide, et la boîte de réception resterait désespérément propre.
   assert.deepEqual(ids(null), ['free'])
   assert.deepEqual(ids('private'), ['owned'])
+})
+
+test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en parle pas', async (t) => {
+  const { dir } = await harness(t)
+
+  const list = (projectId: string) => {
+    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free' },
+      encoding: 'utf8', timeout: 10000,
+      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
+    })
+    assert.equal(run.status, 0, run.stderr)
+    return (JSON.parse(run.stdout).result as { tools: { name: string; inputSchema: { properties: object } }[] }).tools
+  }
+
+  // `create_project` et `move_conversation` complètent les huit quand ils existeront :
+  // le filtre les nomme déjà, un nom de trop ne retirant rien de la liste.
+  const free = list('')
+  assert.deepEqual(
+    free.map((tool) => tool.name).sort(),
+    ['delete_memory', 'edit_instructions', 'read_instructions', 'read_memory', 'write_instructions', 'write_memory'],
+  )
+
+  // Et le serveur du projet, lui, les porte tous : ce qui tombe n'est que ce qui parle
+  // d'un projet, pas la moitié du serveur par accident.
+  const scoped = list('private').map((tool) => tool.name)
+  assert.equal(scoped.length, 23)
+  for (const tool of free) assert.ok(scoped.includes(tool.name), tool.name)
+
+  // Pas de `scope` à offrir : des trois portées de SOLERA.md, un fil libre n'a que la
+  // globale, et le paramètre ne lui proposerait qu'une branche toujours refusée.
+  const read = free.find((tool) => tool.name === 'read_instructions')!
+  assert.deepEqual(Object.keys(read.inputSchema.properties), [])
+})
+
+test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux côtés', async (t) => {
+  const { db, dir, thread } = await harness(t)
+  thread('free', null, 'owner')
+
+  const requests = new AgentRequests(
+    { db, config: { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config },
+    {} as SessionManager,
+    {} as AgentRegistry,
+  )
+
+  const ask = async (kind: 'create_card' | 'list_models', payload: object) => {
+    const id = randomUUID()
+    db.insert(agentRequests).values({
+      id, projectId: null, conversationId: 'free', kind, payload: JSON.stringify(payload), createdAt: Date.now(),
+    }).run()
+    await requests.sweep()
+    return db.select().from(agentRequests).where(eq(agentRequests.id, id)).get()!
+  }
+
+  // Le refus dit *pourquoi*, et c'est tout le test : sans `isNull` dans le préambule de
+  // `handle()`, `project_id = NULL` ne rendrait aucune ligne et le daemon répondrait
+  // « la session qui demande n'existe plus », à une session bien vivante.
+  const card = await ask('create_card', { title: 'Une carte sans board' })
+  assert.equal(card.isError, true)
+  assert.match(card.result ?? '', /n’appartient à aucun projet|n'appartient à aucun projet/)
+  assert.doesNotMatch(card.result ?? '', /n’existe plus|n'existe plus/)
+
+  // Et le projet n'est réclamé que par les genres qui en ont un besoin propre, au lieu
+  // d'être exigé de tous par le préambule.
+  const models = await ask('list_models', {})
+  assert.equal(models.isError, true)
+  assert.match(models.result ?? '', /aucun projet/)
 })

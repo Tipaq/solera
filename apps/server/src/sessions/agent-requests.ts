@@ -34,6 +34,7 @@ import {
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
 import { createConversation } from '../conversations/create.js'
+import { inProject } from '../conversations/scope.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
@@ -160,31 +161,28 @@ export class AgentRequests {
   private async handle(request: AgentRequestRow): Promise<void> {
     try {
       const payload = JSON.parse(request.payload) as Record<string, unknown>
+      // La conversation d'abord, son projet ensuite et seulement pour les genres qui en
+      // ont besoin : un fil libre dépose lui aussi des demandes, et `project_id` est
+      // alors nul des deux côtés. `inProject` et non `eq`, parce que `project_id = NULL`
+      // ne rend jamais vrai en SQL — la demande semblerait venir d'une autre session.
       const requester = this.ctx.db
         .select()
         .from(conversations)
-        .where(
-          and(
-            eq(conversations.id, request.conversationId),
-            eq(conversations.projectId, request.projectId),
-          ),
-        )
+        .where(and(eq(conversations.id, request.conversationId), inProject(request.projectId)))
         .get()
       if (!requester) throw new Refusal("La session qui demande n'existe plus dans ce projet.")
-      const project = this.ctx.db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, request.projectId))
-        .get()
-      if (!project) throw new Refusal("Le projet n'existe plus.")
 
+      if (request.kind === 'create_card') {
+        this.settle(request.id, this.createCard(requester, payload), false)
+        return
+      }
+
+      const project = this.requireProject(request.projectId)
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request.id, text, false, launchedId)
       } else if (request.kind === 'schedule_task') {
         this.settle(request.id, await this.scheduleTask(requester, project, payload), false)
-      } else if (request.kind === 'create_card') {
-        this.settle(request.id, this.createCard(requester, payload), false)
       } else {
         this.settle(request.id, await this.listModels(requester, project, payload), false)
       }
@@ -194,6 +192,27 @@ export class AgentRequests {
       }
       this.settle(request.id, describeError(err), true)
     }
+  }
+
+  /**
+   * Le projet d'une demande qui en exige un.
+   *
+   * Séparé du préambule depuis que `project_id` est nullable : les genres d'avant le fil
+   * libre parlent tous d'un projet, et c'est à eux de le réclamer plutôt qu'à la colonne
+   * de l'imposer à ceux qui viendront.
+   */
+  private requireProject(projectId: string | null): ProjectRow {
+    const project = projectId
+      ? this.ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
+      : null
+    if (!project) {
+      throw new Refusal(
+        projectId
+          ? "Le projet n'existe plus."
+          : "Cette conversation n'appartient à aucun projet, et cet outil en demande un. Range-la dans un projet pour t'en servir.",
+      )
+    }
+    return project
   }
 
   private settle(id: string, result: string, isError: boolean, launchedId: string | null = null): void {

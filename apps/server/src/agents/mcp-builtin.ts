@@ -45,19 +45,20 @@ export interface BuiltinMcpParams {
   config: AgentConfig
   databasePath: string
   /**
-   * Projet de la conversation, ou null pour un fil libre — et le serveur ne part alors
-   * pas : tous ses outils parlent d'un projet (le board, ses sessions, ses consignes,
-   * ses demandes d'agent) et il refuse de démarrer sans `SOLERA_MCP_PROJECT`. Claude
-   * garde sa mémoire, qui passe par `autoMemoryDirectory` et non par ce serveur.
+   * Projet de la conversation, ou null pour un fil libre — et le serveur part quand
+   * même, en n'exposant que les outils qui ne parlent pas d'un projet : la mémoire du
+   * compte et la partie globale de SOLERA.md. C'est le `.mjs` qui tient cette liste,
+   * pas ce module : lui ne fait que transmettre la portée, et une portée vide en est
+   * une.
    */
   projectId: string | null
   conversationId: string
-  /** Dossier de mémoire du projet, où `write_memory` écrit pour Codex. */
+  /** Dossier de mémoire, du projet ou du compte, où `write_memory` écrit pour Codex. */
   memoryDir: string
 }
 
 /**
- * Null quand le serveur ne doit pas partir, pour l'une des raisons du contrat ci-dessus.
+ * Faux quand le serveur ne doit pas partir. L'absence de projet n'en fait pas partie.
  *
  * `strictMcp` l'emporte sur l'activation : le drapeau annonce « rien d'autre que ce que
  * j'ai déclaré » et se contredirait à garder une exception maison.
@@ -70,7 +71,6 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
   const { enabled, config, databasePath, projectId, conversationId, memoryDir } = params
   if (!builtinMcpEnabled(enabled, config)) return null
-  if (projectId === null) return null
 
   return {
     id: BUILTIN_MCP_SERVER_ID,
@@ -87,7 +87,10 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
       // quiconque a un shell sur la machine.
       env: {
         SOLERA_MCP_DB: databasePath,
-        SOLERA_MCP_PROJECT: projectId,
+        // Vide plutôt qu'absente pour un fil libre : les deux se lisent pareil côté
+        // serveur, et une variable toujours posée se voit dans `ps` même quand elle
+        // n'a rien à dire.
+        SOLERA_MCP_PROJECT: projectId ?? '',
         SOLERA_MCP_CONVERSATION: conversationId,
         SOLERA_MCP_MEMORY: memoryDir,
       },

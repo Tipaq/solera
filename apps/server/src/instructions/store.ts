@@ -153,7 +153,7 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   if (input.soleraMcp) {
     parts.push(
       input.mode === 'solera'
-        ? "SOLERA.md se lit et se modifie comme un fichier de consignes, avec `read_instructions`, `edit_instructions` et `write_instructions` du serveur `solera`. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, quel que soit leur CLI. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire du projet."
+        ? `SOLERA.md se lit et se modifie comme un fichier de consignes, avec \`read_instructions\`, \`edit_instructions\` et \`write_instructions\` du serveur \`solera\`${input.projectId === null ? ', qui n\'ont ici que la partie globale : cette conversation n\'appartient à aucun projet' : ''}. Quand l'utilisateur te donne une consigne durable (une préférence, une convention, un piège à éviter) ou te demande de revoir ces consignes, c'est là qu'il faut écrire : elles vaudront pour les sessions suivantes, quel que soit leur CLI. Rien de ce qui ne vaut que pour la tâche en cours ; un fait appris en route va plutôt dans la mémoire.`
         : "Les consignes de ce projet vivent dans le `AGENTS.md` ou le `CLAUDE.md` de son dépôt : c'est là qu'une consigne propre au projet se retient, avec tes outils de fichiers. Les outils SOLERA.md du serveur `solera` (`read_instructions`, `edit_instructions`, `write_instructions`) ne servent qu'à la partie valable pour tous les projets.",
     )
   }

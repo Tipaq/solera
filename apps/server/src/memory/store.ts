@@ -135,8 +135,17 @@ export async function deleteMemoryFile(dir: string, file: string): Promise<void>
  * La mémoire telle qu'on la donne à Codex en début de session : l'index, et de quoi
  * lire et écrire les notes. Claude n'en a pas besoin, il charge l'index de lui-même.
  * Null quand il n'y a ni index ni moyen d'écrire : rien à dire.
+ *
+ * `scope` dit de quelle mémoire il s'agit, parce que ce n'est pas la même : un fil libre
+ * n'a pas de projet, et la sienne est celle de son compte, commune à tous ses fils et à
+ * aucun projet (`freeThreadMemoryDir`). L'annoncer comme la mémoire d'un projet y ferait
+ * ranger des notes sur un chantier dont les autres fils libres n'ont que faire.
  */
-export function memoryAppendixForCodex(dir: string, soleraMcp: boolean): string | null {
+export function memoryAppendixForCodex(
+  dir: string,
+  soleraMcp: boolean,
+  scope: 'project' | 'account' = 'project',
+): string | null {
   let index = ''
   try {
     index = readFileSync(join(dir, MEMORY_INDEX_FILE), 'utf8').trim()
@@ -149,12 +158,14 @@ export function memoryAppendixForCodex(dir: string, soleraMcp: boolean): string 
   }
 
   const parts = [
-    `# Mémoire du projet\n\nNotes que les sessions précédentes, quel que soit leur CLI, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
+    scope === 'project'
+      ? `# Mémoire du projet\n\nNotes que les sessions précédentes, quel que soit leur CLI, ont prises sur ce projet. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`
+      : `# Ta mémoire\n\nNotes que les sessions précédentes ont prises hors de tout projet, quel que soit leur CLI : ce que tu sais de l'utilisateur et de sa façon de travailler. Elles sont dans \`${dir}\`, une par fichier : lis avec \`cat\` celles qui touchent ta tâche. Une note peut avoir vieilli ; vérifie-la avant de t'appuyer dessus.`,
     index ? `## ${MEMORY_INDEX_FILE}\n\n${index}` : 'La mémoire est encore vide.',
   ]
   if (soleraMcp) {
     parts.push(
-      "Pour retenir un fait qui servira aux sessions suivantes et que le dépôt ne dit pas (une préférence de l'utilisateur, une décision, un piège rencontré), écris une note avec `write_memory` du serveur `solera` : un fichier markdown avec un en-tête `name`, `description` et `type` (`user`, `feedback`, `project` ou `reference`), puis le fait. Corrige ou retire une note fausse avec `write_memory` et `delete_memory`. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SOLERA.md.",
+      `Pour retenir un fait qui servira aux sessions suivantes et que ${scope === 'project' ? 'le dépôt' : 'cette conversation'} ne dit pas (une préférence de l'utilisateur, une décision, un piège rencontré), écris une note avec \`write_memory\` du serveur \`solera\` : un fichier markdown avec un en-tête \`name\`, \`description\` et \`type\` (\`user\`, \`feedback\`, \`project\` ou \`reference\`), puis le fait. Corrige ou retire une note fausse avec \`write_memory\` et \`delete_memory\`. Une règle que l'utilisateur fixe pour tous ses agents va plutôt dans SOLERA.md.`,
     )
   }
   return parts.join('\n\n')
