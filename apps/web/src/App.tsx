@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { SettingsDialog } from './components/settings/SettingsDialog'
@@ -17,7 +17,22 @@ import { ProjectsPage } from './routes/ProjectsPage'
 import { NewProjectPage } from './routes/NewProjectPage'
 import { SchedulePage } from './routes/SchedulePage'
 import { SchedulesPage } from './routes/SchedulesPage'
-import { SkillEditorPage } from './routes/SkillEditorPage'
+
+/**
+ * L'éditeur de skill, chargé à part.
+ *
+ * C'est la seule route qui importe `CodeEditor`, donc CodeMirror et son thème : 339 Ko
+ * — le premier poste du bundle principal, 16 % à lui seul — pour un écran qu'on
+ * n'ouvre qu'en venant éditer un skill. Le bundle principal frôle la limite de
+ * précache du service worker (2 Mio), et la dépasser **casse le build** au lieu de le
+ * ralentir, avec une erreur qui ne nomme pas la cause.
+ *
+ * `EditorPane`, l'autre consommateur de `CodeEditor`, est déjà dans le panneau du
+ * Travail chargé à part : c'est le même geste, sur la dernière route qui restait.
+ */
+const SkillEditorPage = lazy(() =>
+  import('./routes/SkillEditorPage').then((m) => ({ default: m.SkillEditorPage })),
+)
 
 /**
  * Les anciennes adresses des réglages, qui ne sont plus des pages.
@@ -85,7 +100,14 @@ export function App() {
               nomme un projet qu'ils n'ont pas. */}
           <Route path="/c/new" element={<DraftConversationPage />} />
           <Route path="/c/:conversationId" element={<ConversationPage />} />
-          <Route path="/skills/:skillId" element={<SkillEditorPage />} />
+          <Route
+            path="/skills/:skillId"
+            element={
+              <Suspense fallback={null}>
+                <SkillEditorPage />
+              </Suspense>
+            }
+          />
         </Route>
         <Route path="/settings" element={<LegacySettingsRoute />} />
         <Route path="/settings/:section" element={<LegacySettingsRoute />} />
