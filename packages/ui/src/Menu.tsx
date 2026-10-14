@@ -279,8 +279,19 @@ export function MenuSwatch({
           'size-5 shrink-0 cursor-pointer rounded-full outline-none transition-transform',
           'hover:scale-110 focus-visible:scale-110',
           selected ? 'ring-2 ring-ink ring-offset-2 ring-offset-[var(--sg-surface)]' : '',
+          // Le retrait n'est pas une teinte : barré et creux, il ne se choisit pas par
+          // erreur en croyant prendre une couleur de plus. Peint à l'accent du thème,
+          // il était la neuvième pastille d'une rangée de huit.
+          color === null ? 'border border-line bg-surface-high' : '',
         )}
-        style={{ background: color ?? 'var(--sg-accent)' }}
+        style={color === null
+          ? {
+            backgroundImage:
+                'linear-gradient(to top left, transparent calc(50% - 0.5px),'
+                + ' var(--sg-ink-faint) calc(50% - 0.5px), var(--sg-ink-faint) calc(50% + 0.5px),'
+                + ' transparent calc(50% + 0.5px))',
+          }
+          : { background: color }}
       />
     </DropdownMenu.Item>
   )

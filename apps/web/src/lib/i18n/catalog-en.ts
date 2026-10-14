@@ -1627,7 +1627,7 @@ export const en = {
   'queued.steer.failed': 'This message could not be steered, it stays queued.',
   'terminal.shell.exited': 'The shell exited (code {code}).',
   'attachments.tooLarge': '"{name}" exceeds {max} MB.',
-  'project.color.themeAccent': 'Theme accent',
+  'project.color.themeAccent': 'No color',
   'push.permission.blocked': 'Notifications are blocked for this site in the browser settings.',
   'push.permission.denied': 'Permission denied.',
   'syntax.theme.ocean': 'Ocean',

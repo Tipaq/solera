@@ -1615,7 +1615,7 @@ export const fr: Catalog = {
   'queued.steer.failed': "Ce message n'a pas pu être injecté, il reste en file.",
   'terminal.shell.exited': "Le shell s'est terminé (code {code}).",
   'attachments.tooLarge': '« {name} » dépasse {max} Mo.',
-  'project.color.themeAccent': 'Accent du thème',
+  'project.color.themeAccent': 'Aucune couleur',
   'push.permission.blocked': 'Les notifications sont bloquées pour ce site dans les réglages du navigateur.',
   'push.permission.denied': 'Autorisation refusée.',
   'syntax.theme.ocean': 'Océan',

@@ -328,7 +328,10 @@ function SummaryColumn({
           <Plus size={13} />
         </IconButton>
       </header>
-      <div className="flex flex-col gap-1.5 px-2 pb-2">
+      {/* Une hauteur minimale : à zéro carte, les quatre colonnes se réduisaient à
+          leurs en-têtes et le board n'avait plus l'air d'un board. C'est aussi la
+          cible où l'on déposera une carte quand le glissement arrivera ici. */}
+      <div className="flex min-h-36 flex-col gap-1.5 px-2 pb-2">
         {cards.slice(0, TILES_PER_COLUMN).map((card) => (
           <CardTile
             key={card.id}
