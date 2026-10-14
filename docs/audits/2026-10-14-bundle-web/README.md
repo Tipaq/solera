@@ -479,3 +479,29 @@ Les trois cas ont été éprouvés en abaissant temporairement `PRECACHE_BUDGET_
 
 `npx eslint apps packages` et `npx tsc --noEmit` propres, budget restauré à
 `2 * 1024 * 1024`.
+
+---
+
+# Épilogue : le contexte Savoir a fusionné, la projection est vérifiée
+
+Pendant que cet audit s'écrivait, la carte #19 a fusionné dans `main` (plus
+`3a7f2ba`, qui renumérote deux migrations), et `audit/bundle-web` y a été fusionnée
+de son côté. L'état « après #19 », qui n'était jusqu'ici qu'une projection, est
+devenu mesurable.
+
+| | chunk d'entrée | marge |
+|---|---|---|
+| `main` avant tout ceci, sans Savoir | 2 069 899 o | 27 253 o |
+| `port/savoir`, l'état décrit par la carte #22 | 2 091 508 o | **5 644 o** |
+| **`main` avec Savoir et les deux découpages** | **1 562 789 o** | **534 363 o** (522 Ko) |
+
+La projection annoncée plus haut était ~1 563 918 o ; le chiffre réel est
+1 562 789 o, soit **1 129 octets d'écart**. Le raisonnement tenait.
+
+Autrement dit, la situation que décrivait la carte — 5,6 Ko de marge, le prochain
+écran casse le build — ne s'est jamais produite : les deux découpages ont atterri
+avant, et le tronc est à **74,5 % du budget** avec le contexte Savoir dedans. Le
+garde reste silencieux, comme prévu à ce niveau.
+
+Vérifié sur l'arbre fusionné : `eslint apps packages` propre, `pnpm -r typecheck`
+propre sur les huit paquets, `vite build` passe (52 entrées de précache).
