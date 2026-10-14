@@ -34,7 +34,6 @@ import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
-import { useRememberProjectView } from '../lib/project-view'
 import { useMediaQuery } from '../lib/viewport'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
@@ -97,7 +96,6 @@ export function BoardPage() {
   const { data: cards, isPending, isError, refetch } = useCards(projectId)
   const reorder = useReorderCards(projectId ?? '')
 
-  useRememberProjectView(projectId, 'board')
 
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
@@ -262,9 +260,7 @@ export function BoardPage() {
           <Button
             variant="ghost"
             size="sm"
-            // `from` : partir d'ici vers une conversation ne doit pas faire du brouillon
-            // la page d'accueil du projet, alors qu'on venait justement du board.
-            onClick={() => navigate(`/p/${projectId}/c/new`, { state: { from: 'board' } })}
+            onClick={() => navigate(`/p/${projectId}/c/new`)}
           >
             <span className="hidden sm:inline">{t('board.newConversation')}</span>
             <span className="sm:hidden">{t('board.newConversation.short')}</span>

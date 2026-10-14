@@ -36,7 +36,6 @@ import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@solera/prot
 import { useOpenConversationId } from '../../lib/conversation-route'
 import { useTranslate } from '../../lib/i18n'
 import { PROJECT_COLORS } from '../../lib/project-colors'
-import { projectViewPath, useProjectView } from '../../lib/project-view'
 import { useUpdateProject } from '../../lib/projects'
 import { useHasUnread } from '../../lib/reads'
 import { useUpdateCollapsedProjects, useUserSettings } from '../../lib/user-settings'
@@ -361,9 +360,6 @@ function ProjectGroup({
     ? sessions
     : sessions.filter((entry, index) => index < SESSIONS_SHOWN || entry.id === openConversationId)
   const [editing, setEditing] = useState(false)
-  // Le clic rouvre le projet là où on l'a laissé : au tableau de bord pour ceux qui s'y
-  // pilotent, sur une conversation neuve pour les autres.
-  const view = useProjectView(project.id)
 
   /**
    * Seul l'en-tête sert de poignée : des listeners posés sur l'élément entier
@@ -409,7 +405,12 @@ function ProjectGroup({
           />
         ) : (
           <NavLink
-            to={projectViewPath(project.id, view)}
+            /* Toujours le tableau de bord : c'est la porte du projet, et une porte
+               ne se déplace pas. Le clic rouvrait la dernière vue consultée, si bien
+               qu'un passage par le board la rendait définitive — la page qui dit où en
+               est le projet devenait alors introuvable sans taper son adresse. Le
+               board et une conversation neuve sont à un clic de là, en haut de page. */
+            to={`/p/${project.id}`}
             onClick={onNavigate}
             // Renommer au double-clic, comme dans un explorateur de fichiers.
             onDoubleClick={(event) => {

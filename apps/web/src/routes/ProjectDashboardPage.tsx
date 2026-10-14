@@ -29,7 +29,6 @@ import { elapsed } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { openPanelOnArrival } from '../lib/panel'
 import { useProjects } from '../lib/projects'
-import { useRememberProjectView } from '../lib/project-view'
 import {
   RUN_LABELS,
   RUN_TONES,
@@ -74,7 +73,6 @@ export function ProjectDashboardPage() {
   // Le tableau de bord n'est pas une vue du projet au sens de `project-view` : c'est
   // sa porte. Retenir « board » ou « brouillon » reste le fait des deux autres.
   // Le tableau de bord se retient comme les deux autres : on revient là où on pilote.
-  useRememberProjectView(projectId, 'dashboard')
 
   const mine = useMemo(
     () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
@@ -124,9 +122,7 @@ export function ProjectDashboardPage() {
                 size="sm"
                 aria-label={t('board.newConversation.short')}
                 icon={<Plus size={16} />}
-                // `from` : ouvrir une conversation depuis ici ne doit pas faire du
-                // brouillon la porte du projet, alors qu'on venait du tableau de bord.
-                onClick={() => navigate(`/p/${projectId}/c/new`, { state: { from: 'board' } })}
+                onClick={() => navigate(`/p/${projectId}/c/new`)}
               >
                 <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
               </Button>

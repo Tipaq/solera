@@ -13,7 +13,6 @@ import { useLiveBackground, useLiveLoops, useLiveSeq, useLiveStatus } from '../.
 import { conversationPath, useOpenConversationId } from '../../lib/conversation-route'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
-import { projectViewPath, useProjectView } from '../../lib/project-view'
 import { isUnreadSettled } from '../../lib/reads'
 import { buildSidebarSignals, presentSignal } from '../../lib/signals'
 import { AgentIcon } from '../AgentIcon'
@@ -50,7 +49,6 @@ export function ConversationLine({
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openId = useOpenConversationId()
-  const projectView = useProjectView(conversation.projectId)
   const [editing, setEditing] = useState(false)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
@@ -192,7 +190,11 @@ export function ConversationLine({
               remove.mutate(conversation.id, {
                 // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer.
                 onSuccess: () => {
-                  if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
+                  // Supprimer le fil ouvert renvoie à la porte de son projet, ou au
+                  // brouillon libre quand il n'en avait pas.
+                  if (wasOpen) {
+                    navigate(conversation.projectId ? `/p/${conversation.projectId}` : '/c/new')
+                  }
                 },
               })
             }}
