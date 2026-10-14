@@ -7,7 +7,12 @@
  *
  * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
  * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
- * par le daemon. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
+ * par le daemon. Un agent peut aussi déclarer un projet, et demander un rangement que
+ * l'utilisateur accorde : déclarer n'écrit qu'une ligne et s'annule par un archivage,
+ * tandis que déplacer une conversation défait un rangement et coupe des liens — c'est
+ * pourquoi `move_conversation` ne déplace pas, il dépose une demande qui attend un clic.
+ * Solera ne crée ni ne supprime jamais de dossier : l'agent fait son `mkdir` lui-même,
+ * avec ses propres outils. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
  * clic. Et SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
  * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. La frontière est là et pas ailleurs : un agent peut
@@ -52,6 +57,12 @@ const PROJECT_ID = process.env.SOLERA_MCP_PROJECT || null
 const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
 /** Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la mémoire automatique de Claude. */
 const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
+/**
+ * Portée de rangement, accordée conversation par conversation : à faux, les deux outils
+ * ne sont pas listés du tout. Annoncer un outil qu'on refusera ensuite ferait lire son
+ * refus comme un échec du modèle.
+ */
+const FILING = process.env.SOLERA_MCP_FILING === '1'
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -128,7 +139,16 @@ const MAX_PEER_MESSAGE_CHARS = 4000
  * secondes d'ordinaire, davantage sur une machine chargée. Passé ce délai, l'agent
  * apprend que la demande court toujours plutôt que de rester suspendu.
  */
-const REQUEST_WAIT_MS = { start_session: 90000, create_card: 15000, list_models: 30000, schedule_task: 30000 }
+const REQUEST_WAIT_MS = {
+  start_session: 90000,
+  create_card: 15000,
+  list_models: 30000,
+  schedule_task: 30000,
+  create_project: 15000,
+  // Le temps que le daemon valide et dépose la demande, pas celui que l'utilisateur met
+  // à l'accorder : l'outil rend la main dès que la demande est posée.
+  move_conversation: 15000,
+}
 const REQUEST_POLL_MS = 200
 
 /** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
@@ -650,6 +670,46 @@ const ALL_TOOLS = [
           type: 'string',
           description: "Nom du fichier, à plat et en `.md` : `MEMORY.md` pour l'index, sinon un nom court en kebab-case (`port-du-serveur-de-dev.md`).",
         }, }, required: ['file'] },
+  },
+  {
+    name: 'create_project',
+    description:
+      "Déclare un nouveau projet Solera sur un dossier du disque. Sert quand l'utilisateur veut qu'un travail vive dans son propre projet, ou quand ce fil n'appartient à aucun projet et qu'il faut lui en donner un. **Crée le dossier toi-même avant d'appeler** (mkdir avec tes outils) : Solera pointe sur un dossier, elle ne le possède pas et ne le crée pas. Le dossier doit être sous celui où cette instance range ses projets. Le projet est privé et vide ; enchaîne avec move_conversation pour y ranger une conversation. Un seul projet par heure et par session.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description:
+            "Chemin absolu du dossier du projet, déjà créé. Un dépôt git cloné ou un dossier neuf font l'affaire ; un AGENTS.md déjà présent met le projet en mode « consignes du dépôt ».",
+        },
+        name: {
+          type: 'string',
+          description: 'Nom du projet dans Solera. Omettre pour le nom du dossier.',
+        },
+      },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'move_conversation',
+    description:
+      "Demande à ranger une conversation dans un projet. **Ne déplace rien** : dépose une demande qui apparaît dans le fil concerné et attend un clic de son propriétaire — c'est lui qui décide d'un rangement, jamais toi. Sert quand une conversation sans projet relève clairement d'un projet (le tien, ou un que tu viens de déclarer avec create_project), ou quand elle travaille visiblement dans le mauvais. Un seul identifiant par appel, et une seule demande en attente à la fois. Le déplacement détache le worktree et la carte, et fait perdre la reprise de la session native du CLI ; le travail non commité, lui, reste dans le projet de départ. La demande affiche ce prix, l'utilisateur tranche.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        conversation: {
+          type: 'string',
+          description:
+            "Identifiant de la conversation à ranger, tel que rendu par list_sessions ou search_history. Omettre pour celle-ci.",
+        },
+        project: {
+          type: 'string',
+          description:
+            "Identifiant du projet de destination, tel que rendu par create_project. Omettre pour le projet de cette session, s'il en a un.",
+        },
+      },
+    },
   },
   {
     name: 'count_active_sessions',
@@ -1804,6 +1864,12 @@ function renderThread(found, before) {
   return `${header}\n\n${parts.join('\n\n')}`
 }
 
+/** Les outils que la portée de rangement ouvre, et qui n'existent pas sans elle. */
+const FILING_TOOLS = new Set(['create_project', 'move_conversation'])
+
+/** Ce que cette session voit du catalogue, une fois ses portées appliquées. */
+const offered = (tool) => FILING || !FILING_TOOLS.has(tool.name)
+
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
 /**
@@ -2073,6 +2139,19 @@ async function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
+  if (FILING_TOOLS.has(name)) {
+    if (!FILING) {
+      return { ...text(`Outil inconnu : ${name}`), isError: true }
+    }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
+    }
+    if (name === 'create_project' && !(typeof args?.path === 'string' && args.path.trim())) {
+      return { ...text('Le paramètre `path` est requis : le chemin absolu du dossier, déjà créé.'), isError: true }
+    }
+    return requestDaemon(name, args ?? {})
+  }
+
   if (name === 'create_card' || name === 'start_session' || name === 'list_models' || name === 'schedule_task') {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
@@ -2208,7 +2287,9 @@ async function callTool(name, args) {
   return { ...text(`Outil inconnu : ${name}`), isError: true }
 }
 
-log(PROJECT_ID ? `prêt, projet=${PROJECT_ID}` : `prêt, fil libre, ${TOOLS.length} outils`)
+log(
+  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${FILING ? ', rangement accordé' : ''}`,
+)
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return
@@ -2236,7 +2317,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
 
   if (msg.method === 'tools/list') {
-    send({ jsonrpc: '2.0', id: msg.id, result: { tools: TOOLS } })
+    send({ jsonrpc: '2.0', id: msg.id, result: { tools: TOOLS.filter(offered) } })
     return
   }
 

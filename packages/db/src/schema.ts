@@ -345,7 +345,16 @@ export const agentRequests = sqliteTable(
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
     /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
     conversationId: text('conversation_id').notNull(),
-    kind: text('kind', { enum: ['start_session', 'create_card', 'list_models', 'schedule_task'] }).notNull(),
+    kind: text('kind', {
+      enum: [
+        'start_session',
+        'create_card',
+        'list_models',
+        'schedule_task',
+        'create_project',
+        'move_conversation',
+      ],
+    }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
@@ -356,11 +365,32 @@ export const agentRequests = sqliteTable(
     isError: integer('is_error', { mode: 'boolean' }).notNull().default(false),
     /** Session née de la demande, pour remonter une chaîne de lancements. */
     launchedConversationId: text('launched_conversation_id'),
+    /**
+     * Quand l'utilisateur a accordé le rangement demandé par `move_conversation`.
+     *
+     * La promesse vit dans la ligne et non en mémoire : un déplacement accepté doit
+     * survivre au redémarrage du serveur, là où un runner, lui, ne survit pas. C'est le
+     * balayage du daemon qui l'applique, dès que la conversation se tait.
+     */
+    acceptedAt: timestamp('accepted_at'),
+    /**
+     * Quand la demande a cessé d'attendre quoi que ce soit : refusée, appliquée, ou
+     * devenue impossible. Distincte de `settled_at`, qui dit seulement que l'agent a eu
+     * sa réponse — et il l'a dès le dépôt, l'accord venant bien plus tard.
+     *
+     * C'est elle qui porte l'invariant « une demande de rangement en attente à la fois »
+     * et qui met la ligne hors de portée de `STALE_MS`, taillé pour un daemon et non
+     * pour un humain.
+     */
+    resolvedAt: timestamp('resolved_at'),
   },
   (t) => [
     index('idx_agent_requests_pending').on(t.settledAt),
     index('idx_agent_requests_from').on(t.conversationId, t.kind, t.createdAt),
     index('idx_agent_requests_launched').on(t.launchedConversationId),
+    // Les rangements accordés que le balayage cherche toutes les demi-secondes. Seules
+    // les demandes de rangement posent cette date : l'index ne porte donc qu'elles.
+    index('idx_agent_requests_accepted').on(t.acceptedAt),
   ],
 )
 

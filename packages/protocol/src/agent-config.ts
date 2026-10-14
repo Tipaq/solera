@@ -43,6 +43,23 @@ const soleraMcpSchema = z.boolean().default(true)
 const skillLibrarySchema = z.boolean().default(true)
 
 /**
+ * Ouvre à l'agent les deux outils de rangement : déclarer un projet, et demander le
+ * déplacement d'une conversation.
+ *
+ * Faux par défaut, à la différence des autres interrupteurs de cette famille : ces deux
+ * outils agissent au-dessus du projet où la session travaille, et c'est une portée qu'on
+ * accorde plutôt qu'une capacité qu'on retire. Vetoable pour l'instance entière dans
+ * `config.toml`, où `[mcp] project_filing = false` fait aussi disparaître l'entrée de
+ * l'interface.
+ *
+ * Un seul booléen de conversation suffit à tenir un agent, alors que les étages
+ * héritent en `??` et non en `&&` : aucun des outils du serveur MCP ne touche à une
+ * configuration, donc personne d'autre que l'utilisateur ne peut recocher celui-ci.
+ * Carte #24 pour la grille outil × portée, qui est un autre chantier.
+ */
+const projectFilingSchema = z.boolean().default(false)
+
+/**
  * Fait attendre la fin du tour aux messages envoyés pendant qu'il tourne, au lieu de
  * les y pousser.
  *
@@ -67,6 +84,7 @@ export const claudeConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  projectFiling: projectFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
   /**
@@ -209,6 +227,7 @@ export const codexConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  projectFiling: projectFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -256,6 +275,7 @@ export const opencodeConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  projectFiling: projectFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -285,6 +305,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  projectFiling: false,
   skillLibrary: true,
   queueMessages: false,
   strictMcp: false,
@@ -308,6 +329,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  projectFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }
@@ -323,6 +345,7 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  projectFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }

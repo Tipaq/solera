@@ -100,6 +100,9 @@ const NOTABLE = new Set<SoleraEvent['type']>([
   'plan.review_requested',
   // Un message de session retenu attend qu'une personne le remette ou l'écarte.
   'session_message.held',
+  // Une demande de rangement attend un clic, et rien ne la périme : elle doit se voir
+  // dans la liste tant que personne n'a répondu.
+  'filing.requested',
 ])
 
 /**
@@ -819,6 +822,31 @@ export class EventLog {
     }
 
     return [...open]
+  }
+
+  /**
+   * La demande de rangement d'une conversation, telle que le journal la porte.
+   *
+   * Lue ici plutôt que recalculée : la demande dit le projet de destination, et c'est
+   * exactement ce que l'affichage a montré à la personne qui clique. La ligne
+   * `agent_requests` reste l'autorité sur l'attente ; le journal, sur le contenu.
+   */
+  openFiling(
+    conversationId: string,
+    requestId: string,
+  ): Extract<SoleraEvent, { type: 'filing.requested' }> | null {
+    const rows = this.db
+      .select({ seq: events.seq, payload: events.payload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.type, 'filing.requested')))
+      .orderBy(asc(events.seq))
+      .all()
+
+    for (const row of rows) {
+      const event = this.parseStored(row.seq, row.payload)
+      if (event.type === 'filing.requested' && event.requestId === requestId) return event
+    }
+    return null
   }
 
   /**

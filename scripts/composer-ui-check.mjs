@@ -50,7 +50,10 @@ async function mount(page) {
     const queryModule = hookSource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1]
     const { QueryClient, QueryClientProvider } = await import(queryModule)
     const composerSource = await (await fetch('/src/components/chat/Composer.tsx')).text()
-    const routerModule = composerSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
+    // Le composer n'importe plus le routeur lui-même : le chemin résolu se lit dans la
+    // source transformée d'un voisin qui l'importe encore.
+    const bubbleSource = await (await fetch('/src/components/chat/MessageBubble.tsx')).text()
+    const routerModule = bubbleSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
     const { MemoryRouter } = await import(routerModule)
     const { Composer } = await import('/src/components/chat/Composer.tsx')
     // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
@@ -122,7 +125,7 @@ try {
       const path = new URL(request.url()).pathname
       const id = path.split('/')[3]
       if (path.endsWith('/models')) return route.fulfill({ json: { models, modes: id === 'codex' ? [{ mode: 'default', label: 'Standard' }, { mode: 'plan', label: 'Plan' }] : [], account: null, fetchedAt: Date.now() } })
-      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], soleraServer: true } })
+      if (path === '/api/mcp/servers') return route.fulfill({ json: { servers: [{ id: 'docs', name: 'Documentation', enabled: true }], soleraServer: true, projectFiling: true } })
       // La bibliothèque de skills : son interrupteur de session vit avec la liste
       // qu'il commande, dans le menu des skills.
       if (path === '/api/skill-library') return route.fulfill({ json: { enabled: true, skills: [{ id: 'dataviz', name: 'dataviz', description: 'Graphiques et palettes', scope: 'global', projectId: null, enabled: true, problem: null }] } })

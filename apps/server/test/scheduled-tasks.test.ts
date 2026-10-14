@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -57,6 +58,8 @@ async function harness(t: TestContext) {
       terminated.push(id)
       db.update(conversations).set({ status: 'interrupted' }).where(eq(conversations.id, id)).run()
     },
+    // Le daemon y annonce les listes qu'une demande a changées.
+    statusBus: new EventEmitter(),
   } as unknown as SessionManager
   const registry = {
     adapter: () => ({
@@ -274,7 +277,7 @@ test('schedule_task creates a task from a session, within the agent guard rails'
     id: 'scheduled', projectId: 'project', userId: 'owner', title: 'Tir', agent: 'claude', config: '{}', status: 'running',
     scheduleId: 'some-task', createdAt: 1, updatedAt: Date.now(),
   }).run()
-  const requests = new AgentRequests({ db, config }, sessions, registry)
+  const requests = new AgentRequests({ db, config }, sessions, registry, new EventLog(db))
 
   const mcp = async (from: string, args: object) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {

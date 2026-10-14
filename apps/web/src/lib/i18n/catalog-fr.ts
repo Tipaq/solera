@@ -1374,6 +1374,27 @@ export const fr: Catalog = {
   'push.disable': 'Désactiver sur cet appareil',
   'push.enable': 'Activer sur cet appareil',
 
+  // Rangement demandé par un agent
+  'filing.title.pending': 'Un agent demande à ranger cette conversation dans « {project} »',
+  'filing.title.past': 'Rangement dans « {project} »',
+  'filing.cost.worktree': 'Le worktree « {name} » sera détaché, et son travail reste ici.',
+  'filing.cost.worktreeDirty':
+    'Le worktree « {name} » sera détaché : ses {files} fichiers non commités restent ici, dans ce projet.',
+  'filing.cost.card': 'La carte #{number} « {title} » sera détachée.',
+  'filing.cost.resume':
+    "La session du CLI ne pourra pas reprendre : le répertoire de travail change, l'agent repart sans son contexte. Le fil, lui, reste entier.",
+  'filing.accept': 'Ranger',
+  'filing.refuse': 'Laisser ici',
+  'filing.status.accepted': 'Rangée',
+  'filing.status.refused': 'Refusé',
+  'filing.status.impossible': 'Impossible',
+  'filing.accepted.hint': 'Le déplacement a lieu dès que cette conversation ne travaille plus.',
+  'filing.ownerOnly': 'Seul le propriétaire de la conversation peut ranger.',
+  'filing.error.generic': 'Décision impossible.',
+  'filing.reason.projectGone': "Le projet de destination n'existait plus.",
+  'filing.reason.scheduled': "Un tir planifié reste où sa tâche l'a mis.",
+  'filing.reason.unknown': 'Le déplacement est devenu impossible.',
+
   // Permissions (demandes de l'agent)
   'permission.status.allowed': 'Autorisé',
   'permission.status.denied': 'Refusé',
@@ -1785,6 +1806,12 @@ export const fr: Catalog = {
   'skills.project.repo.title': "Dans le dépôt",
   'skills.project.repo.hint': "Chaque dossier est lu directement par certains CLI, pas tous. « Ajouter un skill → Depuis cette machine » les reprend pour tous.",
   'composer.setting.skillLibrary': "Bibliothèque de skills",
+  'composer.setting.projectFiling': 'Rangement de projet',
+  'composer.projectFiling.off': 'Refusé',
+  'composer.projectFiling.off.hint': "L'agent ne peut ni déclarer un projet ni demander de rangement",
+  'composer.projectFiling.on': 'Accordé',
+  'composer.projectFiling.on.hint':
+    "L'agent peut déclarer un projet, et demander le rangement d'une conversation — que tu accordes d'un clic",
   'composer.skillLibrary.on': "Livrée",
   'composer.skillLibrary.on.hint': "Les skills globaux et du projet de Solera sont disponibles",
   'composer.skillLibrary.off': "Coupée",

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +19,7 @@ import {
 } from '@solera/db'
 import { parseSessionMessage, type AgentConfig, type AgentModelDto } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
+import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
@@ -65,6 +67,8 @@ async function harness(t: TestContext) {
     async sendMessage(to: string, _id: string, text: string) {
       sent.push({ to, text })
     },
+    // Le daemon y annonce les listes qu'une demande a changées.
+    statusBus: new EventEmitter(),
   } as unknown as SessionManager
   const registry = {
     adapter: (agent: string) => ({
@@ -75,7 +79,7 @@ async function harness(t: TestContext) {
     }),
   } as unknown as AgentRegistry
   const config = { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config
-  const requests = new AgentRequests({ db, config }, sessions, registry)
+  const requests = new AgentRequests({ db, config }, sessions, registry, new EventLog(db))
 
   /** Appelle un outil sur le vrai serveur MCP, pendant que le daemon balaie. */
   const mcp = async (from: string, name: string, args: object) => {

@@ -63,6 +63,15 @@ const configSchema = z.object({
        * un réglage visible mais inopérant valant moins que pas de réglage du tout.
        */
       soleraServer: z.boolean().default(true),
+      /**
+       * Laisse les agents déclarer un projet et demander le rangement d'une
+       * conversation (`create_project`, `move_conversation`).
+       *
+       * Faux par défaut comme le réglage de conversation qu'il chapeaute : ces deux
+       * outils agissent au-dessus du projet où la session travaille. À faux, l'entrée
+       * disparaît aussi de l'interface, par le même raisonnement que `soleraServer`.
+       */
+      projectFiling: z.boolean().default(false),
     })
     .default({}),
   skills: z

@@ -289,6 +289,45 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     decidedBy: z.string().nullable(),
   }),
 
+  /**
+   * Un agent demande à ranger une conversation dans un projet, et attend un clic.
+   *
+   * Couple requête/résolution sur le modèle des permissions juste au-dessus, et pour la
+   * même raison : la demande vit dans le fil, à sa place chronologique, et c'est le
+   * journal rejoué qui dit si elle attend encore.
+   *
+   * Posée dans le journal de la conversation **déplacée**, qui n'est pas forcément celle
+   * qui demande : c'est son propriétaire qui accorde, et c'est chez lui que la demande
+   * doit apparaître.
+   */
+  z.object({
+    type: z.literal('filing.requested'),
+    /** L'id de la ligne `agent_requests` : ce que la route de décision reprend. */
+    requestId: z.string(),
+    /** Le fil déplacé : celui-ci, ou un autre que la session demandeuse voyait. */
+    conversationId: z.string(),
+    conversationTitle: z.string(),
+    projectId: z.string(),
+    projectName: z.string(),
+    /** Ce qui part avec le déplacement, pour que la demande affiche son prix. */
+    worktree: z.object({ name: z.string(), dirtyFiles: z.number() }).nullable(),
+    card: z.object({ number: z.number(), title: z.string() }).nullable(),
+    /** Faux quand la session n'avait de toute façon pas de reprise CLI. */
+    resumable: z.boolean(),
+  }),
+  z.object({
+    type: z.literal('filing.resolved'),
+    requestId: z.string(),
+    decision: z.enum(['accepted', 'refused', 'impossible']),
+    decidedBy: z.string().nullable(),
+    /**
+     * Pourquoi `impossible`, revérifié au moment du clic. Nullable et facultatif : le
+     * journal est rejoué indéfiniment (I2), et les événements écrits avant l'ajout de ce
+     * champ doivent continuer à se relire.
+     */
+    reason: z.string().nullable().optional(),
+  }),
+
   // Questions posées par l'agent
   z.object({
     type: z.literal('question.requested'),

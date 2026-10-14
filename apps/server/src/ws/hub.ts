@@ -260,7 +260,13 @@ class Connection {
     if (canReadConversation(this.ctx, conversationId, this.userId)) this.notifyListsChanged()
   }
 
-  notifyListsChanged(): void {
+  /**
+   * `conversationId` donné, la relecture n'est demandée qu'aux onglets qui ont le droit
+   * de voir ce fil : un signal venu du daemon porte sur un fil précis, là où celui d'une
+   * route a déjà traversé l'authentification de son appelant.
+   */
+  notifyListsChanged(conversationId?: string): void {
+    if (conversationId && !canReadConversation(this.ctx, conversationId, this.userId)) return
     this.send({ t: 'lists-changed' })
   }
 
@@ -317,6 +323,13 @@ export async function registerWebSocketHub(
 
   sessions.statusBus.on('status', (update: StatusBroadcast) => {
     for (const connection of connections) connection.notifyStatus(update)
+  })
+
+  // Les listes que le daemon change de son côté : une carte ou un projet créés par un
+  // agent, une conversation rangée. `lists-changed` ne vient que d'un hook indexé sur des
+  // URL de routes, que le daemon ne traverse pas.
+  sessions.statusBus.on('lists', ({ conversationId }: { conversationId: string }) => {
+    for (const connection of connections) connection.notifyListsChanged(conversationId)
   })
 
   sessions.statusBus.on(
