@@ -126,58 +126,71 @@ export function ConversationLine({
         <span className="shrink-0 text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
         <span className={cx('min-w-0 flex-1 truncate', unread && 'font-medium')}>{conversation.title}</span>
         {project && display.projectDot ? <ProjectAvatar project={project} className="size-3" /> : null}
-        {/* Deux points au plus : l'état présent, et la boucle. */}
-        {present ? <SignalDot signal={present} /> : null}
-        {loop ? <SignalDot signal={loop} /> : null}
-        {!present && unread ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-ink" /> : null}
       </NavLink>
 
-      <Menu
-        trigger={
-          <IconButton
-            label={t('shell.conversation.actions')}
-            size="sm"
-            className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
+      {/* Les points et le « ⋯ » partagent un seul emplacement, à l'aplomb du « + » de
+          *Sessions* et du chevron du projet : une colonne d'icônes et non trois
+          alignements voisins. Au survol les points s'effacent et le menu prend leur
+          place — le même échange que le compteur d'un lieu et sa flèche. La boîte a la
+          taille du bouton pour que le remplacement ne décale rien.
+
+          Opacité et non `hidden` : l'état reste annoncé aux lecteurs d'écran pendant
+          que la souris passe, et `pointer-events-none` laisse le clic au bouton. */}
+      <span className="relative flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 transition-opacity group-hover/row:opacity-0 group-focus-within/row:opacity-0">
+          {/* Deux points au plus : l'état présent, et la boucle. */}
+          {present ? <SignalDot signal={present} /> : null}
+          {loop ? <SignalDot signal={loop} /> : null}
+          {!present && unread ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-ink" /> : null}
+        </span>
+
+        <Menu
+          trigger={
+            <IconButton
+              label={t('shell.conversation.actions')}
+              size="sm"
+              className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
+            >
+              <MoreHorizontal size={14} />
+            </IconButton>
+          }
+        >
+          <MenuItem icon={<Pencil size={14} />} disabled={!conversation.isOwner} onSelect={() => setEditing(true)}>
+            {t('shell.rename')}
+          </MenuItem>
+          {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
+              c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de
+              tâche planifiée reste où sa tâche l'a mis. */}
+          {conversation.isOwner && conversation.scheduleId === null ? (
+            <ArrangeConversationMenu conversation={conversation} />
+          ) : null}
+          <MenuItem
+            icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+            disabled={!conversation.isOwner}
+            onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
           >
-            <MoreHorizontal size={14} />
-          </IconButton>
-        }
-      >
-        <MenuItem icon={<Pencil size={14} />} disabled={!conversation.isOwner} onSelect={() => setEditing(true)}>
-          {t('shell.rename')}
-        </MenuItem>
-        {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
-            c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de
-            tâche planifiée reste où sa tâche l'a mis. */}
-        {conversation.isOwner && conversation.scheduleId === null ? (
-          <ArrangeConversationMenu conversation={conversation} />
-        ) : null}
-        <MenuItem
-          icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-          disabled={!conversation.isOwner}
-          onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
-        >
-          {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
-        </MenuItem>
-        <MenuSeparator />
-        <MenuItem
-          icon={<Trash2 size={14} />}
-          tone="critical"
-          disabled={!conversation.isOwner}
-          onSelect={() => {
-            if (!confirm(t('shell.conversation.deleteConfirm', { title: conversation.title }))) return
-            const wasOpen = openId === conversation.id
-            remove.mutate(conversation.id, {
-              // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer.
-              onSuccess: () => {
-                if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
-              },
-            })
-          }}
-        >
-          {t('shell.delete')}
-        </MenuItem>
-      </Menu>
+            {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
+          </MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            icon={<Trash2 size={14} />}
+            tone="critical"
+            disabled={!conversation.isOwner}
+            onSelect={() => {
+              if (!confirm(t('shell.conversation.deleteConfirm', { title: conversation.title }))) return
+              const wasOpen = openId === conversation.id
+              remove.mutate(conversation.id, {
+                // Ne quitter la vue que si c'est bien celle qu'on vient de supprimer.
+                onSuccess: () => {
+                  if (wasOpen) navigate(projectViewPath(conversation.projectId, projectView))
+                },
+              })
+            }}
+          >
+            {t('shell.delete')}
+          </MenuItem>
+        </Menu>
+      </span>
     </li>
   )
 }
