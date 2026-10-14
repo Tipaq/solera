@@ -36,6 +36,12 @@ const EMPTY: ConversationDto[] = []
  *
  * Elle ne défile pas et ne se replie pas — la zone basse est la seule partie mobile de
  * la colonne. Ce qui ne tient pas est compté, et la modale porte le reste.
+ *
+ * **Trois états, dans l'ordre de ce qu'ils réclament** : ce qui bloque, ce qui a fini
+ * sans être lu, ce qui tourne. Le troisième ne demande rien — c'est le deuxième qu'on
+ * vient chercher, et il n'y figurait pas : une session disparaissait de l'activité à
+ * la seconde où elle devenait la chose à lire, et il fallait la retrouver dans sa
+ * liste. Elle s'efface d'elle-même en l'ouvrant, puisqu'alors elle est lue.
  */
 export function SidebarActivity({ conversations = EMPTY, projects = [], onNavigate, coarse = false }: {
   conversations?: ConversationDto[]
@@ -54,8 +60,12 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const awaiting = entries.filter((entry) => entry.awaiting)
   const running = entries.filter((entry) => entry.running)
   const unread = entries.filter((entry) => entry.unread)
-  // Les attentes précèdent le travail en cours : ce qui réclame passe avant ce qui tourne.
-  const active = [...awaiting, ...running]
+  // Une attente non lue est déjà dans le premier groupe : elle n'est pas répétée ici.
+  // Les plus récentes d'abord, parce que c'est la coupure à sept qui tranche.
+  const toRead = unread
+    .filter((entry) => !entry.awaiting)
+    .sort((a, b) => b.since - a.since)
+  const active = [...awaiting, ...toRead, ...running]
   const shown = coarse ? SHOWN_COARSE : SHOWN
   const rest = active.length - shown
 
@@ -164,7 +174,7 @@ function ActivityLine({ entry, project, onNavigate }: {
     ? t('shell.activity.awaiting')
     : entry.running
       ? t(entry.status === 'running' ? 'shell.activity.running' : 'shell.overview.background')
-      : null
+      : entry.unread ? t('shell.activity.unread') : null
 
   return (
     <li>
@@ -178,7 +188,9 @@ function ActivityLine({ entry, project, onNavigate }: {
         )}
       >
         <span className="shrink-0 text-ink-faint"><AgentIcon agent={entry.conversation.agent} size={14} /></span>
-        <span className="min-w-0 flex-1 truncate">{entry.conversation.title}</span>
+        <span className={cx('min-w-0 flex-1 truncate', entry.unread && 'font-medium text-ink')}>
+          {entry.conversation.title}
+        </span>
         {display.projectDot ? (
           <ProjectAvatar project={project} className="size-3" />
         ) : null}
