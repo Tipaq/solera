@@ -1,5 +1,23 @@
 import { Cron } from 'croner'
-import cronstrue from 'cronstrue/i18n'
+import cronstrue from 'cronstrue'
+/*
+ * Les deux langues de l'interface, et seulement elles.
+ *
+ * **L'anglais est déjà dans `cronstrue`** : le moteur embarque son propre
+ * `enLocaleLoader`, il n'y a rien à importer pour lui (`cronstrue/locales/en` existe
+ * mais ne ferait que redéfinir à l'identique, pour 5 Ko de plus). **Le français est
+ * cette ligne-ci** : chaque autre langue est un fichier séparé qui se greffe sur
+ * `cronstrue.locales` par effet de bord, d'où l'import sans liaison.
+ *
+ * On importait avant `cronstrue/i18n`, qui fait la même chose pour les quarante langues
+ * du paquet : 186 Ko minifiés au lieu de 22, dans le bundle principal, pour
+ * trente-huit langues que l'interface n'affiche jamais.
+ *
+ * Donc : une langue ajoutée à `LOCALE_LABELS` se complète d'une ligne ici. Sans elle,
+ * ses phrases cron restent en anglais — `cronstrue` se rabat sur sa langue par défaut
+ * avec un avertissement console, il ne lève rien et l'écran ne montre pas de trou.
+ */
+import 'cronstrue/locales/fr'
 
 /**
  * Lecture humaine d'un motif cron, et prochains passages.
