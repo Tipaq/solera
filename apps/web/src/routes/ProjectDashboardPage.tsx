@@ -157,9 +157,11 @@ export function ProjectDashboardPage() {
           </header>
 
           {quiet ? (
-            <p className="rounded-xl border border-line px-3.5 py-3 text-sm text-ink-faint">
-              {t('place.quiet')}
-            </p>
+            /* Une ligne nue, et non une tuile vide : le silence n'a pas à prendre la
+               hauteur de ce qu'il remplace. La maquette ne montrait cette zone qu'avec
+               ses trois demandes, et l'encadré pleine largeur donnait à « rien » le même
+               poids qu'à « une session attend depuis une heure ». */
+            <p className="-mt-1 text-sm text-ink-faint">{t('place.quiet')}</p>
           ) : (
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               {awaitingSince !== null ? (
