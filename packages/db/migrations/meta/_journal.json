@@ -253,6 +253,13 @@
       "when": 1791996871867,
       "tag": "0035_demande_de_rangement",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1792007957842,
+      "tag": "0036_rattrapage_vault",
+      "breakpoints": true
     }
   ]
 }
