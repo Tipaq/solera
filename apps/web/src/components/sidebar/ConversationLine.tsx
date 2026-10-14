@@ -107,6 +107,15 @@ export function ConversationLine({
       >
         <span className="shrink-0 text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
         <span className={cx('min-w-0 flex-1 truncate', unread && 'font-medium')}>{conversation.title}</span>
+        {/* L'épingle se tient dans le lien, à la suite du titre, et non dans
+            l'emplacement d'icônes à droite : celui-ci dit l'**état** du moment — ça
+            tourne, ça attend, c'est non lu — et il change sous les yeux. L'épingle est
+            une **propriété** du fil, qui ne bouge que si on la retire. Les mettre au
+            même endroit faisait disparaître la seconde dès que la première avait
+            quelque chose à dire, c'est-à-dire précisément sur les fils qu'on suit. */}
+        {conversation.pinned ? (
+          <Pin size={11} className="shrink-0 text-ink-faint" aria-label={t('shell.conversation.pinned')} />
+        ) : null}
         {project && display.projectDot ? <ProjectAvatar project={project} className="size-3" /> : null}
       </NavLink>
 
@@ -124,11 +133,6 @@ export function ConversationLine({
           {present ? <SignalDot signal={present} /> : null}
           {loop ? <SignalDot signal={loop} /> : null}
           {!present && unread ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-ink" /> : null}
-          {/* Dernier servi : un fil épinglé qui travaille montre d'abord qu'il travaille,
-              et sa place en tête de liste dit déjà qu'il est épinglé. */}
-          {!present && !loop && !unread && conversation.pinned ? (
-            <Pin size={11} className="shrink-0 text-ink-faint" aria-label={t('shell.conversation.pinned')} />
-          ) : null}
         </span>
 
         <Menu
