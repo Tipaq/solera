@@ -24,45 +24,21 @@ export function useAllConversations() {
 }
 
 /**
- * Ordre manuel au sein d'un projet.
+ * Épingle une conversation en tête de sa liste.
  *
- * Le réordonnancement est appliqué localement avant la réponse du serveur : un
- * glisser-déposer qui attend un aller-retour réseau se voit, et se voit mal.
+ * Le seul écart à l'ordre par activité, et le même que partout ailleurs : ChatGPT
+ * épingle, Claude met en favori, aucun des deux ne laisse ordonner à la main. Le champ
+ * existait déjà en base — l'archivage automatique l'épargne — il n'avait pas de bouton.
  */
-export function useReorderConversations(projectId: string) {
+export function usePinConversation() {
   const queryClient = useQueryClient()
-
   return useMutation({
-    mutationFn: (ids: string[]) =>
-      api.post<{ ok: true }>(`/api/projects/${projectId}/conversations/order`, { ids }),
-
-    onMutate: async (ids) => {
-      await queryClient.cancelQueries({ queryKey: ALL_CONVERSATIONS_KEY })
-      const previous = queryClient.getQueryData<ConversationDto[]>(ALL_CONVERSATIONS_KEY)
-      if (!previous) return { previous }
-
-      // Les conversations des autres projets ne bougent pas : on remet celles du
-      // projet concerné dans les emplacements qu'elles occupaient déjà.
-      const byId = new Map(previous.map((entry) => [entry.id, entry]))
-      const reordered = ids.map((id) => byId.get(id)).filter((entry) => entry !== undefined)
-      const slots = previous.flatMap((entry, index) => (entry.projectId === projectId ? [index] : []))
-
-      const next = [...previous]
-      slots.forEach((slot, index) => {
-        const entry = reordered[index]
-        if (entry) next[slot] = entry
-      })
-      queryClient.setQueryData(ALL_CONVERSATIONS_KEY, next)
-
-      return { previous }
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      api.patch<{ ok: true }>(`/api/conversations/${id}`, { pinned }),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
     },
-
-    onError: (_error, _ids, context) => {
-      // Le serveur a refusé : l'ordre affiché doit redevenir celui qu'il connaît.
-      if (context?.previous) queryClient.setQueryData(ALL_CONVERSATIONS_KEY, context.previous)
-    },
-
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['conversations'] }),
   })
 }
 

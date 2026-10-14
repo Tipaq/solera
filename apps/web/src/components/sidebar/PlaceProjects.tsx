@@ -34,7 +34,6 @@ import { useMemo, useState } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import { useOpenConversationId } from '../../lib/conversation-route'
-import { useReorderConversations } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import { PROJECT_COLORS } from '../../lib/project-colors'
 import { projectViewPath, useProjectView } from '../../lib/project-view'
@@ -285,7 +284,6 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
                   conversation={conversation}
                   onNavigate={onNavigate}
                   // Un fil libre n'a pas d'ordre à défendre : rien ne le réordonne.
-                  draggable={false}
                 />
               ))}
             </ul>
@@ -335,7 +333,6 @@ function ProjectGroup({
   const t = useTranslate()
   const navigate = useNavigate()
   const updateProject = useUpdateProject()
-  const reorder = useReorderConversations(project.id)
   const openConversationId = useOpenConversationId()
   /*
     Le groupe liste **toutes** les sessions du projet, actives comprises. Elles en
@@ -367,11 +364,11 @@ function ProjectGroup({
   // Le clic rouvre le projet là où on l'a laissé : au tableau de bord pour ceux qui s'y
   // pilotent, sur une conversation neuve pour les autres.
   const view = useProjectView(project.id)
-  const sensors = useDragSensors()
 
   /**
    * Seul l'en-tête sert de poignée : des listeners posés sur l'élément entier
-   * engloberaient la liste des sessions, qui a son propre contexte de glissement.
+   * engloberaient la liste des sessions, qu'on ne déplace plus mais qui reste
+   * cliquable ligne à ligne.
    */
   const {
     attributes,
@@ -387,17 +384,6 @@ function ProjectGroup({
     setEditing(false)
     const name = draft.trim()
     if (name && name !== project.name) updateProject.mutate({ id: project.id, name })
-  }
-
-  const onDragEnd = (event: DragEndEvent) => {
-    swallowNextClick()
-    const { active: dragged, over } = event
-    if (!over || dragged.id === over.id) return
-    const ids = sessions.map((entry) => entry.id)
-    const from = ids.indexOf(String(dragged.id))
-    const to = ids.indexOf(String(over.id))
-    if (from === -1 || to === -1) return
-    reorder.mutate(arrayMove(ids, from, to))
   }
 
   return (
@@ -540,22 +526,11 @@ function ProjectGroup({
           {sessions.length === 0 ? (
             <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
           ) : (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-              onDragEnd={onDragEnd}
-              // Annuler par Échap relâche aussi la souris sur le lien : même traitement.
-              onDragCancel={swallowNextClick}
-            >
-              <SortableContext items={visible.map((entry) => entry.id)} strategy={verticalListSortingStrategy}>
-                <ul>
-                  {visible.map((conversation) => (
-                    <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
-                  ))}
-                </ul>
-              </SortableContext>
-            </DndContext>
+            <ul>
+              {visible.map((conversation) => (
+                <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
+              ))}
+            </ul>
           )}
 
           {/* « 26 autres sessions… » plutôt que « Voir les 26 sessions » : le reste est
@@ -638,7 +613,6 @@ function ArchivedSection({ conversations, onNavigate }: {
               key={conversation.id}
               conversation={conversation}
               onNavigate={onNavigate}
-              draggable={false}
             />
           ))}
         </ul>

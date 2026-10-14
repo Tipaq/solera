@@ -39,7 +39,6 @@ export const LIST_ROUTES = new Set([
   'POST /api/conversations',
   'POST /api/conversations/:id/project',
   'POST /api/v1/projects/:id/tasks',
-  'POST /api/projects/:id/conversations/order',
   'POST /api/projects/:id/claude-sessions/:sessionId/import',
   'POST /api/conversations/:id/fork',
   'PATCH /api/conversations/:id',

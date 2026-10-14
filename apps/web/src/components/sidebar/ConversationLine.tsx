@@ -1,6 +1,4 @@
-import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
@@ -8,6 +6,7 @@ import { ArrangeConversationMenu } from '../ArrangeConversation'
 import {
   useArchiveConversation,
   useDeleteConversation,
+  usePinConversation,
   useRenameConversation,
 } from '../../lib/conversations'
 import { useLiveBackground, useLiveLoops, useLiveSeq, useLiveStatus } from '../../lib/conversation-status'
@@ -36,19 +35,18 @@ export function ConversationLine({
   conversation,
   project,
   onNavigate,
-  draggable = true,
 }: {
   conversation: ConversationDto
   /** Montré en puce quand la ligne vit hors de son projet — dans le lieu *Fils*. */
   project?: Parameters<typeof ProjectAvatar>[0]['project']
   onNavigate: () => void
-  draggable?: boolean
 }) {
   const t = useTranslate()
   const display = useDisplaySettings()
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
+  const setPinned = usePinConversation()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
   const openId = useOpenConversationId()
@@ -65,13 +63,6 @@ export function ConversationLine({
   )
   const present = presentSignal(signals)
   const loop = signals.find((signal) => signal.kind === 'loop') ?? null
-  const sortable = draggable && !isArchived
-
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: conversation.id,
-    disabled: !sortable || editing,
-  })
-
   const commit = (draft: string) => {
     setEditing(false)
     const value = draft.trim()
@@ -80,11 +71,9 @@ export function ConversationLine({
     }
   }
 
-  const style = { transform: CSS.Transform.toString(transform), transition }
-
   if (editing) {
     return (
-      <li ref={setNodeRef} style={style}>
+      <li>
         <RenameInput
           value={conversation.title}
           onCommit={commit}
@@ -100,15 +89,8 @@ export function ConversationLine({
 
   return (
     <li
-      ref={setNodeRef}
-      style={style}
-      // Une ligne non déplaçable reste navigable : les attributs du hook désactivé
-      // porteraient aria-disabled sur tous ses liens et boutons.
-      {...(sortable ? attributes : {})}
-      {...(sortable ? listeners : {})}
       className={cx(
         'group/row flex h-11 items-center rounded-md pr-0.5 transition-colors md:h-8 pointer-coarse:h-11',
-        isDragging ? 'shadow-float z-10 bg-surface-high opacity-90' : '',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
         isActive || unread ? 'text-ink' : 'text-ink-soft',
       )}
@@ -142,6 +124,11 @@ export function ConversationLine({
           {present ? <SignalDot signal={present} /> : null}
           {loop ? <SignalDot signal={loop} /> : null}
           {!present && unread ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-ink" /> : null}
+          {/* Dernier servi : un fil épinglé qui travaille montre d'abord qu'il travaille,
+              et sa place en tête de liste dit déjà qu'il est épinglé. */}
+          {!present && !loop && !unread && conversation.pinned ? (
+            <Pin size={11} className="shrink-0 text-ink-faint" aria-label={t('shell.conversation.pinned')} />
+          ) : null}
         </span>
 
         <Menu
@@ -157,6 +144,13 @@ export function ConversationLine({
         >
           <MenuItem icon={<Pencil size={14} />} disabled={!conversation.isOwner} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
+          </MenuItem>
+          <MenuItem
+            icon={conversation.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+            disabled={!conversation.isOwner}
+            onSelect={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
+          >
+            {t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
           </MenuItem>
           {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
               c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de

@@ -45,15 +45,25 @@ export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: 
   const groups = useMemo(() => {
     const midnight = startOfToday()
     const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, SHOWN)
-    return BUCKETS.map((bucket, index) => {
+    /*
+      Les épinglées sortent des tranches et prennent la tête, comme la section *Pinned*
+      de ChatGPT et les *Favoris* de Claude : une conversation qu'on épingle doit se
+      retrouver au même endroit quel que soit le jour où on l'a touchée — sans quoi
+      l'épingle ne voudrait pas la même chose ici et dans un projet.
+    */
+    const pinned = sorted.filter((entry) => entry.pinned)
+    const dated = sorted.filter((entry) => !entry.pinned)
+    const buckets = BUCKETS.map((bucket, index) => {
       // La tranche va de son début (inclus) à celui de la précédente (exclu).
       const start = bucket.since === Infinity ? -Infinity : midnight - bucket.since * DAY
       const end = index === 0 ? Infinity : midnight - BUCKETS[index - 1]!.since * DAY
       return {
         key: bucket.key,
-        entries: sorted.filter((entry) => entry.updatedAt >= start && entry.updatedAt < end),
+        entries: dated.filter((entry) => entry.updatedAt >= start && entry.updatedAt < end),
       }
-    }).filter((group) => group.entries.length > 0)
+    })
+    return [{ key: 'shell.threads.pinned' as MessageKey, entries: pinned }, ...buckets]
+      .filter((group) => group.entries.length > 0)
   }, [conversations])
 
   return (
@@ -71,7 +81,6 @@ export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: 
                 project={projects.find((project) => project.id === conversation.projectId)}
                 onNavigate={onNavigate}
                 // L'ordre de l'historique est celui du temps : rien à y glisser.
-                draggable={false}
               />
             ))}
           </ul>

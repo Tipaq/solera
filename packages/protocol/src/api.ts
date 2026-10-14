@@ -486,7 +486,6 @@ export interface ConversationDto {
   outputTokens: number
   metrics: ConversationMetrics
   pinned: boolean
-  position: number
   archivedAt: number | null
   createdAt: number
   updatedAt: number

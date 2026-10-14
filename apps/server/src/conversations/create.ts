@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { eq, min } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { conversations, type ConversationRow, type Db } from '@solera/db'
-import { inProject } from './scope.js'
 import type { AgentConfig, AgentKind } from '@solera/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
@@ -61,14 +60,6 @@ export async function createConversation(
   sessions: SessionManager,
   input: CreateConversationInput,
 ): Promise<ConversationRow> {
-  // Position en tête du projet : c'est l'ordre qu'avait le tri par date, et une
-  // nouvelle conversation en bas de liste passerait inaperçue.
-  const [lowest] = db
-    .select({ min: min(conversations.position) })
-    .from(conversations)
-    .where(inProject(input.projectId))
-    .all()
-
   const now = Date.now()
   const row: ConversationRow = {
     id: randomUUID(),
@@ -99,7 +90,9 @@ export async function createConversation(
     contextMaxTokens: null,
     model: null,
     pinned: false,
-    position: (lowest?.min ?? 0) - 1,
+    // La colonne survit à l'ordre manuel qu'elle servait : les listes trient par
+    // activité récente, plus personne ne la lit.
+    position: 0,
     archivedAt: null,
     createdAt: now,
     updatedAt: now,

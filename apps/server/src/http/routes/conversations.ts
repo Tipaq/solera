@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, desc, eq, isNull, min, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   agentRequests,
@@ -7,7 +7,6 @@ import {
   conversationReads,
   conversations,
   projects,
-  writeTransaction,
   type ConversationRow,
 } from '@solera/db'
 import {
@@ -23,7 +22,6 @@ import {
   planDecisionBodySchema,
   questionAnswerBodySchema,
   parseAgentConfig,
-  reorderConversationsBodySchema,
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
@@ -39,7 +37,7 @@ import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
 import { createConversation } from '../../conversations/create.js'
 import { moveConversation } from '../../conversations/move.js'
-import { conversationVisibleTo, inProject } from '../../conversations/scope.js'
+import { conversationVisibleTo } from '../../conversations/scope.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
@@ -98,7 +96,6 @@ export function conversationToDto(
     outputTokens: row.outputTokens,
     metrics: conversationMetrics(row),
     pinned: row.pinned,
-    position: row.position,
     archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -217,7 +214,7 @@ export function registerConversationRoutes(
       // repliée. Deux requêtes séparées coûteraient un aller-retour à chaque dépliage,
       // et un désarchivage ne pourrait plus se voir sans recharger les deux.
       .where(conversationVisibleTo(user.id))
-      .orderBy(desc(conversations.pinned), asc(conversations.position))
+      .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
       .all()
 
     return rows.map((row) =>
@@ -266,7 +263,7 @@ export function registerConversationRoutes(
           ? eq(conversations.projectId, id)
           : and(eq(conversations.projectId, id), isNull(conversations.archivedAt)),
       )
-      .orderBy(desc(conversations.pinned), asc(conversations.position))
+      .orderBy(desc(conversations.pinned), desc(conversations.updatedAt))
       .all()
 
     return rows.map((row) =>
@@ -377,52 +374,6 @@ export function registerConversationRoutes(
     return reply.status(201).send(conversationToDto(row, user.id, 0, null))
   })
 
-  /**
-   * Ordre manuel des conversations d'un projet. Le client envoie la liste complète
-   * telle qu'elle doit s'afficher : réécrire les positions en bloc évite les trous et
-   * les égalités qu'un déplacement unitaire finirait par produire.
-   */
-  app.post('/api/projects/:id/conversations/order', async (request) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const body = reorderConversationsBodySchema.parse(request.body)
-
-    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
-    if (!project) throw notFound('project_not_found', 'Project not found.')
-    if (project.ownerId !== user.id && project.visibility !== 'shared') {
-      throw notFound('project_not_found', 'Project not found.')
-    }
-
-    const known = new Set(
-      ctx.db
-        .select({ id: conversations.id })
-        .from(conversations)
-        .where(eq(conversations.projectId, id))
-        .all()
-        .map((row) => row.id),
-    )
-    // Un identifiant étranger au projet déplacerait une conversation d'ailleurs :
-    // on refuse l'ensemble plutôt que d'appliquer un ordre partiel.
-    const intruder = body.ids.find((conversationId) => !known.has(conversationId))
-    if (intruder) {
-      throw badRequest(
-        'conversation_not_in_project',
-        'Conversation {id} does not belong to this project.',
-        { id: intruder },
-      )
-    }
-
-    writeTransaction(ctx.db, (tx) => {
-      body.ids.forEach((conversationId, index) => {
-        tx.update(conversations)
-          .set({ position: index })
-          .where(eq(conversations.id, conversationId))
-          .run()
-      })
-    })
-
-    return { ok: true }
-  })
 
   /**
    * Branche une conversation à un point du fil.
@@ -450,12 +401,6 @@ export function registerConversationRoutes(
       throw err
     }
 
-    const [lowest] = ctx.db
-      .select({ min: min(conversations.position) })
-      .from(conversations)
-      .where(inProject(source.projectId))
-      .all()
-
     const now = Date.now()
     const row: ConversationRow = {
       ...source,
@@ -474,7 +419,7 @@ export function registerConversationRoutes(
       // Le journal est recopié juste après, qui posera le vrai compteur.
       lastSeq: 0,
       pinned: false,
-      position: (lowest?.min ?? 0) - 1,
+      position: 0,
       archivedAt: null,
       createdAt: now,
       updatedAt: now,
