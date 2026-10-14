@@ -10,13 +10,21 @@ CREATE TABLE `__new_agent_requests` (
 	`result` text,
 	`is_error` integer DEFAULT false NOT NULL,
 	`launched_conversation_id` text,
+	`accepted_at` integer,
+	`resolved_at` integer,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+-- Retouché à la main : drizzle-kit relisait `accepted_at` et `resolved_at` depuis
+-- l'ancienne table, qui ne les a pas — il les voit dans le schéma d'arrivée et les
+-- recopie sans se demander d'où. La recopie ne nomme donc que les dix colonnes qui
+-- existent ; les deux neuves restent nulles sur les lignes d'avant, ce qui est juste :
+-- aucune demande antérieure n'était un rangement, donc aucune n'attend d'accord.
 INSERT INTO `__new_agent_requests`("id", "project_id", "conversation_id", "kind", "payload", "created_at", "settled_at", "result", "is_error", "launched_conversation_id") SELECT "id", "project_id", "conversation_id", "kind", "payload", "created_at", "settled_at", "result", "is_error", "launched_conversation_id" FROM `agent_requests`;--> statement-breakpoint
 DROP TABLE `agent_requests`;--> statement-breakpoint
 ALTER TABLE `__new_agent_requests` RENAME TO `agent_requests`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
 CREATE INDEX `idx_agent_requests_pending` ON `agent_requests` (`settled_at`);--> statement-breakpoint
 CREATE INDEX `idx_agent_requests_from` ON `agent_requests` (`conversation_id`,`kind`,`created_at`);--> statement-breakpoint
-CREATE INDEX `idx_agent_requests_launched` ON `agent_requests` (`launched_conversation_id`);
+CREATE INDEX `idx_agent_requests_launched` ON `agent_requests` (`launched_conversation_id`);--> statement-breakpoint
+CREATE INDEX `idx_agent_requests_accepted` ON `agent_requests` (`accepted_at`);

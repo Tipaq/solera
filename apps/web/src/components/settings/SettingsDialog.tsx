@@ -31,6 +31,7 @@ import { SecretsSettingsPage } from '../../routes/SecretsSettingsPage'
 import { SessionsSettingsPage } from '../../routes/SessionsSettingsPage'
 import { SkillLibrarySettingsPage } from '../../routes/SkillLibrarySettingsPage'
 import { UsersSettingsPage } from '../../routes/UsersSettingsPage'
+import { VaultSettingsPage } from '../../routes/VaultSettingsPage'
 
 /**
  * Les réglages, en modale à deux volets.
@@ -59,6 +60,7 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   git: GitCredentialsSettingsPage,
   secrets: SecretsSettingsPage,
   api: ApiTokensSettingsPage,
+  savoir: VaultSettingsPage,
   archivage: ArchivingSettingsPage,
   comptes: UsersSettingsPage,
   'a-propos': AboutSection,

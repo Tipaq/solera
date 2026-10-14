@@ -48,6 +48,15 @@ export interface AppSettingsDto {
    * repart en reprise au message suivant.
    */
   maxConcurrentSessions: number
+  /**
+   * La racine du vault du lieu *Savoir*. Vide signifie « pas de vault », ce qui est
+   * l'état d'une instance qui ne prend pas de notes.
+   *
+   * Un réglage d'instance et non de compte : le vault n'est pas un répertoire de
+   * travail, c'est une ressource partagée, comme un service. Les droits qui disent ce
+   * qu'un agent peut y écrire se posent dossier par dossier, pas ici.
+   */
+  vaultPath: string
 }
 
 /** Résultat d'un passage d'archivage lancé à la main. */
@@ -79,6 +88,21 @@ export const updateAppSettingsBodySchema = z.object({
    * session, cent runners demanderaient 50 Go.
    */
   maxConcurrentSessions: z.number().int().min(1).max(100).optional(),
+  /**
+   * Chemin absolu, ou vide pour couper le vault.
+   *
+   * Absolu parce qu'un chemin relatif se lirait depuis le répertoire courant du
+   * daemon, qui n'est pas un endroit que l'utilisateur connaît — et il ne désignerait
+   * pas le même dossier selon la façon dont le service a démarré.
+   */
+  vaultPath: z
+    .string()
+    .trim()
+    .max(4096)
+    .refine((value) => value === '' || value.startsWith('/'), {
+      message: 'The vault path must be absolute.',
+    })
+    .optional(),
 })
 
 /** Résultat d'une dictée transcrite. */

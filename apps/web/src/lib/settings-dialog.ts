@@ -27,6 +27,7 @@ export type SettingsSectionId =
   | 'git'
   | 'secrets'
   | 'api'
+  | 'savoir'
   | 'archivage'
   | 'comptes'
   | 'a-propos'
