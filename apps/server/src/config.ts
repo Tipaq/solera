@@ -74,6 +74,21 @@ const configSchema = z.object({
       projectFiling: z.boolean().default(false),
     })
     .default({}),
+  vault: z
+    .object({
+      /**
+       * Racine du vault du lieu *Savoir*, vide par défaut.
+       *
+       * Défaut de provisionnement seulement : l'interface écrit la valeur en base, et
+       * celle-ci l'emporte (voir `readAppSettings`).
+       *
+       * Un dossier local, hors de `/mnt/c` sous WSL — l'indexation y est trop lente —
+       * et versionné par git : c'est ce qui donne la synchronisation, l'historique par
+       * note, et le rattrapage borné d'un vault modifié ailleurs.
+       */
+      path: z.string().default(''),
+    })
+    .default({}),
   skills: z
     .object({
       /**

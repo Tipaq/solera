@@ -35,6 +35,22 @@ const SkillEditorPage = lazy(() =>
 )
 
 /**
+ * Les deux pages du vault arrivent à part.
+ *
+ * Elles portent l'éditeur de note, donc CodeMirror, sa grammaire markdown et son
+ * autocomplétion : trois cents kilooctets qu'une instance sans vault ne téléchargerait
+ * jamais, et que le reste de l'application n'utilise pas. Le bundle principal frôlait
+ * déjà la limite de précache du service worker — 2 Mio — et les y laisser la faisait
+ * dépasser, ce qui **casse le build** au lieu de le ralentir.
+ *
+ * Même raison et même geste que pour le panneau du Travail, chargé à part lui aussi.
+ */
+const VaultPage = lazy(() => import('./routes/VaultPage').then((m) => ({ default: m.VaultPage })))
+const VaultBrowsePage = lazy(() =>
+  import('./routes/VaultBrowsePage').then((m) => ({ default: m.VaultBrowsePage })),
+)
+
+/**
  * Les anciennes adresses des réglages, qui ne sont plus des pages.
  *
  * Elles ont circulé — un favori, un lien dans une phrase d'aide, l'historique du
@@ -86,6 +102,12 @@ export function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/new" element={<NewProjectPage />} />
           <Route path="/schedules" element={<SchedulesPage />} />
+          {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
+              Pas de voile d'attente : la page arrive quand son code est là, plutôt que
+              de faire clignoter un écran vide entre deux notes. */}
+          <Route path="/vault/parcourir" element={<Suspense fallback={null}><VaultBrowsePage /></Suspense>} />
+          <Route path="/vault/note/*" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
+          <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/services" element={<ServicesPage />} />
           {/* La porte d'un projet est son tableau de bord ; les réglages, qui
               l'occupaient, sont passés dans son `⋯`. */}

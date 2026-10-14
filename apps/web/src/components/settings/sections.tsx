@@ -7,6 +7,7 @@ import {
   GitBranch,
   Info,
   KeyRound,
+  Library,
   Mic,
   Palette,
   PanelLeft,
@@ -139,6 +140,14 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.section.api',
     descriptionKey: 'settings.section.api.description',
     icon: <Terminal size={16} />,
+  },
+  {
+    id: 'savoir',
+    group: 'instance',
+    labelKey: 'settings.section.vault',
+    descriptionKey: 'settings.section.vault.description',
+    icon: <Library size={16} />,
+    adminOnly: true,
   },
   {
     id: 'archivage',

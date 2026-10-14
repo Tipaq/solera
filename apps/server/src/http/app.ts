@@ -23,6 +23,7 @@ import { HttpError, registerErrorHandler, unauthorized } from './errors.js'
 import { registerApiTokenRoutes } from './routes/api-tokens.js'
 import { registerV1Routes } from './v1/index.js'
 import type { Scheduler } from '../scheduler/scheduler.js'
+import type { VaultIndex } from '../vault/index-service.js'
 import type { TaskScheduler } from '../scheduler/task-scheduler.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
 import type { WebhookService } from '../webhooks/service.js'
@@ -59,6 +60,7 @@ import { registerSystemRoutes } from './routes/system.js'
 import { registerServiceRoutes } from './routes/services.js'
 import { registerTerminalRoutes } from './routes/terminals.js'
 import { registerTreeRoutes } from './routes/tree.js'
+import { registerVaultRoutes } from './routes/vault.js'
 import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
@@ -90,6 +92,7 @@ export async function buildApp(
   scheduler: Scheduler,
   relay: SessionRelay,
   tasks: TaskScheduler,
+  vault: VaultIndex,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -199,13 +202,14 @@ export async function buildApp(
   registerAttachmentRoutes(app, attachments, ctx)
   registerPushRoutes(app, push)
   registerSearchRoutes(app, ctx)
-  registerSettingsRoutes(app, ctx, scheduler)
+  registerSettingsRoutes(app, ctx, scheduler, vault)
   registerScheduleRoutes(app, ctx, sessions, registry, tasks)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
   registerSystemRoutes(app)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
+  registerVaultRoutes(app, ctx, vault)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)

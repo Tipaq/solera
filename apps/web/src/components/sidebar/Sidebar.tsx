@@ -9,12 +9,14 @@ import { useProjects, useReorderProjects } from '../../lib/projects'
 import { isUnread } from '../../lib/reads'
 import { useSchedules } from '../../lib/schedules'
 import { useSidebarPlace, type Place } from '../../lib/sidebar'
+import { useVaultState } from '../../lib/vault'
 import { useMediaQuery } from '../../lib/viewport'
 import { HeaderBand } from '../HeaderBand'
 import { Logo } from '../Logo'
 import { PullToRefresh } from '../PullToRefresh'
 import { SidebarActivity } from '../SidebarActivity'
 import { AccountMenu } from './AccountMenu'
+import { PlaceKnowledge } from './PlaceKnowledge'
 import { PlacePlanned } from './PlacePlanned'
 import { PlaceProjects } from './PlaceProjects'
 import { PlaceThreads } from './PlaceThreads'
@@ -53,6 +55,9 @@ export function Sidebar({
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
+  // L'état du vault ne se demande que si le lieu est affiché : une instance qui ne
+  // prend pas de notes n'a pas à interroger un index qu'elle n'a pas.
+  const { data: vaultState } = useVaultState(display.knowledge)
   const reorderProjects = useReorderProjects()
   const scroller = useRef<HTMLDivElement>(null)
   useStatusFeed()
@@ -85,9 +90,18 @@ export function Sidebar({
       count: null,
       dot: threads.some((entry) => isUnread(entry, 0)),
     },
-    // Le lieu *Savoir* manque : rien n'existe encore derrière lui — ni vault, ni index,
-    // ni page. Sa clé (`display.knowledge`) est déjà lue ici pour qu'il reparaisse sans
-    // rien changer d'autre le jour où le contexte Savoir sera porté.
+    // Le compte d'un lieu dit ce qui **réclame**, et le Savoir n'a rien de tel à dire
+    // tant que la boîte des agents n'existe pas : les ébauches et les orphelines sont
+    // du rangement, pas une sollicitation. La colonne les compte, le lieu non.
+    ...(display.knowledge
+      ? [{
+        id: 'knowledge' as Place,
+        label: PLACE_LABELS.knowledge,
+        icon: PLACE_ICONS.knowledge,
+        page: '/vault',
+        count: null,
+      }]
+      : []),
     ...(display.schedules
       ? [{
         id: 'planned' as Place,
@@ -175,6 +189,8 @@ export function Sidebar({
             onNavigate={onNavigate}
             onReorder={(ids) => reorderProjects.mutate(ids)}
           />
+        ) : place === 'knowledge' ? (
+          <PlaceKnowledge state={vaultState} onNavigate={onNavigate} />
         ) : place === 'planned' ? (
           <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={onNavigate} />
         ) : (

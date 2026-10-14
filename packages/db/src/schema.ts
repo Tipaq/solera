@@ -1053,6 +1053,97 @@ export const apiIdempotency = sqliteTable(
   (t) => [primaryKey({ columns: [t.tokenId, t.key] })],
 )
 
+
+/**
+ * L'index du vault, niveau 1 — les faits du texte.
+ *
+ * Trois tables **dérivées** : les fichiers du vault sont la vérité, celles-ci n'en sont
+ * qu'une lecture. Elles se vident et se refont en une passe, et c'est exactement ce qui
+ * autorise à ne rien prévoir pour les réparer.
+ *
+ * Elles vivent dans `solera.db`, donc hors du vault, et c'est une règle : un index
+ * posé dans le vault serait versionné par git, créerait un conflit à chaque
+ * synchronisation entre deux machines, et finirait par apparaître dans l'historique
+ * d'un fichier qu'on relit.
+ *
+ * Aucune clé étrangère vers `projects` ni `users` : le vault n'est pas un répertoire de
+ * travail, c'est une ressource de l'instance, comme un service.
+ */
+export const vaultNotes = sqliteTable(
+  'vault_notes',
+  {
+    /** Chemin relatif à la racine du vault, séparateur `/`. C'est l'identité d'une note. */
+    path: text('path').primaryKey(),
+    /**
+     * Dossier parent, `''` pour une **ébauche**.
+     *
+     * Pas de dossier, donc pas de droit à hériter, donc aucun agent ne la voit : la
+     * colonne porte seule cette conséquence, qu'il faut assumer et qui est bonne.
+     */
+    folder: text('folder').notNull(),
+    /** Le `title` du frontmatter, sinon le premier titre de niveau 1, sinon le nom du fichier. */
+    title: text('title').notNull(),
+    words: integer('words').notNull(),
+    bytes: integer('bytes').notNull(),
+    /** JSON string[] : les tags du frontmatter. */
+    tags: text('tags').notNull(),
+    modifiedAt: timestamp('modified_at').notNull(),
+  },
+  (t) => [index('idx_vault_notes_folder').on(t.folder)],
+)
+
+/**
+ * Les liens `[[cible]]` d'une note, un par occurrence.
+ *
+ * Une ligne par occurrence et non par paire : la même cible citée trois fois dans une
+ * note se lit trois fois dans son historique, et le panneau montre la ligne où chaque
+ * citation se trouve.
+ *
+ * `targetPath` est la **résolution** de `target`, recalculée après chaque passe
+ * d'indexation : NULL signifie lien cassé. Elle n'est pas une clé étrangère, parce
+ * qu'une note supprimée ne doit pas effacer les liens qui la citaient — ils deviennent
+ * cassés, ce qui est précisément le fait à montrer.
+ */
+export const vaultLinks = sqliteTable(
+  'vault_links',
+  {
+    sourcePath: text('source_path').notNull(),
+    /** La cible telle qu'elle est écrite entre les crochets, sans alias ni ancre. */
+    target: text('target').notNull(),
+    /** La cible normalisée, sur quoi la résolution s'appuie. */
+    targetKey: text('target_key').notNull(),
+    /** NULL = lien cassé. */
+    targetPath: text('target_path'),
+    anchor: text('anchor'),
+    alias: text('alias'),
+    /** Ligne de l'occurrence, à partir de 1. */
+    line: integer('line').notNull(),
+  },
+  (t) => [
+    index('idx_vault_links_source').on(t.sourcePath),
+    index('idx_vault_links_target').on(t.targetPath),
+  ],
+)
+
+/**
+ * Ce que l'index reflète. Une seule ligne, `id = 1`.
+ *
+ * `commitSha` est la pièce qui empêche l'index de mentir : sans lui, rien ne garantit
+ * qu'un vault modifié depuis un autre éditeur — ou depuis le téléphone, Solera éteint
+ * trois semaines — soit rattrapé. Avec lui, un `git diff` jusqu'à `HEAD` dit exactement
+ * ce qui a bougé, et le rattrapage est borné.
+ *
+ * `path` est stocké à côté : le chemin du vault changé, l'index entier parle d'autre
+ * chose et se refait, sans qu'on ait à s'en souvenir ailleurs.
+ */
+export const vaultIndexState = sqliteTable('vault_index_state', {
+  id: integer('id').primaryKey(),
+  path: text('path').notNull(),
+  /** NULL hors dépôt git : le rattrapage se fait alors par une passe complète. */
+  commitSha: text('commit_sha'),
+  indexedAt: timestamp('indexed_at').notNull(),
+})
+
 export type UserRow = typeof users.$inferSelect
 export type ApiTokenRow = typeof apiTokens.$inferSelect
 export type ProjectRow = typeof projects.$inferSelect
@@ -1075,3 +1166,6 @@ export type LibrarySkillRow = typeof librarySkills.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
+export type VaultNoteRow = typeof vaultNotes.$inferSelect
+export type VaultLinkRow = typeof vaultLinks.$inferSelect
+export type VaultIndexStateRow = typeof vaultIndexState.$inferSelect

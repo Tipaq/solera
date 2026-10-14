@@ -41,6 +41,9 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
       typeof maxSessions === 'number' && Number.isInteger(maxSessions) && maxSessions >= 1
         ? maxSessions
         : config.limits.maxConcurrentSessions,
+    // Le fichier provisionne, la base l'emporte — comme le reste. Un vault posé dans
+    // le `config.toml` d'une image sert une instance livrée avec son dossier de notes.
+    vaultPath: readString(db, 'vaultPath') || config.vault.path,
   }
 }
 
