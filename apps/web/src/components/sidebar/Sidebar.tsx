@@ -6,7 +6,7 @@ import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects, useReorderProjects } from '../../lib/projects'
-import { isUnread } from '../../lib/reads'
+import { unreadNow } from '../../lib/reads'
 import { useSchedules } from '../../lib/schedules'
 import { useSidebarPlace, type Place } from '../../lib/sidebar'
 import { useVaultState } from '../../lib/vault'
@@ -51,7 +51,7 @@ export function Sidebar({
   const navigate = useNavigate()
   const wide = useMediaQuery('(min-width: 48rem)')
   const display = useDisplaySettings()
-  const place = useSidebarPlace()
+  const requested = useSidebarPlace()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
@@ -88,7 +88,7 @@ export function Sidebar({
       icon: PLACE_ICONS.projects,
       page: '/projects',
       count: null,
-      dot: threads.some((entry) => isUnread(entry, 0)),
+      dot: threads.some((entry) => unreadNow(entry)),
     },
     // Le compte d'un lieu dit ce qui **réclame**, et le Savoir n'a rien de tel à dire
     // tant que la boîte des agents n'existe pas : les ébauches et les orphelines sont
@@ -112,6 +112,10 @@ export function Sidebar({
       }]
       : []),
   ]
+
+  // Un lieu retiré de l'affichage n'a plus de ligne à surligner : la zone basse
+  // retombe sur *Fils* plutôt que de montrer un lieu que la colonne ne nomme pas.
+  const place = places.some((entry) => entry.id === requested) ? requested : 'threads'
 
   return (
     <div className="flex h-full flex-col">

@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
+import { useLocation } from 'react-router-dom'
 
 /**
  * État de la navigation latérale, partagé hors de React.
@@ -76,33 +77,72 @@ export function restoreSidebarWidth(): void {
 export const PLACES = ['threads', 'projects', 'knowledge', 'planned'] as const
 export type Place = (typeof PLACES)[number]
 
-const PLACE_KEY = 'solera.sidebarPlace'
-
-let place: Place = (() => {
-  const stored = localStorage.getItem(PLACE_KEY)
-  return PLACES.includes(stored as Place) ? (stored as Place) : 'threads'
-})()
+/**
+ * Le lieu dont relève une adresse, ou `null` si elle ne tranche pas.
+ *
+ * `null` pour les réglages, les services, l'accueil : ce sont des passages, pas des
+ * lieux, et y aller ne doit pas défaire la colonne qu'on retrouvera en revenant.
+ */
+export function placeOfPath(pathname: string): Place | null {
+  if (pathname.startsWith('/vault')) return 'knowledge'
+  if (pathname.startsWith('/schedules')) return 'planned'
+  if (pathname.startsWith('/p/') || pathname.startsWith('/projects')) return 'projects'
+  if (pathname.startsWith('/c/')) return 'threads'
+  return null
+}
 
 /**
- * Le lieu affiché, retenu par le compte et non déduit de la route.
+ * Le lieu affiché, **dérivé de ce qui est ouvert au centre**.
  *
- * Un lieu est une destination : le choisir ouvre sa page *et* règle la zone basse, les
- * deux ensemble. Mais l'inverse n'est pas vrai — ouvrir une conversation depuis le lieu
- * *Fils* ne doit pas basculer la colonne sur *Projets* sous prétexte que l'adresse
- * porte un projet. Rien ne se déplie ni ne se replie tout seul : on retrouve la colonne
- * telle qu'on l'a laissée, et c'est la bande du haut qui dit où l'on est.
+ * C'est l'inverse de la règle du quinzième tour, qui en faisait un réglage retenu par
+ * le compte et indépendant de l'adresse. Elle tenait tant qu'on entrait dans une
+ * conversation par la colonne ; elle casse dès qu'on y entre autrement — par
+ * l'activité, par la recherche, par une session qu'un agent vient de lancer. On se
+ * retrouvait alors à lire une conversation de projet avec la colonne restée sur
+ * *Savoir*, sans son projet déplié ni sa ligne désignée. Deux états disaient où l'on
+ * est ; il n'en reste qu'un.
+ *
+ * L'exception reste possible, et ne survit pas à la navigation suivante :
+ *
+ * - `override` est posé en cliquant un lieu. Il sert surtout à *Fils*, le seul lieu
+ *   sans page : sans lui, le clic serait défait dans la foulée par la dérivation.
+ * - Il est effacé au premier changement d'adresse — autrement dit dès qu'on ouvre autre
+ *   chose. Ce qu'on regarde commande à nouveau.
  */
+let anchor = window.location.pathname
+let derived: Place = placeOfPath(anchor) ?? 'threads'
+let override: Place | null = null
+
+/** Appelé par la colonne à chaque navigation ; c'est la seule écriture de `anchor`. */
+function followRoute(pathname: string): void {
+  if (pathname === anchor) return
+  anchor = pathname
+  override = null
+  const next = placeOfPath(pathname)
+  if (next) derived = next
+  for (const listener of listeners) listener()
+}
+
 export function useSidebarPlace(): Place {
+  const { pathname } = useLocation()
+  // Dans un effet et non pendant le rendu : la dérivation prévient des abonnés hors de
+  // React, et une notification émise en plein rendu est une écriture pendant le rendu.
+  // Le décalage ne dure qu'une image, celle de la navigation elle-même.
+  useEffect(() => followRoute(pathname), [pathname])
   return useSyncExternalStore(
     subscribe,
-    () => place,
+    () => override ?? derived,
     () => 'threads' as Place,
   )
 }
 
+/**
+ * Le clic sur un lieu. Sans effet si l'adresse dit déjà ce lieu — le choix n'aurait
+ * rien à corriger, et un `override` posé pour rien survivrait à la navigation d'après.
+ */
 export function setSidebarPlace(next: Place): void {
-  if (next === place) return
-  place = next
-  localStorage.setItem(PLACE_KEY, next)
+  const value = next === derived ? null : next
+  if (value === override) return
+  override = value
   for (const listener of listeners) listener()
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { ConversationDto } from '@solera/protocol'
 import { api } from './api'
-import { liveSeq, subscribeStatus } from './conversation-status'
+import { liveBackground, liveSeq, liveStatus, subscribeStatus } from './conversation-status'
 
 /**
  * Il s'est passé quelque chose dans ce fil depuis la dernière visite du compte.
@@ -13,6 +13,43 @@ import { liveSeq, subscribeStatus } from './conversation-status'
  */
 export function isUnread(conversation: ConversationDto, pushedSeq: number): boolean {
   return Math.max(conversation.lastNotableSeq, pushedSeq) > conversation.lastReadSeq
+}
+
+/**
+ * Du nouveau **et** le fil s'est posé : le non-lu tel qu'on le marque.
+ *
+ * Le non-lu est suspendu tant que la conversation produit. Un enchaînement — messages
+ * en file, boucle, travail de fond — referme un tour sans que le travail soit fini, et
+ * marquer là plaçait une pastille « va voir » sur un agent qui n'avait pas terminé.
+ * Rien ne se perd : la marque paraît à la seconde où le fil se pose, c'est-à-dire
+ * exactement quand « il y a quelque chose à lire » devient vrai.
+ *
+ * Ce qui **bloque** n'est pas suspendu : une permission ou une question portent le
+ * statut `awaiting_input`, qui est un canal séparé et garde sa propre marque.
+ */
+export function isUnreadSettled(
+  conversation: ConversationDto,
+  pushedSeq: number,
+  /** Le fil produit encore : statut vivant `running`, ou un travail de fond ouvert. */
+  busy: boolean,
+): boolean {
+  return !busy && isUnread(conversation, pushedSeq)
+}
+
+/**
+ * Le non-lu d'une conversation, lu directement dans les tables vivantes.
+ *
+ * Pour les agrégats, qui parcourent des listes et ne peuvent pas appeler un hook par
+ * ligne. Les vues qui tiennent déjà statut et travaux de fond passent par
+ * `isUnreadSettled`, sans relire les tables.
+ */
+export function unreadNow(conversation: ConversationDto): boolean {
+  const status = liveStatus(conversation.id) ?? conversation.status
+  return isUnreadSettled(
+    conversation,
+    liveSeq(conversation.id),
+    status === 'running' || liveBackground(conversation.id) > 0,
+  )
 }
 
 /**
@@ -29,7 +66,7 @@ export function useHasUnread(
 ): boolean {
   const snapshot = () =>
     conversations.some(
-      (entry) => entry.id !== openConversationId && isUnread(entry, liveSeq(entry.id)),
+      (entry) => entry.id !== openConversationId && unreadNow(entry),
     )
   return useSyncExternalStore(subscribeStatus, snapshot, snapshot)
 }

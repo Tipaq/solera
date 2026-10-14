@@ -27,7 +27,7 @@ import { useAllConversations } from '../lib/conversations'
 import { cronToHuman } from '../lib/cron'
 import { elapsed } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
-import { setPanelOpen, setPanelTab } from '../lib/panel'
+import { openPanelOnArrival } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import {
@@ -181,10 +181,7 @@ export function ProjectDashboardPage() {
                   to={`/p/${projectId}/board`}
                   // Le diff vit dans le panneau du board : la tuile l'y ouvre, sinon
                   // elle mènerait aux cartes et non aux fichiers qu'elle compte.
-                  onClick={() => {
-                    setPanelTab('git')
-                    setPanelOpen(true)
-                  }}
+                  onClick={() => openPanelOnArrival(`/p/${projectId}/board`, 'git')}
                   tone="neutral"
                   icon={<GitBranch size={14} />}
                   label={t('place.demand.uncommitted')}

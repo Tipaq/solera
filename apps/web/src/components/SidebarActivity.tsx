@@ -226,19 +226,29 @@ function ActivityDialog({ open, onOpenChange, onCloseAutoFocus, filter, onFilter
    */
   const [projectId, setProjectId] = useState<string | null | undefined>(undefined)
   const selected = projects.find((project) => project.id === projectId)
+  /*
+    L'ordre est celui de l'urgence, et non celui du dénombrement : ce qui bloque, puis
+    ce qui a fini et attend d'être relu, puis ce qui avance tout seul, et *tous* en
+    dernier. C'est ce qu'on vient voir qui doit être sous le pouce, pas l'inventaire.
+  */
   const filters: { value: Filter; label: string; tone?: 'caution' }[] = [
-    { value: 'all', label: t('shell.overview.all') },
     { value: 'awaiting', label: t('shell.activity.awaiting'), tone: 'caution' },
-    { value: 'running', label: t('shell.activity.running') },
     { value: 'unread', label: t('shell.activity.unread') },
+    { value: 'running', label: t('shell.activity.running') },
+    { value: 'all', label: t('shell.overview.all') },
   ]
-  const rows = entries.filter((entry) => {
-    if (projectId !== undefined && entry.conversation.projectId !== projectId) return false
-    if (filter === 'awaiting') return entry.awaiting
-    if (filter === 'running') return entry.running
-    if (filter === 'unread') return entry.unread
-    return true
-  })
+  /** Même ordre d'urgence à l'intérieur de *tous* : rien n'est caché, rien n'est enfoui. */
+  const rank = (entry: ActivityEntry): number =>
+    entry.awaiting ? 0 : entry.unread ? 1 : entry.running ? 2 : 3
+  const rows = entries
+    .filter((entry) => {
+      if (projectId !== undefined && entry.conversation.projectId !== projectId) return false
+      if (filter === 'awaiting') return entry.awaiting
+      if (filter === 'running') return entry.running
+      if (filter === 'unread') return entry.unread
+      return true
+    })
+    .sort((a, b) => rank(a) - rank(b))
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>

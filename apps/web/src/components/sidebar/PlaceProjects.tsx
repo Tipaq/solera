@@ -31,7 +31,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import type { ConversationDto, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import { useOpenConversationId } from '../../lib/conversation-route'
 import { useReorderConversations } from '../../lib/conversations'
@@ -44,7 +44,6 @@ import { useUpdateCollapsedProjects, useUserSettings } from '../../lib/user-sett
 import { ProjectAvatar } from '../ProjectAvatar'
 import { ConversationLine } from './ConversationLine'
 import { RenameInput } from './RenameInput'
-import { useActiveIds } from '../../lib/activity'
 import {
   cx,
   IconButton,
@@ -108,7 +107,8 @@ export function PlaceProjects({ projects, conversations, schedules, onNavigate, 
 }) {
   const t = useTranslate()
   const sensors = useDragSensors()
-  const activeIds = useActiveIds(conversations)
+  /** Le projet ouvert au centre, quelle que soit sa page : son groupe suit. */
+  const openProjectId = useMatch('/p/:projectId/*')?.params.projectId
 
   /**
    * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
@@ -168,7 +168,7 @@ export function PlaceProjects({ projects, conversations, schedules, onNavigate, 
           ne réordonne que des projets, et ce groupe n'en est pas un. */}
       {free.length > 0 ? (
         <ul>
-          <FreeThreadsGroup conversations={free} activeIds={activeIds} onNavigate={onNavigate} />
+          <FreeThreadsGroup conversations={free} onNavigate={onNavigate} />
         </ul>
       ) : null}
       <DndContext
@@ -190,8 +190,10 @@ export function PlaceProjects({ projects, conversations, schedules, onNavigate, 
                 project={project}
                 conversations={conversations.filter((entry) => entry.projectId === project.id)}
                 scheduleCount={schedules.filter((task) => task.projectId === project.id).length}
-                activeIds={activeIds}
-                open={!dragging && !collapsed.has(project.id)}
+                // Le projet qui porte la conversation ouverte se déplie d'office :
+                // la colonne suit ce qu'on lit, et une ligne sélectionnée sous un
+                // groupe fermé ne se voit pas.
+                open={!dragging && (!collapsed.has(project.id) || project.id === openProjectId)}
                 collapsed={collapsed.has(project.id)}
                 onToggle={() => toggle(project.id)}
                 onNavigate={onNavigate}
@@ -217,20 +219,18 @@ export function PlaceProjects({ projects, conversations, schedules, onNavigate, 
  * du compte est une liste d'identifiants de projets, validée comme des UUID côté serveur,
  * et ce groupe n'en a pas.
  */
-function FreeThreadsGroup({ conversations, activeIds, onNavigate }: {
+function FreeThreadsGroup({ conversations, onNavigate }: {
   conversations: ConversationDto[]
-  activeIds: Set<string>
   onNavigate: () => void
 }) {
   const t = useTranslate()
   const [open, setOpen] = useState(true)
   const openConversationId = useOpenConversationId()
-  // Même coupure que dans un projet : les sessions déjà listées dans l'activité ne sont
-  // pas répétées ici, sauf celle qu'on lit.
+  // Même règle que dans un projet : le groupe liste tout ce qui n'est pas rangé, y
+  // compris ce qui travaille.
   const sessions = useMemo(
-    () => conversations.filter((entry) =>
-      !entry.archivedAt && (!activeIds.has(entry.id) || entry.id === openConversationId)),
-    [conversations, activeIds, openConversationId],
+    () => conversations.filter((entry) => !entry.archivedAt),
+    [conversations],
   )
   const archived = useMemo(() => conversations.filter((entry) => entry.archivedAt), [conversations])
   const hasUnread = useHasUnread(conversations, openConversationId)
@@ -317,7 +317,6 @@ function ProjectGroup({
   project,
   conversations,
   scheduleCount,
-  activeIds,
   open,
   collapsed,
   onToggle,
@@ -327,7 +326,6 @@ function ProjectGroup({
   /** Actives et rangées mêlées : le groupe fait lui-même la coupure. */
   conversations: ConversationDto[]
   scheduleCount: number
-  activeIds: Set<string>
   open: boolean
   /** Replié par l'utilisateur, indépendamment de la fermeture forcée par un glissement. */
   collapsed: boolean
@@ -340,14 +338,19 @@ function ProjectGroup({
   const reorder = useReorderConversations(project.id)
   const openConversationId = useOpenConversationId()
   /*
-    Les sessions **actives** ne figurent pas dans le groupe : elles sont déjà dans
-    l'activité, au-dessus. Les tirs planifiés non plus — une tâche horaire poserait
-    vingt-quatre lignes par jour, et sa section les porte.
+    Le groupe liste **toutes** les sessions du projet, actives comprises. Elles en
+    étaient retirées tant qu'elles figuraient dans l'activité, pour ne pas les écrire
+    deux fois — mais une session qu'un agent vient de lancer naissait alors invisible
+    de son propre projet, et n'y apparaissait qu'une fois calmée. Un sommaire de projet
+    qui perd sa ligne au moment où elle devient intéressante ne sert plus à rien ;
+    l'activité, elle, est un triage transversal, et la répétition est son prix.
+
+    Les tirs planifiés restent dehors : une tâche horaire poserait vingt-quatre lignes
+    par jour, et sa section les porte.
   */
   const sessions = useMemo(
-    () => conversations.filter((entry) =>
-      !entry.archivedAt && !entry.scheduleId && (!activeIds.has(entry.id) || entry.id === openConversationId)),
-    [conversations, activeIds, openConversationId],
+    () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),
+    [conversations],
   )
   const archived = useMemo(
     () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),

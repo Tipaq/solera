@@ -15,7 +15,7 @@ import { conversationPath, useOpenConversationId } from '../../lib/conversation-
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { projectViewPath, useProjectView } from '../../lib/project-view'
-import { isUnread } from '../../lib/reads'
+import { isUnreadSettled } from '../../lib/reads'
 import { buildSidebarSignals, presentSignal } from '../../lib/signals'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
@@ -96,7 +96,7 @@ export function ConversationLine({
   }
 
   const isActive = openId === conversation.id
-  const unread = !isActive && isUnread(conversation, pushedSeq)
+  const unread = !isActive && isUnreadSettled(conversation, pushedSeq, status === 'running' || background > 0)
 
   return (
     <li

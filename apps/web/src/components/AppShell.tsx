@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMatch } from 'react-router-dom'
+import { useLocation, useMatch } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { useAppearanceSync } from '../lib/appearance-sync'
 import { useRememberContext } from '../lib/last-context'
+import { setPanelScope } from '../lib/panel'
 import { useRevalidateLists } from '../lib/conversation-status'
 import {
   restoreSidebarWidth,
@@ -57,6 +58,10 @@ export function AppShell() {
   useVisualViewport()
   useFileDropGuard()
   useRememberContext()
+  // Le panneau droit appartient à ce qui est ouvert au centre : il se referme en
+  // changeant de contexte, et retrouve son état en y revenant.
+  const { pathname } = useLocation()
+  useEffect(() => setPanelScope(pathname), [pathname])
   const revalidateLists = useRevalidateLists()
 
   useEffect(restoreSidebarWidth, [])

@@ -125,15 +125,15 @@ function buildShots(t) {
     },
     { name: 'settings-mcp', path: '/settings/mcp', waitFor: 'text=playwright' },
     { name: 'settings-appearance', path: '/settings/apparence', waitFor: 'role=heading[name="Appearance"]' },
-    // Les vues du panneau latéral ferment la liste : leur `storage` (panneau ouvert)
-    // reste posé dans le contexte, et rien ne doit se capturer après elles.
+    // Les vues du panneau latéral ouvrent le panneau d'un clic : son état est propre
+    // à la conversation ouverte et vit en mémoire, il n'y a plus de clé à poser.
     {
       name: 'panel-files',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      storage: { 'solera.panelOpen': '1' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
+        await page.getByRole('button', { name: 'Open the panel' }).click()
         const panel = page.locator('[data-panel="workspace"]')
         await panel.waitFor({ timeout: 10000 })
         // Déplier jusqu'au fichier, puis attendre que l'éditeur montre son contenu.
@@ -147,9 +147,9 @@ function buildShots(t) {
       name: 'panel-git',
       path: `/p/${t.nimbus.id}/c/${t.hero.id}`,
       waitFor: 'text=Offline fallback is in place',
-      storage: { 'solera.panelOpen': '1' },
       viewport: BOARD_VIEWPORT,
       interact: async (page) => {
+        await page.getByRole('button', { name: 'Open the panel' }).click()
         const panel = page.locator('[data-panel="workspace"]')
         await panel.waitFor({ timeout: 10000 })
         await panel.locator('text=Git').first().click()

@@ -67,6 +67,8 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                 type="button"
                 aria-current={active ? 'page' : undefined}
                 onClick={() => {
+                  // Le lieu se déduit de l'adresse ouverte ; ce clic est l'exception
+                  // qu'on s'accorde, et elle ne survit pas à la navigation suivante.
                   setSidebarPlace(place.id)
                   if (place.page) navigate(place.page)
                   onNavigate()

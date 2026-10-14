@@ -67,27 +67,14 @@ export function useLiveConversations(
         status: state.status,
         running,
         awaiting,
-        unread: state.unread,
+        // Suspendu tant que ça produit : voir `isUnreadSettled`. L'attente, elle, garde
+        // sa marque — c'est le seul cas où un fil occupé réclame bien un regard.
+        unread: state.unread && !running,
         settledAt: state.settledAt,
         since: conversation.updatedAt,
       }]
     })
   }, [conversations, serialized])
-}
-
-/**
- * Les identifiants de ce qui travaille ou attend, pour **ne pas** les lister deux fois.
- *
- * La zone basse de la colonne s'en sert à l'envers des autres appelants : ces sessions
- * sont déjà dans l'activité, juste au-dessus, et les répéter était le défaut corrigé au
- * cinquième tour des maquettes.
- */
-export function useActiveIds(conversations: ConversationDto[]): Set<string> {
-  const live = useLiveConversations(conversations)
-  return useMemo(
-    () => new Set(live.filter((entry) => entry.running || entry.awaiting).map((entry) => entry.conversation.id)),
-    [live],
-  )
 }
 
 /**

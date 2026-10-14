@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
  * l'information par les props traverserait la vue entière pour un booléen.
  */
 
-const OPEN_KEY = 'solera.panelOpen'
 /**
  * Clé distincte de l'ancienne `solera.panelWidth` : la largeur ne veut plus dire la
  * même chose. Elle réglait une colonne prise au fil, où l'on avait intérêt à être
@@ -42,7 +41,21 @@ function defaultWidth(): number {
   return Math.min(1040, Math.round(window.innerWidth * 0.72))
 }
 
-let open = localStorage.getItem(OPEN_KEY) === '1'
+/**
+ * Ouverture du panneau, **par contexte** et non pour toute l'application.
+ *
+ * Un seul booléen enregistré faisait rouvrir le panneau partout dès qu'on l'avait
+ * ouvert quelque part — y compris sur une conversation neuve, qui n'a pourtant rien à
+ * montrer de plus que son composeur. Passer d'un fil où l'on lit des fichiers à un fil
+ * où l'on discute n'a pas à traîner l'explorateur derrière soi.
+ *
+ * En mémoire et non dans `localStorage` : la table grossirait d'une entrée par
+ * conversation visitée, pour un état dont le défaut est de toute façon « fermé ». Au
+ * rechargement, tout repart fermé.
+ */
+const openByScope = new Map<string, boolean>()
+let scope: string | null = null
+let open = false
 let expanded = localStorage.getItem(EXPANDED_KEY) === '1'
 const listeners = new Set<() => void>()
 
@@ -117,8 +130,42 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
 export function setPanelOpen(next: boolean): void {
   if (next === open) return
   open = next
-  localStorage.setItem(OPEN_KEY, next ? '1' : '0')
+  if (scope !== null && !isDraft(scope)) openByScope.set(scope, next)
   for (const listener of listeners) listener()
+}
+
+/** Un brouillon ne retient rien : une conversation neuve s'ouvre toujours fermée. */
+function isDraft(path: string): boolean {
+  return path.endsWith('/c/new')
+}
+
+/**
+ * Désigne le contexte auquel appartient le panneau — l'adresse ouverte au centre.
+ *
+ * Appelé par la coque à chaque navigation. Le panneau sert une conversation, un board
+ * ou une note ; changer de l'un à l'autre change ce qu'il montrerait, donc il se
+ * referme, et retrouve son état en revenant.
+ */
+export function setPanelScope(next: string): void {
+  if (next === scope) return
+  if (scope !== null && !isDraft(scope)) openByScope.set(scope, open)
+  scope = next
+  const restored = isDraft(next) ? false : openByScope.get(next) ?? false
+  if (restored === open) return
+  open = restored
+  for (const listener of listeners) listener()
+}
+
+/**
+ * Ouvre le panneau d'une page où l'on n'est pas encore arrivé.
+ *
+ * Pour les raccourcis qui naviguent *et* ouvrent — la tuile « non commités » du tableau
+ * de bord mène au board et veut son diff. Ouvrir ici serait défait par l'arrivée, qui
+ * rend au panneau l'état de sa nouvelle page : c'est cet état-là qu'on écrit.
+ */
+export function openPanelOnArrival(path: string, tab?: PanelTab): void {
+  openByScope.set(path, true)
+  if (tab) setPanelTab(tab)
 }
 
 /**
