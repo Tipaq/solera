@@ -5,7 +5,6 @@ import { IconButton, cx, useMediaQuery } from '@solera/ui'
 import { formatBytes } from '../../lib/attachments'
 import { rawFileUrl } from '../../lib/files-io'
 import { useTranslate } from '../../lib/i18n'
-import { setPanelTree } from '../../lib/panel'
 
 /**
  * Une vraie visionneuse, pas un `object-contain`.
@@ -20,9 +19,6 @@ import { setPanelTree } from '../../lib/panel'
 /** Bornes du zoom libre : en deçà l'image n'est plus qu'une vignette, au-delà c'est du bruit. */
 const MIN_SCALE = 0.05
 const MAX_SCALE = 16
-
-/** Au-delà, une image ouverte dans un panneau étroit mérite qu'on lui rende la place. */
-const WIDE_IMAGE_PX = 1200
 
 type Mode = 'fit' | 'actual' | 'width'
 
@@ -288,9 +284,12 @@ function Viewer({ scope, path, fullscreen, onFullscreen }: {
             setNatural(size)
             setScale(scaleFor('fit', size))
             setOffset({ x: 0, y: 0 })
-            // Une image large mérite la place que prend l'arborescence : la replier à
-            // l'ouverture évite d'avoir à le faire soi-même à chaque capture.
-            if (!fullscreen && size.width >= WIDE_IMAGE_PX) setPanelTree(false, false)
+            // L'arborescence ne se referme plus toute seule devant une image large.
+            // Elle le faisait au-delà de 1200 px de côté, si bien qu'en parcourant des
+            // captures la colonne disparaissait ou non selon la résolution de la
+            // suivante : un réglage qui change sans qu'on y touche, et dont la cause
+            // est invisible. Son ouverture appartient à qui regarde — le `fit` donne
+            // déjà à l'image la place qui reste, quelle qu'elle soit.
           }}
           style={{
             width: natural ? natural.width * scale : undefined,
