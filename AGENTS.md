@@ -135,8 +135,16 @@ reste de la machine ; `systemctl --user enable --now sillage.service` la ramène
 la seule chose à faire sur elle sans qu'il le demande.
 
 Les deux instances de Solera sont des unités systemd utilisateur, `solera` et
-`solera-dev`, écrites à la main dans `~/.config/systemd/user/` — pas par `install.sh`,
-qui rendrait un nom de service fixe et écraserait celui de Sillage.
+`solera-dev`, dans `~/.config/systemd/user/`. `solera-dev` est écrite à la main — port
+7417, données dans `~/.local/share/solera-dev`, et elle lance `pnpm dev` depuis le
+worktree. `solera.service` vient de `deploy/solera.service.tmpl` et correspond, à
+substitution des placeholders près, à ce que `install.sh` rendrait aujourd'hui.
+
+Cette ligne a dit jusqu'au 2026-10-14 qu'`install.sh` « écraserait le service de
+Sillage » : c'était vrai de l'installeur d'upstream, qui rendait son propre nom, et ça
+ne l'est plus — il écrit `solera.service`, pas `sillage.service`. La raison de ne pas
+l'utiliser ici est ailleurs : il résout la dernière version par l'API publique de
+GitHub, ce que le dépôt privé interdit, et il bascule sans avoir éprouvé la release.
 
 **Publier une version.** `solera.service` ne tourne **pas** depuis le worktree : il
 tourne depuis le layout de l'installeur, `~/.local/share/solera/app/current`, un lien
