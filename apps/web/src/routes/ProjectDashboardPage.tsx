@@ -109,7 +109,17 @@ export function ProjectDashboardPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
         <div className="mx-auto flex max-w-6xl flex-col gap-5">
-          <header className="flex flex-wrap items-center gap-3">
+          {/* Même geste que le filet de la colonne : un trait prend la couleur du
+              projet, aucune surface ne la porte. Il y a déjà trois tuiles teintées
+              juste en dessous, qui disent des états — la couleur d'identité doit rester
+              au bord, sinon elle entre en concurrence avec elles. Sans couleur choisie,
+              le trait reste celui de partout. */}
+          <header
+            className="flex flex-wrap items-center gap-3 border-b border-line pb-3"
+            style={project.color
+              ? { borderColor: `color-mix(in oklch, var(--sg-line), ${project.color} 70%)` }
+              : undefined}
+          >
             <ProjectAvatar project={project} className="size-7" />
             <h2 className="min-w-0 text-lg font-semibold tracking-tight">{project.name}</h2>
             {project.git ? (
