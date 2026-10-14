@@ -126,7 +126,13 @@ export function CommandPalette({
   const route = /^\/p\/([^/]+)(?:\/c\/([^/]+))?/.exec(pathname)
   const projectId = route?.[1] ?? null
   const conversationId = route?.[2] && route[2] !== 'new' ? route[2] : null
-  const scope = conversationId ?? (projectId ? projectScope(projectId) : '')
+  /**
+   * Le brouillon n'a pas de panneau : ouvrir un fichier depuis la palette y poserait
+   * un panneau « ouvert » que la page ne monte pas, et sans bouton pour le refermer.
+   * Portée vide, donc, comme hors de tout projet — la famille `fichiers` le dit.
+   */
+  const draft = pathname.endsWith('/c/new')
+  const scope = draft ? '' : conversationId ?? (projectId ? projectScope(projectId) : '')
 
   const { data: messages, isFetching } = useMessageSearch(open && !prefix ? term : '')
   const { data: cards } = useCardSearch(term, open && (!prefix || prefix.family === 'cards'))
@@ -522,7 +528,7 @@ export function CommandPalette({
             {items.length === 0 ? (
               <p className="px-2.5 py-6 text-center text-sm text-ink-faint">
                 {prefix?.family === 'files' && !scope
-                  ? t('palette.files.noProject')
+                  ? t(draft ? 'palette.files.noThread' : 'palette.files.noProject')
                   : term.length > 0 && !searching
                     ? t('search.empty.moreChars', { count: SEARCH_MIN_QUERY - term.length })
                     : t('search.empty.none')}

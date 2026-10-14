@@ -2204,6 +2204,7 @@ export const fr: Catalog = {
   'palette.placeholder': 'Chercher ou lancer une commande…',
   'palette.more': '{count} de plus',
   'palette.files.noProject': 'Ouvre un projet pour chercher dans ses fichiers.',
+  'palette.files.noThread': 'Envoie un premier message : les fichiers s’ouvrent dans le panneau de la conversation.',
   'palette.group.resume': 'Reprendre',
   'palette.group.actions': 'Gestes',
   'palette.group.notes': 'Notes',

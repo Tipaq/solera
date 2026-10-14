@@ -45,9 +45,11 @@ function defaultWidth(): number {
  * Ouverture du panneau, **par contexte** et non pour toute l'application.
  *
  * Un seul booléen enregistré faisait rouvrir le panneau partout dès qu'on l'avait
- * ouvert quelque part — y compris sur une conversation neuve, qui n'a pourtant rien à
- * montrer de plus que son composeur. Passer d'un fil où l'on lit des fichiers à un fil
- * où l'on discute n'a pas à traîner l'explorateur derrière soi.
+ * ouvert quelque part : passer d'un fil où l'on lit des fichiers à un fil où l'on
+ * discute traînait l'explorateur derrière soi.
+ *
+ * Le brouillon n'a pas de cas particulier ici : sa page ne porte plus de bouton, donc
+ * aucune de ses adresses n'entre jamais dans la table.
  *
  * En mémoire et non dans `localStorage` : la table grossirait d'une entrée par
  * conversation visitée, pour un état dont le défaut est de toute façon « fermé ». Au
@@ -130,13 +132,8 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
 export function setPanelOpen(next: boolean): void {
   if (next === open) return
   open = next
-  if (scope !== null && !isDraft(scope)) openByScope.set(scope, next)
+  if (scope !== null) openByScope.set(scope, next)
   for (const listener of listeners) listener()
-}
-
-/** Un brouillon ne retient rien : une conversation neuve s'ouvre toujours fermée. */
-function isDraft(path: string): boolean {
-  return path.endsWith('/c/new')
 }
 
 /**
@@ -148,9 +145,9 @@ function isDraft(path: string): boolean {
  */
 export function setPanelScope(next: string): void {
   if (next === scope) return
-  if (scope !== null && !isDraft(scope)) openByScope.set(scope, open)
+  if (scope !== null) openByScope.set(scope, open)
   scope = next
-  const restored = isDraft(next) ? false : openByScope.get(next) ?? false
+  const restored = openByScope.get(next) ?? false
   if (restored === open) return
   open = restored
   for (const listener of listeners) listener()

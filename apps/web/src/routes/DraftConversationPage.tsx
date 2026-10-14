@@ -1,5 +1,5 @@
-import { History, PanelRight, SquareKanban, X } from 'lucide-react'
-import { Suspense, lazy, useMemo, useState } from 'react'
+import { History, SquareKanban, X } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
@@ -31,14 +31,9 @@ import { useAllConversations, useCreateConversation } from '../lib/conversations
 import { useProjects } from '../lib/projects'
 import { useRememberProjectView } from '../lib/project-view'
 import { locale, useTranslate } from '../lib/i18n'
-import { setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useAgentUsage } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
-
-const SidePanel = lazy(() =>
-  import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
-)
 
 /** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
 const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[value] }))
@@ -111,7 +106,6 @@ export function DraftConversationPage() {
   const [params] = useSearchParams()
   const { data: conversations } = useAllConversations()
   const createConversation = useCreateConversation(projectId ?? null)
-  const panel = usePanelPresence()
 
   // Valeur de départ seulement : le CLI reste modifiable tant que rien n'est envoyé.
   // Sans ça, le « + » de la sidebar enfermerait sur le CLI du dernier fil.
@@ -286,17 +280,11 @@ export function DraftConversationPage() {
             {t('draft.board')}
           </Button>
         ) : null}
-        {/* Le panneau opère ici sur le workspace du projet : un terminal, les fichiers
-            ou le diff s'ouvrent avant même qu'une session existe. */}
-        {projectId ? (
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            size="sm"
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
-        ) : null}
+        {/* Pas de panneau tant que rien n'a été envoyé. Il ouvrait le workspace du
+            projet avant même qu'une session existe — mais cette page ne pose qu'une
+            question, « sur quoi part-on ? », et un explorateur de fichiers n'y répond
+            pas. Le bouton est retiré plutôt que désactivé : une cible morte dans une
+            bande qui n'en compte que trois se remarque plus que son absence. */}
       </HeaderBand>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -517,12 +505,6 @@ export function DraftConversationPage() {
           ) : null}
         </div>
       </div>
-
-      {projectId && panel.mounted ? (
-        <Suspense fallback={null}>
-          <SidePanel projectId={projectId} open={panel.open} />
-        </Suspense>
-      ) : null}
     </div>
   )
 }

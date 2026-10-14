@@ -2217,6 +2217,7 @@ export const en = {
   'palette.placeholder': 'Search, or run a command...',
   'palette.more': '{count} more',
   'palette.files.noProject': 'Open a project to search its files.',
+  'palette.files.noThread': 'Send a first message: files open in the conversation panel.',
   'palette.group.resume': 'Resume',
   'palette.group.actions': 'Actions',
   'palette.group.notes': 'Notes',
