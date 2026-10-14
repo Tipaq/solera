@@ -1283,6 +1283,7 @@ export function ConversationPage() {
           <SidePanel
             projectId={conversation.projectId}
             conversationId={conversationId}
+            cardId={conversation.card?.id ?? null}
             workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
             agent={conversation.agent}
             editTurns={stream.state.editTurns}

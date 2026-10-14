@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { Bot, ChevronLeft, FileCode, GitCompare, Search, SquareTerminal, X } from 'lucide-react'
+import { Bot, ChevronLeft, FileCode, GitCompare, Search, SquareKanban, SquareTerminal, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
@@ -28,6 +28,7 @@ import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
 import { IconButton, cx } from '@solera/ui'
 import { AgentsPane } from './AgentsPane'
+import { CardPane } from './CardPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
 import { SearchPane } from './SearchPane'
@@ -57,6 +58,7 @@ import { HeaderBand } from '../HeaderBand'
 export function SidePanel({
   projectId,
   conversationId,
+  cardId = null,
   agent,
   editTurns = [],
   turnRunning = false,
@@ -71,6 +73,8 @@ export function SidePanel({
   projectId: string | null
   /** Absente en vue projet : le panneau se réduit alors aux onglets de répertoire. */
   conversationId?: string
+  /** Carte que la conversation traite, s'il y en a une. Au plus une, jamais plusieurs. */
+  cardId?: string | null
   /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
   agent?: AgentKind
   editTurns?: EditTurn[]
@@ -98,9 +102,10 @@ export function SidePanel({
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
+  const sessionTab = chosenTab === 'agents' || chosenTab === 'card'
   const tab: PanelTab = !hasWorkspace
     ? 'agents'
-    : conversationId || chosenTab !== 'agents'
+    : conversationId || !sessionTab
       ? chosenTab
       : 'files'
   const selectedSubAgent = useSelectedSubAgent()
@@ -290,6 +295,7 @@ export function SidePanel({
         tab={tab}
         hasWorkspace={hasWorkspace}
         hasConversation={Boolean(conversationId)}
+        hasCard={Boolean(cardId)}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
       />
 
@@ -364,6 +370,15 @@ export function SidePanel({
         />
       ) : null}
 
+      {/* Montée seulement quand on la regarde, comme la vue Agent : son contenu est une
+          lecture du board, qui doit être fraîche à l'ouverture et n'a rien à tenir
+          derrière un onglet fermé. */}
+      {tab === 'card' && conversationId && projectId ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pb-safe">
+          <CardPane projectId={projectId} conversationId={conversationId} cardId={cardId} />
+        </div>
+      ) : null}
+
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}
       <div
@@ -396,7 +411,7 @@ export function SidePanel({
 }
 
 /**
- * Les cinq vues, dans la bande.
+ * Les six vues, dans la bande.
  *
  * Elles sont nommées tant qu'il y a la place, et les noms tombent **tous ensemble**
  * sous 30 rem : une rangée où seul l'onglet actif garde son nom change de largeur à
@@ -404,10 +419,11 @@ export function SidePanel({
  * recouvre l'écran, l'actif garde le sien — la bande au-dessus dit déjà où l'on est,
  * mais c'est le seul repère écrit qui reste de la vue elle-même.
  *
- * Le trait sépare les quatre vues du répertoire de la seule qui regarde la session.
- * Sur un fil libre il ne reste que la seconde, et le trait n'a donc rien à séparer.
+ * Le trait sépare les quatre vues du répertoire de celles qui regardent la session. Sur
+ * un fil libre il ne reste qu'*Agent*, et le trait n'a donc rien à séparer : un fil sans
+ * projet n'a ni dossier ni board, donc pas de carte non plus.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasCard, agentBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -416,6 +432,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadg
   /** Faux sur un fil libre : les quatre vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
   hasConversation: boolean
+  /** Une pastille sur *Carte* quand il y en a une : l'onglet existe dans les deux cas. */
+  hasCard: boolean
   agentBadge: number
 }) {
   const t = useTranslate()
@@ -438,6 +456,13 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadg
           {hasWorkspace ? <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" /> : null}
           <Tab icon={<Bot size={15} />} label={t('panel.tab.agents')} keepLabel={!band}
             badge={agentBadge} active={tab === 'agents'} onSelect={() => setPanelTab('agents')} />
+          {/* Proposée même sans carte rattachée : l'onglet répond d'abord à « cette
+              session traite-t-elle un travail du board », et une absence est une
+              réponse. Le disparaître ferait chercher où la vue est passée. */}
+          {hasWorkspace ? (
+            <Tab icon={<SquareKanban size={15} />} label={t('panel.tab.card')} keepLabel={!band}
+              dot={hasCard} active={tab === 'card'} onSelect={() => setPanelTab('card')} />
+          ) : null}
         </>
       ) : null}
     </>
@@ -472,6 +497,7 @@ function Tab({
   label,
   active,
   badge = 0,
+  dot = false,
   keepLabel = false,
   onSelect,
 }: {
@@ -480,6 +506,8 @@ function Tab({
   active: boolean
   /** Décompte affiché sur l'onglet. Zéro n'affiche rien. */
   badge?: number
+  /** Présence sans nombre : il n'y a qu'une carte, « 1 » n'apprendrait rien. */
+  dot?: boolean
   /** Garde son nom à l'étroit quand il est actif : le cas du panneau qui recouvre. */
   keepLabel?: boolean
   onSelect: () => void
@@ -509,6 +537,8 @@ function Tab({
         <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-accent-ink">
           {badge}
         </span>
+      ) : dot ? (
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent" />
       ) : null}
     </TooltipButton>
   )
