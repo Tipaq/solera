@@ -378,3 +378,104 @@ structurel.
   `markdown-it`, la chaîne `ConversationPage`) : non traités, délibérément. Avec
   542 Ko de marge, rien ne presse — et pour `ConversationPage`, l'audit conclut qu'il
   ne faut probablement pas le faire du tout.
+
+---
+
+# Suite 2 : le plafond est dit, et le garde présente un choix
+
+Pistes 1 et 3 de la carte #22, posées ensemble dans `apps/web/vite.config.ts` —
+elles répondent à la même question et partagent une constante.
+
+Contrainte posée pour la piste 3 : **le garde ne doit pas aller contre l'expérience
+d'usage.** C'est ce qui a décidé sa forme. Un budget qui ne sait dire que « c'est
+trop gros, découpe » finit par faire découper ce qui est le plus gros — et le plus
+gros est dans le tronc justement parce qu'il sert au premier rendu de l'écran
+principal. Le garde pousserait alors vers le seul geste que cet audit déconseille.
+
+## Piste 1 — le plafond écrit là où il s'applique
+
+```ts
+const PRECACHE_BUDGET_BYTES = 2 * 1024 * 1024
+```
+
+Et dans la configuration Workbox : `maximumFileSizeToCacheInBytes: PRECACHE_BUDGET_BYTES`.
+
+Le commentaire dit ce que le dépôt ne disait nulle part : **les 2 Mio sont le défaut
+de Workbox, pas une limite du navigateur**. C'est un budget qu'on choisit de garder
+parce qu'un précache plus lourd se paie à la première visite et à chaque mise à jour
+du service worker. Donc un chiffre qu'on peut décider de relever — en sachant ce
+qu'on achète.
+
+## Piste 3 — un garde qui explique au lieu de bloquer
+
+Plugin `solera:precache-budget`, placé **avant** `VitePWA` dans `plugins`.
+
+| taille du chunk d'entrée | effet |
+|---|---|
+| < 90 % du budget | silence |
+| ≥ 90 % | avertissement, le build passe |
+| > 100 % | échec, avec le message ci-dessous |
+
+Deux seuils et non un : l'avertissement est ce qui transforme la surprise en
+décision, l'échec n'arrive que là où le build serait de toute façon cassé. Le garde
+n'invente aucune contrainte plus serrée que la vraie — il ne sert pas de cliquet.
+
+Le message d'échec nomme trois réponses, dont **relever le budget**, et nomme
+explicitement ce qu'il ne faut pas faire :
+
+```
+Budget de précache dépassé.
+
+  assets/index-D6tSJcr5.js : 1 542 309 octets, 103 % du budget de précache (1 500 000)
+  Dépassement : 42 309 octets.
+
+Workbox va refuser de précacher ce fichier, et vite-plugin-pwa en fera une
+erreur fatale. Trois réponses, et le choix n'est pas évident :
+
+  1. Charger à la demande un écran rare — le geste déjà appliqué au panneau
+     du Travail, à la visionneuse 3D et à l'éditeur de skill.
+  2. Relever PRECACHE_BUDGET_BYTES dans ce fichier. C'est permis : les 2 Mio
+     sont un défaut de Workbox, pas une limite du navigateur. Ça se paie à la
+     première visite et à chaque mise à jour du service worker.
+  3. Corriger un import trop large — c'est ce qui a rendu 150 Ko sur cronstrue.
+
+À ne pas faire : découper la chaîne de conversation. Elle est dans le chunk
+d'entrée parce que c'est la route la plus visitée de l'application ; l'en sortir
+déplace le coût sur l'écran principal au lieu de le supprimer.
+
+Les postes du bundle, chiffrés et classés, avec ce qui reste découpable et ce
+qui est structurel : docs/audits/2026-10-14-bundle-web/
+```
+
+### Le piège de l'implémentation : `writeBundle` ne peut pas échouer
+
+Première version écrite entièrement dans `writeBundle`. Elle mesurait juste, et ne
+servait à rien : **une exception levée depuis `writeBundle` est avalée par Vite**. Le
+build continuait, et c'est Workbox qui finissait par échouer avec son message
+illisible — précisément ce que le garde existe pour éviter. Observé, pas supposé :
+le hook était bien atteint (`dépasse? true`) et l'erreur affichée était quand même
+celle de `logWorkboxResult`.
+
+La mesure se prend donc en `writeBundle`, où les fichiers sont écrits et le bundle
+connu, et le verdict tombe en `closeBundle`, qui remonte l'erreur et s'exécute avant
+celui de `VitePWA`. Vérifié : avec un budget abaissé, le message du garde est seul à
+l'écran et la trace de Workbox a disparu.
+
+### Pas de nouvelle étape de CI
+
+`ci.yml` lance déjà `pnpm build`, qui construit `apps/web` : le garde y tourne sans
+rien ajouter au workflow. Le même contrôle protège donc la CI et le build local, avec
+le même message — il n'y a pas un seuil pour la machine et un autre pour la personne.
+
+## Contrôles
+
+Les trois cas ont été éprouvés en abaissant temporairement `PRECACHE_BUDGET_BYTES` :
+
+| cas | budget simulé | résultat |
+|---|---|---|
+| dépassement | 1 500 000 | échec, message du garde, `exit 1`, pas de trace Workbox |
+| alerte | 1 700 000 (91 %) | avertissement, build terminé, `exit 0` |
+| nominal | 2 097 152 (74 %) | silence, `exit 0` |
+
+`npx eslint apps packages` et `npx tsc --noEmit` propres, budget restauré à
+`2 * 1024 * 1024`.
