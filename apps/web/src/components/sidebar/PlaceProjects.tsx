@@ -491,7 +491,24 @@ function ProjectGroup({
       </div>
 
       {open ? (
-        <div className="mb-1 ml-3 border-l border-line pl-1.5">
+        /*
+          Le filet qui tient le contenu d'un projet prend sa couleur.
+
+          C'est le seul endroit où elle travaille quand le projet a une image : la
+          pastille de `ProjectAvatar`, son unique rendu jusqu'ici, ne paraît qu'à défaut
+          de logo. Un filet déjà présent plutôt qu'une surface de plus — la colonne a
+          son compte de couleurs, et celle-ci n'a pas à crier : mêlée au trait de
+          séparation, elle marque le bloc d'un projet sans se lire comme un état.
+
+          Rien pour qui n'a rien choisi : `null` veut dire « l'accent du thème », et un
+          filet d'accent sous chaque projet ne distinguerait plus personne.
+        */
+        <div
+          className="mb-1 ml-3 border-l border-line pl-1.5"
+          style={project.color
+            ? { borderColor: `color-mix(in oklch, var(--sg-line), ${project.color} 70%)` }
+            : undefined}
+        >
           <ul>
             <SectionLink to={`/p/${project.id}/board`} icon={<SquareKanban size={14} />} label={t('shell.project.board')} onNavigate={onNavigate} />
             {/* *Planification* est masquée quand elle est vide : une section à zéro
