@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, PinOff, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
@@ -107,17 +107,36 @@ export function ConversationLine({
       >
         <span className="shrink-0 text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
         <span className={cx('min-w-0 flex-1 truncate', unread && 'font-medium')}>{conversation.title}</span>
-        {/* L'épingle se tient dans le lien, à la suite du titre, et non dans
-            l'emplacement d'icônes à droite : celui-ci dit l'**état** du moment — ça
-            tourne, ça attend, c'est non lu — et il change sous les yeux. L'épingle est
-            une **propriété** du fil, qui ne bouge que si on la retire. Les mettre au
-            même endroit faisait disparaître la seconde dès que la première avait
-            quelque chose à dire, c'est-à-dire précisément sur les fils qu'on suit. */}
-        {conversation.pinned ? (
-          <Pin size={11} className="shrink-0 text-ink-faint" aria-label={t('shell.conversation.pinned')} />
-        ) : null}
         {project && display.projectDot ? <ProjectAvatar project={project} className="size-3" /> : null}
       </NavLink>
+
+      {/* L'épingle a son propre emplacement, à gauche du menu : marque quand elle est
+          posée, bouton dès qu'on survole la ligne. Même case pour les deux, parce que
+          c'est la même chose — voir qu'un fil est épinglé et le dépingler ne demandent
+          pas deux endroits, et épingler ne vaut pas d'ouvrir un menu.
+
+          Hors du groupe des points d'état : ceux-là disent le moment et changent sous
+          les yeux, l'épingle est une propriété qui ne bouge que si on la retire. Les
+          mêler faisait disparaître la seconde dès que le premier avait quelque chose à
+          dire — c'est-à-dire sur les fils qu'on suit, ceux qu'on épingle. */}
+      {conversation.isOwner || conversation.pinned ? (
+        <span className="flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
+          <IconButton
+            label={t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
+            size="sm"
+            disabled={!conversation.isOwner}
+            onClick={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
+            className={cx(
+              'transition-opacity',
+              conversation.pinned
+                ? 'text-ink-soft'
+                : 'opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 pointer-coarse:opacity-100',
+            )}
+          >
+            <Pin size={13} className={cx(conversation.pinned && 'fill-current')} />
+          </IconButton>
+        </span>
+      ) : null}
 
       {/* Les points et le « ⋯ » partagent un seul emplacement, à l'aplomb du « + » de
           *Sessions* et du chevron du projet : une colonne d'icônes et non trois
@@ -148,13 +167,6 @@ export function ConversationLine({
         >
           <MenuItem icon={<Pencil size={14} />} disabled={!conversation.isOwner} onSelect={() => setEditing(true)}>
             {t('shell.rename')}
-          </MenuItem>
-          <MenuItem
-            icon={conversation.pinned ? <PinOff size={14} /> : <Pin size={14} />}
-            disabled={!conversation.isOwner}
-            onSelect={() => setPinned.mutate({ id: conversation.id, pinned: !conversation.pinned })}
-          >
-            {t(conversation.pinned ? 'shell.conversation.unpin' : 'shell.conversation.pin')}
           </MenuItem>
           {/* Carte #14 : le rangement vit ici, entre renommer et archiver, parce que
               c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de

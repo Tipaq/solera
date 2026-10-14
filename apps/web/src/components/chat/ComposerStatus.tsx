@@ -6,12 +6,14 @@ import { cx } from '@solera/ui'
 
 /**
  * Ce qui est toujours vrai d'une conversation, sous la barre de saisie : le CLI, la
- * session chargée ou non, la liaison, le raccourci d'envoi.
+ * session chargée ou non, la liaison.
  *
  * Rien de ce qui va et vient n'a sa place ici. Les signaux sont au-dessus du composer,
  * en couleur ; cette ligne-ci reste grise et immobile, et ne doit jamais attirer l'œil.
- * Les mélanger donnait à l'attente d'une réponse le même poids visuel qu'un rappel de
- * raccourci clavier.
+ *
+ * Le rappel « Entrée pour envoyer » a disparu : c'est le geste le plus fréquent de
+ * l'application, il s'apprend au premier message et se relit ensuite à chaque fois pour
+ * rien.
  */
 export function ComposerStatus({
   agent,
@@ -55,8 +57,6 @@ export function ComposerStatus({
         </span>
       ) : null}
 
-      {/* Le raccourci ne se découvre pas tout seul, et il n'a pas de sens au doigt. */}
-      <span className="ml-auto hidden pointer-fine:inline">{t('composer.status.shortcut')}</span>
     </div>
   )
 }

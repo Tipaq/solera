@@ -1110,7 +1110,6 @@ export const fr: Catalog = {
   'composer.status.cold.label': 'Session au repos',
   'composer.status.connected.title': 'Le flux temps réel est établi.',
   'composer.status.connected.label': 'Connecté',
-  'composer.status.shortcut': 'Entrée pour envoyer, Maj+Entrée pour un retour à la ligne',
 
   // Éditeur
   'editor.tab.label': "Ouvrir {path}",

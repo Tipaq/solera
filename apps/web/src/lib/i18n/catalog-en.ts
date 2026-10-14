@@ -1121,7 +1121,6 @@ export const en = {
   'composer.status.cold.label': 'Session idle',
   'composer.status.connected.title': 'The realtime stream is established.',
   'composer.status.connected.label': 'Connected',
-  'composer.status.shortcut': 'Enter to send, Shift+Enter for a new line',
 
   // Éditeur
   'editor.tab.label': "Open {path}",
