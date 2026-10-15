@@ -342,7 +342,10 @@ function ProjectGroup({
     l'activité, elle, est un triage transversal, et la répétition est son prix.
 
     Les tirs planifiés restent dehors : une tâche horaire poserait vingt-quatre lignes
-    par jour, et sa section les porte.
+    par jour. La colonne ne montre que les tâches — le lien *Planification* ci-dessous
+    mène à la page du projet, dont l'historique des tirs porte un lien par fil. C'est la
+    décision de la carte #35, prise après que la section qui les dépliait a disparu avec
+    l'ancienne colonne.
   */
   const sessions = useMemo(
     () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),

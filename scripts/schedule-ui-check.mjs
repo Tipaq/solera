@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -26,6 +26,21 @@ async function freePort() {
   const port = socket.address().port
   await new Promise((resolve) => socket.close(resolve))
   return port
+}
+
+/**
+ * Le dossier où le Solera du poste a installé ses CLI agents.
+ *
+ * La suite donne au serveur un `SOLERA_DATA_DIR` jetable, et ce préfixe suit le dossier
+ * de données : un CLI installé depuis l'interface devient alors introuvable, et le tir
+ * meurt à la naissance sur « native binary not found at claude ». On rend donc le `bin`
+ * du poste au `PATH` du serveur d'essai — c'est une installation, pas un état, et rien
+ * dans la suite n'a de raison de l'isoler.
+ */
+function hostAgentsBin() {
+  const data = process.env.SOLERA_DATA_DIR
+    ?? join(process.env.XDG_DATA_HOME || join(homedir(), '.local/share'), 'solera')
+  return join(data, 'agents', 'bin')
 }
 
 function run(args, cwd, env) {
@@ -59,6 +74,7 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
+    PATH: `${hostAgentsBin()}${delimiter}${process.env.PATH ?? ''}`,
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -137,16 +153,20 @@ try {
   await card.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
   await until('la tâche est en pause', (task) => !task.enabled && task.nextRunAt === null, 10_000)
 
-  // La sidebar : le fil n'est pas dans la liste du projet, il est sous sa tâche.
-  const nav = page.locator('aside nav')
-  const threadLink = nav.locator(`a[href$="/c/${thread.id}"]`)
-  const section = nav.locator('[data-sidebar-schedules]')
-  await section.getByText('Planifiées', { exact: true }).waitFor()
-  assert.equal(await threadLink.count(), 0, 'Un tir ne doit pas apparaître dans la liste principale')
-  await section.getByRole('button', { name: /Veille de test/ }).click()
-  await threadLink.waitFor()
-  assert.equal(await threadLink.count(), 1)
-  assert.equal(await section.locator(`a[href$="/c/${thread.id}"]`).count(), 1, 'Le tir est rangé sous sa tâche')
+  // La colonne ne montre que les tâches, jamais leurs tirs (carte #35). On est sur
+  // /p/<projet>/schedules : le lieu *Projets* est donc affiché, et le groupe du projet
+  // déplié d'office — s'il portait le fil du tir, il serait ici.
+  const column = page.locator('aside')
+  const places = page.getByRole('navigation', { name: 'Lieux' })
+  const threadLink = column.locator(`a[href$="/c/${thread.id}"]`)
+  await column.locator(`a[href="/p/${project.id}/schedules"]`).first().waitFor()
+  assert.equal(await threadLink.count(), 0, 'Un tir ne doit pas apparaître dans la liste des sessions du projet')
+  // Et le lieu *Planifiées* liste les tâches, pas ce qu'elles ont lancé. Un lieu est
+  // une destination : le clic ouvre sa page, d'où l'on revient au projet.
+  await places.getByRole('button', { name: /^Planifiées/ }).click()
+  await column.getByRole('link', { name: /^Veille de test/ }).waitFor()
+  assert.equal(await threadLink.count(), 0, 'Le lieu *Planifiées* ne montre que les tâches')
+  await page.goto(`${base}/p/${project.id}/schedules`)
 
   const done = await until('le tir se termine', (task) => task.runs.every((entry) => entry.status !== 'running'), 150_000)
   assert.equal(done.runs.find((entry) => entry.id === run1.id).status, 'succeeded', JSON.stringify(done.runs))
@@ -154,8 +174,13 @@ try {
   await card.getByText('terminé', { exact: true }).first().waitFor({ timeout: 30_000 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'schedule-desktop.png') })
 
+  // Puisque la colonne ne les porte plus, l'historique est la **seule** route vers le
+  // fil d'un tir : sans ce lien, il ne s'atteindrait plus que par la palette.
+  const runLink = card.locator(`a[href$="/c/${thread.id}"]`)
+  await runLink.waitFor()
+
   // Le fil s'ouvre comme une conversation ordinaire, et l'agent a su qu'il tournait seul.
-  await threadLink.click()
+  await runLink.click()
   await page.getByText(/personne n'est au clavier/).first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'run-desktop.png') })
 
@@ -170,12 +195,19 @@ try {
   assert.equal(manual.enabled, false, 'Lancer maintenant ne sort pas la tâche de sa pause')
   await card.getByText('En cours', { exact: true }).waitFor({ timeout: 30_000 })
 
+  // Au doigt non plus : le tiroir ouvert sur le lieu *Planifiées* montre les tâches et
+  // rien d'autre. On y vient par l'adresse — cliquer le lieu referme le tiroir, puisque
+  // le clic navigue.
+  await page.goto(`${base}/schedules`)
   await page.getByRole('button', { name: /^Ouvrir la navigation/ }).click()
-  const drawer = page.locator('aside nav')
-  await drawer.locator('[data-sidebar-schedules]').getByRole('button', { name: /Veille de test/ }).click()
-  await drawer.locator('[data-sidebar-schedules] a[href*="/c/"]').nth(1).waitFor()
+  const drawer = page.locator('aside')
+  await drawer.getByRole('link', { name: /^Veille de test/ }).waitFor()
+  // L'activité, au-dessus, porte bien des liens de conversation — mais aucun tir : on
+  // vise donc le fil du tir, pas « un lien vers une conversation ».
+  assert.equal(await drawer.locator(`a[href$="/c/${thread.id}"]`).count(), 0, 'La colonne ne porte aucun tir')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'sidebar-mobile.png') })
   await page.getByRole('button', { name: 'Fermer la navigation', exact: true }).click()
+  await page.goto(`${base}/p/${project.id}/schedules`)
 
   await page.getByRole('button', { name: 'Modifier', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Modifier la tâche', exact: true })
@@ -196,7 +228,11 @@ try {
   const after = (await api('/api/conversations')).filter((entry) => entry.title.startsWith('Veille de test · '))
   assert.equal(after.length, 2)
   assert.ok(after.every((entry) => entry.scheduleId === null && entry.archivedAt !== null))
-  assert.equal(await nav.locator('[data-sidebar-schedules]').count(), 0)
+  // La tâche quitte le lieu *Planifiées* ; celle que sème la démonstration y reste, et
+  // c'est elle qui prouve qu'on regarde bien une liste vivante et non un lieu vidé.
+  await places.getByRole('button', { name: /^Planifiées/ }).click()
+  await column.getByRole('link', { name: /^CLI release watch/ }).waitFor()
+  assert.equal(await column.getByRole('link', { name: /^Veille de test/ }).count(), 0)
 
   assert.deepEqual(errors, [])
   console.log(`schedule-ui-check: ok (captures dans ${shots})`)

@@ -64,7 +64,8 @@ export function Sidebar({
   const { refreshing, refresh } = useRefreshLists()
 
   // Les tirs planifiés ne comptent pas dans l'activité : une tâche qui tourne toute
-  // seule n'est pas une session qu'on suit, et sa section dit déjà où elle en est.
+  // seule n'est pas une session qu'on suit, et le lieu *Planifiées* dit déjà où elle en
+  // est. Leurs fils se lisent sur la page de planification du projet, pas ici.
   const attended = useMemo(
     () => (conversations ?? []).filter((entry) => !entry.scheduleId),
     [conversations],
