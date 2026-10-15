@@ -137,7 +137,10 @@ export function Sidebar({
         </span>
       </HeaderBand>
 
-      <div className="shrink-0 px-2 py-1.5">
+      {/* Un filet sépare les deux gestes des lieux. Seul ajout du 2026-10-15 au haut de
+          la colonne : *Rechercher* et *Nouvelle conversation* restent les deux boutons
+          sobres d'avant, mais rien ne disait qu'ils ne sont pas eux-mêmes des lieux. */}
+      <div className="shrink-0 border-b border-line px-2 py-1.5">
         {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait
             inatteignable depuis un téléphone. */}
         <button
@@ -189,7 +192,6 @@ export function Sidebar({
           <PlaceProjects
             projects={projects ?? []}
             conversations={conversations ?? []}
-            schedules={schedules ?? []}
             onNavigate={onNavigate}
             onReorder={(ids) => reorderProjects.mutate(ids)}
           />

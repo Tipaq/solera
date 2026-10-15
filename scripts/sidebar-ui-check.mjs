@@ -120,8 +120,19 @@ try {
 
   // Lieu *Projets* : l'arbre, le centre suit, et la conversation ouverte reste ouverte.
   await places.getByRole('button', { name: /^Projets/ }).click()
-  await column.getByRole('link', { name: /^Board/ }).first().waitFor()
   await column.getByRole('link', { name: 'Nouveau projet…' }).waitFor()
+  // Plus aucun sous-lien de vue sous un projet déplié, ni d'en-tête « Sessions » : les
+  // onglets portent les vues, et sous un projet il n'y a que des sessions.
+  assert.equal(
+    await column.getByRole('link', { name: /^Board/ }).count(),
+    0,
+    'Les sous-liens de vue ont quitté la colonne',
+  )
+  assert.equal(
+    await column.getByText('Sessions', { exact: true }).count(),
+    0,
+    'Pas d’en-tête « Sessions » : le filet de couleur dit l’appartenance',
+  )
   const more = column.getByRole('button', { name: /autres sessions…$/ })
   await more.click()
   await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
@@ -148,11 +159,30 @@ try {
   })
   await page.screenshot({ path: join(shots, 'lieu-projets.png') })
 
-  // La ligne d'un projet ouvre sa porte, et sa porte est le tableau de bord. Elle a
-  // ouvert une conversation neuve vide tant que `/p/:id` n'était qu'un formulaire de
-  // réglages : le défaut de `useProjectView` datait d'avant le tableau de bord.
+  // La ligne d'un projet ouvre sa porte, et sa porte est l'Aperçu. Elle a ouvert une
+  // conversation neuve vide tant que `/p/:id` n'était qu'un formulaire de réglages : le
+  // défaut de `useProjectView` datait d'avant l'Aperçu.
   const projectRow = column.getByRole('link', { name: project.name }).first()
   assert.equal(await projectRow.getAttribute('href'), `/p/${project.id}`)
+
+  /*
+    Quatre cibles sur la ligne, et pas une de plus : le corps, le chevron, puis le `+` et
+    le `⋯` qui **prennent la place** des deux points d'état au survol. C'est la seule
+    chose ici qu'une relecture ne verrait pas — rien dans le code ne dit qu'on échange
+    plutôt qu'on ajoute, sinon deux classes d'affichage qui doivent se répondre.
+  */
+  const projectLine = projectRow.locator('xpath=..')
+  const newThread = projectLine.getByRole('link', { name: /^Nouvelle conversation/ })
+  assert.equal(await newThread.isVisible(), false, 'Au repos, le + n’est pas là')
+  await projectRow.hover()
+  await newThread.waitFor()
+  await projectLine.getByRole('button', { name: /^Actions/ }).waitFor()
+  assert.equal(
+    await projectLine.locator('[data-project-state]').isVisible(),
+    false,
+    'Au survol, les points d’état cèdent la place au lieu de se pousser',
+  )
+
   await projectRow.click()
   await page.waitForURL(`**/p/${project.id}`)
   assert.equal(await page.locator('textarea').count(), 0, 'un projet ne s’ouvre pas sur un fil vide')
