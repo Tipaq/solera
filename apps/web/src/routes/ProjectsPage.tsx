@@ -1,4 +1,4 @@
-import { CalendarClock, FolderOpen, GitBranch, MessageCircleQuestion, Pencil } from 'lucide-react'
+import { CalendarClock, Flag, FolderOpen, GitBranch, MessageCircleQuestion, Pencil } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { CardDto, ConversationDto, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
@@ -7,6 +7,7 @@ import { DemandTile } from '../components/places/DemandTile'
 import { Button, EmptyState, cx } from '@solera/ui'
 import { useLiveConversations, type LiveConversation } from '../lib/activity'
 import { useAllCards } from '../lib/cards'
+import { milestonesOf, type Milestone } from '../lib/timeline'
 import { useAllConversations } from '../lib/conversations'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
@@ -19,6 +20,8 @@ interface Row {
   awaiting: LiveConversation[]
   running: LiveConversation[]
   review: CardDto[]
+  /** Le jalon courant, s'il y en a un : le premier non livré, par ordre de date. */
+  milestone: Milestone | null
   /** La prochaine tâche à partir, toutes cadences confondues. */
   next: ScheduledTaskDto | null
   /** Dernière écriture dans une de ses conversations, zéro s'il n'en a aucune. */
@@ -60,6 +63,10 @@ export function ProjectsPage() {
         awaiting: mine.filter((entry) => entry.awaiting),
         running: mine.filter((entry) => entry.running),
         review: cards.filter((card) => card.projectId === project.id && card.column === 'review'),
+        milestone: (() => {
+          const theirs = milestonesOf(cards.filter((card) => card.projectId === project.id))
+          return theirs.find((entry) => entry.done < entry.cards.length) ?? theirs[0] ?? null
+        })(),
         next: tasks.sort((a, b) => (a.nextRunAt ?? 0) - (b.nextRunAt ?? 0))[0] ?? null,
         lastActivity: lastActivityOf(conversations ?? [], project.id),
       }
@@ -149,7 +156,7 @@ function lastActivityOf(conversations: ConversationDto[], projectId: string): nu
 
 function ProjectRow({ row }: { row: Row }) {
   const t = useTranslate()
-  const { project, awaiting, running, review, next, lastActivity } = row
+  const { project, awaiting, running, review, milestone, next, lastActivity } = row
 
   return (
     <li>
@@ -181,9 +188,40 @@ function ProjectRow({ row }: { row: Row }) {
           ) : null}
         </span>
 
+        {/* Le jalon courant, au milieu de la ligne. C'est une **carte** : le numéro et le
+            titre, cliquables, et non une étiquette inerte — un jalon s'ouvre, se décrit
+            et porte ses notes comme n'importe quelle carte (décision de la carte #32).
+            Sa barre dit l'avancement, et « pas de jalon » occupe la place plutôt que de
+            la laisser vide, sinon les colonnes d'après se décaleraient d'une ligne à
+            l'autre et la lecture verticale tomberait. */}
+        <span className="flex min-w-0 flex-1 basis-56 flex-col gap-1 px-2">
+          {milestone ? (
+            <>
+              <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                <Flag size={11} className="shrink-0 text-ink-faint" />
+                <span className="shrink-0 tabular-nums text-ink-faint">#{milestone.card.number}</span>
+                <span className="min-w-0 truncate">{milestone.card.title}</span>
+                <span className="shrink-0 tabular-nums text-ink-faint">
+                  {t('timeline.progress', { done: milestone.done, total: milestone.cards.length })}
+                </span>
+              </span>
+              <span className="h-1 overflow-hidden rounded-full bg-surface-high">
+                <span
+                  className="block h-full rounded-full bg-accent"
+                  style={{
+                    width: `${milestone.cards.length === 0 ? 0 : Math.round((milestone.done / milestone.cards.length) * 100)}%`,
+                  }}
+                />
+              </span>
+            </>
+          ) : (
+            <span className="text-xs text-ink-faint">{t('place.projects.noMilestone')}</span>
+          )}
+        </span>
+
         {/* Ce qui suit est le même en largeur sur chaque ligne : c'est ce qui rend la
             colonne lisible de haut en bas, et c'est la raison d'être des lignes. */}
-        <span className="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-faint">
+        <span className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-faint">
           {project.git ? (
             <span className="flex min-w-0 items-center gap-1.5" title={project.git.branch}>
               <GitBranch size={12} className="shrink-0" />

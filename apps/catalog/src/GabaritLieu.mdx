@@ -70,9 +70,35 @@ rendu vide : c'est l'appelant qui l'omet. Trois teintes, qui ne sont pas décora
 **caution** pour ce qui attend un humain, **accent** pour ce qui tourne tout seul,
 **neutral** pour un état qu'on constate sans qu'il presse.
 
+## Une chronologie place ce qu'elle peut, et **compte ce qu'elle ne peut pas**
+
+Deux vues la portent — les jalons d'un projet (F4), les jalons de tous les projets (F10)
+— et un seul composant, `Timeline`, parce qu'elles ne diffèrent que par ce qu'une ligne
+et une barre désignent. Trois règles, et la troisième est la seule qui compte vraiment :
+
+- une barre **en pointillé** n'a pas de date promise : elle court jusqu'à aujourd'hui et
+  constate au lieu de promettre ;
+- une barre **rouge** est en retard, et seulement si le travail est encore ouvert — une
+  carte livrée en retard n'a plus rien à réclamer ;
+- le **pied de vue compte ce qui n'a ni jalon ni date**, avec ses numéros. Sans lui, la
+  vue mentirait par omission : on y lirait « voilà le travail » en n'en voyant qu'une
+  part, et c'est le genre d'omission qu'on ne soupçonne pas depuis l'écran.
+
+Un **jalon est une carte** (`docs/audits/2026-10-15-champs-de-carte/`), ce qui a une
+conséquence d'affichage partout : un jalon s'écrit `#numéro — titre` et s'ouvre, il n'est
+jamais une étiquette inerte. Et une carte-jalon ne se compte pas deux fois — elle est une
+*ligne* de la chronologie, pas une barre dedans ; un *titre* de tuile, pas une échéance en
+dessous.
+
 ## Le corps ne réinvente pas la vue dont il est le résumé
 
-Le board de l'Aperçu est **celui de l'application** : mêmes colonnes creusées
+⚠️ **L'Aperçu n'a plus de résumé de board depuis le 2026-10-16** : il redisait le board
+au rabais, et l'onglet est à portée d'œil. Le jalon courant et les échéances proches ont
+pris sa place — ce que l'audit demandait, et qui n'était possible qu'une fois l'échéance
+et le jalon posés. La règle ci-dessous reste vraie de **tout** résumé qu'on serait tenté
+d'écrire ailleurs, et c'est à ce titre qu'elle est gardée.
+
+Le board de l'Aperçu était **celui de l'application** : mêmes colonnes creusées
 (`rounded-xl border-line/60 bg-sunken/60`), même pastille de teinte, même compte en
 pilule, mêmes tuiles `CardTile`. Seule la **densité** change — trois cartes par colonne,
 puis « 2 de plus… ».

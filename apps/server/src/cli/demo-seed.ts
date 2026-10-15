@@ -90,6 +90,15 @@ function git(cwd: string, ...args: string[]): void {
 const SEEDED_AT = Date.now()
 const daysAgo = (days: number): number => SEEDED_AT - days * 86400e3
 
+/**
+ * Minuit du jour de l'amorce : les échéances sont des **jours**, pas des instants.
+ *
+ * Une échéance posée à l'heure de l'amorce tomberait « dans 0 j » le matin et « il y a
+ * 0 j » le soir, et les captures du jalon en retard changeraient de teinte selon l'heure
+ * où la suite tourne.
+ */
+const MIDNIGHT = new Date(SEEDED_AT).setHours(0, 0, 0, 0)
+
 function writeTree(root: string, files: Record<string, string>): void {
   for (const [path, content] of Object.entries(files)) {
     const full = join(root, path)
@@ -627,7 +636,39 @@ async function main(): Promise<void> {
     { number: 5, title: 'Onboarding flow', column: 'done', position: 0, description: 'First-run screen: pick a city, choose units, done.' },
     { number: 8, title: 'Switch to Vite 6', column: 'done', position: 1, description: 'Migration went through with no config change beyond the plugin bump.' },
     { number: 9, title: 'Android home-screen widget', column: 'abandoned', position: 0, description: 'Superseded by the PWA shortcut work; keeping the notes for reference.' },
+    /*
+      Deux cartes-jalons. Un jalon **est** une carte (carte #32) : il n'a ni table ni
+      drapeau, et n'existe que parce que d'autres cartes le désignent — d'où
+      `milestoneOf` plus bas, qui fait la désignation. Sans elles, la chronologie et le
+      jalon courant de l'Aperçu n'auraient rien à montrer, et les suites qui les
+      couvrent ne vérifieraient qu'un état vide.
+    */
+    { number: 11, title: 'v1.2 — offline et radar', column: 'in_progress', position: 1, description: 'Ce que la version 1.2 recouvre : le cache hors ligne et les performances du radar.' },
+    { number: 12, title: 'v1.1 — la mise en route', column: 'done', position: 2, description: 'Premier jet livré : accueil, choix de ville, unités.' },
   ] as const
+
+  /*
+    Les échéances, en jours depuis aujourd'hui. Négatif = dépassé, et il en faut un :
+    c'est le seul cas que l'Aperçu teinte et que la chronologie dessine en rouge. Les
+    cartes absentes de cette table n'ont pas de date, ce qui est la norme.
+  */
+  const dueIn = new Map<number, number>([
+    [4, -1],
+    [2, 2],
+    [3, 9],
+    [1, 24],
+    [11, 9],
+    [12, -11],
+  ])
+
+  /** Quelle carte-jalon chaque carte désigne. Les autres n'en désignent aucune. */
+  const milestoneOf = new Map<number, number>([
+    [2, 11],
+    [4, 11],
+    [10, 11],
+    [5, 12],
+    [8, 12],
+  ])
 
   const cardIds = new Map<number, string>()
   for (const row of cardRows) {
@@ -642,9 +683,19 @@ async function main(): Promise<void> {
       column: row.column,
       position: row.position,
       createdBy: userId,
-      createdAt: now - (14 - row.number) * 86400e3,
+      dueAt: dueIn.has(row.number) ? MIDNIGHT + dueIn.get(row.number)! * 86400e3 : null,
+      createdAt: now - (16 - row.number) * 86400e3,
       updatedAt: now - 86400e3,
     })
+  }
+  /* La désignation vient après la boucle : elle pointe sur des cartes que la boucle est
+     en train de créer, et l'ordre des lignes ne garantit pas qu'un jalon précède ce
+     qu'il recouvre. */
+  for (const [number, milestone] of milestoneOf) {
+    await db
+      .update(cards)
+      .set({ milestoneCardId: cardIds.get(milestone)! })
+      .where(eq(cards.id, cardIds.get(number)!))
   }
   // Le backlink de la description de la carte 10, qui cite #2.
   await db.insert(cardRefs).values({ sourceId: cardIds.get(10)!, targetId: cardIds.get(2)! })
@@ -653,10 +704,16 @@ async function main(): Promise<void> {
     { number: 1, title: 'OpenAPI spec for /places', column: 'todo', position: 0, description: 'Publish the schema so Nimbus can generate its client.' },
     { number: 2, title: 'Nightly geonames refresh', column: 'todo', position: 1, description: 'The dump is loaded once at boot; refresh it on a schedule instead.' },
     { number: 3, title: 'Rate limiting', column: 'done', position: 0, description: '60 requests per minute per API key, 429 with Retry-After beyond.' },
+    // Un jalon **sans date** : le portefeuille doit savoir dire « pas de date » plutôt
+    // que de laisser la ligne muette, et c'est le seul endroit qui le montre.
+    { number: 4, title: 'v2 — le client généré', column: 'todo', position: 2, description: 'Ce que la version 2 recouvre, quand la spec sera publiée.' },
   ] as const
+  const atlasIds = new Map<number, string>()
   for (const row of atlasCardRows) {
+    const id = randomUUID()
+    atlasIds.set(row.number, id)
     await db.insert(cards).values({
-      id: randomUUID(),
+      id,
       projectId: atlasId,
       number: row.number,
       title: row.title,
@@ -664,10 +721,14 @@ async function main(): Promise<void> {
       column: row.column,
       position: row.position,
       createdBy: userId,
-      createdAt: now - (8 - row.number) * 86400e3,
+      createdAt: now - (9 - row.number) * 86400e3,
       updatedAt: now - 2 * 86400e3,
     })
   }
+  await db
+    .update(cards)
+    .set({ milestoneCardId: atlasIds.get(4)! })
+    .where(eq(cards.id, atlasIds.get(1)!))
 
   // ---- Conversations ----------------------------------------------------------
 

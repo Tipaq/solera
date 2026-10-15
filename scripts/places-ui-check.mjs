@@ -112,18 +112,36 @@ try {
   }
   assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
 
-  // Le board est celui de l'application : ses colonnes, et ses tuiles.
-  for (const column of ['À faire', 'En cours', 'À vérifier', 'Terminé']) {
-    await page.getByRole('region', { name: column, exact: true }).waitFor()
-  }
+  /*
+    Le résumé du board a **quitté** l'Aperçu le 2026-10-16 : il redisait le board au
+    rabais, et l'onglet est à portée d'œil. À sa place, le jalon courant et les échéances
+    proches — ce que l'audit demandait, et qui n'était pas possible avant que la carte
+    #36 ne pose l'échéance et le jalon.
+  */
   assert.equal(
-    await page.getByRole('region', { name: 'Abandonné', exact: true }).count(),
+    await page.getByRole('region', { name: 'À faire', exact: true }).count(),
     0,
-    'Le résumé ne porte pas la colonne des abandons',
+    "L'Aperçu ne redit plus le board : l'onglet est à côté",
   )
   const cards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
-  const review = cards.find((entry) => entry.column === 'review')
-  await page.locator(`[data-card-open="${review.id}"]`).waitFor()
+  const milestone = cards.find((entry) => entry.title.startsWith('v1.2'))
+  assert.ok(milestone, 'Le jeu d’essai porte une carte-jalon')
+  await page.getByText('Jalon courant', { exact: true }).waitFor()
+  await page.getByRole('link', { name: milestone.title, exact: true }).waitFor()
+
+  // Les échéances proches, la plus urgente d'abord, et **une seule ligne teintée** :
+  // celle qui est en retard. Si tout était coloré, plus rien ne ressortirait.
+  const due = page.getByText('Échéances proches', { exact: true })
+  await due.waitFor()
+  const late = cards.find((entry) => entry.dueAt !== null && entry.dueAt < Date.now() && entry.column !== 'done')
+  await page.getByRole('link', { name: new RegExp(`#${late.number}\\b`) }).first().waitFor()
+  // Une carte-jalon n'y figure pas : sa date est celle du jalon, que la tuile d'à côté
+  // porte déjà, et l'écrire deux fois sur la même ligne d'écran est le défaut qu'on évite.
+  assert.equal(
+    await page.getByRole('link', { name: new RegExp(`#${milestone.number}\\s`) }).count(),
+    0,
+    'La carte-jalon ne se compte pas aussi dans les échéances',
+  )
 
   // Le bandeau dit ce qui réclame, et rien d'autre.
   const awaiting = page.getByRole('link', { name: /attend ta réponse/ })
@@ -136,6 +154,27 @@ try {
     'Le bandeau ne porte aucun inventaire',
   )
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
+
+  /*
+    La chronologie : les jalons en lignes, les cartes en barres. Ce qu'une relecture ne
+    verrait pas et que la suite tient — le **pied de vue compte ce qui n'a ni jalon ni
+    date**, sans quoi la vue mentirait par omission, et une carte-jalon n'est pas sa
+    propre barre.
+  */
+  await row.getByRole('link', { name: /^Chronologie/ }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline`)
+  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
+  const unplaced = cards.filter(
+    (entry) => entry.milestone === null && entry.dueAt === null
+      && entry.column !== 'done' && entry.column !== 'abandoned',
+  )
+  if (unplaced.length > 0) {
+    await page.getByText(new RegExp(`${unplaced.length} cartes sans jalon ni date`)).waitFor()
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'chronologie-projet.png') })
+
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await page.getByRole('navigation', { name: 'Vues du projet', exact: true }).waitFor()
 
   // La planification du projet suit en lignes.
   const schedules = await (await context.request.get(`${base}/api/schedules`)).json()
@@ -217,6 +256,29 @@ try {
   )
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail.png') })
 
+  // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
+  // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
+  await page.goto(`${base}/projects/timeline`)
+  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
+  await page.getByText('aucun jalon', { exact: true }).first().waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-chronologie.png') })
+
+  // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
+  // une, et il se partage par lien comme les deux autres.
+  await page.goto(`${base}/projects/board?jalon=${milestone.id}`)
+  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
+  const attached = cards.filter((entry) => entry.milestone?.id === milestone.id)
+  assert.ok(attached.length > 0, 'Le jeu d’essai rattache des cartes à son jalon')
+  /* Attendre une **tuile** et non la colonne : la colonne est rendue avant que les
+     cartes du projet arrivent, et compter à ce moment-là rend zéro quel que soit le
+     filtre. C'est la course qui a fait tomber cette assertion la première fois. */
+  await page.locator(`[data-card-open="${attached[0].id}"]`).waitFor()
+  assert.equal(
+    await page.locator('[data-card-open]').count(),
+    attached.length,
+    'Le filtre Jalon ne laisse que les cartes rattachées',
+  )
+
   // ─── La page Planifiées ───────────────────────────────────────────────────
   await page.goto(`${base}/schedules`)
   for (const header of ['Tâche', 'Cible', 'Fréquence', 'Prochaine', 'Dernier']) {
@@ -240,7 +302,7 @@ try {
   // ─── Au doigt ─────────────────────────────────────────────────────────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByRole('region', { name: 'En cours', exact: true }).waitFor()
+  await page.getByText('Jalon courant', { exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-mobile.png') })
   await page.goto(`${base}/projects`)
@@ -249,14 +311,14 @@ try {
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByRole('region', { name: 'En cours', exact: true }).waitFor()
+  await page.getByText('Jalon courant', { exact: true }).waitFor()
   // Le thème se pose après la navigation : `goto` recharge le document et emporterait
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global et Travail, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Travail et les deux chronologies, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

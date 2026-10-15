@@ -1,5 +1,6 @@
 import {
   CalendarClock,
+  Flag,
   GitBranch,
   MoreHorizontal,
   Palette,
@@ -100,10 +101,14 @@ export function ProjectLayout() {
       icon: <CalendarClock size={15} />,
       count: tasks.length,
     },
-    /* Pas d'onglet *Journal* ni *Chronologie* pour l'instant : le premier est la carte
-       #33 (il agrège base, git et disque, donc une route serveur), le second attend
-       l'échéance et le jalon que porte la carte #36. Un onglet qui mène à une page vide
-       est pire que son absence — il promet une vue et rend une erreur. */
+    {
+      to: `/p/${projectId}/timeline`,
+      label: t('project.view.timeline'),
+      icon: <Flag size={15} />,
+    },
+    /* Pas encore d'onglet *Journal* : il agrège base, git et disque, donc une route
+       serveur, et c'est la carte #33. Un onglet qui mène à une page vide est pire que
+       son absence — il promet une vue et rend une erreur. */
   ]
 
   /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */

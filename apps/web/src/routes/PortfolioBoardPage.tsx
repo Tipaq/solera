@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { ChevronDown, ListFilter, X } from 'lucide-react'
+import { ChevronDown, Flag, ListFilter, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CARD_COLUMNS, type AgentKind, type CardColumn } from '@solera/protocol'
@@ -31,6 +31,7 @@ const COLUMNS: readonly CardColumn[] = CARD_COLUMNS.filter((column) => column !=
 
 /** Les filtres actifs vivent dans l'adresse : un board filtré se partage par lien. */
 const PROJECT_PARAM = 'projet'
+const MILESTONE_PARAM = 'jalon'
 const AGENT_PARAM = 'agent'
 
 const collisionDetection: CollisionDetection = (args) => {
@@ -48,11 +49,15 @@ const collisionDetection: CollisionDetection = (args) => {
  * trois projets chargés une colonne devienne un patchwork ; la barre de filtres est là
  * pour ça.
  *
- * Deux dimensions de filtre seulement, projet et agent. Des quatre que montre la
- * maquette, *Étiquette* **ne viendra pas** — les étiquettes sont refusées (carte #32,
- * `docs/audits/2026-10-15-champs-de-carte/`) — et *Jalon* arrive avec la carte #36. Le
- * jalon y est une **carte** et non une entité : le filtre listera donc des cartes-jalons
- * du projet, et chacune s'affiche en `#numéro — titre` cliquable.
+ * Trois dimensions de filtre : projet, jalon, agent. Des quatre que montre la maquette,
+ * *Étiquette* **ne viendra pas** — les étiquettes sont refusées (carte #32,
+ * `docs/audits/2026-10-15-champs-de-carte/`).
+ *
+ * Le filtre *Jalon* liste des **cartes**, puisqu'un jalon en est une : les entrées du
+ * menu portent donc un numéro, et le jeu se déduit des cartes affichées plutôt que d'une
+ * requête — une carte est un jalon dès que quelque chose la désigne, il n'y a rien à
+ * demander au serveur. Deux projets peuvent nommer leur jalon « v1.0 » : le menu les
+ * groupe par projet pour qu'on sache lequel on coche.
  *
  * Le glissement change la **colonne** d'une carte et pas son rang : dans une colonne qui
  * mêle cinq projets, le rang n'a plus de sens — la position d'une carte s'entend dans
@@ -82,6 +87,7 @@ export function PortfolioBoardPage() {
   const [moved, setMoved] = useState<{ id: string; column: CardColumn } | null>(null)
 
   const selectedProjects = params.getAll(PROJECT_PARAM)
+  const selectedMilestones = params.getAll(MILESTONE_PARAM)
   const selectedAgents = params.getAll(AGENT_PARAM)
 
   const toggle = (key: string, value: string) => {
@@ -101,6 +107,25 @@ export function PortfolioBoardPage() {
     setParams(next, { replace: true })
   }
 
+  /* Les jalons des cartes affichées, groupés par projet. Un jalon n'existe que parce
+     qu'une carte le désigne : la liste se lit donc dans `card.milestone`, le serveur
+     l'ayant déjà résolu en numéro et titre. */
+  const milestones = useMemo(() => {
+    const seen = new Map<string, { id: string; number: number; title: string; project: string }>()
+    for (const card of cards) {
+      if (card.milestone === null) continue
+      seen.set(card.milestone.id, {
+        id: card.milestone.id,
+        number: card.milestone.number,
+        title: card.milestone.title,
+        project: card.project.name,
+      })
+    }
+    return [...seen.values()].sort(
+      (a, b) => a.project.localeCompare(b.project) || a.number - b.number,
+    )
+  }, [cards])
+
   const agents = useMemo(() => {
     const seen = new Set<AgentKind>()
     for (const card of cards) for (const session of card.conversations) seen.add(session.agent)
@@ -111,6 +136,9 @@ export function PortfolioBoardPage() {
     () =>
       cards.filter((card) => {
         if (selectedProjects.length > 0 && !selectedProjects.includes(card.projectId)) return false
+        if (selectedMilestones.length > 0 && !selectedMilestones.includes(card.milestone?.id ?? '')) {
+          return false
+        }
         if (selectedAgents.length > 0) {
           const theirs = card.conversations.map((session) => session.agent)
           if (!theirs.some((agent) => selectedAgents.includes(agent))) return false
@@ -118,7 +146,7 @@ export function PortfolioBoardPage() {
         return card.column !== 'abandoned'
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [cards, selectedProjects.join(','), selectedAgents.join(',')],
+    [cards, selectedProjects.join(','), selectedMilestones.join(','), selectedAgents.join(',')],
   )
 
   const columnOf = (card: PortfolioCard) =>
@@ -169,6 +197,31 @@ export function PortfolioBoardPage() {
         </FilterMenu>
 
         <FilterMenu
+          label={t('portfolio.filter.milestone')}
+          empty={t('portfolio.filter.milestone')}
+          selected={selectedMilestones.length}
+        >
+          {milestones.length === 0 ? (
+            <MenuLabel>{t('portfolio.filter.noMilestone')}</MenuLabel>
+          ) : (
+            milestones.map((milestone) => (
+              <MenuCheckboxItem
+                key={milestone.id}
+                checked={selectedMilestones.includes(milestone.id)}
+                onCheckedChange={() => toggle(MILESTONE_PARAM, milestone.id)}
+              >
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Flag size={12} className="shrink-0 text-ink-faint" />
+                  <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{milestone.number}</span>
+                  <span className="min-w-0 truncate">{milestone.title}</span>
+                  <span className="shrink-0 text-meta text-ink-faint">{milestone.project}</span>
+                </span>
+              </MenuCheckboxItem>
+            ))
+          )}
+        </FilterMenu>
+
+        <FilterMenu
           label={t('portfolio.filter.agent')}
           empty={t('portfolio.filter.agent')}
           selected={selectedAgents.length}
@@ -203,6 +256,16 @@ export function PortfolioBoardPage() {
             clearLabel={t('portfolio.filter.clear')}
           />
         ) : null}
+        {selectedMilestones.length > 0 ? (
+          <FilterChip
+            label={selectedMilestones
+              .map((id) => milestones.find((entry) => entry.id === id)?.title)
+              .filter(Boolean)
+              .join(', ')}
+            onClear={() => clear(MILESTONE_PARAM)}
+            clearLabel={t('portfolio.filter.clear')}
+          />
+        ) : null}
         {selectedAgents.length > 0 ? (
           <FilterChip
             label={selectedAgents.join(', ')}
@@ -212,7 +275,10 @@ export function PortfolioBoardPage() {
         ) : null}
 
         <p className="ml-auto shrink-0 text-xs text-ink-faint">
-          {t('portfolio.board.count', { cards: shown.length, projects: projectCount })}
+          {t(projectCount > 1 ? 'portfolio.board.count' : 'portfolio.board.countOne', {
+            cards: shown.length,
+            projects: projectCount,
+          })}
         </p>
       </div>
 

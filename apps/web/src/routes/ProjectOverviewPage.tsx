@@ -1,27 +1,27 @@
 import {
+  AlarmClock,
   ArrowUpRight,
   CalendarClock,
+  Flag,
   GitBranch,
   MessageCircleQuestion,
   Pencil,
   Plus,
-  SquareKanban,
+  TriangleAlert,
 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { CARD_COLUMNS, type CardColumn, type CardDto, type ScheduledTaskDto } from '@solera/protocol'
+import { Link, useParams } from 'react-router-dom'
+import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
-import { CardTile } from '../components/board/CardTile'
-import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { NewCardDialog } from '../components/board/NewCardDialog'
 import { DemandTile } from '../components/places/DemandTile'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
-import { Badge, Button, EmptyState, IconButton, cx } from '@solera/ui'
+import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { demandsOf, oldest, useLiveConversations } from '../lib/activity'
 import { useCards } from '../lib/cards'
+import { milestoneIdsOf, milestonesOf, type Milestone } from '../lib/timeline'
 import { useAllConversations } from '../lib/conversations'
 import { cronToHuman } from '../lib/cron'
-import { elapsed } from '../lib/dates'
+import { daysUntil, elapsed, relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { openPanelOnArrival } from '../lib/panel'
 import { useProjects } from '../lib/projects'
@@ -34,15 +34,8 @@ import {
   useSchedules,
 } from '../lib/schedules'
 
-/**
- * Colonnes du résumé : les ouvertes et « Fait ». L'abandon est un classement, pas un
- * état d'avancement — il a sa place sur le board plein, pas sur quatre colonnes qui
- * doivent dire où en est le chantier.
- */
-const SUMMARY_COLUMNS = CARD_COLUMNS.filter((column) => column !== 'abandoned')
-
-/** Cartes montrées par colonne : au-delà, le résumé redevient le board. */
-const TILES_PER_COLUMN = 3
+/** Échéances montrées : au-delà, la tuile redirait la chronologie, qui est à un onglet. */
+const DUE_SHOWN = 4
 
 /**
  * L'**Aperçu** d'un projet : la vue d'arrivée, et la seule sans action propre — elle ne
@@ -67,7 +60,6 @@ const TILES_PER_COLUMN = 3
  */
 export function ProjectOverviewPage() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
   const t = useTranslate()
 
   const { data: projects, isPending } = useProjects()
@@ -88,8 +80,42 @@ export function ProjectOverviewPage() {
     [schedules, projectId],
   )
 
-  const [creatingCard, setCreatingCard] = useState<CardColumn | null>(null)
   const [creatingTask, setCreatingTask] = useState(false)
+
+  /*
+    Le jalon courant : le premier qui n'est pas livré, dans l'ordre de sa date. Un seul,
+    et non la liste — l'Aperçu dit où en est le chantier, et « trois jalons ouverts »
+    est un inventaire. La chronologie les montre tous, elle est à un onglet d'ici.
+  */
+  const milestones = useMemo(() => milestonesOf(cards ?? []), [cards])
+  const current = useMemo(
+    () => milestones.find((entry) => entry.done < entry.cards.length) ?? milestones[0] ?? null,
+    [milestones],
+  )
+
+  const milestoneIds = useMemo(() => milestoneIdsOf(cards ?? []), [cards])
+
+  /*
+    Les échéances qui approchent : les cartes ouvertes qui ont une date, la plus proche
+    d'abord, **les dépassées comprises** — une échéance en retard est précisément celle
+    qu'il faut voir, et la ranger plus loin que celle de demain serait absurde.
+  */
+  const due = useMemo(
+    () =>
+      (cards ?? [])
+        .filter(
+          (card) =>
+            card.dueAt !== null &&
+            card.column !== 'done' &&
+            card.column !== 'abandoned' &&
+            // La date d'une carte-jalon est celle du jalon, que la tuile d'à côté porte
+            // déjà : l'écrire ici la dirait deux fois sur la même ligne de l'écran.
+            !milestoneIds.has(card.id),
+        )
+        .sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0))
+        .slice(0, DUE_SHOWN),
+    [cards, milestoneIds],
+  )
 
   if (isPending) return null
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
@@ -164,32 +190,19 @@ export function ProjectOverviewPage() {
           </div>
         )}
 
-        <section aria-label={t('project.board.title')} className="flex min-w-0 flex-col gap-2">
-          <SectionHeading icon={<SquareKanban size={14} />} title={t('project.board.title')}>
-            <Link
-              to={`/p/${projectId}/board`}
-              className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
-            >
-              {t('place.seeAll')}
-              <ArrowUpRight size={13} />
-            </Link>
-          </SectionHeading>
-          {/* Défilement horizontal au doigt, quatre colonnes au large : une colonne
-              et demie visible dit qu'il y en a d'autres, sans légende. */}
-          <div className="flex gap-3 overflow-x-auto pb-1">
-            {SUMMARY_COLUMNS.map((column) => (
-              <SummaryColumn
-                key={column}
-                column={column}
-                projectId={projectId}
-                cards={(cards ?? [])
-                  .filter((card) => card.column === column)
-                  .sort((a, b) => a.position - b.position)}
-                onAdd={() => setCreatingCard(column)}
-              />
-            ))}
-          </div>
-        </section>
+        {/* Le **jalon courant** et les **échéances proches**, à la place du résumé du
+            board. L'audit du 2026-10-14 écarte explicitement ce résumé — « il redit le
+            board au rabais ; avec l'onglet à portée d'œil, il n'a plus d'objet » — et
+            c'est devenu vrai le jour où la rangée a mis le board à un clic. Il a tenu
+            jusqu'au 2026-10-16 faute de quoi le remplacer : l'échéance et le jalon
+            n'existaient pas (carte #32, portée par #36).
+
+            Deux colonnes et non trois : la troisième, « Dernières décisions », est le
+            Journal en miniature et attend sa route serveur (carte #33). */}
+        <div className="grid items-start gap-3 lg:grid-cols-2">
+          <MilestoneTile projectId={projectId} milestone={current} />
+          <DueTile projectId={projectId} cards={due} />
+        </div>
 
         <section aria-label={t('schedule.title')} className="flex min-w-0 flex-col gap-2">
           <SectionHeading icon={<CalendarClock size={14} />} title={t('schedule.title')}>
@@ -211,16 +224,6 @@ export function ProjectOverviewPage() {
         </section>
       </div>
 
-      <NewCardDialog
-        projectId={projectId}
-        column={creatingCard ?? 'todo'}
-        open={creatingCard !== null}
-        onClose={() => setCreatingCard(null)}
-        onCreated={(card) => {
-          setCreatingCard(null)
-          navigate(`/p/${projectId}/board?carte=${card.number}`)
-        }}
-      />
       {creatingTask ? <ScheduleDialog project={project} onClose={() => setCreatingTask(false)} /> : null}
     </div>
   )
@@ -245,65 +248,105 @@ function SectionHeading({
 }
 
 /**
- * Une colonne du board, en résumé.
+ * Le jalon courant : un seul, celui qu'on est en train de livrer.
  *
- * Le fond creusé, la pastille de teinte et le compte en pilule sont ceux de
- * `BoardPage`, et les tuiles sont les `CardTile` de l'application : seule la densité
- * change. Un board qui se redessine ici finirait par mentir sur celui qu'on ouvre.
+ * Avec sa barre d'avancement, son compte et un lien vers la chronologie — pas vers le
+ * board : c'est la chronologie qui dit ce qu'un jalon recouvre, le board n'en sait rien.
  *
- * Pas de glissement, en revanche : réordonner se fait sur le board plein, où l'on voit
- * les colonnes entières. Les tuiles sont donc rendues `disabled`, ce qui leur retire
- * leur poignée.
+ * À zéro jalon la tuile ne se grise pas, elle **n'est pas rendue** : c'est la règle du
+ * gabarit, une tuile à zéro disparaît et le bandeau rétrécit.
  */
-function SummaryColumn({
-  column,
-  cards,
-  projectId,
-  onAdd,
-}: {
-  column: CardColumn
-  cards: CardDto[]
-  projectId: string
-  onAdd: () => void
-}) {
+function MilestoneTile({ projectId, milestone }: { projectId: string; milestone: Milestone | null }) {
   const t = useTranslate()
-  const navigate = useNavigate()
-  const hidden = cards.length - TILES_PER_COLUMN
+  if (!milestone) return null
+  const { card, cards, done } = milestone
+  const share = cards.length === 0 ? 0 : Math.round((done / cards.length) * 100)
 
   return (
-    <section
-      className="flex w-60 shrink-0 flex-col rounded-xl border border-line/60 bg-sunken/60 md:w-auto md:flex-1"
-      aria-label={columnLabel(column)}
-    >
-      <header className="flex shrink-0 items-center gap-2 px-3 pt-2.5 pb-2">
-        <span className={cx('size-2 shrink-0 rounded-full', COLUMN_DOTS[column])} />
-        <h4 className="min-w-0 flex-1 truncate text-xs font-semibold text-ink-soft">{columnLabel(column)}</h4>
-        <span className="rounded-md bg-surface-high px-1.5 py-0.5 text-meta text-ink-faint">{cards.length}</span>
-        <IconButton label={t('board.card.new')} size="sm" onClick={onAdd}>
-          <Plus size={13} />
-        </IconButton>
-      </header>
-      {/* Une hauteur minimale : à zéro carte, les quatre colonnes se réduisaient à
-          leurs en-têtes et le board n'avait plus l'air d'un board. C'est aussi la
-          cible où l'on déposera une carte quand le glissement arrivera ici. */}
-      <div className="flex min-h-36 flex-col gap-1.5 px-2 pb-2">
-        {cards.slice(0, TILES_PER_COLUMN).map((card) => (
-          <CardTile
-            key={card.id}
-            card={card}
-            disabled
-            onOpen={() => navigate(`/p/${projectId}/board?carte=${card.number}`)}
-          />
-        ))}
-        {hidden > 0 ? (
-          <Link
-            to={`/p/${projectId}/board`}
-            className="rounded-md px-2 py-1.5 text-meta text-ink-faint hover:text-ink"
-          >
-            {t('place.board.more', { count: hidden })}
-          </Link>
-        ) : null}
+    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
+      <SectionHeading icon={<Flag size={14} />} title={t('project.overview.milestone')}>
+        <Link
+          to={`/p/${projectId}/timeline`}
+          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
+        >
+          {t('project.view.timeline')}
+          <ArrowUpRight size={13} />
+        </Link>
+      </SectionHeading>
+
+      <Link
+        to={`/p/${projectId}/board?carte=${card.number}`}
+        className="min-w-0 truncate rounded text-base font-medium hover:text-accent focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        {card.title}
+      </Link>
+
+      {/* La barre est en `div` et non en `progress` : l'élément natif porte sa propre
+          apparence par plateforme, que le thème ne peut pas suivre. Le compte et la date
+          la doublent en texte, qui est ce qu'un lecteur d'écran annoncera. */}
+      <div
+        role="img"
+        aria-label={t('timeline.progress', { done, total: cards.length })}
+        className="h-1.5 overflow-hidden rounded-full bg-surface-high"
+      >
+        <div className="h-full rounded-full bg-accent" style={{ width: `${share}%` }} />
       </div>
+
+      <p className="flex min-w-0 items-center gap-2 text-xs text-ink-faint">
+        <span className="tabular-nums">{t('timeline.progress', { done, total: cards.length })}</span>
+        <span className="min-w-0 truncate">
+          {card.dueAt === null ? t('timeline.noDate') : relativeDate(card.dueAt)}
+        </span>
+      </p>
+    </section>
+  )
+}
+
+/**
+ * Les échéances qui approchent, **les dépassées comprises et en tête**.
+ *
+ * Une seule ligne est teintée, celle qui est en retard : si tout était coloré, plus rien
+ * ne ressortirait, et c'est le retard qu'on cherche en ouvrant cette tuile.
+ */
+function DueTile({ projectId, cards }: { projectId: string; cards: CardDto[] }) {
+  const t = useTranslate()
+  if (cards.length === 0) return null
+
+  return (
+    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
+      <SectionHeading icon={<AlarmClock size={14} />} title={t('project.overview.due')}>
+        <Link
+          to={`/p/${projectId}/timeline`}
+          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
+        >
+          {t('place.seeAll')}
+          <ArrowUpRight size={13} />
+        </Link>
+      </SectionHeading>
+
+      <ul className="flex min-w-0 flex-col">
+        {cards.map((card) => {
+          const late = card.dueAt !== null && daysUntil(card.dueAt) < 0
+          return (
+            <li key={card.id}>
+              <Link
+                to={`/p/${projectId}/board?carte=${card.number}`}
+                className={cx(
+                  'flex min-h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm transition-colors',
+                  late ? 'bg-critical/10 text-critical' : 'hover:bg-surface-high',
+                )}
+              >
+                {late ? <TriangleAlert size={13} className="shrink-0" /> : null}
+                <span className="shrink-0 text-xs tabular-nums opacity-70">#{card.number}</span>
+                <span className="min-w-0 flex-1 truncate">{card.title}</span>
+                <span className="shrink-0 text-xs opacity-80">
+                  {card.dueAt === null ? null : relativeDate(card.dueAt)}
+                </span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
     </section>
   )
 }
