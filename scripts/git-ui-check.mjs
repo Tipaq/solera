@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 /*
- * La vue Git du panneau — lots 1 et 2 (cartes #10 et #29).
+ * La vue Git du panneau — lots 1, 2 et 3 (cartes #10 et #29).
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas :
  *
@@ -21,9 +21,14 @@ import { chromium } from 'playwright'
  * - **le fil qui a écrit un commit** arrive jusqu'à l'écran, et **se tait** quand deux
  *   fils travaillaient au même endroit à la même heure ;
  * - **les écritures sont fermées pendant qu'un tour tourne**, et la lecture continue ;
- * - **le garde-fou nomme la perte** avant un `reset --dur`.
+ * - **le garde-fou nomme la perte** avant un `reset --dur` ;
+ * - **ce qui est coché dans un bloc est exactement ce qui est indexé**, et le disque ne
+ *   bouge pas (lot 3) ;
+ * - **un rebase interactif fait ce que son plan annonce**, et la destination *Conflits*
+ *   n'existe que pendant un conflit.
  *
- * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/` et `lot-2/`, une par vue.
+ * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/`, `lot-2/` et `lot-3/`,
+ * une par vue.
  *
  * Playwright a besoin de ses bibliothèques, qui ne sont pas dans le système :
  *   export LD_LIBRARY_PATH="$HOME/.local/lib/chromium-deps/usr/lib/x86_64-linux-gnu"
@@ -178,8 +183,10 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-10-15-git/lot-1')
   const shots2 = join(root, 'docs/audits/2026-10-15-git/lot-2')
+  const shots3 = join(root, 'docs/audits/2026-10-15-git/lot-3')
   await mkdir(shots, { recursive: true })
   await mkdir(shots2, { recursive: true })
+  await mkdir(shots3, { recursive: true })
 
   const panel = page.locator('[data-panel="workspace"]')
   // La largeur du panneau accosté se règle à la poignée, qui l'écrit dans le stockage
@@ -402,8 +409,211 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'recherche.png') })
   console.log('OK : la recherche filtre le graphe, par message et par « écrit par un agent ».')
 
+  // ─── Lot 3 · indexer par bloc et par ligne (T3) ───────────────────────────
+  //
+  // Dans le worktree du radar, où aucun agent ne tourne. La matière est posée ici
+  // plutôt que dans `dirtyWorktree` : il faut un fichier **à plusieurs modifications
+  // dans un même bloc**, sans quoi cocher une ligne reviendrait à cocher le fichier et
+  // la suite ne mesurerait rien.
+  const demoGit = (...args) => execFileSync('git', args, {
+    cwd: radarPath,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_AUTHOR_NAME: 'Alex Demo', GIT_AUTHOR_EMAIL: 'alex@example.com', GIT_COMMITTER_NAME: 'Alex Demo', GIT_COMMITTER_EMAIL: 'alex@example.com' },
+  })
+  demoGit('checkout', '--', '.')
+  demoGit('clean', '-fd')
+  writeFileSync(join(radarPath, 'src/lib/radar-prefetch.ts'), [
+    'export const PREFETCH_RING = 1',
+    'export const PREFETCH_DEBOUNCE_MS = 120',
+    'export const PREFETCH_MAX_TILES = 48',
+    '',
+  ].join('\n'))
+  demoGit('add', '-A')
+  demoGit('commit', '-m', 'Prefetch one ring around the viewport')
+  writeFileSync(join(radarPath, 'src/lib/radar-prefetch.ts'), [
+    'export const PREFETCH_RING = 2',
+    'export const PREFETCH_DEBOUNCE_MS = 250',
+    'export const PREFETCH_MAX_TILES = 96',
+    '',
+  ].join('\n'))
+
+  await openGit(640, radarThread)
+  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
+  await panel.getByText('Non indexés · 1').waitFor()
+
+  // Le diff se déplie sous la ligne du fichier, et chaque ligne modifiée y porte sa
+  // case : c'est ce qui fait du diff un formulaire plutôt qu'une illustration. Le nom
+  // accessible de la ligne est « radar-prefetch.ts src/lib/ », le fichier d'abord.
+  await panel.getByRole('button', { name: /^radar-prefetch\.ts/ }).first().click()
+  const boxes = panel.getByRole('button', { name: /^Cocher la ligne/ })
+  await boxes.first().waitFor()
+  assert.equal(await boxes.count(), 6, 'trois lignes changées, donc six cases : avant et après')
+
+  // On coche la paire de la première ligne, et rien d'autre : le compteur du bouton
+  // suit la sélection, et le reste du fichier reste dehors.
+  //
+  // Les rangs ne sont pas 0 et 1 : un diff groupe ses retraits puis ses ajouts, donc
+  // la ligne « avant » est la première et sa ligne « après » la quatrième.
+  await boxes.nth(0).click()
+  await boxes.nth(3).click()
+  await panel.getByRole('button', { name: 'Indexer 2 lignes', exact: true }).waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots3, 'indexer-par-ligne.png') })
+
+  await panel.getByRole('button', { name: 'Indexer 2 lignes', exact: true }).click()
+  // `exact` n'est pas une précaution de style : `getByText` cherche une sous-chaîne
+  // sans tenir compte de la casse, et « Indexés · 1 » se trouve dans « Non indexés
+  // · 1 » — la suite attendrait alors l'écran qu'elle a déjà sous les yeux.
+  await panel.getByText('Indexés · 1', { exact: true }).waitFor()
+  // Et la vérité, qui ne se voit pas sur une image : l'index porte exactement la ligne
+  // cochée, les deux autres sont restées dehors, et le disque n'a pas bougé.
+  const staged3 = demoGit('show', ':src/lib/radar-prefetch.ts')
+  assert.match(staged3, /PREFETCH_RING = 2/, 'la ligne cochée est indexée')
+  assert.match(staged3, /DEBOUNCE_MS = 120/, 'la ligne non cochée est restée à sa valeur d’avant')
+  assert.match(staged3, /MAX_TILES = 48/)
+  assert.match(
+    readFileSync(join(radarPath, 'src/lib/radar-prefetch.ts'), 'utf8'),
+    /DEBOUNCE_MS = 250/,
+    'le disque n’a pas bougé : c’est tout l’intérêt du geste',
+  )
+  console.log('OK : ce qui est coché dans un bloc est exactement ce qui est indexé.')
+
+  // On repart d'un arbre propre pour la suite : git refuse de rebaser par-dessus un
+  // index qui porte des modifications, et c'est lui qui le refuse, pas nous.
+  demoGit('reset', '--hard')
+
+  // ─── Lot 3 · le rebase interactif et ses quatre verbes (T9) ───────────────
+  const rebaseBase = execFileSync('git', ['rev-parse', '--short', 'HEAD~2'], { cwd: radarPath, encoding: 'utf8' }).trim()
+  const baseSubject = execFileSync('git', ['log', '-1', '--format=%s', 'HEAD~2'], { cwd: radarPath, encoding: 'utf8' }).trim()
+
+  await openGit(640, radarThread)
+  const target = panel.getByRole('button', { name: new RegExp(`Gestes sur « ${baseSubject}`) })
+  await target.hover()
+  await target.click()
+  await panel.page().getByRole('menuitem', { name: 'Rebaser interactivement...' }).click()
+
+  // Le plan se lit du plus ancien au plus récent : c'est l'ordre dans lequel git
+  // rejouera, et l'inverse du graphe.
+  await panel.getByText(/^Rebaser 2 commits sur /).waitFor()
+  await panel.getByText(/les tours de ce fil sont suspendus/).waitFor()
+
+  const verbs = panel.getByRole('button', { name: /^Que faire de / })
+  await verbs.first().click()
+  for (const verb of ['reprendre', 'fondre', 'réécrire', 'jeter']) {
+    await panel.page().getByRole('menuitem', { name: verb, exact: true }).waitFor()
+  }
+  // Le dernier commit part à la poubelle : 2 commits → 1.
+  await panel.page().keyboard.press('Escape')
+  await verbs.last().click()
+  await panel.page().getByRole('menuitem', { name: 'jeter', exact: true }).click()
+  await panel.getByText('2 → 1.').waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots3, 'rebase-interactif.png') })
+
+  const before3 = execFileSync('git', ['log', '--format=%s', `${rebaseBase}..HEAD`], { cwd: radarPath, encoding: 'utf8' }).trim().split('\n')
+  assert.equal(before3.length, 2)
+  await panel.getByRole('button', { name: 'Lancer', exact: true }).click()
+  await panel.getByText(/^Rebaser 1 commit sur /).waitFor({ timeout: 15000 })
+  const after3 = execFileSync('git', ['log', '--format=%s', `${rebaseBase}..HEAD`], { cwd: radarPath, encoding: 'utf8' }).trim().split('\n')
+  // `git log` rend le plus récent d'abord, l'écran le plus ancien d'abord : le verbe
+  // posé sur la **dernière** ligne de l'écran porte donc sur le commit le plus récent,
+  // et c'est l'ancien qui reste.
+  assert.deepEqual(after3, [before3[1]], 'le commit jeté est parti, l’autre est resté')
+  console.log('OK : le rebase interactif fait ce que son plan annonçait, et le dit avant.')
+
+  // ─── Lot 3 · les conflits, et la destination qui n'existe que pendant (T10) ─
+  // Le conflit est fabriqué par git lui-même : une branche et la courante qui
+  // écrivent la même ligne. C'est le seul moyen d'avoir un vrai état de conflit.
+  // La fusion échoue, et c'est l'état qu'on vient chercher : son code de sortie non
+  // nul ne doit pas faire tomber la suite.
+  const conflictGit = (...args) => {
+    try {
+      return demoGit(...args)
+    } catch (err) {
+      return String(err.stdout ?? '')
+    }
+  }
+  conflictGit('switch', '-c', 'audit/bundle-web')
+  writeFileSync(join(radarPath, 'vite.config.ts'), 'maximumFileSizeToCacheInBytes: 4_200_000,\nglobIgnores: [\'**/monaco/**\'],\n')
+  conflictGit('add', '-A')
+  conflictGit('commit', '-m', 'Raise the bundle ceiling')
+  conflictGit('switch', 'feat/radar-prefetch')
+  writeFileSync(join(radarPath, 'vite.config.ts'), 'maximumFileSizeToCacheInBytes: 3_500_000,\n')
+  conflictGit('add', '-A')
+  conflictGit('commit', '-m', 'Keep the bundle ceiling where it was')
+  conflictGit('merge', 'audit/bundle-web')
+
+  await openGit(640, radarThread)
+  const conflicts = panel.getByRole('tab', { name: 'Conflits', exact: true })
+  await conflicts.waitFor()
+  await conflicts.click()
+  await panel.getByText(/fichier — fusion de audit\/bundle-web/).waitFor()
+  // Les trois versions empilées, chacune avec son « prendre ».
+  await panel.getByText(/^Les miens — /).waitFor()
+  await panel.getByText(/^Les leurs — /).waitFor()
+  await panel.getByText('Le résultat', { exact: true }).waitFor()
+  // Et le quatrième écart assumé : passer la main coûte un clic.
+  await panel.getByRole('button', { name: 'Laisser l’agent le résoudre', exact: true }).waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots3, 'conflits.png') })
+
+  await panel.getByRole('button', { name: 'prendre', exact: true }).last().click()
+  await panel.getByRole('button', { name: 'Marquer résolu', exact: true }).click()
+  // Le conflit résolu, la destination disparaît du rail : elle n'occupe rien le reste
+  // du temps, et c'est la décision de T10.
+  await conflicts.waitFor({ state: 'detached' })
+  assert.match(
+    execFileSync('git', ['show', ':vite.config.ts'], { cwd: radarPath, encoding: 'utf8' }),
+    /4_200_000/,
+    'le côté pris est bien celui qui est passé à l’index',
+  )
+  console.log('OK : Conflits apparaît pendant un conflit, le résout, et disparaît après.')
+
+  // ─── Lot 3 · l'historique d'un fichier et le blâme par fil (T12) ──────────
+  conflictGit('commit', '--no-edit')
+  // La branche fusionnée est retirée, et ce n'est pas du ménage : tant qu'elle existe,
+  // ses commits sont atteints depuis **deux** têtes, et la règle de rattachement se
+  // tait plutôt que de choisir (`git-threads.ts`). Le blâme n'aurait alors aucun fil à
+  // montrer, ce qui est juste mais ne prouve rien.
+  conflictGit('branch', '-D', 'audit/bundle-web')
+
+  // Deux lignes ajoutées par un commit qui n'appartient qu'à cette branche, et le
+  // reste du fichier laissé tel quel : le blâme montre alors les deux cas côte à côte
+  // — les lignes qu'un fil revendique, et celles que la règle ne peut rattacher à
+  // personne parce qu'elles viennent de l'histoire commune.
+  const kept = demoGit('show', 'HEAD:src/lib/radar-prefetch.ts')
+  writeFileSync(
+    join(radarPath, 'src/lib/radar-prefetch.ts'),
+    `${kept}export const PREFETCH_DEBOUNCE_MS = 250\nexport const PREFETCH_MAX_TILES = 96\n`,
+  )
+  demoGit('add', '-A')
+  demoGit('commit', '-m', 'Debounce the prefetch and cap the tiles')
+  // Et une ligne de plus, non commitée : c'est elle qui fait apparaître le fichier
+  // dans *En cours*, d'où son menu ouvre l'historique (règle T0).
+  writeFileSync(
+    join(radarPath, 'src/lib/radar-prefetch.ts'),
+    `${kept}export const PREFETCH_DEBOUNCE_MS = 250\nexport const PREFETCH_MAX_TILES = 96\nexport const PREFETCH_IDLE_MS = 400\n`,
+  )
+
+  await openGit(640, radarThread)
+  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
+  const row3 = panel.getByRole('button', { name: 'Gestes sur src/lib/radar-prefetch.ts' })
+  await row3.hover()
+  await row3.click()
+  await panel.page().getByRole('menuitem', { name: 'Historique du fichier', exact: true }).click()
+
+  // L'en-tête compte deux choses, et la seconde est celle que GitKraken n'a pas :
+  // combien de **fils** ont touché ce fichier.
+  await panel.getByText(/^\d+ commits · \d+ fils?$/).waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots3, 'historique-d-un-fichier.png') })
+
+  await panel.getByRole('button', { name: 'Blâme', exact: true }).click()
+  // Le deuxième écart assumé : la colonne de droite dit *quel fil* a écrit la ligne.
+  // L'auteur git, lui, est l'utilisateur dans les deux cas et ne renseigne plus rien.
+  await panel.getByRole('button', { name: /Radar tile prefetching/ }).first().waitFor()
+  await panel.getByText('export const PREFETCH_MAX_TILES = 96').waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots3, 'blame-par-fil.png') })
+  console.log('OK : le blâme dit quel fil a écrit chaque ligne, et « à la main » sinon.')
+
   assert.deepEqual(errors, [], 'aucune erreur de page')
-  console.log('Captures :', shots, 'et', shots2)
+  console.log('Captures :', shots, ',', shots2, 'et', shots3)
 } finally {
   if (browser) await browser.close()
   for (const child of processes) child.kill('SIGKILL')
