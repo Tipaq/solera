@@ -53,7 +53,21 @@ const CLAUDE_TOOLS = [
   'Write',
 ]
 
-function git(cwd: string, ...args: string[]): void {
+/**
+ * Les commits de la démo sont datés, et c'est une correction de jeu d'essai.
+ *
+ * Tant qu'ils tombaient tous à la même seconde, le rattachement commit → fil par
+ * recoupement de dates (`git-threads.ts`) ne pouvait **rien distinguer** : toutes les
+ * fenêtres de conversation qui touchaient cet instant répondaient à la fois, donc la
+ * règle ne se prononçait jamais ou toujours pareil. Ce n'était pas un défaut de la
+ * règle, c'en était un de la fixture — et il cachait précisément le chemin atténué,
+ * qui est le seul des deux qui puisse se tromper.
+ */
+function gitAt(cwd: string, at: number | null, ...args: string[]): void {
+  const date = at === null ? {} : (() => {
+    const iso = new Date(at).toISOString()
+    return { GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso }
+  })()
   execFileSync('git', args, {
     cwd,
     stdio: 'ignore',
@@ -63,9 +77,18 @@ function git(cwd: string, ...args: string[]): void {
       GIT_AUTHOR_EMAIL: 'alex@example.com',
       GIT_COMMITTER_NAME: 'Alex Demo',
       GIT_COMMITTER_EMAIL: 'alex@example.com',
+      ...date,
     },
   })
 }
+
+function git(cwd: string, ...args: string[]): void {
+  gitAt(cwd, null, ...args)
+}
+
+/** Le même instant pour tout le jeu d'essai : les fils et les commits s'y accordent. */
+const SEEDED_AT = Date.now()
+const daysAgo = (days: number): number => SEEDED_AT - days * 86400e3
 
 function writeTree(root: string, files: Record<string, string>): void {
   for (const [path, content] of Object.entries(files)) {
@@ -219,7 +242,7 @@ export async function fetchForecast(city: string): Promise<Forecast> {
   })
   git(root, 'init', '-b', 'main')
   git(root, 'add', '-A')
-  git(root, 'commit', '-m', 'Bootstrap Nimbus weather app')
+  gitAt(root, daysAgo(40), 'commit', '-m', 'Bootstrap Nimbus weather app')
 }
 
 /** L'autre projet de la sidebar : un service backend, deux commits suffisent. */
@@ -275,7 +298,7 @@ export async function searchPlaces(query: string): Promise<Place[]> {
   })
   git(root, 'init', '-b', 'main')
   git(root, 'add', '-A')
-  git(root, 'commit', '-m', 'Bootstrap Atlas API')
+  gitAt(root, daysAgo(32), 'commit', '-m', 'Bootstrap Atlas API')
 }
 
 /** Le site de documentation, troisième projet de la sidebar. */
@@ -325,7 +348,7 @@ Open http://localhost:4321 and add your first city.
   })
   git(root, 'init', '-b', 'main')
   git(root, 'add', '-A')
-  git(root, 'commit', '-m', 'Bootstrap the docs site')
+  gitAt(root, daysAgo(25), 'commit', '-m', 'Bootstrap the docs site')
 }
 
 /**
@@ -352,7 +375,8 @@ export function tilesToPrefetch(center: { x: number; y: number }, zoom: number) 
 `,
   })
   git(worktreePath, 'add', '-A')
-  git(worktreePath, 'commit', '-m', 'Prefetch radar tiles around the viewport')
+  // Daté du tour qui l'a écrit : le fil « Radar tile prefetching » a six jours.
+  gitAt(worktreePath, daysAgo(6), 'commit', '-m', 'Prefetch radar tiles around the viewport')
 }
 
 /**
@@ -388,7 +412,8 @@ function readAll(): Record<string, Forecast> {
 `,
   })
   git(worktreePath, 'add', '-A')
-  git(worktreePath, 'commit', '-m', 'Cache the last forecast per city')
+  // Le fil du hero tourne encore : son commit est de tout à l'heure.
+  gitAt(worktreePath, SEEDED_AT - 30 * 60e3, 'commit', '-m', 'Cache the last forecast per city')
   // Le reste du chantier reste non commité : la vue git du panneau montre ainsi un
   // vrai diff de travail, cohérent avec ce que la conversation du hero raconte.
   writeTree(worktreePath, {
@@ -490,7 +515,7 @@ async function main(): Promise<void> {
   await db.delete(projects)
   await db.delete(users)
 
-  const now = Date.now()
+  const now = SEEDED_AT
   const userId = randomUUID()
   await db.insert(users).values({
     id: userId,

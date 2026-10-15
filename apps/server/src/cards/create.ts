@@ -3,6 +3,7 @@ import { and, eq, inArray, max } from 'drizzle-orm'
 import { cardRefs, cards, writeTransaction, type CardRow, type Db } from '@solera/db'
 import { parseCardReferences, type CardColumn } from '@solera/protocol'
 import type { AppContext } from '../http/context.js'
+import { recordCardMove } from './moves.js'
 
 /**
  * Passe une carte de `todo` à `in_progress` au lancement de sa première session.
@@ -12,12 +13,20 @@ import type { AppContext } from '../http/context.js'
  * déjà plus loin dans le workflow ne recule pas — relancer une session sur une carte
  * en relecture n'annule pas la relecture.
  */
-export function advanceCardOnLaunch(ctx: AppContext, cardId: string): void {
-  ctx.db
+export function advanceCardOnLaunch(ctx: AppContext, cardId: string, userId: string): void {
+  const moved = ctx.db
     .update(cards)
     .set({ column: 'in_progress', updatedAt: Date.now() })
     .where(and(eq(cards.id, cardId), eq(cards.column, 'todo')))
     .run()
+
+  // L'un des trois chemins qui changent une colonne, et le plus facile à oublier
+  // puisque personne ne l'a demandé explicitement. Conditionné au nombre de lignes
+  // touchées : une carte déjà plus loin n'a pas bougé, et le journal ne doit pas
+  // raconter un mouvement qui n'a pas eu lieu.
+  if (moved.changes > 0) {
+    recordCardMove(ctx.db, { cardId, from: 'todo', to: 'in_progress', userId })
+  }
 }
 
 /**
@@ -70,6 +79,11 @@ function insertCard(
       // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
       // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
       position: (last?.position ?? 0) + 1,
+      // Ni échéance ni jalon à la création : une carte ouverte par un agent pour noter
+      // ce qu'il a croisé n'a pas de date à proposer, et les deux se posent à la main
+      // depuis le panneau.
+      dueAt: null,
+      milestoneCardId: null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,

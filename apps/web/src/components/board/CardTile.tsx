@@ -1,7 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
-import type { CardDto, ProjectDto } from '@solera/protocol'
+import { CalendarDays, CheckSquare, Flag, GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import { parseSubtasks, type CardDto, type ProjectDto } from '@solera/protocol'
+import { daysUntil, formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
@@ -49,6 +50,11 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
   // est le repère qu'on cherche avant d'en ouvrir une de plus.
   const branch = card.conversations.findLast((session) => session.worktreeName)?.worktreeName
   const agents = [...new Set(card.conversations.map((session) => session.agent))]
+  const subtasks = parseSubtasks(card.description)
+  const done = subtasks.filter((task) => task.checked).length
+  // Une échéance ne colore la tuile que quand il est trop tard ou presque : une date
+  // posée pour dans trois semaines est une information, pas une alerte.
+  const days = card.dueAt === null ? null : daysUntil(card.dueAt)
 
   const body = (
     <>
@@ -67,6 +73,36 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
         <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-ink-faint">
           {excerpt.length > EXCERPT_MAX ? `${excerpt.slice(0, EXCERPT_MAX)}...` : excerpt}
         </p>
+      ) : null}
+
+      {card.dueAt !== null || card.milestone || subtasks.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-ink-faint">
+          {card.dueAt !== null && days !== null ? (
+            <span
+              className={cx(
+                'inline-flex items-center gap-1',
+                days < 0 && 'text-critical',
+                days >= 0 && days <= 2 && 'text-caution',
+              )}
+              title={t('board.card.due')}
+            >
+              <CalendarDays size={11} />
+              {formatDay(card.dueAt)}
+            </span>
+          ) : null}
+          {card.milestone ? (
+            <span className="inline-flex min-w-0 items-center gap-1" title={card.milestone.title}>
+              <Flag size={11} className="shrink-0" />
+              <span className="max-w-28 truncate">{card.milestone.title}</span>
+            </span>
+          ) : null}
+          {subtasks.length > 0 ? (
+            <span className="inline-flex items-center gap-1" title={t('board.card.subtasks')}>
+              <CheckSquare size={11} />
+              {t('board.card.subtasks.count', { done, total: subtasks.length })}
+            </span>
+          ) : null}
+        </div>
       ) : null}
 
       {sessions > 0 || links > 0 || branch || card.attachmentCount > 0 ? (

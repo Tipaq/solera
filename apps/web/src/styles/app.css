@@ -294,6 +294,11 @@
     top: 0.3em;
     accent-color: var(--sg-accent);
   }
+  /* Cliquable seulement là où cocher réécrit vraiment le texte : la description d'une
+     carte. Ailleurs la case est désactivée, et le curseur doit le dire avant le clic. */
+  .sg-markdown li.sg-task-item > input[data-sg-task] {
+    cursor: pointer;
+  }
 
   .sg-markdown blockquote {
     border-left: 2px solid var(--sg-line-strong);

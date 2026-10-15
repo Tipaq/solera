@@ -80,3 +80,39 @@ export function shortAge(ts: number): string {
   }
   return ''
 }
+
+/**
+ * Une échéance est un jour, pas un instant.
+ *
+ * Elle se stocke comme n'importe quel horodatage — un entier de millisecondes, comme
+ * le reste du schéma, et les chronologies à venir s'en servent telles quelles — mais
+ * elle se pose et se lit à la journée. Ces fonctions sont la charnière entre les deux,
+ * et le minuit choisi est celui du lecteur : une date posée le 20 doit se relire
+ * le 20, sans qu'un décalage horaire la rende au 19 au soir.
+ */
+export function dayInputValue(ts: number): string {
+  const date = new Date(ts)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** Le minuit local du jour saisi, ou `null` quand le champ est vide ou incomplet. */
+export function dayFromInput(value: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return null
+  const ts = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).getTime()
+  return Number.isNaN(ts) ? null : ts
+}
+
+/** Le jour, écrit court et dans la langue de l'interface : « 20 oct. ». */
+export function formatDay(ts: number): string {
+  return new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(ts)
+}
+
+/** Jours restants avant une échéance, négatifs quand elle est dépassée. */
+export function daysUntil(ts: number): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((ts - today.getTime()) / 86_400_000)
+}

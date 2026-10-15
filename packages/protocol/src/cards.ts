@@ -46,8 +46,41 @@ export const updateCardBodySchema = z
     title: z.string().min(1).max(TITLE_MAX),
     description: z.string().max(DESCRIPTION_MAX),
     column: cardColumnSchema,
+    /**
+     * Échéance, ou `null` pour l'enlever. Nullable et non optionnelle : « pas de date »
+     * est un choix qui s'écrit, alors que l'absence de clé veut dire « n'y touche pas ».
+     */
+    dueAt: z.number().int().nullable(),
+    /** Carte-jalon à laquelle celle-ci se rattache, ou `null` pour l'en détacher. */
+    milestoneCardId: z.string().uuid().nullable(),
   })
   .partial()
+
+/**
+ * Pose ou retire un lien « bloque » entre deux cartes du même projet.
+ *
+ * Posé à la main et donc affirmé, à l'inverse des références `#12` que l'enregistrement
+ * d'une description réécrit : les deux ne vivent pas dans la même table, et une
+ * correction de phrase ne doit pas effacer un blocage que quelqu'un a constaté.
+ */
+export const cardBlockBodySchema = z.object({
+  /** La carte que celle-ci empêche d'avancer. */
+  blockedId: z.string().uuid(),
+})
+
+/**
+ * Coche ou décoche la n-ième sous-tâche de la description.
+ *
+ * `label` voyage avec l'indice et n'est pas décoratif : la description a pu changer
+ * entre l'affichage et le clic, et réécrire la n-ième case sans vérifier ce qu'elle dit
+ * cocherait une autre ligne que celle qu'on a vue. Le serveur refuse quand les deux ne
+ * concordent plus, plutôt que d'écrire au hasard.
+ */
+export const toggleSubtaskBodySchema = z.object({
+  index: z.number().int().min(0),
+  checked: z.boolean(),
+  label: z.string().max(DESCRIPTION_MAX),
+})
 
 /**
  * Ordre des cartes, colonne par colonne, du haut vers le bas.
@@ -130,6 +163,14 @@ export interface CardDto {
   description: string
   column: CardColumn
   position: number
+  /** Échéance choisie, `null` tant que personne n'en a posé — et c'est la norme. */
+  dueAt: number | null
+  /**
+   * La carte-jalon à laquelle celle-ci se rattache. Un jalon est une carte ordinaire :
+   * sa date est son échéance, son état est sa colonne, et rien ne la distingue sinon
+   * d'être désignée ici.
+   */
+  milestone: CardLinkDto | null
   createdBy: string
   createdByName: string
   createdAt: number
@@ -142,6 +183,10 @@ export interface CardDto {
   references: CardLinkDto[]
   /** Cartes dont la description mentionne celle-ci. */
   referencedBy: CardLinkDto[]
+  /** Cartes que celle-ci empêche d'avancer, par un lien posé à la main. */
+  blocks: CardLinkDto[]
+  /** Cartes qui empêchent celle-ci d'avancer. */
+  blockedBy: CardLinkDto[]
 }
 
 /**
@@ -166,6 +211,82 @@ export function parseCardReferences(text: string): number[] {
     }
   }
   return found
+}
+
+/**
+ * Une case à cocher écrite dans la description, telle que la barre d'avancement et le
+ * panneau la voient.
+ *
+ * Il n'y a pas de table : une sous-tâche est une ligne `- [ ]` du markdown, et cocher
+ * réécrit cette ligne. On évite ainsi un troisième endroit où un travail se décrit, à
+ * côté de la description et des notes — au prix d'un ordre qui suit le texte et d'une
+ * écriture sur la description à chaque clic.
+ */
+export interface CardSubtask {
+  /** Rang dans le document, à partir de 0 : c'est l'adresse d'une sous-tâche. */
+  index: number
+  checked: boolean
+  /** Le texte après la case, tel qu'il est écrit — markdown non rendu. */
+  label: string
+}
+
+/** Une puce de liste portant une case, à la façon de GitHub. */
+const SUBTASK_LINE = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\]\s+)(.*)$/
+
+/** Ouverture ou fermeture d'un bloc de code clôturé. */
+const CODE_FENCE = /^\s*(?:```|~~~)/
+
+/**
+ * Les sous-tâches d'un texte, dans l'ordre où elles s'y lisent.
+ *
+ * Les blocs de code sont sautés : un `- [ ]` dans un exemple de markdown n'est pas une
+ * tâche, et le rendu ne lui met pas de case non plus. Les deux doivent compter pareil,
+ * sans quoi le n-ième clic ne tomberait pas sur la n-ième ligne.
+ */
+export function parseSubtasks(text: string): CardSubtask[] {
+  const found: CardSubtask[] = []
+  let inCode = false
+  for (const line of text.split('\n')) {
+    if (CODE_FENCE.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
+    const match = SUBTASK_LINE.exec(line)
+    if (!match) continue
+    found.push({ index: found.length, checked: match[2] !== ' ', label: match[4]?.trim() ?? '' })
+  }
+  return found
+}
+
+/**
+ * Réécrit une description avec la n-ième sous-tâche cochée ou décochée.
+ *
+ * Rend `null` quand l'indice n'existe plus : la description a changé depuis
+ * l'affichage, et il vaut mieux refuser que cocher une ligne que personne n'a visée.
+ * Seul le caractère entre crochets bouge — le reste de la ligne, indentation et
+ * markdown compris, est rendu tel quel.
+ */
+export function toggleSubtask(text: string, index: number, checked: boolean): string | null {
+  const lines = text.split('\n')
+  let seen = 0
+  let inCode = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    if (CODE_FENCE.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
+    const match = SUBTASK_LINE.exec(line)
+    if (!match) continue
+    if (seen === index) {
+      lines[i] = `${match[1]}${checked ? 'x' : ' '}${match[3]}${match[4]}`
+      return lines.join('\n')
+    }
+    seen += 1
+  }
+  return null
 }
 
 /**

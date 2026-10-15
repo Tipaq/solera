@@ -558,58 +558,6 @@ export interface DiffFileDto {
   removed: number
 }
 
-export interface WorkingDiffDto {
-  /** Null si le répertoire de travail n'est pas un dépôt git. */
-  files: DiffFileDto[] | null
-  patch: string
-  truncated: boolean
-  cwd: string
-  /** Branche courante, ou null hors dépôt. Le worktree, lui, est déjà connu du fil. */
-  branch: string | null
-  /**
-   * Dernier commit, tel que `git log -1` le rend.
-   *
-   * Affiché parce qu'un diff vide a deux causes qu'on ne distingue pas autrement :
-   * rien n'a été touché, ou l'agent vient de commiter ce qu'il a fait.
-   */
-  head: { hash: string; subject: string; relativeDate: string } | null
-}
-
-/** Un commit de la branche courante, tel que `git log` le rend. */
-export interface CommitDto {
-  /** Hash complet : c'est lui qui sert de clé et qu'on redemande pour le diff. */
-  hash: string
-  shortHash: string
-  subject: string
-  author: string
-  /**
-   * Horodatage du commit, en millisecondes.
-   *
-   * Une date et non l'ancienneté que git sait rendre : `%cr` sort dans la langue du
-   * serveur, et se fige au moment de la requête.
-   */
-  ts: number
-}
-
-export interface CommitListDto {
-  /** Null si le répertoire de travail n'est pas un dépôt git, vide s'il n'a aucun commit. */
-  commits: CommitDto[] | null
-  /** Vrai s'il reste des commits plus anciens à demander. */
-  hasMore: boolean
-}
-
-/** Ce qu'un commit a changé, dans la même forme que le diff du répertoire de travail. */
-export interface CommitDiffDto {
-  files: DiffFileDto[]
-  patch: string
-  truncated: boolean
-}
-
-export const commitListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(30),
-  skip: z.coerce.number().int().min(0).default(0),
-})
-
 /**
  * Un hash, et rien d'autre : la référence part sur la ligne de commande de git, où
  * `--all` ou `HEAD~5` n'auraient rien à faire.

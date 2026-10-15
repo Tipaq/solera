@@ -17,6 +17,7 @@
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
+    "test:git-ui": "node scripts/git-ui-check.mjs",
     "test:places-ui": "node scripts/places-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",

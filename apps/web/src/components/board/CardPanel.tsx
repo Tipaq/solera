@@ -1,9 +1,9 @@
 import { ChevronDown, GitBranch, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
+import { CARD_COLUMNS, parseSubtasks, type CardDto } from '@solera/protocol'
 import { restoreCardPanelWidth, setCardPanelWidth } from '../../lib/board-panel'
-import { useCardSaving, useDeleteCard, useUpdateCard } from '../../lib/cards'
+import { useCardSaving, useDeleteCard, useToggleSubtask, useUpdateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { translate, useTranslate } from '../../lib/i18n'
@@ -14,8 +14,12 @@ import { Markdown } from '../chat/Markdown'
 import { AgentIcon } from '../AgentIcon'
 import { Badge, Button, IconButton, Menu, MenuItem, Tabs, cx } from '@solera/ui'
 import { CardAttachments } from './CardAttachments'
+import { CardBlocks } from './CardBlocks'
 import { CardEditor } from './CardEditor'
+import { CardMeta } from './CardMeta'
 import { CardNotes } from './CardNotes'
+import { CardProgress } from './CardProgress'
+import { ColumnDot } from './ColumnDot'
 import { COLUMN_TONES, columnLabel } from './columns'
 
 interface CardPanelProps {
@@ -62,6 +66,7 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
+  const toggleSubtask = useToggleSubtask(projectId, card.id)
   const saving = useCardSaving(card.id)
   const latestSession = card.conversations.filter((session) => !session.archivedAt)
     .sort((a, b) => b.createdAt - a.createdAt)[0]
@@ -90,6 +95,27 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
       .then(() => { acknowledge(draft); setEditing(false) })
       .catch(() => { /* L'erreur est affichée et le brouillon reste intact. */ })
   }
+
+  /**
+   * Cocher une case réécrit la description, et c'est le seul endroit de ce chantier où
+   * du texte de l'utilisateur peut se perdre. Deux garde-fous, et ils sont volontaires :
+   *
+   * - tant qu'un brouillon est ouvert, les cases ne se cochent pas. La description
+   *   affichée n'est alors plus celle qui est en base, et cocher écrirait par-dessus
+   *   une saisie en cours ou réécrirait la ligne d'un texte que le serveur ne connaît
+   *   pas encore ;
+   * - le clic n'envoie que le rang de la case et ce qu'elle dit, jamais la description
+   *   entière : une autre session peut l'avoir changée entre l'affichage et le clic, et
+   *   le serveur refuse plutôt que de cocher une ligne que personne n'a visée.
+   */
+  const subtasks = parseSubtasks(card.description)
+  const checkSubtask = editVisible
+    ? undefined
+    : (index: number, checked: boolean) => {
+        const task = subtasks[index]
+        if (!task || toggleSubtask.isPending) return
+        toggleSubtask.mutate({ index, checked, label: task.label })
+      }
 
   return (
     <PanelFocus open={open} modal={modal} onClose={onClose} fallbackFocus={`[data-card-open="${card.id}"], [data-navigation-trigger]`}>
@@ -164,15 +190,23 @@ export function CardPanel({ card, projectId, open, onClose, onSelectCard }: Card
               <h2 className="min-w-0 flex-1 break-words text-lg font-semibold leading-snug tracking-tight text-ink">{card.title}</h2>
               <Button variant="secondary" size="sm" icon={<Pencil size={14} />} onClick={() => setEditing(true)}>{t('board.card.edit')}</Button>
             </div>
+            <CardMeta card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <div className="rounded-xl border border-line p-4">
-              <h3 className="mb-3 text-sm font-semibold text-ink-soft">{t('board.card.description')}</h3>
-              {card.description ? <div className="min-w-0 break-words text-sm leading-relaxed text-ink-soft"><Markdown text={card.description} /></div> :
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <h3 className="text-sm font-semibold text-ink-soft">{t('board.card.description')}</h3>
+                <CardProgress subtasks={subtasks} />
+              </div>
+              {card.description ? <div className="min-w-0 break-words text-sm leading-relaxed text-ink-soft">
+                <Markdown text={card.description} onToggleTask={checkSubtask} />
+              </div> :
                 <button type="button" onClick={() => setEditing(true)} className="w-full py-6 text-left text-sm text-ink-faint hover:text-accent">{t('board.editor.addDescription')}</button>}
+              {toggleSubtask.isError ? <p role="alert" className="mt-3 text-sm text-critical">{t('board.card.subtasks.error')}</p> : null}
             </div>
           </>}
           {updateCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
         </div>
         <CardAttachments key={card.id} cardId={card.id} projectId={projectId} />
+        <CardBlocks card={card} projectId={projectId} onSelectCard={onSelectCard} />
         <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
         <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />
         </> : null}
@@ -281,22 +315,5 @@ function CardLinkList({
         ))}
       </ul>
     </div>
-  )
-}
-
-/** L'état d'une carte citée, sans le poids d'une pastille pleine dans une liste. */
-function ColumnDot({ column }: { column: CardColumn }) {
-  const tone = COLUMN_TONES[column]
-  return (
-    <span
-      title={columnLabel(column)}
-      className={cx(
-        'size-1.5 shrink-0 rounded-full',
-        tone === 'accent' && 'bg-accent',
-        tone === 'caution' && 'bg-caution',
-        tone === 'positive' && 'bg-positive',
-        tone === 'neutral' && 'bg-line-strong',
-      )}
-    />
   )
 }

@@ -48,6 +48,7 @@ import { registerCardRoutes } from './routes/cards.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
+import { registerGitActionRoutes } from './routes/git-actions.js'
 import { registerGitViewRoutes } from './routes/git-views.js'
 import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
@@ -212,6 +213,7 @@ export async function buildApp(
   registerVaultRoutes(app, ctx, vault)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
+  registerGitActionRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)
   await registerWebSocketHub(app, ctx, log, sessions, push)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.

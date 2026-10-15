@@ -1,8 +1,4 @@
 import { execFile, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { copyFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState } from '@solera/protocol'
 
@@ -350,63 +346,6 @@ export async function readHeadCommit(cwd: string): Promise<HeadCommit | null> {
   }
 }
 
-export interface Commit {
-  hash: string
-  shortHash: string
-  subject: string
-  author: string
-  ts: number
-}
-
-/**
- * Commits de la branche courante, du plus récent au plus ancien.
- *
- * Un commit de plus que demandé est lu, et non renvoyé : c'est ce qui dit s'il reste
- * quelque chose derrière, sans avoir à compter l'historique entier.
- *
- * Retourne null hors dépôt git. Un dépôt sans aucun commit rend une liste vide : `git
- * log` y échoue faute de HEAD, ce qui est un état normal et non une panne.
- */
-export async function readCommits(
-  cwd: string,
-  limit: number,
-  skip: number,
-): Promise<{ commits: Commit[]; hasMore: boolean } | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  let raw: string
-  try {
-    raw = await git(cwd, [
-      'log',
-      `--max-count=${limit + 1}`,
-      `--skip=${skip}`,
-      // Octet nul entre les champs, saut de ligne entre les commits : un sujet peut
-      // contenir n'importe quel caractère imprimable, y compris une tabulation.
-      '--format=%H%x00%h%x00%s%x00%an%x00%ct',
-    ])
-  } catch {
-    return { commits: [], hasMore: false }
-  }
-
-  const commits = raw
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      const [hash, shortHash, subject, author, ts] = line.split('\0')
-      return {
-        hash: hash ?? '',
-        shortHash: shortHash ?? '',
-        subject: subject ?? '',
-        author: author ?? '',
-        ts: Number(ts) * 1000 || 0,
-      }
-    })
-    .filter((commit) => commit.hash.length > 0)
-
-  return { commits: commits.slice(0, limit), hasMore: commits.length > limit }
-}
-
 export interface DiffFile {
   path: string
   added: number
@@ -457,47 +396,5 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
     }
   } catch (err) {
     throw new GitError(gitMessage(err))
-  }
-}
-
-/**
- * Modifications non commitées du répertoire de travail, fichiers non suivis compris :
- * un agent qui crée un fichier doit apparaître dans le diff, sinon la vue ment.
- *
- * Le passage par un index temporaire (`GIT_INDEX_FILE`) est ce qui rend l'opération
- * réellement en lecture seule : faire un `git add --intent-to-add` sur l'index réel
- * modifierait le dépôt de l'utilisateur juste pour afficher un onglet.
- */
-export async function readWorkingDiff(cwd: string): Promise<WorkingDiff | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
-  const scratchIndex = join(tmpdir(), `solera-index-${randomUUID()}`)
-
-  try {
-    // On part d'une copie de l'index courant pour ne pas voir comme « ajoutés » des
-    // fichiers déjà stagés par l'utilisateur. Un dépôt sans index encore écrit est un
-    // cas normal, on repart alors d'un index vide.
-    await copyFile(join(gitDir, 'index'), scratchIndex).catch(() => {})
-    const env = { GIT_INDEX_FILE: scratchIndex }
-
-    await git(cwd, ['add', '--intent-to-add', '--all'], env)
-
-    const [numstat, patch] = await Promise.all([
-      git(cwd, ['diff', 'HEAD', '--numstat'], env),
-      git(cwd, ['diff', 'HEAD'], env),
-    ])
-
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
-  } catch (err) {
-    throw new GitError(gitMessage(err))
-  } finally {
-    await rm(scratchIndex, { force: true }).catch(() => {})
   }
 }

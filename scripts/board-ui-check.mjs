@@ -145,6 +145,47 @@ try {
   await ticket.getByRole('button', { name: 'Ajouter une note', exact: true }).click()
   await ticket.getByText('Les documents de référence sont joints au ticket.', { exact: true }).waitFor()
   await ticket.getByRole('tab', { name: 'Détails', exact: true }).click()
+
+  // Les champs de la carte #36 : l'échéance, le jalon, les sous-tâches du markdown et
+  // les liens « bloque ». Tous dans l'onglet *détails*, qui dit ce qui est prévu, et
+  // jamais dans *activité* ni *sessions*, qui racontent ce qui s'est passé.
+  await ticket.getByLabel('Échéance', { exact: true }).fill('2026-12-01')
+  await page.waitForResponse((response) => response.url().endsWith(`/api/cards/${created.id}`))
+  await ticket.getByRole('button', { name: 'Choisir un jalon', exact: true }).click()
+  const milestones = page.getByRole('dialog', { name: 'Choisir un jalon', exact: true })
+  await milestones.getByPlaceholder('Chercher une carte').fill('2')
+  await milestones.getByRole('button', { name: /^#2 / }).click()
+  await ticket.getByRole('button', { name: 'Détacher de ce jalon', exact: true }).waitFor()
+
+  // Cocher réécrit la description : la case n'a pas de table, c'est une ligne du texte.
+  await ticket.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
+  const tasks = ticket.getByRole('textbox', { name: 'Description', exact: true })
+  await tasks.fill((await tasks.inputValue()) + '\n\n- [ ] Lister les écrans\n- [ ] Poser les échéances')
+  await tasks.press('Control+Enter')
+  await ticket.getByRole('button', { name: 'Modifier la carte', exact: true }).waitFor()
+  await ticket.getByText('0/2', { exact: true }).waitFor()
+  await ticket.locator('input[data-sg-task="0"]').click()
+  await ticket.getByText('1/2', { exact: true }).waitFor()
+  const ticked = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
+    .find((entry) => entry.id === created.id)
+  assert.match(ticked.description, /- \[x\] Lister les écrans/)
+  assert.equal(ticked.dueAt !== null, true)
+  assert.equal(ticked.milestone.number, 2)
+
+  // Un lien posé à la main, à côté des citations `#12` et sous son propre nom.
+  await ticket.getByRole('button', { name: 'Déclarer une carte bloquée', exact: true }).click()
+  const blocked = page.getByRole('dialog', { name: 'Déclarer une carte bloquée', exact: true })
+  await blocked.getByPlaceholder('Chercher une carte').fill('1')
+  await blocked.getByRole('button', { name: /^#1 / }).click()
+  await ticket.getByRole('button', { name: 'Ne plus bloquer #1', exact: true }).waitFor()
+  const blocking = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
+    .find((entry) => entry.number === 1)
+  assert.deepEqual(blocking.blockedBy.map((link) => link.number), [number])
+  // Capture depuis le haut du panneau : l'échéance et le jalon s'y lisent avant la
+  // description, et c'est ce placement-là qu'on vérifie.
+  await ticket.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-champs-desktop.png') })
+
   await ticket.getByRole('button', { name: 'Fermer', exact: true }).click()
   const search = page.getByRole('searchbox', { name: 'Rechercher un ticket, un numéro…', exact: true })
   await search.fill(`#${number}`)
@@ -198,7 +239,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, recherche, clavier et mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, jalon, sous-tâches, lien « bloque », recherche, clavier et mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
