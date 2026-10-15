@@ -1,6 +1,7 @@
 import {
   CalendarClock,
   GitBranch,
+  History,
   MoreHorizontal,
   Palette,
   Plus,
@@ -100,10 +101,18 @@ export function ProjectLayout() {
       icon: <CalendarClock size={15} />,
       count: tasks.length,
     },
-    /* Pas d'onglet *Journal* ni *Chronologie* pour l'instant : le premier est la carte
-       #33 (il agrège base, git et disque, donc une route serveur), le second attend
-       l'échéance et le jalon que porte la carte #36. Un onglet qui mène à une page vide
-       est pire que son absence — il promet une vue et rend une erreur. */
+    {
+      to: `/p/${projectId}/journal`,
+      label: t('project.view.journal'),
+      icon: <History size={15} />,
+      /* Sans compteur, et c'est voulu : un journal n'a pas de reste à faire. Le nombre
+         de lignes des quinze derniers jours dirait l'inventaire que le gabarit interdit
+         au bandeau, et coûterait de surcroît un `git log` par projet rien que pour
+         dessiner la rangée. */
+    },
+    /* Pas d'onglet *Chronologie* pour l'instant : elle attend que les échéances et les
+       jalons de la carte #36 aient de quoi remplir un axe. Un onglet qui mène à une
+       page vide est pire que son absence — il promet une vue et rend une erreur. */
   ]
 
   /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */

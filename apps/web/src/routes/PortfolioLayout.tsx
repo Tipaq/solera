@@ -1,4 +1,4 @@
-import { FolderPlus, Plus, SquareKanban, Target } from 'lucide-react'
+import { FolderPlus, History, Plus, SquareKanban, Target } from 'lucide-react'
 import { useMemo } from 'react'
 import { Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
@@ -60,6 +60,11 @@ export function PortfolioLayout() {
       // Ce groupe ne dit que ce qui **réclame** : son compte est une demande, pas un
       // inventaire, et c'est la seule teinte d'alerte de la rangée.
       tone: 'caution',
+    },
+    {
+      to: '/projects/journal',
+      label: t('portfolio.view.journal'),
+      icon: <History size={15} />,
     },
   ]
 
