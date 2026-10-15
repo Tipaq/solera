@@ -40,19 +40,21 @@ export function AppShell() {
   // Un fil libre n'a pas de segment de projet dans son adresse, et rend pourtant la même
   // page — sans cette ligne il aurait deux bandes au téléphone.
   const freeConversationRoute = useMatch('/c/:conversationId')
-  const boardRoute = useMatch('/p/:projectId/board')
   const servicesRoute = useMatch('/services')
-  const schedulesRoute = useMatch('/p/:projectId/schedules')
-  // Les trois pages de lieu portent leur propre segment de bande : sans ces lignes
-  // elles en auraient deux au téléphone.
-  const dashboardRoute = useMatch('/p/:projectId')
+  // Les vues d'un projet partagent la bande de `ProjectLayout` : un seul `useMatch`
+  // pour les quatre, là où chacune se déclarait avant.
+  const projectRoute = useMatch('/p/:projectId/*')
+  const projectRootRoute = useMatch('/p/:projectId')
+  // Les pages de lieu portent leur propre segment de bande : sans ces lignes elles en
+  // auraient deux au téléphone.
   const projectsRoute = useMatch('/projects')
   const plannedRoute = useMatch('/schedules')
   const vaultRoute = useMatch('/vault/*')
   const vaultRootRoute = useMatch('/vault')
   const contextualHeader = Boolean(
-    conversationRoute || freeConversationRoute || boardRoute || servicesRoute || schedulesRoute
-    || dashboardRoute || projectsRoute || plannedRoute || vaultRoute || vaultRootRoute,
+    conversationRoute || freeConversationRoute || servicesRoute
+    || projectRoute || projectRootRoute || projectsRoute || plannedRoute
+    || vaultRoute || vaultRootRoute,
   )
   const navInactive = wide ? hidden : !navOpen
   useVisualViewport()

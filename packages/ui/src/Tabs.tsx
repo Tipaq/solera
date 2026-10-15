@@ -19,6 +19,41 @@ const COUNT_TONES = {
 } as const
 
 /**
+ * Le compteur d'un onglet, après son intitulé.
+ *
+ * Exporté parce que le motif a **deux porteurs** : `Tabs`, qui bascule un état dans un
+ * panneau, et la rangée de vues d'un projet, qui navigue — l'une est une liste
+ * d'onglets au sens ARIA, l'autre une navigation de liens, et aucune ne peut jouer le
+ * rôle de l'autre. Ce qu'elles partagent est l'apparence, et elle n'a qu'une source.
+ */
+export function TabCount({ count, tone = 'neutral' }: {
+  count: number
+  tone?: 'neutral' | 'caution'
+}) {
+  return (
+    <span className={cx('rounded px-1.5 py-0.5 text-xs tabular-nums', COUNT_TONES[tone])}>
+      {count}
+    </span>
+  )
+}
+
+/**
+ * Les classes d'un élément de rangée, actif ou non.
+ *
+ * Le soulignement d'accent et rien d'autre : voir la note du composant. Une fonction
+ * plutôt qu'un composant, parce que l'élément porteur diffère — `button[role=tab]` ici,
+ * `NavLink` dans la rangée de vues.
+ */
+export function tabItemClass(selected: boolean, layout: 'fill' | 'start' = 'start'): string {
+  return cx(
+    'flex min-h-11 items-center gap-2 border-b-2 px-1 text-sm whitespace-nowrap',
+    'transition-[border-color,color] duration-150',
+    layout === 'fill' ? 'flex-1 justify-center' : '',
+    selected ? 'border-accent text-ink' : 'border-transparent text-ink-faint hover:text-ink',
+  )
+}
+
+/**
  * Une navigation entre les vues d'un même panneau, soulignée sous l'onglet actif.
  *
  * Trois copies de ce motif coexistaient dans l'application, avec trois traitements de
@@ -94,25 +129,11 @@ export function Tabs<T extends string>({
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.value)}
-            className={cx(
-              'flex min-h-11 items-center gap-2 border-b-2 px-1 text-sm whitespace-nowrap',
-              'transition-[border-color,color] duration-150',
-              layout === 'fill' ? 'flex-1 justify-center' : '',
-              selected ? 'border-accent text-ink' : 'border-transparent text-ink-faint hover:text-ink',
-            )}
+            className={tabItemClass(selected, layout)}
           >
             {tab.icon}
             {tab.label}
-            {tab.count === undefined ? null : (
-              <span
-                className={cx(
-                  'rounded px-1.5 py-0.5 text-xs tabular-nums',
-                  COUNT_TONES[tab.tone ?? 'neutral'],
-                )}
-              >
-                {tab.count}
-              </span>
-            )}
+            {tab.count === undefined ? null : <TabCount count={tab.count} tone={tab.tone} />}
           </button>
         )
       })}

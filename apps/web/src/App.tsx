@@ -11,7 +11,8 @@ import { HomePage } from './routes/HomePage'
 import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
-import { ProjectDashboardPage } from './routes/ProjectDashboardPage'
+import { ProjectLayout } from './routes/ProjectLayout'
+import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
 import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsPage } from './routes/ProjectsPage'
 import { NewProjectPage } from './routes/NewProjectPage'
@@ -109,12 +110,16 @@ export function App() {
           <Route path="/vault/note/*" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/services" element={<ServicesPage />} />
-          {/* La porte d'un projet est son tableau de bord ; les réglages, qui
-              l'occupaient, sont passés dans son `⋯`. */}
-          <Route path="/p/:projectId" element={<ProjectDashboardPage />} />
+          {/* Les vues d'un projet partagent une coque : la bande, qui ne dépend pas de
+              la vue, et la rangée d'onglets qui les porte. Les réglages restent dehors —
+              ils ne sont pas une vue mais une destination du `⋯` — et les conversations
+              aussi, leur bande nommant la session plutôt que le projet. */}
+          <Route path="/p/:projectId" element={<ProjectLayout />}>
+            <Route index element={<ProjectOverviewPage />} />
+            <Route path="board" element={<BoardPage />} />
+            <Route path="schedules" element={<SchedulePage />} />
+          </Route>
           <Route path="/p/:projectId/settings" element={<ProjectPage />} />
-          <Route path="/p/:projectId/board" element={<BoardPage />} />
-          <Route path="/p/:projectId/schedules" element={<SchedulePage />} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />

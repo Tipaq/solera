@@ -24,7 +24,7 @@ export { SegmentedControl, type Segment } from './SegmentedControl'
 export { Select, type SelectOption } from './Select'
 export { Switch, SwitchTrack } from './Switch'
 export { SwitchRow } from './SwitchRow'
-export { Tabs, type Tab } from './Tabs'
+export { Tabs, TabCount, tabItemClass, type Tab } from './Tabs'
 /*
  * `Tooltip` était la seule primitive absente du baril, et une trentaine de fichiers
  * l'importaient par son chemin de module. L'écart était cosmétique mais il faisait

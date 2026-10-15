@@ -22,15 +22,15 @@ import {
 } from '@dnd-kit/sortable'
 import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
-import { HeaderBand } from '../components/HeaderBand'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '@solera/ui'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
+import { NEW_PARAM } from './ProjectLayout'
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
@@ -86,7 +86,6 @@ function matchesCard(card: CardDto, query: string): boolean {
 
 export function BoardPage() {
   const { projectId } = useParams()
-  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
@@ -98,7 +97,6 @@ export function BoardPage() {
 
 
   const [query, setQuery] = useState('')
-  const [creating, setCreating] = useState(false)
   const search = query.trim().toLocaleLowerCase()
   const matches = (card: CardDto) => matchesCard(card, search)
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
@@ -149,6 +147,22 @@ export function BoardPage() {
     const timer = setTimeout(() => setLingering(null), PANEL_TRANSITION_MS)
     return () => clearTimeout(timer)
   }, [openCard])
+
+  /**
+   * La création d'une carte est ouverte par l'adresse, pas par un état local.
+   *
+   * C'est la rangée d'onglets de `ProjectLayout` qui porte *+ Carte*, et elle ne
+   * connaît pas ce dialogue : elle écrit `?nouvelle=1`, cette page le lit. Le `+` d'une
+   * colonne, lui, vise une colonne précise et garde son état local — il ne demande pas
+   * la même chose.
+   */
+  const creating = params.get(NEW_PARAM) === '1'
+  const setCreating = (open: boolean) => {
+    const next = new URLSearchParams(params)
+    if (open) next.set(NEW_PARAM, '1')
+    else next.delete(NEW_PARAM)
+    setParams(next, { replace: true })
+  }
 
   const showCard = (number: number | null) => {
     const next = new URLSearchParams(params)
@@ -228,55 +242,16 @@ export function BoardPage() {
   const shown = wide ? [...open, ...(showClosed || search ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
 
   return (
-    // `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
-    // aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
-    // lieu de descendre jusqu'en bas. `relative` porte le tiroir, posé en absolu.
+    /* `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
+       aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
+       lieu de descendre jusqu'en bas.
+
+       Plus de bande ni d'en-tête propre : le nom du projet est dans la bande de
+       `ProjectLayout`, le compte des cartes dans son onglet. Le board commence donc à
+       sa ligne de filtres. */
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <HeaderBand>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs text-ink-faint">{project.name}</p>
-            <h1 className="truncate text-sm font-medium">{t('project.board.title')}</h1>
-          </div>
-          <span className="shrink-0 rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-faint">
-            {t('board.cardCount', { count: (cards ?? []).length })}
-          </span>
-          {/* Au doigt la bande ne tient pas quatre libellés : l'icône suffit, et le
-              nom reste porté par le bouton — une icône seule ne dit pas ce qu'elle
-              fait, ni à l'œil ni à un lecteur d'écran. */}
-          <Button size="sm" aria-label={t('board.create.title')} icon={<Plus size={16} />} onClick={() => setCreating(true)}>
-            <span className="hidden sm:inline">{t('board.create.title')}</span>
-          </Button>
-          {wide && hasClosed ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={showClosed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              onClick={() => setShowClosed((value) => !value)}
-            >
-              {t('board.closed')}
-            </Button>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate(`/p/${projectId}/c/new`)}
-          >
-            <span className="hidden sm:inline">{t('board.newConversation')}</span>
-            <span className="sm:hidden">{t('board.newConversation.short')}</span>
-          </Button>
-          {/* Le panneau opère ici sur le workspace du projet : un terminal, les
-              fichiers ou le diff s'ouvrent sans avoir à entrer dans une session. */}
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            size="sm"
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
-        </HeaderBand>
-
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-5 py-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
             <Search size={16} className="shrink-0 text-ink-faint" />
             <input type="search" value={query} onChange={(event) => {
@@ -291,6 +266,29 @@ export function BoardPage() {
           </div>
           <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : 'board.hint')}</p>
           {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
+          {/* Les deux réglages du board, descendus de la bande auprès de ce qu'ils
+              règlent : le repli du cimetière filtre les colonnes qui suivent, et le
+              panneau ouvre le workspace du projet — un terminal, les fichiers ou le
+              diff, sans avoir à entrer dans une session. */}
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {wide && hasClosed ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={showClosed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                onClick={() => setShowClosed((value) => !value)}
+              >
+                {t('board.closed')}
+              </Button>
+            ) : null}
+            <IconButton
+              label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
+              size="sm"
+              onClick={() => setPanelOpen(!panel.open)}
+            >
+              <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
+            </IconButton>
+          </div>
         </div>
         {search && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
         {!wide ? (
@@ -357,7 +355,14 @@ export function BoardPage() {
       </div>
 
       <NewCardDialog projectId={projectId} open={creating} onClose={() => setCreating(false)} onCreated={(card) => {
-        setCreating(false); setQuery(''); setVisibleColumn(card.column); showCard(card.number)
+        setQuery('')
+        setVisibleColumn(card.column)
+        // Un seul écrit : `setCreating(false)` puis `showCard` partent du même
+        // `params` et le second effacerait le premier.
+        const next = new URLSearchParams(params)
+        next.delete(NEW_PARAM)
+        next.set('carte', String(card.number))
+        setParams(next, { replace: true })
       }} />
       {lingering ? (
         <CardPanel

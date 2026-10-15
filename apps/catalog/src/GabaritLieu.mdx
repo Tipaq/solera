@@ -5,9 +5,42 @@ import { Meta } from '@storybook/addon-docs/blocks'
 # La page d'un lieu
 
 Un lieu de la colonne de gauche est une **destination** : il ouvre une page au centre.
-Trois existent — le tableau de bord d'un projet, *Projets*, *Planifiées* — et elles
-partagent un gabarit, arrêté le 2026-10-12 après dix-neuf tours de maquettes
+Trois existent — l'*Aperçu* d'un projet, *Projets*, *Planifiées* — et elles partagent un
+gabarit, arrêté le 2026-10-12 après dix-neuf tours de maquettes
 (`docs/audits/2026-10-11-colonne/`, tours 12, 16 et 19).
+
+Cette page s'appelait « Tableau de bord » jusqu'au 2026-10-15 : deux mots pour la même
+chose dans deux langues, et c'est le premier qui a cédé — « board » est partout dans le
+code et dans les URL, « tableau de bord » nulle part.
+
+## Une page de lieu est la **première vue** d'une rangée
+
+Depuis le 2026-10-15 (`docs/audits/2026-10-14-gestion-de-projet/`), un projet et le
+portefeuille ne sont plus une page mais **une coque et des vues**, et c'est ce qui place
+le gabarit ci-dessous : il décrit la vue d'arrivée, pas la page entière.
+
+| étage | ce qu'il porte | qui le rend |
+| --- | --- | --- |
+| **la bande** | ce qui **ne dépend pas de la vue** : le projet, son dépôt, *Nouvelle conversation*, le `⋯` | `ProjectLayout` |
+| **la rangée** | les vues, et **l'action de la vue** au bout — *+ Carte*, *+ Tâche* | `ProjectTabs` |
+| **le contenu** | la vue ouverte, qui commence à son contenu : ni bande ni en-tête propre | la page |
+
+Trois conséquences qui se vérifient en relisant une page :
+
+- **La bande est identique sur toutes les vues**, donc elle ne clignote pas quand on
+  change d'onglet. Une route de disposition et non un en-tête recopié : c'est ce qui le
+  garantit, plutôt qu'une discipline.
+- **Le `⋯` ne navigue plus vers une vue.** La rangée est juste en dessous ; redire les
+  vues dans le menu est exactement la redondance que l'audit est venu défaire. Il ne
+  porte que les gestes du projet.
+- **Pas de couloir centré** : pleine largeur, marge de 1 rem, et c'est la **grille** qui
+  tient la lecture — trois colonnes à l'Aperçu, quatre au board, deux aux planifiées. Un
+  couloir faisait sauter le bord gauche de la rangée de plusieurs centimètres entre une
+  vue de lecture et le board.
+
+L'action de la vue est commandée par l'adresse (`?nouvelle=1`) et non par un
+gestionnaire remonté depuis la page : la rangée ne connaît alors aucun dialogue, et
+l'intention survit à un rechargement.
 
 ## Trois étages, et c'est l'ordre qui les justifie
 
@@ -17,6 +50,9 @@ partagent un gabarit, arrêté le 2026-10-12 après dix-neuf tours de maquettes
 | **le corps** | ce qui est **en cours**, repris de la vue qui en est la référence |
 | **le pied** | ce qui **reviendra tout seul** : la planification |
 
+(Ces trois étages sont ceux du **contenu** de la vue d'arrivée, sous la bande et la
+rangée décrites plus haut.)
+
 ## Le bandeau dit une demande, jamais un inventaire
 
 C'est la règle qui décide de son contenu, et elle tranche seule la plupart des cas :
@@ -24,7 +60,7 @@ C'est la règle qui décide de son contenu, et elle tranche seule la plupart des
 > « 7 cartes » décrit ce qui **existe**. « 1 attend ta réponse depuis 1 h » décrit ce
 > qu'on a **à faire**.
 
-Un tableau de bord n'est utile qu'au second. Conséquence directe et non négociable :
+Une vue d'arrivée n'est utile qu'au second. Conséquence directe et non négociable :
 **une tuile à zéro disparaît**. Elle ne se grise pas, elle ne s'écrit pas « 0 » — elle
 n'est pas rendue, et le bandeau rétrécit. Quand il n'en reste aucune, c'est une phrase
 qui le dit : « Rien ne réclame ici. »
@@ -36,7 +72,7 @@ rendu vide : c'est l'appelant qui l'omet. Trois teintes, qui ne sont pas décora
 
 ## Le corps ne réinvente pas la vue dont il est le résumé
 
-Le board du tableau de bord est **celui de l'application** : mêmes colonnes creusées
+Le board de l'Aperçu est **celui de l'application** : mêmes colonnes creusées
 (`rounded-xl border-line/60 bg-sunken/60`), même pastille de teinte, même compte en
 pilule, mêmes tuiles `CardTile`. Seule la **densité** change — trois cartes par colonne,
 puis « 2 de plus… ».

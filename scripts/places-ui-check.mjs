@@ -10,12 +10,17 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 /*
- * Les trois pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
+ * Les trois pages de lieu : l'Aperçu d'un projet, Projets, Planifiées.
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : que le bandeau du haut
- * dit ce qui réclame et **omet ce qui est à zéro**, que le board du tableau de bord
- * est bien celui de l'application — mêmes colonnes, mêmes tuiles — et que l'ancienne
- * page de réglages est toujours joignable depuis le `⋯` qui l'a reprise.
+ * dit ce qui réclame et **omet ce qui est à zéro**, que le board de l'Aperçu est bien
+ * celui de l'application — mêmes colonnes, mêmes tuiles — et que l'ancienne page de
+ * réglages est toujours joignable depuis le `⋯` qui l'a reprise.
+ *
+ * Depuis le 2026-10-15, la vue d'un projet est logée dans une coque : la bande porte le
+ * nom du projet et le `⋯`, la rangée porte les vues. La suite vérifie donc aussi que la
+ * page n'a **plus** d'en-tête à elle — deux titres de projet l'un sous l'autre étaient
+ * précisément ce que la coque est venue supprimer.
  */
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -91,9 +96,21 @@ try {
   const shots = join(root, 'docs/audits/2026-10-12-pages-de-lieu')
   await mkdir(shots, { recursive: true })
 
-  // ─── Le tableau de bord d'un projet ───────────────────────────────────────
+  // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByRole('heading', { name: 'Nimbus', exact: true, level: 2 }).waitFor()
+  await page.getByRole('navigation', { name: 'Vues du projet', exact: true }).waitFor()
+  // Le nom du projet est dans la bande, et **une seule fois** : la page n'en remet pas.
+  assert.equal(
+    await page.getByRole('heading', { name: 'Nimbus', exact: true }).count(),
+    1,
+    'Le nom du projet est dans la bande, et la page ne le redit pas',
+  )
+  // La rangée porte les vues, et l'Aperçu est la seule sans action propre.
+  const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
+  for (const view of ['Aperçu', 'Board', 'Planifiées']) {
+    await row.getByRole('link', { name: new RegExp(`^${view}`) }).waitFor()
+  }
+  assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
 
   // Le board est celui de l'application : ses colonnes, et ses tuiles.
   for (const column of ['À faire', 'En cours', 'À vérifier', 'Terminé']) {
@@ -118,15 +135,22 @@ try {
     0,
     'Le bandeau ne porte aucun inventaire',
   )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'dashboard-projet.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
 
   // La planification du projet suit en lignes.
   const schedules = await (await context.request.get(`${base}/api/schedules`)).json()
   const task = schedules.find((entry) => entry.projectId === nimbus.id)
   if (task) await page.getByRole('link', { name: new RegExp(task.name) }).first().waitFor()
 
-  // Les réglages ont quitté la page et sont dans le `⋯`.
+  // Les réglages ont quitté la page et sont dans le `⋯`, qui ne navigue plus vers une vue.
   await page.getByRole('button', { name: 'Actions du projet', exact: true }).click()
+  for (const view of ['Board', 'Planifiées']) {
+    assert.equal(
+      await page.getByRole('menuitem', { name: view, exact: true }).count(),
+      0,
+      `Le \u22ef ne redit pas la vue « ${view} », la rangée est juste en dessous`,
+    )
+  }
   await page.getByRole('menuitem', { name: 'Réglages du projet', exact: true }).click()
   await page.getByRole('heading', { name: 'Réglages du projet', exact: true }).waitFor()
   assert.equal(new URL(page.url()).pathname, `/p/${nimbus.id}/settings`)
@@ -172,7 +196,7 @@ try {
   await page.goto(`${base}/p/${nimbus.id}`)
   await page.getByRole('region', { name: 'En cours', exact: true }).waitFor()
   await page.waitForTimeout(300)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'dashboard-mobile.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-mobile.png') })
   await page.goto(`${base}/projects`)
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
@@ -183,10 +207,10 @@ try {
   // Le thème se pose après la navigation : `goto` recharge le document et emporterait
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'dashboard-sombre.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

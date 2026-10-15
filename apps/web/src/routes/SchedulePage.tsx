@@ -1,16 +1,16 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, Trash2, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
-import { HeaderBand } from '../components/HeaderBand'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
+import { NEW_PARAM } from './ProjectLayout'
 import {
   RUN_DOTS,
   RUN_LABELS,
@@ -51,55 +51,58 @@ export function SchedulePage() {
     [schedules, projectId],
   )
 
-  // `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
+  /**
+   * `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
+   *
+   * La création est en plus commandée par l'adresse : c'est la rangée d'onglets de
+   * `ProjectLayout` qui porte *+ Tâche*, et elle ne connaît pas ce formulaire.
+   */
   const [editing, setEditing] = useState<ScheduledTaskDto | 'new' | null>(null)
+  const [params, setParams] = useSearchParams()
+  const creating = params.get(NEW_PARAM) === '1'
+  const closeCreating = () => {
+    setParams((current) => {
+      current.delete(NEW_PARAM)
+      return current
+    }, { replace: true })
+  }
+  const open = creating ? 'new' : editing
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <CalendarClock size={16} className="shrink-0 text-ink-faint" />
-        <div className="min-w-0">
-          {project ? <p className="truncate text-xs text-ink-faint">{project.name}</p> : null}
-          <h1 className="truncate text-sm font-medium">{t('schedule.title')}</h1>
-        </div>
-        {tasks.length > 0 ? <Badge>{tasks.length}</Badge> : null}
-        <div className="ml-auto">
-          <Button size="sm" icon={<Plus size={14} />} disabled={!project} onClick={() => setEditing('new')}>
-            {t('schedule.new')}
-          </Button>
-        </div>
-      </HeaderBand>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
-          <p className="text-sm text-ink-soft">{t('schedule.description')}</p>
-          {isError ? <Banner>{t('schedule.loadError')}</Banner> : null}
-          {isPending ? (
-            <p role="status" className="text-sm text-ink-faint">{t('schedule.loading')}</p>
-          ) : tasks.length === 0 ? (
-            <EmptyState
-              icon={<CalendarClock size={22} />}
-              title={t('schedule.empty')}
-              description={t('schedule.emptyHint')}
-            />
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {tasks.map((task) => (
-                <TaskCard key={task.id} task={task} onEdit={() => setEditing(task)} />
-              ))}
-            </ul>
-          )}
-        </div>
+    /* Plus de bande ni d'en-tête propre : le nom du projet est dans la bande de la
+       coque, le compte des tâches dans son onglet, et *+ Tâche* dans sa rangée. */
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="flex max-w-3xl flex-col gap-4">
+        <p className="text-sm text-ink-soft">{t('schedule.description')}</p>
+        {isError ? <Banner>{t('schedule.loadError')}</Banner> : null}
+        {isPending ? (
+          <p role="status" className="text-sm text-ink-faint">{t('schedule.loading')}</p>
+        ) : tasks.length === 0 ? (
+          <EmptyState
+            icon={<CalendarClock size={22} />}
+            title={t('schedule.empty')}
+            description={t('schedule.emptyHint')}
+          />
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {tasks.map((task) => (
+              <TaskCard key={task.id} task={task} onEdit={() => setEditing(task)} />
+            ))}
+          </ul>
+        )}
       </div>
 
-      {editing && project ? (
+      {open && project ? (
         <ScheduleDialog
           // La clé remonte le formulaire d'une tâche à l'autre : ses champs sont un état
           // initial, pas un reflet de la tâche.
-          key={editing === 'new' ? 'new' : editing.id}
+          key={open === 'new' ? 'new' : open.id}
           project={project}
-          task={editing === 'new' ? undefined : editing}
-          onClose={() => setEditing(null)}
+          task={open === 'new' ? undefined : open}
+          onClose={() => {
+            setEditing(null)
+            if (creating) closeCreating()
+          }}
         />
       ) : null}
     </div>

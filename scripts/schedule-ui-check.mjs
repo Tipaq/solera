@@ -99,7 +99,7 @@ try {
   // --- Création par le formulaire ------------------------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
-  await page.getByRole('button', { name: 'Nouvelle tâche', exact: true }).click()
+  await page.getByRole('button', { name: 'Tâche', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouvelle tâche planifiée', exact: true })
   await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
