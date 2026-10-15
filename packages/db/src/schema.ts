@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import {
   blob,
   index,
+  type AnySQLiteColumn,
   integer,
   primaryKey,
   sqliteTable,
@@ -174,6 +175,26 @@ export const cards = sqliteTable(
     column: text('column').$type<CardColumn>().notNull(),
     /** Ordre manuel dans sa colonne, croissant. Réécrit en bloc par le glisser-déposer. */
     position: integer('position').notNull().default(0),
+    /**
+     * Échéance, nullable : une carte sans date est la norme, et une date posée sur
+     * chaque carte d'un projet solo serait du théâtre.
+     */
+    dueAt: timestamp('due_at'),
+    /**
+     * La carte-jalon à laquelle celle-ci appartient — auto-référence, parce qu'un jalon
+     * **est** une carte : il a un nom, une date (son échéance), un endroit où écrire ce
+     * qu'il recouvre, un fil de notes et un état ouvert/fermé (sa colonne). Une table
+     * `milestones` aurait dupliqué tout cela.
+     *
+     * Une colonne et non un lien typé : un jalon au plus par carte, garanti par le
+     * schéma au lieu d'une convention. Et pas de drapeau `is_milestone` : une carte est
+     * un jalon dès que quelque chose la désigne ici.
+     *
+     * `set null` : supprimer la carte-jalon détache les siennes au lieu de les emporter.
+     */
+    milestoneCardId: text('milestone_card_id').references((): AnySQLiteColumn => cards.id, {
+      onDelete: 'set null',
+    }),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),
@@ -183,7 +204,63 @@ export const cards = sqliteTable(
   (t) => [
     uniqueIndex('idx_cards_project_number').on(t.projectId, t.number),
     index('idx_cards_project_column').on(t.projectId, t.column, t.position),
+    index('idx_cards_milestone').on(t.milestoneCardId),
   ],
+)
+
+/**
+ * Liens « bloque » posés à la main : `source` empêche `target` d'avancer.
+ *
+ * Seconde table de liens, à côté de `card_refs`, et surtout pas un `type` sur
+ * celle-là : `card_refs` est dérivée du texte et réécrite à chaque enregistrement,
+ * donc une correction de phrase y effacerait un blocage que quelqu'un a constaté. Un
+ * seul type pour commencer — c'est le seul qui porte ce qu'aucun autre champ ne porte,
+ * « n'ouvre pas #26 avant #25 ».
+ */
+export const cardBlocks = sqliteTable(
+  'card_blocks',
+  {
+    /** La carte qui bloque. */
+    sourceId: text('source_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    /** La carte empêchée d'avancer. */
+    targetId: text('target_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    createdBy: text('created_by').references(() => users.id),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sourceId, t.targetId] }),
+    index('idx_card_blocks_target').on(t.targetId),
+  ],
+)
+
+/**
+ * Une ligne par changement de colonne : d'où, vers où, par qui, quand.
+ *
+ * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
+ * `updated_at`, qu'une simple correction de titre réécrit : sans elle, on ne peut pas
+ * dire **quand** une carte a été terminée, et c'est précisément ce que le Journal
+ * raconte. Elle doit être écrite partout où une colonne change — le glisser-déposer,
+ * le menu du panneau, et le passage automatique en « en cours » au lancement d'une
+ * session. Un seul chemin oublié, et elle ment.
+ */
+export const cardMoves = sqliteTable(
+  'card_moves',
+  {
+    id: text('id').primaryKey(),
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    fromColumn: text('from_column').$type<CardColumn>().notNull(),
+    toColumn: text('to_column').$type<CardColumn>().notNull(),
+    /** Null quand le compte a été supprimé : le mouvement reste daté et vrai. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    movedAt: timestamp('moved_at').notNull(),
+  },
+  (t) => [index('idx_card_moves_card').on(t.cardId, t.movedAt)],
 )
 
 /**
@@ -1156,6 +1233,7 @@ export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
+export type CardMoveRow = typeof cardMoves.$inferSelect
 export type SessionMessageRow = typeof sessionMessages.$inferSelect
 export type AgentRequestRow = typeof agentRequests.$inferSelect
 export type SessionWatchRow = typeof sessionWatches.$inferSelect

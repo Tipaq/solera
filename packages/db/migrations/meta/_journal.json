@@ -260,6 +260,13 @@
       "when": 1792007957842,
       "tag": "0036_rattrapage_vault",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1792099458561,
+      "tag": "0037_champs_de_carte",
+      "breakpoints": true
     }
   ]
 }

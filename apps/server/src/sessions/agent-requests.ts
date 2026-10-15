@@ -352,7 +352,7 @@ export class AgentRequests {
         skills: [],
       },
     })
-    if (card) advanceCardOnLaunch(this.ctx, card.id)
+    if (card) advanceCardOnLaunch(this.ctx, card.id, requester.userId)
 
     const tree = worktreeId
       ? (this.ctx.db.select({ name: worktrees.name }).from(worktrees).where(eq(worktrees.id, worktreeId)).get()

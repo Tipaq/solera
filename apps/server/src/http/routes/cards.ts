@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   attachments,
+  cardBlocks,
   cardNotes,
   cardRefs,
   cards,
@@ -18,9 +19,13 @@ import {
 } from '@solera/db'
 import {
   MAX_ATTACHMENT_BYTES,
+  cardBlockBodySchema,
   createCardBodySchema,
   createCardNoteBodySchema,
   reorderCardsBodySchema,
+  toggleSubtask,
+  toggleSubtaskBodySchema,
+  parseSubtasks,
   updateCardBodySchema,
   type CardConversationDto,
   type CardDto,
@@ -29,8 +34,9 @@ import {
   type CardSearchDto,
 } from '@solera/protocol'
 import { createCard, syncCardReferences } from '../../cards/create.js'
+import { recordCardMove } from '../../cards/moves.js'
 import type { AppContext } from '../context.js'
-import { badRequest, forbidden, notFound } from '../errors.js'
+import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 const MENTION_LIMIT = 20
@@ -63,6 +69,27 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const card = ctx.db.select().from(cards).where(eq(cards.id, cardId)).get()
     if (!card) throw notFound('card_not_found', 'Card not found.')
     return { card, project: loadProject(card.projectId, userId) }
+  }
+
+  /**
+   * Vérifie qu'une carte peut servir de jalon à une autre.
+   *
+   * Même projet, et pas elle-même : un jalon est une carte ordinaire, mais une carte
+   * qui serait son propre jalon ne dirait rien et se rendrait en boucle. Deux niveaux
+   * (une carte-jalon qui a elle-même un jalon) restent permis — c'est une v0.2 dans
+   * une v1.0, et le panneau n'en rend qu'un.
+   */
+  const resolveMilestone = (milestoneCardId: string, card: CardRow): string => {
+    if (milestoneCardId === card.id) {
+      throw badRequest('card_milestone_self', 'A card cannot be its own milestone.')
+    }
+    const row = ctx.db
+      .select({ id: cards.id })
+      .from(cards)
+      .where(and(eq(cards.id, milestoneCardId), eq(cards.projectId, card.projectId)))
+      .get()
+    if (!row) throw notFound('card_not_found', 'Card not found.')
+    return row.id
   }
 
   /**
@@ -158,6 +185,61 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const outgoing = group(links, (row) => row.sourceId)
     const incoming = group(backlinks, (row) => row.targetId)
 
+    /**
+     * Les liens posés à la main, lus à part des références `#12` et nommés autrement :
+     * les deux tables ne disent pas la même chose, et une description corrigée réécrit
+     * la première sans toucher à la seconde.
+     */
+    const blocking = ctx.db
+      .select({
+        sourceId: cardBlocks.sourceId,
+        targetId: cardBlocks.targetId,
+        id: cards.id,
+        number: cards.number,
+        title: cards.title,
+        column: cards.column,
+      })
+      .from(cardBlocks)
+      .innerJoin(cards, eq(cards.id, cardBlocks.targetId))
+      .where(inArray(cardBlocks.sourceId, ids))
+      .orderBy(cards.number)
+      .all()
+
+    const blockedByRows = ctx.db
+      .select({
+        sourceId: cardBlocks.sourceId,
+        targetId: cardBlocks.targetId,
+        id: cards.id,
+        number: cards.number,
+        title: cards.title,
+        column: cards.column,
+      })
+      .from(cardBlocks)
+      .innerJoin(cards, eq(cards.id, cardBlocks.sourceId))
+      .where(inArray(cardBlocks.targetId, ids))
+      .orderBy(cards.number)
+      .all()
+
+    const blocks = group(blocking, (row) => row.sourceId)
+    const blockedBy = group(blockedByRows, (row) => row.targetId)
+
+    // Les cartes-jalons désignées par ce lot, lues en un coup : un jalon est une carte
+    // du même projet, donc souvent déjà dans `rows`, mais pas toujours — le board
+    // replie ses colonnes de sortie et un jalon livré y tombe.
+    const milestoneIds = [
+      ...new Set(rows.map((row) => row.milestoneCardId).filter((id): id is string => id !== null)),
+    ]
+    const milestones = new Map(
+      (milestoneIds.length === 0
+        ? []
+        : ctx.db
+            .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+            .from(cards)
+            .where(inArray(cards.id, milestoneIds))
+            .all()
+      ).map((row) => [row.id, row satisfies CardLinkDto]),
+    )
+
     const notes = new Map(
       ctx.db
         .select({ cardId: cardNotes.cardId, total: count() })
@@ -194,6 +276,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       description: row.description,
       column: row.column,
       position: row.position,
+      dueAt: row.dueAt,
+      milestone: row.milestoneCardId ? (milestones.get(row.milestoneCardId) ?? null) : null,
       createdBy: row.createdBy,
       createdByName: authors.get(row.createdBy) ?? '',
       createdAt: row.createdAt,
@@ -203,6 +287,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       attachmentCount: files.get(row.id) ?? 0,
       references: outgoing.get(row.id) ?? [],
       referencedBy: incoming.get(row.id) ?? [],
+      blocks: blocks.get(row.id) ?? [],
+      blockedBy: blockedBy.get(row.id) ?? [],
     }))
   }
 
@@ -328,6 +414,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const patch: Partial<typeof cards.$inferInsert> = {}
     if (body.title !== undefined) patch.title = body.title
     if (body.description !== undefined) patch.description = body.description
+    if (body.dueAt !== undefined) patch.dueAt = body.dueAt
+    if (body.milestoneCardId !== undefined) {
+      patch.milestoneCardId = body.milestoneCardId === null ? null : resolveMilestone(body.milestoneCardId, card)
+    }
     if (body.column !== undefined && body.column !== card.column) {
       patch.column = body.column
       // Changer de colonne depuis le détail place la carte en fin de la nouvelle,
@@ -343,6 +433,9 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = Date.now()
       ctx.db.update(cards).set(patch).where(eq(cards.id, id)).run()
+    }
+    if (patch.column) {
+      recordCardMove(ctx.db, { cardId: id, from: card.column, to: patch.column, userId: user.id })
     }
     if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
 
@@ -452,6 +545,93 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     return reply.status(204).send()
   })
 
+  /**
+   * Pose un lien « bloque » : la carte de l'URL empêche `blockedId` d'avancer.
+   *
+   * Idempotent, et volontairement : reposer un lien déjà là n'est pas une erreur à
+   * expliquer, c'est un double clic.
+   */
+  app.post('/api/cards/:id/blocks', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = cardBlockBodySchema.parse(request.body)
+    const { card } = loadCard(id, user.id)
+
+    if (body.blockedId === id) {
+      throw badRequest('card_block_self', 'A card cannot block itself.')
+    }
+    const target = ctx.db
+      .select({ id: cards.id })
+      .from(cards)
+      .where(and(eq(cards.id, body.blockedId), eq(cards.projectId, card.projectId)))
+      .get()
+    if (!target) throw notFound('card_not_found', 'Card not found.')
+    // Un blocage réciproque est une impasse qu'aucune des deux cartes ne peut lever :
+    // la refuser ici évite de l'afficher comme un état normal.
+    const reverse = ctx.db
+      .select({ sourceId: cardBlocks.sourceId })
+      .from(cardBlocks)
+      .where(and(eq(cardBlocks.sourceId, target.id), eq(cardBlocks.targetId, id)))
+      .get()
+    if (reverse) throw conflict('card_block_cycle', 'These two cards would block each other.')
+
+    ctx.db
+      .insert(cardBlocks)
+      .values({ sourceId: id, targetId: target.id, createdBy: user.id, createdAt: Date.now() })
+      .onConflictDoNothing()
+      .run()
+
+    return reply.status(201).send(readCard(id, card.projectId))
+  })
+
+  app.delete('/api/cards/:id/blocks/:blockedId', async (request) => {
+    const user = requireUser(request)
+    const { id, blockedId } = request.params as { id: string; blockedId: string }
+    const { card } = loadCard(id, user.id)
+
+    ctx.db
+      .delete(cardBlocks)
+      .where(and(eq(cardBlocks.sourceId, id), eq(cardBlocks.targetId, blockedId)))
+      .run()
+
+    return readCard(id, card.projectId)
+  })
+
+  /**
+   * Coche ou décoche une sous-tâche, c'est-à-dire réécrit une ligne de la description.
+   *
+   * Une route à part plutôt qu'un `PATCH description` : le client n'envoie pas le texte
+   * entier, donc il n'écrase pas ce qu'une autre session vient d'écrire. Le serveur
+   * relit la description, vérifie que la n-ième case dit toujours ce que le clic
+   * visait, et ne retouche que le caractère entre crochets. Si les deux ne concordent
+   * plus, il refuse en 409 : la page affichée est périmée, et c'est elle qu'il faut
+   * recharger, pas la description qu'il faut deviner.
+   */
+  app.post('/api/cards/:id/subtasks', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = toggleSubtaskBodySchema.parse(request.body)
+    const { card } = loadCard(id, user.id)
+
+    const current = parseSubtasks(card.description)[body.index]
+    if (!current || current.label !== body.label.trim()) {
+      throw conflict('card_subtask_moved', 'The description changed since this list was shown.')
+    }
+    if (current.checked === body.checked) return readCard(id, card.projectId)
+
+    const description = toggleSubtask(card.description, body.index, body.checked)
+    if (description === null) {
+      throw conflict('card_subtask_moved', 'The description changed since this list was shown.')
+    }
+
+    ctx.db.update(cards).set({ description, updatedAt: Date.now() }).where(eq(cards.id, id)).run()
+    // Les références ne changent pas en cochant une case, mais la description est la
+    // source des backlinks : la resynchroniser ici garde un seul chemin d'écriture.
+    syncCardReferences(ctx.db, card, description)
+
+    return readCard(id, card.projectId)
+  })
+
   app.post('/api/projects/:id/cards/order', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -504,11 +684,17 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
             column: group.column,
             position: index,
           }
+          const from = known.get(cardId)
           // Un changement de colonne est un mouvement dans le workflow, pas un simple
           // rangement : il vaut modification. Une réorganisation verticale n'en est
           // pas une et ne doit pas faire remonter toute la colonne en « modifiée ».
-          if (known.get(cardId) !== group.column) patch.updatedAt = now
+          if (from !== group.column) patch.updatedAt = now
           tx.update(cards).set(patch).where(eq(cards.id, cardId)).run()
+          // Dans la transaction qui déplace : un glissement qui échoue à mi-chemin ne
+          // doit pas laisser au Journal des mouvements qui n'ont pas eu lieu.
+          if (from && from !== group.column) {
+            recordCardMove(tx, { cardId, from, to: group.column, userId: user.id, at: now })
+          }
         })
       }
     })

@@ -17,14 +17,28 @@ import { MarkdownTable } from './MarkdownTable'
  * `base` : dossier du fichier rendu, quand le texte en est un. Ses liens relatifs en
  * partent, au lieu de partir de la racine du workspace.
  */
-export function Markdown({ text, base }: { text: string; base?: string }) {
+export function Markdown({
+  text,
+  base,
+  onToggleTask,
+}: {
+  text: string
+  base?: string
+  /**
+   * Rend les cases `- [ ]` cliquables et dit laquelle vient d'être cochée, par son
+   * rang dans le document. Absent partout sauf sur la description d'une carte : c'est
+   * le seul texte que l'interface sait réécrire.
+   */
+  onToggleTask?: (index: number, checked: boolean) => void
+}) {
   const conversationId = useContext(FileLinkContext)
+  const tasks = onToggleTask ? ('interactive' as const) : undefined
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
   // est celui affiché tant que la réponse du serveur n'est pas là.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base }),
-    [text, conversationId, base],
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, tasks }),
+    [text, conversationId, base, tasks],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -37,10 +51,14 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
   const segments = useMemo(
     () =>
       linkable
-        ? parseMarkdown(text, { knownFiles: known, scope: conversationId ?? undefined, base })
-            .segments
+        ? parseMarkdown(text, {
+            knownFiles: known,
+            scope: conversationId ?? undefined,
+            base,
+            tasks,
+          }).segments
         : found.segments,
-    [linkable, text, known, conversationId, base, found.segments],
+    [linkable, text, known, conversationId, base, tasks, found.segments],
   )
 
   /**
@@ -50,6 +68,18 @@ export function Markdown({ text, base }: { text: string; base?: string }) {
    * quel, il n'y a pas de composant React où accrocher un `onClick`.
    */
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    const task = (event.target as HTMLElement).closest<HTMLInputElement>('[data-sg-task]')
+    if (task && onToggleTask) {
+      // La case ne bascule pas d'elle-même : son état vit dans la description, pas
+      // dans le DOM injecté, et la laisser se cocher avant la réponse afficherait un
+      // travail fait que le serveur peut encore refuser.
+      // `checked` porte déjà l'état visé : le navigateur bascule la case avant de
+      // livrer le clic, et c'est `preventDefault` qui l'en fait revenir.
+      event.preventDefault()
+      onToggleTask(Number(task.dataset.sgTask), task.checked)
+      return
+    }
+
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-sg-path]')
     const path = target?.dataset.sgPath
     if (!path || !conversationId) return

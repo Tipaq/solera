@@ -58,7 +58,49 @@ export function useUpdateCard(projectId: string) {
       title?: string
       description?: string
       column?: CardColumn
+      /** `null` enlève l'échéance ; absent la laisse telle quelle. */
+      dueAt?: number | null
+      /** `null` détache la carte de son jalon. */
+      milestoneCardId?: string | null
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+/**
+ * Coche ou décoche une sous-tâche de la description.
+ *
+ * L'indice et le libellé plutôt que la description entière : la carte est éditée
+ * ailleurs, par une autre session ou dans un autre onglet, et renvoyer tout le texte
+ * pour une case écraserait ce qu'on n'a pas lu. Le serveur refuse en 409 quand la
+ * n-ième case ne dit plus ce qu'elle disait, et le board se recharge.
+ */
+export function useToggleSubtask(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationKey: ['toggle-subtask', cardId],
+    mutationFn: (task: { index: number; checked: boolean; label: string }) =>
+      api.post<CardDto>(`/api/cards/${cardId}/subtasks`, task),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+    onError: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+/** Pose le lien « cette carte bloque celle-là », qui survit aux réécritures du texte. */
+export function useAddCardBlock(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (blockedId: string) =>
+      api.post<CardDto>(`/api/cards/${cardId}/blocks`, { blockedId }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+export function useRemoveCardBlock(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (blockedId: string) =>
+      api.delete<CardDto>(`/api/cards/${cardId}/blocks/${blockedId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }

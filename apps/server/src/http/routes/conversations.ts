@@ -324,7 +324,7 @@ export function registerConversationRoutes(
     // La seule transition automatique du board, et elle tient à ce qu'elle suit un
     // geste : c'est l'envoi qui vient de réussir, pas la découverte d'une session en
     // train de tourner. Une carte plus avancée que `todo` ne recule pas.
-    if (body.cardId) advanceCardOnLaunch(ctx, body.cardId)
+    if (body.cardId) advanceCardOnLaunch(ctx, body.cardId, user.id)
 
     // Curseur à zéro : le client marque la conversation lue en s'y installant, comme
     // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.

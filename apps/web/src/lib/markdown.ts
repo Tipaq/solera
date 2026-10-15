@@ -43,9 +43,20 @@ const TASK_MARKER = /^\[([ xX])\]\s+/
  * markdown-it ne connaît pas cette extension : le marqueur reste du texte brut au
  * début du premier paragraphe de l'élément. On le retire du texte et on le remplace
  * par une vraie case, désactivée puisque le fil n'est pas modifiable.
+ *
+ * `tasks: 'interactive'` rend ces cases cliquables et numérotées : c'est ce dont la
+ * description d'une carte a besoin, où cocher réécrit la ligne du markdown. Partout
+ * ailleurs — un message d'agent, un fichier lu — il n'y a rien à réécrire, et une case
+ * cliquable qui ne garde pas son état serait un mensonge.
  */
 md.core.ruler.push('sg_task_lists', (state) => {
   const tokens = state.tokens
+  const interactive = (state.env as MarkdownEnv).tasks === 'interactive'
+  // Le rang de la case dans le document est son adresse : c'est par lui que le panneau
+  // dit au serveur laquelle cocher, et il doit compter comme `parseSubtasks` du
+  // protocole — donc sans les `- [ ]` des blocs de code, que markdown-it n'ouvre pas
+  // en liste.
+  let rank = 0
 
   for (let i = 0; i < tokens.length; i += 1) {
     if (tokens[i]?.type !== 'list_item_open') continue
@@ -65,8 +76,12 @@ md.core.ruler.push('sg_task_lists', (state) => {
     tokens[i]?.attrJoin('class', 'sg-task-item')
 
     const checkbox = new state.Token('html_inline', '', 0)
-    checkbox.content = `<input type="checkbox" disabled${match[1] === ' ' ? '' : ' checked'}>`
+    const checked = match[1] === ' ' ? '' : ' checked'
+    checkbox.content = interactive
+      ? `<input type="checkbox" data-sg-task="${rank}"${checked}>`
+      : `<input type="checkbox" disabled${checked}>`
     inline.children?.unshift(checkbox)
+    rank += 1
   }
 
   return true
@@ -330,6 +345,8 @@ interface MarkdownEnv {
   scope?: WorkspaceScope
   /** Dossier du document rendu, d'où partent ses liens relatifs. Voir `pathTarget`. */
   base?: string
+  /** Cases à cocher cliquables, avec leur rang en `data-sg-task`. Voir `sg_task_lists`. */
+  tasks?: 'interactive'
 }
 
 /** Un segment de contenu, tel que le composant React doit le rendre. */
@@ -383,7 +400,12 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  */
 export function parseMarkdown(
   text: string,
-  options: { knownFiles?: Set<string>; scope?: WorkspaceScope; base?: string } = {},
+  options: {
+    knownFiles?: Set<string>
+    scope?: WorkspaceScope
+    base?: string
+    tasks?: 'interactive'
+  } = {},
 ): MarkdownDocument {
   const candidates = new Set<string>()
   const env: MarkdownEnv = { candidates, ...options }
