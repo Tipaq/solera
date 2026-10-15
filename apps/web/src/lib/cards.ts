@@ -1,10 +1,12 @@
-import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import type {
   CardColumn,
   CardDto,
   CardLinkDto,
   CardNoteDto,
   CardSearchDto,
+  ProjectDto,
 } from '@solera/protocol'
 import { api } from './api'
 import { useDebounced } from './search'
@@ -18,6 +20,47 @@ export function useCards(projectId: string | undefined) {
     enabled: Boolean(projectId),
     staleTime: 15_000,
   })
+}
+
+/**
+ * Les cartes de plusieurs projets, chacune sachant d'où elle vient.
+ *
+ * Une requête par projet, parce que c'est ce que le serveur offre — `/api/cards` n'existe
+ * pas, et `/api/cards/search` ne rend que des extraits sans colonne ni session. La liste
+ * des projets est courte, et `useQueries` partage le cache avec `useCards` : ouvrir le
+ * board d'un projet après le board global ne relit rien.
+ *
+ * Le projet voyage avec la carte plutôt qu'à côté : le board global mêle les cartes dans
+ * quatre colonnes, et chaque tuile doit pouvoir dire d'où elle sort sans que l'appelant
+ * garde une table de correspondance à jour.
+ */
+export function useAllCards(projects: ProjectDto[]): {
+  cards: (CardDto & { project: ProjectDto })[]
+  isPending: boolean
+} {
+  const queries = useQueries({
+    queries: projects.map((project) => ({
+      queryKey: cardsKey(project.id),
+      queryFn: () => api.get<CardDto[]>(`/api/projects/${project.id}/cards`),
+      staleTime: 15_000,
+    })),
+  })
+
+  // Les dépendances sont les horodatages de réponse : le tableau que rend `useQueries`
+  // est recomposé à chaque rendu, et le mémoriser dessus ne mémoriserait rien.
+  const stamps = queries.map((query) => query.dataUpdatedAt).join(',')
+  const pending = queries.some((query) => query.isPending)
+
+  return useMemo(
+    () => ({
+      cards: projects.flatMap((project, index) =>
+        (queries[index]?.data ?? []).map((card) => ({ ...card, project })),
+      ),
+      isPending: pending,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projects, stamps, pending],
+  )
 }
 
 /**
@@ -60,6 +103,27 @@ export function useUpdateCard(projectId: string) {
       column?: CardColumn
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+/**
+ * Déplace une carte d'une colonne à l'autre sans savoir d'avance de quel projet.
+ *
+ * Le board global mêle les cartes de tous les projets : il n'a pas un `projectId` à
+ * passer à `useUpdateCard`, il en a un par carte. La variable le porte donc, et c'est
+ * elle qui dit quelle liste relire.
+ *
+ * Le **rang** n'y est pas, et ce n'est pas un oubli : dans une colonne qui mêle cinq
+ * projets, le rang n'a plus de sens — la position d'une carte s'entend dans son propre
+ * board, et c'est là qu'on la règle.
+ */
+export function useMoveCard() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, column }: { id: string; projectId: string; column: CardColumn }) =>
+      api.patch<CardDto>(`/api/cards/${id}`, { column }),
+    onSuccess: (_card, { projectId }) =>
+      queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }
 

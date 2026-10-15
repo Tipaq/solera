@@ -159,9 +159,10 @@ try {
   await page.goto(`${base}/p/${docs.id}`)
   await page.getByText('Rien ne réclame ici.', { exact: true }).waitFor()
 
-  // ─── La page Projets ──────────────────────────────────────────────────────
+  // ─── Le portefeuille : Projets, Board global, Travail ─────────────────────
   await page.goto(`${base}/projects`)
-  await page.getByRole('heading', { name: 'Projets', exact: true, level: 2 }).waitFor()
+  const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
+  await portfolio.waitFor()
   for (const project of projects) {
     await page.getByRole('link', { name: new RegExp(project.name) }).first().waitFor()
   }
@@ -170,6 +171,51 @@ try {
     'Chaque ligne porte la branche du dépôt',
   )
   await page.screenshot({ animations: 'disabled', path: join(shots, 'page-projets.png') })
+
+  /*
+    Le board global : les cartes de **tous** les projets dans quatre colonnes, chacune
+    disant d'où elle sort. C'est ce qui le distingue d'un board de projet, et ce qu'une
+    relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
+    projets atterrissent bien dans la même colonne.
+  */
+  await portfolio.getByRole('link', { name: /^Board/ }).click()
+  await page.waitForURL('**/projects/board')
+  const todo = page.getByRole('region', { name: 'À faire', exact: true })
+  await todo.waitFor()
+  const mixed = await page.evaluate(() => {
+    const names = [...document.querySelectorAll('[data-card-open]')]
+      .map((tile) => tile.textContent ?? '')
+    return names.length
+  })
+  assert.ok(mixed > 0, 'Le board global porte des cartes')
+  assert.equal(
+    await page.getByRole('region', { name: 'Abandonné', exact: true }).count(),
+    0,
+    "L'abandon est un classement, pas une étape du board global",
+  )
+  // Le filtre par projet vit dans l'adresse : un board filtré se partage par lien.
+  await page.goto(`${base}/projects/board?projet=${nimbus.id}`)
+  await todo.waitFor()
+  await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
+  const others = projects.filter((entry) => entry.id !== nimbus.id).map((entry) => entry.name)
+  for (const name of others) {
+    assert.equal(
+      await page.locator('[data-card-open]').filter({ hasText: name }).count(),
+      0,
+      `Le filtre retire les cartes de « ${name} »`,
+    )
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
+
+  // *Travail* : groupé par ce que les cartes demandent, et non par colonne.
+  await page.goto(`${base}/projects/work`)
+  await page.getByRole('heading', { name: /^À vérifier/ }).waitFor()
+  assert.equal(
+    await page.getByRole('heading', { name: /^À faire/ }).count(),
+    0,
+    'Travail groupe par demande, pas par colonne : « À faire » ne réclame rien',
+  )
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail.png') })
 
   // ─── La page Planifiées ───────────────────────────────────────────────────
   await page.goto(`${base}/schedules`)
@@ -210,7 +256,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global et Travail, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

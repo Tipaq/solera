@@ -1,9 +1,10 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
-import type { CardDto } from '@solera/protocol'
+import type { CardDto, ProjectDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
+import { ProjectAvatar } from '../ProjectAvatar'
 import { cx } from '@solera/ui'
 
 /** Ce qui tient sous le titre sans transformer la tuile en fiche. */
@@ -11,6 +12,15 @@ const EXCERPT_MAX = 120
 
 interface CardTileProps {
   card: CardDto
+  /**
+   * Le projet d'où la carte sort, sur un board qui en mêle plusieurs.
+   *
+   * Seul ajout du board global : la pastille devant le numéro et le nom sous le titre.
+   * La tuile reste celle de l'application — un résumé qui redessine ses propres tuiles
+   * finit par mentir sur le board qu'on ouvre en cliquant dessus — et sur un board de
+   * projet, où toutes les cartes viennent du même endroit, le nom serait du bruit.
+   */
+  project?: ProjectDto
   selected?: boolean
   /** Rendu dans le calque de glissement : ni tri, ni clic, seulement l'apparence. */
   disabled?: boolean
@@ -27,7 +37,7 @@ interface CardTileProps {
  * qu'on ne peut plus ouvrir sans souris est un recul que l'ergonomie du glissement ne
  * rachète pas.
  */
-export function CardTile({ card, selected = false, overlay = false, disabled = false, onOpen }: CardTileProps) {
+export function CardTile({ card, project, selected = false, overlay = false, disabled = false, onOpen }: CardTileProps) {
   const t = useTranslate()
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, transform, transition, isDragging } =
     useSortable({ id: card.id, disabled: overlay || disabled })
@@ -43,11 +53,17 @@ export function CardTile({ card, selected = false, overlay = false, disabled = f
   const body = (
     <>
       <div className="flex items-baseline gap-1.5 pr-9 md:pr-5">
+        {project ? <ProjectAvatar project={project} className="size-3 shrink-0 self-center" /> : null}
         <span className="shrink-0 text-meta font-medium text-ink-faint">#{card.number}</span>
         <p className="min-w-0 flex-1 text-sm font-semibold leading-relaxed text-ink">{card.title}</p>
       </div>
 
-      {excerpt ? (
+      {/* Le nom du projet **remplace** l'extrait : sur un board qui en mêle cinq, savoir
+          d'où sort la carte prime sur ses deux premières lignes, et empiler les deux
+          doublerait la hauteur de chaque tuile. */}
+      {project ? (
+        <p className="mt-2 truncate text-xs text-ink-faint">{project.name}</p>
+      ) : excerpt ? (
         <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-ink-faint">
           {excerpt.length > EXCERPT_MAX ? `${excerpt.slice(0, EXCERPT_MAX)}...` : excerpt}
         </p>

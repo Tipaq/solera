@@ -11,6 +11,9 @@ import { HomePage } from './routes/HomePage'
 import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
+import { PortfolioBoardPage } from './routes/PortfolioBoardPage'
+import { PortfolioLayout } from './routes/PortfolioLayout'
+import { PortfolioWorkPage } from './routes/PortfolioWorkPage'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
 import { ProjectPage } from './routes/ProjectPage'
@@ -100,8 +103,15 @@ export function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/projects" element={<ProjectsPage />} />
+          {/* Le portefeuille a la même grammaire qu'un projet, un cran au-dessus. La
+              création d'un projet reste dehors : c'est un formulaire, pas une vue du
+              portefeuille, et il doit s'ouvrir plein écran. */}
           <Route path="/projects/new" element={<NewProjectPage />} />
+          <Route path="/projects" element={<PortfolioLayout />}>
+            <Route index element={<ProjectsPage />} />
+            <Route path="board" element={<PortfolioBoardPage />} />
+            <Route path="work" element={<PortfolioWorkPage />} />
+          </Route>
           <Route path="/schedules" element={<SchedulesPage />} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
               Pas de voile d'attente : la page arrive quand son code est là, plutôt que

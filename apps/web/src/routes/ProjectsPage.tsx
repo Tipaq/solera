@@ -1,19 +1,17 @@
-import { CalendarClock, FolderOpen, FolderPlus, GitBranch, MessageCircleQuestion, Pencil, SquareKanban } from 'lucide-react'
+import { CalendarClock, FolderOpen, GitBranch, MessageCircleQuestion, Pencil } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { CardDto, ConversationDto, ProjectDto, ScheduledTaskDto } from '@solera/protocol'
-import { HeaderBand } from '../components/HeaderBand'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { DemandTile } from '../components/places/DemandTile'
 import { Button, EmptyState, cx } from '@solera/ui'
 import { useLiveConversations, type LiveConversation } from '../lib/activity'
-import { api } from '../lib/api'
+import { useAllCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { useSchedules } from '../lib/schedules'
-import { useQueries } from '@tanstack/react-query'
 
 /** Ce qu'une ligne de projet doit dire, une fois tout recoupé. */
 interface Row {
@@ -47,23 +45,12 @@ export function ProjectsPage() {
   )
   const live = useLiveConversations(conversations ?? [])
 
-  /**
-   * Les cartes de chaque projet, une requête par projet.
-   *
-   * Il n'y a pas de route qui les rende toutes : `/api/projects/:id/cards` est ce que
-   * le serveur offre, et la liste des projets est courte. `useQueries` partage le
-   * cache avec `useCards`, donc ouvrir un board ensuite ne relit rien.
-   */
-  const cardQueries = useQueries({
-    queries: visible.map((project) => ({
-      queryKey: ['cards', project.id],
-      queryFn: () => api.get<CardDto[]>(`/api/projects/${project.id}/cards`),
-      staleTime: 15_000,
-    })),
-  })
+  // Les cartes de tous les projets : le même crochet que le board global et la vue
+  // *Travail*, donc le même cache — passer d'un onglet à l'autre ne relit rien.
+  const { cards } = useAllCards(visible)
 
   const rows = useMemo((): Row[] => {
-    return visible.map((project, index) => {
+    return visible.map((project) => {
       const mine = live.filter((entry) => entry.conversation.projectId === project.id)
       const tasks = (schedules ?? []).filter(
         (task) => task.projectId === project.id && task.nextRunAt !== null,
@@ -72,12 +59,12 @@ export function ProjectsPage() {
         project,
         awaiting: mine.filter((entry) => entry.awaiting),
         running: mine.filter((entry) => entry.running),
-        review: (cardQueries[index]?.data ?? []).filter((card) => card.column === 'review'),
+        review: cards.filter((card) => card.projectId === project.id && card.column === 'review'),
         next: tasks.sort((a, b) => (a.nextRunAt ?? 0) - (b.nextRunAt ?? 0))[0] ?? null,
         lastActivity: lastActivityOf(conversations ?? [], project.id),
       }
     })
-  }, [visible, live, schedules, cardQueries, conversations])
+  }, [visible, live, schedules, cards, conversations])
 
   const awaiting = rows.filter((row) => row.awaiting.length > 0)
   const review = rows.filter((row) => row.review.length > 0)
@@ -85,77 +72,68 @@ export function ProjectsPage() {
   const count = (rows: Row[], of: (row: Row) => number) => rows.reduce((sum, row) => sum + of(row), 0)
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <SquareKanban size={16} className="shrink-0 text-ink-faint" />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{t('place.projects.title')}</h1>
-      </HeaderBand>
+    /* Pleine largeur, et plus de couloir de 64 rem : les lignes de projet prennent toute
+       la place et gardent leurs colonnes alignées — demandes, dépôt, prochaine tâche,
+       activité. C'est la raison d'être des lignes plutôt que d'une grille de cartes, et
+       un couloir centré la défaisait à moitié (écran F6 de l'audit).
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
-        <div className="mx-auto flex max-w-5xl flex-col gap-5">
-          <header className="flex items-center gap-3">
-            <h2 className="min-w-0 flex-1 text-lg font-semibold tracking-tight">
-              {t('place.projects.title')}
-            </h2>
-            <Link to="/projects/new">
-              <Button size="sm" icon={<FolderPlus size={16} />}>{t('place.projects.new')}</Button>
-            </Link>
-          </header>
+       Plus de bande ni d'en-tête : le nom est dans la bande de `PortfolioLayout`, et
+       *+ Projet* au bout de sa rangée. */
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      <div className="flex flex-col gap-5">
+        {awaiting.length > 0 || review.length > 0 || running.length > 0 ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {awaiting.length > 0 ? (
+              <DemandTile
+                to={`/p/${awaiting[0]!.project.id}`}
+                tone="caution"
+                icon={<MessageCircleQuestion size={14} />}
+                label={t('place.projects.awaiting')}
+                count={count(awaiting, (row) => row.awaiting.length)}
+                detail={awaiting.map((row) => row.project.name).join(', ')}
+              />
+            ) : null}
+            {review.length > 0 ? (
+              <DemandTile
+                to={`/p/${review[0]!.project.id}/board`}
+                tone="caution"
+                icon={<Pencil size={14} />}
+                label={t('place.demand.review')}
+                count={count(review, (row) => row.review.length)}
+                detail={t(review.length > 1 ? 'place.projects.spreadMany' : 'place.projects.spreadOne', { count: review.length })}
+              />
+            ) : null}
+            {running.length > 0 ? (
+              <DemandTile
+                to={`/p/${running[0]!.project.id}`}
+                tone="accent"
+                icon={<span aria-hidden className="block size-1.5 rounded-full bg-accent" />}
+                label={t('place.projects.running')}
+                count={count(running, (row) => row.running.length)}
+                detail={t(running.length > 1 ? 'place.projects.spreadMany' : 'place.projects.spreadOne', { count: running.length })}
+              />
+            ) : null}
+          </div>
+        ) : null}
 
-          {awaiting.length > 0 || review.length > 0 || running.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {awaiting.length > 0 ? (
-                <DemandTile
-                  to={`/p/${awaiting[0]!.project.id}`}
-                  tone="caution"
-                  icon={<MessageCircleQuestion size={14} />}
-                  label={t('place.projects.awaiting')}
-                  count={count(awaiting, (row) => row.awaiting.length)}
-                  detail={awaiting.map((row) => row.project.name).join(', ')}
-                />
-              ) : null}
-              {review.length > 0 ? (
-                <DemandTile
-                  to={`/p/${review[0]!.project.id}/board`}
-                  tone="caution"
-                  icon={<Pencil size={14} />}
-                  label={t('place.demand.review')}
-                  count={count(review, (row) => row.review.length)}
-                  detail={t(review.length > 1 ? 'place.projects.spreadMany' : 'place.projects.spreadOne', { count: review.length })}
-                />
-              ) : null}
-              {running.length > 0 ? (
-                <DemandTile
-                  to={`/p/${running[0]!.project.id}`}
-                  tone="accent"
-                  icon={<span aria-hidden className="block size-1.5 rounded-full bg-accent" />}
-                  label={t('place.projects.running')}
-                  count={count(running, (row) => row.running.length)}
-                  detail={t(running.length > 1 ? 'place.projects.spreadMany' : 'place.projects.spreadOne', { count: running.length })}
-                />
-              ) : null}
-            </div>
-          ) : null}
-
-          {isPending ? null : rows.length === 0 ? (
-            <EmptyState
-              icon={<FolderOpen size={22} />}
-              title={t('home.empty.title')}
-              description={t('home.empty.description')}
-              action={
-                <Link to="/projects/new">
-                  <Button>{t('home.createProject')}</Button>
-                </Link>
-              }
-            />
-          ) : (
-            <ul className="flex flex-col gap-1.5">
-              {rows.map((row) => (
-                <ProjectRow key={row.project.id} row={row} />
-              ))}
-            </ul>
-          )}
-        </div>
+        {isPending ? null : rows.length === 0 ? (
+          <EmptyState
+            icon={<FolderOpen size={22} />}
+            title={t('home.empty.title')}
+            description={t('home.empty.description')}
+            action={
+              <Link to="/projects/new">
+                <Button>{t('home.createProject')}</Button>
+              </Link>
+            }
+          />
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {rows.map((row) => (
+              <ProjectRow key={row.project.id} row={row} />
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )

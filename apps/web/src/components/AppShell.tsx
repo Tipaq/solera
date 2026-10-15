@@ -48,12 +48,13 @@ export function AppShell() {
   // Les pages de lieu portent leur propre segment de bande : sans ces lignes elles en
   // auraient deux au téléphone.
   const projectsRoute = useMatch('/projects')
+  const portfolioRoute = useMatch('/projects/*')
   const plannedRoute = useMatch('/schedules')
   const vaultRoute = useMatch('/vault/*')
   const vaultRootRoute = useMatch('/vault')
   const contextualHeader = Boolean(
     conversationRoute || freeConversationRoute || servicesRoute
-    || projectRoute || projectRootRoute || projectsRoute || plannedRoute
+    || projectRoute || projectRootRoute || projectsRoute || portfolioRoute || plannedRoute
     || vaultRoute || vaultRootRoute,
   )
   const navInactive = wide ? hidden : !navOpen
