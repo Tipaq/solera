@@ -29,6 +29,7 @@ const UNDO_LABELS: Record<GitUndoKind, MessageKey> = {
   tag: 'git.undo.tag',
   track: 'git.undo.track',
   'stash-push': 'git.undo.stashPush',
+  'rebase-interactive': 'git.undo.rebaseInteractive',
 }
 
 /**

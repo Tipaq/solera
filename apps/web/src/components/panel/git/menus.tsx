@@ -40,6 +40,8 @@ export interface MenuContext {
   locked: boolean
   projectId: string | null
   onOpenThread: (id: string) => void
+  /** Ouvre le rebase interactif en partant de ce commit (planche T9). */
+  onRebase: (hash: string) => void
 }
 
 export function CommitMenu({
@@ -91,9 +93,14 @@ export function CommitMenu({
         >
           {t('git.menu.commit.rebase', { branch })}
         </MenuItem>
-        {/* Le rebase interactif est le lot 3 : l'entrée reste, éteinte, parce qu'une
-            entrée qui apparaîtra un jour vaut mieux qu'une entrée qui surgit. */}
-        <MenuItem icon={<Rows3 size={13} />} disabled onSelect={() => undefined}>
+        {/* « À partir d'ici » : le commit désigné est le point de **départ**, pas un
+            des commits rejoués. C'est la lecture qu'en fait GitKraken, et la seule qui
+            ne demande pas de deviner où s'arrête la liste. */}
+        <MenuItem
+          icon={<Rows3 size={13} />}
+          disabled={context.locked}
+          onSelect={() => context.onRebase(hash)}
+        >
           {t('git.menu.commit.interactive')}
         </MenuItem>
 

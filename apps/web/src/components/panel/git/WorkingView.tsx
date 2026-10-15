@@ -6,17 +6,19 @@ import {
   GitCommitHorizontal,
   Loader,
   Minus,
+  History,
   MoreHorizontal,
   Plus,
   RefreshCw,
+  UserSquare,
 } from 'lucide-react'
 import type { DiffFileDto, GitStateDto } from '@solera/protocol'
 import { parseUnifiedDiff } from '../../../lib/diff'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
-import { DiffHunks } from '../../DiffHunks'
 import { useGitActions } from './actions'
+import { LineStage } from './LineStage'
 import { useGitState } from './queries'
 
 /**
@@ -37,19 +39,25 @@ import { useGitState } from './queries'
  *   que périmée. Et le message déjà écrit survit à la relecture : c'est le seul état
  *   que l'utilisateur a produit.
  *
- * L'indexation par bloc et par ligne est le lot 3 : ici on coche des fichiers entiers.
+ * **Le diff déplié d'un fichier est un formulaire** (planche T3) : chaque bloc porte
+ * son bouton, chaque ligne modifiée sa case. Le geste part dans `LineStage`, qui
+ * n'envoie que des positions — le serveur relit le diff et refuse si le fichier a
+ * bougé depuis l'affichage.
  */
 export function WorkingView({
   scope,
   pendingReview,
   onReviewed,
   onOpenFile,
+  onOpenHistory,
 }: {
   scope: WorkspaceScope
   /** Un tour vient de finir : la vue est peut-être périmée, et le dit. */
   pendingReview: boolean
   onReviewed: () => void
   onOpenFile: (path: string) => void
+  /** Le menu d'un fichier ouvre son historique et son blâme (règle T0). */
+  onOpenHistory: (path: string, blame: boolean) => void
 }) {
   const t = useTranslate()
   const { run, lock, pending } = useGitActions()
@@ -145,6 +153,7 @@ export function WorkingView({
           opened={opened}
           onOpen={(path) => setOpened(opened === path ? null : path)}
           onOpenFile={onOpenFile}
+          onOpenHistory={onOpenHistory}
           diffs={diffs.unstaged}
         />
 
@@ -162,6 +171,7 @@ export function WorkingView({
           opened={opened}
           onOpen={(path) => setOpened(opened === path ? null : path)}
           onOpenFile={onOpenFile}
+          onOpenHistory={onOpenHistory}
           diffs={diffs.staged}
         />
 
@@ -304,6 +314,7 @@ function Section({
   opened,
   onOpen,
   onOpenFile,
+  onOpenHistory,
   diffs,
 }: {
   title: string
@@ -315,6 +326,7 @@ function Section({
   opened: string | null
   onOpen: (path: string) => void
   onOpenFile: (path: string) => void
+  onOpenHistory: (path: string, blame: boolean) => void
   diffs: ReturnType<typeof parseUnifiedDiff>
 }) {
   const t = useTranslate()
@@ -404,6 +416,15 @@ function Section({
                 <MenuItem icon={<FileCode2 size={13} />} onSelect={() => onOpenFile(file.path)}>
                   {t('git.file.open')}
                 </MenuItem>
+                {/* Les deux entrées que la règle T0 range ici : l'historique d'un
+                    fichier et son blâme portent sur *ce* fichier, donc ils vivent dans
+                    son menu et nulle part ailleurs. */}
+                <MenuItem icon={<History size={13} />} onSelect={() => onOpenHistory(file.path, false)}>
+                  {t('git.file.history')}
+                </MenuItem>
+                <MenuItem icon={<UserSquare size={13} />} onSelect={() => onOpenHistory(file.path, true)}>
+                  {t('git.file.blame')}
+                </MenuItem>
                 <MenuSeparator />
                 {/* Jeter ne s'annule pas : le garde-fou nomme ce qui part. */}
                 <MenuItem
@@ -423,7 +444,7 @@ function Section({
                 {diff.status === 'binary' ? (
                   <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.file.binary')}</p>
                 ) : (
-                  <DiffHunks hunks={diff.hunks} path={diff.path} />
+                  <LineStage file={diff} path={file.path} staged={staged} frozen={frozen} />
                 )}
               </div>
             ) : null}
