@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
-import type { CommitDetailDto, GraphDto, RefsDto, WorkingDiffDto } from '@solera/protocol'
+import type {
+  CommitDetailDto,
+  GitStateDto,
+  GraphDto,
+  RefsDto,
+  StashesDto,
+} from '@solera/protocol'
 import { api } from '../../../lib/api'
 import { workspaceApiBase, type WorkspaceScope } from '../../../lib/workspace-scope'
 
@@ -63,13 +69,29 @@ export function useCommitDetail(scope: WorkspaceScope, hash: string | null) {
   })
 }
 
-export function useWorkingDiff(scope: WorkspaceScope) {
+/**
+ * L'état d'écriture : l'index, l'arbre, le verrou, ce qui s'annule.
+ *
+ * Lu à l'ouverture de la vue et après chaque geste, comme le reste — mais aussi à la
+ * fin d'un tour, parce que c'est le moment où tout a pu changer sous la vue, et le
+ * seul où le verrou se lève.
+ */
+export function useGitState(scope: WorkspaceScope) {
   return useQuery({
-    queryKey: ['diff', scope],
-    queryFn: () => api.get<WorkingDiffDto>(`${workspaceApiBase(scope)}/diff`),
-    // `refetchOnMount` était le manque : un agent qui commite pendant que le panneau
-    // est fermé laissait le cache servir un diff périmé au rouvrir.
+    queryKey: ['git-state', scope],
+    queryFn: () => api.get<GitStateDto>(`${workspaceApiBase(scope)}/git/state`),
     staleTime: Infinity,
     refetchOnMount: 'always',
+  })
+}
+
+/** Les remises, aperçu compris : une lecture par remise, donc seulement à la demande. */
+export function useStashes(scope: WorkspaceScope, enabled: boolean) {
+  return useQuery({
+    queryKey: ['git-stashes', scope],
+    queryFn: () => api.get<StashesDto>(`${workspaceApiBase(scope)}/git/stashes`),
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled,
   })
 }

@@ -1,8 +1,4 @@
 import { execFile, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
-import { copyFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState } from '@solera/protocol'
 
@@ -400,47 +396,5 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
     }
   } catch (err) {
     throw new GitError(gitMessage(err))
-  }
-}
-
-/**
- * Modifications non commitées du répertoire de travail, fichiers non suivis compris :
- * un agent qui crée un fichier doit apparaître dans le diff, sinon la vue ment.
- *
- * Le passage par un index temporaire (`GIT_INDEX_FILE`) est ce qui rend l'opération
- * réellement en lecture seule : faire un `git add --intent-to-add` sur l'index réel
- * modifierait le dépôt de l'utilisateur juste pour afficher un onglet.
- */
-export async function readWorkingDiff(cwd: string): Promise<WorkingDiff | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
-  const scratchIndex = join(tmpdir(), `solera-index-${randomUUID()}`)
-
-  try {
-    // On part d'une copie de l'index courant pour ne pas voir comme « ajoutés » des
-    // fichiers déjà stagés par l'utilisateur. Un dépôt sans index encore écrit est un
-    // cas normal, on repart alors d'un index vide.
-    await copyFile(join(gitDir, 'index'), scratchIndex).catch(() => {})
-    const env = { GIT_INDEX_FILE: scratchIndex }
-
-    await git(cwd, ['add', '--intent-to-add', '--all'], env)
-
-    const [numstat, patch] = await Promise.all([
-      git(cwd, ['diff', 'HEAD', '--numstat'], env),
-      git(cwd, ['diff', 'HEAD'], env),
-    ])
-
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
-  } catch (err) {
-    throw new GitError(gitMessage(err))
-  } finally {
-    await rm(scratchIndex, { force: true }).catch(() => {})
   }
 }

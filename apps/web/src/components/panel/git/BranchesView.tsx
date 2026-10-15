@@ -1,8 +1,20 @@
-import { ArrowDown, ArrowUp, Boxes, ChevronDown, Cloud, GitBranch, Loader, MessagesSquare, Tag } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Boxes,
+  ChevronDown,
+  Cloud,
+  GitBranch,
+  Loader,
+  MessagesSquare,
+  MoreHorizontal,
+  Tag,
+} from 'lucide-react'
 import type { RefSectionDto } from '@solera/protocol'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, cx } from '@solera/ui'
+import { BranchMenu, type MenuContext } from './menus'
 import { useRefs } from './queries'
 
 /**
@@ -12,8 +24,10 @@ import { useRefs } from './queries'
  * qui apparaît un jour sans prévenir est pire qu'une section vide. Deux colonnes sont
  * à nous : le retard sur l'amont, et le fil qui occupe le worktree.
  *
- * Les gestes — basculer, fusionner, renommer, supprimer — vivent dans le menu de
- * chaque ligne et appartiennent au lot 2 : rien ici n'écrit.
+ * Les gestes — basculer, fusionner, rebaser, renommer, supprimer, pousser, suivre un
+ * amont, en faire un worktree — vivent dans le menu de chaque ligne, jamais dans la
+ * barre d'outils : ils désignent *cette* branche (règle T0). Les étiquettes et les
+ * sous-modules n'en ont pas, leurs gestes n'étant pas du lot 2.
  */
 const ICONS = {
   local: GitBranch,
@@ -25,9 +39,11 @@ const ICONS = {
 
 export function BranchesView({
   scope,
+  menus,
   onOpenThread,
 }: {
   scope: WorkspaceScope
+  menus: MenuContext
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
@@ -49,7 +65,12 @@ export function BranchesView({
       ) : null}
 
       {(data?.sections ?? []).map((section) => (
-        <Section key={sectionKey(section)} section={section} onOpenThread={onOpenThread} />
+        <Section
+          key={sectionKey(section)}
+          section={section}
+          menus={menus}
+          onOpenThread={onOpenThread}
+        />
       ))}
     </div>
   )
@@ -60,9 +81,11 @@ const sectionKey = (section: RefSectionDto): string =>
 
 function Section({
   section,
+  menus,
   onOpenThread,
 }: {
   section: RefSectionDto
+  menus: MenuContext
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
@@ -90,7 +113,7 @@ function Section({
         <div
           key={line.fullName}
           className={cx(
-            'flex items-center gap-1.5 rounded px-1.5 py-1',
+            'group flex items-center gap-1.5 rounded px-1.5 py-1',
             line.current && 'bg-accent-wash',
           )}
           title={line.subject}
@@ -139,6 +162,29 @@ function Section({
               <ArrowDown size={9} />
               {line.behind}
             </span>
+          ) : null}
+
+          {section.kind === 'local' || section.kind === 'worktrees' ? (
+            <BranchMenu
+              name={line.name}
+              current={line.current}
+              upstream={line.upstream}
+              threadId={line.thread?.id ?? null}
+              worktreePath={line.worktreePath}
+              context={menus}
+              trigger={
+                <button
+                  type="button"
+                  aria-label={t('git.menu.branch.label', { name: line.name })}
+                  className={cx(
+                    'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
+                    'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                  )}
+                >
+                  <MoreHorizontal size={13} />
+                </button>
+              }
+            />
           ) : null}
         </div>
       ))}

@@ -1,9 +1,10 @@
-import { GitBranch, Tag } from 'lucide-react'
+import { GitBranch, MoreHorizontal, Tag } from 'lucide-react'
 import type { GraphNodeDto, GraphRefDto } from '@solera/protocol'
 import { relativeDate, shortAge } from '../../../lib/dates'
 import { useTranslate } from '../../../lib/i18n'
 import { cx } from '@solera/ui'
 import { Lanes, laneWidth, ROW_HEIGHT } from './lanes'
+import { CommitMenu, type MenuContext } from './menus'
 
 /**
  * Le graphe lui-même : l'en-tête de colonnes et les rangées.
@@ -65,12 +66,15 @@ export function GraphRow({
   lanes,
   selected,
   onSelect,
+  menus,
   onOpenThread,
 }: {
   node: GraphNodeDto
   lanes: number
   selected: boolean
   onSelect: () => void
+  /** De quoi nommer les entrées du menu de ce commit. Voir la règle T0. */
+  menus: MenuContext
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
@@ -155,6 +159,32 @@ export function GraphRow({
       >
         {node.shortHash}
       </span>
+
+      {/* Le menu du commit : douze entrées, et c'est ce qui permet à la barre
+          d'outils de n'en avoir que huit (règle T0). Le nœud « en cours » n'en a pas —
+          il n'est pas un commit, et ses gestes sont ceux d'*En cours*. */}
+      {node.kind === 'working' ? (
+        <span className="size-5 shrink-0" />
+      ) : (
+        <CommitMenu
+          hash={node.hash}
+          shortHash={node.shortHash}
+          threadId={node.thread?.id ?? null}
+          context={menus}
+          trigger={
+            <button
+              type="button"
+              aria-label={t('git.menu.commit.label', { subject: node.subject })}
+              className={cx(
+                'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
+                'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+              )}
+            >
+              <MoreHorizontal size={13} />
+            </button>
+          }
+        />
+      )}
     </div>
   )
 }

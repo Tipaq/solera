@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, Loader, MessagesSquare } from 'lucide-react'
+import { ArrowLeft, Bot, Loader, MessagesSquare, MoreHorizontal } from 'lucide-react'
 import { useMemo } from 'react'
 import { parseUnifiedDiff } from '../../../lib/diff'
 import { relativeDate } from '../../../lib/dates'
@@ -7,6 +7,7 @@ import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, IconButton, cx } from '@solera/ui'
 import { FileDiff, SectionTitle } from '../diff-parts'
 import { Ref } from './GraphRows'
+import { CommitMenu, type MenuContext } from './menus'
 import { useCommitDetail } from './queries'
 
 /**
@@ -24,11 +25,13 @@ import { useCommitDetail } from './queries'
 export function CommitDetail({
   scope,
   hash,
+  menus,
   onBack,
   onOpenThread,
 }: {
   scope: WorkspaceScope
   hash: string
+  menus: MenuContext
   onBack: () => void
   onOpenThread: (id: string) => void
 }) {
@@ -98,6 +101,26 @@ export function CommitDetail({
             </p>
           ) : null}
         </div>
+
+        {/* Le même menu que dans le graphe : un commit ouvert doit pouvoir tout ce
+            qu'un commit de la liste peut, sinon on retourne à la liste pour agir. */}
+        {data ? (
+          <CommitMenu
+            hash={data.hash}
+            shortHash={data.shortHash}
+            threadId={data.thread?.id ?? null}
+            context={menus}
+            trigger={
+              <button
+                type="button"
+                aria-label={t('git.menu.commit.label', { subject: data.subject })}
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink"
+              >
+                <MoreHorizontal size={15} />
+              </button>
+            }
+          />
+        ) : null}
       </div>
 
       {isPending ? (

@@ -4,6 +4,7 @@ import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner } from '@solera/ui'
 import { GraphHeader, GraphRow } from './GraphRows'
+import type { MenuContext } from './menus'
 import { GRAPH_PAGE, useGraph, type GraphFilters } from './queries'
 
 /**
@@ -20,6 +21,7 @@ export function GraphView({
   onMore,
   selected,
   onSelect,
+  menus,
   onOpenThread,
   header,
 }: {
@@ -30,6 +32,7 @@ export function GraphView({
   /** Hash du commit ouvert, `''` pour le nœud « en cours », null pour aucun. */
   selected: string | null
   onSelect: (hash: string) => void
+  menus: MenuContext
   onOpenThread: (id: string) => void
   /** Ce que la destination pose au-dessus de la liste : le champ de recherche. */
   header?: (count: number) => ReactNode
@@ -74,6 +77,7 @@ export function GraphView({
           lanes={data?.lanes ?? 1}
           selected={selected === node.hash}
           onSelect={() => onSelect(node.hash)}
+          menus={menus}
           onOpenThread={onOpenThread}
         />
       ))}

@@ -4,6 +4,7 @@ import { useTranslate } from '../../../lib/i18n'
 import { decodeScope, type WorkspaceScope } from '../../../lib/workspace-scope'
 import { cx } from '@solera/ui'
 import { GraphView } from './GraphView'
+import type { MenuContext } from './menus'
 import type { GraphFilters } from './queries'
 
 /**
@@ -31,6 +32,7 @@ export function SearchView({
   onMore,
   selected,
   onSelect,
+  menus,
   onOpenThread,
 }: {
   scope: WorkspaceScope
@@ -44,6 +46,7 @@ export function SearchView({
   onMore: () => void
   selected: string | null
   onSelect: (hash: string) => void
+  menus: MenuContext
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
@@ -76,6 +79,7 @@ export function SearchView({
       onMore={onMore}
       selected={selected}
       onSelect={onSelect}
+      menus={menus}
       onOpenThread={onOpenThread}
       header={(count) => (
         <div className="px-2.5 pt-1 pb-2">

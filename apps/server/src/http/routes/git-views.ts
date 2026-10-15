@@ -8,14 +8,8 @@ import {
   type GraphQuery,
   type RefsDto,
   type ThreadRefDto,
-  type WorkingDiffDto,
 } from '@solera/protocol'
-import {
-  readCommitDiff,
-  readGitStatus,
-  readHeadCommit,
-  readWorkingDiff,
-} from '../../git.js'
+import { readCommitDiff } from '../../git.js'
 import {
   agentOf,
   parseDecoration,
@@ -136,39 +130,14 @@ const isFiltered = (query: GraphQuery): boolean =>
  * l'état du workspace. Calculées à la demande plutôt que journalisées : c'est un état
  * courant du disque, pas un événement.
  *
- * **Tout y est en lecture.** Indexer, commiter, pousser, basculer, remiser et rebaser
- * sont le lot 2 de la carte #29 et n'ont encore aucune route — ne pas en glisser une
- * ici sans la décision qui va avec (`docs/audits/2026-10-15-git/README.md`).
+ * **Tout y est en lecture, et ça doit le rester.** Indexer, commiter, pousser,
+ * basculer, remiser et rebaser vivent dans `git-actions.ts`, où ils partagent le
+ * verrou de concurrence, le garde-fou et le journal d'annulation. Une écriture glissée
+ * ici serait une écriture sans ces trois-là.
  */
 export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): void {
   // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
   for (const { base, cwdOf, projectIdOf } of workspaceScopes) {
-    app.get(`${base}/diff`, async (request): Promise<WorkingDiffDto> => {
-      const user = requireUser(request)
-      const { id } = request.params as { id: string }
-
-      const cwd = cwdOf(ctx.db, id, user.id)
-      try {
-        // Les trois lectures partent ensemble : elles lancent chacune un process git, et
-        // les enchaîner triplerait le temps d'ouverture de l'onglet.
-        const [diff, status, head] = await Promise.all([
-          readWorkingDiff(cwd),
-          readGitStatus(cwd),
-          readHeadCommit(cwd),
-        ])
-        return {
-          files: diff?.files ?? null,
-          patch: diff?.patch ?? '',
-          truncated: diff?.truncated ?? false,
-          cwd,
-          branch: status?.branch ?? null,
-          head,
-        }
-      } catch (err) {
-        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
-      }
-    })
-
     /**
      * Le graphe du dépôt : la destination *Graphe*, et la destination *Recherche*.
      *
