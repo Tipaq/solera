@@ -100,10 +100,10 @@ export function ProjectLayout() {
       icon: <CalendarClock size={15} />,
       count: tasks.length,
     },
-    /* Pas d'onglet *Journal* ni *Chronologie* pour l'instant : le premier attend sa
-       route serveur (il agrège base, git et disque), le second attend l'échéance et le
-       jalon de la carte #32. Un onglet qui mène à une page vide est pire que son
-       absence — il promet une vue et rend une erreur. */
+    /* Pas d'onglet *Journal* ni *Chronologie* pour l'instant : le premier est la carte
+       #33 (il agrège base, git et disque, donc une route serveur), le second attend
+       l'échéance et le jalon que porte la carte #36. Un onglet qui mène à une page vide
+       est pire que son absence — il promet une vue et rend une erreur. */
   ]
 
   /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */

@@ -16,10 +16,14 @@ export type PortfolioCard = CardDto & { project: ProjectDto }
  * à « où en est le chantier », l'autre à « par quoi je m'y remets ».
  *
  * La maquette F7 nommait un quatrième groupe, « À trancher — une carte de décision
- * attend une personne ». Il n'est pas là, et ce n'est pas un oubli : **rien ne distingue
- * une carte de décision d'une autre** — une carte a un titre, une description et une
- * colonne, pas un type. Le groupe aurait fallu l'inventer, ou le remplir au jugé. C'est
- * la question de la carte #32.
+ * attend une personne ». Il n'est pas là, et **il ne viendra pas** : rien ne distingue
+ * une carte de décision d'une autre, et la carte #32 a refusé ce qui aurait pu le faire
+ * — les étiquettes, écartées le 2026-10-15
+ * (`docs/audits/2026-10-15-champs-de-carte/`). Le seul classement qu'une carte gagnera
+ * est le jalon, qui dit à quelle livraison elle appartient, pas ce qu'elle réclame.
+ *
+ * Ce qui attend une personne se lit donc là où c'est vrai : dans l'état des sessions
+ * rattachées, ci-dessous.
  */
 export type WorkKind = 'awaiting' | 'review' | 'running'
 

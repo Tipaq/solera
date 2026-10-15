@@ -48,9 +48,11 @@ const collisionDetection: CollisionDetection = (args) => {
  * trois projets chargés une colonne devienne un patchwork ; la barre de filtres est là
  * pour ça.
  *
- * Deux dimensions de filtre seulement, projet et agent. *Jalon* et *Étiquette*, que
- * montre la maquette, attendent la carte #32 : un filtre sur un champ qui n'existe pas
- * n'aurait rien à proposer.
+ * Deux dimensions de filtre seulement, projet et agent. Des quatre que montre la
+ * maquette, *Étiquette* **ne viendra pas** — les étiquettes sont refusées (carte #32,
+ * `docs/audits/2026-10-15-champs-de-carte/`) — et *Jalon* arrive avec la carte #36. Le
+ * jalon y est une **carte** et non une entité : le filtre listera donc des cartes-jalons
+ * du projet, et chacune s'affiche en `#numéro — titre` cliquable.
  *
  * Le glissement change la **colonne** d'une carte et pas son rang : dans une colonne qui
  * mêle cinq projets, le rang n'a plus de sens — la position d'une carte s'entend dans
