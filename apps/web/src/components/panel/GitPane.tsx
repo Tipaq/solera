@@ -1,318 +1,175 @@
-import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, GitBranch, GitCommitHorizontal, Loader, RefreshCw } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommitDto, WorkingDiffDto } from '@solera/protocol'
-import { api } from '../../lib/api'
-import { workspaceApiBase } from '../../lib/workspace-scope'
-import { COMMIT_PAGE, useCommitDiff, useCommits } from '../../lib/commits'
-import { parseUnifiedDiff } from '../../lib/diff'
-import { relativeDate } from '../../lib/dates'
-import { locale, useTranslate } from '../../lib/i18n'
-import { Banner, IconButton, cx } from '@solera/ui'
-import { FileDiff, SectionTitle } from './diff-parts'
+import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { useTranslate } from '../../lib/i18n'
+import type { WorkspaceScope } from '../../lib/workspace-scope'
+import { BranchesView } from './git/BranchesView'
+import { CommitDetail } from './git/CommitDetail'
+import { GraphView } from './git/GraphView'
+import { Rail, type Destination } from './git/rail'
+import { SearchView } from './git/SearchView'
+import { Toolbar } from './git/toolbar'
+import { WorkingView } from './git/WorkingView'
+import { GRAPH_PAGE, useGraph, useRefs, useWorkingDiff, type GraphFilters } from './git/queries'
 
 /**
- * Ce que dit le dépôt : ce qui n'est pas commité, puis les commits.
+ * La vue Git du panneau : un rail de destinations, une barre d'outils au-dessus, et
+ * le dépôt partout ailleurs.
  *
- * Tous auteurs confondus, donc y compris ce qu'on a modifié soi-même à la main ou ce
- * qu'un agent a écrit par une commande shell. Ce que l'agent a fait tour par tour est
- * une autre question, et vit dans l'onglet Historique : mélanger les deux laissait
- * croire que la seconde liste était l'état du dépôt, alors qu'elle raconte un passé
- * que le disque a pu recouvrir depuis.
+ * Le dessin est arrêté par la carte #10 et daté dans `docs/audits/2026-10-15-git/` :
+ * quatre tours de maquettes, dont le tour 3 pour la règle de rangement et le tour 4
+ * pour l'échelle des colonnes. **Les planches sont la spécification**, pas une
+ * inspiration — les notes sous chaque image disent pourquoi, ce qui évite de défaire
+ * une décision en croyant l'améliorer.
+ *
+ * Ce lot-ci (lot 1 de la carte #29) est **en lecture seule** : le graphe, le commit
+ * sélectionné, les branches et la recherche. Indexer, commiter, pousser, basculer,
+ * remiser et rebaser sont le lot 2, et aucune route ne les sert encore.
+ *
+ * Ce que la vue dit, et que l'onglet *Agent* ne dit pas : l'état du disque, tous
+ * auteurs confondus. « Ses écritures » raconte ce que l'agent a écrit dans ce fil
+ * d'après le journal — deux questions différentes, et la frontière doit rester lisible.
  */
 export function GitPane({
   scope,
+  projectId,
   turnRunning,
   onOpenFile,
 }: {
-  scope: string
+  scope: WorkspaceScope
+  /** Pour ouvrir le fil qui a écrit un commit : une conversation vit sous son projet. */
+  projectId: string | null
   turnRunning: boolean
   onOpenFile: (path: string) => void
 }) {
-  const [limit, setLimit] = useState(COMMIT_PAGE)
-  const working = useWorkingDiff(scope)
-  const commits = useCommits(scope, limit)
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const client = useQueryClient()
+  const [destination, setDestination] = useState<Destination>('graph')
+  const [limit, setLimit] = useState(GRAPH_PAGE)
+  /** Hash ouvert dans le graphe. `''` est le nœud « en cours », qui n'est pas un commit. */
+  const [selected, setSelected] = useState<string | null>(null)
+  const [filters, setFilters] = useState<GraphFilters>({})
 
-  // Un tour qui se termine a pu commiter : les deux listes se relisent ensemble.
+  const working = useWorkingDiff(scope)
+  const graph = useGraph(scope, {}, limit)
+  // Lu dès l'ouverture et pas seulement sur sa destination : c'est de lui que le rail
+  // tire son compteur, et un compteur qui n'apparaît qu'une fois la destination
+  // visitée ne sert à rien.
+  const refs = useRefs(scope, true)
+
+  const refresh = (): void => {
+    void client.invalidateQueries({ queryKey: ['git-graph', scope] })
+    void client.invalidateQueries({ queryKey: ['git-refs', scope] })
+    void working.refetch()
+  }
+
+  // Un tour qui se termine a pu commiter : tout se relit ensemble, et le détail d'un
+  // commit non — il est immuable.
   const wasRunning = useRef(turnRunning)
   useEffect(() => {
-    if (wasRunning.current && !turnRunning) {
-      void working.refetch()
-      void commits.refetch()
-    }
+    if (wasRunning.current && !turnRunning) refresh()
     wasRunning.current = turnRunning
-  }, [turnRunning, working, commits])
+    // `refresh` tient à `client` et `working`, qui changent à chaque rendu : la
+    // dépendance utile est la fin du tour, et elle seule.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnRunning])
+
+  const openThread = (id: string): void => {
+    if (projectId) navigate(`/p/${projectId}/c/${id}`)
+  }
+
+  const counts = {
+    working: working.data?.files?.length ?? 0,
+    branches: (refs.data?.sections ?? [])
+      .filter((section) => section.kind === 'local' || section.kind === 'worktrees')
+      .reduce((sum, section) => sum + section.lines.length, 0),
+    stashes: (graph.data?.nodes ?? []).filter((node) => node.kind === 'stash').length,
+  }
+
+  const select = (hash: string): void => {
+    // Le nœud « en cours » n'est pas un commit : le sélectionner mène à *En cours*,
+    // qui est sa vue, plutôt qu'à un détail qui n'existerait pas.
+    if (hash === '') {
+      setDestination('working')
+      return
+    }
+    setSelected(hash)
+  }
+
+  // Le détail d'un commit remplace la liste, dans les deux destinations qui en
+  // ouvrent un : le panneau peut n'avoir que 20 rem, et un volet de plus y laisserait
+  // deux colonnes illisibles.
+  const reading = selected !== null && (destination === 'graph' || destination === 'search')
 
   return (
-    // `@container` : l'auteur d'un commit ne s'affiche que si la ligne a la place,
-    // qui dépend de la largeur du panneau et non de celle de la fenêtre.
-    <div className="@container flex h-full min-h-0 min-w-0 flex-col overflow-y-auto pb-safe">
-      <WorkingDiff
-        query={working}
-        onOpenFile={onOpenFile}
-        onRefresh={() => {
-          void working.refetch()
-          void commits.refetch()
-        }}
-      />
-      <Commits
-        scope={scope}
-        query={commits}
-        headHash={working.data?.head?.hash ?? null}
-        onMore={() => setLimit((value) => value + COMMIT_PAGE)}
-      />
-    </div>
-  )
-}
+    // `@container` : les colonnes du graphe et les libellés de la barre d'outils
+    // suivent la largeur du **panneau**, pas celle de la fenêtre. Voir `GraphRows`.
+    <div className="@container flex h-full min-h-0 min-w-0 flex-col">
+      <Toolbar onRefresh={refresh} refreshing={graph.isFetching || working.isFetching} />
 
-function useWorkingDiff(scope: string) {
-  return useQuery({
-    queryKey: ['diff', scope],
-    queryFn: () => api.get<WorkingDiffDto>(`${workspaceApiBase(scope)}/diff`),
-    // Relu à la fin d'un tour, à chaque ouverture du panneau, et à la demande. Jamais
-    // en boucle : un diff se calcule en lançant git, ce n'est pas gratuit.
-    //
-    // `refetchOnMount` était le manque : un agent qui commite pendant que le panneau
-    // est fermé laissait le cache servir un diff périmé au rouvrir, et l'état courant
-    // restait celui d'avant le commit.
-    staleTime: Infinity,
-    refetchOnMount: 'always',
-  })
-}
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <Rail
+          active={destination}
+          counts={counts}
+          onSelect={(next) => {
+            setDestination(next)
+            setSelected(null)
+          }}
+        />
 
-function WorkingDiff({
-  query,
-  onOpenFile,
-  onRefresh,
-}: {
-  query: ReturnType<typeof useWorkingDiff>
-  onOpenFile: (path: string) => void
-  onRefresh: () => void
-}) {
-  const t = useTranslate()
-  const { data, error, isPending, isFetching } = query
-  const files = useMemo(() => (data ? parseUnifiedDiff(data.patch) : []), [data])
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {reading && selected !== null ? (
+            <CommitDetail
+              scope={scope}
+              hash={selected}
+              onBack={() => setSelected(null)}
+              onOpenThread={openThread}
+            />
+          ) : null}
 
-  // Sommés depuis le décompte du serveur plutôt que depuis le patch analysé : celui-ci
-  // est tronqué au-delà d'une certaine taille, et le total mentirait alors.
-  const added = (data?.files ?? []).reduce((sum, file) => sum + file.added, 0)
-  const removed = (data?.files ?? []).reduce((sum, file) => sum + file.removed, 0)
+          {destination === 'graph' && !reading ? (
+            <GraphView
+              scope={scope}
+              filters={{}}
+              limit={limit}
+              onMore={() => setLimit((value) => value + GRAPH_PAGE)}
+              selected={null}
+              onSelect={select}
+              onOpenThread={openThread}
+            />
+          ) : null}
 
-  return (
-    <section className="shrink-0">
-      <SectionTitle
-        action={
-          <IconButton label={t('changes.diff.recalculate')} size="sm" onClick={onRefresh}>
-            <RefreshCw size={14} className={cx(isFetching && 'animate-spin')} />
-          </IconButton>
-        }
-      >
-        {t('changes.diff.current')}
-      </SectionTitle>
+          {destination === 'working' ? <WorkingView query={working} onOpenFile={onOpenFile} /> : null}
 
-      {data?.branch ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line/60 px-2.5 py-1.5 text-meta text-ink-faint">
-          <span className="flex items-center gap-1 text-ink-soft">
-            <GitBranch size={11} className="shrink-0" />
-            {data.branch}
-          </span>
+          {destination === 'branches' ? (
+            <BranchesView scope={scope} onOpenThread={openThread} />
+          ) : null}
 
-          {data.files && data.files.length > 0 ? (
-            <span className="flex items-center gap-1.5">
-              <span>
-                {data.files.length > 1
-                  ? t('changes.files.countMany', { count: data.files.length })
-                  : t('changes.files.countOne', { count: data.files.length })}
-              </span>
-              {added > 0 ? <span className="font-mono text-positive">+{added}</span> : null}
-              {removed > 0 ? <span className="font-mono text-critical">-{removed}</span> : null}
-            </span>
+          {destination === 'search' && !reading ? (
+            <SearchView
+              scope={scope}
+              filters={filters}
+              onFilters={setFilters}
+              limit={limit}
+              onMore={() => setLimit((value) => value + GRAPH_PAGE)}
+              selected={null}
+              onSelect={select}
+              onOpenThread={openThread}
+            />
+          ) : null}
+
+          {/* Deux destinations du rail attendent leur lot : *Remises* avec l'aperçu et
+              le dépilage (lot 2), *Historique d'un fichier* avec le blâme par fil
+              (lot 3). Elles sont dans le rail dès maintenant parce qu'une destination
+              qui apparaît un jour sans prévenir est pire qu'une destination vide. */}
+          {destination === 'stashes' || destination === 'history' ? (
+            <p className="px-3 py-3 text-xs text-ink-faint">
+              {destination === 'stashes' ? t('git.stashes.later') : t('git.history.later')}
+            </p>
           ) : null}
         </div>
-      ) : null}
-
-      {isPending ? (
-        <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
-          <Loader size={11} className="animate-spin" />
-          {t('changes.diff.loading')}
-        </p>
-      ) : null}
-
-      {error ? (
-        <div className="p-2">
-          <Banner>{error instanceof Error ? error.message : t('changes.diff.error')}</Banner>
-        </div>
-      ) : null}
-
-      {data && data.files === null ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.diff.notGitRepo')}</p>
-      ) : null}
-
-      {data?.files?.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.diff.none')}</p>
-      ) : null}
-
-      {files.map((file) => (
-        <FileDiff key={file.path} file={file} onOpenFile={onOpenFile} />
-      ))}
-
-      {data?.truncated ? (
-        <p className="px-2.5 py-2 text-meta text-caution">{t('changes.diff.truncated')}</p>
-      ) : null}
-    </section>
-  )
-}
-
-function Commits({
-  scope,
-  query,
-  headHash,
-  onMore,
-}: {
-  scope: string
-  query: ReturnType<typeof useCommits>
-  /** Hash court du commit courant, pour le signaler dans la liste. */
-  headHash: string | null
-  onMore: () => void
-}) {
-  const t = useTranslate()
-  const { data, error, isPending, isFetching } = query
-
-  return (
-    <section className="shrink-0">
-      <SectionTitle>{t('changes.commits.title')}</SectionTitle>
-
-      {isPending ? (
-        <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
-          <Loader size={11} className="animate-spin" />
-          {t('changes.commits.loading')}
-        </p>
-      ) : null}
-
-      {error ? (
-        <div className="p-2">
-          <Banner>{error instanceof Error ? error.message : t('changes.commits.error')}</Banner>
-        </div>
-      ) : null}
-
-      {data?.commits?.length === 0 ? (
-        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.commits.empty')}</p>
-      ) : null}
-
-      {(data?.commits ?? []).map((commit) => (
-        <Commit
-          key={commit.hash}
-          scope={scope}
-          commit={commit}
-          isHead={commit.shortHash === headHash}
-        />
-      ))}
-
-      {data?.hasMore ? (
-        <button
-          type="button"
-          onClick={onMore}
-          disabled={isFetching}
-          className="w-full px-2.5 py-2 text-meta text-ink-faint underline hover:text-ink disabled:opacity-45"
-        >
-          {isFetching ? t('changes.commits.loading') : t('changes.commits.more')}
-        </button>
-      ) : null}
-    </section>
-  )
-}
-
-function Commit({
-  scope,
-  commit,
-  isHead,
-}: {
-  scope: string
-  commit: CommitDto
-  isHead: boolean
-}) {
-  const t = useTranslate()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div className="border-b border-line/60">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-high"
-        title={new Date(commit.ts).toLocaleString(locale())}
-      >
-        <ChevronRight
-          size={14}
-          className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-        />
-        <GitCommitHorizontal size={14} className="shrink-0 text-ink-faint" />
-        <span className="shrink-0 font-mono text-micro text-ink-faint">
-          {commit.shortHash}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={commit.subject}>
-          {commit.subject}
-        </span>
-        {/* Le commit courant se signale : c'est celui contre lequel se lit le diff du
-            répertoire de travail juste au-dessus. */}
-        {isHead ? (
-          <span className="shrink-0 rounded-full bg-accent-wash px-1.5 py-0.5 text-micro text-accent">
-            {t('changes.commits.head')}
-          </span>
-        ) : null}
-        <span className="hidden shrink-0 text-micro text-ink-faint @min-[30rem]:inline">
-          {commit.author}
-        </span>
-        <span className="shrink-0 text-micro text-ink-faint">{relativeDate(commit.ts)}</span>
-      </button>
-
-      {open ? <CommitDiff scope={scope} hash={commit.hash} /> : null}
-    </div>
-  )
-}
-
-function CommitDiff({ scope, hash }: { scope: string; hash: string }) {
-  const t = useTranslate()
-  const { data, error, isPending } = useCommitDiff(scope, hash, true)
-  const files = useMemo(() => (data ? parseUnifiedDiff(data.patch) : []), [data])
-
-  if (isPending) {
-    return (
-      <p className="flex items-center gap-1.5 px-2.5 py-1.5 text-meta text-ink-faint">
-        <Loader size={11} className="animate-spin" />
-        {t('changes.commits.diffLoading')}
-      </p>
-    )
-  }
-
-  if (error) {
-    return (
-      <p className="px-2.5 py-1.5 text-meta text-critical">
-        {error instanceof Error ? error.message : t('changes.commits.error')}
-      </p>
-    )
-  }
-
-  return (
-    // Décalé : sans ça, les fichiers d'un commit déplié s'alignent sur les commits
-    // eux-mêmes, et la liste se lit comme une seule suite.
-    <div className="border-t border-line/60 bg-sunken/40 pl-4">
-      {files.length === 0 ? (
-        <p className="px-2.5 py-1.5 text-meta text-ink-faint">
-          {t('changes.commits.diffEmpty')}
-        </p>
-      ) : null}
-
-      {/* Sans `onOpenFile` : le fichier du disque n'est plus celui de ce commit, et
-          ouvrir l'un en croyant lire l'autre est le pire des deux mondes. */}
-      {files.map((file) => (
-        <FileDiff key={file.path} file={file} />
-      ))}
-
-      {data?.truncated ? (
-        <p className="px-2.5 py-1.5 text-meta text-caution">{t('changes.diff.truncated')}</p>
-      ) : null}
+      </div>
     </div>
   )
 }

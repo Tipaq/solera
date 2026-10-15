@@ -310,7 +310,7 @@ export function SidePanel({
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
           journal ou d'une lecture git relancée à l'affichage, rien ne s'y perd. */}
       {hasWorkspace && tab === 'git' ? (
-        <GitPane scope={scope} turnRunning={turnRunning} onOpenFile={openInFiles} />
+        <GitPane scope={scope} projectId={projectId} turnRunning={turnRunning} onOpenFile={openInFiles} />
       ) : null}
 
       {/* Montée même derrière une autre vue, comme les fichiers : cliquer un résultat

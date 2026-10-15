@@ -350,63 +350,6 @@ export async function readHeadCommit(cwd: string): Promise<HeadCommit | null> {
   }
 }
 
-export interface Commit {
-  hash: string
-  shortHash: string
-  subject: string
-  author: string
-  ts: number
-}
-
-/**
- * Commits de la branche courante, du plus récent au plus ancien.
- *
- * Un commit de plus que demandé est lu, et non renvoyé : c'est ce qui dit s'il reste
- * quelque chose derrière, sans avoir à compter l'historique entier.
- *
- * Retourne null hors dépôt git. Un dépôt sans aucun commit rend une liste vide : `git
- * log` y échoue faute de HEAD, ce qui est un état normal et non une panne.
- */
-export async function readCommits(
-  cwd: string,
-  limit: number,
-  skip: number,
-): Promise<{ commits: Commit[]; hasMore: boolean } | null> {
-  const status = await readGitStatus(cwd)
-  if (!status) return null
-
-  let raw: string
-  try {
-    raw = await git(cwd, [
-      'log',
-      `--max-count=${limit + 1}`,
-      `--skip=${skip}`,
-      // Octet nul entre les champs, saut de ligne entre les commits : un sujet peut
-      // contenir n'importe quel caractère imprimable, y compris une tabulation.
-      '--format=%H%x00%h%x00%s%x00%an%x00%ct',
-    ])
-  } catch {
-    return { commits: [], hasMore: false }
-  }
-
-  const commits = raw
-    .split('\n')
-    .filter((line) => line.trim().length > 0)
-    .map((line) => {
-      const [hash, shortHash, subject, author, ts] = line.split('\0')
-      return {
-        hash: hash ?? '',
-        shortHash: shortHash ?? '',
-        subject: subject ?? '',
-        author: author ?? '',
-        ts: Number(ts) * 1000 || 0,
-      }
-    })
-    .filter((commit) => commit.hash.length > 0)
-
-  return { commits: commits.slice(0, limit), hasMore: commits.length > limit }
-}
-
 export interface DiffFile {
   path: string
   added: number
