@@ -1,4 +1,5 @@
-import type { Db } from '@solera/db'
+import { eq } from 'drizzle-orm'
+import { conversations, type Db } from '@solera/db'
 import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
 
 /**
@@ -10,9 +11,26 @@ import { conversationWorkspace, projectWorkspace } from '../../workspace.js'
 export interface WorkspaceScope {
   base: string
   cwdOf(db: Db, id: string, userId: string): string
+  /**
+   * Projet auquel ce répertoire appartient.
+   *
+   * La vue Git en a besoin et pas les autres : c'est par lui qu'on retrouve les fils
+   * qui ont écrit les commits et ceux qui occupent les worktrees. À appeler après
+   * `cwdOf`, qui porte le contrôle de visibilité.
+   */
+  projectIdOf(db: Db, id: string): string | null
 }
 
 export const workspaceScopes: readonly WorkspaceScope[] = [
-  { base: '/api/conversations/:id', cwdOf: conversationWorkspace },
-  { base: '/api/projects/:id', cwdOf: projectWorkspace },
+  {
+    base: '/api/conversations/:id',
+    cwdOf: conversationWorkspace,
+    projectIdOf: (db, id) =>
+      db
+        .select({ projectId: conversations.projectId })
+        .from(conversations)
+        .where(eq(conversations.id, id))
+        .get()?.projectId ?? null,
+  },
+  { base: '/api/projects/:id', cwdOf: projectWorkspace, projectIdOf: (_db, id) => id },
 ]
