@@ -1,19 +1,27 @@
 import type { FastifyInstance } from 'fastify'
 import {
   commitHashSchema,
+  filePathQuerySchema,
   graphQuerySchema,
+  type BlameDto,
   type CommitDetailDto,
+  type ConflictsDto,
+  type FileHistoryDto,
   type GraphDto,
   type GraphNodeDto,
   type GraphQuery,
+  type RebasePlanDto,
   type RefsDto,
   type ThreadRefDto,
 } from '@solera/protocol'
 import { readCommitDiff } from '../../git.js'
+import { readConflicts } from '../../git-conflicts.js'
 import {
   agentOf,
   parseDecoration,
+  readBlame,
   readCommitFacts,
+  readEntries,
   readGraphWindow,
   readRefSections,
   uniqueOwners,
@@ -21,6 +29,7 @@ import {
   worktreeBranches,
   type GraphWindow,
 } from '../../git-graph.js'
+import { readWriteState } from '../../git-write.js'
 import { readThreadWindows, threadAt, threadByPath, type ThreadWindow } from '../../git-threads.js'
 import { projectWorkspace } from '../../workspace.js'
 import type { AppContext } from '../context.js'
@@ -29,17 +38,29 @@ import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 
 /**
- * Les nœuds du graphe, rattachés à leur fil.
+ * Le fil d'un commit, question posée par le graphe, par l'historique d'un fichier et
+ * par le blâme.
  *
  * Le rattachement se fait ici et non dans `git-graph.ts` : celui-ci ne connaît que le
  * dépôt, et aller chercher la base depuis une lecture git mélangerait les deux. Voir
  * `git-threads.ts` pour les deux règles et ce qu'elles valent.
  */
-function graphNodes(
+type ThreadOf = (hash: string, ts: number) => ThreadRefDto | null
+
+/**
+ * Le rattachement commit → fil, appliqué à une fenêtre de graphe.
+ *
+ * Extrait de `graphNodes` parce que l'historique d'un fichier et le blâme (planche
+ * T12) posent exactement la même question sur d'autres commits. **Les deux règles
+ * vivent dans `git-threads.ts`** et ne se réinventent pas ici : ce qui est ici, c'est
+ * la première — celle par la branche — qui a besoin de la fenêtre pour savoir quelle
+ * tête atteint quel commit.
+ */
+function threadLookup(
   window: GraphWindow,
   threads: ThreadWindow[],
   rootPath: string,
-): GraphNodeDto[] {
+): ThreadOf {
   const worktreeNames = new Set(window.worktrees.keys())
   const byPath = threadByPath(threads)
 
@@ -55,12 +76,21 @@ function graphNodes(
     tips,
   )
 
-  const threadOf = (hash: string, ts: number): ThreadRefDto | null => {
+  return (hash: string, ts: number): ThreadRefDto | null => {
     const branch = owners.get(hash)
     const path = branch ? window.worktrees.get(branch) : undefined
     const sure = path ? byPath.get(path) : undefined
     return sure ?? threadAt(threads, rootPath, ts)
   }
+}
+
+function graphNodes(
+  window: GraphWindow,
+  threads: ThreadWindow[],
+  rootPath: string,
+): GraphNodeDto[] {
+  const worktreeNames = new Set(window.worktrees.keys())
+  const threadOf = threadLookup(window, threads, rootPath)
 
   return window.rows.map((row) => {
     const stash = window.stashes.get(row.entry.hash)
@@ -116,6 +146,12 @@ function applyFilters(nodes: GraphNodeDto[], query: GraphQuery): GraphNodeDto[] 
  */
 const flatten = (nodes: GraphNodeDto[]): GraphNodeDto[] =>
   nodes.map((node) => ({ ...node, lane: 0, through: [], joins: [], collapses: [], tip: true, root: true }))
+
+/** La fenêtre de l'historique d'un fichier : au-delà, on ne défile plus, on cherche. */
+const FILE_LOG = 100
+
+/** Et celle du blâme : un fichier plus long ne se lit pas ligne à ligne à l'écran. */
+const BLAME_LINES = 2000
 
 const isFiltered = (query: GraphQuery): boolean =>
   Boolean(query.q || query.author || query.file || query.branch || query.since || query.until
@@ -264,6 +300,175 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         }
       } catch (err) {
         if (err instanceof Error && 'statusCode' in err) throw err
+        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+      }
+    })
+
+    /**
+     * Les conflits ouverts, prêts pour l'éditeur de la planche T10.
+     *
+     * Une lecture à part de l'état : elle lit le contenu de chaque fichier en conflit,
+     * ce qui n'a aucune raison d'être payé à chaque ouverture du panneau. La
+     * destination *Conflits* du rail, elle, apparaît sur `GitStateDto.conflicted`, qui
+     * ne coûte qu'un `diff --name-only`.
+     */
+    app.get(`${base}/git/conflicts`, async (request): Promise<ConflictsDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const cwd = cwdOf(ctx.db, id, user.id)
+
+      try {
+        const state = await readWriteState(cwd)
+        if (!state || state.conflicted.length === 0) {
+          return { origin: null, oursLabel: '', theirsLabel: '', files: [] }
+        }
+        return await readConflicts(cwd, state.conflicted)
+      } catch (err) {
+        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+      }
+    })
+
+    /**
+     * Ce qu'il y aurait à rebaser, et sur quoi : la liste que l'écran T9 propose.
+     *
+     * L'amont par défaut est `@{upstream}` : c'est la réponse à « mes commits qui ne
+     * sont pas encore partis », qui est la question qu'on se pose en ouvrant un rebase
+     * interactif. Le menu d'un commit, lui, désigne son point de départ.
+     */
+    app.get(`${base}/git/rebase/plan`, async (request): Promise<RebasePlanDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const query = request.query as { onto?: string }
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const projectId = projectIdOf(ctx.db, id)
+
+      try {
+        const state = await readWriteState(cwd)
+        if (!state) return { onto: null, commits: [], branch: null, guessed: false }
+
+        const guessed = !query.onto
+        const onto = query.onto?.trim() || state.upstream
+        if (!onto) return { onto: null, commits: [], branch: state.branch, guessed }
+
+        // `--reverse` : l'écran liste du plus ancien au plus récent, c'est-à-dire dans
+        // l'ordre où git les rejouera. L'inverse du graphe, et c'est voulu — un plan
+        // de rebase se lit comme une recette.
+        const entries = await readEntries(cwd, ['--reverse', '--max-count=200', `${onto}..HEAD`])
+        const threads = projectId ? readThreadWindows(ctx.db, projectId) : []
+        const rootPath = projectId ? projectWorkspace(ctx.db, projectId, user.id) : cwd
+        const window = await readGraphWindow(cwd, { ...graphQuerySchema.parse({}), limit: 200 })
+        const threadOf = window ? threadLookup(window, threads, rootPath) : () => null
+
+        const head = await readCommitFacts(cwd, onto).catch(() => null)
+        return {
+          onto: head
+            ? { ref: onto, shortHash: head.entry.shortHash, subject: head.entry.subject }
+            : null,
+          branch: state.branch,
+          guessed,
+          commits: entries.map((entry) => ({
+            hash: entry.hash,
+            shortHash: entry.shortHash,
+            subject: entry.subject,
+            body: '',
+            author: entry.author,
+            agent: agentOf(entry.coAuthors),
+            ts: entry.ts,
+            thread: threadOf(entry.hash, entry.ts),
+          })),
+        }
+      } catch (err) {
+        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+      }
+    })
+
+    /** L'historique d'un fichier, **par fil** (planche T12, moitié haute). */
+    app.get(`${base}/git/file/history`, async (request): Promise<FileHistoryDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = filePathQuerySchema.parse(request.query)
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const projectId = projectIdOf(ctx.db, id)
+
+      try {
+        const window = await readGraphWindow(cwd, { ...graphQuerySchema.parse({}), limit: 200 })
+        if (!window) return { commits: null, threads: 0, truncated: false }
+
+        const threads = projectId ? readThreadWindows(ctx.db, projectId) : []
+        const rootPath = projectId ? projectWorkspace(ctx.db, projectId, user.id) : cwd
+        const threadOf = threadLookup(window, threads, rootPath)
+
+        const entries = await readEntries(cwd, [`--max-count=${FILE_LOG + 1}`, '--', path])
+        const commits = entries.slice(0, FILE_LOG).map((entry) => ({
+          hash: entry.hash,
+          shortHash: entry.shortHash,
+          subject: entry.subject,
+          author: entry.author,
+          agent: agentOf(entry.coAuthors),
+          ts: entry.ts,
+          thread: threadOf(entry.hash, entry.ts),
+        }))
+
+        return {
+          commits,
+          threads: new Set(commits.map((commit) => commit.thread?.id).filter(Boolean)).size,
+          truncated: entries.length > FILE_LOG,
+        }
+      } catch (err) {
+        throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+      }
+    })
+
+    /**
+     * Le blâme d'un fichier, **par fil et non par auteur** (planche T12, moitié basse).
+     *
+     * C'est le deuxième écart assumé avec GitKraken, et le plus profond : dans un dépôt
+     * où presque tout est signé d'un agent, « qui a écrit cette ligne » répond « Tim »
+     * partout — le CLI commite sous son identité. « Quelle conversation » répond
+     * quelque chose. L'auteur reste rendu, et c'est l'interface qui le montre pour les
+     * seules lignes écrites à la main, où il apprend encore quelque chose.
+     */
+    app.get(`${base}/git/file/blame`, async (request): Promise<BlameDto> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      const { path } = filePathQuerySchema.parse(request.query)
+      const cwd = cwdOf(ctx.db, id, user.id)
+      const projectId = projectIdOf(ctx.db, id)
+
+      try {
+        const window = await readGraphWindow(cwd, { ...graphQuerySchema.parse({}), limit: 200 })
+        if (!window) return { lines: null, truncated: false }
+
+        const rows = await readBlame(cwd, path, BLAME_LINES)
+        const threads = projectId ? readThreadWindows(ctx.db, projectId) : []
+        const rootPath = projectId ? projectWorkspace(ctx.db, projectId, user.id) : cwd
+        const threadOf = threadLookup(window, threads, rootPath)
+
+        // Un seul `log` pour tous les commits cités : le `Co-Authored-By` ne figure pas
+        // dans la sortie de `blame`, et le demander ligne par ligne ferait mille
+        // process git sur un fichier de mille lignes.
+        const hashes = [...new Set(rows.map((row) => row.hash))]
+        const agents = new Map(
+          (await readEntries(cwd, ['--no-walk', ...hashes])).map((entry) => [
+            entry.hash,
+            agentOf(entry.coAuthors),
+          ]),
+        )
+
+        return {
+          lines: rows.slice(0, BLAME_LINES).map((row) => ({
+            line: row.line,
+            text: row.text,
+            hash: row.hash,
+            shortHash: row.hash.slice(0, 7),
+            author: row.author,
+            agent: agents.get(row.hash) ?? null,
+            ts: row.ts,
+            thread: threadOf(row.hash, row.ts),
+          })),
+          truncated: rows.length > BLAME_LINES,
+        }
+      } catch (err) {
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
     })

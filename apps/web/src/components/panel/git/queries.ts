@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import type {
+  BlameDto,
   CommitDetailDto,
+  ConflictsDto,
+  FileHistoryDto,
   GitStateDto,
   GraphDto,
+  RebasePlanDto,
   RefsDto,
   StashesDto,
 } from '@solera/protocol'
@@ -93,5 +97,61 @@ export function useStashes(scope: WorkspaceScope, enabled: boolean) {
     staleTime: Infinity,
     refetchOnMount: 'always',
     enabled,
+  })
+}
+
+/**
+ * Les conflits ouverts, contenu des fichiers compris.
+ *
+ * Lus seulement quand on ouvre la destination : c'est une lecture par fichier en
+ * conflit, et le rail, lui, n'a besoin que du compte que `GitStateDto.conflicted`
+ * donne déjà.
+ */
+export function useConflicts(scope: WorkspaceScope, enabled: boolean) {
+  return useQuery({
+    queryKey: ['git-conflicts', scope],
+    queryFn: () => api.get<ConflictsDto>(`${workspaceApiBase(scope)}/git/conflicts`),
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled,
+  })
+}
+
+/** Ce qu'il y aurait à rebaser, demandé en ouvrant l'écran et pas avant. */
+export function useRebasePlan(scope: WorkspaceScope, onto: string | null, enabled: boolean) {
+  const search = onto ? `?onto=${encodeURIComponent(onto)}` : ''
+  return useQuery({
+    queryKey: ['git-rebase-plan', scope, onto],
+    queryFn: () => api.get<RebasePlanDto>(`${workspaceApiBase(scope)}/git/rebase/plan${search}`),
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled,
+  })
+}
+
+export function useFileHistory(scope: WorkspaceScope, path: string | null) {
+  return useQuery({
+    queryKey: ['git-file-history', scope, path],
+    queryFn: () =>
+      api.get<FileHistoryDto>(
+        `${workspaceApiBase(scope)}/git/file/history?path=${encodeURIComponent(path ?? '')}`,
+      ),
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled: path !== null,
+  })
+}
+
+/** Le blâme, qui coûte un `git blame` entier : seulement quand l'onglet est ouvert. */
+export function useBlame(scope: WorkspaceScope, path: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['git-blame', scope, path],
+    queryFn: () =>
+      api.get<BlameDto>(
+        `${workspaceApiBase(scope)}/git/file/blame?path=${encodeURIComponent(path ?? '')}`,
+      ),
+    staleTime: Infinity,
+    refetchOnMount: 'always',
+    enabled: enabled && path !== null,
   })
 }

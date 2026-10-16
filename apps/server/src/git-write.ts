@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { copyFile, rm } from 'node:fs/promises'
+import { copyFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -9,10 +9,20 @@ import type {
   GitAction,
   GitImpactDto,
   GitLossDto,
+  GitRebaseDto,
   GitUndoDto,
   GitUndoKind,
   StashDto,
 } from '@solera/protocol'
+import { refuseMarkers } from './git-conflicts.js'
+import { partialPatch } from './git-lines.js'
+import {
+  forgetMessages,
+  readRebaseState,
+  readSubjects,
+  rebaseEnv,
+  writeTodo,
+} from './git-rebase.js'
 import { GitError } from './git.js'
 
 /**
@@ -110,6 +120,7 @@ export interface WriteState {
   truncated: boolean
   head: { hash: string; shortHash: string; subject: string } | null
   conflicted: string[]
+  rebase: GitRebaseDto | null
 }
 
 /**
@@ -174,6 +185,9 @@ export async function readWriteState(cwd: string): Promise<WriteState | null> {
     truncated,
     head,
     conflicted,
+    // Lu avec le reste et non par une requête à part : c'est lui qui suspend les
+    // tours, donc il change ce que la vue entière a le droit de faire.
+    rebase: await readRebaseState(cwd, conflicted),
   }
 }
 
@@ -388,6 +402,25 @@ export async function impactOf(cwd: string, action: GitAction): Promise<GitImpac
         losses,
         offerStash: (await workingLoss(cwd)) !== null,
       }
+    case 'rebase-abort': {
+      // Ce qu'un abandon emporte : les commits déjà rejoués, et le travail de
+      // résolution de conflits qui a été indexé pour y arriver. Le dépôt revient où
+      // il était, donc rien d'autre ne se perd — et le dire exactement est ce qui
+      // distingue ce garde-fou d'un « êtes-vous sûr ? ».
+      const state = await readWriteState(cwd)
+      const done = state?.rebase?.done ?? 0
+      if (done > 0) losses.push({ kind: 'commits', count: done, byAgent: 0 })
+      add(await stagedLoss(cwd))
+      return { undoable: false, losses, offerStash: false }
+    }
+    case 'conflict-take': {
+      // Prendre un côté écrase ce que l'autre portait, et ce qu'on avait déjà résolu
+      // à la main dans ces fichiers-là.
+      const conflicted = (await readWriteState(cwd))?.conflicted ?? []
+      const count = action.path ? 1 : conflicted.length
+      if (count > 0) losses.push({ kind: 'working', count })
+      return { undoable: false, losses, offerStash: false }
+    }
     default:
       return { undoable: isUndoable(action), losses, offerStash: false }
   }
@@ -410,6 +443,11 @@ const UNDOABLE: ReadonlySet<GitAction['kind']> = new Set([
   'commit-revert',
   'commit-tag',
   'stash-push',
+  // Un rebase interactif qui va au bout se défait d'un `reset --dur` sur le `HEAD`
+  // d'avant, tant que l'arbre est resté propre. Un rebase **interrompu**, lui, n'en
+  // rend aucun : il n'a pas encore de `HEAD` d'arrivée, et c'est *Abandonner* qui le
+  // défait, avec son garde-fou.
+  'rebase-start',
 ])
 
 function isUndoable(action: GitAction): boolean {
@@ -807,7 +845,157 @@ export async function perform(
       // promesse d'annulation.
       return { undo: null, message: '' }
     }
+
+    // ─── Lot 3 ────────────────────────────────────────────────────────────────
+    case 'stage-lines':
+    case 'unstage-lines': {
+      const reverse = action.kind === 'unstage-lines'
+      // Le diff est **relu ici**, et c'est ce qui rend le geste sûr : celui que le
+      // client affichait a pu vieillir, et `partialPatch` compare les en-têtes de
+      // blocs avant de retenir quoi que ce soit.
+      const patch = reverse
+        ? await git(cwd, ['diff', '--cached', '--', action.path])
+        : await readUnstagedPatch(cwd, action.path)
+      const partial = partialPatch(patch, action.selections, reverse)
+      if (!partial) return { undo: null, message: '' }
+      await applyToIndex(cwd, partial, reverse)
+      return { undo: null, message: '' }
+    }
+
+    case 'rebase-start': {
+      const hashes = action.plan.map((step) => step.hash)
+      const { todo } = await writeTodo(cwd, action.plan, await readSubjects(cwd, hashes))
+      // `--no-autosquash` : un message qui commence par `fixup!` réordonnerait le todo
+      // dans le dos de ce que l'écran a montré, et la planche T9 promet l'inverse.
+      const out = await interrupted(cwd, ['rebase', '-i', '--no-autosquash', action.onto], rebaseEnv(todo))
+      // Un rebase qui s'est arrêté en chemin n'a pas de point d'arrivée, donc rien à
+      // annuler : c'est *Abandonner*, avec son garde-fou, qui le défait. Promettre un
+      // « Annuler » ici serait promettre un `reset --dur` au beau milieu d'un rebase.
+      const stopped = (await readRebaseState(cwd, [])) !== null
+      return {
+        undo: !stopped && before && beforeBranch
+          ? {
+              kind: 'rebase-interactive',
+              subject: beforeBranch,
+              target: before.shortHash,
+              steps: [['reset', '--hard', before.hash]],
+              head: await after(),
+              requiresClean: true,
+              stashHash: null,
+              redo: action,
+            }
+          : null,
+        message: out,
+      }
+    }
+    case 'rebase-continue':
+    case 'rebase-skip': {
+      const verb = action.kind === 'rebase-continue' ? '--continue' : '--skip'
+      const out = await interrupted(cwd, ['rebase', verb], rebaseEnv(null))
+      return { undo: null, message: out }
+    }
+    case 'rebase-abort': {
+      await git(cwd, ['rebase', '--abort'])
+      await forgetMessages(cwd)
+      // Un abandon remet le dépôt où le rebase l'a trouvé : il n'y a rien à annuler,
+      // et c'est le garde-fou qui a nommé ce qu'il emportait.
+      return { undo: null, message: '' }
+    }
+    case 'conflict-take': {
+      const side = action.side === 'ours' ? '--ours' : '--theirs'
+      const paths = action.path ? [action.path] : (await readWriteState(cwd))?.conflicted ?? []
+      if (paths.length === 0) return { undo: null, message: '' }
+      await git(cwd, ['checkout', side, '--', ...paths])
+      // `add` marque résolu : sans lui le fichier reste en conflit dans l'index, et
+      // l'écran dirait qu'il reste à faire ce qu'on vient de faire.
+      await git(cwd, ['add', '--', ...paths])
+      return { undo: null, message: '' }
+    }
+    case 'conflict-resolve': {
+      refuseMarkers(action.content)
+      await writeFile(join(cwd, action.path), action.content)
+      await git(cwd, ['add', '--', action.path])
+      return { undo: null, message: '' }
+    }
   }
+}
+
+/**
+ * Le patch des non-indexés d'un fichier, **sans toucher à l'index réel**.
+ *
+ * Même tour que `readUnstaged` : un fichier non suivi n'a pas de diff tant que git ne
+ * le connaît pas, et le lui faire connaître dans le vrai index indexerait ce que
+ * personne n'a coché — ce qui est précisément ce que l'indexation par ligne existe
+ * pour éviter.
+ */
+async function readUnstagedPatch(cwd: string, path: string): Promise<string> {
+  const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
+  const scratch = join(tmpdir(), `solera-index-${randomUUID()}`)
+  try {
+    await copyFile(join(gitDir, 'index'), scratch).catch(() => {})
+    const env = { GIT_INDEX_FILE: scratch }
+    await git(cwd, ['add', '--intent-to-add', '--', path], env).catch(() => {})
+    return await git(cwd, ['diff', '--', path], env)
+  } finally {
+    await rm(scratch, { force: true }).catch(() => {})
+  }
+}
+
+/**
+ * Applique un patch à l'index seul.
+ *
+ * `--cached` et pas `--index` : le répertoire de travail ne doit pas bouger. Indexer
+ * deux lignes sur cinq laisse les trois autres exactement où elles étaient, et c'est
+ * tout l'intérêt du geste.
+ *
+ * Le patch passe par l'entrée standard et non par un fichier : il n'a pas à exister
+ * sur le disque, et un fichier temporaire serait un fichier de plus à nettoyer dans un
+ * module où une sortie ratée laisse des traces.
+ */
+async function applyToIndex(cwd: string, patch: string, reverse: boolean): Promise<void> {
+  const args = ['apply', '--cached', ...(reverse ? ['--reverse'] : []), '-']
+  await new Promise<void>((resolve, reject) => {
+    const child = execFile('git', args, { cwd, timeout: READ_TIMEOUT_MS }, (err, _stdout, stderr) => {
+      if (err) reject(new GitError(gitMessage({ stderr, message: err.message })))
+      else resolve()
+    })
+    child.stdin?.end(patch)
+  })
+}
+
+/**
+ * Une commande qui a le droit de s'arrêter en chemin.
+ *
+ * Un rebase qui bute sur un conflit **échoue** au sens d'`execFile` : code de sortie
+ * non nul, message sur la sortie d'erreur. Ce n'est pourtant pas une panne mais l'état
+ * normal d'un rebase interrompu, et le remonter en erreur enverrait l'écran afficher
+ * « ça n'a pas marché » devant un dépôt qui attend exactement qu'on le finisse. On
+ * distingue donc les deux en relisant l'état du dépôt après coup.
+ */
+async function interrupted(
+  cwd: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<string> {
+  try {
+    const out = (await git(cwd, args, env, NETWORK_TIMEOUT_MS)).trim()
+    await finishedRebase(cwd)
+    return out
+  } catch (err) {
+    const state = await readRebaseState(cwd, []).catch(() => null)
+    if (!state) {
+      // Vraie panne : le rebase n'a pas commencé, ou s'est défait tout seul. On
+      // nettoie les messages préparés plutôt que de les laisser traîner dans le dépôt.
+      await forgetMessages(cwd)
+      throw err
+    }
+    return err instanceof Error ? err.message : String(err)
+  }
+}
+
+/** Le rebase est allé au bout : ses messages préparés n'ont plus de raison d'être. */
+async function finishedRebase(cwd: string): Promise<void> {
+  if ((await readRebaseState(cwd, []).catch(() => null)) === null) await forgetMessages(cwd)
 }
 
 /**

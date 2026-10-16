@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { useTranslate } from '../../lib/i18n'
-import type { WorkspaceScope } from '../../lib/workspace-scope'
+import { decodeScope, type WorkspaceScope } from '../../lib/workspace-scope'
 import { GitActionsProvider, useGitActions } from './git/actions'
 import { ErrorBanner, LockBanner, UndoBanner } from './git/banners'
 import { BranchesView } from './git/BranchesView'
 import { CommitDetail } from './git/CommitDetail'
+import { ConflictsView } from './git/ConflictsView'
 import { GraphView } from './git/GraphView'
+import { HistoryView } from './git/HistoryView'
+import { RebaseView } from './git/RebaseView'
 import { Rail, type Destination } from './git/rail'
 import { SearchView } from './git/SearchView'
 import { StashesView } from './git/StashesView'
@@ -42,8 +44,17 @@ import {
  * - **ce qui ne s'annule pas demande avant** — et nomme exactement ce qui sera perdu
  *   (`tour-3/clair/14`). Le reste s'annule, et le bandeau dit quoi et où ça ramène.
  *
- * Restent au lot 3 : l'indexation par bloc et par ligne, le rebase interactif, les
- * conflits, l'historique d'un fichier et le blâme.
+ * Le lot 3 ajoute les quatre fonctions chères, et deux d'entre elles changent ce que
+ * la vue entière a le droit de faire :
+ *
+ * - **le rebase interactif suspend les tours** tant qu'il court (planche T9). Le refus
+ *   vit dans le gestionnaire de sessions ; ici on le dit, et on empêche d'ouvrir un
+ *   second rebase par-dessus le premier ;
+ * - **la destination *Conflits* n'existe que pendant un conflit** (T10), avec le
+ *   bouton qui passe la main à l'agent en un clic.
+ *
+ * S'y ajoutent l'indexation par bloc et par ligne dans *En cours* (T3) et l'historique
+ * d'un fichier avec son blâme par fil (T12).
  *
  * Ce que la vue dit, et que l'onglet *Agent* ne dit pas : l'état du disque, tous
  * auteurs confondus. « Ses écritures » raconte ce que l'agent a écrit dans ce fil
@@ -70,6 +81,17 @@ export function GitPane({
   const [filters, setFilters] = useState<GraphFilters>({})
   /** Un tour vient de finir : *En cours* propose la relecture au lieu de l'imposer. */
   const [pendingReview, setPendingReview] = useState(false)
+  /** Le fichier dont on regarde l'historique, et l'onglet ouvert dessus (T12). */
+  const [file, setFile] = useState<{ path: string; blame: boolean } | null>(null)
+  /**
+   * Le rebase interactif, quand il est ouvert : la valeur est le point de départ
+   * désigné par le menu d'un commit, ou `null` pour l'amont.
+   *
+   * Un état plutôt qu'une destination du rail : la règle T0 range dans le rail les
+   * listes qu'on vient consulter, et un rebase n'est pas une liste — c'est un geste
+   * sur *ces* commits, qui part du menu de l'un d'eux ou de la branche courante.
+   */
+  const [rebasing, setRebasing] = useState<{ onto: string | null } | null>(null)
 
   const state = useGitState(scope)
   const graph = useGraph(scope, {}, limit)
@@ -104,6 +126,20 @@ export function GitPane({
     if (projectId) navigate(`/p/${projectId}/c/${id}`)
   }
 
+  // Le fil où écrire pour passer la main à l'agent : il n'y en a pas en portée
+  // projet, où aucun agent n'est désigné.
+  const decoded = decodeScope(scope)
+  const threadId = decoded.kind === 'conversation' ? decoded.id : null
+
+  const conflicted = state.data?.conflicted.length ?? 0
+  const running = state.data?.rebase ?? null
+
+  // Un rebase qui court ouvre son tableau de bord de lui-même : on ne laisse pas
+  // l'écran afficher un graphe pendant qu'un rebase attend qu'on le finisse.
+  useEffect(() => {
+    if (running && !rebasing) setRebasing({ onto: null })
+  }, [running, rebasing])
+
   const counts = {
     working: (state.data?.staged.length ?? 0) + (state.data?.unstaged.length ?? 0),
     branches: (refs.data?.sections ?? [])
@@ -127,11 +163,21 @@ export function GitPane({
   // deux colonnes illisibles.
   const reading = selected !== null && (destination === 'graph' || destination === 'search')
 
+  const openHistory = (path: string, blame: boolean): void => {
+    setFile({ path, blame })
+    setDestination('history')
+    setSelected(null)
+  }
+
   const menus: MenuContext = {
     branch: state.data?.branch ?? null,
     locked: state.data?.lock !== null && state.data?.lock !== undefined,
     projectId,
     onOpenThread: openThread,
+    // Le rebase interactif part du menu d'un commit : « rebaser interactivement à
+    // partir d'ici », donc le commit désigné est le point de départ, pas un des
+    // commits rejoués.
+    onRebase: (hash) => setRebasing({ onto: hash }),
   }
 
   return (
@@ -152,14 +198,27 @@ export function GitPane({
           <Rail
             active={destination}
             counts={counts}
+            conflicted={conflicted}
             onSelect={(next) => {
               setDestination(next)
               setSelected(null)
+              // Quitter le rail ferme le plan de rebase qu'on composait — sauf s'il
+              // court déjà, auquel cas il n'y a rien à quitter.
+              if (!running) setRebasing(null)
             }}
           />
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {reading && selected !== null ? (
+            {rebasing ? (
+              <RebaseView
+                scope={scope}
+                onto={rebasing.onto}
+                state={state.data}
+                onClose={() => setRebasing(null)}
+              />
+            ) : null}
+
+            {!rebasing && reading && selected !== null ? (
               <CommitDetail
                 scope={scope}
                 hash={selected}
@@ -169,7 +228,7 @@ export function GitPane({
               />
             ) : null}
 
-            {destination === 'graph' && !reading ? (
+            {!rebasing && destination === 'graph' && !reading ? (
               <GraphView
                 scope={scope}
                 filters={{}}
@@ -182,22 +241,32 @@ export function GitPane({
               />
             ) : null}
 
-            {destination === 'working' ? (
+            {!rebasing && destination === 'working' ? (
               <WorkingView
                 scope={scope}
                 pendingReview={pendingReview}
                 onReviewed={() => setPendingReview(false)}
                 onOpenFile={onOpenFile}
+                onOpenHistory={openHistory}
               />
             ) : null}
 
-            {destination === 'branches' ? (
+            {!rebasing && destination === 'branches' ? (
               <BranchesView scope={scope} menus={menus} onOpenThread={openThread} />
             ) : null}
 
-            {destination === 'stashes' ? <StashesView scope={scope} /> : null}
+            {!rebasing && destination === 'stashes' ? <StashesView scope={scope} /> : null}
 
-            {destination === 'search' && !reading ? (
+            {!rebasing && destination === 'conflicts' ? (
+              <ConflictsView
+                scope={scope}
+                threadId={threadId}
+                rebasing={running !== null}
+                onOpenThread={openThread}
+              />
+            ) : null}
+
+            {!rebasing && destination === 'search' && !reading ? (
               <SearchView
                 scope={scope}
                 filters={filters}
@@ -211,21 +280,26 @@ export function GitPane({
               />
             ) : null}
 
-            {/* La dernière destination attend son lot : *Historique d'un fichier*
-                avec le blâme par fil (lot 3). Elle est dans le rail dès maintenant
-                parce qu'une destination qui apparaît un jour sans prévenir est pire
-                qu'une destination vide. */}
-            {destination === 'history' ? <Later /> : null}
+            {!rebasing && destination === 'history' ? (
+              <HistoryView
+                scope={scope}
+                path={file?.path ?? null}
+                blame={file?.blame ?? false}
+                changed={[...(state.data?.unstaged ?? []), ...(state.data?.staged ?? [])]}
+                onPath={(path) => setFile({ path, blame: false })}
+                onBlame={(blame) => setFile((current) => (current ? { ...current, blame } : null))}
+                onOpenCommit={(hash) => {
+                  setDestination('graph')
+                  setSelected(hash)
+                }}
+                onOpenThread={openThread}
+              />
+            ) : null}
           </div>
         </div>
       </div>
     </GitActionsProvider>
   )
-}
-
-function Later() {
-  const t = useTranslate()
-  return <p className="px-3 py-3 text-xs text-ink-faint">{t('git.history.later')}</p>
 }
 
 /**

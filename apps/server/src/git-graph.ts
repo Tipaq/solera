@@ -700,3 +700,80 @@ export async function readCommitFacts(cwd: string, hash: string): Promise<Commit
       .filter((value) => value.startsWith('refs/')),
   }
 }
+
+/* --------------------------------------------- l'histoire d'un fichier (T12) ---- */
+
+/**
+ * Des commits lus avec le même format que le graphe, mais choisis autrement.
+ *
+ * Exporté pour l'historique d'un fichier et pour le blâme, qui ont besoin des mêmes
+ * champs — l'agent du `Co-Authored-By` en particulier — sans vouloir ni couloirs ni
+ * remises. Le format vit ici et nulle part ailleurs : deux définitions auraient fini
+ * par diverger d'un champ, et c'est l'agent qui aurait manqué.
+ */
+export async function readEntries(cwd: string, args: string[]): Promise<LogEntry[]> {
+  const raw = await git(cwd, ['log', `--format=${LOG_FORMAT}${LOG_RECORD}`, ...args]).catch(
+    () => '',
+  )
+  return parseLog(raw)
+}
+
+/** Une ligne de blâme, avant qu'on lui attache son fil. */
+export interface BlameRow {
+  hash: string
+  line: number
+  text: string
+  author: string
+  ts: number
+}
+
+/**
+ * `git blame --porcelain`, qui ne répète l'en-tête d'un commit qu'une fois.
+ *
+ * Le format porcelaine plutôt que le format lisible : celui-ci tronque les noms à la
+ * largeur d'un terminal et colle la date au sha, et le recouper à coups d'expression
+ * régulière sur un fichier de mille lignes est exactement le genre de chose qui marche
+ * jusqu'au premier nom d'auteur contenant une parenthèse.
+ */
+export function parseBlame(raw: string): BlameRow[] {
+  const rows: BlameRow[] = []
+  const authors = new Map<string, { author: string; ts: number }>()
+  let hash = ''
+  let line = 0
+
+  for (const entry of raw.split('\n')) {
+    const header = /^([0-9a-f]{40}) \d+ (\d+)/.exec(entry)
+    if (header) {
+      hash = header[1] as string
+      line = Number(header[2])
+      continue
+    }
+    if (entry.startsWith('author ')) {
+      const current = authors.get(hash) ?? { author: '', ts: 0 }
+      authors.set(hash, { ...current, author: entry.slice('author '.length) })
+      continue
+    }
+    if (entry.startsWith('author-time ')) {
+      const current = authors.get(hash) ?? { author: '', ts: 0 }
+      authors.set(hash, { ...current, ts: Number(entry.slice('author-time '.length)) * 1000 || 0 })
+      continue
+    }
+    // Le contenu de la ligne est la seule qui commence par une tabulation.
+    if (entry.startsWith('\t')) {
+      const known = authors.get(hash) ?? { author: '', ts: 0 }
+      rows.push({ hash, line, text: entry.slice(1), author: known.author, ts: known.ts })
+    }
+  }
+
+  return rows
+}
+
+/** Le blâme d'un fichier, borné : un fichier de dix mille lignes ne se lit pas. */
+export async function readBlame(cwd: string, path: string, limit: number): Promise<BlameRow[]> {
+  // `-L` est refusé quand le fichier a moins de lignes que la borne — ce qui est le
+  // cas courant. Le repli lit tout et coupe ici : la borne sert à ne pas transporter
+  // un fichier énorme, pas à faire échouer les petits.
+  const raw = await git(cwd, ['blame', '--porcelain', `-L1,${limit + 1}`, 'HEAD', '--', path])
+    .catch(() => git(cwd, ['blame', '--porcelain', 'HEAD', '--', path]))
+  return parseBlame(raw)
+}

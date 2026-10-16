@@ -1,4 +1,4 @@
-import { Archive, FilePen, GitBranch, GitMerge, History, Search } from 'lucide-react'
+import { AlertTriangle, Archive, FilePen, GitBranch, GitMerge, History, Search } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslate, type MessageKey } from '../../../lib/i18n'
 import { cx } from '@solera/ui'
@@ -14,10 +14,20 @@ import { cx } from '@solera/ui'
  * · Terminaux · Agent), qui est arrêtée par la carte #7 : le rail vit *à l'intérieur*
  * de l'onglet Git. Deux niveaux différents.
  *
- * *Conflits* manque encore : la planche T10 la veut conditionnelle, visible seulement
- * pendant un conflit, et la détection comme l'éditeur sont le lot 3.
+ * **Conflits est la septième, et elle est conditionnelle** : la planche T10 la veut
+ * visible seulement pendant un conflit, et invisible le reste du temps. Ce n'est pas
+ * la même chose qu'une destination grisée — une destination qui ne sert à rien
+ * aujourd'hui prend la place d'une qui sert, dans un rail de sept icônes sur 44 px.
+ * Elle est en ambre, qui est la couleur de « il y a quelque chose à faire ici ».
  */
-export type Destination = 'graph' | 'working' | 'branches' | 'stashes' | 'search' | 'history'
+export type Destination =
+  | 'graph'
+  | 'working'
+  | 'branches'
+  | 'stashes'
+  | 'search'
+  | 'history'
+  | 'conflicts'
 
 const DESTINATIONS: { id: Destination; icon: LucideIcon; label: MessageKey }[] = [
   { id: 'graph', icon: GitMerge, label: 'git.rail.graph' },
@@ -28,17 +38,27 @@ const DESTINATIONS: { id: Destination; icon: LucideIcon; label: MessageKey }[] =
   { id: 'history', icon: History, label: 'git.rail.history' },
 ]
 
+const CONFLICTS: { id: Destination; icon: LucideIcon; label: MessageKey } = {
+  id: 'conflicts',
+  icon: AlertTriangle,
+  label: 'git.rail.conflicts',
+}
+
 export function Rail({
   active,
   counts,
+  conflicted,
   onSelect,
 }: {
   active: Destination
   /** Ce qui attend derrière une destination : fichiers sales, branches, remises. */
   counts: Partial<Record<Destination, number>>
+  /** Combien de fichiers en conflit : zéro fait disparaître la septième destination. */
+  conflicted: number
   onSelect: (destination: Destination) => void
 }) {
   const t = useTranslate()
+  const destinations = conflicted > 0 ? [...DESTINATIONS, CONFLICTS] : DESTINATIONS
 
   return (
     <div
@@ -47,9 +67,10 @@ export function Rail({
       aria-label={t('git.rail.label')}
       className="flex w-11 shrink-0 flex-col items-center gap-1 border-r border-line py-2"
     >
-      {DESTINATIONS.map(({ id, icon: Icon, label }) => {
+      {destinations.map(({ id, icon: Icon, label }) => {
         const here = id === active
-        const count = counts[id]
+        const count = id === 'conflicts' ? conflicted : counts[id]
+        const warn = id === 'conflicts'
         return (
           <button
             key={id}
@@ -61,12 +82,20 @@ export function Rail({
             onClick={() => onSelect(id)}
             className={cx(
               'relative flex size-8 shrink-0 items-center justify-center rounded-md',
-              here ? 'bg-accent-wash text-accent' : 'text-ink-faint hover:bg-surface-high hover:text-ink',
+              warn && here && 'bg-caution/15 text-caution',
+              warn && !here && 'text-caution hover:bg-caution/10',
+              !warn && here && 'bg-accent-wash text-accent',
+              !warn && !here && 'text-ink-faint hover:bg-surface-high hover:text-ink',
             )}
           >
             <Icon size={15} />
             {count ? (
-              <span className="absolute right-0 -bottom-0.5 rounded-full bg-surface-high px-1 text-[0.5rem] font-semibold text-ink-soft tabular-nums">
+              <span
+                className={cx(
+                  'absolute right-0 -bottom-0.5 rounded-full px-1 text-[0.5rem] font-semibold tabular-nums',
+                  warn ? 'bg-caution text-on-accent' : 'bg-surface-high text-ink-soft',
+                )}
+              >
                 {count}
               </span>
             ) : null}

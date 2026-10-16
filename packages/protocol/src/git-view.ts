@@ -178,3 +178,56 @@ export interface CommitDetailDto {
   patch: string
   truncated: boolean
 }
+
+/**
+ * Un commit de l'historique d'un fichier (planche T12).
+ *
+ * Plus maigre que `CommitDetailDto` : la liste ne montre qu'un sujet, une date et le
+ * fil, et charger le diff de quatorze commits pour en lire un serait quatorze process
+ * git pour rien — on ouvre le détail par le chemin habituel.
+ */
+export interface FileCommitDto {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  agent: string | null
+  ts: number
+  thread: ThreadRefDto | null
+}
+
+export interface FileHistoryDto {
+  /** Null hors dépôt git, ou si le fichier n'a jamais été suivi. */
+  commits: FileCommitDto[] | null
+  /** Combien de fils distincts ont touché ce fichier : l'en-tête « 14 commits · 4 fils ». */
+  threads: number
+  /** Vrai si la fenêtre a été bornée : l'historique d'un fichier ancien est long. */
+  truncated: boolean
+}
+
+/**
+ * Une ligne de blâme, **avec le fil qui l'a écrite**.
+ *
+ * C'est le deuxième écart assumé avec GitKraken (carte #10) : dans un dépôt où presque
+ * tout est signé d'un agent, « qui a écrit cette ligne » ne renseigne plus — c'est
+ * l'utilisateur dans les deux cas, le CLI commitant sous son identité. « Quelle
+ * conversation » si. L'auteur reste rendu pour les lignes écrites à la main, qui sont
+ * les seules où il apprend quelque chose.
+ */
+export interface BlameLineDto {
+  /** Numéro dans le fichier d'aujourd'hui, 1 en tête. */
+  line: number
+  text: string
+  hash: string
+  shortHash: string
+  author: string
+  agent: string | null
+  ts: number
+  thread: ThreadRefDto | null
+}
+
+export interface BlameDto {
+  /** Null hors dépôt git, ou sur un fichier que git ne suit pas. */
+  lines: BlameLineDto[] | null
+  truncated: boolean
+}

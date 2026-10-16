@@ -40,6 +40,7 @@ import type { EventLog } from '../events/event-log.js'
 import { conversationMetrics } from '../conversations/metrics.js'
 import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
+import { rebaseInProgress } from '../git-rebase.js'
 import { agentCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
 
@@ -1131,6 +1132,31 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Les tours sont suspendus pendant un rebase interactif.
+   *
+   * C'est le symétrique du verrou de la vue Git (`lockOf` dans `git-actions.ts`), qui
+   * va dans l'autre sens : là-bas l'interface n'écrit pas pendant qu'un agent
+   * travaille, ici l'agent n'écrit pas pendant que le dépôt est à moitié rebasé. C'est
+   * le troisième écart assumé avec GitKraken (carte #10, planche T9), et il n'est pas
+   * de confort : pendant un rebase, ni l'arbre, ni `HEAD`, ni la branche ne veulent
+   * dire ce qu'ils veulent dire d'habitude. Un agent qui lirait ça pour décider quoi
+   * faire déciderait faux.
+   *
+   * Posé dans `deliver`, le seul passage par où un message atteint le CLI — qu'il
+   * vienne de la route, de la file ou d'une tâche planifiée. Un message en file ne
+   * risque rien : le rebase ne peut démarrer que si aucun tour ne tourne, et la file
+   * est vidée à la fin de chaque tour.
+   */
+  private async refuseDuringRebase(cwd: string): Promise<void> {
+    if (!(await rebaseInProgress(cwd).catch(() => false))) return
+    throw new HttpError(
+      409,
+      'rebase_in_progress',
+      'An interactive rebase is in progress in this directory: finish or abort it before sending a message.',
+    )
+  }
+
   async sendMessage(
     conversationId: string,
     clientMessageId: string,
@@ -1178,6 +1204,7 @@ export class SessionManager {
     skills: string[],
   ): Promise<void> {
     const conversation = this.loadConversation(conversationId)
+    await this.refuseDuringRebase(this.resolveCwd(conversation))
     // Résolu avant de démarrer le runner : une mention invalide doit faire échouer
     // l'envoi, pas laisser une session lancée avec un message perdu.
     const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)

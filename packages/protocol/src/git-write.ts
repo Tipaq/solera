@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { DiffFileDto } from './api.js'
+import { rebaseStepSchema, type GitRebaseDto } from './git-rebase.js'
 
 /**
  * Ce que la vue Git du panneau **écrit** dans le dépôt, et ce qu'elle doit savoir
@@ -44,6 +45,32 @@ const stashIndex = z.number().int().min(0).max(500)
  * `stash@{1}` désigne encore ce qu'on regardait.
  */
 const stashHash = hashSchema.nullable().default(null)
+
+/**
+ * Les lignes cochées d'un bloc, désignées par leur place et vérifiées par son en-tête.
+ *
+ * C'est la seule fonction du lot qui ne soit pas un appel `git` direct (planche T3) :
+ * il faut reconstruire un patch des seules lignes cochées et l'appliquer avec `git
+ * apply --cached`. Le client ne renvoie donc pas du texte — qui aurait à être
+ * réconcilié avec le disque — mais des positions dans le diff qu'il affichait.
+ *
+ * `header` est la vérification : entre l'affichage et le clic, un agent a pu écrire
+ * dans le fichier, et `lines: [2, 3]` ne désignerait alors plus les mêmes lignes. Le
+ * serveur relit le diff, compare l'en-tête, et **refuse** s'il a bougé. Même politique
+ * que le sha d'une remise : refuser vaut mieux qu'indexer autre chose.
+ */
+export const lineSelectionSchema = z.object({
+  /** Rang du bloc dans le diff du fichier, 0 en tête. */
+  hunk: z.number().int().min(0).max(10_000),
+  /** L'en-tête `@@ -a,b +c,d @@`, tel qu'il était à l'écran. */
+  header: z.string().min(1).max(500),
+  /** Rangs des lignes cochées dans le bloc, en comptant les lignes de contexte. */
+  lines: z.array(z.number().int().min(0).max(100_000)).min(1).max(20_000),
+})
+
+export type LineSelection = z.infer<typeof lineSelectionSchema>
+
+const lineSelectionsSchema = z.array(lineSelectionSchema).min(1).max(1000)
 
 /**
  * Le geste demandé, tel qu'il part sur le fil.
@@ -104,6 +131,44 @@ export const gitActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stash-apply'), index: stashIndex, hash: stashHash }),
   z.object({ kind: z.literal('stash-branch'), index: stashIndex, hash: stashHash, name: refNameSchema }),
   z.object({ kind: z.literal('stash-drop'), index: stashIndex, hash: stashHash }),
+
+  // ─── Lot 3 : l'indexation fine, le rebase interactif, les conflits ───────────
+  //
+  // Ils rejoignent la même union que les autres, et ce n'est pas une commodité : le
+  // verrou de concurrence, le garde-fou et le journal d'annulation vivent sur la route
+  // qui la lit. Un geste ajouté ailleurs serait un geste sans ces trois-là.
+  z.object({
+    kind: z.literal('stage-lines'),
+    path: z.string().min(1).max(400),
+    selections: lineSelectionsSchema,
+  }),
+  z.object({
+    kind: z.literal('unstage-lines'),
+    path: z.string().min(1).max(400),
+    selections: lineSelectionsSchema,
+  }),
+  z.object({
+    kind: z.literal('rebase-start'),
+    /** Sur quoi rebaser : une branche, un amont, ou un sha. */
+    onto: z.string().trim().min(1).max(200),
+    /** Du plus ancien au plus récent, comme git rejoue. */
+    plan: z.array(rebaseStepSchema).min(1).max(500),
+  }),
+  z.object({ kind: z.literal('rebase-continue') }),
+  z.object({ kind: z.literal('rebase-skip') }),
+  z.object({ kind: z.literal('rebase-abort') }),
+  z.object({
+    kind: z.literal('conflict-take'),
+    side: z.enum(['ours', 'theirs']),
+    /** Null pour *Tous les miens* / *Les leurs*, qui ne désignent aucun fichier. */
+    path: z.string().min(1).max(400).nullable().default(null),
+  }),
+  z.object({
+    kind: z.literal('conflict-resolve'),
+    path: z.string().min(1).max(400),
+    /** Le fichier entier, tel que l'éditeur l'a composé. Marqueurs compris : refusé. */
+    content: z.string().max(2_000_000),
+  }),
 ])
 
 export type GitAction = z.infer<typeof gitActionSchema>
@@ -155,6 +220,7 @@ export type GitUndoKind =
   | 'tag'
   | 'track'
   | 'stash-push'
+  | 'rebase-interactive'
 
 /**
  * Ce qu'`Annuler` annulerait, tel que le bandeau de T13 l'écrit.
@@ -237,6 +303,17 @@ export interface GitStateDto {
    * git de l'utilisateur, et le co-auteur est le seul endroit où l'agent s'écrit.
    */
   coAuthor: string | null
-  /** Un conflit est en cours : la destination *Conflits* du rail, qui est le lot 3. */
+  /**
+   * Un conflit est en cours : c'est ce qui fait apparaître la destination *Conflits*
+   * du rail, qui n'existe pas le reste du temps (planche T10).
+   */
   conflicted: string[]
+  /**
+   * Un rebase interactif court : les tours de ce fil sont suspendus tant qu'il dure.
+   *
+   * Dans l'état général et non dans une lecture à part, parce qu'il change ce que la
+   * vue entière a le droit de faire — et parce que c'est lui qui explique à l'écran
+   * pourquoi l'agent ne répond plus (planche T9).
+   */
+  rebase: GitRebaseDto | null
 }

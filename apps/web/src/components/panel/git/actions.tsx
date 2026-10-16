@@ -62,6 +62,11 @@ const GUARDED: ReadonlySet<GitAction['kind']> = new Set([
   'stash-drop',
   'branch-delete',
   'push',
+  // Lot 3 : abandonner un rebase jette les commits déjà rejoués et le travail de
+  // résolution ; prendre un côté d'un conflit écrase ce que l'autre portait, et ce
+  // qu'on avait déjà résolu à la main.
+  'rebase-abort',
+  'conflict-take',
 ])
 
 function needsGuard(action: GitAction): boolean {
@@ -86,9 +91,18 @@ export function GitActionsProvider({
   const [error, setError] = useState<string | null>(null)
   const [asking, setAsking] = useState<{ action: GitAction; impact: GitImpactDto } | null>(null)
 
-  /** Les quatre lectures de la vue : un geste les périme toutes ensemble. */
+  /** Les lectures de la vue : un geste les périme toutes ensemble. */
   const refresh = useCallback((): void => {
-    for (const key of ['git-graph', 'git-refs', 'git-state', 'git-stashes']) {
+    for (const key of [
+      'git-graph',
+      'git-refs',
+      'git-state',
+      'git-stashes',
+      'git-conflicts',
+      'git-rebase-plan',
+      'git-file-history',
+      'git-blame',
+    ]) {
       void client.invalidateQueries({ queryKey: [key, scope] })
     }
     // L'arborescence de l'onglet *Fichiers* regarde le même disque : basculer de
@@ -269,6 +283,10 @@ function guardTitle(t: Translate, action: GitAction): string {
       return t('git.guard.title.branchDelete', { name: action.name })
     case 'push':
       return t('git.guard.title.forcePush')
+    case 'rebase-abort':
+      return t('git.guard.title.rebaseAbort')
+    case 'conflict-take':
+      return t('git.guard.title.conflictTake')
     default:
       return t('git.guard.title.generic')
   }
@@ -286,6 +304,10 @@ function guardConfirm(t: Translate, action: GitAction): string {
       return t('git.guard.confirm.branchDelete')
     case 'push':
       return t('git.guard.confirm.forcePush')
+    case 'rebase-abort':
+      return t('git.guard.confirm.rebaseAbort')
+    case 'conflict-take':
+      return t('git.guard.confirm.conflictTake')
     default:
       return t('git.guard.confirm.generic')
   }

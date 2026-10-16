@@ -126,6 +126,7 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
           redo: null,
           coAuthor: null,
           conflicted: [],
+          rebase: null,
         }
       }
 

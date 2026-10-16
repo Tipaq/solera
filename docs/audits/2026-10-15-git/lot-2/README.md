@@ -29,6 +29,8 @@ Une image par vue, parce qu'une planche entière est illisible sans zoom.
 
 ## Ce qui n'est pas là
 
-L'indexation par bloc et par ligne, le rebase interactif (l'entrée du menu est là,
-éteinte), l'éditeur de conflits et la destination *Conflits*, l'historique d'un fichier
-et le blâme : lot 3. Glisser une branche sur une autre : lot 4.
+L'indexation par bloc et par ligne, le rebase interactif, l'éditeur de conflits et la
+destination *Conflits*, l'historique d'un fichier et le blâme : **livrés depuis, au
+lot 3** — voir `../lot-3/`. C'est pourquoi les images de ce dossier, régénérées par la
+même suite, montrent désormais l'entrée *Rebaser interactivement...* vivante et deux
+entrées de plus dans le menu d'un fichier. Glisser une branche sur une autre : lot 4.
