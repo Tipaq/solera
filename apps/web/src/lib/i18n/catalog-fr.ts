@@ -234,6 +234,7 @@ export const fr: Catalog = {
   'composer.sandbox.fullAccess': 'Accès total',
   'composer.sandbox.fullAccess.hint': 'Aucun garde-fou, à réserver aux dossiers sans risque',
   'composer.model.default': 'par défaut',
+  'composer.model.defaultNamed': 'Défaut : {model}',
   'composer.select.saved': 'Réglage enregistré',
   'composer.approval.granular': 'Granulaire',
   'composer.approval.granular.hint': 'Défini hors de Solera',

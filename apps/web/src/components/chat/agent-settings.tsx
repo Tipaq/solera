@@ -275,14 +275,15 @@ const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageK
  * La ligne nommée que la ligne par défaut du catalogue désigne, appariée par
  * l'identifiant canonique que les deux partagent.
  *
- * Claude Code appelle la sienne « Default (recommended) », ce qui est long, ne dit pas
- * qui répondra, et fait apparaître deux fois le même modèle — dont une sous un nom qui
- * n'est pas le sien. C'est donc la jumelle qui se montre, et la ligne par défaut qui
- * s'efface derrière elle ; la sentinelle `CLI_DEFAULT` reste dans la configuration, où
- * elle garde son sens de « suis ce que le CLI recommande ».
+ * Claude Code appelle la sienne « Default (recommended) », ce qui est long et ne dit
+ * pas qui répondra. La jumelle, elle, porte un nom lisible : c'est le sien que la ligne
+ * par défaut emprunte, pour s'annoncer « Défaut : Opus 5 » au lieu de taire sa
+ * génération. Les deux lignes restent dans la liste — choisir « suis ce que le CLI
+ * recommande » et choisir ce modèle-là nommément sont deux gestes différents, et seul
+ * le premier suivra le CLI quand il changera d'avis.
  *
- * Null quand il n'y a pas de jumelle, et c'est le cas usuel : Codex et opencode posent
- * `isDefault` sur un vrai modèle de leur catalogue, que cacher retirerait de la liste.
+ * Null quand il n'y a pas de jumelle : Codex et opencode posent `isDefault` sur un vrai
+ * modèle de leur catalogue, qui porte alors son propre nom sans emprunt.
  */
 function namedTwinOf(models: AgentModelDto[], row: AgentModelDto): AgentModelDto | null {
   if (!row.hint) return null
@@ -381,46 +382,44 @@ export function useAgentSettings({
    * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
    * l'afficher tel quel donnait un sélecteur vide et, faute de modèle trouvé, aucun
    * niveau d'effort. Le CLI annonce lequel de ses modèles il prendrait, c'est celui-là
-   * que la barre montre — sous le nom de sa jumelle quand la ligne par défaut en a une,
-   * puisque c'est elle qui reste visible dans la liste (voir `namedTwinOf`). La
-   * configuration, elle, garde la sentinelle : c'est au serveur de la résoudre au
-   * moment de créer la conversation.
+   * que la barre montre. La configuration, elle, garde la sentinelle : c'est au serveur
+   * de la résoudre au moment de créer la conversation.
    *
-   * Le repli sur la ligne par défaut elle-même reste le dernier recours : sans lui, un
-   * catalogue dont la ligne par défaut ne nomme personne laisserait la barre vide et
-   * ferait disparaître les niveaux d'effort.
+   * C'est bien la ligne par défaut qui est en vigueur, et non la jumelle qu'elle
+   * désigne : les deux figurent dans la liste, et cocher la seconde quand on n'a rien
+   * choisi ferait croire à un modèle épinglé là où on suit encore le CLI.
    */
   const defaultRow = catalog?.models.find((model) => model.isDefault)
-  const resolvedModel =
-    config.model ||
-    (defaultRow && namedTwinOf(catalog?.models ?? [], defaultRow)?.value) ||
-    defaultRow?.value ||
-    CLI_DEFAULT
+  const resolvedModel = config.model || defaultRow?.value || CLI_DEFAULT
 
   const modelOptions = useMemo((): SettingChoice<string>[] => {
     const models = catalog?.models ?? []
     const known = models
-      // La ligne par défaut s'efface derrière le modèle qu'elle désigne : le même
-      // modèle n'a pas à figurer deux fois. Sans jumelle elle reste, puisqu'elle est
-      // alors elle-même un modèle du catalogue.
-      .filter((model) => !(model.isDefault && namedTwinOf(models, model)))
-      .map((model) => {
+      .map((model): SettingChoice<string> => {
         // Le nom court dit la famille et la génération — « Opus 5 » — là où le libellé
         // du CLI porte la variante de contexte ou la mention « recommandé ». Quand il
         // est lu sur l'identifiant, celui-ci n'a plus à être répété en dessous.
         const fromId = modelIdName(model.hint)
+        const twin = model.isDefault ? namedTwinOf(models, model) : null
+        const twinName = twin ? shortModelName(twin.hint, twin.displayName) : null
         return {
           value: model.value,
-          label: model.displayName,
-          short: fromId ?? shortModelLabel(model.displayName),
+          // La liste dit le rang *et* le modèle — « Défaut : Opus 5 » — parce qu'on y
+          // choisit entre les deux. La puce, elle, ne garde que le modèle : le rang
+          // n'apprend rien à qui regarde la barre pour savoir qui va répondre, et
+          // c'est de la place prise au seul mot qui compte. Le nom vient de la jumelle
+          // et non de la ligne elle-même, dont le libellé — « Default (recommended) »
+          // — est justement celui qu'on ne veut nulle part.
+          label: twinName ? t('composer.model.defaultNamed', { model: twinName }) : model.displayName,
+          listed: twinName ? t('composer.model.defaultNamed', { model: twinName }) : undefined,
+          short: twinName ?? fromId ?? shortModelLabel(model.displayName),
           // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
           // dit pas quelle génération va effectivement répondre. Le rappel « par
-          // défaut » ne reste que sur les lignes qui sont le défaut du CLI *et* un
-          // modèle nommé, chez Codex et opencode : là, il apprend quelque chose.
+          // défaut » ne sert que si le libellé n'a pas déjà pu le dire.
           hint: [
             model.description,
             fromId ? null : model.hint,
-            model.isDefault ? t('composer.model.default') : null,
+            !twin && model.isDefault ? t('composer.model.default') : null,
           ]
             .filter(Boolean)
             .join(' · '),
