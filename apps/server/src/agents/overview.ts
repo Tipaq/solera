@@ -38,6 +38,15 @@ interface OverviewInput {
   conversationId: string
   /** L'agent a-t-il les outils du serveur MCP de Solera sous la main. */
   soleraMcp: boolean
+  /**
+   * La famille `cardFiling` est-elle accordée, c'est-à-dire `request_card_move` listé.
+   *
+   * Change une phrase et une seule, celle du briefing de carte : sans la portée, la
+   * colonne « se change dans l'interface et jamais par toi » ; avec elle, l'agent peut
+   * en *proposer* le changement. Lui dire le contraire de ce que son catalogue d'outils
+   * lui montre est la pire des deux erreurs.
+   */
+  cardFiling: boolean
 }
 
 interface Row {
@@ -119,7 +128,11 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 
   if (input.soleraMcp) {
     lines.push(
-      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. La colonne d'une carte, elle, se change dans l'interface et jamais par toi.`,
+      `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. ${
+        input.cardFiling
+          ? "La colonne d'une carte, elle, ne se change que dans l'interface : tu peux en proposer le déplacement avec `request_card_move`, en disant pourquoi, et c'est un clic qui tranche."
+          : "La colonne d'une carte, elle, se change dans l'interface et jamais par toi."
+      }`,
     )
   }
 

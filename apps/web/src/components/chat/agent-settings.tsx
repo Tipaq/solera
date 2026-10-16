@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Clock, Compass, FilePen, FolderInput, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -153,6 +153,26 @@ function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
 const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
 
 /**
+ * La mémoire de Solera, prêtée ou non à la session.
+ *
+ * Accordée en premier et sans ton de mise en garde, à la différence du rangement : c'est
+ * une capacité qu'on retire pour le sujet qu'on ne veut pas voir orienter les suivants,
+ * pas une portée qu'on accorde. « Éteinte » et non « Démontée » parce que c'est vrai des
+ * trois CLI, Claude compris, qui reçoit `autoMemoryEnabled: false` et n'a donc pas de
+ * dossier de repli où continuer d'écrire.
+ */
+type MemoryChoice = 'on' | 'off'
+
+function agentMemoryOptions(t: Translate): SettingChoice<MemoryChoice>[] {
+  return [
+    { value: 'on', label: t('composer.agentMemory.on'), hint: t('composer.agentMemory.on.hint') },
+    { value: 'off', label: t('composer.agentMemory.off'), hint: t('composer.agentMemory.off.hint') },
+  ]
+}
+
+const memoryChoice = (enabled: boolean): MemoryChoice => (enabled ? 'on' : 'off')
+
+/**
  * Le rangement de projet : déclarer un projet, et demander le déplacement d'une
  * conversation. Deux valeurs comme les réglages voisins, et l'allumé porte le ton de
  * mise en garde — c'est une portée qui agit au-dessus du projet où la session travaille.
@@ -167,6 +187,19 @@ function projectFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
 }
 
 const filingChoice = (enabled: boolean): FilingChoice => (enabled ? 'on' : 'off')
+
+/**
+ * Le rangement de carte : proposer le déplacement d'une carte du board, en disant
+ * pourquoi. Même forme et même ton que le rangement de projet — une portée qu'on accorde,
+ * pas une capacité qu'on retire —, et la même raison : la colonne d'une carte est un choix
+ * qu'une personne a posé.
+ */
+function cardFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
+  return [
+    { value: 'off', label: t('composer.cardFiling.off'), hint: t('composer.cardFiling.off.hint') },
+    { value: 'on', label: t('composer.cardFiling.on'), hint: t('composer.cardFiling.on.hint'), tone: 'caution' },
+  ]
+}
 
 /**
  * Ce que l'envoi fait d'un message tapé pendant un tour : l'y pousser, ou le faire
@@ -619,7 +652,9 @@ export function useAgentSettings({
   // occuper le panneau, comme le serveur MCP de Solera.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
+  const memoryOptionList = agentMemoryOptions(t)
   const filingOptionList = projectFilingOptions(t)
+  const cardFilingOptionList = cardFilingOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
   // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
@@ -629,6 +664,13 @@ export function useAgentSettings({
   // quand l'instance coupe l'un ou l'autre, un réglage inopérant valant moins que pas
   // de réglage du tout.
   const filingAvailable = soleraAvailable && mcpRegistry?.projectFiling === true
+  // La mémoire ne dépend pas du serveur MCP de Solera, elle : Claude la tient
+  // nativement, dans le dossier que Solera lui désigne. Seule l'instance peut la
+  // retirer de l'interface.
+  const memoryAvailable = mcpRegistry?.agentMemory === true
+  // Même dépendance que le rangement de projet : l'outil vit dans le serveur MCP de
+  // Solera, l'entrée disparaît quand l'instance coupe l'un ou l'autre.
+  const cardFilingAvailable = soleraAvailable && mcpRegistry?.cardFiling === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -778,6 +820,26 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(claude.agentMemory),
+              onChange: (choice) => onConfigChange({ ...claude, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'claude' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(claude.agentMemory), memoryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
       ...(filingAvailable
         ? [
             setting({
@@ -792,6 +854,25 @@ export function useAgentSettings({
               // attend la relance de la session, comme la bibliothèque de skills.
               notice: notice(
                 appliedLabel(appliedConfig?.agent === 'claude' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(claude.projectFiling), filingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(cardFilingAvailable
+        ? [
+            setting({
+              key: 'cardFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.cardFiling'),
+              icon: <Columns3 size={14} />,
+              options: cardFilingOptionList,
+              value: filingChoice(claude.cardFiling),
+              onChange: (choice) => onConfigChange({ ...claude, cardFiling: choice === 'on' }),
+              // L'outil est listé au lancement du serveur MCP : le changement attend la
+              // relance de la session, comme le rangement de projet.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'claude' ? filingChoice(appliedConfig.cardFiling) : undefined, filingChoice(claude.cardFiling), cardFilingOptionList),
                 t,
               ),
             }),
@@ -908,6 +989,26 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(codex.agentMemory),
+              onChange: (choice) => onConfigChange({ ...codex, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'codex' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(codex.agentMemory), memoryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
       ...(filingAvailable
         ? [
             setting({
@@ -922,6 +1023,25 @@ export function useAgentSettings({
               // attend la relance de la session, comme la bibliothèque de skills.
               notice: notice(
                 appliedLabel(appliedConfig?.agent === 'codex' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(codex.projectFiling), filingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(cardFilingAvailable
+        ? [
+            setting({
+              key: 'cardFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.cardFiling'),
+              icon: <Columns3 size={14} />,
+              options: cardFilingOptionList,
+              value: filingChoice(codex.cardFiling),
+              onChange: (choice) => onConfigChange({ ...codex, cardFiling: choice === 'on' }),
+              // L'outil est listé au lancement du serveur MCP : le changement attend la
+              // relance de la session, comme le rangement de projet.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'codex' ? filingChoice(appliedConfig.cardFiling) : undefined, filingChoice(codex.cardFiling), cardFilingOptionList),
                 t,
               ),
             }),
@@ -1048,6 +1168,26 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(opencode.agentMemory),
+              onChange: (choice) => onConfigChange({ ...opencode, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(opencode.agentMemory), memoryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
       ...(filingAvailable
         ? [
             setting({
@@ -1062,6 +1202,25 @@ export function useAgentSettings({
               // attend la relance de la session, comme la bibliothèque de skills.
               notice: notice(
                 appliedLabel(applied ? filingChoice(applied.projectFiling) : undefined, filingChoice(opencode.projectFiling), filingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(cardFilingAvailable
+        ? [
+            setting({
+              key: 'cardFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.cardFiling'),
+              icon: <Columns3 size={14} />,
+              options: cardFilingOptionList,
+              value: filingChoice(opencode.cardFiling),
+              onChange: (choice) => onConfigChange({ ...opencode, cardFiling: choice === 'on' }),
+              // L'outil est listé au lancement du serveur MCP : le changement attend la
+              // relance de la session, comme le rangement de projet.
+              notice: notice(
+                appliedLabel(applied ? filingChoice(applied.cardFiling) : undefined, filingChoice(opencode.cardFiling), cardFilingOptionList),
                 t,
               ),
             }),

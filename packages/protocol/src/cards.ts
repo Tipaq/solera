@@ -1,6 +1,10 @@
 import { z } from 'zod'
-import { type ConversationStatus } from './api.js'
-import { type AgentKind } from './events.js'
+// `import type` et non `import { type … }` : avec `verbatimModuleSyntax`, la seconde
+// forme laisse un import à l'exécution, et `events.ts` importe maintenant d'ici le
+// schéma de colonne pour ses événements de rangement de carte. Le cycle qui en
+// résulterait mettrait `cardColumnSchema` en zone morte au chargement.
+import type { ConversationStatus } from './api.js'
+import type { AgentKind } from './events.js'
 
 /**
  * Colonne du board, c'est-à-dire la position choisie d'une carte dans le workflow.

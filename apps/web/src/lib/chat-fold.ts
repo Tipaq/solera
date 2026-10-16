@@ -2,6 +2,7 @@ import type {
   AgentQuestion,
   AgentSkillDto,
   BackgroundTask,
+  CardColumn,
   ContentBlock,
   ContextBreakdown,
   ElicitationField,
@@ -93,6 +94,34 @@ export interface FilingItem {
   reason: string | null
 }
 
+/**
+ * Un déplacement de cartes qu'un agent propose, en attente ou déjà tranché.
+ *
+ * Posé dans le fil de la conversation **qui demande** : une carte n'a pas de fil à elle.
+ * C'est pourtant le propriétaire du projet qui accorde, pas celui de la conversation —
+ * d'où `canDecide` calculé à part de celui des autres demandes.
+ */
+export interface CardFilingItem {
+  kind: 'cardFiling'
+  id: string
+  cards: {
+    cardId: string
+    number: number
+    title: string
+    fromColumn: CardColumn
+    toColumn: CardColumn
+    reason: string
+  }[]
+  status: 'pending' | 'accepted' | 'refused' | 'impossible'
+  /** Code du motif d'un `impossible`, traduit à l'affichage. Null partout ailleurs. */
+  reason: string | null
+  /**
+   * Ce qui a réellement bougé, tel que le clic l'a écrit. Vide tant que la demande
+   * attend : entre le dépôt et le clic, une carte peut avoir bougé toute seule.
+   */
+  moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[]
+}
+
 /** Une question posée par l'agent, en attente ou déjà tranchée. */
 export interface QuestionItem {
   kind: 'question'
@@ -181,6 +210,7 @@ export type ChatItem =
   | ToolItem
   | PermissionItem
   | FilingItem
+  | CardFilingItem
   | QuestionItem
   | ElicitationItem
   | PlanItem
@@ -1047,6 +1077,34 @@ export function applyEvent(
           ...(state.items[index] as FilingItem),
           status: event.decision,
           reason: event.reason ?? null,
+        })
+      }
+      break
+    }
+
+    case 'card_filing.requested': {
+      appendItem(state, {
+        kind: 'cardFiling',
+        id: event.requestId,
+        cards: event.cards,
+        status: 'pending',
+        reason: null,
+        moved: [],
+      })
+      break
+    }
+
+    case 'card_filing.resolved': {
+      const index = findLastIndex(
+        state.items,
+        (item) => item.kind === 'cardFiling' && item.id === event.requestId,
+      )
+      if (index !== -1) {
+        replaceItem(state, index, {
+          ...(state.items[index] as CardFilingItem),
+          status: event.decision,
+          reason: event.reason ?? null,
+          moved: event.moved,
         })
       }
       break

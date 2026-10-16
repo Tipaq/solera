@@ -1191,8 +1191,12 @@ export interface McpServerListDto {
    * de l'interface au lieu d'y rester grisée.
    */
   soleraServer: boolean
+  /** Faux quand l'instance ne prête pas sa mémoire aux agents : l'entrée disparaît. */
+  agentMemory: boolean
   /** Faux quand l'instance refuse les outils de rangement : l'entrée disparaît. */
   projectFiling: boolean
+  /** Faux quand l'instance refuse aux agents de proposer un rangement de carte. */
+  cardFiling: boolean
 }
 
 // Erreurs

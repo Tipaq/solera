@@ -64,6 +64,17 @@ const configSchema = z.object({
        */
       soleraServer: z.boolean().default(true),
       /**
+       * Prête la mémoire de Solera aux agents : les trois outils `*_memory`, l'index
+       * injecté à Codex et à opencode, et le dossier que Claude reçoit en
+       * `autoMemoryDirectory`.
+       *
+       * Vrai par défaut comme le réglage de conversation qu'il chapeaute. À faux, la
+       * mémoire est éteinte pour toute l'instance et l'entrée disparaît de l'interface,
+       * par le même raisonnement que `soleraServer`. Pour qui ne veut pas qu'une session
+       * laisse derrière elle, hors de la base, de quoi orienter les suivantes.
+       */
+      agentMemory: z.boolean().default(true),
+      /**
        * Laisse les agents déclarer un projet et demander le rangement d'une
        * conversation (`create_project`, `move_conversation`).
        *
@@ -72,6 +83,15 @@ const configSchema = z.object({
        * disparaît aussi de l'interface, par le même raisonnement que `soleraServer`.
        */
       projectFiling: z.boolean().default(false),
+      /**
+       * Laisse les agents proposer le déplacement d'une carte du board
+       * (`request_card_move`), que l'utilisateur accorde d'un clic.
+       *
+       * Faux par défaut comme le réglage de conversation qu'il chapeaute. À faux,
+       * l'entrée disparaît aussi de l'interface, par le même raisonnement que
+       * `soleraServer`.
+       */
+      cardFiling: z.boolean().default(false),
     })
     .default({}),
   vault: z

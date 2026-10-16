@@ -5,22 +5,37 @@
  * de toutes les précédentes et le board du projet. Les outils exposés ici ouvrent cette
  * mémoire et cet état, cadrés au projet courant.
  *
- * Les outils qui écrivent le font tous dans un flux ajouté : notes de carte, messages
- * entre sessions, surveillances, cartes neuves et sessions lancées, ces deux dernières
- * par le daemon. Un agent peut aussi déclarer un projet, et demander un rangement que
- * l'utilisateur accorde : déclarer n'écrit qu'une ligne et s'annule par un archivage,
- * tandis que déplacer une conversation défait un rangement et coupe des liens — c'est
- * pourquoi `move_conversation` ne déplace pas, il dépose une demande qui attend un clic.
- * Solera ne crée ni ne supprime jamais de dossier : l'agent fait son `mkdir` lui-même,
- * avec ses propres outils. Deux exceptions. L'image du projet, qu'un agent pose ou remplace :
+ * **La frontière, et elle tient en une phrase : un agent raconte, propose, et ne défait
+ * rien.** Ce qui l'oblige est donc moins une liste d'outils qu'une forme d'écriture.
+ *
+ * *Ce qu'il écrit directement est toujours un ajout* : notes de carte, messages entre
+ * sessions, surveillances, cartes neuves, sessions lancées, projets déclarés. Une ligne
+ * de plus ne détruit rien et s'annule — une carte s'archive, un projet aussi.
+ *
+ * *Ce qui défait le choix d'une personne passe par un clic*, et l'outil ne fait alors que
+ * déposer une demande : `move_conversation` pour une conversation, qu'un déplacement
+ * détacherait de son worktree et de sa carte ; `request_card_move` pour les colonnes du
+ * board, où c'est la position choisie d'une carte qui serait défaite. Le clic est ce qui
+ * rend ces mouvements permis : accordé, le geste redevient celui d'une personne, et c'est
+ * son nom qui part dans `card_moves`. C'est pourquoi `request_card_move` n'a besoin
+ * d'aucune règle par sens de mouvement et accepte `abandoned` comme le reste — le tabou
+ * visait l'acte, pas la proposition.
+ *
+ * *Deux écritures échappent à l'ajout sans pour autant demander un clic*, et il faut les
+ * nommer parce qu'elles sont les seules. L'image du projet, qu'un agent pose ou remplace :
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
  * clic. Et SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
- * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. La frontière est là et pas ailleurs : un agent peut
- * raconter ce qu'il a fait ou prévenir une autre session, il ne peut ni déplacer une
- * carte ni réécrire sa description. Déplacer serait se donner un satisfecit, et la
- * colonne cesserait d'être la position choisie qu'elle est censée rester ; réécrire la
- * description ferait qu'un compte rendu de session efface la consigne qu'il était censé
- * suivre.
+ * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main.
+ *
+ * *Ce qui reste interdit, sans demande possible* : réécrire la description d'une carte.
+ * Un compte rendu de session effacerait la consigne qu'il était censé suivre, et il n'y a
+ * pas de clic qui rende cela acceptable. Et Solera ne crée ni ne supprime jamais de
+ * dossier : l'agent fait son `mkdir` lui-même, avec ses propres outils.
+ *
+ * Ces outils se découpent en **familles d'autorisation**, dont le critère d'ouverture est
+ * écrit en tête de `packages/protocol/src/agent-config.ts`. Elles arrivent ici en
+ * variables d'environnement, et une famille refusée retire ses outils du catalogue plutôt
+ * que de les refuser à l'appel.
  *
  * Un message entre sessions n'est que déposé ici. Ce process n'a que la base, il ne
  * tient aucun runner : c'est le daemon qui le remet, en l'injectant dans le tour en
@@ -55,7 +70,15 @@ const DB_PATH = process.env.SOLERA_MCP_DB
 const PROJECT_ID = process.env.SOLERA_MCP_PROJECT || null
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
-/** Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la mémoire automatique de Claude. */
+/**
+ * Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la
+ * mémoire automatique de Claude.
+ *
+ * **Vide quand la famille « Mémoire » est refusée**, et c'est le seul signal : les trois
+ * outils `*_memory` ne sont alors pas listés du tout. Pas de drapeau séparé, parce qu'un
+ * drapeau et un chemin pourraient se contredire — un outil listé qui n'a nulle part où
+ * écrire est pire que pas d'outil.
+ */
 const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
 /**
  * Portée de rangement, accordée conversation par conversation : à faux, les deux outils
@@ -63,6 +86,17 @@ const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
  * refus comme un échec du modèle.
  */
 const FILING = process.env.SOLERA_MCP_FILING === '1'
+
+/**
+ * Portée de rangement de carte, accordée conversation par conversation : à faux,
+ * `request_card_move` n'est pas listé du tout.
+ *
+ * Distincte de `FILING` et pas une part de lui : ranger un projet agit au-dessus du
+ * projet, proposer le déplacement d'une carte défait un choix qu'une personne a posé
+ * dedans. Le critère qui sépare les familles est en tête de
+ * `packages/protocol/src/agent-config.ts`.
+ */
+const CARD_FILING = process.env.SOLERA_MCP_CARD_FILING === '1'
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -120,6 +154,15 @@ const COLUMN_LABELS = {
 /** Au-delà, le board pèse plus qu'il n'oriente. Annoncé quand il mord. */
 const CARD_LIMIT = 40
 
+/**
+ * Cartes qu'une seule demande de déplacement peut porter.
+ *
+ * Une liste existe pour le cas qui a ouvert la carte #54 — treize cartes finies restées
+ * en « en cours » — et vingt la couvre largement. Au-delà, ce n'est plus une proposition
+ * qu'une personne relit avant de cliquer, c'est un lot qu'elle accorde sans le lire.
+ */
+const MAX_CARD_MOVES = 20
+
 /** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
 const CARD_EXCERPT_CHARS = 160
 
@@ -148,6 +191,7 @@ const REQUEST_WAIT_MS = {
   // Le temps que le daemon valide et dépose la demande, pas celui que l'utilisateur met
   // à l'accorder : l'outil rend la main dès que la demande est posée.
   move_conversation: 15000,
+  request_card_move: 15000,
 }
 const REQUEST_POLL_MS = 200
 
@@ -333,7 +377,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, le jalon auquel elle appartient, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. La colonne d'une carte, son échéance, son jalon et ses blocages se posent dans l'interface, par une personne, jamais par toi.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, le jalon auquel elle appartient, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, son jalon et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à ceci près que tu peux en proposer le déplacement avec request_card_move si cet outil t'est accordé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -712,6 +756,41 @@ const ALL_TOOLS = [
     },
   },
   {
+    name: 'request_card_move',
+    description:
+      "Propose le déplacement d'une ou plusieurs cartes du board, vers la colonne que tu indiques. **Ne déplace rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert quand une carte est visiblement finie, abandonnée ou mal classée et que tu peux dire en quoi : une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet, une carte restée « à faire » alors qu'une session y travaille. Toutes les colonnes sont permises, `abandoned` comprise. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        moves: {
+          type: 'array',
+          description: `Les déplacements proposés, de 1 à ${MAX_CARD_MOVES} cartes.`,
+          items: {
+            type: 'object',
+            properties: {
+              card: {
+                type: 'integer',
+                description: "Numéro de la carte, tel qu'il s'écrit après le `#`.",
+              },
+              column: {
+                type: 'string',
+                enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
+                description: 'Colonne visée.',
+              },
+              reason: {
+                type: 'string',
+                description:
+                  "Pourquoi, en une phrase : ce que tu as constaté qui justifie le déplacement, pas ce que tu en conclus. C'est elle que l'utilisateur lit avant de cliquer, et une demande sans raison écrite est refusée.",
+              },
+            },
+            required: ['card', 'column', 'reason'],
+          },
+        },
+      },
+      required: ['moves'],
+    },
+  },
+  {
     name: 'count_active_sessions',
     description:
       "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Solera, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
@@ -721,6 +800,12 @@ const ALL_TOOLS = [
 
 /**
  * Les outils qu'un fil libre voit : ceux dont l'objet n'est pas un projet.
+ *
+ * **Ce n'est pas une famille d'autorisation**, et ça n'a rien à faire dans un écran de
+ * réglages : rien ici ne s'accorde ni ne se refuse, la liste dit seulement quels outils
+ * ont encore un objet quand il n'y a pas de projet. Elle reste en dur. Les familles,
+ * elles, sont les booléens de `packages/protocol/src/agent-config.ts` et s'appliquent
+ * par-dessus celle-ci, dans `offered`.
  *
  * `create_project` et `move_conversation` sont ici avant d'exister — ils arrivent avec
  * le rangement par l'agent, et c'est justement un fil libre qui en a besoin. Une liste
@@ -1930,8 +2015,26 @@ function renderThread(found, before) {
 /** Les outils que la portée de rangement ouvre, et qui n'existent pas sans elle. */
 const FILING_TOOLS = new Set(['create_project', 'move_conversation'])
 
-/** Ce que cette session voit du catalogue, une fois ses portées appliquées. */
-const offered = (tool) => FILING || !FILING_TOOLS.has(tool.name)
+/** Les outils que la famille « Mémoire » ouvre, et qui n'existent pas sans elle. */
+const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
+
+/** Les outils que la famille « Rangement de carte » ouvre. */
+const CARD_FILING_TOOLS = new Set(['request_card_move'])
+
+/**
+ * Ce que cette session voit du catalogue, une fois ses familles d'autorisation
+ * appliquées. Le critère d'ouverture d'une famille est en tête de
+ * `packages/protocol/src/agent-config.ts`.
+ *
+ * Retirés du catalogue, et non listés puis refusés à l'appel : annoncer un outil qu'on
+ * refusera ensuite fait lire son refus comme un échec du modèle. Le refus à l'appel
+ * reste quand même, plus bas — un outil peut être appelé par un client qui a gardé une
+ * vieille liste.
+ */
+const offered = (tool) =>
+  (FILING || !FILING_TOOLS.has(tool.name)) &&
+  (MEMORY_DIR !== '' || !MEMORY_TOOLS.has(tool.name)) &&
+  (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name))
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
@@ -2202,6 +2305,47 @@ async function callTool(name, args) {
     return text(renderCount(countActiveSessions()))
   }
 
+  if (name === 'request_card_move') {
+    if (!CARD_FILING) {
+      return { ...text(`Outil inconnu : ${name}`), isError: true }
+    }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
+    }
+    // Validé ici pour que le modèle reçoive tout de suite ce qu'il doit corriger, et
+    // revalidé par le daemon, qui seul a la base pour autorité. La raison est le seul
+    // champ qu'on refuse sans regarder la carte : sans elle, ce n'est pas une
+    // proposition.
+    const moves = Array.isArray(args?.moves) ? args.moves : null
+    if (!moves || moves.length === 0) {
+      return { ...text('Le paramètre `moves` est requis : au moins un {card, column, reason}.'), isError: true }
+    }
+    if (moves.length > MAX_CARD_MOVES) {
+      return {
+        ...text(`Trop de cartes dans une demande (${moves.length}, ${MAX_CARD_MOVES} au plus). Garde ce qui se décide ensemble.`),
+        isError: true,
+      }
+    }
+    for (const move of moves) {
+      if (!Number.isInteger(move?.card)) {
+        return { ...text('Chaque déplacement veut un `card` entier : le numéro de la carte, sans le `#`.'), isError: true }
+      }
+      if (!(typeof move?.column === 'string' && COLUMN_LABELS[move.column])) {
+        return {
+          ...text(`Colonne inconnue pour #${move?.card} : ${Object.keys(COLUMN_LABELS).join(', ')}.`),
+          isError: true,
+        }
+      }
+      if (!(typeof move?.reason === 'string' && move.reason.trim())) {
+        return {
+          ...text(`Le champ \`reason\` est requis pour #${move.card} : dis ce que tu as constaté, en une phrase. Une demande sans raison n'est pas une proposition.`),
+          isError: true,
+        }
+      }
+    }
+    return requestDaemon(name, { moves })
+  }
+
   if (FILING_TOOLS.has(name)) {
     if (!FILING) {
       return { ...text(`Outil inconnu : ${name}`), isError: true }
@@ -2249,6 +2393,9 @@ async function callTool(name, args) {
   }
 
   if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
+    // La famille « Mémoire » refusée, ou une session sans dossier : les trois outils ne
+    // sont pas listés dans ce cas, ce refus est la ceinture du client qui aurait gardé
+    // une liste d'avant.
     if (!MEMORY_DIR) return { ...text("La mémoire n'est pas disponible dans cette session."), isError: true }
     const file = typeof args?.file === 'string' ? args.file.trim() : ''
 
@@ -2351,7 +2498,7 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${FILING ? ', rangement accordé' : ''}`,
+  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}`,
 )
 
 createInterface({ input: process.stdin }).on('line', async (line) => {

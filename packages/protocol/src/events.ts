@@ -4,6 +4,7 @@ import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
+import { cardColumnSchema } from './cards.js'
 
 /**
  * Schéma d'événements normalisé (invariant I3 de la spec).
@@ -347,6 +348,71 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * champ doivent continuer à se relire.
      */
     reason: z.string().nullable().optional(),
+  }),
+
+  /**
+   * Un agent propose le déplacement d'une ou plusieurs cartes du board, et attend un
+   * clic. Même motif que `filing.*`, avec trois écarts que la carte #54 arbitre.
+   *
+   * **Posée dans le journal de la conversation qui demande**, et non dans celui d'un fil
+   * déplacé : une carte n'a pas de fil à elle. C'est pourtant le **propriétaire du
+   * projet** qui accorde, pas celui de la conversation — c'est le board qu'on range. Les
+   * deux ne se confondent que sur une instance à un seul compte.
+   *
+   * **Une demande porte plusieurs cartes**, appliquées en une transaction : le refus des
+   * listes de #23 tenait à deux temps d'exécution différents, et dix lignes `card_moves`
+   * écrites d'un tenant n'en ont qu'un.
+   *
+   * **La raison est obligatoire, par carte** : une demande sans raison écrite n'est pas
+   * une proposition, c'est un ordre poli. `move_conversation` s'en passe parce que son
+   * prix se calcule tout seul.
+   */
+  z.object({
+    type: z.literal('card_filing.requested'),
+    /** L'id de la ligne `agent_requests` : ce que la route de décision reprend. */
+    requestId: z.string(),
+    /**
+     * Les cartes proposées, dans l'ordre où l'agent les a données, avec leur colonne
+     * d'arrivée et la raison qu'il en donne.
+     *
+     * `fromColumn` est l'état au dépôt, affiché pour que la demande se lise ; c'est la
+     * colonne relue **au clic** qui part dans `card_moves`, la carte ayant pu bouger
+     * entre-temps.
+     */
+    cards: z
+      .array(
+        z.object({
+          cardId: z.string(),
+          number: z.number(),
+          title: z.string(),
+          fromColumn: cardColumnSchema,
+          toColumn: cardColumnSchema,
+          reason: z.string(),
+        }),
+      )
+      .min(1),
+  }),
+  z.object({
+    type: z.literal('card_filing.resolved'),
+    requestId: z.string(),
+    decision: z.enum(['accepted', 'refused', 'impossible']),
+    decidedBy: z.string().nullable(),
+    /**
+     * Pourquoi `impossible`, revérifié au moment du clic — une carte a pu disparaître,
+     * ou déjà se trouver dans la colonne visée. Nullable et facultatif : le journal est
+     * rejoué indéfiniment (I2).
+     */
+    reason: z.string().nullable().optional(),
+    /**
+     * Les cartes réellement déplacées, telles que `card_moves` les a reçues. Facultatif
+     * et vide par défaut, pour la même raison que `reason`.
+     *
+     * Écrit ici et pas déduit de la requête : entre le dépôt et le clic, une carte a pu
+     * bouger, et c'est ce mouvement-là qui a eu lieu.
+     */
+    moved: z
+      .array(z.object({ number: z.number(), fromColumn: cardColumnSchema, toColumn: cardColumnSchema }))
+      .default([]),
   }),
 
   // Questions posées par l'agent

@@ -23,14 +23,85 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
+ * ## Les familles d'autorisation du serveur MCP de Solera, et le critère d'ouverture
+ *
+ * Les booléens qui suivent découpent les outils du serveur intégré en familles. Il y en
+ * a quatre, et la question « faut-il une cinquième ? » se tranche par ce critère, écrit
+ * ici une fois pour ne pas rouvrir le débat à chaque carte :
+ *
+ * > **Une famille existe quand son pouvoir n'est pas de la même nature que le socle —
+ * > l'outil agit au-dessus du projet, ou il défait un choix qu'une personne a posé, ou
+ * > il écrit hors de la base ce qui orientera les sessions suivantes.**
+ *
+ * **Le nombre d'outils n'entre pas dans le critère.** `soleraMcp` en porte une vingtaine
+ * et `cardFiling` un seul ; ce n'est pas une anomalie, c'est ce que le critère dit. Un
+ * découpage par volume redonnerait la matrice outil × portée que la carte #24 a écartée.
+ *
+ * Ce que le critère retient aujourd'hui, et pourquoi :
+ *
+ * - `soleraMcp` — le socle : lire, coordonner, écrire en ajout. C'est le terme de
+ *   comparaison, pas une famille au sens du critère.
+ * - `agentMemory` — écrit hors de la base ce qui orientera les sessions suivantes, sans
+ *   que personne ne l'ait relu.
+ * - `projectFiling` — agit au-dessus du projet où la session travaille.
+ * - `cardFiling` — défait un choix qu'une personne a posé (la colonne d'une carte).
+ *
+ * Ce que le critère écarte, pour fixer les idées : `add_card_note` écrit, mais en ajout
+ * et dans la base ; `set_project_image` remplace, mais n'est le jugement de personne et
+ * se reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet.
+ *
+ * **Quatre étages d'héritage**, les mêmes pour toutes les familles : conversation →
+ * préréglage de projet (`projects.default_config`) → défaut de compte → `config.toml`.
+ * Les trois premiers sont des points de départ (`??`), le dernier seul est un plafond
+ * (`&&`), et c'est lui qui fait *disparaître* l'entrée de l'interface. Toutes les
+ * couches intérieures veulent donc dire la même chose, ce qui est la condition pour que
+ * la valeur affichée se lise ; un étage qui plafonnerait parfois et proposerait parfois
+ * la rendrait illisible.
+ *
+ * **Le prix d'une famille neuve est de quatre endroits** — les trois schémas de CLI
+ * ci-dessous et `apps/server/src/config.ts` — **plus deux catalogues i18n.** C'est cet
+ * argument, et non le critère, qui tient le nombre à quatre.
+ *
+ * `FREE_THREAD_TOOLS` (`apps/server/src/mcp/solera-mcp.mjs`) n'est **pas** une famille et
+ * n'a rien à faire dans un écran de réglages : c'est la liste des outils qui ont encore
+ * un objet quand il n'y a pas de projet.
+ */
+
+/**
  * Monte le serveur MCP de Solera, qui ouvre à l'agent l'historique du projet.
  *
  * Vrai par défaut : c'est ce que la plateforme apporte de plus qu'un lancement direct du
  * CLI. Décochable par conversation pour le sujet où cette mémoire n'aide pas, et
  * coupable pour l'instance entière dans `config.toml`. Commun aux deux CLI, le serveur
  * ne devant rien à l'un ni à l'autre.
+ *
+ * C'est le socle, et les trois familles ci-dessous se découpent *dedans* : les couper
+ * toutes laisse le socle, couper celui-ci les emporte avec lui.
  */
 const soleraMcpSchema = z.boolean().default(true)
+
+/**
+ * Prête aux agents la mémoire de Solera : les trois outils `*_memory`, l'index injecté à
+ * Codex et à opencode, et le dossier que Claude reçoit en `autoMemoryDirectory`.
+ *
+ * **Vrai par défaut** : une session qui ne retient rien est le comportement d'avant
+ * Solera, et c'est la famille dont le critère dit qu'elle écrit hors de la base. On la
+ * retire pour le sujet qu'on ne veut pas voir orienter les suivants, pas l'inverse.
+ *
+ * À faux, la mémoire est **éteinte** et non seulement démontée, et c'est vrai des trois
+ * CLI : Claude reçoit `autoMemoryEnabled: false`, qui lui retire le dossier sans l'en
+ * renvoyer à celui qu'il tient d'habitude (sondé sur Claude Code 2.1.291 : plus aucun
+ * chemin de mémoire dans sa session, et aucun repli vers `~/.claude/projects/…`). C'est
+ * ce qui permet à la case de s'appeler simplement « Mémoire » : si couper avait laissé
+ * Claude écrire dans son dossier à lui, invisible et non partagé, il aurait fallu dire
+ * « Mémoire partagée » et expliquer l'effet CLI par CLI.
+ *
+ * Trois chemins à couper ensemble, et le troisième est le plus facile à oublier : les
+ * outils, le `autoMemoryDirectory` de Claude, **et l'index que `memoryAppendixForCodex`
+ * injecte en début de session**. Sans lui, la mémoire rentrerait par la fenêtre, en
+ * lecture, chez les deux CLI qui n'ont pas de mémoire native.
+ */
+const agentMemorySchema = z.boolean().default(true)
 
 /**
  * Livre la bibliothèque de skills de Solera, globale et du projet, à la session.
@@ -46,18 +117,36 @@ const skillLibrarySchema = z.boolean().default(true)
  * Ouvre à l'agent les deux outils de rangement : déclarer un projet, et demander le
  * déplacement d'une conversation.
  *
- * Faux par défaut, à la différence des autres interrupteurs de cette famille : ces deux
- * outils agissent au-dessus du projet où la session travaille, et c'est une portée qu'on
- * accorde plutôt qu'une capacité qu'on retire. Vetoable pour l'instance entière dans
- * `config.toml`, où `[mcp] project_filing = false` fait aussi disparaître l'entrée de
- * l'interface.
+ * Faux par défaut, comme `cardFiling` et à la différence des deux autres familles : ces
+ * deux outils agissent au-dessus du projet où la session travaille, et c'est une portée
+ * qu'on accorde plutôt qu'une capacité qu'on retire. Vetoable pour l'instance entière
+ * dans `config.toml`, où `[mcp] project_filing = false` fait aussi disparaître l'entrée
+ * de l'interface.
  *
  * Un seul booléen de conversation suffit à tenir un agent, alors que les étages
  * héritent en `??` et non en `&&` : aucun des outils du serveur MCP ne touche à une
  * configuration, donc personne d'autre que l'utilisateur ne peut recocher celui-ci.
- * Carte #24 pour la grille outil × portée, qui est un autre chantier.
+ * C'est l'argument qui vaut pour les quatre familles.
  */
 const projectFilingSchema = z.boolean().default(false)
+
+/**
+ * Ouvre à l'agent `request_card_move` : proposer le déplacement d'une ou plusieurs
+ * cartes du board, en disant pourquoi.
+ *
+ * **Faux par défaut**, comme `projectFiling` : c'est une portée qu'on accorde. Le critère
+ * la retient parce que la colonne d'une carte est un choix qu'une personne a posé, et
+ * qu'un agent qui le défait se donnerait un satisfecit. Une seule carte dans la famille
+ * aujourd'hui, et ce n'est pas un argument — voir le critère plus haut. Vetoable pour
+ * l'instance dans `config.toml`, où `[mcp] card_filing = false` fait aussi disparaître
+ * l'entrée de l'interface.
+ *
+ * L'outil **ne déplace rien** : il dépose une demande que l'utilisateur accorde d'un
+ * clic, et c'est le clic qui écrit `card_moves` au nom de la personne. C'est ce qui
+ * permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait l'acte,
+ * pas la proposition.
+ */
+const cardFilingSchema = z.boolean().default(false)
 
 /**
  * Fait attendre la fin du tour aux messages envoyés pendant qu'il tourne, au lieu de
@@ -84,7 +173,9 @@ export const claudeConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
   /**
@@ -227,7 +318,9 @@ export const codexConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -275,7 +368,9 @@ export const opencodeConfigSchema = z.object({
   /** Identifiants de serveurs du registre MCP actifs sur cette conversation. */
   mcpServers: z.array(z.string()).default([]),
   soleraMcp: soleraMcpSchema,
+  agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -305,7 +400,9 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
   strictMcp: false,
@@ -329,7 +426,9 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }
@@ -345,7 +444,9 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   additionalDirectories: [],
   mcpServers: [],
   soleraMcp: true,
+  agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }

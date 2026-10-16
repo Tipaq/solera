@@ -242,6 +242,19 @@ export function decideFiling(
   return api.post(`/api/conversations/${conversationId}/filings/${requestId}`, { decision })
 }
 
+/**
+ * Accorde ou refuse un déplacement de cartes. `conversationId` est celle **qui a
+ * demandé**, dans le fil de laquelle la demande est apparue ; c'est le serveur qui
+ * vérifie que l'appelant possède le projet.
+ */
+export function decideCardFiling(
+  conversationId: string,
+  requestId: string,
+  decision: 'accepted' | 'refused',
+): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/card-filings/${requestId}`, { decision })
+}
+
 export function answerQuestion(
   conversationId: string,
   requestId: string,

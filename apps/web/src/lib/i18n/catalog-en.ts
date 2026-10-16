@@ -1809,6 +1809,27 @@ export const en = {
   'filing.reason.projectGone': 'The destination project no longer existed.',
   'filing.reason.scheduled': 'A scheduled run stays where its task put it.',
   'filing.reason.unknown': 'The move became impossible.',
+  'cardFiling.title.pending': 'An agent proposes moving {count} card(s) on the board',
+  'cardFiling.title.past': 'Proposed move of {count} card(s)',
+  'cardFiling.accept': 'Move',
+  'cardFiling.accept.many': 'Move all {count}',
+  'cardFiling.refuse': 'Leave as is',
+  'cardFiling.status.accepted': 'Moved',
+  'cardFiling.status.refused': 'Declined',
+  'cardFiling.status.impossible': 'Impossible',
+  'cardFiling.ownerOnly': 'Only the project owner can file cards on their board.',
+  'cardFiling.error.generic': 'Could not record the decision.',
+  'cardFiling.reason.cardsGone':
+    'None of these cards could still move: they are gone, or someone moved them since the proposal.',
+  'cardFiling.reason.unknown': 'The move became impossible.',
+  'composer.setting.cardFiling': 'Card filing',
+  'composer.cardFiling.off': 'Declined',
+  'composer.cardFiling.off.hint': 'The agent cannot propose moving a card on the board',
+  'composer.cardFiling.on': 'Granted',
+  'composer.cardFiling.on.hint':
+    "The agent can propose moving a card, with its reason — which you grant with one click",
+  'error.card_filing_forbidden': 'Only the project owner can file cards on their board.',
+  'error.card_filing_stale': 'None of these cards can still be moved.',
 
   // Permissions (demandes de l'agent)
   'permission.status.allowed': 'Allowed',
@@ -2222,6 +2243,13 @@ export const en = {
   'skills.project.repo.title': "In the repository",
   'skills.project.repo.hint': "Each folder is read directly by some CLIs, not all. \"Add a skill → From this machine\" brings them in for every CLI.",
   'composer.setting.skillLibrary': "Skill library",
+  'composer.setting.agentMemory': 'Memory',
+  'composer.agentMemory.on': 'Shared',
+  'composer.agentMemory.on.hint':
+    "The agent reads and writes Solera's memory, which later sessions will read whatever their CLI",
+  'composer.agentMemory.off': 'Off',
+  'composer.agentMemory.off.hint':
+    'This session remembers nothing for the next ones, and reads nothing they remembered',
   'composer.setting.projectFiling': 'Project filing',
   'composer.projectFiling.off': 'Declined',
   'composer.projectFiling.off.hint': "The agent can neither declare a project nor ask for filing",

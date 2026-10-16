@@ -6,8 +6,23 @@ import { flagSettings, liveFlagSettings } from '../src/agents/claude/flag-settin
 const config = (fields: Partial<ClaudeConfig>): ClaudeConfig => ({ ...DEFAULT_CLAUDE_CONFIG, ...fields })
 
 test('au lancement, Ultracode n’est écrit qu’allumé et le mode rapide toujours', () => {
-  assert.deepEqual(flagSettings(config({})), { fastMode: false })
-  assert.deepEqual(flagSettings(config({ ultracode: true, fastMode: true })), { fastMode: true, ultracode: true })
+  assert.deepEqual(flagSettings(config({})), { fastMode: false, autoMemoryEnabled: false })
+  assert.deepEqual(flagSettings(config({ ultracode: true, fastMode: true })), {
+    fastMode: true,
+    ultracode: true,
+    autoMemoryEnabled: false,
+  })
+})
+
+test('sans dossier de mémoire, la mémoire est éteinte et non laissée à son défaut', () => {
+  // Le cœur de la famille « Mémoire » : omettre `autoMemoryDirectory` aurait renvoyé
+  // Claude à `~/.claude/projects/<cwd>/memory`, qu'il écrit tout aussi volontiers mais
+  // que personne ne voit ni ne partage — la case décochée aurait menti.
+  assert.deepEqual(flagSettings(config({}), [], [], null), { fastMode: false, autoMemoryEnabled: false })
+  assert.deepEqual(flagSettings(config({}), [], [], '/memoire'), {
+    fastMode: false,
+    autoMemoryDirectory: '/memoire',
+  })
 })
 
 test('à chaud, Ultracode n’est renvoyé que s’il bascule', () => {

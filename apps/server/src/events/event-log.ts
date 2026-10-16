@@ -103,6 +103,11 @@ const NOTABLE = new Set<SoleraEvent['type']>([
   // Une demande de rangement attend un clic, et rien ne la périme : elle doit se voir
   // dans la liste tant que personne n'a répondu.
   'filing.requested',
+  // Le jumeau carte, et il en a encore plus besoin : c'est le propriétaire du *projet*
+  // qui tranche, et il n'a aucune raison d'avoir ce fil ouvert. Sans ce mot, la
+  // proposition est invisible et tient pourtant la place de l'unique demande en attente
+  // de la conversation, qui ne peut alors plus rien proposer.
+  'card_filing.requested',
 ])
 
 /**
@@ -845,6 +850,32 @@ export class EventLog {
     for (const row of rows) {
       const event = this.parseStored(row.seq, row.payload)
       if (event.type === 'filing.requested' && event.requestId === requestId) return event
+    }
+    return null
+  }
+
+  /**
+   * La proposition de déplacement de cartes, telle que le journal la porte.
+   *
+   * Même raison que `openFiling`, et le même découpage d'autorité : la ligne
+   * `agent_requests` dit si la demande attend encore, le journal dit ce que la personne a
+   * sous les yeux — les cartes, les colonnes visées et les raisons. Les colonnes de
+   * départ, elles, sont relues en base au clic : la carte a pu bouger depuis.
+   */
+  openCardFiling(
+    conversationId: string,
+    requestId: string,
+  ): Extract<SoleraEvent, { type: 'card_filing.requested' }> | null {
+    const rows = this.db
+      .select({ seq: events.seq, payload: events.payload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.type, 'card_filing.requested')))
+      .orderBy(asc(events.seq))
+      .all()
+
+    for (const row of rows) {
+      const event = this.parseStored(row.seq, row.payload)
+      if (event.type === 'card_filing.requested' && event.requestId === requestId) return event
     }
     return null
   }

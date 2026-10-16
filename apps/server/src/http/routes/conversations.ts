@@ -7,6 +7,7 @@ import {
   conversationReads,
   conversations,
   projects,
+  writeTransaction,
   type ConversationRow,
 } from '@solera/db'
 import {
@@ -25,6 +26,7 @@ import {
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
+  type CardColumn,
   type CardLinkDto,
   type ConversationDto,
   type EditDiffDto,
@@ -35,6 +37,7 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
+import { recordCardMove } from '../../cards/moves.js'
 import { createConversation } from '../../conversations/create.js'
 import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo } from '../../conversations/scope.js'
@@ -835,6 +838,135 @@ export function registerConversationRoutes(
       .set({ acceptedAt: Date.now() })
       .where(eq(agentRequests.id, requestId))
       .run()
+    return { ok: true }
+  })
+
+  /**
+   * Accorde ou refuse un déplacement de cartes qu'un agent a proposé.
+   *
+   * `:id` est la conversation **qui a demandé**, dans le journal de laquelle la demande
+   * est apparue : une carte n'a pas de fil à elle. Mais c'est le **propriétaire du
+   * projet** qui décide, et non celui de la conversation — c'est le board qu'on range.
+   * D'où `loadReadable` et un contrôle de projet à la main, là où le rangement de
+   * conversation se contente de `loadWritable`.
+   *
+   * Accordée, la route applique elle-même, dans une transaction : il n'y a ni runner à
+   * relâcher ni tour à attendre, donc rien à confier au balayage du daemon. Les lignes
+   * `card_moves` portent l'`userId` de qui a cliqué — **le mouvement est attribué à la
+   * personne**, et c'est le fond de la décision de la carte #54.
+   */
+  app.post('/api/conversations/:id/card-filings/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = filingDecisionBodySchema.parse(request.body)
+    const conversation = await loadReadable(id, user.id)
+
+    // Le droit avant l'existence : le board appartient au projet, et c'est son
+    // propriétaire qui le range. Une conversation lisible dans un projet partagé ne
+    // donne donc pas le droit de cliquer — et contrôler d'abord évite qu'un membre non
+    // propriétaire distingue un `requestId` qui existe d'un qui n'existe pas.
+    const project = conversation.projectId
+      ? ctx.db
+          .select({ ownerId: projects.ownerId })
+          .from(projects)
+          .where(eq(projects.id, conversation.projectId))
+          .get()
+      : null
+    if (!project || project.ownerId !== user.id) {
+      throw forbidden('card_filing_forbidden', 'Only the project owner can file cards.')
+    }
+
+    const row = ctx.db
+      .select()
+      .from(agentRequests)
+      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'request_card_move')))
+      .get()
+    const filing = log.openCardFiling(id, requestId)
+    if (!row || !filing) throw notFound('filing_request_not_found', 'Filing request not found.')
+    if (row.resolvedAt !== null) {
+      throw badRequest('filing_already_decided', 'This filing request has already been decided.')
+    }
+
+    const close = (
+      decision: 'refused' | 'impossible' | 'accepted',
+      reason: string | null,
+      moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[],
+    ) => {
+      const now = Date.now()
+      ctx.db
+        .update(agentRequests)
+        .set({ resolvedAt: now, ...(decision === 'accepted' ? { acceptedAt: now } : {}) })
+        .where(eq(agentRequests.id, requestId))
+        .run()
+      log.append(id, { type: 'card_filing.resolved', requestId, decision, decidedBy: user.id, reason, moved })
+    }
+
+    if (body.decision === 'refused') {
+      close('refused', null, [])
+      return { ok: true }
+    }
+
+    // Relu au clic et non pris de la demande : entre le dépôt et maintenant, une carte a
+    // pu être supprimée ou déplacée par quelqu'un.
+    //
+    // Le test porte sur la colonne **de départ** et non sur la colonne visée. Tester
+    // l'arrivée ne retirait du lot que les cartes ayant déjà rejoint la colonne
+    // proposée : une carte qu'une personne venait de ranger dans une *troisième*
+    // colonne était quand même poussée là où l'agent la voulait, et la demande affichait
+    // encore la colonne du dépôt. Le clic défaisait alors un choix humain plus récent que
+    // la proposition — exactement ce que la famille `cardFiling` existe pour empêcher.
+    //
+    // Toute carte qui a bougé depuis le dépôt sort donc du lot, quelle que soit sa
+    // destination. Le cas « déjà arrivée » reste couvert : le daemon refuse au dépôt une
+    // carte déjà dans la colonne visée, donc départ et arrivée diffèrent toujours.
+    const live = filing.cards
+      .map((proposed) => {
+        const card = ctx.db
+          .select({ id: cards.id, number: cards.number, column: cards.column })
+          .from(cards)
+          .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, conversation.projectId!)))
+          .get()
+        return card && card.column === proposed.fromColumn
+          ? { ...card, toColumn: proposed.toColumn }
+          : null
+      })
+      .filter((card): card is NonNullable<typeof card> => card !== null)
+
+    // Plus une seule carte déplaçable : il n'y a plus de proposition à accorder, et le
+    // dire vaut mieux que d'écrire une acceptation qui n'a déplacé personne.
+    if (live.length === 0) {
+      // L'écriture est conservée alors que la route répond une erreur, et c'est
+      // délibéré : la demande *est* résolue, elle n'attend plus rien et ne doit pas
+      // continuer d'occuper la place de l'unique demande en attente de la conversation.
+      // L'appelant reçoit un 400 pour une opération qui a bien changé l'état.
+      close('impossible', 'cards_gone', [])
+      throw badRequest('card_filing_stale', 'None of these cards can still be moved.')
+    }
+
+    // Une seule transaction pour toute la liste : un lot à moitié écrit laisserait le
+    // Journal raconter des déplacements qui n'ont pas tous eu lieu, et c'est exactement
+    // ce que l'en-tête de `card_moves` interdit.
+    const now = Date.now()
+    writeTransaction(ctx.db, (tx) => {
+      for (const card of live) {
+        tx.update(cards).set({ column: card.toColumn, updatedAt: now }).where(eq(cards.id, card.id)).run()
+        recordCardMove(tx, {
+          cardId: card.id,
+          from: card.column,
+          to: card.toColumn,
+          // Qui a cliqué, et non la session qui a proposé : le mouvement est le geste
+          // d'une personne, c'est tout l'objet de la demande d'accord.
+          userId: user.id,
+          at: now,
+        })
+      }
+    })
+
+    close(
+      'accepted',
+      null,
+      live.map((card) => ({ number: card.number, fromColumn: card.column, toColumn: card.toColumn })),
+    )
     return { ok: true }
   })
 

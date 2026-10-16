@@ -762,6 +762,11 @@ export function ConversationPage() {
   if (!conversationId || !conversation || !config) return null
 
   const isOwner = conversation.userId === user?.id
+  // Ranger le board est le droit du propriétaire du projet, pas de celui du fil : une
+  // proposition de déplacement de carte se tranche là. Un fil libre n'a pas de board.
+  const ownsProject =
+    conversation.projectId !== null &&
+    projects?.find((project) => project.id === conversation.projectId)?.ownerId === user?.id
   // Infléchir suppose un tour ouvert et un CLI qui sait le faire : proposer le geste
   // ailleurs reviendrait à annoncer une action que le serveur refuserait.
   const canSteer =
@@ -1151,6 +1156,7 @@ export function ConversationPage() {
                 rows={view.rows}
                 conversationId={conversationId}
                 canDecide={isOwner}
+                canFileCards={ownsProject}
                 onFork={isOwner && !forking ? setForkTarget : undefined}
                 flashedId={flashed}
                 anchors={turnAnchors}

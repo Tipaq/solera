@@ -4,6 +4,7 @@ import type { ChatRow } from '../../lib/tool-rows'
 import { translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { CardFilingPrompt } from './CardFilingPrompt'
 import { FilingPrompt } from './FilingPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -27,6 +28,7 @@ export function ChatThread({
   rows,
   conversationId,
   canDecide = false,
+  canFileCards = false,
   onFork,
   flashedId = null,
   anchors,
@@ -38,6 +40,15 @@ export function ChatThread({
    * conversation partagée en lecture : les prompts s'affichent alors sans agir.
    */
   canDecide?: boolean
+  /**
+   * L'utilisateur possède-t-il le projet, et peut-il donc ranger son board.
+   *
+   * Séparé de `canDecide`, qui dit « propriétaire de la conversation » : une proposition
+   * de déplacement de carte se tranche par le propriétaire du projet. Sur une instance à
+   * un seul compte les deux coïncident toujours, ce qui est exactement la raison pour
+   * laquelle il faut deux noms plutôt qu'un.
+   */
+  canFileCards?: boolean
   /** Absent quand le fil n'est pas forkable, un sous-agent n'ayant pas d'existence propre. */
   onFork?: (message: MessageItem) => void
   /** Message que l'on vient d'atteindre, signalé le temps qu'on le repère. */
@@ -103,6 +114,17 @@ export function ChatThread({
                 conversationId={conversationId}
                 filing={item}
                 canDecide={canDecide}
+              />
+            )
+          case 'cardFiling':
+            return (
+              <CardFilingPrompt
+                key={item.id}
+                conversationId={conversationId}
+                filing={item}
+                // Le propriétaire du projet, et non celui du fil : c'est le board qu'on
+                // range. Les deux ne se confondent que sur une instance à un seul compte.
+                canDecide={canFileCards}
               />
             )
           case 'question':
