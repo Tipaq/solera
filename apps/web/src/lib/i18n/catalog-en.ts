@@ -1802,7 +1802,7 @@ export const en = {
   'cardFiling.ownerOnly': 'Only the project owner can file cards on their board.',
   'cardFiling.error.generic': 'Could not record the decision.',
   'cardFiling.reason.cardsGone':
-    'None of these cards could still move: they are gone, or already in the proposed column.',
+    'None of these cards could still move: they are gone, or someone moved them since the proposal.',
   'cardFiling.reason.unknown': 'The move became impossible.',
   'composer.setting.cardFiling': 'Card filing',
   'composer.cardFiling.off': 'Declined',

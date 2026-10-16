@@ -861,19 +861,10 @@ export function registerConversationRoutes(
     const body = filingDecisionBodySchema.parse(request.body)
     const conversation = await loadReadable(id, user.id)
 
-    const row = ctx.db
-      .select()
-      .from(agentRequests)
-      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'request_card_move')))
-      .get()
-    const filing = log.openCardFiling(id, requestId)
-    if (!row || !filing) throw notFound('filing_request_not_found', 'Filing request not found.')
-    if (row.resolvedAt !== null) {
-      throw badRequest('filing_already_decided', 'This filing request has already been decided.')
-    }
-
-    // Le board appartient au projet, et c'est son propriétaire qui le range. Une
-    // conversation lisible dans un projet partagé ne donne donc pas le droit de cliquer.
+    // Le droit avant l'existence : le board appartient au projet, et c'est son
+    // propriétaire qui le range. Une conversation lisible dans un projet partagé ne
+    // donne donc pas le droit de cliquer — et contrôler d'abord évite qu'un membre non
+    // propriétaire distingue un `requestId` qui existe d'un qui n'existe pas.
     const project = conversation.projectId
       ? ctx.db
           .select({ ownerId: projects.ownerId })
@@ -883,6 +874,17 @@ export function registerConversationRoutes(
       : null
     if (!project || project.ownerId !== user.id) {
       throw forbidden('card_filing_forbidden', 'Only the project owner can file cards.')
+    }
+
+    const row = ctx.db
+      .select()
+      .from(agentRequests)
+      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'request_card_move')))
+      .get()
+    const filing = log.openCardFiling(id, requestId)
+    if (!row || !filing) throw notFound('filing_request_not_found', 'Filing request not found.')
+    if (row.resolvedAt !== null) {
+      throw badRequest('filing_already_decided', 'This filing request has already been decided.')
     }
 
     const close = (
@@ -905,8 +907,18 @@ export function registerConversationRoutes(
     }
 
     // Relu au clic et non pris de la demande : entre le dépôt et maintenant, une carte a
-    // pu être supprimée, ou avoir déjà rejoint la colonne proposée. La colonne de départ
-    // qui part dans `card_moves` est celle d'ici, pas celle qu'affichait la demande.
+    // pu être supprimée ou déplacée par quelqu'un.
+    //
+    // Le test porte sur la colonne **de départ** et non sur la colonne visée. Tester
+    // l'arrivée ne retirait du lot que les cartes ayant déjà rejoint la colonne
+    // proposée : une carte qu'une personne venait de ranger dans une *troisième*
+    // colonne était quand même poussée là où l'agent la voulait, et la demande affichait
+    // encore la colonne du dépôt. Le clic défaisait alors un choix humain plus récent que
+    // la proposition — exactement ce que la famille `cardFiling` existe pour empêcher.
+    //
+    // Toute carte qui a bougé depuis le dépôt sort donc du lot, quelle que soit sa
+    // destination. Le cas « déjà arrivée » reste couvert : le daemon refuse au dépôt une
+    // carte déjà dans la colonne visée, donc départ et arrivée diffèrent toujours.
     const live = filing.cards
       .map((proposed) => {
         const card = ctx.db
@@ -914,15 +926,19 @@ export function registerConversationRoutes(
           .from(cards)
           .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, conversation.projectId!)))
           .get()
-        return card && card.column !== proposed.toColumn
+        return card && card.column === proposed.fromColumn
           ? { ...card, toColumn: proposed.toColumn }
           : null
       })
       .filter((card): card is NonNullable<typeof card> => card !== null)
 
-    // Toutes les cartes ont bougé ou disparu : il n'y a plus de proposition à accorder,
-    // et le dire vaut mieux que d'écrire une acceptation qui n'a déplacé personne.
+    // Plus une seule carte déplaçable : il n'y a plus de proposition à accorder, et le
+    // dire vaut mieux que d'écrire une acceptation qui n'a déplacé personne.
     if (live.length === 0) {
+      // L'écriture est conservée alors que la route répond une erreur, et c'est
+      // délibéré : la demande *est* résolue, elle n'attend plus rien et ne doit pas
+      // continuer d'occuper la place de l'unique demande en attente de la conversation.
+      // L'appelant reçoit un 400 pour une opération qui a bien changé l'état.
       close('impossible', 'cards_gone', [])
       throw badRequest('card_filing_stale', 'None of these cards can still be moved.')
     }

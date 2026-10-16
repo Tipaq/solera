@@ -103,6 +103,11 @@ const NOTABLE = new Set<SoleraEvent['type']>([
   // Une demande de rangement attend un clic, et rien ne la périme : elle doit se voir
   // dans la liste tant que personne n'a répondu.
   'filing.requested',
+  // Le jumeau carte, et il en a encore plus besoin : c'est le propriétaire du *projet*
+  // qui tranche, et il n'a aucune raison d'avoir ce fil ouvert. Sans ce mot, la
+  // proposition est invisible et tient pourtant la place de l'unique demande en attente
+  // de la conversation, qui ne peut alors plus rien proposer.
+  'card_filing.requested',
 ])
 
 /**

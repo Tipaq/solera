@@ -1795,7 +1795,7 @@ export const fr: Catalog = {
   'cardFiling.status.impossible': 'Impossible',
   'cardFiling.ownerOnly': 'Seul le propriétaire du projet peut ranger son board.',
   'cardFiling.error.generic': 'Décision impossible.',
-  'cardFiling.reason.cardsGone': "Aucune de ces cartes ne pouvait plus bouger : elles ont disparu ou avaient déjà rejoint la colonne proposée.",
+  'cardFiling.reason.cardsGone': "Aucune de ces cartes ne pouvait plus bouger : elles ont disparu, ou quelqu'un les a déplacées depuis la proposition.",
   'cardFiling.reason.unknown': 'Le déplacement est devenu impossible.',
   'composer.setting.cardFiling': 'Rangement de carte',
   'composer.cardFiling.off': 'Refusé',

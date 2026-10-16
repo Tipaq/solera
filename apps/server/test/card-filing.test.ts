@@ -210,25 +210,59 @@ test('seul le propriétaire du projet range le board, pas celui du fil', async (
   assert.equal(refused.statusCode, 403, refused.body)
   assert.equal(refused.json().error.code, 'card_filing_forbidden')
   assert.deepEqual(moves(), [])
+
+  // Et le droit passe avant l'existence : un `requestId` inventé rend le même 403, sinon
+  // un membre non propriétaire distinguerait une demande qui existe d'une qui n'existe
+  // pas.
+  const unknown = await decide('00000000-0000-4000-8000-000000000000', 'accepted')
+  assert.equal(unknown.statusCode, 403, unknown.body)
+  assert.equal(unknown.json().error.code, 'card_filing_forbidden')
 })
 
-test('revérifié au clic : une carte qui a bougé entre-temps sort du lot', async (t) => {
-  const { db, card, propose, decide, moves } = await harness(t)
-  const moved = card('Déjà rangée à la main', 'todo')
+test('revérifié au clic : toute carte qui a bougé depuis le dépôt sort du lot', async (t) => {
+  const { db, card, propose, decide, moves, columnOf } = await harness(t)
+  const arrived = card('Rangée à la main là où on la voulait', 'todo')
+  const elsewhere = card('Rangée à la main ailleurs', 'todo')
   const still = card('Toujours là', 'todo')
   const { id } = await propose([
-    { card: moved.number, column: 'done', reason: 'Finie hier.' },
+    { card: arrived.number, column: 'done', reason: 'Finie hier.' },
+    { card: elsewhere.number, column: 'done', reason: 'Finie aussi.' },
     { card: still.number, column: 'review', reason: 'À relire.' },
   ])
 
-  // Entre le dépôt et le clic, une personne a rangé la première elle-même.
-  db.update(cards).set({ column: 'done' }).where(eq(cards.id, moved.id)).run()
+  // Entre le dépôt et le clic, une personne range les deux premières elle-même : l'une
+  // là où l'agent la voulait, l'autre dans une *troisième* colonne.
+  db.update(cards).set({ column: 'done' }).where(eq(cards.id, arrived.id)).run()
+  db.update(cards).set({ column: 'abandoned' }).where(eq(cards.id, elsewhere.id)).run()
 
   assert.equal((await decide(id, 'accepted')).statusCode, 200)
+
+  // Le test porte sur la colonne de départ, pas sur la colonne visée : sans ça, la
+  // seconde carte serait poussée vers `done` et le clic défairait un choix humain plus
+  // récent que la proposition. C'est ce que la famille existe pour empêcher.
   const written = moves()
   assert.equal(written.length, 1)
   assert.equal(written[0]!.cardId, still.id)
   assert.equal(written[0]!.fromColumn, 'todo')
+  assert.equal(columnOf(elsewhere.id), 'abandoned')
+  assert.equal(columnOf(arrived.id), 'done')
+})
+
+test('toutes les cartes déplacées depuis le dépôt : la demande se résout sans rien faire', async (t) => {
+  const { db, card, propose, decide, moves } = await harness(t)
+  const one = card('Une carte', 'todo')
+  const { id } = await propose([{ card: one.number, column: 'done', reason: 'Finie hier.' }])
+  db.update(cards).set({ column: 'review' }).where(eq(cards.id, one.id)).run()
+
+  const stale = await decide(id, 'accepted')
+  assert.equal(stale.statusCode, 400, stale.body)
+  assert.equal(stale.json().error.code, 'card_filing_stale')
+  assert.deepEqual(moves(), [])
+
+  // L'écriture est conservée malgré le 400 : la demande ne doit pas continuer d'occuper
+  // la place de l'unique demande en attente de la conversation.
+  const next = await propose([{ card: one.number, column: 'done', reason: 'Toujours finie.' }])
+  assert.equal(next.row.isError, false, next.row.result ?? '')
 })
 
 test('la famille refusée refuse la demande, la base restant l’autorité', async (t) => {
