@@ -4,6 +4,7 @@ import {
   CalendarClock,
   Flag,
   GitBranch,
+  History,
   MessageCircleQuestion,
   Pencil,
   Plus,
@@ -14,6 +15,11 @@ import { Link, useParams } from 'react-router-dom'
 import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { DemandTile } from '../components/places/DemandTile'
+import {
+  JOURNAL_KIND_ICONS,
+  journalDestination,
+  journalIconTone,
+} from '../components/journal/JournalView'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { demandsOf, oldest, useLiveConversations } from '../lib/activity'
@@ -24,6 +30,7 @@ import { cronToHuman } from '../lib/cron'
 import { daysUntil, elapsed, relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { openPanelOnArrival } from '../lib/panel'
+import { JOURNAL_KIND_LABELS, useJournal } from '../lib/journal'
 import { useProjects } from '../lib/projects'
 import {
   RUN_LABELS,
@@ -36,6 +43,10 @@ import {
 
 /** Échéances montrées : au-delà, la tuile redirait la chronologie, qui est à un onglet. */
 const DUE_SHOWN = 4
+
+/** Lignes de journal montrées : même borne que les échéances, pour que les trois
+    colonnes de la grille gardent la même hauteur quand elles sont pleines. */
+const JOURNAL_SHOWN = 4
 
 /**
  * L'**Aperçu** d'un projet : la vue d'arrivée, et la seule sans action propre — elle ne
@@ -197,11 +208,16 @@ export function ProjectOverviewPage() {
             jusqu'au 2026-10-16 faute de quoi le remplacer : l'échéance et le jalon
             n'existaient pas (carte #32, portée par #36).
 
-            Deux colonnes et non trois : la troisième, « Dernières décisions », est le
-            Journal en miniature et attend sa route serveur (carte #33). */}
-        <div className="grid items-start gap-3 lg:grid-cols-2">
+            La troisième colonne est le Journal en miniature. La maquette F1 l'intitule
+            « Dernières décisions » et ce titre n'est **pas** repris : rien dans la
+            matière ne distingue une décision du reste, la carte #32 ayant refusé de
+            typer les notes le 2026-10-15. C'est la même raison qui a fait nommer
+            *Notes* — et non *Décisions* — la pilule du Journal ; le titre d'ici suit, et
+            la colonne porte le nom de l'onglet où elle mène. */}
+        <div className="grid items-start gap-3 lg:grid-cols-3">
           <MilestoneTile projectId={projectId} milestone={current} />
           <DueTile projectId={projectId} cards={due} />
+          <JournalTile projectId={projectId} />
         </div>
 
         <section aria-label={t('schedule.title')} className="flex min-w-0 flex-col gap-2">
@@ -308,6 +324,81 @@ function MilestoneTile({ projectId, milestone }: { projectId: string; milestone:
  * Une seule ligne est teintée, celle qui est en retard : si tout était coloré, plus rien
  * ne ressortirait, et c'est le retard qu'on cherche en ouvrant cette tuile.
  */
+/**
+ * Le Journal en miniature : ses dernières lignes, toutes natures mêlées.
+ *
+ * Elle partage la requête de l'onglet *Journal* — même `useJournal(projectId)`, donc
+ * même clé react-query — et ne coûte donc rien de plus à qui ouvre ensuite l'onglet.
+ * C'est aussi pourquoi elle ne demande pas une fenêtre plus courte : une seconde fenêtre
+ * ferait une seconde requête, et un `git log` par projet se paie à chaque relecture.
+ *
+ * Les natures ne sont pas filtrées. Montrer les seules notes aurait reconstitué par la
+ * bande le tri que la carte #32 a refusé, et une note n'est pas plus une décision qu'une
+ * carte fermée ou une branche fusionnée.
+ */
+function JournalTile({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useJournal(projectId)
+  const entries = (data?.entries ?? []).slice(0, JOURNAL_SHOWN)
+  // Rien à dire plutôt qu'un cadre vide : les deux autres colonnes disparaissent aussi
+  // à zéro, et une grille à trois trous décrirait un projet neuf comme une panne.
+  if (entries.length === 0) return null
+
+  return (
+    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
+      <SectionHeading icon={<History size={14} />} title={t('project.view.journal')}>
+        <Link
+          to={`/p/${projectId}/journal`}
+          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
+        >
+          {t('place.seeAll')}
+          <ArrowUpRight size={13} />
+        </Link>
+      </SectionHeading>
+
+      <ul className="flex min-w-0 flex-col">
+        {entries.map((entry) => {
+          const to = journalDestination(entry)
+          const body = (
+            <>
+              <span aria-hidden className={cx('shrink-0', journalIconTone(entry))}>
+                {JOURNAL_KIND_ICONS[entry.kind]}
+              </span>
+              {/* Le libellé de nature, en petites capitales comme au Journal : c'est lui
+                  qui dit « NOTE » là où la maquette promettait « DÉCISION ». */}
+              <span className="shrink-0 text-meta font-medium tracking-wide text-ink-faint uppercase">
+                {t(JOURNAL_KIND_LABELS[entry.kind])}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{entry.title}</span>
+              {/* L'âge abrégé, et non l'heure : sans en-tête de journée au-dessus,
+                  « 14:32 » ne dit pas de quel jour il parle. Et non `relativeDate` non
+                  plus — « il y a 18 secondes » mange la moitié d'une colonne sur trois,
+                  là où la tuile d'à côté a toute la largeur pour « dans 9 jours ».
+                  C'est l'abréviation du bandeau juste au-dessus. */}
+              <span className="shrink-0 text-xs tabular-nums text-ink-faint">{elapsed(entry.at)}</span>
+            </>
+          )
+          const shape = 'flex min-h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm'
+          return (
+            <li key={entry.id}>
+              {to ? (
+                <Link to={to} className={cx(shape, 'transition-colors hover:bg-surface-high')}>
+                  {body}
+                </Link>
+              ) : (
+                /* Une fusion faite au terminal, un audit versé sur le disque : Solera n'a
+                   pas de page pour eux, et une ligne morte qui a l'air cliquable est pire
+                   qu'une ligne qui ne l'a pas. Même règle qu'au Journal. */
+                <div className={shape}>{body}</div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 function DueTile({ projectId, cards }: { projectId: string; cards: CardDto[] }) {
   const t = useTranslate()
   if (cards.length === 0) return null

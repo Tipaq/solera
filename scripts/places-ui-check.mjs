@@ -107,7 +107,8 @@ try {
   )
   // La rangée porte les vues, et l'Aperçu est la seule sans action propre.
   const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
-  for (const view of ['Aperçu', 'Board', 'Planifiées', 'Journal']) {
+  // L'ordre de l'audit, et les cinq : la rangée est la même sur les cinq vues.
+  for (const view of ['Aperçu', 'Board', 'Planifiées', 'Chronologie', 'Journal']) {
     await row.getByRole('link', { name: new RegExp(`^${view}`) }).waitFor()
   }
   assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
@@ -142,6 +143,27 @@ try {
     0,
     'La carte-jalon ne se compte pas aussi dans les échéances',
   )
+
+  /*
+    La **troisième colonne**, le Journal en miniature. Elle n'est arrivée qu'à la fusion
+    du 2026-10-16 : la vue de la carte #31 en promettait deux sur trois en commentaire,
+    la route serveur étant sur une autre branche. Rien dans git ne marquait ce manque —
+    les deux branches se fusionnent proprement à cet endroit — d'où cette assertion.
+  */
+  const digest = page.locator('section').filter({ has: page.getByText('Journal', { exact: true }) })
+    .filter({ has: page.getByRole('link', { name: /tout voir/i }) })
+  await digest.first().waitFor()
+  await digest.first().getByRole('link', { name: /tout voir/i }).waitFor()
+  /* Elle écrit « NOTE » et **jamais** « DÉCISION », comme le Journal : `card_notes.body`
+     est un champ libre et la carte #32 a refusé de le typer le 2026-10-15. La maquette
+     F1 intitulait pourtant cette colonne « Dernières décisions ». */
+  for (const absent of ['Décision', 'Décisions', 'Dernières décisions']) {
+    assert.equal(
+      await page.getByText(absent, { exact: true }).count(),
+      0,
+      `L’Aperçu n’écrit pas « ${absent} » : rien ne distingue une note d’une décision`,
+    )
+  }
 
   // Le bandeau dit ce qui réclame, et rien d'autre.
   const awaiting = page.getByRole('link', { name: /attend ta réponse/ })

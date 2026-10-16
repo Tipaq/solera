@@ -159,7 +159,14 @@ try {
   const column = page.locator('aside')
   const places = page.getByRole('navigation', { name: 'Lieux' })
   const threadLink = column.locator(`a[href$="/c/${thread.id}"]`)
-  await column.locator(`a[href="/p/${project.id}/schedules"]`).first().waitFor()
+  /* Prouver d'abord que le groupe **liste bien** ses sessions, sinon l'assertion qui
+     suit passerait sur une colonne vide sans rien dire. On l'attestait par le sous-lien
+     *Planification* de la ligne de projet : la carte #31 a retiré les sous-liens de vue
+     de la colonne, et c'est une session ordinaire du projet qui le montre maintenant. */
+  const ordinary = (await api('/api/conversations'))
+    .filter((entry) => entry.projectId === project.id && !entry.scheduleId && !entry.archivedAt)
+  assert.ok(ordinary.length > 0, 'Le jeu d’essai donne au projet des sessions ordinaires')
+  await column.locator(`a[href$="/c/${ordinary[0].id}"]`).first().waitFor()
   assert.equal(await threadLink.count(), 0, 'Un tir ne doit pas apparaître dans la liste des sessions du projet')
   // Et le lieu *Planifiées* liste les tâches, pas ce qu'elles ont lancé. Un lieu est
   // une destination : le clic ouvre sa page, d'où l'on revient au projet.

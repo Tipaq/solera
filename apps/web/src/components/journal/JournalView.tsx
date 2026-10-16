@@ -168,8 +168,13 @@ function FilterPill({ label, selected, empty, onSelect }: {
   )
 }
 
-/** L'icône de chaque nature, reprise du libellé qu'elle précède. */
-const KIND_ICONS: Record<JournalKind, ReactNode> = {
+/**
+ * L'icône de chaque nature, reprise du libellé qu'elle précède.
+ *
+ * Exportée pour la troisième colonne de l'Aperçu, qui est ce journal en miniature : une
+ * seconde table d'icônes aurait divergé au premier ajout de nature.
+ */
+export const JOURNAL_KIND_ICONS: Record<JournalKind, ReactNode> = {
   note: <StickyNote size={15} />,
   cardOpened: <CircleDot size={15} />,
   cardClosed: <CircleCheck size={15} />,
@@ -184,7 +189,7 @@ const KIND_ICONS: Record<JournalKind, ReactNode> = {
  * un chantier et ce qui a échoué. Tout le reste est au gris du texte secondaire — une
  * ligne par source colorée ferait un sapin de Noël où plus rien ne ressort.
  */
-function iconTone(entry: JournalEntryDto): string {
+export function journalIconTone(entry: JournalEntryDto): string {
   if (entry.kind === 'cardClosed') return 'text-positive'
   if (entry.status === 'failed' || entry.status === 'timed_out') return 'text-caution'
   return 'text-ink-faint'
@@ -197,7 +202,7 @@ function iconTone(entry: JournalEntryDto): string {
 export function JournalRow({ entry, projects }: { entry: JournalEntryDto; projects?: JournalProject[] }) {
   const t = useTranslate()
   const project = projects?.find((candidate) => candidate.id === entry.projectId)
-  const to = destination(entry)
+  const to = journalDestination(entry)
 
   const body = (
     <>
@@ -208,7 +213,7 @@ export function JournalRow({ entry, projects }: { entry: JournalEntryDto; projec
           <span aria-hidden className="size-4 shrink-0" />
         )
       ) : null}
-      <span aria-hidden className={cx('shrink-0', iconTone(entry))}>{KIND_ICONS[entry.kind]}</span>
+      <span aria-hidden className={cx('shrink-0', journalIconTone(entry))}>{JOURNAL_KIND_ICONS[entry.kind]}</span>
       <span className="shrink-0 text-meta font-medium tracking-wide text-ink-faint uppercase">
         {t(JOURNAL_KIND_LABELS[entry.kind])}
       </span>
@@ -255,7 +260,7 @@ export function JournalRow({ entry, projects }: { entry: JournalEntryDto; projec
  * La conversation d'abord : c'est ce qu'on veut rouvrir quand on relit une note ou un
  * tir. La carte ensuite, par le board, qui sait déjà ouvrir son panneau sur un numéro.
  */
-function destination(entry: JournalEntryDto): string | null {
+export function journalDestination(entry: JournalEntryDto): string | null {
   if (entry.conversationId) return `/p/${entry.projectId}/c/${entry.conversationId}`
   if (entry.cardNumber !== null) return `/p/${entry.projectId}/board?carte=${entry.cardNumber}`
   return null
