@@ -86,13 +86,13 @@ export function SidebarPlaces({ places, current, onNavigate }: {
           return (
             <li key={place.id}>
               {/*
-                La ligne est une `div` qui contient le lieu et, le cas échéant, son
-                raccourci — et non un `<button>` enveloppant, comme c'était le cas tant
+                La ligne est une `div` qui tient le lieu, son raccourci et le créneau de
+                droite — et non un `<button>` enveloppant, comme c'était le cas tant
                 qu'elle n'avait qu'une cible : un bouton dans un bouton n'est pas du HTML
                 valide. Même motif que les lignes de la zone basse.
               */}
               <div className={cx(
-                'group/place flex h-11 items-center rounded-md transition-colors md:h-9 pointer-coarse:h-11',
+                'group/place flex h-11 items-center gap-1 rounded-md pr-2.5 transition-colors md:h-9 pointer-coarse:h-11',
                 active ? 'bg-accent-wash font-medium text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
               )}>
                 <button
@@ -105,27 +105,10 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                     if (place.page) navigate(place.page)
                     onNavigate()
                   }}
-                  className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-left text-sm"
+                  className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md pl-2.5 text-left text-sm"
                 >
                   <Icon size={16} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{t(place.label)}</span>
-                  {/* Au survol, le « ↗ » prend la place du compteur : il dit que la ligne
-                      mène à une page, et non qu'elle n'a fait que régler la colonne. Il
-                      reste un ornement et non une seconde cible — la ligne ouvre déjà
-                      cette page. Le raccourci de création qui le suit, lui, est un vrai
-                      bouton : il ne mène pas au même endroit, et c'est précisément ce
-                      qui l'autorise à occuper ce bord. */}
-                  <span aria-hidden className={cx(
-                    'shrink-0 text-meta tabular-nums text-ink-faint',
-                    place.page && 'group-hover/place:hidden',
-                  )}>
-                    {place.count !== null
-                      ? place.count
-                      : place.dot ? <span className="block size-1.5 rounded-full bg-accent" /> : null}
-                  </span>
-                  {place.page ? (
-                    <ArrowUpRight size={14} className="hidden shrink-0 text-ink-faint group-hover/place:block" />
-                  ) : null}
                 </button>
 
                 {place.action && ActionIcon ? (
@@ -143,11 +126,34 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                         n'y a pas de survol pour l'annoncer, et la zone basse porte déjà
                         sa ligne « Nouveau projet… », permanente et nommée.
                       */
-                      className="mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint opacity-0 transition hover:bg-surface-high hover:text-ink focus-visible:opacity-100 group-hover/place:opacity-100 group-focus-within/place:opacity-100 pointer-coarse:hidden"
+                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint opacity-0 transition hover:bg-surface-high hover:text-ink focus-visible:opacity-100 group-hover/place:opacity-100 group-focus-within/place:opacity-100 pointer-coarse:hidden"
                     >
                       <ActionIcon size={14} />
                     </NavLink>
                   </Tooltip>
+                ) : null}
+
+                {/*
+                  Le créneau de droite : le compteur au repos, le « ↗ » au survol. Il dit
+                  que la ligne mène à une page, et non qu'elle n'a fait que régler la
+                  colonne. Un ornement et non une seconde cible — la ligne ouvre déjà
+                  cette page, et deux cibles pour une destination ne feraient qu'un piège.
+
+                  Il est **au bord**, après le raccourci, et donc hors du bouton : c'est ce
+                  qui garde la pastille de ce lieu dans la même colonne que les compteurs
+                  des lieux sans raccourci. Le prix est de vingt pixels au bord droit qui
+                  n'ouvrent plus la page ; l'alignement des quatre lignes les vaut.
+                */}
+                <span aria-hidden className={cx(
+                  'shrink-0 text-meta tabular-nums text-ink-faint',
+                  place.page && 'group-hover/place:hidden',
+                )}>
+                  {place.count !== null
+                    ? place.count
+                    : place.dot ? <span className="block size-1.5 rounded-full bg-accent" /> : null}
+                </span>
+                {place.page ? (
+                  <ArrowUpRight size={14} className="hidden shrink-0 text-ink-faint group-hover/place:block" />
                 ) : null}
               </div>
             </li>
