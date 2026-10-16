@@ -167,6 +167,26 @@ function UsageDialog({ agent }: { agent?: AgentKind }) {
   )
 }
 
+/**
+ * Le panneau prend le focus à l'ouverture, et non son premier bouton.
+ *
+ * Radix focalise sinon le premier élément focalisable — *Rafraîchir*, ou *Fermer*
+ * pendant que la lecture est en cours — et Radix Tooltip, qui ne distingue pas un
+ * focus programmatique d'un focus au clavier, ouvre aussitôt son infobulle : elle
+ * s'affichait avec la modale, par-dessus le contenu, sans que personne ne l'ait
+ * demandée.
+ *
+ * Le contenu porte `tabIndex={-1}` de la main de Radix, donc le focaliser est légitime :
+ * son titre est lu à l'ouverture, `Tab` mène aux boutons, `Échap` ferme.
+ *
+ * Pris sur la cible de l'événement et non sur une ref, comme dans `ComposerSettings` :
+ * la ref n'est pas toujours posée quand l'événement part.
+ */
+function onOpenAutoFocus(event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement | null)?.focus({ preventScroll: true })
+}
+
 export function UsagePanel({
   agent,
   open,
@@ -185,6 +205,7 @@ export function UsagePanel({
             ce qui fait qu'ouvrir relit, sans dépendre d'une durée de fraîcheur côté
             client. */}
         <Dialog.Content
+          onOpenAutoFocus={onOpenAutoFocus}
           className={cx(
             'surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
             'inset-0 border-0',

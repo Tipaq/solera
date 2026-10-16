@@ -258,8 +258,15 @@ try {
   }
   await usage.getByText('Fenêtre de 5 h').waitFor()
   await usage.getByText('Hebdomadaire').waitFor()
+  // Le focus va au panneau et non à son premier bouton : une infobulle ouverte avec la
+  // modale, par-dessus son contenu, est ce que le focus automatique de Radix produit
+  // quand on le laisse faire.
+  assert.equal(await page.getByRole('tooltip').count(), 0)
   await usage.screenshot({ path: join(shots, 'modale-consommation.png') })
+  // Et le panneau focalisé rend bien la main : sans ça, détourner le focus fermerait
+  // la porte de sortie au clavier.
   await page.keyboard.press('Escape')
+  await usage.waitFor({ state: 'hidden' })
 
   // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
