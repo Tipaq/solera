@@ -255,7 +255,7 @@ function ModelChip({ agent, label, value, chip, effort, disabled, ...rest }: {
  */
 function ModelItems({ model, disabled }: { model: SettingGroup; disabled: boolean }) {
   const t = useTranslate()
-  const options = model.options.map((option) => ({ ...option, label: option.short ?? option.label }))
+  const options = model.options.map((option) => ({ ...option, label: option.listed ?? option.short ?? option.label }))
   const shown = options.length <= SHORTLIST_ABOVE ? options : shortlistOf(options, model.value)
   const rest = options.filter((option) => !shown.includes(option))
   const items = (list: typeof options) => (
@@ -369,7 +369,7 @@ function ModelMenu({ agent, model, effort, speed, modes, disabled, close }: {
   const opened = typeof view === 'object' ? modes.find((group) => group.key === view.group) : undefined
   const options = model.options.map((option) => ({
     ...option,
-    label: option.short ?? option.label,
+    label: option.listed ?? option.short ?? option.label,
     icon: <AgentIcon agent={agent} size={14} decorative />,
   }))
   const shortlist = shortlistOf(options, model.value)

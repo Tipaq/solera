@@ -169,7 +169,10 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
                     // sont plus un menu. Elles restent dans la puce du modèle.
                     hint={group.key === 'model' ? undefined : option.hint}
                     tone={option.tone} disabled={disabled || option.disabled}>
-                    {group.key === 'model' ? (option.short ?? option.label) : option.label}
+                    {/* `listed` d'abord, comme `ModelItems` et `ModelMenu` : sinon la ligne par
+                        défaut, dont le nom court est celui de sa jumelle, s'affiche ici sous le
+                        même nom qu'elle — deux « Opus 5.5 » dont rien ne dit lequel suit le CLI. */}
+                    {group.key === 'model' ? (option.listed ?? option.short ?? option.label) : option.label}
                   </MenuRadioItem>
                 ))}
               </MenuRadioGroup>

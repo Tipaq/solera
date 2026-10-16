@@ -18,6 +18,13 @@ export interface SettingOption {
    * modèles, dont le nom affiché porte la variante de contexte et la mention du CLI.
    */
   short?: string
+  /**
+   * Nom que la liste montre, quand il n'est pas celui de la rangée. Posé sur la ligne
+   * par défaut du catalogue : elle s'y annonce « Défaut : Opus 5 », parce qu'on choisit
+   * dans la liste entre elle et le modèle nommé, là où la puce ne garde que le modèle —
+   * la barre sert à lire qui répond, pas à relire le choix qu'on vient de faire.
+   */
+  listed?: string
   hint?: string
   icon?: ReactNode
   disabled?: boolean

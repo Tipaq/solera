@@ -487,10 +487,11 @@ try {
         await escape()
       }
       /*
-       * La ligne par défaut du catalogue ne se montre plus : c'est le modèle qu'elle
-       * désigne — sa jumelle par l'identifiant canonique — qui porte la sélection,
-       * tandis que la configuration garde la sentinelle. À guetter : une barre vide ou
-       * des niveaux d'effort disparus, qui seraient le repli emporté avec la ligne.
+       * La ligne par défaut emprunte le nom de la jumelle qu'elle désigne — « Défaut :
+       * Modèle Alpha » — et c'est elle qui porte la sélection tant qu'aucun modèle
+       * n'est épinglé, la configuration gardant la sentinelle. La puce, elle, ne
+       * montre que le modèle : « Default (recommended) » n'a pas à occuper la barre.
+       * À guetter : une barre vide ou des niveaux d'effort disparus.
        */
       await page.evaluate(async () => {
         const catalog = window.client.getQueryData(['agents', 'codex', 'models'])
@@ -505,13 +506,16 @@ try {
         window.settings.change({ ...window.settings.config, model: '', reasoningEffort: '' })
         await window.settings.flush()
       })
-      await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Modèle : Défaut : Modèle Alpha', exact: true }).waitFor()
+      assert.equal(await model().locator('span.truncate').first().innerText(), 'Modèle Alpha',
+        'La puce dit le modèle, pas le rang')
       await model().click()
-      assert.equal(await page.getByRole('menuitemradio', { name: /Default|Défaut/ }).count(), 0,
-        'La ligne par défaut ne se montre plus dans le catalogue')
+      assert.equal(await page.getByRole('menuitemradio', { name: /^Default \(recommended\)/ }).count(), 0,
+        'La ligne par défaut n\'y garde pas le libellé du CLI')
       const chosenModel = page.getByRole('menuitemradio', { checked: true })
       assert.equal(await chosenModel.count(), 1)
-      assert.match(await chosenModel.textContent(), /^Modèle Alpha/, 'La sentinelle montre le modèle nommé')
+      assert.match(await chosenModel.textContent(), /^Défaut : Modèle Alpha/,
+        'La ligne par défaut nomme le modèle qu\'elle désigne, et porte la sélection')
       assert.match(await page.getByRole('menuitem', { name: /^Effort de réflexion/ }).textContent(), /Moyen/,
         'Les niveaux d\'effort du modèle résolu restent trouvables')
       await page.keyboard.press('Escape')
