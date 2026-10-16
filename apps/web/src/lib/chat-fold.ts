@@ -3,6 +3,7 @@ import type {
   AgentSkillDto,
   BackgroundTask,
   ContentBlock,
+  ContextBreakdown,
   ElicitationField,
   ElicitationValue,
   Loop,
@@ -269,6 +270,8 @@ export interface ContextState {
   usedTokens: number
   maxTokens: number
   ratio: number
+  /** Ce qui occupe la fenêtre, quand le CLI le dit. Voir `ContextBreakdown`. */
+  breakdown: ContextBreakdown | null
 }
 
 export interface ChatState {

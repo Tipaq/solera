@@ -169,3 +169,23 @@ test('bibliothèque de skills : posée avant le thread, remplacée à chaud, abs
   await quiet.start()
   assert.ok(!(await off.records()).some((record) => record.method === 'skills/extraRoots/set'))
 })
+
+test('le contexte Codex porte la nature des jetons, et le cumul du fil reste hors de l’occupation', async (t) => {
+  const f = await runnerFixture(t)
+  const last = { totalTokens: 13_200, inputTokens: 12_000, cachedInputTokens: 9000, cacheWriteInputTokens: 1500, outputTokens: 1200, reasoningOutputTokens: 800 }
+  const total = { totalTokens: 38_794, inputTokens: 34_000, cachedInputTokens: 25_000, cacheWriteInputTokens: 4000, outputTokens: 4794, reasoningOutputTokens: 3100 }
+  await f.emit([
+    { method: 'thread/tokenUsage/updated', params: { threadId: 'root', turnId: 'turn-1', tokenUsage: { modelContextWindow: 272_000, last, total } } },
+    done(),
+  ])
+
+  const usage = f.events.find((event) => event.type === 'usage.updated' && event.context)
+  assert.ok(usage && usage.type === 'usage.updated' && usage.context)
+  if (!usage || usage.type !== 'usage.updated' || !usage.context) return
+  // L'occupation reste `last.inputTokens` : le cumul du fil, trois fois plus gros ici,
+  // ne doit pas s'en approcher.
+  assert.equal(usage.context.usedTokens, 12_000)
+  assert.equal(usage.context.maxTokens, 272_000)
+  assert.deepEqual(usage.context.breakdown, { axis: 'tokens', last, total })
+  assert.ok(soleraEventSchema.safeParse(usage).success)
+})

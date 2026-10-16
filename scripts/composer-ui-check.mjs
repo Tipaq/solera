@@ -69,6 +69,32 @@ async function mount(page) {
     // `steered` garde ce que l'envoi a infléchi plutôt qu'envoyé : c'est la seule
     // façon de distinguer les deux gestes, le bouton étant le même.
     window.steered = []
+    window.claudeContext = {
+      usedTokens: 38_000, maxTokens: 200_000, ratio: 0.19,
+      breakdown: {
+        axis: 'categories',
+        categories: [
+          { label: 'System tools', tokens: 11_600, kind: 'used' },
+          { label: 'Messages', tokens: 24_600, kind: 'used' },
+          { label: 'Memory files', tokens: 1800, kind: 'used' },
+          { label: 'MCP tools (deferred)', tokens: 7300, kind: 'deferred' },
+          { label: 'Autocompact buffer', tokens: 13_000, kind: 'buffer' },
+          { label: 'Free space', tokens: 149_000, kind: 'free' },
+        ],
+        memoryFiles: [{ name: '/w/CLAUDE.md', source: 'Project', tokens: 1800 }],
+        mcpTools: [{ name: 'mcp__docs__search', source: 'docs', tokens: 410 }],
+        agents: [],
+        skills: [],
+      },
+    }
+    window.codexContext = {
+      usedTokens: 12_000, maxTokens: 272_000, ratio: 0.044,
+      breakdown: {
+        axis: 'tokens',
+        last: { totalTokens: 13_200, inputTokens: 12_000, cachedInputTokens: 9000, cacheWriteInputTokens: 1500, outputTokens: 1200, reasoningOutputTokens: 800 },
+        total: { totalTokens: 38_794, inputTokens: 34_000, cachedInputTokens: 25_000, cacheWriteInputTokens: 4000, outputTokens: 4794, reasoningOutputTokens: 3100 },
+      },
+    }
     function Harness() {
       const [id, setId] = React.useState('codex')
       const [disabled, setDisabled] = React.useState(false)
@@ -86,7 +112,9 @@ async function mount(page) {
         commands: [{ name: '/compact', description: 'Déclarée par le CLI' }], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
         onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
-        context: { usedTokens: 38_000, maxTokens: 200_000, ratio: 0.19 },
+        // La modale du contexte change d'axe selon le CLI : Claude découpe la fenêtre
+        // par catégorie, Codex ne sait parler que de la nature des jetons.
+        context: id === 'claude' ? window.claudeContext : window.codexContext,
         onSend: async (text) => { await settings.flush(); await api.post(`/api/conversations/${id}/messages`, { text }) },
         onSteer: async (text) => { window.steered.push(text) },
         onInterrupt: () => {},
@@ -600,6 +628,51 @@ try {
     await page.evaluate(() => window.settings.change({ ...window.settings.config, queueMessages: false }))
     await page.evaluate(() => window.settings.flush())
     await field.fill('')
+
+    /*
+     * La jauge de contexte, et le détail qu'elle ouvre. Les trois CLI n'ont pas le même
+     * axe, et c'est précisément ce que cette vérification garde : rabattre Codex sur le
+     * découpage de Claude demanderait d'inventer un détail qu'il ne donne pas.
+     *
+     * Sous 352 px de rangée, la jauge cède sa place aux commandes : la vérification ne
+     * s'applique qu'aux largeurs où elle est encore là.
+     */
+    const gauge = page.getByRole('button', { name: /^Contexte occupé à/ })
+    if (await gauge.isVisible()) {
+      // La pastille et la modale doivent dire le même pourcentage : 38 k sur 200 k.
+      assert.match(await gauge.getAttribute('aria-label'), /19 %/)
+      await gauge.click()
+      await dialog.waitFor()
+      await dialog.getByText('38 k sur 200 k tokens', { exact: true }).waitFor()
+      await dialog.getByText('19 %', { exact: true }).waitFor()
+      await dialog.getByText('Dans la fenêtre', { exact: true }).waitFor()
+      await dialog.getByText('Messages', { exact: true }).waitFor()
+      // Les schémas d'outils hors fenêtre sont listés à part : les mêler aux autres
+      // ferait une somme qui ne tombe pas sur le total affiché en haut.
+      await dialog.getByText('Hors fenêtre', { exact: true }).waitFor()
+      await dialog.getByText('MCP tools (deferred)', { exact: true }).waitFor()
+      // Le nominatif est replié : la modale répond d'abord « qu'est-ce qui occupe ».
+      const files = dialog.getByText('Fichiers de mémoire (1)', { exact: true })
+      await files.waitFor()
+      assert.equal(await dialog.getByText('CLAUDE.md · Project', { exact: true }).isVisible(), false)
+      await files.click()
+      await dialog.getByText('CLAUDE.md · Project', { exact: true }).waitFor()
+      await escape()
+
+      await page.evaluate(() => window.setConversation('codex'))
+      await model().waitFor()
+      await gauge.click()
+      await dialog.waitFor()
+      await dialog.getByText('Nature des jetons de la dernière requête', { exact: true }).waitFor()
+      await dialog.getByText('Relus depuis le cache', { exact: true }).waitFor()
+      // Le cumul du fil n'est pas une occupation : il dépasse la fenêtre sans y entrer.
+      await dialog.getByText('Cumul du fil', { exact: true }).waitFor()
+      await dialog.getByText('39 k', { exact: true }).waitFor()
+      assert.equal(await dialog.getByText('Dans la fenêtre', { exact: true }).count(), 0)
+      await escape()
+      await page.evaluate(() => window.setConversation('claude'))
+      await model().waitFor()
+    }
 
     if (viewport.width === 1440) {
       /*

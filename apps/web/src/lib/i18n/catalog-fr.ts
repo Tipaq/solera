@@ -341,10 +341,35 @@ export const fr: Catalog = {
   'composer.context.subtitle': 'Ce que le modèle garde sous les yeux à chaque tour.',
   'composer.context.tokens': '{used} sur {max} tokens',
   'composer.context.compact': 'Compacter le contexte',
+  /*
+   * Les libellés de catégories et de provenances viennent du CLI, en anglais, et sont
+   * affichés tels quels : les traduire demanderait une table que chaque version du CLI
+   * périmerait, et un libellé inconnu vaut mieux rendu brut que perdu.
+   */
+  'composer.context.inWindow': 'Dans la fenêtre',
+  'composer.context.buffer': 'Réservé à la compaction',
+  'composer.context.free': 'Libre',
+  'composer.context.deferred': 'Hors fenêtre',
+  'composer.context.deferredHint':
+    'Schémas d’outils que le CLI garde en réserve : ils ne comptent pas dans l’occupation, mais entreront dès qu’un de ces outils sera chargé.',
+  'composer.context.memoryFiles': 'Fichiers de mémoire',
+  'composer.context.mcpTools': 'Outils MCP',
+  'composer.context.agents': 'Sous-agents',
+  'composer.context.skills': 'Skills',
+  'composer.context.truncated': 'Les {count} plus lourds.',
+  'composer.context.nature': 'Nature des jetons de la dernière requête',
+  'composer.context.cached': 'Relus depuis le cache',
+  'composer.context.cacheWrite': 'Écrits dans le cache',
+  'composer.context.fresh': 'Neufs',
+  'composer.context.output': 'Produits au dernier tour',
+  'composer.context.reasoning': 'dont raisonnement',
+  'composer.context.threadTotal': 'Cumul du fil',
+  'composer.context.threadTotalHint':
+    'Tout ce que le fil a consommé depuis son début, tours compactés compris. Ce n’est pas une occupation : la fenêtre ne porte que la dernière requête.',
   'composer.context.explain':
     'Compacter résume les tours anciens et garde les décisions : la conversation continue, mais l’agent ne pourra plus citer le détail de ce qui a été résumé.',
   'composer.context.noBreakdown':
-    'Le détail par source — système, outils, fichiers lus — n’est pas affiché : les CLI donnent un total, pas sa composition.',
+    'Ce CLI ne dit pas ce qui occupe la fenêtre : il n’en donne que le total. Le détail serait inventé.',
   'composer.steer.aria': 'Infléchir le tour en cours',
   'composer.steer.hint': 'Poussé dans le tour en cours ; si celui-ci se termine avant, il ouvre le suivant',
   'composer.interrupt': "Interrompre l'agent",
