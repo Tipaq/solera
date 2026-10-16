@@ -2555,6 +2555,10 @@ export const fr: Catalog = {
   'shell.place.projects': 'Projets',
   'shell.place.knowledge': 'Savoir',
   'shell.place.planned': 'Planifiées',
+  // Le raccourci de la ligne *Projets*. Il ne redit pas « Nouveau projet… » comme la
+  // ligne du bas : deux liens de même nom vers la même page, dans la même colonne, se
+  // confondent à l'oreille d'un lecteur d'écran.
+  'shell.places.newProject': 'Créer un projet',
   'shell.conversation.new': 'Nouvelle conversation',
   'shell.threads.pinned': 'Épinglées',
   'shell.threads.today': 'Aujourd’hui',

@@ -1,4 +1,4 @@
-import { PanelLeftClose, Plus, Search, X } from 'lucide-react'
+import { FolderPlus, PanelLeftClose, Plus, Search, X } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAllConversations } from '../../lib/conversations'
@@ -90,6 +90,10 @@ export function Sidebar({
       page: '/projects',
       count: null,
       dot: threads.some((entry) => unreadNow(entry)),
+      // Créer un projet demandait de dérouler toute la zone basse jusqu'à sa dernière
+      // ligne ; passé une dizaine de projets, c'est loin. Le raccourci la double ici,
+      // sans la remplacer : la ligne du bas reste la voie visible au doigt.
+      action: { page: '/projects/new', icon: FolderPlus, label: 'shell.places.newProject' },
     },
     // Le compte d'un lieu dit ce qui **réclame**, et le Savoir n'a rien de tel à dire
     // tant que la boîte des agents n'existe pas : les ébauches et les orphelines sont
