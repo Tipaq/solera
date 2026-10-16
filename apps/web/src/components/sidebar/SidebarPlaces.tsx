@@ -1,5 +1,5 @@
 import { ArrowUpRight, BookOpen, CalendarClock, MessagesSquare, SquareKanban, type LucideIcon } from 'lucide-react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { MessageKey } from '../../lib/i18n'
 import { useTranslate } from '../../lib/i18n'
 import { setSidebarPlace, type Place } from '../../lib/sidebar'
@@ -92,7 +92,7 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                 valide. Même motif que les lignes de la zone basse.
               */}
               <div className={cx(
-                'group/place flex h-11 items-center gap-1 rounded-md pr-2.5 transition-colors md:h-9 pointer-coarse:h-11',
+                'group/place relative flex h-11 items-center gap-1 rounded-md pr-2.5 transition-colors md:h-9 pointer-coarse:h-11',
                 active ? 'bg-accent-wash font-medium text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
               )}>
                 <button
@@ -105,7 +105,17 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                     if (place.page) navigate(place.page)
                     onNavigate()
                   }}
-                  className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md pl-2.5 text-left text-sm"
+                  /*
+                    Le bouton ne mesure que son texte, mais son `::after` couvre la ligne
+                    entière : toute la largeur ouvre le lieu, y compris sous le créneau de
+                    droite, qui n'a rien d'une cible. Sorti du flux, il n'a pas de largeur
+                    à disputer au compteur — un `w-full` l'aurait repoussé ou tronqué.
+
+                    Un clic sur un pseudo-élément est un clic sur son élément : le compteur
+                    et le « ↗ », qui ne se positionnent pas, passent dessous et laissent
+                    passer. Seul le raccourci remonte au-dessus, par son `relative z-10`.
+                  */
+                  className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md pl-2.5 text-left text-sm after:absolute after:inset-0 after:rounded-md"
                 >
                   <Icon size={16} className="shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{t(place.label)}</span>
@@ -113,7 +123,14 @@ export function SidebarPlaces({ places, current, onNavigate }: {
 
                 {place.action && ActionIcon ? (
                   <Tooltip label={t(place.action.label)}>
-                    <NavLink
+                    {/*
+                      Un `Link` et non un `NavLink` : aucun style actif n'est consommé ici,
+                      et le `aria-current` que `NavLink` pose tout seul aurait donné, sur la
+                      page de création, deux éléments courants dans la même navigation —
+                      la ligne *Projets* et son raccourci. Un lecteur d'écran en annonce
+                      deux pour une seule position.
+                    */}
+                    <Link
                       to={place.action.page}
                       onClick={onNavigate}
                       aria-label={t(place.action.label)}
@@ -126,10 +143,10 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                         n'y a pas de survol pour l'annoncer, et la zone basse porte déjà
                         sa ligne « Nouveau projet… », permanente et nommée.
                       */
-                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint opacity-0 transition hover:bg-surface-high hover:text-ink focus-visible:opacity-100 group-hover/place:opacity-100 group-focus-within/place:opacity-100 pointer-coarse:hidden"
+                      className="relative z-10 inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint opacity-0 transition hover:bg-surface-high hover:text-ink focus-visible:opacity-100 group-hover/place:opacity-100 group-focus-within/place:opacity-100 pointer-coarse:hidden"
                     >
                       <ActionIcon size={14} />
-                    </NavLink>
+                    </Link>
                   </Tooltip>
                 ) : null}
 
@@ -141,8 +158,8 @@ export function SidebarPlaces({ places, current, onNavigate }: {
 
                   Il est **au bord**, après le raccourci, et donc hors du bouton : c'est ce
                   qui garde la pastille de ce lieu dans la même colonne que les compteurs
-                  des lieux sans raccourci. Le prix est de vingt pixels au bord droit qui
-                  n'ouvrent plus la page ; l'alignement des quatre lignes les vaut.
+                  des lieux sans raccourci. Il ne coûte pourtant pas un pixel de zone
+                  cliquable — le `::after` du bouton passe dessous.
                 */}
                 <span aria-hidden className={cx(
                   'shrink-0 text-meta tabular-nums text-ink-faint',

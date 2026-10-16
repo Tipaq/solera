@@ -119,9 +119,37 @@ try {
     await newProject.evaluate((node) => node === document.activeElement),
     'Une tabulation depuis la ligne Projets atteint son raccourci de création',
   )
+  /* Et il **redevient visible** une fois atteint : c'est l'invariant que l'effacement
+     doit à l'accès au clavier, et la moitié qui manquait. Attendre plutôt que mesurer
+     tout de suite — l'opacité est en transition, et une lecture immédiate rend une
+     valeur interpolée sur un état pourtant correct. */
+  await page.waitForFunction(
+    () => getComputedStyle(document.activeElement).opacity === '1',
+    null,
+    { timeout: 2000 },
+  )
   await page.keyboard.press('Enter')
   await page.waitForURL('**/projects/new')
   await page.goBack()
+  await places.waitFor()
+  /*
+    Le bord droit d'une ligne ouvre toujours son lieu. Le compteur et le « ↗ » sont
+    sortis du bouton pour tenir la colonne de droite ; sans le `::after` qui couvre la
+    ligne, ils laisseraient là une bande morte — jusqu'à cinquante pixels, et sur les
+    quatre lieux, y compris ceux qui n'ont aucun raccourci.
+  */
+  for (const [name, url] of [['Planifiées', '**/schedules'], ['Projets', '**/projects']]) {
+    await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
+    const line = places.getByRole('button', { name: new RegExp(`^${name}`) })
+    const box = await line.evaluate((node) => {
+      const { right, top, height } = node.closest('li').getBoundingClientRect()
+      return { x: right - 3, y: top + height / 2 }
+    })
+    await page.mouse.click(box.x, box.y)
+    await page.waitForURL(url, { timeout: 5000 })
+  }
+
+  await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
   await places.waitFor()
   // Les deux icônes ensemble, au survol : la capture ne cadre que les lieux, le reste
   // de la colonne a déjà les siennes.
