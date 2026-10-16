@@ -50,6 +50,11 @@ function repo(): string {
   const root = mkdtempSync(join(tmpdir(), 'solera-git-lot3-'))
   roots.push(root)
   git(root, 'init', '-b', 'main')
+  // Dans le dépôt, et pas seulement dans l'environnement du helper : c'est le serveur
+  // qui commite pendant un rebase interactif, et il n'hérite pas de ces variables.
+  // Voir `git-write.test.ts`, où le même piège est expliqué en entier.
+  git(root, 'config', 'user.name', 'Tim')
+  git(root, 'config', 'user.email', 'tim@example.test')
   return root
 }
 

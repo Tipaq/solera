@@ -54,6 +54,15 @@ function repo(): string {
   const root = mkdtempSync(join(tmpdir(), 'solera-git-write-'))
   roots.push(root)
   git(root, 'init', '-b', 'main')
+  // L'identité est posée **dans le dépôt**, et non dans l'environnement du helper
+  // ci-dessus. Ce helper ne sert qu'aux commits de la mise en place ; les gestes qu'on
+  // éprouve, eux, sont exécutés par le serveur, qui lance son propre git et n'hérite
+  // pas de ces variables. Sur une machine de développement, le `.gitconfig` de
+  // l'utilisateur comble le trou sans qu'on s'en aperçoive — en intégration continue
+  // il n'y en a pas, et les seuls tests où c'est le **serveur** qui commite tombaient
+  // sur « Author identity unknown » : le rebase interactif, « Annuler », « Refaire ».
+  git(root, 'config', 'user.name', 'Tim')
+  git(root, 'config', 'user.email', 'tim@example.test')
   writeFileSync(join(root, 'a.txt'), 'un\n')
   git(root, 'add', '-A')
   git(root, 'commit', '-m', 'Le premier')
