@@ -214,7 +214,16 @@ try {
   await page.getByRole('menuitem', { name: 'Services' }).waitFor()
   await page.getByRole('menuitem', { name: 'Réglages' }).waitFor()
   await page.getByRole('menuitem', { name: 'Se déconnecter' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Consommation' }).waitFor()
   await page.screenshot({ path: join(shots, 'menu-compte.png') })
+
+  // La consommation appartient au compte : son entrée ouvre la modale des CLI. Aucun
+  // CLI n'est activé ici, donc c'est l'état vide qui se vérifie — l'entrée reste quand
+  // même, puisque la savoir vide coûterait une sonde à chaque ouverture du menu.
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  const usage = page.getByRole('dialog', { name: 'Consommation du compte' })
+  await usage.getByText(/Aucun CLI n'est installé/).waitFor()
+  await page.screenshot({ path: join(shots, 'modale-consommation.png') })
   await page.keyboard.press('Escape')
 
   // Le tiroir au doigt : rien ne déborde sur la largeur.
@@ -227,7 +236,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, tiroir mobile.')
+  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte et sa consommation, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

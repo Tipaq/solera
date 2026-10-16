@@ -29,7 +29,7 @@ import { HeldSessionMessages } from '../components/chat/HeldSessionMessages'
 import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
-import { UsagePanel } from '../components/chat/UsagePanel'
+import { UsagePanel } from '../components/UsagePanel'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
@@ -1049,6 +1049,9 @@ export function ConversationPage() {
           </Dialog.Portal>
         </Dialog.Root>
 
+        {/* La même modale que celle du menu du compte, ouverte sur le CLI de ce fil :
+            deux portes vers un écran qui n'a qu'un contenu, et celle-ci arrive là où la
+            question se pose. */}
         <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
 
         <ConfirmDialog
