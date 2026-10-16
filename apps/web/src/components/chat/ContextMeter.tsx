@@ -426,12 +426,19 @@ export function ContextButton({ context, model, onCompact, canCompact }: {
             une session chargée en skills et en outils MCP dépasse l'écran, et la
             `ConfirmDialog` ne défile pas d'elle-même. */}
         <div className="-mx-1 flex max-h-[45vh] flex-col gap-2 overflow-y-auto px-1">
-          {context.breakdown === null ? (
+          {/* `== null` et non `=== null` : le `.default(null)` du schéma n'est appliqué qu'au
+              rejeu, le direct republie l'objet du runner sans le parser. Un bundle web neuf
+              devant un serveur pas encore redémarré reçoit donc un `breakdown` absent.
+              Et l'axe se teste en positif : un axe que ce bundle ne connaît pas encore
+              retombe sur la phrase, il ne se fait pas déstructurer comme des jetons. */}
+          {context.breakdown == null ? (
             <p className="text-meta text-ink-faint">{t('composer.context.noBreakdown')}</p>
           ) : context.breakdown.axis === 'categories' ? (
             <CategoriesDetail breakdown={context.breakdown} windowTokens={context.maxTokens} />
-          ) : (
+          ) : context.breakdown.axis === 'tokens' ? (
             <TokensDetail breakdown={context.breakdown} windowTokens={context.maxTokens} />
+          ) : (
+            <p className="text-meta text-ink-faint">{t('composer.context.noBreakdown')}</p>
           )}
         </div>
 
