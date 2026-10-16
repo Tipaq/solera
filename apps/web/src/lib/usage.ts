@@ -1,4 +1,4 @@
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import type { AgentKind, AgentUsage } from '@solera/protocol'
@@ -97,25 +97,36 @@ export function useAccountUsage(agents: AgentKind[]) {
 /**
  * Relecture explicite, qui court-circuite aussi le cache du serveur.
  *
+ * Une **mutation** et non un appel nu, pour que l'écran sache qu'elle travaille :
+ * `?refresh=1` démarre un process CLI par agent, et un bouton qui ne montre rien
+ * pendant ce temps se fait cliquer trois fois. `isPending` donne le garde et l'icône
+ * qui tourne ; `isFetching` ne les donnerait pas, puisque rien ne passe alors par une
+ * query.
+ *
+ * `fetchQuery` aurait fait voir la relecture aux observateurs, mais au prix d'une
+ * queryFn `?refresh=1` laissée dans le cache : le prochain retour sur l'onglet
+ * relancerait des CLI sans que personne ne l'ait demandé.
+ *
  * Un CLI dont la lecture forcée échoue retombe sur la lecture ordinaire plutôt que de
  * rester muet : l'erreur revient alors par sa query, donc dans sa section, au lieu
- * d'être avalée par le bouton. Et l'échec d'un CLI n'annule pas la relecture des
- * autres, d'où les lectures menées jusqu'au bout une à une plutôt qu'un `Promise.all`
- * qui rejette au premier.
+ * d'être avalée par le bouton. L'échec d'un CLI n'annule pas la relecture des autres —
+ * chacun a son `try`, donc aucune promesse ne rejette et le `Promise.all` les attend
+ * toutes.
  */
 export function useRefreshUsage(agents: AgentKind[]) {
   const queryClient = useQueryClient()
 
-  return async () => {
-    await Promise.all(
-      agents.map(async (agent) => {
-        try {
-          const fresh = await api.get<AgentUsage>(`/api/agents/${agent}/usage?refresh=1`)
-          queryClient.setQueryData(usageKey(agent), fresh)
-        } catch {
-          await queryClient.invalidateQueries({ queryKey: usageKey(agent) })
-        }
-      }),
-    )
-  }
+  return useMutation({
+    mutationFn: () =>
+      Promise.all(
+        agents.map(async (agent) => {
+          try {
+            const fresh = await api.get<AgentUsage>(`/api/agents/${agent}/usage?refresh=1`)
+            queryClient.setQueryData(usageKey(agent), fresh)
+          } catch {
+            await queryClient.invalidateQueries({ queryKey: usageKey(agent) })
+          }
+        }),
+      ),
+  })
 }

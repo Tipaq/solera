@@ -49,7 +49,12 @@ function UsageSection({ entry }: { entry: AccountUsageEntry }) {
   const { agent, usage, error, isPending } = entry
 
   return (
-    <section className="flex flex-col gap-3 border-b border-line px-3 py-3.5 last:border-b-0">
+    <section
+      // Le squelette est un ornement, invisible aux lecteurs d'écran : sans ça, la
+      // section annoncerait son titre puis plus rien pendant que le CLI répond.
+      aria-busy={isPending}
+      className="flex flex-col gap-3 border-b border-line px-3 py-3.5 last:border-b-0"
+    >
       <h3 className="flex items-center gap-2 text-sm font-medium text-ink">
         {/* Muette : le nom du CLI suit immédiatement. */}
         <AgentIcon agent={agent} size={14} decorative />
@@ -120,6 +125,10 @@ function UsageDialog({ agent }: { agent?: AgentKind }) {
 
   const { entries, fetchedAt, isFetching } = useAccountUsage(agents)
   const refresh = useRefreshUsage(agents)
+  // Les deux chemins de lecture : les queries à l'ouverture, la mutation au bouton. La
+  // relecture forcée ne passe pas par une query, donc `isFetching` seul laisserait le
+  // bouton vif et muet pendant qu'il lance un process CLI par agent.
+  const busy = isFetching || refresh.isPending
 
   return (
     <>
@@ -129,10 +138,10 @@ function UsageDialog({ agent }: { agent?: AgentKind }) {
         </Dialog.Title>
         <IconButton
           label={t('usage.refresh')}
-          onClick={() => void refresh()}
-          disabled={isFetching || agents.length === 0}
+          onClick={() => refresh.mutate()}
+          disabled={busy || agents.length === 0}
         >
-          <RefreshCw size={16} className={cx(isFetching && 'animate-spin')} />
+          <RefreshCw size={16} className={cx(busy && 'animate-spin')} />
         </IconButton>
         <Dialog.Close asChild>
           <IconButton label={t('usage.close')}>
