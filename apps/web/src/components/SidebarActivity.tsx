@@ -53,6 +53,15 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
+  /**
+   * Trois états et non deux : `undefined` ne filtre rien, `null` ne garde que les fils
+   * libres. C'est la forme même de `conversation.projectId`, donc la comparaison dans
+   * la modale se suffit — un sentinelle `'none'` aurait demandé un cas de plus.
+   *
+   * Il vit ici, et non dans la modale qui le montre, parce que c'est l'ouverture qui le
+   * décide : la modale n'est jamais démontée, et son état y survivrait à sa fermeture.
+   */
+  const [projectId, setProjectId] = useState<string | null | undefined>(undefined)
   const returnFocus = useRef<HTMLElement | null>(null)
   const openId = useOpenConversationId()
   const entries = useLiveConversations(conversations, openId)
@@ -69,9 +78,31 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   const shown = coarse ? SHOWN_COARSE : SHOWN
   const rest = active.length - shown
 
-  const show = (next: Filter = 'all') => {
+  /**
+   * Le filtre d'ouverture est le premier groupe non vide, dans l'ordre de ce que les
+   * trois états réclament — et `all` seulement quand il n'y a rien à réclamer. Ce qu'on
+   * vient chercher en cliquant, c'est ce qui bloque, pas l'inventaire ; la modale
+   * s'aligne ainsi sur l'ordre que la liste de la colonne dit déjà.
+   *
+   * Les trois groupes sont ceux de la colonne, tous projets confondus — dont `toRead`
+   * et non `unread`, pour que la deuxième ligne ne se rallume pas sur des attentes que
+   * la première a déjà prises si on réordonne un jour ces trois-là.
+   */
+  const entryFilter: Filter =
+    awaiting.length > 0 ? 'awaiting'
+      : toRead.length > 0 ? 'unread'
+        : running.length > 0 ? 'running' : 'all'
+
+  /**
+   * **Rien ne se retient entre deux ouvertures.** Le filtre d'entrée est calculé tous
+   * projets confondus : une portée gardée de la fois d'avant ouvrirait sur un onglet
+   * qui annonce « 2 à débloquer » au-dessus d'une liste vide, puisque ces deux-là sont
+   * ailleurs. Les deux dimensions se croisent, donc elles se décident ensemble.
+   */
+  const show = () => {
     returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    setFilter(next)
+    setFilter(entryFilter)
+    setProjectId(undefined)
     setOpen(true)
   }
   const navigate = () => { returnFocus.current = null; setOpen(false); onNavigate() }
@@ -81,10 +112,12 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
       <div className="shrink-0 border-b border-line px-2 py-1.5" role="group" aria-label={t('shell.activity.label')}>
         {/* L'en-tête porte les compteurs et le « ↗ » vers la modale. Un seul bouton :
             le titre, les pastilles et la flèche ouvrent la même chose, et trois cibles
-            voisines pour une seule destination ne font qu'un piège au doigt. */}
+            voisines pour une seule destination ne font qu'un piège au doigt. Donc la
+            pastille « en cours » ouvre elle aussi sur « à débloquer » quand il y en a :
+            c'est le prix de la cible unique, et il est voulu. */}
         <button
           type="button"
-          onClick={() => show()}
+          onClick={show}
           aria-haspopup="dialog"
           className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface-high"
         >
@@ -129,7 +162,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
         {rest > 0 ? (
           <button
             type="button"
-            onClick={() => show()}
+            onClick={show}
             className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
           >
             <Activity size={14} className="shrink-0" />
@@ -144,6 +177,8 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
         onCloseAutoFocus={() => returnFocus.current?.focus()}
         filter={filter}
         onFilter={setFilter}
+        projectId={projectId}
+        onProjectId={setProjectId}
         entries={entries}
         counts={{ all: entries.length, awaiting: awaiting.length, running: running.length, unread: unread.length }}
         projects={projects}
@@ -219,24 +254,20 @@ function ActivityLine({ entry, project, onNavigate }: {
  * Elle remplace trois onglets dont deux listaient strictement la même chose. Ici le
  * projet s'écrit en clair — la place existe, contrairement à la colonne.
  */
-function ActivityDialog({ open, onOpenChange, onCloseAutoFocus, filter, onFilter, entries, counts, projects, onNavigate }: {
+function ActivityDialog({ open, onOpenChange, onCloseAutoFocus, filter, onFilter, projectId, onProjectId, entries, counts, projects, onNavigate }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCloseAutoFocus: () => void
   filter: Filter
   onFilter: (filter: Filter) => void
+  projectId: string | null | undefined
+  onProjectId: (projectId: string | null | undefined) => void
   entries: ActivityEntry[]
   counts: Record<Filter, number>
   projects: ProjectDto[]
   onNavigate: () => void
 }) {
   const t = useTranslate()
-  /**
-   * Trois états et non deux : `undefined` ne filtre rien, `null` ne garde que les fils
-   * libres. C'est la forme même de `conversation.projectId`, donc la comparaison plus
-   * bas se suffit — un sentinelle `'none'` aurait demandé un cas de plus.
-   */
-  const [projectId, setProjectId] = useState<string | null | undefined>(undefined)
   const selected = projects.find((project) => project.id === projectId)
   /*
     L'ordre est celui de l'urgence, et non celui du dénombrement : ce qui bloque, puis
@@ -322,18 +353,18 @@ function ActivityDialog({ open, onOpenChange, onCloseAutoFocus, filter, onFilter
                   </button>
                 }
               >
-                <MenuItem onSelect={() => setProjectId(undefined)}>{t('shell.overview.allProjects')}</MenuItem>
+                <MenuItem onSelect={() => onProjectId(undefined)}>{t('shell.overview.allProjects')}</MenuItem>
                 <MenuSeparator />
                 {/* Les fils libres sont une cible de filtre comme une autre : ils sont le
                     premier groupe de la colonne, pas un reliquat. */}
-                <MenuItem icon={<MessagesSquare size={14} />} onSelect={() => setProjectId(null)}>
+                <MenuItem icon={<MessagesSquare size={14} />} onSelect={() => onProjectId(null)}>
                   {t('destination.none')}
                 </MenuItem>
                 {projects.map((project) => (
                   <MenuItem
                     key={project.id}
                     icon={<ProjectAvatar project={project} className="size-3" />}
-                    onSelect={() => setProjectId(project.id)}
+                    onSelect={() => onProjectId(project.id)}
                   >
                     {project.name}
                   </MenuItem>
