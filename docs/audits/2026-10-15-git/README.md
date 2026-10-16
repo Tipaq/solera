@@ -59,6 +59,9 @@ A1 ~8 plus un `git log --graph` paginé.
 `apps/web/src/components/GitPrototypes.tsx` et `scripts/git-prototypes.mjs`, jetables,
 à retirer ensemble quand la décision est prise. Rien n'a été écrit dans `GitPane.tsx`.
 
+**Retirés le 2026-10-16**, avec la livraison du lot 4 (carte #52) : les quatre lots
+sont écrits, et les planches de ce dossier portent seules la décision.
+
 ---
 
 # Tour 2 — GitKraken pour de bon

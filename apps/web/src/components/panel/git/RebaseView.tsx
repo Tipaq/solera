@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Loader, Lock, Play } from 'lucide-react'
-import type { GitStateDto, RebaseStep, RebaseVerb } from '@solera/protocol'
+import { ChevronDown, GripVertical, Loader, Lock, Play } from 'lucide-react'
+import type { GitStateDto, RebaseCommitDto, RebaseStep, RebaseVerb } from '@solera/protocol'
 import { useTranslate, type MessageKey } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Button, Menu, MenuItem, cx } from '@solera/ui'
 import { useGitActions } from './actions'
+import { DragLive, moved, useKeyboardDrag } from './drag'
 import { useRebasePlan } from './queries'
 
 /**
@@ -19,9 +20,14 @@ import { useRebasePlan } from './queries'
  * agent sait lire. Le refus vit dans le gestionnaire de sessions ; l'écran ne fait que
  * le dire avant, pour que ce ne soit pas une surprise.
  *
- * Le glisser-déposer pour réordonner n'est pas ici : c'est le même geste que « glisser
- * une branche sur une autre », qui est le lot 4 et qui n'existe pas au doigt. Les
- * quatre verbes, eux, passent par le menu de chaque ligne, qui marche partout.
+ * **Réordonner se fait au clavier** (lot 4) : c'est le même geste que « glisser une
+ * branche sur une autre », écrit une fois dans `drag.tsx`, et il n'existe pas au doigt.
+ * Les quatre verbes, eux, passent par le menu de chaque ligne, qui marche partout — et
+ * c'est bien pour ça qu'un plan reste entièrement composable sans ce raccourci.
+ *
+ * L'ordre du plan n'est pas une préférence d'affichage : c'est l'ordre dans lequel git
+ * rejouera. Il part donc tel quel dans `rebase-start`, qui l'attendait déjà du plus
+ * ancien au plus récent — aucune route n'a eu à bouger pour ce lot.
  */
 
 const VERBS: { id: RebaseVerb; label: MessageKey }[] = [
@@ -54,22 +60,59 @@ export function RebaseView({
   const { run, lock, pending } = useGitActions()
   const plan = useRebasePlan(scope, onto, true)
   const running = state?.rebase ?? null
+  const frozen = !!lock || pending
 
   /** Le verbe choisi pour chaque commit, et le message réécrit quand il y en a un. */
   const [verbs, setVerbs] = useState<Record<string, RebaseStep>>({})
+  /** L'ordre composé, qui n'est plus forcément celui que le serveur a lu. */
+  const [order, setOrder] = useState<string[]>([])
+  /*
+   * Remis à neuf quand le plan **change**, et non à chaque relecture.
+   *
+   * `refresh()` périme `git-rebase-plan` après n'importe quel geste git, et la lecture
+   * se refait aussi à chaque montage : en dépendant de l'objet rendu, cet effet
+   * effaçait un plan à moitié composé sans rien dire. Ce qu'on compose ne doit se
+   * perdre que si les commits eux-mêmes ne sont plus les mêmes — c'est ce que cette
+   * clé dit, et elle ne change pas quand la même liste est relue.
+   */
+  const planKey = (plan.data?.commits ?? []).map((commit) => commit.hash).join(' ')
   useEffect(() => {
-    const commits = plan.data?.commits ?? []
+    const hashes = planKey === '' ? [] : planKey.split(' ')
     setVerbs(
       Object.fromEntries(
-        commits.map((commit) => [commit.hash, { hash: commit.hash, verb: 'pick' as const, message: '' }]),
+        hashes.map((hash) => [hash, { hash, verb: 'pick' as const, message: '' }]),
       ),
     )
-  }, [plan.data])
+    setOrder(hashes)
+  }, [planKey])
 
-  const commits = plan.data?.commits ?? []
+  const drag = useKeyboardDrag({
+    rows: order,
+    canHold: () => !frozen,
+    // Toutes les lignes, **la sienne comprise** : déplacer une ligne dans une liste,
+    // c'est pouvoir la poser n'importe où, et sa place actuelle en fait partie. C'est
+    // ce qui fait qu'une saisie ne déplace rien tant qu'aucune flèche n'a été
+    // pressée, et que la ligne du haut peut redescendre puis revenir en tête.
+    canDrop: () => true,
+    onDrop: (held, over) => setOrder((current) => moved(current, held, over)),
+    roleDescription: t('git.drag.step.role'),
+    phrase: (step, held, over) => {
+      const name = (hash: string) =>
+        (plan.data?.commits ?? []).find((commit) => commit.hash === hash)?.subject ?? hash
+      if (step === 'cancel') return t('git.drag.cancelled', { name: name(held) })
+      const at = (over === null ? order : moved(order, held, over)).indexOf(held) + 1
+      if (step === 'drop') return t('git.drag.step.dropped', { name: name(held), at, of: order.length })
+      return t('git.drag.step.held', { name: name(held), at, of: order.length })
+    },
+  })
+
+  // L'ordre qu'on verrait si on lâchait maintenant : c'est ce qui se rend pendant le
+  // geste, et c'est la même fonction qui l'écrira au lâcher.
+  const shown = drag.held !== null && drag.over !== null ? moved(order, drag.held, drag.over) : order
+  const byHash = new Map((plan.data?.commits ?? []).map((commit) => [commit.hash, commit]))
+  const commits = shown.map((hash) => byHash.get(hash)).filter(Boolean) as RebaseCommitDto[]
   const steps = commits.map((commit) => verbs[commit.hash]).filter(Boolean) as RebaseStep[]
   const kept = steps.filter((step) => step.verb === 'pick' || step.verb === 'reword').length
-  const frozen = !!lock || pending
 
   // Un rebase court déjà : l'écran devient son tableau de bord, et le plan n'a plus
   // lieu d'être proposé — on ne rebase pas pendant qu'on rebase.
@@ -164,11 +207,28 @@ export function RebaseView({
           return (
             <div
               key={commit.hash}
+              {...drag.rowProps(commit.hash)}
+              aria-label={t('git.drag.step.label', { subject: commit.subject })}
               className={cx(
-                'flex items-center gap-2 rounded-md border border-line px-2 py-1.5',
+                'flex items-center gap-2 rounded-md border px-2 py-1.5 outline-none',
+                drag.over === commit.hash ? 'border-accent' : 'border-line',
+                drag.held === commit.hash && 'bg-accent-wash',
+                'focus-visible:border-accent',
                 verb === 'drop' && 'opacity-55',
               )}
             >
+              {/* La poignée ne se clique pas : elle dit que la ligne se déplace, et où
+                  la flèche du clavier agira. Au doigt, elle n'est qu'un repère — le
+                  geste n'y existe pas, et les quatre verbes suffisent à composer. */}
+              <GripVertical
+                size={13}
+                aria-hidden
+                className={cx(
+                  'shrink-0',
+                  drag.held === commit.hash ? 'text-accent' : 'text-ink-faint opacity-50',
+                )}
+              />
+
               <Menu
                 align="start"
                 trigger={
@@ -241,6 +301,8 @@ export function RebaseView({
             <Suspended count={`${commits.length} → ${kept}`} />
           </div>
         ) : null}
+
+        <DragLive message={drag.message} />
       </div>
     </div>
   )

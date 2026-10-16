@@ -33,18 +33,28 @@ export function ContextMenuItem({
   icon,
   onSelect,
   tone = 'neutral',
+  disabled = false,
   children,
 }: {
   icon?: ReactNode
   onSelect: () => void
   tone?: 'neutral' | 'critical'
+  /**
+   * Grisée plutôt que retirée, comme dans `MenuItem`. Les deux primitives rendent les
+   * mêmes listes d'entrées (voir `ObjectMenu` dans la vue Git) : une entrée qui
+   * existerait d'un côté et pas de l'autre ferait du clic droit et du `⋯` deux menus
+   * différents selon la main qui ouvre.
+   */
+  disabled?: boolean
   children: ReactNode
 }) {
   return (
     <Primitive.Item
       onSelect={onSelect}
+      disabled={disabled}
       className={cx(
         'flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm outline-none',
+        'data-[disabled]:pointer-events-none data-[disabled]:opacity-45',
         tone === 'critical'
           ? 'text-critical data-[highlighted]:bg-critical/12'
           : 'text-ink-soft data-[highlighted]:bg-accent-wash data-[highlighted]:text-ink',

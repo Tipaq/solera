@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useState, type ComponentType, type ReactNode } from 'react'
 import {
   ArrowUpFromLine,
   Copy,
@@ -16,7 +16,16 @@ import {
 } from 'lucide-react'
 import { api } from '../../../lib/api'
 import { useTranslate } from '../../../lib/i18n'
-import { Button, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import {
+  Button,
+  ContextMenu,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  cx,
+} from '@solera/ui'
 import { useGitActions } from './actions'
 
 /**
@@ -32,6 +41,66 @@ import { useGitActions } from './actions'
  * passer pour deux variantes d'une même chose. Elles sont en rouge, et la dure passe
  * par le garde-fou de T13.
  */
+
+/**
+ * Les deux chemins vers le même menu : le `⋯` au survol, et le clic droit.
+ *
+ * **Tranché avec Tim au lot 4** : les deux, et non l'un ou l'autre. Le `⋯` reste le
+ * seul chemin au doigt — le clic droit n'y existe pas — et c'est lui qui apprend qu'il
+ * y a un menu à qui l'ignore. Le clic droit, lui, est ce qu'on essaie d'abord à la
+ * souris, et tomber sur le menu du navigateur fait croire qu'il n'y a rien. La planche
+ * T5 ne tranchait pas, et le lot 2 avait laissé la question ouverte.
+ *
+ * Le prix qu'il ne faut pas payer : écrire les entrées deux fois. `Item` et
+ * `Separator` appartiennent à deux modules Radix qui ne se partagent pas (voir
+ * `ContextMenu` dans `@solera/ui`), donc les entrées sont écrites **une fois**, en
+ * fonction, et rendues par l'une ou l'autre trousse.
+ */
+interface MenuKit {
+  Item: ComponentType<{
+    icon?: ReactNode
+    onSelect: () => void
+    tone?: 'neutral' | 'critical'
+    disabled?: boolean
+    children: ReactNode
+  }>
+  Separator: ComponentType
+}
+
+const DROPDOWN: MenuKit = { Item: MenuItem, Separator: MenuSeparator }
+const CONTEXT: MenuKit = { Item: ContextMenuItem, Separator: ContextMenuSeparator }
+
+/**
+ * Une ligne et son menu, ouvert des deux façons.
+ *
+ * `row` reçoit le `⋯` déjà câblé et le pose où il va : ce composant n'a pas à décider
+ * de la mise en page d'une ligne de graphe ou d'une ligne de branche, qui n'ont rien
+ * en commun. Ce qu'il garantit, lui, c'est que les deux ouvertures mènent aux mêmes
+ * entrées.
+ */
+function ObjectMenu({
+  align = 'end',
+  trigger,
+  row,
+  entries,
+}: {
+  align?: 'start' | 'end'
+  trigger: ReactNode
+  row: (menu: ReactNode) => ReactNode
+  entries: (kit: MenuKit) => ReactNode
+}) {
+  return (
+    <ContextMenu
+      trigger={row(
+        <Menu align={align} trigger={trigger}>
+          {entries(DROPDOWN)}
+        </Menu>,
+      )}
+    >
+      {entries(CONTEXT)}
+    </ContextMenu>
+  )
+}
 
 /** Ce qu'un menu doit savoir du dépôt pour nommer ses entrées. */
 export interface MenuContext {
@@ -50,12 +119,16 @@ export function CommitMenu({
   threadId,
   context,
   trigger,
+  row,
 }: {
   hash: string
   shortHash: string
   threadId: string | null
   context: MenuContext
+  /** Le `⋯` de la ligne, tel que l'appelant le dessine. */
   trigger: ReactNode
+  /** La ligne, qui reçoit le `⋯` et devient la cible du clic droit. */
+  row: (menu: ReactNode) => ReactNode
 }) {
   const t = useTranslate()
   const { run } = useGitActions()
@@ -64,95 +137,102 @@ export function CommitMenu({
 
   return (
     <>
-      <Menu align="start" trigger={trigger}>
-        <MenuItem
-          icon={<GitBranch size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-switch', hash })}
-        >
-          {t('git.menu.commit.switch')}
-        </MenuItem>
-        <MenuItem
-          icon={<GitBranchPlus size={13} />}
-          disabled={context.locked}
-          onSelect={() => setAsking('branch')}
-        >
-          {t('git.menu.commit.branch')}
-        </MenuItem>
-        <MenuItem
-          icon={<GitMerge size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-merge', hash })}
-        >
-          {t('git.menu.commit.merge', { branch })}
-        </MenuItem>
-        <MenuItem
-          icon={<RotateCcw size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-rebase', hash })}
-        >
-          {t('git.menu.commit.rebase', { branch })}
-        </MenuItem>
-        {/* « À partir d'ici » : le commit désigné est le point de **départ**, pas un
-            des commits rejoués. C'est la lecture qu'en fait GitKraken, et la seule qui
-            ne demande pas de deviner où s'arrête la liste. */}
-        <MenuItem
-          icon={<Rows3 size={13} />}
-          disabled={context.locked}
-          onSelect={() => context.onRebase(hash)}
-        >
-          {t('git.menu.commit.interactive')}
-        </MenuItem>
+      <ObjectMenu
+        align="start"
+        trigger={trigger}
+        row={row}
+        entries={({ Item, Separator }) => (
+          <>
+            <Item
+              icon={<GitBranch size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-switch', hash })}
+            >
+              {t('git.menu.commit.switch')}
+            </Item>
+            <Item
+              icon={<GitBranchPlus size={13} />}
+              disabled={context.locked}
+              onSelect={() => setAsking('branch')}
+            >
+              {t('git.menu.commit.branch')}
+            </Item>
+            <Item
+              icon={<GitMerge size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-merge', hash })}
+            >
+              {t('git.menu.commit.merge', { branch })}
+            </Item>
+            <Item
+              icon={<RotateCcw size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-rebase', hash })}
+            >
+              {t('git.menu.commit.rebase', { branch })}
+            </Item>
+            {/* « À partir d'ici » : le commit désigné est le point de **départ**, pas un
+                des commits rejoués. C'est la lecture qu'en fait GitKraken, et la seule qui
+                ne demande pas de deviner où s'arrête la liste. */}
+            <Item
+              icon={<Rows3 size={13} />}
+              disabled={context.locked}
+              onSelect={() => context.onRebase(hash)}
+            >
+              {t('git.menu.commit.interactive')}
+            </Item>
 
-        <MenuSeparator />
+            <Separator />
 
-        <MenuItem
-          icon={<Copy size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-cherry-pick', hash })}
-        >
-          {t('git.menu.commit.cherryPick')}
-        </MenuItem>
-        <MenuItem
-          icon={<Undo2 size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-revert', hash })}
-        >
-          {t('git.menu.commit.revert')}
-        </MenuItem>
-        <MenuItem
-          tone="critical"
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-reset', hash, mode: 'soft' })}
-        >
-          {t('git.menu.commit.resetSoft', { branch })}
-        </MenuItem>
-        <MenuItem
-          tone="critical"
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'commit-reset', hash, mode: 'hard' })}
-        >
-          {t('git.menu.commit.resetHard', { branch })}
-        </MenuItem>
+            <Item
+              icon={<Copy size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-cherry-pick', hash })}
+            >
+              {t('git.menu.commit.cherryPick')}
+            </Item>
+            <Item
+              icon={<Undo2 size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-revert', hash })}
+            >
+              {t('git.menu.commit.revert')}
+            </Item>
+            <Item
+              tone="critical"
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-reset', hash, mode: 'soft' })}
+            >
+              {t('git.menu.commit.resetSoft', { branch })}
+            </Item>
+            <Item
+              tone="critical"
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'commit-reset', hash, mode: 'hard' })}
+            >
+              {t('git.menu.commit.resetHard', { branch })}
+            </Item>
 
-        <MenuSeparator />
+            <Separator />
 
-        <MenuItem icon={<Tag size={13} />} disabled={context.locked} onSelect={() => setAsking('tag')}>
-          {t('git.menu.commit.tag')}
-        </MenuItem>
-        <MenuItem icon={<Copy size={13} />} onSelect={() => void copy(hash)}>
-          {t('git.menu.commit.copySha', { sha: shortHash })}
-        </MenuItem>
-        {/* La dernière entrée est la nôtre, et c'est elle qui justifie cette vue :
-            d'un commit, aller à la conversation qui l'a écrit. */}
-        <MenuItem
-          icon={<MessagesSquare size={13} />}
-          disabled={threadId === null}
-          onSelect={() => threadId && context.onOpenThread(threadId)}
-        >
-          {t('git.menu.commit.thread')}
-        </MenuItem>
-      </Menu>
+            <Item icon={<Tag size={13} />} disabled={context.locked} onSelect={() => setAsking('tag')}>
+              {t('git.menu.commit.tag')}
+            </Item>
+            <Item icon={<Copy size={13} />} onSelect={() => void copy(hash)}>
+              {t('git.menu.commit.copySha', { sha: shortHash })}
+            </Item>
+            {/* La dernière entrée est la nôtre, et c'est elle qui justifie cette vue :
+                d'un commit, aller à la conversation qui l'a écrit. */}
+            <Item
+              icon={<MessagesSquare size={13} />}
+              disabled={threadId === null}
+              onSelect={() => threadId && context.onOpenThread(threadId)}
+            >
+              {t('git.menu.commit.thread')}
+            </Item>
+          </>
+        )}
+      />
 
       {asking ? (
         <NameDialog
@@ -181,6 +261,7 @@ export function BranchMenu({
   worktreePath,
   context,
   trigger,
+  row,
 }: {
   name: string
   current: boolean
@@ -189,6 +270,7 @@ export function BranchMenu({
   worktreePath: string | null
   context: MenuContext
   trigger: ReactNode
+  row: (menu: ReactNode) => ReactNode
 }) {
   const t = useTranslate()
   const { run } = useGitActions()
@@ -197,92 +279,99 @@ export function BranchMenu({
 
   return (
     <>
-      <Menu align="end" trigger={trigger}>
-        <MenuItem
-          icon={<GitBranch size={13} />}
-          disabled={context.locked || current}
-          onSelect={() => run({ kind: 'branch-switch', name })}
-        >
-          {t('git.menu.branch.switch')}
-        </MenuItem>
-        <MenuItem
-          icon={<GitMerge size={13} />}
-          disabled={context.locked || current}
-          onSelect={() => run({ kind: 'branch-merge', name })}
-        >
-          {t('git.menu.branch.merge', { branch: context.branch ?? '' })}
-        </MenuItem>
-        <MenuItem
-          icon={<RotateCcw size={13} />}
-          disabled={context.locked || current}
-          onSelect={() => run({ kind: 'branch-rebase', name })}
-        >
-          {t('git.menu.branch.rebase', { branch: context.branch ?? '' })}
-        </MenuItem>
+      <ObjectMenu
+        align="end"
+        trigger={trigger}
+        row={row}
+        entries={({ Item, Separator }) => (
+          <>
+            <Item
+              icon={<GitBranch size={13} />}
+              disabled={context.locked || current}
+              onSelect={() => run({ kind: 'branch-switch', name })}
+            >
+              {t('git.menu.branch.switch')}
+            </Item>
+            <Item
+              icon={<GitMerge size={13} />}
+              disabled={context.locked || current}
+              onSelect={() => run({ kind: 'branch-merge', name })}
+            >
+              {t('git.menu.branch.merge', { branch: context.branch ?? '' })}
+            </Item>
+            <Item
+              icon={<RotateCcw size={13} />}
+              disabled={context.locked || current}
+              onSelect={() => run({ kind: 'branch-rebase', name })}
+            >
+              {t('git.menu.branch.rebase', { branch: context.branch ?? '' })}
+            </Item>
 
-        <MenuSeparator />
+            <Separator />
 
-        <MenuItem
-          icon={<ArrowUpFromLine size={13} />}
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'push', force: false, branch: name })}
-        >
-          {t('git.menu.branch.push')}
-        </MenuItem>
-        <MenuItem
-          tone="critical"
-          disabled={context.locked}
-          onSelect={() => run({ kind: 'push', force: true, branch: name })}
-        >
-          {t('git.menu.branch.forcePush')}
-        </MenuItem>
-        <MenuItem
-          icon={<Link2 size={13} />}
-          disabled={context.locked}
-          onSelect={() => setAsking('track')}
-        >
-          {upstream ? t('git.menu.branch.retrack', { upstream }) : t('git.menu.branch.track')}
-        </MenuItem>
+            <Item
+              icon={<ArrowUpFromLine size={13} />}
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'push', force: false, branch: name })}
+            >
+              {t('git.menu.branch.push')}
+            </Item>
+            <Item
+              tone="critical"
+              disabled={context.locked}
+              onSelect={() => run({ kind: 'push', force: true, branch: name })}
+            >
+              {t('git.menu.branch.forcePush')}
+            </Item>
+            <Item
+              icon={<Link2 size={13} />}
+              disabled={context.locked}
+              onSelect={() => setAsking('track')}
+            >
+              {upstream ? t('git.menu.branch.retrack', { upstream }) : t('git.menu.branch.track')}
+            </Item>
 
-        <MenuSeparator />
+            <Separator />
 
-        <MenuItem icon={<Pencil size={13} />} disabled={context.locked} onSelect={() => setAsking('rename')}>
-          {t('git.menu.branch.rename')}
-        </MenuItem>
-        {/* Un worktree n'est pas un geste git isolé : c'est un chantier que Solera
-            inscrit en base. On passe donc par la route qui existe déjà, et pas par un
-            `git worktree add` qui laisserait un dossier que personne ne connaît. */}
-        <MenuItem
-          icon={<GitBranchPlus size={13} />}
-          disabled={context.locked || context.projectId === null || worktreePath !== null}
-          onSelect={() => {
-            if (!context.projectId) return
-            void api
-              .post(`/api/projects/${context.projectId}/worktrees`, { name, baseRef: name })
-              .catch((err: unknown) => setWorktreeError(err instanceof Error ? err.message : String(err)))
-          }}
-        >
-          {t('git.menu.branch.worktree')}
-        </MenuItem>
-        <MenuItem
-          icon={<MessagesSquare size={13} />}
-          disabled={threadId === null}
-          onSelect={() => threadId && context.onOpenThread(threadId)}
-        >
-          {t('git.menu.branch.thread')}
-        </MenuItem>
+            <Item icon={<Pencil size={13} />} disabled={context.locked} onSelect={() => setAsking('rename')}>
+              {t('git.menu.branch.rename')}
+            </Item>
+            {/* Un worktree n'est pas un geste git isolé : c'est un chantier que Solera
+                inscrit en base. On passe donc par la route qui existe déjà, et pas par un
+                `git worktree add` qui laisserait un dossier que personne ne connaît. */}
+            <Item
+              icon={<GitBranchPlus size={13} />}
+              disabled={context.locked || context.projectId === null || worktreePath !== null}
+              onSelect={() => {
+                if (!context.projectId) return
+                void api
+                  .post(`/api/projects/${context.projectId}/worktrees`, { name, baseRef: name })
+                  .catch((err: unknown) => setWorktreeError(err instanceof Error ? err.message : String(err)))
+              }}
+            >
+              {t('git.menu.branch.worktree')}
+            </Item>
+            <Item
+              icon={<MessagesSquare size={13} />}
+              disabled={threadId === null}
+              onSelect={() => threadId && context.onOpenThread(threadId)}
+            >
+              {t('git.menu.branch.thread')}
+            </Item>
 
-        <MenuSeparator />
+            <Separator />
 
-        <MenuItem
-          icon={<Trash2 size={13} />}
-          tone="critical"
-          disabled={context.locked || current}
-          onSelect={() => run({ kind: 'branch-delete', name, force: true })}
-        >
-          {t('git.menu.branch.delete')}
-        </MenuItem>
-      </Menu>
+            <Item
+              icon={<Trash2 size={13} />}
+              tone="critical"
+              disabled={context.locked || current}
+              onSelect={() => run({ kind: 'branch-delete', name, force: true })}
+            >
+              {t('git.menu.branch.delete')}
+            </Item>
+          </>
+        )}
+      />
 
       {asking ? (
         <NameDialog
