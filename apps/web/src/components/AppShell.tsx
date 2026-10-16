@@ -42,7 +42,7 @@ export function AppShell() {
   const freeConversationRoute = useMatch('/c/:conversationId')
   const servicesRoute = useMatch('/services')
   // Les vues d'un projet partagent la bande de `ProjectLayout` : un seul `useMatch`
-  // pour les quatre, là où chacune se déclarait avant.
+  // pour toutes, là où chacune se déclarait avant.
   const projectRoute = useMatch('/p/:projectId/*')
   const projectRootRoute = useMatch('/p/:projectId')
   // Les pages de lieu portent leur propre segment de bande : sans ces lignes elles en

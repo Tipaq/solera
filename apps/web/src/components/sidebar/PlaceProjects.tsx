@@ -336,11 +336,11 @@ function ProjectGroup({
     l'activité, elle, est un triage transversal, et la répétition est son prix.
 
     Les tirs planifiés restent dehors : une tâche horaire poserait vingt-quatre lignes
-    par jour. La colonne ne montre donc **ni** les tirs **ni** les tâches : c'est la vue
-    *Planifiées* du projet qui porte les tâches, et l'historique de chacune porte un lien
-    par fil. C'est la décision de la carte #35, prise quand la colonne dépliait encore
-    les vues d'un projet sous sa ligne ; la carte #31 a depuis retiré ces sous-liens, et
-    l'historique des tirs est l'unique route vers le fil d'un tir.
+    par jour. Le groupe ne montre donc que les sessions, et le lieu *Planifiées* juste
+    au-dessus les tâches elles-mêmes — jamais ce qu'elles ont lancé. C'est la décision de
+    la carte #35, prise quand la colonne dépliait encore les vues d'un projet sous sa
+    ligne ; la carte #31 a depuis retiré ces sous-liens, et l'historique des tirs, sur la
+    vue *Planifiées* du projet, est devenu l'unique route vers le fil d'un tir.
   */
   const sessions = useMemo(
     () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),

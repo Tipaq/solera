@@ -324,6 +324,56 @@ function MilestoneTile({ projectId, milestone }: { projectId: string; milestone:
  * Une seule ligne est teintée, celle qui est en retard : si tout était coloré, plus rien
  * ne ressortirait, et c'est le retard qu'on cherche en ouvrant cette tuile.
  */
+function DueTile({ projectId, cards }: { projectId: string; cards: CardDto[] }) {
+  const t = useTranslate()
+  if (cards.length === 0) return null
+
+  return (
+    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
+      <SectionHeading icon={<AlarmClock size={14} />} title={t('project.overview.due')}>
+        <Link
+          to={`/p/${projectId}/timeline`}
+          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
+        >
+          {t('place.seeAll')}
+          <ArrowUpRight size={13} />
+        </Link>
+      </SectionHeading>
+
+      <ul className="flex min-w-0 flex-col">
+        {cards.map((card) => {
+          const late = card.dueAt !== null && daysUntil(card.dueAt) < 0
+          return (
+            <li key={card.id}>
+              <Link
+                to={`/p/${projectId}/board?carte=${card.number}`}
+                className={cx(
+                  'flex min-h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm transition-colors',
+                  late ? 'bg-critical/10 text-critical' : 'hover:bg-surface-high',
+                )}
+              >
+                {late ? <TriangleAlert size={13} className="shrink-0" /> : null}
+                <span className="shrink-0 text-xs tabular-nums opacity-70">#{card.number}</span>
+                <span className="min-w-0 flex-1 truncate">{card.title}</span>
+                <span className="shrink-0 text-xs opacity-80">
+                  {card.dueAt === null ? null : relativeDate(card.dueAt)}
+                </span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+/**
+ * Une tâche planifiée en une ligne : agent, nom, cadence, prochaine, dernier verdict.
+ *
+ * `SchedulePage` montre la même chose en carte dépliée, avec le prompt et l'historique.
+ * Ici la hauteur est comptée — trois cartes de cette taille chasseraient le board de
+ * l'écran — donc on resserre, sans rien retirer de ce qui se lit d'un coup d'œil.
+ */
 /**
  * Le Journal en miniature : ses dernières lignes, toutes natures mêlées.
  *
@@ -399,56 +449,6 @@ function JournalTile({ projectId }: { projectId: string }) {
   )
 }
 
-function DueTile({ projectId, cards }: { projectId: string; cards: CardDto[] }) {
-  const t = useTranslate()
-  if (cards.length === 0) return null
-
-  return (
-    <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
-      <SectionHeading icon={<AlarmClock size={14} />} title={t('project.overview.due')}>
-        <Link
-          to={`/p/${projectId}/timeline`}
-          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
-        >
-          {t('place.seeAll')}
-          <ArrowUpRight size={13} />
-        </Link>
-      </SectionHeading>
-
-      <ul className="flex min-w-0 flex-col">
-        {cards.map((card) => {
-          const late = card.dueAt !== null && daysUntil(card.dueAt) < 0
-          return (
-            <li key={card.id}>
-              <Link
-                to={`/p/${projectId}/board?carte=${card.number}`}
-                className={cx(
-                  'flex min-h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm transition-colors',
-                  late ? 'bg-critical/10 text-critical' : 'hover:bg-surface-high',
-                )}
-              >
-                {late ? <TriangleAlert size={13} className="shrink-0" /> : null}
-                <span className="shrink-0 text-xs tabular-nums opacity-70">#{card.number}</span>
-                <span className="min-w-0 flex-1 truncate">{card.title}</span>
-                <span className="shrink-0 text-xs opacity-80">
-                  {card.dueAt === null ? null : relativeDate(card.dueAt)}
-                </span>
-              </Link>
-            </li>
-          )
-        })}
-      </ul>
-    </section>
-  )
-}
-
-/**
- * Une tâche planifiée en une ligne : agent, nom, cadence, prochaine, dernier verdict.
- *
- * `SchedulePage` montre la même chose en carte dépliée, avec le prompt et l'historique.
- * Ici la hauteur est comptée — trois cartes de cette taille chasseraient le board de
- * l'écran — donc on resserre, sans rien retirer de ce qui se lit d'un coup d'œil.
- */
 function TaskLine({ task }: { task: ScheduledTaskDto }) {
   const t = useTranslate()
   const run = lastRun(task)

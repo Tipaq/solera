@@ -154,7 +154,7 @@ export function ProjectLayout() {
           <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
         </Button>
         {/* Le `⋯` ne navigue plus vers une vue : la rangée est juste en dessous, et
-            redire les quatre vues ici est exactement la redondance que l'audit est
+            redire les cinq vues ici est exactement la redondance que l'audit est
             venu défaire. Il ne porte donc que les gestes du projet. */}
         <Menu
           trigger={
