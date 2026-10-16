@@ -282,7 +282,7 @@ CREATE TABLE permission_requests (
   tool_name       TEXT NOT NULL,
   input           TEXT NOT NULL,           -- JSON
   status          TEXT NOT NULL,           -- 'pending'|'allowed'|'denied'|'expired'
-  decision_scope  TEXT,                    -- 'once'|'session'|'always'
+  decision_scope  TEXT,                    -- 'once'|'session'
   decided_by      TEXT REFERENCES users(id),
   created_at      INTEGER NOT NULL,
   decided_at      INTEGER
@@ -397,7 +397,7 @@ type SoleraEvent =
                                     displayName: string | null }
   | { type: 'permission.resolved';  requestId: string;
                                     decision: 'allowed' | 'denied' | 'expired';
-                                    scope: 'once' | 'session' | 'always';
+                                    scope: 'once' | 'session';
                                     decidedBy: string | null }
   | { type: 'question.requested';   requestId: string; questions: AgentQuestion[] }
   | { type: 'question.resolved';    requestId: string;

@@ -375,9 +375,10 @@ export const filingDecisionBodySchema = z.object({
   decision: z.enum(['accepted', 'refused']),
 })
 
+/** Deux portées seulement, voir `permissionScopeSchema` dans `events.ts`. */
 export const permissionDecisionBodySchema = z.object({
   decision: z.enum(['allowed', 'denied']),
-  scope: z.enum(['once', 'session', 'always']).default('once'),
+  scope: z.enum(['once', 'session']).default('once'),
 })
 
 /**

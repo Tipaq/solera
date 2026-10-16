@@ -711,6 +711,9 @@ export class OpencodeRunner implements AgentRunner {
       this.nativeRequests.delete(request.id)
       if (this.settledNatively.delete(request.id)) return
       // opencode n'a que deux portées : cette fois, ou jusqu'à la fin de l'instance.
+      // Les nôtres aussi, et il n'y en aura pas de troisième : voir
+      // `permissionScopeSchema` dans `packages/protocol/src/events.ts`. Son `always`
+      // est donc bien le pendant de notre `session`, pas une portée de plus.
       // Une expiration vaut refus, il n'a pas de variante « resté sans réponse ».
       const reply = decision?.decision === 'allowed'
         ? (decision.scope === 'once' ? 'once' : 'always')

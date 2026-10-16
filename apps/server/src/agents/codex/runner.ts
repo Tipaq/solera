@@ -1041,6 +1041,8 @@ export class CodexRunner implements AgentRunner {
                   fileSystem: p.permissions.fileSystem ?? undefined,
                 }
               : {},
+            // Deux portées de notre côté, deux du sien : `session` pour `session`,
+            // `turn` pour `once`. Voir `permissionScopeSchema` (protocol/events.ts).
             scope: scope === 'session' ? 'session' : 'turn',
           }),
         )

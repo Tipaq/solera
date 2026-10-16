@@ -884,6 +884,10 @@ export class ClaudeRunner implements AgentRunner {
             // Une autorisation ponctuelle ne change aucune règle ; au-delà, on renvoie
             // les mises à jour que le CLI a lui-même proposées, seule façon qu'il
             // cesse de reposer la question.
+            //
+            // Le test porte sur `once` et non sur `session` parce qu'il n'y a que ces
+            // deux portées : pas de troisième à venir, voir `permissionScopeSchema`
+            // dans `packages/protocol/src/events.ts`.
             resolve({
               behavior: 'allow',
               ...(decision.scope === 'once' ? {} : { updatedPermissions: suggestions }),

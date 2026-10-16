@@ -222,3 +222,36 @@ test('relecture : l’index suit un journal qui s’allonge entre deux pages', (
     assert.deepEqual(chunks, ['interrompu en route', 'de nouveau'])
   } finally { close() }
 })
+
+/**
+ * `decisionScope: 'always'` a disparu de l'enum ; les lignes déjà écrites, non. Un
+ * événement que le schéma refuse est remplacé par une erreur visible (`parseStored`),
+ * ce qui laisserait une demande de permission ancienne éternellement « en attente ».
+ */
+test('relecture : une portée « always » d’avant le resserrement se relit, repliée sur « session »', () => {
+  const legacy = {
+    type: 'permission.resolved',
+    requestId: 'p1',
+    decision: 'allowed',
+    scope: 'always',
+    decidedBy: 'owner',
+  } as unknown as SoleraEvent
+
+  const { log, close } = openJournal([
+    turnStart,
+    user('u1', 'Édite le fichier'),
+    { type: 'permission.requested', requestId: 'p1', toolName: 'Edit', input: {}, suggestions: [], title: null, description: null, displayName: null },
+    legacy,
+  ])
+  try {
+    const entries = log.read('c', 0, 10_000)
+    const resolved = entries.at(-1)?.event
+    assert.equal(resolved?.type, 'permission.resolved')
+    assert.equal(resolved.type === 'permission.resolved' ? resolved.scope : null, 'session')
+
+    // Et le fil montre bien la permission accordée, pas une demande en attente.
+    const state = fold(emptyChatState(), entries)
+    const permission = state.items.find((item) => item.kind === 'permission')
+    assert.equal(permission?.kind === 'permission' ? permission.status : null, 'allowed')
+  } finally { close() }
+})
