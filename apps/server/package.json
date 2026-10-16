@@ -17,7 +17,7 @@
     "opencode:probe": "tsx src/cli/opencode-probe.ts",
     "secrets:check": "tsx src/cli/secret-check.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null tsx --test test/*.test.ts",
     "claude:probe": "tsx src/cli/claude-settings-probe.ts"
   },
   "dependencies": {
