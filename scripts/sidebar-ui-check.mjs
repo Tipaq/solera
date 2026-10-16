@@ -223,7 +223,42 @@ try {
   await page.getByRole('menuitem', { name: 'Consommation' }).click()
   const usage = page.getByRole('dialog', { name: 'Consommation du compte' })
   await usage.getByText(/Aucun CLI n'est installé/).waitFor()
-  await page.screenshot({ path: join(shots, 'modale-consommation.png') })
+  await page.keyboard.press('Escape')
+
+  // Avec des CLI, une section chacun, lues ensemble. Bouchonné : la machine de CI
+  // n'installe aucun CLI, et le rendu de la modale est ce qui se vérifie ici — pas la
+  // sonde, qui a ses propres tests côté serveur.
+  const usageFixtures = {
+    claude: { plan: 'max', limitsAvailable: true, credits: { label: 'Crédits hors forfait', utilization: 0.1, detail: '4,10 $ consommés', enabled: true }, windows: [
+      { id: 'five_hour', label: 'Fenêtre de 5 h', utilization: 0.42, resetsAt: Date.now() + 3_600_000 },
+      { id: 'seven_day', label: 'Fenêtre de 7 j', utilization: 0.81, resetsAt: Date.now() + 200_000_000 },
+    ] },
+    codex: { plan: 'plus', limitsAvailable: true, credits: null, windows: [
+      { id: 'weekly', label: 'Hebdomadaire', utilization: 0.93, resetsAt: Date.now() + 86_400_000 },
+    ] },
+    // Sans limites de forfait : les fenêtres sont vides, et ce n'est pas une panne.
+    opencode: { plan: null, limitsAvailable: false, credits: null, windows: [] },
+  }
+  await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: Object.keys(usageFixtures).map((agent) => ({
+    agent, binary: agent, enabled: true, installed: true, managed: true, path: `/usr/bin/${agent}`,
+    version: '1.0.0', reason: null, preferredVersion: '1.0.0', install: { status: 'idle' },
+  })) } }))
+  await page.route('**/api/agents/*/usage*', (route) => {
+    const agent = new URL(route.request().url()).pathname.split('/')[3]
+    route.fulfill({ json: { agent, fetchedAt: Date.now() - 42_000, ...usageFixtures[agent] } })
+  })
+  // Rechargée : la liste des CLI est en cache depuis l'ouverture précédente, et elle y
+  // tient une minute — les bouchons posés après coup ne seraient jamais appelés.
+  await page.reload()
+  await places.waitFor()
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  for (const name of ['Claude Code', 'Codex', 'OpenCode']) {
+    await usage.getByRole('heading', { name }).waitFor()
+  }
+  await usage.getByText('Fenêtre de 5 h').waitFor()
+  await usage.getByText('Hebdomadaire').waitFor()
+  await usage.screenshot({ path: join(shots, 'modale-consommation.png') })
   await page.keyboard.press('Escape')
 
   // Le tiroir au doigt : rien ne déborde sur la largeur.
