@@ -116,12 +116,13 @@ transversal appartient à la page qui montre déjà tous les projets — et de r
 projets leur pleine largeur, eux qui passaient au second plan dans une colonne de 22 rem
 à côté d'une liste de cartes.
 
-Les deux vues transversales ne disent pas la même chose, et c'est ce qui les sépare :
+Les trois vues transversales ne disent pas la même chose, et c'est ce qui les sépare :
 
 | vue | la question | le rangement |
 | --- | --- | --- |
 | **Board** | « où en est le chantier ? » | par **état** : quatre colonnes, cartes mêlées, pastille de projet |
 | **Travail** | « par quoi je m'y remets ? » | par **demande** : ce qui attend, ce qui est à relire, ce qui tourne |
+| **Journal** | « qu'est-ce qui s'est passé ? » | par **date** : un en-tête par jour, du plus récent au plus ancien |
 
 Le board global est en **cartes mêlées** et non en couloirs par projet : on surveille
 mieux par projet, mais un projet calme y occupe une bande vide et la hauteur double. Le
@@ -134,6 +135,39 @@ que sur une grille. L'œil descend une colonne et lit huit branches, là où une
 fait refaire le chemin dans chaque carte. La grille revient quand les éléments ne se
 comparent pas — ce qui est le cas des quatre tuiles du bandeau, qui disent quatre choses
 différentes.
+
+
+## Le Journal range par date, et sa colonne de droite est fixe
+
+Le *Journal* (F5 pour un projet, F11 pour le portefeuille) est la quatrième vue des deux
+rangées depuis le 2026-10-16. Il n'invente aucune matière : il rassemble sept sources qui
+existaient déjà et que rien ne mettait côte à côte — notes de carte, cartes ouvertes,
+cartes fermées, sessions, tirs planifiés, branches fusionnées, audits versés.
+
+Trois règles, et ce sont celles qu'on casse en y touchant :
+
+- **La colonne de droite est fixe** : provenance puis heure, au même endroit sur chaque
+  ligne. C'est elle qui rend la liste lisible de haut en bas quand sept natures se
+  mêlent — l'œil descend une colonne alignée au lieu de chercher l'heure derrière un
+  titre de longueur variable. Le libellé en petites capitales et le titre, eux, flottent :
+  mettre le libellé en colonne fixe creuserait une gouttière vide large comme
+  « TIR PLANIFIÉ ».
+- **Les filtres sont des pilules basses, jamais une seconde rangée d'onglets.** La rangée
+  du dessus porte les vues ; deux rangées de même forme feraient hésiter sur celle qu'on
+  est en train de régler. Une pilule sans ligne s'éteint mais ne part pas — à la
+  différence d'une tuile du bandeau, dont l'absence est l'information. Ici la place des
+  pilules doit être stable d'un rechargement à l'autre.
+- **Deux teintes seulement**, et elles ne sont pas décoratives : ce qui ferme un chantier
+  (*positive*) et ce qui a échoué (*caution*). Une teinte par source ferait un sapin de
+  Noël où plus rien ne ressort.
+
+La maquette montrait une pilule *Décisions* et une ligne `DÉCISION`. **Ni l'une ni
+l'autre n'existe**, et c'est une décision et non un reste : `card_notes.body` est un champ
+libre, et la carte #32 a refusé de lui donner un type le 2026-10-15 — un `kind` rempli au
+jugé par les agents étiquetterait tout « décision », et un tri auquel on ne peut pas se
+fier est pire qu'un tri absent. La ligne dit `NOTE`, la pilule dit *Notes* : même source,
+nom honnête. Une cinquième pilule, *Dépôt*, rassemble les deux sources qui ne sont pas en
+base ; sans elle, les fusions et les audits ne seraient joignables que par *Tout*.
 
 ## Au doigt
 

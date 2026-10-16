@@ -50,6 +50,7 @@ import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
 import { registerGitActionRoutes } from './routes/git-actions.js'
 import { registerGitViewRoutes } from './routes/git-views.js'
+import { registerJournalRoutes } from './routes/journal.js'
 import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerProjectRoutes } from './routes/projects.js'
@@ -197,6 +198,7 @@ export async function buildApp(
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerWorktreeRoutes(app, ctx, terminals)
   registerCardRoutes(app, ctx, attachments)
+  registerJournalRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)
   registerV1Routes(app, ctx, log, sessions, registry, webhooks)

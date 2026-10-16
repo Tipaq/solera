@@ -2496,6 +2496,41 @@ export const en = {
   'shell.overview.allProjects': 'All projects',
   'shell.threads.collapseFree': 'Collapse threads without a project',
   'shell.threads.expandFree': 'Expand threads without a project',
+
+  /* Le Journal (F5, F11) — carte #33. Un bloc, à un seul endroit : trois sessions
+     touchent ce catalogue en parallèle, et des clés dispersées feraient trois conflits
+     au lieu d'un, chacun à régler ligne à ligne. */
+  'project.view.journal': "Journal",
+  'portfolio.view.journal': "Journal",
+  'journal.filters': "Filter the journal",
+  'journal.filter.all': "All",
+  'journal.filter.notes': "Notes",
+  'journal.filter.cards': "Cards",
+  'journal.filter.sessions': "Sessions",
+  'journal.filter.repo': "Repository",
+  'journal.window': "{days} days",
+  'journal.today': "Today",
+  'journal.yesterday': "Yesterday",
+  'journal.kind.note': "Note",
+  'journal.kind.cardOpened': "Opened",
+  'journal.kind.cardClosed': "Closed",
+  'journal.kind.session': "Session",
+  'journal.kind.run': "Scheduled run",
+  'journal.kind.branch': "Branch",
+  'journal.kind.audit': "Audit",
+  'journal.card': "card #{number}",
+  'journal.task': "task",
+  'journal.sessions': "{count} session",
+  'journal.commits': "{count} commits",
+  'journal.run.running': "running",
+  'journal.run.succeeded': "verdict ok",
+  'journal.run.failed': "failed",
+  'journal.run.timed_out': "timed out",
+  'journal.run.skipped': "skipped",
+  'journal.empty': "Nothing happened here yet",
+  'journal.emptyFilter': "Nothing of that kind in this window",
+  'journal.emptyHint': "The journal gathers card notes, cards opened and closed, sessions, scheduled runs, merged branches and audits — over the last two weeks.",
+  'journal.repoIncomplete': "A project could not be read on disk: its merged branches and its audits are missing from this journal.",
 } as const
 
 /**

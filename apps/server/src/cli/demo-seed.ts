@@ -3,13 +3,14 @@ import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
-import type { SoleraEvent } from '@solera/protocol'
+import type { CardColumn, SoleraEvent } from '@solera/protocol'
 import {
   openDatabase,
   users,
   projects,
   worktrees,
   cards,
+  cardMoves,
   cardNotes,
   cardRefs,
   conversations,
@@ -252,6 +253,43 @@ export async function fetchForecast(city: string): Promise<Forecast> {
   git(root, 'init', '-b', 'main')
   git(root, 'add', '-A')
   gitAt(root, daysAgo(40), 'commit', '-m', 'Bootstrap Nimbus weather app')
+  seedJournalMaterial(root)
+}
+
+/**
+ * Les deux sources du Journal qui ne sont pas en base : une branche fusionnée et un
+ * audit versé.
+ *
+ * Elles sont dans la fixture parce qu'aucune autre ne peut les produire — Solera ne
+ * fusionne pas et ne verse pas d'audit, ces gestes se font au terminal. Sans elles, le
+ * Journal de la démo n'aurait que des lignes de base et la moitié de son argument
+ * manquerait à la capture.
+ *
+ * La branche est fusionnée **avant** que les worktrees soient créés sur `main` : ils en
+ * partent, et une fusion postérieure les laisserait en retard sans raison lisible.
+ */
+function seedJournalMaterial(root: string): void {
+  git(root, 'checkout', '-q', '-b', 'feat/city-search')
+  writeTree(root, {
+    'src/citySearch.ts': 'export function searchCities(query: string): string[] {\n  return []\n}\n',
+  })
+  git(root, 'add', '-A')
+  gitAt(root, daysAgo(3), 'commit', '-m', 'Add a city search box')
+  writeTree(root, { 'src/citySearch.test.ts': "import { searchCities } from './citySearch'\n" })
+  git(root, 'add', '-A')
+  gitAt(root, daysAgo(2), 'commit', '-m', 'Cover city search')
+  git(root, 'checkout', '-q', 'main')
+  gitAt(root, daysAgo(2), 'merge', '--no-ff', 'feat/city-search', '-m', "Merge branch 'feat/city-search'")
+
+  // Un audit daté par le jour que porte son nom, qui est la convention du dépôt et ce
+  // que le Journal lit : le `mtime` du dossier bougerait à chaque capture réécrite.
+  const day = new Date(daysAgo(1)).toISOString().slice(0, 10)
+  writeTree(root, {
+    [`docs/audits/${day}-offline-cache/README.md`]:
+      '# the offline fallback holds, the age badge does not\n',
+  })
+  git(root, 'add', '-A')
+  gitAt(root, daysAgo(1), 'commit', '-m', 'File the offline cache audit')
 }
 
 /** L'autre projet de la sidebar : un service backend, deux commits suffisent. */
@@ -514,6 +552,7 @@ async function main(): Promise<void> {
   await db.delete(events)
   await db.delete(permissionRequests)
   await db.delete(conversationReads)
+  await db.delete(cardMoves)
   await db.delete(cardNotes)
   await db.delete(cardRefs)
   await db.delete(conversations)
@@ -699,6 +738,28 @@ async function main(): Promise<void> {
   }
   // Le backlink de la description de la carte 10, qui cite #2.
   await db.insert(cardRefs).values({ sourceId: cardIds.get(10)!, targetId: cardIds.get(2)! })
+
+  /* Les mouvements de colonne, sans lesquels le Journal ne saurait pas **quand** une
+     carte a été terminée : `cards.updated_at` est réécrit par une correction de titre,
+     et la fixture le réécrit justement toutes à la même heure. Trois fermetures et une
+     mise en revue suffisent à montrer la ligne et son compte de sessions. */
+  const moveRows = [
+    { number: 5, from: 'in_progress', to: 'done', at: now - 2 * 86400e3 - 3000e3 },
+    { number: 8, from: 'review', to: 'done', at: now - 86400e3 - 600e3 },
+    { number: 9, from: 'todo', to: 'abandoned', at: now - 5 * 86400e3 },
+    { number: 4, from: 'in_progress', to: 'review', at: now - 4 * 3600e3 },
+  ] as const satisfies readonly { number: number; from: CardColumn; to: CardColumn; at: number }[]
+
+  await db.insert(cardMoves).values(
+    moveRows.map((move) => ({
+      id: randomUUID(),
+      cardId: cardIds.get(move.number)!,
+      fromColumn: move.from,
+      toColumn: move.to,
+      userId,
+      movedAt: move.at,
+    })),
+  )
 
   const atlasCardRows = [
     { number: 1, title: 'OpenAPI spec for /places', column: 'todo', position: 0, description: 'Publish the schema so Nimbus can generate its client.' },
@@ -1742,7 +1803,11 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
   let position = 0
   for (const seed of seeds) {
     const conversationId = randomUUID()
-    if (heroConversationId === null) heroConversationId = conversationId
+    /* Le fil du chantier en cours, et non le premier de la liste — qui se trouve être un
+       tir planifié. C'est lui qui signe la note de carte plus bas, et le Journal nomme
+       la session auteure dans sa colonne de droite : la mauvaise attribution s'y voyait
+       tout de suite, là où le panneau de carte ne la montrait pas. */
+    if (seed.cardId === cardIds.get(2)) heroConversationId = conversationId
     const start = now - seed.ageDays * 86400e3 - seed.spanSec * 1000
     const rows = seed.events.map((entry, index) => {
       const payload = JSON.stringify(entry.event)

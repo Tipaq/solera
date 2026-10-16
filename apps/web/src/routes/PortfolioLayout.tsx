@@ -1,4 +1,4 @@
-import { Flag, FolderPlus, Plus, SquareKanban, Target } from 'lucide-react'
+import { Flag, FolderPlus, History, Plus, SquareKanban, Target } from 'lucide-react'
 import { useMemo } from 'react'
 import { Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
@@ -65,6 +65,11 @@ export function PortfolioLayout() {
       to: '/projects/timeline',
       label: t('project.view.timeline'),
       icon: <Flag size={15} />,
+    },
+    {
+      to: '/projects/journal',
+      label: t('portfolio.view.journal'),
+      icon: <History size={15} />,
     },
   ]
 

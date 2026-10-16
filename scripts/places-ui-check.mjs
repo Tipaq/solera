@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 /*
- * Les trois pages de lieu : l'Aperçu d'un projet, Projets, Planifiées.
+ * Les pages de lieu : l'Aperçu d'un projet, Projets, Planifiées, et les deux Journaux.
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : que le bandeau du haut
  * dit ce qui réclame et **omet ce qui est à zéro**, que le board de l'Aperçu est bien
@@ -107,7 +107,7 @@ try {
   )
   // La rangée porte les vues, et l'Aperçu est la seule sans action propre.
   const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
-  for (const view of ['Aperçu', 'Board', 'Planifiées']) {
+  for (const view of ['Aperçu', 'Board', 'Planifiées', 'Journal']) {
     await row.getByRole('link', { name: new RegExp(`^${view}`) }).waitFor()
   }
   assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
@@ -279,6 +279,51 @@ try {
     'Le filtre Jalon ne laisse que les cartes rattachées',
   )
 
+  /*
+    Le Journal : sept sources mêlées, et c'est leur **alignement** qu'une relecture ne
+    verrait pas. Deux d'entre elles ne sont pas en base — une branche fusionnée se lit
+    dans git, un audit versé sur le disque — et rien dans le code ne garantit qu'elles
+    arrivent bien jusqu'à la page.
+  */
+  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  const filters = page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true })
+  await filters.waitFor()
+  // Les filtres sont des pilules, **pas** une seconde rangée d'onglets : il n'y a
+  // qu'une navigation dans la page, celle des vues.
+  assert.equal(
+    await page.getByRole('navigation').filter({ hasText: 'Tout' }).count(),
+    0,
+    'Les filtres du journal ne sont pas une seconde rangée d’onglets',
+  )
+  // Pas de ligne « Décision » : `card_notes.body` est libre, la carte #32 a refusé le type.
+  for (const absent of ['Décision', 'Décisions']) {
+    assert.equal(
+      await page.getByText(absent, { exact: true }).count(),
+      0,
+      `Le journal n’écrit pas « ${absent} » : rien ne distingue une note d’une décision`,
+    )
+  }
+  // Les deux sources hors base sont là, donc la route a bien lu git et le disque.
+  await page.getByText('feat/city-search', { exact: true }).waitFor()
+  await page.getByText(/docs\/audits\/.*offline-cache/).waitFor()
+  await page.getByText(/^Aujourd.hui$/).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
+
+  // Une pilule filtre vraiment : *Dépôt* ne garde que la fusion et l'audit.
+  await filters.getByRole('radio', { name: 'Dépôt', exact: true }).click()
+  await page.waitForFunction(() => document.querySelectorAll('li').length > 0)
+  assert.equal(
+    await page.getByText('Session', { exact: true }).count(),
+    0,
+    'Le filtre « Dépôt » ne garde que ce qui se lit dans le dossier du projet',
+  )
+
+  // Le même journal au portefeuille, où chaque ligne porte la pastille de son projet.
+  await page.goto(`${base}/projects/journal`)
+  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.getByText('feat/city-search', { exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-journal.png') })
+
   // ─── La page Planifiées ───────────────────────────────────────────────────
   await page.goto(`${base}/schedules`)
   for (const header of ['Tâche', 'Cible', 'Fréquence', 'Prochaine', 'Dernier']) {
@@ -308,6 +353,11 @@ try {
   await page.goto(`${base}/projects`)
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
+  // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
+  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.waitForTimeout(300)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-mobile.png') })
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${nimbus.id}`)
@@ -316,9 +366,13 @@ try {
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
+  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Travail et les deux chronologies, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Travail, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

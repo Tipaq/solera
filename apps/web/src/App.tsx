@@ -12,9 +12,11 @@ import { ServicesPage } from './routes/ServicesPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
 import { PortfolioBoardPage } from './routes/PortfolioBoardPage'
+import { PortfolioJournalPage } from './routes/PortfolioJournalPage'
 import { PortfolioLayout } from './routes/PortfolioLayout'
 import { PortfolioTimelinePage } from './routes/PortfolioTimelinePage'
 import { PortfolioWorkPage } from './routes/PortfolioWorkPage'
+import { ProjectJournalPage } from './routes/ProjectJournalPage'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
 import { ProjectTimelinePage } from './routes/ProjectTimelinePage'
@@ -114,6 +116,7 @@ export function App() {
             <Route path="board" element={<PortfolioBoardPage />} />
             <Route path="work" element={<PortfolioWorkPage />} />
             <Route path="timeline" element={<PortfolioTimelinePage />} />
+            <Route path="journal" element={<PortfolioJournalPage />} />
           </Route>
           <Route path="/schedules" element={<SchedulesPage />} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
@@ -132,6 +135,7 @@ export function App() {
             <Route path="board" element={<BoardPage />} />
             <Route path="schedules" element={<SchedulePage />} />
             <Route path="timeline" element={<ProjectTimelinePage />} />
+            <Route path="journal" element={<ProjectJournalPage />} />
           </Route>
           <Route path="/p/:projectId/settings" element={<ProjectPage />} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}

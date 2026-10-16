@@ -2,6 +2,7 @@ import {
   CalendarClock,
   Flag,
   GitBranch,
+  History,
   MoreHorizontal,
   Palette,
   Plus,
@@ -106,9 +107,15 @@ export function ProjectLayout() {
       label: t('project.view.timeline'),
       icon: <Flag size={15} />,
     },
-    /* Pas encore d'onglet *Journal* : il agrège base, git et disque, donc une route
-       serveur, et c'est la carte #33. Un onglet qui mène à une page vide est pire que
-       son absence — il promet une vue et rend une erreur. */
+    {
+      to: `/p/${projectId}/journal`,
+      label: t('project.view.journal'),
+      icon: <History size={15} />,
+      /* Sans compteur, et c'est voulu : un journal n'a pas de reste à faire. Le nombre
+         de lignes des quinze derniers jours dirait l'inventaire que le gabarit interdit
+         au bandeau, et coûterait de surcroît un `git log` par projet rien que pour
+         dessiner la rangée. */
+    },
   ]
 
   /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */
