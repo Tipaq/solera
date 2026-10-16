@@ -131,6 +131,24 @@ const skillLibrarySchema = z.boolean().default(true)
 const projectFilingSchema = z.boolean().default(false)
 
 /**
+ * Ouvre à l'agent `request_card_move` : proposer le déplacement d'une ou plusieurs
+ * cartes du board, en disant pourquoi.
+ *
+ * **Faux par défaut**, comme `projectFiling` : c'est une portée qu'on accorde. Le critère
+ * la retient parce que la colonne d'une carte est un choix qu'une personne a posé, et
+ * qu'un agent qui le défait se donnerait un satisfecit. Une seule carte dans la famille
+ * aujourd'hui, et ce n'est pas un argument — voir le critère plus haut. Vetoable pour
+ * l'instance dans `config.toml`, où `[mcp] card_filing = false` fait aussi disparaître
+ * l'entrée de l'interface.
+ *
+ * L'outil **ne déplace rien** : il dépose une demande que l'utilisateur accorde d'un
+ * clic, et c'est le clic qui écrit `card_moves` au nom de la personne. C'est ce qui
+ * permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait l'acte,
+ * pas la proposition.
+ */
+const cardFilingSchema = z.boolean().default(false)
+
+/**
  * Fait attendre la fin du tour aux messages envoyés pendant qu'il tourne, au lieu de
  * les y pousser.
  *
@@ -157,6 +175,7 @@ export const claudeConfigSchema = z.object({
   soleraMcp: soleraMcpSchema,
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
   /**
@@ -301,6 +320,7 @@ export const codexConfigSchema = z.object({
   soleraMcp: soleraMcpSchema,
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -350,6 +370,7 @@ export const opencodeConfigSchema = z.object({
   soleraMcp: soleraMcpSchema,
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
+  cardFiling: cardFilingSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -381,6 +402,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
   strictMcp: false,
@@ -406,6 +428,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }
@@ -423,6 +446,7 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
+  cardFiling: false,
   skillLibrary: true,
   queueMessages: false,
 }

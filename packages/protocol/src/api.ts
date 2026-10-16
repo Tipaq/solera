@@ -1195,6 +1195,8 @@ export interface McpServerListDto {
   agentMemory: boolean
   /** Faux quand l'instance refuse les outils de rangement : l'entrée disparaît. */
   projectFiling: boolean
+  /** Faux quand l'instance refuse aux agents de proposer un rangement de carte. */
+  cardFiling: boolean
 }
 
 // Erreurs

@@ -850,6 +850,32 @@ export class EventLog {
   }
 
   /**
+   * La proposition de déplacement de cartes, telle que le journal la porte.
+   *
+   * Même raison que `openFiling`, et le même découpage d'autorité : la ligne
+   * `agent_requests` dit si la demande attend encore, le journal dit ce que la personne a
+   * sous les yeux — les cartes, les colonnes visées et les raisons. Les colonnes de
+   * départ, elles, sont relues en base au clic : la carte a pu bouger depuis.
+   */
+  openCardFiling(
+    conversationId: string,
+    requestId: string,
+  ): Extract<SoleraEvent, { type: 'card_filing.requested' }> | null {
+    const rows = this.db
+      .select({ seq: events.seq, payload: events.payload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.type, 'card_filing.requested')))
+      .orderBy(asc(events.seq))
+      .all()
+
+    for (const row of rows) {
+      const event = this.parseStored(row.seq, row.payload)
+      if (event.type === 'card_filing.requested' && event.requestId === requestId) return event
+    }
+    return null
+  }
+
+  /**
    * Les événements sont validés à la relecture, pas seulement castés.
    *
    * C'est ce qui applique les valeurs par défaut du schéma aux entrées écrites avant

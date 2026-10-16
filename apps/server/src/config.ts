@@ -83,6 +83,15 @@ const configSchema = z.object({
        * disparaît aussi de l'interface, par le même raisonnement que `soleraServer`.
        */
       projectFiling: z.boolean().default(false),
+      /**
+       * Laisse les agents proposer le déplacement d'une carte du board
+       * (`request_card_move`), que l'utilisateur accorde d'un clic.
+       *
+       * Faux par défaut comme le réglage de conversation qu'il chapeaute. À faux,
+       * l'entrée disparaît aussi de l'interface, par le même raisonnement que
+       * `soleraServer`.
+       */
+      cardFiling: z.boolean().default(false),
     })
     .default({}),
   vault: z

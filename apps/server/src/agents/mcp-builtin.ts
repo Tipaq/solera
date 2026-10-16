@@ -76,6 +76,14 @@ export interface BuiltinMcpParams {
    * seule autorité ; ici, c'est ce qui décide si les outils apparaissent du tout.
    */
   projectFiling: boolean
+  /**
+   * Ouvre `request_card_move` : proposer le déplacement d'une carte du board.
+   *
+   * Sa propre portée et non une part de `projectFiling`, parce que les deux ne parlent
+   * pas de la même chose : l'un agit au-dessus du projet, l'autre défait un choix qu'une
+   * personne a posé dedans. Voir le critère en tête de `agent-config.ts`.
+   */
+  cardFiling: boolean
 }
 
 /**
@@ -90,8 +98,16 @@ export function builtinMcpEnabled(enabled: boolean, config: AgentConfig): boolea
 }
 
 export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
-  const { enabled, config, databasePath, projectId, conversationId, memoryDir, projectFiling } =
-    params
+  const {
+    enabled,
+    config,
+    databasePath,
+    projectId,
+    conversationId,
+    memoryDir,
+    projectFiling,
+    cardFiling,
+  } = params
   if (!builtinMcpEnabled(enabled, config)) return null
 
   return {
@@ -116,6 +132,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SOLERA_MCP_CONVERSATION: conversationId,
         SOLERA_MCP_MEMORY: memoryDir,
         ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
+        ...(cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
       },
     },
     createdAt: 0,

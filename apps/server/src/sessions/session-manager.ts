@@ -774,6 +774,7 @@ export class SessionManager {
           // trois outils `*_memory` de son catalogue.
           memoryDir: memoryDir(current) ?? '',
           projectFiling: this.config.mcp.projectFiling && current.projectFiling,
+          cardFiling: this.config.mcp.cardFiling && current.cardFiling,
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },
@@ -815,6 +816,7 @@ export class SessionManager {
                 projectId,
                 conversationId,
                 soleraMcp,
+                cardFiling: soleraMcp && this.config.mcp.cardFiling && current.cardFiling,
               })
             : null,
         ].filter((part) => part !== null)

@@ -396,7 +396,7 @@ export const sessionWatches = sqliteTable(
 
 /**
  * Une demande qu'une session adresse au daemon : lancer une autre session, créer une
- * carte, lire le catalogue des modèles.
+ * carte, lire le catalogue des modèles, proposer un rangement.
  *
  * Même boîte aux lettres que `session_messages`, mais avec retour : le serveur MCP
  * dépose la demande puis attend que le daemon y écrive son résultat, parce que
@@ -430,6 +430,7 @@ export const agentRequests = sqliteTable(
         'schedule_task',
         'create_project',
         'move_conversation',
+        'request_card_move',
       ],
     }).notNull(),
     /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
@@ -443,11 +444,18 @@ export const agentRequests = sqliteTable(
     /** Session née de la demande, pour remonter une chaîne de lancements. */
     launchedConversationId: text('launched_conversation_id'),
     /**
-     * Quand l'utilisateur a accordé le rangement demandé par `move_conversation`.
+     * Quand l'utilisateur a accordé un rangement — celui d'une conversation
+     * (`move_conversation`) ou celui d'une ou plusieurs cartes (`request_card_move`).
      *
-     * La promesse vit dans la ligne et non en mémoire : un déplacement accepté doit
-     * survivre au redémarrage du serveur, là où un runner, lui, ne survit pas. C'est le
-     * balayage du daemon qui l'applique, dès que la conversation se tait.
+     * Pour une conversation, la promesse vit dans la ligne et non en mémoire : un
+     * déplacement accepté doit survivre au redémarrage du serveur, là où un runner, lui,
+     * ne survit pas. C'est le balayage du daemon qui l'applique, dès que la conversation
+     * se tait.
+     *
+     * Un rangement de cartes, lui, est appliqué par le clic même : il n'a pas de runner
+     * à relâcher ni de tour à attendre, et les lignes `card_moves` s'écrivent dans la
+     * transaction de la route. La date reste posée, pour dire **quand** la personne a
+     * accordé, mais `resolved_at` la suit du même instant.
      */
     acceptedAt: timestamp('accepted_at'),
     /**
@@ -465,8 +473,10 @@ export const agentRequests = sqliteTable(
     index('idx_agent_requests_pending').on(t.settledAt),
     index('idx_agent_requests_from').on(t.conversationId, t.kind, t.createdAt),
     index('idx_agent_requests_launched').on(t.launchedConversationId),
-    // Les rangements accordés que le balayage cherche toutes les demi-secondes. Seules
-    // les demandes de rangement posent cette date : l'index ne porte donc qu'elles.
+    // Les rangements de conversation accordés, que le balayage cherche toutes les
+    // demi-secondes. Seules les demandes de rangement posent cette date : l'index ne
+    // porte donc qu'elles, et le balayage filtre encore sur le genre — un rangement de
+    // carte est déjà appliqué quand sa date arrive.
     index('idx_agent_requests_accepted').on(t.acceptedAt),
   ],
 )

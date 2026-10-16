@@ -153,9 +153,9 @@ test('« les fils de ce projet » comprend le groupe des fils libres', async (t)
 test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en parle pas', async (t) => {
   const { dir } = await harness(t)
 
-  const list = (projectId: string, memory = join(dir, 'memory')) => {
+  const list = (projectId: string, memory = join(dir, 'memory'), env: Record<string, string> = {}) => {
     const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free', SOLERA_MCP_MEMORY: memory },
+      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free', SOLERA_MCP_MEMORY: memory, ...env },
       encoding: 'utf8', timeout: 10000,
       input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
     })
@@ -194,6 +194,14 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
     assert.ok(!scopedWithoutMemory.includes(tool), tool)
   }
+
+  // `request_card_move` est la troisième famille, et le seul outil qu'un fil libre ne
+  // voit **jamais**, accordé ou non : une carte appartient à un projet, il n'y aurait
+  // rien à désigner. C'est pourquoi il n'entre pas dans `FREE_THREAD_TOOLS`.
+  const granted = { SOLERA_MCP_CARD_FILING: '1' }
+  assert.ok(list('private', undefined, granted).some((tool) => tool.name === 'request_card_move'))
+  assert.ok(!scoped.includes('request_card_move'))
+  assert.ok(!list('', undefined, granted).some((tool) => tool.name === 'request_card_move'))
 })
 
 test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux côtés', async (t) => {

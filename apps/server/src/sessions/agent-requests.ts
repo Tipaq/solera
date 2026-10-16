@@ -23,6 +23,7 @@ import {
   MIN_SCHEDULE_DURATION_MINUTES,
   agentConfigSchema,
   agentKindSchema,
+  cardColumnSchema,
   defaultConfigFor,
   formatSessionMessage,
   parseAgentConfig,
@@ -32,6 +33,7 @@ import {
   type AgentConfig,
   type AgentKind,
   type AgentModelDto,
+  type CardColumn,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
@@ -51,18 +53,24 @@ import type { SessionManager } from './session-manager.js'
 /**
  * Traite les demandes que les sessions adressent au daemon par le serveur MCP :
  * lancer une autre session, créer une carte, planifier une tâche, lire le catalogue des
- * modèles, déclarer un projet, demander le rangement d'une conversation.
+ * modèles, déclarer un projet, demander le rangement d'une conversation ou celui de
+ * cartes du board.
  *
  * Le serveur MCP n'a que la base. Il dépose la demande et attend que ce balayage y
  * écrive le résultat ; plus court que celui du relais, parce qu'ici un agent est
  * suspendu à la réponse.
  *
- * Le rangement fait exception à ce rythme : l'agent apprend tout de suite que sa demande
- * est déposée, et c'est un clic, plus tard, qui l'accorde. La promesse vit alors dans la
- * ligne (`accepted_at`) et non en mémoire, pour survivre à un redémarrage du serveur, et
- * c'est ce même balayage qui l'applique — il tente, et le refus de `releaseRunner`
- * devient la condition de réessai : le déplacement a lieu dès que la conversation se
- * tait.
+ * Les deux rangements font exception à ce rythme : l'agent apprend tout de suite que sa
+ * demande est déposée, et c'est un clic, plus tard, qui l'accorde.
+ *
+ * Pour une **conversation**, la promesse vit alors dans la ligne (`accepted_at`) et non
+ * en mémoire, pour survivre à un redémarrage du serveur, et c'est ce même balayage qui
+ * l'applique — il tente, et le refus de `releaseRunner` devient la condition de réessai :
+ * le déplacement a lieu dès que la conversation se tait.
+ *
+ * Pour des **cartes**, rien à attendre ni à relâcher : le clic applique lui-même, dans
+ * une transaction, et ce balayage ne revoit jamais la demande. C'est le seul écart de
+ * fond entre les deux, et il vient de ce qu'une carte n'héberge aucun process.
  *
  * Toutes les réponses sont du texte rédigé pour le modèle, en français comme le reste
  * des outils : c'est lui qui les lit, et une erreur doit lui dire quoi corriger.
@@ -112,12 +120,35 @@ export const MAX_AGENT_SCHEDULES_PER_PROJECT = 20
  */
 export const PROJECTS_PER_HOUR = 1
 
+/**
+ * Cartes qu'une seule demande de déplacement peut porter. Doit rester d'accord avec
+ * `MAX_CARD_MOVES` de `apps/server/src/mcp/solera-mcp.mjs`, qui le dit à l'agent.
+ *
+ * Une liste existe pour le cas qui a ouvert la carte #54 — treize cartes finies restées
+ * en « en cours » — et vingt le couvre largement. Au-delà, ce n'est plus une proposition
+ * qu'une personne relit avant de cliquer.
+ */
+export const MAX_CARD_MOVES = 20
+
+/** Au-delà, la raison n'est plus une phrase et la demande ne se lit plus d'un coup. */
+export const MAX_CARD_MOVE_REASON_CHARS = 500
+
+/** Les colonnes en toutes lettres, pour le texte rendu à l'agent. */
+const COLUMN_WORDS: Record<CardColumn, string> = {
+  todo: 'à faire',
+  in_progress: 'en cours',
+  review: 'à vérifier',
+  done: 'terminé',
+  abandoned: 'abandonné',
+}
+
 /** Les genres dont le résultat change une liste de l'interface. */
 const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'start_session',
   'create_card',
   'create_project',
   'move_conversation',
+  'request_card_move',
 ])
 
 /**
@@ -237,6 +268,13 @@ export class AgentRequests {
       }
 
       const project = this.requireProject(request.projectId)
+      // Après `requireProject`, à la différence des trois ci-dessus : une carte
+      // appartient à un projet, et un fil libre n'a aucun board à proposer de ranger.
+      // C'est aussi pourquoi `request_card_move` n'entre pas dans `FREE_THREAD_TOOLS`.
+      if (request.kind === 'request_card_move') {
+        this.settle(request, this.requestCardMove(request, requester, project, payload), false)
+        return
+      }
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request, text, false, launchedId)
@@ -251,7 +289,9 @@ export class AgentRequests {
       }
       // Un rangement refusé d'entrée n'attend plus rien : sans cette clôture il tiendrait
       // indéfiniment la place de l'unique demande en attente de la conversation.
-      if (request.kind === 'move_conversation') this.closeFiling(request.id)
+      if (request.kind === 'move_conversation' || request.kind === 'request_card_move') {
+        this.closeFiling(request.id)
+      }
       this.settle(request, describeError(err), true)
     }
   }
@@ -1030,6 +1070,158 @@ export class AgentRequests {
     if (!parseAgentConfig(requester.config).projectFiling) {
       throw new Refusal(
         "Refusé : le rangement de projet n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
+      )
+    }
+  }
+
+  // --- request_card_move ---------------------------------------------------------
+
+  /**
+   * Dépose une proposition de déplacement de cartes, et ne déplace rien.
+   *
+   * Même motif que `move_conversation`, avec les écarts que #54 arbitre : plusieurs
+   * cartes par demande, une raison obligatoire par carte, toutes les colonnes permises, et
+   * c'est le **propriétaire du projet** qui accorde. L'invariant « une en attente à la
+   * fois » porte, lui, sur la conversation demandeuse, comme pour une conversation : tant
+   * que l'utilisateur n'a pas répondu, l'agent n'a rien à ajouter.
+   *
+   * Pas de borne horaire par-dessus l'invariant : rien ne s'applique sans clic, donc une
+   * boucle d'erreur ne produit qu'une demande, celle qui attend déjà.
+   */
+  private requestCardMove(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    project: ProjectRow,
+    payload: Record<string, unknown>,
+  ): string {
+    this.assertCardFilingAllowed(requester)
+
+    const moves = Array.isArray(payload.moves) ? payload.moves : null
+    if (!moves || moves.length === 0) {
+      throw new Refusal('Le paramètre `moves` est requis : au moins un {card, column, reason}.')
+    }
+    if (moves.length > MAX_CARD_MOVES) {
+      throw new Refusal(
+        `Trop de cartes dans une demande (${moves.length}, ${MAX_CARD_MOVES} au plus). Garde ce qui se décide ensemble.`,
+      )
+    }
+
+    // Une seule demande de rangement de carte en attente par conversation demandeuse.
+    // Compté à part de `move_conversation` : les deux ne se disputent pas la place, ce
+    // sont deux conversations différentes qui les lisent et deux objets différents.
+    const waiting = this.ctx.db
+      .select({ id: agentRequests.id })
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.kind, 'request_card_move'),
+          eq(agentRequests.conversationId, requester.id),
+          isNull(agentRequests.resolvedAt),
+          ne(agentRequests.id, request.id),
+        ),
+      )
+      .get()
+    if (waiting) {
+      throw new Refusal(
+        "Refusé : cette session a déjà une proposition de rangement de carte en attente. Attends que l'utilisateur y réponde.",
+      )
+    }
+
+    const seen = new Set<number>()
+    const proposed: {
+      cardId: string
+      number: number
+      title: string
+      fromColumn: CardColumn
+      toColumn: CardColumn
+      reason: string
+    }[] = []
+
+    for (const raw of moves) {
+      const move = raw as { card?: unknown; column?: unknown; reason?: unknown }
+      if (!Number.isInteger(move.card)) {
+        throw new Refusal('Chaque déplacement veut un `card` entier : le numéro de la carte, sans le `#`.')
+      }
+      const number = move.card as number
+      // Deux lignes sur la même carte feraient deux mouvements contradictoires dans la
+      // même transaction, et l'utilisateur ne saurait pas lequel il accorde.
+      if (seen.has(number)) throw new Refusal(`La carte #${number} apparaît deux fois dans la même demande.`)
+      seen.add(number)
+
+      const column = cardColumnSchema.safeParse(move.column)
+      if (!column.success) {
+        throw new Refusal(
+          `Colonne inconnue pour #${number} : ${cardColumnSchema.options.join(', ')}.`,
+        )
+      }
+      // Obligatoire, et c'est le seul écart de forme avec `move_conversation` : son prix
+      // à lui se calcule tout seul, là où une carte ne se range que sur un constat.
+      const reason = typeof move.reason === 'string' ? move.reason.trim() : ''
+      if (!reason) {
+        throw new Refusal(
+          `Le champ \`reason\` est requis pour #${number} : dis ce que tu as constaté, en une phrase. Une demande sans raison n'est pas une proposition.`,
+        )
+      }
+
+      const card = this.ctx.db
+        .select({ id: cards.id, title: cards.title, column: cards.column })
+        .from(cards)
+        .where(and(eq(cards.projectId, project.id), eq(cards.number, number)))
+        .get()
+      if (!card) throw new Refusal(`Aucune carte #${number} dans ce projet. list_cards donne les numéros.`)
+      if (card.column === column.data) {
+        throw new Refusal(
+          `La carte #${number} est déjà en « ${COLUMN_WORDS[column.data]} ». Retire-la de la demande.`,
+        )
+      }
+
+      proposed.push({
+        cardId: card.id,
+        number,
+        title: card.title,
+        fromColumn: card.column,
+        toColumn: column.data,
+        reason: reason.slice(0, MAX_CARD_MOVE_REASON_CHARS),
+      })
+    }
+
+    // Dans le journal de la conversation qui demande, et non dans un fil par carte : une
+    // carte n'a pas de fil à elle. C'est pourtant le propriétaire du projet qui accordera.
+    this.log.append(requester.id, {
+      type: 'card_filing.requested',
+      requestId: request.id,
+      cards: proposed,
+    })
+    this.notifyLists(requester.id)
+
+    const lines = [
+      proposed.length === 1
+        ? `Demande déposée : déplacer #${proposed[0]!.number} vers « ${COLUMN_WORDS[proposed[0]!.toColumn]} ».`
+        : `Demande déposée : déplacer ${proposed.length} cartes (${proposed.map((move) => `#${move.number} → ${COLUMN_WORDS[move.toColumn]}`).join(', ')}).`,
+      "Elle attend un clic dans cette conversation, et rien n'est déplacé avant. C'est le propriétaire du projet qui tranche, et le mouvement sera inscrit à son nom.",
+      proposed.length === 1
+        ? 'Accordée ou refusée, tu le liras dans ce fil.'
+        : 'Un seul clic accorde la liste entière, ou la refuse entière.',
+      "N'en redépose pas : une seule proposition de rangement de carte peut attendre à la fois.",
+    ]
+    return lines.join('\n')
+  }
+
+  /**
+   * `request_card_move` est une portée accordée, pas une capacité par défaut.
+   *
+   * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
+   * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
+   */
+  private assertCardFilingAllowed(requester: ConversationRow): void {
+    if (!this.ctx.config.mcp.cardFiling) {
+      throw new Refusal(
+        "Refusé : cette instance de Solera n'ouvre pas le rangement de carte aux agents (`[mcp] card_filing` dans config.toml).",
+      )
+    }
+    if (!parseAgentConfig(requester.config).cardFiling) {
+      throw new Refusal(
+        "Refusé : le rangement de carte n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
       )
     }
   }
