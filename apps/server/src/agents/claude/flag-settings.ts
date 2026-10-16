@@ -15,8 +15,9 @@ import type { ClaudeConfig } from '@solera/protocol'
  * Les règles `deny` de la bibliothèque de skills n'y sont posées qu'au lancement, comme
  * le masque des consignes du dépôt quand le projet tient les siennes dans SOLERA.md et
  * le dossier de mémoire. `applyFlagSettings` ne retire que les clés qu'on lui passe à
- * `null` : ne jamais nommer `permissions`, `claudeMdExcludes` ni `autoMemoryDirectory`
- * à chaud suffit à les garder.
+ * `null` : ne jamais nommer `permissions`, `claudeMdExcludes`, `autoMemoryDirectory` ni
+ * `autoMemoryEnabled` à chaud suffit à les garder. Décocher la mémoire sous un runner
+ * lancé attend donc sa relance, comme la bibliothèque de skills.
  */
 export function flagSettings(
   config: ClaudeConfig,
@@ -33,7 +34,19 @@ export function flagSettings(
     ...(excludes.length > 0 ? { claudeMdExcludes: excludes } : {}),
     // La mémoire automatique de Claude, rangée chez Solera pour que Codex la partage et
     // que l'interface la montre. Claude l'écrit comme la sienne, sans permission.
-    ...(memoryDir ? { autoMemoryDirectory: memoryDir } : {}),
+    //
+    // Sans dossier, la mémoire est *éteinte* et non laissée à son défaut : omettre la
+    // seule clé de chemin renverrait Claude à `~/.claude/projects/<cwd>/memory`, qu'il
+    // écrit tout aussi volontiers mais que personne ne voit ni ne partage — la case
+    // « Mémoire » décochée aurait menti. `autoMemoryEnabled: false` lui retire le
+    // dossier sans repli : sondé sur Claude Code 2.1.291, plus aucun chemin de mémoire
+    // n'apparaît dans la session, et la question « as-tu un dossier de mémoire » reçoit
+    // « non » pour réponse. C'est ce qui a permis d'écrire « Mémoire » plutôt que
+    // « Mémoire partagée », et de dire la même phrase pour les trois CLI.
+    //
+    // Les sondes passent null elles aussi, et gardent donc la mémoire du poste éteinte
+    // plutôt que celle-ci : ce qu'elles vérifient ne la regarde pas.
+    ...(memoryDir ? { autoMemoryDirectory: memoryDir } : { autoMemoryEnabled: false }),
   }
 }
 

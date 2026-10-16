@@ -96,6 +96,13 @@ partagé par tous les CLI et par tous les worktrees du projet.
   chaque message, dans son prompt système, et il écrit par les mêmes outils MCP.
 - **Interface** : une carte « Mémoire » sur la page du projet liste les notes, les ouvre
   en édition et les supprime avec leur ligne d'index.
+- **Autorisation** : la mémoire est une famille à part (`agentMemory`), accordée par
+  défaut et refusable aux quatre étages — conversation, préréglage de projet, défaut de
+  compte, `[mcp] agent_memory` dans `config.toml`. Refusée, elle est *éteinte* et pas
+  seulement démontée : les trois outils MCP disparaissent de `tools/list`, l'index n'est
+  plus injecté à Codex et à opencode, et Claude reçoit `autoMemoryEnabled: false`, ce qui
+  lui retire son dossier sans le renvoyer à celui qu'il tient d'habitude (sondé sur
+  Claude Code 2.1.291). C'est ce qui permet à la case de s'appeler « Mémoire » tout court.
 
 Au premier lancement, la mémoire que Claude tenait pour la racine du workspace est
 copiée dans le dossier encore vide, une seule fois (trace `.imported-from.json`).

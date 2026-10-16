@@ -2197,6 +2197,13 @@ export const fr: Catalog = {
   'skills.project.repo.title': "Dans le dépôt",
   'skills.project.repo.hint': "Chaque dossier est lu directement par certains CLI, pas tous. « Ajouter un skill → Depuis cette machine » les reprend pour tous.",
   'composer.setting.skillLibrary': "Bibliothèque de skills",
+  'composer.setting.agentMemory': 'Mémoire',
+  'composer.agentMemory.on': 'Partagée',
+  'composer.agentMemory.on.hint':
+    "L'agent lit et écrit la mémoire de Solera, que les sessions suivantes reliront quel que soit leur CLI",
+  'composer.agentMemory.off': 'Éteinte',
+  'composer.agentMemory.off.hint':
+    "Cette session ne retient rien pour les suivantes, et ne lit pas ce qu'elles ont retenu",
   'composer.setting.projectFiling': 'Rangement de projet',
   'composer.projectFiling.off': 'Refusé',
   'composer.projectFiling.off.hint': "L'agent ne peut ni déclarer un projet ni demander de rangement",

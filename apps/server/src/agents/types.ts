@@ -98,8 +98,14 @@ export interface RunnerContext {
    * Dossier de mémoire du projet, que Claude reçoit en `autoMemoryDirectory` à la place
    * du sien. Créé au retour ; null pour les sondes, qui gardent la mémoire du poste.
    * Codex le reçoit par `projectOverview`.
+   *
+   * Null aussi quand la famille `agentMemory` est refusée, et le runner Claude doit
+   * alors poser `autoMemoryEnabled: false` : omettre le dossier le renverrait au sien,
+   * invisible et non partagé, là où la case promet une mémoire éteinte. Prend la
+   * configuration pour la même raison que `resolveMcpServers` et `skillRoots` :
+   * l'interrupteur change à chaud, sous un runner déjà lancé.
    */
-  memoryDir(): string | null
+  memoryDir(config: AgentConfig): string | null
   /**
    * Racines de plugin de la bibliothèque de skills à livrer : la globale, puis celle du
    * projet. Vide quand la bibliothèque est coupée pour l'instance ou pour la

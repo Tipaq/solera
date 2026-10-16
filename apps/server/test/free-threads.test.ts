@@ -153,9 +153,9 @@ test('« les fils de ce projet » comprend le groupe des fils libres', async (t)
 test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en parle pas', async (t) => {
   const { dir } = await harness(t)
 
-  const list = (projectId: string) => {
+  const list = (projectId: string, memory = join(dir, 'memory')) => {
     const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free' },
+      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free', SOLERA_MCP_MEMORY: memory },
       encoding: 'utf8', timeout: 10000,
       input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
     })
@@ -181,6 +181,19 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   // globale, et le paramètre ne lui proposerait qu'une branche toujours refusée.
   const read = free.find((tool) => tool.name === 'read_instructions')!
   assert.deepEqual(Object.keys(read.inputSchema.properties), [])
+
+  // La famille « Mémoire » refusée arrive ici en dossier vide, et retire les trois
+  // outils du catalogue au lieu de les laisser refuser à l'appel. Dans un fil libre il
+  // n'en reste alors que SOLERA.md : c'est le cas où les deux filtres se cumulent.
+  assert.deepEqual(
+    list('', '').map((tool) => tool.name).sort(),
+    ['edit_instructions', 'read_instructions', 'write_instructions'],
+  )
+  const scopedWithoutMemory = list('private', '').map((tool) => tool.name)
+  assert.equal(scopedWithoutMemory.length, 20)
+  for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
+    assert.ok(!scopedWithoutMemory.includes(tool), tool)
+  }
 })
 
 test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux côtés', async (t) => {

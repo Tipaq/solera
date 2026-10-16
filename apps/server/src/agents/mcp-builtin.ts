@@ -14,6 +14,11 @@ import { BUILTIN_MCP_SERVER_NAME, type AgentConfig, type McpServer } from '@sole
  * Activé par défaut, désactivable à trois niveaux : la conversation, pour le temps d'un
  * sujet ; le défaut des nouvelles conversations, dans les réglages ; l'instance entière,
  * dans `config.toml`, pour qui ne veut de Solera qu'une interface aux CLI.
+ *
+ * Les familles d'autorisation se découpent *dans* ce serveur et arrivent ici en portées
+ * — un dossier de mémoire vide, un drapeau de rangement — jamais en liste d'outils :
+ * c'est le `.mjs` qui tient son catalogue. Le critère d'ouverture d'une famille est
+ * écrit en tête de `packages/protocol/src/agent-config.ts`.
  */
 
 /** Identifiant distinct de ceux du registre, qui sont des UUID. */
@@ -53,7 +58,15 @@ export interface BuiltinMcpParams {
    */
   projectId: string | null
   conversationId: string
-  /** Dossier de mémoire, du projet ou du compte, où `write_memory` écrit pour Codex. */
+  /**
+   * Dossier de mémoire, du projet ou du compte, où `write_memory` écrit pour Codex.
+   *
+   * **Vide quand la famille `agentMemory` est refusée**, et c'est ce vide qui coupe :
+   * le `.mjs` retire alors les trois outils `*_memory` de son catalogue, comme il
+   * retire ceux du rangement. Un seul signal pour les deux moitiés de l'interrupteur —
+   * la liste des outils et le dossier où ils écriraient — plutôt qu'un booléen de plus
+   * à tenir d'accord avec un chemin.
+   */
   memoryDir: string
   /**
    * Ouvre les deux outils de rangement (`create_project`, `move_conversation`).

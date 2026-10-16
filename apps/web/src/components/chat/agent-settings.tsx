@@ -153,6 +153,26 @@ function skillLibraryOptions(t: Translate): SettingChoice<LibraryChoice>[] {
 const libraryChoice = (enabled: boolean): LibraryChoice => (enabled ? 'on' : 'off')
 
 /**
+ * La mémoire de Solera, prêtée ou non à la session.
+ *
+ * Accordée en premier et sans ton de mise en garde, à la différence du rangement : c'est
+ * une capacité qu'on retire pour le sujet qu'on ne veut pas voir orienter les suivants,
+ * pas une portée qu'on accorde. « Éteinte » et non « Démontée » parce que c'est vrai des
+ * trois CLI, Claude compris, qui reçoit `autoMemoryEnabled: false` et n'a donc pas de
+ * dossier de repli où continuer d'écrire.
+ */
+type MemoryChoice = 'on' | 'off'
+
+function agentMemoryOptions(t: Translate): SettingChoice<MemoryChoice>[] {
+  return [
+    { value: 'on', label: t('composer.agentMemory.on'), hint: t('composer.agentMemory.on.hint') },
+    { value: 'off', label: t('composer.agentMemory.off'), hint: t('composer.agentMemory.off.hint') },
+  ]
+}
+
+const memoryChoice = (enabled: boolean): MemoryChoice => (enabled ? 'on' : 'off')
+
+/**
  * Le rangement de projet : déclarer un projet, et demander le déplacement d'une
  * conversation. Deux valeurs comme les réglages voisins, et l'allumé porte le ton de
  * mise en garde — c'est une portée qui agit au-dessus du projet où la session travaille.
@@ -619,6 +639,7 @@ export function useAgentSettings({
   // occuper le panneau, comme le serveur MCP de Solera.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
+  const memoryOptionList = agentMemoryOptions(t)
   const filingOptionList = projectFilingOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
@@ -629,6 +650,10 @@ export function useAgentSettings({
   // quand l'instance coupe l'un ou l'autre, un réglage inopérant valant moins que pas
   // de réglage du tout.
   const filingAvailable = soleraAvailable && mcpRegistry?.projectFiling === true
+  // La mémoire ne dépend pas du serveur MCP de Solera, elle : Claude la tient
+  // nativement, dans le dossier que Solera lui désigne. Seule l'instance peut la
+  // retirer de l'interface.
+  const memoryAvailable = mcpRegistry?.agentMemory === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -778,6 +803,26 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(claude.agentMemory),
+              onChange: (choice) => onConfigChange({ ...claude, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'claude' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(claude.agentMemory), memoryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
       ...(filingAvailable
         ? [
             setting({
@@ -905,6 +950,26 @@ export function useAgentSettings({
               options: libraryOptionList,
               value: libraryChoice(codex.skillLibrary),
               onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
+            }),
+          ]
+        : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(codex.agentMemory),
+              onChange: (choice) => onConfigChange({ ...codex, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(appliedConfig?.agent === 'codex' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(codex.agentMemory), memoryOptionList),
+                t,
+              ),
             }),
           ]
         : []),
@@ -1043,6 +1108,26 @@ export function useAgentSettings({
                   libraryChoice(opencode.skillLibrary),
                   libraryOptionList,
                 ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(opencode.agentMemory),
+              onChange: (choice) => onConfigChange({ ...opencode, agentMemory: choice === 'on' }),
+              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+              // dans l'environnement du serveur MCP : le changement attend la relance de
+              // la session, comme la bibliothèque de skills.
+              notice: notice(
+                appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(opencode.agentMemory), memoryOptionList),
                 t,
               ),
             }),

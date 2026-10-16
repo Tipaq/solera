@@ -153,7 +153,7 @@ export class OpencodeRunner implements AgentRunner {
 
   private launchConfig(config: OpencodeConfig): { launch: Config; servers: McpServer[]; failures: McpServerStatus[] } {
     const resolved = this.ctx.resolveMcpServers(config)
-    const memoryDir = this.ctx.memoryDir()
+    const memoryDir = this.ctx.memoryDir(config)
     return {
       launch: toOpencodeConfig({
         config,

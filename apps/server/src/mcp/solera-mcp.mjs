@@ -55,7 +55,15 @@ const DB_PATH = process.env.SOLERA_MCP_DB
 const PROJECT_ID = process.env.SOLERA_MCP_PROJECT || null
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
-/** Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la mémoire automatique de Claude. */
+/**
+ * Dossier de mémoire — du projet, ou du compte pour un fil libre — partagé avec la
+ * mémoire automatique de Claude.
+ *
+ * **Vide quand la famille « Mémoire » est refusée**, et c'est le seul signal : les trois
+ * outils `*_memory` ne sont alors pas listés du tout. Pas de drapeau séparé, parce qu'un
+ * drapeau et un chemin pourraient se contredire — un outil listé qui n'a nulle part où
+ * écrire est pire que pas d'outil.
+ */
 const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
 /**
  * Portée de rangement, accordée conversation par conversation : à faux, les deux outils
@@ -721,6 +729,12 @@ const ALL_TOOLS = [
 
 /**
  * Les outils qu'un fil libre voit : ceux dont l'objet n'est pas un projet.
+ *
+ * **Ce n'est pas une famille d'autorisation**, et ça n'a rien à faire dans un écran de
+ * réglages : rien ici ne s'accorde ni ne se refuse, la liste dit seulement quels outils
+ * ont encore un objet quand il n'y a pas de projet. Elle reste en dur. Les familles,
+ * elles, sont les booléens de `packages/protocol/src/agent-config.ts` et s'appliquent
+ * par-dessus celle-ci, dans `offered`.
  *
  * `create_project` et `move_conversation` sont ici avant d'exister — ils arrivent avec
  * le rangement par l'agent, et c'est justement un fil libre qui en a besoin. Une liste
@@ -1930,8 +1944,21 @@ function renderThread(found, before) {
 /** Les outils que la portée de rangement ouvre, et qui n'existent pas sans elle. */
 const FILING_TOOLS = new Set(['create_project', 'move_conversation'])
 
-/** Ce que cette session voit du catalogue, une fois ses portées appliquées. */
-const offered = (tool) => FILING || !FILING_TOOLS.has(tool.name)
+/** Les outils que la famille « Mémoire » ouvre, et qui n'existent pas sans elle. */
+const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
+
+/**
+ * Ce que cette session voit du catalogue, une fois ses familles d'autorisation
+ * appliquées. Le critère d'ouverture d'une famille est en tête de
+ * `packages/protocol/src/agent-config.ts`.
+ *
+ * Retirés du catalogue, et non listés puis refusés à l'appel : annoncer un outil qu'on
+ * refusera ensuite fait lire son refus comme un échec du modèle. Le refus à l'appel
+ * reste quand même, plus bas — un outil peut être appelé par un client qui a gardé une
+ * vieille liste.
+ */
+const offered = (tool) =>
+  (FILING || !FILING_TOOLS.has(tool.name)) && (MEMORY_DIR !== '' || !MEMORY_TOOLS.has(tool.name))
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
@@ -2249,6 +2276,9 @@ async function callTool(name, args) {
   }
 
   if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
+    // La famille « Mémoire » refusée, ou une session sans dossier : les trois outils ne
+    // sont pas listés dans ce cas, ce refus est la ceinture du client qui aurait gardé
+    // une liste d'avant.
     if (!MEMORY_DIR) return { ...text("La mémoire n'est pas disponible dans cette session."), isError: true }
     const file = typeof args?.file === 'string' ? args.file.trim() : ''
 
@@ -2351,7 +2381,7 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${FILING ? ', rangement accordé' : ''}`,
+  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}`,
 )
 
 createInterface({ input: process.stdin }).on('line', async (line) => {

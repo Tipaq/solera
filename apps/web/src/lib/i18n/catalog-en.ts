@@ -2204,6 +2204,13 @@ export const en = {
   'skills.project.repo.title': "In the repository",
   'skills.project.repo.hint': "Each folder is read directly by some CLIs, not all. \"Add a skill → From this machine\" brings them in for every CLI.",
   'composer.setting.skillLibrary': "Skill library",
+  'composer.setting.agentMemory': 'Memory',
+  'composer.agentMemory.on': 'Shared',
+  'composer.agentMemory.on.hint':
+    "The agent reads and writes Solera's memory, which later sessions will read whatever their CLI",
+  'composer.agentMemory.off': 'Off',
+  'composer.agentMemory.off.hint':
+    'This session remembers nothing for the next ones, and reads nothing they remembered',
   'composer.setting.projectFiling': 'Project filing',
   'composer.projectFiling.off': 'Declined',
   'composer.projectFiling.off.hint': "The agent can neither declare a project nor ask for filing",

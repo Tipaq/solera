@@ -256,7 +256,7 @@ export class ClaudeRunner implements AgentRunner {
           config,
           library.deny,
           claudeMdExcludes(this.ctx.maskedInstructionRoots()),
-          this.ctx.memoryDir(),
+          this.ctx.memoryDir(config),
         ),
         // Plafonds pour une session que personne ne regarde. Options de lancement
         // seulement : les changer relance le runner, voir `applyConfig`.

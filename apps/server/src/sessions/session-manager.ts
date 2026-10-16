@@ -723,14 +723,23 @@ export class SessionManager {
     }
     // Créé et, la première fois, rempli de la mémoire que Claude tenait pour ce
     // workspace : sans l'import, déplacer son dossier lui ferait tout oublier.
-    const memoryDir = () =>
-      projectId === null
-        ? freeThreadMemoryDir(this.config.paths.memory, conversation.userId)
-        : ensureProjectMemory(
-            this.config.paths.memory,
-            projectId,
-            instructions()?.workspacePath ?? cwd,
-          )
+    //
+    // Null quand la famille `agentMemory` est refusée, et c'est ce null qui coupe les
+    // trois chemins d'un coup : plus de dossier à Claude, plus d'outils dans le serveur
+    // MCP, plus d'index injecté à Codex. Le dossier n'est même pas créé — une mémoire
+    // refusée ne doit pas laisser de trace sur le disque. Indépendant de `soleraMcp` :
+    // la mémoire native de Claude ne passe pas par le serveur MCP, et couper celui-ci
+    // n'a jamais voulu dire couper celle-là.
+    const memoryDir = (current: AgentConfig) =>
+      !(this.config.mcp.agentMemory && current.agentMemory)
+        ? null
+        : projectId === null
+          ? freeThreadMemoryDir(this.config.paths.memory, conversation.userId)
+          : ensureProjectMemory(
+              this.config.paths.memory,
+              projectId,
+              instructions()?.workspacePath ?? cwd,
+            )
 
     return {
       conversationId,
@@ -761,7 +770,9 @@ export class SessionManager {
           databasePath: this.config.paths.database,
           projectId,
           conversationId,
-          memoryDir: memoryDir(),
+          // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
+          // trois outils `*_memory` de son catalogue.
+          memoryDir: memoryDir(current) ?? '',
           projectFiling: this.config.mcp.projectFiling && current.projectFiling,
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
@@ -780,6 +791,8 @@ export class SessionManager {
         // monte désormais, avec moins d'outils — la mémoire et SOLERA.md, soit tout ce
         // dont ces deux appendices parlent.
         const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
+        // Null quand la famille `agentMemory` est refusée : voir plus haut.
+        const memory = memoryDir(current)
         const parts = [
           instructionsAppendix(this.db, {
             projectId,
@@ -790,9 +803,12 @@ export class SessionManager {
           }),
           // Claude charge l'index de sa mémoire de lui-même ; Codex et opencode n'ont que
           // ce qu'on leur dit — et sans le serveur MCP, un fil libre sous Codex avait un
-          // dossier de mémoire sans aucun moyen d'y écrire.
-          conversation.agent !== 'claude'
-            ? memoryAppendixForCodex(memoryDir(), soleraMcp, projectId === null ? 'account' : 'project')
+          // dossier de mémoire sans aucun moyen d'y écrire. C'est aussi le troisième
+          // chemin de la famille `agentMemory`, et le plus facile à oublier : sans le
+          // `memory !== null`, une mémoire refusée rentrerait quand même par la fenêtre
+          // chez les deux CLI qui n'en ont pas de native, en lecture et d'un coup.
+          conversation.agent !== 'claude' && memory !== null
+            ? memoryAppendixForCodex(memory, soleraMcp, projectId === null ? 'account' : 'project')
             : null,
           this.config.mcp.soleraServer && current.soleraMcp && projectId !== null
             ? projectOverview(this.db, {
