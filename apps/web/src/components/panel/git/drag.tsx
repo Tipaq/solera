@@ -7,9 +7,10 @@ import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode } 
  * une autre, et réordonner les lignes d'un plan de rebase. C'est pour ça que les deux
  * sont du même lot — il n'y a qu'une chose à écrire, et qu'une chose à apprendre.
  *
- * **Pourquoi pas de souris, et pas de doigt.** Le geste n'existe pas au doigt : un
- * appui long y sert déjà au défilement, et le même choix passe par le menu de l'objet
- * (règle T0), livré au lot 2 et qui marche partout. L'ajouter au pointeur aurait
+ * **Pourquoi pas de souris, et pas de doigt.** Au doigt, l'appui long sur ces mêmes
+ * lignes ouvre déjà le menu de l'objet — c'est ce que `ContextMenu` fait depuis ce
+ * même lot — et ce menu porte les deux gestes que le lâcher propose (règle T0, lot 2).
+ * La place est donc prise, et par ce qui marche partout. L'ajouter au pointeur aurait
  * demandé `dnd-kit` et ses capteurs pour un raccourci que le menu rend déjà — alors
  * qu'au clavier le menu, lui, demande d'ouvrir, de descendre et de lire. Le clavier
  * est le seul endroit où ce geste gagne quelque chose, et c'est le seul où il est.
@@ -40,10 +41,18 @@ export interface KeyboardDrag {
   /** À étaler sur chaque ligne déplaçable. */
   rowProps: (id: string) => {
     tabIndex: number
+    /**
+     * Un rôle réel, sans quoi rien de ce qui suit n'est prononcé : `aria-label` et
+     * `aria-roledescription` sont ignorés sur un `div` nu, dont le rôle implicite est
+     * `generic`. `group` est celui qui accepte les deux **et** le bouton du fil ou le
+     * `⋯` que la ligne contient — `option` les interdirait.
+     */
+    role: 'group'
     'aria-roledescription': string
     'data-held'?: true
     'data-over'?: true
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => void
+    onBlur: () => void
   }
   /** La phrase à rendre dans la région vivante — voir `DragLive`. */
   message: string
@@ -87,10 +96,11 @@ export function useKeyboardDrag({
   // un plan rechargé — repose le geste plutôt que de le laisser viser un fantôme.
   useEffect(() => {
     if (held !== null && !rows.includes(held)) {
+      setMessage(phrase('cancel', held, over))
       setHeld(null)
       setOver(null)
     }
-  }, [rows, held])
+  }, [rows, held, over, phrase])
 
   const cancel = useCallback(() => {
     if (held === null) return
@@ -102,22 +112,34 @@ export function useKeyboardDrag({
   const rowProps = useCallback(
     (id: string) => {
       const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-        // Seule la ligne elle-même écoute : sans ce filtre, Entrée sur le bouton du
-        // fil ou dans le champ d'un *réécrire* déclencherait aussi le geste.
-        if (event.target !== event.currentTarget) return
-
+        // Échap passe avant le filtre qui suit : il doit reposer la ligne d'où qu'on
+        // le presse, y compris depuis le bouton du fil de cette même ligne. Une
+        // échappée qui ne marche qu'à un endroit précis n'est pas une échappée.
         if (event.key === 'Escape' && held !== null) {
           event.preventDefault()
           cancel()
           return
         }
 
+        // Pour le reste, seule la ligne elle-même écoute : sans ce filtre, Entrée sur
+        // le bouton du fil ou dans le champ d'un *réécrire* déclencherait le geste.
+        if (event.target !== event.currentTarget) return
+
         if (event.key === ' ' || event.key === 'Enter') {
           if (held === null) {
             if (!canHold(id)) return
-            // Saisir une ligne qui n'a nulle part où aller n'avance à rien : le geste
-            // ne commence pas, plutôt que de s'ouvrir sur une impasse.
-            const first = rows.find((row) => row !== id && canDrop(id, row))
+            /*
+             * On vise d'abord **sa propre place** quand elle est une destination
+             * valide — c'est le cas d'une liste qu'on réordonne. Saisir une ligne ne
+             * la déplace alors pas d'un cran avant qu'on ait touché une flèche, et la
+             * ligne du haut peut redescendre puis revenir en tête.
+             *
+             * Là où se poser sur soi n'a pas de sens — lâcher une branche sur
+             * elle-même — `canDrop` est faux et on vise la première destination
+             * offerte. Si aucune ne l'est, le geste ne commence pas, plutôt que de
+             * s'ouvrir sur une impasse.
+             */
+            const first = canDrop(id, id) ? id : rows.find((row) => canDrop(id, row))
             if (first === undefined) return
             event.preventDefault()
             setHeld(id)
@@ -138,7 +160,10 @@ export function useKeyboardDrag({
         const delta = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0
         if (delta === 0) return
         event.preventDefault()
-        const reachable = rows.filter((row) => row !== held && canDrop(held, row))
+        // `canDrop` seul décide, y compris pour la place qu'occupe la ligne tenue :
+        // c'est une destination comme une autre quand on réordonne, et c'est ce qui
+        // donne à chaque ligne autant de positions atteignables qu'il y a de lignes.
+        const reachable = rows.filter((row) => canDrop(held, row))
         if (reachable.length === 0) return
         const at = over === null ? -1 : reachable.indexOf(over)
         // La liste boucle : avec deux destinations, buter en bout serait un cul-de-sac
@@ -151,10 +176,16 @@ export function useKeyboardDrag({
 
       return {
         tabIndex: 0,
+        role: 'group' as const,
         'aria-roledescription': roleDescription,
         ...(held === id ? { 'data-held': true as const } : {}),
         ...(held !== null && over === id ? { 'data-over': true as const } : {}),
         onKeyDown,
+        // Quitter la ligne repose ce qu'on y tenait. Sans ça, `Tab` laisse une ligne
+        // saisie derrière lui : elle reste à demi effacée, la destination reste
+        // cerclée, et l'Entrée que l'annonce vient de conseiller la lâcherait depuis
+        // une autre ligne. `cancel` ne fait rien si rien n'est tenu.
+        onBlur: cancel,
       }
     },
     [rows, held, over, canHold, canDrop, onDrop, phrase, roleDescription, cancel],
@@ -186,6 +217,10 @@ export function DragLive({ message }: { message: string }): ReactNode {
  * lâcher, ce qui est la seule façon que les deux soient d'accord.
  */
 export function moved(order: string[], held: string, over: string): string[] {
+  // `over` est la ligne dont on prend la place, et son rang se lit **avant** le
+  // retrait : descendre pose donc après la cible, monter pose avant. C'est ce qu'on
+  // attend d'une ligne qu'on pousse dans une direction, et `over === held` rend
+  // l'ordre inchangé — la place qu'on occupe déjà.
   const from = order.indexOf(held)
   const to = order.indexOf(over)
   if (from === -1 || to === -1) return order

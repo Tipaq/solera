@@ -66,21 +66,33 @@ export function RebaseView({
   const [verbs, setVerbs] = useState<Record<string, RebaseStep>>({})
   /** L'ordre composé, qui n'est plus forcément celui que le serveur a lu. */
   const [order, setOrder] = useState<string[]>([])
+  /*
+   * Remis à neuf quand le plan **change**, et non à chaque relecture.
+   *
+   * `refresh()` périme `git-rebase-plan` après n'importe quel geste git, et la lecture
+   * se refait aussi à chaque montage : en dépendant de l'objet rendu, cet effet
+   * effaçait un plan à moitié composé sans rien dire. Ce qu'on compose ne doit se
+   * perdre que si les commits eux-mêmes ne sont plus les mêmes — c'est ce que cette
+   * clé dit, et elle ne change pas quand la même liste est relue.
+   */
+  const planKey = (plan.data?.commits ?? []).map((commit) => commit.hash).join(' ')
   useEffect(() => {
-    const commits = plan.data?.commits ?? []
+    const hashes = planKey === '' ? [] : planKey.split(' ')
     setVerbs(
       Object.fromEntries(
-        commits.map((commit) => [commit.hash, { hash: commit.hash, verb: 'pick' as const, message: '' }]),
+        hashes.map((hash) => [hash, { hash, verb: 'pick' as const, message: '' }]),
       ),
     )
-    setOrder(commits.map((commit) => commit.hash))
-  }, [plan.data])
+    setOrder(hashes)
+  }, [planKey])
 
   const drag = useKeyboardDrag({
     rows: order,
     canHold: () => !frozen,
-    // Toutes les autres lignes : déplacer une ligne dans une liste, c'est pouvoir la
-    // poser n'importe où, et c'est ce qui fait que ce geste vaut le détour.
+    // Toutes les lignes, **la sienne comprise** : déplacer une ligne dans une liste,
+    // c'est pouvoir la poser n'importe où, et sa place actuelle en fait partie. C'est
+    // ce qui fait qu'une saisie ne déplace rien tant qu'aucune flèche n'a été
+    // pressée, et que la ligne du haut peut redescendre puis revenir en tête.
     canDrop: () => true,
     onDrop: (held, over) => setOrder((current) => moved(current, held, over)),
     roleDescription: t('git.drag.step.role'),

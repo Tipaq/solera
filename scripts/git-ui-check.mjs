@@ -664,19 +664,56 @@ try {
   await panel.locator('[data-over]').waitFor()
 
   const headBefore = demoGit('rev-parse', 'HEAD').trim()
-  await page.keyboard.press('Enter')
+  // **Entrée maintenue**, et non pressée : c'est le cas qui comptait. Le lâcher part
+  // d'un `keydown`, et le `keydown` de répétition arrive une fraction de seconde plus
+  // tard sur ce que le montage vient de faire apparaître — un navigateur active un
+  // bouton dès le `keydown` pour Entrée. Un `press()` ne produit pas de répétition et
+  // ne verrait rien. Le focus va donc au conteneur, jamais sur « Fusionner ».
+  await page.keyboard.down('Enter')
+  await page.keyboard.down('Enter')
+  await page.keyboard.down('Enter')
+  await page.keyboard.up('Enter')
   await panel.getByText('Lâcher feat/lot-4-drop sur feat/radar-prefetch :').waitFor()
   await panel.getByRole('button', { name: 'Fusionner', exact: true }).waitFor()
   await panel.getByRole('button', { name: 'Rebaser', exact: true }).waitFor()
   await panel.screenshot({ animations: 'disabled', path: join(shots4, 'la-proposition.png') })
-  // Et la vérité qui ne se voit pas sur l'image : le dépôt n'a pas bougé d'un octet.
+  // Et la vérité qui ne se voit pas sur l'image : le dépôt n'a pas bougé d'un octet,
+  // malgré les trois Entrée. La question est toujours posée, et rien n'y a répondu.
   assert.equal(demoGit('rev-parse', 'HEAD').trim(), headBefore, 'le lâcher n’a rien fusionné')
+  assert.equal(
+    await panel.getByRole('alertdialog').count(),
+    1,
+    'la proposition attend toujours, la touche maintenue n’a rien confirmé',
+  )
 
   // L'échappée annule, et le dépôt n'a toujours rien à annuler.
   await panel.getByRole('button', { name: 'Échap', exact: true }).click()
   await panel.getByText('Lâcher feat/lot-4-drop sur feat/radar-prefetch :').waitFor({ state: 'detached' })
   assert.equal(demoGit('rev-parse', 'HEAD').trim(), headBefore)
   console.log('OK : lâcher une branche propose fusionner ou rebaser, et n’agit pas tout seul.')
+
+  // ─── Lot 4 · le raccourci passe par le garde-fou, comme la voie longue ────
+  // Un chemin de quatre touches vers un geste qui écrit ne doit pas court-circuiter
+  // ce que le menu respecte. Sur un arbre sale, git refuserait de rebaser : le
+  // garde-fou le dit avant, et offre de remiser — c'est la réponse qu'on attendait,
+  // pas une erreur git brute.
+  writeFileSync(join(radarPath, 'src/lib/lot4-sale.ts'), 'export const sale = true\n')
+  demoGit('add', '-A')
+
+  await openGit(640, radarThread)
+  await panel.getByRole('tab', { name: 'Branches', exact: true }).click()
+  const again = movable.filter({ hasText: 'feat/lot-4-drop' }).first()
+  await again.focus()
+  await page.keyboard.press(' ')
+  await page.keyboard.press('Enter')
+  await panel.getByRole('button', { name: 'Rebaser', exact: true }).click()
+  await page.getByRole('button', { name: 'Remiser d’abord', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots4, 'le-garde-fou.png') })
+  assert.equal(demoGit('rev-parse', 'HEAD').trim(), headBefore, 'rien n’est parti sans réponse')
+  // Dans le dialogue, et pas dans la barre d'outils, qui a son propre « Annuler ».
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Annuler', exact: true }).click()
+  demoGit('reset', '--hard')
+  console.log('OK : le raccourci clavier passe par le garde-fou, et offre de remiser.')
 
   // ─── Lot 4 · réordonner un plan de rebase, au clavier (le même geste) ─────
   // Deux fichiers distincts : réordonner deux commits qui écrivent la même ligne

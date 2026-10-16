@@ -67,6 +67,12 @@ const GUARDED: ReadonlySet<GitAction['kind']> = new Set([
   // qu'on avait déjà résolu à la main.
   'rebase-abort',
   'conflict-take',
+  // Lot 4 : les deux issues d'un lâcher. Le serveur sait déjà répondre pour elles —
+  // il propose de remiser quand l'arbre est sale — et le lot 4 ouvre vers elles un
+  // chemin clavier de quatre touches. Un raccourci qui saute le garde-fou que la
+  // voie longue respecte serait la porte dérobée que T6 voulait éviter.
+  'branch-merge',
+  'branch-rebase',
 ])
 
 function needsGuard(action: GitAction): boolean {
@@ -141,7 +147,15 @@ export function GitActionsProvider({
         .then((impact) => {
           // Un geste qui, ici et maintenant, ne détruit rien et s'annule, part sans
           // rien demander : un dialogue vide apprend à cliquer sans lire.
-          if (impact.undoable && impact.losses.length === 0) execute(action)
+          //
+          // `offerStash` compte comme une raison de s'arrêter, et pas seulement les
+          // pertes : un rebase par-dessus un arbre sale ne perd rien — git refuse de
+          // partir — mais il échoue, et l'offre de remiser est précisément la réponse
+          // qu'on attendait. La laisser filer rendait une erreur git brute à qui
+          // venait de demander la seule chose qui marche.
+          if (impact.undoable && impact.losses.length === 0 && !impact.offerStash) {
+            execute(action)
+          }
           else setAsking({ action, impact })
         })
         .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
@@ -229,7 +243,17 @@ function Guard({
         </p>
 
         <div className="flex flex-col gap-1.5 text-sm text-ink-soft">
-          <p>{impact.undoable ? t('git.guard.undoable') : t('git.guard.final')}</p>
+          {/* Rien à perdre, mais quelque chose à ranger : ce n'est pas la même
+              question, et « ceci ne s'annule pas » serait faux autant qu'inutile. On
+              dit alors pourquoi on s'arrête — git refusera de partir — plutôt que de
+              dérouler une liste de pertes vide. */}
+          <p>
+            {impact.losses.length === 0 && impact.offerStash
+              ? t('git.guard.dirtyTree')
+              : impact.undoable
+                ? t('git.guard.undoable')
+                : t('git.guard.final')}
+          </p>
           <ul className="flex flex-col gap-1">
             {impact.losses.map((loss) => (
               <li key={loss.kind} className="flex items-start gap-2 text-meta text-ink-soft">
@@ -237,7 +261,7 @@ function Guard({
                 <span>{lossLine(t, loss)}</span>
               </li>
             ))}
-            {impact.losses.length === 0 ? (
+            {impact.losses.length === 0 && !impact.offerStash ? (
               <li className="text-meta text-ink-faint">{t('git.guard.nothingMeasured')}</li>
             ) : null}
           </ul>
@@ -287,6 +311,10 @@ function guardTitle(t: Translate, action: GitAction): string {
       return t('git.guard.title.rebaseAbort')
     case 'conflict-take':
       return t('git.guard.title.conflictTake')
+    case 'branch-merge':
+      return t('git.guard.title.branchMerge', { name: action.name })
+    case 'branch-rebase':
+      return t('git.guard.title.branchRebase', { name: action.name })
     default:
       return t('git.guard.title.generic')
   }
@@ -308,6 +336,10 @@ function guardConfirm(t: Translate, action: GitAction): string {
       return t('git.guard.confirm.rebaseAbort')
     case 'conflict-take':
       return t('git.guard.confirm.conflictTake')
+    case 'branch-merge':
+      return t('git.guard.confirm.branchMerge')
+    case 'branch-rebase':
+      return t('git.guard.confirm.branchRebase')
     default:
       return t('git.guard.confirm.generic')
   }

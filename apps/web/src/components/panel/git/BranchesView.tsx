@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -86,6 +86,20 @@ export function BranchesView({
     .flatMap((section) => section.lines)
     .find((line) => line.current)?.name ?? null
 
+  /**
+   * **La proposition se périme avec le dépôt.**
+   *
+   * `branch-merge` et `branch-rebase` visent un `HEAD` implicite côté serveur : ils
+   * ne portent que la branche d'où l'on part, et c'est la branche courante qui reçoit.
+   * Si un agent bascule ailleurs entre le lâcher et le clic, la phrase à l'écran dit
+   * toujours « sur main » pendant que le geste, lui, fusionnerait dans l'autre. Même
+   * politique que le sha d'une remise au lot 2 : on refuse plutôt que de viser autre
+   * chose. Ici, refuser c'est fermer — il n'y a rien de commencé à défaire.
+   */
+  useEffect(() => {
+    if (drop && (drop.to !== current || !rows.includes(drop.from))) setDrop(null)
+  }, [drop, current, rows])
+
   const drag = useKeyboardDrag({
     rows,
     canHold: (name) => !menus.locked && name !== current && drop === null,
@@ -128,7 +142,18 @@ export function BranchesView({
 
       <DragLive message={drag.message} />
 
-      {drop ? <Proposal drop={drop} onClose={() => setDrop(null)} /> : null}
+      {drop ? (
+        <Proposal
+          drop={drop}
+          onClose={() => {
+            setDrop(null)
+            // Le focus revient d'où il venait. Sans ça il retombe sur le corps du
+            // document, et la tabulation repart du haut de la page — ce qui coûte
+            // bien plus cher à qui n'a que le clavier qu'à qui a une souris.
+            document.getElementById(rowId(drop.from))?.focus()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -155,22 +180,44 @@ function Proposal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
     )
   }
 
+  /*
+   * **Le focus va au conteneur, et non au premier bouton.**
+   *
+   * Deux raisons, et la première est un défaut qu'on a eu. Le lâcher part d'un
+   * `keydown` Entrée ; monter ce bloc déplace le focus de façon synchrone ; si la
+   * touche est restée enfoncée, le `keydown` de répétition arrive sur le bouton qui
+   * vient de le prendre — et un navigateur active un `<button>` dès le `keydown` pour
+   * Entrée. Une touche tenue une fraction de seconde de trop aurait fusionné. La
+   * seconde raison tient sans la première : poser le focus par défaut sur l'issue qui
+   * écrit est exactement ce que la réserve de T6 voulait éviter.
+   *
+   * Le conteneur prend donc le focus — ce qui fait lire la question avant les issues,
+   * la tabulation menant ensuite aux trois boutons.
+   */
+  const shell = useRef<HTMLDivElement>(null)
+  useEffect(() => shell.current?.focus(), [])
+
+  const title = t('git.drag.branch.proposal', { from: drop.from, to: drop.to })
+
   return (
     <div
+      ref={shell}
+      // `alertdialog` sur le modèle du garde-fou de T13 : une question qui porte sur
+      // un geste qui écrit doit être annoncée comme telle, et avec son texte.
+      role="alertdialog"
+      aria-label={title}
+      tabIndex={-1}
       // Échap depuis n'importe lequel des trois boutons : la planche l'écrit à droite
       // comme une issue, et c'est la touche qu'on presse pour sortir d'une question.
       onKeyDown={(event) => event.key === 'Escape' && onClose()}
-      className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface-high px-2.5 py-2"
+      className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface-high px-2.5 py-2 outline-none"
     >
-      <p className="min-w-0 flex-1 text-xs text-ink">
-        {t('git.drag.branch.proposal', { from: drop.from, to: drop.to })}
-      </p>
+      <p className="min-w-0 flex-1 text-xs text-ink">{title}</p>
       {/* « Fusionner » amène `from` dans la courante ; « Rebaser » rejoue la courante
           par-dessus `from`. Les deux verbes de T6, et les deux entrées du menu d'une
           branche — mot pour mot, pour que le raccourci n'apprenne rien de faux. */}
       <button
         type="button"
-        autoFocus
         disabled={frozen}
         onClick={() => choose('merge')}
         className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-on-accent disabled:opacity-45"
@@ -197,6 +244,9 @@ function Proposal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
     </div>
   )
 }
+
+/** De quoi rendre le focus à la ligne qu'on vient de lâcher. */
+const rowId = (name: string): string => `git-branch-${name.replace(/[^\w-]/g, '_')}`
 
 const sectionKey = (section: RefSectionDto): string =>
   section.remote ? `${section.kind}:${section.remote}` : section.kind
@@ -237,7 +287,15 @@ function Section({
       {section.lines.map((line) => {
         const row = (menu: ReactNode) => (
           <div
-            {...(movable ? drag.rowProps(line.name) : {})}
+            {...(movable
+              ? {
+                  ...drag.rowProps(line.name),
+                  id: rowId(line.name),
+                  // Le nom, sans quoi le rôle ne sert à rien : un lecteur d'écran qui
+                  // tabule dans la ligne annoncerait son rôle et rien d'autre.
+                  'aria-label': t('git.drag.branch.label', { name: line.name }),
+                }
+              : {})}
             className={cx(
               'group flex items-center gap-1.5 rounded px-1.5 py-1 outline-none',
               line.current && 'bg-accent-wash',

@@ -15,6 +15,7 @@ Une image par vue, parce qu'une planche entière est illisible sans zoom.
 | `plan-avant` | le plan de rebase tel que le serveur l'a lu, du plus ancien au plus récent, chaque ligne avec sa poignée |
 | `plan-reordonne` | le même après Espace ↓ Entrée : « second step » est passé devant, et c'est l'ordre dans lequel git rejouera |
 | `le-clic-droit` | la question du lot 2, tranchée : le menu d'une branche s'ouvre **aussi** au clic droit, au curseur, avec les mêmes neuf entrées |
+| `le-garde-fou` | le raccourci passe par le garde-fou comme la voie longue : sur un arbre sale, « Rebaser » offre de remiser au lieu de rendre une erreur git |
 
 ## Les décisions prises en route
 
@@ -29,6 +30,21 @@ Une image par vue, parce qu'une planche entière est illisible sans zoom.
   tour en cours et par le garde-fou de T13 : ce raccourci n'ouvre aucune porte dérobée,
   et **aucune route n'a été ajoutée** pour ce lot (`POST …/git/act` et
   `POST …/git/impact` du lot 2 suffisaient, le plan de rebase partant déjà ordonné).
+  Pour que ce soit vrai et pas seulement écrit, `branch-merge` et `branch-rebase`
+  entrent dans `GUARDED` — le chemin long du menu avait le même trou — et `offerStash`
+  arrête désormais le geste au même titre qu'une perte : un rebase par-dessus un arbre
+  sale ne perd rien, mais il échoue, et l'offre de remiser est la réponse qu'on
+  attendait.
+- **Le focus ne va jamais sur l'issue qui écrit.** Le lâcher part d'un `keydown`
+  Entrée ; si la touche reste enfoncée, le `keydown` de répétition arrive sur ce que le
+  montage vient de faire apparaître, et un navigateur active un `<button>` dès le
+  `keydown` pour Entrée. Le focus va donc au conteneur, qui est un `alertdialog` sur le
+  modèle du garde-fou, et c'est la question qui est lue avant les issues.
+- **La proposition se périme avec le dépôt.** `branch-merge` vise un `HEAD` implicite
+  côté serveur : si un agent bascule ailleurs entre le lâcher et le clic, la phrase à
+  l'écran mentirait sur la branche qui reçoit. Elle se ferme dès que la branche
+  courante change ou que la branche lâchée disparaît — même politique que le sha d'une
+  remise au lot 2.
 - **Un seul mécanisme pour les deux points d'application** (`git/drag.tsx`) : l'état
   tenu est `(saisi, visé)`, deux identifiants, et ce qui se voit à l'écran s'en dérive
   au rendu — la même fonction `moved` sert à l'aperçu pendant le geste et au résultat
@@ -61,3 +77,8 @@ Une image par vue, parce qu'une planche entière est illisible sans zoom.
   une branche supprimée ailleurs, un plan rechargé.
 - **Saisir une ligne qui n'a nulle part où aller ne commence pas le geste** — sur un
   dépôt d'une seule branche, Espace ne fait rien plutôt que d'ouvrir une impasse.
+- **Entrée maintenue ne confirme rien.** La suite enfonce Entrée trois fois sans la
+  relâcher : la question est toujours posée après, et `HEAD` n'a pas bougé. Un
+  `press()` n'aurait produit aucune répétition et n'aurait rien vu.
+- **Quitter une ligne au `Tab` repose ce qu'on y tenait**, et `Échap` annule d'où qu'on
+  le presse — y compris depuis le bouton du fil de la même ligne.
