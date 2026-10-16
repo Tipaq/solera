@@ -1061,7 +1061,45 @@ All 6 forecast tests pass, including the two new offline cases.`,
         parentToolCallId: null,
       },
     },
-    { at: 48, event: { type: 'usage.updated', costUsd: 0.4812, inputTokens: 24, outputTokens: 3120, context: { usedTokens: 38400, maxTokens: 200000, ratio: 0.19 } } },
+    {
+      at: 48,
+      event: {
+        type: 'usage.updated',
+        costUsd: 0.4812,
+        inputTokens: 24,
+        outputTokens: 3120,
+        // Les quatre lignes `used` totalisent `usedTokens`, et le tampon plus l'espace
+        // libre complètent la fenêtre : la démo doit tenir au chiffre près, sinon la
+        // modale qu'elle sert à montrer s'y contredit.
+        context: {
+          usedTokens: 38400,
+          maxTokens: 200000,
+          ratio: 0.192,
+          breakdown: {
+            axis: 'categories',
+            categories: [
+              { label: 'System prompt', tokens: 2800, kind: 'used' },
+              { label: 'System tools', tokens: 11600, kind: 'used' },
+              { label: 'Memory files', tokens: 1400, kind: 'used' },
+              { label: 'Messages', tokens: 22600, kind: 'used' },
+              { label: 'MCP tools (deferred)', tokens: 7300, kind: 'deferred' },
+              { label: 'Autocompact buffer', tokens: 13000, kind: 'buffer' },
+              { label: 'Free space', tokens: 148600, kind: 'free' },
+            ],
+            memoryFiles: [
+              { name: 'CLAUDE.md', source: 'Project', tokens: 980 },
+              { name: '~/.claude/CLAUDE.md', source: 'User', tokens: 420 },
+            ],
+            mcpTools: [
+              { name: 'mcp__weather__forecast', source: 'weather', tokens: 410 },
+              { name: 'mcp__weather__geocode', source: 'weather', tokens: 260 },
+            ],
+            agents: [],
+            skills: [],
+          },
+        },
+      },
+    },
     { at: 49, event: { type: 'turn.completed', stopReason: 'success', costUsd: 0.4812, inputTokens: 24, outputTokens: 3120, cacheCreationTokens: 18200, cacheReadTokens: 96400 } },
     {
       at: 55,

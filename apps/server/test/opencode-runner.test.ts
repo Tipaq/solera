@@ -44,7 +44,9 @@ test('un tour : texte en deltas, outil normalisé, sortie en flux, édition, con
   assert.deepEqual(f.events.find((event) => event.type === 'file.edited'), { type: 'file.edited', toolCallId: 'call_2', path: 'a.txt', action: 'modified' })
 
   const usage = f.events.find((event) => event.type === 'usage.updated')
-  assert.deepEqual(usage?.context, { usedTokens: 500, maxTokens: 1000, ratio: 0.5 })
+  // `breakdown` nul et non absent : opencode ne dit rien de ce qui occupe la fenêtre,
+  // et la modale doit lire « ce CLI ne le dit pas » plutôt qu'un détail vide.
+  assert.deepEqual(usage?.context, { usedTokens: 500, maxTokens: 1000, ratio: 0.5, breakdown: null })
   const done = f.events.find((event) => event.type === 'turn.completed')
   assert.deepEqual(done, { type: 'turn.completed', stopReason: 'completed', costUsd: 0.5, inputTokens: 100, outputTokens: 20, cacheReadTokens: 400, cacheCreationTokens: 0 })
   // Le fork retrouve son point de coupe dans le payload natif de la clôture.

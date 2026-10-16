@@ -44,6 +44,7 @@ import type {
   RunnerContext,
 } from '../types.js'
 import { toDto as toCommandDtos } from './command-catalog.js'
+import { contextBreakdown, contextWindow } from './context-usage.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
@@ -821,6 +822,8 @@ export class ClaudeRunner implements AgentRunner {
     if (!this.session) return
     try {
       const usage = await this.session.getContextUsage()
+      const window = contextWindow(usage)
+      if (window === null) return
       this.ctx.emit({
         type: 'usage.updated',
         costUsd: 0,
@@ -828,9 +831,14 @@ export class ClaudeRunner implements AgentRunner {
         outputTokens: 0,
         context: {
           usedTokens: usage.totalTokens,
-          maxTokens: usage.maxTokens,
-          // Le CLI donne un pourcentage ; le schéma stocke un ratio de 0 à 1.
-          ratio: usage.percentage / 100,
+          maxTokens: window,
+          // Le ratio se recalcule au lieu de reprendre le `percentage` du CLI : celui-ci
+          // est un entier arrondi, et il se rapporte à `rawMaxTokens` alors que le
+          // couple affiché partait de `maxTokens`. Les deux ne coïncident pas sur un
+          // modèle soumis à une fenêtre de compaction plus petite que la sienne, et la
+          // pastille annonçait alors un pourcentage que la modale contredisait.
+          ratio: usage.totalTokens / window,
+          breakdown: contextBreakdown(usage),
         },
       })
     } catch {

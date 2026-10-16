@@ -697,7 +697,12 @@ export class OpencodeRunner implements AgentRunner {
       costUsd: part.cost,
       inputTokens: tokens.input,
       outputTokens: tokens.output + tokens.reasoning,
-      context: limit && used > 0 ? { usedTokens: used, maxTokens: limit, ratio: used / limit } : null,
+      // Pas de détail : le CLI ne livre que ces trois compteurs, et il n'y a pas d'axe
+      // à en tirer. Combler l'écart demanderait de l'inventer.
+      context:
+        limit && used > 0
+          ? { usedTokens: used, maxTokens: limit, ratio: used / limit, breakdown: null }
+          : null,
       rateLimit: null,
     })
   }

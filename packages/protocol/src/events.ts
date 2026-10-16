@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { contextBreakdownSchema } from './context.js'
 import { elicitationContentSchema, elicitationFieldSchema } from './elicitation.js'
 import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
@@ -710,8 +711,20 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
       .object({
         usedTokens: z.number(),
         maxTokens: z.number(),
-        /** De 0 à 1, tel que le CLI le calcule quand il le fournit. */
+        /**
+         * De 0 à 1, rapport de l'occupation à la fenêtre ci-dessus.
+         *
+         * Calculé et non recopié du CLI : Claude rend un pourcentage entier, rapporté
+         * à une fenêtre qui n'est pas toujours celle qu'il annonce par ailleurs. Le
+         * laisser passer tel quel faisait dire à la pastille et à la modale deux
+         * pourcentages différents pour la même conversation.
+         */
         ratio: z.number(),
+        /**
+         * Ce qui occupe la fenêtre, quand le CLI le dit. Toujours `null` chez
+         * opencode, qui ne donne qu'un total.
+         */
+        breakdown: contextBreakdownSchema.nullish().default(null),
       })
       .nullable()
       .optional(),

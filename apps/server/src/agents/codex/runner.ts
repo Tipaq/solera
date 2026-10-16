@@ -772,7 +772,16 @@ export class CodexRunner implements AgentRunner {
           // Contrairement à Claude, l'app-server annonce la fenêtre spontanément :
           // aucune requête supplémentaire n'est nécessaire.
           context: window && used > 0
-            ? { usedTokens: used, maxTokens: window, ratio: used / window }
+            ? {
+                usedTokens: used,
+                maxTokens: window,
+                ratio: used / window,
+                // Codex ne découpe pas la fenêtre par contenu : il ne sait rien dire de
+                // ce qui l'occupe. Ce qu'il compte, c'est la **nature** des jetons, et
+                // les deux relevés passent tels quels — c'est la modale qui en tire la
+                // part cachée et le coût du raisonnement, pas le runner.
+                breakdown: { axis: 'tokens', last, total: p.tokenUsage.total },
+              }
             : null,
           rateLimit: null,
         })

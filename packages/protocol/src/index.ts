@@ -1,3 +1,4 @@
+export * from './context.js'
 export * from './events.js'
 export * from './agent-config.js'
 export * from './capabilities.js'
