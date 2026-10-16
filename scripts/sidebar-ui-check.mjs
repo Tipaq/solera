@@ -104,6 +104,32 @@ try {
   for (const name of ['Fils', 'Projets', 'Planifiées']) {
     await places.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
   }
+  /*
+    Le raccourci de création sur la ligne *Projets*, à côté du « ↗ ». Il est **effacé et
+    non retiré** : au clavier on doit l'atteindre, donc il reste dans l'ordre de
+    tabulation même quand on ne le voit pas. C'est ce que cette vérification tient, et
+    qu'une relecture du CSS ne dirait pas — `hidden` aurait eu l'air identique à l'œil.
+  */
+  const newProject = places.getByRole('link', { name: 'Créer un projet', exact: true })
+  await newProject.waitFor()
+  assert.equal(await newProject.evaluate((node) => getComputedStyle(node).opacity), '0')
+  await places.getByRole('button', { name: /^Projets/ }).focus()
+  await page.keyboard.press('Tab')
+  assert.ok(
+    await newProject.evaluate((node) => node === document.activeElement),
+    'Une tabulation depuis la ligne Projets atteint son raccourci de création',
+  )
+  await page.keyboard.press('Enter')
+  await page.waitForURL('**/projects/new')
+  await page.goBack()
+  await places.waitFor()
+  // Les deux icônes ensemble, au survol : la capture ne cadre que les lieux, le reste
+  // de la colonne a déjà les siennes.
+  await places.getByRole('button', { name: /^Projets/ }).hover()
+  await newProject.evaluate((node) => node.blur())
+  await page.waitForTimeout(200)
+  await places.screenshot({ animations: 'disabled', path: join(shots, 'lieux-raccourci-projet.png') })
+
   // L'activité est fixe : faire défiler la zone basse ne la déplace pas.
   const activity = column.getByRole('group', { name: 'Suivi des conversations' })
   await activity.waitFor()
@@ -147,8 +173,11 @@ try {
   await free.waitFor()
   assert.equal(await column.locator(`a[href="/c/fixture-libre"]`).count(), 1)
   assert.equal(await column.locator('a[href^="/p/null/"]').count(), 0)
+  // Les lignes de lieu sont elles aussi des `li > div` depuis qu'elles portent un
+  // raccourci : chercher dans toute la colonne rendrait *Fils* comme premier groupe.
   const order = await column.evaluate((node) => {
-    const groups = [...node.querySelectorAll('li')].filter((item) => item.querySelector(':scope > div'))
+    const groups = [...node.querySelectorAll('li')]
+      .filter((item) => item.querySelector(':scope > div') && !item.closest('nav'))
     return groups[0]?.textContent?.startsWith('Sans projet') ?? false
   })
   assert.equal(order, true, '*Sans projet* doit être le premier groupe')
@@ -319,7 +348,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne), tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne), tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

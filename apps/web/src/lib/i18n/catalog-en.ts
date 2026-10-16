@@ -2562,6 +2562,7 @@ export const en = {
   'shell.place.projects': 'Projects',
   'shell.place.knowledge': 'Knowledge',
   'shell.place.planned': 'Scheduled',
+  'shell.places.newProject': 'Create a project',
   'shell.conversation.new': 'New conversation',
   'shell.threads.pinned': 'Pinned',
   'shell.threads.today': 'Today',
