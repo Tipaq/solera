@@ -1,3 +1,4 @@
+import { useState, type ReactNode } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -5,15 +6,19 @@ import {
   ChevronDown,
   Cloud,
   GitBranch,
+  GitMerge,
   Loader,
   MessagesSquare,
   MoreHorizontal,
+  RotateCcw,
   Tag,
 } from 'lucide-react'
 import type { RefSectionDto } from '@solera/protocol'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, cx } from '@solera/ui'
+import { useGitActions } from './actions'
+import { DragLive, useKeyboardDrag, type KeyboardDrag } from './drag'
 import { BranchMenu, type MenuContext } from './menus'
 import { useRefs } from './queries'
 
@@ -28,6 +33,10 @@ import { useRefs } from './queries'
  * amont, en faire un worktree — vivent dans le menu de chaque ligne, jamais dans la
  * barre d'outils : ils désignent *cette* branche (règle T0). Les étiquettes et les
  * sous-modules n'en ont pas, leurs gestes n'étant pas du lot 2.
+ *
+ * **Le glisser-déposer du lot 4** (planche T6) n'ajoute donc rien à la barre d'outils
+ * et rien au menu : c'est un raccourci au clavier vers deux entrées qui existent déjà,
+ * et il *propose* au lieu d'agir.
  */
 const ICONS = {
   local: GitBranch,
@@ -36,6 +45,12 @@ const ICONS = {
   tags: Tag,
   submodules: Boxes,
 } as const
+
+/** Ce qu'on vient de lâcher, et sur quoi : la proposition de T6, pas encore un geste. */
+interface Drop {
+  from: string
+  to: string
+}
 
 export function BranchesView({
   scope,
@@ -48,30 +63,137 @@ export function BranchesView({
 }) {
   const t = useTranslate()
   const { data, error, isPending } = useRefs(scope, true)
+  const [drop, setDrop] = useState<Drop | null>(null)
+
+  /**
+   * Les branches locales, dans l'ordre de l'écran : ce sont elles qui se saisissent,
+   * et elles seules. Une étiquette ne se fusionne pas, un distant se tire.
+   */
+  const rows = (data?.sections ?? [])
+    .filter((section) => section.kind === 'local' || section.kind === 'worktrees')
+    .flatMap((section) => section.lines.map((line) => line.name))
+
+  /**
+   * **La destination est la branche courante, et rien d'autre.**
+   *
+   * Ce n'est pas une restriction de confort : les deux gestes que T6 propose sont
+   * `git merge <branche>` et `git rebase <branche>`, qui partent tous les deux de là
+   * où l'on est. Lâcher sur une branche où l'on n'est pas voudrait dire y basculer
+   * d'abord — un troisième geste, que personne n'a demandé et qui déplacerait les
+   * fichiers sous un agent. Les autres lignes ne s'allument donc pas.
+   */
+  const current = (data?.sections ?? [])
+    .flatMap((section) => section.lines)
+    .find((line) => line.current)?.name ?? null
+
+  const drag = useKeyboardDrag({
+    rows,
+    canHold: (name) => !menus.locked && name !== current && drop === null,
+    canDrop: (_held, over) => over === current,
+    onDrop: (from, to) => setDrop({ from, to }),
+    roleDescription: t('git.drag.branch.role'),
+    phrase: (step, held, over) => {
+      if (step === 'cancel') return t('git.drag.cancelled', { name: held })
+      if (step === 'drop') return t('git.drag.branch.dropped', { from: held, to: over ?? '' })
+      return t('git.drag.branch.held', { from: held, to: over ?? '' })
+    },
+  })
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2 pt-1 pb-safe">
-      {isPending ? (
-        <p className="flex items-center gap-1.5 px-1 py-2 text-xs text-ink-faint">
-          <Loader size={11} className="animate-spin" />
-          {t('git.branches.loading')}
-        </p>
-      ) : null}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2 pt-1 pb-safe">
+        {isPending ? (
+          <p className="flex items-center gap-1.5 px-1 py-2 text-xs text-ink-faint">
+            <Loader size={11} className="animate-spin" />
+            {t('git.branches.loading')}
+          </p>
+        ) : null}
 
-      {error ? <Banner>{error instanceof Error ? error.message : t('git.branches.error')}</Banner> : null}
+        {error ? <Banner>{error instanceof Error ? error.message : t('git.branches.error')}</Banner> : null}
 
-      {data && data.sections === null ? (
-        <p className="px-1 py-2 text-xs text-ink-faint">{t('changes.diff.notGitRepo')}</p>
-      ) : null}
+        {data && data.sections === null ? (
+          <p className="px-1 py-2 text-xs text-ink-faint">{t('changes.diff.notGitRepo')}</p>
+        ) : null}
 
-      {(data?.sections ?? []).map((section) => (
-        <Section
-          key={sectionKey(section)}
-          section={section}
-          menus={menus}
-          onOpenThread={onOpenThread}
-        />
-      ))}
+        {(data?.sections ?? []).map((section) => (
+          <Section
+            key={sectionKey(section)}
+            section={section}
+            menus={menus}
+            drag={drag}
+            onOpenThread={onOpenThread}
+          />
+        ))}
+      </div>
+
+      <DragLive message={drag.message} />
+
+      {drop ? <Proposal drop={drop} onClose={() => setDrop(null)} /> : null}
+    </div>
+  )
+}
+
+/**
+ * Ce que T6 montre au lâcher : la phrase, les deux issues, et l'échappée.
+ *
+ * Il n'agit pas de lui-même, et c'est toute la réserve de la planche — « il faut qu'un
+ * lâcher accidentel ne fusionne rien ». Les deux boutons repassent par `run`, donc par
+ * le verrou du tour en cours et par le garde-fou de T13 : ce raccourci n'ouvre aucune
+ * porte dérobée.
+ */
+function Proposal({ drop, onClose }: { drop: Drop; onClose: () => void }) {
+  const t = useTranslate()
+  const { run, lock, pending } = useGitActions()
+  const frozen = !!lock || pending
+
+  const choose = (action: 'merge' | 'rebase'): void => {
+    onClose()
+    run(
+      action === 'merge'
+        ? { kind: 'branch-merge', name: drop.from }
+        : { kind: 'branch-rebase', name: drop.from },
+    )
+  }
+
+  return (
+    <div
+      // Échap depuis n'importe lequel des trois boutons : la planche l'écrit à droite
+      // comme une issue, et c'est la touche qu'on presse pour sortir d'une question.
+      onKeyDown={(event) => event.key === 'Escape' && onClose()}
+      className="flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface-high px-2.5 py-2"
+    >
+      <p className="min-w-0 flex-1 text-xs text-ink">
+        {t('git.drag.branch.proposal', { from: drop.from, to: drop.to })}
+      </p>
+      {/* « Fusionner » amène `from` dans la courante ; « Rebaser » rejoue la courante
+          par-dessus `from`. Les deux verbes de T6, et les deux entrées du menu d'une
+          branche — mot pour mot, pour que le raccourci n'apprenne rien de faux. */}
+      <button
+        type="button"
+        autoFocus
+        disabled={frozen}
+        onClick={() => choose('merge')}
+        className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-on-accent disabled:opacity-45"
+      >
+        <GitMerge size={13} />
+        {t('git.drag.branch.merge')}
+      </button>
+      <button
+        type="button"
+        disabled={frozen}
+        onClick={() => choose('rebase')}
+        className="flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink-soft hover:bg-surface disabled:opacity-45"
+      >
+        <RotateCcw size={13} />
+        {t('git.drag.branch.rebase')}
+      </button>
+      <button
+        type="button"
+        onClick={onClose}
+        className="shrink-0 px-1 text-micro text-ink-faint hover:text-ink"
+      >
+        {t('git.drag.escape')}
+      </button>
     </div>
   )
 }
@@ -82,14 +204,17 @@ const sectionKey = (section: RefSectionDto): string =>
 function Section({
   section,
   menus,
+  drag,
   onOpenThread,
 }: {
   section: RefSectionDto
   menus: MenuContext
+  drag: KeyboardDrag
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
   const Icon = ICONS[section.kind]
+  const movable = section.kind === 'local' || section.kind === 'worktrees'
 
   return (
     <div className="flex flex-col gap-0.5 pb-1">
@@ -109,85 +234,98 @@ function Section({
         </span>
       ) : null}
 
-      {section.lines.map((line) => (
-        <div
-          key={line.fullName}
-          className={cx(
-            'group flex items-center gap-1.5 rounded px-1.5 py-1',
-            line.current && 'bg-accent-wash',
-          )}
-          title={line.subject}
-        >
-          <Icon
-            size={11}
-            className={cx('shrink-0', line.current ? 'text-accent' : 'text-ink-faint opacity-60')}
-          />
-          <span
+      {section.lines.map((line) => {
+        const row = (menu: ReactNode) => (
+          <div
+            {...(movable ? drag.rowProps(line.name) : {})}
             className={cx(
-              'min-w-0 truncate text-xs',
-              line.current ? 'font-medium text-accent' : 'text-ink',
+              'group flex items-center gap-1.5 rounded px-1.5 py-1 outline-none',
+              line.current && 'bg-accent-wash',
+              // La ligne tenue s'efface, la destination se souligne : c'est tout ce
+              // que le geste a besoin de montrer, et ça tient dans deux classes.
+              drag.held === line.name && 'opacity-50',
+              drag.over === line.name && 'ring-1 ring-accent',
+              movable && 'focus-visible:ring-1 focus-visible:ring-accent',
             )}
+            title={line.subject}
           >
-            {line.name}
-          </span>
-
-          {line.thread ? (
-            <button
-              type="button"
-              onClick={() => line.thread && onOpenThread(line.thread.id)}
-              className="flex min-w-0 shrink items-center gap-1 truncate text-micro text-ink-faint hover:text-accent hover:underline"
-            >
-              <MessagesSquare size={9} className="shrink-0" />
-              {line.thread.title}
-            </button>
-          ) : null}
-
-          <span className="flex-1" />
-
-          {/* Le retard sur l'amont : ce qu'on pousserait, ce qu'on tirerait. */}
-          {line.ahead ? (
-            <span
-              className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
-              title={t('git.branches.ahead', { count: line.ahead, upstream: line.upstream ?? '' })}
-            >
-              <ArrowUp size={9} />
-              {line.ahead}
-            </span>
-          ) : null}
-          {line.behind ? (
-            <span
-              className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
-              title={t('git.branches.behind', { count: line.behind, upstream: line.upstream ?? '' })}
-            >
-              <ArrowDown size={9} />
-              {line.behind}
-            </span>
-          ) : null}
-
-          {section.kind === 'local' || section.kind === 'worktrees' ? (
-            <BranchMenu
-              name={line.name}
-              current={line.current}
-              upstream={line.upstream}
-              threadId={line.thread?.id ?? null}
-              worktreePath={line.worktreePath}
-              context={menus}
-              trigger={
-                <button
-                  type="button"
-                  aria-label={t('git.menu.branch.label', { name: line.name })}
-                  className={cx(
-                    'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
-                    'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-                  )}
-                >
-                  <MoreHorizontal size={13} />
-                </button>
-              }
+            <Icon
+              size={11}
+              className={cx('shrink-0', line.current ? 'text-accent' : 'text-ink-faint opacity-60')}
             />
-          ) : null}
-        </div>
-      ))}
+            <span
+              className={cx(
+                'min-w-0 truncate text-xs',
+                line.current ? 'font-medium text-accent' : 'text-ink',
+              )}
+            >
+              {line.name}
+            </span>
+
+            {line.thread ? (
+              <button
+                type="button"
+                onClick={() => line.thread && onOpenThread(line.thread.id)}
+                className="flex min-w-0 shrink items-center gap-1 truncate text-micro text-ink-faint hover:text-accent hover:underline"
+              >
+                <MessagesSquare size={9} className="shrink-0" />
+                {line.thread.title}
+              </button>
+            ) : null}
+
+            <span className="flex-1" />
+
+            {/* Le retard sur l'amont : ce qu'on pousserait, ce qu'on tirerait. */}
+            {line.ahead ? (
+              <span
+                className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
+                title={t('git.branches.ahead', { count: line.ahead, upstream: line.upstream ?? '' })}
+              >
+                <ArrowUp size={9} />
+                {line.ahead}
+              </span>
+            ) : null}
+            {line.behind ? (
+              <span
+                className="flex items-center gap-0.5 text-micro text-ink-faint tabular-nums"
+                title={t('git.branches.behind', { count: line.behind, upstream: line.upstream ?? '' })}
+              >
+                <ArrowDown size={9} />
+                {line.behind}
+              </span>
+            ) : null}
+
+            {menu}
+          </div>
+        )
+
+        if (!movable) return <div key={line.fullName}>{row(null)}</div>
+
+        return (
+          <BranchMenu
+            key={line.fullName}
+            name={line.name}
+            current={line.current}
+            upstream={line.upstream}
+            threadId={line.thread?.id ?? null}
+            worktreePath={line.worktreePath}
+            context={menus}
+            row={row}
+            trigger={
+              <button
+                type="button"
+                aria-label={t('git.menu.branch.label', { name: line.name })}
+                className={cx(
+                  'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
+                  'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+                )}
+              >
+                <MoreHorizontal size={13} />
+              </button>
+            }
+          />
+        )
+      })}
     </div>
   )
 }

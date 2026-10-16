@@ -25,7 +25,11 @@ import { chromium } from 'playwright'
  * - **ce qui est coché dans un bloc est exactement ce qui est indexé**, et le disque ne
  *   bouge pas (lot 3) ;
  * - **un rebase interactif fait ce que son plan annonce**, et la destination *Conflits*
- *   n'existe que pendant un conflit.
+ *   n'existe que pendant un conflit ;
+ * - **le glisser-déposer du lot 4 se fait au clavier**, et il faut donc le vérifier au
+ *   clavier : un `click()` de Playwright ne dirait rien du geste qui existe vraiment.
+ *   Lâcher une branche **propose** au lieu d'agir, et réordonner un plan change l'ordre
+ *   dans lequel git rejoue — ce qui se lit dans `git log`, pas à l'écran.
  *
  * Les images sortent dans `docs/audits/2026-10-15-git/lot-1/`, `lot-2/` et `lot-3/`,
  * une par vue.
@@ -184,9 +188,11 @@ try {
   const shots = join(root, 'docs/audits/2026-10-15-git/lot-1')
   const shots2 = join(root, 'docs/audits/2026-10-15-git/lot-2')
   const shots3 = join(root, 'docs/audits/2026-10-15-git/lot-3')
+  const shots4 = join(root, 'docs/audits/2026-10-15-git/lot-4')
   await mkdir(shots, { recursive: true })
   await mkdir(shots2, { recursive: true })
   await mkdir(shots3, { recursive: true })
+  await mkdir(shots4, { recursive: true })
 
   const panel = page.locator('[data-panel="workspace"]')
   // La largeur du panneau accosté se règle à la poignée, qui l'écrit dans le stockage
@@ -612,8 +618,118 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots3, 'blame-par-fil.png') })
   console.log('OK : le blâme dit quel fil a écrit chaque ligne, et « à la main » sinon.')
 
+
+  // ─── Lot 4 · lâcher une branche sur une autre, au clavier (T6) ────────────
+  // Le geste n'existe **qu'**au clavier : pas de `click()` ici, et c'est le but. La
+  // ligne se focalise, Espace la saisit, Entrée la lâche — et ce qui apparaît est une
+  // proposition, pas une fusion. « Il faut qu'un lâcher accidentel ne fusionne rien ».
+  demoGit('branch', 'feat/lot-4-drop')
+
+  await openGit(640, radarThread)
+  await panel.getByRole('tab', { name: 'Branches', exact: true }).click()
+  const movable = panel.locator('[aria-roledescription^="branche déplaçable"]')
+  const dropped = movable.filter({ hasText: 'feat/lot-4-drop' }).first()
+  await dropped.waitFor()
+  await dropped.focus()
+  await page.keyboard.press(' ')
+  // La destination allumée est la branche courante, et elle seule : les deux gestes de
+  // T6 partent de là où l'on est, et lâcher ailleurs voudrait dire y basculer d'abord.
+  await panel.locator('[data-over]').waitFor()
+  assert.equal(await panel.locator('[data-over]').count(), 1, 'une seule destination : la courante')
+  await panel.screenshot({ animations: 'disabled', path: join(shots4, 'glisser-une-branche.png') })
+
+  // Le clic droit, tranché avec Tim au lot 4 : **les deux**, et pas l'un ou l'autre.
+  // La preuve qui compte est que les deux ouvertures mènent aux *mêmes* entrées — les
+  // primitives Radix sont deux, et il aurait été facile d'en laisser une derrière.
+  await page.keyboard.press('Escape')
+  const entries = ['Basculer', 'Supprimer cette branche']
+  const byDots = movable.filter({ hasText: 'feat/lot-4-drop' }).first()
+  await byDots.hover()
+  await byDots.getByRole('button', { name: 'Gestes sur feat/lot-4-drop' }).click()
+  for (const entry of entries) {
+    await panel.page().getByRole('menuitem', { name: entry, exact: true }).waitFor()
+  }
+  await page.keyboard.press('Escape')
+
+  await byDots.click({ button: 'right' })
+  for (const entry of entries) {
+    await panel.page().getByRole('menuitem', { name: entry, exact: true }).waitFor()
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots4, 'le-clic-droit.png') })
+  console.log('OK : le « ⋯ » et le clic droit ouvrent les mêmes entrées.')
+  await page.keyboard.press('Escape')
+
+  await dropped.focus()
+  await page.keyboard.press(' ')
+  await panel.locator('[data-over]').waitFor()
+
+  const headBefore = demoGit('rev-parse', 'HEAD').trim()
+  await page.keyboard.press('Enter')
+  await panel.getByText('Lâcher feat/lot-4-drop sur feat/radar-prefetch :').waitFor()
+  await panel.getByRole('button', { name: 'Fusionner', exact: true }).waitFor()
+  await panel.getByRole('button', { name: 'Rebaser', exact: true }).waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots4, 'la-proposition.png') })
+  // Et la vérité qui ne se voit pas sur l'image : le dépôt n'a pas bougé d'un octet.
+  assert.equal(demoGit('rev-parse', 'HEAD').trim(), headBefore, 'le lâcher n’a rien fusionné')
+
+  // L'échappée annule, et le dépôt n'a toujours rien à annuler.
+  await panel.getByRole('button', { name: 'Échap', exact: true }).click()
+  await panel.getByText('Lâcher feat/lot-4-drop sur feat/radar-prefetch :').waitFor({ state: 'detached' })
+  assert.equal(demoGit('rev-parse', 'HEAD').trim(), headBefore)
+  console.log('OK : lâcher une branche propose fusionner ou rebaser, et n’agit pas tout seul.')
+
+  // ─── Lot 4 · réordonner un plan de rebase, au clavier (le même geste) ─────
+  // Deux fichiers distincts : réordonner deux commits qui écrivent la même ligne
+  // ferait un conflit, et on vérifierait alors la résolution plutôt que l'ordre.
+  demoGit('reset', '--hard')
+  writeFileSync(join(radarPath, 'src/lib/lot4-a.ts'), 'export const a = 1\n')
+  demoGit('add', '-A')
+  demoGit('commit', '-m', 'Lot four first step')
+  writeFileSync(join(radarPath, 'src/lib/lot4-b.ts'), 'export const b = 2\n')
+  demoGit('add', '-A')
+  demoGit('commit', '-m', 'Lot four second step')
+
+  await openGit(640, radarThread)
+  const from4 = panel.getByRole('button', { name: /Gestes sur « Debounce the prefetch/ })
+  await from4.hover()
+  await from4.click()
+  await panel.page().getByRole('menuitem', { name: 'Rebaser interactivement...' }).click()
+  await panel.getByText(/^Rebaser 2 commits sur /).waitFor()
+
+  // L'écran se lit du plus ancien au plus récent : le premier est donc « first step ».
+  const steps = panel.locator('[aria-roledescription^="ligne déplaçable"]')
+  assert.equal(await steps.count(), 2)
+  assert.match(await steps.first().innerText(), /Lot four first step/)
+  await panel.screenshot({ animations: 'disabled', path: join(shots4, 'plan-avant.png') })
+
+  await steps.first().focus()
+  await page.keyboard.press(' ')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  // L'ordre a changé à l'écran, et c'est l'ordre dans lequel git rejouera.
+  assert.match(await steps.first().innerText(), /Lot four second step/, 'la ligne saisie est descendue')
+  await panel.screenshot({ animations: 'disabled', path: join(shots4, 'plan-reordonne.png') })
+
+  // `git log` rend le plus récent d'abord : avant le rebase, « second » est en tête.
+  const before4 = demoGit('log', '--format=%s', '-2').trim().split('\n')
+  assert.deepEqual(before4, ['Lot four second step', 'Lot four first step'])
+  await panel.getByRole('button', { name: 'Lancer', exact: true }).click()
+  // Le plan compte toujours deux commits après coup : c'est donc le dépôt qu'on
+  // interroge, pas l'écran, qui n'a aucun titre différent à montrer ici.
+  let after4 = before4
+  for (let i = 0; i < 150 && after4.join() === before4.join(); i++) {
+    await delay(100)
+    after4 = demoGit('log', '--format=%s', '-2').trim().split('\n')
+  }
+  assert.deepEqual(
+    after4,
+    ['Lot four first step', 'Lot four second step'],
+    'les deux commits ont été rejoués dans l’ordre du plan, pas dans celui d’avant',
+  )
+  console.log('OK : réordonner le plan au clavier change l’ordre dans lequel git rejoue.')
+
   assert.deepEqual(errors, [], 'aucune erreur de page')
-  console.log('Captures :', shots, ',', shots2, 'et', shots3)
+  console.log('Captures :', shots, ',', shots2, ',', shots3, 'et', shots4)
 } finally {
   if (browser) await browser.close()
   for (const child of processes) child.kill('SIGKILL')

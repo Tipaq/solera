@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { GitBranch, MoreHorizontal, Tag } from 'lucide-react'
 import type { GraphNodeDto, GraphRefDto } from '@solera/protocol'
 import { relativeDate, shortAge } from '../../../lib/dates'
@@ -81,7 +82,11 @@ export function GraphRow({
   const refs = node.refs.filter((ref) => ref.kind !== 'head')
   const working = node.working
 
-  return (
+  /**
+   * La ligne, écrite une fois et rendue deux : avec son menu, et — pour le nœud « en
+   * cours », qui n'est pas un commit — avec une place vide à la sienne.
+   */
+  const row = (menu: ReactNode) => (
     <div
       className={cx(
         'group flex items-center gap-2 px-2.5',
@@ -160,31 +165,35 @@ export function GraphRow({
         {node.shortHash}
       </span>
 
-      {/* Le menu du commit : douze entrées, et c'est ce qui permet à la barre
-          d'outils de n'en avoir que huit (règle T0). Le nœud « en cours » n'en a pas —
-          il n'est pas un commit, et ses gestes sont ceux d'*En cours*. */}
-      {node.kind === 'working' ? (
-        <span className="size-5 shrink-0" />
-      ) : (
-        <CommitMenu
-          hash={node.hash}
-          shortHash={node.shortHash}
-          threadId={node.thread?.id ?? null}
-          context={menus}
-          trigger={
-            <button
-              type="button"
-              aria-label={t('git.menu.commit.label', { subject: node.subject })}
-              className={cx(
-                'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
-                'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-              )}
-            >
-              <MoreHorizontal size={13} />
-            </button>
-          }
-        />
-      )}
+      {menu}
     </div>
+  )
+
+  // Le menu du commit : douze entrées, et c'est ce qui permet à la barre d'outils de
+  // n'en avoir que huit (règle T0). Le nœud « en cours » n'en a pas — il n'est pas un
+  // commit, et ses gestes sont ceux d'*En cours* ; sa ligne n'a donc pas non plus de
+  // clic droit, qui ouvrirait le menu d'un objet qui n'existe pas.
+  if (node.kind === 'working') return row(<span className="size-5 shrink-0" />)
+
+  return (
+    <CommitMenu
+      hash={node.hash}
+      shortHash={node.shortHash}
+      threadId={node.thread?.id ?? null}
+      context={menus}
+      row={row}
+      trigger={
+        <button
+          type="button"
+          aria-label={t('git.menu.commit.label', { subject: node.subject })}
+          className={cx(
+            'flex size-5 shrink-0 items-center justify-center rounded text-ink-faint',
+            'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+          )}
+        >
+          <MoreHorizontal size={13} />
+        </button>
+      }
+    />
   )
 }
