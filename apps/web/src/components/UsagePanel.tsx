@@ -1,0 +1,230 @@
+import * as Dialog from '@radix-ui/react-dialog'
+import { RefreshCw, X } from 'lucide-react'
+import { useMemo } from 'react'
+import type { AgentKind } from '@solera/protocol'
+import { AGENT_LABELS, AgentIcon } from './AgentIcon'
+import { locale, useTranslate } from '../lib/i18n'
+import { useAgentAvailability } from '../lib/agents'
+import { useAccountUsage, useRefreshUsage, type AccountUsageEntry } from '../lib/usage'
+import { Banner, IconButton, cx } from '@solera/ui'
+import { UsageBar, readAge } from './chat/UsageBar'
+
+/**
+ * Consommation du compte, l'équivalent de `/usage`.
+ *
+ * Elle appartient au compte et non au fil : le quota d'une fenêtre de 5 h est le même
+ * quelle que soit la conversation ouverte. Ce qui est propre à une conversation — son
+ * coût, ses tokens, son contexte — se lit dans la conversation, et pas ici.
+ *
+ * Le panneau ne connaît aucune fenêtre à l'avance : il affiche ce que le CLI déclare,
+ * dans l'ordre reçu. C'est ce qui a permis à la jauge Fable d'apparaître sans que rien
+ * ne soit écrit à son sujet, et ce qui fera apparaître la suivante.
+ *
+ * Il ne connaît pas davantage ses CLI à l'avance : une section par CLI que le serveur
+ * dit savoir lancer, toutes lues en parallèle à l'ouverture. Un CLI absent est un état
+ * normal depuis que Solera ne transporte plus les binaires — il ne laisse pas de
+ * place vide, il n'a simplement pas de section.
+ */
+
+/** Deux barres grises le temps qu'un CLI réponde : la section garde sa place. */
+function UsageSkeleton() {
+  return (
+    <div className="flex animate-pulse flex-col gap-3.5" aria-hidden>
+      {[0, 1].map((row) => (
+        <div key={row} className="flex flex-col gap-1">
+          <div className="h-3.5 w-28 rounded bg-surface-high" />
+          <div className="h-1.5 rounded-full bg-surface-high" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Un CLI et ses fenêtres. Présentation seule : la lecture est menée une fois pour
+ * toutes par la modale, qui sait combien de CLI elle a et depuis quand.
+ */
+function UsageSection({ entry }: { entry: AccountUsageEntry }) {
+  const t = useTranslate()
+  const { agent, usage, error, isPending } = entry
+
+  return (
+    <section
+      // Le squelette est un ornement, invisible aux lecteurs d'écran : sans ça, la
+      // section annoncerait son titre puis plus rien pendant que le CLI répond.
+      aria-busy={isPending}
+      className="flex flex-col gap-3 border-b border-line px-3 py-3.5 last:border-b-0"
+    >
+      <h3 className="flex items-center gap-2 text-sm font-medium text-ink">
+        {/* Muette : le nom du CLI suit immédiatement. */}
+        <AgentIcon agent={agent} size={14} decorative />
+        <span className="min-w-0 flex-1 truncate">{AGENT_LABELS[agent]}</span>
+        {/* Le forfait en puce plutôt qu'en ligne : c'est une étiquette du CLI nommé à
+            sa gauche, pas une information de plus à lire sous lui. */}
+        {usage?.plan ? (
+          <span className="shrink-0 rounded-full bg-surface-high px-1.5 py-px text-micro text-ink-soft">
+            {/* « max » seul ne dit pas de quoi il est le nom : la puce se lit dans le
+                dessin, elle doit s'entendre dans la voix. */}
+            <span className="sr-only">{t('usage.plan')} </span>
+            {usage.plan}
+          </span>
+        ) : null}
+      </h3>
+
+      {isPending ? <UsageSkeleton /> : null}
+
+      {error ? <Banner>{error.message || t('usage.error')}</Banner> : null}
+
+      {usage ? (
+        <>
+          {!usage.limitsAvailable ? (
+            <p className="text-sm text-ink-faint">{t('usage.noLimits')}</p>
+          ) : (
+            <div className="flex flex-col gap-3.5">
+              {usage.windows.map((window) => (
+                <UsageBar key={window.id} window={window} />
+              ))}
+            </div>
+          )}
+
+          {usage.credits ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-baseline gap-2 text-sm">
+                <span className="min-w-0 flex-1 truncate text-ink-soft">{usage.credits.label}</span>
+                <span className="shrink-0 text-meta text-ink-faint">
+                  {usage.credits.enabled ? t('usage.credits.enabled') : t('usage.credits.disabled')}
+                </span>
+              </div>
+              {usage.credits.detail ? (
+                <p className="text-meta text-ink-faint">{usage.credits.detail}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  )
+}
+
+/**
+ * Les CLI lançables, et leur consommation.
+ *
+ * `agent` est le CLI mis en tête : celui du fil d'où l'on ouvre. Il est toujours
+ * montré, même absent de la liste des disponibles — il vient d'une conversation qui
+ * tourne avec lui, et refuser d'en lire la consommation serait incompréhensible.
+ */
+function UsageDialog({ agent }: { agent?: AgentKind }) {
+  const t = useTranslate()
+  const { data: availability, isPending: listing } = useAgentAvailability()
+
+  const agents = useMemo(() => {
+    const installed = (availability?.agents ?? []).filter((a) => a.installed).map((a) => a.agent)
+    if (!agent) return installed
+    return [agent, ...installed.filter((kind) => kind !== agent)]
+  }, [availability, agent])
+
+  const { entries, fetchedAt, isFetching } = useAccountUsage(agents)
+  const refresh = useRefreshUsage(agents)
+  // Les deux chemins de lecture : les queries à l'ouverture, la mutation au bouton. La
+  // relecture forcée ne passe pas par une query, donc `isFetching` seul laisserait le
+  // bouton vif et muet pendant qu'il lance un process CLI par agent.
+  const busy = isFetching || refresh.isPending
+
+  return (
+    <>
+      <header className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2 pt-safe">
+        <Dialog.Title className="flex-1 text-sm font-semibold">
+          {t('usage.account.title')}
+        </Dialog.Title>
+        <IconButton
+          label={t('usage.refresh')}
+          onClick={() => refresh.mutate()}
+          disabled={busy || agents.length === 0}
+        >
+          <RefreshCw size={16} className={cx(busy && 'animate-spin')} />
+        </IconButton>
+        <Dialog.Close asChild>
+          <IconButton label={t('usage.close')}>
+            <X size={16} />
+          </IconButton>
+        </Dialog.Close>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
+        {entries.map((entry) => (
+          <UsageSection key={entry.agent} entry={entry} />
+        ))}
+
+        {/* La liste des CLI arrive après le premier rendu : tant qu'elle manque, il n'y
+            a pas encore de section à poser, et dire « aucun CLI » serait prématuré. */}
+        {agents.length === 0 && !listing ? (
+          <p className="px-3 py-3.5 text-sm text-ink-faint">{t('usage.noAgent')}</p>
+        ) : null}
+      </div>
+
+      {/* Une seule ancienneté, celle de la plus ancienne lecture affichée : répétée
+          sous chaque section, elle dirait trois fois la même chose à une seconde près. */}
+      {fetchedAt === null ? null : (
+        <footer
+          className="shrink-0 border-t border-line px-3 py-2 text-meta text-ink-faint"
+          title={new Date(fetchedAt).toLocaleString(locale())}
+        >
+          {t('usage.readAt', { age: readAge(fetchedAt) })}
+        </footer>
+      )}
+    </>
+  )
+}
+
+/**
+ * Le panneau prend le focus à l'ouverture, et non son premier bouton.
+ *
+ * Radix focalise sinon le premier élément focalisable — *Rafraîchir*, ou *Fermer*
+ * pendant que la lecture est en cours — et Radix Tooltip, qui ne distingue pas un
+ * focus programmatique d'un focus au clavier, ouvre aussitôt son infobulle : elle
+ * s'affichait avec la modale, par-dessus le contenu, sans que personne ne l'ait
+ * demandée.
+ *
+ * Le contenu porte `tabIndex={-1}` de la main de Radix, donc le focaliser est légitime :
+ * son titre est lu à l'ouverture, `Tab` mène aux boutons, `Échap` ferme.
+ *
+ * Pris sur la cible de l'événement et non sur une ref, comme dans `ComposerSettings` :
+ * la ref n'est pas toujours posée quand l'événement part.
+ */
+function onOpenAutoFocus(event: Event) {
+  event.preventDefault()
+  ;(event.target as HTMLElement | null)?.focus({ preventScroll: true })
+}
+
+export function UsagePanel({
+  agent,
+  open,
+  onOpenChange,
+}: {
+  /** CLI mis en tête. Omis depuis le compte, qui n'en privilégie aucun. */
+  agent?: AgentKind
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="scrim z-40" />
+        {/* Monté à l'ouverture, démonté à la fermeture par le portail de Radix : c'est
+            ce qui fait qu'ouvrir relit, sans dépendre d'une durée de fraîcheur côté
+            client. */}
+        <Dialog.Content
+          onOpenAutoFocus={onOpenAutoFocus}
+          className={cx(
+            'surface fixed z-50 flex flex-col overflow-hidden border-line shadow-pop',
+            'inset-0 border-0',
+            'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:max-h-[90dvh] sm:w-[min(26rem,92vw)]',
+            'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
+          )}
+        >
+          <UsageDialog agent={agent} />
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  )
+}

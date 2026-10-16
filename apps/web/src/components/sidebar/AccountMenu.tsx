@@ -1,4 +1,5 @@
-import { ChevronDown, Info, LogOut, Palette, Server, Settings } from 'lucide-react'
+import { ChevronDown, GaugeCircle, Info, LogOut, Palette, Server, Settings } from 'lucide-react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
 import { useCurrentUser, useLogout } from '../../lib/session'
@@ -7,6 +8,7 @@ import { openSettings } from '../../lib/settings-dialog'
 import { useVersionInfo, useUpdateNotice } from '../../lib/system'
 import { THEMES, THEME_LABELS, useTheme } from '../../lib/theme'
 import { UpdateDot } from '../UpdateDot'
+import { UsagePanel } from '../UsagePanel'
 import { cx, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 
 /**
@@ -16,10 +18,17 @@ import { cx, Menu, MenuItem, MenuSeparator } from '@solera/ui'
  * n'en garde qu'une. La pastille de mise à jour remonte sur l'avatar ; elle était sur
  * l'icône des réglages, qui n'a plus de ligne à elle.
  *
- * Deux des sept entrées arrêtées manquent, faute de destination dans l'application :
- * *Consommation* (il n'existe qu'un panneau par CLI, ouvert depuis un fil) et
- * *Raccourcis* (aucun écran ne les liste). Les écrire ici ne ferait que mener nulle
- * part ; elles viendront avec ce qu'elles ouvrent.
+ * *Consommation* ouvre la modale des trois CLI : elle appartient au compte — le chiffre
+ * est le même quel que soit le fil — et son panneau, jusqu'ici ouvert depuis une
+ * conversation, ne connaissait que le CLI de celle-ci.
+ *
+ * La maquette porte un montant à droite de l'entrée (« 4,10 $ »). Il n'est pas écrit :
+ * aucun CLI ne déclare de coût dans `AgentUsage`, et le chiffre qui s'en approcherait —
+ * une part de quota — demanderait de lancer les trois CLI à chaque ouverture du menu,
+ * pour une ligne que personne n'a demandée. Le montant reviendra le jour où il arrivera
+ * sans ce prix.
+ *
+ * *Raccourcis*, la septième entrée, manque encore : aucun écran ne les liste (carte #20).
  */
 export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   const t = useTranslate()
@@ -30,6 +39,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   const updateNotice = useUpdateNotice()
   const { data: version } = useVersionInfo()
   const [theme, setTheme] = useTheme()
+  const [usageOpen, setUsageOpen] = useState(false)
 
   const go = (path: string) => {
     onNavigate()
@@ -69,6 +79,19 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
           </button>
         }
       >
+        {/* Jamais grisée, même sans CLI installé : savoir lesquels le sont demande une
+            sonde qui lance un process par CLI, et ce menu est monté en permanence — la
+            payer à chaque retour sur l'onglet pour griser une ligne serait un mauvais
+            marché. C'est la modale qui le dit, une fois ouverte. */}
+        <MenuItem
+          icon={<GaugeCircle size={14} />}
+          onSelect={() => {
+            onNavigate()
+            setUsageOpen(true)
+          }}
+        >
+          {t('shell.account.usage')}
+        </MenuItem>
         {display.services ? (
           <MenuItem icon={<Server size={14} />} onSelect={() => go('/services')}>
             {t('services.title')}
@@ -120,6 +143,10 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
           {t('shell.logout')}
         </MenuItem>
       </Menu>
+
+      {/* Hors du menu : il se referme en ouvrant la modale, et son portail emporterait
+          celui de Radix avec lui. */}
+      <UsagePanel open={usageOpen} onOpenChange={setUsageOpen} />
     </div>
   )
 }

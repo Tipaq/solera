@@ -214,8 +214,100 @@ try {
   await page.getByRole('menuitem', { name: 'Services' }).waitFor()
   await page.getByRole('menuitem', { name: 'Réglages' }).waitFor()
   await page.getByRole('menuitem', { name: 'Se déconnecter' }).waitFor()
+  await page.getByRole('menuitem', { name: 'Consommation' }).waitFor()
   await page.screenshot({ path: join(shots, 'menu-compte.png') })
+
+  // La consommation appartient au compte : son entrée ouvre la modale des CLI. Aucun
+  // CLI n'est activé ici, donc c'est l'état vide qui se vérifie — l'entrée reste quand
+  // même, puisque la savoir vide coûterait une sonde à chaque ouverture du menu.
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  const usage = page.getByRole('dialog', { name: 'Consommation du compte' })
+  await usage.getByText(/Aucun CLI n'est installé/).waitFor()
   await page.keyboard.press('Escape')
+
+  // Avec des CLI, une section chacun, lues ensemble. Bouchonné : la machine de CI
+  // n'installe aucun CLI, et le rendu de la modale est ce qui se vérifie ici — pas la
+  // sonde, qui a ses propres tests côté serveur.
+  const usageFixtures = {
+    claude: { plan: 'max', limitsAvailable: true, credits: { label: 'Crédits hors forfait', utilization: 0.1, detail: '4,10 $ consommés', enabled: true }, windows: [
+      { id: 'five_hour', label: 'Fenêtre de 5 h', utilization: 0.42, resetsAt: Date.now() + 3_600_000 },
+      { id: 'seven_day', label: 'Fenêtre de 7 j', utilization: 0.81, resetsAt: Date.now() + 200_000_000 },
+    ] },
+    codex: { plan: 'plus', limitsAvailable: true, credits: null, windows: [
+      { id: 'weekly', label: 'Hebdomadaire', utilization: 0.93, resetsAt: Date.now() + 86_400_000 },
+    ] },
+    // Sans limites de forfait : les fenêtres sont vides, et ce n'est pas une panne.
+    opencode: { plan: null, limitsAvailable: false, credits: null, windows: [] },
+  }
+  await page.route('**/api/agents', (route) => route.fulfill({ json: { agents: Object.keys(usageFixtures).map((agent) => ({
+    agent, binary: agent, enabled: true, installed: true, managed: true, path: `/usr/bin/${agent}`,
+    version: '1.0.0', reason: null, preferredVersion: '1.0.0', install: { status: 'idle' },
+  })) } }))
+  await page.route('**/api/agents/*/usage*', (route) => {
+    const agent = new URL(route.request().url()).pathname.split('/')[3]
+    route.fulfill({ json: { agent, fetchedAt: Date.now() - 42_000, ...usageFixtures[agent] } })
+  })
+  // Rechargée : la liste des CLI est en cache depuis l'ouverture précédente, et elle y
+  // tient une minute — les bouchons posés après coup ne seraient jamais appelés.
+  await page.reload()
+  await places.waitFor()
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  for (const name of ['Claude Code', 'Codex', 'OpenCode']) {
+    await usage.getByRole('heading', { name }).waitFor()
+  }
+  await usage.getByText('Fenêtre de 5 h').waitFor()
+  await usage.getByText('Hebdomadaire').waitFor()
+  // Le focus va au panneau et non à son premier bouton : une infobulle ouverte avec la
+  // modale, par-dessus son contenu, est ce que le focus automatique de Radix produit
+  // quand on le laisse faire.
+  assert.equal(await page.getByRole('tooltip').count(), 0)
+  await usage.screenshot({ path: join(shots, 'modale-consommation.png') })
+  // Et le panneau focalisé rend bien la main : sans ça, détourner le focus fermerait
+  // la porte de sortie au clavier.
+  await page.keyboard.press('Escape')
+  await usage.waitFor({ state: 'hidden' })
+
+  // Ce que la lecture par CLI achète, et qui n'était testé nulle part : un CLI lent ne
+  // retient pas les autres, et un CLI en panne ne vide pas l'écran. Chacun répond pour
+  // lui — c'est toute la raison d'avoir une query par CLI plutôt qu'une pour le compte.
+  await page.unroute('**/api/agents/*/usage*')
+  await page.route('**/api/agents/*/usage*', async (route) => {
+    const agent = new URL(route.request().url()).pathname.split('/')[3]
+    if (agent === 'opencode') {
+      await route.fulfill({ status: 500, json: { error: { code: 'usage_unavailable', message: 'Could not read usage from opencode.' } } })
+      return
+    }
+    // Assez long pour que la section reste en squelette pendant que Claude s'affiche,
+    // assez court pour ne pas peser sur la suite.
+    if (agent === 'codex') await delay(1500)
+    await route.fulfill({ json: { agent, fetchedAt: Date.now() - 42_000, ...usageFixtures[agent] } })
+  })
+  await page.reload()
+  await places.waitFor()
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  // Claude est là, Codex est encore en route, opencode a échoué — les trois en même temps.
+  await usage.getByText('Fenêtre de 5 h').waitFor()
+  await usage.locator('section[aria-busy="true"]').waitFor()
+  await usage.getByRole('alert').waitFor()
+  // Puis le lent arrive, sans que l'échec du voisin ait rien emporté.
+  await usage.getByText('Hebdomadaire').waitFor()
+  assert.equal(await usage.locator('section[aria-busy="true"]').count(), 0)
+  assert.equal(await usage.getByRole('alert').count(), 1)
+
+  // Rafraîchir relance un process CLI par agent, et `?refresh=1` court-circuite le
+  // cache du serveur : le bouton doit se fermer pendant qu'il travaille, sinon trois
+  // clics impatients en lancent trois fois plus. Codex met 1,5 s à répondre, ce qui
+  // laisse le temps de le constater.
+  await usage.getByRole('button', { name: 'Rafraîchir' }).click()
+  // Attendu plutôt que constaté sur-le-champ : le rendu qui ferme le bouton suit le
+  // clic d'un battement, et l'échéance de ce `waitFor` est ce qui dit le défaut.
+  await usage.locator('button[aria-label="Rafraîchir"][disabled]').waitFor({ timeout: 2000 })
+  await usage.locator('button[aria-label="Rafraîchir"]:not([disabled])').waitFor()
+
+  await page.keyboard.press('Escape')
+  await usage.waitFor({ state: 'hidden' })
 
   // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
@@ -227,7 +319,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, tiroir mobile.')
+  console.log('OK : lieux, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne), tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
