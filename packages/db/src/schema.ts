@@ -798,7 +798,7 @@ export const permissionRequests = sqliteTable(
     status: text('status')
       .$type<'pending' | 'allowed' | 'denied' | 'expired'>()
       .notNull(),
-    decisionScope: text('decision_scope').$type<'once' | 'session' | 'always'>(),
+    decisionScope: text('decision_scope').$type<'once' | 'session'>(),
     decidedBy: text('decided_by').references(() => users.id),
     createdAt: timestamp('created_at').notNull(),
     decidedAt: timestamp('decided_at'),

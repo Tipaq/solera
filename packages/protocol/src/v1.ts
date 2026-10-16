@@ -57,7 +57,7 @@ export const taskReplyBodySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('permission'),
     decision: z.enum(['allowed', 'denied']),
-    scope: z.enum(['once', 'session', 'always']).default('once'),
+    scope: z.enum(['once', 'session']).default('once'),
   }),
   z.object({
     kind: z.literal('question'),

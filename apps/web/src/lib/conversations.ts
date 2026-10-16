@@ -222,7 +222,7 @@ export function decidePermission(
   conversationId: string,
   requestId: string,
   decision: 'allowed' | 'denied',
-  scope: 'once' | 'session' | 'always',
+  scope: 'once' | 'session',
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/permissions/${requestId}`, {
     decision,

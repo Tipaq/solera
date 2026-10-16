@@ -56,11 +56,31 @@ export type ContentBlock = z.infer<typeof contentBlockSchema>
  */
 const parentToolCallIdSchema = z.string().nullable().default(null)
 
+/**
+ * Portée d'une décision de permission : deux valeurs, et pas trois.
+ *
+ * `once` ne vaut que pour cet appel ; `session` vaut jusqu'à la fin de l'instance de
+ * CLI. Il n'y a pas de troisième portée parce qu'une autorisation permanente voudrait
+ * dire une liste d'autorisations par outil avec son écran de révocation, qui n'existe
+ * pas : le besoin « trop de clics » se traite par le mode de permission de la
+ * conversation (`agent-config.ts`), pas par une portée de plus sur le clic.
+ *
+ * `always` est accepté en entrée et replié sur `session` : le journal est rejoué
+ * indéfiniment (I2), et les lignes écrites quand l'enum avait trois valeurs doivent
+ * continuer à se relire. Un événement qui ne parse pas est remplacé par une erreur
+ * visible dans le fil (`event-log.ts`, `parseStored`), ce qui laisserait une demande de
+ * permission ancienne éternellement « en attente ». Rien ne produit plus cette valeur,
+ * et l'enum des requêtes (`api.ts`, `v1.ts`) ne l'accepte plus.
+ */
+const permissionScopeSchema = z
+  .enum(['once', 'session', 'always'])
+  .transform((scope) => (scope === 'always' ? 'session' : scope))
+
 /** Une option proposée par le CLI dans une demande de permission. */
 export const permissionOptionSchema = z.object({
   id: z.string(),
   label: z.string(),
-  scope: z.enum(['once', 'session', 'always']),
+  scope: permissionScopeSchema,
   behavior: z.enum(['allow', 'deny']),
 })
 export type PermissionOption = z.infer<typeof permissionOptionSchema>
@@ -285,7 +305,7 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     type: z.literal('permission.resolved'),
     requestId: z.string(),
     decision: z.enum(['allowed', 'denied', 'expired']),
-    scope: z.enum(['once', 'session', 'always']),
+    scope: permissionScopeSchema,
     decidedBy: z.string().nullable(),
   }),
 

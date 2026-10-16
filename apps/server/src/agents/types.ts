@@ -7,9 +7,15 @@ import type {
 } from '@solera/protocol'
 import type { ResolvedMcpServers } from './mcp-registry.js'
 
+/**
+ * Ce que l'utilisateur a répondu à une demande de permission.
+ *
+ * `scope` n'a que deux valeurs, et chaque runner s'en sert en testant `once` : voir
+ * `permissionScopeSchema` dans `packages/protocol/src/events.ts` pour la raison.
+ */
 export interface PermissionDecision {
   decision: 'allowed' | 'denied'
-  scope: 'once' | 'session' | 'always'
+  scope: 'once' | 'session'
   decidedBy: string | null
 }
 
