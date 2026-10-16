@@ -239,24 +239,21 @@ const OPENCODE_PERMISSIONS: { family: keyof OpencodePermissions; label: MessageK
 ]
 
 /**
- * Nomme le modèle derrière la ligne par défaut du catalogue.
+ * La ligne nommée que la ligne par défaut du catalogue désigne, appariée par
+ * l'identifiant canonique que les deux partagent.
  *
- * Claude Code appelle la sienne « Default (recommended) », ce qui est long et ne dit
- * pas qui répondra. Une autre ligne pointe le même `resolvedModel` et porte, elle, un
- * nom lisible : c'est celui-là qu'on affiche. Null quand aucune ne correspond, faute
- * de quoi il faudrait inventer un nom de modèle, ce qui serait pire que de rester
- * vague.
+ * Claude Code appelle la sienne « Default (recommended) », ce qui est long, ne dit pas
+ * qui répondra, et fait apparaître deux fois le même modèle — dont une sous un nom qui
+ * n'est pas le sien. C'est donc la jumelle qui se montre, et la ligne par défaut qui
+ * s'efface derrière elle ; la sentinelle `CLI_DEFAULT` reste dans la configuration, où
+ * elle garde son sens de « suis ce que le CLI recommande ».
+ *
+ * Null quand il n'y a pas de jumelle, et c'est le cas usuel : Codex et opencode posent
+ * `isDefault` sur un vrai modèle de leur catalogue, que cacher retirerait de la liste.
  */
-function defaultModelLabel(
-  models: AgentModelDto[],
-  row: AgentModelDto,
-  t: Translate,
-): string | null {
+function namedTwinOf(models: AgentModelDto[], row: AgentModelDto): AgentModelDto | null {
   if (!row.hint) return null
-  const alias = models.find((model) => !model.isDefault && model.hint === row.hint)
-  return alias
-    ? t('composer.model.defaultNamed', { model: shortModelName(alias.hint, alias.displayName) })
-    : null
+  return models.find((model) => !model.isDefault && model.hint === row.hint) ?? null
 }
 
 /**
@@ -351,36 +348,51 @@ export function useAgentSettings({
    * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
    * l'afficher tel quel donnait un sélecteur vide et, faute de modèle trouvé, aucun
    * niveau d'effort. Le CLI annonce lequel de ses modèles il prendrait, c'est celui-là
-   * que la barre montre. La configuration, elle, garde la sentinelle : c'est au serveur
-   * de la résoudre au moment de créer la conversation.
+   * que la barre montre — sous le nom de sa jumelle quand la ligne par défaut en a une,
+   * puisque c'est elle qui reste visible dans la liste (voir `namedTwinOf`). La
+   * configuration, elle, garde la sentinelle : c'est au serveur de la résoudre au
+   * moment de créer la conversation.
+   *
+   * Le repli sur la ligne par défaut elle-même reste le dernier recours : sans lui, un
+   * catalogue dont la ligne par défaut ne nomme personne laisserait la barre vide et
+   * ferait disparaître les niveaux d'effort.
    */
+  const defaultRow = catalog?.models.find((model) => model.isDefault)
   const resolvedModel =
-    config.model || catalog?.models.find((model) => model.isDefault)?.value || CLI_DEFAULT
+    config.model ||
+    (defaultRow && namedTwinOf(catalog?.models ?? [], defaultRow)?.value) ||
+    defaultRow?.value ||
+    CLI_DEFAULT
 
   const modelOptions = useMemo((): SettingChoice<string>[] => {
     const models = catalog?.models ?? []
-    const known = models.map((model) => {
-      const named = model.isDefault ? defaultModelLabel(models, model, t) : null
-      // Le nom court dit la famille et la génération — « Opus 5 » — là où le libellé
-      // du CLI porte la variante de contexte ou la mention « recommandé ». Quand il
-      // est lu sur l'identifiant, celui-ci n'a plus à être répété en dessous.
-      const fromId = modelIdName(model.hint)
-      return {
-        value: model.value,
-        label: named ?? model.displayName,
-        short: named ?? fromId ?? shortModelLabel(model.displayName),
-        // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
-        // dit pas quelle génération va effectivement répondre. Le rappel « par
-        // défaut » ne sert que si le libellé n'a pas déjà pu le dire.
-        hint: [
-          model.description,
-          fromId ? null : model.hint,
-          !named && model.isDefault ? t('composer.model.default') : null,
-        ]
-          .filter(Boolean)
-          .join(' · '),
-      }
-    })
+    const known = models
+      // La ligne par défaut s'efface derrière le modèle qu'elle désigne : le même
+      // modèle n'a pas à figurer deux fois. Sans jumelle elle reste, puisqu'elle est
+      // alors elle-même un modèle du catalogue.
+      .filter((model) => !(model.isDefault && namedTwinOf(models, model)))
+      .map((model) => {
+        // Le nom court dit la famille et la génération — « Opus 5 » — là où le libellé
+        // du CLI porte la variante de contexte ou la mention « recommandé ». Quand il
+        // est lu sur l'identifiant, celui-ci n'a plus à être répété en dessous.
+        const fromId = modelIdName(model.hint)
+        return {
+          value: model.value,
+          label: model.displayName,
+          short: fromId ?? shortModelLabel(model.displayName),
+          // `hint` porte la version réelle derrière un alias : sans elle, « Opus » ne
+          // dit pas quelle génération va effectivement répondre. Le rappel « par
+          // défaut » ne reste que sur les lignes qui sont le défaut du CLI *et* un
+          // modèle nommé, chez Codex et opencode : là, il apprend quelque chose.
+          hint: [
+            model.description,
+            fromId ? null : model.hint,
+            model.isDefault ? t('composer.model.default') : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        }
+      })
 
     // Le modèle enregistré doit rester sélectionnable même si le catalogue n'a pas pu
     // être lu, sinon le select s'affiche vide et efface le réglage de la conversation.

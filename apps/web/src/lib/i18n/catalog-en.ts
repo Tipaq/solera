@@ -249,7 +249,6 @@ export const en = {
   'composer.sandbox.fullAccess': 'Full access',
   'composer.sandbox.fullAccess.hint': 'No safeguards, reserve for risk-free folders',
   'composer.model.default': 'default',
-  'composer.model.defaultNamed': 'Default: {model}',
   'composer.select.saved': 'Saved setting',
   'composer.approval.granular': 'Granular',
   'composer.approval.granular.hint': 'Set outside Solera',

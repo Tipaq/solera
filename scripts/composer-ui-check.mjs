@@ -228,6 +228,28 @@ try {
       await entry(/^Réglages de la session/).click()
       await entry(new RegExp(`^${label}`)).click()
     }
+    /**
+     * Choisit un mode depuis la puce du modèle : le second chemin de la carte #47.
+     *
+     * Le même réglage que sous le « + », et non une copie — ce qui se vérifie en
+     * relisant ce que la conversation a enregistré.
+     */
+    const pickMode = async (label, option) => {
+      const asMenu = await menuNow()
+      await model().click()
+      if (asMenu) {
+        await page.getByRole('menuitem', { name: new RegExp(`^${label}`) }).click()
+        await page.getByRole('menuitemradio', { name: option }).click()
+        await menuGone()
+      } else {
+        await dialog.waitFor()
+        await page.getByRole('button', { name: new RegExp(`^${label}`) }).click()
+        await page.getByRole('radio', { name: option }).click()
+        // Choisir rend la première vue du panneau plutôt que de le refermer.
+        await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).waitFor()
+        await escape()
+      }
+    }
     /** Choisit une option d'un réglage, depuis la rangée, et rend la main au repos. */
     const pick = async (label, option) => {
       const asMenu = await menuNow()
@@ -338,6 +360,15 @@ try {
     await page.getByText('Plan', { exact: true }).first().waitFor()
     await fits('en mode Plan')
 
+    // Les modes sont dupliqués dans le menu du modèle, et Codex en a deux : le bac à
+    // sable s'y change et revient, sans quitter la puce.
+    await pickMode('Bac à sable', /^Lecture seule/)
+    await page.evaluate(() => window.settings.flush())
+    assert.equal(stored.codex.sandbox, 'read-only', 'La puce du modèle écrit le réglage du « + »')
+    await pickMode('Bac à sable', /^Accès total/)
+    await page.evaluate(() => window.settings.flush())
+    assert.equal(stored.codex.sandbox, 'danger-full-access')
+
     failNext = true
     await pickEffort('Moyen')
     await page.getByRole('alert').filter({ hasText: 'Les réglages' }).waitFor()
@@ -427,6 +458,37 @@ try {
         assert.equal(await page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio').count(), 1)
         await escape()
       }
+      /*
+       * La ligne par défaut du catalogue ne se montre plus : c'est le modèle qu'elle
+       * désigne — sa jumelle par l'identifiant canonique — qui porte la sélection,
+       * tandis que la configuration garde la sentinelle. À guetter : une barre vide ou
+       * des niveaux d'effort disparus, qui seraient le repli emporté avec la ligne.
+       */
+      await page.evaluate(async () => {
+        const catalog = window.client.getQueryData(['agents', 'codex', 'models'])
+        const named = catalog.models.slice(0, 3).map((model) => ({ ...model, isDefault: false }))
+        window.client.setQueryData(['agents', 'codex', 'models'], {
+          ...catalog,
+          models: [
+            { ...named[0], value: 'default', displayName: 'Default (recommended)', isDefault: true },
+            ...named,
+          ],
+        })
+        window.settings.change({ ...window.settings.config, model: '', reasoningEffort: '' })
+        await window.settings.flush()
+      })
+      await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
+      await model().click()
+      assert.equal(await page.getByRole('menuitemradio', { name: /Default|Défaut/ }).count(), 0,
+        'La ligne par défaut ne se montre plus dans le catalogue')
+      const chosenModel = page.getByRole('menuitemradio', { checked: true })
+      assert.equal(await chosenModel.count(), 1)
+      assert.match(await chosenModel.textContent(), /^Modèle Alpha/, 'La sentinelle montre le modèle nommé')
+      assert.match(await page.getByRole('menuitem', { name: /^Effort de réflexion/ }).textContent(), /Moyen/,
+        'Les niveaux d\'effort du modèle résolu restent trouvables')
+      await page.keyboard.press('Escape')
+      await menuGone()
+
       // Une approbation granulaire, posée hors de Solera, se lit sans être modifiable.
       if (submenus) {
         await plus.click()
@@ -479,6 +541,27 @@ try {
     await page.getByText('En vigueur : Demander', { exact: true }).waitFor()
     await page.keyboard.press('Escape')
     await settle()
+    // Le même réglage depuis la puce, avec la mention d'attente : Claude n'a qu'un
+    // mode, et c'est bien le même état qu'on y change.
+    await pickMode('Permissions', /^Demander/)
+    await page.evaluate(() => window.settings.flush())
+    assert.equal(stored.claude.permissionMode, 'manual')
+    await pickMode('Permissions', /^Tout autoriser/)
+    await page.evaluate(() => window.settings.flush())
+    assert.equal(stored.claude.permissionMode, 'bypassPermissions')
+    await model().click()
+    if (await menuNow()) {
+      await page.getByRole('menuitem', { name: /^Permissions/ }).click()
+      await page.getByText('En vigueur : Demander', { exact: true }).waitFor()
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await menuGone()
+    } else {
+      await dialog.waitFor()
+      await page.getByRole('button', { name: /^Permissions/ }).click()
+      await page.getByText('En vigueur : Demander', { exact: true }).waitFor()
+      await escape()
+    }
     await plus.click()
     if (submenus) {
       await page.getByRole('menuitem', { name: /^Serveurs MCP/ }).click()

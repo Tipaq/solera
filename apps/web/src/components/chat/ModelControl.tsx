@@ -50,6 +50,22 @@ const SHORTLIST_ABOVE = 8
 const BRANDS = ['claude', 'anthropic', 'openai']
 
 /**
+ * Réglages qui disent ce que l'agent peut faire sans demander, et qui se changent
+ * aussi depuis le menu du modèle.
+ *
+ * Duplication et non déplacement : le réglage reste dans le « + » et dans le panneau,
+ * le menu du modèle n'en est qu'un chemin plus court — un seul état, deux portes,
+ * comme le modèle et l'effort le sont déjà.
+ *
+ * Chaque CLI reflète ce qu'il a, d'où une règle sur les clés plutôt qu'une liste
+ * figée : un mode de permission chez Claude, l'approbation *et* le bac à sable chez
+ * Codex, l'agent primaire *et* les trois familles de permissions chez opencode.
+ */
+const MODE_KEYS = ['permission', 'mode', 'approval', 'sandbox']
+
+const isModeGroup = (key: string): boolean => MODE_KEYS.includes(key) || key.startsWith('permission-')
+
+/**
  * Nom court d'un modèle, pour une puce qui porte déjà sa marque en icône.
  *
  * Ne retire jamais tout : un libellé qui ne serait qu'une marque reste entier, mieux
@@ -111,6 +127,10 @@ export function modelIdName(resolved: string | null | undefined): string | null 
  * d'effort, et le mode rapide quand il existe — parce que les niveaux d'effort
  * dépendent du modèle choisi et qu'ils se lisaient jusqu'ici sur deux boutons dont le
  * second changeait de contenu sans prévenir.
+ *
+ * Le mode s'y ajoute en bout de menu (voir `MODE_KEYS`), en second accès à ce que le
+ * « + » règle déjà. La puce, elle, n'en dit rien : l'effort s'y efface déjà sous 26 rem
+ * de barre, et le mode Plan garde son étiquette propre dans la rangée.
  */
 export function ModelControl({ agent, groups, disabled, inputRef }: {
   agent: AgentKind
@@ -124,6 +144,7 @@ export function ModelControl({ agent, groups, disabled, inputRef }: {
   const model = groups.find((group) => group.key === 'model')
   const effort = groups.find((group) => group.key === 'effort')
   const speed = groups.find((group) => group.key === 'speed')
+  const modes = groups.filter((group) => isModeGroup(group.key))
   if (!model) return null
 
   const selected = model.options.find((option) => option.value === model.value)
@@ -160,6 +181,10 @@ export function ModelControl({ agent, groups, disabled, inputRef }: {
           </MenuSub>
         ) : null}
         {speed?.toggle ? <SpeedItem group={speed} disabled={disabled} /> : null}
+        {modes.length > 0 ? <MenuSeparator /> : null}
+        {modes.map((group) => (
+          <ModeItem key={group.key} group={group} disabled={disabled} />
+        ))}
       </Menu>
     )
   }
@@ -172,7 +197,10 @@ export function ModelControl({ agent, groups, disabled, inputRef }: {
       quick
       trigger={trigger}
     >
-      {(close) => <ModelMenu agent={agent} model={model} effort={effort} speed={speed} disabled={disabled} close={close} />}
+      {(close) => (
+        <ModelMenu agent={agent} model={model} effort={effort} speed={speed} modes={modes}
+          disabled={disabled} close={close} />
+      )}
     </SettingsSurface>
   )
 }
@@ -253,6 +281,29 @@ function ModelItems({ model, disabled }: { model: SettingGroup; disabled: boolea
   )
 }
 
+/**
+ * Un mode, en sous-menu : son intitulé, la valeur en vigueur à droite, ses options
+ * dedans. Le même dessin que dans le « + », puisque c'est le même réglage — et les
+ * phrases d'explication y restent, parce qu'un garde-fou ne se lève pas sur un mot.
+ */
+function ModeItem({ group, disabled }: { group: SettingGroup; disabled: boolean }) {
+  const current = group.options.find((option) => option.value === group.value)
+  return (
+    <MenuSub icon={group.icon} label={group.label} value={current?.label ?? group.value}
+      tone={current?.tone} disabled={disabled}>
+      {group.notice ? <p className="px-2.5 py-1.5 text-xs text-caution">{group.notice}</p> : null}
+      <MenuRadioGroup value={group.value} onValueChange={group.onChange}>
+        {group.options.map((option) => (
+          <MenuRadioItem key={option.value} value={option.value} hint={option.hint}
+            tone={option.tone} disabled={disabled || option.disabled}>
+            {option.label}
+          </MenuRadioItem>
+        ))}
+      </MenuRadioGroup>
+    </MenuSub>
+  )
+}
+
 /** Le mode rapide, en interrupteur : il va avec le modèle, pas avec les réglages. */
 function SpeedItem({ group, disabled }: { group: SettingGroup; disabled: boolean }) {
   const toggle = group.toggle
@@ -287,22 +338,35 @@ function shortlistOf<T extends { value: string }>(options: T[], value: string): 
 }
 
 /**
- * Le panneau de la puce, au doigt : les modèles courants, l'effort, le mode rapide.
+ * Les vues du panneau : les modèles courants, le catalogue entier, un mode.
+ *
+ * Le catalogue et les modes sont des vues où l'on entre, et non des sections dépliées :
+ * sur opencode, l'agent primaire et les trois familles de permissions ajouteraient une
+ * quinzaine d'options à la suite du rail d'effort.
+ */
+type ModelView = 'root' | 'all' | { group: string }
+
+/**
+ * Le panneau de la puce, au doigt : les modèles courants, l'effort, le mode rapide,
+ * et les modes en bout de liste.
  *
  * Le rail d'effort y reste déplié plutôt que rangé dans une vue : trois cases se
  * touchent d'un geste, et c'est le réglage qu'on change le plus souvent après le
  * modèle lui-même.
  */
-function ModelMenu({ agent, model, effort, speed, disabled, close }: {
+function ModelMenu({ agent, model, effort, speed, modes, disabled, close }: {
   agent: AgentKind
   model: SettingGroup
   effort?: SettingGroup
   speed?: SettingGroup
+  modes: SettingGroup[]
   disabled: boolean
   close: (resumeTyping?: boolean) => void
 }) {
   const t = useTranslate()
-  const [all, setAll] = useState(false)
+  const [view, setView] = useState<ModelView>('root')
+  const all = view === 'all'
+  const opened = typeof view === 'object' ? modes.find((group) => group.key === view.group) : undefined
   const options = model.options.map((option) => ({
     ...option,
     label: option.short ?? option.label,
@@ -319,48 +383,76 @@ function ModelMenu({ agent, model, effort, speed, disabled, close }: {
     <>
       {/* Pas d'en-tête sur la première vue : le menu tient en un écran, le titre de
           section suffit à le nommer, et la surface se ferme au-dehors comme par Échap.
-          Le catalogue entier, lui, est une vue où l'on entre : elle porte son retour. */}
-      {all ? (
-        <SettingsHeading title={model.label} onBack={() => setAll(false)} onClose={() => close()} />
+          Le catalogue entier et les modes, eux, sont des vues où l'on entre : elles
+          portent leur retour. */}
+      {all || opened ? (
+        <SettingsHeading title={opened?.label ?? model.label} onBack={() => setView('root')}
+          onClose={() => close()} />
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 pb-[max(0.5rem,var(--sg-safe-bottom))]">
-        {all ? null : <MenuLabel>{model.label}</MenuLabel>}
-        {model.notice ? <p className="mb-2 px-1 text-xs text-caution">{model.notice}</p> : null}
-        <SettingOptions group={{ ...model, options: shown }} disabled={disabled} onPick={pick} />
-        {shown.length < options.length ? (
-          <Entry submenu hint={t('composer.settings.moreHint')} onClick={() => setAll(true)}>
-            {t('composer.settings.more')}
-          </Entry>
-        ) : null}
-        {all ? null : (
+        {opened ? (
           <>
-            {effort ? (
-              <section className="mt-2 border-t border-line pt-2">
-                <MenuLabel>{effort.label}</MenuLabel>
-                {effort.notice ? <p className="mb-2 px-2.5 text-xs text-caution">{effort.notice}</p> : null}
-                {/* Le niveau retenu s'explique pour qui l'écoute, mais le rail se lit
-                    seul : la phrase sous les trois cases allongeait le menu d'autant. */}
-                <SettingOptions group={effort} disabled={disabled} compact quietHint onPick={effort.onChange} />
-              </section>
+            {opened.notice ? <p className="mb-2 px-1 text-xs text-caution">{opened.notice}</p> : null}
+            {/* Choisir rend la première vue plutôt que de refermer : la valeur retenue
+                se lit sur la ligne d'où l'on vient, ce qui vaut confirmation. */}
+            <SettingOptions group={opened} disabled={disabled}
+              onPick={(picked) => { opened.onChange(picked); setView('root') }} />
+          </>
+        ) : (
+          <>
+            {all ? null : <MenuLabel>{model.label}</MenuLabel>}
+            {model.notice ? <p className="mb-2 px-1 text-xs text-caution">{model.notice}</p> : null}
+            <SettingOptions group={{ ...model, options: shown }} disabled={disabled} onPick={pick} />
+            {shown.length < options.length ? (
+              <Entry submenu hint={t('composer.settings.moreHint')} onClick={() => setView('all')}>
+                {t('composer.settings.more')}
+              </Entry>
             ) : null}
-            {speed?.toggle ? (
+            {all ? null : (
               <>
-                <div className="my-2 h-px bg-line" />
-                <SwitchRow
-                  icon={speed.icon}
-                  checked={speed.value === speed.toggle.on}
-                  disabled={disabled}
-                  onCheckedChange={(checked) => {
-                    const toggle = speed.toggle
-                    if (!toggle) return
-                    const next = checked ? toggle.on : speed.options.find((option) => option.value !== toggle.on)?.value
-                    if (next) speed.onChange(next)
-                  }}
-                  label={speed.toggle.label ?? speed.label}
-                  description={speed.options.find((option) => option.value === speed.toggle?.on)?.hint}
-                />
+                {effort ? (
+                  <section className="mt-2 border-t border-line pt-2">
+                    <MenuLabel>{effort.label}</MenuLabel>
+                    {effort.notice ? <p className="mb-2 px-2.5 text-xs text-caution">{effort.notice}</p> : null}
+                    {/* Le niveau retenu s'explique pour qui l'écoute, mais le rail se lit
+                        seul : la phrase sous les trois cases allongeait le menu d'autant. */}
+                    <SettingOptions group={effort} disabled={disabled} compact quietHint onPick={effort.onChange} />
+                  </section>
+                ) : null}
+                {speed?.toggle ? (
+                  <>
+                    <div className="my-2 h-px bg-line" />
+                    <SwitchRow
+                      icon={speed.icon}
+                      checked={speed.value === speed.toggle.on}
+                      disabled={disabled}
+                      onCheckedChange={(checked) => {
+                        const toggle = speed.toggle
+                        if (!toggle) return
+                        const next = checked ? toggle.on : speed.options.find((option) => option.value !== toggle.on)?.value
+                        if (next) speed.onChange(next)
+                      }}
+                      label={speed.toggle.label ?? speed.label}
+                      description={speed.options.find((option) => option.value === speed.toggle?.on)?.hint}
+                    />
+                  </>
+                ) : null}
+                {modes.length > 0 ? (
+                  <section className="mt-2 border-t border-line pt-2">
+                    {modes.map((group) => {
+                      const current = group.options.find((option) => option.value === group.value)
+                      return (
+                        <Entry key={group.key} icon={group.icon} submenu disabled={disabled}
+                          value={current?.label ?? group.value} tone={current?.tone}
+                          onClick={() => setView({ group: group.key })}>
+                          {group.label}
+                        </Entry>
+                      )
+                    })}
+                  </section>
+                ) : null}
               </>
-            ) : null}
+            )}
           </>
         )}
       </div>
