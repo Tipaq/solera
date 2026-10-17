@@ -4,6 +4,7 @@ import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { ImageLightbox } from '../panel/ImageView'
+import { openInPanel } from '../WebLink'
 import { CodeBlock } from './CodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 
@@ -92,6 +93,10 @@ export function Markdown({
       setViewing({ src: image.currentSrc || image.src, name: image.alt || image.src.split('/').pop() || '' })
       return
     }
+
+    // Un lien vers le web s'ouvre dans la vue *Web* du panneau, sans quitter le fil.
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href]')
+    if (!path && link && openInPanel(event, conversationId, link.href)) return
     if (!path || !conversationId) return
 
     event.preventDefault()

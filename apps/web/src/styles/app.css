@@ -261,6 +261,37 @@
     height: auto;
   }
 
+  /*
+   * La page lue de la vue *Web* : du HTML d'un autre site, déjà nettoyé, dans la
+   * typographie du fil. Ses images et ses tableaux ne doivent pas élargir la colonne.
+   */
+  /* Le HTML d'un site imbrique ses blocs dans des `div` : l'espacement du fil, qui ne
+     vise que les enfants directs, ne les atteint pas. */
+  .sg-web-reader :is(p, ul, ol, pre, blockquote, table, figure, h1, h2, h3, h4, h5, h6) {
+    margin-block: 0.75em;
+  }
+
+  .sg-web-reader img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-md);
+  }
+
+  .sg-web-reader figure {
+    margin: 1rem 0;
+  }
+
+  .sg-web-reader figcaption {
+    font-size: var(--text-meta);
+    color: var(--sg-ink-faint);
+  }
+
+  .sg-web-reader table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
   /* Une image du web s'ouvre aussi dans la visionneuse, sauf si un lien l'enveloppe. */
   .sg-markdown img[data-sg-web-image]:not(a img) {
     cursor: zoom-in;

@@ -173,8 +173,11 @@ export function openPanelOnArrival(path: string, tab?: PanelTab): void {
  * par tour. Les serveurs MCP sont descendus dans le « + » du composer, où leur liste
  * vivait déjà : une vue et une entrée de menu pour une seule fonction, dont une
  * moitié ne servait qu'à regarder.
+ *
+ * `web` s'y ajoute le 2026-10-17, et n'apparaît qu'une fois une page ouverte : voir
+ * `web-pane.ts`.
  */
-export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents'
+export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents' | 'web'
 
 /**
  * Onglet affiché et sous-agent consulté.
