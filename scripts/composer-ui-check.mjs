@@ -521,6 +521,28 @@ try {
       await page.keyboard.press('Escape')
       await menuGone()
 
+      /*
+       * Le même catalogue, sur une conversation déjà lancée. La sentinelle ne survit
+       * pas à la création : `resolveDefaults` l'écrit `default`, la valeur de la ligne
+       * par défaut. C'est ce cas, et non le brouillon, qui a montré deux « Opus 5.5 »
+       * quand la ligne était cachée : la valeur enregistrée, absente de la liste, y
+       * revenait sous le nom court de sa jumelle. Une seule ligne par modèle, et le
+       * défaut en tête.
+       */
+      await page.evaluate(async () => {
+        window.settings.change({ ...window.settings.config, model: 'default' })
+        await window.settings.flush()
+      })
+      await page.getByRole('button', { name: 'Modèle : Défaut : Modèle Alpha', exact: true }).waitFor()
+      await model().click()
+      const listedModels = await page.getByRole('menuitemradio').allTextContents()
+      assert.match(listedModels[0], /^Défaut : Modèle Alpha/, 'Le défaut ouvre la liste')
+      assert.equal(listedModels.filter((name) => name.startsWith('Modèle Alpha')).length, 1,
+        'La valeur enregistrée `default` ne double pas sa jumelle')
+      assert.match(await page.getByRole('menuitemradio', { checked: true }).textContent(), /^Défaut : Modèle Alpha/)
+      await page.keyboard.press('Escape')
+      await menuGone()
+
       // Une approbation granulaire, posée hors de Solera, se lit sans être modifiable.
       if (submenus) {
         await plus.click()
