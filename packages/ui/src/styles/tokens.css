@@ -24,6 +24,21 @@
 
   /* Dose de teinte d'accent sur la bulle utilisateur, voir `.sg-user-bubble`. */
   --sg-message-contrast: 0.45;
+
+  /*
+   * Les couloirs du graphe Git : huit teintes absolues, à la luminosité et à la chroma
+   * de `positive` dans chaque thème — donc lisibles sur le canevas de chacun sans
+   * trois jeux à tenir. Huit et non cinq : une branche garde sa couleur d'une ligne à
+   * l'autre, et cinq se répétaient dès le sixième couloir.
+   */
+  --sg-lane-0: oklch(from var(--sg-positive) l c 25);
+  --sg-lane-1: oklch(from var(--sg-positive) l c 75);
+  --sg-lane-2: oklch(from var(--sg-positive) l c 120);
+  --sg-lane-3: oklch(from var(--sg-positive) l c 160);
+  --sg-lane-4: oklch(from var(--sg-positive) l c 200);
+  --sg-lane-5: oklch(from var(--sg-positive) l c 245);
+  --sg-lane-6: oklch(from var(--sg-positive) l c 290);
+  --sg-lane-7: oklch(from var(--sg-positive) l c 335);
 }
 
 :root[data-theme='light'] {

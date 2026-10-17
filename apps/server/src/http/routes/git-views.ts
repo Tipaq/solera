@@ -111,6 +111,10 @@ function graphNodes(
       collapses: row.collapses,
       tip: row.tip,
       root: row.root,
+      run: row.run,
+      throughRuns: row.throughRuns,
+      joinRuns: row.joinRuns,
+      collapseRuns: row.collapseRuns,
       working: null,
     }
   })
@@ -145,7 +149,18 @@ function applyFilters(nodes: GraphNodeDto[], query: GraphQuery): GraphNodeDto[] 
  * entre des commits sans rapport. GitKraken aplatit pareil quand on filtre.
  */
 const flatten = (nodes: GraphNodeDto[]): GraphNodeDto[] =>
-  nodes.map((node) => ({ ...node, lane: 0, through: [], joins: [], collapses: [], tip: true, root: true }))
+  nodes.map((node) => ({
+    ...node,
+    lane: 0,
+    through: [],
+    joins: [],
+    collapses: [],
+    tip: true,
+    root: true,
+    throughRuns: [],
+    joinRuns: [],
+    collapseRuns: [],
+  }))
 
 /** La fenêtre de l'historique d'un fichier : au-delà, on ne défile plus, on cherche. */
 const FILE_LOG = 100
@@ -192,7 +207,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
 
       try {
         const window = await readGraphWindow(cwd, query)
-        if (!window) return { nodes: null, lanes: 1, hasMore: false, branch: null, filtered: false }
+        if (!window) return { nodes: null, lanes: 1, runs: [], hasMore: false, branch: null, filtered: false }
 
         const threads = projectId ? readThreadWindows(ctx.db, projectId) : []
         // Les fils sans worktree travaillent à la racine du projet : c'est là que le
@@ -211,6 +226,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         return {
           nodes: filtered ? flatten(nodes) : [...working, ...nodes],
           lanes: filtered ? 1 : window.lanes,
+          runs: window.runs,
           hasMore: window.hasMore,
           branch: window.branch,
           filtered,

@@ -177,14 +177,30 @@ export function agentOf(coAuthors: string[]): string | null {
  * Les parents supplémentaires d'une fusion ouvrent un couloir chacun, qui descend du
  * nœud. Les deux cas se dessinent par la même courbe, d'où deux listes distinctes et
  * non une seule : `collapses` arrive par le haut, `joins` repart par le bas.
+ *
+ * Chaque occupation d'un couloir, de son ouverture à sa libération, est une *course*,
+ * numérotée : c'est elle que le survol surligne d'un bout à l'autre, et elle qui porte
+ * le nom de la branche. Git ne retient pas sur quelle branche un commit a été écrit ;
+ * le nom vient de la première ref croisée en descendant la course, ou, pour celle
+ * qu'ouvre une fusion, du message de la fusion. Une branche fusionnée puis supprimée
+ * sans message parlant reste sans nom plutôt que d'en recevoir un faux.
  */
 export function assignLanes(
   entries: LogEntry[],
   kindOf: (entry: LogEntry) => GraphNodeKind,
-): { rows: LaneRow[]; lanes: number } {
+): { rows: LaneRow[]; lanes: number; runs: (string | null)[] } {
   const expected: (string | null)[] = []
+  /** La course qui occupe chaque couloir, en regard de `expected`. */
+  const runOf: number[] = []
+  const runs: (string | null)[] = []
   const rows: LaneRow[] = []
   let width = 0
+
+  const open = (lane: number, name: string | null): number => {
+    runs.push(name)
+    runOf[lane] = runs.length - 1
+    return runs.length - 1
+  }
 
   const free = (): number => {
     const index = expected.indexOf(null)
@@ -201,10 +217,14 @@ export function assignLanes(
     const tip = waiting.length === 0
     const lane = tip ? free() : (waiting[0] as number)
     const collapses = waiting.slice(1)
+    const run = tip ? open(lane, null) : (runOf[lane] as number)
+    if (runs[run] === null) runs[run] = branchOf(entry.decoration)
 
     const through = expected
       .map((hash, index) => (hash !== null ? index : -1))
       .filter((index) => index >= 0 && index !== lane && !collapses.includes(index))
+    const throughRuns = through.map((index) => runOf[index] as number)
+    const collapseRuns = collapses.map((index) => runOf[index] as number)
 
     for (const index of collapses) expected[index] = null
 
@@ -215,15 +235,19 @@ export function assignLanes(
 
     expected[lane] = parents[0] ?? null
     const joins: number[] = []
-    for (const parent of parents.slice(1)) {
+    const joinRuns: number[] = []
+    for (const [index, parent] of parents.slice(1).entries()) {
       const already = expected.indexOf(parent)
       if (already >= 0 && already !== lane) {
         joins.push(already)
+        joinRuns.push(runOf[already] as number)
         continue
       }
       const opened = free()
       expected[opened] = parent
       joins.push(opened)
+      // Le message ne nomme que la branche fusionnée, qui est le second parent.
+      joinRuns.push(open(opened, index === 0 ? mergedBranch(entry.subject) : null))
     }
 
     rows.push({
@@ -234,11 +258,41 @@ export function assignLanes(
       collapses,
       tip,
       root: parents.length === 0,
+      run,
+      throughRuns,
+      joinRuns,
+      collapseRuns,
     })
     width = Math.max(width, expected.length)
   }
 
-  return { rows, lanes: Math.max(width, 1) }
+  return { rows, lanes: Math.max(width, 1), runs }
+}
+
+/**
+ * La branche qu'une décoration nomme, pour baptiser une course.
+ *
+ * `HEAD ->` d'abord : c'est la branche extraite. Sinon la plus courte des refs, ce qui
+ * préfère `feat/x` à `origin/feat/x` sans avoir à connaître les remotes — `%D` ne dit
+ * pas lequel des deux est local. Les étiquettes ne nomment pas une branche.
+ */
+export function branchOf(decoration: string): string | null {
+  const parts = decoration.split(',').map((value) => value.trim()).filter(Boolean)
+  const head = parts.find((part) => part.startsWith('HEAD -> '))
+  if (head) return head.slice('HEAD -> '.length)
+  const names = parts.filter(
+    (part) => part !== 'HEAD' && part !== 'refs/stash' && !part.startsWith('tag: ') && !part.endsWith('/HEAD'),
+  )
+  if (names.length === 0) return null
+  return names.reduce((best, name) => (name.length < best.length ? name : best))
+}
+
+/** La branche qu'une fusion nomme dans son message, quand git ou GitHub l'a écrit. */
+export function mergedBranch(subject: string): string | null {
+  const match =
+    /^Merge (?:remote-tracking )?branch '([^']+)'/.exec(subject)
+    ?? /^Merge pull request #\d+ from [^/\s]+\/(\S+)/.exec(subject)
+  return match?.[1] ?? null
 }
 
 export interface LaneRow {
@@ -249,6 +303,11 @@ export interface LaneRow {
   collapses: number[]
   tip: boolean
   root: boolean
+  /** La course du nœud, et celle de chaque trait, dans l'ordre des listes ci-dessus. */
+  run: number
+  throughRuns: number[]
+  joinRuns: number[]
+  collapseRuns: number[]
 }
 
 /**
@@ -406,6 +465,8 @@ export async function worktreeBranches(cwd: string): Promise<Map<string, string>
 
 export interface GraphWindow {
   rows: LaneRow[]
+  /** Le nom de chaque course, par son numéro. */
+  runs: (string | null)[]
   status: GitStatus
   lanes: number
   hasMore: boolean
@@ -446,12 +507,13 @@ export async function readGraphWindow(cwd: string, query: GraphQuery): Promise<G
   const window = entries.slice(0, query.limit)
   const byHash = new Map(stashes.map((stash) => [stash.hash, stash.ref]))
 
-  const { rows, lanes } = assignLanes(window, (entry) =>
+  const { rows, lanes, runs } = assignLanes(window, (entry) =>
     byHash.has(entry.hash) ? 'stash' : entry.parents.length > 1 ? 'merge' : 'commit',
   )
 
   return {
     rows,
+    runs,
     status,
     lanes,
     hasMore,
@@ -469,6 +531,9 @@ export function workingNode(
 ): GraphNodeDto {
   const lane = first?.lane ?? 0
   const through = first ? [...new Set([...first.through, ...(first.tip ? [] : [first.lane])])] : []
+  const runOf = (index: number): number =>
+    index === first?.lane ? first.run : (first?.throughRuns[first.through.indexOf(index)] ?? 0)
+  const lines = through.filter((index) => index !== lane)
   return {
     kind: 'working',
     hash: '',
@@ -481,11 +546,16 @@ export function workingNode(
     refs: [],
     thread: null,
     lane,
-    through: through.filter((index) => index !== lane),
+    through: lines,
     joins: [],
     collapses: [],
     tip: true,
     root: false,
+    // Le travail en cours se pose sur la branche extraite : il en prolonge la course.
+    run: first?.run ?? 0,
+    throughRuns: lines.map(runOf),
+    joinRuns: [],
+    collapseRuns: [],
     working: {
       files: status.changedFiles,
       added: status.added,

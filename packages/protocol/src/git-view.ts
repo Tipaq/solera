@@ -81,6 +81,15 @@ export interface GraphNodeDto {
   tip: boolean
   /** Rien en dessous : le couloir s'arrête au nœud. */
   root: boolean
+  /**
+   * La course du nœud — l'occupation d'un couloir de bout en bout —, puis celle de
+   * chaque trait, dans l'ordre de `through`, `joins` et `collapses`. Son nom est dans
+   * `GraphDto.runs` ; c'est elle que le survol surligne sur toutes les rangées.
+   */
+  run: number
+  throughRuns: number[]
+  joinRuns: number[]
+  collapseRuns: number[]
   /** Renseigné pour le seul nœud « en cours ». */
   working: { files: number; added: number; removed: number } | null
 }
@@ -90,6 +99,8 @@ export interface GraphDto {
   nodes: GraphNodeDto[] | null
   /** Nombre de couloirs occupés, d'où se déduit la largeur de la colonne. */
   lanes: number
+  /** La branche de chaque course, par son numéro ; null quand rien ne la nomme. */
+  runs: (string | null)[]
   hasMore: boolean
   branch: string | null
   /** Vrai quand la fenêtre a été filtrée : la recherche affiche son compte. */
@@ -105,7 +116,10 @@ export interface GraphDto {
  * par `git log` qui ne les connaît pas.
  */
 export const graphQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(200).default(60),
+  // La fenêtre grandit de page en page depuis le haut : le plafond borne le nombre de
+  // commits qu'on peut faire défiler, pas une page. À 200, le quatrième « plus » était
+  // refusé.
+  limit: z.coerce.number().int().min(1).max(5000).default(60),
   skip: z.coerce.number().int().min(0).default(0),
   /** Texte cherché dans le message. */
   q: z.string().trim().max(200).optional(),

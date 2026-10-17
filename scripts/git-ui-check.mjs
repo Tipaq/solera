@@ -270,6 +270,29 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'graphe-60rem.png') })
   console.log('OK : les colonnes suivent la largeur du panneau, et le fil se tait quand il hésite.')
 
+  // ─── Le survol nomme la branche d'un couloir ──────────────────────────────
+  // Sur la tête, la branche se lit sur l'étiquette ; plus bas, sous la tête, c'est la
+  // course du couloir qui la porte encore. Et une branche fusionnée puis sans ref
+  // reçoit le nom que son message de fusion lui donne.
+  const branchShown = (name) =>
+    panel.getByRole('status').filter({ hasText: new RegExp(`^${name}$`) }).first().waitFor()
+  await panel.getByText('Prefetch radar tiles around the viewport', { exact: true }).hover()
+  await branchShown('feat/radar-prefetch')
+  await panel.getByText('Add a city search box', { exact: true }).hover()
+  await branchShown('feat/city-search')
+  await panel.getByText('Merge radar prefetching into main', { exact: true }).hover()
+  await branchShown('main')
+  console.log('OK : survoler un commit nomme la branche de son couloir, et la surligne.')
+
+  // ─── Sur un panneau large, le commit s'ouvre à côté ───────────────────────
+  await panel.getByRole('button', { name: 'Convert Fahrenheit without rounding twice', exact: true }).click()
+  await panel.getByText(/^parent /).waitFor()
+  // La liste reste là : on passe d'un commit à l'autre sans revenir en arrière.
+  await panel.getByText('Bootstrap Nimbus weather app', { exact: true }).waitFor()
+  await panel.screenshot({ animations: 'disabled', path: join(shots, 'commit-a-cote.png') })
+  await panel.getByRole('button', { name: 'Fermer', exact: true }).first().click()
+  console.log('OK : à 60 rem, le commit s’ouvre à côté du graphe, qui reste en place.')
+
   // ─── Le commit sélectionné ────────────────────────────────────────────────
   await openGit(640)
   await panel.getByRole('button', { name: 'Convert Fahrenheit without rounding twice', exact: true }).click()

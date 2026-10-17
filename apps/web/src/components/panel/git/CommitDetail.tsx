@@ -1,4 +1,4 @@
-import { ArrowLeft, Bot, Loader, MessagesSquare, MoreHorizontal } from 'lucide-react'
+import { ArrowLeft, Bot, Loader, MessagesSquare, MoreHorizontal, X } from 'lucide-react'
 import { useMemo, type ReactNode } from 'react'
 import { parseUnifiedDiff } from '../../../lib/diff'
 import { relativeDate } from '../../../lib/dates'
@@ -21,6 +21,10 @@ import { useCommitDetail } from './queries'
  * Le détail remplace la liste au lieu de s'ouvrir à côté : le panneau peut n'avoir que
  * 20 rem, et un volet de plus y laisserait deux colonnes illisibles. D'où le retour,
  * que la planche T4 n'a pas — elle ne montre pas comment on en sort.
+ *
+ * Sur un panneau large, il s'ouvre **à côté** du graphe, comme chez GitKraken : on
+ * passe d'un commit au suivant sans perdre sa place dans la liste. Le retour y
+ * devient une fermeture.
  */
 export function CommitDetail({
   scope,
@@ -28,11 +32,14 @@ export function CommitDetail({
   menus,
   onBack,
   onOpenThread,
+  beside = false,
 }: {
   scope: WorkspaceScope
   hash: string
   menus: MenuContext
   onBack: () => void
+  /** Ouvert à côté du graphe plutôt qu'à sa place. */
+  beside?: boolean
   onOpenThread: (id: string) => void
 }) {
   const t = useTranslate()
@@ -48,8 +55,8 @@ export function CommitDetail({
    */
   const header = (menu: ReactNode) => (
     <div className="flex items-start gap-1.5 border-b border-line px-2 py-1.5">
-      <IconButton size="sm" label={t('git.commit.back')} onClick={onBack}>
-        <ArrowLeft size={15} />
+      <IconButton size="sm" label={t(beside ? 'common.close' : 'git.commit.back')} onClick={onBack}>
+        {beside ? <X size={15} /> : <ArrowLeft size={15} />}
       </IconButton>
 
       <div className="min-w-0 flex-1">

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { GitBranch, MoreHorizontal, Tag } from 'lucide-react'
+import { Crosshair, GitBranch, MoreHorizontal, Tag } from 'lucide-react'
 import type { GraphNodeDto, GraphRefDto } from '@solera/protocol'
 import { relativeDate, shortAge } from '../../../lib/dates'
 import { useTranslate } from '../../../lib/i18n'
@@ -26,18 +26,47 @@ const AUTHOR = 'w-20'
 const DATE = 'w-12'
 const SHA = 'w-14'
 
-export function GraphHeader({ lanes }: { lanes: number }) {
+export function GraphHeader({ lanes, hovered, onHead }: {
+  lanes: number
+  /** Ramène au commit extrait ; absent quand il n'est pas dans la fenêtre chargée. */
+  onHead?: () => void
+  /**
+   * La branche de la course survolée. Écrite ici, dans l'en-tête qui reste collé en
+   * haut, plutôt qu'en infobulle : une infobulle native met une seconde à venir, et
+   * on survole un trait pour le suivre, pas pour s'arrêter dessus.
+   */
+  hovered?: { name: string | null; color: string } | null
+}) {
   const t = useTranslate()
   return (
-    <div className="flex items-center gap-2 px-2.5 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
+    <div className="sticky top-0 z-10 flex items-center gap-2 bg-surface px-2.5 py-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
       <span className="shrink-0" style={{ width: laneWidth(lanes) }}>
         {t('git.column.graph')}
       </span>
-      <span className="min-w-0 flex-1">{t('git.column.message')}</span>
+      {hovered ? (
+        <span className="flex min-w-0 flex-1 items-center gap-1 normal-case tracking-normal" role="status">
+          <GitBranch size={10} className="shrink-0" style={{ color: hovered.color }} />
+          <span className="truncate text-ink">{hovered.name ?? t('git.graph.unnamedBranch')}</span>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1">{t('git.column.message')}</span>
+      )}
       <span className={cx('hidden shrink-0 @min-[56rem]:block', THREAD)}>{t('git.column.thread')}</span>
       <span className={cx('hidden shrink-0 @min-[36rem]:block', AUTHOR)}>{t('git.column.author')}</span>
       <span className={cx('hidden shrink-0 @min-[28rem]:block', DATE)}>{t('git.column.date')}</span>
       <span className={cx('hidden shrink-0 @min-[46rem]:block', SHA)}>{t('git.column.sha')}</span>
+      {onHead ? (
+        <button
+          type="button"
+          onClick={onHead}
+          title={t('git.graph.toHead')}
+          aria-label={t('git.graph.toHead')}
+          className="flex shrink-0 items-center gap-1 rounded px-1 normal-case tracking-normal text-ink-faint hover:text-accent"
+        >
+          <Crosshair size={11} />
+          <span className="hidden @min-[36rem]:inline">{t('git.graph.head')}</span>
+        </button>
+      ) : null}
     </div>
   )
 }
@@ -65,6 +94,8 @@ export function Ref({ value }: { value: GraphRefDto }) {
 export function GraphRow({
   node,
   lanes,
+  runs,
+  onHoverRun,
   selected,
   onSelect,
   menus,
@@ -72,6 +103,9 @@ export function GraphRow({
 }: {
   node: GraphNodeDto
   lanes: number
+  runs: (string | null)[]
+  /** La course désignée par le pointeur : celle du commit, ou celle du trait visé. */
+  onHoverRun: (run: number | null) => void
   selected: boolean
   onSelect: () => void
   /** De quoi nommer les entrées du menu de ce commit. Voir la règle T0. */
@@ -93,8 +127,11 @@ export function GraphRow({
         selected ? 'bg-accent-wash' : 'hover:bg-surface-high',
       )}
       style={{ height: ROW_HEIGHT }}
+      data-hash={node.hash || undefined}
+      onPointerEnter={() => onHoverRun(node.run)}
+      onPointerLeave={() => onHoverRun(null)}
     >
-      <Lanes node={node} lanes={lanes} />
+      <Lanes node={node} lanes={lanes} runs={runs} onHoverRun={(run) => onHoverRun(run ?? node.run)} />
 
       <button
         type="button"
