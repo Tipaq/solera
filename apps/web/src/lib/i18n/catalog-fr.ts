@@ -144,6 +144,8 @@ export const fr: Catalog = {
   'conversation.drop.attach': 'Déposer pour joindre au message',
   'conversation.meta.worktree': 'Worktree {name}',
   'conversation.meta.projectFolder': 'Dossier du projet',
+  'conversation.meta.projectFolderOn': 'Dossier du projet, sur {branch}',
+  'conversation.meta.detached': 'HEAD détachée',
   'conversation.meta.project': 'projet',
   'conversation.meta.branchOf': 'Branche de « {title} »',
   'conversation.meta.apiControlled': 'Session externe pilotée par {label}',

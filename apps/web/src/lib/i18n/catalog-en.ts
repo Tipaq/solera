@@ -158,6 +158,8 @@ export const en = {
   'conversation.drop.attach': 'Drop to attach to the message',
   'conversation.meta.worktree': 'Worktree {name}',
   'conversation.meta.projectFolder': 'Project folder',
+  'conversation.meta.projectFolderOn': 'Project folder, on {branch}',
+  'conversation.meta.detached': 'detached HEAD',
   'conversation.meta.project': 'project',
   'conversation.meta.branchOf': 'Branch of "{title}"',
   'conversation.meta.apiControlled': 'External session driven by {label}',

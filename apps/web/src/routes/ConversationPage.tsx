@@ -714,12 +714,18 @@ export function ConversationPage() {
   }, [stuckToBottom])
 
   // Le titre vit dans la ligne de conversation, pas dans le journal : il est relu
-  // quand un tour se termine, moment où le CLI a pu en proposer un.
+  // quand un tour se termine, moment où le CLI a pu en proposer un. La branche de la
+  // pastille aussi : l'agent a pu en changer, et elle doit dire ce qui est extrait.
+  const projectId = conversation?.projectId ?? null
   useEffect(() => {
     if (!stream.state.turnRunning && conversationId) {
       void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+      if (projectId) {
+        void queryClient.invalidateQueries({ queryKey: ['projects'] })
+        void queryClient.invalidateQueries({ queryKey: ['worktrees', projectId] })
+      }
     }
-  }, [stream.state.turnRunning, conversationId, queryClient])
+  }, [stream.state.turnRunning, conversationId, projectId, queryClient])
 
   /**
    * Branche la conversation juste avant un message.
@@ -774,6 +780,14 @@ export function ConversationPage() {
     AGENT_CAPABILITIES[conversation.agent].steer &&
     (stream.status === 'running' || stream.status === 'awaiting_input')
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
+  // La pastille dit la branche réellement extraite là où le fil travaille : celle du
+  // worktree, ou celle de la racine — « main » plutôt qu'un « projet » qui ne dit pas
+  // sur quoi l'agent commite. Une tête détachée se dit comme telle.
+  const place = conversation.worktreeId
+    ? worktree?.git
+    : projects?.find((project) => project.id === conversation.projectId)?.git
+  const placeBranch =
+    place?.branch === 'HEAD' ? t('conversation.meta.detached') : (place?.branch ?? null)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
     : undefined
@@ -926,12 +940,14 @@ export function ConversationPage() {
               title={
                 worktree
                   ? t('conversation.meta.worktree', { name: worktree.name })
-                  : t('conversation.meta.projectFolder')
+                  : placeBranch
+                    ? t('conversation.meta.projectFolderOn', { branch: placeBranch })
+                    : t('conversation.meta.projectFolder')
               }
             >
               {worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
               <span className="max-w-40 truncate">
-                {worktree ? (worktree.git?.branch ?? worktree.name) : t('conversation.meta.project')}
+                {placeBranch ?? worktree?.name ?? t('conversation.meta.project')}
               </span>
             </span>
           )}
@@ -988,6 +1004,7 @@ export function ConversationPage() {
                   }
                 >
                   {worktree ? worktree.name : t('conversation.meta.project')}
+                  {placeBranch ? ` · ${placeBranch}` : null}
                 </Meta>
 
                 {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
