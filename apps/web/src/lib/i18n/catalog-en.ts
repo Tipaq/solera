@@ -1443,6 +1443,7 @@ export const en = {
   'editor.quickOpen.truncated': "Partial results: enter a more precise name or path.",
   'editor.quickOpen.keys': "↑ ↓ choose · Enter open · Escape close · ⌘/Ctrl P reopen",
   'editor.image.fit': 'Fit',
+  'editor.image.open': 'Open in the viewer',
   'editor.image.actual': '100%',
   'editor.image.width': 'Width',
   'editor.image.percent': '{percent}%',

@@ -1437,6 +1437,7 @@ export const fr: Catalog = {
   'editor.quickOpen.truncated': "Résultats partiels : précise le nom ou le chemin.",
   'editor.quickOpen.keys': "↑ ↓ choisir · Entrée ouvrir · Échap fermer · ⌘/Ctrl P rouvrir",
   'editor.image.fit': 'Ajuster',
+  'editor.image.open': 'Ouvrir dans la visionneuse',
   'editor.image.actual': '100 %',
   'editor.image.width': 'Largeur',
   'editor.image.percent': '{percent} %',

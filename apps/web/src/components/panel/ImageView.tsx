@@ -33,7 +33,7 @@ export function ImageView({ scope, path }: { scope: string; path: string }) {
   const body = (
     <Viewer
       key={fullscreen ? 'fullscreen' : 'panel'}
-      scope={scope}
+      src={rawFileUrl(scope, path)}
       path={path}
       fullscreen={fullscreen}
       onFullscreen={setFullscreen}
@@ -61,8 +61,39 @@ export function ImageView({ scope, path }: { scope: string; path: string }) {
     : body
 }
 
-function Viewer({ scope, path, fullscreen, onFullscreen }: {
-  scope: string
+/**
+ * La même visionneuse, ouverte en plein écran sur une image qui n'est pas un fichier
+ * du projet : la lecture d'un outil, une pièce jointe, une image du web.
+ *
+ * Elle s'ouvrait jusqu'ici dans un nouvel onglet du navigateur, ou pas du tout : sans
+ * zoom ni glissement, une capture d'écran rendue par un outil restait une vignette.
+ * Fermer rend la main au fil, à l'endroit exact où on l'avait laissé.
+ */
+export function ImageLightbox({ src, name, onClose }: {
+  src: string
+  /** Ce que la réglette affiche : un nom de fichier, ou à défaut le texte alternatif. */
+  name: string
+  onClose: () => void
+}) {
+  const t = useTranslate()
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal
+      aria-label={t('editor.image.fullscreen', { path: name })}
+      className="fixed inset-0 z-[60] flex bg-sunken"
+    >
+      <Viewer src={src} path={name} fullscreen standalone onFullscreen={(value) => { if (!value) onClose() }} />
+    </div>,
+    document.body,
+  )
+}
+
+function Viewer({ src, path, fullscreen, standalone = false, onFullscreen }: {
+  src: string
+  /** Ouverte depuis le fil, hors du panneau : pas de « quitter le plein écran ». */
+  standalone?: boolean
+  /** Le chemin, ou le nom affiché d'une image qui n'en a pas. */
   path: string
   fullscreen: boolean
   onFullscreen: (value: boolean) => void
@@ -92,7 +123,7 @@ function Viewer({ scope, path, fullscreen, onFullscreen }: {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const pinch = useRef<number | null>(null)
 
-  const url = rawFileUrl(scope, path)
+  const url = src
   const name = path.split('/').pop() ?? path
   const format = (path.split('.').pop() ?? '').toUpperCase()
 
@@ -141,6 +172,8 @@ function Viewer({ scope, path, fullscreen, onFullscreen }: {
   useEffect(() => {
     let cancelled = false
     setBytes(null)
+    // Une image en ligne n'a pas d'en-tête à demander : ses octets sont dans l'URL.
+    if (url.startsWith('data:')) return
     void fetch(url, { method: 'HEAD', credentials: 'same-origin' })
       .then((response) => {
         const length = response.headers.get('content-length')
@@ -213,7 +246,7 @@ function Viewer({ scope, path, fullscreen, onFullscreen }: {
 
   return (
     <div
-      data-editor-file={path}
+      data-editor-file={standalone ? undefined : path}
       data-image-viewer
       tabIndex={-1}
       className="@container relative flex min-h-0 min-w-0 flex-1 flex-col outline-none"
@@ -342,7 +375,9 @@ function Viewer({ scope, path, fullscreen, onFullscreen }: {
 
           <span aria-hidden className="mx-1 h-5 w-px bg-line" />
 
-          {wide || fullscreen ? (
+          {/* Une image ouverte depuis le fil n'a pas de panneau où revenir : seul le
+              bouton de fermeture y a un sens. */}
+          {(wide || fullscreen) && !standalone ? (
             <IconButton
               size="sm"
               label={t(fullscreen ? 'editor.image.fullscreen.exit' : 'editor.image.fullscreen.enter')}

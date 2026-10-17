@@ -6,6 +6,7 @@ import { formatBytes } from '../../lib/attachments'
 import { renderableBlocks, type MessageItem } from '../../lib/chat-fold'
 import { locale, useTranslate } from '../../lib/i18n'
 import { cx } from '@solera/ui'
+import { ImageThumbnail } from '../ImageThumbnail'
 import { CopyButton } from './CopyButton'
 import { Markdown } from './Markdown'
 
@@ -241,14 +242,14 @@ function Attachments({
       {images.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {images.map((image) => (
-            <a key={image.url} href={image.url} target="_blank" rel="noopener noreferrer">
-              <img
-                src={image.url}
-                alt={t('message.attachment.alt')}
-                loading="lazy"
-                className="max-h-56 rounded-md border border-line object-contain"
-              />
-            </a>
+            <ImageThumbnail
+              key={image.url}
+              src={image.url}
+              name={t('message.attachment.alt')}
+              alt={t('message.attachment.alt')}
+              loading="lazy"
+              className="max-h-56"
+            />
           ))}
         </div>
       ) : null}
