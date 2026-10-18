@@ -49,6 +49,7 @@ export const fr: Catalog = {
   'services.scopeTitle': 'Quels services apparaissent ici ?',
   'services.scope': 'Cette vue suit la parenté des processus, pas les dossiers des projets. Les services autonomes, les processus sous tmux ou screen et ceux confiés à une autre unité systemd sont exclus. Un processus sans parent reste visible si le service Solera le prend encore en charge. Fermer le navigateur ne les arrête pas. L’arrêt avec Solera n’est annoncé que lorsque le mode de lancement du serveur le garantit.',
   'error.service_gone': 'Ce service n’est plus disponible.',
+  'error.web_cross_site': 'Une page ne se lit que depuis Solera.',
   'error.web_unreadable': 'Page illisible : {reason}',
   'error.service_untracked': 'L’origine de ce service est inconnue.',
   'error.service_changed': 'Le service a changé ou n’a pas pu être arrêté. Actualise la liste.',

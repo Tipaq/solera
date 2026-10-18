@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Globe, Loader, MonitorPlay, RotateCw, X } from 'lucide-react'
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { sanitizeReaderTree, type ReaderElement } from '@solera/protocol'
 import { Banner, Button, IconButton, SegmentedControl } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import {
@@ -27,7 +28,7 @@ export function WebPane({ scope }: { scope: string }) {
   const client = useQueryClient()
   const pane = useWebPane(scope)
   const url = pane ? (pane.history[pane.index] ?? null) : null
-  const page = useWebPage(url)
+  const page = useWebPage(url, pane?.mode ?? 'reader')
   const [address, setAddress] = useState(url ?? '')
   const [viewing, setViewing] = useState<{ src: string; name: string } | null>(null)
   const [frameKey, setFrameKey] = useState(0)
@@ -47,7 +48,7 @@ export function WebPane({ scope }: { scope: string }) {
 
   const reload = () => {
     if (pane.mode === 'live') setFrameKey((key) => key + 1)
-    else void client.invalidateQueries({ queryKey: ['web-page', url] })
+    void client.invalidateQueries({ queryKey: ['web-page', url] })
   }
 
   /** Un lien de la page lue reste dans la vue ; avec une touche, il part au navigateur. */
@@ -59,7 +60,7 @@ export function WebPane({ scope }: { scope: string }) {
       setViewing({ src: image.currentSrc || image.src, name: image.alt || image.src.split('/').pop() || '' })
       return
     }
-    if (!link?.href || event.metaKey || event.ctrlKey || event.shiftKey) return
+    if (!link?.href || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     if (!/^https?:/.test(link.href)) return
     event.preventDefault()
     navigateWeb(scope, link.href)
@@ -70,6 +71,12 @@ export function WebPane({ scope }: { scope: string }) {
   const mixed = window.location.protocol === 'https:' && url.startsWith('http:')
   const refused = page.data?.embeddable === false
   const data = page.data
+  // En *Direct*, le serveur n'a lu que les en-têtes : c'est le type qui dit si la
+  // lecture a une chance.
+  const readable = /html/.test(data?.contentType ?? '')
+  // Le cadre d'une page de Solera elle-même partagerait son origine : avec ses scripts,
+  // `allow-same-origin` lui laisserait lever son propre bac à sable et toucher la session.
+  const sameOrigin = new URL(url).origin === window.location.origin
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -129,7 +136,7 @@ export function WebPane({ scope }: { scope: string }) {
             <div className="flex flex-col gap-2 p-2">
               <Banner tone="caution">{t(mixed ? 'web.live.mixed' : 'web.live.refused')}</Banner>
               <div className="flex items-center gap-3">
-                {data?.html ? (
+                {readable ? (
                   <Button size="sm" onClick={() => setWebMode(scope, 'reader')}>{t('web.mode.reader')}</Button>
                 ) : null}
                 <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-accent underline">
@@ -145,9 +152,12 @@ export function WebPane({ scope }: { scope: string }) {
             key={`${url}-${frameKey}`}
             src={url}
             title={data?.title ?? url}
-            // Le site garde sa propre origine, distincte de celle de Solera : lui
-            // laisser ses scripts ne lui donne aucun accès à la session.
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+            // Un site tiers garde sa propre origine, distincte de celle de Solera : lui
+            // laisser ses scripts ne lui donne aucun accès à la session. Une page de
+            // Solera, elle, est tenue dans une origine opaque.
+            sandbox={sameOrigin
+              ? 'allow-scripts allow-forms allow-popups'
+              : 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'}
             referrerPolicy="no-referrer"
             className="min-h-0 w-full flex-1 border-0 bg-white"
           />
@@ -189,12 +199,7 @@ export function WebPane({ scope }: { scope: string }) {
                 </p>
                 <h1 className="text-lg font-semibold text-ink">{data.title}</h1>
               </header>
-              {/* Nettoyé par le serveur, liste blanche à l'appui : voir `web-reader.ts`. */}
-              <div
-                className="sg-reading sg-markdown sg-web-reader"
-                onClick={onReaderClick}
-                dangerouslySetInnerHTML={{ __html: data.html }}
-              />
+              <ReaderContent html={data.html} base={data.url} onClick={onReaderClick} />
             </article>
           ) : null}
         </div>
@@ -203,4 +208,32 @@ export function WebPane({ scope }: { scope: string }) {
       {viewing ? <ImageLightbox src={viewing.src} name={viewing.name} onClose={() => setViewing(null)} /> : null}
     </div>
   )
+}
+
+/**
+ * Le texte lu, inséré nœud par nœud.
+ *
+ * Déjà nettoyé par le serveur, il l'est de nouveau ici sur l'arbre que *ce* navigateur
+ * a analysé, et ce sont ces nœuds qui entrent dans la page : aucune chaîne n'est
+ * réanalysée, donc aucun écart entre deux analyseurs ne peut y faire renaître une
+ * balise. Un document de `DOMParser` est inerte : rien n'y charge ni ne s'y exécute
+ * avant le nettoyage. Voir `sanitizeReaderTree`.
+ */
+function ReaderContent({ html, base, onClick }: {
+  html: string
+  base: string
+  onClick: (event: MouseEvent<HTMLDivElement>) => void
+}) {
+  const container = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const { body } = new DOMParser().parseFromString(html, 'text/html')
+    sanitizeReaderTree(body as unknown as ReaderElement, base)
+    // Une copie de la liste d'abord : adopter un nœud le retire de `body`, dont la
+    // liste vivante se décalerait sous l'itération.
+    const nodes = Array.from(body.childNodes)
+    container.current?.replaceChildren(...nodes.map((node) => document.adoptNode(node)))
+  }, [html, base])
+
+  return <div ref={container} className="sg-reading sg-markdown sg-web-reader" onClick={onClick} />
 }

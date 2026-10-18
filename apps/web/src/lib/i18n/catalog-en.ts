@@ -61,6 +61,7 @@ export const en = {
   'services.scopeTitle': 'Which services appear here?',
   'services.scope': 'This view follows process ancestry, not project directories. Independent services, processes under tmux or screen, and other systemd units are excluded. A process whose parent has exited remains visible if the Solera service still manages it. Closing the browser does not stop these processes. Shutdown with Solera is only stated when the server’s launch configuration guarantees it.',
   'error.service_gone': 'This service is no longer available.',
+  'error.web_cross_site': 'Pages can only be read from Solera itself.',
   'error.web_unreadable': 'Unreadable page: {reason}',
   'error.service_untracked': 'The origin of this service is unknown.',
   'error.service_changed': 'The service has changed or could not be stopped. Refresh the list.',

@@ -22,6 +22,8 @@ export default defineConfig({
     'src/cli/migrate.ts',
     'src/cli/user-create.ts',
     'src/cli/search-reindex.ts',
+    // Chargé par `new Worker` à côté du bundle principal : voir `web-reader.ts`.
+    'src/web-reader-worker.ts',
   ],
   format: ['esm'],
   target: 'node22',

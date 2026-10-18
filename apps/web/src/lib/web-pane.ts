@@ -112,10 +112,15 @@ export function closeWeb(scope: string): void {
   emit()
 }
 
-export function useWebPage(url: string | null) {
+/**
+ * La page ouverte, lue par le serveur. En *Direct*, seuls ses en-têtes : le cadre veut
+ * savoir s'il s'affichera, et l'extraction de l'article coûterait pour rien.
+ */
+export function useWebPage(url: string | null, mode: WebMode) {
+  const frame = mode === 'live'
   return useQuery({
-    queryKey: ['web-page', url],
-    queryFn: () => api.get<WebPageDto>(`/api/web/read?url=${encodeURIComponent(url ?? '')}`),
+    queryKey: ['web-page', url, frame ? 'frame' : 'reader'],
+    queryFn: () => api.get<WebPageDto>(`/api/web/read?url=${encodeURIComponent(url ?? '')}${frame ? '&frame=1' : ''}`),
     enabled: url !== null,
     staleTime: 5 * 60_000,
     retry: false,
