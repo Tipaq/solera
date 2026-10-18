@@ -534,14 +534,49 @@ try {
         await window.settings.flush()
       })
       await page.getByRole('button', { name: 'Modèle : Défaut : Modèle Alpha', exact: true }).waitFor()
+      /*
+       * Les trois listes qui montrent le catalogue : la puce au pointeur, le « + » →
+       * Réglages → Modèle, et la puce au doigt. Chacune doit compter ses lignes et non
+       * chercher un nom : un doublon de la ligne par défaut ne s'appelle pas forcément
+       * comme sa jumelle — ici « Default (recommended) », le fixture n'ayant pas un
+       * identifiant de marque.
+       */
+      const twinned = ['Défaut : Modèle Alpha', 'Modèle Alpha', 'Modèle Beta', 'Sans réflexion']
+      const assertListed = (names, where) => {
+        assert.equal(names.length, twinned.length, `${where} : une ligne par entrée du catalogue (${names.join(' | ')})`)
+        // Au doigt, chaque ligne porte aussi sa phrase d'explication : le nom en tête suffit.
+        twinned.forEach((name, i) => assert.ok(names[i].startsWith(name), `${where} : « ${name} » en position ${i + 1}, lu « ${names[i]} »`))
+      }
       await model().click()
-      const listedModels = await page.getByRole('menuitemradio').allTextContents()
-      assert.match(listedModels[0], /^Défaut : Modèle Alpha/, 'Le défaut ouvre la liste')
-      assert.equal(listedModels.filter((name) => name.startsWith('Modèle Alpha')).length, 1,
-        'La valeur enregistrée `default` ne double pas sa jumelle')
+      assertListed(await page.getByRole('menuitemradio').allTextContents(), 'Puce, au pointeur')
       assert.match(await page.getByRole('menuitemradio', { checked: true }).textContent(), /^Défaut : Modèle Alpha/)
       await page.keyboard.press('Escape')
       await menuGone()
+      await openSetting('Modèle')
+      assertListed(await page.getByRole('menuitemradio').allTextContents(), '« + » → Réglages → Modèle')
+      assert.match(await page.getByRole('menuitemradio', { checked: true }).textContent(), /^Défaut : Modèle Alpha/)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      await menuGone()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await openModel()
+      const sheetModels = page.getByRole('radiogroup', { name: 'Modèle', exact: true }).getByRole('radio')
+      assertListed(await sheetModels.allTextContents(), 'Puce, au doigt')
+      assert.match(await sheetModels.and(page.locator('[aria-checked="true"]')).textContent(), /^Défaut : Modèle Alpha/)
+      await escape()
+      await page.setViewportSize(viewport)
+
+      // L'aller-retour : la jumelle épingle son modèle, la ligne par défaut rend la
+      // main au CLI. Deux gestes différents, donc deux valeurs enregistrées.
+      await pickModel(/^Modèle Alpha/)
+      await page.evaluate(() => window.settings.flush())
+      assert.equal(stored.codex.model, 'alpha', 'Choisir la jumelle épingle le modèle')
+      await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
+      await pickModel(/^Défaut : Modèle Alpha/)
+      await page.evaluate(() => window.settings.flush())
+      assert.equal(stored.codex.model, 'default', 'Revenir sur le défaut le réenregistre')
+      await page.getByRole('button', { name: 'Modèle : Défaut : Modèle Alpha', exact: true }).waitFor()
 
       // Une approbation granulaire, posée hors de Solera, se lit sans être modifiable.
       if (submenus) {
