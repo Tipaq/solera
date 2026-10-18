@@ -6,6 +6,7 @@ import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { ImageThumbnail } from '../ImageThumbnail'
+import { WebLink } from '../WebLink'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '@solera/ui'
 import { Code, Empty, Plain, Section } from './parts'
@@ -344,14 +345,12 @@ const webFetch: ToolView = (tool) => {
   return (
     <>
       <Section label={translate('tool.webfetch.page')}>
-        <a
+        <WebLink
           href={url}
-          target="_blank"
-          rel="noreferrer"
           className="truncate rounded-md border border-line bg-sunken p-2 font-mono text-xs text-accent underline"
         >
           {url}
-        </a>
+        </WebLink>
       </Section>
       {question === null ? null : (
         <Section label={translate('tool.webfetch.question')}>
@@ -367,6 +366,71 @@ const webFetch: ToolView = (tool) => {
       )}
     </>
   )
+}
+
+/**
+ * La recherche web de Claude Code. Sa sortie commence par `Links: [{title, url}, …]` :
+ * les résultats deviennent des liens qui s'ouvrent dans la vue *Web*, au lieu de
+ * lignes de texte où l'adresse se lisait sans pouvoir s'ouvrir. Une sortie d'une autre
+ * forme retombe sur la liste de lignes.
+ */
+const webSearch: ToolView = (tool) => {
+  const links = pending(tool) ? null : searchLinks(outputText(tool.output))
+  if (links === null || links.length === 0) return searchLines(tool)
+
+  return (
+    <>
+      <Section label={translate('tool.search.queryLabel')}>
+        <Plain content={text(tool.input, 'query') ?? ''} />
+      </Section>
+      <Section
+        label={translate('tool.search.results')}
+        hint={translate(links.length > 1 ? 'tool.search.resultCountMany' : 'tool.search.resultCountOne', { count: links.length })}
+      >
+        <ul className="flex flex-col gap-0.5">
+          {links.map((link) => (
+            <li key={link.url} className="min-w-0">
+              <WebLink
+                href={link.url}
+                title={link.url}
+                className="flex min-w-0 items-baseline gap-2 rounded px-1 py-0.5 text-xs hover:bg-surface-high"
+              >
+                <span className="min-w-0 truncate text-accent">{link.title || link.url}</span>
+                <span className="shrink-0 font-mono text-micro text-ink-faint">{hostOf(link.url)}</span>
+              </WebLink>
+            </li>
+          ))}
+        </ul>
+      </Section>
+    </>
+  )
+}
+
+const searchLines = matchesView('tool.search.queryLabel', ['query'])
+
+export function searchLinks(output: string | null): { title: string; url: string }[] | null {
+  const raw = output ? /^Links: (\[.*\])$/m.exec(output)?.[1] : undefined
+  if (!raw) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return null
+    return parsed.flatMap((entry: unknown) => {
+      const { title, url } = (entry ?? {}) as { title?: unknown; url?: unknown }
+      return typeof url === 'string' && /^https?:\/\//.test(url)
+        ? [{ title: typeof title === 'string' ? title : '', url }]
+        : []
+    })
+  } catch {
+    return null
+  }
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return ''
+  }
 }
 
 const plan: ToolView = (tool) => {
@@ -455,7 +519,7 @@ export const VIEWS: Record<string, ToolView> = {
   Edit: edit,
   Glob: matchesView('tool.search.patternLabel', ['pattern']),
   Grep: matchesView('tool.search.patternLabel', ['pattern']),
-  WebSearch: matchesView('tool.search.queryLabel', ['query']),
+  WebSearch: webSearch,
   TodoWrite: todos,
   Task: subAgent,
   Agent: subAgent,

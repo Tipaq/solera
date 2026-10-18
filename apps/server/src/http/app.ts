@@ -66,6 +66,7 @@ import { registerVaultRoutes } from './routes/vault.js'
 import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
+import { registerWebRoutes } from './routes/web.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
@@ -213,6 +214,7 @@ export async function buildApp(
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault)
+  registerWebRoutes(app)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
   registerGitActionRoutes(app, ctx)

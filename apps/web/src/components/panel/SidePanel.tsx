@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { Bot, ChevronLeft, FileCode, GitCompare, Search, SquareTerminal, X } from 'lucide-react'
+import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareTerminal, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
@@ -32,6 +32,8 @@ import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
 import { SearchPane } from './SearchPane'
 import { TerminalsPane } from './TerminalsPane'
+import { WebPane } from './WebPane'
+import { useWebPane } from '../../lib/web-pane'
 import { QuickOpen } from './QuickOpen'
 import { HeaderBand } from '../HeaderBand'
 
@@ -95,14 +97,19 @@ export function SidePanel({
     ? [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
     : t('panel.noWorkspace')
   const chosenTab = usePanelTab()
+  // La vue *Web* n'existe que tant qu'une page y est ouverte. Elle ne dépend d'aucun
+  // dossier : un fil libre qui cherche sur le web en a autant besoin qu'un autre.
+  const hasWeb = useWebPane(scope) !== null
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
-  const tab: PanelTab = !hasWorkspace
-    ? 'agents'
-    : conversationId || chosenTab !== 'agents'
-      ? chosenTab
-      : 'files'
+  const tab: PanelTab = chosenTab === 'web'
+    ? hasWeb ? 'web' : hasWorkspace ? 'files' : 'agents'
+    : !hasWorkspace
+      ? 'agents'
+      : conversationId || chosenTab !== 'agents'
+        ? chosenTab
+        : 'files'
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -290,6 +297,7 @@ export function SidePanel({
         tab={tab}
         hasWorkspace={hasWorkspace}
         hasConversation={Boolean(conversationId)}
+        hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
       />
 
@@ -364,6 +372,15 @@ export function SidePanel({
         />
       ) : null}
 
+      {/* Montée tant qu'une page est ouverte, comme les terminaux : la page en direct
+          est un document vivant, et la recharger à chaque passage par une autre vue
+          perdrait où l'on en était dedans. */}
+      {hasWeb ? (
+        <div className={cx('min-h-0 min-w-0 flex-1 overflow-hidden', tab === 'web' ? 'flex' : 'hidden')}>
+          <WebPane scope={scope} />
+        </div>
+      ) : null}
+
       {/* Poignée de largeur sur le bord gauche, grand écran seulement : au doigt le
           panneau occupe tout l'écran, il n'y a rien à ajuster. */}
       <div
@@ -407,7 +424,7 @@ export function SidePanel({
  * Le trait sépare les quatre vues du répertoire de la seule qui regarde la session.
  * Sur un fil libre il ne reste que la seconde, et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -416,6 +433,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadg
   /** Faux sur un fil libre : les quatre vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
   hasConversation: boolean
+  /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
+  hasWeb: boolean
   agentBadge: number
 }) {
   const t = useTranslate()
@@ -438,6 +457,13 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, agentBadg
           {hasWorkspace ? <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" /> : null}
           <Tab icon={<Bot size={15} />} label={t('panel.tab.agents')} keepLabel={!band}
             badge={agentBadge} active={tab === 'agents'} onSelect={() => setPanelTab('agents')} />
+        </>
+      ) : null}
+      {hasWeb ? (
+        <>
+          {hasWorkspace || hasConversation ? <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" /> : null}
+          <Tab icon={<Globe size={15} />} label={t('panel.tab.web')} keepLabel={!band}
+            active={tab === 'web'} onSelect={() => setPanelTab('web')} />
         </>
       ) : null}
     </>
