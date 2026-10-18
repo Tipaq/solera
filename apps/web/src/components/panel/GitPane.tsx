@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { decodeScope, type WorkspaceScope } from '../../lib/workspace-scope'
@@ -93,6 +93,7 @@ export function GitPane({
    */
   const [rebasing, setRebasing] = useState<{ onto: string | null } | null>(null)
 
+  const body = useRef<HTMLDivElement>(null)
   const state = useGitState(scope)
   const graph = useGraph(scope, {}, limit)
   // Lus dès l'ouverture et pas seulement sur leur destination : c'est d'eux que le
@@ -160,8 +161,11 @@ export function GitPane({
 
   // Le détail d'un commit remplace la liste, dans les deux destinations qui en
   // ouvrent un : le panneau peut n'avoir que 20 rem, et un volet de plus y laisserait
-  // deux colonnes illisibles.
-  const reading = selected !== null && (destination === 'graph' || destination === 'search')
+  // deux colonnes illisibles. À partir de 56 rem, il y a la place des deux : le détail
+  // s'ouvre à côté, et la liste garde sa place et sa sélection.
+  const opened = selected !== null && (destination === 'graph' || destination === 'search')
+  const beside = useWiderThan(body, BESIDE_REM)
+  const reading = opened && !beside
 
   const openHistory = (path: string, blame: boolean): void => {
     setFile({ path, blame })
@@ -194,7 +198,7 @@ export function GitPane({
 
         <Banners state={state.data} onOpenThread={openThread} />
 
-        <div className="flex min-h-0 min-w-0 flex-1">
+        <div ref={body} className="flex min-h-0 min-w-0 flex-1">
           <Rail
             active={destination}
             counts={counts}
@@ -234,10 +238,11 @@ export function GitPane({
                 filters={{}}
                 limit={limit}
                 onMore={() => setLimit((value) => value + GRAPH_PAGE)}
-                selected={null}
+                selected={beside ? selected : null}
                 onSelect={select}
                 menus={menus}
                 onOpenThread={openThread}
+                head={state.data?.head?.hash ?? null}
               />
             ) : null}
 
@@ -273,7 +278,7 @@ export function GitPane({
                 onFilters={setFilters}
                 limit={limit}
                 onMore={() => setLimit((value) => value + GRAPH_PAGE)}
-                selected={null}
+                selected={beside ? selected : null}
                 onSelect={select}
                 menus={menus}
                 onOpenThread={openThread}
@@ -296,6 +301,20 @@ export function GitPane({
               />
             ) : null}
           </div>
+
+          {!rebasing && opened && beside && selected !== null ? (
+            <div className="flex min-h-0 w-[28rem] max-w-[45%] shrink-0 flex-col border-l border-line">
+              <CommitDetail
+                key={selected}
+                scope={scope}
+                hash={selected}
+                menus={menus}
+                beside
+                onBack={() => setSelected(null)}
+                onOpenThread={openThread}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </GitActionsProvider>
@@ -321,4 +340,23 @@ function Banners({
       {error ? <ErrorBanner message={error} onClose={clearError} /> : null}
     </>
   )
+}
+
+/** La largeur du corps de la vue à partir de laquelle un commit s'ouvre à côté du graphe. */
+const BESIDE_REM = 56
+
+/** Vrai quand l'élément est plus large que `rem` : le panneau se redimensionne à la main. */
+function useWiderThan(target: RefObject<HTMLElement | null>, rem: number): boolean {
+  const [wider, setWider] = useState(false)
+  useEffect(() => {
+    const node = target.current
+    if (!node) return
+    const unit = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    const observer = new ResizeObserver(([entry]) => {
+      setWider((entry?.contentRect.width ?? 0) >= rem * unit)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [target, rem])
+  return wider
 }

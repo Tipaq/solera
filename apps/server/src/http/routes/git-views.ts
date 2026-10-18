@@ -7,6 +7,7 @@ import {
   type CommitDetailDto,
   type ConflictsDto,
   type FileHistoryDto,
+  type GitHeadDto,
   type GraphDto,
   type GraphNodeDto,
   type GraphQuery,
@@ -14,7 +15,7 @@ import {
   type RefsDto,
   type ThreadRefDto,
 } from '@solera/protocol'
-import { readCommitDiff } from '../../git.js'
+import { readCommitDiff, readGitHead } from '../../git.js'
 import { readConflicts } from '../../git-conflicts.js'
 import {
   agentOf,
@@ -111,6 +112,11 @@ function graphNodes(
       collapses: row.collapses,
       tip: row.tip,
       root: row.root,
+      run: row.run,
+      aboveRun: row.aboveRun,
+      throughRuns: row.throughRuns,
+      joinRuns: row.joinRuns,
+      collapseRuns: row.collapseRuns,
       working: null,
     }
   })
@@ -145,7 +151,18 @@ function applyFilters(nodes: GraphNodeDto[], query: GraphQuery): GraphNodeDto[] 
  * entre des commits sans rapport. GitKraken aplatit pareil quand on filtre.
  */
 const flatten = (nodes: GraphNodeDto[]): GraphNodeDto[] =>
-  nodes.map((node) => ({ ...node, lane: 0, through: [], joins: [], collapses: [], tip: true, root: true }))
+  nodes.map((node) => ({
+    ...node,
+    lane: 0,
+    through: [],
+    joins: [],
+    collapses: [],
+    tip: true,
+    root: true,
+    throughRuns: [],
+    joinRuns: [],
+    collapseRuns: [],
+  }))
 
 /** La fenêtre de l'historique d'un fichier : au-delà, on ne défile plus, on cherche. */
 const FILE_LOG = 100
@@ -192,7 +209,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
 
       try {
         const window = await readGraphWindow(cwd, query)
-        if (!window) return { nodes: null, lanes: 1, hasMore: false, branch: null, filtered: false }
+        if (!window) return { nodes: null, lanes: 1, runs: [], hasMore: false, branch: null, filtered: false }
 
         const threads = projectId ? readThreadWindows(ctx.db, projectId) : []
         // Les fils sans worktree travaillent à la racine du projet : c'est là que le
@@ -211,6 +228,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         return {
           nodes: filtered ? flatten(nodes) : [...working, ...nodes],
           lanes: filtered ? 1 : window.lanes,
+          runs: window.runs,
           hasMore: window.hasMore,
           branch: window.branch,
           filtered,
@@ -218,6 +236,13 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
       } catch (err) {
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
+    })
+
+    /** La branche extraite, seule : la pastille de l'en-tête du fil la relit à chaque tour. */
+    app.get(`${base}/git/head`, async (request): Promise<GitHeadDto | null> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      return readGitHead(cwdOf(ctx.db, id, user.id))
     })
 
     /** La destination *Branches* : Local, Worktrees, Distants, Étiquettes, Sous-modules. */

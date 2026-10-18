@@ -297,7 +297,15 @@ function markFilePaths(md: MarkdownIt): void {
     if (token.attrGet('data-sg-drop') !== null) return md.utils.escapeHtml(alt)
 
     const path = token.attrGet('data-sg-path')
-    if (path === null) return self.renderToken(tokens, idx, options)
+    if (path === null) {
+      // Une image du web : marquée, c'est elle — et elle seule — que la visionneuse
+      // ouvre au clic. Le reste du rendu peut porter d'autres images sans hériter du geste.
+      token.attrSet('data-sg-web-image', '')
+      // `renderToken` ne recopie pas le texte alternatif, que la règle par défaut tire
+      // des enfants : sans lui, l'image n'avait pas de nom.
+      token.attrSet('alt', alt)
+      return self.renderToken(tokens, idx, options)
+    }
 
     // Fichier confirmé mais pas affichable : le même bouton que pour un chemin cité,
     // portant le texte alternatif quand il y en a un, le chemin sinon.

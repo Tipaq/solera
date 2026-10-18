@@ -69,7 +69,7 @@ import {
 } from '../lib/thread-window'
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
-import { useWorktrees } from '../lib/worktrees'
+import { useGitHead, useWorktrees } from '../lib/worktrees'
 
 /**
  * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
@@ -157,6 +157,7 @@ export function ConversationPage() {
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId ?? undefined)
+  const { data: head } = useGitHead(conversationId, Boolean(conversation?.projectId))
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
   const { data: allConversations } = useAllConversations()
@@ -721,6 +722,16 @@ export function ConversationPage() {
     }
   }, [stream.state.turnRunning, conversationId, queryClient])
 
+  // La branche de la pastille aussi, mais à la **fin** d'un tour seulement : l'agent a
+  // pu en changer. Pas à l'ouverture du fil, où la lecture vient d'être faite.
+  const wasRunning = useRef(stream.state.turnRunning)
+  useEffect(() => {
+    if (wasRunning.current && !stream.state.turnRunning && conversationId) {
+      void queryClient.invalidateQueries({ queryKey: ['git-head', conversationId] })
+    }
+    wasRunning.current = stream.state.turnRunning
+  }, [stream.state.turnRunning, conversationId, queryClient])
+
   /**
    * Branche la conversation juste avant un message.
    *
@@ -774,6 +785,13 @@ export function ConversationPage() {
     AGENT_CAPABILITIES[conversation.agent].steer &&
     (stream.status === 'running' || stream.status === 'awaiting_input')
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
+  // La pastille dit la branche réellement extraite là où le fil travaille : celle du
+  // worktree, ou celle de la racine — « main » plutôt qu'un « projet » qui ne dit pas
+  // sur quoi l'agent commite. Une tête détachée se dit comme telle, et un rebase nomme
+  // la branche qu'il rejoue.
+  const placeBranch = head?.branch
+    ?? (head?.rebasing ? t('conversation.meta.rebasing', { branch: head.rebasing }) : null)
+    ?? (head?.detached ? t('conversation.meta.detached', { hash: head.detached }) : null)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
     : undefined
@@ -926,12 +944,14 @@ export function ConversationPage() {
               title={
                 worktree
                   ? t('conversation.meta.worktree', { name: worktree.name })
-                  : t('conversation.meta.projectFolder')
+                  : placeBranch
+                    ? t('conversation.meta.projectFolderOn', { branch: placeBranch })
+                    : t('conversation.meta.projectFolder')
               }
             >
               {worktree ? <GitBranch size={10} /> : <FolderTree size={10} />}
               <span className="max-w-40 truncate">
-                {worktree ? (worktree.git?.branch ?? worktree.name) : t('conversation.meta.project')}
+                {placeBranch ?? worktree?.name ?? t('conversation.meta.project')}
               </span>
             </span>
           )}
@@ -988,6 +1008,7 @@ export function ConversationPage() {
                   }
                 >
                   {worktree ? worktree.name : t('conversation.meta.project')}
+                  {placeBranch ? ` · ${placeBranch}` : null}
                 </Meta>
 
                 {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques

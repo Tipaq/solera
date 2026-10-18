@@ -1,3 +1,4 @@
+import { useState, useSyncExternalStore } from 'react'
 import type { GraphNodeDto } from '@solera/protocol'
 
 /**
@@ -11,14 +12,8 @@ import type { GraphNodeDto } from '@solera/protocol'
  * client n'a pas les parents des commits qu'il n'a pas reçus.
  */
 
-/** Cinq teintes, reprises ensuite : au-delà, la couleur ne distingue plus rien. */
-const COLORS = [
-  'var(--sg-accent)',
-  'var(--sg-positive)',
-  'var(--sg-caution)',
-  'var(--sg-loop)',
-  'var(--sg-critical)',
-]
+/** Les huit teintes des couloirs, déclarées dans les jetons. */
+const COLORS = 8
 
 export const ROW_HEIGHT = 30
 
@@ -37,12 +32,78 @@ export function laneStep(lanes: number): number {
 export const laneX = (lane: number, step: number): number => 9 + lane * step
 export const laneWidth = (lanes: number): number => laneX(lanes - 1, laneStep(lanes)) + 9
 
-const color = (lane: number): string => COLORS[lane % COLORS.length] as string
+/**
+ * La couleur d'une course : celle de sa branche quand elle en a une.
+ *
+ * Tirée du nom et non du rang du couloir : `main` garde sa teinte quel que soit le
+ * couloir qu'il occupe dans la fenêtre, et d'un rechargement à l'autre. Une course sans
+ * nom prend celle de son numéro.
+ */
+export function runColor(run: number, names: (string | null)[]): string {
+  const name = names[run]
+  let index = run
+  if (name) {
+    let hash = 0
+    for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) | 0
+    index = Math.abs(hash)
+  }
+  return `var(--sg-lane-${index % COLORS})`
+}
+
+/**
+ * La course survolée, tenue hors de l'état de la liste.
+ *
+ * Survoler ne doit redessiner aucune des centaines de rangées : seuls l'en-tête et la
+ * règle de surlignage s'abonnent. Les rangées n'en reçoivent que `set`, qui ne change
+ * jamais.
+ */
+export interface RunHover {
+  get: () => number | null
+  set: (run: number | null) => void
+  subscribe: (listener: () => void) => () => void
+}
+
+export function useRunHover(): RunHover {
+  const [store] = useState<RunHover>(() => {
+    let current: number | null = null
+    const listeners = new Set<() => void>()
+    return {
+      get: () => current,
+      set: (run) => {
+        if (run === current) return
+        current = run
+        for (const listener of listeners) listener()
+      },
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    }
+  })
+  return store
+}
+
+export const useHoveredRun = (hover: RunHover): number | null =>
+  useSyncExternalStore(hover.subscribe, hover.get)
+
+/**
+ * Le surlignage d'une course au survol, posé en une règle de style plutôt que par un
+ * état de chaque rangée : seul le sélecteur change.
+ */
+export function RunHighlight({ scope, hover }: { scope: string; hover: RunHover }) {
+  const run = useHoveredRun(hover)
+  if (run === null) return null
+  return (
+    <style>
+      {`[data-graph="${scope}"] [data-run] { opacity: 0.25; }`}
+      {`[data-graph="${scope}"] [data-run="${run}"] { opacity: 1; stroke-width: 2.5; }`}
+    </style>
+  )
+}
 
 /** Les quatre natures de nœud : commit, fusion, en cours, remise. */
-function Node({ node, x }: { node: GraphNodeDto; x: number }) {
+function Node({ node, x, stroke }: { node: GraphNodeDto; x: number; stroke: string }) {
   const y = ROW_HEIGHT / 2
-  const stroke = color(node.lane)
 
   if (node.kind === 'stash') {
     return (
@@ -77,62 +138,126 @@ function Node({ node, x }: { node: GraphNodeDto; x: number }) {
   return <circle cx={x} cy={y} r={4.5} fill={stroke} />
 }
 
-export function Lanes({ node, lanes }: { node: GraphNodeDto; lanes: number }) {
+export function Lanes({ node, lanes, runs, onHoverRun }: {
+  node: GraphNodeDto
+  lanes: number
+  /** Le nom de chaque course, pour la couleur. */
+  runs: (string | null)[]
+  /** Un trait survolé désigne sa course ; null quand le pointeur le quitte. */
+  onHoverRun: (run: number | null) => void
+}) {
   const step = laneStep(lanes)
   const width = laneWidth(lanes)
   const middle = ROW_HEIGHT / 2
   const x = laneX(node.lane, step)
+  const own = runColor(node.run, runs)
+
+  /**
+   * Un trait de 1,5 px ne se vise pas : chacun reçoit une zone de survol invisible de
+   * 8 px, posée sous le dessin, qui désigne sa course.
+   */
+  const hit = (key: string, run: number, shape: { d: string } | { x1: number; y1: number; x2: number; y2: number }) => {
+    const common = {
+      key: `hit-${key}`,
+      stroke: 'transparent',
+      strokeWidth: 8,
+      fill: 'none',
+      pointerEvents: 'stroke' as const,
+      onPointerEnter: () => onHoverRun(run),
+      onPointerLeave: () => onHoverRun(null),
+    }
+    return 'd' in shape ? <path {...common} d={shape.d} /> : <line {...common} {...shape} />
+  }
+
+  const throughs = node.through.map((lane, index) => ({ lane, run: node.throughRuns[index] ?? lane }))
+  const joins = node.joins.map((lane, index) => ({ lane, run: node.joinRuns[index] ?? lane }))
+  const collapses = node.collapses.map((lane, index) => ({ lane, run: node.collapseRuns[index] ?? lane }))
+  const curve = (lane: number, from: number) =>
+    `M ${laneX(lane, step)} ${from} C ${laneX(lane, step)} ${middle}, ${x} ${middle}, ${x} ${middle}`
+  // Le couloir du nœud en deux moitiés : celle d'en haut appartient à la course qui
+  // arrive, celle d'en bas à celle qui repart. Elles diffèrent là où le nom change.
+  const above = node.tip ? null : { x1: x, y1: 0, x2: x, y2: middle }
+  const below = node.root ? null : { x1: x, y1: middle, x2: x, y2: ROW_HEIGHT }
 
   return (
+    // Masqué aux lecteurs d'écran : le dessin double ce que dit la rangée, et ses
+    // zones de survol ne sont qu'un raccourci du pointeur.
     <svg width={width} height={ROW_HEIGHT} className="shrink-0" aria-hidden>
-      {node.through.map((lane) => (
+      {throughs.map(({ lane, run }) => hit(`through-${lane}`, run, {
+        x1: laneX(lane, step), y1: 0, x2: laneX(lane, step), y2: ROW_HEIGHT,
+      }))}
+      {joins.map(({ lane, run }) => hit(`join-${lane}`, run, { d: curve(lane, ROW_HEIGHT) }))}
+      {collapses.map(({ lane, run }) => hit(`collapse-${lane}`, run, { d: curve(lane, 0) }))}
+      {above ? hit('above', node.aboveRun, above) : null}
+      {below ? hit('below', node.run, below) : null}
+
+      {throughs.map(({ lane, run }) => (
         <line
           key={lane}
+          data-run={run}
           x1={laneX(lane, step)}
           y1={0}
           x2={laneX(lane, step)}
           y2={ROW_HEIGHT}
-          stroke={color(lane)}
+          stroke={runColor(run, runs)}
           strokeWidth={1.5}
           opacity={0.7}
+          pointerEvents="none"
         />
       ))}
 
       {/* Le couloir du nœud : d'en haut sauf s'il commence ici, jusqu'en bas sauf s'il
           s'arrête ici. C'est ce qui distingue une tête de branche d'un commit du milieu. */}
-      <line
-        x1={x}
-        y1={node.tip ? middle : 0}
-        x2={x}
-        y2={node.root ? middle : ROW_HEIGHT}
-        stroke={color(node.lane)}
-        strokeWidth={1.5}
-        opacity={0.7}
-      />
+      {above ? (
+        <line
+          data-run={node.aboveRun}
+          {...above}
+          stroke={runColor(node.aboveRun, runs)}
+          strokeWidth={1.5}
+          opacity={0.7}
+          pointerEvents="none"
+        />
+      ) : null}
+      {below ? (
+        <line
+          data-run={node.run}
+          {...below}
+          stroke={own}
+          strokeWidth={1.5}
+          opacity={0.7}
+          pointerEvents="none"
+        />
+      ) : null}
 
-      {node.joins.map((lane) => (
+      {joins.map(({ lane, run }) => (
         <path
           key={`join-${lane}`}
-          d={`M ${laneX(lane, step)} ${ROW_HEIGHT} C ${laneX(lane, step)} ${middle}, ${x} ${middle}, ${x} ${middle}`}
+          data-run={run}
+          d={curve(lane, ROW_HEIGHT)}
           fill="none"
-          stroke={color(lane)}
+          stroke={runColor(run, runs)}
           strokeWidth={1.5}
           opacity={0.7}
+          pointerEvents="none"
         />
       ))}
 
-      {node.collapses.map((lane) => (
+      {collapses.map(({ lane, run }) => (
         <path
           key={`collapse-${lane}`}
-          d={`M ${laneX(lane, step)} 0 C ${laneX(lane, step)} ${middle}, ${x} ${middle}, ${x} ${middle}`}
+          data-run={run}
+          d={curve(lane, 0)}
           fill="none"
-          stroke={color(lane)}
+          stroke={runColor(run, runs)}
           strokeWidth={1.5}
           opacity={0.7}
+          pointerEvents="none"
         />
       ))}
 
-      <Node node={node} x={x} />
+      <g data-run={node.run} pointerEvents="none">
+        <Node node={node} x={x} stroke={own} />
+      </g>
     </svg>
   )
 }

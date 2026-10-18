@@ -1,8 +1,9 @@
-import { useContext, useMemo, type MouseEvent } from 'react'
+import { useContext, useMemo, useState, type MouseEvent } from 'react'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
+import { ImageLightbox } from '../panel/ImageView'
 import { CodeBlock } from './CodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 
@@ -32,6 +33,7 @@ export function Markdown({
   onToggleTask?: (index: number, checked: boolean) => void
 }) {
   const conversationId = useContext(FileLinkContext)
+  const [viewing, setViewing] = useState<{ src: string; name: string } | null>(null)
   const tasks = onToggleTask ? ('interactive' as const) : undefined
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
@@ -82,6 +84,14 @@ export function Markdown({
 
     const target = (event.target as HTMLElement).closest<HTMLElement>('[data-sg-path]')
     const path = target?.dataset.sgPath
+
+    // Une image du web, qui n'est pas un fichier du projet : la visionneuse en plein
+    // écran plutôt que rien. Celle qu'un lien enveloppe garde son lien.
+    const image = event.target as HTMLElement
+    if (!path && image instanceof HTMLImageElement && image.hasAttribute('data-sg-web-image') && !image.closest('a')) {
+      setViewing({ src: image.currentSrc || image.src, name: image.alt || image.src.split('/').pop() || '' })
+      return
+    }
     if (!path || !conversationId) return
 
     event.preventDefault()
@@ -112,6 +122,7 @@ export function Markdown({
           />
         )
       })}
+      {viewing ? <ImageLightbox src={viewing.src} name={viewing.name} onClose={() => setViewing(null)} /> : null}
     </div>
   )
 }

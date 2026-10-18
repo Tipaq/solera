@@ -261,6 +261,11 @@
     height: auto;
   }
 
+  /* Une image du web s'ouvre aussi dans la visionneuse, sauf si un lien l'enveloppe. */
+  .sg-markdown img[data-sg-web-image]:not(a img) {
+    cursor: zoom-in;
+  }
+
   /*
    * Blocs indentés de quatre espaces. Les blocs délimités par des accents graves ne
    * passent plus par ici : ils sont rendus par CodeBlock, avec leur barre d'outils.

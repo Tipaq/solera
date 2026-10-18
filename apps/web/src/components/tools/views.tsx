@@ -5,6 +5,7 @@ import { parseUnifiedDiff } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
+import { ImageThumbnail } from '../ImageThumbnail'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '@solera/ui'
 import { Code, Empty, Plain, Section } from './parts'
@@ -86,10 +87,11 @@ const read: ToolView = (tool) => {
   if (image !== null) {
     return (
       <Section label={translate('tool.read.content')} hint={hint}>
-        <img
+        <ImageThumbnail
           src={`data:${image.mediaType};base64,${image.data}`}
+          name={path.split('/').pop() ?? path}
           alt={path}
-          className="max-h-80 rounded-md border border-line object-contain"
+          className="max-h-80"
         />
       </Section>
     )
@@ -130,10 +132,11 @@ const viewImage: ToolView = (tool) => {
       ) : image === null ? (
         <Empty>{translate('tool.viewImage.unavailable')}</Empty>
       ) : (
-        <img
+        <ImageThumbnail
           src={`data:${image.mediaType};base64,${image.data}`}
+          name={path.split('/').pop() ?? path}
           alt={path}
-          className="max-h-80 rounded-md border border-line object-contain"
+          className="max-h-80"
         />
       )}
     </Section>
