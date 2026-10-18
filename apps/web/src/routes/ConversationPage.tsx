@@ -69,7 +69,7 @@ import {
 } from '../lib/thread-window'
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
-import { useWorktrees } from '../lib/worktrees'
+import { useGitHead, useWorktrees } from '../lib/worktrees'
 
 /**
  * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
@@ -157,6 +157,7 @@ export function ConversationPage() {
   // démarre le CLI côté serveur : elle ne part que pour l'agent de la conversation.
   const { data: catalog } = useAgentModels(conversation?.agent ?? 'claude', Boolean(conversation))
   const { data: worktrees } = useWorktrees(conversation?.projectId ?? undefined)
+  const { data: head } = useGitHead(conversationId, Boolean(conversation?.projectId))
   // Déjà chargée pour la sidebar : la provenance d'une branche s'y trouve sans requête
   // supplémentaire.
   const { data: allConversations } = useAllConversations()
@@ -714,18 +715,22 @@ export function ConversationPage() {
   }, [stuckToBottom])
 
   // Le titre vit dans la ligne de conversation, pas dans le journal : il est relu
-  // quand un tour se termine, moment où le CLI a pu en proposer un. La branche de la
-  // pastille aussi : l'agent a pu en changer, et elle doit dire ce qui est extrait.
-  const projectId = conversation?.projectId ?? null
+  // quand un tour se termine, moment où le CLI a pu en proposer un.
   useEffect(() => {
     if (!stream.state.turnRunning && conversationId) {
       void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
-      if (projectId) {
-        void queryClient.invalidateQueries({ queryKey: ['projects'] })
-        void queryClient.invalidateQueries({ queryKey: ['worktrees', projectId] })
-      }
     }
-  }, [stream.state.turnRunning, conversationId, projectId, queryClient])
+  }, [stream.state.turnRunning, conversationId, queryClient])
+
+  // La branche de la pastille aussi, mais à la **fin** d'un tour seulement : l'agent a
+  // pu en changer. Pas à l'ouverture du fil, où la lecture vient d'être faite.
+  const wasRunning = useRef(stream.state.turnRunning)
+  useEffect(() => {
+    if (wasRunning.current && !stream.state.turnRunning && conversationId) {
+      void queryClient.invalidateQueries({ queryKey: ['git-head', conversationId] })
+    }
+    wasRunning.current = stream.state.turnRunning
+  }, [stream.state.turnRunning, conversationId, queryClient])
 
   /**
    * Branche la conversation juste avant un message.
@@ -782,12 +787,11 @@ export function ConversationPage() {
   const worktree = worktrees?.find((entry) => entry.id === conversation.worktreeId)
   // La pastille dit la branche réellement extraite là où le fil travaille : celle du
   // worktree, ou celle de la racine — « main » plutôt qu'un « projet » qui ne dit pas
-  // sur quoi l'agent commite. Une tête détachée se dit comme telle.
-  const place = conversation.worktreeId
-    ? worktree?.git
-    : projects?.find((project) => project.id === conversation.projectId)?.git
-  const placeBranch =
-    place?.branch === 'HEAD' ? t('conversation.meta.detached') : (place?.branch ?? null)
+  // sur quoi l'agent commite. Une tête détachée se dit comme telle, et un rebase nomme
+  // la branche qu'il rejoue.
+  const placeBranch = head?.branch
+    ?? (head?.rebasing ? t('conversation.meta.rebasing', { branch: head.rebasing }) : null)
+    ?? (head?.detached ? t('conversation.meta.detached', { hash: head.detached }) : null)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
     : undefined

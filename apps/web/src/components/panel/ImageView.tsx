@@ -1,6 +1,7 @@
 import { Maximize2, Minimize2, Minus, Plus, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import * as Dialog from '@radix-ui/react-dialog'
 import { IconButton, cx, useMediaQuery } from '@solera/ui'
 import { formatBytes } from '../../lib/attachments'
 import { rawFileUrl } from '../../lib/files-io'
@@ -75,17 +76,50 @@ export function ImageLightbox({ src, name, onClose }: {
   name: string
   onClose: () => void
 }) {
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose() }}>
+      <LightboxContent src={src} name={name} onClose={onClose} />
+    </Dialog.Root>
+  )
+}
+
+/**
+ * Le contenu de la visionneuse, à poser dans un `Dialog.Root`.
+ *
+ * Séparé pour qu'une vignette puisse en être le `Dialog.Trigger` : c'est à lui que
+ * Radix rend le focus à la fermeture. Sans déclencheur, il retombait sur la page.
+ *
+ * Une vraie boîte de dialogue : le focus y entre, le fil derrière devient inerte, et
+ * Échap ne ferme qu'elle — sans s'arrêter là, il fermait aussi la recherche du fil,
+ * qui écoute la même touche sur la fenêtre.
+ */
+export function LightboxContent({ src, name, onClose }: {
+  src: string
+  name: string
+  onClose: () => void
+}) {
   const t = useTranslate()
-  return createPortal(
-    <div
-      role="dialog"
-      aria-modal
-      aria-label={t('editor.image.fullscreen', { path: name })}
-      className="fixed inset-0 z-[60] flex bg-sunken"
-    >
-      <Viewer src={src} path={name} fullscreen standalone onFullscreen={(value) => { if (!value) onClose() }} />
-    </div>,
-    document.body,
+  return (
+    <Dialog.Portal>
+      <Dialog.Content
+        aria-describedby={undefined}
+        onEscapeKeyDown={(event) => event.stopPropagation()}
+        // Le focus va à la boîte elle-même et non au premier bouton : « Réduire » ouvrait
+        // son infobulle par-dessus l'image à chaque ouverture.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          ;(event.currentTarget as HTMLElement | null)?.focus()
+        }}
+        // Rendue dans l'arbre React de qui l'ouvre, à travers un portail : ses clics
+        // remonteraient sinon jusqu'aux gestionnaires du fil — le clic du Markdown,
+        // le pli d'une carte d'outil.
+        onClick={(event) => event.stopPropagation()}
+        className="fixed inset-0 z-[60] flex bg-sunken outline-none"
+      >
+        <Dialog.Title className="sr-only">{t('editor.image.fullscreen', { path: name })}</Dialog.Title>
+        <Viewer src={src} path={name} fullscreen standalone onFullscreen={(value) => { if (!value) onClose() }} />
+      </Dialog.Content>
+    </Dialog.Portal>
   )
 }
 
@@ -172,8 +206,10 @@ function Viewer({ src, path, fullscreen, standalone = false, onFullscreen }: {
   useEffect(() => {
     let cancelled = false
     setBytes(null)
-    // Une image en ligne n'a pas d'en-tête à demander : ses octets sont dans l'URL.
-    if (url.startsWith('data:')) return
+    // Le poids n'est écrit que dans le pied, absent de la visionneuse ouverte depuis le
+    // fil. Le demander y enverrait une requête de plus à l'origine d'une image du web,
+    // pour rien. Une image en ligne, elle, n'a pas d'en-tête : ses octets sont dans l'URL.
+    if (standalone || url.startsWith('data:')) return
     void fetch(url, { method: 'HEAD', credentials: 'same-origin' })
       .then((response) => {
         const length = response.headers.get('content-length')
@@ -181,7 +217,7 @@ function Viewer({ src, path, fullscreen, standalone = false, onFullscreen }: {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [url])
+  }, [url, standalone])
 
   /**
    * Zoom au pointeur : le point sous le curseur ne bouge pas.
@@ -234,13 +270,14 @@ function Viewer({ src, path, fullscreen, standalone = false, onFullscreen }: {
     if (!fullscreen) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return
-      if (event.key === 'Escape') { event.preventDefault(); onFullscreen(false) }
+      // Seule, la visionneuse est une boîte de dialogue : c'est elle qui ferme sur Échap.
+      if (event.key === 'Escape') { if (!standalone) { event.preventDefault(); onFullscreen(false) } }
       else if (event.key.toLowerCase() === 'f') { event.preventDefault(); goTo('fit') }
       else if (event.key === '0') { event.preventDefault(); goTo('actual') }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fullscreen, goTo, onFullscreen])
+  }, [fullscreen, standalone, goTo, onFullscreen])
 
   const percent = Math.round(scale * 100)
 

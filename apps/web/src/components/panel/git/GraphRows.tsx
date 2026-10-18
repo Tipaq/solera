@@ -44,7 +44,9 @@ export function GraphHeader({ lanes, hovered, onHead }: {
         {t('git.column.graph')}
       </span>
       {hovered ? (
-        <span className="flex min-w-0 flex-1 items-center gap-1 normal-case tracking-normal" role="status">
+        // Pas une région vivante : elle naît et meurt au gré du pointeur, et un lecteur
+        // d'écran l'annoncerait à chaque trait franchi — quand il l'annonce.
+        <span className="flex min-w-0 flex-1 items-center gap-1 normal-case tracking-normal" data-hovered-branch>
           <GitBranch size={10} className="shrink-0" style={{ color: hovered.color }} />
           <span className="truncate text-ink">{hovered.name ?? t('git.graph.unnamedBranch')}</span>
         </span>

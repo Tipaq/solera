@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'node:child_process'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import { promisify } from 'node:util'
-import type { FileState } from '@solera/protocol'
+import type { FileState, GitHeadDto } from '@solera/protocol'
 
 const run = promisify(execFile)
 
@@ -63,6 +65,35 @@ export async function readGitStatus(cwd: string): Promise<GitStatus | null> {
   } catch {
     return null
   }
+}
+
+/**
+ * La branche extraite dans un répertoire, et rien d'autre : ce que dit la pastille du
+ * fil. Une ou deux commandes, contre quatre pour `readGitStatus` — elle se relit à
+ * chaque fin de tour.
+ *
+ * Pendant un rebase, HEAD est détachée, mais la branche qu'on rebase est connue : la
+ * taire laisserait croire qu'on n'est sur aucune.
+ */
+export async function readGitHead(cwd: string): Promise<GitHeadDto | null> {
+  const branch = await git(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']).then((raw) => raw.trim()).catch(() => null)
+  if (branch) return { branch, detached: null, rebasing: null }
+  const hash = await git(cwd, ['rev-parse', '--short', 'HEAD']).then((raw) => raw.trim()).catch(() => null)
+  if (!hash) {
+    // Hors dépôt, ou dépôt sans commit : `rev-parse --git-dir` les distingue.
+    const repo = await git(cwd, ['rev-parse', '--git-dir']).then(() => true).catch(() => false)
+    return repo ? { branch: null, detached: null, rebasing: null } : null
+  }
+  let rebasing: string | null = null
+  for (const name of ['rebase-merge/head-name', 'rebase-apply/head-name']) {
+    const path = await git(cwd, ['rev-parse', '--git-path', name]).then((raw) => raw.trim()).catch(() => null)
+    const head = path ? await readFile(resolve(cwd, path), 'utf8').catch(() => null) : null
+    if (head) {
+      rebasing = head.trim().replace(/^refs\/heads\//, '')
+      break
+    }
+  }
+  return { branch: null, detached: hash, rebasing }
 }
 
 export async function listBranches(cwd: string): Promise<string[]> {

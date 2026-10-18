@@ -87,11 +87,26 @@ export interface GraphNodeDto {
    * `GraphDto.runs` ; c'est elle que le survol surligne sur toutes les rangées.
    */
   run: number
+  /**
+   * La course du trait qui arrive par le haut dans le couloir du nœud. Elle diffère de
+   * `run` là où le nom change : sous la tête d'une branche, ou à une fourche.
+   */
+  aboveRun: number
   throughRuns: number[]
   joinRuns: number[]
   collapseRuns: number[]
   /** Renseigné pour le seul nœud « en cours ». */
   working: { files: number; added: number; removed: number } | null
+}
+
+/** La branche extraite là où un fil travaille, pour la pastille de son en-tête. */
+export interface GitHeadDto {
+  /** Null quand HEAD est détachée. Un dépôt sans commit a déjà la sienne, à naître. */
+  branch: string | null
+  /** Le hash court de HEAD quand elle est détachée. */
+  detached: string | null
+  /** La branche qu'un rebase en cours rejoue, HEAD étant alors détachée. */
+  rebasing: string | null
 }
 
 export interface GraphDto {

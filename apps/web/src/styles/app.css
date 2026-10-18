@@ -262,7 +262,7 @@
   }
 
   /* Une image du web s'ouvre aussi dans la visionneuse, sauf si un lien l'enveloppe. */
-  .sg-markdown img:not(a img) {
+  .sg-markdown img[data-sg-web-image]:not(a img) {
     cursor: zoom-in;
   }
 

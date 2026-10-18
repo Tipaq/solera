@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { cx } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
-import { ImageLightbox } from './panel/ImageView'
+import * as Dialog from '@radix-ui/react-dialog'
+import { LightboxContent } from './panel/ImageView'
 
 /**
  * Une image du fil qui s'ouvre dans la visionneuse au clic.
@@ -22,16 +23,13 @@ export function ImageThumbnail({ src, name, alt, className, loading }: {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title={t('editor.image.open')}
-        className="block max-w-full cursor-zoom-in rounded-md"
-      >
-        <img src={src} alt={alt} loading={loading} className={cx('rounded-md border border-line object-contain', className)} />
-      </button>
-      {open ? <ImageLightbox src={src} name={name} onClose={() => setOpen(false)} /> : null}
-    </>
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Trigger asChild>
+        <button type="button" title={t('editor.image.open')} className="block max-w-full cursor-zoom-in rounded-md">
+          <img src={src} alt={alt} loading={loading} className={cx('rounded-md border border-line object-contain', className)} />
+        </button>
+      </Dialog.Trigger>
+      {open ? <LightboxContent src={src} name={name} onClose={() => setOpen(false)} /> : null}
+    </Dialog.Root>
   )
 }

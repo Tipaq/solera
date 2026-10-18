@@ -104,6 +104,68 @@ test('une course porte le nom de sa branche, et la fusion nomme celle qu\'elle o
   assert.equal(base?.run, merge?.run)
 })
 
+test('au point de fourche, l\'histoire de main garde son nom quand une branche plus récente tient le premier couloir', () => {
+  // Le cas courant : un agent commite dans son worktree après le dernier commit de
+  // main. `--date-order` lui donne le couloir 0, et c'est main qui s'y replie.
+  const decorated = (hash: string, parents: string[], decoration: string): LogEntry => ({
+    ...entry(hash, parents),
+    decoration,
+  })
+  const { rows, runs } = assignLanes(
+    [decorated('x1', ['base'], 'feat/x'), decorated('m1', ['base'], 'HEAD -> main'), entry('base', ['root']), entry('root')],
+    commit,
+  )
+  const [x1, m1, base, root] = rows
+  assert.equal(runs[x1?.run ?? -1], 'feat/x')
+  assert.equal(runs[m1?.run ?? -1], 'main')
+  assert.equal(runs[base?.run ?? -1], 'main', 'la base appartient à main, pas à feat/x')
+  assert.equal(runs[root?.run ?? -1], 'main')
+  // Le trait qui arrive sur la base par son couloir reste celui de feat/x : la course
+  // change au nœud, pas au-dessus de lui.
+  assert.equal(runs[base?.aboveRun ?? -1], 'feat/x')
+})
+
+test('sans branche principale ni HEAD parmi elles, la fourche se tait au lieu de deviner', () => {
+  const decorated = (hash: string, parents: string[], decoration: string): LogEntry => ({
+    ...entry(hash, parents),
+    decoration,
+  })
+  const { rows, runs } = assignLanes(
+    [decorated('x1', ['base'], 'feat/x'), decorated('y1', ['base'], 'feat/y'), entry('base')],
+    commit,
+  )
+  assert.equal(runs[rows[2]?.run ?? -1], null)
+})
+
+test('une branche en retard sur une autre nomme l\'histoire sous sa tête', () => {
+  // feat/x a un commit d'avance sur main, sur le même couloir.
+  const decorated = (hash: string, parents: string[], decoration: string): LogEntry => ({
+    ...entry(hash, parents),
+    decoration,
+  })
+  const { rows, runs } = assignLanes(
+    [decorated('x1', ['m1'], 'feat/x'), decorated('m1', ['root'], 'HEAD -> main, origin/main'), entry('root')],
+    commit,
+  )
+  const [x1, m1, root] = rows
+  assert.equal(runs[x1?.run ?? -1], 'feat/x')
+  assert.equal(runs[m1?.run ?? -1], 'main')
+  assert.equal(runs[root?.run ?? -1], 'main')
+  assert.equal(m1?.lane, x1?.lane, 'le dessin ne bouge pas : seule la course change')
+})
+
+test('la copie distante en retard ne renomme pas la branche qu\'elle suit', () => {
+  const decorated = (hash: string, parents: string[], decoration: string): LogEntry => ({
+    ...entry(hash, parents),
+    decoration,
+  })
+  const { rows, runs } = assignLanes(
+    [decorated('m2', ['m1'], 'HEAD -> main'), decorated('m1', ['root'], 'origin/main'), entry('root')],
+    commit,
+  )
+  assert.deepEqual(rows.map((row) => runs[row.run]), ['main', 'main', 'main'])
+})
+
 test('le nom d\'une branche se lit dans la décoration et dans le message de fusion', () => {
   assert.equal(branchOf('HEAD -> feat/y, origin/feat/y'), 'feat/y')
   assert.equal(branchOf('origin/feat/y, feat/y, tag: v1'), 'feat/y')

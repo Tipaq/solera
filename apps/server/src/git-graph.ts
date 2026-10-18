@@ -180,10 +180,21 @@ export function agentOf(coAuthors: string[]): string | null {
  *
  * Chaque occupation d'un couloir, de son ouverture à sa libération, est une *course*,
  * numérotée : c'est elle que le survol surligne d'un bout à l'autre, et elle qui porte
- * le nom de la branche. Git ne retient pas sur quelle branche un commit a été écrit ;
- * le nom vient de la première ref croisée en descendant la course, ou, pour celle
- * qu'ouvre une fusion, du message de la fusion. Une branche fusionnée puis supprimée
- * sans message parlant reste sans nom plutôt que d'en recevoir un faux.
+ * le nom de la branche. Git ne retient pas sur quelle branche un commit a été écrit :
+ * le nom ne se lit qu'aux endroits où il est sûr, et la course **change au nœud** —
+ * le trait qui arrive par le haut (`aboveRun`) garde l'ancienne — plutôt que de
+ * prolonger un nom au-delà de ce qu'il couvre.
+ *
+ * - Un commit qui porte une branche ouvre la course de ce nom : sous la tête de
+ *   `main`, c'est `main`, même si `feat/x` arrivait par le même couloir.
+ * - Une fourche — plusieurs couloirs attendent le même commit — ne prolonge que la
+ *   branche principale ou celle de HEAD. Sinon elle ouvre une course sans nom :
+ *   `--date-order` donne le premier couloir à la branche la plus récente, et c'est
+ *   elle qui baptisait jusque-là toute l'histoire en dessous.
+ * - Une course qu'ouvre une fusion prend le nom que son message donne.
+ *
+ * Une branche fusionnée puis supprimée sans message parlant reste sans nom plutôt que
+ * d'en recevoir un faux.
  */
 export function assignLanes(
   entries: LogEntry[],
@@ -195,6 +206,9 @@ export function assignLanes(
   const runs: (string | null)[] = []
   const rows: LaneRow[] = []
   let width = 0
+
+  /** La course de HEAD, dès qu'on l'a croisée : elle a priorité à une fourche. */
+  let headRun: number | null = null
 
   const open = (lane: number, name: string | null): number => {
     runs.push(name)
@@ -217,14 +231,37 @@ export function assignLanes(
     const tip = waiting.length === 0
     const lane = tip ? free() : (waiting[0] as number)
     const collapses = waiting.slice(1)
-    const run = tip ? open(lane, null) : (runOf[lane] as number)
-    if (runs[run] === null) runs[run] = branchOf(entry.decoration)
 
     const through = expected
       .map((hash, index) => (hash !== null ? index : -1))
       .filter((index) => index >= 0 && index !== lane && !collapses.includes(index))
     const throughRuns = through.map((index) => runOf[index] as number)
     const collapseRuns = collapses.map((index) => runOf[index] as number)
+
+    const own = branchOf(entry.decoration)
+    const candidates = waiting.map((index) => runOf[index] as number)
+    const aboveRun = tip ? null : (runOf[lane] as number)
+    let run: number
+    if (tip) {
+      run = open(lane, own)
+    } else {
+      // `origin/main` sous la tête de `main` n'est que sa copie distante en retard :
+      // la course de `main` continue.
+      const named = own === null
+        ? undefined
+        : candidates.find((candidate) => runs[candidate] === own || own.endsWith(`/${runs[candidate] ?? ''}`))
+      const kept = candidates.length === 1
+        ? candidates[0]
+        : (candidates.find((candidate) => TRUNKS.has(runs[candidate] ?? ''))
+          ?? candidates.find((candidate) => candidate === headRun))
+      run = own !== null
+        ? (named ?? open(lane, own))
+        : kept === undefined ? open(lane, null) : kept
+      runOf[lane] = run
+    }
+    if (entry.decoration.split(',').some((part) => part.trim() === 'HEAD' || part.trim().startsWith('HEAD -> '))) {
+      headRun = run
+    }
 
     for (const index of collapses) expected[index] = null
 
@@ -259,6 +296,7 @@ export function assignLanes(
       tip,
       root: parents.length === 0,
       run,
+      aboveRun: aboveRun ?? run,
       throughRuns,
       joinRuns,
       collapseRuns,
@@ -287,6 +325,9 @@ export function branchOf(decoration: string): string | null {
   return names.reduce((best, name) => (name.length < best.length ? name : best))
 }
 
+/** Les noms d'une branche principale : à une fourche, c'est elle qui continue. */
+const TRUNKS = new Set(['main', 'master', 'trunk', 'develop', 'origin/main', 'origin/master'])
+
 /** La branche qu'une fusion nomme dans son message, quand git ou GitHub l'a écrit. */
 export function mergedBranch(subject: string): string | null {
   const match =
@@ -305,6 +346,8 @@ export interface LaneRow {
   root: boolean
   /** La course du nœud, et celle de chaque trait, dans l'ordre des listes ci-dessus. */
   run: number
+  /** La course du trait qui arrive par le haut dans le couloir du nœud. */
+  aboveRun: number
   throughRuns: number[]
   joinRuns: number[]
   collapseRuns: number[]
@@ -553,6 +596,7 @@ export function workingNode(
     root: false,
     // Le travail en cours se pose sur la branche extraite : il en prolonge la course.
     run: first?.run ?? 0,
+    aboveRun: first?.run ?? 0,
     throughRuns: lines.map(runOf),
     joinRuns: [],
     collapseRuns: [],

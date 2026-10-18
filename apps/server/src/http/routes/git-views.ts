@@ -7,6 +7,7 @@ import {
   type CommitDetailDto,
   type ConflictsDto,
   type FileHistoryDto,
+  type GitHeadDto,
   type GraphDto,
   type GraphNodeDto,
   type GraphQuery,
@@ -14,7 +15,7 @@ import {
   type RefsDto,
   type ThreadRefDto,
 } from '@solera/protocol'
-import { readCommitDiff } from '../../git.js'
+import { readCommitDiff, readGitHead } from '../../git.js'
 import { readConflicts } from '../../git-conflicts.js'
 import {
   agentOf,
@@ -112,6 +113,7 @@ function graphNodes(
       tip: row.tip,
       root: row.root,
       run: row.run,
+      aboveRun: row.aboveRun,
       throughRuns: row.throughRuns,
       joinRuns: row.joinRuns,
       collapseRuns: row.collapseRuns,
@@ -234,6 +236,13 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
       } catch (err) {
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
+    })
+
+    /** La branche extraite, seule : la pastille de l'en-tête du fil la relit à chaque tour. */
+    app.get(`${base}/git/head`, async (request): Promise<GitHeadDto | null> => {
+      const user = requireUser(request)
+      const { id } = request.params as { id: string }
+      return readGitHead(cwdOf(ctx.db, id, user.id))
     })
 
     /** La destination *Branches* : Local, Worktrees, Distants, Étiquettes, Sous-modules. */

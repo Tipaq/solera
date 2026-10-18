@@ -275,7 +275,7 @@ try {
   // course du couloir qui la porte encore. Et une branche fusionnée puis sans ref
   // reçoit le nom que son message de fusion lui donne.
   const branchShown = (name) =>
-    panel.getByRole('status').filter({ hasText: new RegExp(`^${name}$`) }).first().waitFor()
+    panel.locator('[data-hovered-branch]').filter({ hasText: new RegExp(`^${name}$`) }).first().waitFor()
   await panel.getByText('Prefetch radar tiles around the viewport', { exact: true }).hover()
   await branchShown('feat/radar-prefetch')
   await panel.getByText('Add a city search box', { exact: true }).hover()

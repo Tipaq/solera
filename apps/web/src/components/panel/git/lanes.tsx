@@ -174,16 +174,22 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
   const collapses = node.collapses.map((lane, index) => ({ lane, run: node.collapseRuns[index] ?? lane }))
   const curve = (lane: number, from: number) =>
     `M ${laneX(lane, step)} ${from} C ${laneX(lane, step)} ${middle}, ${x} ${middle}, ${x} ${middle}`
-  const ownLine = { x1: x, y1: node.tip ? middle : 0, x2: x, y2: node.root ? middle : ROW_HEIGHT }
+  // Le couloir du nœud en deux moitiés : celle d'en haut appartient à la course qui
+  // arrive, celle d'en bas à celle qui repart. Elles diffèrent là où le nom change.
+  const above = node.tip ? null : { x1: x, y1: 0, x2: x, y2: middle }
+  const below = node.root ? null : { x1: x, y1: middle, x2: x, y2: ROW_HEIGHT }
 
   return (
-    <svg width={width} height={ROW_HEIGHT} className="shrink-0">
+    // Masqué aux lecteurs d'écran : le dessin double ce que dit la rangée, et ses
+    // zones de survol ne sont qu'un raccourci du pointeur.
+    <svg width={width} height={ROW_HEIGHT} className="shrink-0" aria-hidden>
       {throughs.map(({ lane, run }) => hit(`through-${lane}`, run, {
         x1: laneX(lane, step), y1: 0, x2: laneX(lane, step), y2: ROW_HEIGHT,
       }))}
       {joins.map(({ lane, run }) => hit(`join-${lane}`, run, { d: curve(lane, ROW_HEIGHT) }))}
       {collapses.map(({ lane, run }) => hit(`collapse-${lane}`, run, { d: curve(lane, 0) }))}
-      {hit('own', node.run, ownLine)}
+      {above ? hit('above', node.aboveRun, above) : null}
+      {below ? hit('below', node.run, below) : null}
 
       {throughs.map(({ lane, run }) => (
         <line
@@ -202,14 +208,26 @@ export function Lanes({ node, lanes, runs, onHoverRun }: {
 
       {/* Le couloir du nœud : d'en haut sauf s'il commence ici, jusqu'en bas sauf s'il
           s'arrête ici. C'est ce qui distingue une tête de branche d'un commit du milieu. */}
-      <line
-        data-run={node.run}
-        {...ownLine}
-        stroke={own}
-        strokeWidth={1.5}
-        opacity={0.7}
-        pointerEvents="none"
-      />
+      {above ? (
+        <line
+          data-run={node.aboveRun}
+          {...above}
+          stroke={runColor(node.aboveRun, runs)}
+          strokeWidth={1.5}
+          opacity={0.7}
+          pointerEvents="none"
+        />
+      ) : null}
+      {below ? (
+        <line
+          data-run={node.run}
+          {...below}
+          stroke={own}
+          strokeWidth={1.5}
+          opacity={0.7}
+          pointerEvents="none"
+        />
+      ) : null}
 
       {joins.map(({ lane, run }) => (
         <path

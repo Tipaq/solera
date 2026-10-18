@@ -88,7 +88,7 @@ export function Markdown({
     // Une image du web, qui n'est pas un fichier du projet : la visionneuse en plein
     // écran plutôt que rien. Celle qu'un lien enveloppe garde son lien.
     const image = event.target as HTMLElement
-    if (!path && image instanceof HTMLImageElement && !image.closest('a')) {
+    if (!path && image instanceof HTMLImageElement && image.hasAttribute('data-sg-web-image') && !image.closest('a')) {
       setViewing({ src: image.currentSrc || image.src, name: image.alt || image.src.split('/').pop() || '' })
       return
     }
