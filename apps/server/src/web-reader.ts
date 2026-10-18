@@ -1,7 +1,8 @@
-import { lookup } from 'node:dns/promises'
+import dns, { type LookupAddress } from 'node:dns'
 import { BlockList, isIP } from 'node:net'
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { Agent, fetch, type Response } from 'undici'
 import { readerUrl, type WebPageDto } from '@solera/protocol'
 import type { WebArticle } from './web-article.js'
 
@@ -37,15 +38,48 @@ const HEADERS = {
 }
 
 /**
- * Les adresses jamais lues. La vérification porte sur la résolution DNS faite avant la
- * requête, que `fetch` refait de son côté : un nom qui change de réponse entre les deux
- * passerait. Le refus vise un lien égaré, pas un attaquant qui tient un serveur DNS — et
- * l'utilisateur connecté a de toute façon un shell par ses agents.
+ * Les adresses jamais lues : liaison locale, et Quad100, l'API locale de Tailscale, en
+ * IPv4 comme en IPv6.
+ *
+ * Une adresse écrite dans l'URL est vérifiée avant la requête. Un nom l'est au moment
+ * de la connexion, sur la résolution même que la connexion utilise (`checkedLookup`) :
+ * vérifier une première résolution puis laisser `fetch` en faire une seconde laissait
+ * un serveur DNS répondre une adresse publique à l'une et interdite à l'autre.
  */
 const BLOCKED = new BlockList()
 BLOCKED.addSubnet('169.254.0.0', 16, 'ipv4')
 BLOCKED.addSubnet('fe80::', 10, 'ipv6')
 BLOCKED.addAddress('100.100.100.100', 'ipv4')
+BLOCKED.addAddress('fd7a:115c:a1e0::53', 'ipv6')
+
+const RESERVED = 'This address is reserved to the machine and cannot be read.'
+
+function isBlocked(address: string, family: number | string): boolean {
+  return BLOCKED.check(address, family === 6 || family === 'IPv6' ? 'ipv6' : 'ipv4')
+}
+
+/**
+ * La résolution des connexions de la vue Web : celle de Node, dont chaque adresse est
+ * vérifiée avant d'être rendue à la connexion. `dns.lookup` est lu à l'appel, pas à
+ * l'import, pour que les tests puissent jouer un serveur DNS.
+ */
+const checkedLookup: typeof dns.lookup = ((
+  hostname: string,
+  options: dns.LookupOptions,
+  callback: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void,
+) => {
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err, '', 0)
+    if (addresses.length === 0 || addresses.some(({ address, family }) => isBlocked(address, family))) {
+      return callback(Object.assign(new Error(RESERVED), { code: 'SOLERA_RESERVED' }), '', 0)
+    }
+    if (options.all) return callback(null, addresses)
+    const [first] = addresses
+    callback(null, first?.address ?? '', first?.family ?? 4)
+  })
+}) as typeof dns.lookup
+
+const dispatcher = new Agent({ connect: { lookup: checkedLookup } })
 
 /** `safeUrl` reste le nom côté serveur ; la règle vit dans le protocole, partagée. */
 export const safeUrl = readerUrl
@@ -60,7 +94,7 @@ export const safeUrl = readerUrl
  * en https hors de la machine. De `X-Frame-Options`, seuls `DENY` et `SAMEORIGIN`
  * refusent ; le navigateur ignore toute autre valeur.
  */
-export function embeddable(headers: Headers): boolean {
+export function embeddable(headers: { get(name: string): string | null }): boolean {
   const policies = (headers.get('content-security-policy') ?? '').split(',')
   const ancestors = policies.flatMap((policy) => {
     const match = /(?:^|;)\s*frame-ancestors(?=[\s;]|$)([^;]*)/i.exec(policy)
@@ -105,6 +139,8 @@ export async function readWebPage(target: string, { frameOnly = false } = {}): P
   } catch (err) {
     if (err instanceof WebReadError) throw err
     if (signal.aborted) throw new WebReadError('The page took too long to answer.')
+    // `fetch` enveloppe l'échec de la connexion : le refus de `checkedLookup` est dessous.
+    if ((err as { cause?: { code?: string } }).cause?.code === 'SOLERA_RESERVED') throw new WebReadError(RESERVED)
     throw new WebReadError(err instanceof Error ? err.message : String(err))
   }
 }
@@ -113,8 +149,8 @@ export async function readWebPage(target: string, { frameOnly = false } = {}): P
 async function fetchFollowing(start: string, signal: AbortSignal): Promise<{ response: Response; url: string }> {
   let url = start
   for (let hop = 0; ; hop++) {
-    await assertReachable(url)
-    const response = await fetch(url, { redirect: 'manual', signal, headers: HEADERS })
+    assertReachable(url)
+    const response = await fetch(url, { redirect: 'manual', signal, headers: HEADERS, dispatcher })
     const location = response.headers.get('location')
     if (response.status < 300 || response.status >= 400 || !location) return { response, url }
 
@@ -126,17 +162,11 @@ async function fetchFollowing(start: string, signal: AbortSignal): Promise<{ res
   }
 }
 
-async function assertReachable(url: string): Promise<void> {
+/** Une adresse écrite en chiffres ne passe pas par la résolution : on la vérifie ici. */
+function assertReachable(url: string): void {
   const host = new URL(url).hostname.replace(/^\[|\]$/g, '')
-  const addresses = isIP(host)
-    ? [{ address: host, family: isIP(host) }]
-    // Un nom qui ne se résout pas échouera dans `fetch`, avec son propre message.
-    : await lookup(host, { all: true }).catch(() => [])
-  for (const { address, family } of addresses) {
-    if (BLOCKED.check(address, family === 6 ? 'ipv6' : 'ipv4')) {
-      throw new WebReadError('This address is reserved to the machine and cannot be read.')
-    }
-  }
+  const family = isIP(host)
+  if (family !== 0 && isBlocked(host, family)) throw new WebReadError(RESERVED)
 }
 
 async function readCapped(response: Response): Promise<Uint8Array> {

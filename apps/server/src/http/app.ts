@@ -67,6 +67,7 @@ import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerWebRoutes } from './routes/web.js'
+import { registerFrameGuard } from './frame-guard.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
@@ -110,6 +111,7 @@ export async function buildApp(
   })
 
   registerErrorHandler(app)
+  registerFrameGuard(app)
 
   /**
    * Rien ne compressait sur le chemin : ni Solera, ni le nginx qui le précède, dont le

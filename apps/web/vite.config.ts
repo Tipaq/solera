@@ -194,6 +194,9 @@ export default defineConfig({
   ],
   server: {
     port: 5417,
+    // Comme le serveur en production (`frame-guard.ts`) : l'interface ne s'affiche dans
+    // le cadre de personne, y compris celui du mode Direct de la vue Web.
+    headers: { 'content-security-policy': "frame-ancestors 'none'" },
     proxy: {
       '/api': {
         target: `http://127.0.0.1:${SERVER_PORT}`,

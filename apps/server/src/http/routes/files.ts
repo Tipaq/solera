@@ -175,9 +175,12 @@ export function registerFileRoutes(app: FastifyInstance, ctx: AppContext): void 
       // c'est la visionneuse du navigateur qui l'affiche, et la même politique la prive
       // de ses propres ressources, donc de tout affichage. `nosniff` reste la garantie
       // que le type annoncé est celui qui sera appliqué.
-      if (imageType) {
-        reply.header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'")
-      }
+      // `frame-ancestors 'self'` : le panneau encadre lui-même un PDF, et seul lui le
+      // peut — sans directive, le garde de `frame-guard.ts` le refuserait à tous.
+      reply.header(
+        'content-security-policy',
+        imageType ? "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'" : "frame-ancestors 'self'",
+      )
 
       reply
         .header('content-type', type)
