@@ -51,6 +51,23 @@ function formatBytes(value: number): string {
  * explicitement qu'il ne faut pas découper `ConversationPage`. Relever le budget est
  * une réponse légitime, le message le dit.
  */
+/**
+ * En développement, l'interface refuse d'être encadrée, comme le serveur la sert en
+ * production (`registerWebClient`). Tout ce que Vite sert hors de `/api` : les modules
+ * n'en ont que faire, et `/api` sert des fichiers bruts que l'éditeur encadre.
+ */
+function noFraming(): Plugin {
+  return {
+    name: 'solera-no-framing',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith('/api/')) res.setHeader('content-security-policy', "frame-ancestors 'none'")
+        next()
+      })
+    },
+  }
+}
+
 function precacheBudget(): Plugin {
   /*
    * La mesure se prend en `writeBundle`, mais le verdict tombe en `closeBundle`.
@@ -130,6 +147,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    noFraming(),
     // Avant `VitePWA`, pour que le dépassement soit expliqué par le garde plutôt que
     // par le « Assets exceeding the limit » de Workbox.
     precacheBudget(),

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import dns from 'node:dns'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { after, test } from 'node:test'
@@ -6,7 +7,8 @@ import Fastify from 'fastify'
 import type { UserRow } from '@solera/db'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerWebRoutes } from '../src/http/routes/web.js'
-import { embeddable, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
+import { sanitizeReaderTree, type ReaderElement, type ReaderNode } from '@solera/protocol'
+import { embeddable, parseLimits, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
 
 /**
  * Le HTML lu part tel quel dans le panneau, sur l'origine de Solera : le nettoyage est
@@ -41,6 +43,25 @@ test('commentaires, CDATA et instructions de traitement disparaissent : les anal
     assert.doesNotMatch(html, /onerror|<!--|<\?/, trap)
     assert.match(html, /<p>avant<\/p>/)
   }
+})
+
+test('un nœud dont les propriétés sont masquées est retiré sans qu\'on les appelle', () => {
+  // Dans le navigateur, `<form><input name="tagName"><input name="remove">` fait de
+  // `form.tagName` et `form.remove` des champs : rien de ce qu'ils disent ne vaut.
+  const removed: ReaderNode[] = []
+  const field = { nodeType: 1, tagName: 'INPUT' }
+  const masked = [
+    { nodeType: 1, tagName: field, remove: field },
+    { nodeType: field, tagName: 'FORM', remove: field },
+  ]
+  const root = {
+    nodeType: 1,
+    tagName: 'DIV',
+    childNodes: masked,
+    removeChild: (child: ReaderNode) => removed.push(child),
+  } as unknown as ReaderElement
+  sanitizeReaderTree(root, 'https://site.test/')
+  assert.deepEqual(removed, masked)
 })
 
 test('les adresses relatives se résolvent sur la page, les schémas exotiques tombent', () => {
@@ -144,9 +165,36 @@ test('seuls http et https se lisent', async () => {
 })
 
 test('une adresse de liaison locale est refusée, en direct comme au bout d\'une redirection', async () => {
-  await assert.rejects(readWebPage('http://169.254.169.254/latest/meta-data/'), WebReadError)
-  await assert.rejects(readWebPage('http://[fe80::1]/'), WebReadError)
+  for (const address of [
+    'http://169.254.169.254/latest/meta-data/',
+    'http://2852039166/',
+    'http://[::ffff:169.254.169.254]/',
+    'http://[fe80::1]/',
+    'http://100.100.100.100/',
+    'http://[fd7a:115c:a1e0::53]/',
+  ]) {
+    await assert.rejects(readWebPage(address), /reserved/, address)
+  }
   await assert.rejects(readWebPage(`${base}/metadata`), /reserved/)
+})
+
+test('un nom se vérifie sur la résolution même de la connexion', async (t) => {
+  // Un DNS de rebinding : la première réponse est sans danger, les suivantes visent
+  // l'adresse interdite. Il n'y a qu'une résolution, et c'est elle qui est vérifiée.
+  const { port } = new URL(base)
+  let calls = 0
+  const original = dns.lookup
+  t.mock.method(dns, 'lookup', (hostname: string, options: object, callback: (...args: unknown[]) => void) => {
+    if (hostname === 'reserved.test') return callback(null, [{ address: '169.254.169.254', family: 4 }])
+    if (hostname === 'rebind.test') {
+      calls++
+      return callback(null, [{ address: calls === 1 ? '127.0.0.1' : '169.254.169.254', family: 4 }])
+    }
+    return Reflect.apply(original, dns, [hostname, options, callback])
+  })
+  await assert.rejects(readWebPage(`http://reserved.test:${port}/article`), /reserved/)
+  assert.equal((await readWebPage(`http://rebind.test:${port}/article`)).title, 'Un article')
+  assert.equal(calls, 1, 'une seule résolution par connexion')
 })
 
 test('les échecs sortent en erreurs de lecture, pas en erreurs du serveur', async () => {
@@ -170,7 +218,20 @@ test('une page trop lourde tue son processus d\'extraction, pas le serveur', asy
   assert.equal((await readWebPage(`${base}/article`)).title, 'Un article')
 })
 
-test('la route exige une session, et refuse d\'être appelée depuis un autre site', async () => {
+test('une extraction trop longue est arrêtée, et la file reste bornée', async (t) => {
+  const limits = { ...parseLimits }
+  t.after(() => Object.assign(parseLimits, limits))
+
+  parseLimits.timeoutMs = 1
+  await assert.rejects(readWebPage(`${base}/article`), /too long/)
+
+  Object.assign(parseLimits, limits, { parallel: 1, waiting: 0 })
+  const results = await Promise.allSettled([readWebPage(`${base}/article`), readWebPage(`${base}/article`)])
+  assert.deepEqual(results.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+  assert.match(String((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason), /Too many/)
+})
+
+test('la route exige une session, et n\'est appelée que par le client de Solera', async () => {
   const app = Fastify()
   registerErrorHandler(app)
   app.addHook('preHandler', async (request) => {
@@ -179,14 +240,18 @@ test('la route exige une session, et refuse d\'être appelée depuis un autre si
   registerWebRoutes(app)
   const read = (headers: Record<string, string>) =>
     app.inject({ url: `/api/web/read?url=${encodeURIComponent(`${base}/article`)}`, headers })
+  const client = { 'x-test-user': '1', 'x-solera-request': '1' }
 
   assert.equal((await read({})).statusCode, 401)
-  for (const site of ['cross-site', 'same-site']) {
-    const response = await read({ 'x-test-user': '1', 'sec-fetch-site': site })
+  for (const site of ['cross-site', 'same-site', 'none']) {
+    const response = await read({ ...client, 'sec-fetch-site': site })
     assert.equal(response.statusCode, 403, site)
     assert.equal(response.json().error.code, 'web_cross_site')
   }
-  assert.equal((await read({ 'x-test-user': '1', 'sec-fetch-site': 'same-origin' })).statusCode, 200)
-  assert.equal((await read({ 'x-test-user': '1' })).statusCode, 200, 'un client sans Sec-Fetch-Site passe')
+  // Une navigation, ou une image d'une page lue, partie de l'origine de Solera.
+  assert.equal((await read({ 'x-test-user': '1', 'sec-fetch-site': 'same-origin' })).statusCode, 403)
+  assert.equal((await read({ 'x-test-user': '1' })).statusCode, 403, 'un vieux navigateur, sans Sec-Fetch-Site')
+  assert.equal((await read({ ...client, 'sec-fetch-site': 'same-origin' })).statusCode, 200)
+  assert.equal((await read(client)).statusCode, 200, 'le client, sans Sec-Fetch-Site')
   await app.close()
 })

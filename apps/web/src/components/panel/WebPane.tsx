@@ -76,6 +76,9 @@ export function WebPane({ scope }: { scope: string }) {
   const readable = /html/.test(data?.contentType ?? '')
   // Le cadre d'une page de Solera elle-même partagerait son origine : avec ses scripts,
   // `allow-same-origin` lui laisserait lever son propre bac à sable et toucher la session.
+  // Ce calcul ne voit que l'adresse demandée, pas celle où le cadre finit : une page
+  // tierce qui redirige vers Solera est arrêtée par le serveur, dont l'interface refuse
+  // tout cadre (`frame-ancestors 'none'`, voir `registerWebClient`).
   const sameOrigin = new URL(url).origin === window.location.origin
 
   return (
@@ -154,7 +157,7 @@ export function WebPane({ scope }: { scope: string }) {
             title={data?.title ?? url}
             // Un site tiers garde sa propre origine, distincte de celle de Solera : lui
             // laisser ses scripts ne lui donne aucun accès à la session. Une page de
-            // Solera, elle, est tenue dans une origine opaque.
+            // Solera demandée telle quelle est tenue dans une origine opaque.
             sandbox={sameOrigin
               ? 'allow-scripts allow-forms allow-popups'
               : 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'}
@@ -228,7 +231,14 @@ function ReaderContent({ html, base, onClick }: {
 
   useEffect(() => {
     const { body } = new DOMParser().parseFromString(html, 'text/html')
-    sanitizeReaderTree(body as unknown as ReaderElement, base)
+    try {
+      sanitizeReaderTree(body as unknown as ReaderElement, base)
+    } catch {
+      // Un arbre que le nettoyage ne sait pas parcourir n'entre pas : il n'en reste que
+      // le texte. Lever ici démonterait toute l'interface, faute de limite d'erreur.
+      container.current?.replaceChildren(document.createTextNode(body.textContent ?? ''))
+      return
+    }
     // Une copie de la liste d'abord : adopter un nœud le retire de `body`, dont la
     // liste vivante se décalerait sous l'itération.
     const nodes = Array.from(body.childNodes)

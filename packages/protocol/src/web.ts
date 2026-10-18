@@ -38,12 +38,12 @@ export interface WebPageDto {
  */
 export interface ReaderNode {
   readonly nodeType: number
-  remove(): void
 }
 
 export interface ReaderElement extends ReaderNode {
   readonly tagName: string
   readonly childNodes: ArrayLike<ReaderNode>
+  removeChild(child: ReaderNode): unknown
   getAttributeNames(): string[]
   getAttribute(name: string): string | null
   setAttribute(name: string, value: string): void
@@ -104,18 +104,25 @@ export function readerUrl(value: string, base: string, images = false): string |
  * Seuls le texte et les éléments de la liste survivent : un commentaire, une section
  * CDATA ou une instruction de traitement sont retirés, parce que c'est là que les
  * analyseurs divergent.
+ *
+ * Un nœud se retire par son parent, et son nom se lit avant tout le reste : dans le
+ * navigateur, les champs d'un `<form>` masquent ses propriétés (`<input name="remove">`
+ * fait de `form.remove` ce champ, `name="tagName"` de même). Un nœud dont le type ou le
+ * nom n'est plus ce qu'il dit être est retiré, sans rien lui demander d'autre.
  */
 export function sanitizeReaderTree(root: ReaderElement, base: string): void {
   for (const child of Array.from(root.childNodes)) {
-    if (child.nodeType === TEXT_NODE) continue
-    if (child.nodeType !== ELEMENT_NODE) {
-      child.remove()
+    const type = child.nodeType
+    if (type === TEXT_NODE) continue
+    const name = type === ELEMENT_NODE ? (child as ReaderElement).tagName : null
+    if (typeof name !== 'string') {
+      root.removeChild(child)
       continue
     }
     const element = child as ReaderElement
-    const tag = element.tagName.toLowerCase()
+    const tag = name.toLowerCase()
     if (DROP.has(tag)) {
-      element.remove()
+      root.removeChild(element)
       continue
     }
     sanitizeReaderTree(element, base)
@@ -142,7 +149,7 @@ export function sanitizeReaderTree(root: ReaderElement, base: string): void {
       const src = element.getAttribute('src')
       const url = src ? readerUrl(src, base, true) : null
       if (!url) {
-        element.remove()
+        root.removeChild(element)
         continue
       }
       element.setAttribute('src', url)

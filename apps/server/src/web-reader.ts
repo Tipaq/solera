@@ -1,7 +1,8 @@
-import { lookup } from 'node:dns/promises'
-import { BlockList, isIP } from 'node:net'
+import dns, { type LookupAddress, type LookupAllOptions } from 'node:dns'
+import { BlockList, isIP, type LookupFunction } from 'node:net'
 import { fork } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { Agent, fetch, type Response } from 'undici'
 import { readerUrl, type WebPageDto } from '@solera/protocol'
 import type { WebArticle } from './web-article.js'
 
@@ -13,7 +14,8 @@ export { sanitizeHtml } from './web-article.js'
  * Le serveur va chercher l'adresse qu'on lui donne, réseau local compris : c'est voulu,
  * les aperçus d'une application qui tourne sur la machine passent par là. Seules les
  * adresses de liaison locale (le service de métadonnées d'un hôte cloud, `169.254/16`)
- * et l'API locale de Tailscale sont refusées, à chaque saut de redirection.
+ * et l'API locale de Tailscale sont refusées, à chaque saut de redirection, sur
+ * l'adresse même à laquelle on se connecte.
  *
  * L'article est extrait dans un processus à part, au tas borné : une page lourde tue
  * ce processus-là, pas le serveur qui pilote les agents.
@@ -24,11 +26,21 @@ const MAX_BYTES = 5 * 1024 * 1024
 const TIMEOUT_MS = 12_000
 const MAX_REDIRECTS = 5
 
-/** Le tas du processus d'extraction : ce qu'une page lourde peut coûter, et pas plus. */
-const PARSE_HEAP_MB = 256
-const PARSE_TIMEOUT_MS = 15_000
-/** Une extraction à la fois ; au-delà de quelques pages en attente, on refuse. */
-const MAX_WAITING = 4
+/**
+ * Les bornes de l'extraction. Deux processus à la fois : une page qui pend n'arrête
+ * pas toutes les autres. `budgetMs` compte l'attente d'une place avec l'extraction
+ * elle-même, pour qu'une lecture finisse toujours, lue ou refusée. Les tests les
+ * resserrent.
+ */
+export const parseLimits = {
+  /** Le tas d'un processus : ce qu'une page lourde peut coûter, et pas plus. */
+  heapMb: 256,
+  parallel: 2,
+  /** Au-delà des extractions en cours, les pages qui attendent une place. */
+  waiting: 4,
+  timeoutMs: 10_000,
+  budgetMs: 20_000,
+}
 
 const HEADERS = {
   // Certains sites refusent un client sans navigateur ; celui-ci dit ce qu'il est.
@@ -37,15 +49,43 @@ const HEADERS = {
 }
 
 /**
- * Les adresses jamais lues. La vérification porte sur la résolution DNS faite avant la
- * requête, que `fetch` refait de son côté : un nom qui change de réponse entre les deux
- * passerait. Le refus vise un lien égaré, pas un attaquant qui tient un serveur DNS — et
- * l'utilisateur connecté a de toute façon un shell par ses agents.
+ * Les adresses jamais lues. Un nom est vérifié par la résolution même de la connexion
+ * (`checkedLookup`), pas par une résolution faite avant : un serveur DNS qui répond une
+ * adresse publique puis une adresse interdite (DNS rebinding) n'a pas de seconde
+ * réponse à placer. Une adresse écrite en chiffres ne passe pas par le DNS : elle est
+ * vérifiée avant la requête (`assertReachable`).
  */
 const BLOCKED = new BlockList()
 BLOCKED.addSubnet('169.254.0.0', 16, 'ipv4')
 BLOCKED.addSubnet('fe80::', 10, 'ipv6')
+// Quad100, le résolveur et l'interface de Tailscale, sous ses deux adresses.
 BLOCKED.addAddress('100.100.100.100', 'ipv4')
+BLOCKED.addAddress('fd7a:115c:a1e0::53', 'ipv6')
+
+const RESERVED = 'This address is reserved to the machine and cannot be read.'
+
+function blocked(address: string, family: number): boolean {
+  return BLOCKED.check(address, family === 6 ? 'ipv6' : 'ipv4')
+}
+
+/**
+ * La résolution des connexions de la lecture : refuse le nom dont une adresse est
+ * interdite. `dns.lookup` est lu à chaque appel, ce qui laisse les tests y substituer un
+ * DNS qui change de réponse.
+ */
+const checkedLookup = ((hostname: string, options: LookupAllOptions, callback: (
+  err: Error | null, address: string | LookupAddress[], family?: number,
+) => void) => {
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err, [])
+    if (addresses.some(({ address, family }) => blocked(address, family))) return callback(new WebReadError(RESERVED), [])
+    const [first] = addresses
+    if (options.all || !first) callback(null, addresses)
+    else callback(null, first.address, first.family)
+  })
+}) as LookupFunction
+
+const dispatcher = new Agent({ connect: { lookup: checkedLookup } })
 
 /** `safeUrl` reste le nom côté serveur ; la règle vit dans le protocole, partagée. */
 export const safeUrl = readerUrl
@@ -60,7 +100,7 @@ export const safeUrl = readerUrl
  * en https hors de la machine. De `X-Frame-Options`, seuls `DENY` et `SAMEORIGIN`
  * refusent ; le navigateur ignore toute autre valeur.
  */
-export function embeddable(headers: Headers): boolean {
+export function embeddable(headers: { get(name: string): string | null }): boolean {
   const policies = (headers.get('content-security-policy') ?? '').split(',')
   const ancestors = policies.flatMap((policy) => {
     const match = /(?:^|;)\s*frame-ancestors(?=[\s;]|$)([^;]*)/i.exec(policy)
@@ -104,6 +144,8 @@ export async function readWebPage(target: string, { frameOnly = false } = {}): P
     return { url, ...article, contentType, embeddable: frame }
   } catch (err) {
     if (err instanceof WebReadError) throw err
+    // Un refus de `checkedLookup` arrive enveloppé dans l'échec de `fetch`.
+    if (err instanceof Error && err.cause instanceof WebReadError) throw err.cause
     if (signal.aborted) throw new WebReadError('The page took too long to answer.')
     throw new WebReadError(err instanceof Error ? err.message : String(err))
   }
@@ -113,8 +155,8 @@ export async function readWebPage(target: string, { frameOnly = false } = {}): P
 async function fetchFollowing(start: string, signal: AbortSignal): Promise<{ response: Response; url: string }> {
   let url = start
   for (let hop = 0; ; hop++) {
-    await assertReachable(url)
-    const response = await fetch(url, { redirect: 'manual', signal, headers: HEADERS })
+    assertReachable(url)
+    const response = await fetch(url, { redirect: 'manual', signal, headers: HEADERS, dispatcher })
     const location = response.headers.get('location')
     if (response.status < 300 || response.status >= 400 || !location) return { response, url }
 
@@ -126,17 +168,11 @@ async function fetchFollowing(start: string, signal: AbortSignal): Promise<{ res
   }
 }
 
-async function assertReachable(url: string): Promise<void> {
+/** Une adresse en chiffres, que la connexion ne résoudra pas : vérifiée ici. */
+function assertReachable(url: string): void {
   const host = new URL(url).hostname.replace(/^\[|\]$/g, '')
-  const addresses = isIP(host)
-    ? [{ address: host, family: isIP(host) }]
-    // Un nom qui ne se résout pas échouera dans `fetch`, avec son propre message.
-    : await lookup(host, { all: true }).catch(() => [])
-  for (const { address, family } of addresses) {
-    if (BLOCKED.check(address, family === 6 ? 'ipv6' : 'ipv4')) {
-      throw new WebReadError('This address is reserved to the machine and cannot be read.')
-    }
-  }
+  const family = isIP(host)
+  if (family && blocked(host, family)) throw new WebReadError(RESERVED)
 }
 
 async function readCapped(response: Response): Promise<Uint8Array> {
@@ -163,40 +199,54 @@ const WORKER_PATH = fileURLToPath(new URL(
   import.meta.url,
 ))
 
-let queue: Promise<unknown> = Promise.resolve()
-let waiting = 0
+let running = 0
+const queued: (() => void)[] = []
+
+/** La place libérée passe à la page qui attend, s'il y en a une. */
+function release(): void {
+  const next = queued.shift()
+  if (next) next()
+  else running--
+}
 
 /**
- * Extrait l'article dans un processus jetable, au tas borné, une page à la fois.
+ * Extrait l'article dans un processus jetable, au tas borné : voir `parseLimits`.
  *
  * Le serveur tourne avec un tas de 256 Mo, et quelques Mo de balisage dense suffisent à
  * le dépasser. Un `worker_thread` ne suffit pas : son `resourceLimits` ne rattrape pas
  * toutes les allocations, et un dépassement emporte alors tout le processus. Un
  * processus à part meurt seul, et la page est dite trop lourde.
+ *
+ * L'attente est bornée par construction : `waiting` pages derrière `parallel` places
+ * attendent au plus `waiting / parallel` extractions, chacune bornée par `timeoutMs`.
  */
-function parseApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
-  if (waiting >= MAX_WAITING) return Promise.reject(new WebReadError('Too many pages are being read; try again.'))
-  waiting++
-  const run = queue.then(() => runApart(bytes, url)).finally(() => {
-    waiting--
-  })
-  queue = run.catch(() => undefined)
-  return run
+async function parseApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
+  const deadline = Date.now() + parseLimits.budgetMs
+  if (running < parseLimits.parallel) running++
+  else if (queued.length >= parseLimits.waiting) throw new WebReadError('Too many pages are being read; try again.')
+  else await new Promise<void>((resolve) => queued.push(resolve))
+  try {
+    const left = Math.min(parseLimits.timeoutMs, deadline - Date.now())
+    if (left <= 0) throw new WebReadError('This page took too long to read.')
+    return await runApart(bytes, url, left)
+  } finally {
+    release()
+  }
 }
 
-function runApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
+function runApart(bytes: Uint8Array, url: string, timeoutMs: number): Promise<WebArticle> {
   return new Promise((resolve, reject) => {
     const child = fork(WORKER_PATH, [], {
       // Les options de Node du serveur (le chargeur de tsx en développement), sans
       // celles du lanceur de tests, et avec le tas borné en dernier, qui l'emporte.
-      execArgv: [...process.execArgv.filter((arg) => !arg.startsWith('--test')), `--max-old-space-size=${PARSE_HEAP_MB}`],
+      execArgv: [...process.execArgv.filter((arg) => !arg.startsWith('--test')), `--max-old-space-size=${parseLimits.heapMb}`],
       serialization: 'advanced',
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     })
     const timer = setTimeout(() => {
       reject(new WebReadError('This page took too long to read.'))
       child.kill('SIGKILL')
-    }, PARSE_TIMEOUT_MS)
+    }, timeoutMs)
     child.once('message', (reply: { article: WebArticle } | { error: string }) => {
       clearTimeout(timer)
       if ('article' in reply) resolve(reply.article)

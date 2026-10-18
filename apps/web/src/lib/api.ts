@@ -24,7 +24,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
+    // Dit au serveur que la requête vient de ce client, et non d'une navigation ou
+    // d'une image : voir `routes/web.ts`, qui l'exige.
+    headers: { 'x-solera-request': '1', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 

@@ -1,9 +1,6 @@
-import { existsSync } from 'node:fs'
-import { join, sep } from 'node:path'
 import compress from '@fastify/compress'
 import cookie from '@fastify/cookie'
 import multipart from '@fastify/multipart'
-import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
 import type { SessionRelay } from '../sessions/session-relay.js'
 import type { AgentRegistry } from '../agents/registry.js'
@@ -67,6 +64,7 @@ import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerWebRoutes } from './routes/web.js'
+import { registerWebClient } from './web-client.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
@@ -223,55 +221,7 @@ export async function buildApp(
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.
   registerTerminalHub(app, ctx, terminals)
 
-  await registerWebClient(app, ctx)
+  await registerWebClient(app, ctx.config.paths.webRoot)
 
   return app
-}
-
-/**
- * Le frontend buildé est servi en statique par le même process (pas de serveur Node
- * front). En développement, Vite sert l'UI et proxifie /api, donc dist/ est absent
- * et on se contente de répondre en JSON.
- */
-async function registerWebClient(app: FastifyInstance, ctx: AppContext): Promise<void> {
-  const indexPath = join(ctx.config.paths.webRoot, 'index.html')
-  const hasBuild = existsSync(indexPath)
-
-  if (hasBuild) {
-    await app.register(fastifyStatic, {
-      root: ctx.config.paths.webRoot,
-      index: false,
-      // Le cache-control intégré du plugin écraserait celui posé par setHeaders.
-      cacheControl: false,
-      /**
-       * Seuls les fichiers de `assets/` portent un hash dans leur nom : eux seuls
-       * peuvent être figés. Tout le reste (index.html, sw.js, manifest, icônes) garde
-       * un nom stable, et un cache immutable y empêcherait toute mise à jour, service
-       * worker compris.
-       */
-      setHeaders: (res, path) => {
-        const hashed = path.includes(`${sep}assets${sep}`)
-        res.setHeader(
-          'cache-control',
-          hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
-        )
-      },
-    })
-
-    // Sans index, le plugin statique répond 403 sur la racine au lieu de la déléguer.
-    app.get('/', (_request, reply) => reply.sendFile('index.html'))
-  }
-
-  app.setNotFoundHandler((request, reply) => {
-    const path = request.url.split('?')[0] ?? request.url
-    // Un asset manquant doit répondre 404, pas du HTML : sinon le navigateur remonte
-    // une erreur de type MIME au lieu du vrai problème.
-    const looksLikeAsset = /\.[a-z0-9]+$/i.test(path)
-
-    if (path.startsWith('/api/') || looksLikeAsset || !hasBuild) {
-      return reply.status(404).send({ error: { code: 'not_found', message: 'Route inconnue.' } })
-    }
-    // Repli SPA : react-router gère les routes côté client.
-    return reply.sendFile('index.html')
-  })
 }
