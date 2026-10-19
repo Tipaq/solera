@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { existsSync } from 'node:fs'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
   conversations,
   permissionRequests,
   projects,
+  worktrees,
   type ConversationRow,
   type Db,
 } from '@solera/db'
@@ -42,7 +44,7 @@ import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { rebaseInProgress } from '../git-rebase.js'
 import { agentCwd, resolveMention } from '../workspace.js'
-import { HttpError, notFound } from '../http/errors.js'
+import { conflict, HttpError, notFound } from '../http/errors.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -994,10 +996,12 @@ export class SessionManager {
   }
 
   private async startRunner(conversationId: string): Promise<AgentRunner> {
-    await this.makeRoom()
-
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
     const fresh = this.loadConversation(conversationId)
+    // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
+    this.refuseMissingCwd(fresh)
+    await this.makeRoom()
+
     const context = this.buildContext(fresh)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
@@ -1022,6 +1026,45 @@ export class SessionManager {
       throw err
     }
     return runner
+  }
+
+  /**
+   * Refuse de lancer un CLI dans un dossier qui n'existe plus.
+   *
+   * Le cas type : un worktree supprimé hors de Solera, par un `gh pr merge
+   * --delete-branch` ou un `git worktree remove`, sans que sa ligne passe `removedAt`.
+   * La conversation pointe encore dessus, et `spawn` échoue en `ENOENT` en attribuant
+   * l'erreur au binaire, que le SDK de Claude traduit à son tour en « mauvaise libc ».
+   * Rien de ça ne dit à l'utilisateur ce qui se passe : on le dit dans le fil, en
+   * nommant le dossier, et on ne lance rien.
+   */
+  private refuseMissingCwd(conversation: ConversationRow): void {
+    const cwd = this.resolveCwd(conversation)
+    if (existsSync(cwd)) return
+
+    const worktree = conversation.worktreeId
+      ? this.db
+          .select({ name: worktrees.name, path: worktrees.path })
+          .from(worktrees)
+          .where(eq(worktrees.id, conversation.worktreeId))
+          .get()
+      : undefined
+    const message =
+      worktree?.path === cwd
+        ? `Le worktree « ${worktree.name} » de cette conversation n'existe plus (${cwd}) : il a sans doute été supprimé avec sa branche. L'agent n'a pas été lancé.`
+        : `Le dossier de travail de cette conversation n'existe plus (${cwd}). L'agent n'a pas été lancé.`
+
+    this.log.append(conversation.id, {
+      type: 'error',
+      code: 'working_directory_missing',
+      message,
+      recoverable: false,
+    })
+    throw conflict(
+      'working_directory_missing',
+      'The working directory of this conversation no longer exists: {path}.',
+      { path: cwd },
+    )
   }
 
   private touch(conversationId: string): void {
