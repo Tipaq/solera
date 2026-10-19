@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Globe, Loader, MonitorPlay, RotateCw, X } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from 'react'
+import { Component, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { sanitizeReaderTree, type ReaderElement } from '@solera/protocol'
 import { Banner, Button, IconButton, SegmentedControl } from '@solera/ui'
@@ -74,8 +74,8 @@ export function WebPane({ scope }: { scope: string }) {
   // En *Direct*, le serveur n'a lu que les en-têtes : c'est le type qui dit si la
   // lecture a une chance.
   const readable = /html/.test(data?.contentType ?? '')
-  // Le cadre d'une page de Solera elle-même partagerait son origine : avec ses scripts,
-  // `allow-same-origin` lui laisserait lever son propre bac à sable et toucher la session.
+  // Une adresse de Solera elle-même : le cadre la refuserait de toute façon, mais sans
+  // `allow-same-origin`, rien n'y toucherait la session même si ce refus manquait.
   const sameOrigin = new URL(url).origin === window.location.origin
 
   return (
@@ -152,9 +152,12 @@ export function WebPane({ scope }: { scope: string }) {
             key={`${url}-${frameKey}`}
             src={url}
             title={data?.title ?? url}
-            // Un site tiers garde sa propre origine, distincte de celle de Solera : lui
-            // laisser ses scripts ne lui donne aucun accès à la session. Une page de
-            // Solera, elle, est tenue dans une origine opaque.
+            // Les jetons valent pour toutes les navigations du cadre, pas seulement pour
+            // l'adresse demandée. Un site tiers garde son origine : ses scripts n'ont
+            // aucun accès à la session. Il pourrait rediriger le cadre vers Solera, qui
+            // y aurait alors `allow-same-origin` : c'est Solera qui le refuse, en
+            // n'acceptant aucun cadre (`frame-guard.ts`). Retirer le jeton pour une
+            // adresse de Solera n'est qu'un second rempart.
             sandbox={sameOrigin
               ? 'allow-scripts allow-forms allow-popups'
               : 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'}
@@ -199,7 +202,9 @@ export function WebPane({ scope }: { scope: string }) {
                 </p>
                 <h1 className="text-lg font-semibold text-ink">{data.title}</h1>
               </header>
-              <ReaderContent html={data.html} base={data.url} onClick={onReaderClick} />
+              <ReaderBoundary key={data.url} fallback={<Banner>{t('web.error')}</Banner>}>
+                <ReaderContent html={data.html} base={data.url} onClick={onReaderClick} />
+              </ReaderBoundary>
             </article>
           ) : null}
         </div>
@@ -236,4 +241,23 @@ function ReaderContent({ html, base, onClick }: {
   }, [html, base])
 
   return <div ref={container} className="sg-reading sg-markdown sg-web-reader" onClick={onClick} />
+}
+
+/**
+ * Une page que le nettoyage n'a pas su traiter ne montre rien, et le dit.
+ *
+ * Le nettoyage tourne dans un effet : sans cette limite, une erreur y démonterait toute
+ * l'interface jusqu'au rechargement. Ce qui lève n'est jamais inséré, l'échec est donc
+ * fermé ; il doit seulement rester dans la vue.
+ */
+class ReaderBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false }
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true }
+  }
+
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children
+  }
 }

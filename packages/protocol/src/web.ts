@@ -1,4 +1,14 @@
 /**
+ * L'en-tête que pose le client de l'API de l'interface, et qu'exige la lecture d'une page.
+ *
+ * Ni une navigation, ni une `<img>`, ni un formulaire ne savent l'envoyer, et un autre
+ * site ne le peut qu'avec une autorisation CORS que Solera ne donne pas. C'est ce qui
+ * réserve la route à l'interface : `Sec-Fetch-Site` ne suffisait pas, une image d'une
+ * page lue partant de l'origine de Solera elle-même.
+ */
+export const SOLERA_REQUEST_HEADER = 'x-solera-request'
+
+/**
  * Une page du web, lue par le serveur pour la vue *Web* du panneau.
  *
  * Le panneau ne peut pas afficher n'importe quel site dans un cadre : la plupart
@@ -99,6 +109,24 @@ export function readerUrl(value: string, base: string, images = false): string |
 }
 
 /**
+ * Une propriété du DOM lue sur les prototypes, sans passer par l'objet lui-même.
+ *
+ * Dans le navigateur, les champs nommés d'un `<form>` masquent ses propriétés : avec
+ * `<input name="tagName">`, `form.tagName` est ce champ. Le nettoyage levait alors, et
+ * l'erreur démontait toute l'interface. Lu ici, `tagName` est le vrai, et le `<form>`
+ * part avec la liste `DROP` comme les autres.
+ */
+function builtin<T>(node: object, key: string): T {
+  const proto = Object.getPrototypeOf(node) as object
+  // linkedom pose certaines de ces propriétés sur l'objet même, sans les masquer jamais.
+  return (key in proto ? Reflect.get(proto, key, node) : (node as Record<string, unknown>)[key]) as T
+}
+
+function removeNode(node: ReaderNode): void {
+  builtin<() => void>(node, 'remove').call(node)
+}
+
+/**
  * Nettoie en place les enfants de `root`, adresses résolues sur `base`.
  *
  * Seuls le texte et les éléments de la liste survivent : un commentaire, une section
@@ -106,16 +134,17 @@ export function readerUrl(value: string, base: string, images = false): string |
  * analyseurs divergent.
  */
 export function sanitizeReaderTree(root: ReaderElement, base: string): void {
-  for (const child of Array.from(root.childNodes)) {
-    if (child.nodeType === TEXT_NODE) continue
-    if (child.nodeType !== ELEMENT_NODE) {
-      child.remove()
+  for (const child of Array.from(builtin<ArrayLike<ReaderNode>>(root, 'childNodes'))) {
+    const type = builtin<number>(child, 'nodeType')
+    if (type === TEXT_NODE) continue
+    if (type !== ELEMENT_NODE) {
+      removeNode(child)
       continue
     }
     const element = child as ReaderElement
-    const tag = element.tagName.toLowerCase()
+    const tag = builtin<string>(element, 'tagName').toLowerCase()
     if (DROP.has(tag)) {
-      element.remove()
+      removeNode(element)
       continue
     }
     sanitizeReaderTree(element, base)

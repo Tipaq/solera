@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
-import { after, test } from 'node:test'
+import dns from 'node:dns'
+import { after, mock, test } from 'node:test'
 import Fastify from 'fastify'
 import type { UserRow } from '@solera/db'
 import { registerErrorHandler } from '../src/http/errors.js'
+import { registerFrameGuard } from '../src/http/frame-guard.js'
 import { registerWebRoutes } from '../src/http/routes/web.js'
-import { embeddable, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
+import { embeddable, parseLimits, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
 
 /**
  * Le HTML lu part tel quel dans le panneau, sur l'origine de Solera : le nettoyage est
@@ -144,9 +146,54 @@ test('seuls http et https se lisent', async () => {
 })
 
 test('une adresse de liaison locale est refusée, en direct comme au bout d\'une redirection', async () => {
-  await assert.rejects(readWebPage('http://169.254.169.254/latest/meta-data/'), WebReadError)
-  await assert.rejects(readWebPage('http://[fe80::1]/'), WebReadError)
+  // `/reserved/` et pas seulement `WebReadError` : un simple échec réseau en est une aussi.
+  for (const address of [
+    'http://169.254.169.254/latest/meta-data/',
+    'http://2852039166/',
+    'http://[::ffff:169.254.169.254]/',
+    'http://[fe80::1]/',
+    'http://100.100.100.100/',
+    'http://[fd7a:115c:a1e0::53]/',
+  ]) {
+    await assert.rejects(readWebPage(address), /reserved/, address)
+  }
   await assert.rejects(readWebPage(`${base}/metadata`), /reserved/)
+})
+
+/** Joue un serveur DNS : `answer` reçoit le nom et le rang de la question. */
+function fakeDns(t: { after(fn: () => void): void }, answer: (hostname: string, count: number) => string | null) {
+  const original = dns.lookup
+  let count = 0
+  const lookup = mock.method(dns, 'lookup', (hostname: string, options: unknown, callback: unknown) => {
+    const done = (typeof options === 'function' ? options : callback) as (...args: unknown[]) => void
+    const all = typeof options === 'object' && options !== null && (options as { all?: boolean }).all
+    const address = hostname.endsWith('.test') ? answer(hostname, count++) : null
+    if (!hostname.endsWith('.test')) return (original as (...args: unknown[]) => void)(hostname, options, callback)
+    process.nextTick(() => {
+      if (address === null) done(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' }))
+      else if (all) done(null, [{ address, family: 4 }])
+      else done(null, address, 4)
+    })
+  })
+  t.after(() => lookup.mock.restore())
+}
+
+test('un nom qui se résout en adresse réservée est refusé à la connexion', async (t) => {
+  fakeDns(t, () => '169.254.169.254')
+  await assert.rejects(readWebPage('http://metadata.test/'), /reserved/)
+})
+
+test('la connexion se fait sur la résolution vérifiée, pas sur une seconde (DNS rebinding)', async (t) => {
+  // Un serveur de rebinding : une première réponse acceptable, puis l'adresse interdite.
+  const port = (server.address() as { port: number }).port
+  fakeDns(t, (_hostname, count) => (count === 0 ? '127.0.0.1' : '169.254.169.254'))
+  const page = await readWebPage(`http://rebind.test:${port}/article`)
+  assert.equal(page.title, 'Un article', 'une seule résolution, celle qui a été vérifiée')
+})
+
+test('un nom qui ne se résout pas n\'est pas lu', async (t) => {
+  fakeDns(t, () => null)
+  await assert.rejects(readWebPage('http://nowhere.test/'), (err) => err instanceof WebReadError && !/reserved/.test(err.message))
 })
 
 test('les échecs sortent en erreurs de lecture, pas en erreurs du serveur', async () => {
@@ -170,7 +217,48 @@ test('une page trop lourde tue son processus d\'extraction, pas le serveur', asy
   assert.equal((await readWebPage(`${base}/article`)).title, 'Un article')
 })
 
-test('la route exige une session, et refuse d\'être appelée depuis un autre site', async () => {
+test('une extraction trop longue est arrêtée, et la file reste bornée', async (t) => {
+  const limits = { ...parseLimits }
+  t.after(() => Object.assign(parseLimits, limits))
+  const settle = (count: number) =>
+    Promise.allSettled(Array.from({ length: count }, () => readWebPage(`${base}/article`)))
+
+  parseLimits.timeoutMs = 1
+  await assert.rejects(readWebPage(`${base}/article`), /too long/)
+
+  // Deux places : deux lectures à la fois passent toutes deux.
+  Object.assign(parseLimits, limits, { waiting: 0 })
+  assert.deepEqual((await settle(2)).map((result) => result.status), ['fulfilled', 'fulfilled'])
+
+  // Une place et personne en attente : la seconde est refusée, pas mise en file.
+  Object.assign(parseLimits, limits, { parallel: 1, waiting: 0 })
+  const results = await settle(2)
+  assert.deepEqual(results.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+  assert.match(String((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason), /Too many/)
+})
+
+test('le budget d\'une lecture compte son attente en file', async (t) => {
+  const limits = { ...parseLimits }
+  t.after(() => Object.assign(parseLimits, limits))
+  // Une place. La page lourde, sans tas borné, la tient jusqu'au bout du budget ;
+  // l'article, derrière elle, a déjà tout attendu quand elle la rend.
+  Object.assign(parseLimits, limits, { parallel: 1, waiting: 1, heapMb: 4096, budgetMs: 800 })
+  const started = Date.now()
+  const timed = (path: string) => readWebPage(`${base}${path}`).then(
+    () => ({ ok: true, ms: Date.now() - started }),
+    (err: Error) => ({ ok: false, ms: Date.now() - started, message: err.message }),
+  )
+  const heavy = timed('/heavy')
+  // Que la page lourde ait pris la place avant que l'article ne se présente.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const [first, second] = await Promise.all([heavy, timed('/article')])
+  assert.equal(first.ok, false)
+  assert.equal(second.ok, false, 'l’article n’a plus de budget après l’attente')
+  assert.match(second.message ?? '', /too long/)
+  assert.ok(second.ms < 1300, `l’attente est comptée : ${second.ms} ms, budget 800`)
+})
+
+test('la route exige une session, et l\'en-tête que seul le client de l\'API pose', async () => {
   const app = Fastify()
   registerErrorHandler(app)
   app.addHook('preHandler', async (request) => {
@@ -180,13 +268,30 @@ test('la route exige une session, et refuse d\'être appelée depuis un autre si
   const read = (headers: Record<string, string>) =>
     app.inject({ url: `/api/web/read?url=${encodeURIComponent(`${base}/article`)}`, headers })
 
-  assert.equal((await read({})).statusCode, 401)
-  for (const site of ['cross-site', 'same-site']) {
-    const response = await read({ 'x-test-user': '1', 'sec-fetch-site': site })
+  assert.equal((await read({ 'x-solera-request': '1' })).statusCode, 401)
+  // Un lien ouvert depuis une autre application (`none`), une image d'une page lue
+  // (`same-origin`), un navigateur sans Sec-Fetch-Site : aucun ne pose l'en-tête.
+  for (const site of [undefined, 'none', 'same-origin', 'cross-site']) {
+    const response = await read({ 'x-test-user': '1', ...(site ? { 'sec-fetch-site': site } : {}) })
     assert.equal(response.statusCode, 403, site)
     assert.equal(response.json().error.code, 'web_cross_site')
   }
-  assert.equal((await read({ 'x-test-user': '1', 'sec-fetch-site': 'same-origin' })).statusCode, 200)
-  assert.equal((await read({ 'x-test-user': '1' })).statusCode, 200, 'un client sans Sec-Fetch-Site passe')
+  assert.equal((await read({ 'x-test-user': '1', 'x-solera-request': '1' })).statusCode, 200)
+  await app.close()
+})
+
+test('Solera ne s\'affiche dans le cadre de personne, sauf un contenu qu\'il encadre lui-même', async () => {
+  const app = Fastify()
+  registerFrameGuard(app)
+  app.get('/page', async () => ({ ok: true }))
+  app.get('/inert', async (_request, reply) => reply.header('content-security-policy', "default-src 'none'; sandbox").send('x'))
+  app.get('/pdf', async (_request, reply) => reply.header('content-security-policy', "frame-ancestors 'self'").send('x'))
+  app.setNotFoundHandler(async (_request, reply) => reply.code(404).send('absent'))
+
+  const policy = async (url: string) => (await app.inject({ url })).headers['content-security-policy']
+  assert.equal(await policy('/page'), "frame-ancestors 'none'")
+  assert.equal(await policy('/inert'), "default-src 'none'; sandbox; frame-ancestors 'none'")
+  assert.equal(await policy('/pdf'), "frame-ancestors 'self'")
+  assert.equal(await policy('/ailleurs'), "frame-ancestors 'none'", 'le repli aussi')
   await app.close()
 })

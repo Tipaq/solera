@@ -1,4 +1,4 @@
-import type { ApiError } from '@solera/protocol'
+import { SOLERA_REQUEST_HEADER, type ApiError } from '@solera/protocol'
 import { translate, translateError } from './i18n'
 
 /**
@@ -24,7 +24,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
+    headers: {
+      [SOLERA_REQUEST_HEADER]: '1',
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
 

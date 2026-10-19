@@ -65,7 +65,15 @@ async function ready(url, child) {
 }
 
 
-/** Le site de la fixture : un article qui refuse le cadre, et une page qui l'accepte. */
+/** L'origine de Solera, connue une fois le serveur lancé : le site de la fixture y renvoie. */
+let solera = ''
+
+/**
+ * Le site de la fixture : un article qui refuse le cadre, une page qui l'accepte, et
+ * deux pages qui mènent le cadre jusqu'à Solera — par une redirection, et par script.
+ * Au lecteur du serveur, elles répondent une page sage : c'est ce que ferait un site qui
+ * veut passer la sonde `frame=1` et ne piéger que le cadre.
+ */
 function startSite() {
   const paragraph = '<p>Une solera mélange des millésimes, en recomplétant la vieille barrique avec la jeune. </p>'
   const site = createHttpServer((request, response) => {
@@ -76,6 +84,20 @@ function startSite() {
         <article><h1>La méthode solera</h1>${paragraph.repeat(10)}
         <p>Voir aussi <a href="/suite">la suite de l’article</a>.</p>
         <script>document.title = 'SCRIPT-EXECUTE'</script></article></body></html>`)
+      return
+    }
+    if (request.url === '/vers-solera' || request.url === '/script-vers-solera') {
+      const reader = /Solera\/1\.0 \(reader view\)/.test(request.headers['user-agent'] ?? '')
+      if (reader) {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        response.end('<!doctype html><title>Rien</title><p>Rien à voir.</p>')
+      } else if (request.url === '/vers-solera') {
+        response.writeHead(302, { location: `${solera}/` })
+        response.end()
+      } else {
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+        response.end(`<!doctype html><script>location.href = ${JSON.stringify(`${solera}/`)}</script>`)
+      }
       return
     }
     if (request.url === '/suite') {
@@ -137,6 +159,7 @@ try {
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
   const base = `http://127.0.0.1:${webPort}`
+  solera = base
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
@@ -215,6 +238,71 @@ try {
   await panel.getByText(/refuse d’être affiché dans Solera/).waitFor()
   assert.equal(page.context().pages().length, 1)
   console.log('OK : un lien d’une réponse s’ouvre dans la vue Web.')
+
+  // ─── Le cadre ne peut pas être mené jusqu'à Solera ────────────────────────
+  // Le mode Direct garde `allow-same-origin` pour un site tiers ; si ce site redirige
+  // le cadre vers Solera, la page y aurait l'origine de Solera et la main sur
+  // `parent.document`. Solera refuse tout cadre : le navigateur n'y charge rien.
+  const address = panel.getByRole('textbox', { name: 'Adresse de la page' })
+  for (const path of ['/vers-solera', '/script-vers-solera']) {
+    await address.fill(`${origin}${path}`)
+    await address.press('Enter')
+    await panel.locator('iframe').waitFor()
+    // Le temps que le cadre quitte la page du site, redirection ou script compris.
+    const deadline = Date.now() + 5000
+    const framed = () => page.frames().filter((entry) => entry !== page.mainFrame())
+    while (Date.now() < deadline && framed().some((entry) => entry.url().startsWith(origin))) await delay(100)
+    await delay(500)
+    for (const entry of framed()) {
+      assert.ok(!entry.url().startsWith(base), `${path} : Solera ne se charge pas dans le cadre (${entry.url()})`)
+      const reached = await entry.evaluate(() => {
+        try {
+          return parent.document.title
+        } catch {
+          return null
+        }
+      }).catch(() => null)
+      assert.equal(reached, null, `${path} : le cadre n'atteint pas la page de Solera`)
+    }
+  }
+  console.log('OK : un site qui redirige le cadre vers Solera n’y charge rien.')
+
+  // ─── Le second nettoyage, celui du navigateur, tient seul ─────────────────
+  // La réponse du serveur est remplacée par du HTML brut : c'est le nettoyage du
+  // panneau, sur l'arbre que le navigateur a analysé, qui est éprouvé ici. Le
+  // commentaire fermé par `--!>` cache une image à linkedom, pas au navigateur ; les
+  // champs nommés d'un `<form>` masquent `tagName` et `remove`.
+  await page.route('**/api/web/read?*', (route) => {
+    if (!route.request().url().includes(encodeURIComponent('/piege'))) return route.fallback()
+    return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        url: `${origin}/piege`,
+        title: 'Piège',
+        siteName: null,
+        byline: null,
+        contentType: 'text/html',
+        embeddable: true,
+        html: '<p>Avant le piège.</p><!--x--!><img src=x onerror="document.title=\'XSS\'">-->'
+          + '<form><input name="tagName"><input name="remove"><p>Dans le formulaire.</p></form>'
+          + '<p>Après le piège.</p>',
+      }),
+    })
+  })
+  await address.fill(`${origin}/piege`)
+  await address.press('Enter')
+  await panel.getByRole('radio', { name: 'Lecture' }).click()
+  await panel.getByText('Après le piège.').waitFor()
+  await delay(300)
+  assert.notEqual(await page.title(), 'XSS', 'l’image du commentaire ne s’exécute pas')
+  // L'image existe bien pour le navigateur, mais sans rien qui s'exécute.
+  const handlers = await panel.locator('.sg-web-reader *').evaluateAll((nodes) =>
+    nodes.flatMap((node) => node.getAttributeNames().filter((name) => name.startsWith('on'))))
+  assert.deepEqual(handlers, [], 'aucun attribut d’événement')
+  assert.equal(await panel.locator('.sg-web-reader form, .sg-web-reader input').count(), 0)
+  assert.equal(await panel.getByText('Dans le formulaire.').count(), 0, 'le formulaire part entier')
+  await page.unroute('**/api/web/read?*')
+  console.log('OK : le nettoyage du panneau tient seul, sur `--!>` comme sur un formulaire piégé.')
 
   // ─── Fermer la page fait disparaître l'onglet ─────────────────────────────
   await panel.getByRole('button', { name: 'Fermer la page', exact: true }).click()
