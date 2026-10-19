@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronRight, Circle, CircleCheck, CircleDot, Eye, Link2, Loader, Plus, SquareKanban, Unlink } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Circle, CircleCheck, CircleDot, Eye, Link2, Loader, Plus, RotateCw, SquareKanban, Unlink } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { CardDto, CardLinkDto } from '@solera/protocol'
@@ -6,7 +6,7 @@ import { useCards, useCreateCard } from '../../lib/cards'
 import type { ChatItem } from '../../lib/chat-fold'
 import { useAttachCard } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { latestAgentPlan, projectOverview, suggestCard, type AgentPlanStep } from '../../lib/project-pane'
+import { isLiveSession, latestAgentPlan, projectOverview, suggestCard, toReviewCount, type AgentPlanStep } from '../../lib/project-pane'
 import { useProjects } from '../../lib/projects'
 import { AgentIcon } from '../AgentIcon'
 import { CardChooser } from '../board/CardChooser'
@@ -14,7 +14,7 @@ import { CardDetail } from '../board/CardDetail'
 import { ColumnDot } from '../board/ColumnDot'
 import { columnLabel } from '../board/columns'
 import { NewCardDialog } from '../board/NewCardDialog'
-import { Button, IconButton, SegmentedControl, cx } from '@solera/ui'
+import { Button, EmptyState, IconButton, SegmentedControl, cx } from '@solera/ui'
 
 /** Ce que la vue lit de la session, tenu par la page de la conversation. */
 export interface ProjectPaneSession {
@@ -57,9 +57,10 @@ export function ProjectPane({
   const t = useTranslate()
   const [segment, setSegment] = useState<'session' | 'project'>('session')
   const [opened, setOpened] = useState<number | null>(null)
-  const { data: cards, isPending } = useCards(projectId)
+  const board = useCards(projectId)
+  const cards = board.data
   const current = session.card ? cards?.find((card) => card.id === session.card?.id) ?? null : null
-  const reviewCount = cards?.filter((card) => card.column === 'review').length ?? 0
+  const reviewCount = toReviewCount(cards)
   const openedCard = opened !== null ? cards?.find((card) => card.number === opened) : undefined
 
   if (openedCard) {
@@ -109,11 +110,11 @@ export function ProjectPane({
           session={session}
           cards={cards}
           current={current}
-          loading={isPending}
+          board={board}
           onOpen={setOpened}
         />
       ) : (
-        <ProjectSegment projectId={projectId} cards={cards ?? []} current={current} loading={isPending} onOpen={setOpened} />
+        <ProjectSegment projectId={projectId} cards={cards ?? []} current={current} board={board} onOpen={setOpened} />
       )}
     </div>
   )
@@ -128,6 +129,45 @@ function Live() {
   )
 }
 
+/** Où en est la lecture du board : les trois états qu'on ne doit pas confondre. */
+interface BoardState {
+  isPending: boolean
+  isError: boolean
+  refetch: () => unknown
+}
+
+/** Deux lignes qui pulsent, le temps que le board arrive : la place est déjà tenue. */
+function BoardSkeleton() {
+  const t = useTranslate()
+  return (
+    <div className="flex animate-pulse flex-col gap-2.5 px-3.5 py-3 motion-reduce:animate-none" role="status">
+      <span className="sr-only">{t('project.pane.loading')}</span>
+      {[0, 1].map((row) => (
+        <div key={row} aria-hidden className="flex items-center gap-2">
+          <div className="size-2 rounded-full bg-surface-high" />
+          <div className="h-3.5 flex-1 rounded bg-surface-high" />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Le board n'a pas pu être lu. Dit tel quel, et surtout pas « carte supprimée » : ce
+ * second message proposerait de détacher une carte qui existe toujours.
+ */
+function BoardError({ board }: { board: BoardState }) {
+  const t = useTranslate()
+  return (
+    <div role="alert" className="flex items-center gap-2 px-3.5 py-3">
+      <p className="min-w-0 flex-1 text-sm text-critical">{t('project.pane.loadError')}</p>
+      <Button size="sm" variant="ghost" icon={<RotateCw size={14} />} onClick={() => void board.refetch()}>
+        {t('agent.install.retry')}
+      </Button>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------ la session ---- */
 
 function SessionSegment({
@@ -136,7 +176,7 @@ function SessionSegment({
   session,
   cards,
   current,
-  loading,
+  board,
   onOpen,
 }: {
   projectId: string
@@ -144,7 +184,7 @@ function SessionSegment({
   session: ProjectPaneSession
   cards: CardDto[] | undefined
   current: CardDto | null
-  loading: boolean
+  board: BoardState
   onOpen: (number: number) => void
 }) {
   const t = useTranslate()
@@ -161,7 +201,6 @@ function SessionSegment({
             projectId={projectId}
             currentConversationId={conversationId}
             onSelectCard={onOpen}
-            onDeleted={() => undefined}
             afterSubtasks={plan ? <AgentPlan steps={plan} /> : null}
           />
         </div>
@@ -174,11 +213,10 @@ function SessionSegment({
       <ActivityBand session={session} />
       <div className="flex flex-col gap-4 px-2.5 py-3">
         {session.card ? (
-          // Rattachée mais introuvable : le board n'est pas encore là, ou la carte a été
-          // supprimée depuis, la conversation lui survivant.
-          loading ? (
-            <p className="px-1 text-sm text-ink-faint">{t('project.pane.loading')}</p>
-          ) : (
+          // Rattachée mais introuvable : le board n'est pas encore là, n'a pas pu être
+          // lu, ou la carte a été supprimée depuis, la conversation lui survivant. Seul
+          // le dernier cas propose de détacher.
+          board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : (
             <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5">
               <p className="min-w-0 flex-1 text-sm text-ink-soft">{t('project.pane.cardGone')}</p>
               <Button size="sm" variant="ghost" icon={<Unlink size={14} />} disabled={attach.isPending}
@@ -188,7 +226,9 @@ function SessionSegment({
             </div>
           )
         ) : (
-          <NoCard projectId={projectId} conversationId={conversationId} session={session} cards={cards ?? []} />
+          board.isError ? <BoardError board={board} /> : (
+            <NoCard projectId={projectId} conversationId={conversationId} session={session} cards={cards ?? []} />
+          )
         )}
         {plan ? <AgentPlan steps={plan} /> : null}
       </div>
@@ -262,6 +302,18 @@ function NoCard({ projectId, conversationId, session, cards }: {
   const suggestion = suggestCard(session.items, cards)
   const busy = attach.isPending || create.isPending
   const attachTo = (cardId: string) => attach.mutate({ id: conversationId, cardId })
+  /**
+   * La carte déjà créée par « Créer », si son rattachement a échoué. Recliquer la
+   * rattache au lieu d'en créer une seconde : sans cette mémoire, chaque essai laisse
+   * une carte orpheline de plus sur le board.
+   */
+  const [created, setCreated] = useState<CardDto | null>(null)
+  const createAndAttach = () => {
+    if (created) return attachTo(created.id)
+    create.mutate({ title: session.title, column: 'in_progress' }, {
+      onSuccess: (card) => { setCreated(card); attachTo(card.id) },
+    })
+  }
 
   return (
     <div className="rounded-lg border border-dashed border-line-strong p-3">
@@ -297,25 +349,26 @@ function NoCard({ projectId, conversationId, session, cards }: {
           }
         />
         <Button size="sm" variant="ghost" icon={<Plus size={14} />} disabled={busy} title={t('project.pane.create.title')}
-          onClick={() => create.mutate(
-            { title: session.title, column: 'in_progress' },
-            { onSuccess: (card) => attachTo(card.id) },
-          )}>
+          onClick={createAndAttach}>
           {t('project.pane.create')}
         </Button>
       </div>
-      {attach.isError || create.isError ? <p role="alert" className="mt-2 text-sm text-critical">{t('project.pane.attachError')}</p> : null}
+      {attach.isError || create.isError ? (
+        <p role="alert" className="mt-2 text-sm text-critical">
+          {created ? t('project.pane.attachCreatedError', { number: created.number }) : t('project.pane.attachError')}
+        </p>
+      ) : null}
     </div>
   )
 }
 
 /* ------------------------------------------------------------- le projet ---- */
 
-function ProjectSegment({ projectId, cards, current, loading, onOpen }: {
+function ProjectSegment({ projectId, cards, current, board, onOpen }: {
   projectId: string
   cards: CardDto[]
   current: CardDto | null
-  loading: boolean
+  board: BoardState
   onOpen: (number: number) => void
 }) {
   const t = useTranslate()
@@ -338,10 +391,13 @@ function ProjectSegment({ projectId, cards, current, loading, onOpen }: {
         </Button>
       </div>
 
-      {loading ? (
-        <p className="px-3.5 py-3 text-sm text-ink-faint">{t('project.pane.loading')}</p>
-      ) : cards.length === 0 ? (
-        <p className="px-3.5 py-3 text-sm text-ink-faint">{t('project.pane.empty')}</p>
+      {board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : cards.length === 0 ? (
+        <EmptyState
+          icon={<SquareKanban size={22} />}
+          title={t('project.pane.empty')}
+          description={t('project.pane.empty.hint')}
+          action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>}
+        />
       ) : (
         <div className="flex flex-col gap-4 px-2 py-3">
           {current && view.around.length > 0 ? (
@@ -363,7 +419,7 @@ function ProjectSegment({ projectId, cards, current, loading, onOpen }: {
                 trail={<span className="shrink-0 text-micro text-caution">{t('project.pane.toReview')}</span>} />
             ))}
             {view.active.map((card) => {
-              const live = card.conversations.find((entry) => !entry.archivedAt && entry.status !== 'idle')
+              const live = card.conversations.find(isLiveSession)
               return (
                 <CardRow key={card.id} card={card} onOpen={onOpen} dot={false}
                   lead={<Live />}
@@ -402,7 +458,7 @@ function Fold({ label, cards, onOpen }: { label: string; cards: CardDto[]; onOpe
   if (cards.length === 0) return null
   return (
     <details className="group/fold">
-      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-md px-1.5 text-sm text-ink-soft hover:bg-surface-high [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-9 md:min-h-8 pointer-coarse:min-h-11 cursor-pointer list-none items-center gap-2 rounded-md px-1.5 text-sm text-ink-soft hover:bg-surface-high [&::-webkit-details-marker]:hidden">
         <ChevronRight size={13} className="shrink-0 text-ink-faint transition-transform group-open/fold:rotate-90" aria-hidden />
         <span className="flex-1">{label}</span>
         <span className="text-micro tabular-nums text-ink-faint">{cards.length}</span>

@@ -22,7 +22,7 @@ function session(id: string, title: string, agent: CardConversationDto['agent'],
 function card(number: number, title: string, column: CardDto['column'], extra: Partial<CardDto> = {}): CardDto {
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
-    dueAt: null, milestone: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY,
+    dueAt: null, milestone: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
     conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [],
     ...extra,
   }
@@ -30,7 +30,7 @@ function card(number: number, title: string, column: CardDto['column'], extra: P
 
 const milestone = card(42, 'Gestion de projet', 'in_progress')
 const fils = card(21, 'Cliquer « Fils » devrait ouvrir une conversation neuve', 'todo')
-const gitView = card(29, 'Développer la vue Git du panneau', 'done', { updatedAt: now - 2 * DAY })
+const gitView = card(29, 'Développer la vue Git du panneau', 'done', { columnSince: now - 2 * DAY })
 
 export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session', 'in_progress', {
   description: 'La carte qu’une session traite n’était qu’une puce `#27` dans le bandeau, et la suivre renvoyait au board — donc hors de la session.\n\n- [x] Rebaser `wip/carte-panneau` sur main\n- [x] typecheck, lint, board-ui\n- [ ] Élargir l’onglet aux tâches du projet\n- [ ] Stories de CardDetail et ProjectPane',
@@ -56,7 +56,7 @@ export const CARDS: CardDto[] = [
   card(40, 'Dire toujours quelle branche le serveur de dev sert', 'todo'),
   card(41, 'Un CLI introuvable tue le tir en silence', 'todo'),
   card(56, 'Les modales ouvrent une infobulle qu’on n’a pas demandée', 'todo'),
-  card(9, 'Réparer schedule-ui-check', 'done', { updatedAt: now - 30 * DAY }),
+  card(9, 'Réparer schedule-ui-check', 'done', { columnSince: now - 30 * DAY, updatedAt: now - DAY }),
 ]
 
 const NOTES: CardNoteDto[] = [{

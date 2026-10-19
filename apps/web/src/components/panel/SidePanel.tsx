@@ -27,6 +27,7 @@ import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
 import { useCards } from '../../lib/cards'
+import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
@@ -119,7 +120,7 @@ export function SidePanel({
   // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
-  const reviewCount = cards?.filter((card) => card.column === 'review').length ?? 0
+  const reviewCount = toReviewCount(cards)
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au

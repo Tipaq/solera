@@ -85,7 +85,13 @@ export function useCreateCard(projectId: string) {
   return useMutation({
     mutationFn: (input: { title: string; description?: string; column?: CardColumn }) =>
       api.post<CardDto>(`/api/projects/${projectId}/cards`, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+    onSuccess: (card) => {
+      // Posée dans la liste avant la relecture : qui crée une carte l'ouvre dans la
+      // foulée, et la chercher dans une liste qui ne la connaît pas encore ne l'ouvrirait
+      // qu'au retour de la requête, la vue sautant d'un coup.
+      queryClient.setQueryData<CardDto[]>(cardsKey(projectId), (cards) => (cards ? [...cards, card] : cards))
+      return queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
+    },
   })
 }
 
@@ -183,8 +189,11 @@ export function useDeleteCard(projectId: string) {
     mutationFn: (id: string) => api.delete<void>(`/api/cards/${id}`),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
-      // Les conversations rattachées perdent leur puce : leur liste devient fausse.
+      // Les conversations rattachées perdent leur puce : leur liste devient fausse, et
+      // chacune d'elles aussi — la page d'une session garderait sinon la carte qu'on
+      // vient de supprimer, dans son bandeau comme dans sa vue *Projet*.
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['conversation'] })
     },
   })
 }

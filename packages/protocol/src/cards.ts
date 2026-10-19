@@ -179,6 +179,12 @@ export interface CardDto {
   createdByName: string
   createdAt: number
   updatedAt: number
+  /**
+   * Depuis quand la carte est dans sa colonne, d'après `card_moves` ; sa création
+   * quand elle n'a jamais bougé. C'est ce qui dit « terminée cette semaine » —
+   * `updatedAt`, qu'une retouche de titre réécrit, ne le dit pas.
+   */
+  columnSince: number
   conversations: CardConversationDto[]
   /** Les notes ne voyagent pas avec la liste : le board n'en affiche que le compte. */
   attachmentCount: number
@@ -208,11 +214,24 @@ const CARD_REFERENCE = /(?:^|[^\w#])#(\d+)\b/g
  */
 export function parseCardReferences(text: string): number[] {
   const found: number[] = []
+  for (const number of cardMentions(text)) {
+    if (!found.includes(number)) found.push(number)
+  }
+  return found
+}
+
+/**
+ * Chaque citation `#12` d'un texte, dans l'ordre et **sans** dédoublonner.
+ *
+ * Pour qui compte combien de fois une carte revient — la vue *Projet* en tire la carte
+ * qu'une session semble traiter. Le même analyseur que `parseCardReferences`, pour la
+ * même raison : deux analyseurs finiraient par diverger.
+ */
+export function cardMentions(text: string): number[] {
+  const found: number[] = []
   for (const match of text.matchAll(CARD_REFERENCE)) {
     const number = Number(match[1])
-    if (Number.isSafeInteger(number) && number > 0 && !found.includes(number)) {
-      found.push(number)
-    }
+    if (Number.isSafeInteger(number) && number > 0) found.push(number)
   }
   return found
 }

@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   attachments,
   cardBlocks,
+  cardMoves,
   cardNotes,
   cardRefs,
   cards,
@@ -250,6 +251,19 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         .map((row) => [row.cardId, row.total]),
     )
 
+    // Depuis quand chaque carte est dans sa colonne : le dernier mouvement qui l'y a
+    // menée. `updated_at` ne le dit pas, une correction de titre le réécrit — c'est la
+    // raison d'être de `card_moves`, que le Journal lit déjà pour la même question.
+    const arrivals = new Map<string, number>()
+    for (const move of ctx.db
+      .select({ cardId: cardMoves.cardId, toColumn: cardMoves.toColumn, at: max(cardMoves.movedAt) })
+      .from(cardMoves)
+      .where(inArray(cardMoves.cardId, ids))
+      .groupBy(cardMoves.cardId, cardMoves.toColumn)
+      .all()) {
+      if (move.at !== null) arrivals.set(`${move.cardId}:${move.toColumn}`, Number(move.at))
+    }
+
     const files = new Map(ctx.db.select({ cardId: attachments.cardId, total: count() })
       .from(attachments).where(inArray(attachments.cardId, ids)).groupBy(attachments.cardId)
       .all().map((row) => [row.cardId, row.total]))
@@ -282,6 +296,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       createdByName: authors.get(row.createdBy) ?? '',
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      columnSince: arrivals.get(`${row.id}:${row.column}`) ?? row.createdAt,
       conversations: sessions.get(row.id) ?? [],
       noteCount: notes.get(row.id) ?? 0,
       attachmentCount: files.get(row.id) ?? 0,

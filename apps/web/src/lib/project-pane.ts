@@ -1,4 +1,4 @@
-import type { CardDto } from '@solera/protocol'
+import { cardMentions, type CardConversationDto, type CardDto } from '@solera/protocol'
 import type { ChatItem } from './chat-fold'
 
 /** Une étape du plan que l'agent s'est donné, quelle que soit la forme qu'il lui donne. */
@@ -56,10 +56,8 @@ export function suggestCard(items: ChatItem[], cards: CardDto[]): { card: CardDt
     for (const block of item.blocks) {
       if (block.type !== 'text') continue
       // Chaque occurrence compte, et non chaque message : c'est le nombre de fois où
-      // la carte revient qui dit qu'on travaille dessus. Même règle que
-      // `parseCardReferences` pour ce qui est une citation, sans son dédoublonnage.
-      for (const match of block.text.matchAll(CARD_MENTION)) {
-        const number = Number(match[1])
+      // la carte revient qui dit qu'on travaille dessus.
+      for (const number of cardMentions(block.text)) {
         if (open.has(number)) counts.set(number, (counts.get(number) ?? 0) + 1)
       }
     }
@@ -71,9 +69,17 @@ export function suggestCard(items: ChatItem[], cards: CardDto[]): { card: CardDt
   return best
 }
 
-const CARD_MENTION = /(?:^|[^\w#])#(\d+)\b/g
-
 const WEEK = 7 * 24 * 60 * 60 * 1000
+
+/** Une session qui tourne ou attend quelqu'un : ni archivée, ni au repos. */
+export function isLiveSession(session: CardConversationDto): boolean {
+  return !session.archivedAt && session.status !== 'idle'
+}
+
+/** Ce que compte la pastille de *Projet* : les cartes qui attendent une relecture. */
+export function toReviewCount(cards: CardDto[] | undefined): number {
+  return cards?.filter((card) => card.column === 'review').length ?? 0
+}
 
 /**
  * Le projet vu depuis une session : ce qui touche sa carte, ce qui bouge, le reste.
@@ -101,9 +107,12 @@ export function projectOverview(cards: CardDto[], current: CardDto | null, now =
     for (const link of current.referencedBy) add('referencedBy', link.id)
   }
 
-  const live = (card: CardDto) => card.conversations.some((session) => !session.archivedAt && session.status !== 'idle')
   const review = cards.filter((card) => card.column === 'review' && !shown.has(card.id))
-  const active = cards.filter((card) => card.column === 'in_progress' && live(card) && !shown.has(card.id))
+  // Une session vivante suffit, quelle que soit la colonne : une carte encore « à
+  // faire » sur laquelle un agent travaille bouge bel et bien maintenant.
+  const active = cards.filter((card) =>
+    (card.column === 'todo' || card.column === 'in_progress')
+    && card.conversations.some(isLiveSession) && !shown.has(card.id))
   for (const card of [...review, ...active]) shown.add(card.id)
 
   const rest = (column: CardDto['column']) => cards.filter((card) => card.column === column && !shown.has(card.id))
@@ -113,6 +122,6 @@ export function projectOverview(cards: CardDto[], current: CardDto | null, now =
     active,
     todo: rest('todo'),
     inProgress: rest('in_progress'),
-    doneThisWeek: rest('done').filter((card) => now - card.updatedAt < WEEK),
+    doneThisWeek: rest('done').filter((card) => now - card.columnSince < WEEK),
   }
 }

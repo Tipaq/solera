@@ -47,8 +47,11 @@ export function CardDetail({
   card: CardDto
   projectId: string
   onSelectCard: (number: number) => void
-  /** Appelé une fois la carte supprimée : celui qui l'affiche doit la quitter. */
-  onDeleted: () => void
+  /**
+   * Appelé une fois la carte supprimée, quand celui qui l'affiche doit la quitter.
+   * Absent pour la carte d'une session : c'est la conversation, relue, qui la perd.
+   */
+  onDeleted?: () => void
   /** Ce qui précède le numéro dans la tête — un retour, dans le panneau. */
   lead?: ReactNode
   /** Ce qui ferme la fiche, en bout de tête. */
