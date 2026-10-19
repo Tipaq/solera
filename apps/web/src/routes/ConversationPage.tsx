@@ -1183,9 +1183,7 @@ export function ConversationPage() {
                 anchors={turnAnchors}
               />
     
-              {activity ? <TurnActivity label={activity} /> : null}
-    
-              {/* Sous l'indicateur : ce que l'agent n'a pas encore lu. */}
+              {/* Sous le fil : ce que l'agent n'a pas encore lu. */}
               <QueuedMessages
                 conversationId={conversationId}
                 messages={stream.state.queued}
@@ -1255,19 +1253,24 @@ export function ConversationPage() {
           {/*
             Au-dessus de la barre de saisie et non sous elle : c'est la dernière chose
             qu'on lit avant d'écrire. Aligné sur la largeur du composer pour que les deux
-            forment un bloc. `TurnActivity` dit la même activité un peu plus haut, mais
-            depuis le fil, donc il sort de l'écran dès qu'on remonte ; cette rangée reste.
+            forment un bloc. L'activité du tour à gauche, les signaux à droite, sur une
+            seule ligne : hors du fil, elle reste à l'écran quand on remonte.
           */}
           {/* Même gouttière que le fil et que le composer, puis le retrait de 1,5 qui
               aligne la rangée sur le contenu de la carte de saisie, dont le cadre porte
               ce même retrait. */}
-          <div className="px-3 @min-[40rem]:px-12">
-            <SignalRow
-              signals={signals}
-              onSelect={() => setPanelOpen(true)}
-              className="mx-auto max-w-3xl px-1.5 pb-2"
-            />
-          </div>
+          {activity || signals.length > 0 ? (
+            <div className="px-3 @min-[40rem]:px-12">
+              <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-1.5 pb-2">
+                {activity ? <TurnActivity label={activity} /> : <span />}
+                <SignalRow
+                  signals={signals}
+                  onSelect={() => setPanelOpen(true)}
+                  className="justify-end"
+                />
+              </div>
+            </div>
+          ) : null}
 
           <Composer
             key={conversationId}
