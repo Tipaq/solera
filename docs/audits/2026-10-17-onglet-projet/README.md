@@ -4,7 +4,7 @@ Demande de Tim : depuis une conversation de projet, voir les tâches du projet, 
 d'abord la carte que la session traite. Élargit la carte **#27** (onglet *Carte*,
 branche `wip/carte-panneau`).
 
-Maquettes : `apps/web/src/components/panel/OngletProjetPrototypes.tsx`, captures par
+Maquettes : `apps/web/src/components/panel/OngletProjetPrototypes.tsx` sur la branche `proto/onglet-projet`, captures par
 `node scripts/onglet-projet-prototypes.mjs` (une planche par tour, réglée dans le script).
 
 ## Tour 1 — quatre partis
@@ -40,4 +40,4 @@ contre F1 (les onglets d'aujourd'hui, resserrés).
   se lit sous les cases de la carte plutôt qu'à côté : à 34 rem, deux colonnes de cases
   ne tiennent pas.
 - La puce `#12` du titre d'une conversation ouvre l'onglet au lieu du board.
-- Les maquettes restent hors de `main` : `OngletProjetPrototypes.tsx` et son script.
+- Les maquettes restent hors de `main`, sur la branche `proto/onglet-projet` (`95884e6`) : `OngletProjetPrototypes.tsx` et `scripts/onglet-projet-prototypes.mjs`.
