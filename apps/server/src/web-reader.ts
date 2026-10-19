@@ -25,11 +25,20 @@ const MAX_BYTES = 5 * 1024 * 1024
 const TIMEOUT_MS = 12_000
 const MAX_REDIRECTS = 5
 
-/** Le tas du processus d'extraction : ce qu'une page lourde peut coûter, et pas plus. */
-const PARSE_HEAP_MB = 256
-const PARSE_TIMEOUT_MS = 15_000
-/** Une extraction à la fois ; au-delà de quelques pages en attente, on refuse. */
-const MAX_WAITING = 4
+/**
+ * Les bornes de l'extraction. Deux processus à la fois : une page qui pend n'arrête pas
+ * toutes les autres. `budgetMs` compte l'attente d'une place avec l'extraction même,
+ * pour qu'une lecture finisse toujours, lue ou refusée. Les tests les resserrent.
+ */
+export const parseLimits = {
+  /** Le tas d'un processus : ce qu'une page lourde peut coûter, et pas plus. */
+  heapMb: 256,
+  parallel: 2,
+  /** Au-delà des extractions en cours, les pages qui attendent une place. */
+  waiting: 4,
+  timeoutMs: 10_000,
+  budgetMs: 20_000,
+}
 
 const HEADERS = {
   // Certains sites refusent un client sans navigateur ; celui-ci dit ce qu'il est.
@@ -193,40 +202,52 @@ const WORKER_PATH = fileURLToPath(new URL(
   import.meta.url,
 ))
 
-let queue: Promise<unknown> = Promise.resolve()
-let waiting = 0
+let running = 0
+const queued: (() => void)[] = []
+
+/** La place libérée passe à la page qui attend, s'il y en a une. */
+function release(): void {
+  const next = queued.shift()
+  if (next) next()
+  else running--
+}
 
 /**
- * Extrait l'article dans un processus jetable, au tas borné, une page à la fois.
+ * Extrait l'article dans un processus jetable, au tas borné : voir `parseLimits`.
  *
  * Le serveur tourne avec un tas de 256 Mo, et quelques Mo de balisage dense suffisent à
  * le dépasser. Un `worker_thread` ne suffit pas : son `resourceLimits` ne rattrape pas
  * toutes les allocations, et un dépassement emporte alors tout le processus. Un
  * processus à part meurt seul, et la page est dite trop lourde.
  */
-function parseApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
-  if (waiting >= MAX_WAITING) return Promise.reject(new WebReadError('Too many pages are being read; try again.'))
-  waiting++
-  const run = queue.then(() => runApart(bytes, url)).finally(() => {
-    waiting--
-  })
-  queue = run.catch(() => undefined)
-  return run
+async function parseApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
+  // Le budget part d'ici, avant l'attente : une page en file n'attend pas plus que ça.
+  const deadline = Date.now() + parseLimits.budgetMs
+  if (running < parseLimits.parallel) running++
+  else if (queued.length >= parseLimits.waiting) throw new WebReadError('Too many pages are being read; try again.')
+  else await new Promise<void>((resolve) => queued.push(resolve))
+  try {
+    const left = Math.min(parseLimits.timeoutMs, deadline - Date.now())
+    if (left <= 0) throw new WebReadError('This page took too long to read.')
+    return await runApart(bytes, url, left)
+  } finally {
+    release()
+  }
 }
 
-function runApart(bytes: Uint8Array, url: string): Promise<WebArticle> {
+function runApart(bytes: Uint8Array, url: string, timeoutMs: number): Promise<WebArticle> {
   return new Promise((resolve, reject) => {
     const child = fork(WORKER_PATH, [], {
       // Les options de Node du serveur (le chargeur de tsx en développement), sans
       // celles du lanceur de tests, et avec le tas borné en dernier, qui l'emporte.
-      execArgv: [...process.execArgv.filter((arg) => !arg.startsWith('--test')), `--max-old-space-size=${PARSE_HEAP_MB}`],
+      execArgv: [...process.execArgv.filter((arg) => !arg.startsWith('--test')), `--max-old-space-size=${parseLimits.heapMb}`],
       serialization: 'advanced',
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     })
     const timer = setTimeout(() => {
       reject(new WebReadError('This page took too long to read.'))
       child.kill('SIGKILL')
-    }, PARSE_TIMEOUT_MS)
+    }, timeoutMs)
     child.once('message', (reply: { article: WebArticle } | { error: string }) => {
       clearTimeout(timer)
       if ('article' in reply) resolve(reply.article)

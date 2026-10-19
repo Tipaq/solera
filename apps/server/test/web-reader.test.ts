@@ -8,7 +8,7 @@ import type { UserRow } from '@solera/db'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerFrameGuard } from '../src/http/frame-guard.js'
 import { registerWebRoutes } from '../src/http/routes/web.js'
-import { embeddable, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
+import { embeddable, parseLimits, readWebPage, safeUrl, sanitizeHtml, WebReadError } from '../src/web-reader.js'
 
 /**
  * Le HTML lu part tel quel dans le panneau, sur l'origine de Solera : le nettoyage est
@@ -215,6 +215,47 @@ test('une page trop lourde tue son processus d\'extraction, pas le serveur', asy
   await assert.rejects(readWebPage(`${base}/heavy`), /too heavy/)
   // Le serveur lit toujours.
   assert.equal((await readWebPage(`${base}/article`)).title, 'Un article')
+})
+
+test('une extraction trop longue est arrêtée, et la file reste bornée', async (t) => {
+  const limits = { ...parseLimits }
+  t.after(() => Object.assign(parseLimits, limits))
+  const settle = (count: number) =>
+    Promise.allSettled(Array.from({ length: count }, () => readWebPage(`${base}/article`)))
+
+  parseLimits.timeoutMs = 1
+  await assert.rejects(readWebPage(`${base}/article`), /too long/)
+
+  // Deux places : deux lectures à la fois passent toutes deux.
+  Object.assign(parseLimits, limits, { waiting: 0 })
+  assert.deepEqual((await settle(2)).map((result) => result.status), ['fulfilled', 'fulfilled'])
+
+  // Une place et personne en attente : la seconde est refusée, pas mise en file.
+  Object.assign(parseLimits, limits, { parallel: 1, waiting: 0 })
+  const results = await settle(2)
+  assert.deepEqual(results.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+  assert.match(String((results.find((result) => result.status === 'rejected') as PromiseRejectedResult).reason), /Too many/)
+})
+
+test('le budget d\'une lecture compte son attente en file', async (t) => {
+  const limits = { ...parseLimits }
+  t.after(() => Object.assign(parseLimits, limits))
+  // Une place. La page lourde, sans tas borné, la tient jusqu'au bout du budget ;
+  // l'article, derrière elle, a déjà tout attendu quand elle la rend.
+  Object.assign(parseLimits, limits, { parallel: 1, waiting: 1, heapMb: 4096, budgetMs: 800 })
+  const started = Date.now()
+  const timed = (path: string) => readWebPage(`${base}${path}`).then(
+    () => ({ ok: true, ms: Date.now() - started }),
+    (err: Error) => ({ ok: false, ms: Date.now() - started, message: err.message }),
+  )
+  const heavy = timed('/heavy')
+  // Que la page lourde ait pris la place avant que l'article ne se présente.
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  const [first, second] = await Promise.all([heavy, timed('/article')])
+  assert.equal(first.ok, false)
+  assert.equal(second.ok, false, 'l’article n’a plus de budget après l’attente')
+  assert.match(second.message ?? '', /too long/)
+  assert.ok(second.ms < 1300, `l’attente est comptée : ${second.ms} ms, budget 800`)
 })
 
 test('la route exige une session, et l\'en-tête que seul le client de l\'API pose', async () => {
