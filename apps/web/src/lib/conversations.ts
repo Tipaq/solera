@@ -377,3 +377,21 @@ export async function fetchJournal(
     cursor = next
   }
 }
+
+/**
+ * Rattache la conversation à une carte du projet, ou l'en détache avec `null`.
+ *
+ * Le board est relu avec : la carte gagne ou perd une session, et sa tuile l'affiche.
+ */
+export function useAttachCard(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, cardId }: { id: string; cardId: string | null }) =>
+      api.patch<{ ok: true }>(`/api/conversations/${id}`, { cardId }),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
+    },
+  })
+}

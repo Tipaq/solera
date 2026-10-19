@@ -49,7 +49,7 @@ import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
-import { clearSubAgent, setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { clearSubAgent, setPanelOpen, setPanelTab, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
@@ -1026,17 +1026,18 @@ export function ConversationPage() {
                 ) : null}
 
                 {/* Le chemin de retour vers le chantier : depuis une session, on remonte
-                    au travail qu'elle traite. Le titre est celui de la carte au moment du
-                    chargement, pas une copie figée à la création. */}
+                    au travail qu'elle traite. Il ouvre la vue *Projet* du panneau plutôt
+                    que le board, pour lire la carte sans quitter la session. */}
                 {conversation.card ? (
-                  <Link
-                    to={`/p/${conversation.projectId}/board?carte=${conversation.card.number}`}
+                  <button
+                    type="button"
+                    onClick={() => { setPanelTab('project'); setPanelOpen(true) }}
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.card', { title: conversation.card.title })}
                   >
                     <SquareKanban size={11} />
                     <span>#{conversation.card.number}</span>
-                  </Link>
+                  </button>
                 ) : null}
 
                 {/* Une conversation lancée par l'API se dit en toutes lettres : on peut y
@@ -1325,6 +1326,15 @@ export function ConversationPage() {
             open={panel.open}
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}
+            session={{
+              title: conversation.title,
+              card: conversation.card,
+              items: stream.state.items,
+              running: stream.state.turnRunning,
+              activity,
+              model: stream.state.model,
+              contextRatio: stream.state.context?.ratio ?? null,
+            }}
           />
         </Suspense>
       ) : null}
