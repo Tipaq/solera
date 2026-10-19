@@ -14,10 +14,10 @@ import { conversationPath, useOpenConversationId } from '../../lib/conversation-
 import { useDisplaySettings } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { isUnreadSettled } from '../../lib/reads'
-import { buildSidebarSignals, presentSignal } from '../../lib/signals'
+import { buildSidebarSignals, threadState } from '../../lib/signals'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
-import { SignalDot } from '../chat/Signals'
+import { SignalDot, StateDot } from '../chat/Signals'
 import { RenameInput } from './RenameInput'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 
@@ -59,7 +59,6 @@ export function ConversationLine({
     () => buildSidebarSignals({ status, background, loops }),
     [status, background, loops],
   )
-  const present = presentSignal(signals)
   const loop = signals.find((signal) => signal.kind === 'loop') ?? null
   const commit = (draft: string) => {
     setEditing(false)
@@ -84,6 +83,7 @@ export function ConversationLine({
 
   const isActive = openId === conversation.id
   const unread = !isActive && isUnreadSettled(conversation, pushedSeq, status === 'running' || background > 0)
+  const state = threadState({ status, busy: background > 0, unread })
 
   return (
     <li
@@ -150,10 +150,9 @@ export function ConversationLine({
           que la souris passe, et `pointer-events-none` laisse le clic au bouton. */}
       <span className="relative flex size-11 shrink-0 items-center justify-center md:size-7 pointer-coarse:size-11">
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 transition-opacity group-hover/row:opacity-0 group-focus-within/row:opacity-0">
-          {/* Deux points au plus : l'état présent, et la boucle. */}
-          {present ? <SignalDot signal={present} /> : null}
+          {/* Deux points au plus : l'état, selon la charte de la colonne, et la boucle. */}
+          {state ? <StateDot state={state} /> : null}
           {loop ? <SignalDot signal={loop} /> : null}
-          {!present && unread ? <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-ink" /> : null}
         </span>
 
         <Menu

@@ -10,7 +10,8 @@ import {
   WifiOff,
   type LucideIcon,
 } from 'lucide-react'
-import type { Signal, SignalFamily, SignalKind } from '../../lib/signals'
+import { useTranslate } from '../../lib/i18n'
+import type { Signal, SignalFamily, SignalKind, ThreadState } from '../../lib/signals'
 import { cx } from '@solera/ui'
 
 /**
@@ -141,6 +142,42 @@ export function SignalDot({ signal }: { signal: Signal }) {
       aria-label={signal.label}
       title={signal.detail || signal.label}
       className={cx('size-1.5 rounded-full', DOT[signal.family], pulses(signal) && 'animate-pulse')}
+    />
+  )
+}
+
+const STATE_DOT: Record<ThreadState, string> = {
+  working: 'bg-accent animate-pulse',
+  awaiting: 'bg-caution',
+  broken: 'bg-critical',
+  unread: 'bg-ink',
+}
+
+const STATE_LABEL = {
+  working: 'signal.running',
+  awaiting: 'signal.awaiting',
+  broken: 'signal.error',
+  unread: 'signal.unread',
+} as const satisfies Record<ThreadState, string>
+
+/**
+ * L'état d'un fil en un point, selon la charte de `threadState` : le seul rendu de la
+ * colonne pour *en cours*, *attend*, *erreur* et *non lu*. Mêmes couleurs que les
+ * familles de `SignalDot` — le non-lu, qui n'est pas un signal, prend l'encre.
+ *
+ * `labelled` à faux quand la ligne annonce déjà l'état autrement, pour qu'un lecteur
+ * d'écran ne l'entende pas deux fois.
+ */
+export function StateDot({ state, labelled = true }: { state: ThreadState; labelled?: boolean }) {
+  const t = useTranslate()
+  const label = t(STATE_LABEL[state])
+  return (
+    <span
+      aria-hidden={labelled ? undefined : true}
+      aria-label={labelled ? label : undefined}
+      role={labelled ? 'img' : undefined}
+      title={label}
+      className={cx('block size-1.5 shrink-0 rounded-full', STATE_DOT[state])}
     />
   )
 }

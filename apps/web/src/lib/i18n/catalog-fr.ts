@@ -200,6 +200,7 @@ export const fr: Catalog = {
     'Le tour en cours suit encore « {value} ». Le réglage choisi demande de relancer la session, ce qui se fera à la fin du tour.',
   'signal.interrupted': 'Interrompu',
   'signal.error': 'Erreur',
+  'signal.unread': 'Terminé, non lu',
   'signal.offline': 'Liaison coupée',
   'signal.offline.detail': "Reconnexion en cours. Ce que vous lisez peut être périmé.",
 

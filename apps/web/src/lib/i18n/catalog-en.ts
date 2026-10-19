@@ -215,6 +215,7 @@ export const en = {
     'The current turn still runs under "{value}". The setting you chose needs the session to restart, which happens when the turn ends.',
   'signal.interrupted': 'Interrupted',
   'signal.error': 'Error',
+  'signal.unread': 'Finished, unread',
   'signal.offline': 'Connection lost',
   'signal.offline.detail': 'Reconnecting. What you are reading may be out of date.',
 
