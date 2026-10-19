@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import type { MessageKey } from '../../lib/i18n'
 import { useTranslate } from '../../lib/i18n'
 import { setSidebarPlace, type Place } from '../../lib/sidebar'
+import { StateDot } from '../chat/Signals'
 import { cx, Tooltip } from '@solera/ui'
 
 /**
@@ -167,7 +168,7 @@ export function SidebarPlaces({ places, current, onNavigate }: {
                 )}>
                   {place.count !== null
                     ? place.count
-                    : place.dot ? <span className="block size-1.5 rounded-full bg-accent" /> : null}
+                    : place.dot ? <StateDot state="unread" labelled={false} /> : null}
                 </span>
                 {place.page ? (
                   <ArrowUpRight size={14} className="hidden shrink-0 text-ink-faint group-hover/place:block" />

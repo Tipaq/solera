@@ -57,7 +57,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   }
 
   return (
-    <div className="shrink-0 border-t border-line p-2 pb-safe">
+    <div className="shrink-0 border-t border-line p-2 pb-[max(0.5rem,var(--sg-safe-bottom))]">
       <Menu
         align="start"
         trigger={

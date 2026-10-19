@@ -40,8 +40,10 @@ import { PROJECT_COLORS } from '../../lib/project-colors'
 import { useUpdateProject } from '../../lib/projects'
 import { useLiveConversations } from '../../lib/activity'
 import { useHasUnread } from '../../lib/reads'
+import { mostUrgent, threadState } from '../../lib/signals'
 import { useUpdateCollapsedProjects, useUserSettings } from '../../lib/user-settings'
 import { ProjectAvatar } from '../ProjectAvatar'
+import { StateDot } from '../chat/Signals'
 import { ConversationLine } from './ConversationLine'
 import { RenameInput } from './RenameInput'
 import {
@@ -244,7 +246,7 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
           <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
           <span className="truncate">{t('destination.none')}</span>
           {!open && hasUnread ? (
-            <span title={t('shell.project.unread')} className="size-1.5 shrink-0 rounded-full bg-ink" />
+            <span title={t('shell.project.unread')}><StateDot state="unread" labelled={false} /></span>
           ) : null}
         </button>
 
@@ -347,8 +349,9 @@ function ProjectGroup({
     [conversations],
   )
   /*
-    Les deux points d'état de la ligne : accent si un agent travaille, ambre si quelque
-    chose réclame. Le flux vivant et non le statut REST — un agent qui démarre doit
+    Les deux points d'état de la ligne, selon la charte de `threadState` : celui du
+    travail en cours, et celui de ce qui réclame — le plus urgent des fils qui attendent
+    ou n'ont pas été lus, de la même couleur que sur leur propre ligne. Le flux vivant et non le statut REST — un agent qui démarre doit
     allumer la ligne sans attendre la prochaine requête.
 
     Les tirs planifiés comptent ici, à la différence de la liste : une tâche qui a planté
@@ -357,7 +360,11 @@ function ProjectGroup({
   */
   const live = useLiveConversations(conversations, openConversationId ?? undefined)
   const running = live.some((entry) => entry.running)
-  const demanding = live.some((entry) => entry.awaiting || entry.unread)
+  const demanding = mostUrgent(
+    live
+      .filter((entry) => entry.awaiting || entry.unread)
+      .map((entry) => threadState({ status: entry.status, busy: entry.running, unread: entry.unread })),
+  )
   const archived = useMemo(
     () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),
     [conversations],
@@ -453,8 +460,8 @@ function ProjectGroup({
           data-project-state
           className="flex shrink-0 items-center gap-1 pr-1 group-hover:hidden group-focus-within:hidden pointer-coarse:hidden"
         >
-          {running ? <span className="size-1.5 rounded-full bg-accent" /> : null}
-          {demanding ? <span className="size-1.5 rounded-full bg-caution" /> : null}
+          {running ? <StateDot state="working" labelled={false} /> : null}
+          {demanding ? <StateDot state={demanding} labelled={false} /> : null}
         </span>
 
         <span className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex pointer-coarse:flex">

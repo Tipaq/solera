@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useRef, useState } from 'react'
-import { Activity, ArrowUpRight, MessageCircleQuestion, MessagesSquare, X } from 'lucide-react'
+import { Activity, ArrowUpRight, MessagesSquare, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import type { ConversationDto, ProjectDto } from '@solera/protocol'
 import { useLiveConversations, type LiveConversation } from '../lib/activity'
@@ -8,8 +8,10 @@ import { conversationPath, useOpenConversationId } from '../lib/conversation-rou
 import { shortAge } from '../lib/dates'
 import { useDisplaySettings } from '../lib/display-settings'
 import { useTranslate } from '../lib/i18n'
+import { threadState } from '../lib/signals'
 import { AgentIcon } from './AgentIcon'
 import { ProjectAvatar } from './ProjectAvatar'
+import { StateDot } from './chat/Signals'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 
 /**
@@ -127,7 +129,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
           </span>
           {awaiting.length > 0 ? (
             <span className="flex items-center gap-1 rounded-full bg-caution/12 px-1.5 py-px text-meta font-medium tabular-nums text-caution">
-              <MessageCircleQuestion size={11} />
+              <StateDot state="awaiting" labelled={false} />
               {/* Le chiffre est l'écriture visible du libellé qui suit : annoncé deux
                   fois, le bouton se lirait « Activité 2 2 à débloquer ». */}
               <span aria-hidden>{awaiting.length}</span>
@@ -136,7 +138,7 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
           ) : null}
           {running.length > 0 ? (
             <span className="flex items-center gap-1 rounded-full bg-accent-wash px-1.5 py-px text-meta font-medium tabular-nums text-accent">
-              <RunningDot />
+              <StateDot state="working" labelled={false} />
               <span aria-hidden>{running.length}</span>
               <span className="sr-only">{t('shell.overview.runningCount', { count: running.length })}</span>
             </span>
@@ -188,12 +190,24 @@ export function SidebarActivity({ conversations = EMPTY, projects = [], onNaviga
   )
 }
 
-function RunningDot() {
-  return <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-accent" />
+/** L'état d'une entrée selon la charte de la colonne, celle des lignes de fil. */
+function stateOf(entry: ActivityEntry) {
+  return threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
 }
 
 /**
- * Une session en 32 px : agent, titre tronqué, puce du projet, ancienneté, état.
+ * Le repère d'une entrée : son projet, ou l'icône des fils libres quand elle n'en a
+ * pas. L'agent n'y figure plus — dans l'activité, on cherche *où* ça se passe, et le
+ * projet était relégué en petite puce à droite.
+ */
+function EntryMark({ project, free }: { project?: ProjectDto; free: boolean }) {
+  return free
+    ? <MessagesSquare size={14} className="shrink-0 text-ink-faint" />
+    : <ProjectAvatar project={project} className="size-3.5" />
+}
+
+/**
+ * Une session en 32 px : projet, titre tronqué, ancienneté, état.
  *
  * Le titre est tronqué et non replié sur deux lignes — sept sessions tiennent alors dans
  * la hauteur que trois prenaient, et c'est tout l'intérêt de la ligne unique.
@@ -203,13 +217,8 @@ function ActivityLine({ entry, project, onNavigate }: {
   project?: ProjectDto
   onNavigate: () => void
 }) {
-  const t = useTranslate()
   const display = useDisplaySettings()
-  const label = entry.awaiting
-    ? t('shell.activity.awaiting')
-    : entry.running
-      ? t(entry.status === 'running' ? 'shell.activity.running' : 'shell.overview.background')
-      : entry.unread ? t('shell.activity.unread') : null
+  const state = stateOf(entry)
 
   return (
     <li>
@@ -222,26 +231,16 @@ function ActivityLine({ entry, project, onNavigate }: {
           isActive ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >
-        <span className="shrink-0 text-ink-faint"><AgentIcon agent={entry.conversation.agent} size={14} /></span>
+        <EntryMark project={project} free={entry.conversation.projectId === null} />
         <span className={cx('min-w-0 flex-1 truncate', entry.unread && 'font-medium text-ink')}>
           {entry.conversation.title}
         </span>
-        {display.projectDot ? (
-          <ProjectAvatar project={project} className="size-3" />
-        ) : null}
         {display.sessionAge ? (
           <span className="shrink-0 text-meta tabular-nums text-ink-faint">
             {shortAge(entry.settledAt || entry.conversation.updatedAt)}
           </span>
         ) : null}
-        <span className="shrink-0" title={label ?? undefined}>
-          {entry.awaiting
-            ? <MessageCircleQuestion size={12} className="text-caution" />
-            : entry.running
-              ? <RunningDot />
-              : entry.unread ? <span aria-hidden className="block size-1.5 rounded-full bg-ink" /> : null}
-        </span>
-        {label ? <span className="sr-only">{label}</span> : null}
+        {state ? <StateDot state={state} /> : null}
       </NavLink>
     </li>
   )
@@ -413,6 +412,7 @@ function DialogRow({ entry, project, onNavigate }: {
       : entry.status === 'error' ? t('shell.overview.error')
         : entry.status === 'interrupted' ? t('shell.overview.interrupted')
           : entry.settledAt ? t('shell.overview.done') : null
+  const state = stateOf(entry)
 
   return (
     <li>
@@ -438,13 +438,11 @@ function DialogRow({ entry, project, onNavigate }: {
         <span className="w-12 shrink-0 text-right text-meta tabular-nums text-ink-faint">
           {shortAge(entry.settledAt || entry.conversation.updatedAt)}
         </span>
-        <span className="shrink-0" title={label ?? undefined}>
-          {entry.awaiting
-            ? <MessageCircleQuestion size={13} className="text-caution" />
-            : entry.running
-              ? <RunningDot />
-              : entry.unread ? <span aria-hidden className="block size-1.5 rounded-full bg-ink" /> : null}
-        </span>
+        {/* Le point suit la charte de la colonne ; sans état à montrer, le libellé
+            dit encore comment le tour s'est terminé. */}
+        {/* Le point dit l'état en couleur ; le texte, plus précis (« Tour terminé »,
+            « En arrière-plan »), reste ce qu'entend un lecteur d'écran. */}
+        {state ? <StateDot state={state} labelled={!label} /> : null}
         {label ? <span className="sr-only">{label}</span> : null}
       </NavLink>
     </li>

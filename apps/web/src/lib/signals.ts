@@ -241,3 +241,45 @@ export function presentSignal(signals: Signal[]): Signal | null {
   }
   return null
 }
+
+/**
+ * L'état d'un fil réduit à un point : **la charte de la colonne**.
+ *
+ * Quatre états, et pas un de plus : *en cours*, *te demande quelque chose*, *en
+ * erreur*, *fini sans avoir été lu*. Chaque surface de la colonne — l'activité, sa
+ * modale, les lignes de fil, les lignes de projet — passe par ici et par `StateDot`.
+ * Elles décidaient chacune de leur côté : une attente était une bulle ambre dans
+ * l'activité et un point ambre dans la liste, ce qui tournait clignotait ici et pas
+ * là, et le même « non lu » était noir sur un fil et ambre sur son projet.
+ *
+ * L'ordre est celui de `presentSignal` : ce qui est cassé, puis ce qui attend, puis ce
+ * qui travaille. Le non-lu vient en dernier — un fil qui produit encore n'est pas fini.
+ *
+ * Un fil interrompu compte comme cassé. Le bouton *Arrêter* ne pose pas ce statut — il
+ * rend le fil au repos — : seuls le posent un daemon qui redémarre en plein tour et un
+ * tir planifié abattu parce qu'il débordait. L'agent a été coupé sans qu'on le lui
+ * demande, et son travail est à reprendre : c'est une panne, pas une fin.
+ */
+export type ThreadState = 'broken' | 'awaiting' | 'working' | 'unread'
+
+export function threadState(input: {
+  status: ConversationStatus
+  /** Un travail de fond ouvert, en plus du statut. */
+  busy: boolean
+  unread: boolean
+}): ThreadState | null {
+  if (input.status === 'error' || input.status === 'interrupted') return 'broken'
+  if (input.status === 'awaiting_input') return 'awaiting'
+  if (input.status === 'running' || input.busy) return 'working'
+  return input.unread ? 'unread' : null
+}
+
+const STATE_RANK: Record<ThreadState, number> = { broken: 0, awaiting: 1, working: 2, unread: 3 }
+
+/** Le plus urgent de plusieurs états, pour une ligne qui en résume plusieurs. */
+export function mostUrgent(states: (ThreadState | null)[]): ThreadState | null {
+  return states.reduce<ThreadState | null>(
+    (best, state) => (state && (!best || STATE_RANK[state] < STATE_RANK[best]) ? state : best),
+    null,
+  )
+}
