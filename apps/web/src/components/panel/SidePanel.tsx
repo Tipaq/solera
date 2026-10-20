@@ -385,9 +385,11 @@ export function SidePanel({
       ) : null}
 
       {/* Monté seulement quand on le regarde : tout vient du board, déjà en cache, et
-          du fil, que la page tient. Rien ne s'y perd à le démonter. */}
+          du fil, que la page tient. Rien ne s'y perd à le démonter. Remonté à chaque
+          conversation : la page ne l'est pas, et la carte empilée, le segment ou la carte
+          créée mais pas rattachée d'une session n'ont rien à faire dans la suivante. */}
       {tab === 'project' && conversationId && projectId && session ? (
-        <ProjectPane projectId={projectId} conversationId={conversationId} session={session} />
+        <ProjectPane key={conversationId} projectId={projectId} conversationId={conversationId} session={session} />
       ) : null}
 
       {/* Montée tant qu'une page est ouverte, comme les terminaux : la page en direct

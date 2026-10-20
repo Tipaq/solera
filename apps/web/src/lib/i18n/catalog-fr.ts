@@ -2690,6 +2690,7 @@ export const fr: Catalog = {
   "project.pane.idle": "Au repos",
   "project.pane.context": "contexte {percent} %",
   "project.pane.plan": "Le plan de l’agent",
+  "project.pane.plan.previousTurn": "tour précédent",
   "project.pane.loading": "Lecture du board…",
   "project.pane.cardGone": "La carte que traitait cette session n’existe plus.",
   "project.pane.detach": "Détacher",

@@ -6,7 +6,7 @@ import { useCards, useCreateCard } from '../../lib/cards'
 import type { ChatItem } from '../../lib/chat-fold'
 import { useAttachCard } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { isLiveSession, latestAgentPlan, projectOverview, suggestCard, toReviewCount, type AgentPlanStep } from '../../lib/project-pane'
+import { isLiveSession, projectOverview, suggestCard, toReviewCount, visibleAgentPlan, type AgentPlan as AgentPlanData } from '../../lib/project-pane'
 import { useProjects } from '../../lib/projects'
 import { AgentIcon } from '../AgentIcon'
 import { CardChooser } from '../board/CardChooser'
@@ -66,7 +66,10 @@ export function ProjectPane({
   if (openedCard) {
     return (
       <div className="flex min-h-0 flex-1 flex-col pb-safe">
+        {/* Une fiche par carte : passer d'une carte à sa voisine ne doit pas y
+            emporter l'édition en cours ni les erreurs de la précédente. */}
         <CardDetail
+          key={openedCard.id}
           card={openedCard}
           projectId={projectId}
           currentConversationId={conversationId}
@@ -114,7 +117,7 @@ export function ProjectPane({
           onOpen={setOpened}
         />
       ) : (
-        <ProjectSegment projectId={projectId} cards={cards ?? []} current={current} board={board} onOpen={setOpened} />
+        <ProjectSegment projectId={projectId} cards={cards} current={current} board={board} onOpen={setOpened} />
       )}
     </div>
   )
@@ -188,7 +191,7 @@ function SessionSegment({
   onOpen: (number: number) => void
 }) {
   const t = useTranslate()
-  const plan = latestAgentPlan(session.items)
+  const plan = visibleAgentPlan(session.items)
   const attach = useAttachCard(projectId)
 
   if (session.card && current) {
@@ -201,7 +204,7 @@ function SessionSegment({
             projectId={projectId}
             currentConversationId={conversationId}
             onSelectCard={onOpen}
-            afterSubtasks={plan ? <AgentPlan steps={plan} /> : null}
+            afterSubtasks={plan ? <AgentPlan plan={plan} /> : null}
           />
         </div>
       </>
@@ -226,11 +229,13 @@ function SessionSegment({
             </div>
           )
         ) : (
-          board.isError ? <BoardError board={board} /> : (
+          // Pas de proposition tant que le board n'est pas là : elle arriverait après
+          // coup et déplacerait les boutons sous le pointeur.
+          board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : (
             <NoCard projectId={projectId} conversationId={conversationId} session={session} cards={cards ?? []} />
           )
         )}
-        {plan ? <AgentPlan steps={plan} /> : null}
+        {plan ? <AgentPlan plan={plan} /> : null}
       </div>
     </div>
   )
@@ -257,14 +262,19 @@ function ActivityBand({ session }: { session: ProjectPaneSession }) {
   )
 }
 
-/** Le plan que l'agent s'est donné, lu à côté de ce que la carte demande. */
-function AgentPlan({ steps }: { steps: AgentPlanStep[] }) {
+/**
+ * Le plan que l'agent s'est donné, lu à côté de ce que la carte demande. Celui d'un tour
+ * déjà clos le dit, pour qu'on ne le prenne pas pour le programme de la demande en cours.
+ */
+function AgentPlan({ plan }: { plan: AgentPlanData }) {
   const t = useTranslate()
+  const { steps } = plan
   const done = steps.filter((step) => step.status === 'completed').length
   return (
     <section aria-label={t('project.pane.plan')} className="flex flex-col gap-1">
       <h3 className="flex items-center gap-2 text-micro font-semibold tracking-wide text-ink-faint uppercase">
         <span className="flex-1">{t('project.pane.plan')}</span>
+        {plan.previousTurn ? <span className="font-normal normal-case tracking-normal">{t('project.pane.plan.previousTurn')}</span> : null}
         <span className="font-normal tabular-nums">{done}/{steps.length}</span>
       </h3>
       <ul className="flex flex-col gap-px">
@@ -366,7 +376,8 @@ function NoCard({ projectId, conversationId, session, cards }: {
 
 function ProjectSegment({ projectId, cards, current, board, onOpen }: {
   projectId: string
-  cards: CardDto[]
+  /** Absent tant que le board n'est pas lu, ou s'il n'a pas pu l'être. */
+  cards: CardDto[] | undefined
   current: CardDto | null
   board: BoardState
   onOpen: (number: number) => void
@@ -376,22 +387,29 @@ function ProjectSegment({ projectId, cards, current, board, onOpen }: {
   const [creating, setCreating] = useState(false)
   const { data: projects } = useProjects()
   const project = projects?.find((entry) => entry.id === projectId)
-  const view = projectOverview(cards, current)
+  const view = cards ? projectOverview(cards, current) : null
+  // Sur un board vide, l'état vide porte le seul bouton de création : deux « + Carte »
+  // l'un sous l'autre ne disent rien de plus.
+  const empty = cards?.length === 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex shrink-0 items-center gap-1.5 px-3.5 pt-3">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
           {project?.name}
-          <span className="font-normal text-ink-faint"> · {t('project.pane.cards', { count: cards.length })}</span>
+          {/* Le compte attend le board : « 0 carte » pendant un chargement ou après une
+              erreur affirmerait un board vide qu'on n'a pas lu. */}
+          {cards ? <span className="font-normal text-ink-faint"> · {t('project.pane.cards', { count: cards.length })}</span> : null}
         </span>
-        <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>
+        {empty ? null : (
+          <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>
+        )}
         <Button size="sm" variant="secondary" icon={<SquareKanban size={14} />} onClick={() => navigate(`/p/${projectId}/board`)}>
           {t('project.pane.board')}
         </Button>
       </div>
 
-      {board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : cards.length === 0 ? (
+      {board.isError ? <BoardError board={board} /> : !view ? <BoardSkeleton /> : empty ? (
         <EmptyState
           icon={<SquareKanban size={22} />}
           title={t('project.pane.empty')}

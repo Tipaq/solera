@@ -188,6 +188,9 @@ export function CardDetail({
                 <Button size="sm" variant="ghost" disabled={saving} onClick={() => { setDraft(null); setEditing(false) }}>{t('board.card.cancel')}</Button>
                 <Button size="sm" disabled={!dirty || !title.trim() || saving} onClick={save}>{t(saving ? 'board.card.saving' : 'board.card.save')}</Button>
               </div>
+              {/* Dit en clair pourquoi « Session » est grisé dans la tête : l'infobulle du
+                  bouton ne s'affiche ni au doigt ni à un bouton désactivé. */}
+              {dirty ? <p className="text-xs text-ink-faint">{t('board.editor.saveBeforeLaunch')}</p> : null}
               {updateCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
             </div>
           ) : (

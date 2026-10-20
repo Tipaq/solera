@@ -2695,6 +2695,7 @@ export const en = {
   "project.pane.idle": "Idle",
   "project.pane.context": "context {percent}%",
   "project.pane.plan": "The agent’s plan",
+  "project.pane.plan.previousTurn": "previous turn",
   "project.pane.loading": "Reading the board…",
   "project.pane.cardGone": "The card this session worked on no longer exists.",
   "project.pane.detach": "Detach",

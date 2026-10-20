@@ -7,6 +7,16 @@ export interface AgentPlanStep {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+/** Le plan lu dans le fil, et s'il date d'un tour déjà clos par un nouveau message. */
+export interface AgentPlan {
+  steps: AgentPlanStep[]
+  /**
+   * Vrai quand un message de l'utilisateur l'a suivi : l'agent travaille désormais sur
+   * autre chose, et ce plan raconte la demande d'avant, pas celle en cours.
+   */
+  previousTurn: boolean
+}
+
 /**
  * Le dernier plan que l'agent a publié dans ce fil, ou null s'il n'en a jamais tenu.
  *
@@ -15,12 +25,19 @@ export interface AgentPlanStep {
  * chacun réécrit la liste entière, il ne l'amende pas. Un sous-agent tient sa propre
  * liste : elle n'est pas celle de la session, on l'ignore.
  */
-export function latestAgentPlan(items: ChatItem[]): AgentPlanStep[] | null {
+export function latestAgentPlan(items: ChatItem[]): AgentPlan | null {
+  let previousTurn = false
   for (let i = items.length - 1; i >= 0; i -= 1) {
     const item = items[i]
     if (!item) continue
+    if (item.kind === 'message' && item.role === 'user' && item.parentToolCallId === null) {
+      previousTurn = true
+      continue
+    }
     if (item.kind === 'plan_progress') {
-      return item.items.length > 0 ? item.items.map((step) => ({ text: step.text, status: step.status })) : null
+      return item.items.length > 0
+        ? { steps: item.items.map((step) => ({ text: step.text, status: step.status })), previousTurn }
+        : null
     }
     if (item.kind === 'tool' && item.name === 'TodoWrite' && item.parentToolCallId === null) {
       const todos = (item.input as { todos?: unknown } | null)?.todos
@@ -32,10 +49,25 @@ export function latestAgentPlan(items: ChatItem[]): AgentPlanStep[] | null {
         if (!text) return []
         return [{ text, status: status === 'completed' || status === 'in_progress' ? status : 'pending' }]
       })
-      return steps.length > 0 ? steps : null
+      return steps.length > 0 ? { steps, previousTurn } : null
     }
   }
   return null
+}
+
+/**
+ * Le plan qui mérite encore d'être lu à côté de la carte.
+ *
+ * Celui d'un tour clos et entièrement coché ne dit plus rien : le travail qu'il décrivait
+ * est fait, et il se lirait comme le programme de la demande en cours. D'un tour clos mais
+ * inachevé, il reste montré — ce qui n'a pas été fait est justement ce qu'on veut voir —
+ * avec la mention de son tour.
+ */
+export function visibleAgentPlan(items: ChatItem[]): AgentPlan | null {
+  const plan = latestAgentPlan(items)
+  if (!plan) return null
+  if (plan.previousTurn && plan.steps.every((step) => step.status === 'completed')) return null
+  return plan
 }
 
 /**
@@ -71,9 +103,15 @@ export function suggestCard(items: ChatItem[], cards: CardDto[]): { card: CardDt
 
 const WEEK = 7 * 24 * 60 * 60 * 1000
 
-/** Une session qui tourne ou attend quelqu'un : ni archivée, ni au repos. */
+/**
+ * Une session qui tourne ou attend quelqu'un, et n'est pas archivée.
+ *
+ * `interrupted` et `error` n'en sont pas : un redémarrage du daemon laisse `interrupted`
+ * à toute session alors en cours, jusqu'au message suivant — sa carte pulserait sinon
+ * dans « maintenant » sans que rien ne tourne.
+ */
 export function isLiveSession(session: CardConversationDto): boolean {
-  return !session.archivedAt && session.status !== 'idle'
+  return !session.archivedAt && (session.status === 'running' || session.status === 'awaiting_input')
 }
 
 /** Ce que compte la pastille de *Projet* : les cartes qui attendent une relecture. */

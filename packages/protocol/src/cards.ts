@@ -183,6 +183,12 @@ export interface CardDto {
    * Depuis quand la carte est dans sa colonne, d'après `card_moves` ; sa création
    * quand elle n'a jamais bougé. C'est ce qui dit « terminée cette semaine » —
    * `updatedAt`, qu'une retouche de titre réécrit, ne le dit pas.
+   *
+   * Une carte fermée avant `card_moves` (migration 0037, 2026-10-15) n'a pas de
+   * mouvement et date donc de sa création. C'est une borne basse, qui ne se trompe que
+   * par omission : on ne ferme pas une carte avant qu'elle existe, donc aucune ne passe
+   * pour récente à tort. On n'invente pas pour autant de mouvements à rebours — la
+   * table ne garde que des faits datés.
    */
   columnSince: number
   conversations: CardConversationDto[]

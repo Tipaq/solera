@@ -1027,11 +1027,12 @@ export function ConversationPage() {
 
                 {/* Le chemin de retour vers le chantier : depuis une session, on remonte
                     au travail qu'elle traite. Il ouvre la vue *Projet* du panneau plutôt
-                    que le board, pour lire la carte sans quitter la session. */}
+                    que le board, pour lire la carte sans quitter la session — et ferme ce
+                    dialogue, qui sans ça masquerait le panneau qu'on vient d'ouvrir. */}
                 {conversation.card ? (
                   <button
                     type="button"
-                    onClick={() => { setPanelTab('project'); setPanelOpen(true) }}
+                    onClick={() => { setMetaOpen(false); setPanelTab('project'); setPanelOpen(true) }}
                     className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
                     title={t('conversation.meta.card', { title: conversation.card.title })}
                   >
