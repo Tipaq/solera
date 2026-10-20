@@ -45,7 +45,7 @@ export function CardBlocks({
       ) : null}
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-medium tracking-wide text-ink-faint uppercase">
             {t('board.card.blocks')}
           </h3>

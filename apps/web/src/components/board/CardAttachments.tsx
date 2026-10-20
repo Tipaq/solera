@@ -39,9 +39,9 @@ export function CardAttachments({ cardId, projectId }: { cardId: string; project
   }
   return (
     <section className="flex flex-col gap-3" aria-label={t('board.files.title')}>
-      <div className="flex items-center gap-2">
-        <Paperclip size={16} className="text-ink-faint" />
-        <h3 className="flex-1 text-sm font-semibold">{t('board.files.title')}</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <Paperclip size={13} className="text-ink-faint" aria-hidden />
+        <h3 className="flex-1 text-xs font-medium tracking-wide text-ink-faint uppercase">{t('board.files.title')}</h3>
         <Button size="sm" variant="ghost" icon={<Plus size={14} />} disabled={upload.isPending} onClick={() => input.current?.click()}>{t('board.files.add')}</Button>
       </div>
       <p className="text-xs leading-relaxed text-ink-faint">{t('board.files.hint', { max: Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024) })}</p>

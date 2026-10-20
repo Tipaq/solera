@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareTerminal, X } from 'lucide-react'
+import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
@@ -26,12 +26,15 @@ import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
+import { useCards } from '../../lib/cards'
+import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
 import { SearchPane } from './SearchPane'
 import { TerminalsPane } from './TerminalsPane'
+import { ProjectPane, type ProjectPaneSession } from './ProjectPane'
 import { WebPane } from './WebPane'
 import { useWebPane } from '../../lib/web-pane'
 import { QuickOpen } from './QuickOpen'
@@ -68,6 +71,7 @@ export function SidePanel({
   docked = false,
   canDock = false,
   workspaceName,
+  session,
 }: {
   /** Null sur un fil libre : il n'y a alors pas de répertoire de travail du tout. */
   projectId: string | null
@@ -84,6 +88,8 @@ export function SidePanel({
   docked?: boolean
   canDock?: boolean
   workspaceName?: string
+  /** Ce que la vue *Projet* lit de la session : sa carte, son fil, son activité. */
+  session?: ProjectPaneSession
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
@@ -103,13 +109,18 @@ export function SidePanel({
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
+  const sessionTab = chosenTab === 'agents' || chosenTab === 'project'
   const tab: PanelTab = chosenTab === 'web'
     ? hasWeb ? 'web' : hasWorkspace ? 'files' : 'agents'
     : !hasWorkspace
       ? 'agents'
-      : conversationId || chosenTab !== 'agents'
+      : conversationId || !sessionTab
         ? chosenTab
         : 'files'
+  // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
+  // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
+  const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
+  const reviewCount = toReviewCount(cards)
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -299,6 +310,7 @@ export function SidePanel({
         hasConversation={Boolean(conversationId)}
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
+        projectBadge={reviewCount}
       />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
@@ -372,6 +384,14 @@ export function SidePanel({
         />
       ) : null}
 
+      {/* Monté seulement quand on le regarde : tout vient du board, déjà en cache, et
+          du fil, que la page tient. Rien ne s'y perd à le démonter. Remonté à chaque
+          conversation : la page ne l'est pas, et la carte empilée, le segment ou la carte
+          créée mais pas rattachée d'une session n'ont rien à faire dans la suivante. */}
+      {tab === 'project' && conversationId && projectId && session ? (
+        <ProjectPane key={conversationId} projectId={projectId} conversationId={conversationId} session={session} />
+      ) : null}
+
       {/* Montée tant qu'une page est ouverte, comme les terminaux : la page en direct
           est un document vivant, et la recharger à chaque passage par une autre vue
           perdrait où l'on en était dedans. */}
@@ -413,7 +433,7 @@ export function SidePanel({
 }
 
 /**
- * Les cinq vues, dans la bande.
+ * Les vues, dans la bande.
  *
  * Elles sont nommées tant qu'il y a la place, et les noms tombent **tous ensemble**
  * sous 30 rem : une rangée où seul l'onglet actif garde son nom change de largeur à
@@ -421,10 +441,11 @@ export function SidePanel({
  * recouvre l'écran, l'actif garde le sien — la bande au-dessus dit déjà où l'on est,
  * mais c'est le seul repère écrit qui reste de la vue elle-même.
  *
- * Le trait sépare les quatre vues du répertoire de la seule qui regarde la session.
- * Sur un fil libre il ne reste que la seconde, et le trait n'a donc rien à séparer.
+ * Le trait sépare les quatre vues du répertoire des deux qui regardent la session,
+ * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
+ * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge, projectBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -436,6 +457,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
   /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
   hasWeb: boolean
   agentBadge: number
+  /** Cartes du projet en attente de relecture. */
+  projectBadge: number
 }) {
   const t = useTranslate()
   const views = (
@@ -457,6 +480,11 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
           {hasWorkspace ? <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-line" /> : null}
           <Tab icon={<Bot size={15} />} label={t('panel.tab.agents')} keepLabel={!band}
             badge={agentBadge} active={tab === 'agents'} onSelect={() => setPanelTab('agents')} />
+          {hasWorkspace ? (
+            <Tab icon={<SquareKanban size={15} />} label={t('panel.tab.project')} keepLabel={!band}
+              badge={projectBadge} badgeLabel={(label, count) => t('panel.tab.project.badge', { label, count })}
+              badgeTone="caution" active={tab === 'project'} onSelect={() => setPanelTab('project')} />
+          ) : null}
         </>
       ) : null}
       {hasWeb ? (
@@ -498,6 +526,8 @@ function Tab({
   label,
   active,
   badge = 0,
+  badgeLabel,
+  badgeTone = 'accent',
   keepLabel = false,
   onSelect,
 }: {
@@ -506,6 +536,10 @@ function Tab({
   active: boolean
   /** Décompte affiché sur l'onglet. Zéro n'affiche rien. */
   badge?: number
+  /** Ce que le décompte compte, dit au lecteur d'écran. Par défaut, ce qui tourne. */
+  badgeLabel?: (label: string, count: number) => string
+  /** En `caution`, le décompte dit que quelqu'un attend, et non que quelque chose tourne. */
+  badgeTone?: 'accent' | 'caution'
   /** Garde son nom à l'étroit quand il est actif : le cas du panneau qui recouvre. */
   keepLabel?: boolean
   onSelect: () => void
@@ -518,7 +552,7 @@ function Tab({
       aria-pressed={active}
       // Le nom reste porté par le bouton même quand il n'est plus écrit : une icône
       // seule ne dit pas ce qu'elle ouvre, ni à l'œil ni à un lecteur d'écran.
-      aria-label={badge > 0 ? t('panel.tab.badge', { label, count: badge }) : label}
+      aria-label={badge > 0 ? (badgeLabel ? badgeLabel(label, badge) : t('panel.tab.badge', { label, count: badge })) : label}
       title={label}
       className={cx(
         'flex h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors md:h-8 md:min-w-0 pointer-coarse:h-11 pointer-coarse:min-w-11',
@@ -532,7 +566,10 @@ function Tab({
       {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
           dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
       {badge > 0 ? (
-        <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-accent text-micro font-semibold text-accent-ink">
+        <span className={cx(
+          'flex size-4 shrink-0 items-center justify-center rounded-full text-micro font-semibold',
+          badgeTone === 'caution' ? 'bg-caution/12 text-caution' : 'bg-accent text-accent-ink',
+        )}>
           {badge}
         </span>
       ) : null}

@@ -176,8 +176,12 @@ export function openPanelOnArrival(path: string, tab?: PanelTab): void {
  *
  * `web` s'y ajoute le 2026-10-17, et n'apparaît qu'une fois une page ouverte : voir
  * `web-pane.ts`.
+ *
+ * `project` s'y ajoute le 2026-10-19, à côté d'*Agent* : la carte que la session
+ * traite et le projet autour d'elle. Comme *Agent*, il regarde la session, et n'existe
+ * donc ni en vue projet ni sur un fil libre, qui n'a pas de board.
  */
-export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents' | 'web'
+export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents' | 'project' | 'web'
 
 /**
  * Onglet affiché et sous-agent consulté.

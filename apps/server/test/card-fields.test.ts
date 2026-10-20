@@ -247,3 +247,23 @@ test('card_moves : les trois chemins qui changent une colonne écrivent une lign
     ],
   )
 })
+
+test('columnSince : le dernier arrivage dans la colonne, que la retouche du titre ne déplace pas', async (t) => {
+  const { app, create, moves } = await harness(t)
+  const card = await create('Terminer la chronologie')
+  // Jamais déplacée : la colonne date de la création.
+  assert.equal(card.columnSince, card.createdAt)
+
+  const done = await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { column: 'done' } })
+  assert.equal(done.statusCode, 200, done.body)
+  const arrival = moves().at(-1)
+  assert.equal(arrival?.toColumn, 'done')
+  assert.equal(done.json().columnSince, arrival?.movedAt)
+
+  // Une correction de titre réécrit `updatedAt`, pas l'arrivée en « terminé ».
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  const renamed = await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { title: 'Chronologie terminée' } })
+  assert.equal(renamed.statusCode, 200, renamed.body)
+  assert.ok(renamed.json().updatedAt > arrival!.movedAt)
+  assert.equal(renamed.json().columnSince, arrival?.movedAt)
+})

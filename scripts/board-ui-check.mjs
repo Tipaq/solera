@@ -108,13 +108,13 @@ try {
   await dialog.waitFor({ state: 'hidden' })
   const panel = page.getByRole('complementary', { name: /^Carte #/ })
   await panel.getByRole('heading', { name: 'Améliorer l’accueil du projet', exact: true }).waitFor()
-  await panel.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
+  await editCard(page, panel)
   const editor = panel.getByRole('textbox', { name: 'Description', exact: true })
   await editor.fill((await editor.inputValue()) + '\n\nTexte validé.')
-  assert.equal(await panel.getByRole('button', { name: 'Lancer une session', exact: true }).isDisabled(), true)
+  assert.equal(await panel.getByRole('button', { name: 'Session', exact: true }).isDisabled(), true)
   await editor.press('Control+Enter')
-  await panel.getByRole('button', { name: 'Modifier la carte', exact: true }).waitFor()
-  assert.equal(await panel.getByRole('button', { name: 'Lancer une session', exact: true }).isEnabled(), true)
+  await panel.getByRole('textbox', { name: 'Description', exact: true }).waitFor({ state: 'hidden' })
+  assert.equal(await panel.getByRole('button', { name: 'Session', exact: true }).isEnabled(), true)
   const number = Number(new URL(page.url()).searchParams.get('carte'))
   const created = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json()).find((entry) => entry.number === number)
   assert.ok(created)
@@ -146,15 +146,13 @@ try {
   page.once('dialog', (dialog) => dialog.accept())
   await files.getByRole('button', { name: 'Retirer retry.txt', exact: true }).click()
   await files.getByRole('link', { name: /retry.txt/ }).waitFor({ state: 'hidden' })
-  await panel.getByRole('tab', { name: 'Activité 0', exact: true }).click()
   await panel.getByRole('textbox', { name: 'Ajouter une note', exact: true }).fill('Les documents de référence sont joints à la carte.')
   await panel.getByRole('button', { name: 'Ajouter une note', exact: true }).click()
   await panel.getByText('Les documents de référence sont joints à la carte.', { exact: true }).waitFor()
-  await panel.getByRole('tab', { name: 'Détails', exact: true }).click()
 
   // Les champs de la carte #36 : l'échéance, le jalon, les sous-tâches du markdown et
-  // les liens « bloque ». Tous dans l'onglet *détails*, qui dit ce qui est prévu, et
-  // jamais dans *activité* ni *sessions*, qui racontent ce qui s'est passé.
+  // les liens « bloque ». Dans les propriétés de la fiche, qui disent ce qui est prévu,
+  // et non dans son fil, qui raconte ce qui s'est passé.
   await panel.getByLabel('Échéance', { exact: true }).fill('2026-12-01')
   await page.waitForResponse((response) => response.url().endsWith(`/api/cards/${created.id}`))
   await panel.getByRole('button', { name: 'Choisir un jalon', exact: true }).click()
@@ -164,11 +162,11 @@ try {
   await panel.getByRole('button', { name: 'Détacher de ce jalon', exact: true }).waitFor()
 
   // Cocher réécrit la description : la case n'a pas de table, c'est une ligne du texte.
-  await panel.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
+  await editCard(page, panel)
   const tasks = panel.getByRole('textbox', { name: 'Description', exact: true })
   await tasks.fill((await tasks.inputValue()) + '\n\n- [ ] Lister les écrans\n- [ ] Poser les échéances')
   await tasks.press('Control+Enter')
-  await panel.getByRole('button', { name: 'Modifier la carte', exact: true }).waitFor()
+  await panel.getByRole('textbox', { name: 'Description', exact: true }).waitFor({ state: 'hidden' })
   await panel.getByText('0/2', { exact: true }).waitFor()
   await panel.locator('input[data-sg-task="0"]').click()
   await panel.getByText('1/2', { exact: true }).waitFor()
@@ -215,7 +213,7 @@ try {
   assert.equal(await page.locator('[data-card-open]').count(), cards.length + 1)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-desktop.png') })
   await page.locator(`[data-card-open="${created.id}"]`).click()
-  await panel.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
+  await editCard(page, panel)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-editor-desktop.png') })
   await panel.getByRole('button', { name: 'Annuler', exact: true }).click()
   for (const width of [390, 320]) {
@@ -257,4 +255,10 @@ try {
     clearTimeout(timer)
   }))
   await rm(data, { recursive: true, force: true })
+}
+
+/** « Modifier la carte » vit dans le menu « ⋯ » de la fiche, depuis la fiche commune. */
+async function editCard(page, panel) {
+  await panel.getByRole('button', { name: 'Plus d’actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Modifier la carte', exact: true }).click()
 }
