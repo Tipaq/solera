@@ -2,7 +2,10 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { ShieldAlert, X } from 'lucide-react'
 import { useId, useMemo, useState } from 'react'
 import {
+  DEFAULT_CHECK_TIMEOUT_SECONDS,
   DEFAULT_SCHEDULE_DURATION_MINUTES,
+  MAX_CHECK_TIMEOUT_SECONDS,
+  MIN_CHECK_TIMEOUT_SECONDS,
   MAX_SCHEDULE_DURATION_MINUTES,
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
@@ -22,6 +25,7 @@ import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
 import type { SettingGroup } from '../chat/ComposerSettings'
 import { Banner, Button, Field, IconButton, Presets, SegmentedControl, Select } from '@solera/ui'
+import { CheckSection } from './CheckSection'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
@@ -91,6 +95,8 @@ export function ScheduleDialog({
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
+  const [checkScript, setCheckScript] = useState<string | null>(task?.check?.script ?? null)
+  const [checkTimeout, setCheckTimeout] = useState(String(task?.check?.timeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS))
 
   // Même ordre que pour une conversation neuve : le préréglage du projet, puis les
   // défauts du compte. Une configuration d'un autre CLI est abandonnée, pas convertie.
@@ -118,7 +124,13 @@ export function ScheduleDialog({
   const duration = Number(maxDuration)
   const durationValid =
     Number.isInteger(duration) && duration >= MIN_SCHEDULE_DURATION_MINUTES && duration <= MAX_SCHEDULE_DURATION_MINUTES
-  const valid = Boolean(name.trim() && prompt.trim() && cadence && nextRun !== null && durationValid)
+  const timeoutSeconds = Number(checkTimeout)
+  // Un script vidé vaut « pas de vérification » ; un délai, lui, doit se lire.
+  const checkValid =
+    checkScript === null ||
+    !checkScript.trim() ||
+    (Number.isInteger(timeoutSeconds) && timeoutSeconds >= MIN_CHECK_TIMEOUT_SECONDS && timeoutSeconds <= MAX_CHECK_TIMEOUT_SECONDS)
+  const valid = Boolean(name.trim() && prompt.trim() && cadence && nextRun !== null && durationValid && checkValid)
 
   const submit = () => {
     if (!valid || !cadence || mutation.isPending) return
@@ -130,6 +142,8 @@ export function ScheduleDialog({
       cadence,
       overlapPolicy: overlap,
       maxDurationMinutes: duration,
+      checkScript: checkScript?.trim() ? checkScript : null,
+      ...(checkScript?.trim() ? { checkTimeoutSeconds: timeoutSeconds } : {}),
     }
     if (task) update.mutate({ id: task.id, ...input }, { onSuccess: onClose })
     else create.mutate(input, { onSuccess: onClose })
@@ -258,6 +272,15 @@ export function ScheduleDialog({
                   </p>
                 ) : null}
               </fieldset>
+
+              <CheckSection
+                projectId={project.id}
+                taskId={task?.id}
+                script={checkScript}
+                timeout={checkTimeout}
+                onScriptChange={setCheckScript}
+                onTimeoutChange={setCheckTimeout}
+              />
 
               <Select
                 label={t('draft.cli.legend')}
