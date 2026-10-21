@@ -1994,6 +1994,7 @@ export const fr: Catalog = {
   'settings.notifications.deviceScope': 'Propre à cet appareil : activer ici ne change rien sur les autres.',
   'draft.cliSessions.title': 'Ou reprendre une session {label}',
   'draft.cliSessions.description': "Commencées avec le CLI dans ce dossier. La conversation continue la même session, dans les deux sens ; il suffit de ne pas être sur les deux en même temps.",
+  'draft.cliSessions.error': 'Les sessions du CLI dans ce dossier n’ont pas pu être listées.',
   'draft.import.error': "L'import a échoué.",
   'home.empty.description': "Pose ta question : la conversation n'a besoin de rien. Un projet, lui, pointe sur un dossier de ta machine — c'est ce qu'il faut pour travailler sur du code.",
   'home.newConversation': 'Nouvelle conversation',
