@@ -243,6 +243,7 @@ export class ClaudeRunner implements AgentRunner {
         additionalDirectories: [
           ...config.additionalDirectories,
           this.ctx.attachmentsRoot,
+          ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
           ...library.additionalDirectories,
         ],
         plugins: library.plugins,

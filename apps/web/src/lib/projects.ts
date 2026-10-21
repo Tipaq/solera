@@ -4,6 +4,7 @@ import {
   type CloneJobDto,
   type InstructionsMode,
   type ProjectDto,
+  type ProjectPrototypesDto,
 } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
 import { translate, translateError } from './i18n'
@@ -106,6 +107,18 @@ export function useReorderProjects() {
     },
 
     onSettled: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
+  })
+}
+
+/**
+ * Les candidats du projet : des composants créés dans ses prototypes faute de les
+ * trouver dans le design system lié, qui attendent qu'on décide de leur sort.
+ */
+export function useProjectPrototypes(projectId: string, linked: boolean) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'prototypes'],
+    queryFn: () => api.get<ProjectPrototypesDto>(`/api/projects/${projectId}/prototypes`),
+    enabled: linked,
   })
 }
 

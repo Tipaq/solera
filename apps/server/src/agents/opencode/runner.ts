@@ -159,9 +159,14 @@ export class OpencodeRunner implements AgentRunner {
         config,
         mcpServers: resolved.servers,
         skillRoots: this.ctx.skillRoots(config),
-        // Les pièces jointes et la mémoire du projet vivent hors du répertoire de
-        // travail : sans règle, opencode demanderait la permission de les lire.
-        readableDirs: [this.ctx.attachmentsRoot, ...(memoryDir ? [memoryDir] : [])],
+        // Les pièces jointes, la mémoire du projet et les prototypes du design system
+        // lié vivent hors du répertoire de travail : sans règle, opencode demanderait la
+        // permission d'y accéder.
+        readableDirs: [
+          this.ctx.attachmentsRoot,
+          ...(memoryDir ? [memoryDir] : []),
+          ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
+        ],
       }),
       servers: resolved.servers,
       failures: failedStatuses(resolved.failures),

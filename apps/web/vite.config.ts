@@ -185,7 +185,8 @@ export default defineConfig({
         // en cache produirait un fil incohérent avec le journal (invariant I2).
         globPatterns: ['**/*.{js,css,html,woff2}'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        // `/ds/` : les Storybook relayés de la vue Web, qui ne sont pas l'application.
+        navigateFallbackDenylist: [/^\/api\//, /^\/ds\//],
         runtimeCaching: [{ urlPattern: /^\/api\//, handler: 'NetworkOnly' }],
         cleanupOutdatedCaches: true,
       },
@@ -199,6 +200,12 @@ export default defineConfig({
     headers: { 'content-security-policy': "frame-ancestors 'none'" },
     proxy: {
       '/api': {
+        target: `http://127.0.0.1:${SERVER_PORT}`,
+        changeOrigin: true,
+        ws: true,
+      },
+      // Les Storybook relayés des design systems liés, websockets de HMR comprises.
+      '/ds/': {
         target: `http://127.0.0.1:${SERVER_PORT}`,
         changeOrigin: true,
         ws: true,

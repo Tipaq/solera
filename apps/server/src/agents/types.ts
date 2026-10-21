@@ -62,6 +62,11 @@ export interface RunnerContext {
   binary: string
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
+  /**
+   * Le dossier où l'agent écrit ses prototypes, quand le projet lie un design system :
+   * hors du workspace, donc à autoriser en écriture. Null sans DS (carte #63).
+   */
+  prototypesDir: string | null
   /** Origine héritée par les services lancés depuis cette conversation. */
   processEnv?: Record<string, string>
   /**

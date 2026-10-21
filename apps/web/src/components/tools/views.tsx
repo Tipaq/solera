@@ -9,6 +9,7 @@ import { ImageThumbnail } from '../ImageThumbnail'
 import { WebLink } from '../WebLink'
 import { Markdown } from '../chat/Markdown'
 import { cx } from '@solera/ui'
+import { prototypeUrl } from '../../lib/prototypes'
 import { Code, Empty, Plain, Section } from './parts'
 import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
 
@@ -364,6 +365,29 @@ const webFetch: ToolView = (tool) => {
           </div>
         </Section>
       )}
+    </>
+  )
+}
+
+/**
+ * L'aperçu d'un prototype du design system lié : un lien qui le rouvre dans la vue
+ * *Web*, au-dessus de ce que l'outil a répondu. Ouvert de lui-même quand l'appel
+ * aboutit sous les yeux de l'utilisateur (`lib/prototypes.ts`).
+ */
+export const prototypeView: ToolView = (tool) => {
+  const url = prototypeUrl(tool)
+  if (url === null) return null
+  return (
+    <>
+      <Section label={translate('tool.prototype.preview')}>
+        <WebLink
+          href={url}
+          className="truncate rounded-md border border-line bg-sunken p-2 font-mono text-xs text-accent underline"
+        >
+          {translate('tool.prototype.open')}
+        </WebLink>
+      </Section>
+      <TextOutput tool={tool} />
     </>
   )
 }

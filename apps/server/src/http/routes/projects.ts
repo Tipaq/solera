@@ -15,6 +15,7 @@ import {
   updateProjectBodySchema,
   type CloneJobDto,
   type ProjectDto,
+  type ProjectPrototypesDto,
 } from '@solera/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
@@ -38,6 +39,7 @@ import {
 import { SkillLibrary } from '../../skill-library/store.js'
 import { assertUsableWorkspace, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
+import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
 
 /**
  * Le dossier que le clone va remplir.
@@ -441,6 +443,22 @@ export function registerProjectRoutes(
    * déjà des mentions avant qu'une conversation existe. Le worktree, quand il est
    * choisi, change le dossier consulté.
    */
+  /**
+   * Les candidats du projet : les composants que ses agents ont créés dans leurs
+   * prototypes faute de les trouver dans le DS lié, en attente d'une décision.
+   */
+  app.get('/api/projects/:id/prototypes', async (request): Promise<ProjectPrototypesDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    if (!project.designSystemPath) return { directory: null, candidates: [] }
+    const directory = join(
+      prototypesOfDesignSystem(prototypesRoot(ctx.config.paths.data), project.designSystemPath),
+      project.id,
+    )
+    return { directory, candidates: await listCandidates(directory) }
+  })
+
   app.get('/api/projects/:id/files', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

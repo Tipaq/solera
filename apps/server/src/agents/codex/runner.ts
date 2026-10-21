@@ -256,7 +256,11 @@ export class CodexRunner implements AgentRunner {
       case 'workspace-write':
         return {
           type: 'workspaceWrite',
-          writableRoots: this.config.additionalDirectories,
+          // Les prototypes du design system lié vivent hors du workspace (carte #63).
+          writableRoots: [
+            ...this.config.additionalDirectories,
+            ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
+          ],
           networkAccess: this.config.webSearch,
           excludeTmpdirEnvVar: false,
           excludeSlashTmp: false,

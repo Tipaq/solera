@@ -47,6 +47,11 @@ interface OverviewInput {
    * lui montre est la pire des deux erreurs.
    */
   cardFiling: boolean
+  /**
+   * Le dossier des prototypes du projet sur son design system, null sans DS lié. Le
+   * rappel du DS y ajoute alors la manière de prototyper (carte #63).
+   */
+  prototypesDir?: string | null
 }
 
 interface Row {
@@ -176,7 +181,15 @@ function designSystemReminder(db: Db, input: OverviewInput): string | null {
     .get()?.path
   if (!path) return null
 
-  return `Ce projet est lié à un design system (\`${path}\`). Avant de créer ou de styler un composant d'interface, consulte-le : \`list_components\` pour ce qu'il contient, \`read_component\` pour les props et les exemples d'un composant, \`read_ds_page\` pour ses règles. Réutilise et compose ses composants plutôt que d'en écrire un nouveau ou d'en recopier le style. S'il manque vraiment une brique, construis-la avec ses composants et ses jetons, sans valeur en dur, et signale-le à l'utilisateur.`
+  const consult = `Ce projet est lié à un design system (\`${path}\`). Avant de créer ou de styler un composant d'interface, consulte-le : \`list_components\` pour ce qu'il contient, \`read_component\` pour les props et les exemples d'un composant, \`read_ds_page\` pour ses règles. Réutilise et compose ses composants plutôt que d'en écrire un nouveau ou d'en recopier le style.`
+  if (!input.prototypesDir) {
+    return `${consult} S'il manque vraiment une brique, construis-la avec ses composants et ses jetons, sans valeur en dur, et signale-le à l'utilisateur.`
+  }
+  return [
+    consult,
+    `Pour prototyper un écran ou un composant, écris une story du DS dans \`${input.prototypesDir}\`, hors de tout dépôt, et jamais dans le projet ni dans le DS : un fichier \`<Nom>.stories.tsx\` en CSF 3, sans \`title\`, qui importe les composants par les lignes que donne \`list_components\`. Le Storybook du DS le compile ; ses thèmes, ses décorateurs et ses jetons s'appliquent d'eux-mêmes. Puis appelle \`show_prototype\` avec le chemin du fichier : l'aperçu s'ouvre dans la vue Web de l'utilisateur, et se met à jour à chaque modification.`,
+    `Quand le DS n'a pas le composant, dans cet ordre : 1. compose ceux qui existent, car il manque souvent un assemblage et non une brique ; 2. sinon, crée-le dans ce même dossier avec les jetons et les primitives du DS seulement, sans aucune valeur en dur, et donne à sa story le tag \`candidate\` (\`tags: ['candidate']\`) ; 3. dis-le à l'utilisateur : c'est lui qui décide s'il entre dans le DS.`,
+  ].join('\n\n')
 }
 
 function imageReminder(db: Db, input: OverviewInput): string | null {

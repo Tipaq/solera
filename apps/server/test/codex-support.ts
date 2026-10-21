@@ -27,7 +27,7 @@ export function context(overrides: Partial<RunnerContext> = {}) {
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {
-    conversationId: 'test', cwd: tmpdir(), binary: 'unused', attachmentsRoot: tmpdir(),
+    conversationId: 'test', cwd: tmpdir(), binary: 'unused', attachmentsRoot: tmpdir(), prototypesDir: null,
     config: DEFAULT_CODEX_CONFIG, resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
     emit: (event, native) => { events.push(event); raw.push(native) },

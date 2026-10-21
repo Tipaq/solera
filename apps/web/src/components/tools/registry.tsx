@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ToolItem } from '../../lib/chat-fold'
-import { VIEWS, genericView } from './views'
+import { isPrototypeTool } from '../../lib/prototypes'
+import { VIEWS, genericView, prototypeView } from './views'
 
 /**
  * Le registre des renderers d'outils.
@@ -17,6 +18,7 @@ import { VIEWS, genericView } from './views'
  * deviner.
  */
 export function readableView(tool: ToolItem): ReactNode {
-  const view = VIEWS[tool.name]
+  // Un outil MCP porte un nom qui change avec le CLI : celui-là se reconnaît à sa fin.
+  const view = VIEWS[tool.name] ?? (isPrototypeTool(tool.name) ? prototypeView : undefined)
   return view?.(tool) ?? genericView(tool)
 }

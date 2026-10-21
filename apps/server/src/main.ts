@@ -21,7 +21,7 @@ import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
-import { StorybookSupervisor } from './design-system/storybooks.js'
+import { linkedDesignSystems, prototypesRoot, StorybookSupervisor } from './design-system/storybooks.js'
 import { VaultIndex } from './vault/index-service.js'
 
 async function main(): Promise<void> {
@@ -47,7 +47,9 @@ async function main(): Promise<void> {
   const sessions = new SessionManager(db, log, config, registry, secrets)
   const storybooks = new StorybookSupervisor({
     directory: join(config.paths.data, 'design-systems'),
+    prototypesDirectory: prototypesRoot(config.paths.data),
     inUse: (path) => sessions.designSystemInUse(path),
+    linked: () => linkedDesignSystems(db),
   })
   sessions.setStorybooks(storybooks)
   const attachments = new AttachmentStore(db, config.paths.attachments)
@@ -87,6 +89,7 @@ async function main(): Promise<void> {
     relay,
     tasks,
     vault,
+    storybooks,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

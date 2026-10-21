@@ -71,6 +71,7 @@ async function main(): Promise<void> {
     config,
     binary: process.env.CLAUDE_BIN ?? 'claude',
     attachmentsRoot: tmpdir(),
+    prototypesDir: null,
     resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }),

@@ -3,20 +3,23 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import type { AddressInfo } from 'node:net'
+import { connect } from 'node:net'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { openDatabase, projects, runMigrations, users } from '@solera/db'
-import type { ProjectDto } from '@solera/protocol'
+import type { ProjectDto, ProjectPrototypesDto } from '@solera/protocol'
 import { projectOverview } from '../src/agents/overview.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
-import { StorybookSupervisor, type StorybookState } from '../src/design-system/storybooks.js'
+import { DESIGN_SYSTEM_LINE, StorybookSupervisor, type StorybookState } from '../src/design-system/storybooks.js'
+import { registerDesignSystemRelay, rewriteHtml } from '../src/http/routes/design-system-relay.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 
 async function harness(t: TestContext) {
@@ -41,7 +44,9 @@ async function harness(t: TestContext) {
     app.inject({ method: 'PATCH', url: '/api/projects/project', payload: { designSystemPath } })
   const listed = async () => (await app.inject({ url: '/api/projects' })).json<ProjectDto[]>()[0]!
 
-  return { dir, link, listed }
+  const prototypes = async () => (await app.inject({ url: '/api/projects/project/prototypes' })).json<ProjectPrototypesDto>()
+
+  return { dir, link, listed, prototypes }
 }
 
 test('design system : un dossier qui porte un .storybook/ se lie, puis se délie', async (t) => {
@@ -155,6 +160,7 @@ const manifests = (ds: string) => ({
 async function fakeDesignSystem(root: string, behaviour: 'serve' | 'crash'): Promise<string> {
   const ds = join(root, 'packages', 'ds')
   await mkdir(join(ds, '.storybook'), { recursive: true })
+  await writeFile(join(ds, '.storybook', 'main.ts'), `const config = {}\n${DESIGN_SYSTEM_LINE}\n`)
   // Les dépendances à la racine, au-dessus du DS : le cas du monorepo.
   const pkg = join(root, 'node_modules', 'storybook')
   await mkdir(join(pkg, 'bin'), { recursive: true })
@@ -164,13 +170,39 @@ async function fakeDesignSystem(root: string, behaviour: 'serve' | 'crash'): Pro
     behaviour === 'crash'
       ? "console.error('cannot find module vite'); process.exit(3)\n"
       : [
+          "const { join, relative } = require('node:path')",
           "const port = Number(process.argv[process.argv.indexOf('-p') + 1])",
           `const manifests = ${JSON.stringify(manifests(ds))}`,
+          // Les prototypes de deux projets, rangés comme Solera les range : un candidat et
+          // un écran pour `project`, un candidat pour `other`.
+          "const protos = process.env.SOLERA_PROTOTYPES",
+          "const at = (project, file) => './' + relative(process.cwd(), join(protos, project, file))",
+          "if (protos) Object.assign(manifests['/manifests/components.json'].components, {",
+          "  'prototypes-project-profil': { id: 'prototypes-project-profil', name: 'ProfileCard', path: at('project', 'Profil.stories.tsx'), import: '', stories: [] },",
+          "  'prototypes-project-ecran': { id: 'prototypes-project-ecran', name: 'Ecran', path: at('project', 'Ecran.stories.tsx'), import: '', stories: [] },",
+          "  'prototypes-other-carte': { id: 'prototypes-other-carte', name: 'OtherCard', path: at('other', 'Carte.stories.tsx'), import: '', stories: [] },",
+          "})",
+          "const story = (id, name, exportName, importPath, tags) => ({ type: 'story', id, title: 'Prototypes/' + id.split('--')[0], name, exportName, importPath, tags })",
+          "const index = { v: 5, entries: protos ? Object.fromEntries([",
+          "  story('prototypes-project-profil--defaut', 'Défaut', 'Defaut', at('project', 'Profil.stories.tsx'), ['dev', 'candidate']),",
+          "  story('prototypes-project-profil--compact', 'Compact', 'Compact', at('project', 'Profil.stories.tsx'), ['dev', 'candidate']),",
+          "  story('prototypes-project-ecran--defaut', 'Défaut', 'Defaut', at('project', 'Ecran.stories.tsx'), ['dev']),",
+          "  story('prototypes-other-carte--defaut', 'Défaut', 'Defaut', at('other', 'Carte.stories.tsx'), ['dev', 'candidate']),",
+          "].map((entry) => [entry.id, entry])) : {} }",
           "require('node:http').createServer((req, res) => {",
+          "  if (req.url.startsWith('/iframe.html')) {",
+          "    res.setHeader('content-type', 'text/html')",
+          "    res.setHeader('x-frame-options', 'DENY')",
+          "    return res.end('<html><head><script type=\"module\" src=\"/vite-inject-mocker-entry.js\"></script></head><body><script src=\"' + process.env.SOLERA_STORYBOOK_BASE + '@vite/client\"></script><a href=\"//cdn.example/x\"></a></body></html>')",
+          "  }",
           "  res.setHeader('content-type', 'application/json')",
+          "  if (req.url === '/index.json') return res.end(JSON.stringify(index))",
           "  const manifest = manifests[req.url]",
           "  if (req.url.startsWith('/manifests/') && !manifest) { res.statusCode = 404; return res.end('{}') }",
-          "  res.end(JSON.stringify(manifest ?? { url: req.url, cwd: process.cwd() }))",
+          "  const env = Object.fromEntries(['SOLERA_STORYBOOK', 'SOLERA_PROTOTYPES', 'SOLERA_STORYBOOK_BASE'].map((name) => [name, process.env[name]]))",
+          "  res.end(JSON.stringify(manifest ?? { url: req.url, cwd: process.cwd(), env }))",
+          "}).on('upgrade', (req, socket) => {",
+          "  socket.end('HTTP/1.1 101 Switching Protocols\\r\\nx-path: ' + req.url + '\\r\\nx-origin: ' + req.headers.origin + '\\r\\n\\r\\n')",
           "}).listen(port, '127.0.0.1')",
         ].join('\n'),
   )
@@ -198,6 +230,16 @@ async function fakeDesignSystem(root: string, behaviour: 'serve' | 'crash'): Pro
   return ds
 }
 
+/** Un superviseur dont le relais connaît ce DS, sous les données de `root`. */
+function supervisorIn(root: string, ds: string, options: { directory?: string } = {}) {
+  return new StorybookSupervisor({
+    directory: options.directory ?? join(root, 'state'),
+    prototypesDirectory: join(root, 'prototypes'),
+    inUse: () => false,
+    linked: () => [ds],
+  })
+}
+
 async function waitFor<T>(read: () => T | null, timeoutMs = 10_000): Promise<T> {
   const deadline = Date.now() + timeoutMs
   for (;;) {
@@ -220,7 +262,7 @@ test('storybook : lancé depuis le node_modules du dessus, joignable, puis arrê
   const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const ds = await fakeDesignSystem(root, 'serve')
-  const supervisor = new StorybookSupervisor({ directory: join(root, 'state'), inUse: () => false })
+  const supervisor = supervisorIn(root, ds)
   t.after(() => supervisor.shutdown())
 
   supervisor.ensure(ds)
@@ -230,8 +272,15 @@ test('storybook : lancé depuis le node_modules du dessus, joignable, puis arrê
     const state = readState(statePath)
     return state?.status === 'ready' ? state : null
   })
-  const answer = (await (await fetch(`${ready.url}/cwd`)).json()) as { cwd: string }
+  const answer = (await (await fetch(`${ready.url}/cwd`)).json()) as { cwd: string; env: Record<string, string> }
   assert.equal(answer.cwd, ds)
+  // Ce que la ligne du DS et le module qu'elle charge lisent.
+  assert.match(answer.env.SOLERA_STORYBOOK!, /storybook\/solera-storybook\.mjs$/)
+  assert.equal(answer.env.SOLERA_PROTOTYPES, supervisor.prototypesOf(ds))
+  assert.equal(answer.env.SOLERA_STORYBOOK_BASE, ready.base)
+  assert.match(ready.base, /^\/ds\/[0-9a-f]{32}\/$/)
+  assert.equal(ready.prototypes, supervisor.prototypesOf(ds))
+  assert.equal(ready.hooked, true)
 
   supervisor.shutdown()
   assert.equal(existsSync(statePath), false)
@@ -241,7 +290,7 @@ test('storybook : un process qui meurt au démarrage laisse un échec lisible', 
   const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const ds = await fakeDesignSystem(root, 'crash')
-  const supervisor = new StorybookSupervisor({ directory: join(root, 'state'), inUse: () => false })
+  const supervisor = supervisorIn(root, ds)
   t.after(() => supervisor.shutdown())
 
   supervisor.ensure(ds)
@@ -258,7 +307,7 @@ test('storybook : sans paquet storybook au-dessus du DS, l\'échec le dit', asyn
   t.after(() => rm(root, { recursive: true, force: true }))
   const ds = join(root, 'ds')
   await mkdir(join(ds, '.storybook'), { recursive: true })
-  const supervisor = new StorybookSupervisor({ directory: join(root, 'state'), inUse: () => false })
+  const supervisor = supervisorIn(root, ds)
   t.after(() => supervisor.shutdown())
 
   supervisor.ensure(ds)
@@ -271,7 +320,7 @@ test('MCP : les outils du design system lisent le manifeste du Storybook lancé'
   const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   const ds = await fakeDesignSystem(root, 'serve')
-  const supervisor = new StorybookSupervisor({ directory: join(root, 'state'), inUse: () => false })
+  const supervisor = supervisorIn(root, ds)
   t.after(() => supervisor.shutdown())
 
   const dbPath = join(root, 'test.sqlite')
@@ -303,6 +352,10 @@ test('MCP : les outils du design system lisent le manifeste du Storybook lancé'
     }
   }
 
+  const own = supervisor.projectPrototypes(ds, 'project')
+  await writeFile(join(own, 'Profil.stories.tsx'), '')
+  await writeFile(join(own, 'Vide.stories.tsx'), '')
+
   const linked = mcp(
     supervisor.statePath(ds),
     ['list_components', {}],
@@ -310,9 +363,39 @@ test('MCP : les outils du design system lisent le manifeste du Storybook lancé'
     ['read_ds_page', { id: 'principes--docs' }],
     ['read_component', { id: 'Card' }],
     ['read_component', { id: 'primitives-choicelist' }],
+    ['read_component', { id: 'OtherCard' }],
+    ['show_prototype', { file: 'Profil.stories.tsx', story: 'Compact' }],
+    ['show_prototype', { file: join(supervisor.projectPrototypes(ds, 'other'), 'Carte.stories.tsx') }],
+    ['show_prototype', { file: 'Profil.stories.tsx', story: 'Absente' }],
   )
   assert.ok(linked.tools.includes('list_components'))
-  const [list, button, page, missing, choices] = linked.results.map((result) => result.content[0]!.text)
+  assert.ok(linked.tools.includes('show_prototype'))
+  const [list, button, page, missing, choices, foreign, shown, outside, absent] = linked.results.map(
+    (result) => result.content[0]!.text,
+  )
+
+  // Les prototypes : le candidat de ce projet à part, ni son écran ni ceux d'un autre.
+  assert.match(list, /## Candidats de ce projet\n.*\n- `prototypes-project-profil` \*\*ProfileCard\*\*/)
+  assert.doesNotMatch(list, /Ecran|OtherCard/)
+  assert.match(list.split('## Candidats')[0]!, /^Design system : 2 composant\(s\)\./)
+  assert.equal(linked.results[5]!.isError, true)
+  assert.match(foreign, /Aucun composant « OtherCard »/)
+
+  // Un DS sans la ligne : le Storybook tourne, mais l'agent apprend quoi demander.
+  const unhooked = join(root, 'unhooked.json')
+  await writeFile(unhooked, JSON.stringify({ ...readState(supervisor.statePath(ds)), hooked: false }))
+  const missingLine = mcp(unhooked, ['show_prototype', { file: 'Profil.stories.tsx' }]).results[0]!
+  assert.equal(missingLine.isError, true)
+  assert.ok(missingLine.content[0]!.text.includes(DESIGN_SYSTEM_LINE))
+
+  const base = readState(supervisor.statePath(ds))!.base
+  assert.match(shown, new RegExp(`^URL: ${base}iframe\\.html\\?id=prototypes-project-profil--compact&viewMode=story$`, 'm'))
+  assert.match(shown, /taguée `candidate`/)
+  assert.match(shown, /Autres stories du fichier : Defaut\./)
+  assert.equal(linked.results[7]!.isError, true)
+  assert.match(outside, /vit dans/)
+  assert.equal(linked.results[8]!.isError, true)
+  assert.match(absent, /Elles sont : Defaut, Compact\./)
 
   assert.match(list, /`primitives-button` \*\*Button\*\* — L'action principale d'un écran\./)
   assert.match(list, /`primitives-choicelist` \*\*ChoiceList\*\* — Un choix parmi quelques-uns\./)
@@ -339,9 +422,12 @@ test('MCP : les outils du design system lisent le manifeste du Storybook lancé'
   assert.equal(linked.results[3]!.isError, true)
   assert.match(missing, /Aucun composant « Card »/)
 
-  // Sans DS lié, les trois outils ne sont pas annoncés du tout.
+  // Sans DS lié, les outils du design system ne sont pas annoncés du tout.
   const unlinked = mcp('')
-  assert.equal(unlinked.tools.some((name) => ['list_components', 'read_component', 'read_ds_page'].includes(name)), false)
+  assert.equal(
+    unlinked.tools.some((name) => ['list_components', 'read_component', 'read_ds_page', 'show_prototype'].includes(name)),
+    false,
+  )
 })
 
 test('aperçu : le rappel du design system suit le lien et le serveur MCP', async (t) => {
@@ -356,6 +442,143 @@ test('aperçu : le rappel du design system suit le lien et le serveur MCP', asyn
   assert.doesNotMatch(overview(true), /design system/)
   await link(ds)
   assert.match(overview(true), new RegExp(`lié à un design system \\(\`${ds}\`\\)[^]*\`list_components\``))
+  assert.doesNotMatch(overview(true), /show_prototype/)
+  // Avec un dossier de prototypes, la manière de prototyper et les trois paliers.
+  const prototyping = projectOverview(db, { projectId: 'project', conversationId: 'c', soleraMcp: true, prototypesDir: '/p/project' }) ?? ''
+  assert.match(prototyping, /story du DS dans `\/p\/project`/)
+  assert.match(prototyping, /`show_prototype`/)
+  assert.match(prototyping, /tags: \['candidate'\]/)
   // Sans le serveur, le rappel nommerait des outils absents.
   assert.doesNotMatch(overview(false), /design system/)
+})
+
+test('storybook : le jeton du relais est stable, propre à chaque DS, et seul à ouvrir le relais', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const first = supervisorIn(root, '/ds/a')
+  const token = first.token('/ds/a')
+  first.shutdown()
+
+  // Un daemon redémarré garde la clé : un aperçu ouvert depuis le fil reste valable.
+  const again = supervisorIn(root, '/ds/a')
+  t.after(() => again.shutdown())
+  assert.equal(again.token('/ds/a'), token)
+  assert.notEqual(again.token('/ds/b'), token)
+  assert.equal(again.base('/ds/a'), `/ds/${token}/`)
+  assert.equal(again.resolve('0'.repeat(32)), null)
+
+  // Une autre instance, une autre clé.
+  const other = supervisorIn(root, '/ds/a', { directory: join(root, 'other') })
+  t.after(() => other.shutdown())
+  assert.notEqual(other.token('/ds/a'), token)
+})
+
+test('relais : la page de Storybook servie sous /ds/<jeton>/, opaque et ramenée sous le préfixe', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const ds = await fakeDesignSystem(root, 'serve')
+  const supervisor = supervisorIn(root, ds)
+  t.after(() => supervisor.shutdown())
+  const app = Fastify()
+  registerDesignSystemRelay(app, supervisor)
+  t.after(() => app.close())
+  const base = supervisor.base(ds)
+
+  // Pas encore lancé : il démarre, et la page le dit en se rechargeant.
+  const starting = await app.inject({ url: `${base}iframe.html?id=x`, headers: { accept: 'text/html' } })
+  assert.equal(starting.statusCode, 503)
+  assert.match(starting.headers['content-security-policy'] as string, /^sandbox /)
+  await waitFor(() => (readState(supervisor.statePath(ds))?.status === 'ready' ? true : null))
+
+  const page = await app.inject({ url: `${base}iframe.html?id=x` })
+  assert.equal(page.statusCode, 200)
+  const policy = page.headers['content-security-policy'] as string
+  assert.match(policy, /^sandbox allow-scripts/)
+  assert.doesNotMatch(policy, /allow-same-origin/)
+  assert.match(policy, /frame-ancestors 'self'/)
+  assert.equal(page.headers['x-frame-options'], undefined)
+  assert.equal(page.headers['access-control-allow-origin'], '*')
+  assert.match(page.body, /<head><script>[^<]*localStorage[^<]*<\/script>/)
+  assert.match(page.body, new RegExp(`src="${base}vite-inject-mocker-entry\\.js"`))
+  assert.ok(page.body.includes(`src="${base}@vite/client"`))
+  assert.ok(page.body.includes('href="//cdn.example/x"'))
+
+  // Les routes de Storybook perdent le préfixe, celles de Vite le gardent.
+  const echo = async (path: string) => (await app.inject({ url: `${base}${path}` })).json<{ url: string }>().url
+  assert.equal(await echo('sb-manager/runtime.js'), '/sb-manager/runtime.js')
+  assert.equal(await echo('@vite/client'), `${base}@vite/client`)
+  assert.equal(await echo('@fs/x.tsx?v=1'), `${base}@fs/x.tsx?v=1`)
+
+  assert.equal((await app.inject({ url: `/ds/${'0'.repeat(32)}/iframe.html` })).statusCode, 404)
+})
+
+test('relais : une page sans <head> reçoit quand même le stockage', () => {
+  const html = rewriteHtml('<script src="/a.js"></script>', '/ds/t/')
+  assert.match(html, /^<script>/)
+  assert.ok(html.includes('src="/ds/t/a.js"'))
+})
+
+test('candidats : les stories taguées `candidate` des prototypes du projet, lues sur le disque', async (t) => {
+  const { dir, link, prototypes } = await harness(t)
+  assert.deepEqual(await prototypes(), { directory: null, candidates: [] })
+
+  const ds = join(dir, 'ds')
+  await mkdir(join(ds, '.storybook'), { recursive: true })
+  await link(ds)
+  const { directory } = await prototypes()
+  assert.ok(directory?.startsWith(join(dir, 'prototypes')))
+  assert.ok(directory?.endsWith('/project'))
+
+  await mkdir(join(directory!, 'ecrans'), { recursive: true })
+  await writeFile(join(directory!, 'Profil.stories.tsx'), "const meta = { component: Profil, tags: ['autodocs', 'candidate'] }")
+  await writeFile(join(directory!, 'ecrans', 'Badge.stories.tsx'), 'const meta = { tags: ["candidate"] }')
+  await writeFile(join(directory!, 'Ecran.stories.tsx'), "const meta = { tags: ['autodocs'] } // candidate plus tard")
+  await writeFile(join(directory!, 'notes.md'), "tags: ['candidate']")
+
+  const names = (await prototypes()).candidates.map((candidate) => candidate.name).sort()
+  assert.deepEqual(names, ['Badge', 'Profil'])
+})
+
+test('relais : les websockets de Vite gardent le préfixe, le canal de Storybook le perd', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'solera-storybook-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const ds = await fakeDesignSystem(root, 'serve')
+  const supervisor = supervisorIn(root, ds)
+  t.after(() => supervisor.shutdown())
+  const app = Fastify()
+  registerDesignSystemRelay(app, supervisor)
+  t.after(() => app.close())
+  await app.listen({ port: 0, host: '127.0.0.1' })
+  const port = (app.server.address() as AddressInfo).port
+  const base = supervisor.base(ds)
+  supervisor.ensure(ds)
+  await waitFor(() => (readState(supervisor.statePath(ds))?.status === 'ready' ? true : null))
+
+  const upgrade = (path: string) =>
+    new Promise<string>((resolve, reject) => {
+      const socket = connect(port, '127.0.0.1', () =>
+        socket.write(`GET ${path} HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: null\r\n\r\n`),
+      )
+      let answer = ''
+      socket.on('data', (chunk) => (answer += chunk.toString()))
+      socket.on('end', () => resolve(answer))
+      socket.on('error', reject)
+    })
+
+  const hmr = await upgrade(`${base}?token=abc`)
+  assert.match(hmr, /^HTTP\/1\.1 101/)
+  assert.ok(hmr.includes(`x-path: ${base}?token=abc`))
+  const channel = await upgrade(`${base}storybook-server-channel?token=abc`)
+  assert.ok(channel.includes('x-path: /storybook-server-channel?token=abc'))
+  // Storybook n'accepte son canal que de sa propre origine.
+  assert.match(channel, /x-origin: http:\/\/127\.0\.0\.1:\d+/)
+  assert.match(await upgrade(`/ds/${'0'.repeat(32)}/`), /^HTTP\/1\.1 404/)
+})
+
+test('catalogue : le DS de Solera porte la ligne que Solera attend, mot pour mot', () => {
+  const main = readFileSync(fileURLToPath(new URL('../../catalog/.storybook/main.ts', import.meta.url)), 'utf8')
+  assert.ok(main.includes(DESIGN_SYSTEM_LINE))
+  // Et le serveur MCP en garde la même copie.
+  const mcp = readFileSync(fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url)), 'utf8')
+  assert.ok(mcp.includes(`'${DESIGN_SYSTEM_LINE}'`))
 })

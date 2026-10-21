@@ -37,4 +37,5 @@ const config: StorybookConfig = {
   },
 }
 
-export default config
+// Lancé par Solera, le catalogue reçoit en plus les prototypes de ses agents (carte #63).
+export default process.env.SOLERA_STORYBOOK ? (await import(process.env.SOLERA_STORYBOOK)).default(config) : config
