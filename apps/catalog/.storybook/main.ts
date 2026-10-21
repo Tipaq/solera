@@ -29,6 +29,7 @@ const config: StorybookConfig = {
   addons: ['@storybook/addon-docs'],
   // Dépôt privé, outil interne : rien ne part chez Storybook.
   core: { disableTelemetry: true },
+  features: { componentsManifest: true },
 
   framework: {
     name: '@storybook/react-vite',

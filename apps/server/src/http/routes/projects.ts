@@ -37,6 +37,7 @@ import {
 } from '../../projects/image.js'
 import { SkillLibrary } from '../../skill-library/store.js'
 import { assertUsableWorkspace, insertProject } from '../../projects/create.js'
+import { assertDesignSystemDir } from '../../design-system/path.js'
 
 /**
  * Le dossier que le clone va remplir.
@@ -150,6 +151,7 @@ export function registerProjectRoutes(
           conversationCount,
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
+          designSystemPath: project.designSystemPath,
           activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
         }
@@ -318,6 +320,10 @@ export function registerProjectRoutes(
         ...current,
         [body.defaultConfig.agent]: body.defaultConfig.config,
       })
+    }
+    if (body.designSystemPath !== undefined) {
+      patch.designSystemPath =
+        body.designSystemPath === null ? null : await assertDesignSystemDir(body.designSystemPath)
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
 

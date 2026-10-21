@@ -84,6 +84,12 @@ export interface BuiltinMcpParams {
    * personne a posé dedans. Voir le critère en tête de `agent-config.ts`.
    */
   cardFiling: boolean
+  /**
+   * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
+   * (`design-system/storybooks.ts`). Vide quand le projet n'a pas de DS : le `.mjs`
+   * retire alors les outils du design system de son catalogue.
+   */
+  designSystemState: string
 }
 
 /**
@@ -107,6 +113,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
     memoryDir,
     projectFiling,
     cardFiling,
+    designSystemState,
   } = params
   if (!builtinMcpEnabled(enabled, config)) return null
 
@@ -133,6 +140,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SOLERA_MCP_MEMORY: memoryDir,
         ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
         ...(cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
+        SOLERA_MCP_DESIGN_SYSTEM: designSystemState,
       },
     },
     createdAt: 0,

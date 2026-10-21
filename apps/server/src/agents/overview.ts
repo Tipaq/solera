@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cards, conversations, projectImages, worktrees, type Db } from '@solera/db'
+import { cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -158,6 +158,27 @@ const COLUMN_WORDS: Record<string, string> = {
  * en vie jusqu'à ce qu'un vrai logo la remplace. Une image définitive ne fait plus rien
  * dire, pas plus qu'un agent sans l'outil pour agir.
  */
+/**
+ * Le rappel du design system lié, quand le projet en a un.
+ *
+ * Les outils seuls ne suffisent pas : un modèle qui sait écrire un bouton en écrit un
+ * sans penser à demander s'il en existe déjà, et ce réflexe varie d'un modèle à
+ * l'autre. C'est ce rappel qui le tient, par le même canal pour les trois CLI. Il suit
+ * la condition des outils : sans le serveur MCP, il nommerait des outils absents.
+ */
+function designSystemReminder(db: Db, input: OverviewInput): string | null {
+  if (!input.soleraMcp) return null
+
+  const path = db
+    .select({ path: projects.designSystemPath })
+    .from(projects)
+    .where(eq(projects.id, input.projectId))
+    .get()?.path
+  if (!path) return null
+
+  return `Ce projet est lié à un design system (\`${path}\`). Avant de créer ou de styler un composant d'interface, consulte-le : \`list_components\` pour ce qu'il contient, \`read_component\` pour les props et les exemples d'un composant, \`read_ds_page\` pour ses règles. Réutilise et compose ses composants plutôt que d'en écrire un nouveau ou d'en recopier le style. S'il manque vraiment une brique, construis-la avec ses composants et ses jetons, sans valeur en dur, et signale-le à l'utilisateur.`
+}
+
 function imageReminder(db: Db, input: OverviewInput): string | null {
   if (!input.soleraMcp) return null
 
@@ -186,7 +207,7 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
-  const briefing = [cardBriefing(db, input), imageReminder(db, input)]
+  const briefing = [cardBriefing(db, input), designSystemReminder(db, input), imageReminder(db, input)]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

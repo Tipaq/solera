@@ -43,6 +43,7 @@ import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { rebaseInProgress } from '../git-rebase.js'
 import { agentCwd, resolveMention } from '../workspace.js'
 import { HttpError, notFound } from '../http/errors.js'
+import type { StorybookSupervisor } from '../design-system/storybooks.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -138,6 +139,7 @@ export class SessionManager {
    * encore quand le gestionnaire est construit.
    */
   private notifier: ConversationNotifier | null = null
+  private storybooks: StorybookSupervisor | null = null
   readonly statusBus = new EventEmitter()
 
   constructor(
@@ -312,6 +314,19 @@ export class SessionManager {
     // peut partir sans se mêler au contexte du tour précédent, et le seul où un
     // redémarrage promis peut avoir lieu sans rien couper.
     if (status === 'idle') void this.settleIdle(conversationId)
+
+    // Un tour commence : le Storybook du DS lié doit être là quand l'agent le
+    // consultera. Démarré au tour et non à l'ouverture de la page, pour qu'un projet
+    // seulement regardé ne fasse rien tourner.
+    if (status === 'running' && this.storybooks) {
+      const projectId = this.db
+        .select({ projectId: conversations.projectId })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()?.projectId
+      const designSystem = this.designSystemOf(projectId ?? null)
+      if (designSystem) this.storybooks.ensure(designSystem)
+    }
 
     // Un runner en erreur est mort pour de bon : le garder en mémoire renverrait
     // les messages suivants vers un process hors d'état. L'arrêter libère la place,
@@ -500,6 +515,40 @@ export class SessionManager {
 
   setNotifier(notifier: ConversationNotifier): void {
     this.notifier = notifier
+  }
+
+  /**
+   * Les Storybook des design systems liés. Posé après coup, comme le notificateur : le
+   * superviseur demande à ce gestionnaire si un DS sert encore, et l'inverse.
+   */
+  setStorybooks(storybooks: StorybookSupervisor): void {
+    this.storybooks = storybooks
+  }
+
+  /** Le design system du projet de la conversation, s'il en a un. */
+  private designSystemOf(projectId: string | null): string | null {
+    if (projectId === null) return null
+    return (
+      this.db
+        .select({ path: projects.designSystemPath })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .get()?.path ?? null
+    )
+  }
+
+  /** Vrai si une session travaille en ce moment dans un projet lié à ce DS. */
+  designSystemInUse(path: string): boolean {
+    for (const [conversationId, managed] of this.runners) {
+      if (managed.status !== 'running') continue
+      const projectId = this.db
+        .select({ projectId: conversations.projectId })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()?.projectId
+      if (projectId && this.designSystemOf(projectId) === path) return true
+    }
+    return false
   }
 
   /**
@@ -764,6 +813,10 @@ export class SessionManager {
       // l'emporter sur celui que la plateforme ajoute d'elle-même.
       resolveMcpServers: (current) => {
         const resolved = resolveMcpServers(this.db, this.secrets, current.mcpServers)
+        // Relu au lancement du runner, comme le dossier : lier ou délier un DS prend
+        // effet à la session suivante, pas dans un CLI déjà parti.
+        const designSystem = this.designSystemOf(projectId)
+        if (designSystem) this.storybooks?.ensure(designSystem)
         const builtin = builtinMcpServer({
           enabled: this.config.mcp.soleraServer,
           config: current,
@@ -775,6 +828,8 @@ export class SessionManager {
           memoryDir: memoryDir(current) ?? '',
           projectFiling: this.config.mcp.projectFiling && current.projectFiling,
           cardFiling: this.config.mcp.cardFiling && current.cardFiling,
+          designSystemState:
+            designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
         return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
       },

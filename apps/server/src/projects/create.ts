@@ -66,6 +66,7 @@ export async function insertProject(
       (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'solera'),
     ownerId,
     defaultConfig: null,
+    designSystemPath: null,
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

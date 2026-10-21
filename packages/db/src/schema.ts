@@ -76,6 +76,13 @@ export const projects = sqliteTable(
      * les projets d'avant, résolu d'après le dossier (voir `instructions/store.ts`).
      */
     instructionsMode: text('instructions_mode').$type<InstructionsMode>(),
+    /**
+     * Le design system lié : un chemin absolu vers un dossier qui porte un
+     * `.storybook/`. Un chemin et non un dépôt, parce qu'un DS peut être la racine d'un
+     * dépôt dédié comme un sous-dossier d'un dépôt qui en porte plusieurs. Plusieurs
+     * projets peuvent pointer sur le même. Null : pas de DS.
+     */
+    designSystemPath: text('design_system_path'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

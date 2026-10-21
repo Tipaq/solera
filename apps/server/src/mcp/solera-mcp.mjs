@@ -62,7 +62,7 @@ import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SOLERA_MCP_DB
@@ -97,6 +97,19 @@ const FILING = process.env.SOLERA_MCP_FILING === '1'
  * `packages/protocol/src/agent-config.ts`.
  */
 const CARD_FILING = process.env.SOLERA_MCP_CARD_FILING === '1'
+
+/**
+ * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
+ * (`apps/server/src/design-system/storybooks.ts`) : son adresse, ou son échec.
+ *
+ * **Vide quand le projet n'a pas de DS**, et les trois outils du design system ne sont
+ * alors pas listés. Ce process ne lance rien lui-même : un Storybook par DS, partagé par
+ * toutes les sessions qui le lient, ne peut être tenu que par le daemon.
+ */
+const DESIGN_SYSTEM_STATE = process.env.SOLERA_MCP_DESIGN_SYSTEM ?? ''
+
+/** Un Storybook froid démarre en quelques secondes ; un gros DS, en une minute. */
+const DESIGN_SYSTEM_WAIT_MS = 90_000
 
 /** Au-delà, le fil ne tient plus dans un contexte sans en chasser le travail en cours. */
 const MAX_THREAD_CHARS = 20000
@@ -795,6 +808,39 @@ const ALL_TOOLS = [
     description:
       "Compte, sur toute l'instance et non plus sur le seul projet, les conversations en train de travailler. Sert à décider s'il est sûr de redémarrer le service Solera, ce qui tue tous les process CLI en cours, y compris celui de cette conversation. Ne rend que des nombres : ni titres, ni projets, ni contenu.",
     inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_components',
+    description:
+      "Liste le design system lié à ce projet : ses composants, chacun avec la ligne d'import à recopier et une phrase sur son usage, puis ses pages de règles (principes, fondations, gabarits). Appelle cet outil avant de créer ou de styler un composant d'interface : ce que tu t'apprêtes à écrire existe peut-être déjà, ou s'assemble à partir de ce qui existe. Rend un résumé : read_component pour les props et les exemples d'un composant, read_ds_page pour une page.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'read_component',
+    description:
+      "Lit la fiche d'un composant du design system lié : sa ligne d'import, ce qu'il est et quand s'en servir, ses props avec leurs types, leurs valeurs par défaut et celles qui sont exigées, et le code de chacune de ses stories, qui montrent ses variantes. Appelle cet outil avant d'utiliser un composant : les exemples disent comment il s'emploie ici, mieux qu'un composant du même nom ailleurs.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: "Identifiant rendu par list_components (`primitives-button`), ou nom du composant (`Button`).",
+        },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'read_ds_page',
+    description:
+      "Lit une page de règles du design system lié, en MDX : ses principes, une fondation (couleur, espacement, typographie...) ou un gabarit d'écran. Appelle cet outil quand tu composes un écran ou que tu hésites sur une valeur : la page dit laquelle choisir et pourquoi, là où une fiche de composant ne dit que ce qu'il accepte.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Identifiant rendu par list_components (`principes--docs`).' },
+      },
+      required: ['id'],
+    },
   },
 ]
 
@@ -2021,6 +2067,9 @@ const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 /** Les outils que la famille « Rangement de carte » ouvre. */
 const CARD_FILING_TOOLS = new Set(['request_card_move'])
 
+/** Les outils du design system lié, qui n'existent pas dans un projet sans DS. */
+const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_ds_page'])
+
 /**
  * Ce que cette session voit du catalogue, une fois ses familles d'autorisation
  * appliquées. Le critère d'ouverture d'une famille est en tête de
@@ -2034,7 +2083,8 @@ const CARD_FILING_TOOLS = new Set(['request_card_move'])
 const offered = (tool) =>
   (FILING || !FILING_TOOLS.has(tool.name)) &&
   (MEMORY_DIR !== '' || !MEMORY_TOOLS.has(tool.name)) &&
-  (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name))
+  (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name)) &&
+  (DESIGN_SYSTEM_STATE !== '' || !DESIGN_SYSTEM_TOOLS.has(tool.name))
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
 
@@ -2068,6 +2118,338 @@ async function requestDaemon(kind, payload) {
     ),
     isError: true,
   }
+}
+
+/**
+ * Un manifeste du design system lié, `components` ou `docs`, lu au Storybook que le
+ * daemon tient lancé.
+ *
+ * Lu à chaque appel et jamais gardé : le serveur de dev le recalcule depuis le code
+ * présent, et c'est tout l'intérêt de le lire là plutôt que dans un build. Rend
+ * `{ data }`, ou `{ error }` dans une phrase que l'agent peut relayer telle quelle.
+ */
+async function designSystemManifest(kind) {
+  const deadline = Date.now() + DESIGN_SYSTEM_WAIT_MS
+  let state = null
+  for (;;) {
+    try {
+      state = JSON.parse(readFileSync(DESIGN_SYSTEM_STATE, 'utf8'))
+    } catch {
+      state = null
+    }
+    if (state?.status === 'ready' || state?.status === 'failed') break
+    if (Date.now() > deadline) break
+    await new Promise((done) => setTimeout(done, 500))
+  }
+
+  if (!state) {
+    return { error: "Le Storybook du design system n'est pas lancé : Solera le démarre au début de chaque tour. Réessaie au prochain message." }
+  }
+  if (state.status === 'starting') {
+    return { error: `Le Storybook du design system (${state.path}) démarre encore. Réessaie dans un moment.` }
+  }
+  if (state.status === 'failed') {
+    return { error: `Le Storybook du design system (${state.path}) n'a pas pu démarrer. Son journal est ${state.log}.\n\n${state.error ?? ''}` }
+  }
+
+  let response
+  try {
+    response = await fetch(`${state.url}/manifests/${kind}.json`, { signal: AbortSignal.timeout(30_000) })
+  } catch (err) {
+    return { error: `Le Storybook du design system (${state.url}) ne répond pas : ${err.message}` }
+  }
+  if (response.status === 404) {
+    return {
+      error: `Le Storybook du design system (${state.path}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
+    }
+  }
+  if (!response.ok) return { error: `Le Storybook du design system a répondu ${response.status}.` }
+  return { data: await response.json() }
+}
+
+const firstLine = (value) => (value ?? '').split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+
+/**
+ * La première phrase du premier paragraphe : une description de story est du markdown
+ * coupé à la largeur du fichier, et sa première ligne s'arrête au milieu d'un mot.
+ */
+function firstSentence(value) {
+  const paragraph = (value ?? '').trim().split(/\n\s*\n/)[0].replace(/\s*\n\s*/g, ' ')
+  const sentence = paragraph.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? paragraph
+  return sentence.length > 200 ? `${sentence.slice(0, 199)}…` : sentence
+}
+
+/**
+ * Le premier paragraphe de texte d'une page MDX, hors imports, balises et titres.
+ *
+ * Et non le `summary` du manifeste : Storybook le coupe à une largeur fixe, au milieu
+ * d'un mot, et y laisse la fin du titre.
+ */
+function firstProse(content) {
+  const paragraphs = (content ?? '').split(/\n\s*\n/).map((paragraph) => paragraph.trim())
+  return (
+    paragraphs.find(
+      (paragraph) =>
+        paragraph &&
+        !/^(?:import|export)\s/.test(paragraph) &&
+        !paragraph.startsWith('<') &&
+        !paragraph.startsWith('#') &&
+        !paragraph.startsWith('```') &&
+        !paragraph.startsWith('|'),
+    ) ?? ''
+  )
+}
+
+/**
+ * Les imports qui amènent le composant, tirés de ceux de ses stories.
+ *
+ * Le manifeste les rend tous, ceux des icônes et des utilitaires des exemples compris,
+ * dans l'ordre du fichier : la première ligne n'est donc pas forcément celle du DS, ni
+ * même une instruction entière. On garde celles qui nomment le composant ; à défaut,
+ * toutes, plutôt que d'en deviner une.
+ */
+function componentImports(entry) {
+  const statements = (entry.import ?? '')
+    .split(/;\s*\n|\n(?=import\s)/)
+    .map((statement) => statement.replace(/\s+/g, ' ').replace(/,\s*}/, ' }').replace(/;$/, '').trim())
+    .filter(Boolean)
+  const names = [entry.name, entry.reactDocgen?.exportName]
+    .filter(Boolean)
+    .flatMap((name) => name.split(','))
+    .map((name) => name.trim())
+  const naming = statements.filter((statement) =>
+    names.some((name) => new RegExp(`[{,\\s]${name.replace(/[^\w$]/g, '')}[\\s,}]`).test(statement)),
+  )
+  return naming.length > 0 ? naming : statements
+}
+
+function renderComponentList(components, docs) {
+  const entries = Object.values(components.data.components ?? {})
+  const usable = entries.filter((entry) => !entry.error)
+  const broken = entries.filter((entry) => entry.error)
+  const lines = [`Design system : ${usable.length} composant(s).`, '', '## Composants']
+  for (const entry of usable) {
+    const about = firstSentence(docgenOf(entry)?.description || entry.description)
+    lines.push(`- \`${entry.id}\` **${entry.name}**${about ? ` — ${about}` : ''}`)
+    for (const statement of componentImports(entry)) lines.push(`  \`${statement}\``)
+  }
+  if (broken.length > 0) {
+    lines.push('', `${broken.length} fichier(s) de stories que Storybook n'a pas su lire, donc absents : ${broken.map((entry) => `\`${entry.id}\` (${firstLine(entry.error?.message ?? entry.error?.name)})`).join(', ')}.`)
+  }
+  const pages = docs.error ? [] : Object.values(docs.data.docs ?? {})
+  if (pages.length > 0) {
+    // Avec leur première phrase : un titre comme « Couleur » ne dit pas qu'on y trouve le
+    // nom du jeton d'une erreur, et l'agent va alors le chercher par `grep` dans le code.
+    lines.push(
+      '',
+      '## Pages',
+      ...pages.map((page) => {
+        const about = firstSentence(firstProse(page.content))
+        return `- \`${page.id}\` **${page.title}**${about ? ` — ${about}` : ''}`
+      }),
+    )
+  }
+  return lines.join('\n')
+}
+
+/**
+ * Ce que l'extracteur de props a tiré du composant, quelle que soit sa forme.
+ *
+ * Storybook range le résultat sous le nom de l'extracteur choisi par le DS :
+ * `reactDocgen` par défaut, `reactDocgenTypescript` si son `main.ts` le demande. Les
+ * deux disent la même chose dans des champs voisins, et un DS ne doit pas perdre ses
+ * props pour avoir choisi l'autre.
+ */
+function docgenOf(entry) {
+  const docgen = entry.reactDocgen ?? entry.reactDocgenTypescript
+  if (!docgen) return null
+  return {
+    description: docgen.description ?? '',
+    file: docgen.definedInFile ?? docgen.filePath ?? null,
+    props: Object.entries(docgen.props ?? {}).map(([name, prop]) => {
+      const type = prop.tsType ?? prop.type ?? prop.flowType
+      return {
+        name,
+        required: Boolean(prop.required),
+        type: type?.raw ?? type?.name ?? '?',
+        defaultValue: prop.defaultValue?.value ?? null,
+        description: prop.description?.trim() ?? '',
+      }
+    }),
+    composes: docgen.composes ?? [],
+    error: docgen.error ? (docgen.error.message ?? String(docgen.error)) : null,
+  }
+}
+
+/** Ce que les types cités ajoutent au plus à une fiche de composant. */
+const MAX_TYPES_CHARS = 4000
+
+/** Des noms que tout agent connaît : les chercher dans le DS ne rapporterait rien. */
+const WELL_KNOWN_TYPES = new Set([
+  'Array', 'ReadonlyArray', 'Record', 'Partial', 'Required', 'Readonly', 'Pick', 'Omit',
+  'Exclude', 'Extract', 'NonNullable', 'ReturnType', 'Parameters', 'Promise', 'Set', 'Map',
+  'Date', 'Error', 'Function', 'React', 'ReactNode', 'ReactElement', 'JSX', 'CSSProperties',
+  'Ref', 'RefObject', 'ComponentProps', 'ComponentPropsWithoutRef', 'HTMLElement',
+  'HTMLInputElement', 'HTMLButtonElement', 'HTMLDivElement', 'Element', 'Event',
+  'MouseEvent', 'KeyboardEvent', 'ChangeEvent', 'FocusEvent', 'SetStateAction', 'Dispatch',
+])
+
+/** Les noms de type qu'un texte de type cite, hors paramètres génériques d'une lettre. */
+function typeNames(type) {
+  return [...type.matchAll(/\b[A-Z][A-Za-z0-9_]+\b/g)]
+    .map((match) => match[0])
+    .filter((name) => !WELL_KNOWN_TYPES.has(name))
+}
+
+/**
+ * La déclaration d'un type dans un source, avec le JSDoc qui la précède.
+ *
+ * Une lecture de texte et non de TypeScript : elle suit les accolades d'une
+ * `interface` et va jusqu'au `;` ou à la ligne vide d'un `type`. Elle rate les
+ * déclarations exotiques, et c'est acceptable : elle ne fait que compléter ce que
+ * l'extracteur a laissé sous un nom, l'agent garde le chemin du fichier pour le reste.
+ */
+function declarationOf(source, name) {
+  const match = new RegExp(`(^|\\n)((?:export\\s+)?(?:declare\\s+)?(interface|type)\\s+${name}\\b)`).exec(source)
+  if (!match) return null
+  let begin = match.index + match[1].length
+  const before = source.slice(0, begin)
+  // Le dernier commentaire seulement, et collé à la déclaration : un commentaire de tête
+  // de fichier séparé par une ligne vide parle du module, pas de ce type.
+  const doc = /\/\*\*(?:(?!\*\/)[^])*\*\/[ \t]*\n[ \t]*$/.exec(before)
+  if (doc) begin = doc.index
+
+  // Une `interface` s'arrête à l'accolade qui ferme son corps ; un `type`, au `;`, à la
+  // ligne vide ou à la déclaration suivante, hors parenthèses et accolades. Les chevrons
+  // ne comptent pas : `=>` en ferait un de trop, et un générique ne contient pas de `;`.
+  let depth = 0
+  let i = match.index + match[1].length + match[2].length
+  for (; i < source.length; i++) {
+    const char = source[i]
+    if (char === '{' || char === '(' || char === '[') depth++
+    else if (char === '}' || char === ')' || char === ']') {
+      depth--
+      if (match[3] === 'interface' && char === '}' && depth === 0) {
+        i++
+        break
+      }
+    } else if (
+      match[3] === 'type' &&
+      depth === 0 &&
+      (char === ';' || source.startsWith('\n\n', i) || /^\n(?:export|import|const|function|interface|type)\b/.test(source.slice(i, i + 12)))
+    ) {
+      break
+    }
+  }
+  const declaration = source.slice(begin, i).trim()
+  return declaration.length > 1500 ? `${declaration.slice(0, 1500)}\n[...]` : declaration
+}
+
+/**
+ * Les types que les props nomment sans les détailler, retrouvés dans le source.
+ *
+ * L'extracteur rend `options: Choice<T>[]` et s'arrête là : sans la forme de `Choice`,
+ * l'agent va lire le fichier, ou devine. On cherche dans le fichier du composant, puis
+ * dans les fichiers relatifs dont il importe ces noms, et on suit les types que ces
+ * déclarations citent à leur tour, sur deux niveaux.
+ */
+function referencedDeclarations(docgen) {
+  if (!docgen?.file) return []
+  const sources = new Map()
+  const read = (file) => {
+    if (!sources.has(file)) {
+      let content = null
+      try {
+        content = readFileSync(file, 'utf8')
+      } catch {
+        /* Le DS a bougé depuis le démarrage de Storybook : rien à compléter. */
+      }
+      sources.set(file, content)
+    }
+    return sources.get(file)
+  }
+  // Cherché d'abord dans le fichier d'où vient le nom : un type déclaré à côté de celui
+  // qui le cite, dans un fichier que le composant n'importe pas lui-même, se trouve là.
+  const locate = (name, file) => {
+    const source = read(file)
+    if (!source) return null
+    const local = declarationOf(source, name)
+    if (local) return { declaration: local, file }
+    const from = new RegExp(`import\\s+(?:type\\s+)?\\{[^}]*\\b${name}\\b[^}]*\\}\\s+from\\s+['"](\\.[^'"]+)['"]`).exec(source)
+    if (!from) return null
+    const base = resolve(dirname(file), from[1])
+    for (const candidate of [base, `${base}.ts`, `${base}.tsx`, join(base, 'index.ts'), join(base, 'index.tsx')]) {
+      const content = read(candidate)
+      const found = content && declarationOf(content, name)
+      if (found) return { declaration: found, file: candidate }
+    }
+    return null
+  }
+
+  const seen = new Set()
+  const found = []
+  let pending = [...new Set(docgen.props.flatMap((prop) => typeNames(prop.type)))].map((name) => [name, docgen.file])
+  for (let level = 0; level < 3 && pending.length > 0; level++) {
+    const next = []
+    for (const [name, file] of pending) {
+      if (seen.has(name)) continue
+      seen.add(name)
+      const hit = locate(name, file) ?? (file === docgen.file ? null : locate(name, docgen.file))
+      if (!hit) continue
+      found.push(hit.declaration)
+      const body = hit.declaration.replace(/^[^]*?\b(?:interface|type)\s+\w+/, '')
+      next.push(...typeNames(body).map((cited) => [cited, hit.file]))
+    }
+    pending = next
+  }
+
+  // Au-delà, ce n'est plus un complément de fiche mais un fichier recopié : l'agent a le
+  // chemin du source pour y aller lui-même.
+  const kept = []
+  let total = 0
+  for (const declaration of found) {
+    if (total + declaration.length > MAX_TYPES_CHARS) break
+    kept.push(declaration)
+    total += declaration.length
+  }
+  return kept
+}
+
+function renderComponent(entry) {
+  const docgen = docgenOf(entry)
+  const lines = [`# ${entry.name}`, '', `Stories : ${entry.path}`]
+  if (docgen?.file) lines.push(`Source : ${docgen.file}`)
+  if (entry.import) lines.push('', '```tsx', entry.import.trim(), '```')
+  const about = [docgen?.description, entry.description].filter((part) => part?.trim())
+  if (about.length > 0) lines.push('', ...[...new Set(about.map((part) => part.trim()))])
+  const tags = Object.entries(entry.jsDocTags ?? {})
+  if (tags.length > 0) lines.push('', ...tags.map(([tag, values]) => `@${tag} ${[values].flat().join(', ')}`))
+
+  if (docgen && docgen.props.length > 0) {
+    lines.push('', '## Props')
+    for (const prop of docgen.props) {
+      const defaults = prop.defaultValue !== null ? ` = ${prop.defaultValue}` : ''
+      lines.push(`- \`${prop.name}${prop.required ? '' : '?'}: ${prop.type}\`${defaults}${prop.description ? ` — ${prop.description}` : ''}`)
+    }
+  }
+  if (docgen?.composes.length) lines.push('', `Accepte aussi les props de : ${docgen.composes.join(', ')}.`)
+  if (docgen?.error) lines.push('', `Props non lues : ${docgen.error}`)
+
+  const declarations = referencedDeclarations(docgen)
+  if (declarations.length > 0) {
+    lines.push('', '## Types cités par les props', '```ts', declarations.join('\n\n'), '```')
+  }
+
+  const stories = entry.stories ?? []
+  if (stories.length > 0) {
+    lines.push('', '## Stories')
+    for (const story of stories) {
+      lines.push('', `### ${story.name}`)
+      if (story.description) lines.push(story.description.trim())
+      if (story.snippet) lines.push('```tsx', story.snippet.trim(), '```')
+    }
+  }
+  return clip(lines.join('\n'), MAX_THREAD_CHARS)
 }
 
 async function callTool(name, args) {
@@ -2392,6 +2774,39 @@ async function callTool(name, args) {
     return requestDaemon(name, args ?? {})
   }
 
+  if (DESIGN_SYSTEM_TOOLS.has(name)) {
+    if (!DESIGN_SYSTEM_STATE) return { ...text(`Outil inconnu : ${name}`), isError: true }
+    if (name === 'list_components') {
+      const [components, docs] = await Promise.all([
+        designSystemManifest('components'),
+        designSystemManifest('docs'),
+      ])
+      if (components.error) return { ...text(components.error), isError: true }
+      return text(renderComponentList(components, docs))
+    }
+    const id = typeof args?.id === 'string' ? args.id.trim() : ''
+    if (!id) return { ...text('Le paramètre `id` est requis.'), isError: true }
+    if (name === 'read_component') {
+      const manifest = await designSystemManifest('components')
+      if (manifest.error) return { ...text(manifest.error), isError: true }
+      const entries = Object.values(manifest.data.components ?? {})
+      const found =
+        entries.find((entry) => entry.id === id) ??
+        entries.find((entry) => entry.name?.toLowerCase() === id.toLowerCase())
+      if (!found) {
+        return { ...text(`Aucun composant « ${id} » dans le design system. list_components donne les identifiants.`), isError: true }
+      }
+      return text(renderComponent(found))
+    }
+    const manifest = await designSystemManifest('docs')
+    if (manifest.error) return { ...text(manifest.error), isError: true }
+    const page = Object.values(manifest.data.docs ?? {}).find((entry) => entry.id === id)
+    if (!page) {
+      return { ...text(`Aucune page « ${id} » dans le design system. list_components donne les identifiants.`), isError: true }
+    }
+    return text(clip(`# ${page.title}\n\nSource : ${page.path}\n\n${page.content ?? ''}`, MAX_THREAD_CHARS))
+  }
+
   if (name === 'read_memory' || name === 'write_memory' || name === 'delete_memory') {
     // La famille « Mémoire » refusée, ou une session sans dossier : les trois outils ne
     // sont pas listés dans ce cas, ce refus est la ceinture du client qui aurait gardé
@@ -2498,7 +2913,7 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}`,
+  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
 )
 
 createInterface({ input: process.stdin }).on('line', async (line) => {

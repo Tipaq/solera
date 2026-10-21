@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { openDatabase } from '@solera/db'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
@@ -20,6 +21,7 @@ import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
+import { StorybookSupervisor } from './design-system/storybooks.js'
 import { VaultIndex } from './vault/index-service.js'
 
 async function main(): Promise<void> {
@@ -43,6 +45,11 @@ async function main(): Promise<void> {
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
   const sessions = new SessionManager(db, log, config, registry, secrets)
+  const storybooks = new StorybookSupervisor({
+    directory: join(config.paths.data, 'design-systems'),
+    inUse: (path) => sessions.designSystemInUse(path),
+  })
+  sessions.setStorybooks(storybooks)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   const recovered = sessions.recoverInterrupted()
@@ -135,6 +142,7 @@ async function main(): Promise<void> {
     tasks.stop()
     await sessions.stopAll()
     terminals.shutdown()
+    storybooks.shutdown()
     await app.close()
     sqlite.close()
     process.exit(0)
