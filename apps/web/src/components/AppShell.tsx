@@ -18,6 +18,7 @@ import { useMediaQuery, useVisualViewport } from '../lib/viewport'
 import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
+import { Toaster } from './Toaster'
 import { MobileNavigationContext } from './MobileNavigation'
 import { HeaderBand } from './HeaderBand'
 import { McpRegistryDialog } from './mcp/McpRegistryDialog'
@@ -216,6 +217,9 @@ export function AppShell() {
           un menu, et un dialogue rendu dans un menu meurt avec lui à la sélection. */}
       <McpRegistryDialog />
       <UpdatePrompt />
+      {/* Hors de la colonne principale : un toast apparaît par-dessus n'importe quelle
+          vue, sidebar comprise. */}
+      <Toaster />
 
       {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
           et ce sont les vues qui ont un en-tête qui lui réservent sa place

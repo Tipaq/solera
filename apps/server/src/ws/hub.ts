@@ -7,7 +7,7 @@ import {
   type ServerMessage,
 } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import type { PushService } from '../push/push-service.js'
+import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'
 import type { AppContext } from '../http/context.js'
 import { canReadConversation } from '../conversations/scope.js'
@@ -168,6 +168,27 @@ class Connection {
     return this.userId === userId && this.subscriptions.has(conversationId)
   }
 
+  /**
+   * Visible, et l'abonnement push de son appareil, tels que l'onglet les déclare. Faux
+   * jusqu'à la première déclaration : un onglet qui ne dit rien compte comme absent, et
+   * son appareil reçoit donc la notification système plutôt que rien.
+   */
+  private visible = false
+  private endpoint: string | null = null
+
+  setPresence(visible: boolean, endpoint: string | null): void {
+    this.visible = visible
+    this.endpoint = endpoint
+  }
+
+  isVisibleFor(userId: string): boolean {
+    return this.visible && this.userId === userId
+  }
+
+  visibleEndpoint(userId: string): string | null {
+    return this.isVisibleFor(userId) ? this.endpoint : null
+  }
+
   unsubscribe(conversationId: string): void {
     this.subscriptions.get(conversationId)?.()
     this.subscriptions.delete(conversationId)
@@ -309,19 +330,34 @@ export async function registerWebSocketHub(
   ctx: AppContext,
   log: EventLog,
   sessions: SessionManager,
-  push: PushService,
+  notifications: Notifications,
 ): Promise<void> {
   const { default: websocket } = await import('@fastify/websocket')
   await app.register(websocket)
 
   const connections = new Set<Connection>()
 
-  // Un onglet abonné à un fil le voit déjà en direct : le notifier en plus reviendrait
-  // à le prévenir de ce qu'il est en train de lire.
-  sessions.setNotifier({
-    isWatched: (conversationId, userId) =>
-      [...connections].some((connection) => connection.watches(conversationId, userId)),
-    notify: (userId, payload) => push.notify(userId, payload),
+  // Le hub est seul à savoir quels onglets sont visibles et ce qu'ils regardent : c'est
+  // ce qui décide entre un toast, une notification système, ou rien. Un onglet abonné
+  // à un fil mais caché ne compte pas : il ne voit pas ce qui s'y passe.
+  notifications.setPresence({
+    visibleEndpoints: (userId) => {
+      const endpoints = new Set<string>()
+      for (const connection of connections) {
+        const endpoint = connection.visibleEndpoint(userId)
+        if (endpoint) endpoints.add(endpoint)
+      }
+      return endpoints
+    },
+    watchesVisibly: (conversationId, userId) =>
+      [...connections].some(
+        (connection) => connection.isVisibleFor(userId) && connection.watches(conversationId, userId),
+      ),
+    toast: (userId, notification) => {
+      for (const connection of connections) {
+        if (connection.isVisibleFor(userId)) connection.send({ t: 'notify', notification })
+      }
+    },
   })
 
   sessions.statusBus.on('status', (update: StatusBroadcast) => {
@@ -376,6 +412,9 @@ export async function registerWebSocketHub(
           return
         case 'ping':
           connection.send({ t: 'pong' })
+          return
+        case 'presence':
+          connection.setPresence(parsed.visible, parsed.endpoint)
           return
       }
     })

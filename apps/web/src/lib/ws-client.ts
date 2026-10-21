@@ -5,6 +5,7 @@ import {
   type ClientMessage,
   type ConversationMetrics,
   type ConversationStatus,
+  type InAppNotification,
   type ServerMessage,
   type SoleraEvent,
 } from '@solera/protocol'
@@ -87,6 +88,14 @@ class WsClient {
   private readonly listeners = new Map<string, Set<StreamListener>>()
   private readonly cursors = new Map<string, number>()
   private readonly statusWatchers = new Set<StatusWatcher>()
+  /** Toasts poussés par le serveur pour cet onglet, quand il est visible. */
+  private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
+  /**
+   * L'abonnement push de cet appareil, déclaré au serveur avec la visibilité : c'est ce
+   * qui lui permet de ne pas y pousser de notification système pendant que l'application
+   * est sous les yeux, et d'y envoyer un toast à la place.
+   */
+  private pushEndpoint: string | null = null
   /**
    * Dossiers suivis sur le disque, comptés par conversation.
    *
@@ -126,7 +135,39 @@ class WsClient {
     document.addEventListener('resume', wake)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') wake()
+      this.sendPresence()
     })
+    // Une page qu'on quitte ne passe pas toujours par `hidden` avant de fermer son socket
+    // (iOS gèle l'onglet) : le serveur doit cesser tout de suite de la croire présente.
+    window.addEventListener('pagehide', () => this.sendPresence(false))
+    if ('serviceWorker' in navigator) {
+      // `getRegistration` et non `ready` : sans service worker, `ready` ne se résout jamais.
+      void navigator.serviceWorker
+        .getRegistration()
+        .then((registration) => registration?.pushManager?.getSubscription())
+        .then((subscription) => this.setPushEndpoint(subscription?.endpoint ?? null))
+        .catch(() => {})
+    }
+  }
+
+  /** Après un abonnement ou un désabonnement de cet appareil. */
+  setPushEndpoint(endpoint: string | null): void {
+    this.pushEndpoint = endpoint
+    this.sendPresence()
+  }
+
+  /** Visible ou non, et l'abonnement de l'appareil : de quoi choisir entre toast et push. */
+  private sendPresence(visible = document.visibilityState === 'visible'): void {
+    this.send({ t: 'presence', visible, endpoint: this.pushEndpoint })
+  }
+
+  /** Les toasts destinés à cet onglet. Garde le socket ouvert, comme la sidebar. */
+  onNotify(listener: (notification: InAppNotification) => void): () => void {
+    this.notifyListeners.add(listener)
+    this.connect()
+    return () => {
+      this.notifyListeners.delete(listener)
+    }
   }
 
   private get isOpen(): boolean {
@@ -135,7 +176,12 @@ class WsClient {
 
   /** Plus personne n'attend rien : inutile de tenir ou de rétablir le socket. */
   private get idle(): boolean {
-    return this.listeners.size === 0 && this.statusWatchers.size === 0 && this.treePaths.size === 0
+    return (
+      this.listeners.size === 0 &&
+      this.statusWatchers.size === 0 &&
+      this.treePaths.size === 0 &&
+      this.notifyListeners.size === 0
+    )
   }
 
   private send(message: ClientMessage): void {
@@ -285,6 +331,8 @@ class WsClient {
       // Le serveur a libéré les veilles de la connexion tombée : elles sont redéclarées
       // en entier, l'ensemble vivant côté client étant la référence.
       this.sendTreeWatches()
+      // Une connexion neuve est absente pour le serveur tant qu'elle ne s'est pas déclarée.
+      this.sendPresence()
       // Les fils rattrapent leur retard par leur curseur ; les statuts n'ont pas de
       // journal derrière eux et doivent être relus autrement.
       if (this.opened) {
@@ -326,6 +374,11 @@ class WsClient {
     if (message.t === 'tree-changed') {
       const scope = message.scope === 'project' ? projectScope(message.id) : message.id
       for (const listener of this.treeListeners) listener(scope, message.path)
+      return
+    }
+
+    if (message.t === 'notify') {
+      for (const listener of this.notifyListeners) listener(message.notification)
       return
     }
 

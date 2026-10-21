@@ -13,6 +13,7 @@ import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
 import { resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
 import type { PushService } from '../push/push-service.js'
+import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { registerTerminalHub } from '../ws/terminal-hub.js'
@@ -101,6 +102,7 @@ export async function buildApp(
   tasks: TaskScheduler,
   vault: VaultIndex,
   storybooks: StorybookSupervisor,
+  notifications: Notifications,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -227,7 +229,7 @@ export async function buildApp(
   registerGitViewRoutes(app, ctx)
   registerGitActionRoutes(app, ctx)
   registerTerminalRoutes(app, ctx, sessions, terminals)
-  await registerWebSocketHub(app, ctx, log, sessions, push)
+  await registerWebSocketHub(app, ctx, log, sessions, notifications)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.
   registerTerminalHub(app, ctx, terminals)
 

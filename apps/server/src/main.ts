@@ -11,6 +11,7 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
+import { Notifications } from './notifications/dispatcher.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
@@ -69,7 +70,11 @@ async function main(): Promise<void> {
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
 
-  const push = new PushService(db, config.paths.data)
+  const push = new PushService(db, config.paths.data, config.server.publicUrl)
+  // Toast sur l'appareil où l'application est visible, notification système ailleurs ;
+  // le hub WebSocket lui dira qui regarde quoi.
+  const notifications = new Notifications(db, push)
+  sessions.setNotifier(notifications)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -92,6 +97,7 @@ async function main(): Promise<void> {
     tasks,
     vault,
     storybooks,
+    notifications,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

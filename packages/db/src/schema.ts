@@ -895,6 +895,14 @@ export const pushSubscriptions = sqliteTable(
     auth: text('auth').notNull(),
     userAgent: text('user_agent'),
     createdAt: timestamp('created_at').notNull(),
+    /**
+     * Sujet VAPID de cet abonnement : l'origine https par laquelle l'appareil a joint
+     * l'instance au moment de s'abonner. Apple refuse un sujet en `localhost`, et une
+     * instance auto-hébergée n'a souvent pas d'autre adresse publique que celle-là.
+     * `null` pour une origine locale ou en http, et pour les abonnements d'avant : on
+     * retombe alors sur `server.publicUrl`, puis sur un `mailto:` de repli.
+     */
+    subject: text('subject'),
   },
   (t) => [index('idx_push_user').on(t.userId)],
 )

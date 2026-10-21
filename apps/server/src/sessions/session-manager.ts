@@ -14,9 +14,10 @@ import {
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
-  type PushPayload,
+  type CliRequestKind,
   type SoleraEvent,
 } from '@solera/protocol'
+import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
@@ -114,11 +115,36 @@ export interface StatusBroadcast {
   metrics: ConversationMetrics
 }
 
-/** Ce que le gestionnaire attend de la couche de notification, sans la connaître. */
+/**
+ * L'aiguillage des notifications (`notifications/dispatcher.ts`), vu d'ici : c'est lui
+ * qui sait qui regarde quoi, et qui choisit entre un toast, une notification système
+ * ou rien.
+ */
 export interface ConversationNotifier {
-  /** Vrai si ce compte a un onglet ouvert sur cette conversation, à l'instant. */
-  isWatched(conversationId: string, userId: string): boolean
-  notify(userId: string, payload: PushPayload): Promise<void>
+  dispatch(userId: string, notification: OutgoingNotification): Promise<void>
+}
+
+/** Ce qu'un CLI attend, rangé par sorte : ce qui vaut un toast, contrairement à une fin de tour. */
+const REQUEST_KINDS: Partial<Record<SoleraEvent['type'], CliRequestKind>> = {
+  'permission.requested': 'permission',
+  'question.requested': 'question',
+  'elicitation.requested': 'elicitation',
+  'plan.review_requested': 'plan',
+}
+
+/** Ce qu'un CLI attend, en une ligne : l'outil et sa cible, ou la question posée. */
+function requestDetail(event: SoleraEvent): string | null {
+  const clip = (text: string) => (text.length > 160 ? `${text.slice(0, 160)}…` : text)
+  if (event.type === 'permission.requested') {
+    const input = (event.input ?? {}) as Record<string, unknown>
+    const target = [input.command, input.file_path, input.path, input.url, input.pattern].find(
+      (value) => typeof value === 'string',
+    )
+    return clip(target ? `${event.toolName} : ${String(target)}` : event.toolName)
+  }
+  if (event.type === 'question.requested') return event.questions[0] ? clip(event.questions[0].question) : null
+  if (event.type === 'elicitation.requested') return clip(`${event.serverName} : ${event.message}`)
+  return null
 }
 
 export class SessionManager {
@@ -135,8 +161,8 @@ export class SessionManager {
    */
   private readonly queues = new Map<string, QueuedMessage[]>()
   /**
-   * Renseigné après coup : le hub WebSocket, qui sait qui regarde quoi, n'existe pas
-   * encore quand le gestionnaire est construit.
+   * Renseigné après coup : l'aiguillage dépend du service de push, construit après le
+   * gestionnaire. Sans lui, rien ne part.
    */
   private notifier: ConversationNotifier | null = null
   private storybooks: StorybookSupervisor | null = null
@@ -554,11 +580,10 @@ export class SessionManager {
   }
 
   /**
-   * Notifie le propriétaire, sauf s'il a la conversation sous les yeux.
+   * Notifie le propriétaire de ce qu'un CLI attend ou a fini.
    *
-   * Le socket est le seul signal fiable de présence : un onglet abonné à ce fil reçoit
-   * déjà l'événement en direct, lui envoyer en plus une notification système reviendrait
-   * à le prévenir de ce qu'il est en train de lire.
+   * Ce qui part, et où, ne se décide pas ici : l'aiguillage connaît les onglets visibles
+   * par le socket, et ne dérange pas qui a déjà la conversation sous les yeux.
    *
    * Rien de ce qui se passe ici ne doit interrompre un agent (invariant I1), d'où
    * l'absence de propagation d'erreur.
@@ -584,15 +609,35 @@ export class SessionManager {
       // vingt-quatre fois par jour. Ses demandes de décision, elles, passent toujours,
       // puisque le tir reste suspendu tant que personne n'y répond.
       if (conversation.scheduleId && event.type === 'turn.completed') return
-      if (notifier.isWatched(conversationId, conversation.userId)) return
+      const request = REQUEST_KINDS[event.type]
 
-      await notifier.notify(conversation.userId, {
-        title,
-        body: conversation.title,
-        url: `/p/${conversation.projectId}/c/${conversationId}`,
-        // Une conversation ne garde qu'une notification affichée : empiler « l'agent a
-        // terminé » cinq fois ne dit rien de plus que la dernière.
-        tag: conversationId,
+      // Visible sur la conversation : rien. Visible ailleurs : un toast pour une demande,
+      // rien pour une fin de tour, que la sidebar montre déjà. Absent : notification.
+      await notifier.dispatch(conversation.userId, {
+        kind: request ? 'cliRequest' : 'turnCompleted',
+        conversationId,
+        push: {
+          title,
+          body: conversation.title,
+          // Un fil libre vit à la racine : `/p/null/c/…` se chargerait et ne trouverait rien.
+          url: conversation.projectId
+            ? `/p/${conversation.projectId}/c/${conversationId}`
+            : `/c/${conversationId}`,
+          // Une conversation ne garde qu'une notification affichée : empiler « l'agent a
+          // terminé » cinq fois ne dit rien de plus que la dernière.
+          tag: conversationId,
+          kind: request ?? 'turnCompleted',
+        },
+        toast: request
+          ? {
+              kind: 'cliRequest',
+              request,
+              conversationId,
+              projectId: conversation.projectId,
+              conversationTitle: conversation.title,
+              detail: requestDetail(event),
+            }
+          : undefined,
       })
     } catch (err) {
       // Une notification perdue n'est pas un incident de conversation, mais l'avaler

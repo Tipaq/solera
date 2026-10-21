@@ -281,6 +281,13 @@
       "when": 1792682588884,
       "tag": "0039_script_de_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1792688307880,
+      "tag": "0040_sujet_des_notifications",
+      "breakpoints": true
     }
   ]
 }
