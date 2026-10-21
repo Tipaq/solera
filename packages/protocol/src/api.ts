@@ -1221,3 +1221,21 @@ export interface ApiError {
     params?: Record<string, string | number>
   }
 }
+
+/**
+ * Un composant qu'un agent a créé dans les prototypes du projet, faute de le trouver
+ * dans le design system lié : une story taguée `candidate` (carte #63). C'est à une
+ * personne de décider s'il entre dans le DS.
+ */
+export interface PrototypeCandidateDto {
+  /** Le nom du fichier, sans `.stories.tsx`. */
+  name: string
+  path: string
+  modifiedAt: number
+}
+
+export interface ProjectPrototypesDto {
+  /** Le dossier des prototypes du projet, null sans design system lié. */
+  directory: string | null
+  candidates: PrototypeCandidateDto[]
+}

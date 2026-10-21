@@ -68,6 +68,8 @@ import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerWebRoutes } from './routes/web.js'
 import { registerFrameGuard } from './frame-guard.js'
+import { registerDesignSystemRelay } from './routes/design-system-relay.js'
+import type { StorybookSupervisor } from '../design-system/storybooks.js'
 
 /** Routes accessibles sans session. Tout le reste exige un utilisateur. */
 const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
@@ -97,6 +99,7 @@ export async function buildApp(
   relay: SessionRelay,
   tasks: TaskScheduler,
   vault: VaultIndex,
+  storybooks: StorybookSupervisor,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -217,6 +220,7 @@ export async function buildApp(
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault)
   registerWebRoutes(app)
+  registerDesignSystemRelay(app, storybooks)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
   registerGitActionRoutes(app, ctx)

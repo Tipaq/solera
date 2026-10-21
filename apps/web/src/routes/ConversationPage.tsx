@@ -12,6 +12,7 @@ import {
   Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useAutoOpenPrototypes } from '../lib/prototypes'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
@@ -144,6 +145,7 @@ export function ConversationPage() {
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
+  useAutoOpenPrototypes(conversationId, stream.state.items, stream.loading)
   // Être sur la page vaut lecture : la sidebar n'a plus à signaler ce qu'on regarde.
   //
   // Le `seq` de la ligne prime sur celui du fil replié : ouvrir une conversation, c'est

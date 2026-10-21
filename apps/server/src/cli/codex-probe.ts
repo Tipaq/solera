@@ -14,7 +14,7 @@ let answering: Promise<boolean> | null = null
 let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
 const runner = new CodexRunner({
-  conversationId: 'codex-probe', cwd, attachmentsRoot: cwd,
+  conversationId: 'codex-probe', cwd, attachmentsRoot: cwd, prototypesDir: null,
   binary: process.env.CODEX_BIN ?? 'codex', resumeSessionId: null,
   config: { ...DEFAULT_CODEX_CONFIG, model: process.env.CODEX_MODEL ?? 'gpt-6-astra',
     reasoningEffort: 'low', collaborationMode: blocking ? 'plan' : 'default',

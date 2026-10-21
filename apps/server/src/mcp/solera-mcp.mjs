@@ -842,6 +842,25 @@ const ALL_TOOLS = [
       required: ['id'],
     },
   },
+  {
+    name: 'show_prototype',
+    description:
+      "Affiche un prototype dans la vue Web de l'utilisateur : une story que tu as écrite dans le dossier de prototypes de ce projet, compilée par le Storybook du design system lié. Appelle cet outil après avoir écrit ou modifié le fichier : l'aperçu s'ouvre à côté du fil, puis suit tes modifications de lui-même. Rend l'adresse de l'aperçu et les autres stories du fichier, ou l'erreur de Storybook si le fichier ne se lit pas.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          description: 'Chemin du fichier de stories, absolu ou relatif au dossier de prototypes du projet (`Profil.stories.tsx`).',
+        },
+        story: {
+          type: 'string',
+          description: 'Nom de la story à afficher, tel qu\'exporté (`Défaut`). La première du fichier si omis.',
+        },
+      },
+      required: ['file'],
+    },
+  },
 ]
 
 /**
@@ -2068,7 +2087,7 @@ const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 const CARD_FILING_TOOLS = new Set(['request_card_move'])
 
 /** Les outils du design system lié, qui n'existent pas dans un projet sans DS. */
-const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_ds_page'])
+const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_ds_page', 'show_prototype'])
 
 /**
  * Ce que cette session voit du catalogue, une fois ses familles d'autorisation
@@ -2129,6 +2148,27 @@ async function requestDaemon(kind, payload) {
  * `{ data }`, ou `{ error }` dans une phrase que l'agent peut relayer telle quelle.
  */
 async function designSystemManifest(kind) {
+  const ready = await designSystemReady()
+  if (ready.error) return ready
+  const { state } = ready
+
+  let response
+  try {
+    response = await fetch(`${state.url}/manifests/${kind}.json`, { signal: AbortSignal.timeout(30_000) })
+  } catch (err) {
+    return { error: `Le Storybook du design system (${state.url}) ne répond pas : ${err.message}` }
+  }
+  if (response.status === 404) {
+    return {
+      error: `Le Storybook du design system (${state.path}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
+    }
+  }
+  if (!response.ok) return { error: `Le Storybook du design system a répondu ${response.status}.` }
+  return { data: await response.json(), state }
+}
+
+/** L'état du Storybook une fois prêt, en attendant qu'il le soit : `{ state }` ou `{ error }`. */
+async function designSystemReady() {
   const deadline = Date.now() + DESIGN_SYSTEM_WAIT_MS
   let state = null
   for (;;) {
@@ -2151,20 +2191,58 @@ async function designSystemManifest(kind) {
   if (state.status === 'failed') {
     return { error: `Le Storybook du design system (${state.path}) n'a pas pu démarrer. Son journal est ${state.log}.\n\n${state.error ?? ''}` }
   }
+  return { state }
+}
 
-  let response
+/**
+ * L'index des stories du Storybook, qui porte leurs tags : c'est lui qui dit quelles
+ * stories de prototype sont des candidats.
+ */
+async function storyIndex(state) {
   try {
-    response = await fetch(`${state.url}/manifests/${kind}.json`, { signal: AbortSignal.timeout(30_000) })
-  } catch (err) {
-    return { error: `Le Storybook du design system (${state.url}) ne répond pas : ${err.message}` }
+    const response = await fetch(`${state.url}/index.json`, { signal: AbortSignal.timeout(30_000) })
+    return response.ok ? Object.values((await response.json()).entries ?? {}) : []
+  } catch {
+    return []
   }
-  if (response.status === 404) {
-    return {
-      error: `Le Storybook du design system (${state.path}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
-    }
+}
+
+/**
+ * Les prototypes, dans le manifeste et dans l'index : rangés à part du DS.
+ *
+ * Un Storybook sert tous les projets qui lient son DS, et chacun y a son dossier de
+ * prototypes. Ceux des autres projets ne sont pas montrés : un candidat reste au
+ * projet qui l'a créé tant qu'il n'est pas entré dans le DS, sinon il deviendrait un
+ * second DS, officieux. Ceux de ce projet ne sont montrés que s'ils sont candidats ;
+ * un écran prototypé n'est pas une brique à réutiliser.
+ */
+function prototypeScope(state) {
+  const root = state.prototypes ? resolve(state.prototypes) : null
+  const own = root && PROJECT_ID ? join(root, PROJECT_ID) : null
+  const within = (path, directory) => {
+    const absolute = resolve(state.path, path ?? '')
+    return absolute === directory || absolute.startsWith(directory + '/')
   }
-  if (!response.ok) return { error: `Le Storybook du design system a répondu ${response.status}.` }
-  return { data: await response.json() }
+  return {
+    own,
+    isPrototype: (path) => root !== null && within(path, root),
+    isOwn: (path) => own !== null && within(path, own),
+  }
+}
+
+/** Les composants du DS, sans les prototypes ; puis les candidats de ce projet. */
+async function splitComponents(components) {
+  const scope = prototypeScope(components.state)
+  const entries = Object.values(components.data.components ?? {})
+  const ds = entries.filter((entry) => !scope.isPrototype(entry.path))
+  const own = entries.filter((entry) => scope.isOwn(entry.path))
+  if (own.length === 0) return { ds, candidates: [] }
+  const candidateFiles = new Set(
+    (await storyIndex(components.state))
+      .filter((story) => story.tags?.includes('candidate') && scope.isOwn(story.importPath))
+      .map((story) => resolve(components.state.path, story.importPath)),
+  )
+  return { ds, candidates: own.filter((entry) => candidateFiles.has(resolve(components.state.path, entry.path))) }
 }
 
 const firstLine = (value) => (value ?? '').split('\n').map((line) => line.trim()).find(Boolean) ?? ''
@@ -2223,8 +2301,7 @@ function componentImports(entry) {
   return naming.length > 0 ? naming : statements
 }
 
-function renderComponentList(components, docs) {
-  const entries = Object.values(components.data.components ?? {})
+function renderComponentList(entries, candidates, docs) {
   const usable = entries.filter((entry) => !entry.error)
   const broken = entries.filter((entry) => entry.error)
   const lines = [`Design system : ${usable.length} composant(s).`, '', '## Composants']
@@ -2235,6 +2312,16 @@ function renderComponentList(components, docs) {
   }
   if (broken.length > 0) {
     lines.push('', `${broken.length} fichier(s) de stories que Storybook n'a pas su lire, donc absents : ${broken.map((entry) => `\`${entry.id}\` (${firstLine(entry.error?.message ?? entry.error?.name)})`).join(', ')}.`)
+  }
+  if (candidates.length > 0) {
+    lines.push(
+      '',
+      '## Candidats de ce projet',
+      "Créés dans les prototypes de ce projet, faute de brique dans le DS, et pas encore acceptés dedans : à réutiliser dans les prototypes, jamais dans le code du projet.",
+    )
+    for (const entry of candidates) {
+      lines.push(`- \`${entry.id}\` **${entry.name}** — ${entry.path}`)
+    }
   }
   const pages = docs.error ? [] : Object.values(docs.data.docs ?? {})
   if (pages.length > 0) {
@@ -2450,6 +2537,98 @@ function renderComponent(entry) {
     }
   }
   return clip(lines.join('\n'), MAX_THREAD_CHARS)
+}
+
+/**
+ * La ligne que le DS ajoute à la fin de son `.storybook/main.ts`. Recopiée de
+ * `design-system/storybooks.ts`, que ce `.mjs` ne peut pas importer.
+ */
+const DESIGN_SYSTEM_LINE =
+  'export default process.env.SOLERA_STORYBOOK ? (await import(process.env.SOLERA_STORYBOOK)).default(config) : config'
+
+/** Le temps que Storybook indexe un fichier qui vient d'être écrit. */
+const PROTOTYPE_INDEX_WAIT_MS = 10_000
+
+/**
+ * L'aperçu d'un prototype : la story, cherchée dans l'index de Storybook, et son
+ * adresse sous le relais de Solera. C'est l'interface qui l'ouvre dans la vue Web, en
+ * lisant cette adresse dans le résultat de l'outil.
+ */
+async function showPrototype(args) {
+  const ready = await designSystemReady()
+  if (ready.error) return { ...text(ready.error), isError: true }
+  const { state } = ready
+  const scope = prototypeScope(state)
+  if (!scope.own || !state.base) {
+    return { ...text("Ce Storybook ne connaît pas de dossier de prototypes : Solera doit être redémarré pour le lui donner."), isError: true }
+  }
+  if (state.hooked === false) {
+    return {
+      ...text(
+        `Le Storybook du design system (${state.path}) ne charge pas les prototypes : son \`.storybook/main.ts\` doit finir par cette ligne, à la place de son \`export default config\` :\n\n\`\`\`ts\n${DESIGN_SYSTEM_LINE}\n\`\`\`\n\nC'est une modification du DS, pas du projet : demande-la à l'utilisateur plutôt que de la faire.`,
+      ),
+      isError: true,
+    }
+  }
+  const requested = typeof args.file === 'string' ? args.file.trim() : ''
+  if (!requested) return { ...text('Le paramètre `file` est requis.'), isError: true }
+  const file = resolve(scope.own, requested)
+  if (!scope.isOwn(file)) {
+    return { ...text(`Un prototype de ce projet vit dans \`${scope.own}\`, et \`${file}\` n'y est pas.`), isError: true }
+  }
+  try {
+    statSync(file)
+  } catch {
+    return { ...text(`Aucun fichier \`${file}\`.`), isError: true }
+  }
+
+  const deadline = Date.now() + PROTOTYPE_INDEX_WAIT_MS
+  let stories = []
+  for (;;) {
+    stories = (await storyIndex(state)).filter(
+      (entry) => entry.type === 'story' && resolve(state.path, entry.importPath) === file,
+    )
+    if (stories.length > 0 || Date.now() > deadline) break
+    await new Promise((done) => setTimeout(done, 500))
+  }
+  if (stories.length === 0) {
+    // Un fichier que Storybook n'a pas su lire figure au manifeste avec son erreur.
+    const components = await designSystemManifest('components')
+    const broken = components.error
+      ? null
+      : Object.values(components.data.components ?? {}).find(
+          (entry) => entry.error && resolve(state.path, entry.path) === file,
+        )
+    const reason = broken
+      ? `Storybook n'a pas su le lire :\n\n${broken.error?.message ?? broken.error?.name ?? ''}`
+      : "Storybook ne l'a pas indexé : son nom doit finir par `.stories.tsx` (ou `.ts`, `.jsx`, `.js`), et il doit exporter par défaut un `meta` et au moins une story."
+    return { ...text(`Aucune story dans \`${file}\`. ${reason}\n\nLe journal du Storybook est ${state.log}.`), isError: true }
+  }
+
+  const wanted = typeof args.story === 'string' ? args.story.trim() : ''
+  const story =
+    (wanted && stories.find((entry) => entry.exportName === wanted || entry.name === wanted)) || stories[0]
+  if (wanted && story.exportName !== wanted && story.name !== wanted) {
+    return {
+      ...text(`Aucune story « ${wanted} » dans ce fichier. Elles sont : ${stories.map((entry) => entry.exportName ?? entry.name).join(', ')}.`),
+      isError: true,
+    }
+  }
+  const url = `${state.base}iframe.html?id=${encodeURIComponent(story.id)}&viewMode=story`
+  const lines = [
+    `Aperçu de « ${story.title} › ${story.name} » ouvert dans la vue Web.`,
+    '',
+    `URL: ${url}`,
+  ]
+  if (story.tags?.includes('candidate')) {
+    lines.push('', 'Story taguée `candidate` : dis à l\'utilisateur quel composant manque au DS et pourquoi.')
+  }
+  const others = stories.filter((entry) => entry !== story)
+  if (others.length > 0) {
+    lines.push('', `Autres stories du fichier : ${others.map((entry) => entry.exportName ?? entry.name).join(', ')}.`)
+  }
+  lines.push('', "Tu ne vois pas le rendu : une erreur d'exécution s'affiche dans l'aperçu, pas ici. Demande à l'utilisateur ce qu'il voit si un doute subsiste.")
+  return text(lines.join('\n'))
 }
 
 async function callTool(name, args) {
@@ -2782,14 +2961,17 @@ async function callTool(name, args) {
         designSystemManifest('docs'),
       ])
       if (components.error) return { ...text(components.error), isError: true }
-      return text(renderComponentList(components, docs))
+      const { ds, candidates } = await splitComponents(components)
+      return text(renderComponentList(ds, candidates, docs))
     }
+    if (name === 'show_prototype') return showPrototype(args ?? {})
     const id = typeof args?.id === 'string' ? args.id.trim() : ''
     if (!id) return { ...text('Le paramètre `id` est requis.'), isError: true }
     if (name === 'read_component') {
       const manifest = await designSystemManifest('components')
       if (manifest.error) return { ...text(manifest.error), isError: true }
-      const entries = Object.values(manifest.data.components ?? {})
+      const { ds, candidates } = await splitComponents(manifest)
+      const entries = [...ds, ...candidates]
       const found =
         entries.find((entry) => entry.id === id) ??
         entries.find((entry) => entry.name?.toLowerCase() === id.toLowerCase())

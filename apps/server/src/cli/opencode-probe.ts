@@ -20,7 +20,7 @@ let sessionId = ''
 let finish: () => void = () => {}
 const completed = new Promise<void>((resolve) => { finish = resolve })
 const runner = new OpencodeRunner({
-  conversationId: 'opencode-probe', cwd, attachmentsRoot: cwd,
+  conversationId: 'opencode-probe', cwd, attachmentsRoot: cwd, prototypesDir: null,
   binary: process.env.OPENCODE_BIN ?? join(homedir(), '.opencode/bin/opencode'), resumeSessionId: null,
   config: { ...DEFAULT_OPENCODE_CONFIG, model: process.env.OPENCODE_MODEL ?? 'opencode/big-pickle', soleraMcp: false },
   projectOverview: () => 'The project codename is ZEPHYR-9.', maskedInstructionRoots: () => [], memoryDir: () => null,

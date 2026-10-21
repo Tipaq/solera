@@ -790,6 +790,14 @@ export class SessionManager {
               instructions()?.workspacePath ?? cwd,
             )
 
+    // Lu au lancement du runner, comme le serveur MCP : un DS lié ensuite vaut pour la
+    // session suivante.
+    const linkedDesignSystem = this.designSystemOf(projectId)
+    const prototypesDir =
+      linkedDesignSystem && projectId !== null && this.storybooks
+        ? this.storybooks.projectPrototypes(linkedDesignSystem, projectId)
+        : null
+
     return {
       conversationId,
       cwd,
@@ -800,6 +808,7 @@ export class SessionManager {
       // les installations faites depuis l'interface.
       binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
       attachmentsRoot: this.config.paths.attachments,
+      prototypesDir,
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(projectId, conversationId),
         // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
@@ -872,6 +881,7 @@ export class SessionManager {
                 conversationId,
                 soleraMcp,
                 cardFiling: soleraMcp && this.config.mcp.cardFiling && current.cardFiling,
+                prototypesDir,
               })
             : null,
         ].filter((part) => part !== null)

@@ -76,6 +76,7 @@ async function main(): Promise<void> {
     config: { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'bypassPermissions' },
     binary: process.env.CLAUDE_BIN ?? 'claude',
     attachmentsRoot: tmpdir(),
+    prototypesDir: null,
     resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }),

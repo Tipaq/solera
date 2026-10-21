@@ -56,6 +56,7 @@ import {
   useProjects,
   useRemoveProjectImage,
   useSetProjectImage,
+  useProjectPrototypes,
   useUpdateProject,
 } from '../lib/projects'
 
@@ -316,8 +317,38 @@ function ProjectDesignSystem({
             </Button>
           ) : null}
         </div>
+
+        {initialPath ? <PrototypeCandidates projectId={projectId} /> : null}
       </CardBody>
     </Card>
+  )
+}
+
+/**
+ * Ce que les agents ont dû créer faute de le trouver dans le DS (carte #63) : des
+ * composants qui restent dans les prototypes de ce projet tant que personne n'a décidé
+ * s'ils entrent dans le DS, s'ils étaient un accident, ou s'il faut les recomposer.
+ */
+function PrototypeCandidates({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectPrototypes(projectId, true)
+  if (!data || data.candidates.length === 0) return null
+
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-4">
+      <p className="text-sm font-medium">{t('project.designSystem.candidates')}</p>
+      <p className="text-xs text-ink-faint">{t('project.designSystem.candidates.hint')}</p>
+      <ul className="flex flex-col gap-1">
+        {data.candidates.map((candidate) => (
+          <li key={candidate.path} className="min-w-0">
+            <p className="truncate text-sm">{candidate.name}</p>
+            <p className="truncate font-mono text-xs text-ink-faint" title={candidate.path}>
+              {candidate.path}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

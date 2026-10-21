@@ -47,6 +47,16 @@ export function isLocal(url: string): boolean {
   }
 }
 
+/** Un Storybook de design system, relayé par Solera sous `/ds/<jeton>/` (carte #63). */
+export function isRelayed(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.origin === window.location.origin && parsed.pathname.startsWith('/ds/')
+  } catch {
+    return false
+  }
+}
+
 /** Ce que l'on tape dans la barre devient une adresse : le schéma manquant est https. */
 export function normalizeAddress(input: string): string | null {
   const value = input.trim()
@@ -77,7 +87,7 @@ export function navigateWeb(scope: string, url: string, fresh = false): void {
   byScope.set(scope, {
     history,
     index: history.length - 1,
-    mode: fresh || !current ? (isLocal(url) ? 'live' : 'reader') : current.mode,
+    mode: fresh || !current ? (isLocal(url) || isRelayed(url) ? 'live' : 'reader') : current.mode,
   })
   emit()
 }
@@ -121,7 +131,9 @@ export function useWebPage(url: string | null, mode: WebMode) {
   return useQuery({
     queryKey: ['web-page', url, frame ? 'frame' : 'reader'],
     queryFn: () => api.get<WebPageDto>(`/api/web/read?url=${encodeURIComponent(url ?? '')}${frame ? '&frame=1' : ''}`),
-    enabled: url !== null,
+    // Un Storybook relayé est encadrable par construction, et le serveur ne saurait
+    // pas joindre l'origine publique de Solera pour le vérifier.
+    enabled: url !== null && !(frame && isRelayed(url)),
     staleTime: 5 * 60_000,
     retry: false,
   })
