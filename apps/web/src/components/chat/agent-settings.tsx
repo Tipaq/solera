@@ -15,7 +15,7 @@ import {
   type OpencodePermission,
   type OpencodePermissions,
 } from '@solera/protocol'
-import { catalogModel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -445,7 +445,7 @@ export function useAgentSettings({
   const effortOptions = useMemo((): SettingChoice<string>[] => {
     const known = effortsFor(catalog?.models, resolvedModel).map((effort) => ({
       value: effort.value,
-      label: effort.label,
+      label: effortLabel(t, effort),
       hint: effort.hint ?? undefined,
     }))
 
@@ -455,7 +455,7 @@ export function useAgentSettings({
     const current =
       config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : config.variant
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
-      known.unshift({ value: current, label: current, hint: t('composer.select.saved') })
+      known.unshift({ value: current, label: effortLabel(t, { value: current, label: current, hint: null }), hint: t('composer.select.saved') })
     }
     return known
   }, [catalog, config, resolvedModel, t])
