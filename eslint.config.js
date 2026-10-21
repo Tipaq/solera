@@ -8,10 +8,9 @@ import tseslint from 'typescript-eslint'
  * erreur d'exécution qui n'apparaît que dans le navigateur, sous forme d'un message
  * React minifié. Ces deux règles la transforment en échec de build.
  *
- * À la racine et non dans `apps/web` : le design system et le catalogue sont du React
- * eux aussi, et une config par paquet aurait divergé. ESLint remonte l'arborescence
- * pour la trouver, donc `eslint src` lancé depuis n'importe lequel des trois marche
- * sans rien déclarer.
+ * À la racine et non dans `apps/web` : le catalogue est du React lui aussi, et une config
+ * par paquet aurait divergé. ESLint remonte l'arborescence pour la trouver, donc
+ * `eslint src` lancé depuis l'un ou l'autre marche sans rien déclarer.
  */
 export default [
   // Ignores globaux : un objet à part, sinon ils ne valent que pour le bloc qui les

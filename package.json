@@ -33,8 +33,6 @@
     "codex:types:check": "node scripts/codex-types.mjs --check",
     "opencode:types": "node scripts/opencode-types.mjs",
     "opencode:types:check": "node scripts/opencode-types.mjs --check",
-    "ui:tokens": "node --experimental-strip-types scripts/ui-tokens.mjs",
-    "ui:tokens:check": "node --experimental-strip-types scripts/ui-tokens.mjs --check",
     "lint": "eslint apps packages"
   },
   "devDependencies": {

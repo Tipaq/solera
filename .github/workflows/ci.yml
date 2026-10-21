@@ -23,9 +23,6 @@ jobs:
       # Idem pour OpenCode : le script lance un `opencode serve` jetable pour lire son OpenAPI.
       - run: npm install --global opencode-ai@1.18.25
       - run: pnpm opencode:types:check
-      # Les échelles du design system : le CSS commité doit valoir celui que `tokens.ts`
-      # produit, sinon un spécimen annonce une valeur que le navigateur n'applique pas.
-      - run: pnpm ui:tokens:check
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm lint

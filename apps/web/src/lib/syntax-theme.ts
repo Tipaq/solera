@@ -1,5 +1,6 @@
 import type { MessageKey } from './i18n'
 import { useSyncExternalStore } from 'react'
+import { SYNTAX_THEMES, type SyntaxTheme } from '@solera/ui/tokens'
 
 /**
  * Palette de coloration syntaxique, indépendante du thème de l'interface.
@@ -12,19 +13,8 @@ import { useSyncExternalStore } from 'react'
  * raison d'être, et une palette d'ambiance l'annulerait.
  */
 
-export const SYNTAX_THEMES = [
-  'solera',
-  'ocean',
-  'nuit',
-  'agrume',
-  'cerise',
-  'foret',
-  'sable',
-  'ardoise',
-  'sobre',
-  'encre',
-] as const
-export type SyntaxTheme = (typeof SYNTAX_THEMES)[number]
+// La liste vient du design system, qui définit les palettes dans sa feuille de jetons.
+export { SYNTAX_THEMES, type SyntaxTheme } from '@solera/ui/tokens'
 
 export const SYNTAX_THEME_LABELS: Record<SyntaxTheme, MessageKey> = {
   solera: 'syntax.theme.solera',

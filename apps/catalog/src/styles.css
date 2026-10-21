@@ -6,13 +6,14 @@
  * racine du projet Vite, qui est ici `apps/catalog` et non `apps/web`.
  *
  * Sans les trois `@source`, le catalogue s'afficherait sans style pour tout ce qui
- * vient d'ailleurs, et on aurait passé un moment à chercher pourquoi.
+ * vient d'ailleurs, et on aurait passé un moment à chercher pourquoi. Celui du design
+ * system vise `node_modules`, que Tailwind ne scanne jamais de lui-même.
  */
 
 @import 'tailwindcss';
 @import '@solera/ui/styles.css';
 @import '../../web/src/styles/app.css';
 
-@source '../../../packages/ui/src';
+@source '../node_modules/@solera/ui/src';
 @source '../../web/src';
 @source '.';

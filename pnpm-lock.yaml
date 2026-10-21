@@ -33,8 +33,8 @@ importers:
   apps/catalog:
     dependencies:
       '@solera/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
+        specifier: github:Tipaq/solera-ds#e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8
+        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@solera/web':
         specifier: workspace:*
         version: link:../web
@@ -284,8 +284,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/protocol
       '@solera/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
+        specifier: github:Tipaq/solera-ds#e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8
+        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tanstack/react-query':
         specifier: ^5.64.2
         version: 5.101.4(react@19.2.8)
@@ -397,43 +397,6 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
-
-  packages/ui:
-    dependencies:
-      '@radix-ui/react-context-menu':
-        specifier: ^2.3.7
-        version: 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@radix-ui/react-dialog':
-        specifier: ^1.1.23
-        version: 1.1.23(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@radix-ui/react-dropdown-menu':
-        specifier: ^2.1.24
-        version: 2.1.24(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@radix-ui/react-popover':
-        specifier: ^1.1.23
-        version: 1.1.23(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@radix-ui/react-select':
-        specifier: ^2.3.7
-        version: 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@radix-ui/react-tooltip':
-        specifier: ^1.3.0
-        version: 1.3.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      lucide-react:
-        specifier: ^1.26.0
-        version: 1.26.0(react@19.2.8)
-      react:
-        specifier: ^19.0.0
-        version: 19.2.8
-    devDependencies:
-      '@storybook/react-vite':
-        specifier: ^10
-        version: 10.6.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(rollup@4.62.2)(storybook@10.6.1(@types/react@19.2.17)(react@19.2.8))(typescript@5.9.3)(vite@6.4.3(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.1))
-      '@types/react':
-        specifier: ^19.0.7
-        version: 19.2.17
-      typescript:
-        specifier: ^5.7.3
-        version: 5.9.3
 
 packages:
 
@@ -3162,6 +3125,13 @@ packages:
     resolution: {integrity: sha512-BfzEnDJOt9T8M989/lA37EcJgat01wLRnoi5dQf3QzOH7jzpqTAzdDbVfRljVr5r+jzKqpbHeyOfAaXxAd0PAA==}
     cpu: [x64]
     os: [win32]
+
+  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8':
+    resolution: {tarball: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8}
+    version: 0.1.0
+    engines: {node: '>=22.14'}
+    peerDependencies:
+      react: ^19.0.0
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
@@ -8600,6 +8570,21 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.62.2':
     optional: true
+
+  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@radix-ui/react-context-menu': 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@radix-ui/react-dropdown-menu': 2.1.24(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@radix-ui/react-popover': 1.1.23(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@radix-ui/react-select': 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@radix-ui/react-tooltip': 1.3.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      lucide-react: 1.26.0(react@19.2.8)
+      react: 19.2.8
+    transitivePeerDependencies:
+      - '@types/react'
+      - '@types/react-dom'
+      - react-dom
 
   '@stablelib/base64@1.0.1': {}
 

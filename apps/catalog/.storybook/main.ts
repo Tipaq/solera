@@ -1,31 +1,31 @@
 import type { StorybookConfig } from '@storybook/react-vite'
 
 /**
- * Catalogue du design system de Solera.
+ * Catalogue des composants d'application de Solera.
  *
- * Son propre espace de travail, et non une page de l'application : c'est un outil de
- * conception, rien n'en part dans le produit. `apps/web` ne porte plus aucune
- * dépendance Storybook.
+ * Le design system n'est plus ici : il vit dans son propre dépôt, avec son propre
+ * Storybook, et Solera l'installe comme n'importe quelle dépendance. Ce catalogue-ci ne
+ * montre que ce que le design system ne peut pas connaître — les composants qui savent ce
+ * qu'est un CLI, un projet ou une conversation — et compose celui du design system par
+ * `refs`, pour qu'on parcoure les deux dans une seule fenêtre.
  *
- * Les stories, elles, restent **à côté de ce qu'elles montrent** — celles des primitives
- * dans `packages/ui`, celles des composants d'application dans `apps/web`. C'est la
- * convention, et elle a une raison : une primitive renommée casse sa story au
- * `typecheck`, ce qu'un dossier de stories tenu à part n'aurait jamais vu venir.
+ * C'est un outil de conception, et non une page de l'application : rien n'en part dans le
+ * produit, et `apps/web` ne porte aucune dépendance Storybook.
  *
- * Le catalogue ne fait donc que les rassembler, et porter la documentation.
+ * Les stories restent **à côté de ce qu'elles montrent**, dans `apps/web` : un composant
+ * renommé casse sa story au `typecheck`, ce qu'un dossier de stories tenu à part n'aurait
+ * jamais vu venir. Le catalogue ne fait que les rassembler.
  */
 const config: StorybookConfig = {
-  stories: [
-    // La documentation et les motifs, qui n'appartiennent à aucun des deux autres.
-    '../src/**/*.mdx',
-    '../src/**/*.stories.@(ts|tsx)',
-    // Le design system lui-même.
-    '../../../packages/ui/src/**/*.stories.@(ts|tsx)',
-    // Les composants d'application : ils ne sont pas le design system, mais c'est là
-    // que les variantes divergent, et un catalogue qui ne les montrerait pas laisserait
-    // la moitié de l'interface sans référence.
-    '../../web/src/**/*.stories.@(ts|tsx)',
-  ],
+  stories: ['../src/**/*.mdx', '../src/**/*.stories.@(ts|tsx)', '../../web/src/**/*.stories.@(ts|tsx)'],
+  // Le Storybook du design system, lancé à part (`pnpm dev` dans son dépôt). Éteint, sa
+  // section affiche une erreur et le reste du catalogue marche.
+  refs: {
+    ds: {
+      title: 'Design system',
+      url: process.env.SOLERA_DS_STORYBOOK_URL ?? 'http://localhost:6418',
+    },
+  },
   addons: ['@storybook/addon-docs'],
   // Dépôt privé, outil interne : rien ne part chez Storybook.
   core: { disableTelemetry: true },

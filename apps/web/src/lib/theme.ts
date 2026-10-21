@@ -1,8 +1,9 @@
 import type { MessageKey } from './i18n'
 import { useSyncExternalStore } from 'react'
+import { THEMES, type Theme } from '@solera/ui/tokens'
 
-export const THEMES = ['light', 'dark', 'dark-contrast'] as const
-export type Theme = (typeof THEMES)[number]
+// La liste vient du design system, qui définit les thèmes dans sa feuille de jetons.
+export { THEMES, type Theme } from '@solera/ui/tokens'
 
 export const THEME_LABELS: Record<Theme, MessageKey> = {
   light: 'theme.light',

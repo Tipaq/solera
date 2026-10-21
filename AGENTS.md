@@ -40,85 +40,93 @@ Deux endroits où « sillage » subsiste légitimement, et qu'on ne touche pas :
 
 ## L'interface a une référence, et une seule
 
-**Le catalogue, `apps/catalog/src/`.** Ses pages sont du markdown — `Principes.mdx`, les
-*Fondations*, les *Gabarits* — donc lisibles comme n'importe quel fichier, sans ouvrir un
-navigateur. **À lire avant de toucher à un composant**, et à modifier dans le même commit
-quand on change une règle : si le code et le catalogue divergent, c'est le code qui est
-en dette — sauf si le code a raison, auquel cas on change la page d'abord.
+**Le design system vit dans son propre dépôt, [`Tipaq/solera-ds`](https://github.com/Tipaq/solera-ds),
+cloné en `~/projects/solera-ds`.** Ses pages de règles sont du markdown — `docs/Principes.mdx`,
+les *Fondations*, les *Gabarits* — donc lisibles comme n'importe quel fichier, sans
+ouvrir un navigateur. **À lire avant de toucher à un composant.** Si le code et ces pages
+divergent, c'est le code qui est en dette — sauf si le code a raison, auquel cas on change
+la page d'abord, dans le dépôt du design system.
 
-Il y avait un second document, `docs/design-system.md`, supprimé le 2026-10-11. Deux
-normes sur le même sujet en font bientôt deux normes différentes : ses tables de rayons
-avaient déjà fini en troisième exemplaire, et les trois ne disaient pas la même chose. Ce
-qu'il portait d'unique est dans `Principes.mdx` et `Mouvement.mdx` ; ce qu'il listait
-d'écarts restants est sur le board.
-
-**Une valeur se change dans `packages/ui/src/tokens.ts`, et nulle part ailleurs.**
+**Une valeur se change dans `src/tokens.ts` du design system, et nulle part ailleurs.**
+Les primitives, les jetons et leurs règles ne se modifient pas depuis ce dépôt : voir
+`AGENTS.md` du design system.
 
 L'interface est **bilingue de structure** : aucune chaîne en dur dans un composant, tout
 passe par `t('clé')` (`apps/web/src/lib/i18n`). Une chaîne écrite en français dans du
 JSX est un bug, pas un raccourci — et le français est plus long que l'anglais, donc
 c'est lui qui fait déborder un libellé de bouton.
 
-Le design system est un **paquet**, `@solera/ui` : les primitives, les jetons, la
-feuille partagée. Il ne dépend pas de `@solera/web`, donc il ne *peut pas* importer du
-code applicatif — la règle « les primitives ne savent rien du produit » est tenue par le
-graphe de dépendances et non par une relecture.
+### Comment Solera le consomme
 
-Les **échelles statiques** — rayons, pas de texte, polices — ont une seule source,
-`packages/ui/src/tokens.ts`, qui porte la valeur *et* le rôle de chaque pas. Le bloc
-`@theme` qui les déclare en est **généré** :
+`@solera/ui` est une dépendance comme une autre, **épinglée à un commit** du dépôt du
+design system, dans `apps/web/package.json` et `apps/catalog/package.json` :
 
-```sh
-pnpm ui:tokens         # réécrit packages/ui/src/styles/scales.generated.css
-pnpm ui:tokens:check   # échoue si le CSS commité a dérivé — en CI
+```jsonc
+"@solera/ui": "github:Tipaq/solera-ds#<commit>"
 ```
 
-Ne pas éditer `scales.generated.css` à la main : la prochaine génération l'écrase. Les
-**couleurs** ne sont pas là et ne peuvent pas y être : elles sont calculées à l'exécution
-en `oklch()` depuis les réglages d'apparence de l'utilisateur.
+Le dépôt est public : pnpm le télécharge en archive, sans jeton, en local comme en CI et
+dans le `Dockerfile`. Il doit le rester, ou passer à une autre forme de dépendance : un
+dépôt privé serait cloné, et le `#` du commit dans le chemin installé empêche Vite de
+résoudre les imports du paquet.
 
-Le catalogue qui le montre est un Storybook, dans son propre espace de travail :
+Le paquet est livré en sources TypeScript, compilées par Vite avec l'application. Rien
+n'en part dans la release qui ne soit pas dans le bundle.
+
+**Changer le design system pour Solera** : on le modifie et on le pousse dans son dépôt,
+puis on épingle le nouveau commit ici, dans les deux `package.json`, et `pnpm install`.
+Un essai se fait de la même façon, sur une branche du design system : n'importe quel
+commit poussé s'épingle. Ne pas lier le clone par `link:` : il apporterait son propre
+React, chargé à côté de celui de l'application.
+
+La règle « les primitives ne savent rien du produit » est tenue par la séparation des
+dépôts : le design system n'a pas Solera parmi ses dépendances, il ne *peut pas* en
+importer du code. Les deux libellés que ses primitives portent sont fournis par
+l'application (`UiLabelsProvider`, posé dans `main.tsx`).
+
+### Le catalogue de Solera
+
+`apps/catalog` est un Storybook qui ne montre que **les composants d'application** — ceux
+qui savent ce qu'est un CLI, un projet ou une conversation — et les règles propres à
+Solera (`app.css` : le markdown, le confort de lecture). Il compose le Storybook du
+design system par ses `refs` : les deux se parcourent dans une seule fenêtre.
 
 ```sh
+cd ~/projects/solera-ds && pnpm dev # http://localhost:6418, la section « Design system »
 pnpm --filter @solera/catalog dev   # http://localhost:6417
 ```
 
-Ni l'un ni l'autre n'est une fonctionnalité de Solera : rien n'en part dans le bundle.
-Les stories, elles, restent **à côté de ce qu'elles montrent** — celles des primitives
-dans `packages/ui`, celles des composants d'application dans `apps/web` — parce qu'une
-primitive renommée casse alors sa story au `typecheck`. Le catalogue ne fait que les
-rassembler, et porter la documentation.
+**Le design system d'abord.** Au démarrage, le serveur du catalogue vérifie lui-même que
+la ref répond. S'il ne la trouve pas, le navigateur la charge ensuite avec ses cookies,
+la politique CORS du serveur de dev du design system le refuse, et la section affiche
+« Something went wrong » jusqu'au prochain redémarrage du catalogue.
 
-`pnpm build` ne le construit donc pas — il reste hors du chemin de release, pour qu'un
-Storybook cassé ne fasse pas échouer une publication qui ne l'embarque pas. La CI le
-construit à part, par `pnpm build:catalog`.
+Les stories restent **à côté de ce qu'elles montrent**, dans `apps/web` : un composant
+renommé casse sa story au `typecheck`. **Un composant d'application ajouté reçoit sa
+story dans le même commit.**
 
-**Une primitive ajoutée à `packages/ui` reçoit sa story dans le même commit.**
+`pnpm build` ne construit pas le catalogue : il reste hors du chemin de release, pour
+qu'un Storybook cassé ne fasse pas échouer une publication qui ne l'embarque pas. La CI
+le construit à part, par `pnpm build:catalog`.
 
 ### Où vit quoi
 
 | Fichier | Contenu |
 | --- | --- |
-| `packages/ui/src/tokens.ts` | **La source des échelles statiques** : polices, rayons, pas de texte, densités, ombres, tailles d'icônes, couches. Valeur *et* rôle de chaque pas |
-| `packages/ui/src/styles/tokens.css` | Les jetons `--sg-*`, les trois thèmes, les dix palettes de syntaxe |
-| `packages/ui/src/styles/index.css` | Le mapping vers Tailwind, la base et les utilitaires partagés |
-| `packages/ui/src/styles/scales.generated.css` | **Généré.** Ne pas éditer |
-| `packages/ui/src/*.tsx` | Les primitives, et leurs stories à côté |
-| `packages/ui/src/labels.tsx` | Les deux libellés que les primitives portent, fournis par l'application |
-| `apps/web/src/styles/index.css` | L'entrée : Tailwind, le paquet, les sources à scanner |
+| `apps/web/src/styles/index.css` | L'entrée : Tailwind, le paquet, les sources à scanner (dont `node_modules/@solera/ui/src`) |
 | `apps/web/src/styles/app.css` | Les règles propres à Solera : géométrie, fil, markdown |
-| `apps/web/src/lib/theme.ts` | L'application du thème, et la recopie du canevas dans `theme-color` |
-| `apps/web/src/lib/appearance.ts` | Les trois réglages d'apparence |
-| `apps/catalog/.storybook/` | La configuration du catalogue : sources, thème, langue, providers |
-| `apps/catalog/src/*.mdx` | **Les règles** : principes, fondations, gabarits |
-| `apps/catalog/src/specimens.tsx` | Les grilles visuelles des fondations, sans prose |
+| `apps/web/src/lib/theme.ts` | L'application du thème, et la recopie du canevas dans `theme-color`. La liste des thèmes vient du design system |
+| `apps/web/src/lib/syntax-theme.ts` | L'application de la palette de syntaxe. La liste des palettes vient du design system |
+| `apps/web/src/lib/appearance.ts` | Les réglages d'apparence |
+| `apps/catalog/.storybook/` | La configuration du catalogue : sources, `refs` vers le design system, thème, langue, providers |
+| `apps/catalog/src/` | La page des règles propres à Solera, et ses spécimens |
 | `scripts/chromium-deps.sh` | Pose Chromium sans sudo, pour capturer le catalogue |
 | `docs/brand/README.md` | Le symbole, ses exemplaires, et la règle de mise à jour |
 
 `docs/SPEC.md` §12.6 décrit l'ancien jeu de jetons (`--bg-base`, `--fg-primary`,
 `--accent-subtle`, `--gradient-canvas`…), un thème personnalisé et un fond à deux halos :
-rien de tout cela n'existe plus dans le code. Le catalogue le remplace sur le sujet du
-design, et §12.6 doit y renvoyer.
+rien de tout cela n'existe plus dans le code. Le design system le remplace sur le sujet
+du design, et §12.6 doit y renvoyer.
 
 ## Les trois instances de la machine
 
