@@ -48,6 +48,7 @@ import { moveConversation } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
 import type { EventLog } from '../events/event-log.js'
 import { readGitStatus } from '../git.js'
+import { DecisionRefusal, type Decisions } from '../decisions/decisions.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
@@ -60,7 +61,7 @@ import type { SessionManager } from './session-manager.js'
  * Traite les demandes que les sessions adressent au daemon par le serveur MCP :
  * lancer une autre session, créer une carte, planifier une tâche, lire le catalogue des
  * modèles, déclarer un projet, demander le rangement d'une conversation ou celui de
- * cartes du board.
+ * cartes du board, demander une décision.
  *
  * Le serveur MCP n'a que la base. Il dépose la demande et attend que ce balayage y
  * écrive le résultat ; plus court que celui du relais, parce qu'ici un agent est
@@ -73,6 +74,10 @@ import type { SessionManager } from './session-manager.js'
  * en mémoire, pour survivre à un redémarrage du serveur, et c'est ce même balayage qui
  * l'applique — il tente, et le refus de `releaseRunner` devient la condition de réessai :
  * le déplacement a lieu dès que la conversation se tait.
+ *
+ * Une **décision** suit le même rythme : déposée tout de suite, tranchée plus tard par la
+ * route, et c'est ce balayage qui la fait échoir ou la retire d'une session archivée
+ * (`decisions/decisions.ts`).
  *
  * Pour des **cartes**, rien à attendre ni à relâcher : le clic applique lui-même, dans
  * une transaction, et ce balayage ne revoit jamais la demande. C'est le seul écart de
@@ -204,10 +209,13 @@ export class AgentRequests {
     private readonly sessions: SessionManager,
     private readonly registry: AgentRegistry,
     private readonly log: EventLog,
+    /** Les décisions ; sans elles, `request_decision` est refusé. */
+    private readonly decisions?: Decisions,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
+    this.decisions?.setLogger(logger)
     this.timer = setInterval(() => void this.sweep(), POLL_MS)
     this.timer.unref()
   }
@@ -238,6 +246,9 @@ export class AgentRequests {
       }
 
       await this.applyFilings()
+      // Les échéances des décisions, sur le même balayage que les rangements accordés :
+      // une requête indexée sur le genre et la clôture, vide la plupart du temps.
+      this.decisions?.sweep()
     } finally {
       this.busy = false
     }
@@ -273,6 +284,11 @@ export class AgentRequests {
         return
       }
 
+      if (request.kind === 'request_decision') {
+        this.settle(request, await this.requestDecision(request, requester, payload), false)
+        return
+      }
+
       const project = this.requireProject(request.projectId)
       // Après `requireProject`, à la différence des trois ci-dessus : une carte
       // appartient à un projet, et un fil libre n'a aucun board à proposer de ranger.
@@ -295,7 +311,11 @@ export class AgentRequests {
       }
       // Un rangement refusé d'entrée n'attend plus rien : sans cette clôture il tiendrait
       // indéfiniment la place de l'unique demande en attente de la conversation.
-      if (request.kind === 'move_conversation' || request.kind === 'request_card_move') {
+      if (
+        request.kind === 'move_conversation' ||
+        request.kind === 'request_card_move' ||
+        request.kind === 'request_decision'
+      ) {
         this.closeFiling(request.id)
       }
       this.settle(request, describeError(err), true)
@@ -346,6 +366,11 @@ export class AgentRequests {
 
   private notifyLists(conversationId: string): void {
     this.sessions.statusBus.emit('lists', { conversationId })
+  }
+
+  /** La section « À décider » de ces comptes se relit : une demande les attend. */
+  private notifyAwaiting(userIds: string[]): void {
+    if (userIds.length > 0) this.sessions.statusBus.emit('awaiting', { userIds })
   }
 
   // --- start_session -------------------------------------------------------------
@@ -939,6 +964,7 @@ export class AgentRequests {
       ...price,
     })
     this.notifyLists(target.id)
+    this.notifyAwaiting([target.userId])
 
     const lines = [
       target.id === requester.id
@@ -1223,6 +1249,7 @@ export class AgentRequests {
       cards: proposed,
     })
     this.notifyLists(requester.id)
+    this.notifyAwaiting([project.ownerId])
 
     const lines = [
       proposed.length === 1
@@ -1253,6 +1280,40 @@ export class AgentRequests {
       throw new Refusal(
         "Refusé : le rangement de carte n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
       )
+    }
+  }
+
+  // --- request_decision ----------------------------------------------------------
+
+  /**
+   * Dépose une demande de décision, sans bloquer l'agent : voir `decisions/decisions.ts`.
+   *
+   * Placée avant `requireProject` pour qu'un fil libre lise pourquoi on la lui refuse,
+   * plutôt que le refus générique : la réponse revient par `session_messages`, dont le
+   * projet est obligatoire, et c'est la seule raison de cette exigence.
+   */
+  private async requestDecision(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    if (!parseAgentConfig(requester.config).decisions) {
+      throw new Refusal(
+        "Refusé : les demandes de décision ne sont pas accordées à cette conversation. Décide selon tes instructions, ou pose ta question dans ta réponse. L'utilisateur peut cocher « Décisions » dans les réglages de la session, et la relancer.",
+      )
+    }
+    if (!requester.projectId) {
+      throw new Refusal(
+        "Refusé : une demande de décision exige un projet, et cette conversation n'en a pas — sa réponse revient par la messagerie entre sessions, qui vit dans un projet. Ici, quelqu'un lit le fil : pose ta question dans ta réponse.",
+      )
+    }
+    const project = this.requireProject(requester.projectId)
+    if (!this.decisions) throw new Refusal('Les décisions ne sont pas disponibles sur ce serveur.')
+    try {
+      return await this.decisions.request(request, requester, project, payload)
+    } catch (err) {
+      if (err instanceof DecisionRefusal) throw new Refusal(err.message)
+      throw err
     }
   }
 

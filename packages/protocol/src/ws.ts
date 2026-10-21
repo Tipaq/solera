@@ -160,6 +160,13 @@ export type ServerMessage =
    * foi sans qu'il faille tenir un delta par geste.
    */
   | { t: 'lists-changed' }
+  /**
+   * Les demandes d'agent qui attendent ce compte ont changé — une décision déposée,
+   * tranchée ou échue, un rangement proposé ou accordé : la section « À décider » de la
+   * colonne et la pastille de l'icône se relisent. Même raison que `lists-changed` de
+   * ne rien décrire.
+   */
+  | { t: 'awaiting-changed' }
   | { t: 'pong' }
   | { t: 'error'; code: string; message: string; params?: Record<string, string | number> }
 

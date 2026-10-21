@@ -122,6 +122,24 @@ export interface CardFilingItem {
   moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[]
 }
 
+/**
+ * Une décision que la session a demandée (`request_decision`), en attente ou close.
+ *
+ * Elle ne bloque rien : l'agent a continué, ou fini son tour. Le fil la montre à sa place
+ * chronologique, avec de quoi ouvrir le dialogue de réponse, puis ce qu'il en est advenu.
+ */
+export interface DecisionItem {
+  kind: 'decision'
+  id: string
+  question: string
+  options: string[]
+  defaultOption: string | null
+  expiresAt: number
+  status: 'pending' | 'user' | 'default' | 'expired' | 'withdrawn'
+  option: string | null
+  text: string | null
+}
+
 /** Une question posée par l'agent, en attente ou déjà tranchée. */
 export interface QuestionItem {
   kind: 'question'
@@ -211,6 +229,7 @@ export type ChatItem =
   | PermissionItem
   | FilingItem
   | CardFilingItem
+  | DecisionItem
   | QuestionItem
   | ElicitationItem
   | PlanItem
@@ -1105,6 +1124,37 @@ export function applyEvent(
           status: event.decision,
           reason: event.reason ?? null,
           moved: event.moved,
+        })
+      }
+      break
+    }
+
+    case 'decision.requested': {
+      appendItem(state, {
+        kind: 'decision',
+        id: event.requestId,
+        question: event.question,
+        options: event.options,
+        defaultOption: event.defaultOption,
+        expiresAt: event.expiresAt,
+        status: 'pending',
+        option: null,
+        text: null,
+      })
+      break
+    }
+
+    case 'decision.resolved': {
+      const index = findLastIndex(
+        state.items,
+        (item) => item.kind === 'decision' && item.id === event.requestId,
+      )
+      if (index !== -1) {
+        replaceItem(state, index, {
+          ...(state.items[index] as DecisionItem),
+          status: event.by,
+          option: event.option,
+          text: event.text,
         })
       }
       break

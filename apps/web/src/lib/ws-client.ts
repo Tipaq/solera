@@ -90,6 +90,8 @@ class WsClient {
   private readonly statusWatchers = new Set<StatusWatcher>()
   /** Toasts poussés par le serveur pour cet onglet, quand il est visible. */
   private readonly notifyListeners = new Set<(notification: InAppNotification) => void>()
+  /** Ceux qui relisent les demandes d'agent en attente : la colonne, la pastille. */
+  private readonly awaitingListeners = new Set<() => void>()
   /**
    * L'abonnement push de cet appareil, déclaré au serveur avec la visibilité : c'est ce
    * qui lui permet de ne pas y pousser de notification système pendant que l'application
@@ -170,6 +172,18 @@ class WsClient {
     }
   }
 
+  /**
+   * Les demandes d'agent qui attendent ce compte ont changé. Appelé aussi au retour du
+   * socket : ce qui a bougé pendant la coupure n'a été poussé à personne.
+   */
+  onAwaitingChanged(listener: () => void): () => void {
+    this.awaitingListeners.add(listener)
+    this.connect()
+    return () => {
+      this.awaitingListeners.delete(listener)
+    }
+  }
+
   private get isOpen(): boolean {
     return this.socket?.readyState === WebSocket.OPEN
   }
@@ -180,7 +194,8 @@ class WsClient {
       this.listeners.size === 0 &&
       this.statusWatchers.size === 0 &&
       this.treePaths.size === 0 &&
-      this.notifyListeners.size === 0
+      this.notifyListeners.size === 0 &&
+      this.awaitingListeners.size === 0
     )
   }
 
@@ -337,6 +352,7 @@ class WsClient {
       // journal derrière eux et doivent être relus autrement.
       if (this.opened) {
         for (const watcher of this.statusWatchers) watcher.onResync()
+        for (const listener of this.awaitingListeners) listener()
       }
       this.opened = true
       this.broadcastConnection(true)
@@ -379,6 +395,11 @@ class WsClient {
 
     if (message.t === 'notify') {
       for (const listener of this.notifyListeners) listener(message.notification)
+      return
+    }
+
+    if (message.t === 'awaiting-changed') {
+      for (const listener of this.awaitingListeners) listener()
       return
     }
 

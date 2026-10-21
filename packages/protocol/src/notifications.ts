@@ -9,20 +9,25 @@ import { z } from 'zod'
 /**
  * Les sortes de notifications, que chaque compte peut couper séparément.
  *
- * Une sorte nouvelle (une décision demandée par une session autonome, par exemple)
- * s'ajoute ici, à `notificationPrefsSchema` et à son défaut : l'aiguillage du serveur
- * et l'écran des réglages la prennent alors sans autre changement.
+ * Une sorte nouvelle s'ajoute ici, à `notificationPrefsSchema` et à son défaut :
+ * l'aiguillage du serveur et l'écran des réglages la prennent alors sans autre
+ * changement. `decision` est une décision qu'une session demande (`request_decision`).
  */
-export const notificationKindSchema = z.enum(['cliRequest', 'turnCompleted'])
+export const notificationKindSchema = z.enum(['decision', 'cliRequest', 'turnCompleted'])
 export type NotificationKind = z.infer<typeof notificationKindSchema>
 
-export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = { cliRequest: true, turnCompleted: true }
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  decision: true,
+  cliRequest: true,
+  turnCompleted: true,
+}
 
 /**
  * Une clé par sorte, chacune tolérante : un réglage écrit avant l'arrivée d'une sorte
  * n'a pas sa clé, et doit la recevoir allumée plutôt que de perdre les autres.
  */
 export const notificationPrefsSchema = z.object({
+  decision: z.boolean().default(true).catch(true),
   cliRequest: z.boolean().default(true).catch(true),
   turnCompleted: z.boolean().default(true).catch(true),
 })
@@ -33,19 +38,29 @@ export type CliRequestKind = 'permission' | 'question' | 'elicitation' | 'plan'
 
 /**
  * Un toast. Le texte se compose côté client, dans sa langue : le serveur n'envoie que
- * des faits. Une union à une branche pour l'instant, discriminée par `kind` comme les
- * sortes de notifications, pour qu'une sorte nouvelle y ajoute la sienne.
+ * des faits. Discriminé par `kind` comme les sortes de notifications.
  */
-export type InAppNotification = {
-  kind: 'cliRequest'
-  request: CliRequestKind
-  conversationId: string
-  /** `null` pour un fil libre, qui vit à la racine et non sous un projet. */
-  projectId: string | null
-  conversationTitle: string
-  /** Ce qui est demandé, en une ligne : l'outil et sa commande, la question posée. */
-  detail: string | null
-}
+export type InAppNotification =
+  | {
+      kind: 'decision'
+      /** L'id de la ligne `agent_requests` : ce que le dialogue de réponse ouvre. */
+      decisionId: string
+      question: string
+      /** La conversation qui demande, et son titre : d'où vient la question. */
+      conversationId: string
+      conversationTitle: string
+      projectName: string
+    }
+  | {
+      kind: 'cliRequest'
+      request: CliRequestKind
+      conversationId: string
+      /** `null` pour un fil libre, qui vit à la racine et non sous un projet. */
+      projectId: string | null
+      conversationTitle: string
+      /** Ce qui est demandé, en une ligne : l'outil et sa commande, la question posée. */
+      detail: string | null
+    }
 
 /** Service de push d'un abonnement, lu dans son adresse : il dit quel appareil c'est. */
 export type PushServiceKind = 'apple' | 'google' | 'mozilla' | 'microsoft' | 'other'

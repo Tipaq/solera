@@ -15,6 +15,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @solera/server test",
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
+    "test:decisions-ui": "node scripts/decisions-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",

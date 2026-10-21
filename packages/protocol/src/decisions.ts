@@ -1,0 +1,123 @@
+import { z } from 'zod'
+
+/**
+ * Les décisions : ce qu'une session demande à une personne de trancher, sans se bloquer
+ * en attendant (`request_decision`).
+ *
+ * Ce n'est pas une table à part : une décision est une ligne `agent_requests` de genre
+ * `request_decision`, sur le modèle des deux rangements. L'agent a sa réponse « déposée »
+ * tout de suite ; une personne tranche plus tard, et la réponse revient à la session par
+ * `session_messages`, ce qui la relance et survit aux redémarrages.
+ *
+ * Distinctes des demandes natives des CLI (permissions, questions, plans), qui suspendent
+ * un tour et meurent avec le process.
+ */
+
+export const MAX_DECISION_QUESTION_CHARS = 300
+export const MAX_DECISION_CONTEXT_CHARS = 8000
+export const MAX_DECISION_OPTIONS = 6
+export const MAX_DECISION_OPTION_CHARS = 120
+export const MAX_DECISION_ANSWER_CHARS = 4000
+
+/** Le délai le plus court qu'un agent peut demander : un quart d'heure. */
+export const MIN_DECISION_HOURS = 0.25
+
+/** La charge d'une décision, telle que le daemon la réécrit une fois validée. */
+export interface DecisionPayload {
+  question: string
+  /** Ce qu'il faut savoir pour trancher, en markdown. Vide si l'agent n'a rien ajouté. */
+  context: string
+  options: string[]
+  /** Le choix appliqué à l'échéance ; null : l'agent apprendra que personne n'a répondu. */
+  defaultOption: string | null
+}
+
+/**
+ * Ce qu'il est advenu d'une décision (`agent_requests.answer`).
+ *
+ * `user` : une personne a tranché. `default` : l'échéance a appliqué le choix prévu.
+ * `expired` : l'échéance est passée sans réponse ni défaut. `withdrawn` : la conversation
+ * a été archivée ou supprimée avant.
+ */
+export const decisionAnswerSchema = z.object({
+  option: z.string().optional(),
+  text: z.string().optional(),
+  by: z.enum(['user', 'default', 'expired', 'withdrawn']),
+  userId: z.string().optional(),
+})
+export type DecisionAnswer = z.infer<typeof decisionAnswerSchema>
+
+/** L'état d'une décision, déduit de `answer` : `pending` tant qu'elle est nulle. */
+export type DecisionStatus = 'pending' | DecisionAnswer['by']
+
+export interface DecisionDto {
+  id: string
+  projectId: string
+  projectName: string
+  conversationId: string
+  conversationTitle: string
+  /** La carte de la session qui demande, si elle en traite une. */
+  card: { number: number; title: string } | null
+  question: string
+  context: string
+  options: string[]
+  defaultOption: string | null
+  expiresAt: number
+  status: DecisionStatus
+  answer: {
+    option: string | null
+    text: string | null
+    /** Le nom de qui a répondu ; null pour une échéance ou un retrait. */
+    byName: string | null
+    /** L'heure de la clôture. */
+    at: number
+  } | null
+  createdAt: number
+}
+
+export const answerDecisionBodySchema = z
+  .object({
+    option: z.string().max(MAX_DECISION_OPTION_CHARS).nullable().default(null),
+    text: z.string().trim().max(MAX_DECISION_ANSWER_CHARS).default(''),
+  })
+  .refine((body) => body.option !== null || body.text !== '', {
+    message: 'Choose an option or write an answer.',
+  })
+export type AnswerDecisionBody = z.infer<typeof answerDecisionBodySchema>
+
+/**
+ * Une demande d'agent qui attend une personne, pour la section « À décider » de la
+ * colonne : les décisions, et les deux rangements qu'un clic accorde.
+ *
+ * Seules les décisions se tranchent depuis la colonne ; les deux autres mènent à la
+ * conversation où se trouve leur bouton d'accord.
+ */
+export type AwaitingRequestDto =
+  | {
+      kind: 'decision'
+      id: string
+      conversationId: string
+      projectId: string
+      question: string
+      expiresAt: number
+      createdAt: number
+    }
+  | {
+      kind: 'request_card_move'
+      id: string
+      /** La conversation qui demande : c'est dans son fil qu'est le bouton. */
+      conversationId: string
+      projectId: string
+      conversationTitle: string
+      count: number
+      createdAt: number
+    }
+  | {
+      kind: 'move_conversation'
+      id: string
+      /** La conversation à ranger : c'est dans son fil qu'est le bouton. */
+      conversationId: string
+      projectId: string | null
+      conversationTitle: string
+      createdAt: number
+    }

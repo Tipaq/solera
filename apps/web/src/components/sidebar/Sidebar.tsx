@@ -20,6 +20,7 @@ import { PlaceKnowledge } from './PlaceKnowledge'
 import { PlacePlanned } from './PlacePlanned'
 import { PlaceProjects } from './PlaceProjects'
 import { PlaceThreads } from './PlaceThreads'
+import { SidebarAwaiting } from './SidebarAwaiting'
 import { PLACE_ICONS, PLACE_LABELS, SidebarPlaces, type PlaceSpec } from './SidebarPlaces'
 import { cx, IconButton } from '@solera/ui'
 
@@ -30,7 +31,8 @@ const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
  * La colonne de gauche.
  *
  * De haut en bas, et **toujours visible** : logo et repli · *Rechercher* ·
- * *Nouvelle conversation* · la liste verticale des lieux · l'activité · puis la **zone
+ * *Nouvelle conversation* · la liste verticale des lieux · « À décider », quand une
+ * demande d'agent attend · l'activité · puis la **zone
  * basse, seule partie variable et seule partie qui défile** · le compte en une ligne.
  *
  * Le haut est fixe par construction : c'est ce qui garde les lieux et leurs compteurs
@@ -179,6 +181,11 @@ export function Sidebar({
       </div>
 
       <SidebarPlaces places={places} current={place} onNavigate={onNavigate} />
+
+      {/* Absente tant que rien n'attend : voir le composant. Au-dessus de l'activité,
+          parce qu'une demande d'agent réclame, là où une session qui tourne ne demande
+          rien. */}
+      <SidebarAwaiting onNavigate={onNavigate} coarse={!wide} />
 
       {display.activity ? (
         <SidebarActivity

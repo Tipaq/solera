@@ -1,4 +1,4 @@
-import { ChevronDown, GaugeCircle, Info, LogOut, Palette, Server, Settings } from 'lucide-react'
+import { ChevronDown, GaugeCircle, Info, LogOut, MessageCircleQuestion, Palette, Server, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
@@ -97,6 +97,11 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
             {t('services.title')}
           </MenuItem>
         ) : null}
+        {/* L'historique des décisions : la section « À décider » de la colonne y mène,
+            mais elle disparaît quand rien n'attend, et l'historique reste à relire. */}
+        <MenuItem icon={<MessageCircleQuestion size={14} />} onSelect={() => go('/decisions')}>
+          {t('decision.page.title')}
+        </MenuItem>
         <MenuItem icon={<Settings size={14} />} onSelect={() => settings()}>
           {t('shell.settings.fallback')}
         </MenuItem>

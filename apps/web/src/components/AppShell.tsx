@@ -19,6 +19,8 @@ import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
 import { Toaster } from './Toaster'
+import { DecisionDialog } from './decisions/DecisionDialog'
+import { useAwaitingLive } from '../lib/decisions'
 import { MobileNavigationContext } from './MobileNavigation'
 import { HeaderBand } from './HeaderBand'
 import { McpRegistryDialog } from './mcp/McpRegistryDialog'
@@ -32,6 +34,9 @@ import { cx } from '@solera/ui'
 export function AppShell() {
   const t = useTranslate()
   useAppearanceSync()
+  // La section « À décider » et la pastille de l'icône suivent le socket d'ici : la
+  // colonne est démontée au téléphone quand le tiroir est fermé, la pastille non.
+  useAwaitingLive()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const hidden = useSidebarHidden()
@@ -51,11 +56,12 @@ export function AppShell() {
   const projectsRoute = useMatch('/projects')
   const portfolioRoute = useMatch('/projects/*')
   const plannedRoute = useMatch('/schedules')
+  const decisionsRoute = useMatch('/decisions')
   const vaultRoute = useMatch('/vault/*')
   const vaultRootRoute = useMatch('/vault')
   const contextualHeader = Boolean(
     conversationRoute || freeConversationRoute || servicesRoute
-    || projectRoute || projectRootRoute || projectsRoute || portfolioRoute || plannedRoute
+    || projectRoute || projectRootRoute || projectsRoute || portfolioRoute || plannedRoute || decisionsRoute
     || vaultRoute || vaultRootRoute,
   )
   const navInactive = wide ? hidden : !navOpen
@@ -220,6 +226,9 @@ export function AppShell() {
       {/* Hors de la colonne principale : un toast apparaît par-dessus n'importe quelle
           vue, sidebar comprise. */}
       <Toaster />
+      {/* Une décision s'ouvre de la colonne, d'un toast, d'un fil ou de l'historique :
+          un seul dialogue, monté par-dessus n'importe quelle vue. */}
+      <DecisionDialog />
 
       {/* Aucune gouttière : le bouton de réaffichage se pose dans le coin haut-gauche,
           et ce sont les vues qui ont un en-tête qui lui réservent sa place

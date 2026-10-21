@@ -58,6 +58,16 @@ export const LIST_ROUTES = new Set([
 ])
 
 /**
+ * Les routes qui tranchent une demande d'agent attendant une personne : la section
+ * « À décider » des autres onglets se relit. La réponse à une décision n'y est pas, le
+ * module des décisions le signale lui-même, comme le daemon pour les dépôts.
+ */
+export const AWAITING_ROUTES = new Set([
+  'POST /api/conversations/:id/filings/:requestId',
+  'POST /api/conversations/:id/card-filings/:requestId',
+])
+
+/**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
  * statuts pendant que la vue principale suit un fil.
  *
@@ -294,6 +304,12 @@ class Connection {
     this.send({ t: 'lists-changed' })
   }
 
+  /** Les demandes qui attendent ce compte ont changé. */
+  notifyAwaiting(userIds: readonly string[] | null): void {
+    if (userIds && !userIds.includes(this.userId)) return
+    this.send({ t: 'awaiting-changed' })
+  }
+
   markAlive(): void {
     this.alive = true
   }
@@ -371,6 +387,11 @@ export async function registerWebSocketHub(
     for (const connection of connections) connection.notifyListsChanged(conversationId)
   })
 
+  // Une demande qui attend une personne a été déposée ou close : décision, rangement.
+  sessions.statusBus.on('awaiting', ({ userIds }: { userIds: string[] }) => {
+    for (const connection of connections) connection.notifyAwaiting(userIds)
+  })
+
   sessions.statusBus.on(
     'title',
     ({ conversationId, title }: { conversationId: string; title: string }) => {
@@ -430,8 +451,15 @@ export async function registerWebSocketHub(
   // Posé après les routes et pourtant appliqué à toutes : Fastify assemble les hooks
   // d'une route au démarrage, pas à sa déclaration.
   app.addHook('onResponse', async (request, reply) => {
+    const route = `${request.method} ${request.routeOptions.url}`
+    // Avant le filtre des erreurs : un rangement de cartes devenu impossible répond 400
+    // et n'en est pas moins clos. Tous les onglets, et non ceux de l'appelant : relire
+    // une liste qui n'a pas bougé ne coûte qu'une requête.
+    if (AWAITING_ROUTES.has(route)) {
+      for (const connection of connections) connection.notifyAwaiting(null)
+    }
     if (reply.statusCode >= 400) return
-    if (!LIST_ROUTES.has(`${request.method} ${request.routeOptions.url}`)) return
+    if (!LIST_ROUTES.has(route)) return
     for (const connection of connections) connection.notifyListsChanged()
   })
 

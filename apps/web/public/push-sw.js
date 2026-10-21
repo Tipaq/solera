@@ -21,6 +21,7 @@ const TITLES = {
     elicitation: 'Un service demande une saisie',
     plan: 'Un plan attend ta validation',
     turnCompleted: "L'agent a terminé",
+    decision: 'Une décision est à prendre',
     test: 'Notification de test',
   },
   en: {
@@ -29,6 +30,7 @@ const TITLES = {
     elicitation: 'A service is asking for input',
     plan: 'A plan is waiting for review',
     turnCompleted: 'The agent has finished',
+    decision: 'A decision is needed',
     test: 'Test notification',
   },
 }
@@ -61,6 +63,13 @@ self.addEventListener('push', (event) => {
     // Contenu illisible : mieux vaut ne rien afficher qu'une notification vide, mais
     // l'erreur ne doit pas remonter, sinon le navigateur désactive l'abonnement.
     return
+  }
+
+  // La pastille de l'icône de l'application installée : le nombre de décisions en
+  // attente, posé ici parce que l'application est peut-être fermée. Ouverte, elle la
+  // tient elle-même à jour (`useAwaitingLive`).
+  if (typeof payload.badge === 'number' && self.navigator.setAppBadge) {
+    self.navigator.setAppBadge(payload.badge).catch(() => {})
   }
 
   event.waitUntil(

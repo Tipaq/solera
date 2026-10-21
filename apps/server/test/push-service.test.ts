@@ -28,6 +28,7 @@ test('des réglages écrits avant les sortes de notifications les reçoivent tou
   assert.deepEqual(storedUserSettingsSchema.parse({}).notifications, DEFAULT_NOTIFICATION_PREFS)
   // Une sorte ajoutée depuis l'écriture arrive allumée, sans éteindre les autres.
   assert.deepEqual(storedUserSettingsSchema.parse({ notifications: { turnCompleted: false } }).notifications, {
+    decision: true,
     cliRequest: true,
     turnCompleted: false,
   })

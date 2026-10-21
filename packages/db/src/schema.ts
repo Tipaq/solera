@@ -348,9 +348,12 @@ export const sessionMessages = sqliteTable(
     toConversationId: text('to_conversation_id').notNull(),
     /**
      * `message` d'une session à une autre ; `broadcast` annoncé à toutes celles qui
-     * travaillent ; `done`, écrit par le relais, prévient qu'une session surveillée a fini.
+     * travaillent ; `done`, écrit par le relais, prévient qu'une session surveillée a fini ;
+     * `decision`, écrit par le daemon, rend à une session la réponse à sa demande de
+     * décision (`agent_requests.kind = 'request_decision'`). Expéditrice et destinataire
+     * y sont la même conversation : c'est Solera qui parle, au nom de qui a répondu.
      */
-    kind: text('kind', { enum: ['message', 'broadcast', 'done'] }).notNull().default('message'),
+    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision'] }).notNull().default('message'),
     body: text('body').notNull(),
     /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
     replyTo: text('reply_to'),
@@ -438,9 +441,17 @@ export const agentRequests = sqliteTable(
         'create_project',
         'move_conversation',
         'request_card_move',
+        'request_decision',
       ],
     }).notNull(),
-    /** Arguments de l'outil, en JSON, tels que l'agent les a donnés. */
+    /**
+     * Arguments de l'outil, en JSON, tels que l'agent les a donnés.
+     *
+     * Sauf pour `request_decision`, que le daemon réécrit une fois validée sous la forme
+     * `{question, context, options, defaultOption}` : la demande se relit pendant des
+     * heures, par l'interface et par le balayage des échéances, et une forme normalisée
+     * évite que chacun refasse les mêmes nettoyages.
+     */
     payload: text('payload').notNull(),
     createdAt: timestamp('created_at').notNull(),
     /** Posé par le daemon quand la demande est traitée, réussie ou non. */
@@ -473,8 +484,33 @@ export const agentRequests = sqliteTable(
      * C'est elle qui porte l'invariant « une demande de rangement en attente à la fois »
      * et qui met la ligne hors de portée de `STALE_MS`, taillé pour un daemon et non
      * pour un humain.
+     *
+     * Pour une décision (`request_decision`), posée quelle que soit l'issue : réponse,
+     * choix par défaut appliqué, échéance sans réponse ou retrait à l'archivage. C'est
+     * `answer` qui dit laquelle, et `accepted_at` qui date la réponse quand il y en a eu
+     * une.
      */
     resolvedAt: timestamp('resolved_at'),
+    /**
+     * L'échéance d'une décision : passé ce moment, le balayage applique le choix par
+     * défaut s'il y en a un, ou dit à l'agent que personne n'a répondu. Bornée au dépôt
+     * par `decisionMaxHours` de la configuration de la session.
+     *
+     * Nulle pour tous les autres genres : un rangement n'expire pas, il attend un clic.
+     */
+    expiresAt: timestamp('expires_at'),
+    /**
+     * Ce qu'il est advenu d'une décision, en JSON :
+     * `{option?, text?, by: 'user' | 'default' | 'expired' | 'withdrawn', userId?}`.
+     *
+     * `user` quand une personne a tranché (`userId` dit qui, `option` et `text` ce
+     * qu'elle a répondu), `default` quand l'échéance a appliqué le choix prévu par
+     * l'agent, `expired` quand elle est passée sans réponse ni défaut, `withdrawn` quand
+     * la conversation a été archivée avant. Nulle tant que la décision attend, et pour
+     * tous les autres genres. Du JSON plutôt que quatre colonnes : seul ce genre-là s'en
+     * sert, et la ligne est relue entière à chaque fois.
+     */
+    answer: text('answer'),
   },
   (t) => [
     index('idx_agent_requests_pending').on(t.settledAt),
@@ -485,6 +521,10 @@ export const agentRequests = sqliteTable(
     // porte donc qu'elles, et le balayage filtre encore sur le genre — un rangement de
     // carte est déjà appliqué quand sa date arrive.
     index('idx_agent_requests_accepted').on(t.acceptedAt),
+    // Ce qui attend encore une personne : les décisions dont le balayage surveille
+    // l'échéance, et la section « À décider » de la colonne, qui y ajoute les deux
+    // rangements. Toutes deux filtrent sur le genre et sur une clôture absente.
+    index('idx_agent_requests_open').on(t.kind, t.resolvedAt),
   ],
 )
 

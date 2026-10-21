@@ -21,6 +21,11 @@
  * d'aucune règle par sens de mouvement et accepte `abandoned` comme le reste — le tabou
  * visait l'acte, pas la proposition.
  *
+ * *Ce qui demande l'avis d'une personne sans rien défaire* passe par `request_decision` :
+ * l'agent dépose sa question et n'attend pas, la réponse lui revient en message. Rien
+ * n'est écrit à la place de qui que ce soit ; c'est le temps d'une personne que l'outil
+ * engage, d'où sa famille à part.
+ *
  * *Deux écritures échappent à l'ajout sans pour autant demander un clic*, et il faut les
  * nommer parce qu'elles sont les seules. L'image du projet, qu'un agent pose ou remplace :
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
@@ -97,6 +102,13 @@ const FILING = process.env.SOLERA_MCP_FILING === '1'
  * `packages/protocol/src/agent-config.ts`.
  */
 const CARD_FILING = process.env.SOLERA_MCP_CARD_FILING === '1'
+
+/**
+ * Portée « Décisions », accordée conversation par conversation : à faux,
+ * `request_decision` n'est pas listé du tout. Le délai maximal, lui, est relu par le
+ * daemon dans la configuration de la session : ce process n'a rien à en savoir.
+ */
+const DECISIONS = process.env.SOLERA_MCP_DECISIONS === '1'
 
 /**
  * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
@@ -205,6 +217,7 @@ const REQUEST_WAIT_MS = {
   // à l'accorder : l'outil rend la main dès que la demande est posée.
   move_conversation: 15000,
   request_card_move: 15000,
+  request_decision: 15000,
 }
 const REQUEST_POLL_MS = 200
 
@@ -816,6 +829,40 @@ const ALL_TOOLS = [
         },
       },
       required: ['moves'],
+    },
+  },
+  {
+    name: 'request_decision',
+    description:
+      "Demande à l'utilisateur de trancher un choix, **sans attendre sa réponse** : la demande ne bloque pas, et la réponse t'arrivera plus tard en message dans cette conversation, ce qui te relancera si tu as fini ton tour. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent et engage quelque chose qu'on ne défait pas facilement ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas. Une seule demande en attente à la fois ; à l'échéance, ton choix par défaut s'applique, ou tu apprends que personne n'a répondu.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        question: {
+          type: 'string',
+          description: 'La question, courte (300 caractères au plus), compréhensible sans le reste.',
+        },
+        context: {
+          type: 'string',
+          description:
+            "Ce qu'il faut savoir pour trancher, en markdown : ce que tu as trouvé, les liens (PR, issue, fichiers), les conséquences de chaque choix.",
+        },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'De 2 à 6 réponses proposées, courtes. Une réponse libre reste toujours possible.',
+        },
+        default: {
+          type: 'string',
+          description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`.",
+        },
+        expires_in_hours: {
+          type: 'number',
+          description:
+            "Délai de réponse en heures ; ramené au maximum que l'utilisateur a réglé pour cette session, qui s'applique s'il est omis.",
+        },
+      },
+      required: ['question'],
     },
   },
   {
@@ -2101,6 +2148,9 @@ const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 /** Les outils que la famille « Rangement de carte » ouvre. */
 const CARD_FILING_TOOLS = new Set(['request_card_move'])
 
+/** Les outils que la famille « Décisions » ouvre. */
+const DECISION_TOOLS = new Set(['request_decision'])
+
 /** Les outils du design system lié, qui n'existent pas dans un projet sans DS. */
 const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_ds_page', 'show_prototype'])
 
@@ -2118,6 +2168,7 @@ const offered = (tool) =>
   (FILING || !FILING_TOOLS.has(tool.name)) &&
   (MEMORY_DIR !== '' || !MEMORY_TOOLS.has(tool.name)) &&
   (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name)) &&
+  (DECISIONS || !DECISION_TOOLS.has(tool.name)) &&
   (DESIGN_SYSTEM_STATE !== '' || !DESIGN_SYSTEM_TOOLS.has(tool.name))
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
@@ -2922,6 +2973,29 @@ async function callTool(name, args) {
     return requestDaemon(name, { moves })
   }
 
+  if (name === 'request_decision') {
+    if (!DECISIONS) {
+      return { ...text(`Outil inconnu : ${name}`), isError: true }
+    }
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
+    }
+    // Le daemon refuse aussi, mais le dire ici évite un aller-retour : la réponse revient
+    // par la messagerie entre sessions, qui vit dans un projet.
+    if (!PROJECT_ID) {
+      return {
+        ...text(
+          "Refusé : une demande de décision exige un projet, et cette conversation n'en a pas — sa réponse revient par la messagerie entre sessions, qui vit dans un projet. Ici, quelqu'un lit le fil : pose ta question dans ta réponse.",
+        ),
+        isError: true,
+      }
+    }
+    if (!(typeof args?.question === 'string' && args.question.trim())) {
+      return { ...text('Le paramètre `question` est requis.'), isError: true }
+    }
+    return requestDaemon(name, args ?? {})
+  }
+
   if (FILING_TOOLS.has(name)) {
     if (!FILING) {
       return { ...text(`Outil inconnu : ${name}`), isError: true }
@@ -3113,7 +3187,7 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
+  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DECISIONS ? ', décisions accordées' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
 )
 
 createInterface({ input: process.stdin }).on('line', async (line) => {

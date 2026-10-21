@@ -295,10 +295,12 @@ function Deliveries({ deliveries }: { deliveries: PushDeliveryDto[] }) {
 }
 
 /**
- * Les sortes, dans l'ordre où elles dérangent : une demande bloque une session, une fin
- * de tour ne bloque rien. Une sorte nouvelle s'ajoute ici avec ses deux libellés.
+ * Les sortes, dans l'ordre où elles dérangent : une décision a une échéance, une demande
+ * bloque une session, une fin de tour ne bloque rien. Une sorte nouvelle s'ajoute ici
+ * avec ses deux libellés.
  */
 const KINDS: Array<{ kind: NotificationKind; label: MessageKey; hint: MessageKey }> = [
+  { kind: 'decision', label: 'push.prefs.decision', hint: 'push.prefs.decision.hint' },
   { kind: 'cliRequest', label: 'push.prefs.cliRequest', hint: 'push.prefs.cliRequest.hint' },
   { kind: 'turnCompleted', label: 'push.prefs.turnCompleted', hint: 'push.prefs.turnCompleted.hint' },
 ]
