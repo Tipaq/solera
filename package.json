@@ -22,6 +22,7 @@
     "test:places-ui": "node scripts/places-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
+    "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
