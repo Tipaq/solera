@@ -3,8 +3,8 @@
 @import './app.css';
 
 /*
- * Tailwind ne scanne pas `node_modules`, et les paquets de l'espace de travail y sont
- * liés symboliquement : sans cette ligne, aucune classe employée par les primitives
- * n'est générée, et les boutons sortent sans style.
+ * Tailwind ne scanne pas `node_modules`, où le design system est installé : sans cette
+ * ligne, aucune classe employée par les primitives n'est générée, et les boutons sortent
+ * sans style.
  */
-@source '../../../../packages/ui/src';
+@source '../../node_modules/@solera/ui/src';
