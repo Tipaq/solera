@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `design_system_path` text;

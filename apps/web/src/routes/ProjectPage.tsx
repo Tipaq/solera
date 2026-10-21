@@ -6,6 +6,7 @@ import {
   Globe,
   Lock,
   Save,
+  Shapes,
   ShieldAlert,
   SlidersHorizontal,
   SquareKanban,
@@ -152,6 +153,7 @@ export function ProjectPage() {
       {project.isOwner ? (
         <>
           <ProjectImage project={project} />
+          <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
           <ProjectSettings
             projectId={project.id}
@@ -237,6 +239,83 @@ function ProjectImage({ project }: { project: ProjectDto }) {
           <p className="text-xs text-ink-faint">{t('project.image.provisional')}</p>
         ) : null}
         {error ? <Banner>{error}</Banner> : null}
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Le design system lié : un dossier qui porte un `.storybook/`, dont les agents du
+ * projet lisent les composants par le serveur MCP au lieu d'en inventer.
+ *
+ * Une carte à part et non une ligne des réglages : se lier ou se délier n'a rien à voir
+ * avec renommer le projet, et ne doit pas attendre le même bouton.
+ */
+function ProjectDesignSystem({
+  projectId,
+  initialPath,
+}: {
+  projectId: string
+  initialPath: string | null
+}) {
+  const t = useTranslate()
+  const update = useUpdateProject()
+  const [path, setPath] = useState(initialPath ?? '')
+
+  useEffect(() => {
+    setPath(initialPath ?? '')
+  }, [projectId, initialPath])
+
+  const trimmed = path.trim()
+  const dirty = trimmed !== (initialPath ?? '')
+  const error = update.error instanceof ApiRequestError ? update.error.message : null
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.designSystem.title')}
+        description={t('project.designSystem.description')}
+        icon={<Shapes size={16} />}
+      />
+      <CardBody className="flex flex-col gap-4">
+        <PathField
+          label={t('project.designSystem.path')}
+          value={path}
+          onChange={setPath}
+          placeholder={t('project.designSystem.path.placeholder')}
+          hint={t('project.designSystem.path.hint')}
+        />
+
+        {error ? <Banner>{error}</Banner> : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            disabled={!dirty || !trimmed || update.isPending}
+            icon={<Save size={16} />}
+            onClick={() => update.mutate({ id: projectId, designSystemPath: trimmed })}
+          >
+            {t('project.designSystem.save')}
+          </Button>
+          {dirty ? (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                update.reset()
+                setPath(initialPath ?? '')
+              }}
+            >
+              {t('project.settings.cancel')}
+            </Button>
+          ) : initialPath ? (
+            <Button
+              variant="ghost"
+              disabled={update.isPending}
+              onClick={() => update.mutate({ id: projectId, designSystemPath: null })}
+            >
+              {t('project.designSystem.unlink')}
+            </Button>
+          ) : null}
+        </div>
       </CardBody>
     </Card>
   )
