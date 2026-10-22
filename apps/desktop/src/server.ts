@@ -74,6 +74,10 @@ export function startServer(options: ServerOptions): RunningServer {
     },
     stdio: ['pipe', log, log, 'pipe'],
     windowsHide: true,
+    // Hors de Windows, son propre groupe de processus : le dernier recours (`killTree`)
+    // emporte alors avec lui les CLI qu'il a lancés. Sous Windows, `detached` ouvrirait
+    // une console, et `taskkill /T` suit déjà l'arbre.
+    detached: process.platform !== 'win32',
   })
   // Le serveur a sa propre copie du descripteur ; la nôtre ne servirait qu'à fuir.
   closeSync(log)
@@ -137,15 +141,22 @@ export function startServer(options: ServerOptions): RunningServer {
 }
 
 /**
- * Le dernier recours, quand le serveur n'a pas su s'arrêter : sous Windows, `taskkill /T`
- * emporte aussi les CLI qu'il a lancés, que rien d'autre n'arrêterait.
+ * Le dernier recours, quand le serveur n'a pas su s'arrêter : il emporte aussi les CLI
+ * qu'il a lancés, que rien d'autre n'arrêterait. Sous Windows, `taskkill /T` suit
+ * l'arbre ; ailleurs, le signal va au groupe du serveur (`-pid`), qu'il dirige depuis
+ * son lancement en `detached`. Les terminaux, que node-pty place chacun dans sa propre
+ * session, n'en font pas partie : ils se ferment quand le serveur, leur maître, disparaît.
  */
 function killTree(pid: number | undefined): void {
   if (pid === undefined) return
   if (process.platform === 'win32') {
     spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-  } else {
-    process.kill(pid, 'SIGKILL')
+    return
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    // Groupe déjà vide : le serveur et ses enfants sont partis d'eux-mêmes.
   }
 }
 

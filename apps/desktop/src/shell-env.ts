@@ -5,6 +5,8 @@ import { delimiter, join } from 'node:path'
 
 /** Au-delà, le shell est jugé bloqué (une invite dans un `.zshrc`, un réseau lent). */
 const SHELL_TIMEOUT_MS = 10_000
+/** Après la sortie du shell, le temps laissé au tube pour livrer ce qu'il contient. */
+const STDOUT_DRAIN_MS = 500
 
 /**
  * Les dossiers où les installeurs courants posent leurs binaires, repris du service
@@ -75,19 +77,34 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<s
     // réponse qui ne viendra jamais.
     const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'ignore'] })
     let output = ''
+    let settled = false
+    const settle = (err: Error | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      clearTimeout(drain)
+      if (err) reject(err)
+      else resolve(output)
+    }
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {
       output += chunk
     })
-    const timer = setTimeout(() => child.kill('SIGKILL'), SHELL_TIMEOUT_MS)
-    child.on('error', (err) => {
-      clearTimeout(timer)
-      reject(err)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) resolve(output)
-      else reject(new Error(`le shell de connexion a rendu ${code}`))
+    // Un petit-enfant lancé par les fichiers du shell (ssh-agent, direnv) peut garder
+    // stdout ouvert après la sortie du shell : on n'attend donc que la fin du shell, plus
+    // le temps de vider le tube, et le délai ferme le tube lui aussi.
+    let drain: NodeJS.Timeout | undefined
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      child.stdout.destroy()
+      settle(new Error(`le shell de connexion n'a pas répondu en ${SHELL_TIMEOUT_MS / 1000} s`))
+    }, SHELL_TIMEOUT_MS)
+    child.on('error', (err) => settle(err))
+    child.on('exit', (code) => {
+      const done = () => settle(code === 0 ? null : new Error(`le shell de connexion a rendu ${code}`))
+      if (child.stdout.closed) return done()
+      child.stdout.once('close', done)
+      drain = setTimeout(() => child.stdout.destroy(), STDOUT_DRAIN_MS)
     })
   })
 }

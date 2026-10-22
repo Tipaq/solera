@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { SettingsDialog } from './components/settings/SettingsDialog'
-import { SETTINGS_SECTIONS } from './components/settings/sections'
+import { visibleSections } from './components/settings/sections'
 import { openSettings } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
@@ -70,7 +70,11 @@ const VaultBrowsePage = lazy(() =>
  */
 function LegacySettingsRoute() {
   const { section } = useParams()
-  const known = SETTINGS_SECTIONS.find((entry) => entry.id === section)
+  const { data: user } = useCurrentUser()
+  const { data: instance } = useInstance()
+  // Parmi les sections que cette instance montre : une adresse vers une section cachée
+  // (les notifications, en bureau) ouvre la modale sur sa section par défaut.
+  const known = visibleSections(user?.isAdmin, instance?.capabilities).find((entry) => entry.id === section)
 
   useEffect(() => {
     openSettings(known?.id ?? null)

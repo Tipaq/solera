@@ -55,8 +55,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
-  const locale = app.getSystemLocale().replace('-', '_')
-  const env = await loginShellEnv(node, locale.includes('_') ? `${locale}.UTF-8` : 'en_US.UTF-8')
+  const env = await loginShellEnv(node, posixLocale(app.getSystemLocale()))
   // Node et npm embarqués en dernier recours : ceux que l'utilisateur maintient passent
   // devant, mais Solera peut installer un CLI et le lancer sur un poste qui n'a rien.
   const key = pathKey(env)
@@ -65,6 +64,16 @@ async function boot(): Promise<void> {
 
   await launch({ env, port })
   openWindow()
+}
+
+/**
+ * La locale du système en nom POSIX : `fr-FR` devient `fr_FR.UTF-8`, `zh-Hans-CN`
+ * `zh_CN.UTF-8` (l'écriture n'a pas de place dans ce nom). Sans région, l'anglais.
+ */
+function posixLocale(tag: string): string {
+  const [language, ...subtags] = tag.split(/[-_]/)
+  const region = subtags.find((subtag) => /^[A-Z]{2}$/.test(subtag))
+  return language && region ? `${language}_${region}.UTF-8` : 'en_US.UTF-8'
 }
 
 async function launch({ env, port }: { env: NodeJS.ProcessEnv; port: number }): Promise<void> {

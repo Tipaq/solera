@@ -81,6 +81,10 @@ jobs:
     # L'application de bureau de Linux, empaquetée comme en release puis lancée pour de
     # vrai : ce qu'un tag publierait ne se découvre pas cassé le jour de la release. Le
     # paquet reste en artefact du run.
+    # Sur main seulement : l'empaquetage complet est trop lourd pour chaque PR. Une
+    # branche qui touche l'app se vérifie à la main (Actions > Desktop > Run workflow)
+    # ou en local (`pnpm test:desktop-ui`, docs/desktop.md).
+    if: github.event_name == 'push'
     uses: ./.github/workflows/desktop.yml
     with:
       version: v0.0.0-ci

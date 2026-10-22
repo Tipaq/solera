@@ -3,8 +3,6 @@ import {
   FolderOpen,
   GitBranch,
   ImagePlus,
-  Globe,
-  Lock,
   Save,
   Shapes,
   ShieldAlert,
@@ -46,7 +44,6 @@ import {
   Select,
   Switch,
   type Choice,
-  type SelectOption,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
@@ -61,25 +58,7 @@ import {
   useUpdateProject,
 } from '../lib/projects'
 import { useCapability } from '../lib/instance'
-
-/** Recalculée à chaque rendu plutôt que figée au chargement du module : sinon un
- *  changement de langue laisserait ces deux options dans l'ancienne. */
-function visibilityOptions(): SelectOption<ProjectVisibility>[] {
-  return [
-    {
-      value: 'private',
-      label: translate('project.visibility.private'),
-      icon: <Lock size={16} />,
-      hint: translate('project.visibility.private.hint'),
-    },
-    {
-      value: 'shared',
-      label: translate('project.visibility.shared'),
-      icon: <Globe size={16} />,
-      hint: translate('project.visibility.shared.hint'),
-    },
-  ]
-}
+import { VisibilitySelect } from '../components/VisibilitySelect'
 
 export function ProjectPage() {
   const { projectId } = useParams()
@@ -584,7 +563,6 @@ function ProjectSettings({
   const updateProject = useUpdateProject()
   const deleteProject = useDeleteProject()
   const t = useTranslate()
-  const sharedProjects = useCapability('sharedProjects')
 
   const [name, setName] = useState(initialName)
   const [workspacePath, setWorkspacePath] = useState(initialPath)
@@ -624,14 +602,7 @@ function ProjectSettings({
           <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>
         ) : null}
 
-        {sharedProjects ? (
-          <Select
-            label={t('project.settings.visibility')}
-            value={visibility}
-            onChange={setVisibility}
-            options={visibilityOptions()}
-          />
-        ) : null}
+        <VisibilitySelect value={visibility} onChange={setVisibility} />
 
         {/* Appliqué au clic, hors du formulaire : un interrupteur, pas une case à enregistrer. */}
         <div className="flex items-center gap-3">

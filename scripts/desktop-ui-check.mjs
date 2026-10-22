@@ -215,6 +215,7 @@ try {
       await delay(5000)
       const list = await page.evaluate(() => fetch('/api/agents?refresh=1').then((r) => r.json()))
       agent = list.agents.find((entry) => entry.agent === cli)
+      assert.ok(agent, `${cli} absent de /api/agents`)
       if (agent.install.status !== 'running') break
     }
     assert.equal(agent.install.status, 'idle', `installation de ${cli} : ${JSON.stringify(agent.install)}`)

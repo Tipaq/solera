@@ -84,9 +84,11 @@ export function SettingsDialog() {
   // Au large, aucun volet droit vide : la modale s'ouvre toujours sur une section.
   // La résolution se fait ici et non à l'ouverture, parce que la largeur peut changer
   // pendant qu'elle est ouverte — un téléphone qu'on tourne, une fenêtre qu'on étire.
-  // La première section n'existe pas sur toutes les instances (le compte, en bureau) :
-  // à défaut, la première que celle-ci montre.
-  const current = section ?? (wide ? (sections.find((item) => item.id === FIRST_SECTION) ?? sections[0])?.id : null)
+  // Une section demandée que cette instance cache (le compte, en bureau) compte pour
+  // aucune ; et la première section, à défaut, est la première que l'instance montre.
+  const requested = sections.some((item) => item.id === section) ? section : null
+  const current =
+    requested ?? (wide ? (sections.find((item) => item.id === FIRST_SECTION) ?? sections[0])?.id : null)
   const entry = sections.find((item) => item.id === current) ?? null
   const Body = entry ? CONTENT[entry.id] : null
 

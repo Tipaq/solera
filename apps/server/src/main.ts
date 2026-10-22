@@ -220,8 +220,12 @@ async function main(): Promise<void> {
   // L'app de bureau demande l'arrêt en fermant l'entrée standard : sous Windows, il n'y a
   // pas de signal à envoyer, et tuer le serveur laisserait les CLI des sessions orphelins.
   // L'entrée se ferme aussi quand l'app disparaît sans prévenir : le serveur part avec elle.
+  // Tuée, l'app peut laisser un tube rompu plutôt qu'une fin propre, d'où `close` et
+  // `error` en plus de `end`.
   if (INSTANCE_PROFILE === 'desktop') {
-    process.stdin.on('end', () => void shutdown('launcher'))
+    for (const event of ['end', 'close', 'error'] as const) {
+      process.stdin.once(event, () => void shutdown('launcher'))
+    }
     process.stdin.resume()
   }
 }
