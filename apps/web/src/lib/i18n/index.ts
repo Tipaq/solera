@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { catalogFor, LOCALES, type Locale } from './catalogs'
+import { catalogFor, isCatalogLoaded, loadCatalog, LOCALES, type Locale } from './catalogs'
 import type { MessageKey } from './catalog-en'
 
 export { LOCALES, LOCALE_LABELS, type Locale } from './catalogs'
@@ -39,8 +39,28 @@ function detect(): Locale {
   return isLocale(language) ? language : FALLBACK
 }
 
-let current: Locale = detect()
+/*
+ * On démarre sur l'anglais, seul catalogue présent d'emblée, et `initLocale()` bascule
+ * sur la langue détectée une fois son catalogue chargé. `current` ne désigne ainsi
+ * jamais une langue dont le texte manque : afficher une clé brute est impossible.
+ */
+let current: Locale = FALLBACK
+/** Langue demandée dont le catalogue est en cours de chargement, pour l'état d'attente. */
+let pending: Locale | null = null
+/** Dernière demande : un clic plus récent l'emporte sur un chargement plus lent. */
+let requested: Locale = FALLBACK
 const listeners = new Set<() => void>()
+
+function notify(): void {
+  for (const listener of listeners) listener()
+}
+
+function apply(next: Locale): void {
+  current = next
+  // `lang` sert à la césure, à la synthèse vocale et aux correcteurs du navigateur :
+  // laisser l'ancienne valeur ferait lire du français avec des règles anglaises.
+  document.documentElement.lang = next
+}
 
 /**
  * Langue courante, utilisable telle quelle comme étiquette `Intl` : les deux catalogues
@@ -54,14 +74,75 @@ export function locale(): Locale {
   return current
 }
 
-export function setLocale(next: Locale): void {
-  if (next === current) return
-  current = next
+/**
+ * Charge le catalogue de la langue retenue, à attendre avant le premier rendu.
+ *
+ * Rendre d'abord puis traduire ferait clignoter l'interface en anglais le temps du
+ * téléchargement. Un échec (hors ligne sans précache, chunk introuvable après un
+ * déploiement) n'empêche pas de démarrer : on reste en anglais, sans toucher au choix
+ * enregistré, qui reprendra au prochain chargement.
+ *
+ * Le chargement part dès l'import du module (plus bas), et cette fonction rend la même
+ * promesse à chaque appel : `main.tsx` l'attend, tandis qu'un composant monté sans
+ * passer par lui (bancs Playwright, aperçus) bascule à son arrivée, par `notify`.
+ */
+export function initLocale(): Promise<void> {
+  initial ??= loadInitial()
+  return initial
+}
+
+let initial: Promise<void> | null = null
+
+async function loadInitial(): Promise<void> {
+  const wanted = detect()
+  requested = wanted
+  try {
+    await loadCatalog(wanted)
+    if (requested === wanted && current !== wanted) {
+      apply(wanted)
+      notify()
+    }
+  } catch (error) {
+    console.warn(`Catalogue « ${wanted} » indisponible, interface en anglais.`, error)
+    if (requested === wanted) apply(FALLBACK)
+  }
+}
+
+/**
+ * Change de langue. Le catalogue est chargé d'abord, et la bascule ne se fait qu'une fois
+ * qu'il est là : l'interface passe d'une langue complète à l'autre, sans étape
+ * intermédiaire en anglais ni clé brute. Pendant l'attente, `usePendingLocale()` permet
+ * de le signaler.
+ */
+export async function setLocale(next: Locale): Promise<void> {
+  requested = next
+  if (next === current) {
+    if (pending !== null) {
+      pending = null
+      notify()
+    }
+    return
+  }
+  if (!isCatalogLoaded(next)) {
+    pending = next
+    notify()
+    try {
+      await loadCatalog(next)
+    } catch (error) {
+      // Rien n'est enregistré : l'interface reste dans la langue d'avant, cohérente.
+      if (requested === next) {
+        pending = null
+        notify()
+      }
+      throw error
+    }
+    // Un autre choix a été fait pendant le chargement : c'est lui qui compte.
+    if (requested !== next) return
+  }
+  pending = null
   localStorage.setItem(STORAGE_KEY, next)
-  // `lang` sert à la césure, à la synthèse vocale et aux correcteurs du navigateur :
-  // laisser l'ancienne valeur ferait lire du français avec des règles anglaises.
-  document.documentElement.lang = next
-  for (const listener of listeners) listener()
+  apply(next)
+  notify()
 }
 
 function subscribe(listener: () => void): () => void {
@@ -143,3 +224,15 @@ export function translateError(
 export function useLocale(): Locale {
   return useSyncExternalStore(subscribe, locale, () => FALLBACK)
 }
+
+function pendingLocale(): Locale | null {
+  return pending
+}
+
+/** Langue dont le catalogue se charge encore après un choix, sinon `null`. */
+export function usePendingLocale(): Locale | null {
+  return useSyncExternalStore(subscribe, pendingLocale, () => null)
+}
+
+// Pas sous Node : les tests du serveur importent le fold du fil, qui traduit.
+if (typeof document !== 'undefined') void initLocale()

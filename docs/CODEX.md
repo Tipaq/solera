@@ -1,7 +1,7 @@
 # Intégration Codex
 
 Solera utilise `codex app-server` sur stdio. Les bindings sont générés avec
-**codex-cli 0.153.2**. La référence générale est la
+**codex-cli 0.163.0**. La référence générale est la
 [documentation officielle App Server](https://learn.chatgpt.com/docs/app-server).
 Les champs récents, notamment `agentMessage.questions`, sont vérifiés dans les types
 générés par le binaire installé.
@@ -45,6 +45,48 @@ le journal et consultable dans le fil ; ses mises à jour remplacent le même re
 visuel. Les items ont un repli générique et un contrôle d'exhaustivité TypeScript.
 Une requête serveur non implémentée produit un avertissement et une erreur RPC
 explicite. Afficher un outil dynamique ne fournit pas son exécution côté client.
+
+## Compatibilité 0.163.0
+
+`thread/readState/changed` est ignorée : l'état lu/non lu natif ne pilote pas celui
+de Solera. Les méthodes de lecture d'items et de mise à jour de cet état ne sont
+pas utilisées. Les outils concurrents restent suivis par identifiant, même quand
+leurs sorties s'entrecroisent et qu'ils se terminent dans l'ordre inverse.
+
+Le 17 octobre 2026, le binaire 0.163.0 a été sondé avec un compte connecté :
+questions asynchrones et bloquantes, réponses et comptage des jetons passent par
+le vrai runner.
+`model/list` renvoie `gpt-6.1-sol` par défaut ; le catalogue reste lu dynamiquement.
+Les bindings sont vérifiés contre ce même binaire, isolé du CLI de production.
+
+## Steer pendant la réponse
+
+Depuis 0.162.1, `instant_interrupt` est actif par défaut : `turn/steer` coupe la
+réponse en cours. Sondé le 17 octobre 2026 sur 0.163.0 (`gpt-6-astra`), steer envoyé
+au milieu des `item/agentMessage/delta` :
+
+1. `turn/steer` répond `{ turnId }`, le même tour ; quelques deltas de la réponse
+   coupée arrivent encore après l'accusé.
+2. Cette réponse n'a **jamais** d'`item/completed`, et `thread/read` ne la garde pas.
+3. Écho `userMessage` du steer (`item/started` puis `item/completed`), nouvelle
+   réponse `agentMessage` complète, puis un seul `turn/completed` au statut `completed`.
+
+Le runner ignore l'écho, puisque le message est journalisé par `steer`, donc il
+apparaît une seule fois. Il clôt la réponse coupée avec le texte déjà reçu en flux,
+à l'arrivée de l'écho ou, à défaut, avant `turn.completed`. Sans cela, elle
+n'existerait dans le journal que sous forme de deltas, absente de la recherche, du
+transfert vers un autre CLI et de `read_conversation`. Un `item/completed` tardif pour
+le même item serait ignoré. La séquence est rejouée dans `test/codex-runner.test.ts` ;
+la sonde manuelle `pnpm --filter @solera/server codex:steer-probe` la relève sur le
+vrai CLI (`--raw` pour la séquence app-server brute, sans Solera).
+
+## Fork
+
+Le fork passe par `thread/fork { lastTurnId, excludeTurns }` : le dernier tour conservé,
+inclus, dont l'identifiant natif se relit dans le `turn/completed` gardé en `raw` de
+l'événement `turn.completed`. `thread/rollback` n'existe plus depuis 0.156.0. Un fork à
+la fin du fil n'indique aucun tour ; un fork avant le premier tour terminé est refusé,
+la branche n'aurait rien à reprendre.
 
 ## Vérification et mise à jour
 

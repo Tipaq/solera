@@ -208,6 +208,23 @@ export class CodexRunner implements AgentRunner {
   private readonly startedItems = new Set<string>()
   private readonly completedItems = new Set<string>()
   private readonly durations = new ToolDurations()
+  /**
+   * Texte reçu en flux des réponses du fil principal pas encore closes, par item.
+   *
+   * Depuis 0.162.1 (`instant_interrupt` actif par défaut), un `turn/steer` coupe la
+   * réponse en cours : sondé sur 0.163.0, l'item `agentMessage` reçoit ses deltas puis
+   * n'a jamais d'`item/completed`, et `thread/read` ne le garde même pas. Sans ce
+   * tampon, la réponse coupée n'existerait dans le journal que sous forme de deltas,
+   * invisibles pour la recherche, le transfert vers un autre CLI ou `read_conversation`.
+   */
+  private readonly streamedAnswers = new Map<string, string>()
+  /**
+   * Message steeré pas encore journalisé. Il s'écrit à l'écho du CLI ou, à défaut, à la
+   * réponse de `turn/steer` : quand l'accusé et les notifications arrivent dans le même
+   * bloc de stdout, celles-ci passent avant la suite de l'`await`, et le message de
+   * l'utilisateur se serait retrouvé après la réponse qu'il a provoquée.
+   */
+  private pendingSteer: { blocks: ContentBlock[] } | null = null
   /** Nom que Codex donne au fil, annoncé par `thread/name/updated`. */
   private suggested: string | null = null
   /** Tour en cours : `turn/interrupt` l'exige, contrairement au SDK Claude. */
@@ -495,7 +512,7 @@ export class CodexRunner implements AgentRunner {
     journalDeath(this.ctx, {
       type: 'error',
       code: 'runner_failed',
-      message: `codex app-server s'est arrêté de façon inattendue (code ${code ?? 'inconnu'}).`,
+      message: `codex app-server stopped unexpectedly (code ${code ?? 'unknown'}).`,
       recoverable: true,
     })
   }
@@ -522,6 +539,9 @@ export class CodexRunner implements AgentRunner {
       case 'item/plan/delta':
       case 'item/agentMessage/delta': {
         const p = params as AgentMessageDeltaNotification
+        if (method === 'item/agentMessage/delta') {
+          this.streamedAnswers.set(p.itemId, (this.streamedAnswers.get(p.itemId) ?? '') + p.delta)
+        }
         this.ctx.emit({ type: 'message.delta', messageId: p.itemId, text: p.delta, parentToolCallId: null })
         return
       }
@@ -734,6 +754,9 @@ export class CodexRunner implements AgentRunner {
         // qui n'existait plus, et rien ne pouvait plus la faire redescendre.
         this.expireTurnRequests(p.threadId, p.turn.id)
         if (p.turn.status !== 'completed') this.asyncQuestions.expireAll()
+        // Filet : une réponse coupée sans steer derrière (interruption, panne) se clôt
+        // avec le tour, avant lui, pour rester dans le même tour du journal.
+        this.closeCutAnswers(p)
         this.ctx.emit(
           {
             type: 'turn.completed',
@@ -963,13 +986,39 @@ export class CodexRunner implements AgentRunner {
 
   private onItemStarted(item: ThreadItem, raw: unknown, parent: string | null = null): void {
     if (this.startedItems.has(item.id) || this.completedItems.has(item.id)) return
+    // L'écho d'un message steeré est le signal que la réponse en cours a été coupée :
+    // aucun autre événement ne le dit, et elle ne recevra plus rien.
+    // Le message steeré passe avant la clôture, dans le même ordre que lorsque l'accusé
+    // du steer arrive seul, avant les notifications.
+    if (item.type === 'userMessage' && parent === null) {
+      this.flushPendingSteer()
+      this.closeCutAnswers(raw)
+    }
     this.startedItems.add(item.id)
     this.durations.start(item.id)
     for (const event of startedItem(item, parent)) this.ctx.emit(event, raw)
   }
 
+  /**
+   * Clôt les réponses abandonnées avec le texte déjà affiché. L'identifiant est marqué
+   * terminé : un `item/completed` tardif ajouterait sinon ses blocs une seconde fois,
+   * le fold du client les concaténant sous le même identifiant.
+   */
+  private closeCutAnswers(raw: unknown): void {
+    for (const [itemId, text] of this.streamedAnswers) {
+      this.completedItems.add(itemId)
+      this.startedItems.delete(itemId)
+      this.durations.stop(itemId)
+      if (text) {
+        this.ctx.emit({ type: 'message.completed', messageId: itemId, role: 'assistant', blocks: [{ type: 'text', text }], parentToolCallId: null }, raw)
+      }
+    }
+    this.streamedAnswers.clear()
+  }
+
   private onItemCompleted(item: ThreadItem, raw: unknown, parent: string | null = null): void {
     if (this.completedItems.has(item.id)) return
+    this.streamedAnswers.delete(item.id)
     if (!this.startedItems.has(item.id)) this.onItemStarted(item, raw, parent)
     this.completedItems.add(item.id)
     this.startedItems.delete(item.id)
@@ -1279,12 +1328,26 @@ export class CodexRunner implements AgentRunner {
     if (!this.client || !this.threadId || !this.turnId) return false
 
     const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
-    await this.client.call('turn/steer', {
-      threadId: this.threadId,
-      expectedTurnId: this.turnId,
-      input,
-    })
+    this.pendingSteer = { blocks }
+    try {
+      await this.client.call('turn/steer', {
+        threadId: this.threadId,
+        expectedTurnId: this.turnId,
+        input,
+      })
+    } catch (error) {
+      // Refusé (le tour venait de finir) : rien n'a été envoyé, rien ne s'écrit.
+      this.pendingSteer = null
+      throw error
+    }
+    this.flushPendingSteer()
+    return true
+  }
 
+  private flushPendingSteer(): void {
+    if (!this.pendingSteer) return
+    const { blocks } = this.pendingSteer
+    this.pendingSteer = null
     this.ctx.emit({
       type: 'message.completed',
       messageId: randomUUID(),
@@ -1292,7 +1355,6 @@ export class CodexRunner implements AgentRunner {
       blocks,
       parentToolCallId: null,
     })
-    return true
   }
 
   /**

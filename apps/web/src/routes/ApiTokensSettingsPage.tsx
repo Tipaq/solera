@@ -24,7 +24,7 @@ import {
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
-import { useAgentModels, effortsFor } from '../lib/agents'
+import { useAgentModels, effortLabel, effortsFor } from '../lib/agents'
 import {
   useApiTokens,
   useCreateApiToken,
@@ -270,7 +270,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
               disabled={efforts.length === 0}
               options={[
                 { value: '', label: t('apiTokens.effort.default') },
-                ...efforts.map((entry) => ({ value: entry.value, label: entry.label })),
+                ...efforts.map((entry) => ({ value: entry.value, label: effortLabel(t, entry) })),
               ]}
             />
           </div>

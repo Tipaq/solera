@@ -65,15 +65,33 @@ export function useVisualViewport(): void {
     const clear = () => {
       root.style.removeProperty('--sg-app-height')
       root.style.removeProperty('--sg-viewport-top')
+      /*
+       * Le clavier refermé peut laisser le viewport visuel décalé dans le viewport de
+       * mise en page : iPadOS en mode installé ne le ramène pas toujours à zéro, et
+       * n'émet alors ni `resize` ni `scroll`. Le calque fixe est bien redessiné à sa
+       * place, mais WebKit garde les zones de toucher de l'ancien décalage jusqu'au
+       * prochain défilement : la barre de saisie et le bas du fil ne répondent plus
+       * au doigt. Remettre le document à zéro recale les deux viewports et force ce
+       * recalcul. Sans décalage, l'appel ne fait rien.
+       */
+      window.scrollTo(0, 0)
     }
 
+    const hasInputFocus = () => document.activeElement instanceof HTMLElement
+      && document.activeElement.matches('input, textarea, [contenteditable]:not([contenteditable="false"])')
+
     const apply = () => {
-      const gap = window.innerHeight - viewport.height
-      if (gap < resting) resting = gap
+      // `innerHeight` peut suivre le clavier sur iOS ; le calque fixe reste, lui,
+      // dimensionné par le viewport de mise en page.
+      const gap = Math.max(0, Math.max(root.clientHeight, window.innerHeight) - viewport.height)
+      // Un montage ou une rotation pendant la saisie ne doit pas enregistrer la
+      // hauteur du clavier comme écart au repos. La fermeture affinera la mesure.
+      if (!hasInputFocus() && gap < resting) resting = gap
+      const baseline = Number.isFinite(resting) ? resting : 0
 
       // Le clavier est la seule raison d'imposer une hauteur : hors de ce cas, la
       // mesure est retirée plutôt que corrigée, et la règle CSS reprend la main.
-      if (gap - resting < KEYBOARD_MIN_PX) {
+      if (gap - baseline < KEYBOARD_MIN_PX) {
         clear()
         return
       }
@@ -92,15 +110,36 @@ export function useVisualViewport(): void {
       apply()
     }
 
+    /*
+     * Filet pour le clavier qui se ferme sans événement de viewport (voir `clear`) :
+     * quand la saisie perd le focus et qu'aucune autre ne le reprend, la mesure est
+     * rejouée après le délai de l'animation du clavier. Si `resize` a bien été émis
+     * entre-temps, `apply` a déjà tout remis et ce passage ne change rien.
+     */
+    let settle: ReturnType<typeof setTimeout> | undefined
+    const onFocusOut = () => {
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        if (hasInputFocus()) return
+        apply()
+        // `apply` ne touche à rien si le clavier n'était pas reconnu : le recalage du
+        // document doit quand même avoir lieu.
+        window.scrollTo(0, 0)
+      }, 350)
+    }
+
     apply()
     viewport.addEventListener('resize', apply)
     viewport.addEventListener('scroll', apply)
     window.addEventListener('orientationchange', remeasure)
+    document.addEventListener('focusout', onFocusOut)
 
     return () => {
+      clearTimeout(settle)
       viewport.removeEventListener('resize', apply)
       viewport.removeEventListener('scroll', apply)
       window.removeEventListener('orientationchange', remeasure)
+      document.removeEventListener('focusout', onFocusOut)
       root.style.removeProperty('--sg-viewport-gap')
       clear()
     }

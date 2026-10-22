@@ -349,3 +349,167 @@ Vérifié : typecheck, tests (dont `claude-flag-settings.test.ts` et les nouveau
 (API simulée), grand écran et téléphone : une conversation `opus[1m]` s'affiche « Opus
 5.5 » avec son effort, une `claude-fable-5-1` « Fable 5.1 », et Ultracode s'allume sans
 toucher à l'effort.
+
+## Complément du 12 octobre 2026 : cible 2.1.296
+
+Relecture du changelog de 2.1.292 à 2.1.296 (≈ 390 lignes, deux tiers de correctifs,
+beaucoup de Claude Tag, cloud et gateway sans rapport avec Solera) et du diff des types
+entre le SDK 0.3.291 et 0.3.296. Sondes par requêtes de contrôle sur un 2.1.296 téléchargé
+à part (`npm pack @anthropic-ai/claude-code-linux-x64@2.1.296`), sans toucher au binaire
+du système, puis une session réelle sur un serveur jetable configuré sur ce binaire
+(`agents.claude.binary`), pilotée par l'API v1.
+
+| | Installé sur ce poste | Dernier publié | Cible déclarée |
+|---|---|---|---|
+| CLI `@anthropic-ai/claude-code` | 2.1.292 | 2.1.296 (9 octobre) | 2.1.291 → **2.1.296** |
+| SDK `@anthropic-ai/claude-agent-sdk` | 0.3.291 | 0.3.296 | 0.3.291 → **0.3.296** |
+
+Le SDK n'a que des ajouts de champs optionnels, aucun retrait : typecheck, tests et lint
+passent sans retouche de code. Seuls deux commentaires sondés ont été actualisés.
+
+### Ce qui change pour Solera
+
+- **L'alias `haiku` désigne Haiku 5.5 (2.1.293).** Sondé : `haiku` → `claude-haiku-5-5`,
+  « Haiku 5.5 », contexte d'un million de tokens, efforts `low` → `max`, et Ultracode
+  s'y ouvre (`ultracodeAvailable: true` par `getSettings().applied`). Haiku 4.5 ne
+  s'obtient plus que sous `claude-haiku-4-5-20251001`, sans niveau d'effort, et
+  Ultracode lui reste refusé. Le catalogue vient du CLI, rien n'est codé en dur : les
+  conversations et tâches planifiées réglées sur `haiku` passent sur 5.5 au prochain
+  tour, sans rien dire. La session d'essai l'a montré (`session.started` annonce
+  `claude-haiku-5-5` pour une tâche créée en `haiku`). Le composer, qui n'offre Ultracode
+  qu'aux modèles à `xhigh`, l'offre donc désormais sur `haiku` : c'est voulu. Prévenir
+  du changement de modèle : carte #26.
+- **`claude_code_version` dans la réponse d'initialisation** : la version du process
+  qui tient la session, absente des CLI antérieurs. Solera ne la lit pas encore ; elle
+  dirait quelle version une conversation en cours utilise réellement, là où l'écran
+  Agents ne connaît que le binaire du moment. Carte #27.
+- **Attribution des sous-agents et des tâches** : `agent_id` sur les messages, puis
+  `parent_task_id`, `subagent_type` et `run_id` sur `background_tasks_changed` et les
+  `task_*`. `background.updated` ne garde que l'identifiant, le type et la description.
+  Carte #22, ouverte par la veille.
+- **`overageEnabled` sur `rate_limit_event` (2.1.295)** : l'avertissement de quota dit
+  si l'usage supplémentaire est activé. `usage.updated` ne relaie pas le champ. Carte
+  #28.
+- **Nouveaux paramètres d'outils** : `effort` sur l'outil Agent (2.1.292), `allow_large`
+  sur Read (2.1.296). Les vues d'outils ne les montrent pas. Carte #29.
+- **Retards de réessai sur 529** : `CLAUDE_CODE_OVERLOADED_RETRY_BASE_DELAY_MS`
+  (2.1.292), `…_MAX_DELAY_MS` (2.1.296) et `CLAUDE_CODE_RETRY_WATCHDOG_MAX_WAIT_MS`
+  (2.1.295). Utiles aux sessions planifiées sans personne devant. Carte #30.
+- **Limite des descriptions d'outils MCP et des consignes de serveur portée de 2 048 à
+  4 096 caractères (2.1.296)** : les consignes du serveur `solera` ont de la marge ;
+  `solera-mcp.mjs` n'a rien à changer.
+- `SDKStartupFailureReason` gagne `org_config_required_unavailable` et
+  `org_config_refused` ; Solera ne lit pas `startup_failure_reason`.
+- `autoCompactWindow` sur les définitions d'agents (2.1.296), `onFailure: "block"` sur
+  les hooks (2.1.295) : Solera n'écrit ni agents personnalisés ni hooks de ce type.
+
+### Correctifs qui profitent aux sessions SDK, sans code
+
+- 2.1.292 : une commande de fond n'est plus arrêtée 5 s après le résultat final d'un
+  run SDK (voir #12 pour la limite de 30 min, qui demeure) ; le premier tour n'attend
+  plus le `resources/list` des serveurs MCP HTTP et SSE.
+- 2.1.293 : fuite mémoire des connexions MCP HTTP ; reprise erronée après compaction.
+- 2.1.295 : serveurs MCP distants qui restaient déconnectés après une coupure de plus
+  de 15 s ; retour en mode auto refusé après retrait de `disableAutoMode` ; un message
+  envoyé pendant qu'un tour tourne n'est plus perdu.
+- 2.1.296 : une interruption pendant un hook `UserPromptSubmit` ne termine plus une
+  session headless ; `/code-review` rend une liste numérotée au lieu d'un tableau JSON
+  brut ; le coût du cache de Sonnet 5.5 passe à 0,10 $/Mtok dans les chiffres du SDK.
+
+### Sondes du jour
+
+```js
+// Binaire 2.1.296 téléchargé à part, file d'entrée vide, aucun message au modèle.
+const init = await q.initializationResult()
+init.claude_code_version                       // '2.1.296'
+await q.applyFlagSettings({ ultracode: true, effortLevel: 'high' })
+;(await q.getSettings()).applied
+// { model: 'claude-haiku-5-5', effort: 'high', ultracode: true, ultracodeAvailable: true }
+await q.setModel('claude-haiku-4-5-20251001')
+;(await q.getSettings()).applied
+// { model: 'claude-haiku-4-5-20251001', effort: null, ultracode: false, ultracodeAvailable: false }
+```
+
+Vérifié : typecheck, tests, lint ; une session réelle (`haiku`, effort `low`, mode auto)
+sur un serveur jetable avec le binaire 2.1.296 : `GET /api/agents` lit 2.1.296 sans
+écart de version, l'outil Read tourne, le tour se termine en `success` et le contexte
+annonce un million de tokens. Au déploiement, `claude install 2.1.296` sur marldev : le
+CLI du poste ne se met pas à jour seul.
+
+## Complément du 17 octobre 2026 : cible 2.1.301
+
+Carte #42, incluant les veilles #37 et #38. Cible CLI **2.1.301**, dépendance
+SDK **^0.3.301**, résolution du lockfile **0.3.301**. La 2.1.302 existe déjà lors du
+chantier ; elle ne fait pas partie de cette validation. Une installation fraîche
+sans lockfile peut résoudre le caret vers une version ultérieure.
+
+### Compatibilité et périmètre
+
+Le [changelog officiel](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)
+annonce notamment des corrections de double exécution en reprise SDK, de pièces
+jointes envoyées en cours de tour, de reprise après compaction et de permissions
+interrompues par un message. Ces corrections viennent du CLI ; elles ne demandent
+pas de changement d'adaptateur. Elles ne sont pas toutes reproduites ici.
+
+Le diff des déclarations SDK 0.3.296 → 0.3.301 ne retire aucun contrat utilisé par
+Solera. Les nouveaux paramètres restent optionnels. Décisions pour les ajouts :
+
+- `reloadPlugins({ addPlugins })` permet un ajout à chaud, mais pas un retrait :
+  conserver pour ce bump la relance actuelle quand les racines de skills changent.
+- `BUILTIN_TOOL_NAMES` et `LEGACY_TOOL_NAME_ALIASES` ne justifient pas à eux seuls
+  un nouvel écran. La liste d'outils disponible vient toujours de la session.
+- Les politiques par outil des serveurs MCP SDK ne concernent pas notre transport
+  MCP stdio/HTTP actuel.
+- `CLAUDE_CODE_RETRY_WATCHDOG_MAX_USAGE_LIMIT_WAIT_MS` complète la piste #30 :
+  il faudra régler ensemble l'activation du watchdog et ses délais. Ce bump
+  n'active pas de réessai automatique.
+- La compaction au repos reste une piste : aucun bénéfice en SDK n'a été démontré
+  par cette sonde. Ne pas la présenter comme disponible dans Solera.
+
+### Transcripts : protection de l'import et de la synchronisation
+
+Le vrai transcript de l'essai 2.1.301 contient `api-request-shape`,
+`api-request-blob` et `api-request`, avec `type` en première propriété. Même un
+appel refusé pour quota écrit ces lignes. `readJsonl` lit désormais ligne par ligne
+et saute ces trois types avant parsing dans ce format ; un filtre après parsing
+couvre aussi un ordre différent des propriétés. L'ancrage du premier filtre évite
+les faux positifs dans le contenu d'un message. Le même lecteur sert aux sous-agents.
+
+Aucune dépendance au drapeau interne `CLAUDE_CODE_ELEGANT_MEADOW` : le CLI continue
+à écrire son rejeu. La croissance disque reste donc présente. Cette protection ne
+remplace pas tout le chantier #17 : les entrées utiles sont encore accumulées en
+mémoire, et la synchronisation ne lit pas seulement le suffixe manquant.
+
+### Vérifications et limites
+
+Binaire téléchargé à part : `@anthropic-ai/claude-code-linux-x64@2.1.301`.
+Le CLI système reste **2.1.296** ; aucun déploiement ni redémarrage de production.
+
+- `initializationResult().claude_code_version` : `2.1.301`.
+- Catalogue : Opus 5.5, Fable 5.1, Sonnet 5.5 et Haiku 5.5, mêmes alias qu'avant.
+- `applyFlagSettings({ ultracode: true, effortLevel: 'high' })`, puis
+  `getSettings().applied` : Haiku 5.5, effort high, Ultracode actif et disponible.
+  Après `setModel('claude-haiku-4-5-20251001')` : effort null, Ultracode inactif et
+  indisponible. Aucun appel au modèle nécessaire pour ces contrôles.
+- La sonde renvoie `capabilities: ['mcp_call_result_not_for_model_v1']` ; ne pas
+  supposer cette liste identique à la précédente. L'adaptateur ne s'y appuie pas.
+- Serveur jetable, base neuve, port 7501, binaire 2.1.301 : création d'un projet et
+  d'une tâche par l'API v1, initialisation Haiku 5.5 et connexion du MCP Solera
+  réussies. **Essai réel bloqué par le quota du compte**, avant Read et
+  AskUserQuestion. Le journal reçoit bien `error: turn_failed` avec le refus de
+  quota ; le SDK envoie aussi un résultat final traduit en `stopReason: success`,
+  qui ne prouve donc pas à lui seul la réussite. Refaire Read + réponse à
+  AskUserQuestion après rétablissement du quota avant de déclarer ce parcours validé.
+- `NODE_ENV=development pnpm typecheck`, `pnpm test` (241 tests) et `pnpm lint` : OK.
+  Test ajouté : rejeu de 2 Mo, ordre des propriétés différent, contenu ressemblant
+  à un type de rejeu, CRLF, ligne tronquée, dernière ligne sans saut, sous-agent et
+  fichier absent.
+- Sonde mémoire séparée : 200 Mo de lignes de rejeu, puis un message utile, lus
+  avec Node 24 `--max-old-space-size=96` ; seul le message est conservé, sans OOM
+  (RSS ≈ 180 Mio, le plafond de tas n'est pas un plafond de RSS).
+- pnpm signale le peer Zod 4 attendu par le SDK face au Zod 3 du projet ; cet
+  avertissement était déjà présent avec 0.3.296. Aucun serveur MCP SDK n'est créé.
+
+Pas de changement d'interface : aucun parcours Playwright ajouté pour ce bump.
+Lors d'un futur déploiement autorisé, installer aussi `claude install 2.1.301`
+selon la procédure supervisée ; ne pas installer le CLI système pendant la préparation.

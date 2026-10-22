@@ -4776,9 +4776,10 @@ export interface components {
                 setCacheKey?: boolean;
                 /** @description Timeout in milliseconds for full requests to this provider. Set to false to disable timeout. */
                 timeout?: number | false;
-                /** @description Timeout in milliseconds to wait for response headers. Provider integrations may set defaults. Set to false to disable timeout. */
+                /** @description Timeout in milliseconds to wait for response headers (default: 300000). Set to false to disable timeout. */
                 headerTimeout?: number | false;
-                chunkTimeout?: number;
+                /** @description Timeout in milliseconds between streamed SSE chunks for this provider (default: 300000). If no chunk arrives within this window, the request is aborted. Set to false to disable timeout. */
+                chunkTimeout?: number | false;
             } & {
                 [key: string]: unknown;
             };
@@ -4790,6 +4791,20 @@ export interface components {
                     release_date?: string;
                     attachment?: boolean;
                     reasoning?: boolean;
+                    /** @description Reasoning controls the model accepts, used to build its variants */
+                    reasoning_options?: ({
+                        /** @enum {string} */
+                        type: "effort";
+                        values: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "toggle";
+                    } | {
+                        /** @enum {string} */
+                        type: "budget_tokens";
+                        min?: number;
+                        max?: number;
+                    })[];
                     temperature?: boolean;
                     tool_call?: boolean;
                     interleaved?: boolean | ("reasoning" | "reasoning_content" | "reasoning_text") | string | {
@@ -4926,7 +4941,7 @@ export interface components {
             /** @enum {string} */
             share?: "manual" | "auto" | "disabled";
             autoshare?: boolean;
-            /** @description Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications */
+            /** @description Check for new versions and show an update notice. Updates are never installed automatically; run /update or `opencode upgrade`. Set to false to disable update checks. true and 'notify' behave the same */
             autoupdate?: boolean | "notify";
             disabled_providers?: string[];
             enabled_providers?: string[];

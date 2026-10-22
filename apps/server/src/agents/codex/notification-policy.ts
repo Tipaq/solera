@@ -5,6 +5,8 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'error': 'handled',
   'thread/started': 'handled',
   'thread/status/changed': 'handled',
+  // L'état lu/non lu du CLI ne pilote pas celui du journal Solera.
+  'thread/readState/changed': 'ignore',
   'thread/archived': 'notice',
   'thread/deleted': 'notice',
   'thread/unarchived': 'notice',
@@ -85,4 +87,11 @@ export const NOTIFICATION_POLICY: Record<string, 'handled' | 'notice' | 'ignore'
   'windows/worldWritableWarning': 'notice',
   'windowsSandbox/setupCompleted': 'notice',
   'account/login/completed': 'notice',
+  // Login OAuth de passerelle d'entreprise : Solera ne le déclenche pas, mais un
+  // changement de compte mérite d'être lu dans le fil, comme les autres `account/*`.
+  'account/gatewayOAuth/changed': 'notice',
+  // Pièces jointes persistées par fil (0.155) : Solera tient son propre journal.
+  'thread/attachment/updated': 'ignore',
+  // Prédiction de la suite d'un fil (0.162) : rien à en montrer.
+  'thread/prediction/updated': 'ignore',
 } satisfies Record<ServerNotification['method'], 'handled' | 'notice' | 'ignore'>
