@@ -7,7 +7,7 @@ import type { CardLinkDto } from './cards.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
-import { instructionsModeSchema, type InstructionsMode } from './instructions.js'
+import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
 import type { ProjectAgentDefaults } from './project-defaults.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
@@ -51,6 +51,12 @@ export const createUserBodySchema = z.object({
   password: z.string().min(PASSWORD_MIN, `Au moins ${PASSWORD_MIN} caractères.`).max(256),
   isAdmin: z.boolean().default(false),
 })
+
+/**
+ * Le premier compte, créé depuis la visite quand la base n'en a aucun. Administrateur
+ * d'office, comme en ligne de commande : personne d'autre ne pourrait le promouvoir.
+ */
+export const setupAccountBodySchema = createUserBodySchema.omit({ isAdmin: true })
 
 /** Même contrainte qu'à la création : l'identifiant sert de nom de connexion. */
 const usernameSchema = z
@@ -97,7 +103,8 @@ const projectCreationFields = {
   visibility: projectVisibilitySchema.default('private'),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().default(null),
   /** Absent : le dépôt s'il porte déjà un `AGENTS.md` ou un `CLAUDE.md`, Solera sinon. */
-  instructionsMode: instructionsModeSchema.optional(),
+  /** Absent : le défaut du compte. */
+  instructionsMode: projectInstructionsModeSchema.optional(),
 }
 
 /**

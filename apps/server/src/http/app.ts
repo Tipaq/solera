@@ -95,9 +95,10 @@ import type { WorktreeStatusService } from '../worktrees/status-service.js'
  * Routes accessibles sans session. Tout le reste exige un utilisateur.
  *
  * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
- * ce soit, page de connexion comprise.
+ * ce soit, page de connexion comprise. La création du premier compte aussi : elle se
+ * ferme d'elle-même dès qu'un compte existe.
  */
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health', '/api/system/instance'])
+const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/auth/setup', '/api/health', '/api/system/instance'])
 
 /**
  * L'API publique, réservée aux jetons.
@@ -260,7 +261,7 @@ export async function buildApp(
   registerScheduleRoutes(app, ctx, sessions, registry, tasks)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
-  registerSystemRoutes(app)
+  registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault)

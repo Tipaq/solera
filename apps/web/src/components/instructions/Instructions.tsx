@@ -8,6 +8,7 @@ import {
   type InstructionsAuthorDto,
   type InstructionsMode,
   type ProjectInstructionsDto,
+  type ProjectInstructionsMode,
   type RepoInstructionFile,
 } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
@@ -20,6 +21,7 @@ import {
   useUpdateProjectInstructions,
   useWriteRepoInstructions,
 } from '../../lib/instructions'
+import { useUserSettings } from '../../lib/user-settings'
 import { Markdown } from '../chat/Markdown'
 import { HowItWorks, INSTRUCTIONS_HELP } from './HowItWorks'
 import { Banner, Button, ChoiceList, ConfirmDialog, IconButton, SegmentedControl, Select, cx, type Choice } from '@solera/ui'
@@ -362,7 +364,7 @@ export function InstructionsDialog({
 }
 
 /** Le choix proposé à la création ; `auto` laisse le serveur regarder le dossier. */
-export type InstructionsModeChoice = InstructionsMode | 'auto'
+export type InstructionsModeChoice = ProjectInstructionsMode
 
 export function InstructionsModeSelect({
   value,
@@ -386,7 +388,14 @@ export function InstructionsModeSelect({
   )
 }
 
-/** Ce que l'API attend : rien pour `auto`. */
-export function instructionsModeField(choice: InstructionsModeChoice) {
-  return choice === 'auto' ? {} : { instructionsMode: choice }
+/**
+ * Le choix d'un formulaire de création, qui part du défaut du compte (posé par la
+ * visite) tant qu'on n'y a pas touché, et toujours envoyé tel quel : un `auto` choisi
+ * doit l'emporter sur un défaut qui dirait autre chose.
+ */
+export function useInstructionsModeChoice() {
+  const { data: settings } = useUserSettings()
+  const [chosen, setChosen] = useState<InstructionsModeChoice | null>(null)
+  const value = chosen ?? settings?.projectDefaults.instructionsMode ?? 'auto'
+  return { value, onChange: setChosen, field: { instructionsMode: value } }
 }

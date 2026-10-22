@@ -6,6 +6,8 @@ import { visibleSections } from './components/settings/sections'
 import { openSettings } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
+import { useProjects } from './lib/projects'
+import { useUserSettings } from './lib/user-settings'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
@@ -61,6 +63,21 @@ const VaultBrowsePage = lazy(() =>
 )
 
 /**
+ * La visite de première ouverture, chargée à part : elle ne sert qu'une fois par compte,
+ * et son code n'a rien à faire dans le paquet principal, qui frôle la limite de précache.
+ */
+const OnboardingPage = lazy(() =>
+  import('./routes/OnboardingPage').then((m) => ({ default: m.OnboardingPage })),
+)
+
+/** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
+function OnboardingExit() {
+  const { data: projects } = useProjects()
+  if (!projects) return null
+  return <Navigate to={projects.length === 0 ? '/projects/new' : '/'} replace />
+}
+
+/**
  * Les anciennes adresses des réglages, qui ne sont plus des pages.
  *
  * Elles ont circulé — un favori, un lien dans une phrase d'aide, l'historique du
@@ -88,18 +105,51 @@ function LegacySettingsRoute() {
 export function App() {
   const { data: user, isPending } = useCurrentUser()
   // Attendu avec la session : les écrans lisent ses capacités sans état intermédiaire.
-  const { isPending: instancePending } = useInstance()
+  const { data: instance, isPending: instancePending } = useInstance()
+  // Les réglages du compte décident si la visite est due : attendus aussi, pour ne pas
+  // dessiner l'application une fraction de seconde avant de l'ouvrir.
+  const { data: settings, isPending: settingsPending } = useUserSettings(Boolean(user))
 
   // Écran vide plutôt qu'un spinner : la vérification de session est locale et brève,
   // un spinner qui clignote est plus désagréable que rien.
-  if (isPending || instancePending) return null
+  if (isPending || instancePending || (user && settingsPending)) return null
+
+  const onboarding = (
+    <Suspense fallback={null}>
+      <OnboardingPage />
+    </Suspense>
+  )
 
   if (!user) {
+    // Une base sans compte n'a pas de page de connexion à proposer : la visite
+    // commence par créer le premier compte, sur n'importe quelle adresse.
+    if (instance?.needsSetup && instance.capabilities.passwordAuth) {
+      return (
+        <BrowserRouter>
+          <Routes>
+            <Route path="*" element={onboarding} />
+          </Routes>
+        </BrowserRouter>
+      )
+    }
     return (
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </BrowserRouter>
+    )
+  }
+
+  // La visite due prend toute la place : rien d'autre à voir tant qu'elle n'est pas
+  // finie ou passée, et elle reprend à son étape sur n'importe quel appareil.
+  if (settings?.onboarding.pending) {
+    return (
+      <BrowserRouter>
+        <Routes>
+          <Route path="/bienvenue" element={onboarding} />
+          <Route path="*" element={<Navigate to="/bienvenue" replace />} />
         </Routes>
       </BrowserRouter>
     )
@@ -113,6 +163,7 @@ export function App() {
       <SettingsDialog />
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/bienvenue" element={<OnboardingExit />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           {/* Le portefeuille a la même grammaire qu'un projet, un cran au-dessus. La

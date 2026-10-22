@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { agentKindSchema, type AgentKind } from './events.js'
+import { projectInstructionsModeSchema, type ProjectInstructionsMode } from './instructions.js'
 import { DEFAULT_NOTIFICATION_PREFS, notificationPrefsSchema, type NotificationPrefs } from './notifications.js'
 import {
   agentConfigSchema,
@@ -63,7 +65,102 @@ export interface UserSettingsDto {
    * garder sur l'ordinateur n'a pas été demandé, et doublerait l'écran.
    */
   notifications: NotificationPrefs
+  /**
+   * Ce qu'un projet reçoit à sa création quand le formulaire ne dit rien. Posé par la
+   * visite, repris par l'écran Nouveau projet.
+   */
+  projectDefaults: ProjectDefaults
+  /**
+   * La visite de première ouverture, et où elle en est.
+   *
+   * Au compte et non au navigateur : la visite règle le compte (agents, autorisations,
+   * consignes), et la reprendre sur un autre appareil doit repartir de la bonne étape.
+   */
+  onboarding: OnboardingState
 }
+
+/**
+ * Le mode de consignes d'un projet à naître, quand le formulaire de création ne dit rien.
+ *
+ * La mémoire n'a pas de défaut ici : elle est la famille `agentMemory`, qui a déjà son
+ * défaut de compte dans `agentDefaults`, et un second réglage pour la même chose
+ * laisserait l'agent entre deux réponses.
+ */
+export interface ProjectDefaults {
+  instructionsMode: ProjectInstructionsMode
+}
+
+export const DEFAULT_PROJECT_DEFAULTS: ProjectDefaults = { instructionsMode: 'auto' }
+
+export const projectDefaultsSchema = z.object({
+  instructionsMode: projectInstructionsModeSchema.default('auto').catch('auto'),
+})
+
+/**
+ * Le réflexe de permission choisi dans la visite, traduit dans le vocabulaire de chaque
+ * CLI par l'interface. Gardé pour le récapitulatif.
+ */
+export const onboardingPermissionSchema = z.enum(['manual', 'auto', 'acceptEdits', 'bypass'])
+export type OnboardingPermission = z.infer<typeof onboardingPermissionSchema>
+
+/** Ce que la visite demande en route, et qui décide des étapes suivantes. */
+export interface OnboardingAnswers {
+  /** Les CLI que l'utilisateur compte employer : l'étape des agents ne montre qu'eux. */
+  agents: AgentKind[]
+  /**
+   * Vrai dès que l'utilisateur a touché à la question des agents. Avant, la liste vide
+   * ne veut rien dire, et l'interface y coche d'office les CLI trouvés sur la machine.
+   */
+  agentsChosen: boolean
+  permission: OnboardingPermission
+}
+
+export interface OnboardingState {
+  /**
+   * Vrai tant que la visite est due. Faux par défaut : un compte d'avant la visite ne
+   * la voit pas surgir à sa prochaine connexion ; c'est la création du compte qui
+   * l'arme, et « Revoir la visite » dans À propos.
+   */
+  pending: boolean
+  /** Index de l'étape courante dans la liste que l'interface calcule. */
+  step: number
+  answers: OnboardingAnswers
+  /** Identifiants des étapes passées avec « Plus tard », pour le récapitulatif. */
+  skipped: string[]
+  /**
+   * Identifiants des étapes déjà traversées, continuées ou passées : on peut y revenir
+   * depuis la liste, en arrière comme en avant, sans refaire celles d'entre deux.
+   */
+  visited: string[]
+}
+
+export const DEFAULT_ONBOARDING_ANSWERS: OnboardingAnswers = {
+  agents: [],
+  agentsChosen: false,
+  permission: 'auto',
+}
+
+export const DEFAULT_ONBOARDING: OnboardingState = {
+  pending: false,
+  step: 0,
+  answers: DEFAULT_ONBOARDING_ANSWERS,
+  skipped: [],
+  visited: [],
+}
+
+export const onboardingAnswersSchema = z.object({
+  agents: z.array(agentKindSchema).max(8).default([]).catch([]),
+  agentsChosen: z.boolean().default(false).catch(false),
+  permission: onboardingPermissionSchema.default('auto').catch('auto'),
+})
+
+export const onboardingStateSchema = z.object({
+  pending: z.boolean().default(false).catch(false),
+  step: z.number().int().min(0).max(32).default(0).catch(0),
+  answers: onboardingAnswersSchema.default(DEFAULT_ONBOARDING_ANSWERS).catch(DEFAULT_ONBOARDING_ANSWERS),
+  skipped: z.array(z.string().max(40)).max(32).default([]).catch([]),
+  visited: z.array(z.string().max(40)).max(32).default([]).catch([]),
+})
 
 /**
  * Le serveur ne connaît ni les thèmes ni les curseurs : il stocke ce que l'interface
@@ -131,6 +228,8 @@ export const storedUserSettingsSchema = z
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
+    projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
+    onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
   })
   .catch({
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
@@ -138,6 +237,8 @@ export const storedUserSettingsSchema = z
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
+    projectDefaults: DEFAULT_PROJECT_DEFAULTS,
+    onboarding: DEFAULT_ONBOARDING,
   })
 
 export const updateUserSettingsBodySchema = z.object({
@@ -155,4 +256,8 @@ export const updateUserSettingsBodySchema = z.object({
   appearance: appearancePrefsSchema.optional(),
   /** Remplacées en bloc : l'écran envoie toujours toutes les sortes. */
   notifications: notificationPrefsSchema.optional(),
+  /** Remplacés en bloc, comme l'apparence. */
+  projectDefaults: projectDefaultsSchema.optional(),
+  /** Remplacé en bloc : la visite connaît son état entier à chaque pas. */
+  onboarding: onboardingStateSchema.optional(),
 })

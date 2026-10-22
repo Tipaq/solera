@@ -3,10 +3,11 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { max } from 'drizzle-orm'
 import { projects, type ProjectRow } from '@solera/db'
-import type { CreateProjectBody, InstructionsMode } from '@solera/protocol'
+import type { CreateProjectBody, ProjectInstructionsMode } from '@solera/protocol'
 import { badRequest, conflict } from '../http/errors.js'
 import type { AppContext } from '../http/context.js'
 import { repoInstructionFiles } from '../instructions/store.js'
+import { readUserSettings } from '../settings/user-settings.js'
 
 /**
  * Déclarer un projet : une ligne qui pointe sur un dossier existant.
@@ -82,7 +83,8 @@ export interface ProjectFields {
   workspacePath: string
   visibility: 'private' | 'shared'
   color: string | null
-  instructionsMode: InstructionsMode | undefined
+  /** Absent : le défaut du compte. `auto` : d'après ce que le dossier porte. */
+  instructionsMode: ProjectInstructionsMode | undefined
 }
 
 /**
@@ -95,15 +97,17 @@ export async function insertProject(
   fields: ProjectFields,
 ): Promise<ProjectRow> {
   const [highest] = await ctx.db.select({ max: max(projects.position) }).from(projects)
+  // Ce que le compte a choisi pour ses projets à venir, quand la création ne dit rien.
+  const asked = fields.instructionsMode ?? readUserSettings(ctx.db, ownerId).projectDefaults.instructionsMode
 
   const row: ProjectRow = {
     id: randomUUID(),
     ...fields,
-    // Fixé dès la création, faute de choix d'après ce que le dossier porte déjà : un
-    // mode résolu à chaque lancement basculerait le jour où un agent crée un AGENTS.md.
+    // Fixé dès la création : un mode résolu à chaque lancement basculerait le jour où
+    // un agent crée un AGENTS.md. Faute de choix, le défaut du compte ; `auto` regarde
+    // ce que le dossier porte déjà.
     instructionsMode:
-      fields.instructionsMode ??
-      (repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'solera'),
+      asked !== 'auto' ? asked : repoInstructionFiles(fields.workspacePath).length > 0 ? 'repo' : 'solera',
     ownerId,
     defaultConfig: null,
     designSystemPath: null,

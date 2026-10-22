@@ -9,8 +9,7 @@ import { translateError, useTranslate } from '../lib/i18n'
 import { useCloneJob, useStartClone } from '../lib/projects'
 import {
   InstructionsModeSelect,
-  instructionsModeField,
-  type InstructionsModeChoice,
+  useInstructionsModeChoice,
 } from './instructions/Instructions'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
@@ -40,7 +39,7 @@ export function CloneForm() {
   const [parentDir, setParentDir] = useState('')
   const [directory, setDirectory] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'shared'>('private')
-  const [instructionsMode, setInstructionsMode] = useState<InstructionsModeChoice>('auto')
+  const instructionsMode = useInstructionsModeChoice()
   const [jobId, setJobId] = useState<string | null>(null)
 
   const startClone = useStartClone()
@@ -76,7 +75,7 @@ export function CloneForm() {
         parentDir,
         directory: directory.trim(),
         visibility,
-        ...instructionsModeField(instructionsMode),
+        ...instructionsMode.field,
       },
       { onSuccess: (created) => setJobId(created.id) },
     )
@@ -174,7 +173,7 @@ export function CloneForm() {
         required
       />
       <VisibilitySelect value={visibility} onChange={setVisibility} />
-      <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
+      <InstructionsModeSelect value={instructionsMode.value} onChange={instructionsMode.onChange} />
 
       {job?.error ? (
         <Banner>

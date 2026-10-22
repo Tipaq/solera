@@ -91,13 +91,22 @@ try {
   })
   const page = await app.firstWindow({ timeout: 120_000 })
   await page.waitForLoadState('domcontentloaded')
-  // Premier lancement : la fenêtre s'ouvre sur l'application, sans page de connexion ni
-  // compte à créer. La colonne de gauche est le signe que la session est ouverte.
-  await page.getByRole('complementary').first().waitFor({ timeout: 60_000 })
+  // Premier lancement : le compte local ouvert par le lanceur a sa visite armée, et la
+  // fenêtre s'ouvre dessus, sans page de connexion ni étape de compte. On la passe ;
+  // « C'est prêt » mène à la création du premier projet, dans la coque de l'application.
+  await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
+  await page.getByRole('heading', { level: 1 }).first().waitFor()
   assert.equal(await page.getByLabel(/^(Mot de passe|Password)$/).count(), 0, 'pas de mot de passe en bureau')
+  assert.equal(await page.getByText(/Créer le premier compte|Create the first account/).count(), 0, 'pas de compte à créer en bureau')
+  await page.screenshot({ path: join(shots, 'onboarding.png') })
+  await page.getByRole('button', { name: /^(Passer la visite|Skip the tour)$/ }).click()
+  await page.getByRole('heading', { level: 1, name: /^(C'est prêt|All set)$/ }).waitFor()
+  await page.getByRole('button', { name: /^(Créer mon premier projet|Create my first project)$/ }).click()
+  await page.waitForURL(/\/projects\/new$/)
+  // La colonne de gauche est le signe que la coque est ouverte.
+  await page.getByRole('complementary').first().waitFor({ timeout: 60_000 })
 
   // Un seul compte en bureau : la création d'un projet ne demande pas s'il est partagé.
-  await page.goto(new URL('/projects/new', page.url()).href)
   await page.getByLabel(/^(Nom|Name)$/).first().waitFor()
   assert.equal(await page.getByText(/^(Visibilité|Visibility)$/).count(), 0, 'pas de choix privé/partagé en bureau')
 

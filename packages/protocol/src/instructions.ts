@@ -14,6 +14,15 @@ export const instructionsModeSchema = z.enum(['solera', 'repo'])
 export type InstructionsMode = z.infer<typeof instructionsModeSchema>
 
 /**
+ * Le mode demandé pour un projet à naître. `auto` regarde ce que le dossier porte déjà :
+ * `repo` s'il a un `AGENTS.md` ou un `CLAUDE.md`, `solera` sinon. Défaut de compte
+ * (`projectDefaults`) et choix d'un formulaire de création parlent cette langue ; la
+ * ligne du projet, elle, ne garde que le mode résolu.
+ */
+export const projectInstructionsModeSchema = z.union([instructionsModeSchema, z.literal('auto')])
+export type ProjectInstructionsMode = z.infer<typeof projectInstructionsModeSchema>
+
+/**
  * Fichiers de consignes reconnus à la racine d'un workspace, dans l'ordre de préférence.
  * `AGENTS.md` d'abord : Codex et Claude Code le lisent tous deux (sondé sur Claude Code
  * 2.1.286), alors que Codex ignore `CLAUDE.md`.
