@@ -41,9 +41,10 @@ interface OverviewInput {
   /**
    * La famille `cardFiling` est-elle accordée, c'est-à-dire `request_card_move` listé.
    *
-   * Change une phrase et une seule, celle du briefing de carte : sans la portée, la
-   * colonne « se change dans l'interface et jamais par toi » ; avec elle, l'agent peut
-   * en *proposer* le changement. Lui dire le contraire de ce que son catalogue d'outils
+   * Change une phrase et une seule, celle du briefing de carte. `move_card`, dans le
+   * socle, y est dit dans les deux cas ; sans la portée, terminé et abandonné « se posent
+   * dans l'interface et jamais par toi » ; avec elle, l'agent peut en *proposer* le
+   * passage, et celui de toute autre carte. Lui dire le contraire de ce que son catalogue d'outils
    * lui montre est la pire des deux erreurs.
    */
   cardFiling: boolean
@@ -135,8 +136,8 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
     lines.push(
       `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. ${
         input.cardFiling
-          ? "La colonne d'une carte, elle, ne se change que dans l'interface : tu peux en proposer le déplacement avec `request_card_move`, en disant pourquoi, et c'est un clic qui tranche."
-          : "La colonne d'une carte, elle, se change dans l'interface et jamais par toi."
+          ? "Tu ranges toi-même ta carte entre à faire, en cours et à vérifier avec `move_card` : en « à vérifier » quand ton travail attend une relecture. Terminé, abandonné et les autres cartes se proposent avec `request_card_move`, en disant pourquoi, et c'est un clic qui tranche."
+          : "Tu ranges toi-même ta carte entre à faire, en cours et à vérifier avec `move_card` : en « à vérifier » quand ton travail attend une relecture. Terminé et abandonné, eux, se posent dans l'interface et jamais par toi."
       }`,
     )
   }

@@ -294,6 +294,18 @@ export const cardMoves = sqliteTable(
     toColumn: text('to_column').$type<CardColumn>().notNull(),
     /** Null quand le compte a été supprimé : le mouvement reste daté et vrai. */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    /**
+     * La session qui a déplacé la carte d'elle-même, par `move_card`. Null pour un geste
+     * de personne, y compris une demande `request_card_move` accordée d'un clic : le
+     * mouvement est alors celui de qui a cliqué. `user_id` reste rempli pour un agent, au
+     * nom du propriétaire de la conversation, pour que tout lecteur qui ne regarde que lui
+     * continue de savoir pour qui le geste a été fait.
+     *
+     * Sans clé étrangère, comme `agent_requests.conversation_id` : un `ADD COLUMN` de
+     * SQLite ne sait pas poser `ON DELETE SET NULL`, et une clé sans action bloquerait la
+     * suppression de la conversation. Un mouvement survit à la session qui l'a fait.
+     */
+    conversationId: text('conversation_id'),
     movedAt: timestamp('moved_at').notNull(),
   },
   (t) => [index('idx_card_moves_card').on(t.cardId, t.movedAt)],
@@ -478,6 +490,8 @@ export const agentRequests = sqliteTable(
         'create_project',
         'move_conversation',
         'request_card_move',
+        // Le déplacement direct de sa propre carte, que l'agent fait seul.
+        'move_card',
         'request_decision',
         // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
         'create_worktree',

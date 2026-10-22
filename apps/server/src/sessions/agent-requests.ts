@@ -13,6 +13,7 @@ import {
   scheduledTasks,
   users,
   worktrees,
+  writeTransaction,
   type AgentRequestRow,
   type ConversationRow,
   type ProjectRow,
@@ -47,6 +48,7 @@ import {
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
+import { recordCardMove } from '../cards/moves.js'
 import { createConversation } from '../conversations/create.js'
 import { moveConversation } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -166,7 +168,19 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'create_project',
   'move_conversation',
   'request_card_move',
+  'move_card',
 ])
+
+/**
+ * Les colonnes où un agent range sa carte seul, par `move_card`, dans un sens comme dans
+ * l'autre. Doit rester d'accord avec `AGENT_CARD_COLUMNS` de
+ * `apps/server/src/mcp/solera-mcp.mjs`, qui le dit à l'agent.
+ *
+ * Elles disent où en est le travail, et se reprennent d'un geste. `done` et `abandoned`
+ * n'y sont pas, ni à l'arrivée ni au départ : ce sont des verdicts, et une personne les
+ * pose — par l'interface, ou en accordant un `request_card_move`.
+ */
+export const AGENT_CARD_COLUMNS: readonly CardColumn[] = ['todo', 'in_progress', 'review']
 
 
 class Refusal extends Error {}
@@ -343,6 +357,10 @@ export class AgentRequests {
       // C'est aussi pourquoi `request_card_move` n'entre pas dans `FREE_THREAD_TOOLS`.
       if (request.kind === 'request_card_move') {
         this.settle(request, this.requestCardMove(request, requester, project, payload), false)
+        return
+      }
+      if (request.kind === 'move_card') {
+        this.settle(request, this.moveOwnCard(requester, project, payload), false)
         return
       }
       if (request.kind === 'start_session') {
@@ -1635,6 +1653,88 @@ export class AgentRequests {
         "Refusé : le rangement de carte n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
       )
     }
+  }
+
+  // --- move_card -----------------------------------------------------------------
+
+  /**
+   * Déplace la carte de la conversation, d'elle-même et sans clic.
+   *
+   * La part de #66 « agir sur ce qui se réverse » : l'agent dit où en est son travail en
+   * rangeant sa propre carte entre `AGENT_CARD_COLUMNS`. Tout le reste — un verdict, ou
+   * la carte d'une autre session — passe par `request_card_move`, et c'est pourquoi
+   * l'outil n'a pas de paramètre de numéro : il n'y a rien à valider sur une carte qu'il
+   * ne peut pas désigner.
+   *
+   * Dans le socle et non dans la famille `cardFiling` : le critère de
+   * `packages/protocol/src/agent-config.ts` retient cette famille pour ce qui défait un
+   * choix qu'une personne a posé, et une carte qui passe de « en cours » à « à vérifier »
+   * n'en défait aucun. Le refus d'une carte en `done` ou `abandoned` est ce qui tient
+   * cette promesse.
+   *
+   * Le mouvement porte la conversation dans `card_moves`, et une note sur la carte le dit
+   * en clair, signée de la session : c'est le fil que l'utilisateur lit.
+   */
+  private moveOwnCard(requester: ConversationRow, project: ProjectRow, payload: Record<string, unknown>): string {
+    const column = cardColumnSchema.safeParse(payload.column)
+    if (!column.success || !AGENT_CARD_COLUMNS.includes(column.data)) {
+      throw new Refusal(
+        `Le paramètre \`column\` vaut ${AGENT_CARD_COLUMNS.join(', ')}. Terminé et abandonné se demandent avec request_card_move.`,
+      )
+    }
+    const card = requester.cardId
+      ? this.ctx.db
+          .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+          .from(cards)
+          .where(and(eq(cards.id, requester.cardId), eq(cards.projectId, project.id)))
+          .get()
+      : undefined
+    if (!card) {
+      throw new Refusal(
+        "Cette conversation n'est rattachée à aucune carte : il n'y a rien à déplacer. Pour une autre carte, request_card_move.",
+      )
+    }
+    if (!AGENT_CARD_COLUMNS.includes(card.column)) {
+      throw new Refusal(
+        `Refusé : la carte #${card.number} est en « ${COLUMN_WORDS[card.column]} », un verdict posé par une personne. Si elle doit en ressortir, propose-le avec request_card_move.`,
+      )
+    }
+    if (card.column === column.data) {
+      return `La carte #${card.number} « ${card.title} » est déjà en « ${COLUMN_WORDS[column.data]} ».`
+    }
+
+    const reason = typeof payload.reason === 'string' ? payload.reason.trim().slice(0, MAX_CARD_MOVE_REASON_CHARS) : ''
+    const now = Date.now()
+    writeTransaction(this.ctx.db, (tx) => {
+      // Conditionné à la colonne relue : une personne a pu ranger la carte entre la
+      // lecture et l'écriture, et son geste plus récent l'emporte.
+      const moved = tx
+        .update(cards)
+        .set({ column: column.data, updatedAt: now })
+        .where(and(eq(cards.id, card.id), eq(cards.column, card.column)))
+        .run()
+      if (moved.changes === 0) return
+      recordCardMove(tx, {
+        cardId: card.id,
+        from: card.column,
+        to: column.data,
+        userId: requester.userId,
+        conversationId: requester.id,
+        at: now,
+      })
+      tx.insert(cardNotes)
+        .values({
+          id: randomUUID(),
+          cardId: card.id,
+          conversationId: requester.id,
+          userId: null,
+          body: `Déplacée de « ${COLUMN_WORDS[card.column]} » vers « ${COLUMN_WORDS[column.data]} ».${reason ? ` ${reason}` : ''}`,
+          createdAt: now,
+        })
+        .run()
+    })
+
+    return `Carte #${card.number} « ${card.title} » passée de « ${COLUMN_WORDS[card.column]} » à « ${COLUMN_WORDS[column.data]} ». Une note sur la carte le dit.`
   }
 
   // --- request_decision ----------------------------------------------------------
