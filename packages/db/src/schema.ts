@@ -292,7 +292,10 @@ export const cardMoves = sqliteTable(
       .references(() => cards.id, { onDelete: 'cascade' }),
     fromColumn: text('from_column').$type<CardColumn>().notNull(),
     toColumn: text('to_column').$type<CardColumn>().notNull(),
-    /** Null quand le compte a été supprimé : le mouvement reste daté et vrai. */
+    /**
+     * Null quand le compte a été supprimé : le mouvement reste daté et vrai. Null aussi
+     * quand personne n'a fait le geste : le passage en « Terminé » à la fusion du worktree.
+     */
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     /**
      * La session qui a déplacé la carte d'elle-même, par `move_card`. Null pour un geste

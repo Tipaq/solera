@@ -10,7 +10,8 @@ import type { CardColumn } from '@solera/protocol'
  * Journal lit cette table, et elle ne vaut que si les trois chemins qui changent une
  * colonne passent tous par ici — le glisser-déposer, le menu du panneau, le passage
  * automatique en « en cours » au lancement d'une session, la demande accordée d'un
- * clic, et `move_card`, par lequel un agent déplace sa propre carte.
+ * clic, `move_card`, par lequel un agent déplace sa propre carte, et la fusion d'un
+ * worktree, qui termine les cartes de ses sessions (`worktrees/merged-cards.ts`).
  *
  * En ajout seul : un mouvement est un fait daté, il ne se corrige pas. Un aller-retour
  * laisse deux lignes, ce qui est la vérité et pas du bruit.

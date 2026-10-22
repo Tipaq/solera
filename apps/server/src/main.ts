@@ -41,6 +41,7 @@ import { VaultIndex } from './vault/index-service.js'
 import { backfillCommandPaths } from './worktrees/backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedWorktrees } from './worktrees/merge-watch.js'
+import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
@@ -110,6 +111,8 @@ async function main(): Promise<void> {
   // le propose dans « À décider ».
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
   watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
+  // Et la même fusion passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
+  watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus)
