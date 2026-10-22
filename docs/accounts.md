@@ -129,3 +129,21 @@ without `auth.json` would refuse the turn.
 ## OpenCode
 
 Not covered: OpenCode has no account notion in Solera.
+
+## Grok Build
+
+Same design as Codex: Grok Build keeps one sign-in per `GROK_HOME`, in its `auth.json`.
+
+- Each extra account gets its own home under `<data>/grok-accounts/<id>`. Every entry
+  of the user's `~/.grok` is linked into it except `auth.json`, `models_cache.json` and
+  `settings_cache.json`, which depend on the subscription. Sessions are shared, so a
+  conversation resumes whichever account opened it.
+- Sign-in is run by Grok in that home: `grok login --device-auth` for a SuperGrok or
+  X Premium subscription (Solera reads the URL and code it prints), or the ACP
+  `xai.api_key` method with `XAI_API_KEY` for an xAI API key, which Grok stores in the
+  home's `auth.json`. Solera keeps no secret.
+- Sign-out runs `grok logout` in the home, then removes its `auth.json`.
+- The session receives `GROK_HOME`. Changing the account restarts the process.
+- Usage is read per account through Grok's `_x.ai/billing` extension: the share of the
+  weekly or monthly credit allowance, the on-demand cap and the prepaid balance.
+- Probed on Grok Build 1.0.62.

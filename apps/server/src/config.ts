@@ -139,6 +139,9 @@ const configSchema = z.object({
       opencode: z
         .object({ binary: z.string().default('opencode'), enabled: z.boolean().default(true) })
         .default({}),
+      grok: z
+        .object({ binary: z.string().default('grok'), enabled: z.boolean().default(true) })
+        .default({}),
     })
     .default({}),
 })
@@ -193,6 +196,8 @@ export interface Paths {
   skillSourcesCache: string
   /** Un `CODEX_HOME` par compte Codex supplémentaire, voir `codex-accounts/homes.ts`. */
   codexAccounts: string
+  /** Un `GROK_HOME` par compte Grok supplémentaire, voir `grok-accounts/homes.ts`. */
+  grokAccounts: string
   /** Une connexion par abonnement Claude, pour sa seule jauge, voir `claude-accounts/gauges.ts`. */
   claudeAccounts: string
   webRoot: string
@@ -233,6 +238,7 @@ function resolvePaths(): Paths {
     skillLibrary: join(data, 'skill-library'),
     memory: join(data, 'memory'),
     codexAccounts: join(data, 'codex-accounts'),
+    grokAccounts: join(data, 'grok-accounts'),
     claudeAccounts: join(data, 'claude-accounts'),
     // Propre à chaque répertoire de données : deux instances sur une machine (un serveur
     // de test à côté du daemon) ont les mêmes identifiants de sources préconfigurées, et

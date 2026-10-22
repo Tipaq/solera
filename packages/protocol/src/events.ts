@@ -14,7 +14,7 @@ import { cardColumnSchema } from './cards.js'
  * conservé à part, dans la colonne `events.raw`, pour les renderers spécialisés.
  */
 
-export const agentKindSchema = z.enum(['claude', 'codex', 'opencode'])
+export const agentKindSchema = z.enum(['claude', 'codex', 'opencode', 'grok'])
 export type AgentKind = z.infer<typeof agentKindSchema>
 
 export const planStatusSchema = z.enum(['pending', 'in_progress', 'completed'])

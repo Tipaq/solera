@@ -22,6 +22,7 @@ export type SettingsSectionId =
   | 'cli'
   | 'comptes-claude'
   | 'comptes-codex'
+  | 'comptes-grok'
   | 'mcp'
   | 'consignes'
   | 'skills'

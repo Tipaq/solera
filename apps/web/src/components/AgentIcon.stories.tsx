@@ -2,7 +2,7 @@ import type { AgentKind } from '@solera/protocol'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { AGENT_META, AgentIcon } from './AgentIcon'
 
-const AGENTS: AgentKind[] = ['claude', 'codex', 'opencode']
+const AGENTS: AgentKind[] = ['claude', 'codex', 'opencode', 'grok']
 
 const meta = {
   title: "Composants d'application/AgentIcon",

@@ -11,6 +11,7 @@ import {
   type CodexApprovalName,
   type CodexConfig,
   type CodexMode,
+  type GrokConfig,
   type McpServerStatus,
   type OpencodePermission,
   type OpencodePermissions,
@@ -18,6 +19,7 @@ import {
 import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
+import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -68,6 +70,34 @@ function permissionOptions(t: Translate): SettingChoice<ClaudeConfig['permission
       hint: t('composer.permission.bypass.hint'),
       tone: 'caution',
     },
+  ]
+}
+
+/**
+ * Modes de Grok Build. Ses noms recopient ceux de Claude Code, à `manual` près, qu'il
+ * appelle `default` : les libellés de Claude servent donc, sauf l'automatique, dont
+ * l'indice nomme l'agent qui décide. Tous se changent à chaud.
+ */
+function grokPermissionOptions(t: Translate): SettingChoice<GrokConfig['permissionMode']>[] {
+  return [
+    { value: 'default', label: t('composer.permission.manual'), hint: t('composer.permission.manual.hint') },
+    { value: 'auto', label: t('composer.permission.auto'), hint: t('composer.grokPermission.auto.hint') },
+    { value: 'plan', label: t('composer.permission.plan'), hint: t('composer.permission.plan.hint') },
+    {
+      value: 'bypassPermissions',
+      label: t('composer.permission.bypass'),
+      hint: t('composer.permission.bypass.hint'),
+      tone: 'caution',
+    },
+  ]
+}
+
+type WebSearchChoice = 'on' | 'off'
+
+function webSearchOptions(t: Translate): SettingChoice<WebSearchChoice>[] {
+  return [
+    { value: 'on', label: t('composer.webSearch.on'), hint: t('composer.webSearch.on.hint') },
+    { value: 'off', label: t('composer.webSearch.off'), hint: t('composer.webSearch.off.hint') },
   ]
 }
 
@@ -435,6 +465,7 @@ export function useAgentSettings({
   const claude = config.agent === 'claude' ? config : null
   const codex = config.agent === 'codex' ? config : null
   const opencode = config.agent === 'opencode' ? config : null
+  const grok = config.agent === 'grok' ? config : null
 
   /**
    * Modèle réellement en vigueur. `CLI_DEFAULT` ne désigne aucune entrée du catalogue :
@@ -511,7 +542,7 @@ export function useAgentSettings({
     // lisible quand le catalogue ne le déclare pas (ou plus). Seulement si le modèle
     // gère l'effort : sinon le sélecteur n'a pas à exister.
     const current =
-      config.agent === 'claude' ? config.effort : config.agent === 'codex' ? config.reasoningEffort : config.variant
+      config.agent === 'claude' ? config.effort : config.agent === 'opencode' ? config.variant : config.reasoningEffort
     if (known.length > 0 && current && !known.some((option) => option.value === current)) {
       known.unshift({ value: current, label: effortLabel(t, { value: current, label: current, hint: null }), hint: t('composer.select.saved') })
     }
@@ -586,8 +617,9 @@ export function useAgentSettings({
    * Même sentinelle côté effort, que seul Codex laisse vide : le niveau montré est
    * celui que le modèle retenu annonce par défaut.
    */
-  const resolvedEffort = codex
-    ? codex.reasoningEffort ||
+  const effortSetting = codex ?? grok
+  const resolvedEffort = effortSetting
+    ? effortSetting.reasoningEffort ||
       catalogModel(catalog?.models, resolvedModel)?.defaultEffort ||
       CLI_DEFAULT
     : CLI_DEFAULT
@@ -738,13 +770,17 @@ export function useAgentSettings({
   const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
   // Codex : seuls les comptes connectés se choisissent, un home vide refuserait le tour.
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
+  // Grok, sur le même modèle que Codex : un home par compte, connecté ou non.
+  const { data: grokAccountList } = useGrokAccounts(grok !== null)
   const accountOptions = useMemo((): SettingChoice<string>[] => {
-    const chosen = claude?.account ?? codex?.account ?? null
+    const chosen = claude?.account ?? codex?.account ?? grok?.account ?? null
     const accounts = claude
       ? (claudeAccountList?.accounts ?? [])
       : codex
         ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
-        : null
+        : grok
+          ? (grokAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
+          : null
     if (accounts === null) return []
     if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
@@ -758,7 +794,7 @@ export function useAgentSettings({
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [claudeAccountList, codexAccountList, claude, codex, t])
+  }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, t])
   const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
   const permissionOptionList = permissionOptions(t)
@@ -767,6 +803,8 @@ export function useAgentSettings({
   const ultracodeOptionList = ultracodeOptions(t)
   const queueOptionList = queueOptions(t)
   const opencodePermissionList = opencodePermissionOptions(t)
+  const grokPermissionList = grokPermissionOptions(t)
+  const webSearchOptionList = webSearchOptions(t)
 
   let groups: SettingGroup[] = []
   let summary: SummarySegment[] = []
@@ -1073,7 +1111,7 @@ export function useAgentSettings({
             setting({
               key: 'account',
               label: t('composer.setting.account'),
-              icon: <IdCard size={15} />,
+              icon: <IdCard size={14} />,
               options: accountOptions,
               value: accountChoice(codex.account),
               onChange: (choice) =>
@@ -1411,6 +1449,183 @@ export function useAgentSettings({
         onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
         solera={soleraAvailable ? opencode.soleraMcp : null}
         onSoleraChange={(soleraMcp) => onConfigChange({ ...opencode, soleraMcp })}
+        strict={null}
+        onStrictChange={() => {}}
+        disabled={disabled}
+      />
+    )
+  } else if (grok) {
+    const applied = appliedConfig?.agent === 'grok' ? appliedConfig : null
+    const webSearch: WebSearchChoice = grok.webSearch ? 'on' : 'off'
+
+    groups = [
+      setting({
+        key: 'model',
+        label: t('composer.setting.model'),
+        icon: <Sparkles size={14} />,
+        options: modelOptions,
+        value: resolvedModel,
+        onChange: (model) =>
+          onConfigChange({ ...grok, model, reasoningEffort: clampEffort(model, grok.reasoningEffort) }),
+      }),
+      ...(effortOptions.length > 0
+        ? [
+            setting({
+              key: 'effort',
+              label: t('composer.setting.effort'),
+              icon: <Brain size={14} />,
+              options: effortOptions,
+              value: resolvedEffort,
+              onChange: (reasoningEffort) => onConfigChange({ ...grok, reasoningEffort }),
+            }),
+          ]
+        : []),
+      setting({
+        key: 'permission',
+        label: t('composer.setting.permission'),
+        icon: <ShieldCheck size={14} />,
+        options: grokPermissionList,
+        value: grok.permissionMode,
+        onChange: (permissionMode) => onConfigChange({ ...grok, permissionMode }),
+      }),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={14} />,
+              options: accountOptions,
+              value: accountChoice(grok.account),
+              onChange: (choice) =>
+                onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // Le compte est le `GROK_HOME` du process : changer de compte attend la
+              // relance de la session.
+              notice: notice(
+                appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      // Grok coupe ses outils web par une option de lancement : le changement attend
+      // la relance de la session, et la ligne dit ce qui vaut d'ici là.
+      setting({
+        key: 'webSearch',
+        toggle: { on: 'on' },
+        label: t('composer.setting.webSearch'),
+        icon: <Globe size={14} />,
+        options: webSearchOptionList,
+        value: webSearch,
+        onChange: (choice) => onConfigChange({ ...grok, webSearch: choice === 'on' }),
+        notice: notice(
+          appliedLabel(applied ? (applied.webSearch ? 'on' : 'off') : undefined, webSearch, webSearchOptionList),
+          t,
+        ),
+      }),
+      ...(libraryAvailable
+        ? [
+            setting({
+              key: 'skillLibrary',
+              toggle: { on: 'on' },
+              label: t('composer.setting.skillLibrary'),
+              icon: <BookOpen size={14} />,
+              options: libraryOptionList,
+              value: libraryChoice(grok.skillLibrary),
+              onChange: (choice) => onConfigChange({ ...grok, skillLibrary: choice === 'on' }),
+              // Les skills arrivent en plugin au lancement du process, comme chez Claude.
+              notice: notice(
+                appliedLabel(
+                  applied ? libraryChoice(applied.skillLibrary) : undefined,
+                  libraryChoice(grok.skillLibrary),
+                  libraryOptionList,
+                ),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(memoryAvailable
+        ? [
+            setting({
+              key: 'agentMemory',
+              toggle: { on: 'on' },
+              label: t('composer.setting.agentMemory'),
+              icon: <Brain size={14} />,
+              options: memoryOptionList,
+              value: memoryChoice(grok.agentMemory),
+              onChange: (choice) => onConfigChange({ ...grok, agentMemory: choice === 'on' }),
+              // L'index de la mémoire part dans les règles données à la création de la
+              // session : le changement attend la relance, comme la bibliothèque.
+              notice: notice(
+                appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(grok.agentMemory), memoryOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(filingAvailable
+        ? [
+            setting({
+              key: 'projectFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.projectFiling'),
+              icon: <FolderInput size={14} />,
+              options: filingOptionList,
+              value: filingChoice(grok.projectFiling),
+              onChange: (choice) => onConfigChange({ ...grok, projectFiling: choice === 'on' }),
+              notice: notice(
+                appliedLabel(applied ? filingChoice(applied.projectFiling) : undefined, filingChoice(grok.projectFiling), filingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(cardFilingAvailable
+        ? [
+            setting({
+              key: 'cardFiling',
+              toggle: { on: 'on' },
+              label: t('composer.setting.cardFiling'),
+              icon: <Columns3 size={14} />,
+              options: cardFilingOptionList,
+              value: filingChoice(grok.cardFiling),
+              onChange: (choice) => onConfigChange({ ...grok, cardFiling: choice === 'on' }),
+              notice: notice(
+                appliedLabel(applied ? filingChoice(applied.cardFiling) : undefined, filingChoice(grok.cardFiling), cardFilingOptionList),
+                t,
+              ),
+            }),
+          ]
+        : []),
+      ...(decisionsAvailable
+        ? [decisionsSetting(grok, applied, onConfigChange, t)]
+        : []),
+      setting({
+        key: 'queue',
+        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
+        label: t('composer.setting.queue'),
+        icon: <Clock size={14} />,
+        options: queueOptionList,
+        value: queueChoice(grok.queueMessages),
+        onChange: (choice) => onConfigChange({ ...grok, queueMessages: choice === 'queue' }),
+      }),
+    ]
+
+    summary = [
+      segment('model', modelOptions, resolvedModel),
+      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(grok.account ? [segment('account', accountOptions, grok.account)] : []),
+      segment('permission', grokPermissionList, grok.permissionMode),
+    ]
+
+    mcp = (
+      <McpControl
+        servers={mcpServers}
+        inventory={mcpInventory}
+        selected={grok.mcpServers}
+        onSelectedChange={(ids) => onConfigChange({ ...grok, mcpServers: ids })}
+        solera={soleraAvailable ? grok.soleraMcp : null}
+        onSoleraChange={(soleraMcp) => onConfigChange({ ...grok, soleraMcp })}
         strict={null}
         onStrictChange={() => {}}
         disabled={disabled}

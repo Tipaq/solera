@@ -12,6 +12,7 @@ import type { EventLog } from '../events/event-log.js'
 import { ClaudeAdapter } from './claude/adapter.js'
 import type { CliBinary } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
+import { GrokAdapter } from './grok/adapter.js'
 import { OpencodeAdapter } from './opencode/adapter.js'
 import type { AgentRunner, RunnerContext } from './types.js'
 
@@ -21,6 +22,12 @@ export class ForkError extends Error {}
 export interface ForkTarget {
   agentSessionId: string
   cwd: string
+  /**
+   * L'environnement du compte choisi pour la conversation (`GROK_HOME`…), tel que la
+   * session le reçoit : un CLI qui range ses sessions dans le home du compte les y
+   * cherche aussi pour forker.
+   */
+  accountEnv: Record<string, string>
 }
 
 /** Ce qu'il faut à un adaptateur pour reconstituer l'effet d'un appel d'outil. */
@@ -63,7 +70,7 @@ export interface AgentAdapter {
   readonly capabilities: AgentCapabilities
   /**
    * Provenance estampillée sur les payloads natifs journalisés
-   * (« codex-app-server@v2 », « opencode-server@v1 »...). À bumper quand le protocole du CLI change de
+   * (« codex-app-server@v2 », « opencode-server@v1 », « grok-acp@v1 »...). À bumper quand le protocole du CLI change de
    * forme : c'est ce qui permettra de relire un vieux `raw` avec le bon lecteur.
    */
   readonly rawFormat: string
@@ -138,5 +145,6 @@ export function createAgentRegistry(config: Config): AgentRegistry {
     new ClaudeAdapter(config),
     new CodexAdapter(config),
     new OpencodeAdapter(config),
+    new GrokAdapter(config),
   ])
 }
