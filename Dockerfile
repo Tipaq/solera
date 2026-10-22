@@ -48,7 +48,7 @@ RUN apt-get update \
 # ont besoin d'un vrai compte avec un HOME inscriptible pour leurs credentials.
 USER node
 RUN mkdir -p /home/node/.local/share/solera /home/node/.config/solera \
-             /home/node/.claude /home/node/.codex /home/node/.local/share/opencode \
+             /home/node/.claude /home/node/.codex /home/node/.local/share/opencode /home/node/.grok \
              /home/node/workspace
 
 ENV NODE_ENV=production \

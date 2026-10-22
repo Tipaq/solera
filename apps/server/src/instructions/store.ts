@@ -144,7 +144,7 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
   const parts: string[] = []
   if (global || project) {
     parts.push(
-      "# SOLERA.md\n\nConsignes de l'utilisateur tenues dans Solera, communes à Claude, à Codex et à OpenCode. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
+      "# SOLERA.md\n\nConsignes de l'utilisateur tenues dans Solera, communes à Claude, à Codex, à OpenCode et à Grok. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
     )
     if (global) parts.push(`## Pour tous les projets\n\n${global}`)
     if (project) parts.push(`## Pour ce projet\n\n${project}`)

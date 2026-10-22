@@ -479,7 +479,7 @@ const ALL_TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'CLI de la session. Omettre pour le même que le tien.',
         },
         model: {
@@ -561,7 +561,7 @@ const ALL_TOOLS = [
         },
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'CLI des tirs. Omettre pour le même que le tien.',
         },
         model: {
@@ -603,7 +603,7 @@ const ALL_TOOLS = [
       properties: {
         agent: {
           type: 'string',
-          enum: ['claude', 'codex', 'opencode'],
+          enum: ['claude', 'codex', 'opencode', 'grok'],
           description: 'Ne rendre que ce CLI. Omettre pour tous.',
         },
       },

@@ -5,12 +5,15 @@ import {
   claudeConfigSchema,
   codexConfigSchema,
   opencodeConfigSchema,
+  grokConfigSchema,
   DEFAULT_CLAUDE_CONFIG,
   DEFAULT_CODEX_CONFIG,
   DEFAULT_OPENCODE_CONFIG,
+  DEFAULT_GROK_CONFIG,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
+  type GrokConfig,
 } from './agent-config.js'
 
 /**
@@ -84,12 +87,14 @@ export interface AgentDefaults {
   claude: ClaudeConfig
   codex: CodexConfig
   opencode: OpencodeConfig
+  grok: GrokConfig
 }
 
 export const DEFAULT_AGENT_DEFAULTS: AgentDefaults = {
   claude: DEFAULT_CLAUDE_CONFIG,
   codex: DEFAULT_CODEX_CONFIG,
   opencode: DEFAULT_OPENCODE_CONFIG,
+  grok: DEFAULT_GROK_CONFIG,
 }
 
 /**
@@ -105,6 +110,7 @@ export const agentDefaultsSchema = z.object({
   codex: codexConfigSchema.catch(DEFAULT_CODEX_CONFIG),
   // `default` en plus du `catch` : les réglages écrits avant opencode n'ont pas la clé.
   opencode: opencodeConfigSchema.default(DEFAULT_OPENCODE_CONFIG).catch(DEFAULT_OPENCODE_CONFIG),
+  grok: grokConfigSchema.default(DEFAULT_GROK_CONFIG).catch(DEFAULT_GROK_CONFIG),
 })
 
 export const appearancePrefsSchema = z.object({
