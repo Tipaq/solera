@@ -4,7 +4,16 @@ import { useCallback } from 'react'
 import type { AgentKind, AgentUsage } from '@solera/protocol'
 import { api } from './api'
 
-const usageKey = (agent: AgentKind) => ['usage', agent]
+/** `account` est l'identifiant d'un compte Claude supplémentaire, null pour la connexion du CLI. */
+const usageKey = (agent: AgentKind, account: string | null) => ['usage', agent, account]
+
+const usagePath = (agent: AgentKind, account: string | null, refresh: boolean) => {
+  const params = new URLSearchParams()
+  if (account) params.set('account', account)
+  if (refresh) params.set('refresh', '1')
+  const query = params.toString()
+  return `/api/agents/${agent}/usage${query ? `?${query}` : ''}`
+}
 
 /**
  * La lecture d'un CLI, en une place.
@@ -20,10 +29,10 @@ const usageKey = (agent: AgentKind) => ['usage', agent]
  * relire. La valeur précédente reste en cache le temps de la relecture, donc rouvrir
  * affiche l'ancienne mesure immédiatement plutôt qu'un écran vide.
  */
-function usageQuery(agent: AgentKind) {
+function usageQuery({ agent, account }: UsageTarget) {
   return {
-    queryKey: usageKey(agent),
-    queryFn: () => api.get<AgentUsage>(`/api/agents/${agent}/usage`),
+    queryKey: usageKey(agent, account),
+    queryFn: () => api.get<AgentUsage>(usagePath(agent, account, false)),
     staleTime: 0,
     // La consommation d'un compte n'a pas d'à-coups : réessayer en boucle ne ferait
     // que relancer des CLI pour rien.
@@ -37,13 +46,18 @@ function usageQuery(agent: AgentKind) {
  * `enabled` sert aux appelants qui l'affichent sans qu'on l'ait demandée, comme la page
  * de brouillon : interroger un CLI absent ne rapporterait qu'une erreur.
  */
-export function useAgentUsage(agent: AgentKind, enabled = true) {
-  return useQuery({ ...usageQuery(agent), enabled })
+export function useAgentUsage(agent: AgentKind, enabled = true, account: string | null = null) {
+  return useQuery({ ...usageQuery({ agent, account }), enabled })
+}
+
+/** Une consommation à lire : celle d'un CLI, ou d'un de ses comptes supplémentaires. */
+export interface UsageTarget {
+  agent: AgentKind
+  account: string | null
 }
 
 /** Ce qu'une section de la modale a besoin de savoir sur un CLI. */
-export interface AccountUsageEntry {
-  agent: AgentKind
+export interface AccountUsageEntry extends UsageTarget {
   usage: AgentUsage | undefined
   error: Error | null
   /** Première lecture en cours : il n'y a encore rien à montrer pour ce CLI. */
@@ -64,15 +78,15 @@ export interface AccountUsageEntry {
  * montre côte à côte. Un CLI en échec n'empêche pas les autres de s'afficher, il porte
  * son erreur dans sa section.
  */
-export function useAccountUsage(agents: AgentKind[]) {
+export function useAccountUsage(targets: UsageTarget[]) {
   const combine = useCallback(
     (results: UseQueryResult<AgentUsage, Error>[]) => ({
-      // Parcouru dans l'ordre des CLI et non dans celui des résultats : c'est la
-      // liste des CLI qui fait foi, et elle seule garantit à chaque entrée son agent.
-      entries: agents.map((agent, index) => {
+      // Parcouru dans l'ordre des cibles et non dans celui des résultats : c'est leur
+      // liste qui fait foi, et elle seule garantit à chaque entrée son agent.
+      entries: targets.map((target, index) => {
         const result = results[index]
         return {
-          agent,
+          ...target,
           usage: result?.data,
           error: result?.error ?? null,
           isPending: result?.isPending ?? true,
@@ -88,10 +102,10 @@ export function useAccountUsage(agents: AgentKind[]) {
       ),
       isFetching: results.some((result) => result.isFetching),
     }),
-    [agents],
+    [targets],
   )
 
-  return useQueries({ queries: agents.map(usageQuery), combine })
+  return useQueries({ queries: targets.map(usageQuery), combine })
 }
 
 /**
@@ -113,20 +127,25 @@ export function useAccountUsage(agents: AgentKind[]) {
  * chacun a son `try`, donc aucune promesse ne rejette et le `Promise.all` les attend
  * toutes.
  */
-export function useRefreshUsage(agents: AgentKind[]) {
+export function useRefreshUsage(targets: UsageTarget[]) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: () =>
       Promise.all(
-        agents.map(async (agent) => {
+        targets.map(async ({ agent, account }) => {
           try {
-            const fresh = await api.get<AgentUsage>(`/api/agents/${agent}/usage?refresh=1`)
-            queryClient.setQueryData(usageKey(agent), fresh)
+            const fresh = await api.get<AgentUsage>(usagePath(agent, account, true))
+            queryClient.setQueryData(usageKey(agent, account), fresh)
           } catch {
-            await queryClient.invalidateQueries({ queryKey: usageKey(agent) })
+            await queryClient.invalidateQueries({ queryKey: usageKey(agent, account) })
           }
         }),
       ),
   })
+}
+
+/** Le compte Claude supplémentaire qu'une configuration désigne, null pour tout autre cas. */
+export function usageAccountOf(config: { agent: AgentKind; account?: string | null } | null | undefined): string | null {
+  return config?.agent === 'claude' ? (config.account ?? null) : null
 }

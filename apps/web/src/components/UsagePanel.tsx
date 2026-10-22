@@ -5,7 +5,7 @@ import type { AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from './AgentIcon'
 import { locale, useTranslate } from '../lib/i18n'
 import { useAgentAvailability } from '../lib/agents'
-import { useAccountUsage, useRefreshUsage, type AccountUsageEntry } from '../lib/usage'
+import { useAccountUsage, useRefreshUsage, type AccountUsageEntry, type UsageTarget } from '../lib/usage'
 import { Banner, IconButton, cx } from '@solera/ui'
 import { UsageBar, readAge } from './chat/UsageBar'
 
@@ -113,18 +113,18 @@ function UsageSection({ entry }: { entry: AccountUsageEntry }) {
  * montré, même absent de la liste des disponibles — il vient d'une conversation qui
  * tourne avec lui, et refuser d'en lire la consommation serait incompréhensible.
  */
-function UsageDialog({ agent }: { agent?: AgentKind }) {
+function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | null }) {
   const t = useTranslate()
   const { data: availability, isPending: listing } = useAgentAvailability()
 
-  const agents = useMemo(() => {
+  const targets = useMemo<UsageTarget[]>(() => {
     const installed = (availability?.agents ?? []).filter((a) => a.installed).map((a) => a.agent)
-    if (!agent) return installed
-    return [agent, ...installed.filter((kind) => kind !== agent)]
-  }, [availability, agent])
+    const others = installed.filter((kind) => kind !== agent).map((kind) => ({ agent: kind, account: null }))
+    return agent ? [{ agent, account }, ...others] : others
+  }, [availability, agent, account])
 
-  const { entries, fetchedAt, isFetching } = useAccountUsage(agents)
-  const refresh = useRefreshUsage(agents)
+  const { entries, fetchedAt, isFetching } = useAccountUsage(targets)
+  const refresh = useRefreshUsage(targets)
   // Les deux chemins de lecture : les queries à l'ouverture, la mutation au bouton. La
   // relecture forcée ne passe pas par une query, donc `isFetching` seul laisserait le
   // bouton vif et muet pendant qu'il lance un process CLI par agent.
@@ -139,7 +139,7 @@ function UsageDialog({ agent }: { agent?: AgentKind }) {
         <IconButton
           label={t('usage.refresh')}
           onClick={() => refresh.mutate()}
-          disabled={busy || agents.length === 0}
+          disabled={busy || targets.length === 0}
         >
           <RefreshCw size={16} className={cx(busy && 'animate-spin')} />
         </IconButton>
@@ -152,12 +152,12 @@ function UsageDialog({ agent }: { agent?: AgentKind }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
         {entries.map((entry) => (
-          <UsageSection key={entry.agent} entry={entry} />
+          <UsageSection key={`${entry.agent}:${entry.account ?? ''}`} entry={entry} />
         ))}
 
         {/* La liste des CLI arrive après le premier rendu : tant qu'elle manque, il n'y
             a pas encore de section à poser, et dire « aucun CLI » serait prématuré. */}
-        {agents.length === 0 && !listing ? (
+        {targets.length === 0 && !listing ? (
           <p className="px-3 py-3.5 text-sm text-ink-faint">{t('usage.noAgent')}</p>
         ) : null}
       </div>
@@ -198,11 +198,14 @@ function onOpenAutoFocus(event: Event) {
 
 export function UsagePanel({
   agent,
+  account = null,
   open,
   onOpenChange,
 }: {
   /** CLI mis en tête. Omis depuis le compte, qui n'en privilégie aucun. */
   agent?: AgentKind
+  /** Compte Claude supplémentaire du fil, dont on lit la consommation à la place de celle du CLI. */
+  account?: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -222,7 +225,7 @@ export function UsagePanel({
             'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
           )}
         >
-          <UsageDialog agent={agent} />
+          <UsageDialog agent={agent} account={account} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

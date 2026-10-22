@@ -21,6 +21,7 @@ import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
+import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -48,7 +49,8 @@ async function main(): Promise<void> {
   const encryptionKey = loadOrCreateKey(config.paths.data)
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
-  const sessions = new SessionManager(db, log, config, registry, secrets)
+  const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts)
   const storybooks = new StorybookSupervisor({
     directory: join(config.paths.data, 'design-systems'),
     prototypesDirectory: prototypesRoot(config.paths.data),
@@ -96,6 +98,7 @@ async function main(): Promise<void> {
     push,
     secrets,
     gitCredentials,
+    claudeAccounts,
     webhooks,
     scheduler,
     relay,

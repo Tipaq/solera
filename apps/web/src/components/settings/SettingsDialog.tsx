@@ -20,6 +20,7 @@ import { AccountSection } from '../../routes/AccountSection'
 import { ApiTokensSettingsPage } from '../../routes/ApiTokensSettingsPage'
 import { AppearanceSection } from '../../routes/AppearanceSection'
 import { ArchivingSettingsPage } from '../../routes/ArchivingSettingsPage'
+import { ClaudeAccountsSettingsPage } from '../../routes/ClaudeAccountsSettingsPage'
 import { CliDefaultsSettingsPage } from '../../routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from '../../routes/DictationSettingsPage'
 import { DisplaySection } from '../../routes/DisplaySection'
@@ -53,6 +54,7 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   notifications: NotificationsSection,
   dictee: DictationSettingsPage,
   cli: CliDefaultsSettingsPage,
+  'comptes-claude': ClaudeAccountsSettingsPage,
   mcp: McpSettingsPage,
   consignes: InstructionsSettingsPage,
   skills: SkillLibrarySettingsPage,

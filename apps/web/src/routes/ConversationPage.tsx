@@ -33,6 +33,7 @@ import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/UsagePanel'
 import { RestoreCheckpointDialog } from '../components/chat/RestoreCheckpointDialog'
+import { usageAccountOf } from '../lib/usage'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
@@ -1126,7 +1127,12 @@ export function ConversationPage() {
         {/* La même modale que celle du menu du compte, ouverte sur le CLI de ce fil :
             deux portes vers un écran qui n'a qu'un contenu, et celle-ci arrive là où la
             question se pose. */}
-        <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
+        <UsagePanel
+          agent={conversation.agent}
+          account={usageAccountOf(config)}
+          open={usageOpen}
+          onOpenChange={setUsageOpen}
+        />
 
         <RestoreCheckpointDialog
           conversationId={conversationId}
