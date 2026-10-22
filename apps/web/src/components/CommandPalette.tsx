@@ -1,11 +1,13 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import {
+  BookOpen,
   CalendarClock,
   CalendarPlus,
   File,
   FolderOpen,
   Loader,
   MessageSquare,
+  Plug,
   Plus,
   Search,
   Settings,
@@ -14,19 +16,20 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { SEARCH_MIN_QUERY, type ConversationDto } from '@solera/protocol'
+import { SEARCH_MIN_QUERY, type ConversationDto, type FuzzyField } from '@solera/protocol'
 import { useCardSearch } from '../lib/cards'
 import { conversationPath } from '../lib/conversation-route'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
-import { scoreMatch, splitExcerpt, useMessageSearch } from '../lib/search'
+import { describeTransport, useMcpServers } from '../lib/mcp'
+import { fileFields, rankByFields, usePaletteCatalog, usePaletteFiles } from '../lib/palette'
+import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useSchedules } from '../lib/schedules'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
-import { useFileSearch } from '../lib/tree'
 import { openTab } from '../lib/editor-tabs'
-import { setPanelOpen, setPanelTab } from '../lib/panel'
+import { openPanelOnArrival, setPanelOpen, setPanelTab } from '../lib/panel'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from './settings/sections'
 import { AgentIcon } from './AgentIcon'
@@ -37,10 +40,15 @@ import { IconButton, cx } from '@solera/ui'
  *
  * Elle ne cherchait que les conversations et les messages. C'est ce qui enfermait des
  * fonctions dès qu'on a posé « un domicile par chose » : une carte, une tâche
- * planifiée, un réglage n'étaient atteignables que par le chemin qui y mène. Huit
+ * planifiée, un réglage n'étaient atteignables que par le chemin qui y mène. Onze
  * familles désormais, groupées, chacune repliée à trois lignes — une liste à plat de
  * quarante résultats ne se lit pas, et le groupe dit déjà de quelle nature est ce
- * qu'on regarde.
+ * qu'on regarde. Une famille de plus s'ajoute à `FamilyId`, à `GROUP_LABELS` et à la
+ * liste de la recherche générale, et nulle part ailleurs.
+ *
+ * Le classement est la correspondance floue du serveur (`@solera/protocol`), et les
+ * fichiers viennent de tous les projets visibles : chercher un fichier ne demande plus
+ * d'ouvrir d'abord son projet.
  *
  * C'est aussi le filet du réglage *Affichage* : un lieu décroché de la colonne reste
  * ici, et c'est ce qui autorise à le décrocher.
@@ -62,6 +70,8 @@ type FamilyId =
   | 'settings'
   | 'commands'
   | 'files'
+  | 'skills'
+  | 'mcp'
 
 const PREFIXES: { char: string; family: FamilyId; labelKey: MessageKey }[] = [
   { char: '>', family: 'commands', labelKey: 'palette.prefix.commands' },
@@ -123,25 +133,27 @@ export function CommandPalette({
    * coque : la palette s'ouvre depuis n'importe quelle vue, et l'adresse est ce que
    * toutes ont en commun.
    */
-  const route = /^\/p\/([^/]+)(?:\/c\/([^/]+))?/.exec(pathname)
+  const route = /^\/p\/([^/]+)(?:\/(c\/([^/]+)|board))?/.exec(pathname)
   const projectId = route?.[1] ?? null
-  const conversationId = route?.[2] && route[2] !== 'new' ? route[2] : null
+  const conversationId = route?.[3] && route[3] !== 'new' ? route[3] : null
   /**
-   * Le brouillon n'a pas de panneau : ouvrir un fichier depuis la palette y poserait
-   * un panneau « ouvert » que la page ne monte pas, et sans bouton pour le refermer.
-   * Portée vide, donc, comme hors de tout projet — la famille `fichiers` le dit.
+   * Les vues qui montent le panneau, où un fichier s'ouvre sans quitter la page : la
+   * conversation et le board. Le brouillon n'en a pas, et un panneau « ouvert » qu'il
+   * ne monte pas resterait sans bouton pour le refermer.
    */
-  const draft = pathname.endsWith('/c/new')
-  const scope = draft ? '' : conversationId ?? (projectId ? projectScope(projectId) : '')
+  const panelHere = conversationId !== null || route?.[2] === 'board'
 
+  // Un fichier se cherche dès la première lettre derrière `/` : le préfixe dit déjà ce
+  // qu'on veut, et un nom de fichier se tape court.
+  const fileTerm = prefix?.family === 'files' ? term : searching ? term : ''
   const { data: messages, isFetching } = useMessageSearch(open && !prefix ? term : '')
   const { data: cards } = useCardSearch(term, open && (!prefix || prefix.family === 'cards'))
-  // Sans projet sous les yeux, aucune portée : interroger quand même composerait une
-  // adresse de workspace vide, et le serveur répondrait 404 à chaque lettre.
-  const { data: files } = useFileSearch(
-    scope,
-    open && scope && prefix?.family === 'files' ? term : '',
+  const { data: files, isFetching: filesFetching } = usePaletteFiles(
+    open && (!prefix || prefix.family === 'files') ? fileTerm : '',
+    conversationId,
   )
+  const { data: catalog } = usePaletteCatalog(open)
+  const { data: mcp } = useMcpServers()
 
   // Rouvrir la palette doit repartir d'une page blanche : la recherche précédente
   // répondait à une intention qui n'est plus celle du moment.
@@ -231,6 +243,29 @@ export function CommandPalette({
     return entries
   }, [close, go, projectId, t])
 
+  /**
+   * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
+   * depuis une page sans panneau, fait d'abord aller au board de ce projet : c'est la
+   * vue de projet qui monte le panneau sans qu'il faille choisir une conversation.
+   */
+  const openFile = useCallback(
+    (fileProject: string, path: string) => {
+      close()
+      const here = fileProject === projectId && panelHere
+      openTab(here && conversationId ? conversationId : projectScope(fileProject), path)
+      if (here) {
+        setPanelTab('files')
+        setPanelOpen(true)
+        return
+      }
+      // L'arrivée rend au panneau l'état de sa nouvelle page : c'est celui-là qu'on écrit.
+      const board = `/p/${fileProject}/board`
+      openPanelOnArrival(board, 'files')
+      navigate(board)
+    },
+    [close, conversationId, navigate, panelHere, projectId],
+  )
+
   const groups = useMemo((): Group[] => {
     const limit = (id: FamilyId, items: Item[]): Group => ({
       id,
@@ -239,15 +274,13 @@ export function CommandPalette({
       total: items.length,
     })
 
+    /** Une phrase se cherche par morceaux et initiales, pas en lettres éparses. */
+    const sentence = (text: string): FuzzyField => ({ text, weight: 1, mode: 'words' })
+    /** Le contexte d'une ligne, son projet surtout, ne fait que restreindre. */
+    const context = (text: string | undefined): FuzzyField[] =>
+      text ? [{ text, weight: 0.35, mode: 'strict' }] : []
     const byScore = <T,>(source: T[], text: (entry: T) => string): T[] =>
-      source
-        .map((entry) => {
-          const score = scoreMatch(text(entry), term)
-          return score === null ? null : { entry, score }
-        })
-        .filter((entry) => entry !== null)
-        .sort((a, b) => b.score - a.score)
-        .map((entry) => entry.entry)
+      rankByFields(source, term, (entry) => [sentence(text(entry))])
 
     const conversationItems = (source: NonNullable<typeof conversations>): Item[] =>
       source.map((conversation) => ({
@@ -276,21 +309,32 @@ export function CommandPalette({
         run: () => go(`/p/${project.id}`),
       }))
 
-    const fileItems = (): Item[] =>
-      (files?.entries ?? [])
-        .filter((entry) => !entry.isDirectory)
-        .map((entry) => ({
-          key: `f-${entry.path}`,
+    /**
+     * Les fichiers de tous les projets, reclassés ensemble avec les poids du serveur.
+     * Le projet sous les yeux passe devant à pertinence égale : c'est le plus souvent
+     * là qu'on cherche.
+     */
+    const fileItems = (): Item[] => {
+      const found = (files?.projects ?? []).flatMap((group) => {
+        const name = projectNames.get(group.projectId)
+        return name === undefined ? [] : group.paths.map((path) => ({ projectId: group.projectId, name, path }))
+      })
+      return rankByFields(
+        found,
+        term,
+        (file) => fileFields(file.path, file.name),
+        (file) => (file.projectId === projectId ? 0.5 : 0),
+      ).map((file) => {
+        const slash = file.path.lastIndexOf('/')
+        return {
+          key: `f-${file.projectId}-${file.path}`,
           icon: <File size={14} />,
-          label: entry.path.split('/').pop() ?? entry.path,
-          meta: entry.path,
-          run: () => {
-            close()
-            openTab(scope, entry.path)
-            setPanelTab('files')
-            setPanelOpen(true)
-          },
-        }))
+          label: file.path.slice(slash + 1),
+          meta: slash > 0 ? `${file.name} · ${file.path.slice(0, slash)}` : file.name,
+          run: () => openFile(file.projectId, file.path),
+        }
+      })
+    }
 
     // Un préfixe ne veut qu'une famille, et toute la famille : le repli à trois lignes
     // n'a de sens que quand plusieurs familles se partagent la hauteur.
@@ -298,7 +342,9 @@ export function CommandPalette({
       const only: Record<string, Item[]> = {
         commands: byScore(commands, (item) => item.label),
         cards: cardItems(),
-        projects: term ? byScore(projectItems(), (item) => item.label) : projectItems(),
+        projects: term
+          ? rankByFields(projectItems(), term, (item) => [{ text: item.label, weight: 1 }])
+          : projectItems(),
         files: fileItems(),
       }
       const items = only[prefix.family] ?? []
@@ -367,7 +413,11 @@ export function CommandPalette({
         })
       : []
 
-    const settingsItems: Item[] = byScore(sections, (section) => t(section.labelKey)).map(
+    // La description compte aussi : « thème » doit trouver *Apparence*.
+    const settingsItems: Item[] = rankByFields(sections, term, (section) => [
+      sentence(t(section.labelKey)),
+      { text: t(section.descriptionKey), weight: 0.5, mode: 'strict' },
+    ]).map(
       (section) => ({
         key: `s-${section.id}`,
         icon: section.icon,
@@ -380,7 +430,10 @@ export function CommandPalette({
       }),
     )
 
-    const scheduleItems: Item[] = byScore(schedules ?? [], (task) => task.name).map((task) => ({
+    const scheduleItems: Item[] = rankByFields(schedules ?? [], term, (task) => [
+      sentence(task.name),
+      ...context(task.projectId ? projectNames.get(task.projectId) : undefined),
+    ]).map((task) => ({
       key: `t-${task.id}`,
       icon: <CalendarClock size={14} />,
       label: task.name,
@@ -389,21 +442,80 @@ export function CommandPalette({
       run: () => go(task.projectId ? `/p/${task.projectId}/schedules` : '/schedules'),
     }))
 
+    // Un skill global n'a pas de projet ; celui d'un projet qu'on ne voit plus (archivé
+    // depuis l'ouverture) est écarté plutôt que montré sans contexte.
+    const skills = (catalog?.skills ?? []).filter(
+      (skill) => skill.projectId === null || projectNames.has(skill.projectId),
+    )
+    const skillItems: Item[] = rankByFields(
+      skills,
+      term,
+      (skill) => [
+        { text: skill.name, weight: 1 },
+        { text: skill.description, weight: 0.5, mode: 'strict' },
+        ...context(skill.projectId ? projectNames.get(skill.projectId) : undefined),
+      ],
+      // Éteint, il reste trouvable, mais derrière ceux qui servent.
+      (skill) => (skill.enabled ? 0 : -1),
+    ).map((skill) => ({
+      key: `sk-${skill.id}`,
+      icon: <BookOpen size={14} />,
+      label: skill.name,
+      meta: [
+        skill.projectId ? projectNames.get(skill.projectId) : t('palette.skill.global'),
+        skill.enabled ? null : t('palette.disabled'),
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      run: () => go(`/skills/${skill.id}`),
+    }))
+
+    const mcpItems: Item[] = rankByFields(
+      mcp?.servers ?? [],
+      term,
+      (server) => [
+        { text: server.name, weight: 1 },
+        { text: describeTransport(server.transport), weight: 0.5, mode: 'strict' },
+      ],
+      (server) => (server.enabled ? 0 : -1),
+    ).map((server) => ({
+      key: `mcp-${server.id}`,
+      icon: <Plug size={14} />,
+      label: server.name,
+      meta: server.enabled ? describeTransport(server.transport) : t('palette.disabled'),
+      run: () => {
+        close()
+        openSettings('mcp')
+      },
+    }))
+
     return [
       limit('notes', []),
       limit(
         'conversations',
-        conversationItems(byScore(conversations ?? [], (conversation) => conversation.title)),
+        conversationItems(
+          rankByFields(conversations ?? [], term, (conversation) => [
+            sentence(conversation.title),
+            ...context(groupName(conversation)),
+          ]),
+        ),
       ),
       limit('messages', messageItems),
-      limit('projects', byScore(projectItems(), (item) => item.label)),
+      limit(
+        'projects',
+        rankByFields(projectItems(), term, (item) => [{ text: item.label, weight: 1 }]),
+      ),
       limit('cards', cardItems()),
+      limit('files', fileItems()),
+      limit('skills', skillItems),
+      limit('mcp', mcpItems),
       limit('schedules', scheduleItems),
       limit('settings', settingsItems),
       limit('commands', byScore(commands, (item) => item.label)),
     ].filter((group) => group.items.length > 0)
   }, [
     cards,
+    catalog,
     close,
     commands,
     conversations,
@@ -411,12 +523,14 @@ export function CommandPalette({
     files,
     go,
     groupName,
+    mcp,
     messages,
+    openFile,
     prefix,
+    projectId,
     projectNames,
     projects,
     schedules,
-    scope,
     searching,
     sections,
     t,
@@ -481,7 +595,7 @@ export function CommandPalette({
               placeholder={t('palette.placeholder')}
               className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
             />
-            {searching && isFetching ? (
+            {(searching && isFetching) || (fileTerm && filesFetching) ? (
               <Loader size={16} className="shrink-0 animate-spin text-ink-faint" />
             ) : null}
 
@@ -527,9 +641,7 @@ export function CommandPalette({
 
             {items.length === 0 ? (
               <p className="px-2.5 py-6 text-center text-sm text-ink-faint">
-                {prefix?.family === 'files' && !scope
-                  ? t(draft ? 'palette.files.noThread' : 'palette.files.noProject')
-                  : term.length > 0 && !searching
+                {term.length > 0 && !searching && prefix?.family !== 'files'
                     ? t('search.empty.moreChars', { count: SEARCH_MIN_QUERY - term.length })
                     : t('search.empty.none')}
               </p>
@@ -569,6 +681,8 @@ const GROUP_LABELS: Record<FamilyId, MessageKey> = {
   settings: 'palette.group.settings',
   commands: 'palette.group.commands',
   files: 'palette.group.files',
+  skills: 'palette.group.skills',
+  mcp: 'palette.group.mcp',
 }
 
 function Row({

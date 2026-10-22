@@ -70,33 +70,3 @@ export function splitExcerpt(excerpt: string): ExcerptPart[] {
   if (rest) parts.push({ text: rest, hit: false })
   return parts
 }
-
-/**
- * Score d'une saisie contre un texte, par sous-séquence : « cmpct » retrouve
- * « compaction ». Renvoie null quand les lettres n'y sont pas dans l'ordre.
- *
- * Les lettres consécutives et les débuts de mot valent plus : sans ça, un titre qui
- * porte la frappe éparpillée passe devant celui qui la porte telle quelle.
- */
-export function scoreMatch(text: string, query: string): number | null {
-  const haystack = text.toLowerCase()
-  const needle = query.toLowerCase()
-
-  let score = 0
-  let at = 0
-
-  for (const letter of needle) {
-    const found = haystack.indexOf(letter, at)
-    if (found === -1) return null
-
-    if (found === at) score += 3
-    else if (found === 0 || ' -_/.'.includes(haystack[found - 1] ?? '')) score += 2
-    else score += 1
-
-    at = found + 1
-  }
-
-  // À score égal, le titre le plus court est le plus probable : la frappe y occupe
-  // une part plus grande de ce qui est écrit.
-  return score - haystack.length / 100
-}
