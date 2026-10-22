@@ -92,7 +92,8 @@ try {
   await page.getByRole('button', { name: 'Utiliser une clé API' }).click()
   await page.getByLabel('Clé API').fill('sk-test-bogus-key')
   await page.getByRole('button', { name: 'Se connecter', exact: true }).click()
-  await page.getByText('Connecté', { exact: true }).waitFor({ timeout: 30000 })
+  // Dans la modale : la coque porte aussi un « Connecté », celui du serveur.
+  await page.getByRole('dialog').getByText('Connecté', { exact: true }).waitFor({ timeout: 30000 })
   await page.getByText('Clé API', { exact: true }).waitFor()
   assert.ok(!(await page.content()).includes('sk-test-bogus-key'), 'La clé ne revient jamais au navigateur')
   const authFile = join(data, 'data', 'codex-accounts', id, 'auth.json')
@@ -127,7 +128,7 @@ try {
   // Code d'appareil : Codex rend une URL et un code, l'écran les montre, on annule.
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).click()
   await page.getByText('Ouvrir la page de connexion').waitFor({ timeout: 30000 })
-  const code = await page.locator('code').first().textContent()
+  const code = await page.getByRole('dialog').locator('code').first().textContent()
   assert.match(code, /^[A-Z0-9]{4}-[A-Z0-9]{5}$/, code)
   const status = await (await context.request.get(`${base}/api/codex-accounts/${id}/login`)).json()
   assert.equal(status.state, 'pending')

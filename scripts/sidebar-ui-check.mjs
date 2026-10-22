@@ -366,6 +366,37 @@ try {
   await page.keyboard.press('Escape')
   await usage.waitFor({ state: 'hidden' })
 
+  // Les comptes supplémentaires : une section pour chacun de ceux qui ont une jauge,
+  // nommée par le CLI puis le compte. Un jeton sans jauge et une clé API n'ont rien à
+  // montrer, et ne sont pas sondés.
+  const now = Date.now()
+  await page.route('**/api/claude-accounts', (route) => route.fulfill({ json: { accounts: [
+    { id: 'perso', label: 'Perso', kind: 'oauth', gauge: { email: 'alex@example.com' }, createdAt: now, updatedAt: now },
+    { id: 'jeton', label: 'Jeton seul', kind: 'oauth', gauge: null, createdAt: now, updatedAt: now },
+    { id: 'cle', label: 'Clé Console', kind: 'apiKey', gauge: null, createdAt: now, updatedAt: now },
+  ] } }))
+  await page.route('**/api/codex-accounts', (route) => route.fulfill({ json: { accounts: [
+    { id: 'boite', label: 'Boîte', status: 'ready', authMode: 'chatgpt', email: null, planType: 'pro', createdAt: now, updatedAt: now },
+  ] } }))
+  const probedAccounts = []
+  await page.unroute('**/api/agents/*/usage*')
+  await page.route('**/api/agents/*/usage*', (route) => {
+    const url = new URL(route.request().url())
+    const agent = url.pathname.split('/')[3]
+    if (url.searchParams.get('account')) probedAccounts.push(url.searchParams.get('account'))
+    route.fulfill({ json: { agent, fetchedAt: Date.now() - 42_000, ...usageFixtures[agent] } })
+  })
+  await page.reload()
+  await places.waitFor()
+  await column.getByRole('button', { name: 'Alex' }).click()
+  await page.getByRole('menuitem', { name: 'Consommation' }).click()
+  await usage.getByRole('heading', { name: 'Claude Code · Perso' }).waitFor()
+  await usage.getByRole('heading', { name: 'Codex · Boîte' }).waitFor()
+  assert.equal(await usage.locator('section h3').count(), 5)
+  assert.deepEqual(probedAccounts.sort(), ['boite', 'perso'])
+  await page.keyboard.press('Escape')
+  await usage.waitFor({ state: 'hidden' })
+
   // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
@@ -376,7 +407,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne), tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne, par compte), tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

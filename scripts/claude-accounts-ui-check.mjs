@@ -11,6 +11,8 @@ import { chromium } from 'playwright'
 
 // Comptes Claude supplémentaires : l'écran de réglages, puis le sélecteur de compte dans
 // les défauts du CLI. Vrais composants et vraie API, base temporaire, aucun CLI lancé.
+// Les réglages sont une modale : l'adresse /settings/<section> l'ouvre puis rend la main,
+// donc on y retourne par goto plutôt que par reload.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -115,7 +117,7 @@ try {
   const keyed = listed.accounts[1].id
   await context.request.delete(`${base}/api/claude-accounts/${keyed}`)
   // Supprimé par l'API, hors de la page : elle ne le sait qu'en relisant.
-  await page.reload()
+  await page.goto(`${base}/settings/comptes-claude`)
   await page.getByText('Boulot', { exact: true }).waitFor()
 
   // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
@@ -144,21 +146,21 @@ try {
   await delay(500)
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.equal(settings.agentDefaults.claude.account, listed.accounts[0].id)
-  await page.reload()
+  await page.goto(`${base}/settings/cli`)
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail')
 
   // Un compte supprimé reste désigné : le sélecteur le dit au lieu de se vider.
   const removed = await context.request.delete(`${base}/api/claude-accounts/${listed.accounts[0].id}`)
   assert.equal(removed.status(), 204)
-  await page.reload()
+  await page.goto(`${base}/settings/cli`)
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Compte supprimé')
   await page.getByRole('combobox', { name: 'Compte' }).click()
   await page.getByRole('option', { name: /Connexion du CLI/ }).click()
   await delay(500)
   assert.equal((await (await context.request.get(`${base}/api/me/settings`)).json()).agentDefaults.claude.account, null)
-  await page.reload()
+  await page.goto(`${base}/settings/cli`)
   await page.getByRole('combobox', { name: 'Modèle' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).count(), 0, 'Sans compte, pas de sélecteur')
 
