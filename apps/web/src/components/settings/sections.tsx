@@ -99,6 +99,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <IdCard size={16} />,
   },
   {
+    id: 'comptes-codex',
+    group: 'agents',
+    labelKey: 'settings.section.codexAccounts',
+    descriptionKey: 'settings.section.codexAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
     id: 'mcp',
     group: 'agents',
     labelKey: 'settings.section.mcp',

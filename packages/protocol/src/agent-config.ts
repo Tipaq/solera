@@ -370,6 +370,12 @@ export const codexConfigSchema = z.object({
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
+  /**
+   * Compte Codex de Solera dont le home est donné à la session (`CODEX_HOME`), `null`
+   * pour la connexion du CLI. Même raison d'être que `ClaudeConfig.account` ; le
+   * changer relance l'app-server, qui ne lit son home qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -485,6 +491,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
+  account: null,
 }
 
 export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {

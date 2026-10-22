@@ -21,6 +21,7 @@ export type SettingsSectionId =
   | 'dictee'
   | 'cli'
   | 'comptes-claude'
+  | 'comptes-codex'
   | 'mcp'
   | 'consignes'
   | 'skills'
