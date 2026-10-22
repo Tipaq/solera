@@ -659,7 +659,7 @@ export const fr: Catalog = {
   'archiving.delay.invalid': 'Saisir un nombre entier de jours entre 0 et 3650.',
   'archiving.delay.save': 'Enregistrer',
   'archiving.criteria':
-    "Une conversation n'est rangée qu'une fois lue jusqu'au bout par son propriétaire, et jamais tant qu'elle est épinglée, en cours, en attente de réponse ou porteuse d'un travail de fond. Y écrire la ressort.",
+    "Une conversation n'est rangée qu'une fois lue jusqu'au bout par son propriétaire, et jamais tant qu'elle est épinglée, en cours, en attente de réponse ou de décision, ou porteuse d'un travail de fond. Y écrire la ressort.",
   'settings.section.sessions': 'Sessions',
   'settings.section.sessions.description': 'Combien de sessions CLI tournent en même temps',
   'sessions.section.title': 'Sessions',

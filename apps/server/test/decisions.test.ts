@@ -13,6 +13,7 @@ import {
   agentRequests,
   cardNotes,
   cards,
+  conversationReads,
   conversations,
   events,
   openDatabase,
@@ -24,6 +25,7 @@ import {
 import { DEFAULT_CLAUDE_CONFIG, parseSessionMessage } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
+import { archiveStaleConversations } from '../src/conversations/auto-archive.js'
 import { Decisions } from '../src/decisions/decisions.js'
 import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
@@ -379,4 +381,26 @@ test('« À décider » liste aussi les rangements de cartes en attente, pour le
   ])
   const theirs = (await app.inject({ method: 'GET', url: '/api/awaiting', headers: { 'x-as': 'other' } })).json()
   assert.equal(theirs.requests.length, 0)
+})
+
+test('décisions : l’archivage automatique épargne une session qui attend sa réponse', async (t) => {
+  const { db, ask } = await harness(t)
+  const asked = await ask(ALLOWED, { question: 'On pousse ?', options: ['Oui', 'Non'] })
+  assert.equal(asked.isError, false, asked.result ?? '')
+  // Deux sessions au repos, lues et vieilles de dix jours : seule celle sans décision part.
+  const old = Date.now() - 10 * 24 * 3_600_000
+  for (const id of [ALLOWED, PLAIN]) {
+    db.update(conversations).set({ updatedAt: old, lastSeq: 0 }).where(eq(conversations.id, id)).run()
+    db.insert(conversationReads).values({ conversationId: id, userId: 'owner', lastReadSeq: 0, updatedAt: old }).run()
+  }
+
+  assert.equal(archiveStaleConversations(db, 7), 1)
+  const archived = (id: string) => db.select().from(conversations).where(eq(conversations.id, id)).get()!.archivedAt
+  assert.ok(archived(PLAIN))
+  assert.equal(archived(ALLOWED), null)
+
+  // Échue, elle ne protège plus la session.
+  db.update(agentRequests).set({ expiresAt: Date.now() - 1 }).where(eq(agentRequests.id, asked.id)).run()
+  assert.equal(archiveStaleConversations(db, 7), 1)
+  assert.ok(archived(ALLOWED))
 })

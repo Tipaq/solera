@@ -667,7 +667,7 @@ export const en = {
   'archiving.delay.invalid': 'Enter a whole number of days between 0 and 3650.',
   'archiving.delay.save': 'Save',
   'archiving.criteria':
-    'A conversation is only filed once its owner has read it through, and never while it is pinned, running, waiting on an answer, or still carrying background work. Writing in an archived conversation brings it back.',
+    'A conversation is only filed once its owner has read it through, and never while it is pinned, running, waiting on an answer or a decision, or still carrying background work. Writing in an archived conversation brings it back.',
   'settings.section.sessions': 'Sessions',
   'settings.section.sessions.description': 'How many CLI sessions may run at once',
   'sessions.section.title': 'Sessions',
