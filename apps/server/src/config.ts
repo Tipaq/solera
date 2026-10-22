@@ -191,6 +191,10 @@ export interface Paths {
    * refont d'un rafraîchissement, et la sauvegarde n'a pas à les transporter.
    */
   skillSourcesCache: string
+  /** Un `CODEX_HOME` par compte Codex supplémentaire, voir `codex-accounts/homes.ts`. */
+  codexAccounts: string
+  /** Une connexion par abonnement Claude, pour sa seule jauge, voir `claude-accounts/gauges.ts`. */
+  claudeAccounts: string
   webRoot: string
 }
 
@@ -228,6 +232,8 @@ function resolvePaths(): Paths {
     logs: join(data, 'logs'),
     skillLibrary: join(data, 'skill-library'),
     memory: join(data, 'memory'),
+    codexAccounts: join(data, 'codex-accounts'),
+    claudeAccounts: join(data, 'claude-accounts'),
     // Propre à chaque répertoire de données : deux instances sur une machine (un serveur
     // de test à côté du daemon) ont les mêmes identifiants de sources préconfigurées, et
     // ne doivent pas rafraîchir le même clone en même temps.

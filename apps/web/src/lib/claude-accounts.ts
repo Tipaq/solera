@@ -1,0 +1,135 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { ClaudeAccount, ClaudeAccountListDto, ClaudeLoginStatusDto } from '@solera/protocol'
+import { api } from './api'
+
+/**
+ * Comptes Claude supplémentaires du compte courant.
+ *
+ * Comme pour les accès git, aucun hook ne lit un jeton : l'API n'en rend aucun. La
+ * liste sert au sélecteur de compte du composer, qui ne montre la catégorie que s'il y
+ * a quelque chose à choisir.
+ */
+
+const ACCOUNTS_KEY = ['claude-accounts']
+
+export function useClaudeAccounts(enabled = true) {
+  return useQuery({
+    queryKey: ACCOUNTS_KEY,
+    queryFn: () => api.get<ClaudeAccountListDto>('/api/claude-accounts'),
+    enabled,
+    // La liste ne bouge que depuis l'écran de réglages, qui l'invalide lui-même.
+    staleTime: 60 * 60 * 1000,
+  })
+}
+
+export function useCreateClaudeAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { label: string; token: string }) =>
+      api.post<ClaudeAccount>('/api/claude-accounts', input),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+  })
+}
+
+export function useUpdateClaudeAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...patch }: { id: string; label?: string; token?: string }) =>
+      api.patch<void>(`/api/claude-accounts/${encodeURIComponent(id)}`, patch),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+      // Une consommation lue sous l'ancien jeton ne décrit plus forcément le même compte.
+      void queryClient.invalidateQueries({ queryKey: ['usage'] })
+    },
+  })
+}
+
+export function useDeleteClaudeAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.delete<void>(`/api/claude-accounts/${encodeURIComponent(id)}`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
+  })
+}
+
+/**
+ * Connexion guidée d'un abonnement : le serveur pilote `claude setup-token`, l'écran
+ * montre l'URL, recueille le code que la page affiche et le transmet. Le compte naît
+ * quand le CLI a imprimé le jeton.
+ */
+/**
+ * Hors de `ACCOUNTS_KEY`, et pas en dessous : invalider la liste invaliderait aussi la
+ * connexion suivie, dont la relecture invalide la liste à sa fin. La boucle tournait à
+ * quarante requêtes par seconde et figeait l'écran sur « Vérification… » (13 octobre 2026).
+ */
+const loginKey = (loginId: string) => ['claude-login', loginId]
+
+export function useStartClaudeLogin() {
+  return useMutation({
+    mutationFn: (input: { label: string }) =>
+      api.post<ClaudeLoginStatusDto>('/api/claude-accounts/login', input),
+  })
+}
+
+export function useClaudeLoginStatus(loginId: string | null) {
+  const queryClient = useQueryClient()
+  return useQuery({
+    queryKey: loginKey(loginId ?? ''),
+    queryFn: async () => {
+      const status = await api.get<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}`)
+      // C'est la relecture qui apprend la fin, l'envoi du code ne faisant que le
+      // transmettre : le compte créé doit apparaître dans la liste sans recharger.
+      if (status.state === 'done') {
+        void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+        void queryClient.invalidateQueries({ queryKey: ['usage'] })
+      }
+      return status
+    },
+    enabled: loginId !== null,
+    // Le CLI peut s'arrêter de lui-même (délai, erreur) : on le relit tant qu'il attend,
+    // et pendant qu'il vérifie un code, l'envoi ne faisant que le lui transmettre.
+    refetchInterval: (query) =>
+      query.state.data?.state === 'done' || query.state.data?.state === 'failed' ? false : 2000,
+    staleTime: 0,
+  })
+}
+
+export function useSubmitClaudeLoginCode(loginId: string | null) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { code: string }) =>
+      api.post<ClaudeLoginStatusDto>(`/api/claude-accounts/login/${encodeURIComponent(loginId ?? '')}/code`, input),
+    onSuccess: (status) => {
+      queryClient.setQueryData(loginKey(loginId ?? ''), status)
+      if (status.state === 'done') void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+    },
+  })
+}
+
+export function useCancelClaudeLogin() {
+  return useMutation({
+    mutationFn: (loginId: string) => api.delete<void>(`/api/claude-accounts/login/${encodeURIComponent(loginId)}`),
+  })
+}
+
+/**
+ * Jauge d'un abonnement existant : une connexion `claude auth login` menée comme la
+ * connexion guidée, par les mêmes routes de suivi. Elle ne sert qu'à lire l'usage.
+ */
+export function useStartClaudeGauge() {
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.post<ClaudeLoginStatusDto>(`/api/claude-accounts/${encodeURIComponent(accountId)}/gauge`),
+  })
+}
+
+export function useForgetClaudeGauge() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (accountId: string) => api.delete<void>(`/api/claude-accounts/${encodeURIComponent(accountId)}/gauge`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+      void queryClient.invalidateQueries({ queryKey: ['usage'] })
+    },
+  })
+}

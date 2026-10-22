@@ -5,6 +5,7 @@ import {
   Cpu,
   FileText,
   GitBranch,
+  IdCard,
   Info,
   KeyRound,
   Library,
@@ -89,6 +90,20 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.section.cli',
     descriptionKey: 'settings.section.cli.description',
     icon: <SlidersHorizontal size={16} />,
+  },
+  {
+    id: 'comptes-claude',
+    group: 'agents',
+    labelKey: 'settings.section.claudeAccounts',
+    descriptionKey: 'settings.section.claudeAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
+    id: 'comptes-codex',
+    group: 'agents',
+    labelKey: 'settings.section.codexAccounts',
+    descriptionKey: 'settings.section.codexAccounts.description',
+    icon: <IdCard size={16} />,
   },
   {
     id: 'mcp',

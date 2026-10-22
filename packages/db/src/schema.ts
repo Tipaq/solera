@@ -1147,6 +1147,66 @@ export const gitCredentials = sqliteTable(
 )
 
 /**
+ * Comptes Claude supplémentaires, par utilisateur : un jeton OAuth longue durée de
+ * `claude setup-token` chacun, chiffré comme les credentials git.
+ *
+ * Par utilisateur et non par instance, pour la même raison que les credentials git :
+ * c'est l'abonnement de quelqu'un, et un administrateur n'a pas à emprunter celui d'un
+ * autre. Le libellé est ce que le sélecteur de compte affiche : un jeton ne porte ni
+ * courriel ni nom d'organisation lisibles sans dépenser un tour.
+ */
+export const claudeAccounts = sqliteTable(
+  'claude_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    /**
+     * Ce qu'est le secret : un jeton OAuth de `claude setup-token` (abonnement, passé
+     * dans `CLAUDE_CODE_OAUTH_TOKEN`) ou une clé API Console (facturée à l'usage, passée
+     * dans `ANTHROPIC_API_KEY`). Déduit du préfixe à l'écriture, retenu pour que le
+     * lancement n'ait pas à déchiffrer pour le savoir.
+     */
+    kind: text('kind').$type<'oauth' | 'apiKey'>().notNull().default('oauth'),
+    ciphertext: text('ciphertext').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  // Deux comptes du même nom seraient indiscernables dans le sélecteur.
+  (t) => [uniqueIndex('idx_claude_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
+/**
+ * Comptes Codex supplémentaires, par utilisateur.
+ *
+ * Aucun secret ici, contrairement aux comptes Claude : la connexion vit dans l'`auth.json`
+ * du home que Solera donne au compte (`<données>/codex-accounts/<id>`), écrit et
+ * rafraîchi par Codex lui-même. La ligne ne porte que le libellé et ce que Codex a dit
+ * du compte à la dernière connexion, pour que la liste se lise sans lancer d'app-server.
+ */
+export const codexAccounts = sqliteTable(
+  'codex_accounts',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    /** `chatgpt` ou `apiKey` une fois connecté, NULL tant que le home est vide. */
+    authMode: text('auth_mode').$type<'chatgpt' | 'apiKey'>(),
+    email: text('email'),
+    planType: text('plan_type'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [uniqueIndex('idx_codex_accounts_owner_label').on(t.ownerId, t.label)],
+)
+
+/**
  * Jetons d'API, porteurs d'identité des clients machine.
  *
  * Même stockage que les sessions : seul le SHA-256 du secret est retenu, le jeton en
@@ -1369,6 +1429,8 @@ export type SkillSourceRow = typeof skillSources.$inferSelect
 export type LibrarySkillRow = typeof librarySkills.$inferSelect
 export type SecretRow = typeof secrets.$inferSelect
 export type GitCredentialRow = typeof gitCredentials.$inferSelect
+export type ClaudeAccountRow = typeof claudeAccounts.$inferSelect
+export type CodexAccountRow = typeof codexAccounts.$inferSelect
 export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
 export type VaultNoteRow = typeof vaultNotes.$inferSelect
 export type VaultLinkRow = typeof vaultLinks.$inferSelect

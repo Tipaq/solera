@@ -25,6 +25,7 @@
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
     "test:skill-updates-ui": "node scripts/skill-updates-ui-check.mjs",
+    "test:accounts-ui": "node scripts/claude-accounts-ui-check.mjs && node scripts/claude-login-ui-check.mjs && node scripts/codex-accounts-ui-check.mjs && node scripts/draft-account-ui-check.mjs",
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",

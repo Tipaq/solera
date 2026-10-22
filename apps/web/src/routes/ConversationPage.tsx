@@ -33,6 +33,8 @@ import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/UsagePanel'
 import { RestoreCheckpointDialog } from '../components/chat/RestoreCheckpointDialog'
+import { usageAccountOf } from '../lib/usage'
+import { useClaudeAccounts } from '../lib/claude-accounts'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
@@ -233,6 +235,14 @@ export function ConversationPage() {
   // Déclaré ici et non après les retours anticipés, où il vivait : la rangée de signaux
   // en a besoin, et un hook ne peut pas se déclarer plus bas.
   const { config, error: configError, change: updateConfig, retry: retryConfig, flush: flushConfig } = useConversationConfig(conversation)
+  // Le catalogue décrit la connexion du CLI ; une conversation sur une clé API d'un
+  // compte supplémentaire est, elle, facturée à l'usage, et le montant y a un sens.
+  const { data: claudeAccounts } = useClaudeAccounts(conversation?.agent === 'claude')
+  const accountKind = claudeAccounts?.accounts.find((entry) => entry.id === usageAccountOf(config))?.kind ?? null
+  const billingAccount =
+    accountKind === 'apiKey'
+      ? { subscriptionType: null, organization: null, billedBySubscription: false }
+      : catalog?.account
   /**
    * Le mode de permission que le CLI applique encore, quand ce n'est pas celui choisi.
    * Null le reste du temps, donc aucun signal à afficher.
@@ -1110,7 +1120,7 @@ export function ConversationPage() {
                 </Button>
 
                 <UsageSummary
-                  account={catalog?.account}
+                  account={billingAccount}
                   rateLimit={stream.state.rateLimit}
                   costUsd={stream.state.costUsd}
                   inputTokens={stream.state.inputTokens}
@@ -1126,7 +1136,12 @@ export function ConversationPage() {
         {/* La même modale que celle du menu du compte, ouverte sur le CLI de ce fil :
             deux portes vers un écran qui n'a qu'un contenu, et celle-ci arrive là où la
             question se pose. */}
-        <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
+        <UsagePanel
+          agent={conversation.agent}
+          account={usageAccountOf(config)}
+          open={usageOpen}
+          onOpenChange={setUsageOpen}
+        />
 
         <RestoreCheckpointDialog
           conversationId={conversationId}

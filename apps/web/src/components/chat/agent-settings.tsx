@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, MessageCircleQuestion, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, IdCard, MessageCircleQuestion, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -16,6 +16,8 @@ import {
   type OpencodePermissions,
 } from '@solera/protocol'
 import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { useClaudeAccounts } from '../../lib/claude-accounts'
+import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useMcpServers } from '../../lib/mcp'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
@@ -728,6 +730,37 @@ export function useAgentSettings({
   const cardFilingAvailable = soleraAvailable && mcpRegistry?.cardFiling === true
   const decisionsAvailable = soleraAvailable && mcpRegistry?.decisions === true
 
+  /**
+   * Comptes Claude supplémentaires du compte Solera. Demandés pour Claude seulement,
+   * et la catégorie n'apparaît que s'il y a un choix à faire : sans compte enregistré,
+   * la connexion du CLI va de soi.
+   */
+  const { data: claudeAccountList } = useClaudeAccounts(claude !== null)
+  // Codex : seuls les comptes connectés se choisissent, un home vide refuserait le tour.
+  const { data: codexAccountList } = useCodexAccounts(codex !== null)
+  const accountOptions = useMemo((): SettingChoice<string>[] => {
+    const chosen = claude?.account ?? codex?.account ?? null
+    const accounts = claude
+      ? (claudeAccountList?.accounts ?? [])
+      : codex
+        ? (codexAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
+        : null
+    if (accounts === null) return []
+    if (accounts.length === 0 && !chosen) return []
+    const known: SettingChoice<string>[] = [
+      { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') },
+      ...accounts.map((account) => ({ value: account.id, label: account.label })),
+    ]
+    // Un compte supprimé depuis : la conversation le désigne encore, le serveur
+    // repartira sur la connexion du CLI, et l'écran le dit plutôt que de montrer un
+    // sélecteur vide.
+    if (chosen && !accounts.some((account) => account.id === chosen)) {
+      known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
+    }
+    return known
+  }, [claudeAccountList, codexAccountList, claude, codex, t])
+  const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
+
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
   const speedOptionList = speedOptions(t)
@@ -802,6 +835,29 @@ export function useAgentSettings({
               // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
               // l'éteindre laisse le niveau où il est.
               onChange: (choice) => onConfigChange({ ...claude, ultracode: choice === 'on' }),
+            }),
+          ]
+        : []),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={14} />,
+              options: accountOptions,
+              value: accountChoice(claude.account),
+              onChange: (choice) =>
+                onConfigChange({ ...claude, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // Le jeton arrive par l'environnement du process : changer de compte
+              // attend la relance de la session, comme le mode de permission.
+              notice: notice(
+                appliedLabel(
+                  appliedConfig?.agent === 'claude' ? accountChoice(appliedConfig.account) : undefined,
+                  accountChoice(claude.account),
+                  accountOptions,
+                ),
+                t,
+              ),
             }),
           ]
         : []),
@@ -955,6 +1011,8 @@ export function useAgentSettings({
       // résumé, comme un garde-fou levé se lit dans le sien.
       ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
       ...(ultracodeOffered && claude.ultracode ? [segment('ultracode', ultracodeOptionList, 'on')] : []),
+      // Un autre abonnement que celui du CLI paie le tour : ça se lit dans le résumé.
+      ...(claude.account ? [segment('account', accountOptions, claude.account)] : []),
       segment('permission', permissionOptionList, claude.permissionMode),
     ]
 
@@ -1007,6 +1065,29 @@ export function useAgentSettings({
               options: effortOptions,
               value: resolvedEffort,
               onChange: (reasoningEffort) => onConfigChange({ ...codex, reasoningEffort }),
+            }),
+          ]
+        : []),
+      ...(accountOptions.length > 0
+        ? [
+            setting({
+              key: 'account',
+              label: t('composer.setting.account'),
+              icon: <IdCard size={15} />,
+              options: accountOptions,
+              value: accountChoice(codex.account),
+              onChange: (choice) =>
+                onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+              // Le home du compte est l'environnement de l'app-server : changer de
+              // compte attend la relance de la session.
+              notice: notice(
+                appliedLabel(
+                  appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
+                  accountChoice(codex.account),
+                  accountOptions,
+                ),
+                t,
+              ),
             }),
           ]
         : []),
@@ -1125,6 +1206,7 @@ export function useAgentSettings({
     summary = [
       segment('model', modelOptions, resolvedModel),
       ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+      ...(codex.account ? [segment('account', accountOptions, codex.account)] : []),
       ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
       ...(approvalOff && codex.sandbox !== 'danger-full-access'
         ? []

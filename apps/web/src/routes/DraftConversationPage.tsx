@@ -13,6 +13,7 @@ import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/pr
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
+import { AccountChoice } from '../components/chat/AccountChoice'
 import { UsageBar, readAge } from '../components/chat/UsageBar'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { DestinationSelect } from '../components/DestinationSelect'
@@ -30,7 +31,7 @@ import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
-import { useAgentUsage } from '../lib/usage'
+import { useAgentUsage, usageAccountOf } from '../lib/usage'
 import { useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
@@ -59,13 +60,23 @@ function formatDay(ts: number): string {
  * vide. La sonde met plusieurs secondes à froid, et le brouillon sert d'abord à taper
  * un message, pas à regarder des jauges apparaître.
  */
-function DraftUsage({ agent, enabled }: { agent: AgentKind; enabled: boolean }) {
+function DraftUsage({
+  agent,
+  account,
+  enabled,
+}: {
+  agent: AgentKind
+  account: string | null
+  enabled: boolean
+}) {
   const t = useTranslate()
-  const { data: usage, error } = useAgentUsage(agent, enabled)
+  const { data: usage, error } = useAgentUsage(agent, enabled, account)
 
   // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
   // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
   if (error) return <p className="text-xs text-ink-faint">{t('draft.usage.unavailable')}</p>
+  // Un compte supplémentaire sans jauge : le choix vient d'être fait d'après l'usage, et
+  // une absence muette se lirait comme une panne. La raison est dite sous son option.
   if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
 
   return (
@@ -397,6 +408,9 @@ export function DraftConversationPage() {
               ))}
           </fieldset>
 
+          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}
+          <AccountChoice config={effective} onChange={setConfig} enabled={blocked === null} />
+
           {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
               croire qu'il n'y a simplement aucune commande dans ce dossier. */}
           {commandsError ? (
@@ -444,7 +458,7 @@ export function DraftConversationPage() {
             />
           )}
 
-          <DraftUsage agent={agent} enabled={blocked === null} />
+          <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={blocked === null} />
 
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,

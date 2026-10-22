@@ -20,7 +20,7 @@ import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
-import { ClaudeUsageReader } from './usage.js'
+import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
 
 /**
  * Point de coupe d'un fork : l'`uuid` d'une entrée du fichier de transcript.
@@ -168,6 +168,12 @@ export class ClaudeAdapter implements AgentAdapter {
 
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  /** `credential` est le dossier de la connexion de jauge ; vide, le compte n'en a pas. */
+  usageForAccount(accountId: string, credential: string, force: boolean): Promise<AgentUsage> {
+    if (!credential) return Promise.resolve(claudeAccountUsage())
+    return this.usageReader.readForConfigDir(accountId, credential, force)
   }
 
   commands(cwd: string, force: boolean): Promise<ProjectCommandsDto> {

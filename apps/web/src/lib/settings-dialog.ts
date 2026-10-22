@@ -20,6 +20,8 @@ export type SettingsSectionId =
   | 'notifications'
   | 'dictee'
   | 'cli'
+  | 'comptes-claude'
+  | 'comptes-codex'
   | 'mcp'
   | 'consignes'
   | 'skills'

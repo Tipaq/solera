@@ -266,6 +266,13 @@ export const claudeConfigSchema = z.object({
    */
   maxBudgetUsd: z.number().positive().nullable().default(null),
   maxTurns: z.number().int().positive().nullable().default(null),
+  /**
+   * Compte Claude de Solera dont le jeton est passé à la session, `null` pour la
+   * connexion du CLI (`/login`). Un identifiant et non le jeton : la configuration
+   * voyage jusqu'au navigateur, le jeton reste chiffré en base. Le changer relance la
+   * session, le CLI ne lisant son jeton qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type ClaudeConfig = z.infer<typeof claudeConfigSchema>
 
@@ -363,6 +370,12 @@ export const codexConfigSchema = z.object({
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
+  /**
+   * Compte Codex de Solera dont le home est donné à la session (`CODEX_HOME`), `null`
+   * pour la connexion du CLI. Même raison d'être que `ClaudeConfig.account` ; le
+   * changer relance l'app-server, qui ne lit son home qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
 })
 export type CodexConfig = z.infer<typeof codexConfigSchema>
 
@@ -456,6 +469,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   advisorModel: CLI_DEFAULT,
   maxBudgetUsd: null,
   maxTurns: null,
+  account: null,
 }
 
 export const DEFAULT_CODEX_CONFIG: CodexConfig = {
@@ -477,6 +491,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
+  account: null,
 }
 
 export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {

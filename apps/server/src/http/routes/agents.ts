@@ -3,6 +3,9 @@ import { z } from 'zod'
 import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@solera/protocol'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
+import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
+import type { CodexAccountHomes } from '../../codex-accounts/homes.js'
+import type { CodexAccountStore } from '../../codex-accounts/store.js'
 import { projectCwd } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
@@ -36,8 +39,29 @@ export function registerAgentRoutes(
   ctx: AppContext,
   registry: AgentRegistry,
   installer: CliInstaller,
+  claudeAccounts: ClaudeAccountStore,
+  codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
 ): void {
   /** Le nom du CLI vient de la requête : un inconnu vaut 404, pas un défaut silencieux. */
+  /**
+   * Ce qui désigne un compte supplémentaire au CLI, résolu avec son propriétaire :
+   * l'identifiant vient du navigateur, et celui d'un autre utilisateur ne doit rendre
+   * ni jeton ni consommation. Null pour un compte inconnu, ou un CLI sans comptes.
+   */
+  const accountCredential = (agent: string, userId: string, accountId: string): string | null => {
+    if (agent === 'claude') {
+      // Le dossier de sa jauge s'il en a une ; une chaîne vide dit « compte connu, sans
+      // jauge », et l'adaptateur répond sans sonder.
+      const account = claudeAccounts.find(userId, accountId)
+      if (!account) return null
+      return account.gauge && claudeAccounts.gauges ? claudeAccounts.gauges.path(accountId) : ''
+    }
+    if (agent === 'codex') {
+      const account = codexAccounts.store.find(userId, accountId)
+      return account && account.status === 'ready' ? codexAccounts.homes.ensure(accountId) : null
+    }
+    return null
+  }
   const resolveAdapter = (agent: string): AgentAdapter => {
     const adapter = registry.find(agent)
     if (!adapter) throw new HttpError(404, 'unknown_agent', 'Unknown CLI: {agent}.', { agent })
@@ -96,15 +120,23 @@ export function registerAgentRoutes(
    * Consommation du compte. Lue à la demande plutôt que poussée : chaque lecture
    * démarre un process CLI, et la valeur n'intéresse que le moment où on l'ouvre.
    * `?refresh=1` court-circuite le cache, pour le bouton de rafraîchissement.
+   * `?account=` lit celle d'un compte supplémentaire de l'utilisateur, sous son jeton.
    */
   app.get('/api/agents/:agent/usage', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
     const adapter = resolveAdapter(paramsAgent(request.params))
-    const force = (request.query as { refresh?: string }).refresh === '1'
+    const { refresh, account } = request.query as { refresh?: string; account?: string }
+    const force = refresh === '1'
 
     try {
-      return await adapter.usage(force)
+      if (!account) return await adapter.usage(force)
+      const credential = accountCredential(adapter.kind, user.id, account)
+      if (credential === null || !adapter.usageForAccount) {
+        throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
+      }
+      return await adapter.usageForAccount(account, credential, force)
     } catch (err) {
+      if (err instanceof HttpError) throw err
       throw cliUnavailable(
         adapter,
         'usage_unavailable',

@@ -84,6 +84,13 @@ export interface AgentAdapter {
   models(): Promise<AgentModelsDto>
   usage(force: boolean): Promise<AgentUsage>
   /**
+   * La même lecture pour un compte supplémentaire de Solera. `credential` est ce qui
+   * désigne le compte au CLI : un jeton pour Claude (`ClaudeAccountStore`), un
+   * `CODEX_HOME` pour Codex (`CodexAccountHomes`). Absente chez les CLI qui n'en
+   * tiennent pas.
+   */
+  usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>
+  /**
    * Commandes en `/` que le CLI reconnaît dans ce dossier, sans qu'une session tourne.
    * Sert le brouillon, où rien n'est encore lancé ; un CLI sans commandes en `/`
    * répond vide. `force` court-circuite le cache, pour un bouton de rafraîchissement.

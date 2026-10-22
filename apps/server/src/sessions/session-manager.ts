@@ -27,6 +27,9 @@ import { instructionsAppendix, resolveInstructionsMode } from '../instructions/s
 import { ensureProjectMemory, freeThreadMemoryDir, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
+import type { ClaudeAccountStore } from '../claude-accounts/store.js'
+import type { CodexAccountHomes } from '../codex-accounts/homes.js'
+import type { CodexAccountStore } from '../codex-accounts/store.js'
 import type {
   AgentRunner,
   ElicitationAnswer,
@@ -200,6 +203,8 @@ export class SessionManager {
     private readonly config: Config,
     private readonly registry: AgentRegistry,
     private readonly secrets: SecretStore,
+    private readonly claudeAccounts: ClaudeAccountStore,
+    private readonly codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
   }
@@ -821,6 +826,50 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Le jeton du compte Claude que la conversation désigne, dans la variable que le CLI
+   * fait passer devant sa connexion enregistrée (sondé sur 2.1.296). Rien pour la
+   * connexion du CLI, ni pour un autre agent.
+   *
+   * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
+   * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
+   * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
+   * abonnement qui va payer le tour.
+   */
+  private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
+    if (config.agent === 'opencode' || !config.account) return {}
+    const missing = (code: string, message: string) => {
+      this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
+      return {}
+    }
+    if (config.agent === 'claude') {
+      const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
+      if (!resolved) {
+        return missing(
+          'claude_account_missing',
+          "Le compte Claude choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+        )
+      }
+      // Les deux passent devant la connexion enregistrée du CLI ; en mode non
+      // interactif, la clé API est prise sans qu'on le demande (sondé sur 2.1.296).
+      return resolved.kind === 'apiKey'
+        ? { ANTHROPIC_API_KEY: resolved.token }
+        : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
+    }
+    // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
+    // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
+    const account = this.codexAccounts.store.find(conversation.userId, config.account)
+    if (!account || account.status !== 'ready') {
+      return missing(
+        'codex_account_missing',
+        account
+          ? "Le compte Codex choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
+          : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
+      )
+    }
+    return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
+  }
+
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
@@ -889,6 +938,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
+        ...this.accountEnv(conversation, config),
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit

@@ -18,7 +18,7 @@ import { cx, Menu, MenuItem, MenuSeparator } from '@solera/ui'
  * n'en garde qu'une. La pastille de mise à jour remonte sur l'avatar ; elle était sur
  * l'icône des réglages, qui n'a plus de ligne à elle.
  *
- * *Consommation* ouvre la modale des trois CLI : elle appartient au compte — le chiffre
+ * *Consommation* ouvre la modale des CLI et de leurs comptes : elle appartient au compte — le chiffre
  * est le même quel que soit le fil — et son panneau, jusqu'ici ouvert depuis une
  * conversation, ne connaissait que le CLI de celle-ci.
  *
