@@ -106,7 +106,7 @@ async function probeRunner(): Promise<void> {
   let finish: () => void = () => {}
   const done = new Promise<void>((resolve) => { finish = resolve })
   const runner: CodexRunner = new CodexRunner({
-    conversationId: 'codex-steer-probe', cwd, attachmentsRoot: cwd, binary, resumeSessionId: null,
+    conversationId: 'codex-steer-probe', cwd, attachmentsRoot: cwd, prototypesDir: null, binary, resumeSessionId: null,
     config: { ...DEFAULT_CODEX_CONFIG, model, reasoningEffort: 'low', sandbox: 'read-only', askForApproval: 'never', soleraMcp: false },
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
