@@ -23,6 +23,7 @@ import { AppearanceSection } from '../../routes/AppearanceSection'
 import { ArchivingSettingsPage } from '../../routes/ArchivingSettingsPage'
 import { ClaudeAccountsSettingsPage } from '../../routes/ClaudeAccountsSettingsPage'
 import { CodexAccountsSettingsPage } from '../../routes/CodexAccountsSettingsPage'
+import { GrokAccountsSettingsPage } from '../../routes/GrokAccountsSettingsPage'
 import { CliDefaultsSettingsPage } from '../../routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from '../../routes/DictationSettingsPage'
 import { DisplaySection } from '../../routes/DisplaySection'
@@ -58,6 +59,7 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   cli: CliDefaultsSettingsPage,
   'comptes-claude': ClaudeAccountsSettingsPage,
   'comptes-codex': CodexAccountsSettingsPage,
+  'comptes-grok': GrokAccountsSettingsPage,
   mcp: McpSettingsPage,
   consignes: InstructionsSettingsPage,
   skills: SkillLibrarySettingsPage,

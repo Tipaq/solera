@@ -111,6 +111,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <IdCard size={16} />,
   },
   {
+    id: 'comptes-grok',
+    group: 'agents',
+    labelKey: 'settings.section.grokAccounts',
+    descriptionKey: 'settings.section.grokAccounts.description',
+    icon: <IdCard size={16} />,
+  },
+  {
     id: 'mcp',
     group: 'agents',
     labelKey: 'settings.section.mcp',

@@ -3,6 +3,7 @@ import { useMemo } from 'react'
 import type { AgentConfig, AgentUsage, UsageWindow } from '@solera/protocol'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
+import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useTranslate } from '../../lib/i18n'
 import { useAccountUsage, type UsageTarget } from '../../lib/usage'
 import { ChoiceList, type Choice } from '@solera/ui'
@@ -23,7 +24,7 @@ import { ChoiceList, type Choice } from '@solera/ui'
 const CLI_ACCOUNT = 'cli'
 
 /** `gauged` : un abonnement dont l'usage se lit, ChatGPT ou Claude avec sa jauge. */
-type Account = { id: string; label: string; kind: 'oauth' | 'apiKey' | 'chatgpt' | 'gauged' }
+type Account = { id: string; label: string; kind: 'oauth' | 'apiKey' | 'chatgpt' | 'grok' | 'gauged' }
 
 /** La fenêtre la plus chargée, puis la suivante : ce qui décide d'un choix. */
 function summarize(usage: AgentUsage | undefined, t: ReturnType<typeof useTranslate>): string | undefined {
@@ -49,8 +50,10 @@ export function AccountChoice({
   const t = useTranslate()
   const isClaude = config.agent === 'claude'
   const isCodex = config.agent === 'codex'
+  const isGrok = config.agent === 'grok'
   const { data: claudeList } = useClaudeAccounts(isClaude)
   const { data: codexList } = useCodexAccounts(isCodex)
+  const { data: grokList } = useGrokAccounts(isGrok)
 
   const accounts: Account[] = isClaude
     ? (claudeList?.accounts ?? []).map((account) => ({
@@ -68,9 +71,19 @@ export function AccountChoice({
             label: account.label,
             kind: account.authMode === 'apiKey' ? ('apiKey' as const) : ('chatgpt' as const),
           }))
-      : []
+      : isGrok
+        ? (grokList?.accounts ?? [])
+            // Même règle que Codex : un home sans connexion ne se propose pas, et une clé
+            // API n'a pas d'enveloppe de crédits à sonder.
+            .filter((account) => account.status === 'ready')
+            .map((account) => ({
+              id: account.id,
+              label: account.label,
+              kind: account.authMode === 'apiKey' ? ('apiKey' as const) : ('grok' as const),
+            }))
+        : []
 
-  const chosen = config.agent === 'opencode' || config.agent === 'grok' ? null : config.account
+  const chosen = config.agent === 'opencode' ? null : config.account
   // La connexion du CLI, puis les comptes. Un jeton de setup-token sans jauge ne lit pas
   // son forfait, une clé API n'en a pas : les sonder ne rendrait rien, leur aperçu est une
   // phrase.
@@ -88,7 +101,7 @@ export function AccountChoice({
   const { entries } = useAccountUsage(probed, enabled && accounts.length > 0)
   const usageOf = (account: string | null) => entries.find((entry) => entry.account === account)
 
-  if (config.agent === 'opencode' || config.agent === 'grok' || accounts.length === 0) return null
+  if (config.agent === 'opencode' || accounts.length === 0) return null
 
   const hintFor = (account: Account | null): string | undefined => {
     if (account?.kind === 'oauth') return t('draft.account.tokenNoGauge')

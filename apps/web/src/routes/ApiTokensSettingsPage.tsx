@@ -59,6 +59,17 @@ const PERMISSION_MODE_KEYS = {
   dontAsk: 'composer.permission.dontAsk',
   bypassPermissions: 'composer.permission.bypass',
 } as const
+/**
+ * Les modes de Grok qu'un jeton peut fixer : le plan n'a pas de sens pour une tâche que
+ * personne ne relit avant qu'elle s'exécute. « Demander » reprend le libellé de Claude.
+ */
+const GROK_API_PERMISSION_MODES = ['default', 'auto', 'bypassPermissions'] as const
+type GrokApiPermissionMode = (typeof GROK_API_PERMISSION_MODES)[number]
+const GROK_PERMISSION_MODE_KEYS = {
+  default: { label: 'composer.permission.manual', hint: 'composer.permission.manual.hint' },
+  auto: { label: 'composer.permission.auto', hint: 'composer.grokPermission.auto.hint' },
+  bypassPermissions: { label: 'composer.permission.bypass', hint: 'composer.permission.bypass.hint' },
+} as const
 const AGENTS = Object.keys(AGENT_LABELS) as AgentKind[]
 
 /** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
@@ -181,6 +192,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
   const [lifetime, setLifetime] = useState<LifetimeChoice>('none')
   const [webhookUrl, setWebhookUrl] = useState('')
   const [permissionMode, setPermissionMode] = useState<ApiPermissionMode>('manual')
+  const [grokPermissionMode, setGrokPermissionMode] = useState<GrokApiPermissionMode>('default')
 
   const { data: catalog } = useAgentModels(agent)
   const models = catalog?.models ?? []
@@ -198,6 +210,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
     const config: Record<string, unknown> = { ...DEFAULT_CONFIGS[agent], model }
     if (effort) config[EFFORT_FIELD[agent]] = effort
     if (agent === 'claude') config.permissionMode = permissionMode
+    if (agent === 'grok') config.permissionMode = grokPermissionMode
 
     const days = LIFETIMES[lifetime]
     createToken.mutate(
@@ -292,6 +305,26 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
                 value: mode,
                 label: t(PERMISSION_MODE_KEYS[mode]),
                 hint: t(`${PERMISSION_MODE_KEYS[mode]}.hint` as Parameters<typeof t>[0]),
+              }))}
+            />
+          ) : null}
+          {agent === 'grok' ? (
+            <Select
+              label={t('apiTokens.permission.label')}
+              value={grokPermissionMode}
+              onChange={(mode) => {
+                setGrokPermissionMode(mode)
+                // `auto` et `bypassPermissions` ne laissent personne dans la boucle :
+                // le serveur exige alors la portée des tâches autonomes.
+                if (mode !== 'default' && !scopes.includes('tasks:autonomous')) {
+                  setScopes([...scopes, 'tasks:autonomous'])
+                }
+              }}
+              className="sm:max-w-xs"
+              options={GROK_API_PERMISSION_MODES.map((mode) => ({
+                value: mode,
+                label: t(GROK_PERMISSION_MODE_KEYS[mode].label),
+                hint: t(GROK_PERMISSION_MODE_KEYS[mode].hint),
               }))}
             />
           ) : null}

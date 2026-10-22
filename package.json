@@ -17,6 +17,8 @@
     "test:codex-ui": "node scripts/codex-ui-check.mjs",
     "test:decisions-ui": "node scripts/decisions-ui-check.mjs",
     "test:opencode-ui": "node scripts/opencode-ui-check.mjs",
+    "test:grok-ui": "node scripts/grok-ui-check.mjs",
+    "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",
     "test:images-ui": "node scripts/fil-images-ui-check.mjs",

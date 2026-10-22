@@ -29,6 +29,9 @@ import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
+import { GrokAccountHomes } from './grok-accounts/homes.js'
+import { GrokLoginService } from './grok-accounts/login.js'
+import { GrokAccountStore } from './grok-accounts/store.js'
 import { loadOrCreateKey } from './secrets/cipher.js'
 import { SecretStore } from './secrets/store.js'
 import { SessionManager } from './sessions/session-manager.js'
@@ -70,7 +73,9 @@ async function main(): Promise<void> {
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
   const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable())
-  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts)
+  const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
+  const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
+  const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)
   const storybooks = new StorybookSupervisor({
     directory: join(config.paths.data, 'design-systems'),
     prototypesDirectory: prototypesRoot(config.paths.data),
@@ -128,6 +133,8 @@ async function main(): Promise<void> {
     claudeLogin,
     codexAccounts,
     codexLogin,
+    grokAccounts,
+    grokLogin,
     webhooks,
     scheduler,
     relay,

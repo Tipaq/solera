@@ -464,6 +464,11 @@ export const grokConfigSchema = z.object({
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
+  /**
+   * Compte Grok de Solera dont le home est donné à la session (`GROK_HOME`), `null` pour
+   * la connexion du CLI. Le changer relance le process, qui ne lit son home qu'au lancement.
+   */
+  account: z.string().nullable().default(null),
   queueMessages: queueMessagesSchema,
 })
 export type GrokConfig = z.infer<typeof grokConfigSchema>
@@ -568,6 +573,7 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   decisions: false,
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
+  account: null,
   queueMessages: false,
 }
 

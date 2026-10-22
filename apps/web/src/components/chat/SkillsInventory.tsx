@@ -9,6 +9,14 @@ import type { SettingGroup } from './ComposerSettings'
 import { SettingsHeading } from './SettingsPanel'
 
 /**
+ * Claude ne distingue pas les skills des commandes dans son inventaire public, et Grok
+ * les publie lui aussi parmi ses commandes en `/`.
+ */
+function listsSkillsAsCommands(agent: AgentConfig['agent']): boolean {
+  return agent === 'claude' || agent === 'grok'
+}
+
+/**
  * Inventaire des skills et des commandes de la session, montré dans le menu « + ».
  *
  * Deux listes et non une : ce que la bibliothèque de Solera livrera au prochain
@@ -50,8 +58,7 @@ export function SkillsInventory({ projectId, config, skills, commands, library: 
   // illisible, lui, ne se règle pas : il se répare dans la bibliothèque.
   const configured = (library.data?.skills ?? []).filter((skill) => !skill.problem)
   const libraryEnabled = config.skillLibrary && library.data?.enabled === true
-  // Claude ne distingue pas les skills des commandes dans son inventaire public.
-  const reported = config.agent === 'claude' ? commands : skills
+  const reported = listsSkillsAsCommands(config.agent) ? commands : skills
   const matches = (item: { name: string; description: string }) =>
     (item.name + ' ' + item.description).toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
   const visibleLibrary = configured.filter(matches)
@@ -85,7 +92,7 @@ export function SkillsInventory({ projectId, config, skills, commands, library: 
       </section>
       <section className="mt-2 border-t border-line pt-2">
         <MenuLabel>{t('composer.skills.session')}</MenuLabel>
-        <p className="px-2.5 pb-2 text-meta text-ink-faint">{t(config.agent === 'claude' ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}</p>
+        <p className="px-2.5 pb-2 text-meta text-ink-faint">{t(listsSkillsAsCommands(config.agent) ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}</p>
         {visibleReported.map((skill) => <InventoryRow key={skill.name} name={skill.name} description={skill.description} />)}
         {visibleReported.length === 0 ? <p className="px-2.5 py-3 text-sm text-ink-faint">{t(reported.length === 0 ? 'composer.skills.notReported' : 'composer.skills.empty')}</p> : null}
       </section>
@@ -144,7 +151,7 @@ export function SkillsMenu({ projectId, config, skills, commands, library: libra
   const update = useUpdateLibrarySkill()
   const configured = (library.data?.skills ?? []).filter((skill) => !skill.problem)
   const libraryEnabled = config.skillLibrary && library.data?.enabled === true
-  const reported = config.agent === 'claude' ? commands : skills
+  const reported = listsSkillsAsCommands(config.agent) ? commands : skills
 
   return <>
     {librarySetting ? <>
@@ -174,7 +181,7 @@ export function SkillsMenu({ projectId, config, skills, commands, library: libra
         tiroir pour ne pas doubler la longueur du menu. */}
     <MenuSub label={t('composer.skills.session')} value={String(reported.length)}>
       <p className="px-2.5 py-1.5 text-meta text-ink-faint">
-        {t(config.agent === 'claude' ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}
+        {t(listsSkillsAsCommands(config.agent) ? 'composer.skills.commandsHint' : 'composer.skills.reportedHint')}
       </p>
       {reported.map((skill) => (
         <p key={skill.name} className="px-2.5 py-1.5 text-sm text-ink-soft">
