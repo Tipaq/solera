@@ -8,6 +8,7 @@ import {
   conversationReads,
   conversations,
   projects,
+  worktrees,
   writeTransaction,
   type ConversationRow,
 } from '@solera/db'
@@ -52,6 +53,11 @@ import {
 } from '../../conversations/handoff.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
+import {
+  checkWorktree,
+  isWorkingDirectoryMissing,
+  workingDirectoryMissing,
+} from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
@@ -79,19 +85,22 @@ const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
 
 /**
- * `lastReadSeq` et `card` sont passés plutôt que relus ici : les routes de liste les
- * ramènent en une jointure, et une lecture par ligne rendrait la sidebar quadratique.
+ * `lastReadSeq`, `card` et `worktreeGone` sont passés plutôt que relus ici : les routes
+ * de liste les ramènent en une jointure, et une lecture par ligne rendrait la sidebar
+ * quadratique.
  */
 export function conversationToDto(
   row: ConversationRow,
   userId: string,
   lastReadSeq: number,
   card: CardLinkDto | null,
+  worktreeGone: boolean,
 ): ConversationDto {
   return {
     id: row.id,
     projectId: row.projectId,
     worktreeId: row.worktreeId,
+    worktreeGone,
     card,
     userId: row.userId,
     title: row.title,
@@ -212,9 +221,11 @@ export function registerConversationRoutes(
           title: cards.title,
           column: cards.column,
         },
+        worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
         conversationReads,
@@ -236,6 +247,9 @@ export function registerConversationRoutes(
         user.id,
         row.lastReadSeq ?? 0,
         row.card,
+        // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
+        // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
+        row.worktreeRemovedAt !== null,
       ),
     )
   })
@@ -261,9 +275,11 @@ export function registerConversationRoutes(
           title: cards.title,
           column: cards.column,
         },
+        worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(
         conversationReads,
         and(
@@ -285,6 +301,9 @@ export function registerConversationRoutes(
         user.id,
         row.lastReadSeq ?? 0,
         row.card,
+        // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
+        // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
+        row.worktreeRemovedAt !== null,
       ),
     )
   })
@@ -343,7 +362,15 @@ export function registerConversationRoutes(
     // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
     return reply
       .status(201)
-      .send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId)))
+      .send(
+        conversationToDto(
+          row,
+          user.id,
+          0,
+          readCardLink(ctx, body.cardId),
+          checkWorktree(ctx.db, row.worktreeId).gone,
+        ),
+      )
   })
 
   /**
@@ -384,7 +411,7 @@ export function registerConversationRoutes(
 
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
-    return reply.status(201).send(conversationToDto(row, user.id, 0, null))
+    return reply.status(201).send(conversationToDto(row, user.id, 0, null, false))
   })
 
 
@@ -405,6 +432,12 @@ export function registerConversationRoutes(
     if (body.throughSeq > source.lastSeq) {
       throw badRequest('fork_point_unknown', 'This cut point is beyond the end of the thread.')
     }
+    // Une branche hérite du worktree, et le CLI forke sa session dans ce dossier : d'un
+    // worktree disparu, il n'y a rien à brancher. Le refus est celui du bandeau, qui
+    // propose de continuer à la racine avant de brancher.
+    const sourceWorktree = checkWorktree(ctx.db, source.worktreeId)
+    if (sourceWorktree.marked) sessions.statusBus.emit('lists', { conversationId: id })
+    if (sourceWorktree.gone) throw workingDirectoryMissing(sourceWorktree.path ?? '')
 
     let agentSessionId: string
     try {
@@ -465,6 +498,7 @@ export function registerConversationRoutes(
           user.id,
           0,
           readCardLink(ctx, row.cardId),
+          false,
         ),
       )
   })
@@ -509,7 +543,9 @@ export function registerConversationRoutes(
       config,
       // Même arbre et même chantier : c'est le même travail, poursuivi avec un autre
       // outil.
-      worktreeId: source.worktreeId,
+      // Un worktree disparu ne se transmet pas : la suite partirait condamnée au même
+      // bandeau. Elle reprend à la racine du projet.
+      worktreeId: checkWorktree(ctx.db, source.worktreeId).gone ? null : source.worktreeId,
       cardId: source.cardId,
       title: body.title ?? source.title,
       origin: null,
@@ -523,7 +559,15 @@ export function registerConversationRoutes(
 
     return reply
       .status(201)
-      .send(conversationToDto(row, user.id, 0, readCardLink(ctx, row.cardId)))
+      .send(
+        conversationToDto(
+          row,
+          user.id,
+          0,
+          readCardLink(ctx, row.cardId),
+          checkWorktree(ctx.db, row.worktreeId).gone,
+        ),
+      )
   })
 
   /** Ce qu'une suite a reçu de sa source, pour que l'utilisateur voie ce que l'agent sait. */
@@ -551,11 +595,16 @@ export function registerConversationRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const conversation = await loadReadable(id, user.id)
+    // Constaté ici et non seulement à l'envoi : un worktree emporté par un merge doit
+    // montrer son bandeau à l'ouverture du fil, pas au premier message refusé.
+    const worktree = checkWorktree(ctx.db, conversation.worktreeId)
+    if (worktree.marked) sessions.statusBus.emit('lists', { conversationId: id })
     return conversationToDto(
       conversation,
       user.id,
       readCursor(id, user.id),
       readCardLink(ctx, conversation.cardId),
+      worktree.gone,
     )
   })
 
@@ -641,11 +690,20 @@ export function registerConversationRoutes(
     const { path } = editDiffQuerySchema.parse(request.query)
 
     const conversation = await loadReadable(id, user.id)
+    // Le diff se lit dans le journal ; le dossier ne sert qu'à rendre les chemins
+    // relatifs. Un worktree disparu garde donc ses diffs lisibles, sous son ancien chemin.
+    let cwd: string
+    try {
+      cwd = sessions.workingDirectory(id)
+    } catch (err) {
+      if (!isWorkingDirectoryMissing(err) || !err.params) throw err
+      cwd = String(err.params.path)
+    }
     return registry.adapter(conversation.agent).describeEdit({
       log,
       conversationId: id,
       toolCallId,
-      cwd: sessions.workingDirectory(id),
+      cwd,
       path,
     })
   })
@@ -733,6 +791,26 @@ export function registerConversationRoutes(
       user.id,
       readCursor(id, user.id),
       result.moved ? null : readCardLink(ctx, conversation.cardId),
+      checkWorktree(ctx.db, result.row.worktreeId).gone,
+    )
+  })
+
+  /**
+   * *Continuer à la racine* — la conversation dont le worktree a disparu reprend dans
+   * le workspace du projet. Le geste vit dans le gestionnaire de sessions, qui tient le
+   * runner et la file.
+   */
+  app.post('/api/conversations/:id/project-root', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+    const row = await sessions.continueAtProjectRoot(id)
+    return conversationToDto(
+      row,
+      user.id,
+      readCursor(id, user.id),
+      readCardLink(ctx, row.cardId),
+      false,
     )
   })
 

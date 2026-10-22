@@ -61,8 +61,8 @@ export function readThreadWindows(db: Db, projectId: string): ThreadWindow[] {
   return rows.map((row) => ({
     id: row.id,
     title: row.title,
-    // Même politique que `resolveConversationCwd` : un worktree retiré retombe sur le
-    // workspace, sans quoi un fil pointerait un dossier qui n'existe plus.
+    // Un worktree retiré retombe sur le workspace, sans quoi un fil pointerait un
+    // dossier qui n'existe plus. C'est aussi là qu'il reprend s'il continue à la racine.
     path:
       row.worktreePath && !row.worktreeRemovedAt ? row.worktreePath : row.workspacePath,
     from: row.createdAt,

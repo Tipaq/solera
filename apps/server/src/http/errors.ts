@@ -27,6 +27,18 @@ export class HttpError extends Error {
 
 type Params = Record<string, string | number>
 
+/**
+ * Le message d'une erreur, ses `{param}` remplacés : pour ce qui le recopie hors d'une
+ * réponse HTTP (un événement du fil, une réponse à un agent), où personne ne
+ * l'interpolera plus loin.
+ */
+export function describeHttpError(err: unknown): string {
+  if (err instanceof HttpError) {
+    return err.message.replace(/\{(\w+)\}/g, (_, key: string) => String(err.params?.[key] ?? key))
+  }
+  return err instanceof Error ? err.message : String(err)
+}
+
 export const badRequest = (code: string, message: string, params?: Params) =>
   new HttpError(400, code, message, params)
 export const unauthorized = () => new HttpError(401, 'unauthorized', 'Authentication required.')

@@ -10,6 +10,7 @@ import { visibilityFilter } from '../../projects/scope.js'
 import { searchProjectFiles, type FileSearchTarget } from '../../search/palette-files.js'
 import type { SkillLibrary } from '../../skill-library/store.js'
 import { conversationWorkspace } from '../../workspace.js'
+import { isWorkingDirectoryMissing } from '../../worktrees/gone.js'
 import type { AppContext } from '../context.js'
 import { requireUser } from '../require-user.js'
 
@@ -52,7 +53,15 @@ export function registerPaletteRoutes(app: FastifyInstance, ctx: AppContext, lib
       // `conversationWorkspace` refait le contrôle d'accès ; une conversation que ce
       // compte ne voit pas appartient à un projet qu'il ne voit pas non plus, absent
       // de `targets`, donc rien n'est substitué.
-      if (target) target.cwd = conversationWorkspace(ctx.db, conversationId, user.id)
+      if (target) {
+        try {
+          target.cwd = conversationWorkspace(ctx.db, conversationId, user.id)
+        } catch (err) {
+          // Un worktree disparu : la recherche reste sur le workspace du projet plutôt
+          // que d'échouer pour tous les projets à cause d'un seul fil.
+          if (!isWorkingDirectoryMissing(err)) throw err
+        }
+      }
     }
 
     return { projects: await searchProjectFiles(targets, q) }

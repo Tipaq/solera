@@ -67,6 +67,22 @@ export function useArchiveConversation() {
   })
 }
 
+/**
+ * *Continuer à la racine* : une conversation dont le worktree a disparu reprend dans le
+ * dossier du projet.
+ */
+export function useContinueAtProjectRoot() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<ConversationDto>(`/api/conversations/${id}/project-root`, {}),
+    onSuccess: (conversation) => {
+      queryClient.setQueryData(['conversation', conversation.id], conversation)
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+    },
+  })
+}
+
 export function useConversations(projectId: string | undefined) {
   return useQuery({
     queryKey: conversationsKey(projectId ?? ''),

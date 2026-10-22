@@ -114,9 +114,11 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
   // retenir le passage, un dépôt absent ou lent n'ayant pas à le faire échouer.
   void (async () => {
     for (const row of stale) {
-      const cwd = resolveConversationCwd(db, row)
-      if (cwd === null) continue
       try {
+        // Dans l'essai : un worktree disparu refuse de se résoudre, et ses refs sont
+        // parties avec lui.
+        const cwd = resolveConversationCwd(db, row)
+        if (cwd === null) continue
         await deleteCheckpoints(cwd, row.id)
       } catch {
         // Projet retiré du disque, dépôt hors d'usage : les refs partiront avec lui.

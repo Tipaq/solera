@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
 import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
 import { HttpError, notFound } from './http/errors.js'
+import { directoryGone, markWorktreeGone, workingDirectoryMissing } from './worktrees/gone.js'
 
 /**
  * Répertoire de travail d'une conversation, et bornage des chemins qui s'y rapportent.
@@ -81,11 +82,10 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
  * Dossier visé par le brouillon d'une conversation : le worktree s'il en désigne un,
  * le workspace du projet sinon.
  *
- * Même politique qu'une conversation existante (`resolveConversationCwd`) : un
- * worktree retiré retombe sur le workspace au lieu d'échouer, pour que les mentions
- * `@`, les commandes `/` et la création du fil répondent tous depuis le même dossier.
- * Un worktree d'un autre projet, lui, est introuvable : l'identifiant ne doit pas
- * servir à lire ailleurs.
+ * Un worktree retiré est introuvable, comme celui d'un autre projet : on n'ouvre pas
+ * de fil dans un dossier qui n'existe plus, et le repli silencieux sur le workspace
+ * ferait croire au brouillon qu'il est encore dans son arbre. L'identifiant d'un autre
+ * projet, lui, ne doit pas servir à lire ailleurs.
  */
 export function projectCwd(
   db: Db,
@@ -97,10 +97,10 @@ export function projectCwd(
   if (!worktreeId) return workspace
 
   const worktree = db.select().from(worktrees).where(eq(worktrees.id, worktreeId)).get()
-  if (!worktree || worktree.projectId !== projectId) {
+  if (!worktree || worktree.projectId !== projectId || worktree.removedAt) {
     throw notFound('worktree_not_found', 'Worktree not found.')
   }
-  return worktree.removedAt ? workspace : worktree.path
+  return worktree.path
 }
 
 /**
@@ -109,6 +109,12 @@ export function projectCwd(
  * `null` est le cas du fil libre, et il n'est pas une erreur : c'est à l'appelant de
  * dire ce qu'il en fait — le gestionnaire de sessions lui donne un dossier vide à lui,
  * les routes du panneau refusent.
+ *
+ * Un worktree disparu est refusé (`working_directory_missing`), jamais remplacé par le
+ * workspace du projet : la conversation y repartirait sans que personne l'ait décidé,
+ * dans un dossier où son travail n'est pas. C'est le bandeau du fil qui propose de la
+ * rattacher à la racine (carte #61). Un dossier constaté absent est marqué au passage,
+ * pour que tous ceux qui lisent `removedAt` voient le même état sans refaire le constat.
  */
 export function resolveConversationCwd(db: Db, conversation: ConversationRow): string | null {
   if (conversation.projectId === null) return null
@@ -118,7 +124,12 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
       .from(worktrees)
       .where(eq(worktrees.id, conversation.worktreeId))
       .get()
-    if (worktree && !worktree.removedAt) return worktree.path
+    if (worktree) {
+      if (worktree.removedAt) throw workingDirectoryMissing(worktree.path)
+      if (!directoryGone(worktree.path)) return worktree.path
+      markWorktreeGone(db, worktree.id)
+      throw workingDirectoryMissing(worktree.path)
+    }
   }
 
   const projectId = conversation.projectId
