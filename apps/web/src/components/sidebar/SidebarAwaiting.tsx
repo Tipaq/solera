@@ -7,6 +7,7 @@ import { formatAgo } from '../../lib/loops'
 import { useTranslate } from '../../lib/i18n'
 import { StateDot } from '../chat/Signals'
 import { cx } from '@solera/ui'
+import { decisionQuestion } from '../decisions/decision-text'
 
 /**
  * Au-delà, le reste est **compté** plutôt que listé, comme l'activité : la colonne ne
@@ -99,15 +100,16 @@ function AwaitingLine({ request, onNavigate }: {
   const t = useTranslate()
 
   if (request.kind === 'decision') {
+    const question = decisionQuestion(request.question, request.worktreeBranch, t)
     return (
       <button
         type="button"
         onClick={() => openDecision(request.id)}
-        title={`${request.question} — ${decisionDue(request.expiresAt)}`}
+        title={`${question} — ${decisionDue(request.expiresAt)}`}
         className={ROW}
       >
         <MessageCircleQuestion size={14} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 flex-1 truncate">{request.question}</span>
+        <span className="min-w-0 flex-1 truncate">{question}</span>
         {/* Le temps restant seul : la phrase entière est dans l'infobulle, et la colonne
             n'a pas la place de la porter à côté de la question. */}
         <span className="shrink-0 text-meta tabular-nums text-ink-faint">

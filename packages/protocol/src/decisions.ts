@@ -33,6 +33,26 @@ export interface DecisionPayload {
 }
 
 /**
+ * Les choix d'une proposition de nettoyage d'arbre. Des clés et non des phrases : c'est
+ * Solera qui pose la question, sans connaître la langue du lecteur, et l'interface les
+ * traduit.
+ */
+export const WORKTREE_DECISION_OPTIONS = ['clean', 'keep'] as const
+
+/**
+ * Une décision que Solera pose lui-même : nettoyer un arbre fusionné et propre. La
+ * réponse ne part à aucune session, elle nettoie (`agent_requests.worktree_path`).
+ */
+export interface DecisionWorktreeDto {
+  path: string
+  branch: string
+  /** La branche contre laquelle l'arbre a été jugé fusionné. */
+  base: string
+  /** Sessions non archivées que le nettoyage rangerait. */
+  sessions: number
+}
+
+/**
  * Ce qu'il est advenu d'une décision (`agent_requests.answer`).
  *
  * `user` : une personne a tranché. `default` : l'échéance a appliqué le choix prévu.
@@ -58,6 +78,8 @@ export interface DecisionDto {
   conversationTitle: string
   /** La carte de la session qui demande, si elle en traite une. */
   card: { number: number; title: string } | null
+  /** Non nul pour une proposition de nettoyage : la question vient alors de Solera. */
+  worktree: DecisionWorktreeDto | null
   question: string
   context: string
   options: string[]
@@ -99,6 +121,8 @@ export type AwaitingRequestDto =
       conversationId: string
       projectId: string
       question: string
+      /** Pour une proposition de nettoyage : la branche, de quoi recomposer la question. */
+      worktreeBranch: string | null
       expiresAt: number
       createdAt: number
     }

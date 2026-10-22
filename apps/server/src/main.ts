@@ -35,6 +35,10 @@ import { SessionManager } from './sessions/session-manager.js'
 import { TerminalManager } from './terminals/terminal-manager.js'
 import { linkedDesignSystems, prototypesRoot, StorybookSupervisor } from './design-system/storybooks.js'
 import { VaultIndex } from './vault/index-service.js'
+import { backfillCommandPaths } from './worktrees/backfill.js'
+import { WorktreeCleanup } from './worktrees/cleanup.js'
+import { watchMergedWorktrees } from './worktrees/merge-watch.js'
+import { WorktreeStatusService } from './worktrees/status-service.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -45,6 +49,7 @@ async function main(): Promise<void> {
 
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
+  backfillCommandPaths(db)
   await purgeExpiredSessions(db)
   purgeIdempotencyKeys(db)
 
@@ -94,9 +99,15 @@ async function main(): Promise<void> {
   // Les décisions que les sessions demandent : déposées et échues par le balayage des
   // demandes d'agent, tranchées par la route. Elles notifient par l'aiguillage.
   const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
+  // L'avancement des worktrees, par projet, invalidé à chaque fin de tour.
+  const worktreeStatus = new WorktreeStatusService(db, log)
+  // Nettoyer un chantier ferme ses terminaux et range ses sessions ; une fusion détectée
+  // le propose dans « À décider ».
+  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
+  watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -125,6 +136,8 @@ async function main(): Promise<void> {
     storybooks,
     notifications,
     decisions,
+    worktreeStatus,
+    worktreeCleanup,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

@@ -15,6 +15,7 @@ import {
   type Toast,
 } from '../lib/toasts'
 import { wsClient } from '../lib/ws-client'
+import { decisionQuestion } from './decisions/decision-text'
 
 /** Au-delà, les toasts se résument : une pile qui couvre l'écran ne se lit plus. */
 const VISIBLE = 2
@@ -140,7 +141,9 @@ function DecisionToast({ id, notification }: {
   return (
     <ToastFrame id={id} icon={<MessageCircleQuestion size={16} />}>
       <p className="text-xs font-medium text-accent">{t('toast.decision.title')}</p>
-      <p className="mt-0.5 line-clamp-2 text-sm font-medium text-ink">{notification.question}</p>
+      <p className="mt-0.5 line-clamp-2 text-sm font-medium text-ink">
+        {decisionQuestion(notification.question, notification.worktreeBranch, t)}
+      </p>
       <p className="mt-0.5 truncate text-xs text-ink-faint">
         {[notification.projectName, notification.conversationTitle].filter(Boolean).join(' · ')}
       </p>

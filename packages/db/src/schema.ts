@@ -157,6 +157,29 @@ export const worktrees = sqliteTable(
 )
 
 /**
+ * Chemins absolus qu'une conversation a touchés hors de son répertoire de travail.
+ *
+ * Une session notée à la racine du projet qui écrit dans `~/projects/x-feature` y
+ * travaille en réalité : c'est ce rattachement « a écrit dans » que la vue des
+ * chantiers croise avec les worktrees du dépôt. Tenu à jour à l'écriture du journal,
+ * avec un rattrapage unique à la migration, pour ne pas rebalayer des millions
+ * d'événements à chaque lecture. Distinct de `conversations.worktree_id`, qui décide du
+ * cwd de la reprise et ne doit jamais être réécrit après coup.
+ */
+export const conversationPaths = sqliteTable(
+  'conversation_paths',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    /** Chemin absolu d'un fichier édité, ou d'un dossier cité par une commande. */
+    path: text('path').notNull(),
+    lastTs: timestamp('last_ts').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.conversationId, t.path] })],
+)
+
+/**
  * Cartes du board : le travail à faire, distinct de la conversation qui l'exécute.
  *
  * Une carte survit à ses sessions et en porte plusieurs ; c'est ce qui la sépare d'une
@@ -448,6 +471,9 @@ export const agentRequests = sqliteTable(
         'move_conversation',
         'request_card_move',
         'request_decision',
+        // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
+        'create_worktree',
+        'list_worktrees',
       ],
     }).notNull(),
     /**
@@ -517,6 +543,16 @@ export const agentRequests = sqliteTable(
      * sert, et la ligne est relue entière à chaque fois.
      */
     answer: text('answer'),
+    /**
+     * Pour une décision que Solera pose lui-même, et non une session : l'arbre fusionné et
+     * propre qu'elle propose de nettoyer (`worktrees/merge-watch.ts`).
+     *
+     * Une telle décision appartient au propriétaire du projet, ne part à aucune session et
+     * ne se retire pas à l'archivage de `conversation_id`, qui ne nomme que la session la
+     * plus récente de l'arbre, ou reste vide. La réponse « Nettoyer » agit tout de suite.
+     * C'est aussi la clé qui évite de reposer la question pour un arbre déjà tranché.
+     */
+    worktreePath: text('worktree_path'),
   },
   (t) => [
     index('idx_agent_requests_pending').on(t.settledAt),

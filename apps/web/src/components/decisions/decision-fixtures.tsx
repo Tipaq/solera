@@ -20,6 +20,7 @@ export const PENDING: DecisionDto = {
   conversationId: 'c1',
   conversationTitle: 'Monter vite en 7.0',
   card: { number: 77, title: 'Porter les décisions de Sillage' },
+  worktree: null,
   question: 'Monter vite en 7.0 maintenant, ou attendre la 7.0.1 ?',
   context:
     "Les tests passent sur la branche, mais deux plugins affichent un **avertissement de dépréciation** :\n\n- `@vitejs/plugin-react` ;\n- `vite-plugin-pwa`.\n\nLa 7.0.1 est annoncée pour la semaine prochaine.",
@@ -72,17 +73,32 @@ export const EXPIRED: DecisionDto = {
 
 export const WITHDRAWN: DecisionDto = { ...PENDING, id: 'd6', status: 'withdrawn', answer: null }
 
+/** Une proposition de nettoyage : Solera la pose, sans session, et la rédige au lecteur. */
+export const WORKTREE: DecisionDto = {
+  ...PENDING,
+  id: 'd7',
+  conversationId: 'c5',
+  conversationTitle: 'Porter le lot 3',
+  card: null,
+  worktree: { path: '/home/tim/projects/solera-worktrees/feat__chantiers', branch: 'feat/chantiers', base: 'main', sessions: 2 },
+  question: 'feat/chantiers est fusionnée et propre : nettoyer ?',
+  context: '',
+  options: ['clean', 'keep'],
+  defaultOption: null,
+  expiresAt: now + 160 * HOUR,
+}
+
 export const DECISIONS = [PENDING, OPEN_QUESTION, ANSWERED, DEFAULTED, EXPIRED, WITHDRAWN]
 
 /** Ce que la colonne liste : deux décisions, un rangement de cartes, un de conversation. */
 export const AWAITING: AwaitingRequestDto[] = [
   {
     kind: 'decision', id: PENDING.id, conversationId: PENDING.conversationId, projectId: 'p1',
-    question: PENDING.question, expiresAt: PENDING.expiresAt, createdAt: PENDING.createdAt,
+    question: PENDING.question, worktreeBranch: null, expiresAt: PENDING.expiresAt, createdAt: PENDING.createdAt,
   },
   {
     kind: 'decision', id: OPEN_QUESTION.id, conversationId: 'c2', projectId: 'p1',
-    question: OPEN_QUESTION.question, expiresAt: OPEN_QUESTION.expiresAt, createdAt: now - 2 * HOUR,
+    question: OPEN_QUESTION.question, worktreeBranch: null, expiresAt: OPEN_QUESTION.expiresAt, createdAt: now - 2 * HOUR,
   },
   {
     kind: 'request_card_move', id: 'r1', conversationId: 'c3', projectId: 'p1',
@@ -99,7 +115,7 @@ export const AWAITING_MANY: AwaitingRequestDto[] = [
   ...AWAITING,
   ...[1, 2, 3].map((n): AwaitingRequestDto => ({
     kind: 'decision', id: `extra-${n}`, conversationId: `c-extra-${n}`, projectId: 'p1',
-    question: `Question ${n} d'une tâche planifiée de nuit`, expiresAt: now + (n + 2) * HOUR, createdAt: now - n * HOUR,
+    question: `Question ${n} d'une tâche planifiée de nuit`, worktreeBranch: null, expiresAt: now + (n + 2) * HOUR, createdAt: now - n * HOUR,
   })),
 ]
 
@@ -146,7 +162,7 @@ export function SeededDecisions({ awaiting = AWAITING, open = null, toasts = [],
   const client = useQueryClient()
   useState(() => {
     client.setQueryData(AWAITING_KEY, awaiting)
-    for (const decision of DECISIONS) client.setQueryData(['decision', decision.id], decision)
+    for (const decision of [...DECISIONS, WORKTREE]) client.setQueryData(['decision', decision.id], decision)
     for (const id of TOAST_IDS) dismissToast(id)
     for (const toast of toasts) pushToast(toast)
     openDecision(open)

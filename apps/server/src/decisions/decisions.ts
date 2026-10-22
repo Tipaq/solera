@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { EventEmitter } from 'node:events'
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
@@ -20,6 +20,7 @@ import {
   MAX_DECISION_OPTIONS,
   MAX_DECISION_QUESTION_CHARS,
   MIN_DECISION_HOURS,
+  WORKTREE_DECISION_OPTIONS,
   decisionAnswerSchema,
   parseAgentConfig,
   type AnswerDecisionBody,
@@ -27,6 +28,7 @@ import {
   type DecisionAnswer,
   type DecisionDto,
   type DecisionPayload,
+  type DecisionWorktreeDto,
 } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
@@ -50,6 +52,25 @@ import type { Notifications } from '../notifications/dispatcher.js'
  */
 
 const HOUR_MS = 3_600_000
+
+/** Une proposition de nettoyage attend une semaine : un arbre fusionné ne périme pas. */
+const WORKTREE_DECISION_HOURS = 168
+
+/** Ce qu'il advient d'un « Nettoyer » : fait, ou refusé parce que l'arbre a changé depuis. */
+export type WorktreeCleanOutcome = 'cleaned' | 'stale'
+
+/** Un arbre fusionné et propre, tel que l'avancement des worktrees le détecte. */
+export interface WorktreeProposal {
+  projectId: string
+  /** La session la plus récente de l'arbre, ou '' s'il n'en a aucune. */
+  conversationId: string
+  branch: string
+  path: string
+  /** Le commit de tête : la réponse vaut pour lui, un arbre qui a bougé se repropose. */
+  head: string | null
+  base: string
+  sessions: number
+}
 
 /** Refus adressé à l'agent : le texte lui est rendu tel quel. */
 export class DecisionRefusal extends Error {}
@@ -88,6 +109,18 @@ export function readDecisionPayload(raw: string): DecisionPayload {
   }
 }
 
+/** L'arbre visé par une proposition de nettoyage ; null pour une demande d'agent. */
+function readWorktree(row: AgentRequestRow): DecisionWorktreeDto | null {
+  if (!row.worktreePath) return null
+  const value = (JSON.parse(row.payload) as { worktree?: Partial<DecisionWorktreeDto> }).worktree ?? {}
+  return {
+    path: row.worktreePath,
+    branch: typeof value.branch === 'string' ? value.branch : '',
+    base: typeof value.base === 'string' ? value.base : '',
+    sessions: typeof value.sessions === 'number' ? value.sessions : 0,
+  }
+}
+
 function readAnswer(raw: string | null): DecisionAnswer | null {
   if (!raw) return null
   const parsed = decisionAnswerSchema.safeParse(JSON.parse(raw))
@@ -96,6 +129,12 @@ function readAnswer(raw: string | null): DecisionAnswer | null {
 
 export class Decisions {
   private logger: FastifyBaseLogger | null = null
+  /**
+   * Le nettoyage, branché après coup (`worktrees/merge-watch.ts`) : il dépend des
+   * terminaux et des sessions, que ce module n'a pas à connaître. Sans lui, « Nettoyer »
+   * est refusé.
+   */
+  private cleanWorktree: ((row: AgentRequestRow) => Promise<WorktreeCleanOutcome>) | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -266,6 +305,12 @@ export class Decisions {
     )
     for (const row of open) {
       try {
+        // Une proposition de nettoyage ne dépend d'aucune session : l'avancement des
+        // arbres la retire quand l'arbre bouge, et l'échéance la clôt.
+        if (row.worktreePath) {
+          if (row.expiresAt !== null && row.expiresAt <= now) this.close(row, { by: 'expired' })
+          continue
+        }
         const archivedAt = owners.get(row.conversationId)
         if (archivedAt === undefined || archivedAt !== null) {
           this.close(row, { by: 'withdrawn' })
@@ -279,10 +324,112 @@ export class Decisions {
     }
   }
 
+  // --- Les propositions de nettoyage, par l'avancement des arbres ------------------
+
+  setWorktreeCleaner(clean: (row: AgentRequestRow) => Promise<WorktreeCleanOutcome>): void {
+    this.cleanWorktree = clean
+  }
+
+  /**
+   * Propose de nettoyer un arbre fusionné et propre, une seule fois par arbre, branche et
+   * commit de tête : une réponse « Garder », ou l'échéance, vaut tant que l'arbre n'a pas
+   * bougé. Un arbre recréé sous le même chemin, ou qui a reçu et livré du travail depuis,
+   * se repropose ; un retrait aussi laisse la question se reposer.
+   *
+   * Une décision comme celles des sessions, pour paraître au même endroit, mais posée
+   * par Solera : elle va au propriétaire du projet, seul à pouvoir nettoyer, et sa
+   * réponse ne part à aucune session.
+   */
+  proposeWorktreeCleanup(proposal: WorktreeProposal): boolean {
+    const asked = this.ctx.db
+      .select({ resolvedAt: agentRequests.resolvedAt, answer: agentRequests.answer, payload: agentRequests.payload })
+      .from(agentRequests)
+      .where(and(eq(agentRequests.projectId, proposal.projectId), eq(agentRequests.worktreePath, proposal.path)))
+      .all()
+      .some((row) => {
+        // Une question ouverte sur ce chemin suffit : on ne pose pas la seconde.
+        if (row.resolvedAt === null) return true
+        if (readAnswer(row.answer)?.by === 'withdrawn') return false
+        const asked = (JSON.parse(row.payload) as { worktree?: { branch?: unknown; head?: unknown } }).worktree
+        return asked?.branch === proposal.branch && (asked?.head ?? null) === proposal.head
+      })
+    if (asked) return false
+    const project = this.ctx.db.select().from(projects).where(eq(projects.id, proposal.projectId)).get()
+    if (!project) return false
+
+    const now = Date.now()
+    const id = randomUUID()
+    // En français comme le reste de ce que le serveur écrit (notifications, notes) ;
+    // l'interface recompose la question et les choix dans la langue du lecteur.
+    const payload: DecisionPayload & { worktree: Omit<DecisionWorktreeDto, 'path'> & { head: string | null } } = {
+      question: `${proposal.branch} est fusionnée et propre : nettoyer ?`,
+      context: [
+        `Rien dans l'arbre que ${proposal.base} n'ait déjà.`,
+        `Nettoyer retire l'arbre (${proposal.path}), supprime la branche, archive ${proposal.sessions} session(s) et arrête ce qui y tourne.`,
+      ].join('\n\n'),
+      options: [...WORKTREE_DECISION_OPTIONS],
+      defaultOption: null,
+      worktree: { branch: proposal.branch, head: proposal.head, base: proposal.base, sessions: proposal.sessions },
+    }
+    this.ctx.db
+      .insert(agentRequests)
+      .values({
+        id,
+        projectId: proposal.projectId,
+        conversationId: proposal.conversationId,
+        kind: 'request_decision',
+        payload: JSON.stringify(payload),
+        createdAt: now,
+        // Déposée d'emblée : personne n'attend de réponse du daemon.
+        settledAt: now,
+        expiresAt: now + WORKTREE_DECISION_HOURS * HOUR_MS,
+        worktreePath: proposal.path,
+      })
+      .run()
+    this.awaitingChanged([project.ownerId])
+    void this.notifyWorktree(id, project, proposal.branch, payload.question)
+    return true
+  }
+
+  /** Retire la proposition en attente pour un arbre qui a bougé ou disparu. */
+  withdrawWorktreeProposal(projectId: string, path: string): void {
+    const pending = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.projectId, projectId),
+          eq(agentRequests.worktreePath, path),
+          isNull(agentRequests.resolvedAt),
+        ),
+      )
+      .get()
+    if (pending) this.close(pending, { by: 'withdrawn' })
+  }
+
+  /** Les arbres d'un projet qui ont une proposition en attente. */
+  pendingWorktreeProposals(projectId: string): string[] {
+    return this.ctx.db
+      .select({ path: agentRequests.worktreePath })
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.projectId, projectId),
+          isNotNull(agentRequests.worktreePath),
+          isNull(agentRequests.resolvedAt),
+        ),
+      )
+      .all()
+      .flatMap((row) => (row.path ? [row.path] : []))
+  }
+
   // --- Les gestes de l'utilisateur ------------------------------------------------
 
-  /** La réponse d'une personne. Seul le propriétaire de la conversation tranche. */
-  answer(userId: string, id: string, body: AnswerDecisionBody): DecisionDto {
+  /**
+   * La réponse d'une personne. Seul le propriétaire de la conversation tranche, ou celui
+   * du projet pour une proposition de nettoyage.
+   */
+  async answer(userId: string, id: string, body: AnswerDecisionBody): Promise<DecisionDto> {
     const row = this.row(userId, id)
     if (row.resolvedAt !== null) {
       throw new HttpError(409, 'decision_closed', 'This decision is no longer pending.')
@@ -290,6 +437,7 @@ export class Decisions {
     if (body.option !== null && !readDecisionPayload(row.payload).options.includes(body.option)) {
       throw new HttpError(400, 'decision_unknown_option', 'This option was not offered.')
     }
+    if (row.worktreePath) return this.answerWorktree(userId, row, body)
     this.close(row, {
       by: 'user',
       userId,
@@ -299,15 +447,37 @@ export class Decisions {
     return this.get(userId, id)
   }
 
+  /**
+   * La réponse à une proposition de nettoyage n'est remise à personne : elle agit. Le
+   * nettoyage passe avant la clôture, pour qu'un échec laisse la question ouverte ; un
+   * arbre qui a bougé depuis la question retire la proposition au lieu de nettoyer.
+   */
+  private async answerWorktree(userId: string, row: AgentRequestRow, body: AnswerDecisionBody): Promise<DecisionDto> {
+    if (body.option !== 'clean' && body.option !== 'keep') {
+      throw new HttpError(400, 'decision_option_required', 'Choose one of the options.')
+    }
+    if (body.option === 'clean') {
+      if (!this.cleanWorktree) throw new HttpError(409, 'worktree_clean_unavailable', 'Cleaning up is not available.')
+      if ((await this.cleanWorktree(row)) === 'stale') {
+        // Le recalcul qui l'a vu a pu la retirer déjà : c'est le refus qui compte ici.
+        if (row.projectId && row.worktreePath) this.withdrawWorktreeProposal(row.projectId, row.worktreePath)
+        throw new HttpError(409, 'worktree_not_merged', 'This worktree changed since the question: nothing was cleaned up.')
+      }
+    }
+    this.close(row, { by: 'user', userId, option: body.option, ...(body.text ? { text: body.text } : {}) })
+    return this.get(userId, row.id)
+  }
+
   list(userId: string, scope: 'pending' | 'all', limit = 200): DecisionDto[] {
     const rows = this.ctx.db
       .select({ request: agentRequests })
       .from(agentRequests)
-      .innerJoin(conversations, eq(conversations.id, agentRequests.conversationId))
+      .leftJoin(conversations, eq(conversations.id, agentRequests.conversationId))
+      .leftJoin(projects, eq(projects.id, agentRequests.projectId))
       .where(
         and(
           eq(agentRequests.kind, 'request_decision'),
-          eq(conversations.userId, userId),
+          ownedBy(userId),
           isNotNull(agentRequests.expiresAt),
           scope === 'pending' ? isNull(agentRequests.resolvedAt) : undefined,
         ),
@@ -327,11 +497,12 @@ export class Decisions {
     return this.ctx.db
       .select({ id: agentRequests.id })
       .from(agentRequests)
-      .innerJoin(conversations, eq(conversations.id, agentRequests.conversationId))
+      .leftJoin(conversations, eq(conversations.id, agentRequests.conversationId))
+      .leftJoin(projects, eq(projects.id, agentRequests.projectId))
       .where(
         and(
           eq(agentRequests.kind, 'request_decision'),
-          eq(conversations.userId, userId),
+          ownedBy(userId),
           isNull(agentRequests.resolvedAt),
           isNotNull(agentRequests.expiresAt),
         ),
@@ -396,7 +567,19 @@ export class Decisions {
     const items: AwaitingRequestDto[] = []
     for (const row of rows) {
       const requester = threads.get(row.conversationId)
-      if (row.kind === 'request_decision') {
+      if (row.kind === 'request_decision' && row.worktreePath) {
+        if (!row.projectId || owners.get(row.projectId) !== userId || row.expiresAt === null) continue
+        items.push({
+          kind: 'decision',
+          id: row.id,
+          conversationId: row.conversationId,
+          projectId: row.projectId,
+          question: readDecisionPayload(row.payload).question,
+          worktreeBranch: readWorktree(row)?.branch ?? null,
+          expiresAt: row.expiresAt,
+          createdAt: row.createdAt,
+        })
+      } else if (row.kind === 'request_decision') {
         if (!requester || requester.userId !== userId || !requester.projectId || row.expiresAt === null) continue
         items.push({
           kind: 'decision',
@@ -404,6 +587,7 @@ export class Decisions {
           conversationId: row.conversationId,
           projectId: requester.projectId,
           question: readDecisionPayload(row.payload).question,
+          worktreeBranch: null,
           expiresAt: row.expiresAt,
           createdAt: row.createdAt,
         })
@@ -460,6 +644,16 @@ export class Decisions {
       .run()
     if (closed.changes === 0) {
       throw new HttpError(409, 'decision_closed', 'This decision is no longer pending.')
+    }
+
+    // Une proposition de nettoyage n'a pas de session à qui répondre : seule la section
+    // « À décider » du propriétaire est à relire.
+    if (row.worktreePath) {
+      const owner = row.projectId
+        ? this.ctx.db.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, row.projectId)).get()
+        : undefined
+      this.awaitingChanged(owner ? [owner.ownerId] : [])
+      return
     }
 
     const payload = readDecisionPayload(row.payload)
@@ -580,11 +774,39 @@ export class Decisions {
       .catch((err: unknown) => this.logger?.warn({ err, request: id }, 'notification de décision non émise'))
   }
 
+  /** Comme `notify`, sans session : la question vient de Solera, et vise une branche. */
+  private async notifyWorktree(id: string, project: ProjectRow, branch: string, question: string): Promise<void> {
+    if (!this.notifications) return
+    await this.notifications
+      .dispatch(project.ownerId, {
+        kind: 'decision',
+        push: {
+          title: 'Décision à prendre',
+          body: `${project.name} — ${question}`,
+          url: `/decisions?open=${id}`,
+          tag: `decision-${id}`,
+          kind: 'decision',
+          badge: this.pendingCount(project.ownerId),
+        },
+        toast: {
+          kind: 'decision',
+          decisionId: id,
+          question,
+          conversationId: '',
+          conversationTitle: '',
+          projectName: project.name,
+          worktreeBranch: branch,
+        },
+      })
+      .catch((err: unknown) => this.logger?.warn({ err, request: id }, 'notification de décision non émise'))
+  }
+
   private row(userId: string, id: string): AgentRequestRow {
     const found = this.ctx.db
-      .select({ request: agentRequests, ownerId: conversations.userId })
+      .select({ request: agentRequests, ownerId: conversations.userId, projectOwnerId: projects.ownerId })
       .from(agentRequests)
       .leftJoin(conversations, eq(conversations.id, agentRequests.conversationId))
+      .leftJoin(projects, eq(projects.id, agentRequests.projectId))
       .where(
         and(
           eq(agentRequests.id, id),
@@ -593,7 +815,7 @@ export class Decisions {
         ),
       )
       .get()
-    if (!found || found.ownerId !== userId) {
+    if (!found || (found.request.worktreePath ? found.projectOwnerId : found.ownerId) !== userId) {
       throw new HttpError(404, 'decision_not_found', 'Decision not found.')
     }
     return found.request
@@ -662,6 +884,7 @@ export class Decisions {
         conversationId: row.conversationId,
         conversationTitle: thread?.title ?? '',
         card: thread?.cardId ? (cardRows.get(thread.cardId) ?? null) : null,
+        worktree: readWorktree(row),
         question: payload.question,
         context: payload.context,
         options: payload.options,
@@ -680,6 +903,18 @@ export class Decisions {
       }
     })
   }
+}
+
+/**
+ * À qui revient une décision : au propriétaire de la conversation qui l'a demandée, ou à
+ * celui du projet pour une proposition de nettoyage. Suppose les jointures à gauche sur
+ * `conversations` et `projects`.
+ */
+function ownedBy(userId: string) {
+  return or(
+    and(isNull(agentRequests.worktreePath), eq(conversations.userId, userId)),
+    and(isNotNull(agentRequests.worktreePath), eq(projects.ownerId, userId)),
+  )
 }
 
 /** Le fil qu'un `move_conversation` déplace : celui que l'agent a nommé, ou le sien. */

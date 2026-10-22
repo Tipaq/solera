@@ -16,6 +16,7 @@ import type { AppContext } from '../context.js'
 import { HttpError, badRequest, conflict } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
+import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 
 /**
  * Les **écritures** de la vue Git du panneau : indexer, commiter, pousser, basculer,
@@ -97,7 +98,11 @@ function coAuthorOf(db: Db, base: string, id: string): string | null {
  */
 const journal = new UndoJournal()
 
-export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerGitActionRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  worktreeStatus: WorktreeStatusService,
+): void {
   for (const { base, cwdOf } of workspaceScopes) {
     /** Où en est l'écriture : l'index, l'arbre, le verrou, et ce qui s'annule. */
     app.get(`${base}/git/state`, async (request): Promise<GitStateDto> => {
@@ -185,6 +190,9 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
         return { message: outcome.message }
       } catch (err) {
         throw gitFailure(err)
+      } finally {
+        // Commit, fusion, branche : l'avancement des chantiers a pu changer.
+        worktreeStatus.invalidateForCwd(cwd)
       }
     })
 
@@ -199,6 +207,8 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
         return { message: '' }
       } catch (err) {
         throw gitFailure(err)
+      } finally {
+        worktreeStatus.invalidateForCwd(cwd)
       }
     })
 
@@ -213,6 +223,8 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
         return { message: '' }
       } catch (err) {
         throw gitFailure(err)
+      } finally {
+        worktreeStatus.invalidateForCwd(cwd)
       }
     })
   }

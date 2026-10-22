@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { resolve, sep } from 'node:path'
 import { Cron } from 'croner'
-import { and, asc, count, eq, gt, isNotNull, isNull, ne } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
   cardNotes,
+  conversationPaths,
   cards,
   conversations,
   projects,
@@ -40,6 +41,7 @@ import {
   type AgentKind,
   type AgentModelDto,
   type CardColumn,
+  type WorktreeState,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
@@ -52,6 +54,8 @@ import { DecisionRefusal, type DecisionDeposit, type Decisions } from '../decisi
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
+import { defaultBase } from '../worktrees/assess.js'
+import type { WorktreeStatusService } from '../worktrees/status-service.js'
 import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import { createWorktree } from '../worktrees/create.js'
@@ -175,6 +179,23 @@ function describeError(err: unknown): string {
 
 class Refusal extends Error {}
 
+/** Doit rester d'accord avec `createWorktreeBodySchema` du protocole : le nom sert aussi de dossier. */
+function assertWorktreeName(name: string): void {
+  if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.split('/').includes('..') || name.startsWith('/') || name.endsWith('/')) {
+    throw new Refusal(`Nom de worktree invalide « ${name} » : lettres, chiffres, . _ - / seulement, comme une branche git.`)
+  }
+}
+
+/** L'état d'un arbre dit à un agent, avec ce qu'il implique pour lui. */
+const WORKTREE_STATE_WORDS: Record<WorktreeState, string> = {
+  missing: 'introuvable (dossier disparu)',
+  unreadable: 'illisible (git n’a pas pu le juger)',
+  dirty: 'non commité',
+  unmerged: 'commité, à fusionner',
+  empty: 'sans travail encore (aucun commit propre)',
+  merged: 'fusionné, rien à garder (à nettoyer)',
+}
+
 /**
  * Le fil que `move_conversation` déplace : celui que l'agent a nommé, ou le sien.
  *
@@ -211,6 +232,8 @@ export class AgentRequests {
     private readonly log: EventLog,
     /** Les décisions ; sans elles, `request_decision` est refusé. */
     private readonly decisions?: Decisions,
+    /** Avancement des worktrees ; sans lui, `list_worktrees` est refusé. */
+    private readonly worktreeStatus?: WorktreeStatusService,
   ) {}
 
   start(logger: FastifyBaseLogger): void {
@@ -304,6 +327,10 @@ export class AgentRequests {
         this.settle(request, text, false, launchedId)
       } else if (request.kind === 'schedule_task') {
         this.settle(request, await this.scheduleTask(requester, project, payload), false)
+      } else if (request.kind === 'create_worktree') {
+        this.settle(request, await this.createWorktreeFor(requester, project, payload), false)
+      } else if (request.kind === 'list_worktrees') {
+        this.settle(request, await this.listWorktrees(requester, project), false)
       } else {
         this.settle(request, await this.listModels(requester, project, payload), false)
       }
@@ -594,11 +621,122 @@ export class AgentRequests {
       .get()
     if (existing) return existing.id
 
-    if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.split('/').includes('..') || name.startsWith('/') || name.endsWith('/')) {
-      throw new Refusal(`Nom de worktree invalide « ${name} » : lettres, chiffres, . _ - / seulement, comme une branche git.`)
-    }
+    assertWorktreeName(name)
     const row = await createWorktree(this.ctx, project, requester.userId, name, 'HEAD')
+    this.worktreeStatus?.forget(project.id)
     return row.id
+  }
+
+  // --- create_worktree, list_worktrees ---------------------------------------------
+
+  /**
+   * Crée un worktree pour la session qui le demande, au même endroit et de la même façon
+   * que l'interface, puis l'y rattache.
+   *
+   * Le rattachement passe par `conversation_paths`, comme une écriture dans l'arbre, et
+   * jamais par `conversations.worktree_id` : ce dernier décide du cwd à la reprise, et
+   * Claude range ses transcripts par dossier de travail, si bien qu'une session dont on
+   * changerait le cwd après coup ne se retrouverait plus. Le cwd reste donc où il est,
+   * et l'agent travaille dans l'arbre par chemins absolus.
+   *
+   * Une branche neuve part de la branche par défaut du projet et non de HEAD : la
+   * session qui demande est souvent dans l'arbre principal, resté sur une autre branche
+   * que celle qu'on croit.
+   */
+  private async createWorktreeFor(requester: ConversationRow, project: ProjectRow, payload: Record<string, unknown>): Promise<string> {
+    const branch = typeof payload.branch === 'string' ? payload.branch.trim() : ''
+    if (!branch) throw new Refusal('Le paramètre `branch` est requis : le nom de la branche, par exemple `fix/titre-tronque`.')
+    assertWorktreeName(branch)
+
+    const existing = this.ctx.db
+      .select()
+      .from(worktrees)
+      .where(and(eq(worktrees.projectId, project.id), eq(worktrees.name, branch), isNull(worktrees.removedAt)))
+      .get()
+
+    let row = existing
+    let origin: string
+    if (row) {
+      origin = 'Il existait déjà : Solera te le rend tel quel.'
+    } else {
+      const requested = typeof payload.base === 'string' ? payload.base.trim() : ''
+      // Passée telle quelle à `git worktree add` : un tiret en tête serait lu comme une option.
+      if (requested && (!/^[A-Za-z0-9._/@{}^~-]+$/.test(requested) || requested.startsWith('-'))) {
+        throw new Refusal(`Base invalide « ${requested} » : un nom de branche, de tag ou de commit.`)
+      }
+      const base = requested || (await defaultBase(project.workspacePath)) || 'HEAD'
+      row = await createWorktree(this.ctx, project, requester.userId, branch, base)
+      origin = row.baseRef === branch
+        ? `La branche « ${branch} » existait : elle est reprise telle quelle.`
+        : `Branche neuve, partie de ${base}.`
+    }
+
+    const now = Date.now()
+    this.ctx.db
+      .insert(conversationPaths)
+      .values({ conversationId: requester.id, path: row.path, lastTs: now })
+      .onConflictDoUpdate({
+        target: [conversationPaths.conversationId, conversationPaths.path],
+        set: { lastTs: sql`max(${conversationPaths.lastTs}, ${now})` },
+      })
+      .run()
+    this.worktreeStatus?.forget(project.id)
+
+    return [
+      `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
+      "Ta session y est rattachée : l'utilisateur retrouve l'arbre et ta session dans la vue Chantiers du projet, d'où il le nettoiera une fois fusionné.",
+      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`,
+      `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
+    ].join('\n')
+  }
+
+  /**
+   * Les arbres du projet et leur avancement, tels que la vue Chantiers les montre.
+   *
+   * Attend un calcul à jour plutôt que de rendre la liste périmée que l'interface
+   * accepte : un agent qui demande s'il peut reprendre un arbre décide sur la réponse.
+   */
+  private async listWorktrees(requester: ConversationRow, project: ProjectRow): Promise<string> {
+    if (!this.worktreeStatus) throw new Refusal("L'avancement des worktrees n'est pas disponible ici.")
+    const list = await this.worktreeStatus.current(project)
+    if (list.worktrees.length === 0) {
+      return list.base === null
+        ? "Ce projet n'est pas un dépôt git : il n'a pas de worktree."
+        : "Aucun worktree en dehors de l'arbre principal. create_worktree en crée un."
+    }
+
+    const ids = [...new Set(list.worktrees.flatMap((tree) => tree.conversations.map((entry) => entry.id)))]
+    const titles = new Map(
+      ids.length
+        ? this.ctx.db
+            .select({ id: conversations.id, title: conversations.title, archivedAt: conversations.archivedAt })
+            .from(conversations)
+            .where(inArray(conversations.id, ids))
+            .all()
+            .map((row) => [row.id, row.archivedAt ? `${row.title} (archivée)` : row.title])
+        : [],
+    )
+
+    const lines = list.worktrees.map((tree) => {
+      const facts = [
+        tree.modified > 0 ? `${tree.modified} fichier(s) modifié(s)` : null,
+        tree.untracked > 0 ? `${tree.untracked} non suivi(s)` : null,
+        tree.ahead > 0 ? `${tree.ahead} commit(s) en avance` : null,
+        tree.behind > 0 ? `${tree.behind} en retard` : null,
+        tree.conflicts ? 'conflit prévisible' : null,
+      ].filter(Boolean)
+      const sessions = tree.conversations.map((entry) => {
+        const who = entry.id === requester.id ? 'toi' : `« ${titles.get(entry.id) ?? entry.id} »`
+        return `${who} ${entry.link === 'worktree' ? 'y travaille' : 'y a travaillé'}`
+      })
+      return [
+        `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
+        `  ${tree.path}${tree.external ? ' · créé hors de Solera' : ''}`,
+        sessions.length ? `  Sessions : ${sessions.join(' ; ')}` : '  Aucune session rattachée.',
+      ].join('\n')
+    })
+
+    return [`Worktrees du projet, comparés à ${list.base ?? 'HEAD'} :`, ...lines].join('\n')
   }
 
   private launchCard(projectId: string, value: unknown): { id: string; number: number; title: string } | null {

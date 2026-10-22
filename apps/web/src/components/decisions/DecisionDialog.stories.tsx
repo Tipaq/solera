@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { DecisionDialog } from './DecisionDialog'
-import { ANSWERED, DEFAULTED, EXPIRED, OPEN_QUESTION, PENDING, SeededDecisions, WITHDRAWN } from './decision-fixtures'
+import { ANSWERED, DEFAULTED, EXPIRED, OPEN_QUESTION, PENDING, SeededDecisions, WITHDRAWN, WORKTREE } from './decision-fixtures'
 
 const meta = {
   title: "Composants d'application/DecisionDialog",
@@ -52,4 +52,9 @@ export const Echue: Story = {
 export const Retiree: Story = {
   name: 'Retirée',
   render: () => <SeededDecisions open={WITHDRAWN.id}><DecisionDialog /></SeededDecisions>,
+}
+
+/** Posée par Solera : un arbre fusionné et propre, à nettoyer ou garder. Pas de réponse libre. */
+export const Nettoyage: Story = {
+  render: () => <SeededDecisions open={WORKTREE.id}><DecisionDialog /></SeededDecisions>,
 }

@@ -159,6 +159,19 @@ export async function removeWorktree(repo: string, path: string, force: boolean)
 }
 
 /**
+ * Supprime une branche locale, par `-D` : une branche fusionnée par squash n'est pas un
+ * ancêtre de la base, et `-d` la refuserait. À l'appelant de s'être assuré qu'elle ne
+ * porte rien que la base n'ait déjà.
+ */
+export async function deleteBranch(repo: string, branch: string): Promise<void> {
+  try {
+    await git(repo, ['branch', '-D', '--', branch])
+  } catch (err) {
+    throw new GitError(gitMessage(err))
+  }
+}
+
+/**
  * Un clone qui n'a plus rien dit depuis ce délai est considéré perdu.
  *
  * Une inactivité plutôt qu'une durée totale : un dépôt de plusieurs gigaoctets sur une

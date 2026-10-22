@@ -50,6 +50,11 @@ export type InAppNotification =
       conversationId: string
       conversationTitle: string
       projectName: string
+      /**
+       * Pour une proposition de nettoyage, la branche visée : le client recompose la
+       * question dans sa langue. Facultatif pour un serveur plus ancien que le client.
+       */
+      worktreeBranch?: string | null
     }
   | {
       kind: 'cliRequest'
