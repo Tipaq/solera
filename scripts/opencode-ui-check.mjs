@@ -60,10 +60,10 @@ try {
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
       // Les cartes du fil portent des aides : sans fournisseur, la première qui en
-      // affiche une fait tomber tout le rendu. Chemin résolu lu dans la source
+      // affiche une fait tomber tout le rendu. Chemin pré-empaqueté par Vite, lu dans la source
       // transformée, comme celui de React Query au-dessus.
       const threadSource = await (await fetch('/src/components/chat/ChatThread.tsx')).text()
-      const { TooltipProvider } = await import(/from "([^"]*\/packages\/ui\/[^"]*)"/.exec(threadSource)[1])
+      const { TooltipProvider } = await import(/from "([^"]*@solera_ui[^"]*)"/.exec(threadSource)[1])
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')
       const { buildRows } = await import('/src/lib/tool-rows.ts')
