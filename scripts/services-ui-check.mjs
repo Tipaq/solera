@@ -158,7 +158,9 @@ try {
   // Le tiroir de navigation termine sa transition après le changement de breakpoint.
   await delay(350)
   await page.locator('[data-navigation-trigger]').click()
-  await page.getByRole('link', { name: 'Services', exact: true }).click()
+  // Services se range dans le menu du compte, au pied de la colonne.
+  await page.getByRole('button', { name: 'Alex', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Services', exact: true }).click()
   await delay(350)
   await row.getByRole('button', { name: 'Arrêter', exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
