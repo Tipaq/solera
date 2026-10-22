@@ -1,8 +1,7 @@
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { chmod, cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
 import {
   CHECK_SKIP_EXIT_CODE,
   MAX_CHECK_OUTPUT_CHARS,
@@ -10,6 +9,7 @@ import {
   type ScheduleCheckVerdict,
 } from '@solera/protocol'
 import { agentProcessEnv } from '../agents/process-env.js'
+import { serviceAppsAvailable } from '../services/apps.js'
 
 /**
  * La vérification d'une tâche planifiée : un script joué par le daemon avant le tour
@@ -20,21 +20,6 @@ import { agentProcessEnv } from '../agents/process-env.js'
  * rien. La garde est ailleurs : le script vient de la base, et celui qu'un agent écrit
  * ne tourne pas avant qu'une personne l'ait validé.
  */
-
-let userManager: Promise<boolean> | null = null
-
-/**
- * Un gestionnaire systemd utilisateur répond-il ? Non sous macOS, ni dans un conteneur
- * sans systemd : le script tourne alors sous le daemon. Demandé une fois par process.
- */
-function userManagerAvailable(): Promise<boolean> {
-  if (process.platform !== 'linux') return Promise.resolve(false)
-  userManager ??= promisify(execFile)('systemctl', ['--user', '--no-pager', 'show-environment'], { timeout: 5000 }).then(
-    () => true,
-    () => false,
-  )
-  return userManager
-}
 
 /** Ce que l'erreur standard garde, pour le débogage seulement. */
 const MAX_STDERR_CHARS = 4000
@@ -112,7 +97,7 @@ export async function runCheck(script: string, context: CheckContext): Promise<S
 
     // Hors du cgroup du daemon quand systemd le permet : un script qui s'emballe en
     // mémoire ne doit pas geler Solera, qui partage son plafond avec les sessions.
-    const argv = (await userManagerAvailable())
+    const argv = (await serviceAppsAvailable())
       ? ['systemd-run', '--user', '--scope', '--quiet', '--collect', `--description=Solera check: ${context.taskName}`, '--', ...command]
       : command
 
