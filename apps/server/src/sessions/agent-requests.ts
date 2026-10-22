@@ -52,7 +52,7 @@ import type { EventLog } from '../events/event-log.js'
 import { readGitStatus } from '../git.js'
 import { DecisionRefusal, type DecisionDeposit, type Decisions } from '../decisions/decisions.js'
 import type { AppContext } from '../http/context.js'
-import { HttpError } from '../http/errors.js'
+import { describeHttpError, HttpError } from '../http/errors.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
 import { defaultBase } from '../worktrees/assess.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
@@ -166,16 +166,6 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'request_card_move',
 ])
 
-/**
- * Remplace les `{param}` d'un message d'erreur HTTP : les erreurs des fonctions
- * partagées avec les routes sont écrites pour l'API, le modèle les lit telles quelles.
- */
-function describeError(err: unknown): string {
-  if (err instanceof HttpError) {
-    return err.message.replace(/\{(\w+)\}/g, (_, key: string) => String(err.params?.[key] ?? key))
-  }
-  return err instanceof Error ? err.message : String(err)
-}
 
 class Refusal extends Error {}
 
@@ -347,7 +337,7 @@ export class AgentRequests {
       ) {
         this.closeFiling(request.id)
       }
-      this.settle(request, describeError(err), true)
+      this.settle(request, describeHttpError(err), true)
     }
   }
 

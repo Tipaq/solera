@@ -24,6 +24,7 @@ import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
+import { WorktreeGoneNotice } from '../components/chat/WorktreeGoneNotice'
 import { ConversationMinimap } from '../components/chat/ConversationMinimap'
 import { PromptSuggestion } from '../components/chat/PromptSuggestion'
 import { QueuedMessages } from '../components/chat/QueuedMessages'
@@ -48,6 +49,8 @@ import {
   sendMessage,
   steerConversation,
   useAllConversations,
+  useArchiveConversation,
+  useContinueAtProjectRoot,
   useConversation,
 } from '../lib/conversations'
 import { ApiRequestError } from '../lib/api'
@@ -790,6 +793,11 @@ export function ConversationPage() {
   // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
   const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
 
+  // Les deux issues d'un fil dont le worktree a disparu (carte #61).
+  const archive = useArchiveConversation()
+  const continueAtRoot = useContinueAtProjectRoot()
+  const worktreeGoneError = archive.error ?? continueAtRoot.error
+
   // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
   // pas : il rejoint la garde plutôt que d'être forcé plus bas.
   if (!conversationId || !conversation || !config) return null
@@ -1349,6 +1357,22 @@ export function ConversationPage() {
             </div>
           ) : null}
 
+          {/* Un worktree disparu ne laisse rien à écrire : le bandeau prend la place du
+              composer, dans la même gouttière, et propose les deux issues. */}
+          {conversation.worktreeGone ? (
+            <div className="px-3 pb-3 @min-[40rem]:px-12">
+              <div className="mx-auto max-w-3xl">
+                <WorktreeGoneNotice
+                  agent={conversation.agent}
+                  canAct={isOwner}
+                  pending={archive.isPending || continueAtRoot.isPending}
+                  error={worktreeGoneError instanceof Error ? worktreeGoneError.message : undefined}
+                  onArchive={() => archive.mutate({ id: conversationId, archived: true })}
+                  onContinue={() => continueAtRoot.mutate(conversationId)}
+                />
+              </div>
+            </div>
+          ) : (
           <Composer
             key={conversationId}
             initialText={draft}
@@ -1383,6 +1407,7 @@ export function ConversationPage() {
               />
             }
           />
+          )}
         </div>
       </div>
 
@@ -1392,9 +1417,13 @@ export function ConversationPage() {
       {panel.mounted ? (
         <Suspense fallback={null}>
           <SidePanel
-            projectId={conversation.projectId}
+            // Un worktree disparu n'a plus de dossier à montrer : le panneau se réduit à
+            // ce qu'il montre d'un fil libre, sans fichiers, sans Git ni terminal.
+            projectId={conversation.worktreeGone ? null : conversation.projectId}
             conversationId={conversationId}
-            workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
+            workspaceName={
+              conversation.worktreeId && !conversation.worktreeGone ? (worktree?.name ?? '…') : undefined
+            }
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
             checkpoints={stream.state.checkpoints}

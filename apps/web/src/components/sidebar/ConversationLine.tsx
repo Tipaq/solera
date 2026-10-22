@@ -1,4 +1,4 @@
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, FolderX, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
@@ -109,6 +109,19 @@ export function ConversationLine({
       >
         <span className="shrink-0 text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
         <span className={cx('min-w-0 flex-1 truncate', unread && 'font-medium')}>{conversation.title}</span>
+        {/* Une propriété durable du fil, pas un moment : avec le titre plutôt que parmi
+            les points d'état, qui s'effacent au survol. */}
+        {conversation.worktreeGone ? (
+          <span
+            role="img"
+            className="shrink-0 text-caution"
+            title={t('conversation.worktreeGone.marker')}
+            aria-label={t('conversation.worktreeGone.marker')}
+            data-worktree-gone-marker
+          >
+            <FolderX size={12} />
+          </span>
+        ) : null}
         {project && display.projectDot ? <ProjectAvatar project={project} className="size-3" /> : null}
       </NavLink>
 

@@ -12,6 +12,7 @@ import {
 } from '@solera/db'
 import {
   parseAgentConfig,
+  RESUMES_FROM_OTHER_DIRECTORY,
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
@@ -49,7 +50,8 @@ import { readAppSettings } from '../settings/app-settings.js'
 import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { rebaseInProgress } from '../git-rebase.js'
 import { agentCwd, resolveMention } from '../workspace.js'
-import { HttpError, notFound } from '../http/errors.js'
+import { conflict, describeHttpError, HttpError, notFound } from '../http/errors.js'
+import { isDirectory, isWorkingDirectoryMissing, workingDirectoryMissing } from '../worktrees/gone.js'
 import type { StorybookSupervisor } from '../design-system/storybooks.js'
 import {
   CheckpointError,
@@ -736,6 +738,9 @@ export class SessionManager {
     // Un tour a pu redémarrer entre l'annonce du statut et ce flush : le message
     // reste alors en file, il repartira à la prochaine transition vers `idle`.
     if (this.isBusy(conversationId)) return
+    // Un worktree disparu garde ses messages en file : le bandeau du fil propose de
+    // rattacher la conversation à la racine, et ils partiront à ce moment-là.
+    if (!this.queues.has(conversationId) || this.worktreeGone(conversationId)) return
 
     const queue = this.queues.get(conversationId)
     const next = queue?.shift()
@@ -754,9 +759,7 @@ export class SessionManager {
       this.log.append(conversationId, {
         type: 'error',
         code: 'queued_message_failed',
-        message: `The queued message could not be sent: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        message: `The queued message could not be sent: ${describeHttpError(err)}`,
         recoverable: true,
       })
     }
@@ -1226,10 +1229,12 @@ export class SessionManager {
   }
 
   private async startRunner(conversationId: string): Promise<AgentRunner> {
-    await this.makeRoom()
-
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
     const fresh = this.loadConversation(conversationId)
+    // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
+    this.refuseMissingCwd(fresh)
+    await this.makeRoom()
+
     const context = this.buildContext(fresh)
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
@@ -1254,6 +1259,79 @@ export class SessionManager {
       throw err
     }
     return runner
+  }
+
+  /**
+   * Le dossier où le CLI travaille, ou le refus s'il a disparu (cartes #60 et #61).
+   *
+   * Lancer un CLI dans un cwd absent finit en `ENOENT` attribué au binaire, que le SDK
+   * de Claude traduit en « mauvaise libc ». Le worktree disparu est constaté et marqué
+   * par `resolveConversationCwd` ; reste ici le dossier du projet lui-même.
+   *
+   * Rien n'est écrit dans le fil : l'état est porté par la conversation (`worktreeGone`,
+   * qui remplace le composer par un bandeau), et un événement par essai empilerait
+   * autant de bandeaux. Le runner encore vivant est arrêté, sa file gardée pour le
+   * rattachement, et les listes relues pour que le fil voie l'état.
+   */
+  private refuseMissingCwd(conversation: ConversationRow): string {
+    try {
+      const cwd = this.resolveCwd(conversation)
+      if (!isDirectory(cwd)) throw workingDirectoryMissing(cwd)
+      return cwd
+    } catch (err) {
+      if (isWorkingDirectoryMissing(err)) {
+        void this.stopRunner(conversation.id, { keepQueue: true })
+        this.statusBus.emit('lists', { conversationId: conversation.id })
+      }
+      throw err
+    }
+  }
+
+  /**
+   * *Continuer à la racine* : rattache au projet une conversation dont le worktree a
+   * disparu (carte #61).
+   *
+   * Refusé tant que le worktree existe : ce n'est pas un déplacement ordinaire, c'est la
+   * seule issue d'un fil qui ne peut plus tourner, et le proposer ailleurs ferait
+   * quitter son arbre à un fil qui y travaille. La session native est gardée quand le
+   * CLI sait la reprendre depuis un autre dossier (`RESUMES_FROM_OTHER_DIRECTORY`),
+   * sinon il repart sur une session neuve, ce que le bandeau a dit avant le clic. Les
+   * messages restés en file partent alors, depuis la racine.
+   */
+  async continueAtProjectRoot(conversationId: string): Promise<ConversationRow> {
+    const conversation = this.loadConversation(conversationId)
+    if (!this.worktreeGone(conversationId)) {
+      throw conflict(
+        'worktree_not_gone',
+        'This conversation still has its worktree: there is nothing to reattach.',
+      )
+    }
+    // Déjà arrêté par `refuseMissingCwd` ; attendu ici pour qu'aucun arrêt en cours ne
+    // tombe après l'écriture.
+    await this.stopRunner(conversationId, { keepQueue: true })
+
+    const patch: Partial<ConversationRow> = {
+      worktreeId: null,
+      ...(RESUMES_FROM_OTHER_DIRECTORY[conversation.agent] ? {} : { agentSessionId: null }),
+      updatedAt: Date.now(),
+    }
+    this.db.update(conversations).set(patch).where(eq(conversations.id, conversationId)).run()
+    this.statusBus.emit('lists', { conversationId })
+    void this.flushQueue(conversationId)
+    return { ...conversation, ...patch }
+  }
+
+  /** Vrai si la conversation vit dans un worktree que `refuseMissingCwd` refuse. */
+  private worktreeGone(conversationId: string): boolean {
+    const conversation = this.loadConversation(conversationId)
+    if (!conversation.worktreeId) return false
+    try {
+      this.refuseMissingCwd(conversation)
+      return false
+    } catch (err) {
+      if (isWorkingDirectoryMissing(err)) return true
+      throw err
+    }
   }
 
   private touch(conversationId: string): void {
@@ -1454,10 +1532,13 @@ export class SessionManager {
     skills: string[],
   ): Promise<void> {
     const conversation = this.loadConversation(conversationId)
-    await this.refuseDuringRebase(this.resolveCwd(conversation))
+    // Avant `ensureRunner` : un runner déjà vivant ne repasse pas par `startRunner`, et
+    // c'est lui qu'il faut arrêter quand son dossier a disparu sous ses pieds.
+    const cwd = this.refuseMissingCwd(conversation)
+    await this.refuseDuringRebase(cwd)
     // Résolu avant de démarrer le runner : une mention invalide doit faire échouer
     // l'envoi, pas laisser une session lancée avec un message perdu.
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
+    const resolved = this.resolveMentions(cwd, mentions)
 
     const runner = await this.ensureRunner(conversation)
     // Après le démarrage du runner, qui peut prendre des secondes, et juste avant

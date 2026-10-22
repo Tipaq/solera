@@ -14,6 +14,7 @@ import { GitError, readGitStatus, removeWorktree } from '../../git.js'
 import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import type { WorktreeCleanup } from '../../worktrees/cleanup.js'
 import { createWorktree } from '../../worktrees/create.js'
+import { markWorktreeGone } from '../../worktrees/gone.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
 import { conflict, forbidden, notFound } from '../errors.js'
@@ -160,9 +161,9 @@ export function registerWorktreeRoutes(
       await rm(row.path, { recursive: true, force: true }).catch(() => {})
     }
 
-    // Les conversations rattachées passent en lecture seule au lieu d'être effacées :
-    // leur historique reste consultable.
-    ctx.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, id)).run()
+    // Les conversations rattachées ne sont pas effacées : leur fil montre le bandeau
+    // « worktree disparu », qui propose de les archiver ou de les continuer à la racine.
+    markWorktreeGone(ctx.db, id)
     worktreeStatus.forget(project.id)
 
     return reply.status(204).send()
