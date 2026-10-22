@@ -54,6 +54,20 @@ const HOUR_MS = 3_600_000
 /** Refus adressé à l'agent : le texte lui est rendu tel quel. */
 export class DecisionRefusal extends Error {}
 
+/**
+ * Une décision déposée : le texte rendu à l'agent, et l'annonce à qui doit trancher.
+ *
+ * L'annonce est à part parce qu'elle doit venir **après** la clôture côté daemon
+ * (`settled_at`) : la section « À décider » ne liste que les demandes closes, et l'onglet
+ * qui la relit sur `awaiting-changed` repartirait sans la décision — et effacerait son
+ * toast. Elle n'attend pas le push : un service de push lent ne doit retenir ni la
+ * réponse de l'agent, ni le balayage des autres demandes.
+ */
+export interface DecisionDeposit {
+  text: string
+  announce(): void
+}
+
 /** Ce que ce module attend de l'aiguillage des notifications, et rien de plus. */
 export type DecisionNotifier = Pick<Notifications, 'dispatch'>
 
@@ -109,17 +123,18 @@ export class Decisions {
 
   /**
    * Valide et dépose une décision. La ligne est déjà là, écrite par le serveur MCP : on
-   * la complète (charge normalisée, échéance) et on prévient qui doit trancher.
+   * la complète (charge normalisée, échéance), et l'appelant prévient qui doit trancher
+   * par `announce`, une fois la demande close de son côté.
    *
    * Le droit (`decisions` dans la configuration de la session) et le projet sont
    * vérifiés par l'appelant, avec les autres genres.
    */
-  async request(
+  request(
     request: AgentRequestRow,
     requester: ConversationRow,
     project: ProjectRow,
     payload: Record<string, unknown>,
-  ): Promise<string> {
+  ): DecisionDeposit {
     const question = typeof payload.question === 'string' ? payload.question.trim() : ''
     if (!question) throw new DecisionRefusal('Le paramètre `question` est requis.')
     if (question.length > MAX_DECISION_QUESTION_CHARS) {
@@ -199,10 +214,8 @@ export class Decisions {
       expiresAt,
     })
     this.noteOnCard(requester, `Décision demandée : ${question}`, null)
-    this.awaitingChanged([requester.userId])
-    await this.announce(request.id, requester, project, question)
 
-    return [
+    const text = [
       "Demande déposée : l'utilisateur la voit dans « À décider » et en est notifié.",
       `Ne l'attends pas : termine ton tour, ou continue ce qui n'en dépend pas. La réponse t'arrivera en message, au plus tard le ${stamp(expiresAt)} ; ${
         fallback
@@ -211,6 +224,13 @@ export class Decisions {
       }.`,
       "N'en redépose pas : une seule demande de décision peut attendre à la fois.",
     ].join('\n')
+    return {
+      text,
+      announce: () => {
+        this.awaitingChanged([requester.userId])
+        void this.notify(request.id, requester, project, question)
+      },
+    }
   }
 
   /**
@@ -530,7 +550,7 @@ export class Decisions {
   }
 
   /** Notification et toast : une décision attend, c'est tout l'intérêt de la prévenir. */
-  private async announce(
+  private async notify(
     id: string,
     requester: ConversationRow,
     project: ProjectRow,

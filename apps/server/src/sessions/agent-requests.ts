@@ -48,7 +48,7 @@ import { moveConversation } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
 import type { EventLog } from '../events/event-log.js'
 import { readGitStatus } from '../git.js'
-import { DecisionRefusal, type Decisions } from '../decisions/decisions.js'
+import { DecisionRefusal, type DecisionDeposit, type Decisions } from '../decisions/decisions.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
@@ -285,7 +285,9 @@ export class AgentRequests {
       }
 
       if (request.kind === 'request_decision') {
-        this.settle(request, await this.requestDecision(request, requester, payload), false)
+        const deposit = this.requestDecision(request, requester, payload)
+        this.settle(request, deposit.text, false)
+        deposit.announce()
         return
       }
 
@@ -1292,11 +1294,11 @@ export class AgentRequests {
    * plutôt que le refus générique : la réponse revient par `session_messages`, dont le
    * projet est obligatoire, et c'est la seule raison de cette exigence.
    */
-  private async requestDecision(
+  private requestDecision(
     request: AgentRequestRow,
     requester: ConversationRow,
     payload: Record<string, unknown>,
-  ): Promise<string> {
+  ): DecisionDeposit {
     if (!this.ctx.config.mcp.decisions) {
       throw new Refusal(
         "Refusé : cette instance de Solera n'ouvre pas les demandes de décision aux agents (`[mcp] decisions` dans config.toml). Décide selon tes instructions, ou pose ta question dans ta réponse.",
@@ -1315,7 +1317,7 @@ export class AgentRequests {
     const project = this.requireProject(requester.projectId)
     if (!this.decisions) throw new Refusal('Les décisions ne sont pas disponibles sur ce serveur.')
     try {
-      return await this.decisions.request(request, requester, project, payload)
+      return this.decisions.request(request, requester, project, payload)
     } catch (err) {
       if (err instanceof DecisionRefusal) throw new Refusal(err.message)
       throw err

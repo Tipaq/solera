@@ -28,7 +28,7 @@ import { Decisions } from '../src/decisions/decisions.js'
 import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerDecisionRoutes } from '../src/http/routes/decisions.js'
-import type { OutgoingNotification } from '../src/notifications/dispatcher.js'
+import { Notifications, type OutgoingNotification, type PushSender } from '../src/notifications/dispatcher.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { SessionRelay } from '../src/sessions/session-relay.js'
@@ -47,7 +47,8 @@ const PLAIN = 'plain'
 const FREE = 'free'
 const CARDED = 'carded'
 
-async function harness(t: TestContext) {
+/** `push` : un vrai aiguillage devant ce service, au lieu d'un `dispatch` qui note seulement. */
+async function harness(t: TestContext, { push }: { push?: PushSender } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-decisions-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
@@ -90,11 +91,18 @@ async function harness(t: TestContext) {
   bus.on('awaiting', ({ userIds }: { userIds: string[] }) => awaited.push(userIds))
   const dispatched: Array<{ userId: string; notification: OutgoingNotification }> = []
   const ctx = { db, config: { mcp: { decisions: true } } as unknown as Config }
-  const decisions = new Decisions(ctx, log, bus, {
-    dispatch: async (userId, notification) => {
-      dispatched.push({ userId, notification })
-    },
-  })
+  const decisions = new Decisions(
+    ctx,
+    log,
+    bus,
+    push
+      ? new Notifications(db, push)
+      : {
+          dispatch: async (userId, notification) => {
+            dispatched.push({ userId, notification })
+          },
+        },
+  )
   const sessions = { statusBus: bus } as unknown as SessionManager
   const requests = new AgentRequests(ctx, sessions, {} as AgentRegistry, log, decisions)
 
@@ -133,8 +141,38 @@ async function harness(t: TestContext) {
     return (JSON.parse(run.stdout).result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
   }
 
-  return { db, ctx, app, decisions, requests, ask, row, messages, journal, dispatched, awaited, tools }
+  return { db, ctx, bus, app, decisions, requests, ask, row, messages, journal, dispatched, awaited, tools }
 }
+
+test('décisions : la colonne se relit après la clôture, et un push lent ne retient rien', async (t) => {
+  // Un abonnement push qui ne répond pas avant qu'on le libère, comme un service lointain.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => { release = resolve })
+  t.after(() => release())
+  let pushed = 0
+  const { db, bus, decisions, requests, row } = await harness(t, {
+    push: { notify: async () => { pushed += 1; await held } },
+  })
+  // Ce qu'un onglet relirait au signal : la section « À décider » au moment de l'émettre.
+  const seen: string[][] = []
+  bus.on('awaiting', () => seen.push(decisions.awaiting('owner').map((entry) => entry.id)))
+
+  const id = randomUUID()
+  db.insert(agentRequests)
+    .values({ id, projectId: 'project', conversationId: ALLOWED, kind: 'request_decision', payload: JSON.stringify({ question: 'On pousse ?' }), createdAt: Date.now() })
+    .run()
+  const swept = await Promise.race([
+    requests.sweep().then(() => 'fini'),
+    new Promise((resolve) => setTimeout(() => resolve('retenu par le push'), 2_000)),
+  ])
+
+  assert.equal(swept, 'fini')
+  assert.equal(pushed, 1, 'Le push est bien parti')
+  const deposited = row(id)
+  assert.ok(deposited.settledAt, "L'agent a sa réponse sans attendre le push")
+  assert.equal(deposited.isError, false, deposited.result ?? '')
+  assert.deepEqual(seen, [[id]], 'Au signal, la décision est déjà dans « À décider »')
+})
 
 test('décisions : déposée sans bloquer, notifiée, et rendue à la session par un message', async (t) => {
   const { db, app, ask, row, messages, journal, dispatched, awaited } = await harness(t)
