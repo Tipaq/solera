@@ -22,6 +22,7 @@ import { GitCredentialStore } from './git-credentials/store.js'
 import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
+import { ClaudeLoginService } from './claude-accounts/login.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
@@ -53,6 +54,8 @@ async function main(): Promise<void> {
   const secrets = new SecretStore(db, encryptionKey)
   const gitCredentials = new GitCredentialStore(db, encryptionKey)
   const claudeAccounts = new ClaudeAccountStore(db, encryptionKey)
+  // La connexion guidée pilote `claude setup-token`, résolu comme pour les conversations.
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable())
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
@@ -106,6 +109,7 @@ async function main(): Promise<void> {
     secrets,
     gitCredentials,
     claudeAccounts,
+    claudeLogin,
     codexAccounts,
     codexLogin,
     webhooks,
