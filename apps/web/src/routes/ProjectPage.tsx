@@ -44,6 +44,7 @@ import {
   EmptyState,
   Field,
   Select,
+  Switch,
   type Choice,
   type SelectOption,
 } from '@solera/ui'
@@ -161,6 +162,7 @@ export function ProjectPage() {
             initialName={project.name}
             initialPath={project.workspacePath}
             initialVisibility={project.visibility}
+            turnCheckpoints={project.turnCheckpoints}
             hasConversations={projectConversations.length > 0}
             onDeleted={() => navigate('/')}
           />
@@ -563,11 +565,13 @@ function ProjectSettings({
   initialName,
   initialPath,
   initialVisibility,
+  turnCheckpoints,
   hasConversations,
   onDeleted,
 }: {
   projectId: string
   initialName: string
+  turnCheckpoints: boolean
   initialPath: string
   initialVisibility: ProjectVisibility
   hasConversations: boolean
@@ -621,6 +625,20 @@ function ProjectSettings({
           onChange={setVisibility}
           options={visibilityOptions()}
         />
+
+        {/* Appliqué au clic, hors du formulaire : un interrupteur, pas une case à enregistrer. */}
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm">{t('project.settings.checkpoints')}</p>
+            <p className="text-xs text-ink-faint">{t('project.settings.checkpoints.hint')}</p>
+          </div>
+          <Switch
+            checked={turnCheckpoints}
+            label={t('project.settings.checkpoints')}
+            disabled={updateProject.isPending}
+            onCheckedChange={(checked) => updateProject.mutate({ id: projectId, turnCheckpoints: checked })}
+          />
+        </div>
 
         {error ? <Banner>{error}</Banner> : null}
 

@@ -1,7 +1,9 @@
-import { and, eq, exists, gt, gte, isNull, lt, not, or, sql } from 'drizzle-orm'
+import { and, eq, exists, gt, gte, inArray, isNull, lt, not, or, sql } from 'drizzle-orm'
 import { agentRequests, conversationReads, conversations, type Db } from '@solera/db'
+import { deleteCheckpoints } from '../checkpoints.js'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
+import { resolveConversationCwd } from '../workspace.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -74,9 +76,11 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
       ),
   )
 
-  const result = db
-    .update(conversations)
-    .set({ archivedAt: now })
+  // Les candidats sont lus avant d'être rangés : leurs captures git, elles, ne se
+  // retrouvent qu'en sachant quelles lignes ont basculé.
+  const stale = db
+    .select()
+    .from(conversations)
     .where(
       and(
         isNull(conversations.archivedAt),
@@ -89,7 +93,36 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
         not(awaitsDecision),
       ),
     )
+    .all()
+  if (stale.length === 0) return 0
+
+  const result = db
+    .update(conversations)
+    .set({ archivedAt: now })
+    .where(
+      and(
+        isNull(conversations.archivedAt),
+        inArray(
+          conversations.id,
+          stale.map((row) => row.id),
+        ),
+      ),
+    )
     .run()
+
+  // Un fil rangé n'a plus de tour à défaire : ses captures quittent le dépôt, sans
+  // retenir le passage, un dépôt absent ou lent n'ayant pas à le faire échouer.
+  void (async () => {
+    for (const row of stale) {
+      const cwd = resolveConversationCwd(db, row)
+      if (cwd === null) continue
+      try {
+        await deleteCheckpoints(cwd, row.id)
+      } catch {
+        // Projet retiré du disque, dépôt hors d'usage : les refs partiront avec lui.
+      }
+    }
+  })()
 
   return result.changes
 }

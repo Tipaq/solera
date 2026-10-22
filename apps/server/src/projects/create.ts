@@ -107,6 +107,7 @@ export async function insertProject(
     ownerId,
     defaultConfig: null,
     designSystemPath: null,
+    turnCheckpoints: true,
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

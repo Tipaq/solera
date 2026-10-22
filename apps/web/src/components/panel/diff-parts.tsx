@@ -42,6 +42,89 @@ export function SectionTitle({ children, action }: { children: ReactNode; action
   )
 }
 
+/**
+ * La ligne d'un fichier changé, dépliable : icône de nature, chemin, lignes ajoutées et
+ * retirées. Le corps déplié est fourni par l'appelant, déjà lu ou lu à la demande.
+ */
+export function FileRow({
+  path,
+  action,
+  added,
+  removed,
+  detail,
+  children,
+}: {
+  path: string
+  action: EditedFile['action']
+  added: number
+  removed: number
+  /** Ajouté au chemin, en retrait : l'ancien nom d'un renommage. */
+  detail?: string
+  /** Rendu seulement une fois la ligne dépliée. */
+  children: () => ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const tone = ACTIONS[action]
+
+  return (
+    <div className="border-b border-line/60">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        data-path={path}
+        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-high"
+      >
+        <ChevronRight
+          size={14}
+          className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
+        />
+        <span className={cx('shrink-0', tone.tone)}>{tone.icon}</span>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={path}>
+          {path}
+          {detail ? <span className="text-ink-faint"> · {detail}</span> : null}
+        </span>
+        {added > 0 ? <span className="shrink-0 font-mono text-micro text-positive">+{added}</span> : null}
+        {removed > 0 ? (
+          <span className="shrink-0 font-mono text-micro text-critical">-{removed}</span>
+        ) : null}
+      </button>
+
+      {open ? <div className="border-t border-line/60">{children()}</div> : null}
+    </div>
+  )
+}
+
+/** Le corps déplié d'un fichier : ses hunks, et de quoi ouvrir le fichier du disque. */
+export function FileDiffBody({
+  file,
+  onOpenFile,
+}: {
+  file: DiffFile
+  onOpenFile?: (path: string) => void
+}) {
+  const t = useTranslate()
+  return (
+    <>
+      {file.status === 'binary' ? (
+        <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.file.binary')}</p>
+      ) : (
+        <DiffHunks hunks={file.hunks} path={file.path} />
+      )}
+
+      {onOpenFile && file.status !== 'removed' ? (
+        <button
+          type="button"
+          onClick={() => onOpenFile(file.path)}
+          className="px-2.5 py-1.5 text-meta text-ink-faint underline hover:text-ink"
+        >
+          {t('changes.file.open')}
+        </button>
+      ) : null}
+    </>
+  )
+}
+
 /** Un fichier d'un diff, dépliable sur ses hunks. */
 export function FileDiff({
   file,
@@ -51,53 +134,9 @@ export function FileDiff({
   /** Absent pour un commit passé : le fichier du disque n'est plus celui d'alors. */
   onOpenFile?: (path: string) => void
 }) {
-  const t = useTranslate()
-  const [open, setOpen] = useState(false)
-  const action = ACTIONS[DIFF_ACTIONS[file.status]]
-
   return (
-    <div className="border-b border-line/60">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-surface-high"
-      >
-        <ChevronRight
-          size={14}
-          className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')}
-        />
-        <span className={cx('shrink-0', action.tone)}>{action.icon}</span>
-        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft" title={file.path}>
-          {file.path}
-        </span>
-        {file.added > 0 ? (
-          <span className="shrink-0 font-mono text-micro text-positive">+{file.added}</span>
-        ) : null}
-        {file.removed > 0 ? (
-          <span className="shrink-0 font-mono text-micro text-critical">-{file.removed}</span>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div className="border-t border-line/60">
-          {file.status === 'binary' ? (
-            <p className="px-2.5 py-2 text-xs text-ink-faint">{t('changes.file.binary')}</p>
-          ) : (
-            <DiffHunks hunks={file.hunks} path={file.path} />
-          )}
-
-          {onOpenFile && file.status !== 'removed' ? (
-            <button
-              type="button"
-              onClick={() => onOpenFile(file.path)}
-              className="px-2.5 py-1.5 text-meta text-ink-faint underline hover:text-ink"
-            >
-              {t('changes.file.open')}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <FileRow path={file.path} action={DIFF_ACTIONS[file.status]} added={file.added} removed={file.removed}>
+      {() => <FileDiffBody file={file} onOpenFile={onOpenFile} />}
+    </FileRow>
   )
 }

@@ -83,6 +83,12 @@ export const projects = sqliteTable(
      * projets peuvent pointer sur le même. Null : pas de DS.
      */
     designSystemPath: text('design_system_path'),
+    /**
+     * Capturer l'état du workspace avant et après chaque tour (refs git cachées), pour
+     * montrer ce qu'un tour a changé et pouvoir y revenir. Vrai par défaut ; à couper
+     * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
+     */
+    turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

@@ -3,7 +3,7 @@ import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, Sq
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
-import type { EditTurn } from '../../lib/chat-fold'
+import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
 import { openTab, useEditorTabs } from '../../lib/editor-tabs'
 import { useTranslate } from '../../lib/i18n'
 import {
@@ -64,6 +64,8 @@ export function SidePanel({
   conversationId,
   agent,
   editTurns = [],
+  checkpoints = [],
+  canRestore = false,
   turnRunning = false,
   subAgents = [],
   background = [],
@@ -80,6 +82,10 @@ export function SidePanel({
   /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
   agent?: AgentKind
   editTurns?: EditTurn[]
+  /** Points de reprise des tours, pour l'onglet Git filtré sur un tour. */
+  checkpoints?: TurnCheckpoint[]
+  /** Vrai pour le propriétaire du fil : lui seul peut ramener le workspace en arrière. */
+  canRestore?: boolean
   turnRunning?: boolean
   subAgents?: SubAgent[]
   background?: BackgroundWork[]
@@ -330,7 +336,15 @@ export function SidePanel({
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du
           journal ou d'une lecture git relancée à l'affichage, rien ne s'y perd. */}
       {hasWorkspace && tab === 'git' ? (
-        <GitPane scope={scope} projectId={projectId} turnRunning={turnRunning} onOpenFile={openInFiles} />
+        <GitPane
+          scope={scope}
+          projectId={projectId}
+          conversationId={conversationId}
+          checkpoints={checkpoints}
+          canRestore={canRestore}
+          turnRunning={turnRunning}
+          onOpenFile={openInFiles}
+        />
       ) : null}
 
       {/* Montée même derrière une autre vue, comme les fichiers : cliquer un résultat

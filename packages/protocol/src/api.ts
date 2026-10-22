@@ -153,6 +153,7 @@ export const updateProjectBodySchema = z
     /** Chemin absolu d'un dossier qui porte un `.storybook/` ; `null` délie le DS. */
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),
+    turnCheckpoints: z.boolean(),
   })
   .partial()
 
@@ -219,6 +220,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Le design system lié, null s'il n'y en a pas. */
   designSystemPath: string | null
+  /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
+  turnCheckpoints: boolean
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
   activeTerminals: number
   /** État du dépôt git, null si le workspace n'est pas un dépôt. */

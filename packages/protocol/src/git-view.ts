@@ -260,3 +260,29 @@ export interface BlameDto {
   lines: BlameLineDto[] | null
   truncated: boolean
 }
+
+// Points de reprise d'un tour
+
+export const checkpointKeySchema = z.string().regex(/^[0-9a-f-]{8,64}$/)
+
+/** Un chemin du dépôt, tel que git le donne : jamais vide, sans octet nul. */
+const checkpointPathSchema = z.string().min(1).max(4096).refine((path) => !path.includes('\0'))
+
+export const checkpointFileDiffQuerySchema = z.object({
+  path: checkpointPathSchema,
+  /** L'ancien nom d'un renommage : sans lui, git montrerait une création. */
+  oldPath: checkpointPathSchema.optional(),
+})
+
+export interface CheckpointRestoreDto {
+  written: number
+  deleted: number
+  /** Faux quand l'index n'a pas pu être capturé (conflits au moment du tour). */
+  indexRestored: boolean
+}
+
+/** Le diff d'un fichier entre les deux captures d'un tour. */
+export interface CheckpointFileDiffDto {
+  patch: string
+  truncated: boolean
+}
