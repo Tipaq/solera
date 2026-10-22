@@ -1533,7 +1533,13 @@ raccourci n'existe pas au doigt).
 
 **Les titres ne passent pas par l'index.** La liste complète des conversations est déjà
 chargée pour la navigation : les filtrer en mémoire répond à la frappe sans aller-retour,
-et par sous-séquence, si bien que « poigne » retrouve « Poignée de sidebar ». Le contenu,
+et en correspondance floue, si bien que « poigne » retrouve « Poignée de sidebar ». Cette
+correspondance est celle de `packages/protocol/src/fuzzy.ts`, partagée avec le serveur :
+une phrase se cherche par morceaux et initiales, un nom en lettres éparses, et chaque mot
+de la saisie dans le champ où il vaut le plus (« nimbus cache » : le projet, puis le
+titre). Les fichiers de **tous** les projets visibles viennent de `/api/palette/files`,
+qui garde 15 s la liste de chaque dépôt ; les skills de `/api/palette/catalog`, relu à
+chaque ouverture ; les serveurs MCP de leur registre. Le contenu,
 lui, arrive du serveur une fois la saisie stabilisée (200 ms, à partir de 3 caractères),
 dans une seconde section. Deux sections plutôt qu'une bascule à mémoriser : chacune répond
 à une intention distincte et elles se distinguent au premier coup d'œil.
