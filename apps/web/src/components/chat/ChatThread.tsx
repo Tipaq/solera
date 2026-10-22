@@ -5,6 +5,7 @@ import { translate, translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { CardFilingPrompt } from './CardFilingPrompt'
+import { DecisionPrompt } from './DecisionPrompt'
 import { FilingPrompt } from './FilingPrompt'
 import { MessageBubble } from './MessageBubble'
 import { PermissionPrompt } from './PermissionPrompt'
@@ -144,6 +145,8 @@ export function ChatThread({
                 canDecide={canFileCards}
               />
             )
+          case 'decision':
+            return <DecisionPrompt key={item.id} item={item} canDecide={canDecide} />
           case 'question':
             return (
               <QuestionPrompt

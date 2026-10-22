@@ -9,6 +9,50 @@
  * vient du contenu poussé par le serveur.
  */
 
+/**
+ * Titres par sorte de notification, dans la langue de l'appareil : le serveur ne connaît
+ * pas celle de l'interface, et ce script n'a pas accès à son catalogue. Le titre envoyé
+ * par le serveur reste le repli, pour une sorte que cette copie ne connaît pas encore.
+ */
+const TITLES = {
+  fr: {
+    permission: 'Une autorisation est demandée',
+    question: "L'agent te demande de choisir",
+    elicitation: 'Un service demande une saisie',
+    plan: 'Un plan attend ta validation',
+    turnCompleted: "L'agent a terminé",
+    decision: 'Une décision est à prendre',
+    test: 'Notification de test',
+  },
+  en: {
+    permission: 'Approval requested',
+    question: 'The agent is asking you to choose',
+    elicitation: 'A service is asking for input',
+    plan: 'A plan is waiting for review',
+    turnCompleted: 'The agent has finished',
+    decision: 'A decision is needed',
+    test: 'Test notification',
+  },
+}
+
+/** Les essais seulement : le corps des autres est le titre de la conversation. */
+const TEST_BODIES = {
+  fr: 'Les notifications de Solera arrivent bien sur cet appareil.',
+  en: 'Solera notifications reach this device.',
+}
+
+function language() {
+  return (self.navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en'
+}
+
+function titleOf(payload) {
+  return (payload.kind && TITLES[language()][payload.kind]) || payload.title
+}
+
+function bodyOf(payload) {
+  return payload.kind === 'test' ? TEST_BODIES[language()] : payload.body
+}
+
 self.addEventListener('push', (event) => {
   if (!event.data) return
 
@@ -21,9 +65,16 @@ self.addEventListener('push', (event) => {
     return
   }
 
+  // La pastille de l'icône de l'application installée : le nombre de décisions en
+  // attente, posé ici parce que l'application est peut-être fermée. Ouverte, elle la
+  // tient elle-même à jour (`useAwaitingLive`).
+  if (typeof payload.badge === 'number' && self.navigator.setAppBadge) {
+    self.navigator.setAppBadge(payload.badge).catch(() => {})
+  }
+
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
+    self.registration.showNotification(titleOf(payload), {
+      body: bodyOf(payload),
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       // Une conversation ne garde qu'une notification affichée : le serveur envoie son

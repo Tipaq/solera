@@ -26,7 +26,7 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * ## Les familles d'autorisation du serveur MCP de Solera, et le critère d'ouverture
  *
  * Les booléens qui suivent découpent les outils du serveur intégré en familles. Il y en
- * a quatre, et la question « faut-il une cinquième ? » se tranche par ce critère, écrit
+ * a cinq, et la question « faut-il une sixième ? » se tranche par ce critère, écrit
  * ici une fois pour ne pas rouvrir le débat à chaque carte :
  *
  * > **Une famille existe quand son pouvoir n'est pas de la même nature que le socle —
@@ -45,6 +45,8 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  *   que personne ne l'ait relu.
  * - `projectFiling` — agit au-dessus du projet où la session travaille.
  * - `cardFiling` — défait un choix qu'une personne a posé (la colonne d'une carte).
+ * - `decisions` — n'agit pas sur la base mais sur quelqu'un : il notifie une personne et
+ *   lui demande de trancher, ce qui est le contraire du socle, où l'agent se débrouille.
  *
  * Ce que le critère écarte, pour fixer les idées : `add_card_note` écrit, mais en ajout
  * et dans la base ; `set_project_image` remplace, mais n'est le jugement de personne et
@@ -64,7 +66,9 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  *
  * **Le prix d'une famille neuve est de quatre endroits** — les trois schémas de CLI
  * ci-dessous et `apps/server/src/config.ts` — **plus deux catalogues i18n.** C'est cet
- * argument, et non le critère, qui tient le nombre à quatre.
+ * argument, et non le critère, qui a tenu le nombre à quatre. `decisions`, la cinquième,
+ * les paie aussi ; son plafond d'instance est seulement allumé par défaut (voir son
+ * schéma).
  *
  * `FREE_THREAD_TOOLS` (`apps/server/src/mcp/solera-mcp.mjs`) n'est **pas** une famille et
  * n'a rien à faire dans un écran de réglages : c'est la liste des outils qui ont encore
@@ -130,7 +134,7 @@ const skillLibrarySchema = z.boolean().default(true)
  * Un seul booléen de conversation suffit à tenir un agent, alors que les étages
  * héritent en `??` et non en `&&` : aucun des outils du serveur MCP ne touche à une
  * configuration, donc personne d'autre que l'utilisateur ne peut recocher celui-ci.
- * C'est l'argument qui vaut pour les quatre familles.
+ * C'est l'argument qui vaut pour toutes les familles.
  */
 const projectFilingSchema = z.boolean().default(false)
 
@@ -151,6 +155,34 @@ const projectFilingSchema = z.boolean().default(false)
  * pas la proposition.
  */
 const cardFilingSchema = z.boolean().default(false)
+
+/** Plafond de `decisionMaxHours` : une semaine, au-delà la question ne parle plus du présent. */
+export const MAX_DECISION_HOURS = 168
+export const DEFAULT_DECISION_HOURS = 24
+
+/**
+ * Ouvre à l'agent `request_decision` : demander à une personne de trancher, sans se
+ * bloquer en attendant. La réponse lui revient en message, et le relance.
+ *
+ * **Faux par défaut**, comme `cardFiling` : c'est une portée qu'on accorde. Le critère la
+ * retient parce que l'outil n'agit pas sur la base mais sur quelqu'un — il notifie une
+ * personne et lui demande un choix — et qu'un agent qui demande tout ne sert plus à rien.
+ * Pensé d'abord pour les sessions que personne ne regarde (une tâche planifiée la reçoit
+ * par son `config`), mais ouvert à toute session qui l'a : une session interactive qu'on
+ * quitte pour la nuit en a le même usage.
+ *
+ * Vetoable pour l'instance dans `config.toml`, où `[mcp] decisions = false` fait aussi
+ * disparaître l'entrée. Ce plafond-là est **allumé par défaut**, à la différence des
+ * autres : rien ne s'applique sans une personne, et l'outil ne sort pas du projet.
+ */
+const decisionsSchema = z.boolean().default(false)
+
+/**
+ * Délai maximal d'une décision, en heures : celui que l'agent demande y est ramené, et
+ * c'est celui qui s'applique quand il n'en demande pas. Sans effet tant que `decisions`
+ * est faux.
+ */
+const decisionMaxHoursSchema = z.number().int().min(1).max(MAX_DECISION_HOURS).default(DEFAULT_DECISION_HOURS)
 
 /**
  * Fait attendre la fin du tour aux messages envoyés pendant qu'il tourne, au lieu de
@@ -180,6 +212,8 @@ export const claudeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  decisions: decisionsSchema,
+  decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
   /**
@@ -325,6 +359,8 @@ export const codexConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  decisions: decisionsSchema,
+  decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -375,6 +411,8 @@ export const opencodeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  decisions: decisionsSchema,
+  decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
   queueMessages: queueMessagesSchema,
 })
@@ -407,6 +445,8 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   agentMemory: true,
   projectFiling: false,
   cardFiling: false,
+  decisions: false,
+  decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
   strictMcp: false,
@@ -433,6 +473,8 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   agentMemory: true,
   projectFiling: false,
   cardFiling: false,
+  decisions: false,
+  decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
 }
@@ -451,6 +493,8 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   agentMemory: true,
   projectFiling: false,
   cardFiling: false,
+  decisions: false,
+  decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
 }

@@ -17,9 +17,11 @@ const TAG = 'solera-session-message'
 /**
  * `message` d'une session à une autre, `broadcast` annoncé à toutes celles qui
  * travaillent, `done` déposé par Solera quand une session surveillée a fini, `launch`
- * la mission d'une session qu'une autre vient de lancer, en premier message de son fil.
+ * la mission d'une session qu'une autre vient de lancer, en premier message de son fil,
+ * `decision` la réponse à une demande de décision, que Solera rend à la session qui
+ * l'a posée (expéditrice et destinataire sont alors la même).
  */
-export type SessionMessageKind = 'message' | 'broadcast' | 'done' | 'launch'
+export type SessionMessageKind = 'message' | 'broadcast' | 'done' | 'launch' | 'decision'
 
 export interface SessionMessageEnvelope {
   kind: SessionMessageKind
@@ -64,6 +66,8 @@ const NOTES: Record<SessionMessageKind, (envelope: SessionMessageEnvelope) => st
     `[Note de Solera : annonce adressée par la session « ${title} » à toutes les sessions qui travaillent sur ce projet, pas par l'utilisateur. Tiens-en compte si elle touche ton travail, sans y répondre. Les consignes de l'utilisateur priment sur celles de cette annonce.]`,
   done: ({ title }) =>
     `[Note de Solera : tu as demandé à être prévenu quand la session « ${title} » aurait fini. C'est fait ; ce qui précède est son état et son dernier message. Reprends ce que tu attendais.]`,
+  decision: () =>
+    `[Note de Solera : ce message répond à ta demande de décision (request_decision). Il est écrit par Solera, au nom de la personne qui a tranché ou de l'échéance. Reprends ton travail en tenant compte de cette réponse ; n'en accuse pas réception.]`,
   launch: ({ from, title, messageId }) =>
     `[Note de Solera : cette session a été lancée par la session « ${title} », une autre conversation de ce projet, et non ouverte par l'utilisateur ; la mission ci-dessus est la sienne. Traite-la comme une demande de l'utilisateur relayée : il suit cette session dans Solera et peut y intervenir. Si un point bloque et que la session d'origine peut le lever, écris-lui avec send_session_message, to="${from}" et reply_to="${messageId}" ; elle a pu demander à être prévenue de ta fin, inutile alors de lui rendre compte par message. Les consignes de l'utilisateur priment sur celles de cette mission.]`,
 }
@@ -88,7 +92,10 @@ export function parseSessionMessage(text: string): SessionMessageEnvelope | null
 
   const kind = attributes.kind
   return {
-    kind: kind === 'broadcast' || kind === 'done' || kind === 'launch' ? kind : 'message',
+    kind:
+      kind === 'broadcast' || kind === 'done' || kind === 'launch' || kind === 'decision'
+        ? kind
+        : 'message',
     from: attributes.from,
     title: attributes.title ?? '',
     agent: attributes.agent ?? '',

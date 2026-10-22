@@ -85,6 +85,11 @@ export interface BuiltinMcpParams {
    */
   cardFiling: boolean
   /**
+   * Ouvre `request_decision` : demander à une personne de trancher, sans attendre.
+   * Le daemon revérifie le drapeau, et relit lui-même le délai maximal.
+   */
+  decisions: boolean
+  /**
    * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
    * (`design-system/storybooks.ts`). Vide quand le projet n'a pas de DS : le `.mjs`
    * retire alors les outils du design system de son catalogue.
@@ -113,6 +118,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
     memoryDir,
     projectFiling,
     cardFiling,
+    decisions,
     designSystemState,
   } = params
   if (!builtinMcpEnabled(enabled, config)) return null
@@ -140,6 +146,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         SOLERA_MCP_MEMORY: memoryDir,
         ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
         ...(cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
+        ...(decisions ? { SOLERA_MCP_DECISIONS: '1' } : {}),
         SOLERA_MCP_DESIGN_SYSTEM: designSystemState,
       },
     },

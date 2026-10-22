@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, UserSettingsDto } from '@solera/protocol'
+import type { AgentConfig, NotificationPrefs, UserSettingsDto } from '@solera/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
@@ -50,6 +50,29 @@ export function useUpdateCollapsedProjects() {
       if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
     },
 
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * Les sortes de notifications voulues, remplacées en bloc. Appliquées sans attendre,
+ * comme les projets repliés : un interrupteur qui attend le réseau pour basculer
+ * semble ne pas avoir pris le clic.
+ */
+export function useUpdateNotificationPrefs() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (notifications: NotificationPrefs) =>
+      api.patch<UserSettingsDto>('/api/me/settings', { notifications }),
+    onMutate: async (notifications) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, notifications })
+      return { previous }
+    },
+    onError: (_error, _prefs, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
     onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }

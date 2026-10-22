@@ -1,4 +1,4 @@
-import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, MessageCircleQuestion, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
@@ -199,6 +199,62 @@ function cardFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
     { value: 'off', label: t('composer.cardFiling.off'), hint: t('composer.cardFiling.off.hint') },
     { value: 'on', label: t('composer.cardFiling.on'), hint: t('composer.cardFiling.on.hint'), tone: 'caution' },
   ]
+}
+
+/**
+ * Les décisions : demander à une personne de trancher, sans attendre (`request_decision`).
+ *
+ * Un seul réglage pour l'interrupteur et le délai maximal, plutôt qu'un interrupteur et
+ * un champ : « refusées » ou « accordées, X h au plus » se lisent d'une seule valeur, et
+ * trois délais couvrent les usages — une demi-journée, une journée, un week-end. Un
+ * délai posé ailleurs (par l'API) reste choisissable plutôt que d'être réécrit en silence.
+ */
+const DECISION_HOURS = [4, 24, 72]
+
+function decisionOptions(t: Translate, current: number): SettingChoice<string>[] {
+  const hours = DECISION_HOURS.includes(current) ? DECISION_HOURS : [...DECISION_HOURS, current].sort((a, b) => a - b)
+  return [
+    { value: 'off', label: t('composer.decisions.off'), hint: t('composer.decisions.off.hint') },
+    ...hours.map((value) => ({
+      value: String(value),
+      label: t('composer.decisions.on', { hours: value }),
+      hint: t('composer.decisions.on.hint'),
+      tone: 'caution' as const,
+    })),
+  ]
+}
+
+const decisionChoice = (config: { decisions: boolean; decisionMaxHours: number }): string =>
+  config.decisions ? String(config.decisionMaxHours) : 'off'
+
+function decisionsSetting<C extends AgentConfig>(
+  current: C,
+  applied: C | null,
+  onConfigChange: (config: C) => void,
+  t: Translate,
+): SettingGroup {
+  const options = decisionOptions(t, current.decisionMaxHours)
+  return setting({
+    key: 'decisions',
+    label: t('composer.setting.decisions'),
+    icon: <MessageCircleQuestion size={14} />,
+    options,
+    value: decisionChoice(current),
+    onChange: (choice) =>
+      onConfigChange({
+        ...current,
+        decisions: choice !== 'off',
+        decisionMaxHours: choice === 'off' ? current.decisionMaxHours : Number(choice),
+      }),
+    // L'outil est listé au lancement du serveur MCP : l'allumer ou l'éteindre attend la
+    // relance de la session. Le délai, lui, est relu par le daemon à chaque dépôt.
+    notice: notice(
+      applied && applied.decisions !== current.decisions
+        ? appliedLabel(decisionChoice(applied), decisionChoice(current), decisionOptions(t, applied.decisionMaxHours))
+        : null,
+      t,
+    ),
+  })
 }
 
 /**
@@ -670,6 +726,7 @@ export function useAgentSettings({
   // Même dépendance que le rangement de projet : l'outil vit dans le serveur MCP de
   // Solera, l'entrée disparaît quand l'instance coupe l'un ou l'autre.
   const cardFilingAvailable = soleraAvailable && mcpRegistry?.cardFiling === true
+  const decisionsAvailable = soleraAvailable && mcpRegistry?.decisions === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -877,6 +934,9 @@ export function useAgentSettings({
             }),
           ]
         : []),
+      ...(decisionsAvailable
+        ? [decisionsSetting(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t)]
+        : []),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
@@ -1045,6 +1105,9 @@ export function useAgentSettings({
               ),
             }),
           ]
+        : []),
+      ...(decisionsAvailable
+        ? [decisionsSetting(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t)]
         : []),
       setting({
         key: 'queue',
@@ -1224,6 +1287,9 @@ export function useAgentSettings({
               ),
             }),
           ]
+        : []),
+      ...(decisionsAvailable
+        ? [decisionsSetting(opencode, applied, onConfigChange, t)]
         : []),
       setting({
         key: 'queue',

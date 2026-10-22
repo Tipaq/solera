@@ -415,6 +415,34 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
       .default([]),
   }),
 
+  /**
+   * Une session demande une décision (`request_decision`), sans se bloquer.
+   *
+   * Posée dans le journal de la conversation qui demande, à sa place chronologique,
+   * comme `card_filing.requested`. L'autorité reste la ligne `agent_requests` : le
+   * journal dit ce qui a été demandé et ce qu'il en est advenu, la route de réponse
+   * relit la ligne.
+   */
+  z.object({
+    type: z.literal('decision.requested'),
+    /** L'id de la ligne `agent_requests` : ce que le dialogue de réponse ouvre. */
+    requestId: z.string(),
+    question: z.string(),
+    context: z.string(),
+    options: z.array(z.string()),
+    defaultOption: z.string().nullable(),
+    expiresAt: z.number(),
+  }),
+  z.object({
+    type: z.literal('decision.resolved'),
+    requestId: z.string(),
+    /** Qui a clos la décision : une personne, l'échéance, ou l'archivage. */
+    by: z.enum(['user', 'default', 'expired', 'withdrawn']),
+    option: z.string().nullable(),
+    text: z.string().nullable(),
+    decidedBy: z.string().nullable(),
+  }),
+
   // Questions posées par l'agent
   z.object({
     type: z.literal('question.requested'),

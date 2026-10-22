@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { conversationStatusSchema, type ConversationMetrics } from './api.js'
 import type { AgentConfig } from './agent-config.js'
 import type { SoleraEvent } from './events.js'
+import type { InAppNotification } from './notifications.js'
 
 /**
  * Une seule connexion WebSocket par onglet, multiplexée sur plusieurs conversations
@@ -37,6 +38,17 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     paths: z.array(z.string()).max(MAX_WATCHED_PATHS),
   }),
   z.object({ t: z.literal('ping') }),
+  /**
+   * L'onglet est-il visible, et à quel abonnement push correspond son appareil ? Le
+   * serveur ne pousse pas de notification système vers un appareil où l'application est
+   * sous les yeux : il y envoie un toast. Un onglet caché, ou qui n'a encore rien
+   * déclaré, compte comme absent.
+   */
+  z.object({
+    t: z.literal('presence'),
+    visible: z.boolean(),
+    endpoint: z.string().max(2000).nullable(),
+  }),
 ])
 export type ClientMessage = z.infer<typeof clientMessageSchema>
 
@@ -119,6 +131,12 @@ export type ServerMessage =
    */
   | { t: 'title'; conversationId: string; title: string }
   /**
+   * Un toast pour cet onglet visible : un CLI qui attend dans une autre conversation.
+   * Seuls les onglets visibles le reçoivent ; les autres appareils ont la notification
+   * système.
+   */
+  | { t: 'notify'; notification: InAppNotification }
+  /**
    * Le contenu d'un dossier suivi a bougé sur le disque : le client relit ce niveau.
    *
    * Un chemin par message, la veille étant déjà amortie côté serveur : regrouper
@@ -142,6 +160,13 @@ export type ServerMessage =
    * foi sans qu'il faille tenir un delta par geste.
    */
   | { t: 'lists-changed' }
+  /**
+   * Les demandes d'agent qui attendent ce compte ont changé — une décision déposée,
+   * tranchée ou échue, un rangement proposé ou accordé : la section « À décider » de la
+   * colonne et la pastille de l'icône se relisent. Même raison que `lists-changed` de
+   * ne rien décrire.
+   */
+  | { t: 'awaiting-changed' }
   | { t: 'pong' }
   | { t: 'error'; code: string; message: string; params?: Record<string, string | number> }
 

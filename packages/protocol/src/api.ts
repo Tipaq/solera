@@ -798,6 +798,17 @@ export interface PushPayload {
    * plutôt qu'une pile qui répète la même information.
    */
   tag: string
+  /**
+   * Ce qu'annonce la notification, pour que le service worker en compose le titre dans
+   * la langue de l'appareil : le serveur ne connaît pas celle de l'interface. `title`
+   * reste le repli, pour une sorte que le service worker en cache ne connaît pas encore.
+   */
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  /**
+   * Le nombre de décisions en attente, pour la pastille de l'icône de l'application
+   * installée : le service worker la pose à la réception, application fermée comprise.
+   */
+  badge?: number
 }
 
 export const pushSubscribeBodySchema = z.object({
@@ -810,7 +821,10 @@ export const pushUnsubscribeBodySchema = z.object({ endpoint: z.string().url() }
 export interface PushStatusDto {
   /** Clé publique VAPID de l'instance, requise par le navigateur pour s'abonner. */
   publicKey: string
-  /** Vrai si ce compte a déjà au moins un appareil abonné. */
+  /**
+   * Vrai si ce compte a déjà au moins un appareil abonné. Ne dit rien de l'appareil
+   * qui demande : l'écran compare son propre abonnement à la liste des appareils.
+   */
   subscribed: boolean
 }
 
@@ -1234,6 +1248,8 @@ export interface McpServerListDto {
   projectFiling: boolean
   /** Faux quand l'instance refuse aux agents de proposer un rangement de carte. */
   cardFiling: boolean
+  /** Faux quand l'instance refuse aux agents de demander une décision : l'entrée disparaît. */
+  decisions: boolean
 }
 
 // Erreurs

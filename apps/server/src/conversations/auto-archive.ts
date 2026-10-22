@@ -1,5 +1,5 @@
-import { and, eq, exists, gte, isNull, lt, or, sql } from 'drizzle-orm'
-import { conversationReads, conversations, type Db } from '@solera/db'
+import { and, eq, exists, gt, gte, isNull, lt, not, or, sql } from 'drizzle-orm'
+import { agentRequests, conversationReads, conversations, type Db } from '@solera/db'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
 
@@ -37,7 +37,10 @@ export function runArchivePass(db: Db, config: Config): number | null {
  * - jamais rattrapé par son propriétaire, jamais. Cacher ce que personne n'a lu, c'est
  *   perdre le travail plutôt que le ranger. Le curseur est celui du propriétaire et non
  *   de tous les lecteurs : dans un projet partagé, un compte qui ne passe jamais
- *   maintiendrait sinon tous les fils en vie indéfiniment.
+ *   maintiendrait sinon tous les fils en vie indéfiniment ;
+ * - une décision en attente, jamais. La session n'a pas fini son travail : elle attend la
+ *   réponse pour le reprendre, et l'archiver retirerait sa demande. Une décision échue
+ *   ne protège plus rien, le balayage des demandes la clôt.
  *
  * Renvoie le nombre de conversations rangées.
  */
@@ -57,6 +60,20 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
       ),
   )
 
+  const awaitsDecision = exists(
+    db
+      .select({ one: sql`1` })
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.conversationId, conversations.id),
+          eq(agentRequests.kind, 'request_decision'),
+          isNull(agentRequests.resolvedAt),
+          gt(agentRequests.expiresAt, now),
+        ),
+      ),
+  )
+
   const result = db
     .update(conversations)
     .set({ archivedAt: now })
@@ -69,6 +86,7 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
         eq(conversations.loopCount, 0),
         lt(conversations.updatedAt, now - afterDays * DAY_MS),
         ownerCaughtUp,
+        not(awaitsDecision),
       ),
     )
     .run()

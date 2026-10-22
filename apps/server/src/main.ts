@@ -11,6 +11,8 @@ import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
+import { Notifications } from './notifications/dispatcher.js'
+import { Decisions } from './decisions/decisions.js'
 import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
@@ -61,15 +63,23 @@ async function main(): Promise<void> {
   // Construit avant l'application, dont les routes remettent ou écartent un message
   // retenu, mais démarré après elle, faute de logger avant.
   const relay = new SessionRelay(db, sessions, log)
-  // Lancements, cartes, projets et rangements demandés par les agents, par le serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
 
-  const push = new PushService(db, config.paths.data)
+  const push = new PushService(db, config.paths.data, config.server.publicUrl)
+  // Toast sur l'appareil où l'application est visible, notification système ailleurs ;
+  // le hub WebSocket lui dira qui regarde quoi.
+  const notifications = new Notifications(db, push)
+  sessions.setNotifier(notifications)
+  // Les décisions que les sessions demandent : déposées et échues par le balayage des
+  // demandes d'agent, tranchées par la route. Elles notifient par l'aiguillage.
+  const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
+  // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
+  // serveur MCP.
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -92,6 +102,8 @@ async function main(): Promise<void> {
     tasks,
     vault,
     storybooks,
+    notifications,
+    decisions,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

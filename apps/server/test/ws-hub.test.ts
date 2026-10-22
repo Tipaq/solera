@@ -8,10 +8,10 @@ import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
-import type { ServerMessage } from '@solera/protocol'
+import type { ClientMessage, PushPayload, ServerMessage } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import type { EventLog } from '../src/events/event-log.js'
-import type { PushService } from '../src/push/push-service.js'
+import { Notifications, type PushSender } from '../src/notifications/dispatcher.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { AttachmentStore } from '../src/attachments/store.js'
@@ -25,6 +25,7 @@ import { registerScheduleRoutes } from '../src/http/routes/schedules.js'
 import type { TaskScheduler } from '../src/scheduler/task-scheduler.js'
 import { registerV1Routes } from '../src/http/v1/index.js'
 import { LIST_ROUTES, registerWebSocketHub } from '../src/ws/hub.js'
+import { writeNotificationPrefs } from '../src/settings/user-settings.js'
 
 async function database(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-ws-hub-'))
@@ -76,7 +77,19 @@ async function hub(t: TestContext, warm: string[] = []) {
     (request.params as { id: string }).id === 'missing' ? reply.code(404).send({}) : { ok: true })
   app.post('/api/conversations/:id/read', async () => ({ lastReadSeq: 1 }))
 
-  await registerWebSocketHub(app, ctx, {} as EventLog, sessions, {} as PushService)
+  // Le journal ne sert qu'à l'abonnement à un fil : rien à rattraper, rien à suivre.
+  const log = { read: () => [], subscribe: () => () => {} } as unknown as EventLog
+  // Le service de push réel parlerait au réseau : on retient ce qu'il aurait envoyé, et
+  // à qui on aurait évité de l'envoyer.
+  const pushed: Array<{ userId: string; payload: PushPayload; except: string[] }> = []
+  const push: PushSender = {
+    notify: async (userId, payload, options = {}) => {
+      pushed.push({ userId, payload, except: [...(options.except ?? [])].sort() })
+      return []
+    },
+  }
+  const notifications = new Notifications(db, push)
+  await registerWebSocketHub(app, ctx, log, sessions, notifications)
   await app.ready()
   // Les deux bouts coupés net : une fermeture polie attend la réponse de l'autre côté,
   // que les flux simulés de `injectWS` ne transmettent pas, et `ws` patiente alors 30 s.
@@ -85,17 +98,19 @@ async function hub(t: TestContext, warm: string[] = []) {
     await app.close()
   })
 
-  const connect = async (user: string) => {
+  const open = async (user: string) => {
     const received: ServerMessage[] = []
     const socket = await app.injectWS('/api/ws', { headers: { 'x-user': user } }, {
       // Avant l'ouverture : l'instantané de statuts part dès la connexion.
       onInit: (ws) => ws.on('message', (raw) => received.push(JSON.parse(raw.toString()) as ServerMessage)),
     })
     t.after(() => socket.terminate())
-    return received
+    const send = (message: ClientMessage) => socket.send(JSON.stringify(message))
+    return { received, send }
   }
+  const connect = async (user: string) => (await open(user)).received
 
-  return { app, sessions, connect }
+  return { app, db, sessions, connect, open, notifications, pushed }
 }
 
 /** Les messages traversent des flux asynchrones : on attend un peu avant de conclure. */
@@ -176,4 +191,145 @@ test('chaque route de LIST_ROUTES existe', async (t) => {
     const [method, url] = key.split(' ') as [string, string]
     assert.ok(app.hasRoute({ method: method as 'GET', url }), `route absente : ${key}`)
   }
+})
+
+// --- L'aiguillage des notifications ------------------------------------------------
+
+const toasts = (messages: ServerMessage[]) => messages.filter((m) => m.t === 'notify')
+
+/** Une demande de permission dans `c1`, telle que le gestionnaire de sessions l'envoie. */
+const permission = {
+  kind: 'cliRequest' as const,
+  conversationId: 'c1',
+  push: { title: 'Une autorisation est demandée', body: 'Session', url: '/p/private/c/c1', tag: 'c1', kind: 'permission' as const },
+  toast: {
+    kind: 'cliRequest' as const,
+    request: 'permission' as const,
+    conversationId: 'c1',
+    projectId: 'private',
+    conversationTitle: 'Session',
+    detail: 'Bash : ls',
+  },
+}
+
+/** Une fin de tour : jamais de toast, seulement la notification système. */
+const turnCompleted = {
+  kind: 'turnCompleted' as const,
+  conversationId: 'c1',
+  push: { title: "L'agent a terminé", body: 'Session', url: '/p/private/c/c1', tag: 'c1', kind: 'turnCompleted' as const },
+}
+
+test("une demande arrive en toast sur l'appareil visible, en push sur les autres", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  const phone = await open('owner')
+  desk.send({ t: 'presence', visible: true, endpoint: 'https://push.example/desk' })
+  phone.send({ t: 'presence', visible: false, endpoint: 'https://push.example/phone' })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 1)
+  assert.equal(toasts(phone.received).length, 0)
+  // Le push part pour tout le compte, sauf l'appareil qui a eu le toast.
+  assert.deepEqual(pushed.map((p) => p.except), [['https://push.example/desk']])
+})
+
+test("rien ne part si la conversation est sous les yeux d'un onglet visible", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  desk.send({ t: 'presence', visible: true, endpoint: null })
+  desk.send({ t: 'subscribe', conversationId: 'c1', afterSeq: 0 })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.equal(pushed.length, 0)
+})
+
+test("un onglet abonné au fil mais caché ne retient pas la notification", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  desk.send({ t: 'presence', visible: false, endpoint: 'https://push.example/desk' })
+  desk.send({ t: 'subscribe', conversationId: 'c1', afterSeq: 0 })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.deepEqual(pushed.map((p) => p.except), [[]])
+})
+
+test("un onglet qui n'a rien déclaré compte comme absent", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  desk.send({ t: 'subscribe', conversationId: 'c1', afterSeq: 0 })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.equal(pushed.length, 1)
+})
+
+test("une fin de tour ne fait jamais de toast, et épargne l'appareil visible", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  desk.send({ t: 'presence', visible: true, endpoint: 'https://push.example/desk' })
+  await settle()
+
+  await notifications.dispatch('owner', turnCompleted)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.deepEqual(pushed.map((p) => p.except), [['https://push.example/desk']])
+})
+
+test("le toast ne va qu'au compte concerné", async (t) => {
+  const { open, notifications } = await hub(t)
+  const owner = await open('owner')
+  const other = await open('other')
+  owner.send({ t: 'presence', visible: true, endpoint: null })
+  other.send({ t: 'presence', visible: true, endpoint: 'https://push.example/other' })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(owner.received).length, 1)
+  assert.equal(toasts(other.received).length, 0)
+})
+
+test('une sorte coupée dans les réglages ne part nulle part', async (t) => {
+  const { db, open, notifications, pushed } = await hub(t)
+  writeNotificationPrefs(db, 'owner', { cliRequest: false, turnCompleted: true })
+  const desk = await open('owner')
+  desk.send({ t: 'presence', visible: true, endpoint: null })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await notifications.dispatch('owner', turnCompleted)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.deepEqual(pushed.map((p) => p.payload.kind), ['turnCompleted'])
+})
+
+test("un onglet qui passe en arrière-plan rend la main à la notification système", async (t) => {
+  const { open, notifications, pushed } = await hub(t)
+  const desk = await open('owner')
+  desk.send({ t: 'presence', visible: true, endpoint: 'https://push.example/desk' })
+  desk.send({ t: 'presence', visible: false, endpoint: 'https://push.example/desk' })
+  await settle()
+
+  await notifications.dispatch('owner', permission)
+  await settle()
+
+  assert.equal(toasts(desk.received).length, 0)
+  assert.deepEqual(pushed.map((p) => p.except), [[]])
 })

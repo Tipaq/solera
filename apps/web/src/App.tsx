@@ -9,6 +9,7 @@ import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
 import { ServicesPage } from './routes/ServicesPage'
+import { DecisionsPage } from './routes/DecisionsPage'
 import { LoginPage } from './routes/LoginPage'
 import { BoardPage } from './routes/BoardPage'
 import { PortfolioBoardPage } from './routes/PortfolioBoardPage'
@@ -119,6 +120,7 @@ export function App() {
             <Route path="journal" element={<PortfolioJournalPage />} />
           </Route>
           <Route path="/schedules" element={<SchedulesPage />} />
+          <Route path="/decisions" element={<DecisionsPage />} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
               Pas de voile d'attente : la page arrive quand son code est là, plutôt que
               de faire clignoter un écran vide entre deux notes. */}
