@@ -234,12 +234,23 @@ export function parseCardReferences(text: string): number[] {
  * même raison : deux analyseurs finiraient par diverger.
  */
 export function cardMentions(text: string): number[] {
-  const found: number[] = []
+  return cardReferenceRanges(text).map((range) => range.number)
+}
+
+/**
+ * Chaque `#n` d'un texte, avec sa place : début du `#` et fin du numéro. Sert au rendu,
+ * qui remplace la référence par un lien sans toucher au caractère qui la précède. Les
+ * deux fonctions au-dessus en dérivent : un seul analyseur.
+ */
+export function cardReferenceRanges(text: string): { start: number; end: number; number: number }[] {
+  const ranges: { start: number; end: number; number: number }[] = []
   for (const match of text.matchAll(CARD_REFERENCE)) {
     const number = Number(match[1])
-    if (Number.isSafeInteger(number) && number > 0) found.push(number)
+    if (!Number.isSafeInteger(number) || number <= 0) continue
+    const end = match.index + match[0].length
+    ranges.push({ start: end - (match[1] ?? '').length - 1, end, number })
   }
-  return found
+  return ranges
 }
 
 /**

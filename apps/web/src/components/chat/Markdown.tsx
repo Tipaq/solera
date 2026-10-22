@@ -1,10 +1,12 @@
 import { useContext, useMemo, useState, type MouseEvent } from 'react'
+import { useCardRefs } from '../../lib/card-refs'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { ImageLightbox } from '../panel/ImageView'
 import { openInPanel } from '../WebLink'
+import { useCardRefPreview } from '../board/CardRefPreview'
 import { CodeBlock } from './CodeBlock'
 import { MarkdownTable } from './MarkdownTable'
 
@@ -36,12 +38,16 @@ export function Markdown({
   const conversationId = useContext(FileLinkContext)
   const [viewing, setViewing] = useState<{ src: string; name: string } | null>(null)
   const tasks = onToggleTask ? ('interactive' as const) : undefined
+  // Les cartes du projet, quand l'écran en a un : leurs `#12` deviennent des liens.
+  const { projectId, cards: cardsByNumber } = useCardRefs()
+  const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
+  const cardRefs = useCardRefPreview(projectId, cardsByNumber)
 
-  // Première passe : ce que le texte cite. Elle ne produit aucun lien, mais son HTML
-  // est celui affiché tant que la réponse du serveur n'est pas là.
+  // Première passe : ce que le texte cite. Elle ne produit aucun lien de fichier, mais
+  // son HTML est celui affiché tant que la réponse du serveur n'est pas là.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, tasks }),
-    [text, conversationId, base, tasks],
+    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, tasks, cards }),
+    [text, conversationId, base, tasks, cards],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -59,9 +65,10 @@ export function Markdown({
             scope: conversationId ?? undefined,
             base,
             tasks,
+            cards,
           }).segments
         : found.segments,
-    [linkable, text, known, conversationId, base, tasks, found.segments],
+    [linkable, text, known, conversationId, base, tasks, cards, found.segments],
   )
 
   /**
@@ -106,7 +113,10 @@ export function Markdown({
   }
 
   return (
-    <div className="sg-reading flex flex-col gap-3">
+    // Sur le conteneur entier et non segment par segment : un `#12` peut aussi bien
+    // tomber dans une cellule de tableau, rendue par son propre composant.
+    <div className="sg-reading flex flex-col gap-3" {...cardRefs.handlers}>
+      {cardRefs.preview}
       {segments.map((segment, index) => {
         // L'index comme clé : les segments n'ont pas d'identité propre et la liste est
         // reconstruite entièrement à chaque changement du texte.

@@ -20,20 +20,22 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, type CardColumn, type CardDto } from '@solera/protocol'
+import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, cx } from '@solera/ui'
+import { Button, EmptyState, IconButton, Menu, MenuRadioGroup, MenuRadioItem, cx } from '@solera/ui'
+import { CardRefContext } from '../lib/card-refs'
 import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { NEW_PARAM } from './ProjectLayout'
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
+import { useBoardOrder } from '../lib/user-settings'
 import { useMediaQuery } from '../lib/viewport'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
@@ -46,12 +48,27 @@ const SidePanel = lazy(() =>
 /** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
 type Layout = Map<CardColumn, string[]>
 
-function layoutOf(cards: CardDto[]): Layout {
+/** Le tri d'une colonne selon l'ordre choisi ; le numéro départage les ex aequo. */
+const ORDERINGS: Record<BoardOrder, (a: CardDto, b: CardDto) => number> = {
+  manual: (a, b) => a.position - b.position,
+  recent: (a, b) => b.columnSince - a.columnSince || b.number - a.number,
+  oldest: (a, b) => a.columnSince - b.columnSince || a.number - b.number,
+}
+
+function layoutOf(cards: CardDto[], order: BoardOrder): Layout {
   const grouped: Layout = new Map(CARD_COLUMNS.map((column) => [column, []]))
-  for (const card of [...cards].sort((a, b) => a.position - b.position)) {
+  for (const card of [...cards].sort(ORDERINGS[order])) {
     grouped.get(card.column)?.push(card.id)
   }
   return grouped
+}
+
+/**
+ * Un clic dans le vide du board, qui referme le tiroir d'une carte. Pas sur une carte,
+ * qui bascule le tiroir sur elle, ni sur un contrôle, qui a sa propre action.
+ */
+function isEmptyBoardClick(target: EventTarget): boolean {
+  return target instanceof Element && !target.closest('button, a, input, textarea, select, label, [data-card-tile], [role="menu"]')
 }
 
 function columnOf(layout: Layout, cardId: string): CardColumn | undefined {
@@ -94,6 +111,7 @@ export function BoardPage() {
   const { data: projects } = useProjects()
   const { data: cards, isPending, isError, refetch } = useCards(projectId)
   const reorder = useReorderCards(projectId ?? '')
+  const [order, setOrder] = useBoardOrder(projectId)
 
 
   const [query, setQuery] = useState('')
@@ -125,7 +143,7 @@ export function BoardPage() {
     () => new Map((cards ?? []).map((card) => [card.id, card])),
     [cards],
   )
-  const settled = useMemo(() => layoutOf(cards ?? []), [cards])
+  const settled = useMemo(() => layoutOf(cards ?? [], order), [cards, order])
   const layout = dragging?.layout ?? settled
 
   const project = projects?.find((entry) => entry.id === projectId)
@@ -217,7 +235,10 @@ export function BoardPage() {
     const to = CARD_COLUMNS.includes(String(over.id) as CardColumn)
       ? ids.length - 1
       : ids.indexOf(String(over.id))
-    const ordered = from === -1 || to === -1 || from === to ? ids : arrayMove(ids, from, to)
+    // Trié par arrivée, l'ordre d'une colonne ne se choisit pas : seul le passage d'une
+    // colonne à l'autre compte, et réordonner sur place réécrirait l'ordre manuel en
+    // douce, qu'on retrouverait chamboulé en y revenant.
+    const ordered = from === -1 || to === -1 || from === to || order !== 'manual' ? ids : arrayMove(ids, from, to)
 
     // Seules les colonnes dont le contenu a changé sont réécrites, et chacune en
     // entier : le serveur refuse une colonne partielle, qui laisserait les cartes
@@ -264,13 +285,28 @@ export function BoardPage() {
             }} aria-label={t('board.search')}
               placeholder={t('board.search')} className="min-h-10 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-ink-faint" />
           </div>
-          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : 'board.hint')}</p>
+          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}</p>
           {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
           {/* Les deux réglages du board, descendus de la bande auprès de ce qu'ils
               règlent : le repli du cimetière filtre les colonnes qui suivent, et le
               panneau ouvre le workspace du projet — un terminal, les fichiers ou le
               diff, sans avoir à entrer dans une session. */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Menu
+              trigger={
+                <Button variant="ghost" size="sm" icon={<ArrowDownUp size={14} />} aria-label={t('board.order.label')}>
+                  <span className="hidden sm:inline">{t(`board.order.${order}`)}</span>
+                </Button>
+              }
+            >
+              <MenuRadioGroup value={order} onValueChange={(value) => setOrder(boardOrderSchema.parse(value))}>
+                {boardOrderSchema.options.map((value) => (
+                  <MenuRadioItem key={value} value={value}>
+                    {t(`board.order.${value}`)}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </Menu>
             {wide && hasClosed ? (
               <Button
                 variant="ghost"
@@ -330,7 +366,14 @@ export function BoardPage() {
           onDragEnd={onDragEnd}
           onDragCancel={() => setDragging(null)}
         >
-          <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5">
+          <div
+            className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5"
+            // Le tiroir se referme d'un clic à côté, comme une fenêtre qu'on quitte. Le
+            // clavier a déjà Échap ; au téléphone, le tiroir couvre tout l'écran.
+            onClick={(event) => {
+              if (openCard && isEmptyBoardClick(event.target)) showCard(null)
+            }}
+          >
             {shown.map((column) => (
               <BoardColumn
                 key={column}
@@ -341,6 +384,7 @@ export function BoardPage() {
                 filtered={Boolean(search)}
                 projectId={projectId}
                 openNumber={openCard?.number ?? null}
+                showArrival={order !== 'manual'}
                 onOpenCard={(card) => showCard(card.number)}
               />
             ))}
@@ -365,6 +409,7 @@ export function BoardPage() {
         setParams(next, { replace: true })
       }} />
       {lingering ? (
+        <CardRefContext.Provider value={projectId}>
         <CardPanel
           key={lingering.id}
           card={lingering}
@@ -373,6 +418,7 @@ export function BoardPage() {
           onClose={() => showCard(null)}
           onSelectCard={showCard}
         />
+        </CardRefContext.Provider>
       ) : null}
 
       {panel.mounted ? (
@@ -391,9 +437,12 @@ function BoardColumn({
   openNumber,
   onOpenCard,
   filtered,
+  showArrival,
 }: {
   column: CardColumn
   filtered: boolean
+  /** Trié par arrivée : chaque tuile dit depuis quand elle est dans la colonne. */
+  showArrival: boolean
   cards: CardDto[]
   projectId: string
   openNumber: number | null
@@ -487,6 +536,7 @@ function BoardColumn({
               card={card}
               disabled={filtered}
               selected={card.number === openNumber}
+              showArrival={showArrival}
               onOpen={() => onOpenCard(card)}
             />
           ))}
