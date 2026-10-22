@@ -6,6 +6,7 @@ import { AGENT_LABELS, AgentIcon } from './AgentIcon'
 import { locale, useTranslate } from '../lib/i18n'
 import { useAgentAvailability } from '../lib/agents'
 import { useClaudeAccounts } from '../lib/claude-accounts'
+import { useCodexAccounts } from '../lib/codex-accounts'
 import { useAccountUsage, useRefreshUsage, type AccountUsageEntry, type UsageTarget } from '../lib/usage'
 import { Banner, IconButton, cx } from '@solera/ui'
 import { UsageBar, readAge } from './chat/UsageBar'
@@ -25,6 +26,10 @@ import { UsageBar, readAge } from './chat/UsageBar'
  * dit savoir lancer, toutes lues en parallèle à l'ouverture. Un CLI absent est un état
  * normal depuis que Solera ne transporte plus les binaires — il ne laisse pas de
  * place vide, il n'a simplement pas de section.
+ *
+ * Un CLI peut porter plusieurs comptes : sa connexion, puis chaque compte
+ * supplémentaire qui sait lire son forfait (voir `docs/accounts.md`), chacun dans sa
+ * section, parce que chacun a sa propre limite.
  */
 
 /** Deux barres grises le temps qu'un CLI réponde : la section garde sa place. */
@@ -45,7 +50,7 @@ function UsageSkeleton() {
  * Un CLI et ses fenêtres. Présentation seule : la lecture est menée une fois pour
  * toutes par la modale, qui sait combien de CLI elle a et depuis quand.
  */
-function UsageSection({ entry }: { entry: AccountUsageEntry }) {
+function UsageSection({ entry, accountLabel }: { entry: AccountUsageEntry; accountLabel?: string }) {
   const t = useTranslate()
   const { agent, account, usage, error, isPending } = entry
   // Un compte Claude supplémentaire n'a pas de jauge, mais pas pour la même raison
@@ -65,7 +70,11 @@ function UsageSection({ entry }: { entry: AccountUsageEntry }) {
       <h3 className="flex items-center gap-2 text-sm font-medium text-ink">
         {/* Muette : le nom du CLI suit immédiatement. */}
         <AgentIcon agent={agent} size={14} decorative />
-        <span className="min-w-0 flex-1 truncate">{AGENT_LABELS[agent]}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {AGENT_LABELS[agent]}
+          {/* Le compte suit le CLI : deux sections Claude ne se distinguent que par lui. */}
+          {accountLabel ? <span className="text-ink-faint"> · {accountLabel}</span> : null}
+        </span>
         {/* Le forfait en puce plutôt qu'en ligne : c'est une étiquette du CLI nommé à
             sa gauche, pas une information de plus à lire sous lui. */}
         {usage?.plan ? (
@@ -124,11 +133,48 @@ function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | 
   const t = useTranslate()
   const { data: availability, isPending: listing } = useAgentAvailability()
 
+  const installed = useMemo(
+    () => (availability?.agents ?? []).filter((a) => a.installed).map((a) => a.agent),
+    [availability],
+  )
+  const { data: claudeList } = useClaudeAccounts(installed.includes('claude'))
+  const { data: codexList } = useCodexAccounts(installed.includes('codex'))
+
+  // Les comptes supplémentaires qui ont une jauge, chacun en section : un abonnement
+  // de plus a sa propre limite, et c'est elle qu'on vient lire avant de choisir sur
+  // lequel lancer. Un jeton sans jauge et une clé API n'ont rien à montrer ici ; la
+  // modale ne les sonde pas, la page des comptes dit pourquoi.
+  const extra = useMemo(
+    () => [
+      ...(installed.includes('claude') ? (claudeList?.accounts ?? []) : [])
+        .filter((entry) => entry.kind === 'oauth' && entry.gauge)
+        .map((entry) => ({ agent: 'claude' as const, account: entry.id, label: entry.label })),
+      ...(installed.includes('codex') ? (codexList?.accounts ?? []) : [])
+        .filter((entry) => entry.status === 'ready' && entry.authMode === 'chatgpt')
+        .map((entry) => ({ agent: 'codex' as const, account: entry.id, label: entry.label })),
+    ],
+    [installed, claudeList, codexList],
+  )
+  const accountLabels = useMemo(() => {
+    const labels = new Map<string, string>()
+    for (const entry of claudeList?.accounts ?? []) labels.set(entry.id, entry.label)
+    for (const entry of codexList?.accounts ?? []) labels.set(entry.id, entry.label)
+    return labels
+  }, [claudeList, codexList])
+
+  // Chaque CLI sur sa propre connexion, suivi de ses comptes. Le fil d'où l'on ouvre
+  // passe en tête, sur le compte qu'il utilise, et n'est pas répété plus bas.
   const targets = useMemo<UsageTarget[]>(() => {
-    const installed = (availability?.agents ?? []).filter((a) => a.installed).map((a) => a.agent)
-    const others = installed.filter((kind) => kind !== agent).map((kind) => ({ agent: kind, account: null }))
-    return agent ? [{ agent, account }, ...others] : others
-  }, [availability, agent, account])
+    const ordered: UsageTarget[] = installed.flatMap((kind) => [
+      { agent: kind, account: null },
+      ...extra
+        .filter((entry) => entry.agent === kind)
+        .map((entry) => ({ agent: entry.agent, account: entry.account })),
+    ])
+    if (!agent) return ordered
+    const lead = { agent, account }
+    return [lead, ...ordered.filter((target) => target.agent !== agent || target.account !== account)]
+  }, [installed, extra, agent, account])
 
   const { entries, fetchedAt, isFetching } = useAccountUsage(targets)
   const refresh = useRefreshUsage(targets)
@@ -159,7 +205,11 @@ function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | 
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-safe">
         {entries.map((entry) => (
-          <UsageSection key={`${entry.agent}:${entry.account ?? ''}`} entry={entry} />
+          <UsageSection
+            key={`${entry.agent}:${entry.account ?? ''}`}
+            entry={entry}
+            accountLabel={entry.account ? accountLabels.get(entry.account) : undefined}
+          />
         ))}
 
         {/* La liste des CLI arrive après le premier rendu : tant qu'elle manque, il n'y
