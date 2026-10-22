@@ -1,5 +1,8 @@
+import { homedir } from 'node:os'
 import type { GrokConfig, McpServer } from '@solera/protocol'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
+import { AcpClient } from '../acp/client.js'
+import { agentProcessEnv } from '../process-env.js'
 
 /**
  * Comment Solera lance `grok agent stdio`, et dans quel environnement.
@@ -60,6 +63,28 @@ export function grokLaunch(config: GrokConfig, pluginDirs: string[]): GrokLaunch
   for (const dir of pluginDirs) args.push('--plugin-dir', dir)
   args.push('stdio')
   return { args, env: { ...GROK_ISOLATION_ENV } }
+}
+
+/**
+ * Un `grok agent stdio` jetable, le temps d'une requête : catalogue, consommation, fork,
+ * connexion par clé. Le même lancement et le même isolement que pour une conversation,
+ * sans plugins ni session ouverte. `home` est le `GROK_HOME` d'un compte supplémentaire ;
+ * sans lui, c'est la connexion du CLI qui sert.
+ */
+export function grokProbe(options: {
+  binary: string
+  cwd?: string
+  home?: string | null
+  env?: Record<string, string>
+}): AcpClient {
+  const { binary, home, env } = options
+  return new AcpClient({
+    label: 'grok',
+    binary,
+    args: ['agent', '--no-leader', 'stdio'],
+    cwd: options.cwd ?? home ?? homedir(),
+    env: agentProcessEnv({ ...GROK_ISOLATION_ENV, ...(home ? { GROK_HOME: home } : {}), ...env }),
+  })
 }
 
 export function sameLaunch(a: GrokLaunch, b: GrokLaunch): boolean {

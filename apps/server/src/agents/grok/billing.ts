@@ -1,10 +1,7 @@
-import { homedir } from 'node:os'
 import type { AgentUsage, UsageWindow } from '@solera/protocol'
-import { AcpClient } from '../acp/client.js'
 import { CachedProbe, CachedProbeMap } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
-import { agentProcessEnv } from '../process-env.js'
-import { GROK_ISOLATION_ENV } from './launch.js'
+import { grokProbe } from './launch.js'
 import { fields } from './tools.js'
 
 /**
@@ -78,13 +75,7 @@ export function toGrokUsage(response: unknown): GrokUsage {
  * connexion du CLI. Sans connexion, Grok refuse la requête : l'erreur remonte.
  */
 export async function readGrokBilling(binary: string, home?: string): Promise<GrokUsage> {
-  const client = new AcpClient({
-    label: 'grok',
-    binary,
-    args: ['agent', '--no-leader', 'stdio'],
-    cwd: home ?? homedir(),
-    env: agentProcessEnv({ ...GROK_ISOLATION_ENV, ...(home ? { GROK_HOME: home } : {}) }),
-  })
+  const client = grokProbe({ binary, home })
   const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
   try {
     await client.initialize(CLIENT_INFO)

@@ -188,34 +188,50 @@ test('reprise par session/resume, mode « tout autoriser » et consignes du dép
   assert.ok(!rpc.some((entry) => entry.method === 'session/new'))
 })
 
-test('permission : la décision devient l’option de Grok du même genre', async (t) => {
+test('permission : jamais `allow_always`, et l’accord de session tenu par Solera', async (t) => {
   const f = await runnerFixture(t)
   const options = [
     { optionId: 'allow-edits-session', name: 'Yes, allow all edits during this session', kind: 'allow_always' },
     { optionId: 'allow-once', name: 'Yes', kind: 'allow_once' },
     { optionId: 'reject-once', name: 'No', kind: 'reject_once' },
   ]
-  const toolCall = { toolCallId: 'c1', kind: 'edit', title: 'Edit `a.txt`', rawInput: { variant: 'SearchReplace', file_path: 'a.txt', old_string: 'a', new_string: 'b' }, _meta: tool('search_replace', 'edit') }
-  await f.play({ steps: [{ permission: { toolCall, options } }, { permission: { toolCall, options } }, { permission: { toolCall, options } }] })
+  const edit = { toolCallId: 'c1', kind: 'edit', title: 'Edit `a.txt`', rawInput: { variant: 'SearchReplace', file_path: 'a.txt', old_string: 'a', new_string: 'b' }, _meta: tool('search_replace', 'edit') }
+  const bash = { toolCallId: 'c2', kind: 'execute', title: 'Run', rawInput: { command: 'rm -rf build' }, _meta: tool('run_terminal_command', 'execute') }
+  const alwaysOnly = options.filter((option) => option.kind !== 'allow_once')
+  await f.play({ steps: [
+    { permission: { toolCall: edit, options } },
+    { permission: { toolCall: edit, options } },
+    // Même appel après l'accord de session : répondu sans redemander.
+    { permission: { toolCall: edit, options } },
+    { permission: { toolCall: bash, options } },
+    // Pas d'`allow_once` proposé : un accord ne peut pas être aussi étroit, il devient un refus.
+    { permission: { toolCall: { ...bash, toolCallId: 'c3', rawInput: { command: 'ls' } }, options: alwaysOnly } },
+  ] })
 
   const decisions = [
     { decision: 'allowed' as const, scope: 'once' as const },
     { decision: 'allowed' as const, scope: 'session' as const },
     { decision: 'denied' as const, scope: 'once' as const },
+    { decision: 'allowed' as const, scope: 'once' as const },
   ]
   for (const [index, decision] of decisions.entries()) {
     await until(() => f.events.filter((event) => event.type === 'permission.requested').length > index, 'permission')
     const request = f.events.filter((event) => event.type === 'permission.requested')[index]!
     assert.ok(request.type === 'permission.requested')
-    assert.equal(request.toolName, 'Edit')
-    assert.equal(request.title, 'Edit `a.txt`')
+    if (index < 2) {
+      assert.equal(request.toolName, 'Edit')
+      assert.equal(request.title, 'Edit `a.txt`')
+    }
     assert.ok(f.runner.resolvePermission(request.requestId, { ...decision, decidedBy: 'me' }))
   }
   await until(() => f.count('turn.completed') > 0)
+  assert.equal(f.count('permission.requested'), 4)
   const answers = (await f.rpc()).filter((entry) => entry.answer).map((entry) => entry.answer!.result.outcome)
   assert.deepEqual(answers, [
     { outcome: 'selected', optionId: 'allow-once' },
-    { outcome: 'selected', optionId: 'allow-edits-session' },
+    { outcome: 'selected', optionId: 'allow-once' },
+    { outcome: 'selected', optionId: 'allow-once' },
+    { outcome: 'selected', optionId: 'reject-once' },
     { outcome: 'selected', optionId: 'reject-once' },
   ])
 })
@@ -304,8 +320,12 @@ test('steer par _x.ai/interject, compaction par _x.ai/compact_conversation', asy
   const rpc = await f.rpc()
   assert.deepEqual(rpc.find((entry) => entry.method === '_x.ai/interject')!.params, { sessionId: 'ses_fixture', text: 'Aussi ceci' })
 
+  const statusesBefore = f.statuses.length
   assert.equal(await f.runner.compact(), true)
+  // Occupée le temps du résumé : un message envoyé entre-temps attend dans la file.
+  assert.equal(f.statuses[statusesBefore], 'running')
   await until(() => f.count('context.compacted') > 0)
+  await until(() => f.statuses.at(-1) === 'idle', 'retour au repos')
   assert.deepEqual(f.events.find((event) => event.type === 'context.compacted'),
     { type: 'context.compacted', trigger: 'manual', preTokens: 900, postTokens: 300 })
   assert.equal(f.count('context.compaction_started'), 1)

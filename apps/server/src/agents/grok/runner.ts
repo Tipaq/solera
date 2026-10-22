@@ -92,6 +92,12 @@ const NOTIFICATION_NOISE = new Set([
 /** Un `costUsdTicks` vaut un dix-milliardième de dollar (sondé : 0,033 $ pour 330 643 200). */
 const USD_PER_TICK = 1e-10
 
+/**
+ * Délai d'ouverture d'une session : Grok y démarre les serveurs MCP avant de répondre, et
+ * un `npx` qui télécharge son paquet dépasse sans peine le délai ordinaire d'une requête.
+ */
+const SESSION_OPEN_TIMEOUT_MS = 180_000
+
 /** Délai accordé à Grok pour clore un tour annulé avant de forcer la fin. */
 const CANCEL_GRACE_MS = 15_000
 
@@ -136,6 +142,15 @@ function permissionFlags(mode: GrokPermissionMode): { yoloMode: boolean; autoMod
   }
 }
 
+/**
+ * Ce qu'un accord « pour la session » couvre : l'outil, et pour une commande la commande
+ * exacte. Accorder `Bash` une fois pour toutes laisserait passer n'importe quelle commande.
+ */
+function grantKey(tool: string, input: unknown): string {
+  const command = tool === 'Bash' ? fields(input).command : undefined
+  return JSON.stringify([tool, typeof command === 'string' ? command : null])
+}
+
 export class GrokRunner implements AgentRunner {
   readonly conversationId: string
 
@@ -168,7 +183,18 @@ export class GrokRunner implements AgentRunner {
   private readonly noticed = new Set<string>()
 
   private turnActive = false
+  /**
+   * Rang du tour en cours. La réponse d'un `session/prompt` annulé peut arriver après que
+   * le garde-fou a clos son tour et qu'un autre a commencé : elle ne doit clore que le sien.
+   */
+  private turnSeq = 0
   private cancelWatchdog: NodeJS.Timeout | null = null
+  /**
+   * Accords « pour la session », tenus par Solera. L'option `allow_always` de Grok peut
+   * devenir une règle permanente dans `~/.grok`, valable pour tous les projets : un accord
+   * de session répond donc `allow_once` à chaque appel semblable, sans redemander.
+   */
+  private readonly sessionGrants = new Set<string>()
   /** Une compaction demandée par Solera est en cours. */
   private compacting: 'manual' | 'auto' | null = null
   /** Fenêtre de contexte par modèle, lue dans le catalogue de la session. */
@@ -248,7 +274,7 @@ export class GrokRunner implements AgentRunner {
         cwd: this.ctx.cwd,
         mcpServers,
         _meta: meta,
-      })
+      }, SESSION_OPEN_TIMEOUT_MS)
       sessionId = this.ctx.resumeSessionId
     } else {
       // Le texte de projet (SOLERA.md, mémoire, transfert) part en `rules`, que Grok
@@ -264,7 +290,7 @@ export class GrokRunner implements AgentRunner {
           ...(rules ? { rules } : {}),
           ...(this.config.model ? { modelId: this.config.model } : {}),
         },
-      })
+      }, SESSION_OPEN_TIMEOUT_MS)
       session = created
       sessionId = created.sessionId
     }
@@ -353,7 +379,11 @@ export class GrokRunner implements AgentRunner {
     this.client = null
     const wasStarted = this.sessionId !== null
     this.turnActive = false
+    this.compacting = null
     this.clearCancelWatchdog()
+    // Les appels ouverts se referment dans le fil avec la fin de session (`session.ended`),
+    // comme chez les autres CLI ; ici, il reste à ne plus les attendre.
+    this.forgetTurnState()
     // Mort pendant le démarrage : `start()` échoue et le gestionnaire remonte l'erreur.
     if (!wasStarted) return
 
@@ -669,6 +699,16 @@ export class GrokRunner implements AgentRunner {
   private onPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const call = request.toolCall
     const described = describeTool(nativeToolName(call._meta, call.title), call.rawInput)
+    const grant = grantKey(described.name, described.input)
+    const select = (kind: string): RequestPermissionResponse => {
+      const option = request.options.find((entry) => entry.kind === kind)
+      return option ? { outcome: { outcome: 'selected', optionId: option.optionId } } : { outcome: { outcome: 'cancelled' } }
+    }
+    // Déjà accordé pour la session : une fois de plus, sans redemander. Sans `allow_once`
+    // proposé, la question est posée, plutôt que de choisir une option plus large.
+    if (this.sessionGrants.has(grant) && request.options.some((entry) => entry.kind === 'allow_once')) {
+      return Promise.resolve(select('allow_once'))
+    }
     return new Promise((resolve) => {
       this.interactions.requestPermission(
         { toolName: described.name, input: described.input, title: typeof call.title === 'string' ? call.title : null },
@@ -677,11 +717,19 @@ export class GrokRunner implements AgentRunner {
             resolve({ outcome: { outcome: 'cancelled' } })
             return
           }
-          const kinds = decision.decision === 'allowed'
-            ? decision.scope === 'once' ? ['allow_once', 'allow_always'] : ['allow_always', 'allow_once']
-            : ['reject_once', 'reject_always']
-          const option = kinds.map((kind) => request.options.find((entry) => entry.kind === kind)).find(Boolean)
-          resolve(option ? { outcome: { outcome: 'selected', optionId: option.optionId } } : { outcome: { outcome: 'cancelled' } })
+          if (decision.decision !== 'allowed') {
+            resolve(select('reject_once'))
+            return
+          }
+          // Jamais `allow_always` : une fois ou pour la session, Grok n'accorde que l'appel
+          // présent. Sans `allow_once`, l'accord ne peut pas être aussi étroit que demandé,
+          // et l'appel est refusé.
+          if (!request.options.some((entry) => entry.kind === 'allow_once')) {
+            resolve(select('reject_once'))
+            return
+          }
+          if (decision.scope !== 'once') this.sessionGrants.add(grant)
+          resolve(select('allow_once'))
         },
       )
     })
@@ -807,17 +855,18 @@ export class GrokRunner implements AgentRunner {
     const prompt = command && this.commandNames.has(command.name)
       ? [{ type: 'text' as const, text }]
       : this.promptBlocks(text, attachments, mentions)
-    this.beginTurn()
-    void this.runPrompt(prompt)
+    void this.runPrompt(prompt, this.beginTurn())
   }
 
-  private beginTurn(): void {
+  private beginTurn(): number {
     this.turnActive = true
+    this.turnSeq += 1
     this.ctx.emit({ type: 'turn.started' })
     this.ctx.setStatus(this.interactions.hasBlocking ? 'awaiting_input' : 'running')
+    return this.turnSeq
   }
 
-  private async runPrompt(prompt: AcpContentBlock[]): Promise<void> {
+  private async runPrompt(prompt: AcpContentBlock[], turn: number): Promise<void> {
     const client = this.client
     if (!client) return
     try {
@@ -825,29 +874,30 @@ export class GrokRunner implements AgentRunner {
       const meta = fields(response._meta)
       // Un refus de permission clôt le tour en `cancelled` : c'est un refus, pas une interruption.
       const stopReason = meta.cancellationCategory === 'PermissionRejected' ? 'permission_denied' : response.stopReason
-      this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response)
+      this.endTurn(stopReason, meta.usage as PromptUsage | undefined, response, turn)
     } catch (error) {
-      // La mort du process se raconte par `onProcessExit`.
-      if (!this.client) return
+      // La mort du process se raconte par `onProcessExit`, et un tour déjà clos par le
+      // garde-fou d'annulation n'a plus rien à dire.
+      if (!this.client || turn !== this.turnSeq || !this.turnActive) return
       this.ctx.emit({
         type: 'error',
         code: 'turn_failed',
         message: error instanceof Error ? error.message : String(error),
         recoverable: true,
       })
-      this.endTurn('failed', undefined, null)
+      this.endTurn('failed', undefined, null, turn)
     }
   }
 
-  private endTurn(stopReason: string, usage: PromptUsage | undefined, raw: unknown): void {
-    if (!this.turnActive) return
+  private endTurn(stopReason: string, usage: PromptUsage | undefined, raw: unknown, turn: number): void {
+    if (!this.turnActive || turn !== this.turnSeq) return
     this.turnActive = false
     this.clearCancelWatchdog()
     this.closeText()
     for (const [id] of this.tools) {
       this.ctx.emit({ type: 'tool.completed', toolCallId: id, output: 'Tool execution aborted', isError: true, durationMs: this.durations.stop(id) })
     }
-    this.tools.clear()
+    this.forgetTurnState()
     this.interactions.expireAll()
 
     this.ctx.emit(
@@ -880,8 +930,16 @@ export class GrokRunner implements AgentRunner {
     // La réponse au `session/prompt` (`cancelled`) clôt le tour. Le garde-fou couvre le
     // cas où elle ne vient jamais.
     this.clearCancelWatchdog()
-    this.cancelWatchdog = setTimeout(() => this.endTurn('cancelled', undefined, null), CANCEL_GRACE_MS)
+    const turn = this.turnSeq
+    this.cancelWatchdog = setTimeout(() => this.endTurn('cancelled', undefined, null, turn), CANCEL_GRACE_MS)
     this.cancelWatchdog.unref()
+  }
+
+  /** Ce que le runner retient des appels d'un tour, à oublier quand il se clôt. */
+  private forgetTurnState(): void {
+    this.tools.clear()
+    this.silentTools.clear()
+    this.elicitations.clear()
   }
 
   private clearCancelWatchdog(): void {
@@ -911,16 +969,25 @@ export class GrokRunner implements AgentRunner {
     if (!client || !this.sessionId || this.turnActive) return false
     this.compacting = 'manual'
     this.ctx.emit({ type: 'context.compaction_started' })
+    // La session est occupée le temps du résumé : un message envoyé entre-temps attend
+    // dans la file de Solera, au lieu d'ouvrir un `session/prompt` en parallèle.
+    this.ctx.setStatus('running')
+    const settle = () => {
+      if (this.client && !this.turnActive) this.ctx.setStatus('idle')
+    }
     client.request('_x.ai/compact_conversation', { sessionId: this.sessionId }, null).then(
       () => {
-        if (this.compacting !== 'manual') return
-        this.compacting = null
-        this.ctx.emit({ type: 'context.compacted', trigger: 'manual', preTokens: null, postTokens: null })
+        if (this.compacting === 'manual') {
+          this.compacting = null
+          this.ctx.emit({ type: 'context.compacted', trigger: 'manual', preTokens: null, postTokens: null })
+        }
+        settle()
       },
       (err: unknown) => {
         if (!this.client) return
         this.compacting = null
         this.notice('compaction_failed', `La compaction a échoué : ${err instanceof Error ? err.message : String(err)}`, 'warning')
+        settle()
       },
     )
     return true
@@ -949,7 +1016,11 @@ export class GrokRunner implements AgentRunner {
 
   /**
    * Modèle, effort et mode de permission se changent à chaud. Les outils web, les skills
-   * et les serveurs MCP demandent un nouveau process.
+   * et les serveurs MCP demandent un nouveau process. Les familles d'autorisation
+   * (mémoire, rangements, décisions) sont des variables du serveur `solera` : elles
+   * changent sa définition, donc la comparaison des serveurs, et relancent. Les
+   * `additionalDirectories` n'ont pas d'effet chez Grok, dont l'ACP ne les lit pas
+   * (sondé) : rien à relancer pour eux, un fichier hors du dossier passe par une permission.
    */
   async applyConfig(config: AgentConfig): Promise<boolean> {
     if (config.agent !== 'grok' || !this.launched || !this.client || !this.sessionId) return false

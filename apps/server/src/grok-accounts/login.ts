@@ -2,10 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { GrokLoginStatusDto } from '@solera/protocol'
-import { AcpClient } from '../agents/acp/client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { readGrokBilling } from '../agents/grok/billing.js'
-import { GROK_ISOLATION_ENV } from '../agents/grok/launch.js'
+import { GROK_ISOLATION_ENV, grokProbe } from '../agents/grok/launch.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { GrokAccountHomes } from './homes.js'
 import type { GrokAccountStore } from './store.js'
@@ -47,6 +46,7 @@ function plain(text: string): string {
 
 export class GrokLoginService {
   private readonly pending = new Map<string, PendingLogin>()
+  private readonly starting = new Map<string, Promise<GrokLoginStatusDto>>()
   private readonly outcomes = new Map<string, LoginOutcome>()
 
   constructor(
@@ -66,16 +66,26 @@ export class GrokLoginService {
     return { state: 'idle', verificationUrl: null, userCode: null, error: null }
   }
 
-  private env(home: string, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-    return agentProcessEnv({ ...GROK_ISOLATION_ENV, GROK_HOME: home, ...extra })
+  private env(home: string): NodeJS.ProcessEnv {
+    return agentProcessEnv({ ...GROK_ISOLATION_ENV, GROK_HOME: home })
   }
 
   /**
    * Par code d'appareil : rend l'URL et le code dès que Grok les a écrits, et garde le
    * process jusqu'à sa fin. Une connexion déjà en cours sur ce compte est reprise.
    */
-  async startDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
-    if (this.pending.has(accountId)) return this.status(accountId)
+  startDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
+    if (this.pending.has(accountId)) return Promise.resolve(this.status(accountId))
+    // Un second clic pendant que Grok n'a pas encore écrit son code reprend le premier
+    // lancement, au lieu d'en démarrer un autre : `pending` n'est posé qu'après le code.
+    const starting = this.starting.get(accountId)
+    if (starting) return starting
+    const started = this.spawnDeviceCode(accountId).finally(() => this.starting.delete(accountId))
+    this.starting.set(accountId, started)
+    return started
+  }
+
+  private async spawnDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
     this.outcomes.delete(accountId)
     const home = this.homes.ensure(accountId)
     const child = spawn(await this.binary(), ['login', '--device-auth'], {
@@ -131,13 +141,7 @@ export class GrokLoginService {
   async loginWithApiKey(accountId: string, apiKey: string): Promise<void> {
     await this.cancel(accountId)
     const home = this.homes.ensure(accountId)
-    const client = new AcpClient({
-      label: 'grok',
-      binary: await this.binary(),
-      args: ['agent', '--no-leader', 'stdio'],
-      cwd: home,
-      env: this.env(home, { XAI_API_KEY: apiKey }),
-    })
+    const client = grokProbe({ binary: await this.binary(), home, env: { XAI_API_KEY: apiKey } })
     try {
       await client.initialize(CLIENT_INFO)
       await client.request('authenticate', { methodId: 'xai.api_key' })

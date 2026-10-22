@@ -13,14 +13,12 @@ import {
 import type { Config } from '../../config.js'
 import { CliBinary, resolveBinary } from '../cli-binary.js'
 import type { EventLog } from '../../events/event-log.js'
-import { AcpClient } from '../acp/client.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
-import { agentProcessEnv } from '../process-env.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { GrokUsageReader } from './billing.js'
 import { GrokCatalog } from './catalog.js'
-import { GROK_ISOLATION_ENV } from './launch.js'
+import { grokProbe } from './launch.js'
 import { GrokRunner } from './runner.js'
 import { describeEdit } from './tools.js'
 
@@ -95,13 +93,8 @@ export class GrokAdapter implements AgentAdapter {
    */
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { targetPromptIndex } = cut as GrokForkCut
-    const client = new AcpClient({
-      label: 'grok',
-      binary: await this.cli.executable(),
-      args: ['agent', '--no-leader', 'stdio'],
-      cwd: target.cwd,
-      env: agentProcessEnv(GROK_ISOLATION_ENV),
-    })
+    // Dans le home du compte de la conversation : c'est là que Grok cherche la session.
+    const client = grokProbe({ binary: await this.cli.executable(), cwd: target.cwd, env: target.accountEnv })
     try {
       await client.initialize(CLIENT_INFO)
       const forked = await client.request<{ newSessionId?: unknown }>('_x.ai/session/fork', {

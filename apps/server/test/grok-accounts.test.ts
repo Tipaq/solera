@@ -69,6 +69,14 @@ test('home Grok d’un compte : lié au home de l’utilisateur, sauf la connexi
   assert.ok(!lstatSync(join(home, 'logs')).isSymbolicLink(), 'ce que Grok écrit dans le home du compte y reste')
 })
 
+test('home Grok d’un compte : les sessions sont liées même quand l’utilisateur n’en a pas encore', async (t) => {
+  const { userHome, homes } = await harness(t)
+  await rm(join(userHome, 'sessions'), { recursive: true })
+  const home = homes.ensure('acct')
+  assert.equal(readlinkSync(join(home, 'sessions')), join(userHome, 'sessions'))
+  assert.ok(lstatSync(join(userHome, 'sessions')).isDirectory(), 'le dossier est créé côté utilisateur')
+})
+
 test('connexion par code d’appareil : URL et code lus sur la sortie de grok login, courriel et formule retenus', async (t) => {
   const { store, homes, login } = await harness(t)
   const account = store.create('owner', 'Perso')
@@ -93,6 +101,16 @@ test('connexion par code d’appareil : URL et code lus sur la sortie de grok lo
   assert.equal(homes.connected(account.id), false)
   assert.equal(readFileSync(join(homes.path(account.id), 'logout.log'), 'utf8'), 'logout\n')
   assert.equal(store.find('owner', account.id)!.status, 'pending')
+})
+
+test('connexion par code d’appareil : un double clic ne lance qu’un grok login', async (t) => {
+  const { store, login } = await harness(t)
+  const account = store.create('owner', 'Double')
+  const first = login.startDeviceCode(account.id)
+  const second = login.startDeviceCode(account.id)
+  assert.equal(first, second, 'le second appel reprend le lancement en cours')
+  assert.equal((await first).userCode, 'W68V-VRXD')
+  await until(() => login.status(account.id).state === 'done', 'connexion')
 })
 
 test('connexion refusée : l’échec garde le motif écrit par Grok', async (t) => {

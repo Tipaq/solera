@@ -22,6 +22,12 @@ export class ForkError extends Error {}
 export interface ForkTarget {
   agentSessionId: string
   cwd: string
+  /**
+   * L'environnement du compte choisi pour la conversation (`GROK_HOME`…), tel que la
+   * session le reçoit : un CLI qui range ses sessions dans le home du compte les y
+   * cherche aussi pour forker.
+   */
+  accountEnv: Record<string, string>
 }
 
 /** Ce qu'il faut à un adaptateur pour reconstituer l'effet d'un appel d'outil. */

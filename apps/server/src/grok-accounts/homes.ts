@@ -25,6 +25,9 @@ export function userGrokHome(): string {
  */
 const PRIVATE = new Set(['auth.json', 'models_cache.json', 'settings_cache.json'])
 
+/** Le dossier des sessions, qui doit être un lien vers celui de l'utilisateur. */
+const SHARED_SESSIONS = 'sessions'
+
 export class GrokAccountHomes {
   constructor(private readonly root: string) {}
 
@@ -37,7 +40,11 @@ export class GrokAccountHomes {
     const home = this.path(accountId)
     mkdirSync(home, { recursive: true })
     const source = userGrokHome()
-    if (!existsSync(source)) return home
+    // Les sessions doivent être partagées dès le premier lancement : sans dossier côté
+    // utilisateur, Grok créerait un vrai `sessions/` dans le home du compte, jamais lié
+    // ensuite. Changer de compte ou forker ne retrouverait plus la session, et supprimer
+    // le compte en effacerait l'historique.
+    mkdirSync(join(source, SHARED_SESSIONS), { recursive: true })
 
     for (const name of readdirSync(source)) {
       if (PRIVATE.has(name)) continue

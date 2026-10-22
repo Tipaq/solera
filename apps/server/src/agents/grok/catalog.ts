@@ -1,10 +1,7 @@
-import { homedir } from 'node:os'
 import { usableSlashCommands, type SlashCommandDto } from '@solera/protocol'
-import { AcpClient } from '../acp/client.js'
 import { CachedProbe } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
-import { agentProcessEnv } from '../process-env.js'
-import { GROK_ISOLATION_ENV } from './launch.js'
+import { grokProbe } from './launch.js'
 import { fields } from './tools.js'
 
 /**
@@ -44,13 +41,7 @@ export class GrokCatalog {
   }
 
   private async read(): Promise<GrokListing> {
-    const client = new AcpClient({
-      label: 'grok',
-      binary: await this.executable(),
-      args: ['agent', '--no-leader', 'stdio'],
-      cwd: homedir(),
-      env: agentProcessEnv(GROK_ISOLATION_ENV),
-    })
+    const client = grokProbe({ binary: await this.executable() })
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
     try {
       const meta = fields((await client.initialize(CLIENT_INFO))._meta)

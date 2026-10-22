@@ -571,7 +571,11 @@ export class SessionManager {
     // retirer...) : l'adaptateur le calcule depuis le journal et le consomme lui-même.
     const adapter = this.registry.adapter(conversation.agent)
     return adapter.fork(
-      { agentSessionId: conversation.agentSessionId, cwd: this.resolveCwd(conversation) },
+      {
+        agentSessionId: conversation.agentSessionId,
+        cwd: this.resolveCwd(conversation),
+        accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
+      },
       adapter.forkCut(this.log, conversationId, throughSeq),
     )
   }

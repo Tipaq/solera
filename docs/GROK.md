@@ -54,6 +54,10 @@ Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
 - **Champ `systemPrompt` de l'ACP et option `--rules`** : ignorés par `grok agent`. Seul
   `_meta.rules` passe, et seulement à la création : une reprise garde le prompt système
   enregistré avec la session (`system_prompt.txt`).
+  Conséquence, propre à Grok parmi les quatre CLI : SOLERA.md, l'index de la mémoire et
+  le rappel des cartes restent ceux de la création de la session. Une relance, pour un
+  réglage ou au redémarrage du serveur, ne les met pas à jour ; seule une conversation
+  neuve le fait. Les outils du serveur `solera`, eux, suivent les réglages à la relance.
 - **Reprise** : `session/resume`, sans rejeu de l'historique. `session/load` rejouerait
   tout en `session/update`. `session/resume` refuse `additionalDirectories`, et
   `session/new` ne le lit pas : les fichiers hors du dossier de travail passent par une
@@ -72,7 +76,11 @@ Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
   sont les extraits remplacés, pas les fichiers entiers : le diff affiché est partiel.
 - **Permission** : `session/request_permission` propose `allow-once`,
   `allow-edits-session`, `always-allow`, `reject-once`… Grok lit la réponse par son
-  genre (`allow_once`, `allow_always`, `reject_once`). **Un refus clôt le tour entier**
+  genre (`allow_once`, `allow_always`, `reject_once`). Solera ne répond jamais
+  `allow_always`, qui peut devenir une règle permanente dans `~/.grok` pour tous les
+  projets : un accord « pour la session » est tenu par Solera (l'outil, et pour une
+  commande la commande exacte), qui répond `allow_once` aux appels semblables. Sans
+  `allow_once` proposé, l'accord devient un refus. **Un refus clôt le tour entier**
   (`cancelled`, catégorie `PermissionRejected`), journalisé en `permission_denied`.
 - **Questions** : requête `_x.ai/ask_user_question`, réponses rangées par intitulé de
   question. L'outil est actif par défaut.
@@ -101,7 +109,9 @@ La connexion du CLI : `grok login --device-auth` sur la machine qui fait tourner
 
 Des comptes supplémentaires se déclarent dans **Réglages › Comptes Grok**, sur le modèle
 des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, lié au
-home de l'utilisateur sauf `auth.json`, `models_cache.json` et `settings_cache.json`. La
+home de l'utilisateur sauf `auth.json`, `models_cache.json` et `settings_cache.json`. Le
+dossier `sessions/` est créé côté utilisateur avant d'être lié, pour que changer de
+compte ou forker retrouve la session, et le fork tourne dans le home du compte. La
 connexion passe par `grok login --device-auth` lancé dans ce home (Solera lit l'URL et le
 code sur sa sortie), ou par la méthode ACP `xai.api_key`, que Grok enregistre dans
 l'`auth.json` du home. La déconnexion joue `grok logout` puis retire cet `auth.json`.
