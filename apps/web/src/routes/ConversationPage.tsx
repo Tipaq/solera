@@ -20,6 +20,7 @@ import { AGENT_CAPABILITIES } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { HeaderBand } from '../components/HeaderBand'
+import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
@@ -40,6 +41,7 @@ import {
   compactConversation,
   conversationsKey,
   forkConversation,
+  useHandoff,
   interruptConversation,
   sendMessage,
   steerConversation,
@@ -274,6 +276,8 @@ export function ConversationPage() {
   /** Dernier tour atteint par un saut, mis en évidence le temps qu'on le repère. */
   const [flashed, setFlashed] = useState<string | null>(null)
   const [metaOpen, setMetaOpen] = useState(false)
+  /** Dialogue « Continuer dans un autre CLI » : le geste change d'outil, il se confirme. */
+  const [handoffOpen, setHandoffOpen] = useState(false)
   const [findOpen, setFindOpen] = useState(false)
 
   /** Nombre de lignes montées, en partant de la fin. Voir `thread-window`. */
@@ -773,6 +777,9 @@ export function ConversationPage() {
     [conversationId, navigate, queryClient, t],
   )
 
+  // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
+  const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
+
   // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
   // pas : il rejoint la garde plutôt que d'être forcé plus bas.
   if (!conversationId || !conversation || !config) return null
@@ -799,6 +806,9 @@ export function ConversationPage() {
     ?? (head?.detached ? t('conversation.meta.detached', { hash: head.detached }) : null)
   const origin = conversation.forkedFromId
     ? allConversations?.find((entry) => entry.id === conversation.forkedFromId)
+    : undefined
+  const continued = conversation.handoffFromId
+    ? allConversations?.find((entry) => entry.id === conversation.handoffFromId)
     : undefined
 
   const compact = async () => {
@@ -1030,6 +1040,20 @@ export function ConversationPage() {
                   </Link>
                 ) : null}
 
+                {/* Une suite dit quel fil elle continue, et avec quel CLI il était mené :
+                    c'est ce qui explique que l'agent connaisse un travail que ce fil ne
+                    montre pas. */}
+                {continued ? (
+                  <Link
+                    to={conversationPath(continued)}
+                    className="flex shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 hover:text-ink"
+                    title={t('conversation.meta.continues', { title: continued.title, agent: AGENT_LABELS[continued.agent] })}
+                  >
+                    <AgentIcon agent={continued.agent} size={10} />
+                    <span className="max-w-32 truncate">{continued.title}</span>
+                  </Link>
+                ) : null}
+
                 {/* Le chemin de retour vers le chantier : depuis une session, on remonte
                     au travail qu'elle traite. Il ouvre la vue *Projet* du panneau plutôt
                     que le board, pour lire la carte sans quitter la session — et ferme ce
@@ -1057,6 +1081,23 @@ export function ConversationPage() {
                     <Terminal size={11} />
                     {t('conversation.meta.apiControlled', { label: conversation.origin.label })}
                   </span>
+                ) : null}
+
+                {/* Ce que l'agent d'une suite sait de sa source : le bloc tel qu'il
+                    l'a reçu, pour vérifier ce qui lui manque avant de le lui redire. */}
+                {handoff.data ? (
+                  <details className="basis-full text-xs">
+                    <summary className="cursor-pointer text-ink-soft">
+                      {t('conversation.meta.handoff')} ·{' '}
+                      {t('conversation.meta.handoffSize', {
+                        kilobytes: Math.max(1, Math.round(handoff.data.bytes / 1000)),
+                        budget: Math.round(handoff.data.budgetTokens / 1000),
+                      })}
+                    </summary>
+                    <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-sunken p-2 text-[0.6875rem] whitespace-pre-wrap text-ink-soft">
+                      {handoff.data.text}
+                    </pre>
+                  </details>
                 ) : null}
 
                 {/* Tout vient du fold : le journal est la seule source d'affichage (I2),
@@ -1112,6 +1153,10 @@ export function ConversationPage() {
           </p>
           <p>{t('conversation.fork.confirm.unaffected')}</p>
         </ConfirmDialog>
+
+        {handoffOpen ? (
+          <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
+        ) : null}
 
         <ThreadSearch
           scroller={scroller}
@@ -1300,6 +1345,7 @@ export function ConversationPage() {
             onCompact={isOwner ? () => void compact() : undefined}
             onFind={() => setFindOpen(true)}
             onDetails={() => setMetaOpen(true)}
+            onHandoff={() => setHandoffOpen(true)}
             canCompact={!compacting && !stream.state.compacting && stream.status === 'idle'}
             onSteer={canSteer ? steer : undefined}
             onSend={send}

@@ -178,6 +178,8 @@ interface ComposerProps {
    */
   onFind?(): void
   onDetails?(): void
+  /** Continuer le fil dans un autre CLI, à côté de ses détails. Absent du brouillon. */
+  onHandoff?(): void
   /**
    * Infléchit le tour en cours, là où le CLI le permet.
    *
@@ -241,6 +243,7 @@ export function Composer({
   canCompact = false,
   onFind,
   onDetails,
+  onHandoff,
   onSteer,
   initialText = '',
   variant = 'thread',
@@ -852,6 +855,7 @@ export function Composer({
               commands={commands}
               onFind={onFind}
               onDetails={onDetails}
+              onHandoff={onHandoff}
             />
 
             {/* Dehors, et pas dans le menu : c'est l'action la plus fréquente au doigt. */}

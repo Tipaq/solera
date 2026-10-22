@@ -11,7 +11,7 @@ import {
   cx,
   useMediaQuery,
 } from '@solera/ui'
-import { BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
+import { ArrowRightLeft, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
 import { useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
@@ -78,6 +78,8 @@ interface ComposerPlusMenuProps {
    */
   onFind?: () => void
   onDetails?: () => void
+  /** Continuer le fil dans un autre CLI : il se décrit avec ses détails, il en part. */
+  onHandoff?: () => void
 }
 
 /** Le raccourci de la recherche dans le fil, écrit comme le clavier de la machine. */
@@ -124,7 +126,7 @@ function PlusTrigger({ status, disabled, ...rest }: {
  * l'inventaire des skills et les réglages au complet, s'ouvrent en boîte : elles
  * portent une recherche, un défilement et des sections, qu'un menu ne sait pas tenir.
  */
-function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands, onFind, onDetails }: ComposerPlusMenuProps) {
+function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands, onFind, onDetails, onHandoff }: ComposerPlusMenuProps) {
   const t = useTranslate()
   const settingsGroups = groups.filter((group) => !IN_SKILLS_MENU.includes(group.key))
   const librarySetting = groups.find((group) => group.key === 'skillLibrary')
@@ -142,7 +144,7 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
       <MenuSub icon={<PlugZap size={16} />} label={t('composer.plus.mcp')} value={mcpSummary}>
         {mcpItems}
       </MenuSub>
-      {onFind || onDetails ? <MenuSeparator /> : null}
+      {onFind || onDetails || onHandoff ? <MenuSeparator /> : null}
       {onFind ? (
         <MenuItem icon={<Search size={16} />} shortcut={FIND_HINT} onSelect={onFind}>
           {t('conversation.search')}
@@ -151,6 +153,11 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
       {onDetails ? (
         <MenuItem icon={<Info size={16} />} onSelect={onDetails}>
           {t('conversation.meta.details')}
+        </MenuItem>
+      ) : null}
+      {onHandoff ? (
+        <MenuItem icon={<ArrowRightLeft size={16} />} onSelect={onHandoff}>
+          {t('conversation.handoff.menu')}
         </MenuItem>
       ) : null}
       <MenuSeparator />
@@ -223,6 +230,7 @@ function PlusSheet({
   commands,
   onFind,
   onDetails,
+  onHandoff,
 }: ComposerPlusMenuProps) {
   const t = useTranslate()
   const [view, setView] = useState<View>('root')
@@ -283,7 +291,7 @@ function PlusSheet({
                 </Entry>
                 {/* Pas de raccourci écrit sur cette pile : elle ne s'ouvre qu'au doigt,
                     où il n'y a pas de clavier pour le jouer. */}
-                {onFind || onDetails ? <div className="my-1 h-px bg-line" /> : null}
+                {onFind || onDetails || onHandoff ? <div className="my-1 h-px bg-line" /> : null}
                 {onFind ? (
                   <Entry icon={<Search size={16} />} onClick={() => { close(); onFind() }}>
                     {t('conversation.search')}
@@ -292,6 +300,11 @@ function PlusSheet({
                 {onDetails ? (
                   <Entry icon={<Info size={16} />} onClick={() => { close(); onDetails() }}>
                     {t('conversation.meta.details')}
+                  </Entry>
+                ) : null}
+                {onHandoff ? (
+                  <Entry icon={<ArrowRightLeft size={16} />} onClick={() => { close(); onHandoff() }}>
+                    {t('conversation.handoff.menu')}
                   </Entry>
                 ) : null}
                 <div className="my-1 h-px bg-line" />

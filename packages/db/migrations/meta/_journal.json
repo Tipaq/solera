@@ -302,6 +302,13 @@
       "when": 1792690712602,
       "tag": "0042_points_de_reprise",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1792690854523,
+      "tag": "0043_passation_entre_cli",
+      "breakpoints": true
     }
   ]
 }
