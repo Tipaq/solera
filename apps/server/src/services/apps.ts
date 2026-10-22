@@ -178,3 +178,16 @@ export async function controlServiceApp(unit: string, action: ServiceAppAction):
   // et la liste, rafraîchie toutes les 5 secondes, dira où elle en est.
   await systemctl(action === 'reset' ? ['reset-failed', unit] : ['--no-block', action, unit])
 }
+
+let userManager: Promise<boolean> | null = null
+
+/**
+ * Un gestionnaire systemd utilisateur répond-il ? Non sous macOS, ni dans un conteneur
+ * sans systemd. Demandé une fois par process : la réponse ne change pas sans
+ * redémarrage de la machine.
+ */
+export function serviceAppsAvailable(): Promise<boolean> {
+  if (process.platform !== 'linux') return Promise.resolve(false)
+  userManager ??= systemctl(['show-environment']).then(() => true, () => false)
+  return userManager
+}
