@@ -3,9 +3,10 @@
 Solera lance un `grok agent --no-leader stdio` par conversation et lui parle en **ACP**
 (Agent Client Protocol) : du JSON-RPC sur stdio, une ligne par message, comme l'éditeur
 Zed. Grok Build double l'ACP standard d'extensions `_x.ai/…`, dans les deux sens. Tout
-ce qui suit a été sondé sur **Grok Build 1.0.62** et lu dans ses sources publiques
-(`xai-org/grok-build`, Apache-2.0, dont le dépôt public avait la 1.0.45 au moment de
-l'intégration).
+ce qui suit a été sondé en amont, sur Sillage, sur **Grok Build 1.0.62** et lu dans ses
+sources publiques (`xai-org/grok-build`, Apache-2.0, dont le dépôt public avait la 1.0.45
+au moment de l'intégration). Le portage dans Solera (lot 10, 2026-10-22) n'a été joué
+que contre le faux Grok des tests : aucun binaire Grok n'est installé sur la machine.
 
 Le client ACP (`apps/server/src/agents/acp/client.ts`) est écrit à la main ; seuls les
 types viennent du SDK officiel `@agentclientprotocol/sdk`. La `ClientSideConnection` du
@@ -42,6 +43,7 @@ sous-commande.
 | Bibliothèque de skills | `--plugin-dir` par racine ; `_x.ai/plugins/reload` après une écriture | relance pour l'interrupteur |
 | Serveurs MCP du registre, serveur de Solera | `mcpServers` de `session/new` (stdio, http, sse) | relance |
 | SOLERA.md, mémoire, transfert entre CLI | `_meta.rules` de `session/new`, ajouté au prompt système dans `<human_rules>` | à la création seulement |
+| Mémoire, rangement de projet et de carte, décisions | Outils du serveur `solera`, listés à son lancement ; l'index de la mémoire part aussi dans `_meta.rules` | relance |
 | Consignes tenues dans SOLERA.md | `_meta.agentProfile` avec `agentsMd: false` : les `AGENTS.md`/`CLAUDE.md` du dépôt sont sinon toujours lus | à la création et à la reprise |
 
 Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`

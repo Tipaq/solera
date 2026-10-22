@@ -22,6 +22,11 @@ Ce qu'on perd en coupant, et qu'il faut assumer : il entretenait la plomberie de
 (~8 commits par mois sur `agents/claude`, `agents/codex`, `cli/`). Quand Claude Code ou
 Codex changent leur protocole, c'est à nous de réparer.
 
+Ce que chaque adaptateur suppose de son CLI, tel qu'il a été sondé, est écrit à côté du
+code : `docs/CODEX.md`, `docs/OPENCODE.md` et `docs/GROK.md` (Grok Build, le quatrième,
+piloté par l'Agent Client Protocol et ses extensions `_x.ai/…`). C'est la première
+chose à relire quand un CLI change de version, et à tenir à jour après la réparation.
+
 ## Le nom
 
 Le produit s'appelle **Solera** — le système de barriques du xérès, où l'on recomplète la
