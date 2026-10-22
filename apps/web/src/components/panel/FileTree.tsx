@@ -21,7 +21,8 @@ import { Fragment, useEffect, useRef, useState, type DragEvent, type ReactNode }
 import type { FileState, TreeEntryDto } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { referenceInComposer } from '../../lib/composer-ref'
-import { openTab, useEditorTabs } from '../../lib/editor-tabs'
+import { hasDraft, moveDocuments } from '../../lib/editor-documents'
+import { closeTab, moveTabs, openTab, useEditorTabs } from '../../lib/editor-tabs'
 import {
   parentOf,
   siblingPath,
@@ -93,7 +94,7 @@ export function FileTree({
   onCollapse: () => void
 }) {
   const t = useTranslate()
-  const { active: activePath } = useEditorTabs(scope)
+  const { active: activePath, paths: openPaths } = useEditorTabs(scope)
   const [draft, setDraft] = useState<Draft | null>(null)
   /** Entrée dont la suppression est proposée : le geste est sans retour possible. */
   const [pendingDelete, setPendingDelete] = useState<TreeEntryDto | null>(null)
@@ -113,6 +114,31 @@ export function FileTree({
   const refresh = useRefreshTree(scope)
   useEffect(() => registerTreeRefresh(scope, refresh), [scope, refresh])
 
+  /**
+   * Un renommage ou un déplacement réussi : les onglets suivent l'entrée, brouillon
+   * compris. Restés sous l'ancien chemin, l'enregistrement y recréerait le fichier.
+   */
+  const moveEntry = (from: string, to: string) =>
+    move.mutate({ from, to }, {
+      onSuccess: () => {
+        moveDocuments(scope, from, to)
+        moveTabs(scope, from, to)
+      },
+    })
+
+  /**
+   * Une suppression réussie ferme les onglets de ce qui a disparu. Sauf ceux qui portent
+   * un brouillon : c'est la dernière copie du travail, et il doit rester récupérable.
+   */
+  const deleteEntry = (path: string) =>
+    remove.mutate({ path }, {
+      onSuccess: () => {
+        for (const open of openPaths) {
+          if ((open === path || open.startsWith(`${path}/`)) && !hasDraft(scope, open)) closeTab(scope, open)
+        }
+      },
+    })
+
   const openPicker = (parent: string) => {
     setUploadInto(parent)
     picker.current?.click()
@@ -130,12 +156,12 @@ export function FileTree({
     },
     onRename: (path, name) => {
       setDraft(null)
-      if (name !== path.split('/').pop()) move.mutate({ from: path, to: siblingPath(path, name) })
+      if (name !== path.split('/').pop()) moveEntry(path, siblingPath(path, name))
     },
     onMove: (from, toParent) => {
       const name = from.split('/').pop() ?? from
       const to = toParent ? `${toParent}/${name}` : name
-      if (to !== from) move.mutate({ from, to })
+      if (to !== from) moveEntry(from, to)
     },
     onDelete: setPendingDelete,
     onDrop: (parent, transfer) => {
@@ -268,7 +294,7 @@ export function FileTree({
         confirmLabel={t('filetree.delete.confirm')}
         tone="critical"
         onConfirm={() => {
-          if (pendingDelete) remove.mutate({ path: pendingDelete.path })
+          if (pendingDelete) deleteEntry(pendingDelete.path)
           setPendingDelete(null)
         }}
       >
