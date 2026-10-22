@@ -78,7 +78,7 @@ export interface AccountUsageEntry extends UsageTarget {
  * montre côte à côte. Un CLI en échec n'empêche pas les autres de s'afficher, il porte
  * son erreur dans sa section.
  */
-export function useAccountUsage(targets: UsageTarget[]) {
+export function useAccountUsage(targets: UsageTarget[], enabled = true) {
   const combine = useCallback(
     (results: UseQueryResult<AgentUsage, Error>[]) => ({
       // Parcouru dans l'ordre des cibles et non dans celui des résultats : c'est leur
@@ -105,7 +105,10 @@ export function useAccountUsage(targets: UsageTarget[]) {
     [targets],
   )
 
-  return useQueries({ queries: targets.map(usageQuery), combine })
+  return useQueries({
+    queries: targets.map((target) => ({ ...usageQuery(target), enabled })),
+    combine,
+  })
 }
 
 /**
