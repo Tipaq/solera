@@ -50,9 +50,11 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
 - **Worktrees.** Start a conversation on the project root, on an existing
   worktree, or on a branch Solera creates for it.
 - **Full-text search** across every conversation in every project.
-- **Processes launched by Solera.** On Linux, see commands and services still
-  attached to Solera, their parent, ports and originating conversation. Independent
-  systemd services and tmux sessions are excluded. [Detection and limits](docs/services.md).
+- **Processes launched by Solera.** On Linux, see what each agent and terminal has
+  started, each command with its process tree, ports and originating conversation,
+  plus the permanent apps agents run as `solera-app-*` systemd units; stop them from
+  the same page. Other systemd services and tmux sessions are excluded.
+  [Detection and limits](docs/services.md).
 - **A board the agents can read and add to.** Cards per project, handed to the
   agent through a built-in MCP server: a session can read its card, look up what an
   earlier one decided, see which sessions are running, and leave a note for the
