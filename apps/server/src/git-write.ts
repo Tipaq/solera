@@ -44,9 +44,32 @@ import { GitError } from './git.js'
  *
  * Le verrou de concurrence, lui, n'est pas ici mais dans la route : il tient à la base
  * (quel fil travaille dans ce répertoire) et pas au dépôt.
+ * Ici, seulement la file (`serialized`) qui empêche deux écritures du serveur de se
+ * croiser.
  */
 
 const run = promisify(execFile)
+
+const queues = new Map<string, Promise<unknown>>()
+
+/**
+ * Une écriture à la fois par dépôt.
+ *
+ * Le verrou de la route refuse un geste pendant qu'un fil travaille ; il ne voit pas
+ * deux écritures du serveur lui-même qui se croisent — un geste de l'onglet Git et la
+ * restauration d'un tour, par exemple, qui réécrivent tous deux l'index et l'arbre.
+ */
+export function serialized<T>(cwd: string, task: () => Promise<T>): Promise<T> {
+  const previous = queues.get(cwd) ?? Promise.resolve()
+  const next = previous.then(task, task)
+  const settled = next.catch(() => {})
+  queues.set(cwd, settled)
+  // La file se vide derrière elle : un dépôt ouvert une fois ne garde pas d'entrée.
+  void settled.then(() => {
+    if (queues.get(cwd) === settled) queues.delete(cwd)
+  })
+  return next
+}
 
 /** Les lectures d'état sont courtes ; un `log` sur un gros dépôt peut traîner. */
 const READ_TIMEOUT_MS = 15_000

@@ -29,6 +29,7 @@
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
     "test:palette-ui": "node scripts/palette-ui-check.mjs",
+    "test:checkpoints-ui": "node scripts/checkpoints-ui-check.mjs",
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "test:vault-ui": "node scripts/vault-ui-check.mjs",
     "test:web-ui": "node scripts/web-ui-check.mjs",

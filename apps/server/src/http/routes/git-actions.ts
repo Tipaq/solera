@@ -11,7 +11,7 @@ import {
 } from '@solera/protocol'
 import { credentialEnv } from '../../git-credential/helper.js'
 import { GitError } from '../../git.js'
-import { impactOf, perform, readStashDetails, readWriteState, UndoJournal } from '../../git-write.js'
+import { impactOf, perform, readStashDetails, readWriteState, serialized, UndoJournal } from '../../git-write.js'
 import type { AppContext } from '../context.js'
 import { HttpError, badRequest, conflict } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -180,7 +180,7 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
 
       refuseWhileRunning(ctx, cwd)
       try {
-        const outcome = await perform(cwd, action, credentialEnv(ctx.config.paths, user.id))
+        const outcome = await serialized(cwd, () => perform(cwd, action, credentialEnv(ctx.config.paths, user.id)))
         journal.record(cwd, outcome.undo)
         return { message: outcome.message }
       } catch (err) {
@@ -195,7 +195,7 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
 
       refuseWhileRunning(ctx, cwd)
       try {
-        await journal.undo(cwd)
+        await serialized(cwd, () => journal.undo(cwd))
         return { message: '' }
       } catch (err) {
         throw gitFailure(err)
@@ -209,7 +209,7 @@ export function registerGitActionRoutes(app: FastifyInstance, ctx: AppContext): 
 
       refuseWhileRunning(ctx, cwd)
       try {
-        await journal.redo(cwd, credentialEnv(ctx.config.paths, user.id))
+        await serialized(cwd, () => journal.redo(cwd, credentialEnv(ctx.config.paths, user.id)))
         return { message: '' }
       } catch (err) {
         throw gitFailure(err)
@@ -234,7 +234,7 @@ function parseAction(body: unknown): GitAction {
  * bandeau qui dit « indisponible » sans dire qui travaille ni quoi attendre n'apprend
  * rien (planche `tour-1/clair/04`).
  */
-function refuseWhileRunning(ctx: AppContext, cwd: string): void {
+export function refuseWhileRunning(ctx: AppContext, cwd: string): void {
   const lock = lockOf(ctx.db, cwd)
   if (!lock) return
   throw conflict('turn_running', 'An agent is working in this directory ({title}).', {

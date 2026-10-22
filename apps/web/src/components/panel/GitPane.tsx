@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import type { TurnCheckpoint } from '../../lib/chat-fold'
+import { clearCheckpoint, usePanelCheckpoint } from '../../lib/panel'
 import { decodeScope, type WorkspaceScope } from '../../lib/workspace-scope'
+import { RestoreCheckpointDialog } from '../chat/RestoreCheckpointDialog'
 import { GitActionsProvider, useGitActions } from './git/actions'
 import { ErrorBanner, LockBanner, UndoBanner } from './git/banners'
 import { BranchesView } from './git/BranchesView'
@@ -14,6 +17,7 @@ import { Rail, type Destination } from './git/rail'
 import { SearchView } from './git/SearchView'
 import { StashesView } from './git/StashesView'
 import { Toolbar } from './git/toolbar'
+import { TurnChangesView } from './git/TurnChangesView'
 import { WorkingView } from './git/WorkingView'
 import type { MenuContext } from './git/menus'
 import {
@@ -63,12 +67,21 @@ import {
 export function GitPane({
   scope,
   projectId,
+  conversationId,
+  checkpoints = [],
+  canRestore = false,
   turnRunning,
   onOpenFile,
 }: {
   scope: WorkspaceScope
   /** Pour ouvrir le fil qui a écrit un commit : une conversation vit sous son projet. */
   projectId: string | null
+  /** Absente en vue projet : il n'y a alors pas de tour à montrer. */
+  conversationId?: string
+  /** Points de reprise des tours, pour la vue filtrée sur un tour désigné depuis le fil. */
+  checkpoints?: TurnCheckpoint[]
+  /** Vrai pour le propriétaire du fil, hors tour : lui seul peut ramener le workspace. */
+  canRestore?: boolean
   turnRunning: boolean
   onOpenFile: (path: string) => void
 }) {
@@ -92,6 +105,13 @@ export function GitPane({
    * sur *ces* commits, qui part du menu de l'un d'eux ou de la branche courante.
    */
   const [rebasing, setRebasing] = useState<{ onto: string | null } | null>(null)
+
+  // Le tour désigné depuis le fil, s'il appartient bien à cette conversation.
+  const checkpointKey = usePanelCheckpoint()
+  const checkpoint = conversationId
+    ? (checkpoints.find((entry) => entry.key === checkpointKey) ?? null)
+    : null
+  const [restoring, setRestoring] = useState<TurnCheckpoint | null>(null)
 
   const body = useRef<HTMLDivElement>(null)
   const state = useGitState(scope)
@@ -173,6 +193,9 @@ export function GitPane({
     setSelected(null)
   }
 
+  /** Ni tour ni rebase ne tient la colonne : les destinations du rail s'y montrent. */
+  const browsing = !checkpoint && !rebasing
+
   const menus: MenuContext = {
     branch: state.data?.branch ?? null,
     locked: state.data?.lock !== null && state.data?.lock !== undefined,
@@ -206,6 +229,7 @@ export function GitPane({
             onSelect={(next) => {
               setDestination(next)
               setSelected(null)
+              clearCheckpoint()
               // Quitter le rail ferme le plan de rebase qu'on composait — sauf s'il
               // court déjà, auquel cas il n'y a rien à quitter.
               if (!running) setRebasing(null)
@@ -213,7 +237,21 @@ export function GitPane({
           />
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {rebasing ? (
+            {/* Le tour désigné depuis le fil prend la colonne, comme un rebase : c'est la
+                question « qu'est-ce qui a changé ? » posée à un tour plutôt qu'au dépôt.
+                Le rail le referme, et la croix ramène au dépôt. */}
+            {checkpoint && conversationId ? (
+              <TurnChangesView
+                conversationId={conversationId}
+                checkpoint={checkpoint}
+                canRestore={canRestore}
+                onRestore={setRestoring}
+                onClose={clearCheckpoint}
+                onOpenFile={onOpenFile}
+              />
+            ) : null}
+
+            {!checkpoint && rebasing ? (
               <RebaseView
                 scope={scope}
                 onto={rebasing.onto}
@@ -222,7 +260,7 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && reading && selected !== null ? (
+            {browsing && reading && selected !== null ? (
               <CommitDetail
                 scope={scope}
                 hash={selected}
@@ -232,7 +270,7 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && destination === 'graph' && !reading ? (
+            {browsing && destination === 'graph' && !reading ? (
               <GraphView
                 scope={scope}
                 filters={{}}
@@ -246,7 +284,7 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && destination === 'working' ? (
+            {browsing && destination === 'working' ? (
               <WorkingView
                 scope={scope}
                 pendingReview={pendingReview}
@@ -256,13 +294,13 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && destination === 'branches' ? (
+            {browsing && destination === 'branches' ? (
               <BranchesView scope={scope} menus={menus} onOpenThread={openThread} />
             ) : null}
 
-            {!rebasing && destination === 'stashes' ? <StashesView scope={scope} /> : null}
+            {browsing && destination === 'stashes' ? <StashesView scope={scope} /> : null}
 
-            {!rebasing && destination === 'conflicts' ? (
+            {browsing && destination === 'conflicts' ? (
               <ConflictsView
                 scope={scope}
                 threadId={threadId}
@@ -271,7 +309,7 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && destination === 'search' && !reading ? (
+            {browsing && destination === 'search' && !reading ? (
               <SearchView
                 scope={scope}
                 filters={filters}
@@ -285,7 +323,7 @@ export function GitPane({
               />
             ) : null}
 
-            {!rebasing && destination === 'history' ? (
+            {browsing && destination === 'history' ? (
               <HistoryView
                 scope={scope}
                 path={file?.path ?? null}
@@ -302,7 +340,7 @@ export function GitPane({
             ) : null}
           </div>
 
-          {!rebasing && opened && beside && selected !== null ? (
+          {browsing && opened && beside && selected !== null ? (
             <div className="flex min-h-0 w-[28rem] max-w-[45%] shrink-0 flex-col border-l border-line">
               <CommitDetail
                 key={selected}
@@ -317,6 +355,14 @@ export function GitPane({
           ) : null}
         </div>
       </div>
+      {conversationId ? (
+        <RestoreCheckpointDialog
+          conversationId={conversationId}
+          checkpoint={restoring}
+          openerText={restoring?.openerText ?? ''}
+          onClose={() => setRestoring(null)}
+        />
+      ) : null}
     </GitActionsProvider>
   )
 }

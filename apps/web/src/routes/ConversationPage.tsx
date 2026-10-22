@@ -31,6 +31,7 @@ import { ThreadSearch } from '../components/chat/ThreadSearch'
 import { TurnActivity } from '../components/chat/TurnActivity'
 import { TurnNav } from '../components/chat/TurnNav'
 import { UsagePanel } from '../components/UsagePanel'
+import { RestoreCheckpointDialog } from '../components/chat/RestoreCheckpointDialog'
 import { UsageSummary } from '../components/chat/UsageSummary'
 import { useAgentModels } from '../lib/agents'
 import { syncClaudeConversation } from '../lib/claude-sessions'
@@ -50,11 +51,11 @@ import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
-import { clearSubAgent, setPanelOpen, setPanelTab, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
-import { describeActivity, type MessageItem } from '../lib/chat-fold'
+import { describeActivity, type MessageItem, type TurnCheckpoint } from '../lib/chat-fold'
 import { buildBackground, type BackgroundWork } from '../lib/background'
 import { buildLoops, type ArmedLoop } from '../lib/loops'
 import { buildSignals, type SignalKind } from '../lib/signals'
@@ -265,6 +266,8 @@ export function ConversationPage() {
   const [forking, setForking] = useState(false)
   /** Message dont le fork est proposé : le geste est trop peu courant pour être direct. */
   const [forkTarget, setForkTarget] = useState<MessageItem | null>(null)
+  /** Tour dont on propose de défaire les changements du workspace. */
+  const [restoreTarget, setRestoreTarget] = useState<TurnCheckpoint | null>(null)
   /** Échec d'une action ponctuelle sur la conversation : fork, compaction. */
   const [actionError, setActionError] = useState<string | null>(null)
   const [compacting, setCompacting] = useState(false)
@@ -1084,6 +1087,13 @@ export function ConversationPage() {
             question se pose. */}
         <UsagePanel agent={conversation.agent} open={usageOpen} onOpenChange={setUsageOpen} />
 
+        <RestoreCheckpointDialog
+          conversationId={conversationId}
+          checkpoint={restoreTarget}
+          openerText={restoreTarget?.openerText ?? ''}
+          onClose={() => setRestoreTarget(null)}
+        />
+
         <ConfirmDialog
           open={forkTarget !== null}
           onOpenChange={(next) => {
@@ -1185,6 +1195,9 @@ export function ConversationPage() {
                 onFork={isOwner && !forking ? setForkTarget : undefined}
                 flashedId={flashed}
                 anchors={turnAnchors}
+                checkpoints={stream.state.checkpoints}
+                onShowChanges={(checkpoint) => showCheckpoint(checkpoint.key)}
+                onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
               />
     
               {/* Sous le fil : ce que l'agent n'a pas encore lu. */}
@@ -1323,6 +1336,8 @@ export function ConversationPage() {
             workspaceName={conversation.worktreeId ? (worktree?.name ?? '…') : undefined}
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
+            checkpoints={stream.state.checkpoints}
+            canRestore={isOwner && !stream.state.turnRunning}
             turnRunning={stream.state.turnRunning}
             subAgents={subAgents}
             background={background}

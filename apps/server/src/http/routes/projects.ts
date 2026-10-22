@@ -114,6 +114,7 @@ export function registerProjectRoutes(
           defaultConfig: readProjectDefaults(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           designSystemPath: project.designSystemPath,
+          turnCheckpoints: project.turnCheckpoints,
           activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
         }
@@ -271,6 +272,7 @@ export function registerProjectRoutes(
         body.designSystemPath === null ? null : await assertDesignSystemDir(body.designSystemPath)
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
+    if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
