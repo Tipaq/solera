@@ -42,6 +42,13 @@ const MAX_STDERR_CHARS = 4000
 /** Après le délai, le temps laissé au script pour se terminer proprement. */
 const KILL_GRACE_MS = 3000
 
+/**
+ * Après la sortie du script, le temps laissé aux tuyaux pour livrer ce qu'il a écrit.
+ * Pas plus : un descendant lancé en arrière-plan (`sleep 60 &`, ou détaché par `setsid`)
+ * hérite des tuyaux et les tiendrait ouverts aussi longtemps qu'il vit.
+ */
+const EXIT_DRAIN_MS = 200
+
 export interface CheckContext {
   taskId: string
   taskName: string
@@ -127,11 +134,23 @@ function execute(
     let stderr = ''
     let timedOut = false
     let settled = false
+    let killer: NodeJS.Timeout | undefined
+    let drain: NodeJS.Timeout | undefined
+
+    // Un groupe de processus à lui : le délai doit emporter les commandes que le script
+    // a lancées, pas seulement le shell.
+    const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+
     const finish = (exitCode: number | null, extraError = '') => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       clearTimeout(killer)
+      clearTimeout(drain)
+      // Un descendant peut tenir encore les tuyaux : on lâche nos bouts plutôt que de
+      // l'attendre, sans quoi le tir resterait « en vérification » pour toujours.
+      child.stdout?.destroy()
+      child.stderr?.destroy()
       const errorText = `${stderr}${extraError}`
       resolve({
         verdict: verdictOf(exitCode, timedOut),
@@ -143,9 +162,6 @@ function execute(
       })
     }
 
-    // Un groupe de processus à lui : le délai doit emporter les commandes que le script
-    // a lancées, pas seulement le shell.
-    const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const kill = (signal: NodeJS.Signals) => {
       try {
         if (child.pid) process.kill(-child.pid, signal)
@@ -153,11 +169,15 @@ function execute(
         // Déjà terminé.
       }
     }
-    let killer: NodeJS.Timeout | undefined
     const timer = setTimeout(() => {
       timedOut = true
       kill('SIGTERM')
-      killer = setTimeout(() => kill('SIGKILL'), KILL_GRACE_MS)
+      // Passé le répit, on conclut quoi qu'il arrive : un descendant sorti du groupe
+      // (`setsid`) échappe au signal et ne doit pas bloquer la tâche.
+      killer = setTimeout(() => {
+        kill('SIGKILL')
+        finish(null)
+      }, KILL_GRACE_MS)
     }, timeoutMs)
 
     // On garde un peu plus que le plafond pour savoir qu'il a été dépassé.
@@ -168,6 +188,11 @@ function execute(
       if (stderr.length <= MAX_STDERR_CHARS) stderr += chunk.toString()
     })
     child.on('error', (err) => finish(null, `Lancement impossible : ${err.message}`))
+    // Le verdict tient au code de sortie du script, pas à la fermeture des tuyaux.
+    child.on('exit', (code) => {
+      if (!timedOut) clearTimeout(timer)
+      drain = setTimeout(() => finish(code), EXIT_DRAIN_MS)
+    })
     child.on('close', (code) => finish(code))
   })
 }

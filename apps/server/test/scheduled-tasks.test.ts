@@ -391,6 +391,44 @@ test('runCheck turns the exit code into a verdict and keeps the output', async (
   assert.ok(slow.durationMs < 10_000)
 })
 
+test('runCheck concludes on the script exit, even when a descendant keeps the pipes open', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'solera-check-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const context = {
+    taskId: 'task', taskName: 'Veille', projectId: 'project', cwd: dir, stateDir: join(dir, 'state'),
+    firedAt: Date.now(), trigger: 'schedule' as const, previous: null, timeoutMs: 20_000,
+  }
+
+  // Un descendant d'arrière-plan hérite des tuyaux : le script est pourtant sorti en 0.
+  const background = await runCheck('sleep 5 & echo ok; exit 0', { ...context, timeoutMs: 2000 })
+  assert.equal(background.verdict, 'launch')
+  assert.equal(background.timedOut, false)
+  assert.equal(background.exitCode, 0)
+  assert.equal(background.stdout.trim(), 'ok')
+  assert.ok(background.durationMs < 1500, `${background.durationMs} ms`)
+
+  // Détaché par `setsid`, il échappe même au groupe de processus.
+  const detached = await runCheck('setsid sleep 30 & echo ok; exit 0', context)
+  assert.equal(detached.verdict, 'launch')
+  assert.equal(detached.stdout.trim(), 'ok')
+  assert.ok(detached.durationMs < 5000, `${detached.durationMs} ms`)
+})
+
+test('runCheck gives up after the timeout and its grace, whatever still holds the pipes', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'solera-check-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const context = {
+    taskId: 'task', taskName: 'Veille', projectId: 'project', cwd: dir, stateDir: join(dir, 'state'),
+    firedAt: Date.now(), trigger: 'schedule' as const, previous: null, timeoutMs: 300,
+  }
+  // Le shell ignore SIGTERM, et son descendant détaché survivrait au SIGKILL du groupe.
+  const stubborn = await runCheck("trap '' TERM; setsid sleep 30 & while :; do sleep 1; done", context)
+  assert.equal(stubborn.verdict, 'error')
+  assert.equal(stubborn.timedOut, true)
+  assert.equal(stubborn.exitCode, null)
+  assert.ok(stubborn.durationMs < 6000, `${stubborn.durationMs} ms`)
+})
+
 test('runCheck keeps its state between runs, but an essay works on a copy', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'solera-check-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
