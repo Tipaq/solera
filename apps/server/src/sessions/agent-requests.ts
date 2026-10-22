@@ -1297,6 +1297,11 @@ export class AgentRequests {
     requester: ConversationRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
+    if (!this.ctx.config.mcp.decisions) {
+      throw new Refusal(
+        "Refusé : cette instance de Solera n'ouvre pas les demandes de décision aux agents (`[mcp] decisions` dans config.toml). Décide selon tes instructions, ou pose ta question dans ta réponse.",
+      )
+    }
     if (!parseAgentConfig(requester.config).decisions) {
       throw new Refusal(
         "Refusé : les demandes de décision ne sont pas accordées à cette conversation. Décide selon tes instructions, ou pose ta question dans ta réponse. L'utilisateur peut cocher « Décisions » dans les réglages de la session, et la relancer.",

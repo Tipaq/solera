@@ -89,7 +89,7 @@ async function harness(t: TestContext) {
   const awaited: string[][] = []
   bus.on('awaiting', ({ userIds }: { userIds: string[] }) => awaited.push(userIds))
   const dispatched: Array<{ userId: string; notification: OutgoingNotification }> = []
-  const ctx = { db, config: { mcp: {} } as unknown as Config }
+  const ctx = { db, config: { mcp: { decisions: true } } as unknown as Config }
   const decisions = new Decisions(ctx, log, bus, {
     dispatch: async (userId, notification) => {
       dispatched.push({ userId, notification })
@@ -133,7 +133,7 @@ async function harness(t: TestContext) {
     return (JSON.parse(run.stdout).result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
   }
 
-  return { db, app, decisions, requests, ask, row, messages, journal, dispatched, awaited, tools }
+  return { db, ctx, app, decisions, requests, ask, row, messages, journal, dispatched, awaited, tools }
 }
 
 test('décisions : déposée sans bloquer, notifiée, et rendue à la session par un message', async (t) => {
@@ -229,8 +229,15 @@ test('décisions : déposée sans bloquer, notifiée, et rendue à la session pa
   assert.equal(messages(ALLOWED)[0]!.deliveredVia, 'wake')
 })
 
-test('décisions : refusées sans le drapeau, en fil libre, et une seule à la fois', async (t) => {
-  const { ask, tools } = await harness(t)
+test('décisions : refusées par l’instance, sans le drapeau, en fil libre, et une seule à la fois', async (t) => {
+  const { ctx, ask, tools } = await harness(t)
+
+  // L'instance tient le plafond : éteinte, même une session qui a le drapeau est refusée.
+  ctx.config.mcp.decisions = false
+  const vetoed = await ask(ALLOWED, { question: 'On pousse ?' })
+  assert.equal(vetoed.isError, true)
+  assert.match(vetoed.result ?? '', /\[mcp\] decisions/)
+  ctx.config.mcp.decisions = true
 
   const refused = await ask(PLAIN, { question: 'On pousse ?' })
   assert.equal(refused.isError, true)

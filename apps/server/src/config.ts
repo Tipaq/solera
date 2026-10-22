@@ -92,6 +92,16 @@ const configSchema = z.object({
        * `soleraServer`.
        */
       cardFiling: z.boolean().default(false),
+      /**
+       * Laisse les agents demander une décision (`request_decision`), que l'utilisateur
+       * tranche plus tard sans que la session attende.
+       *
+       * Vrai par défaut, à la différence des trois précédents : c'est un veto, pas une
+       * portée. Le réglage de conversation qu'il chapeaute est déjà faux par défaut, et
+       * rien ne s'applique sans une personne ; l'éteindre ici fait disparaître l'entrée
+       * de l'interface, par le même raisonnement que `soleraServer`.
+       */
+      decisions: z.boolean().default(true),
     })
     .default({}),
   vault: z

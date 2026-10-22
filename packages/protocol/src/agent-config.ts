@@ -56,8 +56,7 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture
  * par un agent le remet en attente. La garde est donc sur le script et non sur l'outil.
  *
- * **Quatre étages d'héritage**, les mêmes pour toutes les familles (sauf `decisions`, qui
- * n'a pas le quatrième) : conversation →
+ * **Quatre étages d'héritage**, les mêmes pour toutes les familles : conversation →
  * préréglage de projet (`projects.default_config`) → défaut de compte → `config.toml`.
  * Les trois premiers sont des points de départ (`??`), le dernier seul est un plafond
  * (`&&`), et c'est lui qui fait *disparaître* l'entrée de l'interface. Toutes les
@@ -68,8 +67,8 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * **Le prix d'une famille neuve est de quatre endroits** — les trois schémas de CLI
  * ci-dessous et `apps/server/src/config.ts` — **plus deux catalogues i18n.** C'est cet
  * argument, et non le critère, qui a tenu le nombre à quatre. `decisions`, la cinquième,
- * s'en tire à trois endroits : elle n'a pas de plafond d'instance (voir son schéma), donc
- * trois étages d'héritage au lieu de quatre.
+ * les paie aussi ; son plafond d'instance est seulement allumé par défaut (voir son
+ * schéma).
  *
  * `FREE_THREAD_TOOLS` (`apps/server/src/mcp/solera-mcp.mjs`) n'est **pas** une famille et
  * n'a rien à faire dans un écran de réglages : c'est la liste des outils qui ont encore
@@ -172,8 +171,9 @@ export const DEFAULT_DECISION_HOURS = 24
  * par son `config`), mais ouvert à toute session qui l'a : une session interactive qu'on
  * quitte pour la nuit en a le même usage.
  *
- * Pas de plafond d'instance dans `config.toml`, à la différence des quatre familles
- * d'avant : rien ne s'applique sans une personne, et l'outil ne sort pas du projet.
+ * Vetoable pour l'instance dans `config.toml`, où `[mcp] decisions = false` fait aussi
+ * disparaître l'entrée. Ce plafond-là est **allumé par défaut**, à la différence des
+ * autres : rien ne s'applique sans une personne, et l'outil ne sort pas du projet.
  */
 const decisionsSchema = z.boolean().default(false)
 

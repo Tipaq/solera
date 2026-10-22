@@ -119,7 +119,7 @@ function AwaitingLine({ request, onNavigate }: {
 
   const label =
     request.kind === 'request_card_move'
-      ? t('awaiting.cardMove', { count: request.count })
+      ? t(request.count > 1 ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count: request.count })
       : t('awaiting.moveConversation')
   return (
     <NavLink

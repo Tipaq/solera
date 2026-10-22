@@ -884,7 +884,7 @@ export class SessionManager {
           memoryDir: memoryDir(current) ?? '',
           projectFiling: this.config.mcp.projectFiling && current.projectFiling,
           cardFiling: this.config.mcp.cardFiling && current.cardFiling,
-          decisions: current.decisions,
+          decisions: this.config.mcp.decisions && current.decisions,
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })

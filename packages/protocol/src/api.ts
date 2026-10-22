@@ -1248,6 +1248,8 @@ export interface McpServerListDto {
   projectFiling: boolean
   /** Faux quand l'instance refuse aux agents de proposer un rangement de carte. */
   cardFiling: boolean
+  /** Faux quand l'instance refuse aux agents de demander une décision : l'entrée disparaît. */
+  decisions: boolean
 }
 
 // Erreurs

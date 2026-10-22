@@ -726,6 +726,7 @@ export function useAgentSettings({
   // Même dépendance que le rangement de projet : l'outil vit dans le serveur MCP de
   // Solera, l'entrée disparaît quand l'instance coupe l'un ou l'autre.
   const cardFilingAvailable = soleraAvailable && mcpRegistry?.cardFiling === true
+  const decisionsAvailable = soleraAvailable && mcpRegistry?.decisions === true
 
   const permissionOptionList = permissionOptions(t)
   const sandboxOptionList = codexSandboxOptions(t)
@@ -933,7 +934,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(soleraAvailable
+      ...(decisionsAvailable
         ? [decisionsSetting(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t)]
         : []),
       setting({
@@ -1105,7 +1106,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(soleraAvailable
+      ...(decisionsAvailable
         ? [decisionsSetting(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t)]
         : []),
       setting({
@@ -1287,7 +1288,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(soleraAvailable
+      ...(decisionsAvailable
         ? [decisionsSetting(opencode, applied, onConfigChange, t)]
         : []),
       setting({

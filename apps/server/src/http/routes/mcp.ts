@@ -67,6 +67,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): void {
       agentMemory: ctx.config.mcp.agentMemory,
       projectFiling: ctx.config.mcp.projectFiling,
       cardFiling: ctx.config.mcp.cardFiling,
+      decisions: ctx.config.mcp.decisions,
     }
   })
 
