@@ -16,7 +16,7 @@ import { useAutoOpenPrototypes } from '../lib/prototypes'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
-import { AGENT_CAPABILITIES } from '@solera/protocol'
+import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { HeaderBand } from '../components/HeaderBand'
@@ -793,11 +793,6 @@ export function ConversationPage() {
   // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
   const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
 
-  // Les deux issues d'un fil dont le worktree a disparu (carte #61).
-  const archive = useArchiveConversation()
-  const continueAtRoot = useContinueAtProjectRoot()
-  const worktreeGoneError = archive.error ?? continueAtRoot.error
-
   // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
   // pas : il rejoint la garde plutôt que d'être forcé plus bas.
   if (!conversationId || !conversation || !config) return null
@@ -1362,13 +1357,11 @@ export function ConversationPage() {
           {conversation.worktreeGone ? (
             <div className="px-3 pb-3 @min-[40rem]:px-12">
               <div className="mx-auto max-w-3xl">
-                <WorktreeGoneNotice
+                <WorktreeGoneIssues
+                  key={conversationId}
+                  conversationId={conversationId}
                   agent={conversation.agent}
                   canAct={isOwner}
-                  pending={archive.isPending || continueAtRoot.isPending}
-                  error={worktreeGoneError instanceof Error ? worktreeGoneError.message : undefined}
-                  onArchive={() => archive.mutate({ id: conversationId, archived: true })}
-                  onContinue={() => continueAtRoot.mutate(conversationId)}
                 />
               </div>
             </div>
@@ -1448,6 +1441,35 @@ export function ConversationPage() {
       ) : null}
     </div>
     </FileLinkContext.Provider>
+  )
+}
+
+/**
+ * Les deux issues d'un fil dont le worktree a disparu (carte #61). Monté avec la clé
+ * de la conversation : l'erreur ou l'attente d'un geste ne suit pas l'utilisateur dans
+ * le fil suivant.
+ */
+function WorktreeGoneIssues({
+  conversationId,
+  agent,
+  canAct,
+}: {
+  conversationId: string
+  agent: AgentKind
+  canAct: boolean
+}) {
+  const archive = useArchiveConversation()
+  const continueAtRoot = useContinueAtProjectRoot()
+  const error = archive.error ?? continueAtRoot.error
+  return (
+    <WorktreeGoneNotice
+      agent={agent}
+      canAct={canAct}
+      pending={archive.isPending || continueAtRoot.isPending}
+      error={error instanceof Error ? error.message : undefined}
+      onArchive={() => archive.mutate({ id: conversationId, archived: true })}
+      onContinue={() => continueAtRoot.mutate(conversationId)}
+    />
   )
 }
 

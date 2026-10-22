@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
 import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
 import { HttpError, notFound } from './http/errors.js'
-import { isDirectory, markWorktreeGone, workingDirectoryMissing } from './worktrees/gone.js'
+import { directoryGone, markWorktreeGone, workingDirectoryMissing } from './worktrees/gone.js'
 
 /**
  * Répertoire de travail d'une conversation, et bornage des chemins qui s'y rapportent.
@@ -125,7 +125,8 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
       .where(eq(worktrees.id, conversation.worktreeId))
       .get()
     if (worktree) {
-      if (!worktree.removedAt && isDirectory(worktree.path)) return worktree.path
+      if (worktree.removedAt) throw workingDirectoryMissing(worktree.path)
+      if (!directoryGone(worktree.path)) return worktree.path
       markWorktreeGone(db, worktree.id)
       throw workingDirectoryMissing(worktree.path)
     }

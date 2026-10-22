@@ -1,6 +1,6 @@
 import { rm, stat } from 'node:fs/promises'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
-import { cards, conversations, worktrees, type Db, type ProjectRow } from '@solera/db'
+import { and, inArray, isNull } from 'drizzle-orm'
+import { cards, conversations, type Db, type ProjectRow } from '@solera/db'
 import type {
   WorktreeCleanupPlanDto,
   WorktreeCleanupResultDto,
@@ -15,6 +15,7 @@ import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '.
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { HttpError } from '../http/errors.js'
 import { listWorktrees } from './assess.js'
+import { markWorktreeGone } from './gone.js'
 import type { WorktreeStatusService } from './status-service.js'
 
 /**
@@ -192,9 +193,7 @@ export class WorktreeCleanup {
         .catch(() => undefined)
     }
 
-    if (tree.id) {
-      this.db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, tree.id)).run()
-    }
+    if (tree.id) markWorktreeGone(this.db, tree.id)
     this.status.forget(project.id)
     return result
   }

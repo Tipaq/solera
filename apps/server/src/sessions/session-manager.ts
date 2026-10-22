@@ -51,7 +51,12 @@ import { SkillLibraryLayout } from '../skill-library/layout.js'
 import { rebaseInProgress } from '../git-rebase.js'
 import { agentCwd, resolveMention } from '../workspace.js'
 import { conflict, describeHttpError, HttpError, notFound } from '../http/errors.js'
-import { isDirectory, isWorkingDirectoryMissing, workingDirectoryMissing } from '../worktrees/gone.js'
+import {
+  checkWorktree,
+  directoryGone,
+  isWorkingDirectoryMissing,
+  workingDirectoryMissing,
+} from '../worktrees/gone.js'
 import type { StorybookSupervisor } from '../design-system/storybooks.js'
 import {
   CheckpointError,
@@ -738,9 +743,18 @@ export class SessionManager {
     // Un tour a pu redémarrer entre l'annonce du statut et ce flush : le message
     // reste alors en file, il repartira à la prochaine transition vers `idle`.
     if (this.isBusy(conversationId)) return
+    if (!this.queues.has(conversationId)) return
     // Un worktree disparu garde ses messages en file : le bandeau du fil propose de
-    // rattacher la conversation à la racine, et ils partiront à ce moment-là.
-    if (!this.queues.has(conversationId) || this.worktreeGone(conversationId)) return
+    // rattacher la conversation à la racine, et ils partiront à ce moment-là. Dans
+    // l'essai : `flushQueue` part en `void`, et une conversation supprimée avec un
+    // message en file ne doit pas devenir un rejet que personne n'écoute.
+    try {
+      if (this.worktreeGone(conversationId)) return
+    } catch (err) {
+      console.warn(`[sessions] file de ${conversationId} abandonnée :`, err)
+      this.queues.delete(conversationId)
+      return
+    }
 
     const queue = this.queues.get(conversationId)
     const next = queue?.shift()
@@ -1276,7 +1290,7 @@ export class SessionManager {
   private refuseMissingCwd(conversation: ConversationRow): string {
     try {
       const cwd = this.resolveCwd(conversation)
-      if (!isDirectory(cwd)) throw workingDirectoryMissing(cwd)
+      if (directoryGone(cwd)) throw workingDirectoryMissing(cwd)
       return cwd
     } catch (err) {
       if (isWorkingDirectoryMissing(err)) {
@@ -1306,9 +1320,11 @@ export class SessionManager {
         'This conversation still has its worktree: there is nothing to reattach.',
       )
     }
-    // Déjà arrêté par `refuseMissingCwd` ; attendu ici pour qu'aucun arrêt en cours ne
-    // tombe après l'écriture.
+    // Arrêté ici et attendu : aucun arrêt en cours ne doit tomber après l'écriture, et
+    // un runner resté chaud garderait l'ancien cwd en mémoire. La capture ouverte,
+    // elle, visait l'ancien dépôt.
     await this.stopRunner(conversationId, { keepQueue: true })
+    this.checkpoints.delete(conversationId)
 
     const patch: Partial<ConversationRow> = {
       worktreeId: null,
@@ -1321,17 +1337,14 @@ export class SessionManager {
     return { ...conversation, ...patch }
   }
 
-  /** Vrai si la conversation vit dans un worktree que `refuseMissingCwd` refuse. */
+  /**
+   * Vrai si le worktree de la conversation a disparu. Sans autre effet que le marquage
+   * d'un dossier constaté absent, qui fait relire les listes.
+   */
   private worktreeGone(conversationId: string): boolean {
-    const conversation = this.loadConversation(conversationId)
-    if (!conversation.worktreeId) return false
-    try {
-      this.refuseMissingCwd(conversation)
-      return false
-    } catch (err) {
-      if (isWorkingDirectoryMissing(err)) return true
-      throw err
-    }
+    const worktree = checkWorktree(this.db, this.loadConversation(conversationId).worktreeId)
+    if (worktree.marked) this.statusBus.emit('lists', { conversationId })
+    return worktree.gone
   }
 
   private touch(conversationId: string): void {

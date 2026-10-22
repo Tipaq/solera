@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -23,6 +23,7 @@ import { HttpError } from '../src/http/errors.js'
 import type { SecretStore } from '../src/secrets/store.js'
 import { SessionManager } from '../src/sessions/session-manager.js'
 import { projectCwd, resolveConversationCwd } from '../src/workspace.js'
+import { directoryGone } from '../src/worktrees/gone.js'
 
 /**
  * Une conversation dont le worktree a disparu (cartes #60 et #61).
@@ -251,4 +252,30 @@ test('le message d\'une erreur en file interpole ses paramètres', async (t) => 
   assert.equal(failure.code, 'queued_message_failed')
   assert.ok(failure.message.includes(h.workspace))
   assert.doesNotMatch(failure.message, /\{path\}/)
+})
+
+test('une erreur passagère du disque ne marque rien : seuls ENOENT et ENOTDIR disent une absence', async (t) => {
+  const h = await harness(t)
+  // Un parent illisible : `stat` répond EACCES, comme un montage momentanément absent.
+  const parent = join(h.dir, 'worktrees')
+  await chmod(parent, 0o000)
+  try {
+    assert.equal(directoryGone(h.worktreePath), false)
+    await assert.rejects(h.sessions.sendMessage('conv', 'c1', 'bonjour'))
+  } finally {
+    // Avant le nettoyage du dossier de test, qui ne saurait pas le parcourir.
+    await chmod(parent, 0o755)
+  }
+  assert.equal(h.removedAt(), null)
+})
+
+test('une conversation supprimée avec un message en file ne fait pas de rejet non géré', async (t) => {
+  const h = await harness(t)
+  h.liveRunner('conv', 'running')
+  await h.sessions.sendMessage('conv', 'c1', 'à la fin du tour')
+  h.db.delete(conversations).where(eq(conversations.id, 'conv')).run()
+
+  const internals = h.sessions as unknown as { flushQueue(id: string): Promise<void>; runners: Map<string, { status: string }> }
+  internals.runners.get('conv')!.status = 'idle'
+  await internals.flushQueue('conv')
 })

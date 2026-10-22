@@ -17,12 +17,19 @@ import { conflict, HttpError } from '../http/errors.js'
  * réconciliation avec `git worktree list` (carte #78) — tant que tous passent par ici.
  */
 
-/** Vrai si le chemin est un dossier. Un fichier au même nom ne fait pas un cwd. */
-export function isDirectory(path: string): boolean {
+/**
+ * Vrai si le chemin n'est plus un dossier : absent, ou remplacé par un fichier.
+ *
+ * Seuls `ENOENT` et `ENOTDIR` disent une absence. Un `EACCES`, un `EIO` ou un montage
+ * `/mnt` que WSL n'a pas encore remonté sont passagers, et `removedAt` ne s'efface
+ * jamais : les prendre pour une disparition condamnerait un arbre bien vivant.
+ */
+export function directoryGone(path: string): boolean {
   try {
-    return statSync(path).isDirectory()
-  } catch {
-    return false
+    return !statSync(path).isDirectory()
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    return code === 'ENOENT' || code === 'ENOTDIR'
   }
 }
 
@@ -52,17 +59,17 @@ export function markWorktreeGone(db: Db, worktreeId: string): boolean {
 export function checkWorktree(
   db: Db,
   worktreeId: string | null,
-): { gone: boolean; marked: boolean } {
-  if (!worktreeId) return { gone: false, marked: false }
+): { gone: boolean; marked: boolean; path: string | null } {
+  if (!worktreeId) return { gone: false, marked: false, path: null }
   const row = db
     .select({ path: worktrees.path, removedAt: worktrees.removedAt })
     .from(worktrees)
     .where(eq(worktrees.id, worktreeId))
     .get()
-  if (!row) return { gone: false, marked: false }
-  if (row.removedAt) return { gone: true, marked: false }
-  if (isDirectory(row.path)) return { gone: false, marked: false }
-  return { gone: true, marked: markWorktreeGone(db, worktreeId) }
+  if (!row) return { gone: false, marked: false, path: null }
+  if (row.removedAt) return { gone: true, marked: false, path: row.path }
+  if (!directoryGone(row.path)) return { gone: false, marked: false, path: row.path }
+  return { gone: true, marked: markWorktreeGone(db, worktreeId), path: row.path }
 }
 
 /**

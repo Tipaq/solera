@@ -342,6 +342,25 @@ export const updateConversationBodySchema = z
   .partial()
 
 /**
+ * Les CLI qui reprennent leur session depuis un autre dossier que celui où elle a
+ * commencé : ce que *Continuer à la racine* garde ou perd.
+ *
+ * Claude Code retrouve une session par son identifiant quel que soit le cwd, même quand
+ * le dossier d'origine n'existe plus (essayé le 2026-10-22 avec la 2.1.302). Codex
+ * retrouve son thread par identifiant et reçoit le nouveau cwd au `thread/resume`.
+ * opencode range ses sessions par dossier et en rend celui d'origine ; Grok reprend
+ * par `session/resume` avec le nouveau cwd, sans que rien dise où il range sa session.
+ * Non vérifiés, les deux repartent sur une session neuve, et le bandeau le dit avant
+ * le geste.
+ */
+export const RESUMES_FROM_OTHER_DIRECTORY: Record<AgentKind, boolean> = {
+  claude: true,
+  codex: true,
+  opencode: false,
+  grok: false,
+}
+
+/**
  * *Ranger…* : la destination d'une conversation, changée après coup.
  *
  * `null` la sort de son projet et en refait un fil libre. Le geste est séparé de
@@ -349,22 +368,6 @@ export const updateConversationBodySchema = z
  * conversation, celui-ci la déplace, et le déplacement emporte avec lui le worktree,
  * la carte et le répertoire de travail.
  */
-/**
- * Les CLI qui reprennent leur session depuis un autre dossier que celui où elle a
- * commencé : ce que *Continuer à la racine* garde ou perd.
- *
- * Claude Code retrouve une session par son identifiant quel que soit le cwd, même quand
- * le dossier d'origine n'existe plus (essayé le 2026-10-22 avec la 2.1.302). Codex
- * retrouve son thread par identifiant et reçoit le nouveau cwd au `thread/resume`.
- * opencode range ses sessions par dossier et en rend celui d'origine : non vérifié, il
- * repart sur une session neuve, et le bandeau le dit avant le geste.
- */
-export const RESUMES_FROM_OTHER_DIRECTORY: Record<AgentKind, boolean> = {
-  claude: true,
-  codex: true,
-  opencode: false,
-}
-
 export const moveConversationBodySchema = z.object({
   projectId: z.string().uuid().nullable(),
 })

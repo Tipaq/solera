@@ -53,7 +53,11 @@ import {
 } from '../../conversations/handoff.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
 import type { WebhookService } from '../../webhooks/service.js'
-import { checkWorktree, isWorkingDirectoryMissing } from '../../worktrees/gone.js'
+import {
+  checkWorktree,
+  isWorkingDirectoryMissing,
+  workingDirectoryMissing,
+} from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
 import { assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
@@ -358,7 +362,15 @@ export function registerConversationRoutes(
     // pour n'importe quelle autre. La devancer ici mentirait sur ce qui est en base.
     return reply
       .status(201)
-      .send(conversationToDto(row, user.id, 0, readCardLink(ctx, body.cardId), false))
+      .send(
+        conversationToDto(
+          row,
+          user.id,
+          0,
+          readCardLink(ctx, body.cardId),
+          checkWorktree(ctx.db, row.worktreeId).gone,
+        ),
+      )
   })
 
   /**
@@ -420,6 +432,12 @@ export function registerConversationRoutes(
     if (body.throughSeq > source.lastSeq) {
       throw badRequest('fork_point_unknown', 'This cut point is beyond the end of the thread.')
     }
+    // Une branche hérite du worktree, et le CLI forke sa session dans ce dossier : d'un
+    // worktree disparu, il n'y a rien à brancher. Le refus est celui du bandeau, qui
+    // propose de continuer à la racine avant de brancher.
+    const sourceWorktree = checkWorktree(ctx.db, source.worktreeId)
+    if (sourceWorktree.marked) sessions.statusBus.emit('lists', { conversationId: id })
+    if (sourceWorktree.gone) throw workingDirectoryMissing(sourceWorktree.path ?? '')
 
     let agentSessionId: string
     try {
@@ -480,7 +498,7 @@ export function registerConversationRoutes(
           user.id,
           0,
           readCardLink(ctx, row.cardId),
-          checkWorktree(ctx.db, row.worktreeId).gone,
+          false,
         ),
       )
   })
@@ -525,7 +543,9 @@ export function registerConversationRoutes(
       config,
       // Même arbre et même chantier : c'est le même travail, poursuivi avec un autre
       // outil.
-      worktreeId: source.worktreeId,
+      // Un worktree disparu ne se transmet pas : la suite partirait condamnée au même
+      // bandeau. Elle reprend à la racine du projet.
+      worktreeId: checkWorktree(ctx.db, source.worktreeId).gone ? null : source.worktreeId,
       cardId: source.cardId,
       title: body.title ?? source.title,
       origin: null,

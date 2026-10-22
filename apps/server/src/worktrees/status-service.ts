@@ -3,6 +3,7 @@ import { conversationPaths, conversations, projects, worktrees, type Db, type Pr
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import { UNREADABLE, assessWorktree, defaultBase, listWorktrees } from './assess.js'
+import { directoryGone, markWorktreeGone } from './gone.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
@@ -221,6 +222,14 @@ export class WorktreeStatusService {
         },
       ),
     )
+    // Un arbre connu en base dont le dossier est parti : on le marque, pour que ses
+    // conversations montrent le bandeau « worktree disparu » (carte #61). `missing` vaut
+    // aussi pour une entrée que git dit prunable ; seul le constat sur le disque marque.
+    list.forEach((tree, index) => {
+      if (tree.id && assessed[index]?.state === 'missing' && directoryGone(tree.path)) {
+        markWorktreeGone(this.db, tree.id)
+      }
+    })
     const paths = this.touchedPaths(project.id)
 
     const result: WorktreeStatusDto[] = list.map((tree, index) => ({
