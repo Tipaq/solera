@@ -1,5 +1,4 @@
-import { mkdir, readdir, stat } from 'node:fs/promises'
-import { isAbsolute, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
@@ -25,7 +24,7 @@ import { credentialEnv, credentialHelperCommand } from '../../git-credential/hel
 import { listBranches, readGitStatus } from '../../git.js'
 import { dropConversation } from '../../search/search-index.js'
 import type { AppContext } from '../context.js'
-import { badRequest, conflict, forbidden, notFound } from '../errors.js'
+import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
 import { writeProjectsDir } from '../../settings/user-settings.js'
@@ -37,48 +36,9 @@ import {
   writeProjectImage,
 } from '../../projects/image.js'
 import { SkillLibrary } from '../../skill-library/store.js'
-import { assertUsableWorkspace, insertProject } from '../../projects/create.js'
+import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
 import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
-
-/**
- * Le dossier que le clone va remplir.
- *
- * Symétrique de `assertUsableWorkspace` : là où un projet ordinaire exige un dossier qui
- * existe, un clone exige un emplacement libre. Un dossier existant mais vide est accepté,
- * parce que c'est ce que produit un `mkdir` fait d'avance par l'utilisateur.
- */
-async function assertFreeDestination(parentDir: string, directory: string): Promise<string> {
-  if (!isAbsolute(parentDir)) {
-    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
-  }
-  // Le nom de dossier vient d'une URL de dépôt : sans cette garde, `..` ferait écrire
-  // le clone n'importe où sur le disque.
-  if (directory.includes('/') || directory.includes('\\') || directory.startsWith('.')) {
-    throw badRequest('clone_directory_invalid', 'The directory name must be a plain folder name.')
-  }
-
-  const parent = resolve(parentDir)
-  const info = await stat(parent).catch(() => null)
-  if (!info) {
-    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: parent })
-  }
-  if (!info.isDirectory()) {
-    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: parent })
-  }
-
-  const destination = join(parent, directory)
-  const existing = await readdir(destination).catch(() => null)
-  if (existing && existing.length > 0) {
-    throw conflict(
-      'clone_destination_not_empty',
-      'Directory {path} already exists and is not empty.',
-      { path: destination },
-    )
-  }
-
-  return destination
-}
 
 export function registerProjectRoutes(
   app: FastifyInstance,
@@ -164,27 +124,10 @@ export function registerProjectRoutes(
   app.post('/api/projects', async (request, reply) => {
     const user = requireUser(request)
     const body = createProjectBodySchema.parse(request.body)
-
-    let workspacePath: string
-    if ('workspacePath' in body) {
-      workspacePath = await assertUsableWorkspace(body.workspacePath)
-    } else {
-      // Un projet qui part de zéro : le dossier est créé ici, dans le parent choisi.
-      // Un dossier déjà là mais vide passe aussi, comme pour un clone.
-      workspacePath = await assertFreeDestination(body.parentDir, body.directory)
-      await mkdir(workspacePath, { recursive: true })
-      // Le parent devient la proposition de la prochaine création : c'est là que
-      // cette personne range ses projets, inutile de le lui redemander.
-      writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
-    }
-
-    const row = await insertProject(ctx, user.id, {
-      name: body.name,
-      workspacePath,
-      visibility: body.visibility,
-      color: body.color,
-      instructionsMode: body.instructionsMode,
-    })
+    const row = await createProject(ctx, user.id, body)
+    // Le parent d'un projet parti de zéro devient la proposition de la prochaine
+    // création : c'est là que cette personne range ses projets.
+    if ('parentDir' in body) writeProjectsDir(ctx.db, user.id, resolve(body.parentDir))
 
     const dto: ProjectDto = {
       ...row,
@@ -194,7 +137,7 @@ export function registerProjectRoutes(
       conversationCount: 0,
       defaultConfig: NO_PROJECT_DEFAULTS,
       activeTerminals: 0,
-      git: await readGitStatus(workspacePath),
+      git: await readGitStatus(row.workspacePath),
     }
     return reply.status(201).send(dto)
   })

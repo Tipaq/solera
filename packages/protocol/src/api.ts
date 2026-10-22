@@ -115,6 +115,7 @@ export const createProjectBodySchema = z.union([
     directory: z.string().min(1).max(120),
   }),
 ])
+export type CreateProjectBody = z.infer<typeof createProjectBodySchema>
 
 /**
  * Nom de dossier tiré d'un nom de projet : `Mon Projet Été` devient `mon-projet-ete`.

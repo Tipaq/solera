@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { isAbsolute, resolve } from 'node:path'
-import { stat } from 'node:fs/promises'
+import { isAbsolute, join, resolve } from 'node:path'
+import { mkdir, readdir, stat } from 'node:fs/promises'
 import { max } from 'drizzle-orm'
 import { projects, type ProjectRow } from '@solera/db'
-import type { InstructionsMode } from '@solera/protocol'
-import { badRequest } from '../http/errors.js'
+import type { CreateProjectBody, InstructionsMode } from '@solera/protocol'
+import { badRequest, conflict } from '../http/errors.js'
 import type { AppContext } from '../http/context.js'
 import { repoInstructionFiles } from '../instructions/store.js'
 
@@ -12,9 +12,10 @@ import { repoInstructionFiles } from '../instructions/store.js'
  * Déclarer un projet : une ligne qui pointe sur un dossier existant.
  *
  * Hors des routes parce que le daemon en a besoin aussi, `create_project` déposant la
- * même ligne qu'un clic dans l'interface — motif de `conversations/create.ts`. Solera
- * ne crée jamais le dossier ici : la route de création de projet le fait pour un projet
- * parti de zéro, et c'est son exception à elle, pas une capacité de ce module.
+ * même ligne qu'un clic dans l'interface — motif de `conversations/create.ts`. Seul
+ * `createProject`, appelé par les routes HTTP (l'interface et l'API publique), crée un
+ * dossier, pour un projet parti de zéro ; `create_project` passe par `insertProject` et
+ * n'en crée jamais.
  */
 
 export async function assertUsableWorkspace(path: string): Promise<string> {
@@ -35,6 +36,45 @@ export async function assertUsableWorkspace(path: string): Promise<string> {
   }
 
   return resolved
+}
+
+/**
+ * Le dossier que le clone va remplir.
+ *
+ * Symétrique de `assertUsableWorkspace` : là où un projet ordinaire exige un dossier qui
+ * existe, un clone exige un emplacement libre. Un dossier existant mais vide est accepté,
+ * parce que c'est ce que produit un `mkdir` fait d'avance par l'utilisateur.
+ */
+export async function assertFreeDestination(parentDir: string, directory: string): Promise<string> {
+  if (!isAbsolute(parentDir)) {
+    throw badRequest('workspace_not_absolute', 'The workspace path must be absolute.')
+  }
+  // Le nom de dossier vient d'une URL de dépôt : sans cette garde, `..` ferait écrire
+  // le clone n'importe où sur le disque.
+  if (directory.includes('/') || directory.includes('\\') || directory.startsWith('.')) {
+    throw badRequest('clone_directory_invalid', 'The directory name must be a plain folder name.')
+  }
+
+  const parent = resolve(parentDir)
+  const info = await stat(parent).catch(() => null)
+  if (!info) {
+    throw badRequest('workspace_missing', 'Directory {path} does not exist.', { path: parent })
+  }
+  if (!info.isDirectory()) {
+    throw badRequest('workspace_not_a_directory', '{path} is not a directory.', { path: parent })
+  }
+
+  const destination = join(parent, directory)
+  const existing = await readdir(destination).catch(() => null)
+  if (existing && existing.length > 0) {
+    throw conflict(
+      'clone_destination_not_empty',
+      'Directory {path} already exists and is not empty.',
+      { path: destination },
+    )
+  }
+
+  return destination
 }
 
 export interface ProjectFields {
@@ -73,4 +113,27 @@ export async function insertProject(
   }
   await ctx.db.insert(projects).values(row)
   return row
+}
+
+/** Le corps de création des routes HTTP : un dossier existant, ou un dossier à créer. */
+export async function createProject(
+  ctx: AppContext,
+  ownerId: string,
+  body: CreateProjectBody,
+): Promise<ProjectRow> {
+  let workspacePath: string
+  if ('workspacePath' in body) {
+    workspacePath = await assertUsableWorkspace(body.workspacePath)
+  } else {
+    // Un dossier déjà là mais vide passe aussi, comme pour un clone.
+    workspacePath = await assertFreeDestination(body.parentDir, body.directory)
+    await mkdir(workspacePath, { recursive: true })
+  }
+  return insertProject(ctx, ownerId, {
+    name: body.name,
+    workspacePath,
+    visibility: body.visibility,
+    color: body.color,
+    instructionsMode: body.instructionsMode,
+  })
 }
