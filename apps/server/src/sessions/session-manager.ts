@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
 import {
+  conversationHandoffs,
   conversations,
   permissionRequests,
   projects,
@@ -931,7 +932,17 @@ export class SessionManager {
         const soleraMcp = builtinMcpEnabled(this.config.mcp.soleraServer, current)
         // Null quand la famille `agentMemory` est refusée : voir plus haut.
         const memory = memoryDir(current)
+        // Le contexte transmis par la conversation que celle-ci continue, dans le
+        // même canal que SOLERA.md et hors de tout interrupteur : c'est l'historique
+        // de ce fil, pas un apport de Solera. Relu à chaque démarrage parce que le
+        // CLI repart sans lui à chaque reprise, comme pour les consignes.
+        const handoff = this.db
+          .select({ text: conversationHandoffs.text })
+          .from(conversationHandoffs)
+          .where(eq(conversationHandoffs.conversationId, conversationId))
+          .get()
         const parts = [
+          handoff?.text ?? null,
           instructionsAppendix(this.db, {
             projectId,
             // Un fil libre n'a pas de dépôt où un AGENTS.md pourrait vivre : ses

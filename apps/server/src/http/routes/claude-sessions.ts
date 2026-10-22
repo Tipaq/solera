@@ -176,6 +176,7 @@ export function registerClaudeSessionRoutes(
       agent: 'claude',
       agentSessionId: sessionId,
       forkedFromId: null,
+      handoffFromId: null,
       createdByTokenId: null,
       originLabel: null,
       scheduleId: null,

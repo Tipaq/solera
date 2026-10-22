@@ -58,7 +58,7 @@ async function mount(page) {
     const { Composer } = await import('/src/components/chat/Composer.tsx')
     // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
     // source transformée du composer, comme pour les autres dépendances.
-    const uiModule = composerSource.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1]
+    const uiModule = composerSource.match(/from ["']([^"']*@solera[/_]ui[^"']*)["']/)[1]
     const { TooltipProvider } = await import(uiModule)
     const { useConversationConfig } = await import('/src/lib/conversation-config.ts')
     const { useConversation } = await import('/src/lib/conversations.ts')

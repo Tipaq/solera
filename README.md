@@ -83,6 +83,10 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   conversation open.
 - **Dictation** biased with a lexicon read from the project itself plus the
   current branch, then an optional cleanup pass. Any OpenAI-format endpoint.
+- **Continue a conversation in another CLI.** From Claude Code to Codex or OpenCode and
+  back: the new agent receives a budgeted selection of the thread, full messages rather
+  than a summary, with references it can read back through the Solera MCP server.
+  [How the handoff is built](docs/cli-handoff.md).
 - **MCP servers** declared once and handed to the agents that should get them.
 - **A task API for machines.** `/api/v1` speaks tasks rather than screens: open
   one in a project, follow its events, answer what it asks, steer or interrupt
