@@ -1,0 +1,26 @@
+{
+  "name": "@solera/desktop",
+  "productName": "Solera",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solera en application de bureau : le serveur et son interface sur votre propre poste.",
+  "homepage": "https://tipaq.github.io/solera/",
+  "repository": "github:Tipaq/solera",
+  "author": "Timothée Paquot",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "desktopName": "solera.desktop",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "start": "tsup && electron .",
+    "package": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "electron": "44.9.0",
+    "electron-builder": "26.15.3",
+    "tsup": "^8.3.5"
+  }
+}

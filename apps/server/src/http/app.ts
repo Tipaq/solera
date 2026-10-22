@@ -80,11 +80,18 @@ import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerWebRoutes } from './routes/web.js'
 import { registerFrameGuard } from './frame-guard.js'
+import { registerLocalOriginGuard } from './local-origin.js'
+import { INSTANCE_PROFILE } from '../instance/profile.js'
 import { registerDesignSystemRelay } from './routes/design-system-relay.js'
 import type { StorybookSupervisor } from '../design-system/storybooks.js'
 
-/** Routes accessibles sans session. Tout le reste exige un utilisateur. */
-const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health'])
+/**
+ * Routes accessibles sans session. Tout le reste exige un utilisateur.
+ *
+ * Le profil de l'instance en fait partie : l'interface l'attend avant de dessiner quoi que
+ * ce soit, page de connexion comprise.
+ */
+const PUBLIC_ROUTES = new Set(['/api/auth/login', '/api/health', '/api/system/instance'])
 
 /**
  * L'API publique, réservée aux jetons.
@@ -133,6 +140,7 @@ export async function buildApp(
 
   registerErrorHandler(app)
   registerFrameGuard(app)
+  if (INSTANCE_PROFILE === 'desktop') registerLocalOriginGuard(app)
 
   /**
    * Rien ne compressait sur le chemin : ni Solera, ni le nginx qui le précède, dont le

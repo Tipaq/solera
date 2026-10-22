@@ -31,6 +31,7 @@ import {
   type Choice,
   type SelectOption,
 } from '@solera/ui'
+import { useCapability } from '../lib/instance'
 
 type CreateMode = 'new' | 'existing' | 'clone'
 type Visibility = 'private' | 'shared'
@@ -116,6 +117,7 @@ export function NewProjectPage() {
 function NewFolderForm() {
   const openCreated = useAdoptAfterCreate()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const { data: settings } = useUserSettings()
   const visibilityOptions = useVisibilityOptions()
@@ -184,12 +186,14 @@ function NewFolderForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
@@ -203,6 +207,7 @@ function NewFolderForm() {
 function ExistingFolderForm() {
   const openCreated = useAdoptAfterCreate()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
   const createProject = useCreateProject()
   const visibilityOptions = useVisibilityOptions()
 
@@ -241,12 +246,14 @@ function ExistingFolderForm() {
         hint={t('projects.create.workspacePath.hint')}
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      {sharedProjects ? (
+        <Select
+          label={t('project.settings.visibility')}
+          value={visibility}
+          onChange={setVisibility}
+          options={visibilityOptions}
+        />
+      ) : null}
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">

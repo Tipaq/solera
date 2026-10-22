@@ -34,6 +34,7 @@
     "test:ui": "node scripts/frontend-ui-check.mjs",
     "test:vault-ui": "node scripts/vault-ui-check.mjs",
     "test:web-ui": "node scripts/web-ui-check.mjs",
+    "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
     "db:generate": "pnpm --filter @solera/db generate",
     "db:migrate": "pnpm --filter @solera/server migrate",
     "user:create": "pnpm --filter @solera/server user:create",
