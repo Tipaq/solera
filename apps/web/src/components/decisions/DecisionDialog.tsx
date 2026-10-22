@@ -8,6 +8,7 @@ import { decisionDue, openDecision, useAnswerDecision, useDecision, useOpenDecis
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
 import { Banner, Button, ChoiceList, IconButton, cx } from '@solera/ui'
+import { decisionContext, decisionOption, decisionQuestion } from './decision-text'
 
 export const DECISION_STATUS_LABELS: Record<DecisionStatus, MessageKey> = {
   pending: 'decision.status.pending',
@@ -43,7 +44,11 @@ export function DecisionDialog() {
                 {t(decision ? DECISION_STATUS_LABELS[decision.status] : 'decision.status.pending')}
               </p>
               <Dialog.Title className="mt-1 text-heading font-semibold text-ink">
-                {decision?.question ?? (isError ? t('decision.dialog.missing') : '…')}
+                {decision
+                  ? decisionQuestion(decision.question, decision.worktree?.branch, t)
+                  : isError
+                    ? t('decision.dialog.missing')
+                    : '…'}
               </Dialog.Title>
               {decision ? (
                 <p className="mt-1 truncate text-xs text-ink-faint">
@@ -69,6 +74,9 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
   const [option, setOption] = useState<string | null>(null)
   const [text, setText] = useState('')
   const pending = decision.status === 'pending'
+  // Une proposition de nettoyage se tranche par un choix : pas d'agent à qui écrire.
+  const worktree = decision.worktree
+  const context = decisionContext(decision, t)
   // Tranchée ailleurs pendant qu'on hésitait : on montre l'issue plutôt qu'une erreur.
   useEffect(() => {
     if (!pending) answer.reset()
@@ -89,9 +97,9 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
       }}
     >
       <div className="flex min-h-0 flex-col gap-5 overflow-y-auto p-5">
-        {decision.context ? (
+        {context ? (
           <div className="min-w-0 rounded-lg border border-line bg-sunken px-4 py-3 text-sm break-words text-ink-soft">
-            <Markdown text={decision.context} />
+            <Markdown text={context} />
           </div>
         ) : null}
 
@@ -103,13 +111,13 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
                 value={option ?? ''}
                 options={decision.options.map((entry) => ({
                   value: entry,
-                  label: entry,
+                  label: decisionOption(decision, entry, t),
                   hint: entry === decision.defaultOption ? t('decision.dialog.default') : undefined,
                 }))}
                 onChange={(value) => setOption((current) => (current === value ? null : value))}
               />
             ) : null}
-            <div className="flex flex-col gap-1.5">
+            {worktree ? null : <div className="flex flex-col gap-1.5">
               <label htmlFor={textId} className="text-sm font-medium text-ink-soft">
                 {t(decision.options.length > 0 ? 'decision.dialog.note' : 'decision.dialog.free')}
               </label>
@@ -125,12 +133,14 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
                 }}
                 className="w-full resize-y rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink outline-none placeholder:text-ink-faint hover:border-line-strong focus:border-accent"
               />
-            </div>
+            </div>}
             <p className="text-xs text-ink-faint">
               {decisionDue(decision.expiresAt)} ·{' '}
-              {decision.defaultOption
-                ? t('decision.dialog.fallback', { option: decision.defaultOption })
-                : t('decision.dialog.noFallback')}
+              {worktree
+                ? t('decision.worktree.expiry')
+                : decision.defaultOption
+                  ? t('decision.dialog.fallback', { option: decision.defaultOption })
+                  : t('decision.dialog.noFallback')}
             </p>
             {answer.isError ? <Banner>{answer.error.message}</Banner> : null}
           </>
@@ -141,11 +151,15 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-4 pb-safe">
         <Link
-          to={conversationPath({ id: decision.conversationId, projectId: decision.projectId || null })}
+          to={
+            worktree
+              ? `/p/${decision.projectId}/settings#worktrees`
+              : conversationPath({ id: decision.conversationId, projectId: decision.projectId || null })
+          }
           onClick={() => openDecision(null)}
           className="inline-flex min-h-11 items-center gap-1 text-sm text-ink-faint hover:text-accent md:min-h-9 pointer-coarse:min-h-11"
         >
-          {t('decision.dialog.openSession')}
+          {t(worktree ? 'decision.worktree.open' : 'decision.dialog.openSession')}
           <ArrowUpRight size={14} />
         </Link>
         <div className="flex-1" />
@@ -178,7 +192,7 @@ export function DecisionOutcome({ decision, className }: { decision: DecisionDto
             ? t('decision.outcome.default')
             : t('decision.outcome.expired')}
       </p>
-      {answer?.option ? <p className="font-medium text-ink">{answer.option}</p> : null}
+      {answer?.option ? <p className="font-medium text-ink">{decisionOption(decision, answer.option, t)}</p> : null}
       {answer?.text ? <p className="whitespace-pre-wrap text-ink-soft">{answer.text}</p> : null}
     </div>
   )

@@ -9,6 +9,8 @@ import Fastify from 'fastify'
 import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerGitActionRoutes } from '../src/http/routes/git-actions.js'
+import { EventLog } from '../src/events/event-log.js'
+import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 import {
   impactOf,
   perform,
@@ -271,7 +273,13 @@ async function harness(t: TestContext, status: 'idle' | 'running' | 'awaiting_in
   app.addHook('onRequest', async (request) => {
     request.user = db.select().from(users).all()[0]
   })
-  registerGitActionRoutes(app, { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } } as never)
+  // Les routes périment l'avancement des chantiers après chaque geste : un service réel
+  // sur cette base, jamais lu ici.
+  registerGitActionRoutes(
+    app,
+    { db, config: { paths: { data: dir, database: join(dir, 'test.sqlite') } } } as never,
+    new WorktreeStatusService(db, new EventLog(db)),
+  )
   t.after(() => app.close())
   return { app, root }
 }

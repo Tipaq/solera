@@ -274,9 +274,12 @@ export class CodexRunner implements AgentRunner {
         return {
           type: 'workspaceWrite',
           // Les prototypes du design system lié vivent hors du workspace (carte #63).
+          // Les worktrees où la session travaille hors de son cwd, relus à chaque tour :
+          // un arbre créé en cours de session s'ouvre au suivant.
           writableRoots: [
             ...this.config.additionalDirectories,
             ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
+            ...(this.ctx.workTrees?.() ?? []),
           ],
           networkAccess: this.config.webSearch,
           excludeTmpdirEnvVar: false,

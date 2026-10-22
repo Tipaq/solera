@@ -59,6 +59,7 @@ import {
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
+import { linkedWorktreePaths } from '../worktrees/linked.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -1030,6 +1031,9 @@ export class SessionManager {
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
           : [],
+      // Un fil libre n'a pas de projet, donc pas de worktree.
+      workTrees: () =>
+        conversation.projectId ? linkedWorktreePaths(this.db, conversationId, conversation.projectId) : [],
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SoleraEvent, raw?: unknown) => {

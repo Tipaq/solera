@@ -8,6 +8,7 @@ import { Badge, Banner, EmptyState, Tabs } from '@solera/ui'
 import { shortAge } from '../lib/dates'
 import { decisionDue, openDecision, useDecisions } from '../lib/decisions'
 import { useTranslate } from '../lib/i18n'
+import { decisionOption, decisionQuestion } from '../components/decisions/decision-text'
 
 /** Deux teintes qui disent quelque chose, comme au Journal : ce qui attend, ce qui a échu. */
 const STATUS_TONES: Record<DecisionStatus, 'caution' | 'positive' | 'neutral'> = {
@@ -82,7 +83,9 @@ export function DecisionsPage() {
 function DecisionRow({ decision }: { decision: DecisionDto }) {
   const t = useTranslate()
   const answer = decision.answer
-  const outcome = answer ? [answer.option, answer.text].filter(Boolean).join(' — ') : ''
+  const outcome = answer
+    ? [answer.option ? decisionOption(decision, answer.option, t) : null, answer.text].filter(Boolean).join(' — ')
+    : ''
 
   return (
     <li className="border-t border-line/60 first:border-t-0">
@@ -92,7 +95,7 @@ function DecisionRow({ decision }: { decision: DecisionDto }) {
         className="flex min-h-11 w-full flex-col gap-1 rounded px-2 py-2.5 text-left transition-colors hover:bg-surface-high"
       >
         <span className="flex w-full items-start gap-2">
-          <span className="min-w-0 flex-1 text-sm font-medium text-ink">{decision.question}</span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-ink">{decisionQuestion(decision.question, decision.worktree?.branch, t)}</span>
           <Badge tone={STATUS_TONES[decision.status]}>{t(DECISION_STATUS_LABELS[decision.status])}</Badge>
         </span>
         <span className="flex w-full items-center gap-2 text-xs text-ink-faint">

@@ -84,6 +84,8 @@ import { registerLocalOriginGuard } from './local-origin.js'
 import { INSTANCE_PROFILE } from '../instance/profile.js'
 import { registerDesignSystemRelay } from './routes/design-system-relay.js'
 import type { StorybookSupervisor } from '../design-system/storybooks.js'
+import type { WorktreeCleanup } from '../worktrees/cleanup.js'
+import type { WorktreeStatusService } from '../worktrees/status-service.js'
 
 /**
  * Routes accessibles sans session. Tout le reste exige un utilisateur.
@@ -125,6 +127,8 @@ export async function buildApp(
   storybooks: StorybookSupervisor,
   notifications: Notifications,
   decisions: Decisions,
+  worktreeStatus: WorktreeStatusService,
+  worktreeCleanup: WorktreeCleanup,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -233,7 +237,7 @@ export async function buildApp(
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
-  registerWorktreeRoutes(app, ctx, terminals)
+  registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments)
   registerJournalRoutes(app, ctx)
   registerUserRoutes(app, ctx)
@@ -256,7 +260,7 @@ export async function buildApp(
   registerDesignSystemRelay(app, storybooks)
   registerFileRoutes(app, ctx)
   registerGitViewRoutes(app, ctx)
-  registerGitActionRoutes(app, ctx)
+  registerGitActionRoutes(app, ctx, worktreeStatus)
   registerTerminalRoutes(app, ctx, sessions, terminals)
   await registerWebSocketHub(app, ctx, log, sessions, notifications)
   // Après le hub : c'est lui qui enregistre le plugin websocket dont dépend le terminal.
