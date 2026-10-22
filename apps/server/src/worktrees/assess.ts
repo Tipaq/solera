@@ -157,6 +157,7 @@ export interface WorktreeAssessment {
   modified: number
   untracked: number
   conflicts: boolean
+  unmergedCommits: boolean
   lastCommitAt: number | null
   lastEditAt: number | null
 }
@@ -168,8 +169,32 @@ const MISSING: WorktreeAssessment = {
   modified: 0,
   untracked: 0,
   conflicts: false,
+  unmergedCommits: false,
   lastCommitAt: null,
   lastEditAt: null,
+}
+
+/** Un arbre que git n'a pas su juger (gitdir cassé, objet manquant) : ni sûr ni perdu. */
+export const UNREADABLE: WorktreeAssessment = { ...MISSING, state: 'unreadable' }
+
+/**
+ * Vrai si la branche a déjà porté un commit à elle : son reflog garde une entrée de
+ * commit, de fusion, de cherry-pick ou de rebase, au-delà de sa création.
+ *
+ * C'est ce qui sépare un arbre fusionné par fast-forward ou par merge (rien en avance,
+ * mais du travail livré) d'un arbre qu'on vient de créer (rien en avance non plus, et
+ * aucun travail encore). Un arbre qui porte des modifications, même déjà dans la base,
+ * a travaillé : la question ne se pose que pour un arbre sans commit propre ni fichier
+ * touché. Sans reflog, expiré ou désactivé, on ne sait pas : on répond
+ * non, et l'arbre reste « sans travail », qu'on peut nettoyer mais qu'on ne propose pas.
+ */
+async function branchHasWorked(repo: string, branch: string | null): Promise<boolean> {
+  if (!branch) return false
+  const result = await git(repo, ['reflog', 'show', '--format=%gs', `refs/heads/${branch}`, '--'])
+  if (result.code !== 0) return false
+  return result.stdout
+    .split('\n')
+    .some((entry) => /^(commit|merge|cherry-pick|rebase|pull|am|revert)\b/.test(entry.trim()))
 }
 
 /**
@@ -260,7 +285,7 @@ async function lastEdit(path: string, files: string[]): Promise<number | null> {
 export async function assessWorktree(
   repo: string,
   base: string,
-  entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'>,
+  entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'> & { branch?: string | null },
   /** Force le chemin des git antérieurs à 2.40, pour les tests ; sinon lu sur la version. */
   options: { legacyGit?: boolean } = {},
 ): Promise<WorktreeAssessment> {
@@ -313,7 +338,13 @@ export async function assessWorktree(
   const untrackedKnown = await untrackedInBase(entry.path, base, untracked.map((e) => e.path))
 
   const state: WorktreeState =
-    !trackedInBase || !untrackedKnown ? 'dirty' : !commitsInBase ? 'unmerged' : 'merged'
+    !trackedInBase || !untrackedKnown
+      ? 'dirty'
+      : !commitsInBase
+        ? 'unmerged'
+        : ahead === 0 && entries.length === 0 && !(await branchHasWorked(repo, entry.branch ?? null))
+          ? 'empty'
+          : 'merged'
 
   return {
     state,
@@ -322,6 +353,7 @@ export async function assessWorktree(
     modified: tracked.length,
     untracked: untracked.length,
     conflicts,
+    unmergedCommits: !commitsInBase,
     lastCommitAt: lastCommit ? Number(lastCommit) * 1000 : null,
     lastEditAt: await lastEdit(entry.path, entries.map((e) => e.path)),
   }

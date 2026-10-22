@@ -66,6 +66,8 @@ export interface WorktreeProposal {
   conversationId: string
   branch: string
   path: string
+  /** Le commit de tête : la réponse vaut pour lui, un arbre qui a bougé se repropose. */
+  head: string | null
   base: string
   sessions: number
 }
@@ -329,9 +331,10 @@ export class Decisions {
   }
 
   /**
-   * Propose de nettoyer un arbre fusionné et propre, une seule fois par arbre : une
-   * réponse « Garder », ou l'échéance, vaut pour la suite. Seul un retrait (l'arbre a
-   * bougé entre-temps) laisse la question se reposer quand il redevient fusionné.
+   * Propose de nettoyer un arbre fusionné et propre, une seule fois par arbre, branche et
+   * commit de tête : une réponse « Garder », ou l'échéance, vaut tant que l'arbre n'a pas
+   * bougé. Un arbre recréé sous le même chemin, ou qui a reçu et livré du travail depuis,
+   * se repropose ; un retrait aussi laisse la question se reposer.
    *
    * Une décision comme celles des sessions, pour paraître au même endroit, mais posée
    * par Solera : elle va au propriétaire du projet, seul à pouvoir nettoyer, et sa
@@ -339,11 +342,17 @@ export class Decisions {
    */
   proposeWorktreeCleanup(proposal: WorktreeProposal): boolean {
     const asked = this.ctx.db
-      .select({ resolvedAt: agentRequests.resolvedAt, answer: agentRequests.answer })
+      .select({ resolvedAt: agentRequests.resolvedAt, answer: agentRequests.answer, payload: agentRequests.payload })
       .from(agentRequests)
       .where(and(eq(agentRequests.projectId, proposal.projectId), eq(agentRequests.worktreePath, proposal.path)))
       .all()
-      .some((row) => row.resolvedAt === null || readAnswer(row.answer)?.by !== 'withdrawn')
+      .some((row) => {
+        // Une question ouverte sur ce chemin suffit : on ne pose pas la seconde.
+        if (row.resolvedAt === null) return true
+        if (readAnswer(row.answer)?.by === 'withdrawn') return false
+        const asked = (JSON.parse(row.payload) as { worktree?: { branch?: unknown; head?: unknown } }).worktree
+        return asked?.branch === proposal.branch && (asked?.head ?? null) === proposal.head
+      })
     if (asked) return false
     const project = this.ctx.db.select().from(projects).where(eq(projects.id, proposal.projectId)).get()
     if (!project) return false
@@ -352,7 +361,7 @@ export class Decisions {
     const id = randomUUID()
     // En français comme le reste de ce que le serveur écrit (notifications, notes) ;
     // l'interface recompose la question et les choix dans la langue du lecteur.
-    const payload: DecisionPayload & { worktree: Omit<DecisionWorktreeDto, 'path'> } = {
+    const payload: DecisionPayload & { worktree: Omit<DecisionWorktreeDto, 'path'> & { head: string | null } } = {
       question: `${proposal.branch} est fusionnée et propre : nettoyer ?`,
       context: [
         `Rien dans l'arbre que ${proposal.base} n'ait déjà.`,
@@ -360,7 +369,7 @@ export class Decisions {
       ].join('\n\n'),
       options: [...WORKTREE_DECISION_OPTIONS],
       defaultOption: null,
-      worktree: { branch: proposal.branch, base: proposal.base, sessions: proposal.sessions },
+      worktree: { branch: proposal.branch, head: proposal.head, base: proposal.base, sessions: proposal.sessions },
     }
     this.ctx.db
       .insert(agentRequests)

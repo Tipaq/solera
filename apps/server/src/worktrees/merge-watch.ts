@@ -39,9 +39,11 @@ export function watchMergedWorktrees(
     for (const tree of list.worktrees) {
       // L'arbre qui porte la branche par défaut n'est pas un chantier qu'on fusionne.
       if (tree.state !== 'merged' || tree.branch === list.base) continue
-      // Les sessions qui vivent dans l'arbre, et elles seules : une session de la racine
-      // qui y a cité un chemin peut tourner des jours sans rien y faire.
-      const ids = tree.conversations.filter((entry) => entry.link === 'worktree').map((entry) => entry.id)
+      // Toute session liée qui travaille repousse la question, comme le nettoyage la
+      // refuserait : elle n'a peut-être pas fini. Seules celles qui vivent dans l'arbre
+      // seront archivées, et c'est elles que la question compte.
+      const ids = tree.conversations.map((entry) => entry.id)
+      const residents = new Set(tree.conversations.filter((entry) => entry.link === 'worktree').map((entry) => entry.id))
       const linked = ids.length
         ? db
             .select({ id: conversations.id, status: conversations.status, updatedAt: conversations.updatedAt, archivedAt: conversations.archivedAt })
@@ -49,16 +51,18 @@ export function watchMergedWorktrees(
             .where(inArray(conversations.id, ids))
             .all()
         : []
-      if (linked.some((row) => row.status === 'running' || row.status === 'awaiting_input')) continue
-      const latest = [...linked].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+      if (linked.some((row) => row.archivedAt === null && (row.status === 'running' || row.status === 'awaiting_input'))) continue
+      const living = linked.filter((row) => residents.has(row.id))
+      const latest = [...living].sort((a, b) => b.updatedAt - a.updatedAt)[0]
       // Seul le propriétaire peut nettoyer un arbre : c'est à lui que la question va.
       decisions.proposeWorktreeCleanup({
         projectId: project.id,
         conversationId: latest?.id ?? '',
         branch: tree.name,
         path: tree.path,
+        head: tree.head,
         base: list.base,
-        sessions: linked.filter((row) => row.archivedAt === null).length,
+        sessions: living.filter((row) => row.archivedAt === null).length,
       })
     }
   })

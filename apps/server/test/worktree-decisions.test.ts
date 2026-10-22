@@ -133,7 +133,7 @@ test('un arbre fusionné et propre est proposé une fois, au propriétaire', asy
   assert.equal(rows().length, 1, 'une question expirée ne revient pas')
 })
 
-test('une session qui vit dans l’arbre et travaille repousse la question, pas une session de la racine', async (t) => {
+test('toute session liée qui travaille repousse la question, mais seules celles de l’arbre comptent', async (t) => {
   const { db, merged, compute, rows } = harness(t)
   const path = merged('feat/agent')
   db.insert(worktrees).values({ id: 'wt', projectId: 'project', name: 'feat/agent', path, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
@@ -147,7 +147,13 @@ test('une session qui vit dans l’arbre et travaille repousse la question, pas 
   await compute()
   assert.equal(rows().length, 0)
 
+  // Celle de l'arbre a fini, celle de la racine qui y a cité un chemin tourne encore :
+  // elle y travaille peut-être, la question attend.
   db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'agent')).run()
+  await compute()
+  assert.equal(rows().length, 0)
+
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'root')).run()
   await compute()
   assert.equal(rows().length, 1)
   assert.equal(rows()[0]!.conversationId, 'agent')
@@ -233,4 +239,34 @@ test('la route : seul le propriétaire du projet tranche, et « Nettoyer » rép
   assert.equal(answered.statusCode, 200)
   assert.equal(answered.json().status, 'user')
   assert.ok(!existsSync(path))
+})
+
+test('un arbre qu’on vient de créer n’est jamais proposé, même sans rien en avance', async (t) => {
+  const { repo, compute, rows } = harness(t)
+  const fresh = join(repo, '..', 'trees', 'feat__fresh')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat/fresh', fresh, 'main')
+  await compute()
+  assert.equal(rows().length, 0)
+  assert.ok(existsSync(fresh))
+})
+
+test('« Garder » vaut pour cet arbre-là : recréé et refusionné, il est reproposé', async (t) => {
+  const { repo, merged, compute, rows, service } = harness(t)
+  const path = merged('feat/again')
+  await compute()
+  await service.answer('owner', rows()[0]!.id, { option: 'keep', text: '' })
+  await compute()
+  assert.equal(rows().length, 1, 'gardé, et rien n’a bougé : la question ne revient pas')
+
+  // Le même chemin, une autre vie : l'arbre est retiré, puis recréé et fusionné de nouveau.
+  git(repo, 'worktree', 'remove', '--force', path)
+  git(repo, 'branch', '-D', 'feat/again')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat/again', path, 'main')
+  writeFileSync(join(path, 'second.txt'), 'second\n')
+  git(path, 'add', '-A')
+  git(path, 'commit', '-q', '-m', 'second')
+  git(repo, 'merge', '-q', '--squash', 'feat/again')
+  git(repo, 'commit', '-q', '-m', 'squash again')
+  await compute()
+  assert.equal(rows().filter((row) => row.status === 'pending').length, 1)
 })

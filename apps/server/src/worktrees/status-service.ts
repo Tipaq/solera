@@ -1,12 +1,12 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { assessWorktree, defaultBase, listWorktrees } from './assess.js'
+import { UNREADABLE, assessWorktree, defaultBase, listWorktrees } from './assess.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
- * Court, parce que l'arbre bouge sous les sessions ; mais la barre latérale relit la
+ * Court, parce que l'arbre bouge sous les sessions ; mais l'interface relit la
  * liste à chaque fin de tour, et sans ce délai chaque relecture lancerait des dizaines
  * de git.
  */
@@ -37,7 +37,7 @@ interface CacheEntry {
  * worktree invalident.
  *
  * Une liste périmée est rendue tout de suite pendant que la suivante se calcule :
- * la barre latérale n'attend jamais un `git status` sur un dépôt de plusieurs
+ * l'interface n'attend jamais un `git status` sur un dépôt de plusieurs
  * gigaoctets. Seul le tout premier appel d'un projet attend.
  */
 export class WorktreeStatusService {
@@ -150,6 +150,10 @@ export class WorktreeStatusService {
         .finally(() => {
           entry.pending = null
         })
+      // Servie périmée, la liste n'attend pas ce calcul : son échec ne doit pas devenir
+      // un rejet que personne n'écoute, et faire tomber le daemon. Ceux qui l'attendent
+      // le reçoivent quand même, par la promesse elle-même.
+      entry.pending.catch((err: unknown) => console.warn('[worktrees] calcul en échec :', err))
     }
     // Une liste connue mais périmée part tout de suite, signalée comme telle ; le
     // calcul lancé servira la lecture suivante.
@@ -206,11 +210,18 @@ export class WorktreeStatusService {
     }
 
     const list = [...unified.values()]
+    // Un arbre que git ne sait pas juger (gitdir cassé, objet manquant) est marqué
+    // illisible, seul : il ne doit ni faire échouer la liste entière, ni la laisser
+    // périmée pour toujours.
     const assessed = await mapLimited(list, CONCURRENCY, (tree) =>
-      base
-        ? assessWorktree(repo, base, tree)
-        : assessWorktree(repo, 'HEAD', { ...tree, head: null }),
+      (base ? assessWorktree(repo, base, tree) : assessWorktree(repo, 'HEAD', { ...tree, head: null })).catch(
+        (err: unknown) => {
+          console.warn(`[worktrees] arbre illisible ${tree.path} :`, err)
+          return UNREADABLE
+        },
+      ),
     )
+    const paths = this.touchedPaths(project.id)
 
     const result: WorktreeStatusDto[] = list.map((tree, index) => ({
       id: tree.id,
@@ -218,12 +229,13 @@ export class WorktreeStatusService {
       path: tree.path,
       branch: tree.branch,
       external: tree.id === null,
-      conversations: this.linkedConversations(project.id, tree.id, tree.path),
+      head: tree.head,
+      conversations: this.linkedConversations(tree.id, tree.path, paths),
       ...assessed[index]!,
     }))
 
     // Les plus urgents d'abord, puis les plus récemment actifs.
-    const order = { missing: 0, dirty: 1, unmerged: 2, merged: 3 }
+    const order = { missing: 0, unreadable: 1, dirty: 2, unmerged: 3, empty: 4, merged: 5 }
     result.sort(
       (a, b) =>
         order[a.state] - order[b.state] ||
@@ -234,14 +246,27 @@ export class WorktreeStatusService {
   }
 
   /**
+   * Les chemins que les conversations du projet ont touchés, lus une fois par calcul
+   * plutôt qu'une fois par arbre.
+   */
+  private touchedPaths(projectId: string): { id: string; path: string }[] {
+    return this.db
+      .select({ id: conversationPaths.conversationId, path: conversationPaths.path })
+      .from(conversationPaths)
+      .innerJoin(conversations, eq(conversations.id, conversationPaths.conversationId))
+      .where(eq(conversations.projectId, projectId))
+      .all()
+  }
+
+  /**
    * Les conversations tenues à un arbre : par leur cwd (`worktree_id`), ou parce
    * qu'elles y ont écrit (voir `conversation_paths`). Le premier lien l'emporte sur le
    * second pour une même conversation.
    */
   private linkedConversations(
-    projectId: string,
     worktreeId: string | null,
     path: string,
+    touched: { id: string; path: string }[],
   ): { id: string; link: WorktreeLink }[] {
     const linked = new Map<string, WorktreeLink>()
 
@@ -254,21 +279,10 @@ export class WorktreeStatusService {
       for (const row of direct) linked.set(row.id, 'worktree')
     }
 
-    // `substr` plutôt que LIKE : un nom de dossier porte souvent `_`, joker de LIKE.
     const prefix = `${path}/`
-    const edited = this.db
-      .select({ id: conversationPaths.conversationId })
-      .from(conversationPaths)
-      .innerJoin(conversations, eq(conversations.id, conversationPaths.conversationId))
-      .where(
-        and(
-          eq(conversations.projectId, projectId),
-          sql`(${conversationPaths.path} = ${path} OR substr(${conversationPaths.path}, 1, ${prefix.length}) = ${prefix})`,
-        ),
-      )
-      .groupBy(conversationPaths.conversationId)
-      .all()
-    for (const row of edited) if (!linked.has(row.id)) linked.set(row.id, 'edited')
+    for (const row of touched) {
+      if ((row.path === path || row.path.startsWith(prefix)) && !linked.has(row.id)) linked.set(row.id, 'edited')
+    }
 
     return [...linked].map(([id, link]) => ({ id, link }))
   }

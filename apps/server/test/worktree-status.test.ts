@@ -329,7 +329,8 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   assert.ok(!byPath.has(repo), "l'arbre principal n'est pas un chantier")
 
   const knownTree = byPath.get(known)!
-  assert.deepEqual([knownTree.id, knownTree.external, knownTree.state, knownTree.name], ['wt-known', false, 'merged', 'feat/known'])
+  // Créé, jamais commité ni touché : sans travail, et non fusionné.
+  assert.deepEqual([knownTree.id, knownTree.external, knownTree.state, knownTree.name], ['wt-known', false, 'empty', 'feat/known'])
   assert.deepEqual(knownTree.conversations.map((c) => c.id).sort(), ['c-both', 'c-direct'])
   assert.ok(knownTree.conversations.every((c) => c.link === 'worktree'))
 
@@ -344,7 +345,7 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   // Resservi du cache tant que rien ne l'invalide ; un tour terminé le périme, et la
   // liste périmée est rendue tout de suite pendant que la suivante se calcule.
   write(known, 'src/app.ts', 'changed\n')
-  assert.equal((await service.get(projectRow)).worktrees.find((w) => w.id === 'wt-known')?.state, 'merged')
+  assert.equal((await service.get(projectRow)).worktrees.find((w) => w.id === 'wt-known')?.state, 'empty')
   log.append('c-direct', { type: 'turn.completed', costUsd: 0, inputTokens: 0, outputTokens: 0, durationMs: 0 } as never)
   const stale = await service.get(projectRow)
   assert.equal(stale.fresh, false)
@@ -397,7 +398,13 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
     [plan.state, plan.ahead, plan.branchDeletable, plan.conversations.map((c) => c.id), plan.card?.number],
     ['merged', 1, true, ['c1'], 7],
   )
-  assert.deepEqual(plan.busy, [])
+  assert.equal(plan.unmergedCommits, false)
+  // La session de la racine qui a écrit dans l'arbre tourne : elle y travaille peut-être,
+  // le nettoyage l'attend aussi, sans pour autant l'archiver.
+  assert.deepEqual(plan.busy.map((c) => c.id), ['c3'])
+  await assert.rejects(cleanup.run(projectRow, { path: known, deleteBranch: true, stopServices: true }), /working in this worktree/)
+  db.update(conversations).set({ status: 'idle' }).where(sqlEq(conversations.id, 'c3')).run()
+  assert.deepEqual((await cleanup.plan(projectRow, known))!.busy, [])
 
   // Une session qui vit dans l'arbre et travaille : le nettoyage attend la fin de son tour.
   db.update(conversations).set({ status: 'running' }).where(sqlEq(conversations.id, 'c1')).run()
@@ -430,4 +437,56 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const prunable = (await cleanup.run(projectRow, { path: gone, deleteBranch: true, stopServices: false }))!
   assert.deepEqual([prunable.removed, prunable.branchDeleted], [true, true])
   assert.deepEqual((await listWorktrees(repo)).map((e) => e.path), [repo])
+})
+
+test('nettoyer : un arbre que git refuse de retirer reste, et sa perte de commits se voit', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-locked-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+  const status = new WorktreeStatusService(db, new EventLog(db))
+  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
+
+  // Un commit que la base n'a pas, puis du non commité par-dessus : l'état dit « non
+  // commité », mais le plan sait aussi que supprimer la branche perdrait le commit.
+  const both = addTree(repo, trees, 'feat/both')
+  write(both, 'src/kept.ts', 'kept\n')
+  commitAll(both, 'kept')
+  write(both, 'src/wip.ts', 'wip\n')
+  const plan = (await cleanup.plan(projectRow, both))!
+  assert.deepEqual([plan.state, plan.unmergedCommits, plan.ahead], ['dirty', true, 1])
+
+  // Verrouillé : git refuse `remove --force`, et le dossier n'est pas effacé à la main.
+  git(repo, 'worktree', 'lock', both)
+  await assert.rejects(cleanup.run(projectRow, { path: both, deleteBranch: false, stopServices: false }), /refused to remove/)
+  assert.ok(existsSync(join(both, 'src/wip.ts')))
+  assert.equal(git(repo, 'branch', '--list', 'feat/both').trim().replace(/^[*+ ]+/, ''), 'feat/both')
+})
+
+test('un arbre illisible est marqué tel, sans faire échouer la liste', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-unreadable-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+
+  const healthy = addTree(repo, trees, 'feat/healthy')
+  const broken = addTree(repo, trees, 'feat/broken')
+  // Le fichier `.git` de l'arbre pointe vers un gitdir qui n'existe pas.
+  writeFileSync(join(broken, '.git'), 'gitdir: /nowhere/at/all\n')
+
+  const list = await new WorktreeStatusService(db, new EventLog(db)).get(projectRow)
+  const states = Object.fromEntries(list.worktrees.map((w) => [w.name, w.state]))
+  assert.equal(states['feat/broken'], 'unreadable')
+  assert.equal(states['feat/healthy'], 'empty')
 })

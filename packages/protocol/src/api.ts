@@ -590,10 +590,15 @@ export interface WorktreeDto {
 
 /**
  * État d'un arbre par rapport à la branche par défaut du projet, du plus urgent au plus
- * anodin : introuvable, du travail non commité que la base n'a pas, des commits que la
- * base n'a pas, rien que la base n'ait déjà (donc à nettoyer).
+ * anodin : introuvable, illisible (git n'a pas pu le juger), du travail non commité que
+ * la base n'a pas, des commits que la base n'a pas, une branche qui n'a encore jamais
+ * porté de travail, rien que la base n'ait déjà (fusionné, donc à nettoyer).
+ *
+ * `empty` et `merged` ne perdent rien l'un comme l'autre ; seul le second dit que le
+ * travail est livré, et c'est lui seul que « À décider » propose de nettoyer : un arbre
+ * qu'on vient de créer ne doit pas être offert au nettoyage avant son premier commit.
  */
-export type WorktreeState = 'missing' | 'dirty' | 'unmerged' | 'merged'
+export type WorktreeState = 'missing' | 'unreadable' | 'dirty' | 'unmerged' | 'empty' | 'merged'
 
 /** Comment une conversation tient à un arbre : son cwd, ou des fichiers qu'elle y a écrits. */
 export type WorktreeLink = 'worktree' | 'edited'
@@ -616,6 +621,13 @@ export interface WorktreeStatusDto {
   untracked: number
   /** La fusion dans la base produirait un conflit. */
   conflicts: boolean
+  /**
+   * Des commits propres à la branche que la base n'a pas, quel que soit l'état : un
+   * arbre `dirty` peut en porter aussi, et supprimer sa branche les perdrait.
+   */
+  unmergedCommits: boolean
+  /** Le commit de tête : une proposition de nettoyage vaut pour lui seul. */
+  head: string | null
   lastCommitAt: number | null
   lastEditAt: number | null
   conversations: { id: string; link: WorktreeLink }[]
@@ -643,6 +655,8 @@ export interface WorktreeCleanupPlanDto {
   modified: number
   untracked: number
   ahead: number
+  /** Des commits que la base n'a pas : supprimer la branche les perdrait. */
+  unmergedCommits: boolean
   /** Vrai si la branche peut être supprimée : elle existe et n'est pas la base. */
   branchDeletable: boolean
   /** Sessions non archivées dont le cwd est l'arbre : le nettoyage les archive. */

@@ -4,15 +4,19 @@ import { cx } from '@solera/ui'
 /** Couleur d'un état de chantier, pour que le même mot ait la même teinte partout. */
 export const WORKTREE_STATE_COLOR: Record<WorktreeState, string> = {
   missing: 'bg-critical',
+  unreadable: 'bg-critical',
   dirty: 'bg-caution',
   unmerged: 'bg-accent',
+  empty: 'bg-line-strong',
   merged: 'bg-positive',
 }
 
-export const WORKTREE_STATE_TONE: Record<WorktreeState, 'critical' | 'caution' | 'accent' | 'positive'> = {
+export const WORKTREE_STATE_TONE: Record<WorktreeState, 'neutral' | 'critical' | 'caution' | 'accent' | 'positive'> = {
   missing: 'critical',
+  unreadable: 'critical',
   dirty: 'caution',
   unmerged: 'accent',
+  empty: 'neutral',
   merged: 'positive',
 }
 

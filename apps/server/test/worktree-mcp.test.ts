@@ -125,7 +125,8 @@ test('create_worktree : depuis la branche par défaut, rattaché sans toucher au
 
   const listed = (await call('list_worktrees', {})).content[0]!.text
   assert.match(listed, /comparés à main/)
-  assert.match(listed, /`feat\/mcp` : fusionné/)
+  // Créé et jamais commité : sans travail, pas « fusionné », qu'on proposerait de nettoyer.
+  assert.match(listed, /`feat\/mcp` : sans travail encore/)
   assert.match(listed, /toi y a travaillé/)
 })
 

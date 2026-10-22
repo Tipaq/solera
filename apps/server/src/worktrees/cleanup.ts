@@ -1,7 +1,12 @@
 import { rm, stat } from 'node:fs/promises'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { cards, conversations, worktrees, type Db, type ProjectRow } from '@solera/db'
-import type { WorktreeCleanupPlanDto, WorktreeCleanupResultDto, WorktreeStatusDto } from '@solera/protocol'
+import type {
+  WorktreeCleanupPlanDto,
+  WorktreeCleanupResultDto,
+  WorktreeStatusDto,
+  WorktreeStatusListDto,
+} from '@solera/protocol'
 import { GitError, deleteBranch, removeWorktree } from '../git.js'
 import { controlServiceApp, scanServiceApps, serviceAppsAvailable } from '../services/apps.js'
 import { processOrigins, type ProcessOrigins } from '../services/origins.js'
@@ -9,6 +14,7 @@ import { readProcessHost } from '../services/ownership.js'
 import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '../services/processes.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import { HttpError } from '../http/errors.js'
+import { listWorktrees } from './assess.js'
 import type { WorktreeStatusService } from './status-service.js'
 
 /**
@@ -19,6 +25,23 @@ import type { WorktreeStatusService } from './status-service.js'
  */
 function residents(tree: WorktreeStatusDto): string[] {
   return tree.conversations.filter((entry) => entry.link === 'worktree').map((entry) => entry.id)
+}
+
+/**
+ * Les sessions liées à l'arbre qui travaillent en ce moment, qu'elles y vivent ou y
+ * écrivent par chemins absolus (`create_worktree`) : le nettoyage les attend toutes,
+ * plutôt que de retirer un dossier sous un agent qui s'en sert.
+ */
+function busyIn(db: Db, tree: WorktreeStatusDto): { id: string; title: string }[] {
+  const ids = tree.conversations.map((entry) => entry.id)
+  if (ids.length === 0) return []
+  return db
+    .select({ id: conversations.id, title: conversations.title, status: conversations.status })
+    .from(conversations)
+    .where(and(inArray(conversations.id, ids), isNull(conversations.archivedAt)))
+    .all()
+    .filter((row) => isBusy(row.status))
+    .map(({ id, title }) => ({ id, title }))
 }
 
 /**
@@ -45,17 +68,23 @@ export class WorktreeCleanup {
   /**
    * L'arbre désigné par son chemin, s'il appartient bien au projet : connu de git ou de
    * la base, jamais un dossier quelconque. C'est la seule garde entre une route et un
-   * `rm -rf`.
+   * `rm -rf`. Relu à l'instant et non tiré du cache : la branche et l'état qu'on montre,
+   * ou sur lesquels on agit, doivent être ceux de maintenant.
    */
-  private async locate(project: ProjectRow, path: string): Promise<WorktreeStatusDto | null> {
-    const list = await this.status.get(project)
-    return list.worktrees.find((tree) => tree.path === path) ?? null
+  private async locate(
+    project: ProjectRow,
+    path: string,
+  ): Promise<{ tree: WorktreeStatusDto; list: WorktreeStatusListDto } | null> {
+    this.status.invalidate(project.id)
+    const list = await this.status.current(project)
+    const tree = list.worktrees.find((entry) => entry.path === path)
+    return tree ? { tree, list } : null
   }
 
   async plan(project: ProjectRow, path: string): Promise<WorktreeCleanupPlanDto | null> {
-    const tree = await this.locate(project, path)
-    if (!tree) return null
-    const list = await this.status.get(project)
+    const found = await this.locate(project, path)
+    if (!found) return null
+    const { tree, list } = found
 
     const linked = residents(tree)
     const open = linked.length
@@ -85,9 +114,10 @@ export class WorktreeCleanup {
       modified: tree.modified,
       untracked: tree.untracked,
       ahead: tree.ahead,
+      unmergedCommits: tree.unmergedCommits,
       branchDeletable: tree.branch !== null && tree.branch !== list.base,
       conversations: open.map(({ id, title }) => ({ id, title })),
-      busy: open.filter((row) => isBusy(row.status)).map(({ id, title }) => ({ id, title })),
+      busy: busyIn(this.db, tree),
       services: (await this.servicesUnder(path)).map((s) => ({ id: s.id, label: s.label, kind: s.kind })),
       terminals: this.terminals.underCwd(path).length,
       card: card ? { id: card.id, number: card.number, title: card.title } : null,
@@ -98,22 +128,16 @@ export class WorktreeCleanup {
     project: ProjectRow,
     options: { path: string; deleteBranch: boolean; stopServices: boolean },
   ): Promise<WorktreeCleanupResultDto | null> {
-    const tree = await this.locate(project, options.path)
-    if (!tree) return null
-    const base = (await this.status.get(project)).base
+    const found = await this.locate(project, options.path)
+    if (!found) return null
+    const { tree, list } = found
+    const base = list.base
     const result: WorktreeCleanupResultDto = { removed: false, branchDeleted: false, archived: 0, stopped: 0 }
 
     // Une session qui travaille dans l'arbre ne le perd pas sous elle : on attend la fin
     // de son tour plutôt que de l'interrompre. Relu ici, le plan a pu vieillir.
     const ids = residents(tree)
-    const busy = ids.length
-      ? this.db
-          .select({ title: conversations.title, status: conversations.status })
-          .from(conversations)
-          .where(inArray(conversations.id, ids))
-          .all()
-          .filter((row) => isBusy(row.status))
-      : []
+    const busy = busyIn(this.db, tree)
     if (busy.length > 0) {
       throw new HttpError(409, 'worktree_busy', 'A session is working in this worktree ({title}).', {
         title: busy[0]!.title,
@@ -147,7 +171,15 @@ export class WorktreeCleanup {
       await removeWorktree(project.workspacePath, tree.path, true)
     } catch (err) {
       if (!(err instanceof GitError)) throw err
-      // Git ne le connaît plus (entrée en base seulement) : le dossier part seul.
+      // Git refuse un arbre qu'il connaît encore (verrouillé, sous-module) : on s'arrête
+      // là, son refus dit pourquoi. Le dossier ne part seul que si git ne le connaît
+      // plus, une entrée de la base seulement.
+      const known = (await listWorktrees(project.workspacePath)).some((entry) => entry.path === tree.path)
+      if (known) {
+        throw new HttpError(409, 'worktree_remove_refused', 'Git refused to remove this worktree: {reason}', {
+          reason: err.message,
+        })
+      }
       if (await stat(tree.path).then((s) => s.isDirectory()).catch(() => false)) {
         await rm(tree.path, { recursive: true, force: true })
       }
@@ -172,9 +204,8 @@ export class WorktreeCleanup {
    * c'est le geste d'une réponse « Nettoyer », donnée parfois des jours après la question.
    */
   async cleanIfMerged(project: ProjectRow, path: string): Promise<'cleaned' | 'stale'> {
-    this.status.invalidate(project.id)
-    const tree = (await this.status.current(project)).worktrees.find((entry) => entry.path === path)
-    if (!tree || tree.state !== 'merged') return 'stale'
+    const found = await this.locate(project, path)
+    if (!found || found.tree.state !== 'merged') return 'stale'
     await this.run(project, { path, deleteBranch: true, stopServices: true })
     return 'cleaned'
   }

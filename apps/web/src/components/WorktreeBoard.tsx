@@ -202,6 +202,9 @@ function CleanupDialog({
   const clean = useCleanWorktree(projectId)
   const updateCard = useUpdateCard(projectId)
   const [deleteBranch, setDeleteBranch] = useState(true)
+  // Des commits que la base n'a pas : la branche les garde, on ne la propose pas à la
+  // suppression d'office. Cochée quand même, la perte est dite plus bas.
+  useEffect(() => { setDeleteBranch(!plan?.unmergedCommits) }, [plan?.unmergedCommits])
   const [stopServices, setStopServices] = useState(true)
   const [cardDone, setCardDone] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -212,11 +215,12 @@ function CleanupDialog({
   if (plan) {
     if (plan.modified > 0) lost.push(plural('worktrees.modified', plan.modified))
     if (plan.untracked > 0) lost.push(plural('worktrees.untracked', plan.untracked))
-    if (plan.state === 'unmerged' && plan.ahead > 0 && base) {
+    // Les commits ne partent qu'avec la branche : l'arbre retiré, elle les garde.
+    if (plan.unmergedCommits && deleteBranch && plan.branchDeletable && base) {
       lost.push(translate(plan.ahead > 1 ? 'worktrees.clean.lostCommits.many' : 'worktrees.clean.lostCommits.one', { count: plan.ahead, base }))
     }
   }
-  const destructive = lost.length > 0 || (plan?.state === 'dirty')
+  const destructive = lost.length > 0 || plan?.state === 'dirty' || plan?.state === 'unreadable'
 
   return (
     <ConfirmDialog
@@ -256,6 +260,8 @@ function CleanupDialog({
               {' · '}
               {lost.join(' · ')}
             </Banner>
+          ) : plan.state === 'unreadable' ? (
+            <Banner tone="caution">{t('worktrees.clean.unreadable')}</Banner>
           ) : plan.state !== 'missing' ? (
             <p className="text-ink-faint">{t('worktrees.clean.nothingLost')}</p>
           ) : null}

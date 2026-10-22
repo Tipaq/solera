@@ -508,7 +508,7 @@ const ALL_TOOLS = [
   {
     name: 'create_worktree',
     description:
-      "Crée un worktree git de ce projet, par Solera, et y rattache ta session : l'utilisateur la voit avec sa branche et l'état de l'arbre dans la barre latérale, et retrouve l'arbre dans la vue Chantiers, d'où il le nettoie une fois fusionné. C'est la façon de travailler à l'écart de l'arbre principal : n'utilise pas `git worktree add` toi-même, Solera ne saurait ni que l'arbre existe ni que tu y travailles. Ton répertoire de travail ne change pas : tu travailles dans l'arbre par chemins absolus, que la réponse te donne. Appelle list_worktrees avant, pour reprendre un arbre qui existe plutôt que d'en créer un second. Pour confier un travail à une nouvelle session dans un arbre à part, préfère start_session avec `worktree`.",
+      "Crée un worktree git de ce projet, par Solera, et y rattache ta session : l'utilisateur retrouve l'arbre, son état et ta session dans la vue Chantiers du projet, d'où il le nettoie une fois fusionné. C'est la façon de travailler à l'écart de l'arbre principal : n'utilise pas `git worktree add` toi-même, Solera ne saurait ni que l'arbre existe ni que tu y travailles. Ton répertoire de travail ne change pas : tu travailles dans l'arbre par chemins absolus, que la réponse te donne. Appelle list_worktrees avant, pour reprendre un arbre qui existe plutôt que d'en créer un second. Pour confier un travail à une nouvelle session dans un arbre à part, préfère start_session avec `worktree`.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -528,7 +528,7 @@ const ALL_TOOLS = [
   {
     name: 'list_worktrees',
     description:
-      "Liste les worktrees de ce projet, y compris ceux créés hors de Solera, avec leur état par rapport à la branche par défaut (non commité, à fusionner, fusionné, introuvable) et les sessions qui y travaillent. Sert avant create_worktree, pour reprendre un arbre existant, et pour savoir si un chantier est déjà fusionné.",
+      "Liste les worktrees de ce projet, y compris ceux créés hors de Solera, avec leur état par rapport à la branche par défaut (non commité, à fusionner, fusionné, sans travail encore, introuvable, illisible) et les sessions qui y travaillent. Sert avant create_worktree, pour reprendre un arbre existant, et pour savoir si un chantier est déjà fusionné.",
     inputSchema: { type: 'object', properties: {} },
   },
   {

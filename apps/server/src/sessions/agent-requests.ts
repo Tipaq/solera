@@ -41,6 +41,7 @@ import {
   type AgentKind,
   type AgentModelDto,
   type CardColumn,
+  type WorktreeState,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
@@ -186,12 +187,14 @@ function assertWorktreeName(name: string): void {
 }
 
 /** L'état d'un arbre dit à un agent, avec ce qu'il implique pour lui. */
-const WORKTREE_STATE_WORDS = {
+const WORKTREE_STATE_WORDS: Record<WorktreeState, string> = {
   missing: 'introuvable (dossier disparu)',
+  unreadable: 'illisible (git n’a pas pu le juger)',
   dirty: 'non commité',
   unmerged: 'commité, à fusionner',
+  empty: 'sans travail encore (aucun commit propre)',
   merged: 'fusionné, rien à garder (à nettoyer)',
-} as const
+}
 
 /**
  * Le fil que `move_conversation` déplace : celui que l'agent a nommé, ou le sien.
@@ -681,7 +684,7 @@ export class AgentRequests {
 
     return [
       `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
-      "Ta session y est rattachée : l'utilisateur la voit avec cette branche dans la barre latérale, et retrouve l'arbre dans la vue Chantiers, d'où il le nettoiera une fois fusionné.",
+      "Ta session y est rattachée : l'utilisateur retrouve l'arbre et ta session dans la vue Chantiers du projet, d'où il le nettoiera une fois fusionné.",
       `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`,
       `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
     ].join('\n')
