@@ -4,6 +4,7 @@ import type {
   AgentKind,
   ScheduleCadence,
   ScheduleOverlapPolicy,
+  ScheduleCheckResultDto,
   ScheduleRunStatus,
   ScheduledRunDto,
   ScheduledTaskDto,
@@ -38,6 +39,9 @@ export interface ScheduleInput {
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
   maxDurationMinutes: number
+  /** Null retire la vérification. */
+  checkScript?: string | null
+  checkTimeoutSeconds?: number
 }
 
 function useInvalidate() {
@@ -78,7 +82,25 @@ export function useDeleteSchedule() {
 export function useRunSchedule() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: (id: string) => api.post<ScheduledRunDto>(`/api/schedules/${id}/run`),
+    mutationFn: ({ id, skipCheck = false }: { id: string; skipCheck?: boolean }) =>
+      api.post<ScheduledRunDto>(`/api/schedules/${id}/run`, { skipCheck }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Joue un script de vérification sans rien lancer ; rien n'est mis en cache. */
+export function useTestScheduleCheck(projectId: string) {
+  return useMutation({
+    mutationFn: (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
+      api.post<ScheduleCheckResultDto>(`/api/projects/${projectId}/schedules/check-test`, input),
+  })
+}
+
+export function useApproveScheduleCheck() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ id, script }: { id: string; script: string }) =>
+      api.post<ScheduledTaskDto>(`/api/schedules/${id}/check/approve`, { script }),
     onSuccess: invalidate,
   })
 }
@@ -89,10 +111,11 @@ export function useRunSchedule() {
  * Le tir en cours prime sur la pause : une tâche mise en pause pendant un tir tourne
  * encore, et l'afficher « en pause » cacherait la session qui travaille.
  */
-export type ScheduleState = 'running' | 'paused' | 'failed' | 'done' | 'waiting'
+export type ScheduleState = 'running' | 'approval' | 'paused' | 'failed' | 'done' | 'waiting'
 
 export const SCHEDULE_STATE_LABELS: Record<ScheduleState, MessageKey> = {
   running: 'schedule.state.running',
+  approval: 'schedule.state.approval',
   paused: 'schedule.state.paused',
   failed: 'schedule.state.failed',
   done: 'schedule.state.done',
@@ -110,6 +133,7 @@ export function lastRun(task: ScheduledTaskDto): ScheduledRunDto | undefined {
 }
 
 export const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
+  checking: 'schedule.run.checking',
   running: 'schedule.run.running',
   succeeded: 'schedule.run.succeeded',
   failed: 'schedule.run.failed',
@@ -118,6 +142,7 @@ export const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
 }
 
 export const RUN_DOTS: Record<ScheduleRunStatus, string> = {
+  checking: 'bg-accent animate-pulse',
   running: 'bg-accent animate-pulse',
   succeeded: 'bg-positive',
   failed: 'bg-critical',
@@ -127,6 +152,7 @@ export const RUN_DOTS: Record<ScheduleRunStatus, string> = {
 
 /** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
 export const RUN_TONES: Record<ScheduleRunStatus, 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'> = {
+  checking: 'accent',
   running: 'accent',
   succeeded: 'positive',
   failed: 'critical',
@@ -136,7 +162,10 @@ export const RUN_TONES: Record<ScheduleRunStatus, 'neutral' | 'accent' | 'positi
 
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   const last = lastRun(task)
-  if (last?.status === 'running') return 'running'
+  if (last?.status === 'running' || last?.status === 'checking') return 'running'
+  // Avant la pause : une tâche qui attend une validation ne fait rien tant qu'on ne l'a
+  // pas donnée, et c'est la seule chose qu'on attende de qui la regarde.
+  if (task.check && !task.check.approved) return 'approval'
   if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
   return 'waiting'

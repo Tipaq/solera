@@ -1,9 +1,10 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, Pause, Pencil, Play, Trash2, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, ShieldAlert, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
+import { CheckApprovalDialog } from '../components/schedule/CheckSection'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
@@ -25,8 +26,9 @@ import {
   type ScheduleState,
 } from '../lib/schedules'
 
-const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'critical' | 'positive'> = {
+const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'critical' | 'positive'> = {
   running: 'accent',
+  approval: 'caution',
   paused: 'neutral',
   failed: 'critical',
   done: 'neutral',
@@ -116,8 +118,10 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
   const remove = useDeleteSchedule()
   const [historyOpen, setHistoryOpen] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   const state = scheduleState(task)
   const error = update.error ?? run.error ?? remove.error
+  const check = task.check
 
   return (
     <li className="flex min-w-0" data-schedule={task.name}><Card className="flex min-w-0 flex-1 flex-col"><CardBody className="flex min-w-0 flex-1 flex-col gap-3">
@@ -137,6 +141,11 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         <Fact label={t('schedule.fact.last')}>
           {task.lastRunAt ? relativeDate(task.lastRunAt) : t('schedule.fact.never')}
         </Fact>
+        {check ? (
+          <Fact label={t('schedule.fact.check')}>
+            {t(check.approved ? 'schedule.fact.checkValue' : 'schedule.fact.checkPending', { seconds: check.timeoutSeconds })}
+          </Fact>
+        ) : null}
         <Fact label={t('schedule.fact.limit')}>
           {t('schedule.fact.limitValue', {
             minutes: task.maxDurationMinutes,
@@ -149,6 +158,15 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         {task.prompt}
       </p>
 
+      {check && !check.approved ? (
+        <Banner tone="caution">
+          <span className="block font-medium">{t('schedule.check.pendingTitle')}</span>
+          <span className="block">{t('schedule.check.pending')}</span>
+          <Button className="mt-1.5" size="sm" variant="secondary" icon={<ShieldAlert size={14} />} onClick={() => setReviewing(true)}>
+            {t('schedule.check.review')}
+          </Button>
+        </Banner>
+      ) : null}
       {error ? <Banner>{error.message}</Banner> : null}
 
       <div className="flex flex-wrap items-center gap-1 border-t border-line pt-3">
@@ -157,10 +175,22 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
           size="sm"
           icon={<Zap size={14} />}
           disabled={run.isPending || state === 'running'}
-          onClick={() => run.mutate(task.id)}
+          onClick={() => run.mutate({ id: task.id })}
         >
           {t('schedule.action.runNow')}
         </Button>
+        {/* Pour essayer la tâche quand la vérification dit « rien à faire », ou se trompe. */}
+        {check ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<FlaskConical size={14} />}
+            disabled={run.isPending || state === 'running'}
+            onClick={() => run.mutate({ id: task.id, skipCheck: true })}
+          >
+            {t('schedule.action.runWithoutCheck')}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
@@ -205,6 +235,10 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
         ) : null}
       </div>
 
+      {check && !check.approved ? (
+        <CheckApprovalDialog task={task} open={reviewing} onOpenChange={setReviewing} />
+      ) : null}
+
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -239,7 +273,9 @@ function RunRow({ run, projectId }: { run: ScheduledRunDto; projectId: string | 
       </span>
       <span className="shrink-0 text-ink-soft">{t(RUN_LABELS[run.status])}</span>
       {run.trigger === 'manual' ? <span className="shrink-0">{t('schedule.run.manual')}</span> : null}
-      {run.error ? <span className="min-w-0 truncate" title={run.error}>{run.error}</span> : null}
+      {/* Écarté par son script : « rien à faire », pas une anomalie comme un chevauchement. */}
+      {run.status === 'skipped' && run.check ? <span className="shrink-0">{t('schedule.run.byCheck')}</span> : null}
+      {run.error ? <span className="min-w-0 truncate" title={run.check?.stdout || run.error}>{run.error}</span> : null}
     </>
   )
   const className = 'flex min-h-9 min-w-0 items-center gap-2 rounded px-1 text-xs text-ink-faint'

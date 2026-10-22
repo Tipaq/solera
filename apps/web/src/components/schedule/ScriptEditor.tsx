@@ -1,0 +1,98 @@
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
+import { EditorView, keymap, lineNumbers } from '@codemirror/view'
+import { useEffect, useRef } from 'react'
+import { cx } from '@solera/ui'
+import { editorHighlight, editorTheme, loadLanguage } from '../panel/editor-setup'
+
+/** Marque un texte posé par le formulaire lui-même : il ne remonte pas comme une saisie. */
+const external = Annotation.define<boolean>()
+
+/** CodeMirror ramène toute fin de ligne à `\n` : on compare dans ses termes. */
+function asEditorText(value: string): string {
+  return value.replace(/\r\n?/g, '\n')
+}
+
+/**
+ * Un petit éditeur pour le script de vérification d'une tâche planifiée : CodeMirror
+ * avec le thème de l'éditeur du panneau. Volontairement plus simple que `CodeEditor`,
+ * fait pour des fichiers et leurs sessions : ici un seul texte, tenu par le formulaire.
+ */
+export function ScriptEditor({
+  value,
+  onChange,
+  label,
+  language = 'check.sh',
+  maxHeight = '24rem',
+  className,
+}: {
+  value: string
+  onChange: (value: string) => void
+  label: string
+  /** Nom de fichier dont l'extension choisit la coloration : `check.sh`. */
+  language?: string
+  /**
+   * Hauteur au-delà de laquelle l'éditeur défile en lui-même. Posée sur l'éditeur et non
+   * sur son conteneur : CodeMirror ne défile que si c'est lui qui est borné.
+   */
+  maxHeight?: string
+  className?: string
+}) {
+  const host = useRef<HTMLDivElement>(null)
+  const view = useRef<EditorView | null>(null)
+  const latest = useRef(onChange)
+  latest.current = onChange
+
+  useEffect(() => {
+    if (!host.current) return
+    // La grammaire se charge à part : l'éditeur s'ouvre tout de suite, en clair, puis se colore.
+    const grammar = new Compartment()
+    const editor = new EditorView({
+      parent: host.current,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          lineNumbers(),
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          editorTheme,
+          editorHighlight,
+          EditorView.theme({ '&': { maxHeight }, '.cm-scroller': { overflow: 'auto' } }),
+          grammar.of([]),
+          EditorView.lineWrapping,
+          EditorView.contentAttributes.of({ 'aria-label': label }),
+          // Seule une saisie remonte. Le texte converti au montage (fins de ligne) ou
+          // remplacé de l'extérieur n'est pas une modification de l'utilisateur, et le
+          // formulaire s'en sert pour savoir s'il doit renvoyer le script.
+          EditorView.updateListener.of((update) => {
+            if (!update.docChanged) return
+            if (update.transactions.every((tr) => tr.annotation(external))) return
+            latest.current(update.state.doc.toString())
+          }),
+        ],
+      }),
+    })
+    view.current = editor
+    let cancelled = false
+    void loadLanguage(language).then((support) => {
+      if (!cancelled && support) editor.dispatch({ effects: grammar.reconfigure(support) })
+    })
+    return () => {
+      cancelled = true
+      editor.destroy()
+      view.current = null
+    }
+    // Monté une fois : la valeur suivante vient de l'éditeur lui-même, la repousser à
+    // chaque frappe ferait sauter le curseur.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Une valeur changée de l'extérieur (réglages annulés, modèle chargé) remplace le texte.
+  useEffect(() => {
+    const editor = view.current
+    if (!editor || editor.state.doc.toString() === asEditorText(value)) return
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value }, annotations: external.of(true) })
+  }, [value])
+
+  return <div ref={host} className={cx('min-h-40 overflow-hidden rounded-md border border-line bg-sunken text-code', className)} />
+}

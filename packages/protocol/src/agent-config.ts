@@ -48,7 +48,11 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  *
  * Ce que le critère écarte, pour fixer les idées : `add_card_note` écrit, mais en ajout
  * et dans la base ; `set_project_image` remplace, mais n'est le jugement de personne et
- * se reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet.
+ * se reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet. Le
+ * `check_script` de `schedule_task` fait tourner du code hors de toute session, mais il
+ * ne tourne pas tant qu'une personne n'a pas validé ce texte précis : comme pour
+ * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture
+ * par un agent le remet en attente. La garde est donc sur le script et non sur l'outil.
  *
  * **Quatre étages d'héritage**, les mêmes pour toutes les familles : conversation →
  * préréglage de projet (`projects.default_config`) → défaut de compte → `config.toml`.

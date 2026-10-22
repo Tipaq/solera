@@ -6,6 +6,7 @@ import { useTranslate, type MessageKey, locale } from '../../lib/i18n'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { SCHEDULE_STATE_LABELS, scheduleState } from '../../lib/schedules'
 import { ProjectAvatar } from '../ProjectAvatar'
+import { StateDot } from '../chat/Signals'
 import { cx } from '@solera/ui'
 
 const DAY = 86_400_000
@@ -107,8 +108,11 @@ function TaskLine({ task, project, onNavigate }: {
 }) {
   const t = useTranslate()
   const state = scheduleState(task)
+  // Un script à valider écarte tous les tirs : l'heure du prochain mentirait, c'est la
+  // validation qu'on attend.
+  const awaiting = state === 'approval'
   const due = useMemo(() => {
-    if (task.nextRunAt === null) return t(SCHEDULE_STATE_LABELS[state])
+    if (task.nextRunAt === null || state === 'approval') return t(SCHEDULE_STATE_LABELS[state])
     const midnight = new Date()
     midnight.setHours(0, 0, 0, 0)
     const sameDay = task.nextRunAt < midnight.getTime() + DAY
@@ -134,7 +138,8 @@ function TaskLine({ task, project, onNavigate }: {
         <CalendarClock size={14} className="shrink-0 text-ink-faint" />
         <span className="min-w-0 flex-1 truncate">{task.name}</span>
         {project ? <ProjectAvatar project={project} className="size-3" /> : null}
-        <span className="shrink-0 text-meta tabular-nums text-ink-faint">{due}</span>
+        {awaiting ? <StateDot state="awaiting" labelled={false} /> : null}
+        <span className={cx('shrink-0 text-meta tabular-nums', awaiting ? 'text-caution' : 'text-ink-faint')}>{due}</span>
       </NavLink>
     </li>
   )

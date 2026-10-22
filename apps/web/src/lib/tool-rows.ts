@@ -1,5 +1,6 @@
 import { isSpawnTool } from '@solera/protocol'
 import { hasVisibleContent, type ChatItem, type ToolItem } from './chat-fold'
+import { isSoleraTool } from './solera-tools'
 
 /**
  * Mise en forme d'un fil avant rendu.
@@ -84,7 +85,10 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
       // Le lancement d'un sous-agent garde sa ligne : c'est le seul repère qui dise
       // qu'un pan entier du travail s'est fait ailleurs, et noyé dans « 5 outils » il
       // ne se distingue plus d'un `Read`.
-      if (isSpawnTool(item.name)) {
+      //
+      // De même pour une tâche planifiée qui porte un script de vérification : sa ligne
+      // porte la validation que l'agent vient de demander, qu'un repli cacherait.
+      if (isSpawnTool(item.name) || proposesCheck(item)) {
         flush()
         rows.push({ kind: 'tool', key: item.id, tool: item })
       } else {
@@ -108,4 +112,10 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
   flush()
 
   return rows
+}
+
+function proposesCheck(tool: ToolItem): boolean {
+  if (!isSoleraTool(tool.name, 'schedule_task')) return false
+  const input = tool.input as { check_script?: unknown } | null
+  return typeof input?.check_script === 'string' && input.check_script.trim() !== ''
 }
