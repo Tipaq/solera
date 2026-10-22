@@ -1,9 +1,17 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView, keymap, lineNumbers } from '@codemirror/view'
 import { useEffect, useRef } from 'react'
 import { cx } from '@solera/ui'
 import { editorHighlight, editorTheme, loadLanguage } from '../panel/editor-setup'
+
+/** Marque un texte posé par le formulaire lui-même : il ne remonte pas comme une saisie. */
+const external = Annotation.define<boolean>()
+
+/** CodeMirror ramène toute fin de ligne à `\n` : on compare dans ses termes. */
+function asEditorText(value: string): string {
+  return value.replace(/\r\n?/g, '\n')
+}
 
 /**
  * Un petit éditeur pour le script de vérification d'une tâche planifiée : CodeMirror
@@ -53,8 +61,13 @@ export function ScriptEditor({
           grammar.of([]),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ 'aria-label': label }),
+          // Seule une saisie remonte. Le texte converti au montage (fins de ligne) ou
+          // remplacé de l'extérieur n'est pas une modification de l'utilisateur, et le
+          // formulaire s'en sert pour savoir s'il doit renvoyer le script.
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) latest.current(update.state.doc.toString())
+            if (!update.docChanged) return
+            if (update.transactions.every((tr) => tr.annotation(external))) return
+            latest.current(update.state.doc.toString())
           }),
         ],
       }),
@@ -77,8 +90,8 @@ export function ScriptEditor({
   // Une valeur changée de l'extérieur (réglages annulés, modèle chargé) remplace le texte.
   useEffect(() => {
     const editor = view.current
-    if (!editor || editor.state.doc.toString() === value) return
-    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } })
+    if (!editor || editor.state.doc.toString() === asEditorText(value)) return
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value }, annotations: external.of(true) })
   }, [value])
 
   return <div ref={host} className={cx('min-h-40 overflow-hidden rounded-md border border-line bg-sunken text-code', className)} />

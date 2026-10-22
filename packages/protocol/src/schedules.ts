@@ -43,12 +43,24 @@ export const MAX_CHECK_TIMEOUT_SECONDS = 1800
 /** Ce que la sortie standard peut apporter au prompt ; au-delà, elle est tronquée. */
 export const MAX_CHECK_OUTPUT_CHARS = 20000
 
+/**
+ * Les fins de ligne d'un script, ramenées à `\n`.
+ *
+ * Un `\r` n'a rien à faire dans un script shell — il casse `/bin/sh` en fin de ligne —
+ * et l'éditeur du formulaire, CodeMirror, le convertit de lui-même. Laissé en base, il
+ * ferait diverger le texte affiché du texte enregistré : un simple « Enregistrer »
+ * renverrait un script « changé », que l'interface validerait sans que personne l'ait relu.
+ */
+export function normalizeCheckScript(script: string): string {
+  return script.replace(/\r\n?/g, '\n')
+}
+
 /** Vide ou null retire la vérification : un champ vidé dans le formulaire veut dire « aucune ». */
 export const checkScriptSchema = z
   .string()
   .max(MAX_CHECK_SCRIPT_CHARS)
   .nullable()
-  .transform((value) => (value && value.trim() ? value : null))
+  .transform((value) => (value && value.trim() ? normalizeCheckScript(value) : null))
 export const checkTimeoutSchema = z.number().int().min(MIN_CHECK_TIMEOUT_SECONDS).max(MAX_CHECK_TIMEOUT_SECONDS)
 
 /**
@@ -130,7 +142,7 @@ export const updateScheduledTaskBodySchema = z
  * lui, sur un état vide, comme un premier tir.
  */
 export const testScheduleCheckBodySchema = z.object({
-  script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS),
+  script: z.string().min(1).max(MAX_CHECK_SCRIPT_CHARS).transform(normalizeCheckScript),
   timeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
   taskId: z.string().optional(),
 })

@@ -19,6 +19,9 @@ import {
 import {
   CHECK_SKIP_EXIT_CODE,
   DEFAULT_CLAUDE_CONFIG,
+  checkScriptSchema,
+  createScheduledTaskBodySchema,
+  updateScheduledTaskBodySchema,
   nextScheduleRun,
   type AgentConfig,
   type ScheduleCadence,
@@ -429,6 +432,35 @@ test('runCheck gives up after the timeout and its grace, whatever still holds th
   assert.ok(stubborn.durationMs < 6000, `${stubborn.durationMs} ms`)
 })
 
+test('a check script never keeps a carriage return', () => {
+  assert.equal(checkScriptSchema.parse('echo a\r\necho b\rexit 0\r\n'), 'echo a\necho b\nexit 0\n')
+  assert.equal(checkScriptSchema.parse('\r\n'), null)
+  const created = createScheduledTaskBodySchema.parse({
+    name: 'x', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, prompt: 'x',
+    cadence: { kind: 'interval', minutes: 60 }, checkScript: 'echo a\r\nexit 0',
+  })
+  assert.equal(created.checkScript, 'echo a\nexit 0')
+  assert.equal(updateScheduledTaskBodySchema.parse({ checkScript: 'echo a\r\nexit 0' }).checkScript, 'echo a\nexit 0')
+})
+
+test('saving a task from the interface does not approve a script nobody touched', async (t) => {
+  const { db, checkedTask, reload } = await harness(t)
+  const proposed = checkedTask('echo a\nexit 0', { byAgent: true })
+  assert.equal(proposed.checkApprovedAt, null)
+
+  // Le formulaire ne renvoie pas un script qu'on n'a pas édité : changer l'heure le laisse à valider.
+  const retimed = updateScheduledTask(db, reload(proposed.id), updateScheduledTaskBodySchema.parse({
+    cadence: { kind: 'cron', expression: '0 8 * * *' },
+  }))
+  assert.equal(retimed.checkApprovedAt, null)
+  assert.equal(retimed.checkProposedBy, 'agent-conversation')
+
+  // Et le même texte aux fins de ligne près n'est pas un script changé.
+  const crlf = updateScheduledTask(db, retimed, updateScheduledTaskBodySchema.parse({ checkScript: 'echo a\r\nexit 0' }))
+  assert.equal(crlf.checkApprovedAt, null)
+  assert.equal(reload(proposed.id).checkScript, 'echo a\nexit 0')
+})
+
 test('runCheck keeps its state between runs, but an essay works on a copy', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'solera-check-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
@@ -536,7 +568,7 @@ test('schedule_task can propose a check, which waits for the user', async (t) =>
   child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
   child.stdin.write(JSON.stringify({
     jsonrpc: '2.0', id: 1, method: 'tools/call',
-    params: { name: 'schedule_task', arguments: { name: 'Veille Codex', prompt: 'Analyse {{check_output}}', cron: '0 9 * * *', check_script: 'npm view @openai/codex version' } },
+    params: { name: 'schedule_task', arguments: { name: 'Veille Codex', prompt: 'Analyse {{check_output}}', cron: '0 9 * * *', check_script: 'set -e\r\nnpm view @openai/codex version' } },
   }) + '\n')
   const deadline = Date.now() + 10000
   while (!stdout.includes('\n') && Date.now() < deadline) {
@@ -548,7 +580,8 @@ test('schedule_task can propose a check, which waits for the user', async (t) =>
   assert.equal(result.isError, undefined, result.content[0]?.text)
   assert.match(result.content[0]!.text, /attend la validation/)
   const row = db.select().from(scheduledTasks).get()!
-  assert.equal(row.checkScript, 'npm view @openai/codex version')
+  // Les fins de ligne Windows sont ramenées à `\n` dès la proposition.
+  assert.equal(row.checkScript, 'set -e\nnpm view @openai/codex version')
   assert.equal(row.checkApprovedAt, null)
   assert.equal(row.checkProposedBy, 'parent')
 })

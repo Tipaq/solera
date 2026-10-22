@@ -187,12 +187,27 @@ try {
     .run(project.id, owner, JSON.stringify({ agent: 'claude', model: 'default', effort: 'medium', permissionMode: 'bypassPermissions' }), threadEvents.length, threadEvents.length, now, now)
   const insertEvent = db.prepare('INSERT INTO events (conversation_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)')
   threadEvents.forEach((event, index) => insertEvent.run('agent-thread', index + 1, now + index, event.type, JSON.stringify(event)))
-  db.close()
 
   // La tâche se signale « À valider » sur sa carte, avant même qu'on l'ouvre.
   await page.reload()
   await card.getByText('À valider', { exact: true }).waitFor()
   await card.getByText('Script de vérification à valider').waitFor()
+
+  // Enregistrer la tâche sans toucher au script ne le valide pas, même quand l'éditeur
+  // en a converti les fins de ligne à l'affichage. Un `\r` ne passe plus par l'API :
+  // on le pose en base, comme une ligne écrite avant la normalisation.
+  const crlf = script.replace('; ', '\r\n')
+  db.prepare('UPDATE scheduled_tasks SET check_script = ? WHERE id = ?').run(crlf, task.id)
+  await card.getByRole('button', { name: 'Modifier', exact: true }).click()
+  const untouched = page.getByRole('dialog')
+  await untouched.locator('[data-check-section] .cm-content').getByText('proposé par un agent').waitFor()
+  await untouched.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await untouched.waitFor({ state: 'hidden' })
+  task = await mine()
+  assert.equal(task.check.approved, false, 'Saving the task must not approve a script nobody touched')
+  assert.equal(task.check.script, crlf)
+  db.prepare('UPDATE scheduled_tasks SET check_script = ? WHERE id = ?').run(script, task.id)
+  db.close()
   await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
   task = await until('tir bloqué', (entry) => /en attente de validation/.test(entry.runs[0]?.error ?? ''), 15_000)
   assert.equal(task.runs[0].check, null, 'Un script non validé ne tourne pas')

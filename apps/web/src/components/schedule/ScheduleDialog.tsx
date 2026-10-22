@@ -96,6 +96,14 @@ export function ScheduleDialog({
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
   const [checkScript, setCheckScript] = useState<string | null>(task?.check?.script ?? null)
+  // Le script ne repart que si quelqu'un l'a touché : l'enregistrer depuis l'interface
+  // vaut le valider, et changer l'heure d'une tâche ne doit pas valider en passant le
+  // script qu'un agent a proposé.
+  const [checkEdited, setCheckEdited] = useState(false)
+  const editCheckScript = (script: string | null) => {
+    setCheckScript(script)
+    setCheckEdited(true)
+  }
   const [checkTimeout, setCheckTimeout] = useState(String(task?.check?.timeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS))
 
   // Même ordre que pour une conversation neuve : le préréglage du projet, puis les
@@ -142,7 +150,7 @@ export function ScheduleDialog({
       cadence,
       overlapPolicy: overlap,
       maxDurationMinutes: duration,
-      checkScript: checkScript?.trim() ? checkScript : null,
+      ...(!task || checkEdited ? { checkScript: checkScript?.trim() ? checkScript : null } : {}),
       ...(checkScript?.trim() ? { checkTimeoutSeconds: timeoutSeconds } : {}),
     }
     if (task) update.mutate({ id: task.id, ...input }, { onSuccess: onClose })
@@ -278,7 +286,7 @@ export function ScheduleDialog({
                 taskId={task?.id}
                 script={checkScript}
                 timeout={checkTimeout}
-                onScriptChange={setCheckScript}
+                onScriptChange={editCheckScript}
                 onTimeoutChange={setCheckTimeout}
               />
 
