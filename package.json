@@ -19,6 +19,7 @@
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",
     "test:images-ui": "node scripts/fil-images-ui-check.mjs",
+    "test:explorer-ui": "node scripts/explorer-ui-check.mjs",
     "test:places-ui": "node scripts/places-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:viewport-ui": "node scripts/viewport-ui-check.mjs",
