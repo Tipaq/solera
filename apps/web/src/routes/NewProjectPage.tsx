@@ -2,8 +2,6 @@ import {
   FolderOpen,
   FolderPlus,
   GitBranch,
-  Globe,
-  Lock,
 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { slugifyProjectName } from '@solera/protocol'
@@ -27,31 +25,12 @@ import {
   CardHeader,
   ChoiceList,
   Field,
-  Select,
   type Choice,
-  type SelectOption,
 } from '@solera/ui'
+import { VisibilitySelect } from '../components/VisibilitySelect'
 
 type CreateMode = 'new' | 'existing' | 'clone'
 type Visibility = 'private' | 'shared'
-
-function useVisibilityOptions(): SelectOption<Visibility>[] {
-  const t = useTranslate()
-  return [
-    {
-      value: 'private',
-      label: t('project.visibility.private'),
-      icon: <Lock size={16} />,
-      hint: t('project.visibility.private.hint'),
-    },
-    {
-      value: 'shared',
-      label: t('project.visibility.shared'),
-      icon: <Globe size={16} />,
-      hint: t('project.visibility.shared.hint'),
-    },
-  ]
-}
 
 export function NewProjectPage() {
   const t = useTranslate()
@@ -118,7 +97,6 @@ function NewFolderForm() {
   const t = useTranslate()
   const createProject = useCreateProject()
   const { data: settings } = useUserSettings()
-  const visibilityOptions = useVisibilityOptions()
 
   const [name, setName] = useState('')
   const [directory, setDirectory] = useState('')
@@ -184,12 +162,7 @@ function NewFolderForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      <VisibilitySelect value={visibility} onChange={setVisibility} />
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">
@@ -204,7 +177,6 @@ function ExistingFolderForm() {
   const openCreated = useAdoptAfterCreate()
   const t = useTranslate()
   const createProject = useCreateProject()
-  const visibilityOptions = useVisibilityOptions()
 
   const [name, setName] = useState('')
   const [workspacePath, setWorkspacePath] = useState('')
@@ -241,12 +213,7 @@ function ExistingFolderForm() {
         hint={t('projects.create.workspacePath.hint')}
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={visibilityOptions}
-      />
+      <VisibilitySelect value={visibility} onChange={setVisibility} />
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
       {error ? <Banner>{error}</Banner> : null}
       <Button type="submit" disabled={createProject.isPending} className="self-start">

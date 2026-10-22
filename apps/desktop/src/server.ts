@@ -1,0 +1,169 @@
+import { spawn, spawnSync } from 'node:child_process'
+import { closeSync, mkdirSync, openSync, renameSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import type { Readable } from 'node:stream'
+
+export interface ServerOptions {
+  /** Le Node embarqué, celui sous lequel l'arbre d'exécution a été installé et vérifié. */
+  node: string
+  /** L'arbre d'exécution de la release : `server/`, `web/`, `node_modules/`. */
+  runtime: string
+  dataDir: string
+  configFile: string
+  logFile: string
+  port: number
+  env: NodeJS.ProcessEnv
+}
+
+export interface Handshake {
+  origin: string
+  session: string
+  /**
+   * Le nom du cookie de session. Le serveur le dérive de son dossier de données
+   * (`loadConfig`), pour que deux instances d'un même poste ne s'écrasent pas.
+   */
+  cookie: string
+}
+
+export interface RunningServer {
+  /** Se résout quand le serveur répond et que la session de l'utilisateur est ouverte. */
+  ready: Promise<Handshake>
+  onExit(listener: (code: number | null) => void): void
+  stop(): Promise<void>
+}
+
+/** Au-delà, le journal repart d'un fichier neuf, l'ancien gardé à côté. */
+const LOG_ROTATE_BYTES = 10 * 1024 * 1024
+/** Les migrations d'une base ancienne prennent quelques secondes, pas deux minutes. */
+const READY_TIMEOUT_MS = 120_000
+/** Le temps de ranger les sessions en cours, comme à l'arrêt du service d'un serveur. */
+const STOP_TIMEOUT_MS = 15_000
+
+/**
+ * Lance le serveur de Solera tel que la release le livre, avec les réglages qu'une
+ * installation pose dans son service (`deploy/solera.plist.tmpl`), plus le profil de
+ * bureau.
+ *
+ * Le serveur annonce son port et la session de l'utilisateur sur le descripteur 3, un
+ * tube réservé à cet échange (`apps/server/src/instance/desktop.ts`) : la session ne
+ * passe ni par le réseau ni par le journal, où vont stdout et stderr. Son entrée standard
+ * est un tube que l'app ferme pour demander l'arrêt, sous Windows comme ailleurs.
+ *
+ * `windowsHide` donne au serveur une console cachée plutôt qu'une fenêtre : les git et les
+ * CLI qu'il lance en héritent, au lieu d'ouvrir chacun la sienne.
+ */
+export function startServer(options: ServerOptions): RunningServer {
+  mkdirSync(dirname(options.logFile), { recursive: true })
+  mkdirSync(options.dataDir, { recursive: true })
+  rotate(options.logFile)
+  const log = openSync(options.logFile, 'a')
+  // Node dimensionne son tas selon la machine : 256 Mo ne suffisaient pas toujours à
+  // charger les données d'un utilisateur.
+  const child = spawn(options.node, [join(options.runtime, 'server', 'main.js')], {
+    cwd: options.runtime,
+    env: {
+      ...options.env,
+      NODE_ENV: 'production',
+      SOLERA_PROFILE: 'desktop',
+      SOLERA_HANDSHAKE_FD: '3',
+      SOLERA_DATA_DIR: options.dataDir,
+      SOLERA_CONFIG: options.configFile,
+      SOLERA_WEB_ROOT: join(options.runtime, 'web'),
+      SOLERA_HOST: '127.0.0.1',
+      SOLERA_PORT: String(options.port),
+    },
+    stdio: ['pipe', log, log, 'pipe'],
+    windowsHide: true,
+    // Hors de Windows, son propre groupe de processus : le dernier recours (`killTree`)
+    // emporte alors avec lui les CLI qu'il a lancés. Sous Windows, `detached` ouvrirait
+    // une console, et `taskkill /T` suit déjà l'arbre.
+    detached: process.platform !== 'win32',
+  })
+  // Le serveur a sa propre copie du descripteur ; la nôtre ne servirait qu'à fuir.
+  closeSync(log)
+
+  let exited = false
+  child.once('exit', () => {
+    exited = true
+  })
+
+  const ready = new Promise<Handshake>((resolve, reject) => {
+    const channel = child.stdio[3] as Readable
+    let buffer = ''
+    const timer = setTimeout(() => {
+      killTree(child.pid)
+      reject(new Error(`le serveur n'a pas répondu en ${READY_TIMEOUT_MS / 1000} s`))
+    }, READY_TIMEOUT_MS)
+    const fail = (err: Error) => {
+      clearTimeout(timer)
+      reject(err)
+    }
+    channel.setEncoding('utf8')
+    channel.on('data', (chunk: string) => {
+      buffer += chunk
+      const end = buffer.indexOf('\n')
+      if (end === -1) return
+      clearTimeout(timer)
+      try {
+        const { port, session, cookie } = JSON.parse(buffer.slice(0, end)) as {
+          port: number
+          session: string
+          cookie: string
+        }
+        resolve({ origin: `http://127.0.0.1:${port}`, session, cookie })
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
+    child.once('error', fail)
+    child.once('exit', (code, signal) => fail(new Error(`le serveur s'est arrêté au démarrage (${signal ?? `code ${code}`})`)))
+  })
+  // Un rejet après la résolution (l'arrêt normal, plus tard) ne doit rien signaler.
+  ready.catch(() => {})
+
+  return {
+    ready,
+    onExit(listener) {
+      child.on('exit', (code) => listener(code))
+    },
+    stop() {
+      if (exited) return Promise.resolve()
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => killTree(child.pid), STOP_TIMEOUT_MS)
+        child.once('exit', () => {
+          clearTimeout(timer)
+          resolve()
+        })
+        child.stdin?.end()
+      })
+    },
+  }
+}
+
+/**
+ * Le dernier recours, quand le serveur n'a pas su s'arrêter : il emporte aussi les CLI
+ * qu'il a lancés, que rien d'autre n'arrêterait. Sous Windows, `taskkill /T` suit
+ * l'arbre ; ailleurs, le signal va au groupe du serveur (`-pid`), qu'il dirige depuis
+ * son lancement en `detached`. Les terminaux, que node-pty place chacun dans sa propre
+ * session, n'en font pas partie : ils se ferment quand le serveur, leur maître, disparaît.
+ */
+function killTree(pid: number | undefined): void {
+  if (pid === undefined) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+    return
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {
+    // Groupe déjà vide : le serveur et ses enfants sont partis d'eux-mêmes.
+  }
+}
+
+function rotate(file: string): void {
+  try {
+    if (statSync(file).size > LOG_ROTATE_BYTES) renameSync(file, `${file}.1`)
+  } catch {
+    // Pas encore de journal : rien à faire tourner.
+  }
+}

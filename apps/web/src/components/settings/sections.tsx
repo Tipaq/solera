@@ -19,6 +19,7 @@ import {
   Users,
 } from 'lucide-react'
 import type { ReactNode } from 'react'
+import type { InstanceCapabilities } from '@solera/protocol'
 import type { MessageKey } from '../../lib/i18n'
 import type { SettingsSectionId } from '../../lib/settings-dialog'
 
@@ -45,6 +46,8 @@ export interface SettingsSection {
   descriptionKey: MessageKey
   icon: ReactNode
   adminOnly?: boolean
+  /** Capacité de l'instance sans laquelle la section n'a pas d'objet. */
+  requires?: keyof InstanceCapabilities
 }
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -54,6 +57,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.section.account',
     descriptionKey: 'settings.section.account.description',
     icon: <UserRound size={16} />,
+    requires: 'passwordAuth',
   },
   {
     id: 'apparence',
@@ -75,6 +79,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.section.notifications',
     descriptionKey: 'settings.section.notifications.description',
     icon: <Bell size={16} />,
+    requires: 'webPush',
   },
   {
     id: 'dictee',
@@ -179,6 +184,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     descriptionKey: 'settings.section.accounts.description',
     icon: <Users size={16} />,
     adminOnly: true,
+    requires: 'passwordAuth',
   },
   {
     id: 'a-propos',
@@ -189,7 +195,17 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
 ]
 
-/** Les sections qu'un compte voit, l'administration restant à ceux qui l'exercent. */
-export function visibleSections(isAdmin: boolean | undefined): SettingsSection[] {
-  return SETTINGS_SECTIONS.filter((section) => !section.adminOnly || isAdmin)
+/**
+ * Les sections qu'un compte voit sur cette instance : l'administration reste à ceux qui
+ * l'exercent, et une section dont l'instance n'a pas la capacité disparaît. Partagée
+ * avec la palette, qui ne doit pas proposer une section que la modale cache.
+ */
+export function visibleSections(
+  isAdmin: boolean | undefined,
+  capabilities: InstanceCapabilities | undefined,
+): SettingsSection[] {
+  return SETTINGS_SECTIONS.filter(
+    (section) =>
+      (!section.adminOnly || isAdmin) && (!section.requires || (capabilities?.[section.requires] ?? true)),
+  )
 }

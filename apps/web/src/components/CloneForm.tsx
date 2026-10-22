@@ -1,4 +1,4 @@
-import { GitBranch, Globe, Lock } from 'lucide-react'
+import { GitBranch } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { parseRemoteUrl, type GitRepoDto } from '@solera/protocol'
 import { Link } from 'react-router-dom'
@@ -15,7 +15,8 @@ import {
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from './PathField'
 import { RepoCombobox } from './RepoCombobox'
-import { Banner, Button, Field, Select, type SelectOption } from '@solera/ui'
+import { Banner, Button, Field } from '@solera/ui'
+import { VisibilitySelect } from './VisibilitySelect'
 
 /**
  * Nom de dossier que git choisirait pour cette URL, vide tant qu'elle n'en est pas une.
@@ -51,21 +52,6 @@ export function CloneForm() {
   useEffect(() => {
     if (settings?.projectsDir) setParentDir((current) => current || settings.projectsDir!)
   }, [settings?.projectsDir])
-
-  const VISIBILITY_OPTIONS: SelectOption<'private' | 'shared'>[] = [
-    {
-      value: 'private',
-      label: t('project.visibility.private'),
-      icon: <Lock size={16} />,
-      hint: t('project.visibility.private.hint'),
-    },
-    {
-      value: 'shared',
-      label: t('project.visibility.shared'),
-      icon: <Globe size={16} />,
-      hint: t('project.visibility.shared.hint'),
-    },
-  ]
 
   /** Les deux champs dérivés suivent l'URL tant que l'utilisateur ne les a pas repris. */
   const applyUrl = (next: string) => {
@@ -187,12 +173,7 @@ export function CloneForm() {
         autoCorrect="off"
         required
       />
-      <Select
-        label={t('project.settings.visibility')}
-        value={visibility}
-        onChange={setVisibility}
-        options={VISIBILITY_OPTIONS}
-      />
+      <VisibilitySelect value={visibility} onChange={setVisibility} />
       <InstructionsModeSelect value={instructionsMode} onChange={setInstructionsMode} />
 
       {job?.error ? (

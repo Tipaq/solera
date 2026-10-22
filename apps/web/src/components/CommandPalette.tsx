@@ -21,6 +21,7 @@ import { useCardSearch } from '../lib/cards'
 import { conversationPath } from '../lib/conversation-route'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useInstance } from '../lib/instance'
 import { useProjects } from '../lib/projects'
 import { describeTransport, useMcpServers } from '../lib/mcp'
 import { fileFields, rankByFields, usePaletteCatalog, usePaletteFiles } from '../lib/palette'
@@ -179,7 +180,11 @@ export function CommandPalette({
     [projects],
   )
 
-  const sections = useMemo(() => visibleSections(user?.isAdmin), [user?.isAdmin])
+  const { data: instance } = useInstance()
+  const sections = useMemo(
+    () => visibleSections(user?.isAdmin, instance?.capabilities),
+    [user?.isAdmin, instance?.capabilities],
+  )
 
   /**
    * Ce qui se lit à droite de la ligne d'un fil : son projet, ou le fait qu'il n'en a

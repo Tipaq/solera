@@ -96,7 +96,7 @@
           </p>
         </div>
       </div>
-      <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes</span><a class="release" id="version-badge" href="https://github.com/Tipaq/solera/releases/latest">Releases ↗</a></div>
+      <div class="hero-meta"><span>Claude Code + Codex + OpenCode</span><span>Linux · macOS · Windows / WSL2 · Docker · Kubernetes · Desktop app</span><a class="release" id="version-badge" href="https://github.com/Tipaq/solera/releases/latest">Releases ↗</a></div>
       <!-- À CHANGER : film/solera-film.mp4 n'existe pas dans le dépôt — seul le poster
            est là. Tant que la vidéo n'est pas tournée, le lecteur reste vide et le texte
            décrit un film qui n'existe pas. Tourner le film, ou retirer cette figure (et
@@ -393,7 +393,7 @@
       <div class="section-background" aria-hidden="true"><svg class="background-rings" viewBox="0 0 1600 1000" fill="none" preserveAspectRatio="xMidYMid slice" focusable="false"><use href="#background-pattern"/></svg></div>
       <div class="install-intro">
         <p class="section-label">Run it yourself</p><h2 id="install-title">Your machine.<br>Your workspace.</h2>
-        <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected.</p>
+        <p>An always-on server is recommended for picking up work throughout the day. Your desktop works too, while it stays awake and connected, and the desktop app is the quickest way to try Solera there.</p>
         <p>Docker, a systemd user service on Linux, a launchd agent on macOS, the same service inside WSL2 on Windows, or a Helm chart. All bind to localhost or stay inside the cluster by default. <a href="https://github.com/Tipaq/solera/blob/main/docs/remote-access.md">Add private remote access with a VPN</a> to connect from another device.</p>
       </div>
 
@@ -404,6 +404,7 @@
           <button id="tab-macos" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-macos" data-tab="macos">macOS</button>
           <button id="tab-windows" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-windows" data-tab="windows">Windows</button>
           <button id="tab-helm" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-helm" data-tab="helm">Kubernetes</button>
+          <button id="tab-desktop" role="tab" aria-selected="false" tabindex="-1" aria-controls="panel-desktop" data-tab="desktop">Desktop app</button>
         </div>
 
         <div id="panel-docker" class="tab-panel" role="tabpanel" aria-labelledby="tab-docker" data-panel="docker">
@@ -453,6 +454,16 @@ curl -fsSL https://raw.githubusercontent.com/Tipaq/solera/main/install.sh | bash
           <p>One replica, <code>Recreate</code> strategy: the state is a SQLite database on a <code>ReadWriteOnce</code> volume, and two pods writing to it means corruption. Give the data volume a block storage class rather than NFS, whose file locks SQLite cannot rely on. Then create the first account:</p>
 <pre><code>kubectl <span class="dim">-n</span> solera exec <span class="dim">-it</span> deploy/solera \
   -- node /app/server/cli/user-create.js</code></pre>
+        </div>
+
+        <div id="panel-desktop" class="tab-panel" role="tabpanel" aria-labelledby="tab-desktop" data-panel="desktop" hidden>
+          <p>Solera Desktop runs the same server and interface in a window of their own, on the machine where you code. Nothing to set up, no account, no password. It is not reachable from other devices, and agents stop when you quit it.</p>
+          <ul>
+            <li>macOS, Apple Silicon: <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-mac-arm64.dmg">Solera-mac-arm64.dmg</a></li>
+            <li>Debian, Ubuntu: <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-amd64.deb">x64 .deb</a> · <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.deb">arm64 .deb</a></li>
+            <li>Other Linux: <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-x86_64.AppImage">x64 AppImage</a> · <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.AppImage">arm64 AppImage</a></li>
+          </ul>
+          <p>The app is not notarized by Apple yet: allow it once in System Settings › Privacy &amp; Security. The <a href="https://github.com/Tipaq/solera/blob/main/docs/desktop.md">desktop guide</a> covers installing, where data lives and what differs from the server.</p>
         </div>
       </div>
     </section>

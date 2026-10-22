@@ -13,7 +13,7 @@ OpenCode CLIs on your own machine. Vibe-code from anywhere: the official agent h
 without the terminal.
 
 Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
-Kubernetes. An always-on server is recommended for continuity across devices; a
+Kubernetes, or as a [desktop app](docs/desktop.md) for Linux and macOS. An always-on server is recommended for continuity across devices; a
 workstation works too while it stays awake and online.
 [Set up private remote access and agent preview links](docs/remote-access.md).
 
@@ -144,6 +144,24 @@ OpenCode receives them with every message, so an edit reaches it on the next one
 Details and the probes behind them: [docs/solera-md.md](docs/solera-md.md).
 
 ## Install
+
+### Server or desktop
+
+Solera comes in two editions, built from the same server and interface:
+
+- **The server** is the one this section installs: an always-on machine you reach
+  from any browser, phone included, with accounts, push notifications and sessions
+  that keep running when you close the tab.
+- **[Solera Desktop](docs/desktop.md)** is an app for Linux and macOS: download it,
+  open it, and Solera runs in its own window on the machine where you code. No
+  server to set up, no account, no password; nothing runs once you quit it, and it
+  is not reachable from other devices.
+
+| Package | Download |
+|---|---|
+| macOS, Apple Silicon | [Solera-mac-arm64.dmg](https://github.com/Tipaq/solera/releases/latest/download/Solera-mac-arm64.dmg) |
+| Debian, Ubuntu | [x64 `.deb`](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-amd64.deb) · [arm64 `.deb`](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.deb) |
+| Other Linux | [x64 AppImage](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-x86_64.AppImage) · [arm64 AppImage](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.AppImage) |
 
 ### Docker
 

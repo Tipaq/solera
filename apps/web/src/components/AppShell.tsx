@@ -13,6 +13,7 @@ import {
 } from '../lib/sidebar'
 import { useFileDropGuard } from '../lib/file-drop'
 import { useTranslate } from '../lib/i18n'
+import { useCapability } from '../lib/instance'
 import { resizeHandle } from '../lib/resize-handle'
 import { useMediaQuery, useVisualViewport } from '../lib/viewport'
 import { CommandPalette } from './CommandPalette'
@@ -39,6 +40,7 @@ export function AppShell() {
   useAwaitingLive()
   const [navOpen, setNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const pwa = useCapability('pwa')
   const hidden = useSidebarHidden()
   const aside = useRef<HTMLElement>(null)
   const wide = useMediaQuery('(min-width: 48rem)')
@@ -222,7 +224,8 @@ export function AppShell() {
       {/* Montée ici et pas dans le composer : elle s'ouvre depuis le « + », donc depuis
           un menu, et un dialogue rendu dans un menu meurt avec lui à la sélection. */}
       <McpRegistryDialog />
-      <UpdatePrompt />
+      {/* Monter l'invite enregistre le service worker : sans PWA, ni l'un ni l'autre. */}
+      {pwa ? <UpdatePrompt /> : null}
       {/* Hors de la colonne principale : un toast apparaît par-dessus n'importe quelle
           vue, sidebar comprise. */}
       <Toaster />

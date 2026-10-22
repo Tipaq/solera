@@ -9,6 +9,8 @@ import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
+import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
+import { INSTANCE_PROFILE } from './instance/profile.js'
 import { migrationsFolder, runPendingMigrations } from './migrations.js'
 import { PushService } from './push/push-service.js'
 import { Notifications } from './notifications/dispatcher.js'
@@ -36,6 +38,7 @@ import { VaultIndex } from './vault/index-service.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
+  if (INSTANCE_PROFILE === 'desktop') scrubLauncherEnv()
   for (const dir of [config.paths.attachments, config.paths.worktrees, config.paths.logs]) {
     mkdirSync(dir, { recursive: true })
   }
@@ -165,6 +168,14 @@ async function main(): Promise<void> {
 
   await app.listen({ host: config.server.host, port: config.server.port })
 
+  // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
+  // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
+  if (INSTANCE_PROFILE === 'desktop') {
+    const address = app.server.address()
+    const port = typeof address === 'object' && address ? address.port : config.server.port
+    announceToLauncher({ port, session: await openDesktopSession(db), cookie: config.sessionCookie })
+  }
+
   // Le lanceur du helper git décrit le Node et la release de ce process : réécrit à
   // chaque démarrage, il suit les mises à jour sans que les dépôts clonés aient à changer.
   // Puis les dépôts clonés avant lui passent au lanceur. Après listen et sans l'attendre :
@@ -182,7 +193,12 @@ async function main(): Promise<void> {
     app.log.warn({ err }, 'lanceur du helper git non installe')
   }
 
+  // Deux demandes d'arrêt peuvent se croiser (un signal, puis l'app de bureau qui ferme
+  // l'entrée standard) : la seconde ne doit pas refermer ce que la première a fermé.
+  let stopping = false
   const shutdown = async (signal: string) => {
+    if (stopping) return
+    stopping = true
     app.log.info({ signal }, 'arrêt en cours')
     // Avant stopAll, qui expire les sollicitations : les statuts disent encore ce qui
     // était en vol, et les livraisons persistées partiront au prochain démarrage.
@@ -201,6 +217,17 @@ async function main(): Promise<void> {
   }
   process.on('SIGINT', () => void shutdown('SIGINT'))
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
+  // L'app de bureau demande l'arrêt en fermant l'entrée standard : sous Windows, il n'y a
+  // pas de signal à envoyer, et tuer le serveur laisserait les CLI des sessions orphelins.
+  // L'entrée se ferme aussi quand l'app disparaît sans prévenir : le serveur part avec elle.
+  // Tuée, l'app peut laisser un tube rompu plutôt qu'une fin propre, d'où `close` et
+  // `error` en plus de `end`.
+  if (INSTANCE_PROFILE === 'desktop') {
+    for (const event of ['end', 'close', 'error'] as const) {
+      process.stdin.once(event, () => void shutdown('launcher'))
+    }
+    process.stdin.resume()
+  }
 }
 
 main().catch((err: unknown) => {

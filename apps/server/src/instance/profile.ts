@@ -1,0 +1,28 @@
+import type { InstanceCapabilities, InstanceInfo, InstanceProfile } from '@solera/protocol'
+
+/**
+ * Le profil de l'instance, lu une fois dans l'environnement que pose le lanceur.
+ *
+ * Jamais dans une requête : c'est lui qui décide qu'une session s'ouvre sans mot de
+ * passe, et aucun client ne doit pouvoir se l'attribuer. Évalué à l'import, avant que
+ * `scrubLauncherEnv` ne retire la variable de l'environnement des processus enfants.
+ */
+export const INSTANCE_PROFILE: InstanceProfile =
+  process.env.SOLERA_PROFILE === 'desktop' ? 'desktop' : 'server'
+
+export function instanceCapabilities(profile: InstanceProfile): InstanceCapabilities {
+  const desktop = profile === 'desktop'
+  return {
+    passwordAuth: !desktop,
+    // L'application de bureau n'a pas de service de push, et un téléphone ne joindrait
+    // pas un serveur qui n'écoute que sur 127.0.0.1.
+    webPush: !desktop,
+    pwa: !desktop,
+    // Un seul compte en bureau : rien à partager, rien à cacher.
+    sharedProjects: !desktop,
+  }
+}
+
+export function instanceInfo(): InstanceInfo {
+  return { profile: INSTANCE_PROFILE, capabilities: instanceCapabilities(INSTANCE_PROFILE) }
+}

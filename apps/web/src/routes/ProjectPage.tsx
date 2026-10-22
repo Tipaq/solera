@@ -3,8 +3,6 @@ import {
   FolderOpen,
   GitBranch,
   ImagePlus,
-  Globe,
-  Lock,
   Save,
   Shapes,
   ShieldAlert,
@@ -46,7 +44,6 @@ import {
   Select,
   Switch,
   type Choice,
-  type SelectOption,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
@@ -60,25 +57,8 @@ import {
   useProjectPrototypes,
   useUpdateProject,
 } from '../lib/projects'
-
-/** Recalculée à chaque rendu plutôt que figée au chargement du module : sinon un
- *  changement de langue laisserait ces deux options dans l'ancienne. */
-function visibilityOptions(): SelectOption<ProjectVisibility>[] {
-  return [
-    {
-      value: 'private',
-      label: translate('project.visibility.private'),
-      icon: <Lock size={16} />,
-      hint: translate('project.visibility.private.hint'),
-    },
-    {
-      value: 'shared',
-      label: translate('project.visibility.shared'),
-      icon: <Globe size={16} />,
-      hint: translate('project.visibility.shared.hint'),
-    },
-  ]
-}
+import { useCapability } from '../lib/instance'
+import { VisibilitySelect } from '../components/VisibilitySelect'
 
 export function ProjectPage() {
   const { projectId } = useParams()
@@ -86,6 +66,7 @@ export function ProjectPage() {
   const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
 
   const project = projects?.find((p) => p.id === projectId)
 
@@ -102,11 +83,13 @@ export function ProjectPage() {
           {project.name}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
-            {project.visibility === 'shared'
-              ? t('project.visibility.shared')
-              : t('project.visibility.private')}
-          </Badge>
+          {sharedProjects ? (
+            <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
+              {project.visibility === 'shared'
+                ? t('project.visibility.shared')
+                : t('project.visibility.private')}
+            </Badge>
+          ) : null}
           {project.git ? (
             <>
               <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
@@ -619,12 +602,7 @@ function ProjectSettings({
           <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>
         ) : null}
 
-        <Select
-          label={t('project.settings.visibility')}
-          value={visibility}
-          onChange={setVisibility}
-          options={visibilityOptions()}
-        />
+        <VisibilitySelect value={visibility} onChange={setVisibility} />
 
         {/* Appliqué au clic, hors du formulaire : un interrupteur, pas une case à enregistrer. */}
         <div className="flex items-center gap-3">

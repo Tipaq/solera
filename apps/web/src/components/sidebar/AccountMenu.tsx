@@ -2,6 +2,7 @@ import { ChevronDown, GaugeCircle, Info, LogOut, MessageCircleQuestion, Palette,
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
+import { useCapability } from '../../lib/instance'
 import { useCurrentUser, useLogout } from '../../lib/session'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { openSettings } from '../../lib/settings-dialog'
@@ -36,6 +37,8 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   const { data: user } = useCurrentUser()
   const display = useDisplaySettings()
   const logout = useLogout()
+  // Sans mot de passe, une déconnexion ne laisserait qu'une page de connexion sans issue.
+  const passwordAuth = useCapability('passwordAuth')
   const updateNotice = useUpdateNotice()
   const { data: version } = useVersionInfo()
   const [theme, setTheme] = useTheme()
@@ -143,10 +146,14 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
             ) : null}
           </span>
         </MenuItem>
-        <MenuSeparator />
-        <MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>
-          {t('shell.logout')}
-        </MenuItem>
+        {passwordAuth ? (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<LogOut size={14} />} onSelect={() => logout.mutate()}>
+              {t('shell.logout')}
+            </MenuItem>
+          </>
+        ) : null}
       </Menu>
 
       {/* Hors du menu : il se referme en ouvrant la modale, et son portail emporterait
