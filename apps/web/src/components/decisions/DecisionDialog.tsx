@@ -2,7 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { ArrowUpRight, X } from 'lucide-react'
 import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { DecisionDto, DecisionStatus } from '@solera/protocol'
+import { MAX_DECISION_ANSWER_CHARS, type DecisionDto, type DecisionStatus } from '@solera/protocol'
 import { conversationPath } from '../../lib/conversation-route'
 import { decisionDue, openDecision, useAnswerDecision, useDecision, useOpenDecision } from '../../lib/decisions'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
@@ -117,7 +117,7 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
                 id={textId}
                 value={text}
                 rows={3}
-                maxLength={4000}
+                maxLength={MAX_DECISION_ANSWER_CHARS}
                 placeholder={t('decision.dialog.notePlaceholder')}
                 onChange={(event) => setText(event.target.value)}
                 onKeyDown={(event) => {
