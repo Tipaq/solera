@@ -1947,9 +1947,14 @@ l'onglet étant fermé.
   bibliothèque.
 - Cookie de session opaque de 32 octets, seul son SHA-256 est stocké. Durée 30 jours,
   prolongée à chaque usage.
-- Pas d'inscription ouverte. Le premier compte est créé par une commande
-  `pnpm solera user:create`, les suivants par un administrateur depuis `/settings/users`.
-- Limitation de débit sur `/api/auth/login` : 5 tentatives par minute et par IP.
+- Pas d'inscription ouverte. Le premier compte est créé soit par la commande
+  `pnpm solera user:create`, soit depuis le navigateur par la visite de première
+  ouverture, tant que la base n'en a aucun (`POST /api/auth/setup`, fermée dès qu'un
+  compte existe). Les suivants le sont par un administrateur, dans les réglages.
+- Tout compte créé après la visite l'a due à sa première connexion (`onboarding` dans
+  ses réglages) ; elle se rejoue depuis À propos.
+- Limitation de débit sur `/api/auth/login` et `/api/auth/setup` : 5 tentatives par
+  minute et par IP.
 - Pas de 2FA en v1. Solera doit être derrière un reverse proxy ou un VPN, ce qui est
   documenté dans le README.
 
