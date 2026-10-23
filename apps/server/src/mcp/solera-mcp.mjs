@@ -62,6 +62,15 @@
  * globale ; le board, les sessions, le journal et les consignes de projet n'ont, eux,
  * rien à désigner. Le serveur ne part donc plus que sur la base : c'est `SOLERA_MCP_DB`
  * qui lui est indispensable, `SOLERA_MCP_PROJECT` qui est facultatif.
+ *
+ * Il a enfin un mode *global*, pour un client hors de Solera branché sur toute
+ * l'instance : par `POST /api/v1/mcp` (`http/v1/mcp.ts`), ou lancé à la main sur la
+ * machine (`docs/mcp.md`). Chaque outil y prend un paramètre `project`, `list_projects`
+ * les énumère, les écritures sont au nom d'un compte et non d'une session, et l'on agit
+ * sur une session existante comme l'utilisateur le ferait dans l'interface. Ce mode
+ * s'ouvre par un drapeau, `SOLERA_MCP_GLOBAL=1`, et jamais par l'absence de projet,
+ * qui est déjà le fil libre : une session mal lancée ne doit pas pouvoir s'ouvrir sur
+ * toute l'instance pour une variable oubliée.
  */
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
@@ -71,8 +80,15 @@ import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SOLERA_MCP_DB
-/** Projet de la conversation, ou null pour un fil libre : voir l'en-tête. */
-const PROJECT_ID = process.env.SOLERA_MCP_PROJECT || null
+/** Mode global : aucun projet imposé, chaque appel nomme le sien (voir l'en-tête). */
+const GLOBAL = process.env.SOLERA_MCP_GLOBAL === '1'
+/**
+ * Projet de la conversation, ou null pour un fil libre : voir l'en-tête.
+ *
+ * En mode global, posé au début de chaque appel d'outil d'après son paramètre
+ * `project`, les appels étant traités un par un pour que deux ne se marchent pas dessus.
+ */
+let PROJECT_ID = GLOBAL ? null : process.env.SOLERA_MCP_PROJECT || null
 /** Exclue des résultats : sans ça l'agent se relit lui-même et tourne en rond. */
 const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
 /**
@@ -84,7 +100,23 @@ const CURRENT_CONVERSATION = process.env.SOLERA_MCP_CONVERSATION ?? ''
  * drapeau et un chemin pourraient se contredire — un outil listé qui n'a nulle part où
  * écrire est pire que pas d'outil.
  */
-const MEMORY_DIR = process.env.SOLERA_MCP_MEMORY ?? ''
+let MEMORY_DIR = GLOBAL ? '' : (process.env.SOLERA_MCP_MEMORY ?? '')
+/**
+ * Mode global : la racine de la mémoire, d'où `MEMORY_DIR` se déduit à chaque appel,
+ * celle du projet visé ou celle du compte. À défaut, `memory/` à côté de la base, comme
+ * le daemon ; **vide quand la mémoire est refusée**, comme `MEMORY_DIR` ailleurs.
+ */
+const MEMORY_ROOT = GLOBAL ? (process.env.SOLERA_MCP_MEMORY ?? (DB_PATH ? join(dirname(DB_PATH), 'memory') : '')) : ''
+/** Mode global : le compte au nom duquel écrire, ou à défaut le seul compte de la base. */
+const USER_NAME = process.env.SOLERA_MCP_USER ?? ''
+/**
+ * Mode global : projets permis, identifiants séparés par des virgules ; vide, tous ceux
+ * que le compte voit. C'est la liste blanche d'un jeton d'API, posée par le pont HTTP.
+ */
+const ALLOWED_PROJECTS = (process.env.SOLERA_MCP_PROJECTS ?? '')
+  .split(',')
+  .map((id) => id.trim())
+  .filter(Boolean)
 /**
  * Portée de rangement, accordée conversation par conversation : à faux, les deux outils
  * ne sont pas listés du tout. Annoncer un outil qu'on refusera ensuite ferait lire son
@@ -222,6 +254,10 @@ const REQUEST_WAIT_MS = {
   create_worktree: 60000,
   // Le premier calcul d'avancement lance plusieurs git par arbre.
   list_worktrees: 30000,
+  // Mode global : remettre un message peut démarrer le CLI d'une session au repos.
+  message_session: 30000,
+  interrupt_session: 15000,
+  reply_session: 15000,
 }
 const REQUEST_POLL_MS = 200
 
@@ -300,7 +336,37 @@ if (!DB_PATH) {
   process.exit(1)
 }
 
+if (GLOBAL && (process.env.SOLERA_MCP_PROJECT || CURRENT_CONVERSATION)) {
+  log("SOLERA_MCP_GLOBAL exclut SOLERA_MCP_PROJECT et SOLERA_MCP_CONVERSATION : le mode global sert un client hors session, pas une conversation")
+  process.exit(1)
+}
+
 const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+
+/**
+ * Le compte du mode global, résolu une fois au démarrage : nommé par l'environnement,
+ * ou le seul compte de la base, cas de la plupart des instances. Sans lui, pas d'auteur
+ * pour une carte ou une session lancée : on s'arrête tout de suite plutôt que de refuser
+ * chaque écriture.
+ */
+const USER = GLOBAL ? resolveUser() : null
+function resolveUser() {
+  const columns = 'id, username, display_name AS displayName, is_admin AS admin'
+  if (USER_NAME) {
+    const row = db.prepare(`SELECT ${columns} FROM users WHERE username = ?`).get(USER_NAME)
+    if (!row) {
+      log(`aucun compte « ${USER_NAME} » (SOLERA_MCP_USER)`)
+      process.exit(1)
+    }
+    return row
+  }
+  const rows = db.prepare(`SELECT ${columns} FROM users ORDER BY created_at LIMIT 2`).all()
+  if (rows.length !== 1) {
+    log(rows.length === 0 ? 'aucun compte dans la base' : 'plusieurs comptes : SOLERA_MCP_USER doit en nommer un')
+    process.exit(1)
+  }
+  return rows[0]
+}
 
 /**
  * Connexion d'écriture, ouverte au premier besoin et gardée ensuite.
@@ -1010,9 +1076,185 @@ function forFreeThread(tool) {
   return tool
 }
 
-const TOOLS = PROJECT_ID
-  ? ALL_TOOLS
-  : ALL_TOOLS.filter((tool) => FREE_THREAD_TOOLS.has(tool.name)).map(forFreeThread)
+/**
+ * Mode global : ce que chaque outil fait du paramètre `project`.
+ *
+ * `required` pour ce qui vit dans un projet (le board, l'historique, un lancement) ;
+ * `optional` pour ce qui a aussi un sens sans lui, et dit lequel en le décrivant ;
+ * `none` pour ce qui désigne une session, qui porte déjà son projet. Les outils absents
+ * de cette liste ne sont pas proposés : ceux qui supposent une session pour signer ou
+ * pour recevoir (messagerie entre sessions, surveillance), ceux qui supposent son
+ * répertoire de travail (`find_file_edits`, `create_worktree`, `set_project_image`,
+ * dont le chemin est sur la machine de Solera et pas sur celle du client), et les
+ * demandes qui attendent le clic d'une personne (rangements, décisions) — en mode
+ * global, l'appelant est cette personne. Les outils du design system n'ont rien à
+ * montrer sans une vue Web à côté du fil.
+ */
+const GLOBAL_PROJECT_PARAM = {
+  search_history: 'required',
+  list_cards: 'required',
+  read_card: 'required',
+  add_card_note: 'required',
+  create_card: 'required',
+  start_session: 'required',
+  schedule_task: 'required',
+  list_models: 'required',
+  list_worktrees: 'required',
+  list_sessions: 'optional',
+  read_memory: 'optional',
+  write_memory: 'optional',
+  delete_memory: 'optional',
+  read_instructions: 'optional',
+  edit_instructions: 'optional',
+  write_instructions: 'optional',
+  read_conversation: 'none',
+  send_session_message: 'none',
+  interrupt_session: 'none',
+  reply_session: 'none',
+  count_active_sessions: 'none',
+  list_projects: 'none',
+}
+
+const PROJECT_PARAM_DESCRIPTION = 'Projet visé : son nom ou son identifiant, tels que list_projects les rend.'
+
+/** Ce que veut dire un `project` omis, pour les outils où il est facultatif. */
+const PROJECT_OMITTED = {
+  list_sessions: 'Omettre pour tous tes projets.',
+  read_memory: 'Omettre pour la mémoire de ton compte, celle que partagent tes fils libres.',
+  write_memory: 'Omettre pour la mémoire de ton compte, celle que partagent tes fils libres.',
+  delete_memory: 'Omettre pour la mémoire de ton compte, celle que partagent tes fils libres.',
+  read_instructions: "Omettre pour la partie globale, celle qui vaut dans tous les projets.",
+  edit_instructions: "Omettre pour la partie globale, celle qui vaut dans tous les projets. Écrire dans la partie globale est réservé aux comptes administrateurs.",
+  write_instructions: "Omettre pour la partie globale, celle qui vaut dans tous les projets. Écrire dans la partie globale est réservé aux comptes administrateurs.",
+}
+
+const SESSION_ID_DESCRIPTION = 'Identifiant de la session, tel que list_sessions, search_history ou start_session le rendent.'
+
+/** Les outils du seul mode global : pas d'équivalent dans une session, qui a les siens. */
+const GLOBAL_ONLY_TOOLS = [
+  {
+    name: 'list_projects',
+    description:
+      "Liste les projets de cette instance Solera que ton compte voit, avec leur dossier, leurs sessions en train de travailler et leur dernière activité. Les autres outils prennent un paramètre `project` : le nom ou l'identifiant rendus ici. Appelle cet outil en premier quand tu ne sais pas sous quel nom Solera connaît un projet.",
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'interrupt_session',
+    description:
+      "Arrête le tour en cours d'une de tes sessions, comme le bouton Arrêter de Solera. Elle garde son contexte : send_session_message la fait reprendre. Pour une session qui part dans la mauvaise direction et qu'un message glissé dans son tour ne suffirait pas à ramener.",
+    inputSchema: {
+      type: 'object',
+      properties: { session: { type: 'string', description: SESSION_ID_DESCRIPTION } },
+      required: ['session'],
+    },
+  },
+  {
+    name: 'reply_session',
+    description:
+      "Répond à ce qu'une de tes sessions attend, tel que read_conversation le décrit en tête : une permission prend `decision` (allowed ou denied) et `scope` (once ou session) ; une question prend `answers`, un objet { id de question: [réponses] }, ou `status: cancelled` ; un plan prend `decision` (approved ou rejected) et `followUpMode` facultatif ; une saisie prend `action` (accept, decline ou cancel) et `content`. Sans `request_id`, répond à la sollicitation ouverte s'il n'y en a qu'une.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session: { type: 'string', description: SESSION_ID_DESCRIPTION },
+        request_id: { type: 'string', description: 'Identifiant de la sollicitation, que read_conversation donne.' },
+        decision: { type: 'string', description: 'Permission : allowed ou denied. Plan : approved ou rejected.' },
+        scope: { type: 'string', enum: ['once', 'session'], description: "Permission : portée de l'accord, once par défaut." },
+        answers: { type: 'object', description: 'Question : { "<id>": ["réponse"] }, plusieurs réponses si la question le permet.' },
+        status: { type: 'string', enum: ['answered', 'cancelled'], description: 'Question : cancelled pour ne pas répondre.' },
+        followUpMode: { type: 'string', description: "Plan accepté : l'identifiant d'une suite que read_conversation propose." },
+        action: { type: 'string', enum: ['accept', 'decline', 'cancel'], description: 'Saisie : accepter avec `content`, ou refuser.' },
+        content: { type: 'object', description: 'Saisie : les valeurs demandées.' },
+      },
+      required: ['session'],
+    },
+  },
+]
+
+/** Plus long qu'un tour de parole, plus court que le délai d'une requête HTTP du pont. */
+const MAX_WAIT_SECONDS = 100
+
+/**
+ * Les descriptions que le mode global réécrit, parce qu'elles parlent de « ta »
+ * session ou de « cette conversation » et que l'appelant n'en a pas. Les autres ne
+ * changent que de « ce projet » à « le projet visé ».
+ */
+const GLOBAL_DESCRIPTIONS = {
+  read_conversation:
+    "Lit une conversation Solera, identifiée par le `id` que list_sessions, search_history ou start_session rendent. En tête, son état : statut, outil en cours, et ce qu'elle attend de toi s'il y a une permission, une question, un plan ou une saisie en suspens, avec ce qu'il faut pour y répondre par reply_session. Puis le fil, messages de l'utilisateur et de l'agent sans les appels d'outils ; d'un fil trop long, la demande initiale et la fin. Avec `wait_seconds`, attend d'abord que la session finisse son tour ou s'arrête sur une question : c'est la façon de lire sa réponse après start_session ou send_session_message, sans rappeler l'outil en boucle.",
+  send_session_message:
+    "Écrit à une de tes sessions, comme si tu le tapais dans Solera : glissé dans son tour si elle travaille et que son CLI le permet, mis en file pour la fin du tour sinon ; une session au repos reprend avec son contexte. Pour une mission neuve, préfère start_session. Enchaîne avec read_conversation et `wait_seconds` pour lire sa réponse.",
+  list_sessions:
+    "Liste les conversations qui travaillent en ce moment, et celles qui ont travaillé récemment, dans un projet ou dans tous les tiens, avec leur état (une session qui « attend une réponse » attend la tienne : read_conversation dit laquelle), leur worktree et sa branche. Appelle cet outil pour savoir où en est le travail, et avant de lancer une session sur un chantier qu'une autre tient peut-être déjà.",
+  add_card_note:
+    "Ajoute une note au fil d'une carte, désignée par `card`. Sert à laisser aux sessions qui la traiteront ce qu'elles ne pourront pas redécouvrir seules : une décision, une contrainte, ce qui a déjà été tenté. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte.",
+  start_session:
+    "Lance une nouvelle conversation Solera dans un projet, que l'utilisateur suit et reprend comme les autres. La session ne connaît rien de ce qui précède : `prompt` doit se suffire. Elle démarre avec les réglages par défaut du projet pour ce CLI (permissions comprises), modèle et effort en plus si tu les donnes. Rend son identifiant : enchaîne avec read_conversation et `wait_seconds` pour lire sa réponse.",
+}
+
+function forGlobal(tool) {
+  const mode = GLOBAL_PROJECT_PARAM[tool.name]
+  const description = (GLOBAL_DESCRIPTIONS[tool.name] ?? tool.description)
+    .replaceAll('de ce projet', 'du projet visé')
+    .replaceAll('dans ce projet', 'dans le projet visé')
+    .replaceAll('ce projet', 'le projet visé')
+  // `scope` des consignes cède la place à `project`, qui dit la même chose ; `reply_to`
+  // borne les échanges entre sessions, et l'appelant n'en est pas une.
+  const dropped = new Set(tool.name.endsWith('_instructions') ? ['scope'] : tool.name === 'send_session_message' ? ['reply_to'] : [])
+  const properties = Object.fromEntries(
+    Object.entries(tool.inputSchema.properties ?? {}).filter(([key]) => !dropped.has(key)).map(([key, value]) => {
+      // Hors session, « le tien » ne désigne aucun CLI ni aucun arbre.
+      if (key === 'agent') return [key, { ...value, description: value.description.replace('Omettre pour le même que le tien.', 'Omettre pour Claude.') }]
+      if (key === 'worktree') {
+        return [key, { ...value, description: value.description.replace('Omettre pour le même arbre que toi. `@root` pour la racine du projet.', 'Omettre pour la racine du projet.').replace(' : à préférer pour un travail sans rapport avec le tien, pour que vos modifications ne se mêlent pas', '') }]
+      }
+      if (key === 'id' && tool.name === 'read_conversation') return [key, { ...value, description: SESSION_ID_DESCRIPTION }]
+      if (key === 'to') return [key, { ...value, description: SESSION_ID_DESCRIPTION }]
+      if (key === 'body' && tool.name === 'send_session_message') {
+        return [key, { type: 'string', description: `Le message, en markdown, ${MAX_LAUNCH_PROMPT_CHARS} caractères au plus.` }]
+      }
+      return [key, value]
+    }),
+  )
+  const extra = {}
+  if (mode === 'required') extra.project = { type: 'string', description: PROJECT_PARAM_DESCRIPTION }
+  if (mode === 'optional') extra.project = { type: 'string', description: `${PROJECT_PARAM_DESCRIPTION} ${PROJECT_OMITTED[tool.name]}` }
+  if (tool.name === 'add_card_note') extra.card = { type: 'integer', description: "Numéro de la carte, tel qu'il s'écrit après le `#`." }
+  if (tool.name === 'read_conversation') {
+    extra.wait_seconds = {
+      type: 'integer',
+      description: `Attendre d'abord, au plus ce nombre de secondes (${MAX_WAIT_SECONDS} au plus), que la session finisse son tour ou s'arrête sur une question. Au-delà, l'état est rendu tel quel et la session continue.`,
+    }
+  }
+  const required = [
+    ...(mode === 'required' ? ['project'] : []),
+    ...(tool.name === 'add_card_note' ? ['card'] : []),
+    ...(tool.inputSchema.required ?? []),
+  ]
+  return {
+    ...tool,
+    description,
+    inputSchema: {
+      ...tool.inputSchema,
+      properties: { ...extra, ...properties },
+      ...(required.length > 0 ? { required } : {}),
+    },
+  }
+}
+
+function globalTools() {
+  const [listProjects, ...gestures] = GLOBAL_ONLY_TOOLS
+  return [
+    listProjects,
+    ...ALL_TOOLS.filter((tool) => GLOBAL_PROJECT_PARAM[tool.name]),
+    ...gestures,
+  ].map((tool) => (tool.name === 'list_projects' ? tool : forGlobal(tool)))
+}
+
+const TOOLS = GLOBAL
+  ? globalTools()
+  : PROJECT_ID
+    ? ALL_TOOLS
+    : ALL_TOOLS.filter((tool) => FREE_THREAD_TOOLS.has(tool.name)).map(forFreeThread)
 
 /**
  * Traduit une saisie libre en requête FTS5.
@@ -1087,7 +1329,7 @@ function readConversation(id) {
     .prepare(
       `SELECT id, title, agent, created_at AS createdAt
        FROM conversations
-       WHERE id = ? AND project_id = ?`,
+       WHERE id = ? AND project_id IS ?`,
     )
     .get(id, PROJECT_ID)
   if (!conversation) return null
@@ -1130,6 +1372,10 @@ const WORKING = `(c.status = 'running' OR c.background_count > 0 OR c.loop_count
  * manquer. La fenêtre ne gouverne que les autres.
  */
 function listSessions(withinMinutes) {
+  // En mode global sans `project`, tous les projets du compte, et ses fils libres quand
+  // aucune liste blanche ne le borne : c'est la même règle que `loadTaskForToken`.
+  const scope = GLOBAL && !PROJECT_ID ? visibleProjects().map((row) => row.id) : [PROJECT_ID]
+  const freeThreads = GLOBAL && !PROJECT_ID && ALLOWED_PROJECTS.length === 0
   return db
     .prepare(
       `SELECT c.id AS id,
@@ -1140,18 +1386,26 @@ function listSessions(withinMinutes) {
               c.loop_count AS loops,
               c.updated_at AS updatedAt,
               w.name AS worktree,
+              p.name AS projectName,
               coalesce(w.path, p.workspace_path) AS path
        FROM conversations AS c
-       JOIN projects AS p ON p.id = c.project_id
+       LEFT JOIN projects AS p ON p.id = c.project_id
        LEFT JOIN worktrees AS w ON w.id = c.worktree_id
-       WHERE c.project_id = ?
-         AND c.id != ?
+       WHERE (c.project_id IN (SELECT value FROM json_each(@scope))
+              OR (@free = 1 AND c.project_id IS NULL AND c.user_id = @user))
+         AND c.id != @me
          AND c.archived_at IS NULL
-         AND (${WORKING} OR c.updated_at >= ?)
+         AND (${WORKING} OR c.updated_at >= @since)
        ORDER BY c.updated_at DESC
        LIMIT 50`,
     )
-    .all(PROJECT_ID, CURRENT_CONVERSATION, Date.now() - withinMinutes * 60_000)
+    .all({
+      scope: JSON.stringify(scope),
+      free: freeThreads ? 1 : 0,
+      user: USER?.id ?? null,
+      me: CURRENT_CONVERSATION,
+      since: Date.now() - withinMinutes * 60_000,
+    })
 }
 
 /**
@@ -1464,13 +1718,18 @@ function describeActivity(row) {
 }
 
 function renderSessions(rows, withinMinutes) {
+  const everywhere = GLOBAL && !PROJECT_ID
   if (rows.length === 0) {
-    return `Aucune autre conversation de ce projet n'a travaillé dans les ${withinMinutes} dernières minutes.`
+    return everywhere
+      ? `Aucune conversation de tes projets n'a travaillé dans les ${withinMinutes} dernières minutes.`
+      : `Aucune ${GLOBAL ? '' : 'autre '}conversation de ce projet n'a travaillé dans les ${withinMinutes} dernières minutes.`
   }
 
   const cache = new Map()
   const lines = rows.map((row) => {
-    const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
+    const where = !row.projectName
+      ? 'fil libre'
+      : `${everywhere ? `projet ${row.projectName}, ` : ''}${row.worktree ? `worktree ${row.worktree}` : 'racine du projet'}`
     const git = row.path ? gitState(row.path, cache) : null
     const tree = git
       ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
@@ -1685,9 +1944,9 @@ function addCardNote(cardId, body) {
   writeDb()
     .prepare(
       `INSERT INTO card_notes (id, card_id, conversation_id, user_id, body, created_at)
-       VALUES (?, ?, ?, NULL, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, body, Date.now())
+    .run(randomUUID(), cardId, CURRENT_CONVERSATION || null, USER?.id ?? null, body, Date.now())
 }
 
 function setProjectImage(mimeType, data, provisional) {
@@ -1770,13 +2029,13 @@ function saveInstructions(projectId, transform, fixMode) {
       .prepare(
         `INSERT INTO instructions
            (id, project_id, content, updated_at, updated_by_user_id, updated_by_conversation_id)
-         VALUES (?, ?, ?, ?, NULL, ?)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            content = excluded.content, updated_at = excluded.updated_at,
-           updated_by_user_id = NULL,
+           updated_by_user_id = excluded.updated_by_user_id,
            updated_by_conversation_id = excluded.updated_by_conversation_id`,
       )
-      .run(id, projectId, result, Date.now(), CURRENT_CONVERSATION || null)
+      .run(id, projectId, result, Date.now(), USER?.id ?? null, CURRENT_CONVERSATION || null)
     if (fixMode) {
       write
         .prepare(`UPDATE projects SET instructions_mode = 'solera' WHERE id = ? AND instructions_mode IS NULL`)
@@ -1801,10 +2060,11 @@ function instructionsTarget(args, writing) {
     }
   }
   if (scope === 'global') {
-    if (writing && !conversationOwnerIsAdmin()) {
+    if (writing && !(USER ? Boolean(USER.admin) : conversationOwnerIsAdmin())) {
       return {
-        refusal:
-          "La partie globale de SOLERA.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
+        refusal: USER
+          ? "La partie globale de SOLERA.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et celui-ci ne l'est pas. Écris dans la partie d'un projet (paramètre `project`)."
+          : "La partie globale de SOLERA.md entre dans toutes les sessions de l'instance : seul un compte administrateur peut y écrire, et cette conversation n'appartient pas à l'un d'eux. Écris dans la partie du projet (`scope: project`), ou propose à l'utilisateur de faire la modification lui-même.",
       }
     }
     return { scope, projectId: null, fixMode: false }
@@ -1817,8 +2077,9 @@ function instructionsTarget(args, writing) {
   const { mode, chosen } = project
   if (mode === 'repo') {
     return {
-      refusal:
-        "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SOLERA.md ne servent pour lui qu'à la partie globale (`scope: global`).",
+      refusal: GLOBAL
+        ? "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : elles se modifient dans le dépôt, pas par ce serveur. Sans `project`, les outils SOLERA.md servent la partie globale."
+        : "Ce projet garde ses consignes dans son dépôt, dans `AGENTS.md` ou `CLAUDE.md` : lis-les et modifie-les avec tes outils de fichiers. Les outils SOLERA.md ne servent pour lui qu'à la partie globale (`scope: global`).",
     }
   }
   return { scope, projectId: PROJECT_ID, fixMode: !chosen }
@@ -1830,7 +2091,7 @@ const scopeLabel = (scope) => (scope === 'global' ? 'partie globale' : 'partie d
  * De quelle mémoire on parle : un fil libre n'en partage aucune avec un projet, il a
  * celle de son compte, commune à tous ses fils libres.
  */
-const MEMORY_LABEL = PROJECT_ID ? 'du projet' : 'de tes fils libres'
+const memoryLabel = () => (PROJECT_ID ? 'du projet' : GLOBAL ? 'de ton compte' : 'de tes fils libres')
 
 /** Les notes de la mémoire, index d'abord. */
 function memoryFiles() {
@@ -2196,7 +2457,9 @@ const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_
  */
 const offered = (tool) =>
   (FILING || !FILING_TOOLS.has(tool.name)) &&
-  (MEMORY_DIR !== '' || !MEMORY_TOOLS.has(tool.name)) &&
+  // En mode global, la racine et non le dossier : celui-ci suit le projet du dernier
+  // appel, et la liste des outils ne doit pas en dépendre.
+  ((GLOBAL ? MEMORY_ROOT : MEMORY_DIR) !== '' || !MEMORY_TOOLS.has(tool.name)) &&
   (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name)) &&
   (DECISIONS || !DECISION_TOOLS.has(tool.name)) &&
   (DESIGN_SYSTEM_STATE !== '' || !DESIGN_SYSTEM_TOOLS.has(tool.name))
@@ -2213,10 +2476,10 @@ async function requestDaemon(kind, payload) {
   const id = randomUUID()
   writeDb()
     .prepare(
-      `INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO agent_requests (id, project_id, conversation_id, user_id, kind, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, PROJECT_ID, CURRENT_CONVERSATION, kind, JSON.stringify(payload), Date.now())
+    .run(id, PROJECT_ID, CURRENT_CONVERSATION, USER?.id ?? null, kind, JSON.stringify(payload), Date.now())
 
   const read = db.prepare('SELECT settled_at, result, is_error FROM agent_requests WHERE id = ?')
   const deadline = Date.now() + REQUEST_WAIT_MS[kind]
@@ -2727,7 +2990,270 @@ async function showPrototype(args) {
   return text(lines.join('\n'))
 }
 
+// --- mode global ------------------------------------------------------------------
+
+/**
+ * Les projets que le mode global sert : ceux que le compte voit dans l'interface (les
+ * siens et les partagés), restreints à la liste blanche s'il y en a une. Les deux
+ * filtres se composent, comme pour un jeton d'API : un compte emprunté ne s'élargit pas.
+ */
+function visibleProjects() {
+  return db
+    .prepare(
+      `SELECT id, name FROM projects
+       WHERE archived_at IS NULL AND (owner_id = ? OR visibility = 'shared')
+       ORDER BY position, name`,
+    )
+    .all(USER.id)
+    .filter((row) => ALLOWED_PROJECTS.length === 0 || ALLOWED_PROJECTS.includes(row.id))
+}
+
+function listProjects() {
+  const visible = new Set(visibleProjects().map((row) => row.id))
+  return db
+    .prepare(
+      `SELECT p.id AS id, p.name AS name, p.workspace_path AS path,
+              sum(CASE WHEN ${WORKING} THEN 1 ELSE 0 END) AS working,
+              max(c.updated_at) AS lastActivity
+       FROM projects AS p
+       LEFT JOIN conversations AS c ON c.project_id = p.id AND c.archived_at IS NULL
+       GROUP BY p.id
+       ORDER BY p.position, p.name`,
+    )
+    .all()
+    .filter((row) => visible.has(row.id))
+}
+
+function renderProjects(rows) {
+  if (rows.length === 0) return 'Aucun projet que ce compte voie dans cette instance.'
+  return [
+    `${rows.length} projet(s) :`,
+    ...rows.map(
+      (row) =>
+        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
+    ),
+  ].join('\n')
+}
+
+/**
+ * Le projet d'un appel du mode global, posé dans `PROJECT_ID` et `MEMORY_DIR`, ou le
+ * refus à rendre. Par identifiant, par nom exact, sinon par nom approchant s'il n'y en
+ * a qu'un : deviner entre deux serait écrire dans le mauvais projet.
+ */
+function selectProject(name, args) {
+  PROJECT_ID = null
+  MEMORY_DIR = ''
+  const mode = GLOBAL_PROJECT_PARAM[name]
+  const wanted = typeof args?.project === 'string' ? args.project.trim() : ''
+  if (mode === 'none' || (mode === 'optional' && !wanted)) {
+    // Sans projet, la mémoire est celle du compte : la même que ses fils libres, qui
+    // sont eux aussi hors de tout projet (`memory/store.ts`, `freeThreadMemoryDir`).
+    if (MEMORY_ROOT) MEMORY_DIR = join(MEMORY_ROOT, 'threads', USER.id)
+    return null
+  }
+  if (!wanted) {
+    return { ...text("Le paramètre `project` est requis : le nom ou l'identifiant d'un projet, voir list_projects."), isError: true }
+  }
+  const rows = visibleProjects()
+  const lower = wanted.toLowerCase()
+  let found = rows.filter((row) => row.id === wanted)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase() === lower)
+  if (found.length === 0) found = rows.filter((row) => row.name.toLowerCase().includes(lower))
+  if (found.length !== 1) {
+    return {
+      ...text(
+        found.length === 0
+          ? `Aucun projet « ${wanted} ». list_projects donne les noms et identifiants.`
+          : `Plusieurs projets répondent à « ${wanted} » : ${found.map((row) => `${row.name} (${row.id})`).join(', ')}. Précise.`,
+      ),
+      isError: true,
+    }
+  }
+  PROJECT_ID = found[0].id
+  if (MEMORY_ROOT) MEMORY_DIR = join(MEMORY_ROOT, 'projects', PROJECT_ID)
+  return null
+}
+
+/**
+ * Une session que le compte du mode global peut lire, ou null : dans un projet qu'il
+ * voit, ou un de ses fils libres quand aucune liste blanche ne le borne. `owned` exige
+ * en plus qu'elle soit à lui, pour écrire : un projet partagé se lit à plusieurs mais
+ * ne s'écrit pas à plusieurs, comme dans l'interface et l'API.
+ */
+function globalConversation(id, owned) {
+  const row = db
+    .prepare(
+      `SELECT c.id AS id, c.project_id AS projectId, c.user_id AS userId, c.title AS title,
+              c.agent AS agent, c.status AS status, c.background_count AS background,
+              c.loop_count AS loops, c.updated_at AS updatedAt, c.archived_at AS archivedAt,
+              w.name AS worktree
+       FROM conversations AS c LEFT JOIN worktrees AS w ON w.id = c.worktree_id
+       WHERE c.id = ?`,
+    )
+    .get(id)
+  if (!row) return null
+  const visible =
+    row.projectId === null
+      ? row.userId === USER.id && ALLOWED_PROJECTS.length === 0
+      : visibleProjects().some((project) => project.id === row.projectId)
+  if (!visible || (owned && row.userId !== USER.id)) return null
+  return row
+}
+
+/**
+ * L'état présent d'une session, replié depuis la fin de son journal. Doit rester
+ * d'accord avec `digest` de `apps/server/src/http/v1/task-view.ts` : mêmes types lus,
+ * même fenêtre, même règle pour la sollicitation ouverte.
+ */
+const DIGEST_TYPES = [
+  'tool.started', 'tool.completed', 'message.completed',
+  'permission.requested', 'permission.resolved', 'question.requested', 'question.resolved',
+  'plan.review_requested', 'plan.review_resolved', 'elicitation.requested', 'elicitation.resolved',
+]
+const DIGEST_WINDOW = 300
+const PROMPT_KINDS = {
+  'permission.requested': 'permission',
+  'question.requested': 'question',
+  'plan.review_requested': 'plan',
+  'elicitation.requested': 'elicitation',
+}
+const RESOLVED_TYPES = new Set(['permission.resolved', 'question.resolved', 'plan.review_resolved', 'elicitation.resolved'])
+
+function digestSession(id) {
+  const rows = db
+    .prepare(
+      `SELECT type, ts, payload FROM events
+       WHERE conversation_id = ? AND type IN (${DIGEST_TYPES.map(() => '?').join(', ')})
+       ORDER BY seq DESC LIMIT ${DIGEST_WINDOW}`,
+    )
+    .all(id, ...DIGEST_TYPES)
+  const completed = new Set()
+  const resolved = new Set()
+  let activity = null
+  let pending = null
+  for (const row of rows) {
+    const event = JSON.parse(row.payload)
+    if (event.type === 'tool.completed') {
+      completed.add(event.toolCallId)
+    } else if (event.type === 'tool.started') {
+      if (!activity && !completed.has(event.toolCallId)) activity = { name: event.name, at: row.ts }
+    } else if (RESOLVED_TYPES.has(event.type)) {
+      resolved.add(event.requestId)
+    } else if (PROMPT_KINDS[event.type] && !pending && !resolved.has(event.requestId)) {
+      pending = { kind: PROMPT_KINDS[event.type], requestId: event.requestId, at: row.ts, event }
+    }
+  }
+  return { activity, pending }
+}
+
+/** La sollicitation ouverte, avec ce qu'il faut pour y répondre. */
+function renderPending(pending) {
+  const { event } = pending
+  const head = `Elle attend ta réponse (${pending.kind}, request_id ${pending.requestId}, ${ago(pending.at)}) :`
+  if (pending.kind === 'permission') {
+    return `${head}\n  Permission pour l'outil ${event.toolName}${event.input !== undefined ? `, entrée ${clip(JSON.stringify(event.input), 600)}` : ''}.\n  reply_session avec decision allowed ou denied, et scope once ou session.`
+  }
+  if (pending.kind === 'question') {
+    const questions = (event.questions ?? []).map((question) => {
+      const options = (question.options ?? []).map((option) => `« ${option.label}${option.description ? ` : ${option.description}` : ''} »`).join(', ')
+      return `  - [${question.id}] ${question.question}${options ? ` Options : ${options}.` : ''}${question.multiSelect ? ' Plusieurs réponses possibles.' : ''}${question.allowOther ? ' Réponse libre acceptée.' : ''}`
+    })
+    return `${head}\n${questions.join('\n')}\n  reply_session avec answers { "<id>": ["réponse"] }, ou status cancelled.`
+  }
+  if (pending.kind === 'plan') {
+    const follow = (event.followUpOptions ?? []).map((option) => `${option.id} (${option.label})`).join(', ')
+    return `${head}\n  Plan proposé :\n${clip(event.plan ?? '', 4000)}\n  reply_session avec decision approved ou rejected${follow ? `, et followUpMode parmi ${follow}` : ''}.`
+  }
+  return `${head}\n  Saisie demandée : ${event.message ?? ''}${event.requestedSchema ? `\n  Schéma : ${clip(JSON.stringify(event.requestedSchema), 1500)}` : ''}\n  reply_session avec action accept et content, ou action decline.`
+}
+
+/** L'en-tête d'état que read_conversation pose sur le fil en mode global. */
+function renderSessionState(row) {
+  const { activity, pending } = digestSession(row.id)
+  const lines = [
+    `État : ${describeActivity(row)}, ${row.projectId ? (row.worktree ? `worktree ${row.worktree}` : 'racine du projet') : 'fil libre'}, dernière activité ${ago(row.updatedAt)}.`,
+  ]
+  if (row.status === 'running' && activity) lines.push(`En train d'appeler l'outil ${activity.name} (depuis ${ago(activity.at)}).`)
+  if (pending) lines.push(renderPending(pending))
+  else if (!isWorking(row)) lines.push('Elle est au repos : send_session_message la fait reprendre, avec son contexte.')
+  return lines.join('\n')
+}
+
+/**
+ * Attend que la session ait fini son tour, ou qu'elle s'arrête sur une question.
+ *
+ * Un message vient souvent d'être envoyé : le statut ne passe à `running` qu'après un
+ * court délai, et rendre tout de suite « au repos » ferait rater le tour entier.
+ */
+async function waitForSession(id, seconds) {
+  const deadline = Date.now() + seconds * 1000
+  const grace = Date.now() + 3000
+  let row = globalConversation(id, false)
+  while (row && Date.now() < deadline) {
+    if ((!isWorking(row) || row.status === 'awaiting_input') && Date.now() >= grace) return { row, timedOut: false }
+    await new Promise((done) => setTimeout(done, 1000))
+    row = globalConversation(id, false)
+  }
+  return { row, timedOut: Boolean(row) }
+}
+
+/**
+ * Les outils dont le mode global change le sens, ou qui n'existent que là. Rend null
+ * pour laisser `callTool` traiter les autres comme d'ordinaire, le projet de l'appel
+ * déjà posé par `selectProject`.
+ */
+async function callGlobalTool(name, args) {
+  if (name === 'list_projects') return text(renderProjects(listProjects()))
+
+  if (name === 'read_conversation') {
+    const id = typeof args?.id === 'string' ? args.id.trim() : ''
+    let row = id ? globalConversation(id, false) : null
+    if (!row) return { ...text(`Aucune conversation « ${id} » que ce compte voie. list_sessions donne leurs identifiants.`), isError: true }
+    let waited = ''
+    if (Number.isInteger(args?.wait_seconds) && args.wait_seconds > 0) {
+      const seconds = Math.min(args.wait_seconds, MAX_WAIT_SECONDS)
+      const result = await waitForSession(id, seconds)
+      if (!result.row) return { ...text(`La conversation « ${id} » n'est plus visible.`), isError: true }
+      row = result.row
+      if (result.timedOut) waited = `Toujours au travail après ${seconds} s : rappelle read_conversation avec wait_seconds pour attendre encore.\n`
+    }
+    PROJECT_ID = row.projectId
+    const found = readConversation(id)
+    const thread = found ? renderThread(found, Number.isInteger(args?.before) ? args.before : null) : ''
+    return text(`${waited}${renderSessionState(row)}\n\n${thread}`)
+  }
+
+  if (name === 'send_session_message' || name === 'interrupt_session' || name === 'reply_session') {
+    const id = (name === 'send_session_message' ? args?.to : args?.session) ?? ''
+    const target = typeof id === 'string' && id.trim() ? globalConversation(id.trim(), true) : null
+    if (!target) {
+      return { ...text(`Aucune session « ${id} » à toi. list_sessions donne celles qui existent.`), isError: true }
+    }
+    if (target.archivedAt !== null) {
+      return { ...text(`La session « ${target.title} » est archivée : désarchive-la dans Solera pour lui écrire.`), isError: true }
+    }
+    PROJECT_ID = target.projectId
+    if (name === 'send_session_message') {
+      const body = typeof args?.body === 'string' ? args.body.trim() : ''
+      if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
+      if (body.length > MAX_LAUNCH_PROMPT_CHARS) {
+        return { ...text(`Message trop long (${body.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus).`), isError: true }
+      }
+      return requestDaemon('message_session', { session: target.id, body })
+    }
+    if (name === 'interrupt_session') return requestDaemon(name, { session: target.id })
+    return requestDaemon(name, { ...args, session: target.id })
+  }
+
+  return null
+}
+
 async function callTool(name, args) {
+  if (GLOBAL) {
+    const handled = await callGlobalTool(name, args)
+    if (handled) return handled
+  }
+
   if (name === 'search_history') {
     const query = typeof args?.query === 'string' ? args.query : ''
     if (!query.trim()) return { ...text('Le paramètre `query` est requis.'), isError: true }
@@ -2798,11 +3324,15 @@ async function callTool(name, args) {
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
     if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
 
-    const card = currentCard()
+    // En mode global, la carte que `card` désigne : l'appelant n'a pas de conversation
+    // rattachée, et c'est lui, pas un agent, qui choisit où écrire.
+    const card = GLOBAL ? (Number.isInteger(args?.card) ? readCard(args.card) : null) : currentCard()
     if (!card) {
       return {
         ...text(
-          "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Solera, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
+          GLOBAL
+            ? `Aucune carte #${args?.card ?? '?'} dans ce projet. list_cards donne leurs numéros.`
+            : "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Solera, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
         ),
         isError: true,
       }
@@ -3047,7 +3577,7 @@ async function callTool(name, args) {
     name === 'create_worktree' ||
     name === 'list_worktrees'
   ) {
-    if (!CURRENT_CONVERSATION) {
+    if (!CURRENT_CONVERSATION && !USER) {
       return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas pour qui agir."), isError: true }
     }
     if (name === 'create_card' && !(typeof args?.title === 'string' && args.title.trim())) {
@@ -3135,7 +3665,7 @@ async function callTool(name, args) {
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire ${MEMORY_LABEL}, dans ${MEMORY_DIR} :`,
+            `Mémoire ${memoryLabel()}, dans ${MEMORY_DIR} :`,
             index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
             `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
           ].join('\n\n'),
@@ -3174,7 +3704,7 @@ async function callTool(name, args) {
     writeFileSync(join(MEMORY_DIR, file), args.content)
     const indexed = file !== MEMORY_INDEX && indexNote(file, args.content)
     return text(
-      `Note « ${file} » écrite dans la mémoire ${MEMORY_LABEL}${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
+      `Note « ${file} » écrite dans la mémoire ${memoryLabel()}${indexed ? `, et ajoutée à ${MEMORY_INDEX}` : ''}. Les sessions suivantes, quel que soit leur CLI, la verront.`,
     )
   }
 
@@ -3227,8 +3757,11 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DECISIONS ? ', décisions accordées' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
+  `prêt, ${GLOBAL ? `mode global, compte=${USER.username}${ALLOWED_PROJECTS.length ? `, ${ALLOWED_PROJECTS.length} projet(s) permis` : ''}` : PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DECISIONS ? ', décisions accordées' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
 )
+
+/** La file des appels du mode global, voir `tools/call`. */
+let calls = Promise.resolve()
 
 createInterface({ input: process.stdin }).on('line', async (line) => {
   if (!line.trim()) return
@@ -3261,15 +3794,30 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
 
   if (msg.method === 'tools/call') {
-    let result
-    try {
-      result = await callTool(msg.params?.name, msg.params?.arguments ?? {})
-    } catch (err) {
-      // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
-      // sa requête, là où une erreur de protocole ne lui apprend rien.
-      log(`échec de ${msg.params?.name} : ${err.message}`)
-      result = { ...text(`La recherche a échoué : ${err.message}`), isError: true }
+    const run = async () => {
+      const name = msg.params?.name
+      const args = msg.params?.arguments ?? {}
+      try {
+        if (GLOBAL) {
+          // Un outil hors du catalogue global n'a pas de projet à recevoir : le refuser
+          // ici plutôt que de le laisser lire le projet d'un appel précédent.
+          if (!TOOLS.some((tool) => tool.name === name && offered(tool))) {
+            return { ...text(`Outil inconnu : ${name}`), isError: true }
+          }
+          const refusal = selectProject(name, args)
+          if (refusal) return refusal
+        }
+        return await callTool(name, args)
+      } catch (err) {
+        // Rendu en résultat d'outil et non en erreur JSON-RPC : le modèle peut corriger
+        // sa requête, là où une erreur de protocole ne lui apprend rien.
+        log(`échec de ${name} : ${err.message}`)
+        return { ...text(`La recherche a échoué : ${err.message}`), isError: true }
+      }
     }
+    // En mode global, un par un : le projet est un état du process, et deux appels
+    // entrelacés sur des projets différents écriraient chacun dans celui de l'autre.
+    const result = GLOBAL ? await (calls = calls.then(run, run)) : await run()
     send({ jsonrpc: '2.0', id: msg.id, result })
     return
   }

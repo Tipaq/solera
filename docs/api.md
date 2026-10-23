@@ -3,6 +3,9 @@
 L’API `/api/v1` s’authentifie avec `Authorization: Bearer <clé>`.
 Les clés se créent dans les réglages API de Solera.
 
+La portée `mcp` ouvre `POST /api/v1/mcp`, le serveur MCP de Solera par HTTP : voir
+[mcp.md](mcp.md).
+
 ## Créer un projet
 
 `POST /api/v1/projects` exige la permission `projects:write` et une clé sans

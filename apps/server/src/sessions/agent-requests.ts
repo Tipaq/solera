@@ -11,6 +11,7 @@ import {
   conversations,
   projects,
   scheduledTasks,
+  users,
   worktrees,
   type AgentRequestRow,
   type ConversationRow,
@@ -28,6 +29,7 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
+  taskReplyBodySchema,
   agentConfigSchema,
   agentKindSchema,
   cardColumnSchema,
@@ -169,6 +171,33 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
 
 class Refusal extends Error {}
 
+/**
+ * Qui demande : une session, ou un compte sans session.
+ *
+ * Le second cas est celui du serveur MCP en mode global, branché de l'extérieur sur
+ * toute l'instance (`docs/mcp.md`) : la demande porte un `user_id` et une conversation
+ * vide. Il a l'`id` vide, pas de worktree ni de tâche d'origine, et tout ce qui tient à
+ * une session (chaîne de lancements, note de provenance) ne s'y applique pas. Un `Pick`
+ * et non la ligne entière, pour que le type dise ce que les traitements lisent vraiment ;
+ * ceux qui ne valent que pour une session (rangements, décisions) gardent la ligne.
+ */
+type Requester = Pick<ConversationRow, 'id' | 'projectId' | 'userId' | 'agent' | 'worktreeId' | 'scheduleId' | 'title'>
+
+/** Les genres qu'un compte sans session peut déposer : ni rangement ni décision, qui se proposent à lui. */
+const GLOBAL_KINDS = new Set<AgentRequestRow['kind']>([
+  'start_session',
+  'create_card',
+  'schedule_task',
+  'list_models',
+  'list_worktrees',
+  'message_session',
+  'interrupt_session',
+  'reply_session',
+])
+
+/** Les gestes sur une session existante, réservés au mode global. */
+type SessionGesture = 'message_session' | 'interrupt_session' | 'reply_session'
+
 /** Doit rester d'accord avec `createWorktreeBodySchema` du protocole : le nom sert aussi de dossier. */
 function assertWorktreeName(name: string): void {
   if (!/^[A-Za-z0-9._/-]+$/.test(name) || name.split('/').includes('..') || name.startsWith('/') || name.endsWith('/')) {
@@ -270,6 +299,10 @@ export class AgentRequests {
   private async handle(request: AgentRequestRow): Promise<void> {
     try {
       const payload = JSON.parse(request.payload) as Record<string, unknown>
+      if (request.conversationId === '') {
+        await this.handleGlobal(request, payload)
+        return
+      }
       // La conversation d'abord, son projet ensuite et seulement pour les genres qui en
       // ont besoin : un fil libre dépose lui aussi des demandes, et `project_id` est
       // alors nul des deux côtés. `inProject` et non `eq`, parce que `project_id = NULL`
@@ -342,6 +375,184 @@ export class AgentRequests {
   }
 
   /**
+   * Une demande du serveur MCP en mode global : un compte, pas de session.
+   *
+   * Le serveur MCP a déjà borné le compte à ses projets ; le daemon revérifie ce que la
+   * base seule peut garantir, à savoir que le compte voit le projet visé, comme le fait
+   * `loadProjectForToken` pour l'API. Les rangements et les décisions sont refusés : ce
+   * sont des propositions qui attendent le clic d'une personne, et l'appelant est cette
+   * personne.
+   */
+  private async handleGlobal(request: AgentRequestRow, payload: Record<string, unknown>): Promise<void> {
+    const requester = this.principal(request)
+    if (!GLOBAL_KINDS.has(request.kind)) {
+      throw new Refusal("Cet outil n'existe que dans une session Solera : hors session, il n'y a personne à qui proposer ce geste.")
+    }
+    if (request.kind === 'message_session' || request.kind === 'interrupt_session' || request.kind === 'reply_session') {
+      this.settle(request, await this.actOnSession(request.kind, requester, payload), false)
+      return
+    }
+
+    const project = this.requireProject(request.projectId)
+    if (project.archivedAt !== null || (project.ownerId !== requester.userId && project.visibility !== 'shared')) {
+      throw new Refusal("Ce projet n'existe pas pour ce compte. list_projects donne ceux qu'il voit.")
+    }
+    if (request.kind === 'start_session') {
+      const { text, launchedId } = await this.startSession(request, requester, project, payload)
+      this.settle(request, text, false, launchedId)
+    } else if (request.kind === 'create_card') {
+      this.settle(request, this.createCard(requester, payload), false)
+    } else if (request.kind === 'schedule_task') {
+      this.settle(request, await this.scheduleTask(requester, project, payload), false)
+    } else if (request.kind === 'list_worktrees') {
+      this.settle(request, await this.listWorktrees(requester, project), false)
+    } else {
+      this.settle(request, await this.listModels(requester, project, payload), false)
+    }
+  }
+
+  /**
+   * Le demandeur d'une demande sans session : le compte qu'elle nomme.
+   *
+   * Le CLI par défaut est Claude, comme pour un projet neuf dans l'interface ; le client
+   * global passe `agent` quand il en veut un autre, et la description de l'outil le lui
+   * dit.
+   */
+  private principal(request: AgentRequestRow): Requester {
+    if (!request.userId) {
+      throw new Refusal("La demande ne vient d'aucune session ni d'aucun compte : Solera ne sait pas pour qui agir.")
+    }
+    const user = this.ctx.db.select().from(users).where(eq(users.id, request.userId)).get()
+    if (!user) throw new Refusal("Le compte au nom duquel agir n'existe plus.")
+    return {
+      id: '',
+      projectId: request.projectId,
+      userId: user.id,
+      agent: 'claude',
+      worktreeId: null,
+      scheduleId: null,
+      title: user.displayName,
+    }
+  }
+
+  /**
+   * Ce qu'un client hors session fait à une session existante, comme l'utilisateur le
+   * ferait dans l'interface : lui écrire, arrêter son tour, répondre à ce qu'elle demande.
+   *
+   * Les bornes sont celles de `loadTaskForToken` côté API : la session appartient au
+   * compte, l'écriture restant réservée au propriétaire du fil même dans un projet
+   * partagé. Le projet de la demande n'entre pas en compte, la session le porte.
+   */
+  private async actOnSession(kind: SessionGesture, requester: Requester, payload: Record<string, unknown>): Promise<string> {
+    const id = typeof payload.session === 'string' ? payload.session.trim() : ''
+    if (!id) throw new Refusal('Le paramètre `session` est requis : l’identifiant que list_sessions donne.')
+    const target = this.ctx.db
+      .select()
+      .from(conversations)
+      .where(and(eq(conversations.id, id), isNull(conversations.archivedAt)))
+      .get()
+    if (!target || target.userId !== requester.userId) {
+      throw new Refusal(`Aucune session « ${id} » à toi. list_sessions donne celles qui existent.`)
+    }
+
+    if (kind === 'interrupt_session') {
+      if (target.status !== 'running') {
+        return `La session « ${target.title} » ne travaille pas (${target.status}) : rien à interrompre.`
+      }
+      await this.sessions.interrupt(target.id)
+      return `Tour de « ${target.title} » interrompu. Elle garde son contexte : send_session_message la fait reprendre.`
+    }
+
+    if (kind === 'reply_session') return this.replyToSession(target, requester, payload)
+
+    const body = typeof payload.body === 'string' ? payload.body.trim() : ''
+    if (!body) throw new Refusal('Le paramètre `body` est requis.')
+    if (body.length > MAX_LAUNCH_PROMPT_CHARS) {
+      throw new Refusal(`Message trop long (${body.length} caractères, ${MAX_LAUNCH_PROMPT_CHARS} au plus).`)
+    }
+    // Comme un message entre sessions : glissé dans le tour en cours s'il y en a un,
+    // sinon il ouvre un tour. L'inflexion n'existe que pendant un tour et l'appelant
+    // perd souvent la course ; le texte repart alors en message ordinaire.
+    if (target.status === 'running' && (await this.sessions.steer(target.id, randomUUID(), body, [], []))) {
+      return `Message glissé dans le tour en cours de « ${target.title} » : son CLI le lit tout de suite. read_conversation avec wait_seconds pour voir la suite.`
+    }
+    const busy = target.status === 'running'
+    await this.sessions.sendMessage(target.id, randomUUID(), body, [], [])
+    return busy
+      ? `Message mis en file pour « ${target.title} » : son CLI ne sait pas infléchir un tour, il lui sera remis à la fin de celui-ci. read_conversation avec wait_seconds pour voir sa réponse.`
+      : `Message remis à « ${target.title} » : elle reprend avec son contexte, comme si tu l'avais tapé dans Solera. read_conversation avec wait_seconds pour voir sa réponse.`
+  }
+
+  /** Répond à la sollicitation ouverte, selon sa nature, comme la route `replies` de l'API. */
+  private async replyToSession(
+    target: ConversationRow,
+    requester: Requester,
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const requestId = typeof payload.request_id === 'string' ? payload.request_id.trim() : ''
+    const open = this.log.openPrompts(target.id)
+    const pending = requestId ? open.find((prompt) => prompt.requestId === requestId) : open[0]
+    if (!pending) {
+      throw new Refusal(
+        requestId
+          ? `Aucune sollicitation ouverte « ${requestId} » sur cette session : read_conversation dit ce qu'elle attend.`
+          : `La session « ${target.title} » n'attend aucune réponse.`,
+      )
+    }
+    if (!requestId && open.length > 1) {
+      throw new Refusal(`« ${target.title} » attend ${open.length} réponses : précise \`request_id\`, que read_conversation donne.`)
+    }
+    // Les champs en trop (`session`, `request_id`) tombent au passage : zod ne garde que
+    // ceux du genre de sollicitation.
+    const parsed = taskReplyBodySchema.safeParse({ ...payload, kind: pending.kind })
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0]
+      throw new Refusal(
+        `Réponse mal formée pour une sollicitation de type ${pending.kind} : ${issue ? `${issue.path.join('.') || 'corps'} — ${issue.message}` : 'invalide'}.`,
+      )
+    }
+    const body = parsed.data
+    // L'id du compte, comme un clic dans l'interface : `permission_requests` référence
+    // `users.id`.
+    const decidedBy = requester.userId
+    let resolved: boolean
+    switch (body.kind) {
+      case 'permission':
+        resolved = this.sessions.resolvePermission(target.id, pending.requestId, {
+          decision: body.decision,
+          scope: body.scope,
+          decidedBy,
+        })
+        break
+      case 'question':
+        resolved = await this.sessions.answerQuestion(target.id, pending.requestId, {
+          status: body.status,
+          answers: body.answers,
+          decidedBy,
+        })
+        break
+      case 'plan':
+        resolved = this.sessions.reviewPlan(target.id, pending.requestId, {
+          decision: body.decision,
+          followUpMode: body.followUpMode,
+          decidedBy,
+        })
+        break
+      case 'elicitation':
+        resolved = this.sessions.resolveElicitation(target.id, pending.requestId, {
+          action: body.action,
+          content: body.content,
+          decidedBy,
+        })
+        break
+    }
+    if (!resolved) {
+      throw new Refusal("Cette sollicitation a expiré : la session s'est arrêtée entre-temps. send_session_message la fait reprendre.")
+    }
+    return `Réponse (${body.kind}) remise à « ${target.title} » : elle continue. read_conversation avec wait_seconds pour la suite.`
+  }
+
+  /**
    * Le projet d'une demande qui en exige un.
    *
    * Séparé du préambule depuis que `project_id` est nullable : les genres d'avant le fil
@@ -396,7 +607,7 @@ export class AgentRequests {
 
   private async startSession(
     request: AgentRequestRow,
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: StartSessionPayload,
   ): Promise<{ text: string; launchedId: string }> {
@@ -429,14 +640,18 @@ export class AgentRequests {
       origin: null,
       firstMessage: {
         clientMessageId: randomUUID(),
-        text: formatSessionMessage({
-          kind: 'launch',
-          from: requester.id,
-          title: requester.title,
-          agent: requester.agent,
-          messageId: request.id,
-          body: prompt,
-        }),
+        // Lancée par un compte et non par une session : la mission arrive nue, comme si
+        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+        text: requester.id
+          ? formatSessionMessage({
+              kind: 'launch',
+              from: requester.id,
+              title: requester.title,
+              agent: requester.agent,
+              messageId: request.id,
+              body: prompt,
+            })
+          : prompt,
         attachments: [],
         mentions: [],
         skills: [],
@@ -454,7 +669,9 @@ export class AgentRequests {
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
       describePermissions(config),
-      "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire.",
+      requester.id
+        ? "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire."
+        : 'Elle apparaît dans Solera comme les autres. Pour lire sa réponse : read_conversation avec ce même id et `wait_seconds`.',
     ]
     return { text: lines.filter(Boolean).join('\n'), launchedId: row.id }
   }
@@ -466,7 +683,7 @@ export class AgentRequests {
    * chacune : pas de colonne à ajouter aux conversations pour une question que seul ce
    * module pose.
    */
-  private assertLaunchAllowed(requester: ConversationRow, requestId: string): void {
+  private assertLaunchAllowed(requester: Requester, requestId: string): void {
     let depth = 0
     let current = requester.id
     while (depth <= MAX_LAUNCH_DEPTH) {
@@ -491,6 +708,9 @@ export class AgentRequests {
       .where(
         and(
           eq(agentRequests.conversationId, requester.id),
+          // Hors session, la cadence se compte par compte : tous ses clients extérieurs
+          // ensemble, et pas ceux d'un autre compte de l'instance.
+          requester.id ? undefined : eq(agentRequests.userId, requester.userId),
           eq(agentRequests.kind, 'start_session'),
           eq(agentRequests.isError, false),
           ne(agentRequests.id, requestId),
@@ -500,7 +720,9 @@ export class AgentRequests {
       .all()
     if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
       throw new Refusal(
-        `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`,
+        requester.id
+          ? `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`
+          : `Refusé : ce compte a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure depuis un client MCP. Crée des cartes avec create_card pour le reste, ou lance-les depuis Solera.`,
       )
     }
   }
@@ -595,7 +817,7 @@ export class AgentRequests {
    * worktree, que l'agent nomme ; `@root` désigne la racine du projet.
    */
   private async launchTree(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     value: unknown,
   ): Promise<string | null> {
@@ -686,7 +908,7 @@ export class AgentRequests {
    * Attend un calcul à jour plutôt que de rendre la liste périmée que l'interface
    * accepte : un agent qui demande s'il peut reprendre un arbre décide sur la réponse.
    */
-  private async listWorktrees(requester: ConversationRow, project: ProjectRow): Promise<string> {
+  private async listWorktrees(requester: Requester, project: ProjectRow): Promise<string> {
     if (!this.worktreeStatus) throw new Refusal("L'avancement des worktrees n'est pas disponible ici.")
     const list = await this.worktreeStatus.current(project)
     if (list.worktrees.length === 0) {
@@ -753,7 +975,7 @@ export class AgentRequests {
    * le dise à l'utilisateur.
    */
   private async scheduleTask(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
@@ -818,7 +1040,7 @@ export class AgentRequests {
     const config = await this.launchConfig(agent, project, requester.userId, payload)
     const task = createScheduledTask(
       this.ctx.db,
-      { projectId: project.id, userId: requester.userId, conversationId: requester.id },
+      { projectId: project.id, userId: requester.userId, conversationId: requester.id || undefined },
       {
         name,
         agent,
@@ -854,7 +1076,7 @@ export class AgentRequests {
    * Toujours en « à faire » : une carte ouverte par un agent est une proposition, pas
    * un travail engagé. Elle avance quand une session la prend, comme toute autre.
    */
-  private createCard(requester: ConversationRow, payload: Record<string, unknown>): string {
+  private createCard(requester: Requester, payload: Record<string, unknown>): string {
     const title = typeof payload.title === 'string' ? payload.title.trim() : ''
     const description = typeof payload.description === 'string' ? payload.description.trim() : ''
     if (!title) throw new Refusal('Le paramètre `title` est requis.')
@@ -873,18 +1095,20 @@ export class AgentRequests {
     })
     // La provenance se lit dans le fil de la carte, avec un lien vers la session : la
     // description reste celle que l'agent a rédigée, et la personne qui la reprendra
-    // sait d'où elle vient.
-    this.ctx.db
-      .insert(cardNotes)
-      .values({
-        id: randomUUID(),
-        cardId: card.id,
-        conversationId: requester.id,
-        userId: null,
-        body: 'Carte ouverte depuis cette session.',
-        createdAt: Date.now(),
-      })
-      .run()
+    // sait d'où elle vient. Une carte ouverte au nom d'un compte porte déjà son auteur.
+    if (requester.id) {
+      this.ctx.db
+        .insert(cardNotes)
+        .values({
+          id: randomUUID(),
+          cardId: card.id,
+          conversationId: requester.id,
+          userId: null,
+          body: 'Carte ouverte depuis cette session.',
+          createdAt: Date.now(),
+        })
+        .run()
+    }
 
     return `Carte #${card.number} « ${card.title} » créée dans « à faire ». Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
   }
@@ -1455,7 +1679,7 @@ export class AgentRequests {
   // --- list_models ---------------------------------------------------------------
 
   private async listModels(
-    requester: ConversationRow,
+    requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
