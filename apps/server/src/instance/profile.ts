@@ -23,6 +23,7 @@ export function instanceCapabilities(profile: InstanceProfile): InstanceCapabili
   }
 }
 
-export function instanceInfo(): InstanceInfo {
+/** Le profil et ses capacités ; la route y ajoute ce qui se lit en base. */
+export function instanceInfo(): Omit<InstanceInfo, 'needsSetup'> {
   return { profile: INSTANCE_PROFILE, capabilities: instanceCapabilities(INSTANCE_PROFILE) }
 }

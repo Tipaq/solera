@@ -178,6 +178,9 @@ docker compose up -d
 docker compose exec -it solera node /app/server/cli/user-create.js   # first account, admin
 ```
 
+Or skip the command: as long as the database has no account, opening Solera in a
+browser starts the first-run tour on creating the first (administrator) account.
+
 Update by pulling a newer image tag. The UI tells you when a release is available
 and what changed.
 

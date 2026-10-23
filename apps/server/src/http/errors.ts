@@ -63,7 +63,7 @@ export const conflict = (code: string, message: string, params?: Params) =>
  * l'UI n'ait qu'un seul chemin d'affichage.
  */
 /** Routes dont le corps ne doit jamais atterrir dans les journaux. */
-const SENSITIVE_ROUTES = ['/api/auth/login']
+const SENSITIVE_ROUTES = ['/api/auth/login', '/api/auth/setup']
 
 function redactBody(url: string, body: unknown): unknown {
   const path = url.split('?')[0] ?? url

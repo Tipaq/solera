@@ -5,6 +5,7 @@ import { authSessions, conversations, projects, users } from '@solera/db'
 import { createUserBodySchema, updateUserBodySchema, type UserDto } from '@solera/protocol'
 import { hashPassword, verifyPassword } from '../../auth/passwords.js'
 import { sessionTokenHash } from '../../auth/sessions.js'
+import { armOnboarding } from '../../settings/user-settings.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireAdmin, requireUser } from '../require-user.js'
@@ -91,10 +92,11 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
       })
     }
 
+    const id = randomUUID()
     ctx.db
       .insert(users)
       .values({
-        id: randomUUID(),
+        id,
         username: body.username,
         passwordHash: await hashPassword(body.password),
         displayName: body.displayName,
@@ -102,6 +104,8 @@ export function registerUserRoutes(app: FastifyInstance, ctx: AppContext): void 
         createdAt: Date.now(),
       })
       .run()
+    // La visite attend ce compte à sa première connexion, sans l'étape du premier compte.
+    armOnboarding(ctx.db, id)
 
     return reply.status(201).send({ ok: true })
   })

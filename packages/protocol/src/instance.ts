@@ -42,4 +42,10 @@ export interface InstanceCapabilities {
 export interface InstanceInfo {
   profile: InstanceProfile
   capabilities: InstanceCapabilities
+  /**
+   * Vrai tant que la base n'a aucun compte : l'interface ouvre alors la visite sur la
+   * création du premier compte au lieu de la page de connexion. Toujours faux en bureau,
+   * où le lanceur crée le compte lui-même.
+   */
+  needsSetup: boolean
 }

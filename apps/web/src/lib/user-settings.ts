@@ -1,13 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AgentConfig, NotificationPrefs, UserSettingsDto } from '@solera/protocol'
+import type {
+  AgentConfig,
+  NotificationPrefs,
+  OnboardingState,
+  ProjectDefaults,
+  UserSettingsDto,
+} from '@solera/protocol'
 import { api } from './api'
 
 const USER_SETTINGS_KEY = ['user-settings']
 
-export function useUserSettings() {
+/** `enabled` à faux tant qu'aucune session n'est ouverte : la route répondrait 401. */
+export function useUserSettings(enabled = true) {
   return useQuery({
     queryKey: USER_SETTINGS_KEY,
     queryFn: () => api.get<UserSettingsDto>('/api/me/settings'),
+    enabled,
   })
 }
 
@@ -73,6 +81,38 @@ export function useUpdateNotificationPrefs() {
     onError: (_error, _prefs, context) => {
       if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
     },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * L'état de la visite, remplacé en bloc. Appliqué sans attendre : chaque pas l'écrit, et
+ * une étape qui attendrait le réseau pour s'afficher donnerait une visite molle.
+ */
+export function useUpdateOnboarding() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (onboarding: OnboardingState) =>
+      api.patch<UserSettingsDto>('/api/me/settings', { onboarding }),
+    onMutate: async (onboarding) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, onboarding })
+      return { previous }
+    },
+    onError: (_error, _state, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/** Les défauts des projets à venir, remplacés en bloc. */
+export function useUpdateProjectDefaults() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (projectDefaults: ProjectDefaults) =>
+      api.patch<UserSettingsDto>('/api/me/settings', { projectDefaults }),
     onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }

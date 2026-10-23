@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   MAX_PROJECT_IMAGE_BYTES,
   type CloneJobDto,
-  type InstructionsMode,
+  type ProjectInstructionsMode,
   type ProjectDto,
   type ProjectPrototypesDto,
 } from '@solera/protocol'
@@ -11,11 +11,13 @@ import { translate, translateError } from './i18n'
 
 const PROJECTS_KEY = ['projects']
 
-export function useProjects() {
+/** `enabled` à faux tant qu'aucune session n'est ouverte, comme sur la visite. */
+export function useProjects(enabled = true) {
   return useQuery({
     queryKey: PROJECTS_KEY,
     queryFn: () => api.get<ProjectDto[]>('/api/projects'),
     staleTime: 30_000,
+    enabled,
   })
 }
 
@@ -23,7 +25,7 @@ export function useProjects() {
 export type CreateProjectInput = (
   | { name: string; workspacePath: string; visibility: 'private' | 'shared' }
   | { name: string; parentDir: string; directory: string; visibility: 'private' | 'shared' }
-) & { instructionsMode?: InstructionsMode }
+) & { instructionsMode?: ProjectInstructionsMode }
 
 export function useCreateProject() {
   const queryClient = useQueryClient()
@@ -44,7 +46,7 @@ export interface StartCloneInput {
   parentDir: string
   directory: string
   visibility: 'private' | 'shared'
-  instructionsMode?: InstructionsMode
+  instructionsMode?: ProjectInstructionsMode
 }
 
 export function useStartClone() {

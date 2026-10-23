@@ -561,6 +561,10 @@ try {
   const other = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block', storageState: await context.storageState() })
   const otherLogin = await other.request.post(base + '/api/auth/login', { data: { username: 'ui-reader', password: 'ui-test-password' } })
   assert.ok(otherLogin.ok())
+  // Un compte ouvert par un administrateur a sa visite due : passée ici, c'est la
+  // séparation des comptes qu'on vérifie, pas la visite (sa suite : test:onboarding-ui).
+  const settled = await other.request.patch(base + '/api/me/settings', { data: { onboarding: { pending: false } } })
+  assert.ok(settled.ok())
   assert.equal((await other.request.get(`${base}/api/projects/${project.id}/file/download?path=package.json`)).status(), 404)
   assert.equal((await other.request.get(`${base}/api/conversations/${hero.id}/file/download?path=package.json`)).status(), 404)
   const otherPage = await other.newPage()

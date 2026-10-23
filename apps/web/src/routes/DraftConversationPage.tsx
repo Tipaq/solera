@@ -11,6 +11,7 @@ import {
 } from '@solera/protocol'
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
+import { AgentInstallRow } from '../components/AgentInstallRow'
 import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
 import { AccountChoice } from '../components/chat/AccountChoice'
@@ -21,7 +22,6 @@ import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
   useAgentAvailability,
-  useInstallAgent,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
@@ -126,7 +126,6 @@ export function DraftConversationPage() {
 
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
-  const install = useInstallAgent()
   const t = useTranslate()
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
@@ -375,37 +374,8 @@ export function DraftConversationPage() {
                 que la barre de saisie refuse. */}
             {blocked ? <Banner>{blocked}</Banner> : null}
 
-            {/* Un rang par CLI manquant. Un CLI désactivé relève de la configuration,
-                son installation ne résoudrait pas son indisponibilité. */}
-            {availability?.agents
-              .filter((entry) => !entry.installed && entry.reason !== 'disabled')
-              .map((entry) => (
-                <div
-                  key={entry.agent}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-line p-2"
-                >
-                  <span className="min-w-0 text-xs leading-snug text-ink-faint">
-                    {entry.install.status === 'running'
-                      ? t('agent.install.running', {
-                          label: AGENT_LABELS[entry.agent],
-                          version: entry.install.version,
-                        })
-                      : entry.install.status === 'failed'
-                        ? entry.install.error
-                        : t('agent.install.missing', { label: AGENT_LABELS[entry.agent] })}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={entry.install.status === 'running' || install.isPending}
-                    onClick={() => install.mutate(entry.agent)}
-                  >
-                    {entry.install.status === 'failed'
-                      ? t('agent.install.retry')
-                      : t('agent.install.action', { version: entry.preferredVersion })}
-                  </Button>
-                </div>
-              ))}
+            {/* Un rang par CLI manquant. */}
+            {availability?.agents.map((entry) => <AgentInstallRow key={entry.agent} entry={entry} />)}
           </fieldset>
 
           {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}

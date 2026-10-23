@@ -30,6 +30,20 @@ export function useLogin() {
   })
 }
 
+/** Le premier compte, depuis la visite : la session s'ouvre avec lui. */
+export function useSetupAccount() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (account: { username: string; displayName: string; password: string }) =>
+      api.post<CurrentUser>('/api/auth/setup', account),
+    onSuccess: (user) => {
+      queryClient.setQueryData(ME_KEY, user)
+      // La base a désormais un compte : le profil de l'instance ne le dit plus.
+      void queryClient.invalidateQueries({ queryKey: ['system', 'instance'] })
+    },
+  })
+}
+
 export function useLogout() {
   const queryClient = useQueryClient()
   return useMutation({
