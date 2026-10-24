@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // L'avancement des worktrees sur la démo : vrai serveur, vrai git, base temporaire.
 // La démo porte deux arbres créés par Solera (« offline cache », non commité ; « radar
@@ -98,7 +98,7 @@ try {
   git(repoRoot, 'worktree', 'add', '-b', 'feat/gone', gone, 'main')
   await rm(gone, { recursive: true, force: true })
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
 
   const session = async (viewport, mobile) => {
     const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: 'fr-FR', serviceWorkers: 'block' })

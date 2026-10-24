@@ -4,7 +4,7 @@ import { createServer } from 'node:net'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 import { checkJournalCache } from './checks/journal-cache.mjs'
 
 // Vérifie les vrais composants avec une API simulée ; aucune conversation réelle.
@@ -29,7 +29,7 @@ try {
   }
   assert.ok(ready, diagnostics || 'Vite failed to start')
   // Le Chromium complet est couvert par le profil AppArmor du serveur.
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
     const errors = []

@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
 const out = fileURLToPath(new URL('../docs/audits/2026-10-12-savoir/', import.meta.url))
@@ -34,7 +34,7 @@ try {
     await delay(100)
   }
   assert.ok(ready, diagnostics)
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
 
   const planches = [
     { component: 'VaultTour6', dir: 'tour-6/', width: 1180, dernier: 'gamma-fils-du-vault' },

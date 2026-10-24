@@ -4,7 +4,8 @@ import { createServer } from 'node:net'
 import { once } from 'node:events'
 import { fileURLToPath } from 'node:url'
 import { setTimeout } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Vérifie que le fil rend ce que l'adaptateur Grok Build journalise : outils sous leurs noms
 // du journal (dont un outil MCP appelé par `use_tool`), permission, question rendue par
@@ -30,7 +31,13 @@ try {
   }
   assert.ok(ready, diagnostics || 'Vite failed to start')
   // Le Chromium complet est couvert par le profil AppArmor du serveur.
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
+  const modules = {
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/tool-output.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/chat/ChatThread.tsx'),
+  }
+  browser = await launchBrowser()
   for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
     const page = await browser.newPage({ viewport, locale: 'fr-FR' })
     const errors = []
@@ -42,7 +49,7 @@ try {
     })
     await page.route('**/__grok_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><body><main id="check" style="max-width:720px;margin:24px auto;padding:16px"></main></body></html>' }))
     await page.goto(`${origin}/__grok_check`)
-    await page.evaluate(async () => {
+    await page.evaluate(async (modules) => {
       const refresh = (await import('/@react-refresh')).default
       refresh.injectIntoGlobalHook(window)
       window.$RefreshReg$ = () => {}
@@ -52,19 +59,15 @@ try {
       await import('/src/styles/index.css')
       const React = (await import('/node_modules/.vite/deps/react.js')).default
       const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-      // Les cartes d'outils lisent leur sortie par React Query. Le fournisseur doit venir
-      // du même module que celui des composants, que Vite sert sous une URL versionnée :
-      // elle se lit dans un module qui l'importe.
-      const source = await (await fetch('/src/lib/tool-output.ts')).text()
-      const queryModule = /from "([^"]*react-query[^"]*)"/.exec(source)[1]
-      const { QueryClient, QueryClientProvider } = await import(queryModule)
+      // Les cartes d'outils lisent leur sortie par React Query.
+      const { QueryClient, QueryClientProvider } = await import(modules.query)
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      // Le fil mène vers d'autres conversations : il lui faut un routeur.
+      const { MemoryRouter } = await import(modules.router)
       const { ChatThread } = await import('/src/components/chat/ChatThread.tsx')
       // Les cartes du fil portent des aides : sans fournisseur, la première qui en
-      // affiche une fait tomber tout le rendu. Chemin pré-empaqueté par Vite, lu dans la source
-      // transformée, comme celui de React Query au-dessus.
-      const threadSource = await (await fetch('/src/components/chat/ChatThread.tsx')).text()
-      const { TooltipProvider } = await import(/from "([^"]*@solera_ui[^"]*)"/.exec(threadSource)[1])
+      // affiche une fait tomber tout le rendu.
+      const { TooltipProvider } = await import(modules.ui)
       const { TurnActivity } = await import('/src/components/chat/TurnActivity.tsx')
       const { applyEvent, emptyChatState } = await import('/src/lib/chat-fold.ts')
       const { buildRows } = await import('/src/lib/tool-rows.ts')
@@ -73,12 +76,12 @@ try {
       let seq = 0
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
-        root.render(React.createElement(QueryClientProvider, { client: queryClient },
+        root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(MemoryRouter, null,
           React.createElement(TooltipProvider, null,
             React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
             state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
           ),
-        ))
+        )))
       }
       // Les événements tels que `apps/server/src/agents/grok/` les émet (sondé sur 1.0.62).
       window.appendEvent({ type: 'turn.started' })
@@ -105,7 +108,7 @@ try {
         { id: 'default', label: 'Valider et demander', hint: 'Chaque écriture et chaque commande restent soumises à ton accord' },
         { id: 'auto', label: 'Valider et laisser décider', hint: "Grok n'interrompt que pour ce qui lui paraît risqué" },
       ] })
-    })
+    }, modules)
     await page.getByText('calc.py', { exact: false }).first().waitFor()
     // Les appels terminés à la suite se replient en une ligne, qui les nomme.
     await page.getByText('3 outils', { exact: true }).click()

@@ -4,7 +4,8 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Vrais composants ; les sources simulées reproduisent les mises à jour partielles, sans toucher aux skills installés.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -19,8 +20,14 @@ for (const stream of [vite.stdout, vite.stderr]) stream.on('data', (chunk) => { 
 let browser
 
 async function mount(page) {
+  // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
+  const modules = {
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/skill-library.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/components/skills/AddSkillMenu.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/skills/SkillUpdates.tsx'),
+  }
   await page.goto(`${origin}/__skills_check`)
-  await page.evaluate(async () => {
+  await page.evaluate(async (modules) => {
     const refresh = (await import('/@react-refresh')).default
     refresh.injectIntoGlobalHook(window)
     window.$RefreshReg$ = () => {}
@@ -31,16 +38,11 @@ async function mount(page) {
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-    const hookSource = await (await fetch('/src/lib/skill-library.ts')).text()
-    const { QueryClient, QueryClientProvider } = await import(hookSource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1])
-    const source = await (await fetch('/src/components/skills/AddSkillMenu.tsx')).text()
-    const { MemoryRouter } = await import(source.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
+    const { QueryClient, QueryClientProvider } = await import(modules.query)
+    const { MemoryRouter } = await import(modules.router)
     const { SkillUpdates } = await import('/src/components/skills/SkillUpdates.tsx')
     const { useSkillLibrary } = await import('/src/lib/skill-library.ts')
-    // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
-    // source transformée du composant, comme pour les autres dépendances.
-    const updatesSource = await (await fetch('/src/components/skills/SkillUpdates.tsx')).text()
-    const { TooltipProvider } = await import(updatesSource.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1])
+    const { TooltipProvider } = await import(modules.ui)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     function Harness() {
       const library = useSkillLibrary(null)
@@ -48,7 +50,7 @@ async function mount(page) {
     }
     const content = React.createElement(Harness)
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, content))))
-  })
+  }, modules)
 }
 
 try {
@@ -57,7 +59,7 @@ try {
     if (vite.exitCode !== null) throw new Error(diagnostics)
     await delay(100)
   }
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, isMobile: width < 700, hasTouch: width < 700, serviceWorkers: 'block' })
     const page = await context.newPage()

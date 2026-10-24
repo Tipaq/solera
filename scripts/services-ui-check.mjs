@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Base, projets et serveurs jetables : aucun agent ni service utilisateur n'est arrêté.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -81,7 +81,7 @@ try {
   units.push(`solera-app-${appName}.service`)
   await systemd([`--unit=solera-app-${appName}`, `--setenv=SOLERA_PROCESS_ORIGIN=${token}`, `--working-directory=${project.workspace_path}`, process.execPath, '-e', script(appPort)])
   await ready(`http://127.0.0.1:${appPort}`, server)
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   assert.ok((await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })).ok())

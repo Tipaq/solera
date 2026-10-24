@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Palette de recherche sur la vraie API et les données de démo. Aucun CLI n'est activé.
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -68,7 +68,7 @@ try {
   assert.equal(seedCode, 0, seed.diagnostics)
 
   if (shots) await mkdir(shots, { recursive: true })
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })

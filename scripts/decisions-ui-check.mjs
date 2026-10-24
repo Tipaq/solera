@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Les décisions de bout en bout, avec les vrais composants et la vraie API, dans une base
 // temporaire : une session accordée dépose une décision par la même file que le serveur
@@ -97,7 +97,7 @@ try {
     return id
   }
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')

@@ -10,7 +10,7 @@
  * Chaque vue sort en deux versions, `<nom>-dark.png` et `<nom>-light.png`, dans
  * `site/screenshots/`. Locale forcée en anglais : le site est en anglais.
  */
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 import { mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -218,7 +218,7 @@ async function captureTheme(browser, theme, shots) {
 
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true })
-  const browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  const browser = await launchBrowser()
 
   // Un contexte éphémère résout les identifiants, valables pour les deux thèmes.
   const probe = await browser.newContext()

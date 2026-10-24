@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Retours d'un utilisateur Windows de Sillage (20 oct. 2026), repris chez nous :
 // avancement de l'installation d'un CLI, CLI manquants masquables, sélection de texte
@@ -81,7 +81,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await newContext(base, { viewport: { width: 1440, height: 1000 } })
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const project = projects.find((entry) => entry.name === 'Nimbus')

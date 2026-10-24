@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Composants réels et images locales, sans daemon ni base de production.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -58,7 +58,7 @@ try {
     if (vite.exitCode !== null) throw new Error(diagnostics)
     await delay(100)
   }
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: width < 700, isMobile: width < 700, permissions: ['clipboard-read', 'clipboard-write'], serviceWorkers: 'block' })
     const page = await context.newPage()
