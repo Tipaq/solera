@@ -199,17 +199,6 @@ export class WorktreeCleanup {
   }
 
   /**
-   * Nettoie un arbre seulement s'il est toujours fusionné et propre, relu à l'instant :
-   * c'est le geste d'une réponse « Nettoyer », donnée parfois des jours après la question.
-   */
-  async cleanIfMerged(project: ProjectRow, path: string): Promise<'cleaned' | 'stale'> {
-    const found = await this.locate(project, path)
-    if (!found || found.tree.state !== 'merged') return 'stale'
-    await this.run(project, { path, deleteBranch: true, stopServices: true })
-    return 'cleaned'
-  }
-
-  /**
    * Les apps `solera-app-*` et les processus suivis dont le répertoire est dans
    * l'arbre, chacun avec la façon de l'arrêter.
    */

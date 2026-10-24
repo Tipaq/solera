@@ -41,7 +41,6 @@ import { linkedDesignSystems, prototypesRoot, StorybookSupervisor } from './desi
 import { VaultIndex } from './vault/index-service.js'
 import { backfillCommandPaths } from './worktrees/backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
-import { watchMergedWorktrees } from './worktrees/merge-watch.js'
 import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
 
@@ -110,11 +109,12 @@ async function main(): Promise<void> {
   const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
   // L'avancement des worktrees, par projet, invalidé à chaque fin de tour.
   const worktreeStatus = new WorktreeStatusService(db, log)
-  // Nettoyer un chantier ferme ses terminaux et range ses sessions ; une fusion détectée
-  // le propose dans « À décider ».
+  // Nettoyer un chantier ferme ses terminaux et range ses sessions. C'est un geste de la
+  // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
+  // agent demande à une personne, et les propositions d'avant sont retirées ici.
   const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
-  watchMergedWorktrees(db, worktreeStatus, decisions, worktreeCleanup)
-  // Et la même fusion passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
+  decisions.retireWorktreeProposals()
+  // Une fusion détectée passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
   watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.

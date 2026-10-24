@@ -87,7 +87,7 @@ try {
   git(squashed, 'commit', '-m', 'Fix a typo')
   git(repoRoot, 'merge', '--squash', 'fix/squashed-typo')
   git(repoRoot, 'commit', '-m', 'Fix a typo (squashed)')
-  // Un second arbre fusionné, que « À décider » proposera de nettoyer.
+  // Un second arbre fusionné, que « À décider » ne doit pas proposer de nettoyer.
   const docs = join(data, 'external', 'nimbus-docs')
   git(repoRoot, 'worktree', 'add', '-b', 'docs/readme', docs, 'main')
   await writeFile(join(docs, 'NOTES.md'), 'notes\n')
@@ -130,34 +130,22 @@ try {
   assert.ok(desktop.status.worktrees.find((tree) => tree.name === 'feat/offline-cache').conversations.length > 0)
   console.log('OK : états calculés sur la démo.')
 
-  // « À décider » : le calcul a proposé de nettoyer les deux arbres fusionnés. La
-  // réponse « Nettoyer » retire l'arbre et sa branche, sans passer par une session.
+  // « À décider » est réservé à ce qu'un agent demande : une fusion n'y propose plus de
+  // nettoyer l'arbre, qui reste dans les Chantiers.
   const { page, errors, project } = desktop
   await page.goto(`${base}/p/${project.id}/board`)
-  const decided = page.getByRole('region', { name: 'À décider' })
-  await decided.getByRole('button', { name: /docs\/readme est fusionnée et propre : nettoyer \?/ }).click()
-  const decisionDialog = page.getByRole('dialog', { name: 'docs/readme est fusionnée et propre : nettoyer ?' })
-  await decisionDialog.getByText("Rien dans cet arbre que la branche par défaut n'ait déjà.").waitFor()
-  assert.equal(await decisionDialog.getByRole('textbox').count(), 0, 'Pas de note à écrire : aucune session ne la lirait')
-  await decisionDialog.getByRole('link', { name: 'Ouvrir les chantiers' }).waitFor()
-  await decisionDialog.getByRole('radio', { name: 'Nettoyer' }).click()
-  await page.waitForTimeout(200)
-  await decisionDialog.screenshot({ path: join(shots, 'decision-dialog.png') })
-  await decisionDialog.getByRole('button', { name: 'Envoyer' }).click()
-  await decisionDialog.getByText('Répondu par', { exact: false }).waitFor()
-  assert.ok(!existsSync(docs), 'Le dossier est retiré par la réponse')
-  assert.equal(git(repoRoot, 'branch', '--list', 'docs/readme'), '', 'La branche est supprimée par la réponse')
-  await decisionDialog.screenshot({ path: join(shots, 'decision-answered.png') })
-  await page.keyboard.press('Escape')
-  await decisionDialog.waitFor({ state: 'hidden' })
-  console.log('OK : « À décider » propose et nettoie un arbre fusionné.')
+  await page.getByRole('heading', { level: 1 }).first().waitFor()
+  await page.waitForTimeout(500)
+  assert.equal(await page.getByText(/est fusionnée et propre : nettoyer \?/).count(), 0, 'Aucune proposition de nettoyage')
+  assert.ok(existsSync(docs), "L'arbre fusionné reste en place")
+  console.log('OK : une fusion ne propose rien dans « À décider ».')
 
   // Vue Chantiers, dans les réglages du projet, à la place de l'ancienne liste.
   await page.goto(`${base}/p/${project.id}/settings#worktrees`)
   const board = page.locator('#worktrees').locator('..')
   await board.getByRole('heading', { name: 'Chantiers' }).waitFor()
   const names = await board.locator('li > div > div > span.font-mono').allInnerTexts()
-  assert.deepEqual(names, ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'fix/squashed-typo'], `ordre : ${names}`)
+  assert.deepEqual(names, ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'docs/readme', 'fix/squashed-typo'], `ordre : ${names}`)
   await board.getByText('Créé hors de Solera', { exact: true }).first().waitFor()
   await board.getByText('Introuvable', { exact: true }).first().waitFor()
   await board.getByRole('link', { name: 'Add offline caching for forecasts' }).waitFor()

@@ -201,6 +201,18 @@ try {
   assert.ok(await thumbnail.evaluate((node) => node === document.activeElement), 'le focus revient à la vignette')
   console.log('OK : le focus entre, reste et revient ; Échap ferme.')
 
+  // ─── Une image du brouillon se relit avant l'envoi ────────────────────────
+  await page.locator('input[type="file"]').first().setInputFiles({ name: 'brouillon.png', mimeType: 'image/png', buffer: image })
+  await page.getByRole('button', { name: 'Retirer brouillon.png' }).waitFor()
+  await page.getByRole('img', { name: 'brouillon.png' }).click()
+  const draftDialog = page.getByRole('dialog', { name: /brouillon\.png en plein écran/ })
+  await draftDialog.waitFor()
+  await page.keyboard.press('Escape')
+  await draftDialog.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Retirer brouillon.png' }).click()
+  await page.getByRole('img', { name: 'brouillon.png' }).waitFor({ state: 'detached' })
+  console.log('OK : une image jointe au brouillon s’ouvre dans la visionneuse.')
+
   // ─── Échap ne ferme qu'elle ───────────────────────────────────────────────
   await page.keyboard.press('Control+f')
   const search = page.getByPlaceholder(/Rechercher/)

@@ -12,8 +12,7 @@ const OPEN_COLUMNS: CardColumn[] = ['in_progress', 'review']
  * Passe en « Terminé » les cartes dont le worktree vient d'être fusionné (#86, porté de
  * Sillage).
  *
- * Branché sur les calculs d'avancement, comme la proposition de nettoyage
- * (`merge-watch.ts`) : une fusion se fait par l'onglet Git, par un agent au shell ou sur
+ * Branché sur les calculs d'avancement : une fusion se fait par l'onglet Git, par un agent au shell ou sur
  * la forge puis un pull, et seul l'état de l'arbre les voit toutes. C'est le seul passage
  * en « Terminé » qu'aucune personne ne clique, et il tient parce que la fusion en est
  * déjà un : quelqu'un a jugé le travail bon à livrer.

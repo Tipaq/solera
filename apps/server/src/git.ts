@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
 
@@ -16,6 +16,69 @@ async function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promis
     ...(env ? { env: { ...process.env, ...env } } : {}),
   })
   return stdout
+}
+
+/**
+ * Ce qui fait d'un `git diff` un patch unifié lisible par l'interface, quelle que soit la
+ * configuration de l'utilisateur : une couleur forcée, un diff externe, un textconv ou
+ * `diff.noprefix` donneraient un texte que ni l'écran ni `git apply` ne savent lire, et
+ * `diff.relative` des chemins tantôt depuis la racine, tantôt depuis le sous-dossier.
+ */
+export const PATCH_FLAGS = [
+  '--no-color',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--src-prefix=a/',
+  '--dst-prefix=b/',
+  '--no-relative',
+]
+
+/**
+ * Le sous-dossier où le projet est ouvert, avec sa barre finale (`apps/web/`) ; vide à
+ * la racine du dépôt.
+ */
+export async function readPrefix(cwd: string): Promise<string> {
+  return (await git(cwd, ['rev-parse', '--show-prefix']).catch(() => '')).trim()
+}
+
+/**
+ * Un chemin que git donne depuis la racine du dépôt, ramené au dossier du projet.
+ *
+ * `status`, `--numstat` et les en-têtes de patch parlent depuis la racine même lancés
+ * d'un sous-dossier, alors que les gestes et l'ouverture d'un fichier prennent des
+ * chemins relatifs au projet. Un fichier hors du sous-dossier devient `../x`.
+ */
+export function fromPrefix(prefix: string, path: string): string {
+  return prefix ? posix.relative(prefix, path) : path
+}
+
+/** Les chemins des en-têtes d'un patch, ramenés au dossier du projet. Voir `fromPrefix`. */
+export function relativePatch(prefix: string, patch: string): string {
+  if (!prefix) return patch
+  const side = (marker: string, path: string) => `${marker}${fromPrefix(prefix, path)}`
+  let header = false
+  return patch
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('diff --git ')) {
+        header = true
+        const body = line.slice('diff --git '.length)
+        const at = body.indexOf(' b/')
+        if (!body.startsWith('a/') || at === -1) return line
+        return `diff --git ${side('a/', body.slice(2, at))} ${side('b/', body.slice(at + 3))}`
+      }
+      // Hors en-tête, `--- a/x` peut être une ligne retirée qui commençait par `-- a/x`.
+      if (!header) return line
+      if (line.startsWith('@@')) header = false
+      else if (line.startsWith('--- a/')) return side('--- a/', line.slice(6))
+      else if (line.startsWith('+++ b/')) return side('+++ b/', line.slice(6))
+      else {
+        const moved = /^(rename|copy) (from|to) (.*)$/.exec(line)
+        if (moved) return `${moved[1]} ${moved[2]} ${fromPrefix(prefix, moved[3]!)}`
+      }
+      return line
+    })
+    .join('\n')
 }
 
 export interface GitStatus {
@@ -352,9 +415,11 @@ export async function writeLocalCredentialHelpers(cwd: string, helpers: string[]
  */
 export async function readFileStates(cwd: string): Promise<Map<string, FileState> | null> {
   let raw: string
+  let prefix: string
   try {
     const inside = (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim()
     if (inside !== 'true') return null
+    prefix = await readPrefix(cwd)
     raw = await git(cwd, [
       'status',
       '--porcelain',
@@ -383,6 +448,8 @@ export async function readFileStates(cwd: string): Promise<Map<string, FileState
     // Git remonte les dossiers entièrement ignorés comme une seule entrée terminée
     // par un séparateur : la garder telle quelle ne correspondrait à aucune entrée.
     if (path.endsWith('/')) path = path.slice(0, -1)
+    // Le porcelain parle depuis la racine, l'explorateur depuis le dossier du projet.
+    path = fromPrefix(prefix, path)
 
     if (code === '!!') states.set(path, 'ignored')
     else if (code === '??') states.set(path, 'untracked')
@@ -456,7 +523,7 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
   try {
     const [numstat, patch] = await Promise.all([
       git(cwd, ['show', '--format=', '--numstat', '-m', '--first-parent', hash]),
-      git(cwd, ['show', '--format=', '--patch', '-m', '--first-parent', hash]),
+      git(cwd, ['show', '--format=', '--patch', ...PATCH_FLAGS, '-m', '--first-parent', hash]),
     ])
 
     const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES

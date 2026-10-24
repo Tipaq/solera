@@ -8,21 +8,21 @@ import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { EventEmitter } from 'node:events'
 import Fastify from 'fastify'
-import { agentRequests, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@solera/db'
+import { agentRequests, cards, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@solera/db'
 import { decisionAnswerSchema } from '@solera/protocol'
 import type { Config } from '../src/config.js'
 import { Decisions } from '../src/decisions/decisions.js'
 import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerDecisionRoutes } from '../src/http/routes/decisions.js'
-import type { TerminalManager } from '../src/terminals/terminal-manager.js'
-import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
-import { watchMergedWorktrees } from '../src/worktrees/merge-watch.js'
+import { watchMergedCards } from '../src/worktrees/merged-cards.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
- * « À décider » propose de nettoyer un arbre fusionné et propre : détection, une seule
- * question par arbre, retrait quand l'arbre bouge, et réponse qui nettoie ou garde.
+ * Une fusion ne propose plus de nettoyer l'arbre dans « À décider », réservé à ce qu'un
+ * agent demande à une personne. La détection de fusion, elle, reste : c'est elle qui
+ * passe en « Terminé » la carte de la session qui vivait dans l'arbre (#86). Les
+ * propositions qu'une version d'avant avait posées sont retirées, sans rien nettoyer.
  */
 const isolation = mkdtempSync(join(tmpdir(), 'solera-worktree-decision-isolation-'))
 writeFileSync(join(isolation, 'gitconfig'), '')
@@ -77,9 +77,9 @@ function harness(t: TestContext) {
       announced.push(`${userId} ${toast?.worktreeBranch ?? ''} ${toast?.question ?? ''}`)
     },
   })
-  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
-  watchMergedWorktrees(db, status, service, cleanup)
+  // Branché comme dans `main.ts`.
+  service.retireWorktreeProposals()
+  watchMergedCards(db, status)
 
   /** Recalcule comme après un tour, et laisse la détection passer. */
   const compute = async () => {
@@ -87,186 +87,99 @@ function harness(t: TestContext) {
     await status.current(project)
     await settle()
   }
-  /** Les propositions, lues comme les anciennes lignes `decisions` de l'amont. */
+  /** Les décisions, avec leur issue. */
   const rows = () =>
     db.select().from(agentRequests).all().map((row) => {
       const answer = row.answer ? decisionAnswerSchema.parse(JSON.parse(row.answer)) : null
       return { ...row, status: answer?.by ?? 'pending', answer }
     })
 
-  return { db, repo, merged, compute, rows, service, announced }
+  /** Une proposition « nettoyer ? » telle que la posait une version d'avant. */
+  const oldProposal = (path: string, id = 'old') =>
+    db.insert(agentRequests).values({
+      id,
+      projectId: 'project',
+      conversationId: '',
+      kind: 'request_decision',
+      payload: JSON.stringify({
+        question: 'feat/done est fusionnée et propre : nettoyer ?',
+        context: '',
+        options: ['clean', 'keep'],
+        defaultOption: null,
+        worktree: { branch: 'feat/done', head: null, base: 'main', sessions: 0 },
+      }),
+      createdAt: 1,
+      settledAt: 1,
+      expiresAt: Date.now() + 3_600_000,
+      worktreePath: path,
+    }).run()
+
+  return { db, repo, merged, compute, rows, service, announced, oldProposal }
 }
 
-test('un arbre fusionné et propre est proposé une fois, au propriétaire', async (t) => {
-  const { db, repo, merged, compute, rows, announced, service } = harness(t)
+test('une fusion passe la carte en « Terminé » et ne propose plus rien dans « À décider »', async (t) => {
+  const { db, merged, compute, rows, announced, service } = harness(t)
   const path = merged('feat/done')
-  // Un arbre qui porte encore du travail n'est pas proposé.
-  const busyTree = join(repo, '..', 'trees', 'feat__wip')
-  git(repo, 'worktree', 'add', '-q', '-b', 'feat/wip', busyTree, 'main')
-  writeFileSync(join(busyTree, 'wip.txt'), 'wip\n')
+  db.insert(worktrees).values({ id: 'wt', projectId: 'project', name: 'feat/done', path, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+  db.insert(cards).values({
+    id: 'card', projectId: 'project', number: 1, title: 'Carte', description: '', column: 'in_progress',
+    position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1,
+  }).run()
+  db.insert(conversations).values({
+    id: 'agent', projectId: 'project', userId: 'owner', title: 'Agent', agent: 'claude', config: '{}',
+    status: 'idle', worktreeId: 'wt', cardId: 'card', createdAt: 1, updatedAt: 5,
+  }).run()
 
   await compute()
-  const [first, ...others] = rows()
-  assert.equal(others.length, 0)
-  const payload = JSON.parse(first!.payload) as { options: string[]; worktree: { branch: string } }
-  assert.deepEqual(
-    [first!.kind, payload.worktree.branch, first!.worktreePath, first!.status, payload.options],
-    ['request_decision', 'feat/done', path, 'pending', ['clean', 'keep']],
-  )
-  assert.equal(first!.conversationId, '')
-  assert.deepEqual(announced, ['owner feat/done feat/done est fusionnée et propre : nettoyer ?'])
-  // Elle va au propriétaire du projet, dans « À décider » comme dans l'historique.
-  assert.deepEqual(service.awaiting('owner').map((item) => item.kind === 'decision' && item.worktreeBranch), ['feat/done'])
-  assert.equal(service.list('owner', 'pending')[0]!.worktree?.path, path)
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'card')).get()!.column, 'done')
+  assert.equal(rows().length, 0)
+  assert.deepEqual(announced, [])
+  assert.deepEqual(service.awaiting('owner'), [])
+  assert.equal(service.pendingCount('owner'), 0)
+  assert.ok(existsSync(path), "l'arbre reste : le nettoyage se fait à la main")
+})
 
-  // Les calculs suivants ne reposent pas la question.
-  await compute()
-  assert.equal(rows().length, 1)
+test('les propositions en attente sont retirées au démarrage, sans nettoyer ni relancer', async (t) => {
+  const { merged, rows, service, oldProposal } = harness(t)
+  const path = merged('feat/done')
+  oldProposal(path)
+  assert.equal(service.pendingCount('owner'), 1)
 
-  // L'échéance la clôt sans rien remettre ni nettoyer : la session n'existe pas.
-  db.update(agentRequests).set({ expiresAt: Date.now() - 1 }).run()
-  service.sweep()
-  assert.equal(rows()[0]!.status, 'expired')
-  assert.ok(rows()[0]!.resolvedAt)
+  assert.equal(service.retireWorktreeProposals(), 1)
+  const [row] = rows()
+  assert.equal(row!.status, 'withdrawn')
+  assert.ok(row!.resolvedAt)
+  assert.equal(row!.acceptedAt, null)
+  assert.equal(service.pendingCount('owner'), 0)
   assert.ok(existsSync(path))
-  await compute()
-  assert.equal(rows().length, 1, 'une question expirée ne revient pas')
+  // Elle reste lisible dans l'historique.
+  assert.equal(service.list('owner', 'all')[0]!.worktree?.path, path)
+  assert.equal(service.retireWorktreeProposals(), 0)
 })
 
-test('toute session liée qui travaille repousse la question, mais seules celles de l’arbre comptent', async (t) => {
-  const { db, merged, compute, rows } = harness(t)
-  const path = merged('feat/agent')
-  db.insert(worktrees).values({ id: 'wt', projectId: 'project', name: 'feat/agent', path, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
-  db.insert(conversations).values([
-    { id: 'agent', projectId: 'project', userId: 'owner', title: 'Agent', agent: 'claude', config: '{}', status: 'running', worktreeId: 'wt', createdAt: 1, updatedAt: 5 },
-    // Une session de la racine qui a cité l'arbre dans une commande, et tourne encore.
-    { id: 'root', projectId: 'project', userId: 'owner', title: 'Racine', agent: 'claude', config: '{}', status: 'running', createdAt: 1, updatedAt: 9 },
-  ]).run()
-  new EventLog(db).append('root', { type: 'tool.started', toolCallId: 't', name: 'Bash', input: { command: `git -C ${path} log` }, parentToolCallId: null })
-
-  await compute()
-  assert.equal(rows().length, 0)
-
-  // Celle de l'arbre a fini, celle de la racine qui y a cité un chemin tourne encore :
-  // elle y travaille peut-être, la question attend.
-  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'agent')).run()
-  await compute()
-  assert.equal(rows().length, 0)
-
-  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, 'root')).run()
-  await compute()
-  assert.equal(rows().length, 1)
-  assert.equal(rows()[0]!.conversationId, 'agent')
-  assert.equal((JSON.parse(rows()[0]!.payload) as { worktree: { sessions: number } }).worktree.sessions, 1)
-})
-
-test('la proposition se retire quand l’arbre reprend du travail ou disparaît', async (t) => {
-  const { merged, compute, rows, repo } = harness(t)
-  const reopened = merged('feat/reopened')
-  const removed = merged('feat/removed')
-  await compute()
-  assert.equal(rows().filter((row) => row.status === 'pending').length, 2)
-
-  writeFileSync(join(reopened, 'again.txt'), 'again\n')
-  git(repo, 'worktree', 'remove', '--force', removed)
-  await compute()
-  const byPath = new Map(rows().map((row) => [row.worktreePath, row]))
-  assert.equal(byPath.get(reopened)!.status, 'withdrawn')
-  assert.equal(byPath.get(removed)!.status, 'withdrawn')
-
-  // Fusionné de nouveau, l'arbre est reproposé : le retrait ne vaut pas réponse.
-  rmSync(join(reopened, 'again.txt'))
-  await compute()
-  assert.equal(rows().filter((row) => row.worktreePath === reopened && row.status === 'pending').length, 1)
-})
-
-test('répondre « Garder » laisse l’arbre, « Nettoyer » le retire avec sa branche', async (t) => {
-  const { repo, merged, compute, rows, service } = harness(t)
-  const kept = merged('feat/kept')
-  const cleaned = merged('feat/cleaned')
-  await compute()
-  const id = (path: string) => rows().find((row) => row.worktreePath === path)!.id
-
-  const keep = await service.answer('owner', id(kept), { option: 'keep', text: '' })
-  assert.equal(keep.status, 'user')
-  assert.equal(keep.answer?.option, 'keep')
-  assert.equal(keep.worktree?.path, kept)
-  assert.ok(existsSync(kept))
-
-  await assert.rejects(service.answer('owner', id(cleaned), { option: null, text: 'vas-y' }), /Choose one of the options/)
-  const clean = await service.answer('owner', id(cleaned), { option: 'clean', text: '' })
-  assert.equal(clean.status, 'user')
-  assert.ok(!existsSync(cleaned))
-  assert.equal(git(repo, 'branch', '--list', 'feat/cleaned'), '')
-  assert.equal(git(repo, 'branch', '--list', 'feat/kept').replace(/^[*+ ]+/, ''), 'feat/kept')
-
-  await compute()
-  assert.equal(rows().filter((row) => row.status === 'pending').length, 0, 'ni l’arbre gardé ni le nettoyé ne reviennent')
-})
-
-test('« Nettoyer » sur un arbre qui a bougé depuis la question ne nettoie rien', async (t) => {
-  const { merged, compute, rows, service } = harness(t)
-  const path = merged('feat/moved')
-  await compute()
-  const decision = rows()[0]!
-  // Du travail arrive après la question, sans nouveau calcul entre-temps.
-  writeFileSync(join(path, 'late.txt'), 'late\n')
-
-  await assert.rejects(service.answer('owner', decision.id, { option: 'clean', text: '' }), /changed since the question/)
-  assert.ok(existsSync(join(path, 'late.txt')))
+test('le balayage retire aussi une proposition restée en attente', async (t) => {
+  const { merged, rows, service, oldProposal } = harness(t)
+  const path = merged('feat/done')
+  oldProposal(path)
+  service.sweep()
   assert.equal(rows()[0]!.status, 'withdrawn')
+  assert.ok(existsSync(path))
 })
 
-test('la route : seul le propriétaire du projet tranche, et « Nettoyer » répond par la décision close', async (t) => {
-  const { db, merged, compute, rows, service } = harness(t)
-  const path = merged('feat/route')
-  await compute()
-  const id = rows()[0]!.id
-  db.insert(users).values({ id: 'other', username: 'other', displayName: 'Other', passwordHash: '', createdAt: 1 }).run()
+test('répondre « Nettoyer » à une ancienne proposition la retire et ne nettoie rien', async (t) => {
+  const { db, merged, rows, service, oldProposal } = harness(t)
+  const path = merged('feat/done')
+  oldProposal(path)
 
   const app = Fastify()
   app.addHook('preHandler', async (request) => {
-    const as = (request.headers['x-as'] as string | undefined) ?? 'owner'
-    request.user = db.select().from(users).where(eq(users.id, as)).get()
+    request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
   })
   registerErrorHandler(app)
   registerDecisionRoutes(app, service)
   t.after(() => app.close())
-
-  const foreign = await app.inject({ method: 'GET', url: `/api/decisions/${id}`, headers: { 'x-as': 'other' } })
-  assert.equal(foreign.statusCode, 404)
-  const answered = await app.inject({ method: 'POST', url: `/api/decisions/${id}/answer`, payload: { option: 'clean' } })
-  assert.equal(answered.statusCode, 200)
-  assert.equal(answered.json().status, 'user')
-  assert.ok(!existsSync(path))
-})
-
-test('un arbre qu’on vient de créer n’est jamais proposé, même sans rien en avance', async (t) => {
-  const { repo, compute, rows } = harness(t)
-  const fresh = join(repo, '..', 'trees', 'feat__fresh')
-  git(repo, 'worktree', 'add', '-q', '-b', 'feat/fresh', fresh, 'main')
-  await compute()
-  assert.equal(rows().length, 0)
-  assert.ok(existsSync(fresh))
-})
-
-test('« Garder » vaut pour cet arbre-là : recréé et refusionné, il est reproposé', async (t) => {
-  const { repo, merged, compute, rows, service } = harness(t)
-  const path = merged('feat/again')
-  await compute()
-  await service.answer('owner', rows()[0]!.id, { option: 'keep', text: '' })
-  await compute()
-  assert.equal(rows().length, 1, 'gardé, et rien n’a bougé : la question ne revient pas')
-
-  // Le même chemin, une autre vie : l'arbre est retiré, puis recréé et fusionné de nouveau.
-  git(repo, 'worktree', 'remove', '--force', path)
-  git(repo, 'branch', '-D', 'feat/again')
-  git(repo, 'worktree', 'add', '-q', '-b', 'feat/again', path, 'main')
-  writeFileSync(join(path, 'second.txt'), 'second\n')
-  git(path, 'add', '-A')
-  git(path, 'commit', '-q', '-m', 'second')
-  git(repo, 'merge', '-q', '--squash', 'feat/again')
-  git(repo, 'commit', '-q', '-m', 'squash again')
-  await compute()
-  assert.equal(rows().filter((row) => row.status === 'pending').length, 1)
+  const answered = await app.inject({ method: 'POST', url: '/api/decisions/old/answer', payload: { option: 'clean' } })
+  assert.equal(answered.statusCode, 409, answered.body)
+  assert.equal(rows()[0]!.status, 'withdrawn')
+  assert.ok(existsSync(path))
 })
