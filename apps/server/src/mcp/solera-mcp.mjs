@@ -262,6 +262,7 @@ const REQUEST_WAIT_MS = {
   move_conversation: 15000,
   request_card_move: 15000,
   move_card: 15000,
+  rename_session: 15000,
   request_decision: 15000,
   // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
   create_worktree: 60000,
@@ -285,6 +286,9 @@ const REQUEST_WAIT_MS = {
 const MAX_ACTION_LABEL_CHARS = 60
 const MAX_ACTION_COMMAND_CHARS = 4000
 const REQUEST_POLL_MS = 200
+
+/** Doit rester d'accord avec `MAX_SESSION_TITLE_CHARS` du protocole (`session-title.ts`). */
+const MAX_SESSION_TITLE_CHARS = 60
 
 /** Doit rester d'accord avec `MAX_LAUNCH_PROMPT_CHARS` de `agent-requests.ts`. */
 const MAX_LAUNCH_PROMPT_CHARS = 20000
@@ -770,6 +774,23 @@ const ALL_TOOLS = [
     },
   },
   {
+    name: 'rename_session',
+    description:
+      "Donne un titre court et parlant à ta propre session, celui qui la fait retrouver dans la sidebar de Solera. Fais-le dès que tu as compris la demande, sans demander de confirmation : 3 à 6 mots dans la langue de l'utilisateur, qui nomment le sujet concret (« Refonte de la sidebar », « Corriger la connexion ») plutôt que de recopier sa phrase ou d'annoncer où en est le travail. Ne le change ensuite que si le sujet principal change. Un titre choisi par l'utilisateur l'emporte : si Solera le conserve, ne réessaie pas. Cet outil ne renomme aucune autre session.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: {
+          type: 'string',
+          minLength: 1,
+          maxLength: MAX_SESSION_TITLE_CHARS,
+          description: `Le titre, sur une ligne, ${MAX_SESSION_TITLE_CHARS} caractères au plus.`,
+        },
+      },
+      required: ['title'],
+    },
+  },
+  {
     name: 'set_project_image',
     description:
       "Pose ou remplace l'image de ce projet dans Solera, celle qui le fait reconnaître d'un coup d'œil dans la navigation. Elle s'affiche en tout petit, dans un carré : préfère une icône ou un logo sans texte à une bannière. Sources, dans l'ordre : un logo ou une icône déjà dans le dépôt ; à défaut un SVG simple que tu dessines pour évoquer le projet, ou une image générée si tu as un outil pour ça, et dans ces deux cas passe `provisional: true`. Appelle aussi cet outil quand le projet gagne un vrai logo ou en change, pour que l'image suive.",
@@ -1136,6 +1157,7 @@ const ALL_TOOLS = [
  * CLI, qui relit `tools/list` et découvre alors les outils du projet rejoint.
  */
 const FREE_THREAD_TOOLS = new Set([
+  'rename_session',
   'create_project',
   'move_conversation',
   'read_memory',
@@ -3615,6 +3637,21 @@ async function callTool(name, args) {
 
   if (name === 'count_active_sessions') {
     return text(renderCount(countActiveSessions()))
+  }
+
+  if (name === 'rename_session') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas laquelle renommer."), isError: true }
+    }
+    // Revalidé par le daemon ; ici, pour que le modèle lise tout de suite quoi corriger.
+    const title = typeof args?.title === 'string' ? args.title.trim() : ''
+    if (!title || title.length > MAX_SESSION_TITLE_CHARS || /[\u0000-\u001f\u007f]/u.test(title)) {
+      return {
+        ...text(`Le paramètre \`title\` est un titre sur une ligne, de 1 à ${MAX_SESSION_TITLE_CHARS} caractères.`),
+        isError: true,
+      }
+    }
+    return requestDaemon(name, { title })
   }
 
   if (name === 'move_card') {

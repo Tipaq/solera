@@ -53,7 +53,8 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * session et entre « à faire », « en cours » et « à vérifier », qui disent où en est le
  * travail et non ce qu'il vaut — les verdicts, terminé et abandonné, restent à
  * `cardFiling` ; `set_project_image` remplace, mais n'est le jugement de personne et se
- * reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet. Le
+ * reprend d'un clic ; `rename_session` de même, borné à la session qui l'appelle, et le
+ * titre qu'une personne a donné l'emporte toujours sur le sien ; `start_session` coûte cher, mais ne sort pas du projet. Le
  * `check_script` de `schedule_task` fait tourner du code hors de toute session, mais il
  * ne tourne pas tant qu'une personne n'a pas validé ce texte précis : comme pour
  * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture

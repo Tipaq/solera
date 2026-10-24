@@ -175,7 +175,7 @@ test('le catalogue global : list_projects, un paramètre project, et rien de ce 
   for (const absent of [
     'broadcast_session_message', 'notify_when_done', 'read_session_messages', 'find_file_edits',
     'create_worktree', 'set_project_image', 'create_project', 'move_conversation', 'request_card_move',
-    'request_decision', 'show_prototype',
+    'request_decision', 'show_prototype', 'rename_session',
   ]) {
     assert.ok(!names.includes(absent), absent)
   }

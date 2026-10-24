@@ -168,13 +168,13 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   const free = list('')
   assert.deepEqual(
     free.map((tool) => tool.name).sort(),
-    ['delete_memory', 'edit_instructions', 'read_instructions', 'read_memory', 'write_instructions', 'write_memory'],
+    ['delete_memory', 'edit_instructions', 'read_instructions', 'read_memory', 'rename_session', 'write_instructions', 'write_memory'],
   )
 
   // Et le serveur du projet, lui, les porte tous : ce qui tombe n'est que ce qui parle
   // d'un projet, pas la moitié du serveur par accident.
   const scoped = list('private').map((tool) => tool.name)
-  assert.equal(scoped.length, 30)
+  assert.equal(scoped.length, 31)
   for (const tool of free) assert.ok(scoped.includes(tool.name), tool.name)
 
   // Pas de `scope` à offrir : des trois portées de SOLERA.md, un fil libre n'a que la
@@ -184,13 +184,13 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
 
   // La famille « Mémoire » refusée arrive ici en dossier vide, et retire les trois
   // outils du catalogue au lieu de les laisser refuser à l'appel. Dans un fil libre il
-  // n'en reste alors que SOLERA.md : c'est le cas où les deux filtres se cumulent.
+  // n'en reste alors que SOLERA.md et son titre : c'est le cas où les deux filtres se cumulent.
   assert.deepEqual(
     list('', '').map((tool) => tool.name).sort(),
-    ['edit_instructions', 'read_instructions', 'write_instructions'],
+    ['edit_instructions', 'read_instructions', 'rename_session', 'write_instructions'],
   )
   const scopedWithoutMemory = list('private', '').map((tool) => tool.name)
-  assert.equal(scopedWithoutMemory.length, 27)
+  assert.equal(scopedWithoutMemory.length, 28)
   for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
     assert.ok(!scopedWithoutMemory.includes(tool), tool)
   }

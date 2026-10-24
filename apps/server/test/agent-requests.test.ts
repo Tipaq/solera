@@ -23,6 +23,7 @@ import { EventLog } from '../src/events/event-log.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
+import { adoptSessionTitle, sessionTitleReminder } from '../src/conversations/title.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -63,12 +64,15 @@ async function harness(t: TestContext) {
     }).run()
 
   const sent: { to: string; text: string }[] = []
+  // Le daemon y annonce les listes qu'une demande a changées, et les titres.
+  const statusBus = new EventEmitter()
+  const titleEvents: { conversationId: string; title: string }[] = []
+  statusBus.on('title', (event: { conversationId: string; title: string }) => titleEvents.push(event))
   const sessions = {
     async sendMessage(to: string, _id: string, text: string) {
       sent.push({ to, text })
     },
-    // Le daemon y annonce les listes qu'une demande a changées.
-    statusBus: new EventEmitter(),
+    statusBus,
   } as unknown as SessionManager
   const registry = {
     adapter: (agent: string) => ({
@@ -99,7 +103,7 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, conversation, mcp, sent }
+  return { db, conversation, mcp, sent, statusBus, titleEvents }
 }
 
 test('matchModel finds a model by the name the user says, and never guesses between two', () => {
@@ -210,4 +214,63 @@ test('list_models shows the catalog and the defaults a launch would use', async 
   const result = await mcp('parent', 'list_models', { agent: 'codex' })
   assert.match(result.content[0]!.text, /par défaut : modèle gpt-5\.5/)
   assert.match(result.content[0]!.text, /`astra-1` \(Astra\)/)
+})
+
+test('rename_session names only its own session, and announces the title', async (t) => {
+  const { db, conversation, mcp, titleEvents, statusBus } = await harness(t)
+  conversation('self')
+  conversation('peer')
+  const title = (id: string) => db.select().from(conversations).where(eq(conversations.id, id)).get()!
+
+  const renamed = await mcp('self', 'rename_session', { title: '  Refonte de la sidebar  ' })
+  assert.equal(renamed.isError, undefined, renamed.content[0]?.text)
+  assert.equal(title('self').title, 'Refonte de la sidebar')
+  assert.equal(title('self').titleSetByAgent, true)
+  assert.equal(title('self').titleSetByUser, false)
+  assert.deepEqual(titleEvents, [{ conversationId: 'self', title: 'Refonte de la sidebar' }])
+
+  // Le résumé du CLI ne remplace plus le titre de l'agent, et le même titre ne s'annonce pas deux fois.
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Résumé du CLI', 'cli'), 'protected')
+  await mcp('self', 'rename_session', { title: 'Refonte de la sidebar' })
+  assert.equal(titleEvents.length, 1)
+
+  for (const args of [{ title: '' }, { title: 'x'.repeat(61) }, { title: 'Deux\nlignes' }, { title: 'Bad\u0000title' }]) {
+    assert.equal((await mcp('self', 'rename_session', args)).isError, true, JSON.stringify(args))
+  }
+  assert.equal(title('peer').title, 'Session peer')
+  assert.equal(title('self').title, 'Refonte de la sidebar')
+
+  // Le sujet change : l'agent ajuste son titre.
+  assert.equal((await mcp('self', 'rename_session', { title: 'Corriger la connexion' })).isError, undefined)
+  assert.equal(titleEvents.at(-1)?.title, 'Corriger la connexion')
+})
+
+test("le titre de l'utilisateur l'emporte sur celui de l'agent et sur le résumé tardif du CLI", async (t) => {
+  const { db, conversation, mcp, statusBus, titleEvents } = await harness(t)
+  conversation('self')
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Résumé natif', 'cli'), 'updated')
+  // Reprendre à son compte le titre affiché le protège quand même du prochain résumé.
+  await mcp('self', 'rename_session', { title: 'Résumé natif' })
+  assert.equal(db.select().from(conversations).get()?.titleSetByAgent, true)
+
+  db.update(conversations).set({ title: 'Mon titre', titleSetByUser: true, titleSetByAgent: false }).run()
+  titleEvents.length = 0
+  const kept = await mcp('self', 'rename_session', { title: "Titre de l'agent" })
+  assert.equal(kept.isError, undefined)
+  assert.match(kept.content[0]!.text, /choisi par l'utilisateur/)
+  assert.equal(adoptSessionTitle(db, statusBus, 'self', 'Résumé tardif', 'cli'), 'protected')
+  assert.equal(db.select().from(conversations).get()?.title, 'Mon titre')
+  assert.deepEqual(titleEvents, [])
+  assert.equal(adoptSessionTitle(db, statusBus, 'disparue', 'Résumé', 'cli'), 'missing')
+})
+
+test('le rappel de nommage suit le titre : à donner, à garder, ou rien', async (t) => {
+  const { db, conversation, statusBus } = await harness(t)
+  conversation('self')
+  assert.match(sessionTitleReminder(db, 'self', true) ?? '', /appelle `rename_session`/)
+  assert.equal(sessionTitleReminder(db, 'self', false), null)
+  adoptSessionTitle(db, statusBus, 'self', 'Refonte de la sidebar', 'agent')
+  assert.match(sessionTitleReminder(db, 'self', true) ?? '', /Garde-le tant que le sujet principal ne change pas/)
+  db.update(conversations).set({ titleSetByUser: true }).run()
+  assert.equal(sessionTitleReminder(db, 'self', true), null)
 })

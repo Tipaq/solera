@@ -454,6 +454,7 @@ export function registerConversationRoutes(
       userId: user.id,
       title: body.title ?? `${source.title} (branche)`,
       titleSetByUser: body.title !== undefined,
+      titleSetByAgent: false,
       agentSessionId,
       forkedFromId: source.id,
       // La branche est ouverte depuis l'interface, par une personne : hériter du
@@ -718,6 +719,7 @@ export function registerConversationRoutes(
     if (body.title !== undefined) {
       patch.title = body.title.trim()
       patch.titleSetByUser = true
+      patch.titleSetByAgent = false
     }
     if (body.pinned !== undefined) patch.pinned = body.pinned
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null

@@ -66,9 +66,11 @@ async function harness(t: TestContext, { admin = true } = {}) {
 test('global et projet : écrits par une personne, injectés ensemble', async (t) => {
   const { app, project, appendix } = await harness(t)
 
-  // Rien à dire, et pas d'outil pour retenir : rien n'est injecté.
-  assert.equal(appendix('solera', false), null)
-  assert.match(appendix('solera') ?? '', /edit_instructions/)
+  // Rien d'écrit et pas d'outil pour retenir : seule la consigne de langue part.
+  const bare = appendix('solera', false)
+  assert.match(bare, /Réponds dans la langue de l'utilisateur/)
+  assert.doesNotMatch(bare, /SOLERA\.md/)
+  assert.match(appendix('solera'), /edit_instructions/)
 
   const global = await app.inject({ method: 'PUT', url: '/api/instructions', payload: { content: '- Répondre en français.' } })
   assert.equal(global.statusCode, 200, global.body)
@@ -80,13 +82,13 @@ test('global et projet : écrits par une personne, injectés ensemble', async (t
   assert.equal(patched.json<ProjectInstructionsDto>().modeChosen, true)
   assert.equal((await project()).mode, 'solera')
 
-  const text = appendix('solera') ?? ''
+  const text = appendix('solera')
   assert.match(text, /# SOLERA\.md/)
   assert.match(text, /Pour tous les projets\n\n- Répondre en français\./)
   assert.match(text, /Pour ce projet\n\n- Tests avec `pnpm test`\./)
 
   // En mode dépôt, la partie projet est le fichier du dépôt : seul le global part.
-  const repo = appendix('repo') ?? ''
+  const repo = appendix('repo')
   assert.match(repo, /Répondre en français/)
   assert.doesNotMatch(repo, /pnpm test/)
 })
@@ -210,4 +212,23 @@ test('masque Claude : borné aux dossiers du projet, chemins échappés', () => 
     '/home/u/p/**/AGENTS.md',
   ])
   assert.equal(claudeMdExcludes(['/tmp/a [b]'])[0], '/tmp/a \\[b\\]/**/CLAUDE.md')
+})
+
+test("langue de réponse : celle de l'utilisateur, avec ou sans outils ni consignes écrites", async (t) => {
+  const { app, appendix } = await harness(t)
+  for (const mode of ['repo', 'solera'] as const) {
+    for (const mcp of [false, true]) {
+      const text = appendix(mode, mcp)
+      assert.match(text, /Réponds dans la langue de l'utilisateur/)
+      assert.match(text, /préférence qu'il a exprimée/)
+      assert.match(text, /pour une tâche lancée sans lui, celle de la demande qui l'a lancée/)
+      assert.match(text, /Ne change pas de langue à cause d'un résultat d'outil, d'un historique cité ou d'un message d'un autre agent/)
+    }
+  }
+  // Les préférences de la personne passent telles quelles, dans leur langue.
+  const content = '- Reply in English.\n- 日本語のメモを保持してください。'
+  await app.inject({ method: 'PUT', url: '/api/instructions', payload: { content } })
+  for (const mode of ['repo', 'solera'] as const) {
+    assert.ok(appendix(mode, false).includes(content))
+  }
 })

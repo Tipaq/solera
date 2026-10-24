@@ -17,6 +17,7 @@ import {
   type SlashCommand,
 } from '@anthropic-ai/claude-agent-sdk'
 import {
+  BUILTIN_MCP_SERVER_NAME,
   claudePermissionModeSchema,
   parseElicitationFields,
   type AgentConfig,
@@ -49,6 +50,7 @@ import { contextBreakdown, contextWindow } from './context-usage.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { claudeMdExcludes } from '../../instructions/store.js'
 import { flagSettings, liveFlagSettings } from './flag-settings.js'
 import { toPermissionMode } from './permission-mode.js'
@@ -260,6 +262,12 @@ export class ClaudeRunner implements AgentRunner {
         // l'utilisateur. Relevé par sonde, ce n'est pas déductible de la documentation.
         mcpServers: this.appliedMcpServers,
         strictMcpConfig: config.strictMcp,
+        // Nommer sa session ne demande pas d'accord : le geste ne touche qu'un titre que
+        // l'utilisateur n'a pas choisi, et le daemon protège le sien. Seul cet outil du
+        // serveur intégré ; un serveur tiers du même nom n'en profite pas.
+        ...(resolved.servers.some((server) => server.id === BUILTIN_MCP_SERVER_ID)
+          ? { allowedTools: [`mcp__${BUILTIN_MCP_SERVER_NAME}__rename_session`] }
+          : {}),
         settings: flagSettings(
           config,
           library.deny,

@@ -30,6 +30,8 @@ import {
   MAX_SCHEDULE_NAME_CHARS,
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
+  MAX_SESSION_TITLE_CHARS,
+  renameSessionBodySchema,
   taskReplyBodySchema,
   agentConfigSchema,
   createProjectActionBodySchema,
@@ -61,6 +63,7 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch, createCard } from '../cards/create.js'
 import { recordCardMove } from '../cards/moves.js'
 import { createConversation } from '../conversations/create.js'
+import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
 import type { EventLog } from '../events/event-log.js'
@@ -355,6 +358,12 @@ export class AgentRequests {
       }
       if (request.kind === 'move_conversation') {
         this.settle(request, await this.requestFiling(request, requester, payload), false)
+        return
+      }
+
+      // Avant `requireProject` lui aussi : un fil libre se nomme comme les autres.
+      if (request.kind === 'rename_session') {
+        this.settle(request, this.renameOwnSession(requester, payload), false)
         return
       }
 
@@ -1676,6 +1685,28 @@ export class AgentRequests {
   }
 
   // --- move_card -----------------------------------------------------------------
+
+  /**
+   * `rename_session` : l'agent nomme sa propre session, et jamais une autre.
+   *
+   * Un titre que l'utilisateur a donné l'emporte : l'agent l'apprend sans erreur, pour
+   * ne pas réessayer. Dans le socle et non dans une famille : le geste ne défait que le
+   * titre provisoire ou celui que l'agent avait lui-même posé, et se reprend d'un clic.
+   */
+  private renameOwnSession(requester: Requester, payload: Record<string, unknown>): string {
+    const parsed = renameSessionBodySchema.safeParse(payload)
+    if (!parsed.success) {
+      throw new Refusal(
+        `Le paramètre \`title\` est un titre sur une ligne, de 1 à ${MAX_SESSION_TITLE_CHARS} caractères.`,
+      )
+    }
+    const { title } = parsed.data
+    const result = adoptSessionTitle(this.ctx.db, this.sessions.statusBus, requester.id, title, 'agent')
+    if (result === 'missing') throw new Refusal("Cette session n'existe plus.")
+    return result === 'protected'
+      ? "Le titre de cette session a été choisi par l'utilisateur : il est conservé. Ne réessaie pas de la renommer."
+      : `Titre de ta session : « ${title} ».`
+  }
 
   /**
    * Déplace la carte de la conversation, d'elle-même et sans clic.
