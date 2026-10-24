@@ -180,8 +180,12 @@ export function openPanelOnArrival(path: string, tab?: PanelTab): void {
  * `project` s'y ajoute le 2026-10-19, à côté d'*Agent* : la carte que la session
  * traite et le projet autour d'elle. Comme *Agent*, il regarde la session, et n'existe
  * donc ni en vue projet ni sur un fil libre, qui n'a pas de board.
+ *
+ * `actions` s'y ajoute le 2026-10-24, après *Terminaux* : les boutons du projet. Une
+ * action se joue dans le dossier de la vue, et une tâche s'ouvre dans un terminal du
+ * panneau ; c'est une vue du répertoire, absente d'un fil libre comme les quatre autres.
  */
-export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'agents' | 'project' | 'web'
+export type PanelTab = 'files' | 'search' | 'git' | 'terminals' | 'actions' | 'agents' | 'project' | 'web'
 
 /**
  * Onglet affiché et sous-agent consulté.
@@ -242,6 +246,33 @@ export function clearCheckpoint(): void {
   if (checkpointKey === null) return
   checkpointKey = null
   for (const listener of listeners) listener()
+}
+
+/**
+ * Terminal à mettre devant à la prochaine liste qui le contient : une action vient de
+ * l'ouvrir, et le panneau des terminaux, qui tient sa sélection, doit la suivre.
+ */
+let focusedTerminal: string | null = null
+
+export function useFocusedTerminal(): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => focusedTerminal,
+    () => null,
+  )
+}
+
+/** Ouvre le panneau sur un terminal donné, depuis n'importe où dans la vue. */
+export function showTerminal(id: string): void {
+  focusedTerminal = id
+  tab = 'terminals'
+  setPanelOpen(true)
+  for (const listener of listeners) listener()
+}
+
+/** Le panneau des terminaux a pris la sélection en compte. */
+export function clearFocusedTerminal(): void {
+  focusedTerminal = null
 }
 
 /** L'appel de spawn du sous-agent consulté, ou null pour la liste. */

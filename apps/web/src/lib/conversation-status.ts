@@ -229,6 +229,7 @@ export function useStatusFeed(): void {
           void queryClient.invalidateQueries({ queryKey: ['projects'] })
           void queryClient.invalidateQueries({ queryKey: ['schedules'] })
           void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          void queryClient.invalidateQueries({ queryKey: ['actions'] })
           // L'en-tête du fil ouvert aussi : renommé ou supprimé ailleurs, il doit le
           // montrer sans attendre qu'on en sorte.
           void queryClient.invalidateQueries({ queryKey: ['conversation'] })

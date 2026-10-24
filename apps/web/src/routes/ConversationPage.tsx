@@ -80,6 +80,7 @@ import {
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useGitHead, useWorktrees } from '../lib/worktrees'
+import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 /**
  * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
@@ -999,6 +1000,11 @@ export function ConversationPage() {
             labelClassName="@max-[44rem]/thread:hidden"
           />
 
+          {/* Les boutons du projet, joués dans le worktree de ce fil. Un fil libre n'a
+              pas de dossier où les lancer. */}
+          {conversation.projectId ? (
+            <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
+          ) : null}
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
               conversation, il lit le répertoire de travail de ce fil, worktree

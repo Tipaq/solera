@@ -1,5 +1,5 @@
 import { TooltipButton } from '@solera/ui'
-import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X } from 'lucide-react'
+import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X, Zap } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
@@ -26,9 +26,11 @@ import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjects } from '../../lib/projects'
+import { useActions } from '../../lib/actions'
 import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
 import { IconButton, cx } from '@solera/ui'
+import { ActionsPane } from './ActionsPane'
 import { AgentsPane } from './AgentsPane'
 import { FilesPane } from './FilesPane'
 import { GitPane } from './GitPane'
@@ -100,7 +102,7 @@ export function SidePanel({
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
   const t = useTranslate()
-  // Un fil libre n'a pas de dossier : les quatre vues de répertoire n'ont pas d'objet.
+  // Un fil libre n'a pas de dossier : les cinq vues de répertoire n'ont pas d'objet.
   const hasWorkspace = projectId !== null
   const scope = conversationId ?? projectScope(projectId ?? '')
   const { data: projects } = useProjects()
@@ -127,6 +129,11 @@ export function SidePanel({
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
+  // Le badge d'*Actions* ne compte que celles à relire : elles seules attendent quelqu'un.
+  const { data: actions } = useActions()
+  const proposedActions = (actions ?? []).filter(
+    (action) => action.projectId === projectId && action.status === 'proposed',
+  ).length
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -317,6 +324,7 @@ export function SidePanel({
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
         projectBadge={reviewCount}
+        actionsBadge={proposedActions}
       />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
@@ -380,6 +388,12 @@ export function SidePanel({
             />
           </div>
         </div>
+      ) : null}
+
+      {/* Monté seulement quand on le regarde : la liste vient du cache des actions, et
+          les terminaux qu'elle ouvre vivent dans leur propre vue. */}
+      {tab === 'actions' && projectId ? (
+        <ActionsPane projectId={projectId} conversationId={conversationId} />
       ) : null}
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient
@@ -450,22 +464,23 @@ export function SidePanel({
  * Les vues, dans la bande.
  *
  * Elles sont nommées tant qu'il y a la place, et les noms tombent **tous ensemble**
- * sous 30 rem : une rangée où seul l'onglet actif garde son nom change de largeur à
- * chaque choix, et les quatre autres deviennent des devinettes. Quand le panneau
+ * sous 38 rem : une rangée où seul l'onglet actif garde son nom change de largeur à
+ * chaque choix, et les quatre autres deviennent des devinettes. Le seuil suit le nombre
+ * de vues : 30 rem tenaient six noms, *Actions* en a fait sept. Quand le panneau
  * recouvre l'écran, l'actif garde le sien — la bande au-dessus dit déjà où l'on est,
  * mais c'est le seul repère écrit qui reste de la vue elle-même.
  *
- * Le trait sépare les quatre vues du répertoire des deux qui regardent la session,
+ * Le trait sépare les cinq vues du répertoire des deux qui regardent la session,
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge, projectBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
   closable: boolean
   tab: PanelTab
-  /** Faux sur un fil libre : les quatre vues de répertoire n'ont rien à montrer. */
+  /** Faux sur un fil libre : les cinq vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
   hasConversation: boolean
   /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
@@ -473,6 +488,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
   agentBadge: number
   /** Cartes du projet en attente de relecture. */
   projectBadge: number
+  /** Actions du projet proposées par un agent, en attente de relecture. */
+  actionsBadge: number
 }) {
   const t = useTranslate()
   const views = (
@@ -487,6 +504,9 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
             active={tab === 'git'} onSelect={() => setPanelTab('git')} />
           <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
             active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+          <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
+            badge={actionsBadge} badgeLabel={(label, count) => t('panel.tab.actions.badge', { label, count })}
+            badgeTone="caution" active={tab === 'actions'} onSelect={() => setPanelTab('actions')} />
         </>
       ) : null}
       {hasConversation ? (
@@ -511,7 +531,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
     </>
   )
 
-  // La liste défile plutôt que de pousser les vues hors du cadre : sous 30 rem elles
+  // La liste défile plutôt que de pousser les vues hors du cadre : sous 38 rem elles
   // sont réduites à leurs icônes, mais un panneau de 20 rem n'en tient toujours que
   // quatre.
   const inner = 'flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto'
@@ -576,7 +596,7 @@ function Tab({
       <span className="shrink-0">{icon}</span>
       {/* Jamais cachés par principe : ils tombent quand la place manque, et tous à la
           fois, pour que la rangée ne change pas de forme à chaque choix. */}
-      <span className={cx(keepLabel && active ? null : '@max-[30rem]:hidden')}>{label}</span>
+      <span className={cx(keepLabel && active ? null : '@max-[38rem]:hidden')}>{label}</span>
       {/* Le décompte, lui, ne se replie jamais : c'est ce qui signale une activité
           dont on ne verrait sinon aucune trace, l'onglet étant fermé. */}
       {badge > 0 ? (
