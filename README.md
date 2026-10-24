@@ -13,7 +13,7 @@ and Grok Build CLIs on your own machine. Vibe-code from anywhere: the official a
 without the terminal.
 
 Runs on Linux, on macOS (Apple Silicon), on Windows through WSL2, in Docker or on
-Kubernetes, or as a [desktop app](docs/desktop.md) for Linux and macOS. An always-on server is recommended for continuity across devices; a
+Kubernetes, or as a [desktop app](docs/desktop.md) for Linux, macOS and Windows. An always-on server is recommended for continuity across devices; a
 workstation works too while it stays awake and online.
 [Set up private remote access and agent preview links](docs/remote-access.md).
 
@@ -159,7 +159,7 @@ Solera comes in two editions, built from the same server and interface:
 - **The server** is the one this section installs: an always-on machine you reach
   from any browser, phone included, with accounts, push notifications and sessions
   that keep running when you close the tab.
-- **[Solera Desktop](docs/desktop.md)** is an app for Linux and macOS: download it,
+- **[Solera Desktop](docs/desktop.md)** is an app for Linux, macOS and Windows: download it,
   open it, and Solera runs in its own window on the machine where you code. No
   server to set up, no account, no password; nothing runs once you quit it, and it
   is not reachable from other devices.
@@ -167,6 +167,7 @@ Solera comes in two editions, built from the same server and interface:
 | Package | Download |
 |---|---|
 | macOS, Apple Silicon | [Solera-mac-arm64.dmg](https://github.com/Tipaq/solera/releases/latest/download/Solera-mac-arm64.dmg) |
+| Windows | [Solera-win-x64.exe](https://github.com/Tipaq/solera/releases/latest/download/Solera-win-x64.exe) |
 | Debian, Ubuntu | [x64 `.deb`](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-amd64.deb) · [arm64 `.deb`](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.deb) |
 | Other Linux | [x64 AppImage](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-x86_64.AppImage) · [arm64 AppImage](https://github.com/Tipaq/solera/releases/latest/download/Solera-linux-arm64.AppImage) |
 
@@ -333,7 +334,9 @@ options, HTTPS, and shared instructions for reachable agent preview links.
 
 Releases are git tags (`vX.Y.Z`). Each tag builds Linux tarballs (x64 and arm64) and
 a macOS one (Apple Silicon), prebuilt native modules included, a multi-arch Docker
-image on `ghcr.io/tipaq/solera`, and a GitHub release with generated notes. The app
+image on `ghcr.io/tipaq/solera`, the desktop app (`.dmg` and `.zip` for macOS, an
+`.exe` installer for Windows, `.deb` and AppImage for Linux x64 and arm64), and a
+GitHub release with generated notes. The app
 shows the installed version, checks for newer releases, and on installer-based
 setups can update itself from the UI.
 

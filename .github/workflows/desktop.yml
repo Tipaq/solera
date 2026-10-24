@@ -2,7 +2,7 @@ name: Desktop
 
 # L'application de bureau : l'arbre d'exécution de la release, le Node qui l'a construit et
 # Electron, empaquetés pour chaque plateforme, puis lancés pour de vrai. Appelé par
-# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64). Une fois ce
+# release.yml à chaque tag (toutes les cibles) et par la CI (Linux x64 et Windows x64). Une fois ce
 # fichier sur main, on peut aussi le lancer à la main pour une branche (Actions > Desktop
 # > Run workflow) : les paquets restent alors en artefacts du run, rien n'est publié.
 #
@@ -17,10 +17,10 @@ on:
         required: true
         type: string
       targets:
-        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64)
+        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64, win-x64)
         required: false
         type: string
-        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+        default: '["linux-x64", "linux-arm64", "darwin-arm64", "win-x64"]'
       install-check:
         description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
         required: false
@@ -34,10 +34,10 @@ on:
         type: string
         default: v0.0.0-dev
       targets:
-        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64)
+        description: Cibles, en tableau JSON (linux-x64, linux-arm64, darwin-arm64, win-x64)
         required: false
         type: string
-        default: '["linux-x64", "linux-arm64", "darwin-arm64"]'
+        default: '["linux-x64", "linux-arm64", "darwin-arm64", "win-x64"]'
       install-check:
         description: CLI à installer pendant le contrôle de lancement (liste séparée par des virgules)
         required: false
@@ -69,10 +69,18 @@ jobs:
     runs-on: >-
       ${{ matrix.target == 'darwin-arm64' && 'macos-15'
         || matrix.target == 'linux-arm64' && 'ubuntu-22.04-arm'
+        || matrix.target == 'win-x64' && 'windows-2025'
         || 'ubuntu-22.04' }}
     env:
-      PLATFORM: ${{ startsWith(matrix.target, 'darwin') && 'darwin' || 'linux' }}
+      PLATFORM: >-
+        ${{ startsWith(matrix.target, 'darwin') && 'darwin'
+          || startsWith(matrix.target, 'win') && 'win32'
+          || 'linux' }}
       ARCH: ${{ endsWith(matrix.target, 'arm64') && 'arm64' || 'x64' }}
+    # Le bash de Git for Windows aussi sous Windows : les étapes sont écrites pour lui.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -82,7 +90,15 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # Les scripts du dépôt sont écrits pour sh (`mkdir -p`, `cp -r`), que pnpm lancerait
+      # sinon dans cmd.exe.
+      - name: Run package scripts with Git Bash
+        if: runner.os == 'Windows'
+        run: pnpm config set script-shell 'C:\Program Files\Git\bin\bash.exe'
+      # Sous Windows, sans scripts d'installation : better-sqlite3 et node-pty y chargent leurs
+      # binaires précompilés, et le `node-gyp rebuild` qu'impose le binding.gyp de
+      # better-sqlite3 échoue sur un Visual Studio trop récent pour lui.
+      - run: pnpm install --frozen-lockfile ${{ runner.os == 'Windows' && '--ignore-scripts' || '' }}
       - run: pnpm build
         env:
           SOLERA_VERSION: ${{ inputs.version }}
@@ -96,7 +112,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           version='${{ inputs.version }}'
-          os=$([ "$PLATFORM" = darwin ] && echo mac || echo linux)
+          case "$PLATFORM" in darwin) os=mac ;; win32) os=win ;; *) os=linux ;; esac
           pnpm exec electron-builder "--$os" "--$ARCH" --publish never -c.extraMetadata.version="${version#v}"
       - name: Verify the macOS signature
         if: env.PLATFORM == 'darwin'
@@ -106,9 +122,11 @@ jobs:
       # l'AppImage et le .deb emballent, et l'écran vient de Xvfb.
       - name: Launch check
         env:
-          SOLERA_CHECK_INSTALL: ${{ inputs.install-check }}
+          # Sous Windows, le contrôle installe au moins Codex par le npm embarqué : c'est là
+          # que les lanceurs npm (`.cmd`) demandent d'être lus plutôt que lancés.
+          SOLERA_CHECK_INSTALL: ${{ inputs.install-check || (runner.os == 'Windows' && 'codex' || '') }}
         run: |
-          if [ "$PLATFORM" = darwin ]; then
+          if [ "$PLATFORM" = darwin ] || [ "$PLATFORM" = win32 ]; then
             node scripts/desktop-ui-check.mjs
           elif command -v xvfb-run >/dev/null; then
             xvfb-run -a node scripts/desktop-ui-check.mjs
@@ -121,6 +139,7 @@ jobs:
           path: |
             apps/desktop/release/*.dmg
             apps/desktop/release/*.zip
+            apps/desktop/release/*.exe
             apps/desktop/release/*.AppImage
             apps/desktop/release/*.deb
           if-no-files-found: error
