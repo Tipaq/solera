@@ -230,7 +230,7 @@ export const cards = sqliteTable(
      * bouge, sauf une fois fermée : c'est une personne qui la ferme.
      *
      * `set null` : supprimer une parente détache ses enfants au lieu de les emporter.
-     * Anciennement `milestone_card_id` (migration 0053).
+     * Anciennement `milestone_card_id` (migration 0054).
      */
     parentId: text('parent_id').references((): AnySQLiteColumn => cards.id, {
       onDelete: 'set null',
