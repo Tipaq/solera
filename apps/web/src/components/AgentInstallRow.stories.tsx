@@ -23,7 +23,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Un CLI manquant et l'installation de la version que Solera vise, partagés par l'écran d'une conversation neuve et par la visite de première ouverture. Rien pour un CLI installé ou désactivé.",
+          "Un CLI manquant et l'installation de la version que Solera vise, partagés par l'écran d'une conversation neuve et par la visite de première ouverture. Pendant l'installation, le rang montre son avancement : temps écoulé, fichiers reçus, fichier en cours. Rien pour un CLI installé ou désactivé.",
       },
     },
   },
@@ -36,7 +36,17 @@ export const Manquant: Story = {}
 
 export const EnCours: Story = {
   name: 'Installation en cours',
-  args: { entry: { ...missing, install: { status: 'running', version: '0.4.2' } } },
+  args: {
+    entry: {
+      ...missing,
+      install: { status: 'running', version: '0.4.2', startedAt: Date.now() - 83_000, fetched: 14, current: 'grok-0.4.2.tgz' },
+    },
+  },
+}
+
+export const Masquable: Story = {
+  name: 'Avec « Ne plus proposer »',
+  args: { onDismiss: () => {} },
 }
 
 export const Echec: Story = {

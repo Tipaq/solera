@@ -46,6 +46,7 @@ import { ProjectAvatar } from '../ProjectAvatar'
 import { StateDot } from '../chat/Signals'
 import { ConversationLine } from './ConversationLine'
 import { RenameInput } from './RenameInput'
+import { openRowMenu } from './row-menu'
 import {
   cx,
   IconButton,
@@ -408,6 +409,8 @@ function ProjectGroup({
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
+        // Sur l'en-tête seul : les conversations dessous ont le leur.
+        onContextMenu={openRowMenu}
         className="group flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
       >
         {editing ? (
@@ -458,13 +461,15 @@ function ProjectGroup({
         <span
           aria-hidden
           data-project-state
-          className="flex shrink-0 items-center gap-1 pr-1 group-hover:hidden group-focus-within:hidden pointer-coarse:hidden"
+          className="flex shrink-0 items-center gap-1 pr-1 group-hover:hidden group-focus-within:hidden group-has-[[data-state=open]]:hidden pointer-coarse:hidden"
         >
           {running ? <StateDot state="working" labelled={false} /> : null}
           {demanding ? <StateDot state={demanding} labelled={false} /> : null}
         </span>
 
-        <span className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex pointer-coarse:flex">
+        {/* Visibles tant que le menu est ouvert : le focus est parti dans le menu, et
+            sans son déclencheur à l'écran il s'ancrerait dans le coin de la fenêtre. */}
+        <span className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex has-[[data-state=open]]:flex pointer-coarse:flex">
           <Tooltip label={t('shell.project.newConversation', { name: project.name })}>
             <NavLink
               to={`/p/${project.id}/c/new`}
@@ -479,7 +484,7 @@ function ProjectGroup({
           {project.isOwner ? (
             <Menu
               trigger={
-                <IconButton label={t('shell.project.actions', { name: project.name })} size="sm">
+                <IconButton label={t('shell.project.actions', { name: project.name })} size="sm" data-row-menu>
                   <MoreHorizontal size={14} />
                 </IconButton>
               }

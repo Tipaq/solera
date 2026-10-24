@@ -19,6 +19,7 @@ import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { SignalDot, StateDot } from '../chat/Signals'
 import { RenameInput } from './RenameInput'
+import { openRowMenu } from './row-menu'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 
 /**
@@ -87,6 +88,7 @@ export function ConversationLine({
 
   return (
     <li
+      onContextMenu={openRowMenu}
       className={cx(
         'group/row flex h-11 items-center rounded-md pr-0.5 transition-colors md:h-8 pointer-coarse:h-11',
         isActive ? 'bg-accent-wash' : 'hover:bg-surface-high hover:text-ink',
@@ -173,6 +175,7 @@ export function ConversationLine({
             <IconButton
               label={t('shell.conversation.actions')}
               size="sm"
+              data-row-menu
               className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100"
             >
               <MoreHorizontal size={14} />

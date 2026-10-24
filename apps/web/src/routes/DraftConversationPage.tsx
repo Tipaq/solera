@@ -21,7 +21,9 @@ import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
+  hiddenAgent,
   useAgentAvailability,
+  useHiddenAgents,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
@@ -127,6 +129,12 @@ export function DraftConversationPage() {
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
   const t = useTranslate()
+  // Les CLI masqués par le compte ne sont ni proposés à l'installation ni dans le
+  // choix, tant qu'ils manquent : qui n'utilise que Claude Code n'a pas à les enjamber.
+  const hiddenAgents = useHiddenAgents()
+  const hiddenRows = (availability?.agents ?? []).filter(
+    (entry) => entry.reason !== 'disabled' && hiddenAgent(entry, hiddenAgents.hidden),
+  )
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -333,7 +341,7 @@ export function DraftConversationPage() {
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {AGENTS.map((option) => {
+              {AGENTS.filter((option) => !hiddenRows.some((entry) => entry.agent === option.value)).map((option) => {
                 const selected = option.value === agent
                 const entry = availability?.agents.find((a) => a.agent === option.value)
                 // Indisponible seulement quand le serveur l'a dit. Tant que la sonde n'a
@@ -374,8 +382,22 @@ export function DraftConversationPage() {
                 que la barre de saisie refuse. */}
             {blocked ? <Banner>{blocked}</Banner> : null}
 
-            {/* Un rang par CLI manquant. */}
-            {availability?.agents.map((entry) => <AgentInstallRow key={entry.agent} entry={entry} />)}
+            {/* Un rang par CLI manquant, sauf ceux que le compte a masqués. */}
+            {availability?.agents
+              .filter((entry) => !hiddenAgent(entry, hiddenAgents.hidden))
+              .map((entry) => (
+                <AgentInstallRow key={entry.agent} entry={entry} onDismiss={() => hiddenAgents.hide(entry.agent)} />
+              ))}
+            {/* Une ligne discrète pour retrouver ce qu'on a masqué : le masque n'est pas
+                une configuration, il ne faut pas aller le défaire dans les réglages. */}
+            {hiddenRows.length > 0 ? (
+              <p className="text-xs text-ink-faint">
+                {t('agent.install.hidden', { labels: hiddenRows.map((entry) => AGENT_LABELS[entry.agent]).join(', ') })}{' '}
+                <button type="button" className="underline hover:text-ink" onClick={hiddenAgents.reveal}>
+                  {t('agent.install.reveal')}
+                </button>
+              </p>
+            ) : null}
           </fieldset>
 
           {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}

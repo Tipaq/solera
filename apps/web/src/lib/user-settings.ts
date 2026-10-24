@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  AgentKind,
   BoardOrder,
   NotificationPrefs,
   OnboardingState,
@@ -59,6 +60,27 @@ export function useUpdateCollapsedProjects() {
       if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
     },
 
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+}
+
+/**
+ * Les CLI masqués, remplacés en bloc et appliqués sans attendre : le rang disparaît au
+ * clic, et revient tel quel si le serveur n'a pas pris le changement.
+ */
+export function useUpdateHiddenAgents() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (hiddenAgents: AgentKind[]) => api.patch<UserSettingsDto>('/api/me/settings', { hiddenAgents }),
+    onMutate: async (hiddenAgents) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous) queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, hiddenAgents })
+      return { previous }
+    },
+    onError: (_error, _agents, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
     onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
 }
