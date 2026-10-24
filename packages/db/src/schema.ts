@@ -1035,8 +1035,29 @@ export const events = sqliteTable(
      */
     rawFormat: text('raw_format'),
   },
-  (t) => [primaryKey({ columns: [t.conversationId, t.seq] })],
+  (t) => [
+    primaryKey({ columns: [t.conversationId, t.seq] }),
+    // Retrouver le natif d'un appel d'outil (pour un diff) sans décoder les sorties,
+    // parfois énormes, de tous les autres.
+    index('idx_events_native_tool')
+      .on(t.conversationId, t.type, sql`(${t.payload} ->> '$.toolCallId')`, t.seq)
+      .where(sql`${t.type} = 'tool.started' or ${t.type} = 'tool.completed'`),
+  ],
 )
+
+/**
+ * Où en est l'import d'un transcript Claude Code : un curseur par fichier, écrit dans
+ * la même transaction que les événements qu'il couvre. Reconstructible : sans lui, la
+ * synchronisation suivante repart du point commun avec le journal.
+ */
+export const claudeTranscriptCursors = sqliteTable('claude_transcript_cursors', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  /** Le `lastSeq` du journal à l'écriture : s'il a bougé depuis, le curseur ne vaut plus. */
+  journalSeq: integer('journal_seq').notNull(),
+  state: text('state').notNull(),
+})
 
 export const permissionRequests = sqliteTable(
   'permission_requests',

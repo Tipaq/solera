@@ -1,9 +1,9 @@
-import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ContentBlock, SoleraEvent } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
+import { TranscriptReader } from './transcript-reader.js'
 
 /**
  * Lecture et traduction d'un transcript de session Claude Code.
@@ -61,43 +61,19 @@ export function readTranscript(cwd: string, sessionId: string): Promise<Transcri
   return readJsonl(transcriptPath(cwd, sessionId))
 }
 
-const REQUEST_REPLAY_TYPES = new Set(['api-request', 'api-request-shape', 'api-request-blob'])
-
 async function readJsonl(path: string): Promise<TranscriptEntry[]> {
-  let file
+  const reader = await TranscriptReader.open(path)
+  if (!reader) return []
   try {
-    file = await open(path, 'r')
-  } catch {
-    return []
-  }
-
-  const entries: TranscriptEntry[] = []
-  try {
-    // Depuis 2.1.300, le rejeu du CLI duplique prompts et outils. Lire en flux évite
-    // de garder le fichier entier en mémoire en plus des entrées utiles à l'affichage.
-    for await (const line of file.readLines()) {
-      // Sondé sur 2.1.301 : ces lignes commencent par le type. L'ancrage empêche
-      // d'écarter un message qui ne ferait que citer ce format dans son contenu.
-      if (/^\s*\{\s*"type"\s*:\s*"api-request(?:-shape|-blob)?"\s*[,}]/.test(line)) continue
-      try {
-        const parsed: unknown = JSON.parse(line)
-        if (typeof parsed !== 'object' || parsed === null) continue
-        const entry = parsed as TranscriptEntry
-        // Le filtre reste juste si une future version déplace la propriété type.
-        if (typeof entry.type === 'string' && REQUEST_REPLAY_TYPES.has(entry.type)) continue
-        entries.push(entry)
-      } catch {
-        // Une ligne tronquée (écriture en cours au moment de la lecture) n'invalide
-        // pas le reste du fichier.
-      }
-    }
+    const entries: TranscriptEntry[] = []
+    for await (const { entry } of reader.lines(0, await reader.prefix(0))) if (entry) entries.push(entry)
+    return entries
   } catch {
     // Comme un fichier absent, une lecture impossible ne fournit aucun historique.
     return []
   } finally {
-    await file.close()
+    await reader.file.close()
   }
-  return entries
 }
 
 /**
@@ -146,7 +122,7 @@ export async function readSubAgentTranscripts(
  * sous-agent, et rien ne vaut mieux qu'un rattachement au hasard, qui rendrait tout un
  * fil invisible sans rien signaler.
  */
-function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
+export function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
   const spawned = new Map<string, string>()
   for (const entry of entries) {
     const agentId = entry.toolUseResult?.agentId
@@ -163,7 +139,7 @@ function spawnedAgents(entries: TranscriptEntry[]): Map<string, string> {
   return spawned
 }
 
-function entryTs(entry: TranscriptEntry): number {
+export function entryTs(entry: TranscriptEntry): number {
   const parsed = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN
   return Number.isFinite(parsed) ? parsed : Date.now()
 }
@@ -190,9 +166,20 @@ function isLocalCommand(text: string): boolean {
 const INTERRUPT_MARKER = /^\[Request interrupted by user[^\]]*\]$/
 
 interface ToolUse {
-  name: string
-  input: unknown
+  /** Le fichier que l'appel modifie, calculé au départ : l'entrée elle-même ne se garde pas. */
+  path: string | null
   startedAt: number
+}
+
+/**
+ * Ce que le traducteur retient entre deux entrées. Sérialisable, pour qu'une
+ * synchronisation reprenne au milieu d'un transcript sans relire ce qui précède.
+ */
+export interface TranscriptTranslationState {
+  pendingTools: [string, ToolUse][]
+  model: string | null
+  inTurn: boolean
+  count: number
 }
 
 /**
@@ -229,31 +216,31 @@ export function translateTranscript(
 }
 
 /**
- * Un fil et un seul : le principal (`thread` nul) ou celui d'un sous-agent.
+ * Le traducteur d'un fil et d'un seul : le principal (`thread` nul) ou celui d'un
+ * sous-agent. Il avance entrée par entrée, et `snapshot` rend de quoi le recréer au
+ * même point.
  *
  * Les frontières de tour et les compactions n'appartiennent qu'au fil principal : un
  * sous-agent travaille *dans* un tour, il n'en ouvre pas.
  */
-function translateThread(
-  entries: TranscriptEntry[],
-  cwd: string,
-  thread: string | null,
-): { events: TranslatedEvent[]; model: string | null } {
-  const events: TranslatedEvent[] = []
-  const pendingTools = new Map<string, ToolUse>()
-  let model: string | null = null
-  let inTurn = false
+export function transcriptTranslator(cwd: string, thread: string | null, saved?: TranscriptTranslationState) {
+  const pendingTools = new Map<string, ToolUse>(saved?.pendingTools)
+  let model: string | null = saved?.model ?? null
+  let inTurn = saved?.inTurn ?? false
+  let count = saved?.count ?? 0
 
-  for (const entry of entries) {
+  const snapshot = (): TranscriptTranslationState => ({ pendingTools: [...pendingTools], model, inTurn, count })
+  const translate = (entry: TranscriptEntry): TranslatedEvent[] => {
+    const events: TranslatedEvent[] = []
     // Les versions de CLI qui écrivaient les tours de sous-agent en ligne dans le
     // fichier principal les marquent ainsi. Repris comme fil principal, le prompt du
     // sous-agent s'afficherait comme une chose que l'utilisateur aurait dite.
-    if (thread === null && entry.isSidechain === true) continue
+    if (thread === null && entry.isSidechain === true) return events
     const ts = entryTs(entry)
 
     if (entry.type === 'assistant') {
       const message = entry.message
-      if (!message || !Array.isArray(message.content)) continue
+      if (!message || !Array.isArray(message.content)) return events
       if (typeof message.model === 'string' && message.model !== '<synthetic>') {
         model = message.model
       }
@@ -266,7 +253,7 @@ function translateThread(
           blocks.push({ type: 'thinking', text: block.thinking })
         } else if (block.type === 'tool_use' && typeof block.id === 'string') {
           const name = typeof block.name === 'string' ? block.name : ''
-          pendingTools.set(block.id, { name, input: block.input, startedAt: ts })
+          pendingTools.set(block.id, { path: editedPath(name, block.input), startedAt: ts })
           blocks.push({ type: 'tool_use', toolCallId: block.id, name, input: block.input })
           events.push({
             ts,
@@ -295,11 +282,11 @@ function translateThread(
           raw: entry,
         })
       }
-      continue
+      return events
     }
 
     if (entry.type === 'user') {
-      if (entry.isMeta === true || entry.isCompactSummary === true) continue
+      if (entry.isMeta === true || entry.isCompactSummary === true) return events
       const content = entry.message?.content
 
       if (Array.isArray(content)) {
@@ -323,7 +310,7 @@ function translateThread(
             raw: block,
           })
 
-          const path = started && !isError ? editedPath(started.name, started.input) : null
+          const path = started && !isError ? started.path : null
           if (path !== null) {
             events.push({
               ts,
@@ -338,7 +325,7 @@ function translateThread(
             })
           }
         }
-        if (handled) continue
+        if (handled) return events
       }
 
       const text =
@@ -350,7 +337,7 @@ function translateThread(
                 .map((block) => block.text as string)
                 .join('\n')
             : ''
-      if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) continue
+      if (!text.trim() || isLocalCommand(text) || INTERRUPT_MARKER.test(text.trim())) return events
 
       // Un sous-agent n'ouvre pas de tour : il travaille dans celui de son parent,
       // et le sien ferait clignoter l'indicateur d'activité du fil principal.
@@ -362,14 +349,14 @@ function translateThread(
         ts,
         event: {
           type: 'message.completed',
-          messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${events.length}`,
+          messageId: typeof entry.uuid === 'string' ? entry.uuid : `import-${count + events.length}`,
           role: 'user',
           blocks: [{ type: 'text', text }],
           parentToolCallId: thread,
         },
         raw: entry,
       })
-      continue
+      return events
     }
 
     if (entry.type === 'system' && thread === null) {
@@ -407,14 +394,31 @@ function translateThread(
     }
     // Tout le reste (mode, last-prompt, file-history-*, attachment...) est un état
     // interne du CLI sans traduction dans le fil.
+    return events
   }
 
-  // Un transcript qui s'arrête en plein tour vient d'une session interrompue : sans
-  // clôture, le fil rejoué garderait l'indicateur d'activité allumé.
-  if (inTurn) {
-    const last = events.at(-1)
-    events.push({ ts: last?.ts ?? Date.now(), event: { type: 'session.ended', reason: 'interrupted' } })
+  return {
+    snapshot,
+    push(entry: TranscriptEntry): TranslatedEvent[] {
+      const events = translate(entry)
+      count += events.length
+      return events
+    },
+    /**
+     * Un transcript qui s'arrête en plein tour vient d'une session interrompue : sans
+     * clôture, le fil rejoué garderait l'indicateur d'activité allumé.
+     */
+    finish(ts: number): TranslatedEvent[] {
+      if (!inTurn) return []
+      inTurn = false
+      return [{ ts, event: { type: 'session.ended', reason: 'interrupted' } }]
+    },
   }
+}
 
-  return { events, model }
+function translateThread(entries: TranscriptEntry[], cwd: string, thread: string | null) {
+  const translator = transcriptTranslator(cwd, thread)
+  const events = entries.flatMap((entry) => translator.push(entry))
+  events.push(...translator.finish(events.at(-1)?.ts ?? Date.now()))
+  return { events, model: translator.snapshot().model }
 }
