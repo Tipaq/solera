@@ -1,17 +1,18 @@
-import { CalendarDays, ChevronDown, Flag, MoreHorizontal, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { CalendarDays, Check, ChevronDown, CircleHelp, ListTree, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CARD_COLUMNS, parseSubtasks, type CardDto } from '@solera/protocol'
-import { useCardSaving, useDeleteCard, useToggleSubtask, useUpdateCard } from '../../lib/cards'
+import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, parentCloseProposed, parseSubtasks, type CardDto } from '@solera/protocol'
+import { useCardSaving, useDeleteCard, useToggleSubtask, useTriageCard, useUpdateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { locale, translate, useTranslate } from '../../lib/i18n'
 import { Markdown } from '../chat/Markdown'
-import { Badge, Button, IconButton, Menu, MenuItem, cx } from '@solera/ui'
+import { Badge, Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { CardAttachments } from './CardAttachments'
 import { CardBlocks } from './CardBlocks'
 import { CardEditor } from './CardEditor'
-import { CardDue, CardMilestone } from './CardMeta'
+import { CardChooser } from './CardChooser'
+import { CardChildren, CardDue, CardParent } from './CardMeta'
 import { CardProgress } from './CardProgress'
 import { CardThread } from './CardThread'
 import { ColumnDot } from './ColumnDot'
@@ -68,6 +69,10 @@ export function CardDetail({
   const navigate = useNavigate()
   const updateCard = useUpdateCard(projectId)
   const deleteCard = useDeleteCard(projectId)
+  const triage = useTriageCard(projectId)
+  const isParent = card.children.length > 0
+  const closed = CARD_CLOSED_COLUMNS.includes(card.column)
+  const accepted = card.acceptedAt !== null
   const toggleSubtask = useToggleSubtask(projectId, card.id)
   const saving = useCardSaving(card.id)
   const latestSession = card.conversations.filter((session) => !session.archivedAt)
@@ -143,20 +148,44 @@ export function CardDetail({
             <ChevronDown size={14} />
           </button>
         }>
-          {CARD_COLUMNS.map((column) => (
+          {/* Une parente ne se range pas : sa colonne suit ses enfants. Il ne reste qu'à
+              la fermer, ce qui est un verdict, ou à la rouvrir, ce qui lui rend la
+              colonne que ses enfants disent. */}
+          {isParent ? (
+            <>
+              <MenuLabel>{t('board.card.parent.derived')}</MenuLabel>
+              {closed ? (
+                <MenuItem icon={<span aria-hidden><ColumnDot column="in_progress" /></span>}
+                  onSelect={() => updateCard.mutate({ id: card.id, column: 'todo' })}>
+                  {t('board.card.parent.reopen')}
+                </MenuItem>
+              ) : null}
+              {CARD_CLOSED_COLUMNS.map((column) => (
+                <MenuItem key={column} icon={<span aria-hidden><ColumnDot column={column} /></span>} disabled={column === card.column}
+                  onSelect={() => updateCard.mutate({ id: card.id, column })}>
+                  {columnLabel(column)}
+                </MenuItem>
+              ))}
+            </>
+          ) : CARD_COLUMNS.map((column) => (
             <MenuItem key={column} icon={<span aria-hidden><ColumnDot column={column} /></span>} disabled={column === card.column}
               onSelect={() => updateCard.mutate({ id: card.id, column })}>
               {columnLabel(column)}
             </MenuItem>
           ))}
         </Menu>
+        {card.column === 'todo' && !accepted ? <Badge tone="accent">{t('board.card.new.badge')}</Badge> : null}
+        {card.column === 'todo' && accepted && card.toClarifySince !== null ? (
+          <Badge tone="caution">{t('board.card.toClarify')}</Badge>
+        ) : null}
         <div className="flex-1" />
         {resumable ? (
           <Button size="sm" variant="secondary" icon={<Play size={14} />} onClick={() => navigate(`/p/${projectId}/c/${resumable.id}`)}>
             {t('card.detail.resume')}
           </Button>
         ) : null}
-        <Button size="sm" disabled={dirty || saving} title={dirty ? t('board.editor.saveBeforeLaunch') : t('board.card.launch')}
+        <Button size="sm" disabled={dirty || saving || !accepted}
+          title={!accepted ? t('board.card.triage.launch') : dirty ? t('board.editor.saveBeforeLaunch') : t('board.card.launch')}
           icon={<Plus size={14} />} onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}>
           {t('card.detail.session')}
         </Button>
@@ -164,6 +193,12 @@ export function CardDetail({
           <IconButton label={t('card.detail.more')} size="sm"><MoreHorizontal size={15} /></IconButton>
         }>
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>{t('board.card.edit')}</MenuItem>
+          {!closed && card.toClarifySince === null ? (
+            <MenuItem icon={<CircleHelp size={14} />} onSelect={() => updateCard.mutate({ id: card.id, toClarify: true })}>
+              {t('board.card.toClarify.mark')}
+            </MenuItem>
+          ) : null}
+          <MenuSeparator />
           <MenuItem icon={<Trash2 size={14} />} tone="critical" disabled={deleteCard.isPending} onSelect={remove}>
             {t('board.card.remove')}
           </MenuItem>
@@ -207,13 +242,14 @@ export function CardDetail({
             className="flex min-w-0 flex-col gap-4 [grid-area:props] @max-[42rem]:mb-5 @max-[42rem]:border-y @max-[42rem]:border-line @max-[42rem]:py-4 @min-[42rem]:self-start @min-[42rem]:border-l @min-[42rem]:border-line @min-[42rem]:pl-5"
           >
             <dl className="flex flex-col gap-0.5">
-              <Property icon={<Flag size={13} />} label={t('card.detail.milestone')}>
-                <CardMilestone card={card} projectId={projectId} onSelectCard={onSelectCard} />
+              <Property icon={<ListTree size={13} />} label={t('card.detail.parent')}>
+                <CardParent card={card} projectId={projectId} onSelectCard={onSelectCard} />
               </Property>
               <Property icon={<CalendarDays size={13} />} label={t('board.card.due')}>
                 <CardDue card={card} projectId={projectId} />
               </Property>
             </dl>
+            <CardChildren card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <CardBlocks card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
             <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />
@@ -227,6 +263,7 @@ export function CardDetail({
           </aside>
 
           <div className="flex min-w-0 flex-col gap-5 pb-5 [grid-area:desc]">
+            <CardStateBanners card={card} projectId={projectId} accepted={accepted} triage={triage} updateCard={updateCard} />
             {editVisible ? null : (
               <div className="flex flex-col gap-2">
                 {card.description ? (
@@ -252,6 +289,81 @@ export function CardDetail({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Ce que la carte attend d'une personne, avant l'énoncé : un tri si elle vient de
+ * l'extérieur, des réponses si elle est à préciser, une clôture si tous ses enfants sont
+ * fermés. Chacun avec son geste, sur place : le chercher dans un menu, c'est le rater.
+ */
+function CardStateBanners({
+  card,
+  projectId,
+  accepted,
+  triage,
+  updateCard,
+}: {
+  card: CardDto
+  projectId: string
+  accepted: boolean
+  triage: ReturnType<typeof useTriageCard>
+  updateCard: ReturnType<typeof useUpdateCard>
+}) {
+  const t = useTranslate()
+  const busy = triage.isPending || updateCard.isPending
+  return (
+    <>
+      {!accepted && card.column === 'todo' ? (
+        <div className="flex flex-col gap-2">
+          <Banner tone="info">{t('board.card.triage.body')}</Banner>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button size="sm" icon={<Check size={14} />} disabled={busy}
+              onClick={() => triage.mutate({ id: card.id, action: 'accept' })}>
+              {t('board.card.triage.accept')}
+            </Button>
+            <CardChooser
+              projectId={projectId}
+              label={t('board.card.triage.attach')}
+              excludeIds={[card.id, ...card.children.map((child) => child.id)]}
+              onPick={(picked) => triage.mutate({ id: card.id, action: 'accept', parentId: picked.id })}
+              trigger={
+                <Button size="sm" variant="secondary" icon={<ListTree size={14} />} disabled={busy}>
+                  {t('board.card.triage.attach')}
+                </Button>
+              }
+            />
+            <Button size="sm" variant="ghost" icon={<X size={14} />} disabled={busy}
+              onClick={() => triage.mutate({ id: card.id, action: 'refuse' })}>
+              {t('board.card.triage.refuse')}
+            </Button>
+          </div>
+          {triage.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.saveError')}</p> : null}
+        </div>
+      ) : null}
+      {card.toClarifySince !== null && card.column === 'todo' ? (
+        <div className="flex flex-col gap-2">
+          <Banner tone="caution">{t('board.card.toClarify.body')}</Banner>
+          <div>
+            <Button size="sm" variant="secondary" icon={<Check size={14} />} disabled={busy}
+              onClick={() => updateCard.mutate({ id: card.id, toClarify: false })}>
+              {t('board.card.toClarify.clear')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {parentCloseProposed(card) ? (
+        <div className="flex flex-col gap-2">
+          <Banner tone="positive">{t('board.card.parent.closeProposed')}</Banner>
+          <div>
+            <Button size="sm" icon={<Check size={14} />} disabled={busy}
+              onClick={() => updateCard.mutate({ id: card.id, column: 'done' })}>
+              {t('board.card.parent.close')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </>
   )
 }
 

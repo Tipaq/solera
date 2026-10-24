@@ -10,10 +10,10 @@ import { asc, eq } from 'drizzle-orm'
 import { cardMoves, openDatabase, projects, runMigrations, users } from '@solera/db'
 import { parseSubtasks, toggleSubtask, type CardDto } from '@solera/protocol'
 import { AttachmentStore } from '../src/attachments/store.js'
-import { advanceCardOnLaunch } from '../src/cards/create.js'
+import { advanceCardOnLaunch, createCard } from '../src/cards/create.js'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
-import { registerCardRoutes } from '../src/http/routes/cards.js'
+import { assertCardAccepted, registerCardRoutes } from '../src/http/routes/cards.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-card-fields-'))
@@ -48,54 +48,181 @@ async function harness(t: TestContext) {
   return { app, ctx, db, create, moves }
 }
 
-test('échéance et jalon : posés, relus, et détachés sans toucher à la carte-jalon', async (t) => {
+test('échéance et parente : posées, relues, et détachées sans toucher à la parente', async (t) => {
   const { app, create } = await harness(t)
-  const milestone = await create('v0.2 — la gestion de projet')
+  const parent = await create('v0.2 — la gestion de projet')
   const card = await create('Porter la chronologie')
 
   const due = Date.parse('2026-11-02T00:00:00Z')
   const dated = await app.inject({
     method: 'PATCH',
     url: `/api/cards/${card.id}`,
-    payload: { dueAt: due, milestoneCardId: milestone.id },
+    payload: { dueAt: due, parentId: parent.id },
   })
   assert.equal(dated.statusCode, 200, dated.body)
   assert.equal(dated.json().dueAt, due)
-  assert.deepEqual(dated.json().milestone, {
-    id: milestone.id,
-    number: milestone.number,
-    title: milestone.title,
+  assert.deepEqual(dated.json().parent, {
+    id: parent.id,
+    number: parent.number,
+    title: parent.title,
     column: 'todo',
   })
 
-  // Aucun drapeau ne marque la carte-jalon : elle reste une carte comme une autre, et
-  // c'est le fait d'être désignée qui en fait un jalon.
+  // Aucun drapeau ne marque la parente : elle reste une carte, qui a des enfants.
   const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
-  assert.equal(board.find((row) => row.id === milestone.id)?.milestone, null)
+  const read = board.find((row) => row.id === parent.id)
+  assert.equal(read?.parent, null)
+  assert.deepEqual(read?.children.map((child) => child.id), [card.id])
 
   const detached = await app.inject({
     method: 'PATCH',
     url: `/api/cards/${card.id}`,
-    payload: { milestoneCardId: null, dueAt: null },
+    payload: { parentId: null, dueAt: null },
   })
-  assert.equal(detached.json().milestone, null)
+  assert.equal(detached.json().parent, null)
   assert.equal(detached.json().dueAt, null)
 
   const itself = await app.inject({
     method: 'PATCH',
     url: `/api/cards/${card.id}`,
-    payload: { milestoneCardId: card.id },
+    payload: { parentId: card.id },
   })
-  assert.equal(itself.statusCode, 400, 'une carte ne peut pas être son propre jalon')
+  assert.equal(itself.statusCode, 400, 'une carte ne peut pas être sa propre parente')
 
-  // Supprimer la carte-jalon détache les siennes au lieu de les emporter : un jalon
-  // rangé ne doit pas effacer le travail qu'il recouvrait.
-  await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { milestoneCardId: milestone.id } })
-  const removed = await app.inject({ method: 'DELETE', url: `/api/cards/${milestone.id}` })
+  // Supprimer la parente détache ses enfants au lieu de les emporter.
+  await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { parentId: parent.id } })
+  const removed = await app.inject({ method: 'DELETE', url: `/api/cards/${parent.id}` })
   assert.equal(removed.statusCode, 204, removed.body)
   const survivors: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
   assert.equal(survivors.length, 1)
-  assert.equal(survivors[0]?.milestone, null)
+  assert.equal(survivors[0]?.parent, null)
+})
+
+test('arbre : profondeur libre, sans cycle, et un titre refusé avec le cycle', async (t) => {
+  const { app, create } = await harness(t)
+  const top = await create('Jalon')
+  const middle = await create('Chantier')
+  const leaf = await create('Petit pas')
+  const patch = (id: string, payload: object) => app.inject({ method: 'PATCH', url: `/api/cards/${id}`, payload })
+
+  assert.equal((await patch(middle.id, { parentId: top.id })).statusCode, 200)
+  assert.equal((await patch(leaf.id, { parentId: middle.id })).statusCode, 200)
+
+  const cycle = await patch(top.id, { parentId: leaf.id, title: 'Renommé' })
+  assert.equal(cycle.statusCode, 409, cycle.body)
+  assert.equal(cycle.json().error.code, 'card_parent_cycle')
+  const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
+  assert.equal(board.find((row) => row.id === top.id)?.title, 'Jalon', 'rien ne s\'écrit quand le rattachement est refusé')
+
+  // Créer directement sous une parente : c'est le geste « Ajouter un enfant ».
+  const born = await app.inject({ method: 'POST', url: '/api/projects/project/cards', payload: { title: 'Né dessous', parentId: leaf.id } })
+  assert.equal(born.statusCode, 201, born.body)
+  assert.equal(born.json().parent.id, leaf.id)
+})
+
+test('colonne déduite : en cours dès qu\'un enfant démarre, jamais terminée seule, et remontée jusqu\'en haut', async (t) => {
+  const { app, create, moves } = await harness(t)
+  const top = await create('Jalon')
+  const middle = await create('Chantier')
+  const a = await create('A')
+  const b = await create('B')
+  const patch = (id: string, payload: object) => app.inject({ method: 'PATCH', url: `/api/cards/${id}`, payload })
+  const column = async (id: string) =>
+    ((await app.inject('/api/projects/project/cards')).json() as CardDto[]).find((row) => row.id === id)?.column
+
+  await patch(middle.id, { parentId: top.id })
+  await patch(a.id, { parentId: middle.id })
+  await patch(b.id, { parentId: middle.id })
+  assert.equal(await column(middle.id), 'todo')
+
+  await patch(a.id, { column: 'in_progress' })
+  assert.equal(await column(middle.id), 'in_progress')
+  assert.equal(await column(top.id), 'in_progress', 'la remontée traverse les niveaux')
+  // Le mouvement déduit est écrit au Journal comme les autres, par la même personne.
+  assert.ok(moves().some((move) => move.cardId === top.id && move.toColumn === 'in_progress' && move.userId === 'owner'))
+
+  await patch(a.id, { column: 'done' })
+  await patch(b.id, { column: 'done' })
+  assert.equal(await column(middle.id), 'in_progress', 'tous les enfants livrés : la clôture est proposée, pas faite')
+
+  // Une parente ouverte ne garde pas une colonne choisie à la main.
+  await patch(middle.id, { column: 'review' })
+  assert.equal(await column(middle.id), 'in_progress')
+
+  // Fermée par une personne, elle ne se rouvre pas seule quand un enfant bouge.
+  await patch(middle.id, { column: 'done' })
+  await patch(a.id, { column: 'in_progress' })
+  assert.equal(await column(middle.id), 'done')
+  // Rouverte, elle reprend ce que ses enfants disent.
+  await patch(middle.id, { column: 'todo' })
+  assert.equal(await column(middle.id), 'in_progress')
+
+  // Le glisser-déposer ne connaît que les feuilles : une colonne complète se compte
+  // sans les parentes, et une parente ne s'y range pas.
+  const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
+  const leaves = (wanted: string) => board.filter((row) => row.column === wanted && row.children.length === 0).map((row) => row.id)
+  const ordered = await app.inject({
+    method: 'POST',
+    url: '/api/projects/project/cards/order',
+    payload: { columns: [{ column: 'in_progress', ids: leaves('in_progress') }] },
+  })
+  assert.equal(ordered.statusCode, 200, ordered.body)
+  const refused = await app.inject({
+    method: 'POST',
+    url: '/api/projects/project/cards/order',
+    payload: { columns: [{ column: 'in_progress', ids: [...leaves('in_progress'), middle.id] }] },
+  })
+  assert.equal(refused.statusCode, 400)
+  assert.equal(refused.json().error.code, 'card_is_parent')
+})
+
+test('à préciser : ramène en « à faire », et s\'efface dès que la carte en sort', async (t) => {
+  const { app, create } = await harness(t)
+  const card = await create('Floue')
+  const patch = (payload: object) => app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload })
+
+  await patch({ column: 'in_progress' })
+  const marked = await patch({ toClarify: true })
+  assert.equal(marked.json().column, 'todo')
+  assert.equal(typeof marked.json().toClarifySince, 'number')
+
+  const resumed = await patch({ column: 'in_progress' })
+  assert.equal(resumed.json().toClarifySince, null, 'quitter « à faire » efface l\'état')
+
+  await patch({ toClarify: true })
+  const cleared = await patch({ toClarify: false })
+  assert.equal(cleared.json().toClarifySince, null)
+  assert.equal(cleared.json().column, 'todo', 'lever l\'état ne déplace pas')
+
+  await patch({ column: 'done' })
+  assert.equal((await patch({ toClarify: true })).statusCode, 409, 'une carte fermée n\'a plus rien à préciser')
+})
+
+test('non acceptée : acceptée, rattachée ou refusée, et sans session tant qu\'elle attend', async (t) => {
+  const { app, ctx, create } = await harness(t)
+  const parent = await create('Parente')
+  const incoming = () => createCard(ctx.db, 'project', 'owner', { title: 'Issue #12', description: '', column: 'todo' }, { accepted: false })
+
+  const first = incoming()
+  const listed: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
+  assert.equal(listed.find((row) => row.id === first.id)?.acceptedAt, null)
+  assert.throws(() => assertCardAccepted(ctx, first.id), /not been accepted/)
+
+  const accepted = await app.inject({ method: 'POST', url: `/api/cards/${first.id}/accept`, payload: {} })
+  assert.equal(accepted.statusCode, 200, accepted.body)
+  assert.equal(typeof accepted.json().acceptedAt, 'number')
+  assert.doesNotThrow(() => assertCardAccepted(ctx, first.id))
+
+  const second = incoming()
+  const attached = await app.inject({ method: 'POST', url: `/api/cards/${second.id}/accept`, payload: { parentId: parent.id } })
+  assert.equal(attached.json().parent.id, parent.id)
+  assert.notEqual(attached.json().acceptedAt, null)
+
+  const third = incoming()
+  const refused = await app.inject({ method: 'POST', url: `/api/cards/${third.id}/refuse` })
+  assert.equal(refused.json().column, 'abandoned')
+  assert.equal(refused.json().acceptedAt, null, 'refusée, elle reste non acceptée')
+  assert.equal((await app.inject({ method: 'POST', url: `/api/cards/${first.id}/refuse` })).statusCode, 409)
 })
 
 test('liens « bloque » : affirmés, survivants à une réécriture de description, et sans réciprocité', async (t) => {

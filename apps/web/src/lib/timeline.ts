@@ -9,13 +9,11 @@ export interface Span {
 }
 
 /**
- * Une carte qui sert de jalon, avec ce qu'elle recouvre.
+ * Une carte parente, avec ses enfants : ce que la chronologie appelle un jalon.
  *
- * Un jalon **est** une carte (décision de la carte #32, `docs/audits/2026-10-15-champs-de-carte/`)
- * et n'a donc ni table ni drapeau : une carte est un jalon dès que quelque chose la
- * désigne. Le jeu des jalons se déduit donc de la liste des cartes, sans second appel —
- * et une carte-jalon que personne ne désigne encore n'en est pas un, ce qui est la
- * conséquence voulue de « pas de drapeau `is_milestone` ».
+ * Un jalon n'est pas un type (carte #83) : c'est une carte qui a des enfants, et une
+ * échéance le plus souvent. Le jeu des jalons se déduit donc de la liste des cartes,
+ * sans second appel. Chaque parente fait sa ligne, quelle que soit sa profondeur.
  */
 export interface Milestone {
   card: CardDto
@@ -26,17 +24,15 @@ export interface Milestone {
 }
 
 /**
- * Les identifiants des cartes qui servent de jalon.
+ * Les identifiants des cartes qui ont des enfants.
  *
- * Une carte-jalon reste une carte : elle a sa colonne, son échéance, et elle apparaît sur
- * le board comme une autre — c'est la conséquence assumée de « un jalon est une carte »
- * (carte #32). Mais les vues qui la montrent **en tant que jalon** doivent alors la
- * retirer de leurs listes de cartes, sinon elle s'y lit deux fois : une ligne de la
- * chronologie *et* une barre dedans, un titre de tuile *et* une échéance en dessous.
+ * Les vues qui les montrent **en tant que jalon** doivent les retirer de leurs listes
+ * de cartes, sinon elles s'y lisent deux fois : une ligne de la chronologie *et* une
+ * barre dedans, un titre de tuile *et* une échéance en dessous.
  */
 export function milestoneIdsOf(cards: CardDto[]): Set<string> {
   const ids = new Set<string>()
-  for (const card of cards) if (card.milestone !== null) ids.add(card.milestone.id)
+  for (const card of cards) if (card.parent !== null) ids.add(card.parent.id)
   return ids
 }
 
@@ -45,12 +41,12 @@ export function milestonesOf(cards: CardDto[]): Milestone[] {
   const byId = new Map(cards.map((card) => [card.id, card]))
   const grouped = new Map<string, CardDto[]>()
   for (const card of cards) {
-    // `card.milestone` est le jalon résolu par le serveur — titre et numéro compris, ce
-    // qui évite d'avoir à le retrouver quand la carte-jalon n'est pas dans ce jeu.
-    if (card.milestone === null) continue
-    const bucket = grouped.get(card.milestone.id)
+    // `card.parent` est la parente résolue par le serveur — titre et numéro compris, ce
+    // qui évite d'avoir à la retrouver quand elle n'est pas dans ce jeu.
+    if (card.parent === null) continue
+    const bucket = grouped.get(card.parent.id)
     if (bucket) bucket.push(card)
-    else grouped.set(card.milestone.id, [card])
+    else grouped.set(card.parent.id, [card])
   }
 
   return [...grouped.entries()]
@@ -177,7 +173,7 @@ export function ticksOf(from: number, to: number): number[] {
 export function unplacedOf(cards: CardDto[]): CardDto[] {
   return cards.filter(
     (card) =>
-      card.milestone === null &&
+      card.parent === null &&
       card.dueAt === null &&
       card.column !== 'done' &&
       card.column !== 'abandoned',

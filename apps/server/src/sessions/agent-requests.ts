@@ -1003,12 +1003,17 @@ export class AgentRequests {
     const number = typeof value === 'number' ? value : Number(String(value).replace(/^#/, ''))
     if (!Number.isInteger(number)) throw new Refusal('Le paramètre `card` est le numéro de la carte, par exemple 12.')
     const card = this.ctx.db
-      .select({ id: cards.id, number: cards.number, title: cards.title })
+      .select({ id: cards.id, number: cards.number, title: cards.title, acceptedAt: cards.acceptedAt })
       .from(cards)
       .where(and(eq(cards.projectId, projectId), eq(cards.number, number)))
       .get()
     if (!card) throw new Refusal(`Aucune carte #${number} dans ce projet. list_cards les montre.`)
-    return card
+    if (card.acceptedAt === null) {
+      throw new Refusal(
+        `Refusé : la carte #${number} est arrivée de l'extérieur et personne ne l'a encore acceptée. Une carte non acceptée ne lance pas de session.`,
+      )
+    }
+    return { id: card.id, number: card.number, title: card.title }
   }
 
   // --- schedule_task -------------------------------------------------------------

@@ -217,20 +217,37 @@ export const cards = sqliteTable(
      */
     dueAt: timestamp('due_at'),
     /**
-     * La carte-jalon à laquelle celle-ci appartient — auto-référence, parce qu'un jalon
-     * **est** une carte : il a un nom, une date (son échéance), un endroit où écrire ce
-     * qu'il recouvre, un fil de notes et un état ouvert/fermé (sa colonne). Une table
-     * `milestones` aurait dupliqué tout cela.
+     * La carte parente : les cartes forment un arbre, et c'est la seule hiérarchie du
+     * board. Un jalon n'est pas un type, c'est une carte de haut niveau qui a une
+     * échéance et des enfants ; découper une carte, c'est lui en ajouter, sans qu'elle
+     * change de nature. Une table `milestones` aurait dupliqué ce qu'une carte porte
+     * déjà : un nom, une date, un fil de notes, un état.
      *
-     * Une colonne et non un lien typé : un jalon au plus par carte, garanti par le
-     * schéma au lieu d'une convention. Et pas de drapeau `is_milestone` : une carte est
-     * un jalon dès que quelque chose la désigne ici.
+     * Profondeur libre dans le modèle (l'interface en rend bien trois niveaux), sans
+     * cycle : la route qui rattache refuse une descendante (`cards/tree.ts`).
      *
-     * `set null` : supprimer la carte-jalon détache les siennes au lieu de les emporter.
+     * La colonne d'une carte qui a des enfants est déduite d'eux et réécrite quand l'un
+     * bouge, sauf une fois fermée : c'est une personne qui la ferme.
+     *
+     * `set null` : supprimer une parente détache ses enfants au lieu de les emporter.
+     * Anciennement `milestone_card_id` (migration 0054).
      */
-    milestoneCardId: text('milestone_card_id').references((): AnySQLiteColumn => cards.id, {
+    parentId: text('parent_id').references((): AnySQLiteColumn => cards.id, {
       onDelete: 'set null',
     }),
+    /**
+     * Date d'acceptation ; `null` pour une carte venue de l'extérieur (une issue
+     * absorbée) que personne n'a encore acceptée. Elle attend en tête de « à faire »
+     * avec la pastille « nouvelle », et ne lance pas de session. Une carte créée dans
+     * Solera est acceptée à sa création.
+     */
+    acceptedAt: timestamp('accepted_at'),
+    /**
+     * « À préciser » depuis : un état de la carte dans « à faire », pas une colonne. La
+     * session qui l'a lancée attend des réponses avant d'écrire du code. Effacé dès que
+     * la carte quitte « à faire », par quelque chemin que ce soit (`cards/moves.ts`).
+     */
+    toClarifySince: timestamp('to_clarify_since'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),
@@ -240,7 +257,7 @@ export const cards = sqliteTable(
   (t) => [
     uniqueIndex('idx_cards_project_number').on(t.projectId, t.number),
     index('idx_cards_project_column').on(t.projectId, t.column, t.position),
-    index('idx_cards_milestone').on(t.milestoneCardId),
+    index('idx_cards_parent').on(t.parentId),
   ],
 )
 

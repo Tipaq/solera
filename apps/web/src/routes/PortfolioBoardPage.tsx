@@ -21,7 +21,7 @@ import { Menu, MenuCheckboxItem, MenuLabel, cx } from '@solera/ui'
 import { AgentIcon } from '../components/AgentIcon'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { useAllCards, useMoveCard } from '../lib/cards'
+import { ancestorIds, useAllCards, useMoveCard } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import type { PortfolioCard } from '../lib/portfolio'
@@ -31,7 +31,7 @@ const COLUMNS: readonly CardColumn[] = CARD_COLUMNS.filter((column) => column !=
 
 /** Les filtres actifs vivent dans l'adresse : un board filtré se partage par lien. */
 const PROJECT_PARAM = 'projet'
-const MILESTONE_PARAM = 'jalon'
+const MILESTONE_PARAM = 'parente'
 const AGENT_PARAM = 'agent'
 
 const collisionDetection: CollisionDetection = (args) => {
@@ -107,17 +107,17 @@ export function PortfolioBoardPage() {
     setParams(next, { replace: true })
   }
 
-  /* Les jalons des cartes affichées, groupés par projet. Un jalon n'existe que parce
-     qu'une carte le désigne : la liste se lit donc dans `card.milestone`, le serveur
-     l'ayant déjà résolu en numéro et titre. */
+  /* Les parentes des cartes affichées, groupées par projet. Une parente n'existe que
+     parce qu'une carte la désigne : la liste se lit donc dans `card.parent`, le serveur
+     l'ayant déjà résolue en numéro et titre. */
   const milestones = useMemo(() => {
     const seen = new Map<string, { id: string; number: number; title: string; project: string }>()
     for (const card of cards) {
-      if (card.milestone === null) continue
-      seen.set(card.milestone.id, {
-        id: card.milestone.id,
-        number: card.milestone.number,
-        title: card.milestone.title,
+      if (card.parent === null) continue
+      seen.set(card.parent.id, {
+        id: card.parent.id,
+        number: card.parent.number,
+        title: card.parent.title,
         project: card.project.name,
       })
     }
@@ -136,7 +136,10 @@ export function PortfolioBoardPage() {
     () =>
       cards.filter((card) => {
         if (selectedProjects.length > 0 && !selectedProjects.includes(card.projectId)) return false
-        if (selectedMilestones.length > 0 && !selectedMilestones.includes(card.milestone?.id ?? '')) {
+        // Le kanban ne montre que les feuilles : une parente regroupe, elle ne se range pas.
+        if (card.children.length > 0) return false
+        // Une parente choisie retient toutes ses descendantes, pas seulement ses enfants.
+        if (selectedMilestones.length > 0 && ![...ancestorIds(cards, card)].some((id) => selectedMilestones.includes(id))) {
           return false
         }
         if (selectedAgents.length > 0) {

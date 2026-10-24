@@ -20,7 +20,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowDownUp, ChevronDown, ChevronRight, PanelRight, Plus, Search, X } from 'lucide-react'
+import { ArrowDownUp, ChevronDown, ChevronRight, ListTree, PanelRight, Plus, Search, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
@@ -30,7 +30,7 @@ import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, Menu, MenuRadioGroup, MenuRadioItem, cx } from '@solera/ui'
 import { CardRefContext } from '../lib/card-refs'
-import { useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
+import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { NEW_PARAM } from './ProjectLayout'
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
@@ -38,6 +38,9 @@ import { useProjects } from '../lib/projects'
 import { useBoardOrder } from '../lib/user-settings'
 import { useMediaQuery } from '../lib/viewport'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+
+/** Le filtre par parente, en clair dans l'adresse comme `carte`. */
+const PARENT_PARAM = 'parente'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
@@ -56,9 +59,20 @@ const ORDERINGS: Record<BoardOrder, (a: CardDto, b: CardDto) => number> = {
   oldest: (a, b) => a.columnSince - b.columnSince || a.number - b.number,
 }
 
+/**
+ * Les cartes par colonne, feuilles seulement : une carte qui a des enfants les
+ * regroupe, sa colonne se déduit d'eux, et la montrer à côté d'eux compterait deux fois
+ * le même travail. On la retrouve par le filtre, et sur la tuile de chaque enfant.
+ *
+ * Les cartes non acceptées passent en tête de « à faire » : elles attendent un tri, et
+ * c'est la première chose à faire en ouvrant le board.
+ */
 function layoutOf(cards: CardDto[], order: BoardOrder): Layout {
   const grouped: Layout = new Map(CARD_COLUMNS.map((column) => [column, []]))
-  for (const card of [...cards].sort(ORDERINGS[order])) {
+  const sorted = [...cards]
+    .filter((card) => card.children.length === 0)
+    .sort((a, b) => Number(a.acceptedAt !== null) - Number(b.acceptedAt !== null) || ORDERINGS[order](a, b))
+  for (const card of sorted) {
     grouped.get(card.column)?.push(card.id)
   }
   return grouped
@@ -117,7 +131,22 @@ export function BoardPage() {
 
   const [query, setQuery] = useState('')
   const search = query.trim().toLocaleLowerCase()
-  const matches = (card: CardDto) => matchesCard(card, search)
+  /**
+   * Le filtre par parente, dans l'adresse pour qu'un lien le garde : le kanban ne
+   * montre alors que ses descendantes, à toute profondeur.
+   */
+  const parentNumber = Number(params.get(PARENT_PARAM)) || null
+  const parentCard = parentNumber === null ? null : ((cards ?? []).find((card) => card.number === parentNumber) ?? null)
+  const under = useMemo(() => (parentCard ? descendantIds(cards ?? [], parentCard.id) : null), [cards, parentCard])
+  const parents = useMemo(() => (cards ?? []).filter((card) => card.children.length > 0).sort((a, b) => a.number - b.number), [cards])
+  const narrowed = Boolean(search) || under !== null
+  const matches = (card: CardDto) => matchesCard(card, search) && (under === null || under.has(card.id))
+  const setParentFilter = (number: number | null) => {
+    const next = new URLSearchParams(params)
+    if (number === null) next.delete(PARENT_PARAM)
+    else next.set(PARENT_PARAM, String(number))
+    setParams(next, { replace: true })
+  }
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
   /**
    * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
@@ -294,6 +323,30 @@ export function BoardPage() {
               diff, sans avoir à entrer dans une session. Les actions du projet se
               lancent de là aussi, à la racine du projet. */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {parents.length > 0 ? (
+              <Menu
+                trigger={
+                  <Button variant="ghost" size="sm" icon={<ListTree size={14} />} aria-label={t('board.parent.label')}
+                    className={cx(parentCard && 'text-accent')}>
+                    <span className="hidden max-w-40 truncate sm:inline">
+                      {parentCard ? `#${parentCard.number} ${parentCard.title}` : t('board.parent.all')}
+                    </span>
+                  </Button>
+                }
+              >
+                <MenuRadioGroup value={String(parentCard?.number ?? '')} onValueChange={(value) => setParentFilter(value ? Number(value) : null)}>
+                  <MenuRadioItem value="">{t('board.parent.all')}</MenuRadioItem>
+                  {parents.map((parent) => (
+                    <MenuRadioItem key={parent.id} value={String(parent.number)}>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{parent.number}</span>
+                        <span className="min-w-0 truncate">{parent.title}</span>
+                      </span>
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </Menu>
+            ) : null}
             <Menu
               trigger={
                 <Button variant="ghost" size="sm" icon={<ArrowDownUp size={14} />} aria-label={t('board.order.label')}>
@@ -329,7 +382,7 @@ export function BoardPage() {
             </IconButton>
           </div>
         </div>
-        {search && !(cards ?? []).some(matches) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
+        {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
         {!wide ? (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
             {CARD_COLUMNS.map((column) => {
@@ -384,7 +437,8 @@ export function BoardPage() {
                 cards={(layout.get(column) ?? [])
                   .map((id) => byId.get(id))
                   .filter((card): card is CardDto => card !== undefined && matches(card))}
-                filtered={Boolean(search)}
+                filtered={narrowed}
+                parentId={parentCard?.id}
                 projectId={projectId}
                 openNumber={openCard?.number ?? null}
                 showArrival={order !== 'manual'}
@@ -441,9 +495,12 @@ function BoardColumn({
   onOpenCard,
   filtered,
   showArrival,
+  parentId,
 }: {
   column: CardColumn
   filtered: boolean
+  /** La parente du filtre : une carte créée sous ce filtre lui est rattachée. */
+  parentId?: string
   /** Trié par arrivée : chaque tuile dit depuis quand elle est dans la colonne. */
   showArrival: boolean
   cards: CardDto[]
@@ -462,7 +519,7 @@ function BoardColumn({
   const submit = () => {
     const value = title.trim()
     if (!value || createCard.isPending) return
-    createCard.mutate({ title: value, column }, { onSuccess: (card) => { setTitle(''); setAdding(false); onOpenCard(card) } })
+    createCard.mutate({ title: value, column, parentId }, { onSuccess: (card) => { setTitle(''); setAdding(false); onOpenCard(card) } })
   }
 
   return (

@@ -493,7 +493,7 @@ const ALL_TOOLS = [
   {
     name: 'list_cards',
     description:
-      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance et son jalon compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
+      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance, sa parente et son état dans « à faire » (non acceptée, à préciser) compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -509,7 +509,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, le jalon auquel elle appartient, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, son jalon et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à deux exceptions près : tu ranges ta propre carte entre à faire, en cours et à vérifier avec move_card, et tu peux proposer tout autre déplacement avec request_card_move si cet outil t'est accordé.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, sa parente et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à deux exceptions près : tu ranges ta propre carte entre à faire, en cours et à vérifier avec move_card, et tu peux proposer tout autre déplacement avec request_card_move si cet outil t'est accordé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1941,11 +1941,14 @@ function listCards(column) {
               c.description AS description,
               c.updated_at  AS updatedAt,
               c.due_at      AS dueAt,
-              m.number      AS milestoneNumber,
-              m.title       AS milestoneTitle,
-              (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions
+              c.accepted_at AS acceptedAt,
+              c.to_clarify_since AS toClarifySince,
+              m.number      AS parentNumber,
+              m.title       AS parentTitle,
+              (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions,
+              (SELECT COUNT(*) FROM cards AS k WHERE k.parent_id = c.id) AS children
        FROM cards AS c
-       LEFT JOIN cards AS m ON m.id = c.milestone_card_id
+       LEFT JOIN cards AS m ON m.id = c.parent_id
        WHERE c.project_id = ?
          AND (? IS NULL OR c.column = ?)
        ORDER BY CASE c.column
@@ -1992,10 +1995,11 @@ function readCard(number) {
   const card = db
     .prepare(
       `SELECT c.id, c.number, c.title, c.column, c.description, c.created_at AS createdAt,
-              c.due_at AS dueAt, m.number AS milestoneNumber, m.title AS milestoneTitle,
-              m.column AS milestoneColumn, m.due_at AS milestoneDueAt
+              c.due_at AS dueAt, c.accepted_at AS acceptedAt, c.to_clarify_since AS toClarifySince,
+              m.number AS parentNumber, m.title AS parentTitle,
+              m.column AS parentColumn, m.due_at AS parentDueAt
        FROM cards AS c
-       LEFT JOIN cards AS m ON m.id = c.milestone_card_id
+       LEFT JOIN cards AS m ON m.id = c.parent_id
        WHERE c.project_id = ? AND c.number = ?`,
     )
     .get(PROJECT_ID, number)
@@ -2010,6 +2014,12 @@ function readCard(number) {
        LEFT JOIN worktrees AS w ON w.id = v.worktree_id
        WHERE v.card_id = ?
        ORDER BY v.created_at`,
+    )
+    .all(card.id)
+
+  card.children = db
+    .prepare(
+      `SELECT number, title, column FROM cards WHERE parent_id = ? ORDER BY number`,
     )
     .all(card.id)
 
@@ -2345,6 +2355,15 @@ function readSessionMessages(withId) {
   return rows
 }
 
+/** La colonne, précisée par l'état qu'une carte peut avoir dans « à faire ». */
+function cardState(card) {
+  const column = COLUMN_LABELS[card.column] ?? card.column
+  if (card.column !== 'todo') return column
+  if (card.acceptedAt === null) return `${column}, non acceptée`
+  if (card.toClarifySince) return `${column}, à préciser`
+  return column
+}
+
 function renderCards(rows, column) {
   const truncated = rows.length > CARD_LIMIT
   const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
@@ -2364,8 +2383,9 @@ function renderCards(rows, column) {
     const sessions = row.sessions > 0 ? `, ${row.sessions} session(s)` : ''
     const self = row.number === mine ? ' <- celle de cette conversation' : ''
     const due = row.dueAt ? `, échéance ${dueDate(row.dueAt)}` : ''
-    const milestone = row.milestoneNumber ? `, jalon #${row.milestoneNumber} « ${row.milestoneTitle} »` : ''
-    return `- #${row.number} [${COLUMN_LABELS[row.column] ?? row.column}] ${row.title}${due}${milestone}${sessions}${self}${summary}`
+    const parent = row.parentNumber ? `, enfant de #${row.parentNumber} « ${row.parentTitle} »` : ''
+    const children = row.children > 0 ? `, ${row.children} enfant(s)` : ''
+    return `- #${row.number} [${cardState(row)}] ${row.title}${due}${parent}${children}${sessions}${self}${summary}`
   })
 
   const head = `${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
@@ -2377,19 +2397,34 @@ function renderCards(rows, column) {
 
 function renderCard(card) {
   const parts = [
-    `#${card.number} [${COLUMN_LABELS[card.column] ?? card.column}] ${card.title}`,
+    `#${card.number} [${cardState(card)}] ${card.title}`,
   ]
 
-  // L'échéance et le jalon avant la description : ce sont deux lignes, et elles disent
-  // pour quand et pour quelle livraison avant qu'on lise ce qu'il y a à faire.
+  // L'échéance, la parente et les enfants avant la description : ce sont des lignes
+  // courtes, et elles disent pour quand et dans quel ensemble avant ce qu'il y a à faire.
   const head = []
+  if (card.acceptedAt === null) {
+    head.push("Carte venue de l'extérieur, pas encore acceptée : elle attend qu'une personne l'accepte, la rattache ou la refuse, et ne lance pas de session.")
+  }
+  if (card.toClarifySince) {
+    head.push(`À préciser depuis ${ago(card.toClarifySince)} : des questions attendent une réponse avant le code.`)
+  }
   if (card.dueAt) head.push(`Échéance : ${dueDate(card.dueAt)}.`)
-  if (card.milestoneNumber) {
-    // Un jalon est une carte : son numéro se lit par read_card comme n'importe quelle
+  if (card.parentNumber) {
+    // Une parente est une carte : son numéro se lit par read_card comme n'importe quelle
     // autre, et sa date est son échéance.
-    const when = card.milestoneDueAt ? `, pour le ${dueDate(card.milestoneDueAt)}` : ''
+    const when = card.parentDueAt ? `, pour le ${dueDate(card.parentDueAt)}` : ''
     head.push(
-      `Jalon : #${card.milestoneNumber} « ${card.milestoneTitle} » [${COLUMN_LABELS[card.milestoneColumn] ?? card.milestoneColumn}]${when}.`,
+      `Parente : #${card.parentNumber} « ${card.parentTitle} » [${COLUMN_LABELS[card.parentColumn] ?? card.parentColumn}]${when}.`,
+    )
+  }
+  if (card.children.length > 0) {
+    // La colonne d'une parente suit ses enfants : la dire ici évite qu'un agent tente
+    // de la déplacer à la main.
+    head.push(
+      `Enfants (la colonne de cette carte se déduit de la leur) :\n${card.children
+        .map((child) => `- #${child.number} [${COLUMN_LABELS[child.column] ?? child.column}] ${child.title}`)
+        .join('\n')}`,
     )
   }
   if (head.length > 0) parts.push(head.join('\n'))

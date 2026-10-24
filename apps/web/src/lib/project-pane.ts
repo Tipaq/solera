@@ -129,7 +129,7 @@ export function toReviewCount(cards: CardDto[] | undefined): number {
  */
 export function projectOverview(cards: CardDto[], current: CardDto | null, now = Date.now()) {
   const shown = new Set<string>(current ? [current.id] : [])
-  const around: { relation: 'milestone' | 'blockedBy' | 'blocks' | 'references' | 'referencedBy'; card: CardDto }[] = []
+  const around: { relation: 'parent' | 'children' | 'blockedBy' | 'blocks' | 'references' | 'referencedBy'; card: CardDto }[] = []
   if (current) {
     const byId = new Map(cards.map((card) => [card.id, card]))
     const add = (relation: (typeof around)[number]['relation'], id: string) => {
@@ -138,7 +138,8 @@ export function projectOverview(cards: CardDto[], current: CardDto | null, now =
       shown.add(id)
       around.push({ relation, card })
     }
-    if (current.milestone) add('milestone', current.milestone.id)
+    if (current.parent) add('parent', current.parent.id)
+    for (const link of current.children) add('children', link.id)
     for (const link of current.blockedBy) add('blockedBy', link.id)
     for (const link of current.blocks) add('blocks', link.id)
     for (const link of current.references) add('references', link.id)

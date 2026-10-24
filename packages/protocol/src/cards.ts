@@ -43,6 +43,8 @@ export const createCardBodySchema = z.object({
   title: z.string().min(1).max(TITLE_MAX),
   description: z.string().max(DESCRIPTION_MAX).default(''),
   column: cardColumnSchema.default('todo'),
+  /** La parente, pour découper une carte : lui ajouter un enfant. */
+  parentId: z.string().uuid().optional(),
 })
 
 export const updateCardBodySchema = z
@@ -55,10 +57,49 @@ export const updateCardBodySchema = z
      * est un choix qui s'écrit, alors que l'absence de clé veut dire « n'y touche pas ».
      */
     dueAt: z.number().int().nullable(),
-    /** Carte-jalon à laquelle celle-ci se rattache, ou `null` pour l'en détacher. */
-    milestoneCardId: z.string().uuid().nullable(),
+    /** Carte parente à laquelle celle-ci se rattache, ou `null` pour l'en détacher. */
+    parentId: z.string().uuid().nullable(),
+    /**
+     * Pose ou lève l'état « à préciser ». Le poser ramène la carte dans « à faire » :
+     * c'est un état de cette colonne, pas une colonne de plus.
+     */
+    toClarify: z.boolean(),
   })
   .partial()
+
+/**
+ * Accepte une carte venue de l'extérieur. Avec `parentId`, c'est le geste
+ * « Rattacher à une carte » : elle est acceptée et rangée sous cette parente d'un coup.
+ */
+export const acceptCardBodySchema = z.object({
+  parentId: z.string().uuid().optional(),
+})
+
+/**
+ * La colonne d'une carte parente, déduite de celles de ses enfants.
+ *
+ * « En cours » dès qu'un enfant a commencé, terminé compris : le travail est entamé.
+ * « À faire » tant qu'aucun n'a bougé. Jamais « terminé » : quand tous les enfants
+ * sont fermés, le passage est proposé (`parentCloseProposed`), et c'est une personne
+ * qui ferme. Jamais « en relecture » non plus : une parente ne se relit pas, ce sont
+ * ses enfants qui ont des PR.
+ *
+ * Ne s'applique qu'à une parente encore ouverte ; une fois fermée, elle ne se rouvre
+ * pas seule parce qu'un enfant a bougé.
+ */
+export function deriveParentColumn(children: readonly CardColumn[]): CardColumn {
+  return children.some((column) => column !== 'todo' && column !== 'abandoned') ? 'in_progress' : 'todo'
+}
+
+/** Tous les enfants sont fermés, au moins un livré, et la parente pas encore close. */
+export function parentCloseProposed(card: { column: CardColumn; children: readonly { column: CardColumn }[] }): boolean {
+  return (
+    !CARD_CLOSED_COLUMNS.includes(card.column) &&
+    card.children.length > 0 &&
+    card.children.every((child) => CARD_CLOSED_COLUMNS.includes(child.column)) &&
+    card.children.some((child) => child.column === 'done')
+  )
+}
 
 /**
  * Pose ou retire un lien « bloque » entre deux cartes du même projet.
@@ -170,11 +211,19 @@ export interface CardDto {
   /** Échéance choisie, `null` tant que personne n'en a posé — et c'est la norme. */
   dueAt: number | null
   /**
-   * La carte-jalon à laquelle celle-ci se rattache. Un jalon est une carte ordinaire :
-   * sa date est son échéance, son état est sa colonne, et rien ne la distingue sinon
-   * d'être désignée ici.
+   * La carte parente. Un jalon n'est pas un type : c'est une carte de haut niveau, qui
+   * a une échéance et des enfants.
    */
-  milestone: CardLinkDto | null
+  parent: CardLinkDto | null
+  /**
+   * Les enfants directs, par numéro. Une carte qui en a sert de regroupement : le
+   * kanban ne la montre pas, et sa colonne se déduit d'eux (`deriveParentColumn`).
+   */
+  children: CardLinkDto[]
+  /** `null` : venue de l'extérieur et pas encore acceptée. Elle ne lance pas de session. */
+  acceptedAt: number | null
+  /** « À préciser » depuis cette date, ou `null`. Ne se pose qu'en « à faire ». */
+  toClarifySince: number | null
   createdBy: string
   createdByName: string
   createdAt: number
