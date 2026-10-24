@@ -79,8 +79,10 @@ export function ProjectLayout() {
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
 
   /* Les cartes **ouvertes**, pas l'inventaire : « 9 » doit dire ce qui reste à faire,
-     et compter le cimetière ferait monter le nombre à mesure qu'on avance. */
-  const openCards = (cards ?? []).filter((card) => !CARD_CLOSED_COLUMNS.includes(card.column))
+     et compter le cimetière ferait monter le nombre à mesure qu'on avance. Les feuilles
+     seulement, comme le kanban : une parente compterait deux fois le travail de ses
+     enfants. */
+  const openCards = (cards ?? []).filter((card) => card.children.length === 0 && !CARD_CLOSED_COLUMNS.includes(card.column))
   const tasks = (schedules ?? []).filter((task) => task.projectId === projectId)
 
   const tabs: ViewTab[] = [

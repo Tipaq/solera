@@ -1,13 +1,13 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CalendarDays, CheckSquare, Clock, Flag, GitBranch, GripVertical, Link2, MessageSquare, Paperclip } from 'lucide-react'
+import { CalendarDays, CheckSquare, Clock, GitBranch, GripVertical, Link2, ListTree, MessageSquare, Paperclip } from 'lucide-react'
 import { parseSubtasks, type CardDto, type ProjectDto } from '@solera/protocol'
 import type { KeyboardEventHandler, MouseEventHandler, TouchEventHandler } from 'react'
 import { daysUntil, formatDay, relativeDate, shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectAvatar } from '../ProjectAvatar'
-import { cx } from '@solera/ui'
+import { Badge, cx } from '@solera/ui'
 
 /** Ce qui tient sous le titre sans transformer la tuile en fiche. */
 const EXCERPT_MAX = 120
@@ -71,6 +71,14 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
         <p className="min-w-0 flex-1 text-sm font-semibold leading-relaxed text-ink">{card.title}</p>
       </div>
 
+      {/* Les deux états de « à faire », qui ne sont pas des colonnes : une carte venue
+          de l'extérieur attend qu'on la trie, une carte à préciser attend des réponses. */}
+      {card.column === 'todo' && card.acceptedAt === null ? (
+        <div className="mt-1.5"><Badge tone="accent">{t('board.card.new.badge')}</Badge></div>
+      ) : card.column === 'todo' && card.toClarifySince !== null ? (
+        <div className="mt-1.5"><Badge tone="caution">{t('board.card.toClarify')}</Badge></div>
+      ) : null}
+
       {/* Le nom du projet **remplace** l'extrait : sur un board qui en mêle cinq, savoir
           d'où sort la carte prime sur ses deux premières lignes, et empiler les deux
           doublerait la hauteur de chaque tuile. */}
@@ -82,7 +90,7 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
         </p>
       ) : null}
 
-      {card.dueAt !== null || card.milestone || subtasks.length > 0 ? (
+      {card.dueAt !== null || card.parent || subtasks.length > 0 ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-ink-faint">
           {card.dueAt !== null && days !== null ? (
             <span
@@ -97,10 +105,10 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
               {formatDay(card.dueAt)}
             </span>
           ) : null}
-          {card.milestone ? (
-            <span className="inline-flex min-w-0 items-center gap-1" title={card.milestone.title}>
-              <Flag size={11} className="shrink-0" />
-              <span className="max-w-28 truncate">{card.milestone.title}</span>
+          {card.parent ? (
+            <span className="inline-flex min-w-0 items-center gap-1" title={card.parent.title}>
+              <ListTree size={11} className="shrink-0" />
+              <span className="max-w-28 truncate">{card.parent.title}</span>
             </span>
           ) : null}
           {subtasks.length > 0 ? (

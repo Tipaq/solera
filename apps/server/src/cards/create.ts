@@ -4,6 +4,7 @@ import { cardRefs, cards, writeTransaction, type CardRow, type Db } from '@soler
 import { parseCardReferences, type CardColumn } from '@solera/protocol'
 import type { AppContext } from '../http/context.js'
 import { recordCardMove } from './moves.js'
+import { resolveParent, syncParentColumn } from './tree.js'
 
 /**
  * Passe une carte de `todo` à `in_progress` au lancement de sa première session.
@@ -42,10 +43,27 @@ export function createCard(
   projectId: string,
   userId: string,
   body: { title: string; description: string; column: CardColumn },
+  options: CreateCardOptions = {},
 ): CardRow {
-  const row = insertCard(db, projectId, userId, body)
+  const parentId = options.parentId ? resolveParent(db, { id: '', projectId }, options.parentId) : null
+  const row = insertCard(db, projectId, userId, body, { ...options, parentId })
   syncCardReferences(db, row, row.description)
+  // Un enfant né ailleurs qu'en « à faire » fait peut-être démarrer sa parente.
+  syncParentColumn(db, parentId, { userId, conversationId: options.conversationId })
   return row
+}
+
+export interface CreateCardOptions {
+  /** La parente, du même projet. Vérifiée comme un rattachement fait à la main. */
+  parentId?: string | null
+  /**
+   * Vrai par défaut : une carte créée dans Solera, par une personne ou une session, est
+   * acceptée en naissant. Faux pour une entrée venue de l'extérieur (une issue absorbée),
+   * qui attend en tête de « à faire » qu'on l'accepte, la rattache ou la refuse.
+   */
+  accepted?: boolean
+  /** La session qui crée, quand c'en est une, pour le mouvement éventuel de la parente. */
+  conversationId?: string
 }
 
 function insertCard(
@@ -53,6 +71,7 @@ function insertCard(
   projectId: string,
   userId: string,
   body: { title: string; description: string; column: CardColumn },
+  options: CreateCardOptions & { parentId: string | null },
 ): CardRow {
   const now = Date.now()
   // Numéro et position se calculent dans la transaction qui insère : deux créations
@@ -79,11 +98,12 @@ function insertCard(
       // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
       // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
       position: (last?.position ?? 0) + 1,
-      // Ni échéance ni jalon à la création : une carte ouverte par un agent pour noter
-      // ce qu'il a croisé n'a pas de date à proposer, et les deux se posent à la main
-      // depuis le panneau.
+      // Pas d'échéance à la création : une carte ouverte par un agent pour noter ce
+      // qu'il a croisé n'a pas de date à proposer, elle se pose à la main.
       dueAt: null,
-      milestoneCardId: null,
+      parentId: options.parentId,
+      acceptedAt: options.accepted === false ? null : now,
+      toClarifySince: null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,

@@ -164,13 +164,21 @@ test('start_session links a card and moves it to in progress', async (t) => {
   conversation('parent')
   db.insert(cards).values({
     id: 'card', projectId: 'project', number: 7, title: 'Bug', description: '', column: 'todo',
-    position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1,
+    position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1, acceptedAt: 1,
   }).run()
+  // Une carte venue de l'extérieur et pas encore acceptée ne lance rien.
+  db.insert(cards).values({
+    id: 'incoming', projectId: 'project', number: 8, title: 'Issue', description: '', column: 'todo',
+    position: 2, createdBy: 'owner', createdAt: 1, updatedAt: 1, acceptedAt: null,
+  }).run()
+  const refused = await mcp('parent', 'start_session', { prompt: 'Traiter la carte.', card: 8 })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0]!.text, /non acceptée ne lance pas de session/)
 
   const result = await mcp('parent', 'start_session', { prompt: 'Traiter la carte.', card: 7 })
   assert.match(result.content[0]!.text, /carte #7/)
-  assert.equal(db.select().from(cards).get()?.column, 'in_progress')
-  const request = db.select().from(agentRequests).get()!
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'card')).get()?.column, 'in_progress')
+  const request = db.select().from(agentRequests).all().find((row) => row.launchedConversationId)!
   assert.equal(db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()?.cardId, 'card')
 })
 

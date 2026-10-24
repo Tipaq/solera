@@ -22,19 +22,19 @@ function session(id: string, title: string, agent: CardConversationDto['agent'],
 function card(number: number, title: string, column: CardDto['column'], extra: Partial<CardDto> = {}): CardDto {
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
-    dueAt: null, milestone: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
+    dueAt: null, parent: null, children: [], acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
     conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [],
     ...extra,
   }
 }
 
-const milestone = card(42, 'Gestion de projet', 'in_progress')
-const fils = card(21, 'Cliquer « Fils » devrait ouvrir une conversation neuve', 'todo')
+const parent = card(42, 'Gestion de projet', 'in_progress')
+const fils = card(21, 'Cliquer « Fils » devrait ouvrir une conversation neuve', 'todo', { toClarifySince: now - DAY })
 const gitView = card(29, 'Développer la vue Git du panneau', 'done', { columnSince: now - 2 * DAY })
 
 export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session', 'in_progress', {
   description: 'La carte qu’une session traite n’était qu’une puce `#27` dans le bandeau, et la suivre renvoyait au board — donc hors de la session.\n\n- [x] Rebaser `wip/carte-panneau` sur main\n- [x] typecheck, lint, board-ui\n- [ ] Élargir l’onglet aux tâches du projet\n- [ ] Stories de CardDetail et ProjectPane',
-  milestone: link(milestone),
+  parent: link(parent),
   blocks: [link(fils)],
   referencedBy: [link(gitView)],
   noteCount: 1,
@@ -45,7 +45,7 @@ export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session'
 })
 
 export const CARDS: CardDto[] = [
-  CURRENT, milestone, fils, gitView,
+  { ...parent, children: [link(CURRENT), link(fils)] }, CURRENT, fils, gitView,
   card(57, 'Vue Git : trois dettes relevées à la relecture du lot 4', 'review', {
     conversations: [session('c-57', 'Lot 4 : trois dettes', 'codex', 'idle', DAY)],
   }),
@@ -54,7 +54,7 @@ export const CARDS: CardDto[] = [
   }),
   card(19, 'Porter le contexte Savoir', 'in_progress'),
   card(40, 'Dire toujours quelle branche le serveur de dev sert', 'todo'),
-  card(41, 'Un CLI introuvable tue le tir en silence', 'todo'),
+  card(41, 'Un CLI introuvable tue le tir en silence', 'todo', { acceptedAt: null }),
   card(56, 'Les modales ouvrent une infobulle qu’on n’a pas demandée', 'todo'),
   card(9, 'Réparer schedule-ui-check', 'done', { columnSince: now - 30 * DAY, updatedAt: now - DAY }),
 ]

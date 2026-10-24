@@ -59,7 +59,7 @@ import {
   workingDirectoryMissing,
 } from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { assertCardInProject, readCardLink } from './cards.js'
+import { assertCardAccepted, assertCardInProject, readCardLink } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -324,7 +324,10 @@ export function registerConversationRoutes(
     }
 
     if (body.worktreeId) assertWorktreeBelongs(ctx, id, body.worktreeId)
-    if (body.cardId) assertCardInProject(ctx, body.cardId, id)
+    if (body.cardId) {
+      assertCardInProject(ctx, body.cardId, id)
+      assertCardAccepted(ctx, body.cardId)
+    }
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.

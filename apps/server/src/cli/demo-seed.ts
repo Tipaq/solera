@@ -676,15 +676,21 @@ async function main(): Promise<void> {
     { number: 8, title: 'Switch to Vite 6', column: 'done', position: 1, description: 'Migration went through with no config change beyond the plugin bump.' },
     { number: 9, title: 'Android home-screen widget', column: 'abandoned', position: 0, description: 'Superseded by the PWA shortcut work; keeping the notes for reference.' },
     /*
-      Deux cartes-jalons. Un jalon **est** une carte (carte #32) : il n'a ni table ni
-      drapeau, et n'existe que parce que d'autres cartes le désignent — d'où
-      `milestoneOf` plus bas, qui fait la désignation. Sans elles, la chronologie et le
+      Deux cartes-jalons. Un jalon n'est pas un type (carte #83) : c'est une carte qui a
+      des enfants, désignés par `milestoneOf` plus bas. Sans elles, la chronologie et le
       jalon courant de l'Aperçu n'auraient rien à montrer, et les suites qui les
       couvrent ne vérifieraient qu'un état vide.
     */
     { number: 11, title: 'v1.2 — offline et radar', column: 'in_progress', position: 1, description: 'Ce que la version 1.2 recouvre : le cache hors ligne et les performances du radar.' },
     { number: 12, title: 'v1.1 — la mise en route', column: 'done', position: 2, description: 'Premier jet livré : accueil, choix de ville, unités.' },
+    // Une issue entrée de l'extérieur, que personne n'a encore triée (`incoming`).
+    { number: 13, title: 'Forecast shows yesterday after midnight', column: 'todo', position: 5, description: 'Reported on the issue tracker: between midnight and 1am the forecast still shows the previous day.' },
   ] as const
+
+  /** Non acceptée : arrivée de l'extérieur, en tête de « à faire » avec sa pastille. */
+  const incoming = new Set([13])
+  /** À préciser : la session a posé ses questions et attend. */
+  const toClarify = new Set([6])
 
   /*
     Les échéances, en jours depuis aujourd'hui. Négatif = dépassé, et il en faut un :
@@ -700,7 +706,7 @@ async function main(): Promise<void> {
     [12, -11],
   ])
 
-  /** Quelle carte-jalon chaque carte désigne. Les autres n'en désignent aucune. */
+  /** La parente de chaque carte. Les autres n'en ont pas. */
   const milestoneOf = new Map<number, number>([
     [2, 11],
     [4, 11],
@@ -723,6 +729,8 @@ async function main(): Promise<void> {
       position: row.position,
       createdBy: userId,
       dueAt: dueIn.has(row.number) ? MIDNIGHT + dueIn.get(row.number)! * 86400e3 : null,
+      acceptedAt: incoming.has(row.number) ? null : now - (16 - row.number) * 86400e3,
+      toClarifySince: toClarify.has(row.number) ? now - 3 * 3600e3 : null,
       createdAt: now - (16 - row.number) * 86400e3,
       updatedAt: now - 86400e3,
     })
@@ -733,7 +741,7 @@ async function main(): Promise<void> {
   for (const [number, milestone] of milestoneOf) {
     await db
       .update(cards)
-      .set({ milestoneCardId: cardIds.get(milestone)! })
+      .set({ parentId: cardIds.get(milestone)! })
       .where(eq(cards.id, cardIds.get(number)!))
   }
   // Le backlink de la description de la carte 10, qui cite #2.
@@ -782,13 +790,14 @@ async function main(): Promise<void> {
       column: row.column,
       position: row.position,
       createdBy: userId,
+      acceptedAt: now - (9 - row.number) * 86400e3,
       createdAt: now - (9 - row.number) * 86400e3,
       updatedAt: now - 2 * 86400e3,
     })
   }
   await db
     .update(cards)
-    .set({ milestoneCardId: atlasIds.get(4)! })
+    .set({ parentId: atlasIds.get(4)! })
     .where(eq(cards.id, atlasIds.get(1)!))
 
   // ---- Conversations ----------------------------------------------------------

@@ -83,7 +83,7 @@ export function useCardSearch(query: string, enabled: boolean) {
 export function useCreateCard(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { title: string; description?: string; column?: CardColumn }) =>
+    mutationFn: (input: { title: string; description?: string; column?: CardColumn; parentId?: string }) =>
       api.post<CardDto>(`/api/projects/${projectId}/cards`, input),
     onSuccess: (card) => {
       // Posée dans la liste avant la relecture : qui crée une carte l'ouvre dans la
@@ -109,9 +109,24 @@ export function useUpdateCard(projectId: string) {
       column?: CardColumn
       /** `null` enlève l'échéance ; absent la laisse telle quelle. */
       dueAt?: number | null
-      /** `null` détache la carte de son jalon. */
-      milestoneCardId?: string | null
+      /** `null` détache la carte de sa parente. */
+      parentId?: string | null
+      /** Pose ou lève l'état « à préciser » ; le poser ramène la carte en « à faire ». */
+      toClarify?: boolean
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+/**
+ * Le tri d'une carte venue de l'extérieur : l'accepter, la rattacher à une parente (ce
+ * qui l'accepte aussi), ou la refuser.
+ */
+export function useTriageCard(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, action, parentId }: { id: string; action: 'accept' | 'refuse'; parentId?: string }) =>
+      api.post<CardDto>(`/api/cards/${id}/${action}`, action === 'accept' && parentId ? { parentId } : {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }
@@ -309,4 +324,37 @@ export function useDeleteCardNote(projectId: string, cardId: string) {
       void queryClient.invalidateQueries({ queryKey: cardsKey(projectId) })
     },
   })
+}
+
+/**
+ * Les descendantes d'une carte, d'après la liste chargée : ce qu'on ne peut pas lui
+ * donner pour parente, et ce que le filtre du board montre quand on la choisit.
+ */
+export function descendantIds(cards: readonly CardDto[], id: string): Set<string> {
+  const byParent = new Map<string, string[]>()
+  for (const card of cards) {
+    if (!card.parent) continue
+    byParent.set(card.parent.id, [...(byParent.get(card.parent.id) ?? []), card.id])
+  }
+  const found = new Set<string>()
+  const pending = [...(byParent.get(id) ?? [])]
+  while (pending.length > 0) {
+    const next = pending.pop()!
+    if (found.has(next)) continue
+    found.add(next)
+    pending.push(...(byParent.get(next) ?? []))
+  }
+  return found
+}
+
+/** Les ancêtres d'une carte, de sa parente à la racine. */
+export function ancestorIds(cards: readonly CardDto[], card: CardDto): Set<string> {
+  const byId = new Map(cards.map((entry) => [entry.id, entry]))
+  const found = new Set<string>()
+  let cursor = card.parent?.id
+  while (cursor && !found.has(cursor)) {
+    found.add(cursor)
+    cursor = byId.get(cursor)?.parent?.id
+  }
+  return found
 }

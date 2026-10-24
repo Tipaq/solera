@@ -79,6 +79,8 @@ try {
   const hero = conversations.find((entry) => entry.title === 'Add offline caching for forecasts')
   const cards = await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json()
   const card = cards.find((entry) => entry.number === 2)
+  // Le kanban ne montre que les feuilles : les parentes (#11, #12) regroupent.
+  const leaves = cards.filter((entry) => entry.children.length === 0)
   const board = `${base}/p/${project.id}/board`
   const page = await context.newPage()
   const errors = []
@@ -150,16 +152,16 @@ try {
   await panel.getByRole('button', { name: 'Ajouter une note', exact: true }).click()
   await panel.getByText('Les documents de référence sont joints à la carte.', { exact: true }).waitFor()
 
-  // Les champs de la carte #36 : l'échéance, le jalon, les sous-tâches du markdown et
+  // Les champs de la carte #36 : l'échéance, la parente, les sous-tâches du markdown et
   // les liens « bloque ». Dans les propriétés de la fiche, qui disent ce qui est prévu,
   // et non dans son fil, qui raconte ce qui s'est passé.
   await panel.getByLabel('Échéance', { exact: true }).fill('2026-12-01')
   await page.waitForResponse((response) => response.url().endsWith(`/api/cards/${created.id}`))
-  await panel.getByRole('button', { name: 'Choisir un jalon', exact: true }).click()
-  const milestones = page.getByRole('dialog', { name: 'Choisir un jalon', exact: true })
-  await milestones.getByPlaceholder('Chercher une carte').fill('2')
-  await milestones.getByRole('button', { name: /^#2 / }).click()
-  await panel.getByRole('button', { name: 'Détacher de ce jalon', exact: true }).waitFor()
+  await panel.getByRole('button', { name: 'Choisir une parente', exact: true }).click()
+  const parents = page.getByRole('dialog', { name: 'Choisir une parente', exact: true })
+  await parents.getByPlaceholder('Chercher une carte').fill('11')
+  await parents.getByRole('button', { name: /^#11 / }).click()
+  await panel.getByRole('button', { name: 'Détacher de cette parente', exact: true }).waitFor()
 
   // Cocher réécrit la description : la case n'a pas de table, c'est une ligne du texte.
   await editCard(page, panel)
@@ -174,7 +176,7 @@ try {
     .find((entry) => entry.id === created.id)
   assert.match(ticked.description, /- \[x\] Lister les écrans/)
   assert.equal(ticked.dueAt !== null, true)
-  assert.equal(ticked.milestone.number, 2)
+  assert.equal(ticked.parent.number, 11)
 
   // Un lien posé à la main, à côté des citations `#12` et sous son propre nom.
   await panel.getByRole('button', { name: 'Déclarer une carte bloquée', exact: true }).click()
@@ -185,7 +187,7 @@ try {
   const blocking = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
     .find((entry) => entry.number === 1)
   assert.deepEqual(blocking.blockedBy.map((link) => link.number), [number])
-  // Capture depuis le haut du panneau : l'échéance et le jalon s'y lisent avant la
+  // Capture depuis le haut du panneau : l'échéance et la parente s'y lisent avant la
   // description, et c'est ce placement-là qu'on vérifie.
   await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-champs-desktop.png') })
@@ -261,7 +263,51 @@ try {
   await page.keyboard.press('Space')
   assert.ok((await reordered).ok())
   await page.waitForTimeout(300)
-  assert.equal(await page.locator('[data-card-open]').count(), cards.length + 1)
+  assert.equal(await page.locator('[data-card-open]').count(), leaves.length + 1)
+
+  // L'arbre de cartes (#83). Une issue entrée de l'extérieur attend en tête de « à faire »,
+  // avec sa pastille, et ne lance pas de session tant qu'on ne l'a pas acceptée.
+  const todo = page.getByRole('region', { name: 'À faire', exact: true })
+  assert.equal(await todo.locator('[data-card-tile]').first().getAttribute('data-card-tile'), '13')
+  const incoming = todo.locator('[data-card-tile="13"]')
+  await incoming.getByText('nouvelle', { exact: true }).waitFor()
+  await todo.locator('[data-card-tile="6"]').getByText('à préciser', { exact: true }).waitFor()
+  await incoming.scrollIntoViewIfNeeded()
+  await todo.screenshot({ animations: 'disabled', path: join(shots, 'board-todo-states.png') })
+  await incoming.locator('[data-card-open]').click()
+  await panel.getByRole('button', { name: 'Accepter', exact: true }).waitFor()
+  assert.equal(await panel.getByRole('button', { name: 'Session', exact: true }).isDisabled(), true, 'Une carte non acceptée ne lance pas de session')
+  await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-incoming.png') })
+  const accepted = page.waitForResponse((response) => response.url().endsWith('/accept'))
+  await panel.getByRole('button', { name: 'Accepter', exact: true }).click()
+  assert.ok((await accepted).ok())
+  await panel.getByRole('button', { name: 'Accepter', exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await panel.getByRole('button', { name: 'Session', exact: true }).isEnabled(), true)
+  await incoming.getByText('nouvelle', { exact: true }).waitFor({ state: 'detached' })
+
+  // Une parente : ses enfants dans la fiche, sa colonne déduite, et le filtre du board.
+  await page.goto(`${board}?carte=11`)
+  await panel.getByRole('heading', { name: /^v1\.2/ }).waitFor()
+  const children = panel.getByRole('heading', { name: 'Enfants', exact: true }).locator('xpath=../..')
+  for (const child of [2, 4, 10, number]) await children.getByRole('button', { name: new RegExp(`^#${child} `) }).waitFor()
+  await panel.getByRole('button', { name: /^Changer la colonne/ }).click()
+  await page.getByText('Colonne déduite des enfants', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-parent.png') })
+  await page.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await panel.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Filtrer par parente', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: /#11/ }).click()
+  await page.waitForFunction(() => new URL(location.href).searchParams.get('parente') === '11')
+  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, 4)
+  for (const child of [2, 4, 10, number]) await page.locator(`[data-card-tile="${child}"]`).waitFor()
+  assert.equal(await page.getByRole('button', { name: /^Déplacer la carte/ }).count(), 0, 'Un board filtré ne réordonne pas des colonnes partielles')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-parent-filter.png') })
+  await page.getByRole('button', { name: 'Filtrer par parente', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Toutes les cartes', exact: true }).click()
+  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, leaves.length + 1)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-desktop.png') })
   await page.locator(`[data-card-open="${created.id}"]`).click()
   await editCard(page, panel)
@@ -294,7 +340,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, jalon, sous-tâches, lien « bloque », référence #n et aperçu, tiroir refermé à côté, glisser par la carte, ordre par arrivée, recherche, clavier et mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, lien « bloque », référence #n et aperçu, tiroir refermé à côté, glisser par la carte, ordre par arrivée, recherche, clavier, carte non acceptée et à préciser, parente et filtre, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

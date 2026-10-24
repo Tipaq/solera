@@ -44,7 +44,7 @@ export function ProjectTimelinePage() {
     () =>
       (cards ?? []).filter(
         (card) =>
-          card.milestone === null &&
+          card.parent === null &&
           card.dueAt !== null &&
           card.column !== 'abandoned' &&
           // Une carte-jalon a sa propre ligne : la remettre en barre la dirait deux fois.

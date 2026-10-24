@@ -20,6 +20,7 @@ import {
 } from '@solera/db'
 import {
   MAX_ATTACHMENT_BYTES,
+  acceptCardBodySchema,
   cardBlockBodySchema,
   createCardBodySchema,
   createCardNoteBodySchema,
@@ -36,6 +37,7 @@ import {
 } from '@solera/protocol'
 import { createCard, syncCardReferences } from '../../cards/create.js'
 import { recordCardMove } from '../../cards/moves.js'
+import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -49,12 +51,9 @@ const SEARCH_LIMIT = 20
  * Le board : les cartes d'un projet, c'est-à-dire le travail à faire, distinct des
  * conversations qui l'exécutent.
  *
- * Ce fichier ne dérive rien. La colonne d'une carte est une position choisie, écrite
- * par un geste et par lui seul ; l'activité se lit sur les conversations rattachées et
- * l'état de merge dans git, tous deux hors de cette table. Une seule transition
- * automatique existe dans tout le chantier, `todo` vers `in_progress` au lancement
- * d'une session, et elle vit dans la route de création de conversation parce que c'est
- * l'envoi du message qui la déclenche, pas l'observation d'une session active.
+ * La colonne d'une feuille est une position choisie, écrite par un geste ; celle d'une
+ * carte qui a des enfants se déduit d'eux (`cards/tree.ts`). L'activité se lit sur les
+ * conversations rattachées et l'état de merge dans git, tous deux hors de cette table.
  */
 export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store: AttachmentStore): void {
   const loadProject = (projectId: string, userId: string): ProjectRow => {
@@ -70,27 +69,6 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const card = ctx.db.select().from(cards).where(eq(cards.id, cardId)).get()
     if (!card) throw notFound('card_not_found', 'Card not found.')
     return { card, project: loadProject(card.projectId, userId) }
-  }
-
-  /**
-   * Vérifie qu'une carte peut servir de jalon à une autre.
-   *
-   * Même projet, et pas elle-même : un jalon est une carte ordinaire, mais une carte
-   * qui serait son propre jalon ne dirait rien et se rendrait en boucle. Deux niveaux
-   * (une carte-jalon qui a elle-même un jalon) restent permis — c'est une v0.2 dans
-   * une v1.0, et le panneau n'en rend qu'un.
-   */
-  const resolveMilestone = (milestoneCardId: string, card: CardRow): string => {
-    if (milestoneCardId === card.id) {
-      throw badRequest('card_milestone_self', 'A card cannot be its own milestone.')
-    }
-    const row = ctx.db
-      .select({ id: cards.id })
-      .from(cards)
-      .where(and(eq(cards.id, milestoneCardId), eq(cards.projectId, card.projectId)))
-      .get()
-    if (!row) throw notFound('card_not_found', 'Card not found.')
-    return row.id
   }
 
   /**
@@ -224,22 +202,31 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const blocks = group(blocking, (row) => row.sourceId)
     const blockedBy = group(blockedByRows, (row) => row.targetId)
 
-    // Les cartes-jalons désignées par ce lot, lues en un coup : un jalon est une carte
-    // du même projet, donc souvent déjà dans `rows`, mais pas toujours — le board
-    // replie ses colonnes de sortie et un jalon livré y tombe.
-    const milestoneIds = [
-      ...new Set(rows.map((row) => row.milestoneCardId).filter((id): id is string => id !== null)),
-    ]
-    const milestones = new Map(
-      (milestoneIds.length === 0
+    // Parentes et enfants lus en deux coups, hors de `rows` : le board ne charge pas
+    // toujours tout, et une parente livrée tombe dans les colonnes repliées.
+    const parentIds = [...new Set(rows.map((row) => row.parentId).filter((id): id is string => id !== null))]
+    const parents = new Map(
+      (parentIds.length === 0
         ? []
         : ctx.db
             .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
             .from(cards)
-            .where(inArray(cards.id, milestoneIds))
+            .where(inArray(cards.id, parentIds))
             .all()
       ).map((row) => [row.id, row satisfies CardLinkDto]),
     )
+    const offspring = new Map<string, CardLinkDto[]>()
+    for (const row of ctx.db
+      .select({ parentId: cards.parentId, id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+      .from(cards)
+      .where(inArray(cards.parentId, ids))
+      .orderBy(cards.number)
+      .all()) {
+      if (!row.parentId) continue
+      const bucket = offspring.get(row.parentId) ?? []
+      bucket.push({ id: row.id, number: row.number, title: row.title, column: row.column })
+      offspring.set(row.parentId, bucket)
+    }
 
     const notes = new Map(
       ctx.db
@@ -291,7 +278,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       column: row.column,
       position: row.position,
       dueAt: row.dueAt,
-      milestone: row.milestoneCardId ? (milestones.get(row.milestoneCardId) ?? null) : null,
+      parent: row.parentId ? (parents.get(row.parentId) ?? null) : null,
+      children: offspring.get(row.id) ?? [],
+      acceptedAt: row.acceptedAt,
+      toClarifySince: row.toClarifySince,
       createdBy: row.createdBy,
       createdByName: authors.get(row.createdBy) ?? '',
       createdAt: row.createdAt,
@@ -416,7 +406,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const row = createCard(ctx.db, id, user.id, body)
+    const { parentId, ...fields } = body
+    const row = createCard(ctx.db, id, user.id, fields, { parentId })
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -426,13 +417,14 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = updateCardBodySchema.parse(request.body)
     const { card } = loadCard(id, user.id)
 
+    // Le rattachement se vérifie avant toute écriture : un cycle refusé ne doit pas
+    // laisser derrière lui un titre à moitié enregistré.
+    if (body.parentId) resolveParent(ctx.db, card, body.parentId)
+
     const patch: Partial<typeof cards.$inferInsert> = {}
     if (body.title !== undefined) patch.title = body.title
     if (body.description !== undefined) patch.description = body.description
     if (body.dueAt !== undefined) patch.dueAt = body.dueAt
-    if (body.milestoneCardId !== undefined) {
-      patch.milestoneCardId = body.milestoneCardId === null ? null : resolveMilestone(body.milestoneCardId, card)
-    }
     if (body.column !== undefined && body.column !== card.column) {
       patch.column = body.column
       // Changer de colonne depuis le détail place la carte en fin de la nouvelle,
@@ -452,8 +444,69 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     if (patch.column) {
       recordCardMove(ctx.db, { cardId: id, from: card.column, to: patch.column, userId: user.id })
     }
+    if (body.parentId !== undefined) setCardParent(ctx.db, card, body.parentId, { userId: user.id })
+    // Une parente ouverte ne garde pas une colonne choisie à la main : la rouvrir, ou la
+    // poser ailleurs qu'en fermé, revient à la colonne que ses enfants disent. La fermer
+    // reste un geste, celui que `parentCloseProposed` propose.
+    if (patch.column) syncOwnColumn(id, user.id)
+    if (body.toClarify !== undefined) setToClarify(ctx.db, id, body.toClarify, { userId: user.id })
     if (body.description !== undefined) syncCardReferences(ctx.db, card, body.description)
 
+    return readCard(id, card.projectId)
+  })
+
+  /** La colonne d'une carte qui a des enfants, recalculée depuis eux après un geste. */
+  const syncOwnColumn = (cardId: string, userId: string): void => {
+    const child = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get()
+    if (child) syncParentColumn(ctx.db, cardId, { userId })
+  }
+
+  /**
+   * Accepte une carte venue de l'extérieur, et la rattache d'un même geste quand
+   * `parentId` est donné (« Rattacher à une carte »). Idempotent : accepter une carte
+   * déjà acceptée ne réécrit pas sa date.
+   */
+  app.post('/api/cards/:id/accept', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = acceptCardBodySchema.parse(request.body ?? {})
+    const { card } = loadCard(id, user.id)
+
+    if (body.parentId) resolveParent(ctx.db, card, body.parentId)
+    if (card.acceptedAt === null) {
+      ctx.db.update(cards).set({ acceptedAt: Date.now(), updatedAt: Date.now() }).where(eq(cards.id, id)).run()
+    }
+    if (body.parentId) setCardParent(ctx.db, card, body.parentId, { userId: user.id })
+    return readCard(id, card.projectId)
+  })
+
+  /**
+   * Refuse une carte venue de l'extérieur : elle part en « abandonné » et reste non
+   * acceptée, ce qui la distingue d'une carte abandonnée après avoir été travaillée.
+   * Une carte déjà acceptée ne se refuse plus : on l'abandonne.
+   */
+  app.post('/api/cards/:id/refuse', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { card } = loadCard(id, user.id)
+    if (card.acceptedAt !== null) {
+      throw conflict('card_already_accepted', 'This card was accepted; abandon it instead.')
+    }
+    if (card.column !== 'abandoned') {
+      const [last] = ctx.db
+        .select({ position: max(cards.position) })
+        .from(cards)
+        .where(and(eq(cards.projectId, card.projectId), eq(cards.column, 'abandoned')))
+        .all()
+      const now = Date.now()
+      writeTransaction(ctx.db, (tx) => {
+        tx.update(cards)
+          .set({ column: 'abandoned', position: (last?.position ?? 0) + 1, updatedAt: now })
+          .where(eq(cards.id, id))
+          .run()
+        recordCardMove(tx, { cardId: id, from: card.column, to: 'abandoned', userId: user.id, at: now })
+      })
+    }
     return readCard(id, card.projectId)
   })
 
@@ -478,6 +531,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       // portent du travail réel, que le rangement du board n'a pas à emporter.
       tx.update(conversations).set({ cardId: null }).where(eq(conversations.cardId, id)).run()
       tx.delete(cards).where(eq(cards.id, id)).run()
+      // La parente perd un enfant : ce qu'il lui reste dit peut-être autre chose.
+      syncParentColumn(tx, card.parentId, { userId: user.id })
     })
 
     return reply.status(204).send()
@@ -653,18 +708,23 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = reorderCardsBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const known = new Map(
-      ctx.db
-        .select({ id: cards.id, column: cards.column })
-        .from(cards)
-        .where(eq(cards.projectId, id))
-        .all()
-        .map((row) => [row.id, row.column]),
-    )
+    // Le kanban ne montre que les feuilles : une carte qui a des enfants n'y est pas,
+    // n'entre donc pas dans le compte d'une colonne complète, et ne s'y range pas — sa
+    // colonne se déduit de ses enfants.
+    const all = ctx.db
+      .select({ id: cards.id, column: cards.column, parentId: cards.parentId })
+      .from(cards)
+      .where(eq(cards.projectId, id))
+      .all()
+    const parentIds = new Set(all.map((row) => row.parentId).filter((parentId) => parentId !== null))
+    const known = new Map(all.filter((row) => !parentIds.has(row.id)).map((row) => [row.id, row.column]))
 
     const placed = new Set<string>()
     for (const group of body.columns) {
       for (const cardId of group.ids) {
+        if (parentIds.has(cardId)) {
+          throw badRequest('card_is_parent', 'Card {id} has children; its column follows theirs.', { id: cardId })
+        }
         if (!known.has(cardId)) {
           throw badRequest('card_not_in_project', 'Card {id} does not belong to this project.', {
             id: cardId,
@@ -768,6 +828,17 @@ export function assertCardInProject(ctx: AppContext, cardId: string, projectId: 
     .where(and(eq(cards.id, cardId), eq(cards.projectId, projectId)))
     .get()
   if (!row) throw notFound('card_not_found', 'Card not found.')
+}
+
+/**
+ * Vérifie qu'une carte peut lancer une session : une carte venue de l'extérieur que
+ * personne n'a acceptée attend un tri, pas un agent.
+ */
+export function assertCardAccepted(ctx: AppContext, cardId: string): void {
+  const row = ctx.db.select({ acceptedAt: cards.acceptedAt }).from(cards).where(eq(cards.id, cardId)).get()
+  if (row && row.acceptedAt === null) {
+    throw conflict('card_not_accepted', 'This card has not been accepted yet; it cannot start a session.')
+  }
 }
 
 /** La carte d'une conversation, pour la puce qui ramène au board depuis le fil. */
