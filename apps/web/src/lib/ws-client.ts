@@ -216,7 +216,7 @@ class WsClient {
 
     this.connect()
     if (this.isOpen) {
-      this.send({ t: 'subscribe', conversationId, afterSeq: this.cursors.get(conversationId) ?? 0 })
+      this.send({ t: 'subscribe', bodies: 1, conversationId, afterSeq: this.cursors.get(conversationId) ?? 0 })
     }
     listener.onConnectionChange(this.isOpen)
 
@@ -341,7 +341,7 @@ class WsClient {
     socket.onopen = () => {
       this.reconnectAttempts = 0
       for (const [conversationId, afterSeq] of this.cursors) {
-        this.send({ t: 'subscribe', conversationId, afterSeq })
+        this.send({ t: 'subscribe', bodies: 1, conversationId, afterSeq })
       }
       // Le serveur a libéré les veilles de la connexion tombée : elles sont redéclarées
       // en entier, l'ensemble vivant côté client étant la référence.

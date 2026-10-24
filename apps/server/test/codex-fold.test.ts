@@ -4,7 +4,7 @@ import type { SoleraEvent } from '@solera/protocol'
 
 // Le fold est indépendant de React ; seul le choix initial de langue lit le navigateur.
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr' }, configurable: true })
-const { applyEvent, emptyChatState, isAwaitingUser } = await import('../../web/src/lib/chat-fold.js')
+const { applyEvent, emptyChatState, isAwaitingUser } = await import('@solera/protocol/chat-state')
 
 const fold = (events: SoleraEvent[]) => events.reduce((state, event, index) =>
   applyEvent(state, index + 1, index * 100, event), emptyChatState())

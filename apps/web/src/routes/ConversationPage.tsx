@@ -155,6 +155,11 @@ export function ConversationPage() {
   const { data: user } = useCurrentUser()
   const { data: conversation } = useConversation(conversationId)
   const stream = useChatStream(conversationId, conversation?.status ?? 'idle')
+  const { loadOlder } = stream
+  // La conversation affichée : une page plus ancienne qui arrive après qu'on l'a
+  // quittée ne doit pas élargir la fenêtre de la suivante.
+  const currentThread = useRef(conversationId)
+  currentThread.current = conversationId
   useAutoOpenPrototypes(conversationId, stream.state.items, stream.loading)
   // Être sur la page vaut lecture : la sidebar n'a plus à signaler ce qu'on regarde.
   //
@@ -342,11 +347,23 @@ export function ConversationPage() {
     [rows],
   )
 
+  // La recherche parcourt le DOM : tant qu'elle est ouverte, l'historique se charge
+  // en entier, page après page.
+  useEffect(() => {
+    if (findOpen && stream.hasMore && !stream.loadingOlder && !stream.error && !stream.loading) void loadOlder()
+  }, [findOpen, stream.hasMore, stream.loadingOlder, stream.error, stream.loading, loadOlder, stream.state.items])
+
+  /** Montre les lignes d'avant : celles déjà chargées, puis une page de plus du serveur. */
   const showEarlier = useCallback(() => {
-    const node = scroller.current
-    if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
-    setWindowSize((size) => size + WINDOW_STEP_ROWS)
-  }, [])
+    const expand = () => {
+      if (currentThread.current !== conversationId) return
+      const node = scroller.current
+      if (node) scrollAnchor.current = { height: node.scrollHeight, top: node.scrollTop }
+      setWindowSize((size) => size + WINDOW_STEP_ROWS)
+    }
+    if (view.hidden === 0 && stream.hasMore) void loadOlder().then(expand)
+    else expand()
+  }, [view.hidden, stream.hasMore, loadOlder, conversationId])
 
   /** Message visé par un résultat de recherche, une fois le fil chargé. */
   const [searchParams] = useSearchParams()
@@ -557,31 +574,37 @@ export function ConversationPage() {
   /**
    * Monte un message resté avant la fenêtre, par son `seq`.
    *
-   * Rend vrai seulement si la fenêtre grandit vraiment, donc si un rendu suivra. C'est
-   * ce que demandent les deux placements d'ouverture ci-dessous : ils gardent le fil
-   * masqué le temps que la cible soit montée, et une attente que rien ne réveillerait
-   * le laisserait invisible pour de bon.
+   * Rend vrai tant qu'une page demandée ou une fenêtre qui grandit amèneront un rendu
+   * de plus. C'est ce que demandent les deux placements d'ouverture ci-dessous : ils
+   * gardent le fil masqué le temps que la cible soit montée, et une attente que rien
+   * ne réveillerait le laisserait invisible pour de bon.
    */
   const growWindowTo = useCallback(
     (seq: number): boolean => {
       const target = stream.state.items.find(
         (item) => item.kind === 'message' && item.seq === seq,
       )
-      if (!target) return false
+      if (!target) {
+        // Pas encore chargé : la page qui le porte est peut-être encore au serveur.
+        if (stream.hasMore && !stream.error) {
+          if (!stream.loadingOlder) void loadOlder()
+          return true
+        }
+        return false
+      }
       const needed = windowToReveal(rows, target.id)
       if (needed === null || needed <= windowSize) return false
       setWindowSize(needed)
       return true
     },
-    [stream.state.items, rows, windowSize],
+    [stream.state.items, rows, windowSize, stream.hasMore, stream.error, stream.loadingOlder, loadOlder],
   )
 
   /**
    * Ouverture sur un message précis, quand on arrive depuis la recherche.
    *
-   * Le journal est chargé en entier, donc le message est déjà dans le fil, mais pas
-   * forcément monté : la cible peut être restée avant la fenêtre, auquel cas on la
-   * dévoile et l'effet repasse au rendu suivant. Une seule fois par cible, sinon chaque
+   * Les pages plus anciennes se chargent, et la fenêtre s'élargit, jusqu'à ce que le
+   * message soit monté ; l'effet repasse à chaque rendu. Une seule fois par cible, sinon chaque
    * événement reçu ramènerait le défilement au même endroit pour le reste de la session.
    */
   useLayoutEffect(() => {
@@ -592,9 +615,8 @@ export function ConversationPage() {
     if (!hasAnchor || anchored.current === anchorSeq) return
     if (growWindowTo(anchorSeq)) return
 
-    // Marquée avant de savoir si la cible existe : le journal est entièrement replié à
-    // ce stade, donc un message introuvable ne viendra plus, et laisser la cible en
-    // attente retiendrait indéfiniment l'affichage du fil.
+    // Marquée avant de savoir si la cible existe : plus aucune page ne peut l'apporter,
+    // et laisser la cible en attente retiendrait indéfiniment l'affichage du fil.
     anchored.current = anchorSeq
 
     const element = node.querySelector<HTMLElement>(`[data-seq="${anchorSeq}"]`)
@@ -610,9 +632,9 @@ export function ConversationPage() {
   /**
    * Place le fil à son ouverture, puis le donne à voir.
    *
-   * Une seule fois par conversation, une fois le journal replié en entier : c'est la
-   * seule position qui ait un sens, celles d'avant portant sur un fil encore en train
-   * de se construire. Tant que ce n'est pas fait, `placed` garde le fil masqué.
+   * Une seule fois par conversation, une fois arrivées la vue d'ouverture et les pages
+   * qu'il faut pour le repère enregistré : celles d'avant portent sur un fil encore en
+   * train de se construire. Tant que ce n'est pas fait, `placed` garde le fil masqué.
    */
   useLayoutEffect(() => {
     const node = scroller.current
@@ -1189,7 +1211,8 @@ export function ConversationPage() {
           scroller={scroller}
           open={findOpen}
           onClose={() => setFindOpen(false)}
-          revision={stream.state.lastSeq}
+          revision={stream.state.lastSeq + stream.state.items.length}
+          loading={(stream.hasMore && !stream.error) || stream.loadingOlder}
         />
 
         {/* Contexte de positionnement de l'indicateur d'attente : posé dans le fil, il
@@ -1241,21 +1264,26 @@ export function ConversationPage() {
                 />
               ) : null}
     
-              {view.hidden > 0 ? (
+              {view.hidden > 0 || stream.hasMore ? (
                 <button
                   type="button"
                   onClick={showEarlier}
+                  disabled={stream.loadingOlder}
                   className={cx(
                     'surface mx-auto rounded-full border border-line px-3 py-1.5',
                     'text-xs text-ink-soft transition-colors hover:text-ink',
                   )}
                 >
-                  {t(
-                    view.hidden > 1
-                      ? 'conversation.thread.earlier.other'
-                      : 'conversation.thread.earlier.one',
-                    { count: view.hidden },
-                  )}
+                  {stream.loadingOlder
+                    ? t('journal.history.loading')
+                    : view.hidden === 0
+                      ? t('journal.history.earlier')
+                      : t(
+                          view.hidden > 1
+                            ? 'conversation.thread.earlier.other'
+                            : 'conversation.thread.earlier.one',
+                          { count: view.hidden },
+                        )}
                 </button>
               ) : null}
     
@@ -1428,6 +1456,7 @@ export function ConversationPage() {
             }
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
+            history={{ hasMore: stream.hasMore, loading: stream.loadingOlder, load: loadOlder }}
             checkpoints={stream.state.checkpoints}
             canRestore={isOwner && !stream.state.turnRunning}
             turnRunning={stream.state.turnRunning}

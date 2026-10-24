@@ -15,6 +15,8 @@ import {
   isSuperseded,
   type SupersessionIndex,
 } from './superseded.js'
+import { bodyPayload, bodyWeight, prepareBodyPayload } from './event-bodies.js'
+import { ThreadProjection } from './thread-projection.js'
 import { replayPayload, replayWeight } from './tool-output.js'
 import { touchedPaths } from './touched-paths.js'
 
@@ -122,6 +124,15 @@ function byteSize(payload: string, raw: string | null): number {
   return Buffer.byteLength(payload) + (raw === null ? 0 : Buffer.byteLength(raw))
 }
 
+/** Les événements dont la projection de transport peut alléger le corps. */
+const BODY_TYPES = new Set<SoleraEvent['type']>([
+  'message.completed',
+  'tool.started',
+  'tool.input_updated',
+  'tool.completed',
+  'diff.updated',
+])
+
 /**
  * Budget des index de relecture gardés en mémoire, ceux des conversations ouvertes
  * récemment. Compté en octets estimés et non en nombre d'index : celui d'une très
@@ -130,6 +141,8 @@ function byteSize(payload: string, raw: string | null): number {
 const SUPERSESSION_INDEX_BYTES = 16 * 1024 * 1024
 
 export class EventLog {
+  /** Le fil projeté de chaque conversation, tenu à jour après chaque écriture. */
+  readonly thread: ThreadProjection
   private readonly bus = new EventEmitter()
   private readonly supersession = new Map<string, SupersessionIndex>()
   private readonly indexWeights = new WeakMap<SupersessionIndex, { seq: number; bytes: number }>()
@@ -138,6 +151,7 @@ export class EventLog {
     // Une conversation très suivie (plusieurs onglets, mobile et desktop) dépasse
     // vite la limite par défaut de 10 écouteurs.
     this.bus.setMaxListeners(200)
+    this.thread = new ThreadProjection(db, this)
   }
 
   /**
@@ -197,6 +211,7 @@ export class EventLog {
 
     this.bus.emit(conversationId, entry)
     this.bus.emit(ALL_EVENTS, entry)
+    this.thread.schedule(conversationId)
     return entry
   }
 
@@ -278,6 +293,7 @@ export class EventLog {
     })
 
     for (const entry of entries) this.bus.emit(conversationId, entry)
+    if (entries.length) this.thread.schedule(conversationId)
     return entries.at(-1)?.seq ?? 0
   }
 
@@ -368,14 +384,29 @@ export class EventLog {
   readForReplay(
     conversationId: string,
     afterSeq: number,
-    limits: { rows: number; bytes: number },
+    limits: {
+      rows: number
+      bytes: number
+      /** Corps lourds en références (`event-bodies.ts`), pour un client qui sait les demander. */
+      bodies?: boolean
+      /** Sans tri de supplantation : la projection veut tout, et n'a pas à bâtir l'index. */
+      unfiltered?: boolean
+    },
   ): { entries: JournalEntry[]; nextAfter: number } {
-    const index = this.supersessionIndex(conversationId)
+    // Revenir sur un fil projeté inchangé ne demande pas d'index de supplantation.
+    const lastSeq =
+      this.db
+        .select({ seq: conversations.lastSeq })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .get()?.seq ?? 0
+    if (afterSeq >= lastSeq) return { entries: [], nextAfter: afterSeq }
+    const index = limits.unfiltered ? null : this.supersessionIndex(conversationId)
     const listed = this.db
       .select({
         seq: events.seq,
         type: events.type,
-        bytes: replayWeight,
+        bytes: limits.bodies ? bodyWeight : replayWeight,
         toolCallId: sql<string | null>`case when ${events.type} = 'tool.output_delta'
           then ${events.payload} ->> '$.toolCallId' end`,
       })
@@ -389,7 +420,7 @@ export class EventLog {
     let bytes = 0
     let nextAfter = afterSeq
     for (const row of listed) {
-      if (!isSuperseded(index, row)) {
+      if (!index || !isSuperseded(index, row)) {
         if (kept.length > 0 && bytes + row.bytes > limits.bytes) break
         kept.push(row.seq)
         bytes += row.bytes
@@ -400,7 +431,7 @@ export class EventLog {
     if (kept.length === 0) return { entries: [], nextAfter }
 
     const rows = this.db
-      .select({ seq: events.seq, ts: events.ts, payload: replayPayload })
+      .select({ seq: events.seq, ts: events.ts, payload: limits.bodies ? bodyPayload : replayPayload })
       .from(events)
       .where(and(eq(events.conversationId, conversationId), inArray(events.seq, kept)))
       .orderBy(asc(events.seq))
@@ -411,10 +442,83 @@ export class EventLog {
         conversationId,
         seq: row.seq,
         ts: row.ts,
-        event: this.parseStored(row.seq, row.payload),
+        event: this.parseStored(row.seq, row.payload, limits.bodies),
       })),
       nextAfter,
     }
+  }
+
+  /** Le rattrapage du socket garde tous les `seq`, mais la représentation légère de REST. */
+  readWithBodies(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
+    return this.db
+      .select({ seq: events.seq, ts: events.ts, payload: bodyPayload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), gt(events.seq, afterSeq)))
+      .orderBy(asc(events.seq))
+      .limit(limit)
+      .all()
+      .map((row) => ({
+        conversationId,
+        seq: row.seq,
+        ts: row.ts,
+        event: this.parseStored(row.seq, row.payload, true),
+      }))
+  }
+
+  /** Un événement en direct est déjà écrit : on projette cette ligne-là, jamais un appel plus récent. */
+  withBodies(entry: JournalEntry): JournalEntry {
+    if (!BODY_TYPES.has(entry.event.type)) return entry
+    return this.readWithBodies(entry.conversationId, entry.seq - 1, 1)[0] ?? entry
+  }
+
+  /**
+   * Un corps laissé au serveur par la projection de transport. Le chemin JSON est
+   * construit ici et jamais reçu du client, et seuls les champs que la projection
+   * remplace sont lisibles : rien du `raw` natif.
+   */
+  eventBody(
+    conversationId: string,
+    seq: number,
+    field: 'input' | 'output' | 'patch',
+    block?: number,
+  ): { value: unknown } | null {
+    const path = block === undefined ? `$.${field}` : `$.blocks[${block}].${field}`
+    const row = this.db
+      .select({
+        value: sql<string | null>`${events.payload} -> ${path}`,
+        type: events.type,
+        blockType: sql<string | null>`${events.payload} ->> ${block === undefined ? '$.type' : `$.blocks[${block}].type`}`,
+      })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.seq, seq)))
+      .get()
+    if (!row || row.value === null) return null
+    const allowed =
+      block === undefined
+        ? (field === 'input' && (row.type === 'tool.started' || row.type === 'tool.input_updated')) ||
+          (field === 'output' && row.type === 'tool.completed') ||
+          (field === 'patch' && row.type === 'diff.updated')
+        : row.type === 'message.completed' &&
+          ((field === 'input' && row.blockType === 'tool_use') ||
+            (field === 'output' && row.blockType === 'tool_result'))
+    return allowed ? { value: JSON.parse(row.value) } : null
+  }
+
+  /** L'URL `data:` d'une image de message, servie à part du fil. */
+  eventImage(conversationId: string, seq: number, block: number): string | null {
+    const row = this.db
+      .select({ url: sql<string | null>`${events.payload} ->> ${`$.blocks[${block}].url`}` })
+      .from(events)
+      .where(
+        and(
+          eq(events.conversationId, conversationId),
+          eq(events.seq, seq),
+          eq(events.type, 'message.completed'),
+          sql`${events.payload} ->> ${`$.blocks[${block}].type`} = 'image'`,
+        ),
+      )
+      .get()
+    return row?.url ?? null
   }
 
   /**
@@ -916,8 +1020,8 @@ export class EventLog {
    * l'ajout d'un champ : le journal est rejoué indéfiniment (invariant I2), donc une
    * ancienne forme doit continuer à produire un affichage juste plutôt qu'un `NaN`.
    */
-  private parseStored(seq: number, payload: string): SoleraEvent {
-    const raw: unknown = JSON.parse(payload)
+  private parseStored(seq: number, payload: string, bodies = false): SoleraEvent {
+    const raw: unknown = bodies ? prepareBodyPayload(payload) : JSON.parse(payload)
     const parsed = soleraEventSchema.safeParse(raw)
     if (parsed.success) return parsed.data
 

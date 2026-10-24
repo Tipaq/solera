@@ -14,7 +14,11 @@ export async function checkJournalCache(page) {
     const client = new QueryClient()
     const requests = []
     let updated = false
+    const originalGet = api.get
+    const originalSubscribe = wsClient.subscribe
     api.get = async (url) => {
+      // Serveur sans projection du fil : le hook retombe sur le journal.
+      if (url.includes('/thread?')) throw new Error('legacy server')
       const after = Number(new URL(url, location.origin).searchParams.get('after'))
       requests.push(after)
       return {
@@ -51,11 +55,13 @@ export async function checkJournalCache(page) {
     const second = await visit('one')
     const third = await visit('one')
     for (const id of ['two', 'three', 'four', 'five']) await visit(id)
-    const count = client.getQueryCache().findAll({ queryKey: ['chat-journal-snapshot'] }).length
+    const count = client.getQueryCache().findAll({ queryKey: ['chat-journal-snapshot-v2'] }).length
     client.removeQueries()
     await visit('one')
     client.clear()
     host.remove()
+    api.get = originalGet
+    wsClient.subscribe = originalSubscribe
     return { first, second, third, requests, count }
   })
   assert.equal(result.first, 'Bonjour')
@@ -63,6 +69,6 @@ export async function checkJournalCache(page) {
   assert.equal(result.third, 'Bonjour !')
   assert.deepEqual(result.requests.slice(0, 3), [0, 10, 11])
   assert.equal(result.requests.at(-1), 0, 'La déconnexion efface le cache')
-  assert.equal(result.count, 4, 'Le cache reste borné')
+  assert.equal(result.count, 5, 'Les petits fils se partagent le budget en octets')
   console.log('OK : retour au fil sans rejeu complet, deltas fusionnés, cache borné et effacement.')
 }

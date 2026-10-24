@@ -9,7 +9,7 @@ import { MAX_OUTPUT_BYTES } from '../src/events/tool-output.js'
 
 // Le fold est indépendant de React ; seul le choix initial de langue lit le navigateur.
 Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => 'fr' }, configurable: true })
-const { applyEvent, emptyChatState } = await import('../../web/src/lib/chat-fold.js')
+const { applyEvent, emptyChatState } = await import('@solera/protocol/chat-state')
 type ChatState = ReturnType<typeof emptyChatState>
 
 const user = (messageId: string, text: string): SoleraEvent =>

@@ -19,10 +19,30 @@ export type AgentKind = z.infer<typeof agentKindSchema>
 
 export const planStatusSchema = z.enum(['pending', 'in_progress', 'completed'])
 
+/**
+ * Désigne un corps volumineux resté sur le serveur : le champ `field` de l'événement
+ * `seq`, ou de son bloc `block`. Un événement du journal ne change plus, donc la
+ * référence vise toujours le même contenu, là où un identifiant d'appel peut être
+ * réutilisé d'un tour à l'autre.
+ */
+export const eventBodyRefSchema = z.object({
+  seq: z.number().int().positive(),
+  field: z.enum(['input', 'output', 'patch']),
+  block: z.number().int().nonnegative().optional(),
+})
+export type EventBodyRef = z.infer<typeof eventBodyRefSchema>
+
 export const contentBlockSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }),
   z.object({ type: z.literal('thinking'), text: z.string() }),
-  z.object({ type: z.literal('image'), mimeType: z.string(), url: z.string() }),
+  z.object({
+    type: z.literal('image'),
+    mimeType: z.string(),
+    url: z.string(),
+    /** Dimensions lues dans l'en-tête quand l'image reste au serveur : la place est réservée avant qu'elle arrive. */
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+  }),
   /**
    * Pièce jointe non affichable en ligne. Le chemin transmis à l'agent n'apparaît pas
    * ici : le fil montre le fichier, pas son emplacement sur le disque du serveur.
@@ -39,11 +59,13 @@ export const contentBlockSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     name: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
   }),
   z.object({
     type: z.literal('tool_result'),
     toolCallId: z.string(),
     output: z.unknown(),
+    outputRef: eventBodyRefSchema.optional(),
     isError: z.boolean(),
   }),
 ])
@@ -270,6 +292,7 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     toolCallId: z.string(),
     name: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
     parentToolCallId: z.string().nullable(),
   }),
   z.object({
@@ -281,18 +304,21 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool.input_updated'),
     toolCallId: z.string(),
     input: z.unknown(),
+    inputRef: eventBodyRefSchema.optional(),
   }),
   z.object({
     type: z.literal('tool.completed'),
     toolCallId: z.string(),
     output: z.unknown(),
+    outputRef: eventBodyRefSchema.optional(),
     isError: z.boolean(),
     durationMs: z.number(),
     /**
      * Taille réelle de la sortie, présente seulement quand `output` n'a pas été
      * transmise. Une relecture d'historique retire les sorties volumineuses pour ne pas
      * transférer des mégaoctets que personne ne lit ; la carte de l'appel demande le
-     * corps complet à l'ouverture. Jamais posé sur le direct, qui livre tout.
+     * corps complet à l'ouverture. Posé aussi sur le direct, pour une connexion qui a
+     * demandé les références de corps (`bodies`).
      */
     outputBytes: z.number().optional(),
   }),
@@ -911,6 +937,7 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     type: z.literal('diff.updated'),
     /** Diff unifié natif, lorsqu'il est fourni. */
     patch: z.string().optional(),
+    patchRef: eventBodyRefSchema.optional(),
     files: z.array(
       z.object({ path: z.string(), added: z.number(), removed: z.number() }),
     ),

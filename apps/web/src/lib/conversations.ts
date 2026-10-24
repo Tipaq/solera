@@ -371,10 +371,10 @@ export type JournalPage = { seq: number; ts: number; event: SoleraEvent }[]
  * jusqu'à rejoindre le dernier `seq` connu du serveur : s'arrêter à la première page
  * laisserait des trous invisibles dans le fil.
  *
- * Chaque page est rendue à l'appelant dès son arrivée plutôt qu'à la fin. Une
- * conversation de vingt mille événements en demande une quarantaine, et les attendre
- * toutes laissait l'écran vide le temps d'autant d'allers-retours enchaînés. Le fil
- * s'affiche maintenant dès la première et grandit jusqu'à sa fin.
+ * Chaque page est rendue à l'appelant dès son arrivée plutôt qu'à la fin, avec le
+ * dernier `seq` qu'elle a examiné : le fold laisse la main entre deux pages, et une
+ * page suivante qui échoue reprend sans rejouer des deltas déjà fusionnés. Les corps
+ * lourds arrivent en références (`bodies=1`), demandés quand une carte s'ouvre.
  *
  * Les pages ne peuvent pas être demandées en parallèle : le curseur d'une page est le
  * dernier `seq` lu par la précédente, et rien ne permet de le prévoir, une page rendant
@@ -386,30 +386,34 @@ export type JournalPage = { seq: number; ts: number; event: SoleraEvent }[]
 export async function fetchJournal(
   conversationId: string,
   afterSeq: number,
-  onPage: (entries: JournalPage) => void,
+  onPage: (entries: JournalPage, readThrough: number) => void,
+  signal?: AbortSignal,
 ): Promise<number> {
   let cursor = afterSeq
 
   for (;;) {
+    signal?.throwIfAborted()
     const page = await api.get<JournalPageDto>(
-      `/api/conversations/${conversationId}/events?after=${cursor}`,
+      `/api/conversations/${conversationId}/events?after=${cursor}&bodies=1`,
+      signal,
     )
-
-    if (page.entries.length > 0) {
-      onPage(
-        page.entries.map((entry) => ({
-          seq: entry.seq,
-          ts: entry.ts,
-          event: entry.event as SoleraEvent,
-        })),
-      )
-    }
+    signal?.throwIfAborted()
 
     // Le web s'échange sans redémarrage, le serveur non : entre les deux, ce client
     // parle à un serveur qui ignore `nextAfter`. On retombe alors sur la dernière entrée
     // rendue, ce qu'il faisait avant, plutôt que d'avancer sur un `undefined` qui
     // relirait la première page sans fin.
     const next = page.nextAfter ?? page.entries.at(-1)?.seq ?? cursor
+    // Chaque curseur examiné est remis, même pour une page entièrement filtrée.
+    onPage(
+      page.entries.map((entry) => ({
+        seq: entry.seq,
+        ts: entry.ts,
+        event: entry.event as SoleraEvent,
+      })),
+      next,
+    )
+    signal?.throwIfAborted()
 
     // Une page qui n'avance pas arrête la boucle : sans ce garde, un serveur qui rendrait
     // un curseur immobile la ferait tourner sur la même page indéfiniment.

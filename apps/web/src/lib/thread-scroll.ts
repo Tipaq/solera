@@ -29,11 +29,20 @@ export interface ThreadScroll {
 const AT_BOTTOM: ThreadScroll = { atBottom: true, seq: 0, offset: 0 }
 
 const positions = new Map<string, ThreadScroll>()
+/** Les positions des conversations ouvertes le plus récemment ; au-delà, la plus ancienne sort. */
+const MAX_POSITIONS = 128
 
 export function readThreadScroll(conversationId: string): ThreadScroll {
-  return positions.get(conversationId) ?? AT_BOTTOM
+  const position = positions.get(conversationId)
+  if (position) {
+    positions.delete(conversationId)
+    positions.set(conversationId, position)
+  }
+  return position ?? AT_BOTTOM
 }
 
 export function saveThreadScroll(conversationId: string, position: ThreadScroll): void {
+  positions.delete(conversationId)
   positions.set(conversationId, position.atBottom ? AT_BOTTOM : position)
+  if (positions.size > MAX_POSITIONS) positions.delete(positions.keys().next().value!)
 }

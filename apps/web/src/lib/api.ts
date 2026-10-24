@@ -20,7 +20,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
@@ -29,11 +29,13 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   })
 
   if (response.status === 204) return undefined as T
 
   const text = await response.text()
+  signal?.throwIfAborted()
   const parsed: unknown = text.length > 0 ? JSON.parse(text) : null
 
   if (!response.ok) {
@@ -54,7 +56,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>('GET', path),
+  /** `signal` annule la requête : un fil qu'on quitte n'a plus à finir de charger. */
+  get: <T>(path: string, signal?: AbortSignal) => request<T>('GET', path, undefined, signal),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
