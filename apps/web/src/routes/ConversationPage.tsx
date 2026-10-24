@@ -56,6 +56,7 @@ import {
 import { ApiRequestError } from '../lib/api'
 import { useFileDrop } from '../lib/file-drop'
 import { useConversationConfig } from '../lib/conversation-config'
+import { CardRefContext } from '../lib/card-refs'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
@@ -889,6 +890,8 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
+    {/* Les `#12` du fil désignent les cartes du board de ce projet. */}
+    <CardRefContext.Provider value={conversation.projectId}>
     {/* `overflow-clip` et non `hidden` : un conteneur `hidden` reste défilable par programme, et l éditeur qui révèle une ligne pendant que le panneau glisse hors écran le décalait, laissant le panneau coupé à gauche. */}
     <div ref={panelLayout.containerRef} className="relative flex h-full overflow-clip">
       <div
@@ -1440,6 +1443,7 @@ export function ConversationPage() {
         </Suspense>
       ) : null}
     </div>
+    </CardRefContext.Provider>
     </FileLinkContext.Provider>
   )
 }

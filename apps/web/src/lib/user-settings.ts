@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  BoardOrder,
   NotificationPrefs,
   OnboardingState,
   ProjectDefaults,
@@ -115,4 +116,30 @@ export function useUpdateProjectDefaults() {
       api.patch<UserSettingsDto>('/api/me/settings', { projectDefaults }),
     onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
   })
+}
+
+/**
+ * L'ordre des colonnes d'un board, et de quoi le changer. Appliqué sans attendre : le
+ * board se réordonne au clic, et revient si le serveur n'a pas pris le choix.
+ */
+export function useBoardOrder(projectId: string | undefined): [BoardOrder, (order: BoardOrder) => void] {
+  const queryClient = useQueryClient()
+  const { data } = useUserSettings()
+  const update = useMutation({
+    mutationFn: (order: BoardOrder) => api.patch<UserSettingsDto>('/api/me/settings', { boardOrder: { projectId, order } }),
+    onMutate: async (order) => {
+      await queryClient.cancelQueries({ queryKey: USER_SETTINGS_KEY })
+      const previous = queryClient.getQueryData<UserSettingsDto>(USER_SETTINGS_KEY)
+      if (previous && projectId) {
+        queryClient.setQueryData(USER_SETTINGS_KEY, { ...previous, boardOrder: { ...previous.boardOrder, [projectId]: order } })
+      }
+      return { previous }
+    },
+    onError: (_error, _order, context) => {
+      if (context?.previous) queryClient.setQueryData(USER_SETTINGS_KEY, context.previous)
+    },
+    onSuccess: (settings) => queryClient.setQueryData(USER_SETTINGS_KEY, settings),
+  })
+  const order = (projectId && data?.boardOrder[projectId]) || 'manual'
+  return [order, (next) => update.mutate(next)]
 }

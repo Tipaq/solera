@@ -190,7 +190,58 @@ try {
   await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-champs-desktop.png') })
 
-  await panel.getByRole('button', { name: 'Fermer', exact: true }).click()
+  // Le `#2` de la description est un lien vers la carte, avec un aperçu au survol (#86).
+  const ref = panel.locator('button.sg-card-ref[data-sg-card="2"]')
+  await ref.hover()
+  const preview = page.getByRole('tooltip').filter({ hasText: card.title })
+  await preview.waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'card-ref-preview.png') })
+  await page.mouse.move(5, 5)
+  await preview.waitFor({ state: 'detached' })
+
+  // Un clic dans le vide du board referme le tiroir, comme « Fermer » : ici l'espace
+  // entre les deux premières colonnes, le tiroir couvrant la droite du board.
+  const todoBox = await page.getByRole('region', { name: 'À faire', exact: true }).boundingBox()
+  await page.mouse.click(todoBox.x + todoBox.width + 8, todoBox.y + 100)
+  await panel.waitFor({ state: 'hidden' })
+  assert.ok(!page.url().includes('carte='))
+  const review = page.getByRole('region', { name: 'À vérifier', exact: true })
+  const reviewBox = await review.boundingBox()
+
+  // La carte se saisit par tout son corps au pointeur, et le geste ne l'ouvre pas.
+  const tile = page.locator(`[data-card-tile="${number}"]`)
+  await tile.scrollIntoViewIfNeeded()
+  const from = await tile.boundingBox()
+  await page.mouse.move(from.x + from.width / 3, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 3 + 10, from.y + from.height / 2 + 10, { steps: 3 })
+  await page.mouse.move(reviewBox.x + reviewBox.width / 2, reviewBox.y + reviewBox.height - 40, { steps: 15 })
+  await delay(150)
+  const dropped = page.waitForResponse((response) => response.url().endsWith('/cards/order'))
+  await page.mouse.up()
+  assert.ok((await dropped).ok())
+  await review.locator(`[data-card-tile="${number}"]`).waitFor()
+  assert.ok(!page.url().includes('carte='), 'glisser n’ouvre pas la carte')
+  const moved = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
+    .find((entry) => entry.id === created.id)
+  assert.equal(moved.column, 'review')
+
+  // L'ordre par arrivée, déduit de `card_moves` : la carte qui vient d'arriver passe en
+  // tête, et le choix est retenu pour ce projet.
+  const firstInReview = () => review.locator('[data-card-tile]').first().getAttribute('data-card-tile')
+  await page.getByRole('button', { name: 'Ordre des cartes', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Arrivées récentes en tête', exact: true }).click()
+  await page.waitForFunction((n) => document.querySelector('section[aria-label="À vérifier"] [data-card-tile]')?.getAttribute('data-card-tile') === String(n), number)
+  assert.equal(await firstInReview(), String(number))
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-order-arrival.png') })
+  const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
+  assert.equal(settings.boardOrder[project.id], 'recent')
+  await page.getByRole('button', { name: 'Ordre des cartes', exact: true }).click()
+  const manual = page.waitForResponse((response) => response.url().endsWith('/api/me/settings') && response.request().method() === 'PATCH')
+  await page.getByRole('menuitemradio', { name: 'Ordre manuel', exact: true }).click()
+  assert.ok((await manual).ok())
+  assert.deepEqual((await (await context.request.get(`${base}/api/me/settings`)).json()).boardOrder, {})
+
   const search = page.getByRole('searchbox', { name: 'Rechercher une carte, un numéro…', exact: true })
   await search.fill(`#${number}`)
   await page.locator(`[data-card-open="${created.id}"]`).waitFor()
@@ -243,7 +294,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, jalon, sous-tâches, lien « bloque », recherche, clavier et mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, jalon, sous-tâches, lien « bloque », référence #n et aperçu, tiroir refermé à côté, glisser par la carte, ordre par arrivée, recherche, clavier et mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

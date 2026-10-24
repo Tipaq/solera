@@ -26,11 +26,16 @@
  * n'est écrit à la place de qui que ce soit ; c'est le temps d'une personne que l'outil
  * engage, d'où sa famille à part.
  *
- * *Deux écritures échappent à l'ajout sans pour autant demander un clic*, et il faut les
+ * *Trois écritures échappent à l'ajout sans pour autant demander un clic*, et il faut les
  * nommer parce qu'elles sont les seules. L'image du projet, qu'un agent pose ou remplace :
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
- * clic. Et SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
- * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main.
+ * clic. SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
+ * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. Et
+ * `move_card`, par lequel un agent range **sa propre** carte entre « à faire », « en
+ * cours » et « à vérifier » (#86) : ces colonnes disent où en est le travail, pas ce
+ * qu'il vaut, et se reprennent d'un geste. Une carte en « terminé » ou « abandonné » ne
+ * bouge pas par lui, ni vers ces colonnes ni hors d'elles : ce sont des verdicts, et ils
+ * restent à `request_card_move`.
  *
  * *Ce qui reste interdit, sans demande possible* : réécrire la description d'une carte.
  * Un compte rendu de session effacerait la consigne qu'il était censé suivre, et il n'y a
@@ -220,6 +225,13 @@ const CARD_LIMIT = 40
  */
 const MAX_CARD_MOVES = 20
 
+/**
+ * Les colonnes où `move_card` range la carte de la conversation, sans clic. Doit rester
+ * d'accord avec `AGENT_CARD_COLUMNS` de `apps/server/src/sessions/agent-requests.ts`,
+ * qui en est l'autorité.
+ */
+const AGENT_CARD_COLUMNS = ['todo', 'in_progress', 'review']
+
 /** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
 const CARD_EXCERPT_CHARS = 160
 
@@ -249,6 +261,7 @@ const REQUEST_WAIT_MS = {
   // à l'accorder : l'outil rend la main dès que la demande est posée.
   move_conversation: 15000,
   request_card_move: 15000,
+  move_card: 15000,
   request_decision: 15000,
   // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
   create_worktree: 60000,
@@ -480,7 +493,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, le jalon auquel elle appartient, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, son jalon et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à ceci près que tu peux en proposer le déplacement avec request_card_move si cet outil t'est accordé.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, le jalon auquel elle appartient, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, son jalon et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à deux exceptions près : tu ranges ta propre carte entre à faire, en cours et à vérifier avec move_card, et tu peux proposer tout autre déplacement avec request_card_move si cet outil t'est accordé.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -509,9 +522,29 @@ const ALL_TOOLS = [
     },
   },
   {
+    name: 'move_card',
+    description:
+      "Range la carte de cette conversation dans une autre colonne du board, sans demander : à faire (todo), en cours (in_progress) ou à vérifier (review). Fais-le de toi-même quand ton travail change d'étape — en « à vérifier » quand tu as fini et qu'une personne doit relire (une PR ouverte, par exemple), de retour « en cours » si la relecture te renvoie au travail. Seulement ta carte, et seulement entre ces trois colonnes : « terminé » et « abandonné » sont des verdicts qu'une personne pose, et une carte qui y est ne bouge plus. Pour ceux-là, ou pour la carte d'une autre session, propose le déplacement avec request_card_move si cet outil t'est accordé, ou dis-le dans ta réponse. Le déplacement laisse une note sur la carte, signée de cette session.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        column: {
+          type: 'string',
+          enum: AGENT_CARD_COLUMNS,
+          description: 'Colonne d’arrivée : todo (à faire), in_progress (en cours) ou review (à vérifier).',
+        },
+        reason: {
+          type: 'string',
+          description: "Pourquoi, en une phrase, ajoutée à la note : « PR #34 ouverte », par exemple. Facultatif.",
+        },
+      },
+      required: ['column'],
+    },
+  },
+  {
     name: 'create_card',
     description:
-      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne peux ni déplacer une carte ni réécrire une description existante : la colonne et la consigne appartiennent aux personnes.",
+      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne réécris pas une description existante : la consigne appartient à qui l'a écrite. La colonne de ta propre carte se change avec move_card.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -3490,6 +3523,26 @@ async function callTool(name, args) {
 
   if (name === 'count_active_sessions') {
     return text(renderCount(countActiveSessions()))
+  }
+
+  if (name === 'move_card') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas quelle carte ranger."), isError: true }
+    }
+    // Revalidé par le daemon, qui seul a la base pour autorité ; ici, pour que le modèle
+    // lise tout de suite ce qu'il doit corriger.
+    if (!AGENT_CARD_COLUMNS.includes(args?.column)) {
+      return {
+        ...text(
+          `Le paramètre \`column\` vaut ${AGENT_CARD_COLUMNS.join(', ')}. Terminé et abandonné se demandent avec request_card_move.`,
+        ),
+        isError: true,
+      }
+    }
+    return requestDaemon(name, {
+      column: args.column,
+      ...(typeof args?.reason === 'string' ? { reason: args.reason } : {}),
+    })
   }
 
   if (name === 'request_card_move') {

@@ -1,0 +1,1 @@
+ALTER TABLE `card_moves` ADD `conversation_id` text;

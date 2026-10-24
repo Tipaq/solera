@@ -49,8 +49,11 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  *   lui demande de trancher, ce qui est le contraire du socle, où l'agent se débrouille.
  *
  * Ce que le critère écarte, pour fixer les idées : `add_card_note` écrit, mais en ajout
- * et dans la base ; `set_project_image` remplace, mais n'est le jugement de personne et
- * se reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet. Le
+ * et dans la base ; `move_card` déplace sans clic, mais seulement la carte de la
+ * session et entre « à faire », « en cours » et « à vérifier », qui disent où en est le
+ * travail et non ce qu'il vaut — les verdicts, terminé et abandonné, restent à
+ * `cardFiling` ; `set_project_image` remplace, mais n'est le jugement de personne et se
+ * reprend d'un clic ; `start_session` coûte cher, mais ne sort pas du projet. Le
  * `check_script` de `schedule_task` fait tourner du code hors de toute session, mais il
  * ne tourne pas tant qu'une personne n'a pas validé ce texte précis : comme pour
  * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture
@@ -153,6 +156,10 @@ const projectFilingSchema = z.boolean().default(false)
  * clic, et c'est le clic qui écrit `card_moves` au nom de la personne. C'est ce qui
  * permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait l'acte,
  * pas la proposition.
+ *
+ * Le déplacement direct de sa propre carte, `move_card`, n'est pas de cette famille mais
+ * du socle (#86) : il ne va ni vers `done` ni vers `abandoned`, ni n'en sort, et ne
+ * touche aucune autre carte. Ce qui reste ici est exactement ce qu'il refuse.
  */
 const cardFilingSchema = z.boolean().default(false)
 
