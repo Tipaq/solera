@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { resolve, sep } from 'node:path'
 import { Cron } from 'croner'
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   agentRequests,
+  cardBlocks,
   cardNotes,
   conversationPaths,
   cards,
@@ -48,6 +49,7 @@ import {
   type AgentKind,
   type AgentModelDto,
   type CardColumn,
+  type SoleraEvent,
   type WorktreeState,
   type ProjectActionRunResult,
 } from '@solera/protocol'
@@ -60,8 +62,9 @@ import {
   type ActionRunner,
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
-import { advanceCardOnLaunch, createCard } from '../cards/create.js'
+import { advanceCardOnLaunch } from '../cards/create.js'
 import { recordCardMove } from '../cards/moves.js'
+import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation } from '../conversations/move.js'
@@ -71,6 +74,16 @@ import { readGitStatus } from '../git.js'
 import { DecisionRefusal, type DecisionDeposit, type Decisions } from '../decisions/decisions.js'
 import type { AppContext } from '../http/context.js'
 import { describeHttpError, HttpError } from '../http/errors.js'
+import { Refusal } from './refusal.js'
+import {
+  appendOwnDescription,
+  cardByNumber,
+  cardNumbers,
+  createCardFor,
+  editOwnSubtasks,
+  linkOwnConversation,
+  parseDueDay,
+} from './card-gestures.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
 import { defaultBase } from '../worktrees/assess.js'
 import type { WorktreeStatusService } from '../worktrees/status-service.js'
@@ -155,14 +168,14 @@ export const MAX_AGENT_SCHEDULES_PER_PROJECT = 20
 export const PROJECTS_PER_HOUR = 1
 
 /**
- * Cartes qu'une seule demande de déplacement peut porter. Doit rester d'accord avec
- * `MAX_CARD_MOVES` de `apps/server/src/mcp/solera-mcp.mjs`, qui le dit à l'agent.
+ * Cartes qu'une seule demande de changement peut porter. Doit rester d'accord avec
+ * `MAX_CARD_CHANGES` de `apps/server/src/mcp/solera-mcp.mjs`, qui le dit à l'agent.
  *
  * Une liste existe pour le cas qui a ouvert la carte #54 — treize cartes finies restées
  * en « en cours » — et vingt le couvre largement. Au-delà, ce n'est plus une proposition
  * qu'une personne relit avant de cliquer.
  */
-export const MAX_CARD_MOVES = 20
+export const MAX_CARD_CHANGES = 20
 
 /** Au-delà, la raison n'est plus une phrase et la demande ne se lit plus d'un coup. */
 export const MAX_CARD_MOVE_REASON_CHARS = 500
@@ -176,14 +189,31 @@ const COLUMN_WORDS: Record<CardColumn, string> = {
   abandoned: 'abandonné',
 }
 
+/** Une ligne de `request_card_change`, en clair, pour le texte rendu à l'agent. */
+function describeCardChange(line: Extract<SoleraEvent, { type: 'card_filing.requested' }>['cards'][number]): string {
+  const day = (ts: number | null) => (ts === null ? 'aucune' : new Date(ts).toLocaleDateString('fr-FR'))
+  return [
+    line.toColumn ? `vers « ${COLUMN_WORDS[line.toColumn]} »` : null,
+    line.parent ? (line.parent.to ? `sous #${line.parent.to.number}` : 'détachée de sa parente') : null,
+    line.dueAt ? `échéance ${day(line.dueAt.to)}` : null,
+    line.blocks ? `bloque ${line.blocks.map((card) => `#${card.number}`).join(', ')}` : null,
+    line.unblocks ? `ne bloque plus ${line.unblocks.map((card) => `#${card.number}`).join(', ')}` : null,
+  ]
+    .filter((part) => part !== null)
+    .join(', ')
+}
+
 /** Les genres dont le résultat change une liste de l'interface. */
 const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'start_session',
   'create_card',
   'create_project',
   'move_conversation',
-  'request_card_move',
+  'request_card_change',
   'move_card',
+  'append_card_description',
+  'edit_subtasks',
+  'link_card',
 ])
 
 /**
@@ -193,12 +223,18 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
  *
  * Elles disent où en est le travail, et se reprennent d'un geste. `done` et `abandoned`
  * n'y sont pas, ni à l'arrivée ni au départ : ce sont des verdicts, et une personne les
- * pose — par l'interface, ou en accordant un `request_card_move`.
+ * pose — par l'interface, ou en accordant un `request_card_change`.
  */
 export const AGENT_CARD_COLUMNS: readonly CardColumn[] = ['todo', 'in_progress', 'review']
 
+/**
+ * Ce que `move_card` accepte : ces colonnes, plus « à préciser », qui n'en est pas une
+ * mais un état de « à faire » (#83). La session y met sa carte quand elle attend des
+ * réponses avant d'écrire du code (#67), et l'en sort en reprenant le travail.
+ */
+export const AGENT_CARD_TARGETS = [...AGENT_CARD_COLUMNS, 'to_clarify'] as const
 
-class Refusal extends Error {}
+
 
 /**
  * Qui demande : une session, ou un compte sans session.
@@ -349,7 +385,7 @@ export class AgentRequests {
       // un : un fil libre en dépose aussi. Les mettre après `requireProject` les lui
       // refuserait, alors que déclarer un projet est justement ce qu'il a à faire.
       if (request.kind === 'create_card') {
-        this.settle(request, this.createCard(requester, payload), false)
+        this.settle(request, createCardFor(this.ctx.db, requester, payload), false)
         return
       }
       if (request.kind === 'create_project') {
@@ -377,13 +413,25 @@ export class AgentRequests {
       const project = this.requireProject(request.projectId)
       // Après `requireProject`, à la différence des trois ci-dessus : une carte
       // appartient à un projet, et un fil libre n'a aucun board à proposer de ranger.
-      // C'est aussi pourquoi `request_card_move` n'entre pas dans `FREE_THREAD_TOOLS`.
-      if (request.kind === 'request_card_move') {
-        this.settle(request, this.requestCardMove(request, requester, project, payload), false)
+      // C'est aussi pourquoi `request_card_change` n'entre pas dans `FREE_THREAD_TOOLS`.
+      if (request.kind === 'request_card_change') {
+        this.settle(request, this.requestCardChange(request, requester, project, payload), false)
         return
       }
       if (request.kind === 'move_card') {
         this.settle(request, this.moveOwnCard(requester, project, payload), false)
+        return
+      }
+      if (request.kind === 'append_card_description') {
+        this.settle(request, appendOwnDescription(this.ctx.db, requester, project.id, payload), false)
+        return
+      }
+      if (request.kind === 'edit_subtasks') {
+        this.settle(request, editOwnSubtasks(this.ctx.db, requester, project.id, payload), false)
+        return
+      }
+      if (request.kind === 'link_card') {
+        this.settle(request, linkOwnConversation(this.ctx.db, requester, project.id, payload), false)
         return
       }
       if (request.kind === 'start_session') {
@@ -412,7 +460,7 @@ export class AgentRequests {
       // indéfiniment la place de l'unique demande en attente de la conversation.
       if (
         request.kind === 'move_conversation' ||
-        request.kind === 'request_card_move' ||
+        request.kind === 'request_card_change' ||
         request.kind === 'request_decision'
       ) {
         this.closeFiling(request.id)
@@ -448,7 +496,7 @@ export class AgentRequests {
       const { text, launchedId } = await this.startSession(request, requester, project, payload)
       this.settle(request, text, false, launchedId)
     } else if (request.kind === 'create_card') {
-      this.settle(request, this.createCard(requester, payload), false)
+      this.settle(request, createCardFor(this.ctx.db, requester, payload), false)
     } else if (request.kind === 'schedule_task') {
       this.settle(request, await this.scheduleTask(requester, project, payload), false)
     } else if (request.kind === 'list_worktrees') {
@@ -1122,49 +1170,6 @@ export class AgentRequests {
     return lines.filter(Boolean).join('\n')
   }
 
-  // --- create_card ---------------------------------------------------------------
-
-  /**
-   * Toujours en « à faire » : une carte ouverte par un agent est une proposition, pas
-   * un travail engagé. Elle avance quand une session la prend, comme toute autre.
-   */
-  private createCard(requester: Requester, payload: Record<string, unknown>): string {
-    const title = typeof payload.title === 'string' ? payload.title.trim() : ''
-    const description = typeof payload.description === 'string' ? payload.description.trim() : ''
-    if (!title) throw new Refusal('Le paramètre `title` est requis.')
-    if (title.length > 200) throw new Refusal('Titre trop long (200 caractères au plus).')
-    if (description.length > 20000) throw new Refusal('Description trop longue (20 000 caractères au plus).')
-
-    // Le board appartient à un projet : un fil libre n'en a pas, et il n'y a donc nulle
-    // part où poser la carte tant qu'il n'est pas rangé.
-    if (requester.projectId === null) {
-      throw new Refusal("Cette conversation n'appartient à aucun projet : il n'y a pas de board où créer une carte.")
-    }
-    const card = createCard(this.ctx.db, requester.projectId, requester.userId, {
-      title,
-      description,
-      column: 'todo',
-    })
-    // La provenance se lit dans le fil de la carte, avec un lien vers la session : la
-    // description reste celle que l'agent a rédigée, et la personne qui la reprendra
-    // sait d'où elle vient. Une carte ouverte au nom d'un compte porte déjà son auteur.
-    if (requester.id) {
-      this.ctx.db
-        .insert(cardNotes)
-        .values({
-          id: randomUUID(),
-          cardId: card.id,
-          conversationId: requester.id,
-          userId: null,
-          body: 'Carte ouverte depuis cette session.',
-          createdAt: Date.now(),
-        })
-        .run()
-    }
-
-    return `Carte #${card.number} « ${card.title} » créée dans « à faire ». Pour la faire traiter tout de suite : start_session avec card=${card.number}.`
-  }
-
   // --- create_project ------------------------------------------------------------
 
   /**
@@ -1536,10 +1541,10 @@ export class AgentRequests {
     }
   }
 
-  // --- request_card_move ---------------------------------------------------------
+  // --- request_card_change -------------------------------------------------------
 
   /**
-   * Dépose une proposition de déplacement de cartes, et ne déplace rien.
+   * Dépose une proposition de changement de cartes, et ne change rien.
    *
    * Même motif que `move_conversation`, avec les écarts que #54 arbitre : plusieurs
    * cartes par demande, une raison obligatoire par carte, toutes les colonnes permises, et
@@ -1547,10 +1552,14 @@ export class AgentRequests {
    * fois » porte, lui, sur la conversation demandeuse, comme pour une conversation : tant
    * que l'utilisateur n'a pas répondu, l'agent n'a rien à ajouter.
    *
+   * #66 y a ajouté ce qu'un agent ne pose pas seul sur une carte existante : sa parente,
+   * son échéance et ses liens « bloque ». Ils engagent le planning d'une personne, et
+   * passent donc par le même clic que les verdicts.
+   *
    * Pas de borne horaire par-dessus l'invariant : rien ne s'applique sans clic, donc une
    * boucle d'erreur ne produit qu'une demande, celle qui attend déjà.
    */
-  private requestCardMove(
+  private requestCardChange(
     request: AgentRequestRow,
     requester: ConversationRow,
     project: ProjectRow,
@@ -1558,13 +1567,13 @@ export class AgentRequests {
   ): string {
     this.assertCardFilingAllowed(requester)
 
-    const moves = Array.isArray(payload.moves) ? payload.moves : null
-    if (!moves || moves.length === 0) {
-      throw new Refusal('Le paramètre `moves` est requis : au moins un {card, column, reason}.')
+    const changes = Array.isArray(payload.changes) ? payload.changes : null
+    if (!changes || changes.length === 0) {
+      throw new Refusal('Le paramètre `changes` est requis : au moins un {card, reason} et ce qu’il faut changer.')
     }
-    if (moves.length > MAX_CARD_MOVES) {
+    if (changes.length > MAX_CARD_CHANGES) {
       throw new Refusal(
-        `Trop de cartes dans une demande (${moves.length}, ${MAX_CARD_MOVES} au plus). Garde ce qui se décide ensemble.`,
+        `Trop de cartes dans une demande (${changes.length}, ${MAX_CARD_CHANGES} au plus). Garde ce qui se décide ensemble.`,
       )
     }
 
@@ -1576,7 +1585,7 @@ export class AgentRequests {
       .from(agentRequests)
       .where(
         and(
-          eq(agentRequests.kind, 'request_card_move'),
+          eq(agentRequests.kind, 'request_card_change'),
           eq(agentRequests.conversationId, requester.id),
           isNull(agentRequests.resolvedAt),
           ne(agentRequests.id, request.id),
@@ -1585,66 +1594,112 @@ export class AgentRequests {
       .get()
     if (waiting) {
       throw new Refusal(
-        "Refusé : cette session a déjà une proposition de rangement de carte en attente. Attends que l'utilisateur y réponde.",
+        "Refusé : cette session a déjà une proposition de changement de carte en attente. Attends que l'utilisateur y réponde.",
       )
     }
 
+    const ref = (card: { id: string; number: number; title: string }) => ({ cardId: card.id, number: card.number, title: card.title })
     const seen = new Set<number>()
-    const proposed: {
-      cardId: string
-      number: number
-      title: string
-      fromColumn: CardColumn
-      toColumn: CardColumn
-      reason: string
-    }[] = []
+    const proposed: Extract<SoleraEvent, { type: 'card_filing.requested' }>['cards'] = []
 
-    for (const raw of moves) {
-      const move = raw as { card?: unknown; column?: unknown; reason?: unknown }
-      if (!Number.isInteger(move.card)) {
-        throw new Refusal('Chaque déplacement veut un `card` entier : le numéro de la carte, sans le `#`.')
+    for (const raw of changes) {
+      const change = (raw ?? {}) as Record<string, unknown>
+      if (!Number.isInteger(change.card)) {
+        throw new Refusal('Chaque changement veut un `card` entier : le numéro de la carte, sans le `#`.')
       }
-      const number = move.card as number
-      // Deux lignes sur la même carte feraient deux mouvements contradictoires dans la
+      const number = change.card as number
+      // Deux lignes sur la même carte feraient deux changements contradictoires dans la
       // même transaction, et l'utilisateur ne saurait pas lequel il accorde.
       if (seen.has(number)) throw new Refusal(`La carte #${number} apparaît deux fois dans la même demande.`)
       seen.add(number)
 
-      const column = cardColumnSchema.safeParse(move.column)
-      if (!column.success) {
-        throw new Refusal(
-          `Colonne inconnue pour #${number} : ${cardColumnSchema.options.join(', ')}.`,
-        )
-      }
       // Obligatoire, et c'est le seul écart de forme avec `move_conversation` : son prix
       // à lui se calcule tout seul, là où une carte ne se range que sur un constat.
-      const reason = typeof move.reason === 'string' ? move.reason.trim() : ''
+      const reason = typeof change.reason === 'string' ? change.reason.trim() : ''
       if (!reason) {
         throw new Refusal(
           `Le champ \`reason\` est requis pour #${number} : dis ce que tu as constaté, en une phrase. Une demande sans raison n'est pas une proposition.`,
         )
       }
-
-      const card = this.ctx.db
-        .select({ id: cards.id, title: cards.title, column: cards.column })
-        .from(cards)
-        .where(and(eq(cards.projectId, project.id), eq(cards.number, number)))
-        .get()
-      if (!card) throw new Refusal(`Aucune carte #${number} dans ce projet. list_cards donne les numéros.`)
-      if (card.column === column.data) {
-        throw new Refusal(
-          `La carte #${number} est déjà en « ${COLUMN_WORDS[column.data]} ». Retire-la de la demande.`,
-        )
+      const card = cardByNumber(this.ctx.db, project.id, number)
+      const line: (typeof proposed)[number] = {
+        ...ref(card),
+        fromColumn: card.column,
+        reason: reason.slice(0, MAX_CARD_MOVE_REASON_CHARS),
       }
 
-      proposed.push({
-        cardId: card.id,
-        number,
-        title: card.title,
-        fromColumn: card.column,
-        toColumn: column.data,
-        reason: reason.slice(0, MAX_CARD_MOVE_REASON_CHARS),
-      })
+      if (change.column !== undefined) {
+        const column = cardColumnSchema.safeParse(change.column)
+        if (!column.success) {
+          throw new Refusal(`Colonne inconnue pour #${number} : ${cardColumnSchema.options.join(', ')}.`)
+        }
+        if (card.column === column.data) {
+          throw new Refusal(`La carte #${number} est déjà en « ${COLUMN_WORDS[column.data]} ». Retire \`column\` de la demande.`)
+        }
+        line.toColumn = column.data
+      }
+
+      if (change.parent !== undefined) {
+        // 0 détache, comme `null` : les schémas d'outils ne disent pas « entier ou null »
+        // de la même façon chez les trois CLI, et aucune carte ne porte le numéro 0.
+        if (change.parent !== null && !Number.isInteger(change.parent)) {
+          throw new Refusal(`Le champ \`parent\` de #${number} est le numéro de la parente, ou 0 pour la détacher.`)
+        }
+        const next = change.parent === null || change.parent === 0 ? null : cardByNumber(this.ctx.db, project.id, change.parent as number)
+        if ((next?.id ?? null) === card.parentId) {
+          throw new Refusal(`La carte #${number} a déjà cette parente. Retire \`parent\` de la demande.`)
+        }
+        if (next) {
+          try {
+            resolveParent(this.ctx.db, card, next.id)
+          } catch {
+            throw new Refusal(`#${next.number} ne peut pas devenir la parente de #${number} : elle en descend, ou c'est la même carte.`)
+          }
+        }
+        const current = card.parentId
+          ? this.ctx.db.select({ id: cards.id, number: cards.number, title: cards.title }).from(cards).where(eq(cards.id, card.parentId)).get()
+          : undefined
+        line.parent = { from: current ? ref(current) : null, to: next ? ref(next) : null }
+      }
+
+      if (change.due !== undefined) {
+        const dueAt = parseDueDay(change.due === '' ? null : change.due, 'due')
+        if (dueAt === card.dueAt) throw new Refusal(`La carte #${number} a déjà cette échéance. Retire \`due\` de la demande.`)
+        line.dueAt = { from: card.dueAt, to: dueAt }
+      }
+
+      const blocks = cardNumbers(change.blocks, 'blocks').map((other) => cardByNumber(this.ctx.db, project.id, other))
+      const unblocks = cardNumbers(change.unblocks, 'unblocks').map((other) => cardByNumber(this.ctx.db, project.id, other))
+      for (const target of blocks) {
+        if (target.id === card.id) throw new Refusal(`La carte #${number} ne peut pas se bloquer elle-même.`)
+        const links = this.ctx.db
+          .select({ sourceId: cardBlocks.sourceId })
+          .from(cardBlocks)
+          .where(
+            or(
+              and(eq(cardBlocks.sourceId, card.id), eq(cardBlocks.targetId, target.id)),
+              and(eq(cardBlocks.sourceId, target.id), eq(cardBlocks.targetId, card.id)),
+            ),
+          )
+          .all()
+        if (links.some((link) => link.sourceId === card.id)) throw new Refusal(`#${number} bloque déjà #${target.number}.`)
+        if (links.length > 0) throw new Refusal(`#${target.number} bloque déjà #${number} : les deux se bloqueraient l'une l'autre.`)
+      }
+      for (const target of unblocks) {
+        const link = this.ctx.db
+          .select({ sourceId: cardBlocks.sourceId })
+          .from(cardBlocks)
+          .where(and(eq(cardBlocks.sourceId, card.id), eq(cardBlocks.targetId, target.id)))
+          .get()
+        if (!link) throw new Refusal(`#${number} ne bloque pas #${target.number} : il n'y a pas de lien à retirer.`)
+      }
+      if (blocks.length > 0) line.blocks = blocks.map(ref)
+      if (unblocks.length > 0) line.unblocks = unblocks.map(ref)
+
+      if (!line.toColumn && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
+        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
+      }
+      proposed.push(line)
     }
 
     // Dans le journal de la conversation qui demande, et non dans un fil par carte : une
@@ -1659,19 +1714,19 @@ export class AgentRequests {
 
     const lines = [
       proposed.length === 1
-        ? `Demande déposée : déplacer #${proposed[0]!.number} vers « ${COLUMN_WORDS[proposed[0]!.toColumn]} ».`
-        : `Demande déposée : déplacer ${proposed.length} cartes (${proposed.map((move) => `#${move.number} → ${COLUMN_WORDS[move.toColumn]}`).join(', ')}).`,
-      "Elle attend un clic dans cette conversation, et rien n'est déplacé avant. C'est le propriétaire du projet qui tranche, et le mouvement sera inscrit à son nom.",
+        ? `Demande déposée pour #${proposed[0]!.number} : ${describeCardChange(proposed[0]!)}.`
+        : `Demande déposée pour ${proposed.length} cartes : ${proposed.map((line) => `#${line.number} (${describeCardChange(line)})`).join(', ')}.`,
+      "Elle attend un clic dans cette conversation, et rien n'est changé avant. C'est le propriétaire du projet qui tranche, et le changement sera inscrit à son nom.",
       proposed.length === 1
         ? 'Accordée ou refusée, tu le liras dans ce fil.'
         : 'Un seul clic accorde la liste entière, ou la refuse entière.',
-      "N'en redépose pas : une seule proposition de rangement de carte peut attendre à la fois.",
+      "N'en redépose pas : une seule proposition de changement de carte peut attendre à la fois.",
     ]
     return lines.join('\n')
   }
 
   /**
-   * `request_card_move` est une portée accordée, pas une capacité par défaut.
+   * `request_card_change` est une portée accordée, pas une capacité par défaut.
    *
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
    * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
@@ -1718,7 +1773,7 @@ export class AgentRequests {
    *
    * La part de #66 « agir sur ce qui se réverse » : l'agent dit où en est son travail en
    * rangeant sa propre carte entre `AGENT_CARD_COLUMNS`. Tout le reste — un verdict, ou
-   * la carte d'une autre session — passe par `request_card_move`, et c'est pourquoi
+   * la carte d'une autre session — passe par `request_card_change`, et c'est pourquoi
    * l'outil n'a pas de paramètre de numéro : il n'y a rien à valider sur une carte qu'il
    * ne peut pas désigner.
    *
@@ -1732,48 +1787,80 @@ export class AgentRequests {
    * en clair, signée de la session : c'est le fil que l'utilisateur lit.
    */
   private moveOwnCard(requester: ConversationRow, project: ProjectRow, payload: Record<string, unknown>): string {
-    const column = cardColumnSchema.safeParse(payload.column)
-    if (!column.success || !AGENT_CARD_COLUMNS.includes(column.data)) {
+    const target = AGENT_CARD_TARGETS.find((value) => value === payload.column)
+    if (!target) {
       throw new Refusal(
-        `Le paramètre \`column\` vaut ${AGENT_CARD_COLUMNS.join(', ')}. Terminé et abandonné se demandent avec request_card_move.`,
+        `Le paramètre \`column\` vaut ${AGENT_CARD_TARGETS.join(', ')}. Terminé et abandonné se demandent avec request_card_change.`,
       )
     }
     const card = requester.cardId
       ? this.ctx.db
-          .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+          .select({
+            id: cards.id,
+            number: cards.number,
+            title: cards.title,
+            column: cards.column,
+            toClarifySince: cards.toClarifySince,
+          })
           .from(cards)
           .where(and(eq(cards.id, requester.cardId), eq(cards.projectId, project.id)))
           .get()
       : undefined
     if (!card) {
       throw new Refusal(
-        "Cette conversation n'est rattachée à aucune carte : il n'y a rien à déplacer. Pour une autre carte, request_card_move.",
+        "Cette conversation n'est rattachée à aucune carte : il n'y a rien à déplacer. Rattache-la avec link_card si une carte décrit ton travail ; pour une autre carte, request_card_change.",
       )
     }
     if (!AGENT_CARD_COLUMNS.includes(card.column)) {
       throw new Refusal(
-        `Refusé : la carte #${card.number} est en « ${COLUMN_WORDS[card.column]} », un verdict posé par une personne. Si elle doit en ressortir, propose-le avec request_card_move.`,
+        `Refusé : la carte #${card.number} est en « ${COLUMN_WORDS[card.column]} », un verdict posé par une personne. Si elle doit en ressortir, propose-le avec request_card_change.`,
       )
     }
-    if (card.column === column.data) {
-      return `La carte #${card.number} « ${card.title} » est déjà en « ${COLUMN_WORDS[column.data]} ».`
+    const reason = typeof payload.reason === 'string' ? payload.reason.trim().slice(0, MAX_CARD_MOVE_REASON_CHARS) : ''
+    const clarifying = card.column === 'todo' && card.toClarifySince !== null
+    const where = clarifying ? 'à préciser' : COLUMN_WORDS[card.column]
+
+    // « À préciser » se pose et se lève par `setToClarify`, qui ramène aussi la carte en
+    // « à faire » : c'est un état de cette colonne. En sortir vers une autre colonne
+    // passe par le mouvement ordinaire, et `recordCardMove` efface l'état.
+    if (target === 'to_clarify' || (target === 'todo' && clarifying)) {
+      if (target === 'to_clarify' && clarifying) return `La carte #${card.number} « ${card.title} » est déjà « à préciser ».`
+      const on = target === 'to_clarify'
+      setToClarify(this.ctx.db, card.id, on, { userId: requester.userId, conversationId: requester.id })
+      this.ctx.db
+        .insert(cardNotes)
+        .values({
+          id: randomUUID(),
+          cardId: card.id,
+          conversationId: requester.id,
+          userId: null,
+          body: `${on ? `Mise « à préciser » depuis « ${where} »` : 'Plus rien à préciser, de retour « à faire »'}.${reason ? ` ${reason}` : ''}`,
+          createdAt: Date.now(),
+        })
+        .run()
+      return on
+        ? `Carte #${card.number} « ${card.title} » mise « à préciser ». Pose tes questions dans ta réponse, et laisse-les aussi en note avec add_card_note ; ramène-la en in_progress quand tu reprends.`
+        : `Carte #${card.number} « ${card.title} » : plus rien à préciser, elle reste « à faire ».`
+    }
+    const column: CardColumn = target
+    if (card.column === column) {
+      return `La carte #${card.number} « ${card.title} » est déjà en « ${COLUMN_WORDS[column]} ».`
     }
 
-    const reason = typeof payload.reason === 'string' ? payload.reason.trim().slice(0, MAX_CARD_MOVE_REASON_CHARS) : ''
     const now = Date.now()
     writeTransaction(this.ctx.db, (tx) => {
       // Conditionné à la colonne relue : une personne a pu ranger la carte entre la
       // lecture et l'écriture, et son geste plus récent l'emporte.
       const moved = tx
         .update(cards)
-        .set({ column: column.data, updatedAt: now })
+        .set({ column: column, updatedAt: now })
         .where(and(eq(cards.id, card.id), eq(cards.column, card.column)))
         .run()
       if (moved.changes === 0) return
       recordCardMove(tx, {
         cardId: card.id,
         from: card.column,
-        to: column.data,
+        to: column,
         userId: requester.userId,
         conversationId: requester.id,
         at: now,
@@ -1784,13 +1871,13 @@ export class AgentRequests {
           cardId: card.id,
           conversationId: requester.id,
           userId: null,
-          body: `Déplacée de « ${COLUMN_WORDS[card.column]} » vers « ${COLUMN_WORDS[column.data]} ».${reason ? ` ${reason}` : ''}`,
+          body: `Déplacée de « ${COLUMN_WORDS[card.column]} » vers « ${COLUMN_WORDS[column]} ».${reason ? ` ${reason}` : ''}`,
           createdAt: now,
         })
         .run()
     })
 
-    return `Carte #${card.number} « ${card.title} » passée de « ${COLUMN_WORDS[card.column]} » à « ${COLUMN_WORDS[column.data]} ». Une note sur la carte le dit.`
+    return `Carte #${card.number} « ${card.title} » passée de « ${COLUMN_WORDS[card.column]} » à « ${COLUMN_WORDS[column]} ». Une note sur la carte le dit.`
   }
 
   // --- request_decision ----------------------------------------------------------

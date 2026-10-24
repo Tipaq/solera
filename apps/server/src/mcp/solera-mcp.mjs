@@ -9,17 +9,21 @@
  * rien.** Ce qui l'oblige est donc moins une liste d'outils qu'une forme d'écriture.
  *
  * *Ce qu'il écrit directement est toujours un ajout* : notes de carte, messages entre
- * sessions, surveillances, cartes neuves, sessions lancées, projets déclarés. Une ligne
- * de plus ne détruit rien et s'annule — une carte s'archive, un projet aussi.
+ * sessions, surveillances, cartes neuves — avec leur parente, leur échéance et leurs
+ * blocages, puisqu'elles n'étaient le choix de personne —, sessions lancées, projets
+ * déclarés. Et sur **sa propre** carte (#66) : une précision en fin de description, des
+ * sous-tâches ajoutées ou cochées, le rattachement de la conversation lancée sans elle.
+ * Une ligne de plus ne détruit rien et s'annule — une carte s'abandonne, un projet
+ * s'archive, une case se décoche.
  *
  * *Ce qui défait le choix d'une personne passe par un clic*, et l'outil ne fait alors que
  * déposer une demande : `move_conversation` pour une conversation, qu'un déplacement
- * détacherait de son worktree et de sa carte ; `request_card_move` pour les colonnes du
- * board, où c'est la position choisie d'une carte qui serait défaite. Le clic est ce qui
- * rend ces mouvements permis : accordé, le geste redevient celui d'une personne, et c'est
- * son nom qui part dans `card_moves`. C'est pourquoi `request_card_move` n'a besoin
- * d'aucune règle par sens de mouvement et accepte `abandoned` comme le reste — le tabou
- * visait l'acte, pas la proposition.
+ * détacherait de son worktree et de sa carte ; `request_card_change` pour une carte qui
+ * existe déjà, dont la colonne, la parente, l'échéance ou les blocages sont le choix
+ * d'une personne. Le clic est ce qui rend ces gestes permis : accordé, le geste redevient
+ * celui d'une personne, et c'est son nom qui part dans `card_moves`. C'est pourquoi
+ * `request_card_change` n'a besoin d'aucune règle par sens de mouvement et accepte
+ * `abandoned` comme le reste — le tabou visait l'acte, pas la proposition.
  *
  * *Ce qui demande l'avis d'une personne sans rien défaire* passe par `request_decision` :
  * l'agent dépose sa question et n'attend pas, la réponse lui revient en message. Rien
@@ -31,15 +35,18 @@
  * elle n'est la consigne ni le jugement de personne, et l'utilisateur la reprend d'un
  * clic. SOLERA.md, qu'un agent lit et réécrit comme il le ferait d'un fichier de
  * consignes du dépôt, à la demande de l'utilisateur, qui en voit la dernière main. Et
- * `move_card`, par lequel un agent range **sa propre** carte entre « à faire », « en
- * cours » et « à vérifier » (#86) : ces colonnes disent où en est le travail, pas ce
- * qu'il vaut, et se reprennent d'un geste. Une carte en « terminé » ou « abandonné » ne
+ * `move_card`, par lequel un agent range **sa propre** carte entre « à faire », « à
+ * préciser », « en cours » et « à vérifier » (#86, #66) : ces étapes disent où en est le
+ * travail, pas ce qu'il vaut, et se reprennent d'un geste. Une carte en « terminé » ou « abandonné » ne
  * bouge pas par lui, ni vers ces colonnes ni hors d'elles : ce sont des verdicts, et ils
- * restent à `request_card_move`.
+ * restent à `request_card_change`.
  *
- * *Ce qui reste interdit, sans demande possible* : réécrire la description d'une carte.
- * Un compte rendu de session effacerait la consigne qu'il était censé suivre, et il n'y a
- * pas de clic qui rende cela acceptable. Et Solera ne crée ni ne supprime jamais de
+ * *Ce qui reste interdit, sans demande possible* : réécrire la description d'une carte,
+ * et supprimer une carte. Un compte rendu de session effacerait la consigne qu'il était
+ * censé suivre, et il n'y a pas de clic qui rende cela acceptable ; c'est pourquoi
+ * `append_card_description` n'écrit qu'en fin, dans sa section, et refuse si une
+ * personne a changé le texte depuis qu'il l'a lu. Une carte sans objet s'abandonne, par
+ * une demande. Et Solera ne crée ni ne supprime jamais de
  * dossier : l'agent fait son `mkdir` lui-même, avec ses propres outils.
  *
  * Ces outils se découpent en **familles d'autorisation**, dont le critère d'ouverture est
@@ -131,7 +138,7 @@ const FILING = process.env.SOLERA_MCP_FILING === '1'
 
 /**
  * Portée de rangement de carte, accordée conversation par conversation : à faux,
- * `request_card_move` n'est pas listé du tout.
+ * `request_card_change` n'est pas listé du tout.
  *
  * Distincte de `FILING` et pas une part de lui : ranger un projet agit au-dessus du
  * projet, proposer le déplacement d'une carte défait un choix qu'une personne a posé
@@ -217,13 +224,13 @@ const COLUMN_LABELS = {
 const CARD_LIMIT = 40
 
 /**
- * Cartes qu'une seule demande de déplacement peut porter.
+ * Cartes qu'une seule demande de changement peut porter.
  *
  * Une liste existe pour le cas qui a ouvert la carte #54 — treize cartes finies restées
  * en « en cours » — et vingt la couvre largement. Au-delà, ce n'est plus une proposition
  * qu'une personne relit avant de cliquer, c'est un lot qu'elle accorde sans le lire.
  */
-const MAX_CARD_MOVES = 20
+const MAX_CARD_CHANGES = 20
 
 /**
  * Les colonnes où `move_card` range la carte de la conversation, sans clic. Doit rester
@@ -231,6 +238,19 @@ const MAX_CARD_MOVES = 20
  * qui en est l'autorité.
  */
 const AGENT_CARD_COLUMNS = ['todo', 'in_progress', 'review']
+
+/**
+ * Ce que `move_card` accepte : ces colonnes, plus « à préciser », un état de « à faire ».
+ * D'accord avec `AGENT_CARD_TARGETS` du même fichier du daemon.
+ */
+const AGENT_CARD_TARGETS = [...AGENT_CARD_COLUMNS, 'to_clarify']
+
+/**
+ * Bornes des gestes sur la carte, d'accord avec `apps/server/src/sessions/card-gestures.ts`,
+ * qui les tient. Ici pour les dire à l'agent.
+ */
+const MAX_PRECISION_CHARS = 4000
+const MAX_SUBTASKS = 30
 
 /** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
 const CARD_EXCERPT_CHARS = 160
@@ -260,8 +280,11 @@ const REQUEST_WAIT_MS = {
   // Le temps que le daemon valide et dépose la demande, pas celui que l'utilisateur met
   // à l'accorder : l'outil rend la main dès que la demande est posée.
   move_conversation: 15000,
-  request_card_move: 15000,
+  request_card_change: 15000,
   move_card: 15000,
+  append_card_description: 15000,
+  edit_subtasks: 15000,
+  link_card: 15000,
   rename_session: 15000,
   request_decision: 15000,
   // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
@@ -509,7 +532,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. L'échéance d'une carte, sa parente et ses blocages se posent dans l'interface, par une personne, jamais par toi ; sa colonne aussi, à deux exceptions près : tu ranges ta propre carte entre à faire, en cours et à vérifier avec move_card, et tu peux proposer tout autre déplacement avec request_card_move si cet outil t'est accordé.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. Sur ta propre carte, tu ranges seul (move_card), tu complètes la description (append_card_description) et tu coches les sous-tâches (edit_subtasks). L'échéance, la parente, les blocages et la colonne d'une carte existante sont, eux, le choix d'une personne : tu en proposes le changement avec request_card_change.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -524,10 +547,14 @@ const ALL_TOOLS = [
   {
     name: 'add_card_note',
     description:
-      "Ajoute une note au fil de la carte que traite cette conversation. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte, qui appartient à la personne qui l'a écrite.",
+      "Ajoute une note au fil d'une carte, par défaut celle que traite cette conversation. Sert à laisser aux sessions suivantes ce qu'elles ne pourront pas redécouvrir seules : ce qui a été fait et où en est le travail, ce qui a été essayé sans marcher et pourquoi, une décision prise en route, une contrainte trouvée dans le code. Appelle cet outil en fin de travail, et avant toute interruption longue. N'y recopie pas ce que le dépôt dit déjà, ni ce que `git log` raconte : une note utile est celle qui aurait fait gagner du temps si on l'avait lue au début. Sur une autre carte, avec `card`, pour ce que tu as appris qui la concerne : une contrainte qu'elle devra respecter, un travail que tu as fait et dont elle dépend. Les notes s'ajoutent et ne s'effacent pas ; elles ne remplacent pas la description de la carte, qui appartient à la personne qui l'a écrite.",
     inputSchema: {
       type: 'object',
       properties: {
+        card: {
+          type: 'integer',
+          description: "Numéro de la carte, tel qu'il s'écrit après le `#`. Omettre pour la carte de cette conversation.",
+        },
         body: {
           type: 'string',
           description:
@@ -540,14 +567,14 @@ const ALL_TOOLS = [
   {
     name: 'move_card',
     description:
-      "Range la carte de cette conversation dans une autre colonne du board, sans demander : à faire (todo), en cours (in_progress) ou à vérifier (review). Fais-le de toi-même quand ton travail change d'étape — en « à vérifier » quand tu as fini et qu'une personne doit relire (une PR ouverte, par exemple), de retour « en cours » si la relecture te renvoie au travail. Seulement ta carte, et seulement entre ces trois colonnes : « terminé » et « abandonné » sont des verdicts qu'une personne pose, et une carte qui y est ne bouge plus. Pour ceux-là, ou pour la carte d'une autre session, propose le déplacement avec request_card_move si cet outil t'est accordé, ou dis-le dans ta réponse. Le déplacement laisse une note sur la carte, signée de cette session.",
+      "Range la carte de cette conversation, sans demander : à faire (todo), à préciser (to_clarify), en cours (in_progress) ou à vérifier (review). Fais-le de toi-même quand ton travail change d'étape — « à préciser » quand la carte ne dit pas assez pour écrire du code et que tu poses tes questions (laisse-les aussi en note avec add_card_note), « en cours » quand tu reprends, « à vérifier » quand tu as fini et qu'une personne doit relire (une PR ouverte, par exemple). « À préciser » n'est pas une colonne mais un état de « à faire » : la carte y retourne, et en ressort quand tu la passes en cours. Seulement ta carte : « terminé » et « abandonné » sont des verdicts qu'une personne pose, et une carte qui y est ne bouge plus. Pour ceux-là, ou pour la carte d'une autre session, propose le changement avec request_card_change. Le déplacement laisse une note sur la carte, signée de cette session.",
     inputSchema: {
       type: 'object',
       properties: {
         column: {
           type: 'string',
-          enum: AGENT_CARD_COLUMNS,
-          description: 'Colonne d’arrivée : todo (à faire), in_progress (en cours) ou review (à vérifier).',
+          enum: AGENT_CARD_TARGETS,
+          description: 'Où la ranger : todo (à faire), to_clarify (à préciser), in_progress (en cours) ou review (à vérifier).',
         },
         reason: {
           type: 'string',
@@ -560,7 +587,7 @@ const ALL_TOOLS = [
   {
     name: 'create_card',
     description:
-      "Ouvre une carte dans la colonne « à faire » du board de ce projet. Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas : un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Tu ne réécris pas une description existante : la consigne appartient à qui l'a écrite. La colonne de ta propre carte se change avec move_card.",
+      "Ouvre une carte dans la colonne « à faire » du board de ce projet, complète d'un coup : sa parente, son échéance, ses sous-tâches et ses liens « bloque ». Sert à noter un travail qui sort du sujet de cette conversation, pour qu'il ne se perde pas — un bug croisé en route, une dette repérée, une suite que l'utilisateur a évoquée —, et à découper un chantier : une carte enfant de la tienne (`parent`) pour une étape qui mérite sa propre session. C'est le geste par défaut pour ce que tu découvres seul ; ne lance une session (start_session) que si l'utilisateur l'a demandé. Appelle list_cards avant, pour ne pas doubler une carte qui existe. Une sous-tâche cochable est un petit pas de la même session ; une carte enfant, un travail à part.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -573,8 +600,71 @@ const ALL_TOOLS = [
           description:
             "Description en markdown, compréhensible sans ce fil : symptôme, fichiers et lignes en cause, comment reproduire, piste de correction si tu en as une. `#12` cite une autre carte.",
         },
+        parent: {
+          type: 'integer',
+          description: "Numéro de la carte parente, dont celle-ci est une partie. Une carte ouverte seulement.",
+        },
+        due: {
+          type: 'string',
+          description: "Échéance, au format AAAA-MM-JJ. Seulement si l'utilisateur en a donné une, ou si la parente en a une que celle-ci doit tenir.",
+        },
+        subtasks: {
+          type: 'array',
+          items: { type: 'string' },
+          description: `Sous-tâches cochables, une ligne chacune, ${MAX_SUBTASKS} au plus. Ajoutées en fin de description.`,
+        },
+        blocks: {
+          type: 'array',
+          items: { type: 'integer' },
+          description: 'Numéros des cartes que celle-ci empêche d’avancer : elles ne s’ouvrent pas avant elle.',
+        },
+        blocked_by: {
+          type: 'array',
+          items: { type: 'integer' },
+          description: 'Numéros des cartes qui doivent être finies avant celle-ci.',
+        },
       },
       required: ['title'],
+    },
+  },
+  {
+    name: 'append_card_description',
+    description:
+      "Complète la description de la carte de cette conversation, sans réécrire ce qui précède : ton texte part en fin, dans une section « Précisions », daté et signé de cette session, et une note sur la carte le dit. Sert quand le cahier des charges a bougé en route — une réponse de l'utilisateur qui tranche une question, une contrainte découverte qui change ce qui est attendu — et que la session suivante doit le lire dans la description plutôt que de le chercher dans les notes. Pas pour un compte rendu de ce que tu as fait : c'est le rôle de add_card_note. Le texte d'origine appartient à qui l'a écrit, et tu n'y touches pas.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: `Ce qu'il faut ajouter, en markdown, ${MAX_PRECISION_CHARS} caractères au plus. Écrit pour être lu sans ce fil.`,
+        },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'edit_subtasks',
+    description:
+      "Coche, décoche ou ajoute des sous-tâches — les cases `- [ ]` de la description — sur la carte de cette conversation. Coche au fur et à mesure que tu les termines : c'est la barre d'avancement que l'utilisateur voit sur le board. Désigne-les par leur libellé, tel que read_card le montre. Les ajouts vont sous la dernière case, ou dans une section « Sous-tâches » s'il n'y en a pas, et une note sur la carte le dit.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        check: { type: 'array', items: { type: 'string' }, description: 'Libellés des sous-tâches à cocher.' },
+        uncheck: { type: 'array', items: { type: 'string' }, description: 'Libellés des sous-tâches à décocher.' },
+        add: { type: 'array', items: { type: 'string' }, description: 'Sous-tâches à ajouter, non cochées, une ligne chacune.' },
+      },
+    },
+  },
+  {
+    name: 'link_card',
+    description:
+      "Rattache cette conversation à une carte du board, quand elle a été lancée sans carte et qu'une carte décrit bien son travail : l'utilisateur te le dit, ou list_cards en montre une dont c'est exactement le sujet. La carte passe en « en cours » si elle était « à faire », et ses notes, move_card et append_card_description deviennent les tiens. Seulement si la conversation n'a pas de carte : en changer se fait dans l'interface. Dans le doute, demande plutôt que de choisir.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        card: { type: 'integer', description: "Numéro de la carte, tel qu'il s'écrit après le `#`." },
+      },
+      required: ['card'],
     },
   },
   {
@@ -1008,15 +1098,15 @@ const ALL_TOOLS = [
     },
   },
   {
-    name: 'request_card_move',
+    name: 'request_card_change',
     description:
-      "Propose le déplacement d'une ou plusieurs cartes du board, vers la colonne que tu indiques. **Ne déplace rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert quand une carte est visiblement finie, abandonnée ou mal classée et que tu peux dire en quoi : une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet, une carte restée « à faire » alors qu'une session y travaille. Toutes les colonnes sont permises, `abandoned` comprise. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte.",
+      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte.",
     inputSchema: {
       type: 'object',
       properties: {
-        moves: {
+        changes: {
           type: 'array',
-          description: `Les déplacements proposés, de 1 à ${MAX_CARD_MOVES} cartes.`,
+          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, parent, due, blocks, unblocks.`,
           items: {
             type: 'object',
             properties: {
@@ -1029,17 +1119,35 @@ const ALL_TOOLS = [
                 enum: ['todo', 'in_progress', 'review', 'done', 'abandoned'],
                 description: 'Colonne visée.',
               },
+              parent: {
+                type: 'integer',
+                description: 'Numéro de la nouvelle parente, ou 0 pour la détacher de la sienne.',
+              },
+              due: {
+                type: 'string',
+                description: "Nouvelle échéance au format AAAA-MM-JJ, ou une chaîne vide pour l'enlever.",
+              },
+              blocks: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: 'Cartes que celle-ci devra bloquer.',
+              },
+              unblocks: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: "Cartes qu'elle cessera de bloquer.",
+              },
               reason: {
                 type: 'string',
                 description:
-                  "Pourquoi, en une phrase : ce que tu as constaté qui justifie le déplacement, pas ce que tu en conclus. C'est elle que l'utilisateur lit avant de cliquer, et une demande sans raison écrite est refusée.",
+                  "Pourquoi, en une phrase : ce que tu as constaté qui justifie le changement, pas ce que tu en conclus. C'est elle que l'utilisateur lit avant de cliquer, et une demande sans raison écrite est refusée.",
               },
             },
-            required: ['card', 'column', 'reason'],
+            required: ['card', 'reason'],
           },
         },
       },
-      required: ['moves'],
+      required: ['changes'],
     },
   },
   {
@@ -1334,7 +1442,7 @@ function forGlobal(tool) {
   const extra = {}
   if (mode === 'required') extra.project = { type: 'string', description: PROJECT_PARAM_DESCRIPTION }
   if (mode === 'optional') extra.project = { type: 'string', description: `${PROJECT_PARAM_DESCRIPTION} ${PROJECT_OMITTED[tool.name]}` }
-  if (tool.name === 'add_card_note') extra.card = { type: 'integer', description: "Numéro de la carte, tel qu'il s'écrit après le `#`." }
+  if (tool.name === 'add_card_note') properties.card = { type: 'integer', description: "Numéro de la carte, tel qu'il s'écrit après le `#`." }
   if (tool.name === 'read_conversation') {
     extra.wait_seconds = {
       type: 'integer',
@@ -2615,7 +2723,7 @@ const FILING_TOOLS = new Set(['create_project', 'move_conversation'])
 const MEMORY_TOOLS = new Set(['read_memory', 'write_memory', 'delete_memory'])
 
 /** Les outils que la famille « Rangement de carte » ouvre. */
-const CARD_FILING_TOOLS = new Set(['request_card_move'])
+const CARD_FILING_TOOLS = new Set(['request_card_change'])
 
 /** Les outils que la famille « Décisions » ouvre. */
 const DECISION_TOOLS = new Set(['request_decision'])
@@ -3506,15 +3614,20 @@ async function callTool(name, args) {
     const body = typeof args?.body === 'string' ? args.body.trim() : ''
     if (!body) return { ...text('Le paramètre `body` est requis.'), isError: true }
 
-    // En mode global, la carte que `card` désigne : l'appelant n'a pas de conversation
-    // rattachée, et c'est lui, pas un agent, qui choisit où écrire.
-    const card = GLOBAL ? (Number.isInteger(args?.card) ? readCard(args.card) : null) : currentCard()
+    // La carte que `card` désigne, sinon celle de la conversation. Une note s'ajoute et
+    // ne défait rien, d'où toutes les cartes du projet (#66) ; en mode global, `card` est
+    // requis, l'appelant n'ayant pas de conversation rattachée.
+    const named = args?.card !== undefined
+    if (named && !Number.isInteger(args.card)) {
+      return { ...text('Le paramètre `card` est le numéro de la carte, sans le `#`.'), isError: true }
+    }
+    const card = named ? readCard(args.card) : GLOBAL ? null : currentCard()
     if (!card) {
       return {
         ...text(
-          GLOBAL
+          named || GLOBAL
             ? `Aucune carte #${args?.card ?? '?'} dans ce projet. list_cards donne leurs numéros.`
-            : "Cette conversation n'est rattachée à aucune carte, il n'y a donc pas de fil où écrire. Le rattachement se fait dans l'interface de Solera, sur la carte ou depuis la conversation ; demande-le plutôt que de choisir une carte toi-même.",
+            : "Cette conversation n'est rattachée à aucune carte. Donne `card` pour écrire sur une autre, ou rattache-la d'abord avec link_card si c'est bien son sujet.",
         ),
         isError: true,
       }
@@ -3695,10 +3808,10 @@ async function callTool(name, args) {
     }
     // Revalidé par le daemon, qui seul a la base pour autorité ; ici, pour que le modèle
     // lise tout de suite ce qu'il doit corriger.
-    if (!AGENT_CARD_COLUMNS.includes(args?.column)) {
+    if (!AGENT_CARD_TARGETS.includes(args?.column)) {
       return {
         ...text(
-          `Le paramètre \`column\` vaut ${AGENT_CARD_COLUMNS.join(', ')}. Terminé et abandonné se demandent avec request_card_move.`,
+          `Le paramètre \`column\` vaut ${AGENT_CARD_TARGETS.join(', ')}. Terminé et abandonné se demandent avec request_card_change.`,
         ),
         isError: true,
       }
@@ -3709,7 +3822,22 @@ async function callTool(name, args) {
     })
   }
 
-  if (name === 'request_card_move') {
+  // Les gestes sur la carte de la conversation (#66) : tout se valide dans le daemon,
+  // qui relit la description et la carte au moment d'écrire.
+  if (name === 'append_card_description' || name === 'edit_subtasks' || name === 'link_card') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas quelle carte toucher."), isError: true }
+    }
+    if (name === 'append_card_description' && !(typeof args?.text === 'string' && args.text.trim())) {
+      return { ...text('Le paramètre `text` est requis.'), isError: true }
+    }
+    if (name === 'link_card' && !Number.isInteger(args?.card)) {
+      return { ...text('Le paramètre `card` est le numéro de la carte, sans le `#`.'), isError: true }
+    }
+    return requestDaemon(name, args ?? {})
+  }
+
+  if (name === 'request_card_change') {
     if (!CARD_FILING) {
       return { ...text(`Outil inconnu : ${name}`), isError: true }
     }
@@ -3720,34 +3848,34 @@ async function callTool(name, args) {
     // revalidé par le daemon, qui seul a la base pour autorité. La raison est le seul
     // champ qu'on refuse sans regarder la carte : sans elle, ce n'est pas une
     // proposition.
-    const moves = Array.isArray(args?.moves) ? args.moves : null
-    if (!moves || moves.length === 0) {
-      return { ...text('Le paramètre `moves` est requis : au moins un {card, column, reason}.'), isError: true }
+    const changes = Array.isArray(args?.changes) ? args.changes : null
+    if (!changes || changes.length === 0) {
+      return { ...text('Le paramètre `changes` est requis : au moins un {card, reason} et ce qu’il faut changer.'), isError: true }
     }
-    if (moves.length > MAX_CARD_MOVES) {
+    if (changes.length > MAX_CARD_CHANGES) {
       return {
-        ...text(`Trop de cartes dans une demande (${moves.length}, ${MAX_CARD_MOVES} au plus). Garde ce qui se décide ensemble.`),
+        ...text(`Trop de cartes dans une demande (${changes.length}, ${MAX_CARD_CHANGES} au plus). Garde ce qui se décide ensemble.`),
         isError: true,
       }
     }
-    for (const move of moves) {
-      if (!Number.isInteger(move?.card)) {
-        return { ...text('Chaque déplacement veut un `card` entier : le numéro de la carte, sans le `#`.'), isError: true }
+    for (const change of changes) {
+      if (!Number.isInteger(change?.card)) {
+        return { ...text('Chaque changement veut un `card` entier : le numéro de la carte, sans le `#`.'), isError: true }
       }
-      if (!(typeof move?.column === 'string' && COLUMN_LABELS[move.column])) {
+      if (change.column !== undefined && !(typeof change.column === 'string' && COLUMN_LABELS[change.column])) {
         return {
-          ...text(`Colonne inconnue pour #${move?.card} : ${Object.keys(COLUMN_LABELS).join(', ')}.`),
+          ...text(`Colonne inconnue pour #${change.card} : ${Object.keys(COLUMN_LABELS).join(', ')}.`),
           isError: true,
         }
       }
-      if (!(typeof move?.reason === 'string' && move.reason.trim())) {
+      if (!(typeof change?.reason === 'string' && change.reason.trim())) {
         return {
-          ...text(`Le champ \`reason\` est requis pour #${move.card} : dis ce que tu as constaté, en une phrase. Une demande sans raison n'est pas une proposition.`),
+          ...text(`Le champ \`reason\` est requis pour #${change.card} : dis ce que tu as constaté, en une phrase. Une demande sans raison n'est pas une proposition.`),
           isError: true,
         }
       }
     }
-    return requestDaemon(name, { moves })
+    return requestDaemon(name, { changes })
   }
 
   if (name === 'request_decision') {

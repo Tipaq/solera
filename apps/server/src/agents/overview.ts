@@ -39,12 +39,13 @@ interface OverviewInput {
   /** L'agent a-t-il les outils du serveur MCP de Solera sous la main. */
   soleraMcp: boolean
   /**
-   * La famille `cardFiling` est-elle accordée, c'est-à-dire `request_card_move` listé.
+   * La famille `cardFiling` est-elle accordée, c'est-à-dire `request_card_change` listé.
    *
-   * Change une phrase et une seule, celle du briefing de carte. `move_card`, dans le
-   * socle, y est dit dans les deux cas ; sans la portée, terminé et abandonné « se posent
+   * Change une phrase et une seule, celle du briefing de carte. Les gestes du socle sur
+   * sa carte (`move_card`, `edit_subtasks`, `append_card_description`) y sont dits dans
+   * les deux cas ; sans la portée, les verdicts et les champs d'une personne « se posent
    * dans l'interface et jamais par toi » ; avec elle, l'agent peut en *proposer* le
-   * passage, et celui de toute autre carte. Lui dire le contraire de ce que son catalogue d'outils
+   * changement, et celui de toute autre carte. Lui dire le contraire de ce que son catalogue d'outils
    * lui montre est la pire des deux erreurs.
    */
   cardFiling: boolean
@@ -135,15 +136,21 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
   if (input.soleraMcp) {
     lines.push(
       `\`read_card\` avec le numéro ${card.number} rend sa description entière, les chemins locaux de ses pièces jointes à consulter avec tes outils de lecture, les notes des sessions précédentes et les cartes qui la citent ; \`add_card_note\` laisse à la suivante ce qu'elle ne pourra pas redécouvrir seule, et c'est à faire avant de terminer. ${
+        OWN_CARD_GESTURES
+      } ${
         input.cardFiling
-          ? "Tu ranges toi-même ta carte entre à faire, en cours et à vérifier avec `move_card` : en « à vérifier » quand ton travail attend une relecture. Terminé, abandonné et les autres cartes se proposent avec `request_card_move`, en disant pourquoi, et c'est un clic qui tranche."
-          : "Tu ranges toi-même ta carte entre à faire, en cours et à vérifier avec `move_card` : en « à vérifier » quand ton travail attend une relecture. Terminé et abandonné, eux, se posent dans l'interface et jamais par toi."
+          ? "Terminé, abandonné, l'échéance, la parente ou les blocages d'une carte, et les autres cartes, se proposent avec `request_card_change`, en disant pourquoi, et c'est un clic qui tranche."
+          : "Terminé, abandonné, l'échéance, la parente et les blocages, eux, se posent dans l'interface et jamais par toi."
       }`,
     )
   }
 
   return lines.join(' ')
 }
+
+/** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */
+const OWN_CARD_GESTURES =
+  "Tu ranges toi-même ta carte avec `move_card` : « à préciser » si elle ne dit pas assez pour écrire du code, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
 
 /** Les colonnes en toutes lettres : les valeurs stockées sont des identifiants. */
 const COLUMN_WORDS: Record<string, string> = {

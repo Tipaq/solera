@@ -1,12 +1,15 @@
 import { ArrowRight, Columns3 } from 'lucide-react'
 import { useState } from 'react'
+import type { CardColumn } from '@solera/protocol'
 import type { CardFilingItem } from '../../lib/chat-fold'
+import { formatDay } from '../../lib/dates'
 import { decideCardFiling } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { Badge, Button, cx } from '@solera/ui'
 
 /**
- * Un déplacement de cartes qu'un agent propose, et que l'utilisateur accorde.
+ * Un changement de cartes qu'un agent propose, et que l'utilisateur accorde : leur
+ * colonne, et depuis #66 leur parente, leur échéance et leurs liens « bloque ».
  *
  * Elle montre **la raison écrite pour chaque carte**, et c'est ce qui distingue cette
  * demande de celle d'un rangement de conversation : le prix d'un déplacement de
@@ -73,18 +76,48 @@ export function CardFilingPrompt({
           </p>
           <ul className="mt-1.5 space-y-1.5">
             {filing.cards.map((card) => {
-              const applied = movedByNumber.get(card.number)
-              const from = applied ? applied.fromColumn : card.fromColumn
+              const moved = movedByNumber.get(card.number)
+              const from = moved ? moved.fromColumn : card.fromColumn
+              const skipped = filing.status === 'accepted' && filing.applied !== null && !filing.applied.includes(card.number)
               return (
                 <li key={card.cardId} className="text-xs">
                   <span className="flex flex-wrap items-center gap-1 text-ink">
                     <span className="font-medium">#{card.number}</span>
                     <span className="min-w-0 truncate">{card.title}</span>
-                    <span className="text-ink-faint">{columnLabel(from, t)}</span>
-                    <ArrowRight size={11} className="shrink-0 text-ink-faint" />
-                    <span className="text-ink-soft">{columnLabel(card.toColumn, t)}</span>
+                    {card.toColumn ? (
+                      <>
+                        <span className="text-ink-faint">{columnLabel(from, t)}</span>
+                        <ArrowRight size={11} className="shrink-0 text-ink-faint" />
+                        <span className="text-ink-soft">{columnLabel(card.toColumn, t)}</span>
+                      </>
+                    ) : null}
                   </span>
+                  {card.parent ? (
+                    <ChangeLine
+                      label={t('cardFiling.change.parent')}
+                      from={card.parent.from ? `#${card.parent.from.number}` : t('cardFiling.change.none')}
+                      to={card.parent.to ? `#${card.parent.to.number} ${card.parent.to.title}` : t('cardFiling.change.none')}
+                    />
+                  ) : null}
+                  {card.dueAt ? (
+                    <ChangeLine
+                      label={t('cardFiling.change.due')}
+                      from={card.dueAt.from === null ? t('cardFiling.change.none') : formatDay(card.dueAt.from)}
+                      to={card.dueAt.to === null ? t('cardFiling.change.none') : formatDay(card.dueAt.to)}
+                    />
+                  ) : null}
+                  {card.blocks ? (
+                    <span className="mt-0.5 block text-ink">
+                      {t('cardFiling.change.blocks', { cards: card.blocks.map((other) => `#${other.number}`).join(', ') })}
+                    </span>
+                  ) : null}
+                  {card.unblocks ? (
+                    <span className="mt-0.5 block text-ink">
+                      {t('cardFiling.change.unblocks', { cards: card.unblocks.map((other) => `#${other.number}`).join(', ') })}
+                    </span>
+                  ) : null}
                   <span className="mt-0.5 block text-ink-soft">{card.reason}</span>
+                  {skipped ? <span className="mt-0.5 block text-ink-faint">{t('cardFiling.notApplied')}</span> : null}
                 </li>
               )
             })}
@@ -127,6 +160,18 @@ export function CardFilingPrompt({
   )
 }
 
+/** Un champ qui change, de sa valeur au dépôt à celle proposée. */
+function ChangeLine({ label, from, to }: { label: string; from: string; to: string }) {
+  return (
+    <span className="mt-0.5 flex flex-wrap items-center gap-1 text-ink">
+      <span className="text-ink-faint">{label}</span>
+      <span className="text-ink-faint">{from}</span>
+      <ArrowRight size={11} className="shrink-0 text-ink-faint" />
+      <span className="min-w-0 truncate text-ink-soft">{to}</span>
+    </span>
+  )
+}
+
 /**
  * Les colonnes du board, dans la langue du lecteur : la base n'en stocke que les clés.
  *
@@ -134,7 +179,7 @@ export function CardFilingPrompt({
  * colonne s'appelle `in_progress`, et une interpolation ferait perdre au type `MessageKey`
  * toute capacité à voir une clé manquante.
  */
-const COLUMN_KEYS: Record<CardFilingItem['cards'][number]['toColumn'], MessageKey> = {
+const COLUMN_KEYS: Record<CardColumn, MessageKey> = {
   todo: 'board.column.todo',
   in_progress: 'board.column.inProgress',
   review: 'board.column.review',
@@ -142,10 +187,7 @@ const COLUMN_KEYS: Record<CardFilingItem['cards'][number]['toColumn'], MessageKe
   abandoned: 'board.column.abandoned',
 }
 
-function columnLabel(
-  column: CardFilingItem['cards'][number]['toColumn'],
-  t: (key: MessageKey) => string,
-): string {
+function columnLabel(column: CardColumn, t: (key: MessageKey) => string): string {
   return t(COLUMN_KEYS[column])
 }
 

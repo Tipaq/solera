@@ -407,7 +407,7 @@ export class Decisions {
       .from(agentRequests)
       .where(
         and(
-          inArray(agentRequests.kind, ['request_decision', 'request_card_move', 'move_conversation']),
+          inArray(agentRequests.kind, ['request_decision', 'request_card_change', 'move_conversation']),
           isNull(agentRequests.resolvedAt),
           isNull(agentRequests.acceptedAt),
           isNotNull(agentRequests.settledAt),
@@ -475,16 +475,19 @@ export class Decisions {
           expiresAt: row.expiresAt,
           createdAt: row.createdAt,
         })
-      } else if (row.kind === 'request_card_move') {
+      } else if (row.kind === 'request_card_change') {
         if (!requester || !row.projectId || owners.get(row.projectId) !== userId) continue
-        const moves = (JSON.parse(row.payload) as { moves?: unknown }).moves
+        // `moves` avant #66, qui l'a élargi en `changes` : une demande déposée avant la
+        // migration attend peut-être encore son clic.
+        const payload = JSON.parse(row.payload) as { changes?: unknown; moves?: unknown }
+        const changes = payload.changes ?? payload.moves
         items.push({
-          kind: 'request_card_move',
+          kind: 'request_card_change',
           id: row.id,
           conversationId: row.conversationId,
           projectId: row.projectId,
           conversationTitle: requester.title,
-          count: Array.isArray(moves) ? moves.length : 0,
+          count: Array.isArray(changes) ? changes.length : 0,
           createdAt: row.createdAt,
         })
       } else {

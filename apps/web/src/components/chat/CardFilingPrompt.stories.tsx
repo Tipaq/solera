@@ -8,7 +8,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "La proposition de déplacement de cartes qu'un agent dépose dans son fil, et que le propriétaire du projet accorde d'un clic.\n\n**La raison est obligatoire, par carte, et c'est le fond de ce composant.** Le prix d'un rangement de conversation se calcule tout seul — un worktree, une carte, une reprise de CLI — alors qu'une carte ne se range que sur un constat. Une demande sans raison écrite n'est pas une proposition, c'est un ordre poli : le serveur la refuse avant même d'arriver ici. Ce qui reste à lire, donc, est exactement ce que l'agent a constaté.\n\n**Toutes les colonnes sont permises, `abandoned` comprise.** Il n'y a pas de règle par sens de mouvement : le tabou visait l'acte, pas la proposition, et c'est le clic qui tranche. Le mouvement est ensuite inscrit dans `card_moves` au nom de **la personne qui a cliqué**, jamais de la session qui a proposé.\n\n**Une demande porte plusieurs cartes, accordées en une transaction** — le cas qui a ouvert la carte #54 était treize cartes finies et publiées, restées en « en cours », qu'aucun agent ne pouvait ranger. Un seul bouton accorde la liste entière.\n\nLe bouton n'apparaît qu'au propriétaire du **projet**, et non du fil : c'est son board. Les deux ne se confondent que sur une instance à un seul compte.",
+          "La proposition de changement de cartes qu'un agent dépose dans son fil, et que le propriétaire du projet accorde d'un clic.\n\n**La raison est obligatoire, par carte, et c'est le fond de ce composant.** Le prix d'un rangement de conversation se calcule tout seul — un worktree, une carte, une reprise de CLI — alors qu'une carte ne se range que sur un constat. Une demande sans raison écrite n'est pas une proposition, c'est un ordre poli : le serveur la refuse avant même d'arriver ici. Ce qui reste à lire, donc, est exactement ce que l'agent a constaté.\n\n**Au-delà de la colonne, la parente, l'échéance et les liens « bloque » d'une carte existante** (#66) : ils engagent le planning d'une personne, et passent par le même clic. Chaque ligne n'affiche que ce qu'elle change.\n\n**Toutes les colonnes sont permises, `abandoned` comprise.** Il n'y a pas de règle par sens de mouvement : le tabou visait l'acte, pas la proposition, et c'est le clic qui tranche. Le mouvement est ensuite inscrit dans `card_moves` au nom de **la personne qui a cliqué**, jamais de la session qui a proposé.\n\n**Une demande porte plusieurs cartes, accordées en une transaction** — le cas qui a ouvert la carte #54 était treize cartes finies et publiées, restées en « en cours », qu'aucun agent ne pouvait ranger. Un seul bouton accorde la liste entière.\n\nLe bouton n'apparaît qu'au propriétaire du **projet**, et non du fil : c'est son board. Les deux ne se confondent que sur une instance à un seul compte.",
       },
     },
   },
@@ -39,6 +39,7 @@ const meta = {
       status: 'pending',
       reason: null,
       moved: [],
+      applied: null,
     },
   },
 } satisfies Meta<typeof CardFilingPrompt>
@@ -69,6 +70,51 @@ export const Accordee: Story = {
         { number: 23, fromColumn: 'review', toColumn: 'done' },
         { number: 41, fromColumn: 'todo', toColumn: 'abandoned' },
       ],
+    },
+  },
+}
+
+/** Ce qui n'est pas une colonne : une parente, une échéance, des liens « bloque ». */
+export const AutresChamps: Story = {
+  name: 'Parente, échéance et blocages',
+  args: {
+    filing: {
+      ...meta.args.filing,
+      cards: [
+        {
+          cardId: 'k3',
+          number: 67,
+          title: 'Une colonne « À préciser » : la session clarifie la carte au lancement',
+          fromColumn: 'todo',
+          parent: { from: null, to: { cardId: 'k9', number: 75, title: 'Orchestrer le travail par cartes' } },
+          dueAt: { from: null, to: new Date(2026, 10, 15).getTime() },
+          reason: 'Le jalon #75 la liste dans son tableau, mais elle ne lui est pas rattachée.',
+        },
+        {
+          cardId: 'k4',
+          number: 69,
+          title: 'Clore une carte finie : archiver et nettoyer',
+          fromColumn: 'todo',
+          blocks: [{ cardId: 'k5', number: 72, title: 'Lancer un jalon' }],
+          reason: '#72 archive les conversations des cartes closes : il lui faut le geste de #69.',
+        },
+      ],
+    },
+  },
+}
+
+/**
+ * Accordée, mais une carte avait changé d'échéance entre le dépôt et le clic : elle sort
+ * du lot, et la ligne le dit.
+ */
+export const EnPartie: Story = {
+  name: 'Accordée en partie',
+  args: {
+    filing: {
+      ...meta.args.filing,
+      status: 'accepted',
+      moved: [{ number: 23, fromColumn: 'in_progress', toColumn: 'done' }],
+      applied: [23],
     },
   },
 }

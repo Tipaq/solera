@@ -77,7 +77,8 @@ export interface BuiltinMcpParams {
    */
   projectFiling: boolean
   /**
-   * Ouvre `request_card_move` : proposer le déplacement d'une carte du board.
+   * Ouvre `request_card_change` : proposer de changer une carte du board — sa colonne,
+   * sa parente, son échéance ou ses blocages.
    *
    * Sa propre portée et non une part de `projectFiling`, parce que les deux ne parlent
    * pas de la même chose : l'un agit au-dessus du projet, l'autre défait un choix qu'une

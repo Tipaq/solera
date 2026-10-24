@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   agentRequests,
+  cardBlocks,
   cards,
   conversationHandoffs,
   conversationReads,
@@ -41,7 +42,9 @@ import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
+import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { recordCardMove } from '../../cards/moves.js'
+import { resolveParent, writeCardParent } from '../../cards/tree.js'
 import { createConversation } from '../../conversations/create.js'
 import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo } from '../../conversations/scope.js'
@@ -1067,7 +1070,7 @@ export function registerConversationRoutes(
     const row = ctx.db
       .select()
       .from(agentRequests)
-      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'request_card_move')))
+      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'request_card_change')))
       .get()
     const filing = log.openCardFiling(id, requestId)
     if (!row || !filing) throw notFound('filing_request_not_found', 'Filing request not found.')
@@ -1079,6 +1082,7 @@ export function registerConversationRoutes(
       decision: 'refused' | 'impossible' | 'accepted',
       reason: string | null,
       moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[],
+      applied?: number[],
     ) => {
       const now = Date.now()
       ctx.db
@@ -1086,7 +1090,7 @@ export function registerConversationRoutes(
         .set({ resolvedAt: now, ...(decision === 'accepted' ? { acceptedAt: now } : {}) })
         .where(eq(agentRequests.id, requestId))
         .run()
-      log.append(id, { type: 'card_filing.resolved', requestId, decision, decidedBy: user.id, reason, moved })
+      log.append(id, { type: 'card_filing.resolved', requestId, decision, decidedBy: user.id, reason, moved, ...(applied ? { applied } : {}) })
     }
 
     if (body.decision === 'refused') {
@@ -1095,66 +1099,91 @@ export function registerConversationRoutes(
     }
 
     // Relu au clic et non pris de la demande : entre le dépôt et maintenant, une carte a
-    // pu être supprimée ou déplacée par quelqu'un.
+    // pu être supprimée ou changée par quelqu'un.
     //
-    // Le test porte sur la colonne **de départ** et non sur la colonne visée. Tester
+    // Le test porte sur la valeur **de départ** et non sur la valeur visée. Tester
     // l'arrivée ne retirait du lot que les cartes ayant déjà rejoint la colonne
     // proposée : une carte qu'une personne venait de ranger dans une *troisième*
     // colonne était quand même poussée là où l'agent la voulait, et la demande affichait
     // encore la colonne du dépôt. Le clic défaisait alors un choix humain plus récent que
     // la proposition — exactement ce que la famille `cardFiling` existe pour empêcher.
     //
-    // Toute carte qui a bougé depuis le dépôt sort donc du lot, quelle que soit sa
-    // destination. Le cas « déjà arrivée » reste couvert : le daemon refuse au dépôt une
-    // carte déjà dans la colonne visée, donc départ et arrivée diffèrent toujours.
+    // Toute carte qui a changé depuis le dépôt sort donc du lot, quelle que soit sa
+    // destination : sa colonne, et depuis #66 sa parente et son échéance quand la
+    // demande les touche. Un lien « bloque » devenu impossible (la carte visée a disparu,
+    // ou bloque désormais celle-ci) la retire aussi : le clic ne pose rien à moitié.
+    const projectId = conversation.projectId!
     const live = filing.cards
       .map((proposed) => {
         const card = ctx.db
-          .select({ id: cards.id, number: cards.number, column: cards.column })
+          .select()
           .from(cards)
-          .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, conversation.projectId!)))
+          .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, projectId)))
           .get()
-        return card && card.column === proposed.fromColumn
-          ? { ...card, toColumn: proposed.toColumn }
-          : null
+        if (!card) return null
+        if (proposed.toColumn && card.column !== proposed.fromColumn) return null
+        if (proposed.parent && card.parentId !== (proposed.parent.from?.cardId ?? null)) return null
+        if (proposed.dueAt && card.dueAt !== proposed.dueAt.from) return null
+        let parentId: string | null | undefined
+        if (proposed.parent) {
+          try {
+            parentId = proposed.parent.to ? resolveParent(ctx.db, card, proposed.parent.to.cardId) : null
+          } catch {
+            return null
+          }
+        }
+        for (const target of proposed.blocks ?? []) {
+          const exists = ctx.db.select({ id: cards.id }).from(cards).where(and(eq(cards.id, target.cardId), eq(cards.projectId, projectId))).get()
+          const reverse = ctx.db
+            .select({ sourceId: cardBlocks.sourceId })
+            .from(cardBlocks)
+            .where(and(eq(cardBlocks.sourceId, target.cardId), eq(cardBlocks.targetId, card.id)))
+            .get()
+          if (!exists || reverse) return null
+        }
+        return { card, proposed, parentId }
       })
-      .filter((card): card is NonNullable<typeof card> => card !== null)
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
 
-    // Plus une seule carte déplaçable : il n'y a plus de proposition à accorder, et le
-    // dire vaut mieux que d'écrire une acceptation qui n'a déplacé personne.
+    // Plus une seule carte applicable : il n'y a plus de proposition à accorder, et le
+    // dire vaut mieux que d'écrire une acceptation qui n'a rien changé.
     if (live.length === 0) {
       // L'écriture est conservée alors que la route répond une erreur, et c'est
       // délibéré : la demande *est* résolue, elle n'attend plus rien et ne doit pas
       // continuer d'occuper la place de l'unique demande en attente de la conversation.
       // L'appelant reçoit un 400 pour une opération qui a bien changé l'état.
       close('impossible', 'cards_gone', [])
-      throw badRequest('card_filing_stale', 'None of these cards can still be moved.')
+      throw badRequest('card_filing_stale', 'None of these cards can still be changed.')
     }
 
     // Une seule transaction pour toute la liste : un lot à moitié écrit laisserait le
-    // Journal raconter des déplacements qui n'ont pas tous eu lieu, et c'est exactement
+    // Journal raconter des changements qui n'ont pas tous eu lieu, et c'est exactement
     // ce que l'en-tête de `card_moves` interdit.
+    //
+    // Chaque geste est attribué à qui a cliqué, et non à la session qui a proposé : c'est
+    // le geste d'une personne, tout l'objet de la demande d'accord.
     const now = Date.now()
+    const by = { userId: user.id }
+    const moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[] = []
     writeTransaction(ctx.db, (tx) => {
-      for (const card of live) {
-        tx.update(cards).set({ column: card.toColumn, updatedAt: now }).where(eq(cards.id, card.id)).run()
-        recordCardMove(tx, {
-          cardId: card.id,
-          from: card.column,
-          to: card.toColumn,
-          // Qui a cliqué, et non la session qui a proposé : le mouvement est le geste
-          // d'une personne, c'est tout l'objet de la demande d'accord.
-          userId: user.id,
-          at: now,
-        })
+      for (const { card, proposed, parentId } of live) {
+        if (parentId !== undefined) writeCardParent(tx, card, parentId, by)
+        if (proposed.dueAt) tx.update(cards).set({ dueAt: proposed.dueAt.to, updatedAt: now }).where(eq(cards.id, card.id)).run()
+        for (const target of proposed.blocks ?? []) {
+          addCardBlock(tx, { projectId, sourceId: card.id, targetId: target.cardId, userId: user.id })
+        }
+        for (const target of proposed.unblocks ?? []) removeCardBlock(tx, { sourceId: card.id, targetId: target.cardId })
+        if (proposed.toColumn) {
+          // Relue après la parente : rattacher une carte peut avoir changé la colonne
+          // d'une parente, jamais la sienne.
+          tx.update(cards).set({ column: proposed.toColumn, updatedAt: now }).where(eq(cards.id, card.id)).run()
+          recordCardMove(tx, { cardId: card.id, from: card.column, to: proposed.toColumn, ...by, at: now })
+          moved.push({ number: card.number, fromColumn: card.column, toColumn: proposed.toColumn })
+        }
       }
     })
 
-    close(
-      'accepted',
-      null,
-      live.map((card) => ({ number: card.number, fromColumn: card.column, toColumn: card.toColumn })),
-    )
+    close('accepted', null, moved, live.map(({ card }) => card.number))
     return { ok: true }
   })
 

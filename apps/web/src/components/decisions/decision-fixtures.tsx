@@ -101,7 +101,7 @@ export const AWAITING: AwaitingRequestDto[] = [
     question: OPEN_QUESTION.question, worktreeBranch: null, expiresAt: OPEN_QUESTION.expiresAt, createdAt: now - 2 * HOUR,
   },
   {
-    kind: 'request_card_move', id: 'r1', conversationId: 'c3', projectId: 'p1',
+    kind: 'request_card_change', id: 'r1', conversationId: 'c3', projectId: 'p1',
     conversationTitle: 'Ranger le board après la release', count: 3, createdAt: now - 3 * HOUR,
   },
   {

@@ -44,20 +44,24 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * - `agentMemory` — écrit hors de la base ce qui orientera les sessions suivantes, sans
  *   que personne ne l'ait relu.
  * - `projectFiling` — agit au-dessus du projet où la session travaille.
- * - `cardFiling` — défait un choix qu'une personne a posé (la colonne d'une carte).
+ * - `cardFiling` — défait un choix qu'une personne a posé (la colonne, la parente,
+ *   l'échéance ou les blocages d'une carte).
  * - `decisions` — n'agit pas sur la base mais sur quelqu'un : il notifie une personne et
  *   lui demande de trancher, ce qui est le contraire du socle, où l'agent se débrouille.
  *
  * Ce que le critère écarte, pour fixer les idées : `add_card_note` écrit, mais en ajout
  * et dans la base ; `move_card` déplace sans clic, mais seulement la carte de la
- * session et entre « à faire », « en cours » et « à vérifier », qui disent où en est le
- * travail et non ce qu'il vaut — les verdicts, terminé et abandonné, restent à
- * `cardFiling` ; `set_project_image` remplace, mais n'est le jugement de personne et se
+ * session et entre « à faire », « à préciser », « en cours » et « à vérifier », qui
+ * disent où en est le travail et non ce qu'il vaut — les verdicts, terminé et abandonné,
+ * restent à `cardFiling` ; `append_card_description` et `edit_subtasks` écrivent sur la
+ * description de sa carte, mais en fin et sans rien réécrire, ou en cochant une case qui
+ * se décoche ; `create_card` pose parente, échéance et blocages, mais sur une carte qui
+ * n'était encore le choix de personne ; `set_project_image` remplace, mais n'est le jugement de personne et se
  * reprend d'un clic ; `rename_session` de même, borné à la session qui l'appelle, et le
  * titre qu'une personne a donné l'emporte toujours sur le sien ; `start_session` coûte cher, mais ne sort pas du projet. Le
  * `check_script` de `schedule_task` fait tourner du code hors de toute session, mais il
  * ne tourne pas tant qu'une personne n'a pas validé ce texte précis : comme pour
- * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture
+ * `request_card_change`, l'agent propose et c'est le clic qui agit, et toute réécriture
  * par un agent le remet en attente. La garde est donc sur le script et non sur l'outil.
  * Les actions de projet (`register_action`, `run_action`) suivent ce précédent : un clic
  * de l'utilisateur ne lance une action qu'il ne l'ait relue, et un agent qui en change
@@ -134,7 +138,7 @@ const skillLibrarySchema = z.boolean().default(true)
  * Ouvre à l'agent les deux outils de rangement : déclarer un projet, et demander le
  * déplacement d'une conversation.
  *
- * Faux par défaut, comme `cardFiling` et à la différence des deux autres familles : ces
+ * Faux par défaut, comme `decisions` et à la différence des autres familles : ces
  * deux outils agissent au-dessus du projet où la session travaille, et c'est une portée
  * qu'on accorde plutôt qu'une capacité qu'on retire. Vetoable pour l'instance entière
  * dans `config.toml`, où `[mcp] project_filing = false` fait aussi disparaître l'entrée
@@ -148,26 +152,29 @@ const skillLibrarySchema = z.boolean().default(true)
 const projectFilingSchema = z.boolean().default(false)
 
 /**
- * Ouvre à l'agent `request_card_move` : proposer le déplacement d'une ou plusieurs
- * cartes du board, en disant pourquoi.
+ * Ouvre à l'agent `request_card_change` : proposer de changer une ou plusieurs cartes du
+ * board — leur colonne, leur parente, leur échéance, leurs liens « bloque » —, en disant
+ * pourquoi.
  *
- * **Faux par défaut**, comme `projectFiling` : c'est une portée qu'on accorde. Le critère
- * la retient parce que la colonne d'une carte est un choix qu'une personne a posé, et
- * qu'un agent qui le défait se donnerait un satisfecit. Une seule carte dans la famille
- * aujourd'hui, et ce n'est pas un argument — voir le critère plus haut. Vetoable pour
- * l'instance dans `config.toml`, où `[mcp] card_filing = false` fait aussi disparaître
- * l'entrée de l'interface.
+ * Le critère la retient parce que ces champs sont un choix qu'une personne a posé, et
+ * qu'un agent qui les défait se donnerait un satisfecit. Un seul outil dans la famille,
+ * et ce n'est pas un argument — voir le critère plus haut. Vetoable pour l'instance dans
+ * `config.toml`, où `[mcp] card_filing = false` fait aussi disparaître l'entrée de
+ * l'interface.
  *
- * L'outil **ne déplace rien** : il dépose une demande que l'utilisateur accorde d'un
- * clic, et c'est le clic qui écrit `card_moves` au nom de la personne. C'est ce qui
- * permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait l'acte,
- * pas la proposition.
+ * **Vrai par défaut** depuis #66, à la différence de `projectFiling` : l'outil **ne
+ * change rien**, il dépose une demande que l'utilisateur accorde d'un clic, et c'est le
+ * clic qui écrit au nom de la personne. Une proposition ne coûte qu'une lecture, et la
+ * clôture d'une carte finie (#69) en a besoin dans toutes les sessions. C'est aussi ce
+ * qui permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait
+ * l'acte, pas la proposition.
  *
- * Le déplacement direct de sa propre carte, `move_card`, n'est pas de cette famille mais
- * du socle (#86) : il ne va ni vers `done` ni vers `abandoned`, ni n'en sort, et ne
- * touche aucune autre carte. Ce qui reste ici est exactement ce qu'il refuse.
+ * Ce qu'un agent fait seul sur **sa** carte n'est pas de cette famille mais du socle
+ * (#86, #66) : `move_card` entre à faire, à préciser, en cours et à vérifier, et les
+ * ajouts à sa description et à ses sous-tâches. Ce qui reste ici est exactement ce
+ * qu'ils refusent.
  */
-const cardFilingSchema = z.boolean().default(false)
+const cardFilingSchema = z.boolean().default(true)
 
 /** Plafond de `decisionMaxHours` : une semaine, au-delà la question ne parle plus du présent. */
 export const MAX_DECISION_HOURS = 168
@@ -177,7 +184,7 @@ export const DEFAULT_DECISION_HOURS = 24
  * Ouvre à l'agent `request_decision` : demander à une personne de trancher, sans se
  * bloquer en attendant. La réponse lui revient en message, et le relance.
  *
- * **Faux par défaut**, comme `cardFiling` : c'est une portée qu'on accorde. Le critère la
+ * **Faux par défaut**, comme `projectFiling` : c'est une portée qu'on accorde. Le critère la
  * retient parce que l'outil n'agit pas sur la base mais sur quelqu'un — il notifie une
  * personne et lui demande un choix — et qu'un agent qui demande tout ne sert plus à rien.
  * Pensé d'abord pour les sessions que personne ne regarde (une tâche planifiée la reçoit
@@ -513,7 +520,7 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
-  cardFiling: false,
+  cardFiling: true,
   decisions: false,
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
@@ -542,7 +549,7 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
-  cardFiling: false,
+  cardFiling: true,
   decisions: false,
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
@@ -563,7 +570,7 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
-  cardFiling: false,
+  cardFiling: true,
   decisions: false,
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
@@ -582,7 +589,7 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   soleraMcp: true,
   agentMemory: true,
   projectFiling: false,
-  cardFiling: false,
+  cardFiling: true,
   decisions: false,
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,

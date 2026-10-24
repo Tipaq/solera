@@ -120,7 +120,7 @@ function AwaitingLine({ request, onNavigate }: {
   }
 
   const label =
-    request.kind === 'request_card_move'
+    request.kind === 'request_card_change'
       ? t(request.count > 1 ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count: request.count })
       : t('awaiting.moveConversation')
   return (
@@ -130,7 +130,7 @@ function AwaitingLine({ request, onNavigate }: {
       title={`${label} — ${request.conversationTitle}`}
       className={({ isActive }) => cx(ROW, isActive && 'bg-accent-wash text-ink')}
     >
-      {request.kind === 'request_card_move'
+      {request.kind === 'request_card_change'
         ? <Columns3 size={14} className="shrink-0 text-ink-faint" />
         : <FolderInput size={14} className="shrink-0 text-ink-faint" />}
       <span className="min-w-0 flex-1 truncate">{request.conversationTitle}</span>
