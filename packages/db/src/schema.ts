@@ -459,8 +459,16 @@ export const agentRequests = sqliteTable(
      * tout le monde.
      */
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
-    /** Conversation qui demande. Sans clé étrangère, comme les messages entre sessions. */
+    /**
+     * Conversation qui demande. Sans clé étrangère, comme les messages entre sessions.
+     *
+     * Vide quand la demande vient du serveur MCP en mode global, branché de l'extérieur
+     * sur toute l'instance (`docs/mcp.md`) : il n'y a alors pas de session, et c'est
+     * `user_id` qui dit pour qui agir.
+     */
     conversationId: text('conversation_id').notNull(),
+    /** Compte au nom duquel agir quand aucune conversation ne demande. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
     kind: text('kind', {
       enum: [
         'start_session',
@@ -474,6 +482,11 @@ export const agentRequests = sqliteTable(
         // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
         'create_worktree',
         'list_worktrees',
+        // Gestes sur une session existante, au nom d'un compte : ceux d'un client MCP
+        // hors session, qui n'a pas de runner pour les faire lui-même.
+        'message_session',
+        'interrupt_session',
+        'reply_session',
       ],
     }).notNull(),
     /**

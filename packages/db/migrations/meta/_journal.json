@@ -344,6 +344,13 @@
       "when": 1792698477775,
       "tag": "0048_grok_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1792772969131,
+      "tag": "0050_mcp_global",
+      "breakpoints": true
     }
   ]
 }

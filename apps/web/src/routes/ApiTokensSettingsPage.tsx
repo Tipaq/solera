@@ -1,5 +1,5 @@
-import { Check, Copy, KeyRound, Plus, Trash2, Unplug } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Check, Copy, KeyRound, Plug, Plus, Terminal, Trash2, Unplug } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   DEFAULT_CONFIGS,
   EFFORT_FIELD,
@@ -20,9 +20,10 @@ import {
   EmptyState,
   Field,
   Select,
+  cx,
 } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
-import { SectionHeader } from '../components/settings/SectionHeader'
+import { ListHeading, SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { useAgentModels, effortLabel, effortsFor } from '../lib/agents'
 import {
@@ -32,18 +33,34 @@ import {
   useRevokeApiToken,
 } from '../lib/api-tokens'
 import { copyText } from '../lib/clipboard'
-import { locale, useTranslate } from '../lib/i18n'
+import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 
 /**
- * Jetons d'API.
+ * API et serveur MCP : les deux portes de Solera vers un outil extérieur, et les jetons
+ * qui les ouvrent.
  *
- * C'est ici que se décide avec quoi les agents travailleront : le CLI, le modèle et
- * l'effort sont portés par le jeton, une fois, plutôt que redemandés à chaque tâche par
- * un appelant qui ne saurait pas les choisir.
+ * Les deux vivent sous `/api/v1` et partagent les jetons, ce qui les faisait passer pour
+ * une seule chose : la page commence donc par les présenter l'une sous l'autre, chacune
+ * avec son adresse et un bouton qui prépare un jeton à sa mesure.
+ *
+ * Pour l'API, c'est ici que se décide avec quoi les agents travailleront : le CLI, le
+ * modèle et l'effort sont portés par le jeton, une fois, plutôt que redemandés à chaque
+ * tâche par un appelant qui ne saurait pas les choisir. Le serveur MCP n'en a pas
+ * l'usage : une session qu'il lance prend les réglages par défaut du projet.
  */
 
 const SCOPES = apiScopeSchema.options
+
+/** Ce que chaque portée ouvre, dit en clair : le nom seul ne dit pas où s'arrête `tasks:write`. */
+const SCOPE_HINT_KEYS: Record<ApiScope, MessageKey> = {
+  'projects:read': 'apiTokens.scope.projects:read',
+  'projects:write': 'apiTokens.scope.projects:write',
+  'tasks:read': 'apiTokens.scope.tasks:read',
+  'tasks:write': 'apiTokens.scope.tasks:write',
+  'tasks:autonomous': 'apiTokens.scope.tasks:autonomous',
+  mcp: 'apiTokens.scope.mcp',
+}
 
 /**
  * Modes de permission proposables sur un jeton : ceux où le CLI garde un garde-fou.
@@ -72,6 +89,48 @@ const GROK_PERMISSION_MODE_KEYS = {
 } as const
 const AGENTS = Object.keys(AGENT_LABELS) as AgentKind[]
 
+/** Ce pour quoi un jeton est créé : il décide des portées cochées d'entrée et des champs montrés. */
+type TokenUse = 'api' | 'mcp'
+const PRESET_SCOPES: Record<TokenUse, ApiScope[]> = {
+  api: ['projects:read', 'tasks:read', 'tasks:write'],
+  mcp: ['mcp'],
+}
+
+/** Le CLI, le modèle et le webhook ne servent qu'aux tâches : sans portée `tasks:*`, rien ne les lit. */
+const launchesTasks = (scopes: ApiScope[]) => scopes.some((scope) => scope.startsWith('tasks:'))
+
+/**
+ * Les adresses que l'utilisateur recopiera ailleurs : celles par lesquelles il voit
+ * l'interface, qui sont aussi celles que son outil atteindra — l'adresse Tailscale
+ * quand il ouvre Solera depuis un autre appareil.
+ */
+const apiEndpoint = () => `${window.location.origin}/api/v1`
+const mcpEndpoint = () => `${window.location.origin}/api/v1/mcp`
+
+/**
+ * Une adresse en boucle locale ne mène nulle part depuis un autre appareil : c'est là
+ * que l'utilisateur se trompe, en recopiant `localhost` dans l'app de son téléphone.
+ */
+const isLoopback = () => ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
+
+/**
+ * Exemples de configuration d'un client MCP. Ce ne sont que des cas particuliers des
+ * trois informations du guide (transport, adresse, en-tête) : MCP est un standard, et
+ * tout client qui parle HTTP « streamable » se configure de la même façon, sous des
+ * noms de champs différents. Formats sondés en amont : `http_headers` lu par Codex
+ * 0.162.1 (`codex mcp get --json`), `--header` de `claude mcp add`.
+ */
+const mcpJsonExample = (token: string) =>
+  JSON.stringify(
+    { mcpServers: { solera: { type: 'http', url: mcpEndpoint(), headers: { Authorization: `Bearer ${token}` } } } },
+    null,
+    2,
+  )
+const codexTomlExample = (token: string) =>
+  `[mcp_servers.solera]\nurl = "${mcpEndpoint()}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`
+const claudeCommandExample = (token: string) =>
+  `claude mcp add --transport http solera ${mcpEndpoint()} --header "Authorization: Bearer ${token}"`
+
 /** Durées de vie proposées, en jours. `none` laisse le jeton valable jusqu'à révocation. */
 const LIFETIMES = { none: null, '30': 30, '90': 90, '365': 365 } as const
 type LifetimeChoice = keyof typeof LIFETIMES
@@ -83,7 +142,13 @@ const errorOf = (error: unknown): string | null =>
 export function ApiTokensSettingsPage() {
   const t = useTranslate()
   const { data: tokens } = useApiTokens()
+  const [adding, setAdding] = useState<TokenUse | null>(null)
   const [created, setCreated] = useState<CreatedApiTokenDto | null>(null)
+
+  const open = (use: TokenUse) => {
+    setCreated(null)
+    setAdding(use)
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -92,14 +157,62 @@ export function ApiTokensSettingsPage() {
         description={t('apiTokens.section.description')}
       />
 
+      {/* L'une sous l'autre : côte à côte, la colonne des réglages est trop étroite pour
+          qu'une adresse tienne sur une ligne à côté de son bouton. */}
+      <section className="flex flex-col gap-3">
+        <SurfaceCard
+          icon={<Terminal size={16} />}
+          title={t('apiTokens.surface.api.title')}
+          description={t('apiTokens.surface.api.description')}
+          endpoint={apiEndpoint()}
+          scopes={t('apiTokens.surface.api.scopes')}
+          createLabel={t('apiTokens.surface.api.create')}
+          disabled={adding !== null}
+          onCreate={() => open('api')}
+        />
+        <SurfaceCard
+          icon={<Plug size={16} />}
+          title={t('apiTokens.surface.mcp.title')}
+          description={t('apiTokens.surface.mcp.description')}
+          endpoint={mcpEndpoint()}
+          scopes={t('apiTokens.surface.mcp.scopes')}
+          createLabel={t('apiTokens.surface.mcp.create')}
+          disabled={adding !== null}
+          onCreate={() => open('mcp')}
+        >
+          {/* Replié : utile au moment de brancher un client, encombrant le reste du temps.
+              Le jeton n'existe plus en clair, d'où l'emplacement à remplacer. */}
+          <details className="rounded-md border border-line px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-ink-soft">
+              {t('apiTokens.mcpGuide.toggle')}
+            </summary>
+            <div className="pt-3">
+              <McpConnectGuide token={null} />
+            </div>
+          </details>
+        </SurfaceCard>
+      </section>
+
       <Banner tone="info">{t('apiTokens.banner')}</Banner>
 
       {created ? <SecretReveal created={created} onDismiss={() => setCreated(null)} /> : null}
 
-      <CreateTokenCard onCreated={setCreated} />
+      {/* Remonté à la fermeture : un formulaire rouvert doit repartir vide, pas des
+          champs du jeton précédent. La clé le remonte aussi d'un usage à l'autre. */}
+      {adding ? (
+        <CreateTokenCard
+          key={adding}
+          use={adding}
+          onCreated={(token) => {
+            setCreated(token)
+            setAdding(null)
+          }}
+          onCancel={() => setAdding(null)}
+        />
+      ) : null}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold text-ink-soft">{t('apiTokens.existing.title')}</h2>
+        <ListHeading title={t('apiTokens.existing.title')} count={tokens?.length} />
         {tokens && tokens.length > 0 ? (
           tokens.map((token) => <TokenCard key={token.id} token={token} />)
         ) : (
@@ -111,6 +224,50 @@ export function ApiTokensSettingsPage() {
         )}
       </section>
     </div>
+  )
+}
+
+/**
+ * Une des deux portes de Solera : ce qu'elle ouvre, son adresse, et de quoi créer le
+ * jeton qui va avec. L'adresse se copie, parce qu'elle part dans la configuration d'un
+ * autre outil et qu'une faute de frappe y donnerait une erreur peu parlante.
+ */
+function SurfaceCard({
+  icon,
+  title,
+  description,
+  endpoint,
+  scopes,
+  createLabel,
+  disabled,
+  onCreate,
+  children,
+}: {
+  icon: ReactNode
+  title: string
+  description: string
+  endpoint: string
+  scopes: string
+  createLabel: string
+  disabled: boolean
+  onCreate: () => void
+  /** Ce que la porte demande en plus pour s'en servir, sous son adresse. */
+  children?: ReactNode
+}) {
+  const t = useTranslate()
+  return (
+    <Card className="flex flex-col">
+      <CardHeader title={title} description={description} icon={icon} />
+      <CardBody className="flex flex-1 flex-col gap-3">
+        <CopyableValue label={t('apiTokens.surface.endpoint')} value={endpoint} />
+        {isLoopback() ? <p className="text-xs text-ink-faint">{t('apiTokens.surface.loopback')}</p> : null}
+        <p className="text-xs text-ink-faint">{scopes}</p>
+        {children}
+        <Button size="sm" icon={<Plus size={14} />} disabled={disabled} onClick={onCreate} className="self-start">
+          {createLabel}
+        </Button>
+      </CardBody>
+    </Card>
   )
 }
 
@@ -135,13 +292,16 @@ function SecretReveal({
       <CardHeader title={t('apiTokens.secret.title')} icon={<KeyRound size={16} />} />
       <CardBody className="flex flex-col gap-3">
         <Banner tone="caution">{t('apiTokens.secret.once')}</Banner>
-        <CopyableSecret label={t('apiTokens.secret.token')} value={created.secret} />
+        <CopyableValue label={t('apiTokens.secret.token')} value={created.secret} />
         {created.token.webhookUrl ? (
-          <CopyableSecret
+          <CopyableValue
             label={t('apiTokens.secret.webhook')}
             value={created.webhookSecret}
           />
         ) : null}
+        {/* Le jeton à peine né est le seul moment où le guide peut l'embarquer : après, il
+            n'existe plus en clair nulle part. */}
+        {created.token.scopes.includes('mcp') ? <McpConnectGuide token={created.secret} /> : null}
         <Button size="sm" variant="ghost" onClick={onDismiss} className="self-start">
           {t('apiTokens.secret.dismiss')}
         </Button>
@@ -150,7 +310,72 @@ function SecretReveal({
   )
 }
 
-function CopyableSecret({ label, value }: { label: string; value: string }) {
+/**
+ * Comment brancher un client MCP sur Solera, quel qu'il soit.
+ *
+ * MCP est un standard : tout client demande les trois mêmes choses, transport, adresse
+ * et authentification, sous des noms qui varient. Le guide les donne d'abord, puis dit
+ * comment les reconnaître dans un formulaire : c'est là que l'utilisateur se trompe,
+ * pas sur l'adresse. Les exemples ne viennent qu'ensuite, repliés, comme des cas
+ * particuliers. Sans jeton, ils portent un emplacement à remplacer.
+ */
+function McpConnectGuide({ token }: { token: string | null }) {
+  const t = useTranslate()
+  const value = token ?? t('apiTokens.mcpGuide.placeholder')
+  const examples: { label: string; value: string }[] = [
+    { label: t('apiTokens.mcpGuide.example.json'), value: mcpJsonExample(value) },
+    { label: t('apiTokens.mcpGuide.example.codex'), value: codexTomlExample(value) },
+    { label: t('apiTokens.mcpGuide.example.claude'), value: claudeCommandExample(value) },
+  ]
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-ink-soft">{t('apiTokens.mcpGuide.intro')}</p>
+      <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.transport')}</dt>
+        <dd className="text-ink-soft">{t('apiTokens.mcpGuide.transport.value')}</dd>
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.url')}</dt>
+        <dd className="min-w-0">
+          <code className="break-all font-mono text-xs text-ink">{mcpEndpoint()}</code>
+        </dd>
+        <dt className="font-medium text-ink">{t('apiTokens.mcpGuide.auth')}</dt>
+        <dd className="min-w-0">
+          <code className="break-all font-mono text-xs text-ink">Authorization: Bearer {value}</code>
+        </dd>
+      </dl>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-ink">{t('apiTokens.mcpGuide.fields')}</span>
+        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-ink-soft">
+          <li>{t('apiTokens.mcpGuide.fields.headers')}</li>
+          <li>{t('apiTokens.mcpGuide.fields.bearer')}</li>
+          <li>{t('apiTokens.mcpGuide.fields.env')}</li>
+        </ul>
+      </div>
+
+      <details className="rounded-md border border-line px-3 py-2">
+        <summary className="cursor-pointer text-sm font-medium text-ink-soft">
+          {t('apiTokens.mcpGuide.examples')}
+        </summary>
+        <div className="flex flex-col gap-3 pt-3">
+          {examples.map((example) => (
+            <CopyableValue key={example.label} label={example.label} value={example.value} multiline />
+          ))}
+        </div>
+      </details>
+    </div>
+  )
+}
+
+function CopyableValue({
+  label,
+  value,
+  multiline = false,
+}: {
+  label: string
+  value: string
+  /** Une commande sur plusieurs lignes garde ses retours ; un secret se coupe où il peut. */
+  multiline?: boolean
+}) {
   const t = useTranslate()
   const [copied, setCopied] = useState(false)
 
@@ -162,8 +387,15 @@ function CopyableSecret({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium text-ink-soft">{label}</span>
-      <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 break-all rounded-md bg-sunken px-3 py-2 font-mono text-xs text-ink">
+      {/* Un exemple sur plusieurs lignes prend toute la largeur, le bouton en dessous :
+          à côté, au doigt, il ne lui laissait qu'une colonne étroite. */}
+      <div className={cx('flex gap-2', multiline ? 'flex-col items-start' : 'items-center')}>
+        <code
+          className={cx(
+            'min-w-0 flex-1 break-all rounded-md bg-sunken px-3 py-2 font-mono text-xs text-ink',
+            multiline && 'w-full whitespace-pre-wrap',
+          )}
+        >
           {value}
         </code>
         <Button
@@ -178,7 +410,15 @@ function CopyableSecret({ label, value }: { label: string; value: string }) {
   )
 }
 
-function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDto) => void }) {
+function CreateTokenCard({
+  use,
+  onCreated,
+  onCancel,
+}: {
+  use: TokenUse
+  onCreated: (created: CreatedApiTokenDto) => void
+  onCancel: () => void
+}) {
   const t = useTranslate()
   const { data: projects } = useProjects()
   const createToken = useCreateApiToken()
@@ -187,7 +427,7 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
   const [agent, setAgent] = useState<AgentKind>('claude')
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
-  const [scopes, setScopes] = useState<ApiScope[]>(['projects:read', 'tasks:read', 'tasks:write'])
+  const [scopes, setScopes] = useState<ApiScope[]>(PRESET_SCOPES[use])
   const [projectIds, setProjectIds] = useState<string[]>([])
   const [lifetime, setLifetime] = useState<LifetimeChoice>('none')
   const [webhookUrl, setWebhookUrl] = useState('')
@@ -221,22 +461,19 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
         agent,
         config,
         expiresAt: days === null ? null : Date.now() + days * DAY_MS,
-        webhookUrl: webhookUrl.trim() || null,
+        // Masqué sans portée de tâches : une valeur saisie avant de décocher ne doit pas partir.
+        webhookUrl: (launchesTasks(scopes) && webhookUrl.trim()) || null,
       },
-      {
-        onSuccess: (created) => {
-          onCreated(created)
-          setLabel('')
-          setProjectIds([])
-          setWebhookUrl('')
-        },
-      },
+      { onSuccess: onCreated },
     )
   }
 
   return (
     <Card>
-      <CardHeader title={t('apiTokens.create.title')} icon={<Plus size={16} />} />
+      <CardHeader
+        title={use === 'mcp' ? t('apiTokens.create.title.mcp') : t('apiTokens.create.title')}
+        icon={use === 'mcp' ? <Plug size={16} /> : <Terminal size={16} />}
+      />
       <CardBody>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <Field
@@ -244,90 +481,108 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
             hint={t('apiTokens.label.hint')}
             value={label}
             onChange={(event) => setLabel(event.target.value)}
+            autoFocus
             required
           />
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Select
-              label={t('apiTokens.agent.label')}
-              value={agent}
-              onChange={(value) => {
-                setAgent(value)
-                setModel('')
-                setEffort('')
-              }}
-              options={AGENTS.map((kind) => ({
-                value: kind,
-                label: AGENT_LABELS[kind],
-                icon: <AgentIcon agent={kind} size={16} />,
-              }))}
-            />
-            <Select
-              label={t('apiTokens.model.label')}
-              value={model}
-              onChange={(value) => {
-                setModel(value)
-                setEffort('')
-              }}
-              placeholder={t('apiTokens.model.default')}
-              options={[
-                { value: '', label: t('apiTokens.model.default') },
-                ...models.map((entry) => ({ value: entry.value, label: entry.displayName })),
-              ]}
-            />
-            <Select
-              label={t('apiTokens.effort.label')}
-              value={effort}
-              onChange={setEffort}
-              placeholder={t('apiTokens.effort.default')}
-              disabled={efforts.length === 0}
-              options={[
-                { value: '', label: t('apiTokens.effort.default') },
-                ...efforts.map((entry) => ({ value: entry.value, label: effortLabel(t, entry) })),
-              ]}
-            />
-          </div>
+          {/* Le CLI, le modèle et le webhook ne servent qu'aux tâches de l'API : pour un
+              jeton MCP seul, les montrer laisserait croire qu'ils règlent ses sessions. */}
+          {launchesTasks(scopes) ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Select
+                  label={t('apiTokens.agent.label')}
+                  value={agent}
+                  onChange={(value) => {
+                    setAgent(value)
+                    setModel('')
+                    setEffort('')
+                  }}
+                  options={AGENTS.map((kind) => ({
+                    value: kind,
+                    label: AGENT_LABELS[kind],
+                    icon: <AgentIcon agent={kind} size={16} />,
+                  }))}
+                />
+                <Select
+                  label={t('apiTokens.model.label')}
+                  value={model}
+                  onChange={(value) => {
+                    setModel(value)
+                    setEffort('')
+                  }}
+                  placeholder={t('apiTokens.model.default')}
+                  options={[
+                    { value: '', label: t('apiTokens.model.default') },
+                    ...models.map((entry) => ({ value: entry.value, label: entry.displayName })),
+                  ]}
+                />
+                <Select
+                  label={t('apiTokens.effort.label')}
+                  value={effort}
+                  onChange={setEffort}
+                  placeholder={t('apiTokens.effort.default')}
+                  disabled={efforts.length === 0}
+                  options={[
+                    { value: '', label: t('apiTokens.effort.default') },
+                    ...efforts.map((entry) => ({ value: entry.value, label: effortLabel(t, entry) })),
+                  ]}
+                />
+              </div>
 
-          {agent === 'claude' ? (
-            <Select
-              label={t('apiTokens.permission.label')}
-              value={permissionMode}
-              onChange={(mode) => {
-                setPermissionMode(mode)
-                // Tout permettre exige la portée dédiée : la cocher soi-même serait
-                // facile à oublier, et le serveur refuserait le formulaire entier.
-                if (mode === 'bypassPermissions' && !scopes.includes('tasks:autonomous')) {
-                  setScopes([...scopes, 'tasks:autonomous'])
-                }
-              }}
-              className="sm:max-w-xs"
-              options={API_PERMISSION_MODES.map((mode) => ({
-                value: mode,
-                label: t(PERMISSION_MODE_KEYS[mode]),
-                hint: t(`${PERMISSION_MODE_KEYS[mode]}.hint` as Parameters<typeof t>[0]),
-              }))}
-            />
-          ) : null}
-          {agent === 'grok' ? (
-            <Select
-              label={t('apiTokens.permission.label')}
-              value={grokPermissionMode}
-              onChange={(mode) => {
-                setGrokPermissionMode(mode)
-                // `auto` et `bypassPermissions` ne laissent personne dans la boucle :
-                // le serveur exige alors la portée des tâches autonomes.
-                if (mode !== 'default' && !scopes.includes('tasks:autonomous')) {
-                  setScopes([...scopes, 'tasks:autonomous'])
-                }
-              }}
-              className="sm:max-w-xs"
-              options={GROK_API_PERMISSION_MODES.map((mode) => ({
-                value: mode,
-                label: t(GROK_PERMISSION_MODE_KEYS[mode].label),
-                hint: t(GROK_PERMISSION_MODE_KEYS[mode].hint),
-              }))}
-            />
-          ) : null}
+              {agent === 'claude' ? (
+                <Select
+                  label={t('apiTokens.permission.label')}
+                  value={permissionMode}
+                  onChange={(mode) => {
+                    setPermissionMode(mode)
+                    // Tout permettre exige la portée dédiée : la cocher soi-même serait
+                    // facile à oublier, et le serveur refuserait le formulaire entier.
+                    if (mode === 'bypassPermissions' && !scopes.includes('tasks:autonomous')) {
+                      setScopes([...scopes, 'tasks:autonomous'])
+                    }
+                  }}
+                  className="sm:max-w-xs"
+                  options={API_PERMISSION_MODES.map((mode) => ({
+                    value: mode,
+                    label: t(PERMISSION_MODE_KEYS[mode]),
+                    hint: t(`${PERMISSION_MODE_KEYS[mode]}.hint` as Parameters<typeof t>[0]),
+                  }))}
+                />
+              ) : null}
+              {agent === 'grok' ? (
+                <Select
+                  label={t('apiTokens.permission.label')}
+                  value={grokPermissionMode}
+                  onChange={(mode) => {
+                    setGrokPermissionMode(mode)
+                    // `auto` et `bypassPermissions` ne laissent personne dans la boucle :
+                    // le serveur exige alors la portée des tâches autonomes.
+                    if (mode !== 'default' && !scopes.includes('tasks:autonomous')) {
+                      setScopes([...scopes, 'tasks:autonomous'])
+                    }
+                  }}
+                  className="sm:max-w-xs"
+                  options={GROK_API_PERMISSION_MODES.map((mode) => ({
+                    value: mode,
+                    label: t(GROK_PERMISSION_MODE_KEYS[mode].label),
+                    hint: t(GROK_PERMISSION_MODE_KEYS[mode].hint),
+                  }))}
+                />
+              ) : null}
+
+              <Field
+                label={t('apiTokens.webhook.label')}
+                hint={t('apiTokens.webhook.hint')}
+                type="url"
+                placeholder="https://..."
+                value={webhookUrl}
+                onChange={(event) => setWebhookUrl(event.target.value)}
+              />
+            </>
+          ) : (
+            <p className="text-sm text-ink-faint">{t('apiTokens.create.mcpOnly')}</p>
+          )}
 
           <Select
             label={t('apiTokens.lifetime.label')}
@@ -342,28 +597,28 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
             ]}
           />
 
-          <Field
-            label={t('apiTokens.webhook.label')}
-            hint={t('apiTokens.webhook.hint')}
-            type="url"
-            placeholder="https://..."
-            value={webhookUrl}
-            onChange={(event) => setWebhookUrl(event.target.value)}
-          />
-
           <fieldset className="flex flex-col gap-1.5">
-            <legend className="text-sm font-medium text-ink-soft">
+            <legend className="mb-1.5 text-sm font-medium text-ink-soft">
               {t('apiTokens.scopes.label')}
             </legend>
-            <div className="flex flex-wrap gap-3">
+            {/* Une ligne par portée, avec ce qu'elle ouvre : un nom comme `mcp` ne dit pas
+                qu'il écrit les consignes et la mémoire. */}
+            <div className="grid gap-2 sm:grid-cols-2">
               {SCOPES.map((scope) => (
-                <label key={scope} className="flex items-center gap-2 text-sm text-ink">
+                <label
+                  key={scope}
+                  className="flex cursor-pointer items-start gap-2.5 rounded-md border border-line px-3 py-2 text-sm text-ink transition-colors hover:border-line-strong has-checked:border-accent has-checked:bg-accent-wash"
+                >
                   <input
                     type="checkbox"
                     checked={scopes.includes(scope)}
                     onChange={() => setScopes(toggle(scopes, scope))}
+                    className="mt-0.5 size-4 shrink-0 accent-accent"
                   />
-                  <code className="font-mono text-xs">{scope}</code>
+                  <span className="min-w-0">
+                    <code className="font-mono text-xs">{scope}</code>
+                    <span className="block text-xs text-ink-faint">{t(SCOPE_HINT_KEYS[scope])}</span>
+                  </span>
                 </label>
               ))}
             </div>
@@ -392,13 +647,14 @@ function CreateTokenCard({ onCreated }: { onCreated: (created: CreatedApiTokenDt
 
           {errorOf(createToken.error) ? <Banner>{errorOf(createToken.error)}</Banner> : null}
 
-          <Button
-            type="submit"
-            disabled={createToken.isPending || scopes.length === 0}
-            className="self-start"
-          >
-            {createToken.isPending ? t('apiTokens.create.pending') : t('apiTokens.create.action')}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={createToken.isPending || scopes.length === 0}>
+              {createToken.isPending ? t('apiTokens.create.pending') : t('apiTokens.create.action')}
+            </Button>
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              {t('common.cancel')}
+            </Button>
+          </div>
         </form>
       </CardBody>
     </Card>
@@ -422,7 +678,10 @@ function TokenCard({ token }: { token: ApiTokenDto }) {
               {t('apiTokens.hint', { hint: token.hint })}
             </code>
             {revoked ? <Badge tone="critical">{t('apiTokens.revoked')}</Badge> : null}
-            <Badge icon={<AgentIcon agent={token.agent} size={11} />}>{token.agent}</Badge>
+            {/* Le CLI ne règle que les tâches : sur un jeton MCP seul, il ne dirait rien de vrai. */}
+            {launchesTasks(token.scopes) ? (
+              <Badge icon={<AgentIcon agent={token.agent} size={11} />}>{token.agent}</Badge>
+            ) : null}
             {token.scopes.map((scope) => (
               <Badge key={scope}>{scope}</Badge>
             ))}

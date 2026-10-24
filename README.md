@@ -97,6 +97,11 @@ The full specification lives in [docs/SPEC.md](docs/SPEC.md) (French).
   an optional list of allowed projects, separate from the browser session.
   Create projects with `POST /api/v1/projects` and the explicit `projects:write`
   scope on an unrestricted token. [Project creation API](docs/api.md).
+- **Solera's own MCP server, from anywhere.** A token with the `mcp` scope plugs
+  an outside client (Claude Code on a laptop, a desktop app, an assistant on your
+  phone) into `/api/v1/mcp`: every project of your account, its board and memory,
+  and its sessions, which it can launch, read, message, interrupt and answer.
+  [MCP server](docs/mcp.md).
 
 ## Instructions and memory
 

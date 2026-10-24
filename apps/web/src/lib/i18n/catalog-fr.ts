@@ -716,8 +716,8 @@ export const fr: Catalog = {
   'settings.section.git.description': 'Jetons de clonage et de push',
   'settings.section.secrets': 'Secrets',
   'settings.section.secrets.description': 'Jetons et clés employés par les serveurs MCP',
-  'settings.section.api': 'API',
-  'settings.section.api.description': 'Jetons permettant à un autre outil de lancer des tâches',
+  'settings.section.api': 'API et MCP',
+  'settings.section.api.description': 'Piloter Solera depuis un autre outil, par son API ou son serveur MCP',
   'settings.section.stt': 'Dictée',
   'settings.section.stt.description': 'Saisie vocale par un fournisseur de transcription IA',
 
@@ -753,10 +753,53 @@ export const fr: Catalog = {
   'error.audio_too_large': "L'enregistrement est vide ou trop volumineux.",
 
   // Jetons d'API
-  'apiTokens.section.title': "Jetons d'API",
-  'apiTokens.section.description': 'Permettre à un outil externe de lancer des tâches sur Solera',
+  'apiTokens.section.title': 'API et serveur MCP',
+  'apiTokens.section.description': "Solera s'ouvre aux outils extérieurs de deux façons, avec les mêmes jetons",
+  'apiTokens.surface.endpoint': 'Adresse',
+  'apiTokens.surface.loopback':
+    "Cette adresse ne vaut que sur cette machine. Depuis un autre appareil, ouvrez Solera par son adresse privée (Tailscale, voir docs/remote-access.md) et recopiez celle qui s'affiche alors.",
+  'apiTokens.surface.api.title': 'API REST',
+  'apiTokens.surface.api.description':
+    "Pour un script ou un service : lister les projets, lancer une tâche avec un prompt, la suivre, y répondre, l'arrêter. Le CLI et le modèle sont fixés sur le jeton.",
+  'apiTokens.surface.api.scopes': "Portées projects:* et tasks:*. Webhook facultatif à la fin d'une tâche.",
+  'apiTokens.surface.api.create': "Créer un jeton d'API",
+  'apiTokens.surface.mcp.title': 'Serveur MCP',
+  'apiTokens.surface.mcp.description':
+    "Pour un agent hors de Solera, Claude Code sur un portable, une app de bureau ou un assistant sur le téléphone : les outils d'une session Solera, sur tous vos projets. Historique, board, mémoire, consignes, lancement de sessions, et dialogue avec elles jusqu'à répondre à leurs permissions.",
+  'apiTokens.surface.mcp.scopes': 'Portée mcp. Transport HTTP « streamable », avec le jeton en bearer.',
+  'apiTokens.surface.mcp.create': 'Créer un jeton MCP',
+  'apiTokens.mcpGuide.toggle': 'Brancher un client MCP',
+  'apiTokens.mcpGuide.intro':
+    "Solera parle le protocole MCP standard. Tout client compatible s'y branche avec ces trois réglages, quel que soit le nom qu'il leur donne.",
+  'apiTokens.mcpGuide.transport': 'Transport',
+  'apiTokens.mcpGuide.transport.value': 'HTTP « streamable », parfois appelé simplement HTTP. Ni stdio, ni SSE.',
+  'apiTokens.mcpGuide.url': 'Adresse',
+  'apiTokens.mcpGuide.auth': 'Authentification',
+  'apiTokens.mcpGuide.fields': 'Selon le formulaire de votre client :',
+  'apiTokens.mcpGuide.fields.headers': "Une liste d'en-têtes : clé Authorization, valeur Bearer suivi d'une espace et du jeton.",
+  'apiTokens.mcpGuide.fields.bearer': 'Un champ « jeton porteur » ou « bearer token » : le jeton seul, sans le mot Bearer.',
+  'apiTokens.mcpGuide.fields.env':
+    "Un champ qui demande le nom d'une variable d'environnement : il attend un nom de variable, pas le jeton, et cette variable doit exister là où le client tourne. Une app Mac lancée depuis le Dock ne voit pas les variables de votre shell : préférez l'en-tête.",
+  'apiTokens.mcpGuide.placeholder': '<jeton>',
+  'apiTokens.mcpGuide.examples': 'Exemples',
+  'apiTokens.mcpGuide.example.json': 'Fichier JSON (format mcpServers, la clé racine varie selon le client)',
+  'apiTokens.mcpGuide.example.codex': 'Codex, dans ~/.codex/config.toml',
+  'apiTokens.mcpGuide.example.claude': 'Claude Code, dans un terminal',
+  'apiTokens.create.title.mcp': 'Nouveau jeton MCP',
+  'apiTokens.create.mcpOnly':
+    "Ni CLI ni modèle à choisir : une session lancée par le serveur MCP prend les réglages par défaut de son projet. Cochez une portée tasks pour servir aussi l'API avec ce jeton.",
+  'apiTokens.scope.projects:read': 'Lister les projets et les conversations visibles',
+  'apiTokens.scope.projects:write': 'Créer des projets (jetons sans restriction de projets)',
+  'apiTokens.scope.tasks:read': 'Lire les tâches, leur état et leurs résultats',
+  'apiTokens.scope.tasks:write': 'Lancer, répondre et arrêter des tâches',
+  'apiTokens.scope.tasks:autonomous': 'Autoriser une configuration sans garde-fou',
+  'apiTokens.scope.mcp':
+    'Utiliser le serveur MCP par HTTP : historique, board, sessions, mémoire, consignes et lancements, en votre nom',
+  'mcp.ownServer':
+    'Ce sont des serveurs que vos agents utilisent. Pour brancher un outil extérieur sur Solera lui-même, Solera a son propre serveur MCP :',
+  'mcp.ownServer.link': 'API et MCP',
   'apiTokens.banner':
-    "Un jeton n'ouvre que /api/v1, jamais le reste de l'interface, et il agit en votre nom : il n'atteint rien que vous n'atteigniez vous-même. Le CLI et ses réglages se choisissent ici, pour qu'un appelant n'ait qu'un prompt à envoyer.",
+    "Un jeton n'ouvre que /api/v1, l'API comme le serveur MCP, jamais le reste de l'interface, et il agit en votre nom : il n'atteint rien que vous n'atteigniez vous-même. Le restreindre à quelques projets borne ce qu'atteindrait un jeton qui fuit.",
   'apiTokens.create.title': 'Nouveau jeton',
   'apiTokens.create.action': 'Créer le jeton',
   'apiTokens.create.pending': 'Création...',

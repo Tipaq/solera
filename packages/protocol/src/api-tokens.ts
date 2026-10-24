@@ -24,6 +24,13 @@ export const apiScopeSchema = z.enum([
   'tasks:read',
   'tasks:write',
   'tasks:autonomous',
+  /**
+   * Le serveur MCP de Solera par HTTP (`POST /api/v1/mcp`) : les outils d'une session,
+   * mais sur tous les projets du compte et en son nom — historique, board, sessions,
+   * mémoire, consignes, lancements. Portée à part parce qu'elle ouvre plus que les
+   * tâches : les consignes et la mémoire s'y écrivent, et une session s'y pilote.
+   */
+  'mcp',
 ])
 export type ApiScope = z.infer<typeof apiScopeSchema>
 
