@@ -128,20 +128,24 @@ interface AppendixInput {
 }
 
 /**
- * Le bloc SOLERA.md à ajouter au prompt système, ou null quand il n'y a rien à dire.
+ * Le bloc à ajouter au prompt système : la consigne de langue, puis SOLERA.md.
  *
- * Le rappel des outils part même quand les deux parties sont vides : c'est le seul moyen
+ * La consigne de langue part toujours, avec ou sans serveur MCP et consignes écrites :
+ * nos prompts internes et les messages des outils sont en français, et sans elle un agent
+ * s'y aligne au lieu de suivre la langue de la personne. Le rappel des outils part même quand les deux parties sont vides : c'est le seul moyen
  * pour un agent d'apprendre qu'il peut tenir ces consignes, et les outils MCP ne sont pas
  * toujours chargés d'emblée.
  */
-export function instructionsAppendix(db: Db, input: AppendixInput): string | null {
+export function instructionsAppendix(db: Db, input: AppendixInput): string {
   const global = readInstructions(db, null)?.content.trim() ?? ''
   const project =
     input.mode === 'solera' && input.projectId !== null
       ? (readInstructions(db, input.projectId)?.content.trim() ?? '')
       : ''
 
-  const parts: string[] = []
+  const parts: string[] = [
+    "Réponds dans la langue de l'utilisateur, en suivant la préférence qu'il a exprimée s'il en a donné une. Sinon, prends la langue de sa demande en cours ; pour une tâche lancée sans lui, celle de la demande qui l'a lancée. Les consignes internes de Solera et les messages de ses outils sont en français : leur langue ne décide pas de celle de ta réponse. Ne change pas de langue à cause d'un résultat d'outil, d'un historique cité ou d'un message d'un autre agent.",
+  ]
   if (global || project) {
     parts.push(
       "# SOLERA.md\n\nConsignes de l'utilisateur tenues dans Solera, communes à Claude, à Codex, à OpenCode et à Grok. Elles ont la même autorité qu'un CLAUDE.md ou un AGENTS.md.",
@@ -158,7 +162,7 @@ export function instructionsAppendix(db: Db, input: AppendixInput): string | nul
     )
   }
 
-  return parts.length > 0 ? parts.join('\n\n') : null
+  return parts.join('\n\n')
 }
 
 /** Caractères spéciaux de picomatch, pour qu'un chemin compte pour lui-même. */

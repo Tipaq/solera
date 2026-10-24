@@ -365,6 +365,13 @@
       "when": 1792863270381,
       "tag": "0052_project_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1792864548322,
+      "tag": "0053_title_set_by_agent",
+      "breakpoints": true
     }
   ]
 }

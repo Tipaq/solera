@@ -80,6 +80,11 @@ function summarize(name: string, input: unknown): ToolSummary | null {
     return { text: description, mono: false }
   }
 
+  // Le titre qu'un agent donne à sa session se lit comme une phrase, pas comme du code.
+  if (isSoleraTool(name, 'rename_session') && typeof fields.title === 'string' && fields.title.length > 0) {
+    return { text: fields.title, mono: false }
+  }
+
   const candidates =
     name === 'Bash'
       ? ['command']

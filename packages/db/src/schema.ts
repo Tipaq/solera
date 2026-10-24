@@ -495,6 +495,8 @@ export const agentRequests = sqliteTable(
         'request_card_move',
         // Le déplacement direct de sa propre carte, que l'agent fait seul.
         'move_card',
+        // Le titre de sa propre session, qui doit être annoncé aux clients.
+        'rename_session',
         'request_decision',
         // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
         'create_worktree',
@@ -643,6 +645,12 @@ export const conversations = sqliteTable(
      * jamais l'écraser derrière son dos.
      */
     titleSetByUser: integer('title_set_by_user', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Vrai quand l'agent a nommé sa session par `rename_session` : le résumé que le CLI
+     * propose plus tard ne l'écrase plus. Un titre de l'utilisateur, lui, l'emporte
+     * toujours, et le renommer remet ce drapeau à faux.
+     */
+    titleSetByAgent: integer('title_set_by_agent', { mode: 'boolean' }).notNull().default(false),
     // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
     // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
     agent: text('agent').$type<AgentKind>().notNull(),

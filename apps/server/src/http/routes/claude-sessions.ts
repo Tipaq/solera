@@ -173,6 +173,7 @@ export function registerClaudeSessionRoutes(
       userId: user.id,
       title: importTitle(info, firstText),
       titleSetByUser: false,
+      titleSetByAgent: false,
       agent: 'claude',
       agentSessionId: sessionId,
       forkedFromId: null,

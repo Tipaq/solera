@@ -3,6 +3,7 @@ import type {
   ThreadStartParams,
 } from '@solera/codex-bindings/v2'
 import type { McpServer, McpServerState, McpServerStatus } from '@solera/protocol'
+import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 
 /**
  * Traduction du registre Solera vers la configuration que Codex accepte, et retour.
@@ -29,9 +30,13 @@ export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
   const entries = servers.map((server): [string, ConfigValue] => {
     const { transport } = server
     if (transport.type === 'stdio') {
+      // Nommer sa session passe sans accord, comme chez Claude : le daemon protège le
+      // titre de l'utilisateur. Seul cet outil, et seulement du serveur intégré.
+      const naming =
+        server.id === BUILTIN_MCP_SERVER_ID ? { tools: { rename_session: { approval_mode: 'approve' } } } : {}
       return [
         server.name,
-        { command: transport.command, args: transport.args, env: transport.env },
+        { command: transport.command, args: transport.args, env: transport.env, ...naming },
       ]
     }
     // Codex ne distingue pas `http` de `sse` en configuration : il déduit le transport

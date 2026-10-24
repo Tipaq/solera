@@ -25,6 +25,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
+import { adoptSessionTitle, sessionTitleReminder } from '../conversations/title.js'
 import { ensureProjectMemory, freeThreadMemoryDir, memoryAppendixForCodex } from '../memory/store.js'
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
@@ -1048,6 +1049,8 @@ export class SessionManager {
           conversation.agent !== 'claude' && memory !== null
             ? memoryAppendixForCodex(memory, soleraMcp, projectId === null ? 'account' : 'project')
             : null,
+          // Avant l'aperçu du projet, et pour un fil libre aussi : il se nomme pareil.
+          sessionTitleReminder(this.db, conversationId, soleraMcp),
           this.config.mcp.soleraServer && current.soleraMcp && projectId !== null
             ? projectOverview(this.db, {
                 projectId,
@@ -1805,30 +1808,30 @@ export class SessionManager {
   }
 
   /**
-   * Reprend le titre proposé par le CLI, tant que l'utilisateur n'a pas renommé
-   * lui-même. Évite le « Nouvelle conversation » générique sans jamais écraser un
-   * choix explicite.
+   * Reprend le titre proposé par le CLI, tant que ni l'utilisateur ni l'agent n'ont
+   * nommé la session. Évite le « Nouvelle conversation » générique sans jamais écraser
+   * un choix explicite.
    */
   private async adoptSuggestedTitle(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed) return
 
     const conversation = this.db
-      .select({ title: conversations.title, titleSetByUser: conversations.titleSetByUser })
+      .select({
+        title: conversations.title,
+        titleSetByUser: conversations.titleSetByUser,
+        titleSetByAgent: conversations.titleSetByAgent,
+      })
       .from(conversations)
       .where(eq(conversations.id, conversationId))
       .get()
-    if (!conversation || conversation.titleSetByUser) return
+    if (!conversation || conversation.titleSetByUser || conversation.titleSetByAgent) return
 
     const title = await managed.runner.suggestedTitle()
     if (!title || title === conversation.title) return
 
-    this.db
-      .update(conversations)
-      .set({ title })
-      .where(eq(conversations.id, conversationId))
-      .run()
-    this.statusBus.emit('title', { conversationId, title })
+    // Écriture conditionnelle : le résumé a pu arriver après un renommage.
+    adoptSessionTitle(this.db, this.statusBus, conversationId, title, 'cli')
   }
 
   /**
