@@ -7,7 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
 // créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
@@ -84,7 +84,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')

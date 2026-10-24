@@ -4,7 +4,8 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Vrai composer et vraie file de sauvegarde ; API simulée, aucun CLI lancé.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -34,8 +35,15 @@ const initial = {
 }
 
 async function mount(page) {
+  // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
+  // Le composer n'importe plus le routeur lui-même : il se lit chez un voisin qui l'importe encore.
+  const modules = {
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/conversation-config.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/chat/Composer.tsx'),
+  }
   await page.goto(`${origin}/__composer_check`)
-  await page.evaluate(async () => {
+  await page.evaluate(async (modules) => {
     const refresh = (await import('/@react-refresh')).default
     refresh.injectIntoGlobalHook(window)
     window.$RefreshReg$ = () => {}
@@ -46,20 +54,10 @@ async function mount(page) {
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-    const hookSource = await (await fetch('/src/lib/conversation-config.ts')).text()
-    const queryModule = hookSource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1]
-    const { QueryClient, QueryClientProvider } = await import(queryModule)
-    const composerSource = await (await fetch('/src/components/chat/Composer.tsx')).text()
-    // Le composer n'importe plus le routeur lui-même : le chemin résolu se lit dans la
-    // source transformée d'un voisin qui l'importe encore.
-    const bubbleSource = await (await fetch('/src/components/chat/MessageBubble.tsx')).text()
-    const routerModule = bubbleSource.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1]
-    const { MemoryRouter } = await import(routerModule)
+    const { QueryClient, QueryClientProvider } = await import(modules.query)
+    const { MemoryRouter } = await import(modules.router)
     const { Composer } = await import('/src/components/chat/Composer.tsx')
-    // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
-    // source transformée du composer, comme pour les autres dépendances.
-    const uiModule = composerSource.match(/from ["']([^"']*@solera[/_]ui[^"']*)["']/)[1]
-    const { TooltipProvider } = await import(uiModule)
+    const { TooltipProvider } = await import(modules.ui)
     const { useConversationConfig } = await import('/src/lib/conversation-config.ts')
     const { useConversation } = await import('/src/lib/conversations.ts')
     const { useVisualViewport } = await import('/src/lib/viewport.ts')
@@ -121,7 +119,7 @@ async function mount(page) {
       })
     }
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, React.createElement(Harness)))))
-  })
+  }, modules)
   await page.getByRole('button', { name: 'Modèle : Modèle Alpha', exact: true }).waitFor()
 }
 
@@ -133,7 +131,7 @@ try {
     await delay(100)
   }
   assert.ok(ready, diagnostics)
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 640 }, { width: 667, height: 375 }]) {
     const context = await browser.newContext({ viewport, hasTouch: viewport.width < 700, isMobile: viewport.width < 700, locale: 'fr-FR', serviceWorkers: 'block' })
     const page = await context.newPage()

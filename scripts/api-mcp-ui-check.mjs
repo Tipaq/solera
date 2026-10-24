@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Vérifie que les réglages présentent l'API et le serveur MCP côte à côte, qu'un jeton MCP
 // se crée sans les champs propres aux tâches, puis que ce jeton ouvre le vrai serveur MCP.
@@ -64,7 +64,7 @@ try {
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [code] = await once(seed, 'exit')
   assert.equal(code, 0, seed.diagnostics)
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   assert.ok((await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })).ok())

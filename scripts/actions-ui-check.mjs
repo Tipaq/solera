@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Actions de projet, de bout en bout : vraie API, vrai serveur MCP, vrais terminaux, et
 // sous Linux une vraie unité systemd utilisateur (`solera-app-action-*`), arrêtée et
@@ -92,7 +92,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Choix du compte sur la page de nouvelle session, avec l'usage de chaque compte sous son
 // nom. Vrais composants, vraie API, base temporaire ; les vrais CLI sont sondés pour l'usage.
@@ -68,7 +68,7 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   assert.ok((await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })).ok())

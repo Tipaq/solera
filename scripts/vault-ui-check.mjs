@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 /**
  * Le vault de bout en bout : un dossier de notes sur le disque, l'index qui le lit, et
@@ -106,7 +106,7 @@ try {
   const base = `http://127.0.0.1:${webPort}`
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     locale: 'fr-FR',

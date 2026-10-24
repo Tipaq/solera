@@ -4,7 +4,7 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Les événements sont simulés : seul un iPad réel peut valider les calques WebKit.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -25,7 +25,7 @@ try {
     await delay(100)
   }
   assert.ok(ready, diagnostics)
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const size of [{ width: 1440, height: 900 }, { width: 820, height: 1180 }, { width: 390, height: 844 }]) {
     for (const initiallyOpen of [false, true]) {
       const page = await browser.newPage({ viewport: size, hasTouch: true })

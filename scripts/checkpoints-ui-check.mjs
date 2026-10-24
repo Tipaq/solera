@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
 
 // Les points de reprise d'un tour sur la démo : vrai serveur, vrai git, base temporaire.
 // Un tour est joué sans agent par `checkpoint-demo.ts`, captures et fichiers compris.
@@ -81,7 +81,7 @@ try {
   assert.equal(existsSync(join(turn.cwd, 'CHANGELOG.md')), true)
   assert.equal(existsSync(join(turn.cwd, 'src/lib/forecast.ts')), false)
 
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
 
   const session = async (viewport, mobile) => {
     const context = await browser.newContext({ viewport, isMobile: mobile, hasTouch: mobile, locale: 'fr-FR', serviceWorkers: 'block' })

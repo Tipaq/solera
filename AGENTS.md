@@ -317,6 +317,12 @@ Les scripts `*-ui-check.mjs` et `screenshots.mjs` fonctionnent donc, de même qu
 capture d'écran du catalogue. `brand-assets.mjs` reste sur `@resvg/resvg-js`, un binaire
 autonome sans dépendance système.
 
+Une suite lance son navigateur par `launchBrowser()` (`scripts/checks/browser.mjs`), jamais
+par `chromium.launch` : Playwright logerait la mémoire partagée de Chromium dans `/tmp`, et
+un `/tmp` presque plein donne une page Vite blanche, en `ERR_INSUFFICIENT_RESOURCES`, à
+une étape au hasard. Une suite qui monte un composant seul prend ses fournisseurs (React
+Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`).
+
 ## Ce qui reste à faire avant de montrer Solera à quiconque
 
 - **Le site.** Le gros a été repris, mais trois `À CHANGER` restent dans

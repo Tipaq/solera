@@ -4,7 +4,8 @@ import { once } from 'node:events'
 import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { chromium } from 'playwright'
+import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Vrais composants ; les sources simulées permettent un conflit reproductible, sans toucher aux skills installés.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -19,8 +20,14 @@ for (const stream of [vite.stdout, vite.stderr]) stream.on('data', (chunk) => { 
 let browser
 
 async function mount(page) {
+  // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
+  const modules = {
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/skill-library.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/components/skills/AddSkillMenu.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/chat/SkillsInventory.tsx'),
+  }
   await page.goto(`${origin}/__skills_check`)
-  await page.evaluate(async () => {
+  await page.evaluate(async (modules) => {
     const refresh = (await import('/@react-refresh')).default
     refresh.injectIntoGlobalHook(window)
     window.$RefreshReg$ = () => {}
@@ -31,15 +38,11 @@ async function mount(page) {
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
-    const hookSource = await (await fetch('/src/lib/skill-library.ts')).text()
-    const { QueryClient, QueryClientProvider } = await import(hookSource.match(/from ["']([^"']*tanstack[^"']+)["']/)[1])
-    const source = await (await fetch('/src/components/chat/SkillsInventory.tsx')).text()
-    const { MemoryRouter } = await import(source.match(/from ["']([^"']*react-router-dom[^"']+)["']/)[1])
+    const { QueryClient, QueryClientProvider } = await import(modules.query)
+    const { MemoryRouter } = await import(modules.router)
     const { SkillsInventory } = await import('/src/components/chat/SkillsInventory.tsx')
     const { AddSkillMenu } = await import('/src/components/skills/AddSkillMenu.tsx')
-    // `TooltipProvider` vient du paquet d'interface : le chemin résolu se lit dans la
-    // source transformée du composant, comme pour les autres dépendances.
-    const { TooltipProvider } = await import(source.match(/from ["']([^"']*\/packages\/ui\/[^"']+)["']/)[1])
+    const { TooltipProvider } = await import(modules.ui)
     const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
     const commands = Array.from({ length: 24 }, (_, i) => ({ name: `commande-${i}`, description: 'Une description de commande très longue. '.repeat(30) }))
     // L'inventaire vit maintenant dans le menu « + » du composer : un panneau de
@@ -52,7 +55,7 @@ async function mount(page) {
       }, React.createElement(SkillsInventory, { config: { agent: 'claude', skillLibrary: true }, commands, skills: [], onBack: () => {}, onClose: () => {} })),
       React.createElement(AddSkillMenu, { scope: 'global', projectId: null }))
     createRoot(document.getElementById('check')).render(React.createElement(QueryClientProvider, { client }, React.createElement(MemoryRouter, null, React.createElement(TooltipProvider, null, content))))
-  })
+  }, modules)
 }
 
 try {
@@ -61,7 +64,7 @@ try {
     if (vite.exitCode !== null) throw new Error(diagnostics)
     await delay(100)
   }
-  browser = await chromium.launch({ channel: 'chromium', chromiumSandbox: true })
+  browser = await launchBrowser()
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     const context = await browser.newContext({ viewport, hasTouch: viewport.width < 700, isMobile: viewport.width < 700, serviceWorkers: 'block' })
     const page = await context.newPage()
@@ -105,7 +108,7 @@ try {
     await mount(page)
     const inventory = page.locator('[data-inventory]')
     await inventory.waitFor()
-    const manage = inventory.getByRole('link', { name: 'Gérer la bibliothèque' })
+    const manage = inventory.getByRole('button', { name: 'Gérer la bibliothèque' })
     assert.ok(await manage.isVisible())
     // Les deux listes se suivent dans le même défilement, chacune sous son intitulé :
     // la bibliothèque, dont chaque skill s'allume, puis ce que le CLI annonce.
