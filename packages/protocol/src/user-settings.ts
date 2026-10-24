@@ -55,6 +55,15 @@ export interface UserSettingsDto {
    */
   boardOrder: Record<string, BoardOrder>
   /**
+   * CLI dont on ne veut plus entendre parler tant qu'ils ne sont pas installés.
+   *
+   * Qui n'utilise que Claude Code n'a pas à voir trois boutons « Installer » à chaque
+   * nouvelle session. Masquer n'est pas désactiver : un CLI masqué qui finit par être
+   * installé réapparaît de lui-même, et la liste se rouvre d'un clic. Au compte, comme
+   * les projets repliés : le choix vaut sur tous ses appareils.
+   */
+  hiddenAgents: AgentKind[]
+  /**
    * Dossier parent proposé à la création d'un projet, `null` tant qu'aucun projet n'a
    * été créé ainsi.
    *
@@ -240,6 +249,7 @@ export const storedUserSettingsSchema = z
     // suppression, y compris pour les comptes qui ne se connectent plus.
     collapsedProjects: z.array(z.string()).default([]).catch([]),
     boardOrder: z.record(z.string(), boardOrderSchema).default({}).catch({}),
+    hiddenAgents: z.array(agentKindSchema).default([]).catch([]),
     projectsDir: z.string().nullable().default(null).catch(null),
     appearance: appearancePrefsSchema.nullable().default(null).catch(null),
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
@@ -250,6 +260,7 @@ export const storedUserSettingsSchema = z
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
     boardOrder: {},
+    hiddenAgents: [],
     projectsDir: null,
     appearance: null,
     notifications: DEFAULT_NOTIFICATION_PREFS,
@@ -268,6 +279,8 @@ export const updateUserSettingsBodySchema = z.object({
   collapsedProjects: z.array(z.string().uuid()).optional(),
   /** L'ordre d'un seul board ; les autres projets gardent le leur. */
   boardOrder: z.object({ projectId: z.string().uuid(), order: boardOrderSchema }).optional(),
+  /** La liste entière, comme les projets repliés. */
+  hiddenAgents: z.array(agentKindSchema).optional(),
   /** `null` retire le dossier mémorisé ; absent, il ne bouge pas. */
   projectsDir: z.string().min(1).nullable().optional(),
   /** Remplacée en bloc, comme les projets repliés. */

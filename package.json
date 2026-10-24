@@ -42,6 +42,7 @@
     "test:web-ui": "node scripts/web-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
+    "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "db:generate": "pnpm --filter @solera/db generate",
     "db:migrate": "pnpm --filter @solera/server migrate",
     "user:create": "pnpm --filter @solera/server user:create",

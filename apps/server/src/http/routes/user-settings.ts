@@ -5,6 +5,7 @@ import {
   writeAppearance,
   writeBoardOrder,
   writeCollapsedProjects,
+  writeHiddenAgents,
   writeNotificationPrefs,
   writeOnboarding,
   writeProjectDefaults,
@@ -36,6 +37,7 @@ export function registerUserSettingsRoutes(app: FastifyInstance, ctx: AppContext
     if (body.agentDefault) writeUserAgentDefault(ctx.db, user.id, body.agentDefault)
     if (body.collapsedProjects) writeCollapsedProjects(ctx.db, user.id, body.collapsedProjects)
     if (body.boardOrder) writeBoardOrder(ctx.db, user.id, body.boardOrder.projectId, body.boardOrder.order)
+    if (body.hiddenAgents) writeHiddenAgents(ctx.db, user.id, body.hiddenAgents)
     if (body.projectsDir !== undefined) writeProjectsDir(ctx.db, user.id, body.projectsDir)
     if (body.appearance) writeAppearance(ctx.db, user.id, body.appearance)
     if (body.notifications) writeNotificationPrefs(ctx.db, user.id, body.notifications)

@@ -9,8 +9,10 @@ import {
   type AgentModelDto,
   type AgentModelsDto,
 } from '@solera/protocol'
+import { useMemo } from 'react'
 import { translate, type MessageKey } from './i18n'
 import { api } from './api'
+import { useUpdateHiddenAgents, useUserSettings } from './user-settings'
 
 /**
  * Présence et version des CLI sur la machine du serveur.
@@ -42,6 +44,27 @@ export function useInstallAgent() {
     mutationFn: (agent: AgentKind) => api.post(`/api/agents/${agent}/install`, {}),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['agents', 'availability'] }),
   })
+}
+
+/**
+ * Les CLI que ce compte a masqués tant qu'ils manquent, et de quoi en masquer un ou
+ * tout rouvrir. Un CLI masqué mais installé ne l'est plus : le masque ne porte que sur
+ * la proposition d'installer, voir `hiddenAgent`.
+ */
+export function useHiddenAgents() {
+  const { data: settings } = useUserSettings()
+  const update = useUpdateHiddenAgents()
+  const hidden = useMemo(() => settings?.hiddenAgents ?? [], [settings?.hiddenAgents])
+  return {
+    hidden,
+    hide: (agent: AgentKind) => update.mutate([...hidden, agent]),
+    reveal: () => update.mutate([]),
+  }
+}
+
+/** Un CLI à ne pas proposer : masqué par le compte, et toujours absent. */
+export function hiddenAgent(entry: AgentAvailabilityDto | undefined, hidden: AgentKind[]): boolean {
+  return entry !== undefined && !entry.installed && hidden.includes(entry.agent)
 }
 
 /**
