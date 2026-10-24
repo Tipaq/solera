@@ -578,13 +578,11 @@ export const agentRequests = sqliteTable(
      */
     answer: text('answer'),
     /**
-     * Pour une décision que Solera pose lui-même, et non une session : l'arbre fusionné et
-     * propre qu'elle propose de nettoyer (`worktrees/merge-watch.ts`).
-     *
-     * Une telle décision appartient au propriétaire du projet, ne part à aucune session et
-     * ne se retire pas à l'archivage de `conversation_id`, qui ne nomme que la session la
-     * plus récente de l'arbre, ou reste vide. La réponse « Nettoyer » agit tout de suite.
-     * C'est aussi la clé qui évite de reposer la question pour un arbre déjà tranché.
+     * Pour une ancienne proposition « nettoyer ? » que Solera posait lui-même dès qu'un
+     * arbre était fusionné : l'arbre visé. Il n'en pose plus ; celles qui attendaient sont
+     * retirées au démarrage (`Decisions.retireWorktreeProposals`), et les closes restent
+     * lisibles dans l'historique. Une telle ligne appartient au propriétaire du projet et
+     * ne part à aucune session.
      */
     worktreePath: text('worktree_path'),
   },

@@ -238,6 +238,9 @@ export class ClaudeRunner implements AgentRunner {
         model: config.model,
         effort: config.effort,
         permissionMode: toPermissionMode(config.permissionMode),
+        // Le SDK exige cet opt-in en plus du mode : ne pas dépendre de la tolérance du
+        // binaire installé, qui peut changer d'une mise à jour à l'autre.
+        allowDangerouslySkipPermissions: config.permissionMode === 'bypassPermissions',
         // Les pièces jointes sont stockées hors du workspace : sans ce dossier
         // autorisé, l'agent se verrait refuser la lecture des fichiers qu'on lui joint.
         // Même raison pour les fichiers annexes des skills de la bibliothèque.
@@ -544,6 +547,12 @@ export class ClaudeRunner implements AgentRunner {
           return
         }
         if (message.subtype === 'init') {
+          const requested = toPermissionMode(this.config.permissionMode)
+          if (message.permissionMode !== requested) {
+            process.stderr.write(
+              `[claude ${this.conversationId}] mode de permission divergent : demandé=${requested} obtenu=${message.permissionMode} version=${message.claude_code_version}\n`,
+            )
+          }
           const first = this.sessionId === null
           this.sessionId = message.session_id
           this.ctx.setAgentSessionId(message.session_id)
@@ -871,6 +880,13 @@ export class ClaudeRunner implements AgentRunner {
     input: Record<string, unknown>,
     options: Parameters<CanUseTool>[2],
   ): Promise<PermissionResult> {
+    // Sans les arguments de l'outil : le journal sert au diagnostic, et une commande
+    // peut contenir un secret.
+    if (this.config.permissionMode === 'bypassPermissions') {
+      process.stderr.write(
+        `[claude ${this.conversationId}] demande de permission inattendue : outil=${toolName} mode=bypassPermissions\n`,
+      )
+    }
     /**
      * Mises à jour de permission proposées par le CLI pour ne plus reposer la
      * question. Sans les renvoyer, « autoriser pour la session » n'autorise que cet
@@ -1262,9 +1278,10 @@ export class ClaudeRunner implements AgentRunner {
     // contournement est donné au lancement, et `set_permission_mode` ne le reprend pas :
     // il accepte le nouveau mode sans rien changer, `canUseTool` n'est plus jamais
     // rappelé, et la conversation continue à tout autoriser sous un réglage qui affiche
-    // le contraire. Contrairement au sens inverse, qui échoue franchement, celui-ci
-    // passait pour appliqué et n'a donc jamais fait repartir le runner.
-    if (this.launchedWithBypass && config.permissionMode !== 'bypassPermissions') return false
+    // le contraire. Dans l'autre sens, l'opt-in `allowDangerouslySkipPermissions` n'est
+    // lui aussi qu'une option de lancement : on relance dans les deux sens, plutôt que de
+    // croire sur parole une réponse de contrôle.
+    if (this.launchedWithBypass !== (config.permissionMode === 'bypassPermissions')) return false
 
     // Les plafonds de budget sont des options de lancement, sans requête de contrôle
     // pour les changer : même sort que `strictMcp`.

@@ -23,7 +23,7 @@ import {
   rebaseEnv,
   writeTodo,
 } from './git-rebase.js'
-import { GitError } from './git.js'
+import { fromPrefix, GitError, PATCH_FLAGS, readPrefix, relativePatch } from './git.js'
 
 /**
  * Ce que la vue Git **écrit** dans le dépôt, et ce qu'elle doit savoir avant d'écrire.
@@ -88,7 +88,9 @@ async function git(
   timeout = READ_TIMEOUT_MS,
 ): Promise<string> {
   try {
-    const { stdout } = await run('git', args, {
+    // Un chemin accentué reste lisible : sans ce réglage, `--numstat` et les en-têtes de
+    // patch l'écrivent entre guillemets, en octets échappés.
+    const { stdout } = await run('git', ['-c', 'core.quotePath=false', ...args], {
       cwd,
       timeout,
       maxBuffer: 8 * 1024 * 1024,
@@ -117,7 +119,7 @@ function gitMessage(err: unknown): string {
 /** Un diff de plusieurs mégaoctets ne s'affiche pas et ne se transporte pas utilement. */
 const MAX_DIFF_BYTES = 512 * 1024
 
-function parseNumstat(numstat: string): DiffFileDto[] {
+function parseNumstat(numstat: string, prefix = ''): DiffFileDto[] {
   return numstat
     .split('\0')
     .flatMap((chunk) => chunk.split('\n'))
@@ -128,6 +130,7 @@ function parseNumstat(numstat: string): DiffFileDto[] {
       return { path: path ?? '', added: Number(added) || 0, removed: Number(removed) || 0 }
     })
     .filter((file) => file.path.length > 0)
+    .map((file) => ({ ...file, path: fromPrefix(prefix, file.path) }))
 }
 
 export interface WriteState {
@@ -181,15 +184,21 @@ export async function readWriteState(cwd: string): Promise<WriteState | null> {
     ahead = Number(aheadRaw) || 0
   }
 
-  const [staged, stagedPatch] = await Promise.all([
-    git(cwd, ['diff', '--cached', '--numstat']).catch(() => ''),
-    git(cwd, ['diff', '--cached']).catch(() => ''),
+  // `--no-relative` : un `diff.relative` de l'utilisateur ne doit pas faire parler une
+  // commande depuis le sous-dossier et sa voisine depuis la racine. Tout part de la
+  // racine, puis revient au dossier du projet, qui est celui des gestes.
+  const prefix = await readPrefix(cwd)
+  const [staged, rawStagedPatch] = await Promise.all([
+    git(cwd, ['diff', '--cached', '--numstat', '--no-relative']).catch(() => ''),
+    git(cwd, ['diff', '--cached', ...PATCH_FLAGS]).catch(() => ''),
   ])
-  const unstaged = await readUnstaged(cwd)
-  const conflicted = (await git(cwd, ['diff', '--name-only', '--diff-filter=U']).catch(() => ''))
+  const stagedPatch = relativePatch(prefix, rawStagedPatch)
+  const unstaged = await readUnstaged(cwd, prefix)
+  const conflicted = (await git(cwd, ['diff', '--name-only', '--no-relative', '--diff-filter=U']).catch(() => ''))
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
+    .map((path) => fromPrefix(prefix, path))
 
   const truncated =
     Buffer.byteLength(stagedPatch) > MAX_DIFF_BYTES ||
@@ -201,7 +210,7 @@ export async function readWriteState(cwd: string): Promise<WriteState | null> {
     ahead,
     behind,
     detached: branch === null && head !== null,
-    staged: parseNumstat(staged),
+    staged: parseNumstat(staged, prefix),
     unstaged: unstaged.files,
     stagedPatch: stagedPatch.slice(0, MAX_DIFF_BYTES),
     unstagedPatch: unstaged.patch.slice(0, MAX_DIFF_BYTES),
@@ -222,7 +231,7 @@ async function readHead(cwd: string): Promise<WriteState['head']> {
 }
 
 /** Le répertoire de travail contre l'index, non-suivis compris. Voir `readWriteState`. */
-async function readUnstaged(cwd: string): Promise<{ files: DiffFileDto[]; patch: string }> {
+async function readUnstaged(cwd: string, prefix: string): Promise<{ files: DiffFileDto[]; patch: string }> {
   const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim()
   const scratch = join(tmpdir(), `solera-index-${randomUUID()}`)
   try {
@@ -230,10 +239,10 @@ async function readUnstaged(cwd: string): Promise<{ files: DiffFileDto[]; patch:
     const env = { GIT_INDEX_FILE: scratch }
     await git(cwd, ['add', '--intent-to-add', '--all'], env)
     const [numstat, patch] = await Promise.all([
-      git(cwd, ['diff', '--numstat'], env).catch(() => ''),
-      git(cwd, ['diff'], env).catch(() => ''),
+      git(cwd, ['diff', '--numstat', '--no-relative'], env).catch(() => ''),
+      git(cwd, ['diff', ...PATCH_FLAGS], env).catch(() => ''),
     ])
-    return { files: parseNumstat(numstat), patch }
+    return { files: parseNumstat(numstat, prefix), patch: relativePatch(prefix, patch) }
   } finally {
     await rm(scratch, { force: true }).catch(() => {})
   }
@@ -877,7 +886,7 @@ export async function perform(
       // client affichait a pu vieillir, et `partialPatch` compare les en-têtes de
       // blocs avant de retenir quoi que ce soit.
       const patch = reverse
-        ? await git(cwd, ['diff', '--cached', '--', action.path])
+        ? await git(cwd, ['diff', '--cached', ...PATCH_FLAGS, '--', action.path])
         : await readUnstagedPatch(cwd, action.path)
       const partial = partialPatch(patch, action.selections, reverse)
       if (!partial) return { undo: null, message: '' }
@@ -958,7 +967,7 @@ async function readUnstagedPatch(cwd: string, path: string): Promise<string> {
     await copyFile(join(gitDir, 'index'), scratch).catch(() => {})
     const env = { GIT_INDEX_FILE: scratch }
     await git(cwd, ['add', '--intent-to-add', '--', path], env).catch(() => {})
-    return await git(cwd, ['diff', '--', path], env)
+    return await git(cwd, ['diff', ...PATCH_FLAGS, '--', path], env)
   } finally {
     await rm(scratch, { force: true }).catch(() => {})
   }
@@ -977,8 +986,11 @@ async function readUnstagedPatch(cwd: string, path: string): Promise<string> {
  */
 async function applyToIndex(cwd: string, patch: string, reverse: boolean): Promise<void> {
   const args = ['apply', '--cached', ...(reverse ? ['--reverse'] : []), '-']
+  // Depuis la racine : les chemins du patch en partent, et lancé d'un sous-dossier,
+  // `git apply` ignorerait sans rien dire tout ce qui n'y est pas relatif.
+  const top = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim()
   await new Promise<void>((resolve, reject) => {
-    const child = execFile('git', args, { cwd, timeout: READ_TIMEOUT_MS }, (err, _stdout, stderr) => {
+    const child = execFile('git', args, { cwd: top, timeout: READ_TIMEOUT_MS }, (err, _stdout, stderr) => {
       if (err) reject(new GitError(gitMessage({ stderr, message: err.message })))
       else resolve()
     })
