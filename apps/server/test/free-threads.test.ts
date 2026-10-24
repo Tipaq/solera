@@ -174,7 +174,7 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   // Et le serveur du projet, lui, les porte tous : ce qui tombe n'est que ce qui parle
   // d'un projet, pas la moitié du serveur par accident.
   const scoped = list('private').map((tool) => tool.name)
-  assert.equal(scoped.length, 26)
+  assert.equal(scoped.length, 30)
   for (const tool of free) assert.ok(scoped.includes(tool.name), tool.name)
 
   // Pas de `scope` à offrir : des trois portées de SOLERA.md, un fil libre n'a que la
@@ -190,7 +190,7 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
     ['edit_instructions', 'read_instructions', 'write_instructions'],
   )
   const scopedWithoutMemory = list('private', '').map((tool) => tool.name)
-  assert.equal(scopedWithoutMemory.length, 23)
+  assert.equal(scopedWithoutMemory.length, 27)
   for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
     assert.ok(!scopedWithoutMemory.includes(tool), tool)
   }

@@ -37,6 +37,7 @@ import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/pane
 import { useProjects } from '../lib/projects'
 import { useBoardOrder } from '../lib/user-settings'
 import { useMediaQuery } from '../lib/viewport'
+import { ActionsLauncher } from '../components/actions/ActionsLauncher'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
@@ -290,7 +291,8 @@ export function BoardPage() {
           {/* Les deux réglages du board, descendus de la bande auprès de ce qu'ils
               règlent : le repli du cimetière filtre les colonnes qui suivent, et le
               panneau ouvre le workspace du projet — un terminal, les fichiers ou le
-              diff, sans avoir à entrer dans une session. */}
+              diff, sans avoir à entrer dans une session. Les actions du projet se
+              lancent de là aussi, à la racine du projet. */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <Menu
               trigger={
@@ -317,6 +319,7 @@ export function BoardPage() {
                 {t('board.closed')}
               </Button>
             ) : null}
+            <ActionsLauncher projectId={projectId} size="sm" />
             <IconButton
               label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
               size="sm"

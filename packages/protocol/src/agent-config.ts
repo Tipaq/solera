@@ -58,6 +58,11 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * ne tourne pas tant qu'une personne n'a pas validé ce texte précis : comme pour
  * `request_card_move`, l'agent propose et c'est le clic qui agit, et toute réécriture
  * par un agent le remet en attente. La garde est donc sur le script et non sur l'outil.
+ * Les actions de projet (`register_action`, `run_action`) suivent ce précédent : un clic
+ * de l'utilisateur ne lance une action qu'il ne l'ait relue, et un agent qui en change
+ * la commande, la nature, le dossier ou l'URL la remet en attente. `run_action` reste
+ * permis sur une action non relue, l'agent pouvant jouer la même commande dans son
+ * shell : la relecture protège le clic, pas l'agent de lui-même.
  *
  * **Quatre étages d'héritage**, les mêmes pour toutes les familles : conversation →
  * préréglage de projet (`projects.default_config`) → défaut de compte → `config.toml`.

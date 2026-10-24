@@ -52,6 +52,10 @@ export const LIST_ROUTES = new Set([
   'DELETE /api/schedules/:id',
   'POST /api/schedules/:id/run',
   'POST /api/schedules/:id/check/approve',
+  'POST /api/projects/:id/actions',
+  'PATCH /api/actions/:id',
+  'POST /api/actions/:id/approve',
+  'DELETE /api/actions/:id',
   // Un rangement de carte accordé : la liste des conversations porte la colonne de la
   // carte rattachée, et le board d'un autre onglet la montre aussi.
   'POST /api/conversations/:id/card-filings/:requestId',

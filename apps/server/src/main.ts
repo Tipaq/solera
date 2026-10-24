@@ -7,6 +7,7 @@ import { WebhookService } from './webhooks/service.js'
 import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
+import { ActionRunner } from './actions/actions.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
@@ -86,6 +87,8 @@ async function main(): Promise<void> {
   sessions.setStorybooks(storybooks)
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
+  // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
+  const actions = new ActionRunner(db, config, terminals)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
   // Construit avant l'application, dont les routes remettent ou écartent un message
@@ -115,7 +118,7 @@ async function main(): Promise<void> {
   watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -148,6 +151,7 @@ async function main(): Promise<void> {
     decisions,
     worktreeStatus,
     worktreeCleanup,
+    actions,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

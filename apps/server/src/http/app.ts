@@ -28,6 +28,8 @@ import type { Scheduler } from '../scheduler/scheduler.js'
 import type { VaultIndex } from '../vault/index-service.js'
 import type { TaskScheduler } from '../scheduler/task-scheduler.js'
 import { registerScheduleRoutes } from './routes/schedules.js'
+import { registerActionRoutes } from './routes/actions.js'
+import type { ActionRunner } from '../actions/actions.js'
 import type { WebhookService } from '../webhooks/service.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
@@ -136,6 +138,7 @@ export async function buildApp(
   decisions: Decisions,
   worktreeStatus: WorktreeStatusService,
   worktreeCleanup: WorktreeCleanup,
+  actions: ActionRunner,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -259,6 +262,7 @@ export async function buildApp(
   registerPaletteRoutes(app, ctx, skillLibrary)
   registerSettingsRoutes(app, ctx, scheduler, vault)
   registerScheduleRoutes(app, ctx, sessions, registry, tasks)
+  registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx)
   registerSystemRoutes(app, ctx)

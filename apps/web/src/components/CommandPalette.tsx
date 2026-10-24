@@ -3,20 +3,27 @@ import {
   BookOpen,
   CalendarClock,
   CalendarPlus,
+  ExternalLink,
   File,
   FolderOpen,
   Loader,
   MessageSquare,
+  Play,
   Plug,
   Plus,
+  RotateCw,
   Search,
   Settings,
+  ShieldQuestion,
+  Square,
   SquareKanban,
+  SquareTerminal,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { SEARCH_MIN_QUERY, type ConversationDto, type FuzzyField } from '@solera/protocol'
+import { SEARCH_MIN_QUERY, type ConversationDto, type FuzzyField, type ProjectActionDto } from '@solera/protocol'
+import { actionView, describeActionState, useActions, useRunAction } from '../lib/actions'
 import { useCardSearch } from '../lib/cards'
 import { conversationPath } from '../lib/conversation-route'
 import { useAllConversations } from '../lib/conversations'
@@ -30,7 +37,7 @@ import { useSchedules } from '../lib/schedules'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
-import { openPanelOnArrival, setPanelOpen, setPanelTab } from '../lib/panel'
+import { openPanelOnArrival, setPanelOpen, setPanelTab, showTerminal } from '../lib/panel'
 import { projectScope } from '../lib/workspace-scope'
 import { visibleSections } from './settings/sections'
 import { AgentIcon } from './AgentIcon'
@@ -41,7 +48,7 @@ import { IconButton, cx } from '@solera/ui'
  *
  * Elle ne cherchait que les conversations et les messages. C'est ce qui enfermait des
  * fonctions dès qu'on a posé « un domicile par chose » : une carte, une tâche
- * planifiée, un réglage n'étaient atteignables que par le chemin qui y mène. Onze
+ * planifiée, un réglage n'étaient atteignables que par le chemin qui y mène. Douze
  * familles désormais, groupées, chacune repliée à trois lignes — une liste à plat de
  * quarante résultats ne se lit pas, et le groupe dit déjà de quelle nature est ce
  * qu'on regarde. Une famille de plus s'ajoute à `FamilyId`, à `GROUP_LABELS` et à la
@@ -62,6 +69,7 @@ import { IconButton, cx } from '@solera/ui'
 type FamilyId =
   | 'resume'
   | 'actions'
+  | 'projectActions'
   | 'notes'
   | 'conversations'
   | 'messages'
@@ -155,6 +163,10 @@ export function CommandPalette({
   )
   const { data: catalog } = usePaletteCatalog(open)
   const { data: mcp } = useMcpServers()
+  const { data: projectActions } = useActions()
+  // `mutate` est stable, pas l'objet de la mutation : les résultats ne se refont pas à
+  // chaque rendu.
+  const { mutate: startAction } = useRunAction()
 
   // Rouvrir la palette doit repartir d'une page blanche : la recherche précédente
   // répondait à une intention qui n'est plus celle du moment.
@@ -271,6 +283,38 @@ export function CommandPalette({
     [close, conversationId, navigate, panelHere, projectId],
   )
 
+  /**
+   * Le geste d'une action de projet. Dans le projet sous les yeux et sur une vue qui
+   * monte le panneau, elle se joue là où l'on est, worktree de la conversation compris ;
+   * ailleurs, on rejoint d'abord le board de son projet, et elle se joue à sa racine.
+   * Relire ouvre l'onglet *Actions*, où la commande se lit avant de partir.
+   */
+  const runProjectAction = useCallback(
+    (action: ProjectActionDto, op: ProjectActionOp) => {
+      close()
+      if (op === 'open') {
+        const href = actionView(action).href
+        if (href) window.open(href, '_blank', 'noreferrer')
+        return
+      }
+      const here = action.projectId === projectId && panelHere
+      if (!here) {
+        const board = `/p/${action.projectId}/board`
+        openPanelOnArrival(board, op === 'output' ? 'terminals' : 'actions')
+        navigate(board)
+      }
+      if (op === 'review') {
+        setPanelTab('actions')
+        setPanelOpen(true)
+      } else if (op === 'output') {
+        if (action.lastRun) showTerminal(action.lastRun.terminalId)
+      } else {
+        startAction({ action, op, conversationId: here ? (conversationId ?? undefined) : undefined })
+      }
+    },
+    [close, conversationId, navigate, panelHere, projectId, startAction],
+  )
+
   const groups = useMemo((): Group[] => {
     const limit = (id: FamilyId, items: Item[]): Group => ({
       id,
@@ -304,6 +348,31 @@ export function CommandPalette({
         meta: projectNames.get(card.projectId),
         run: () => go(`/p/${card.projectId}/board?carte=${card.number}`),
       }))
+
+    /**
+     * Les actions de projet, une ligne par geste que leur état permet : un service en
+     * marche s'ouvre, s'arrête et se relance, il ne se « lance » pas une seconde fois.
+     */
+    const projectActionItems = (source: ProjectActionDto[]): Item[] =>
+      source.flatMap((action) => {
+        const project = projectNames.get(action.projectId)
+        if (project === undefined) return []
+        const view = actionView(action)
+        const ops: ProjectActionOp[] =
+          view.primary === 'review' ? ['review']
+            : view.primary === 'stop' ? [...(view.href ? ['open' as const] : []), 'stop', 'restart']
+              : view.primary === 'output' ? ['output']
+                : ['run']
+        const state = describeActionState(action, t)
+        return ops.map((op) => ({
+          key: `pa-${action.id}-${op}`,
+          icon: ACTION_OPS[op].icon,
+          label: t(ACTION_OPS[op].label, { label: action.label }),
+          meta: action.projectId === projectId ? state : `${project} · ${state}`,
+          run: () => runProjectAction(action, op),
+        }))
+      })
+    const visibleActions = (projectActions ?? []).filter((action) => projectNames.has(action.projectId))
 
     const projectItems = (source = projects ?? []): Item[] =>
       source.map((project) => ({
@@ -375,10 +444,15 @@ export function CommandPalette({
       // Aucun « de plus » ici : *Reprendre* n'est pas une famille repliée mais une
       // courte liste de ce qui est encore chaud. Tout voir, c'est déjà la colonne.
       const resume = recent.slice(0, 5)
-      return [
+      // Les actions du projet sous les yeux, entre ce qu'on reprend et les gestes :
+      // à l'ouverture, la palette est aussi le chemin le plus court vers un bouton.
+      const here = projectActionItems(visibleActions.filter((action) => action.projectId === projectId))
+      const rest: Group[] = [
         { id: 'resume', label: t(GROUP_LABELS.resume), items: resume, total: resume.length },
+        limit('projectActions', here),
         { id: 'actions', label: t(GROUP_LABELS.actions), items: commands, total: commands.length },
       ]
+      return rest.filter((group) => group.id !== 'projectActions' || group.items.length > 0)
     }
 
     const messageItems: Item[] = searching
@@ -511,6 +585,22 @@ export function CommandPalette({
         rankByFields(projectItems(), term, (item) => [{ text: item.label, weight: 1 }]),
       ),
       limit('cards', cardItems()),
+      limit(
+        'projectActions',
+        projectActionItems(
+          // Celles du projet sous les yeux passent devant à pertinence égale.
+          rankByFields(
+            visibleActions,
+            term,
+            (action) => [
+              sentence(action.label),
+              { text: action.command, weight: 0.4, mode: 'strict' },
+              ...context(projectNames.get(action.projectId)),
+            ],
+            (action) => (action.projectId === projectId ? 0.5 : 0),
+          ),
+        ),
+      ),
       limit('files', fileItems()),
       limit('skills', skillItems),
       limit('mcp', mcpItems),
@@ -533,8 +623,10 @@ export function CommandPalette({
     openFile,
     prefix,
     projectId,
+    projectActions,
     projectNames,
     projects,
+    runProjectAction,
     schedules,
     searching,
     sections,
@@ -674,9 +766,22 @@ export function CommandPalette({
   )
 }
 
+/** Ce qu'une ligne de la palette fait d'une action de projet. */
+type ProjectActionOp = 'run' | 'stop' | 'restart' | 'open' | 'output' | 'review'
+
+const ACTION_OPS: Record<ProjectActionOp, { label: MessageKey; icon: ReactNode }> = {
+  run: { label: 'palette.projectAction.run', icon: <Play size={14} /> },
+  stop: { label: 'palette.projectAction.stop', icon: <Square size={14} /> },
+  restart: { label: 'palette.projectAction.restart', icon: <RotateCw size={14} /> },
+  open: { label: 'palette.projectAction.open', icon: <ExternalLink size={14} /> },
+  output: { label: 'palette.projectAction.output', icon: <SquareTerminal size={14} /> },
+  review: { label: 'palette.projectAction.review', icon: <ShieldQuestion size={14} /> },
+}
+
 const GROUP_LABELS: Record<FamilyId, MessageKey> = {
   resume: 'palette.group.resume',
   actions: 'palette.group.actions',
+  projectActions: 'palette.group.projectActions',
   notes: 'palette.group.notes',
   conversations: 'search.section.conversations',
   messages: 'palette.group.messages',
