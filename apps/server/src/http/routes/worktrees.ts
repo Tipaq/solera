@@ -18,6 +18,7 @@ import { markWorktreeGone } from '../../worktrees/gone.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
 import { conflict, forbidden, notFound } from '../errors.js'
+import { parentBranchFor } from '../../cards/parent-branch.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -118,7 +119,9 @@ export function registerWorktreeRoutes(
     const body = createWorktreeBodySchema.parse(request.body)
 
     const project = loadProject(id, user.id)
-    const row = await createWorktree(ctx, project, user.id, body.name, body.baseRef)
+    // Une carte enfant part de la branche de sa parente, où elle sera fusionnée (#68).
+    const base = (await parentBranchFor(ctx.db, project, body.cardId ?? null)) ?? body.baseRef
+    const row = await createWorktree(ctx, project, user.id, body.name, base)
     worktreeStatus.forget(project.id)
 
     return reply.status(201).send(await toDto(row))

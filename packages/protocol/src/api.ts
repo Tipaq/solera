@@ -606,6 +606,11 @@ export const createWorktreeBodySchema = z.object({
     .refine((name) => !name.split('/').includes('..'), 'Le nom ne peut pas contenir « .. »')
     .refine((name) => !name.startsWith('/') && !name.endsWith('/'), 'Nom de branche invalide'),
   baseRef: z.string().min(1).default('HEAD'),
+  /**
+   * La carte que l'arbre va traiter, quand personne n'a choisi de base : si elle a une
+   * parente, l'arbre part de la branche de celle-ci et non de `baseRef` (#68).
+   */
+  cardId: z.string().min(1).optional(),
 })
 
 export interface WorktreeDto {

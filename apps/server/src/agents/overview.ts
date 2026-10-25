@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
 import { sessionReference } from '@solera/protocol'
+import { parentBranchOf } from '../cards/parent-branch.js'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -168,12 +169,19 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 function deliveryBriefing(db: Db, input: OverviewInput): string | null {
   if (!input.soleraMcp) return null
   const card = db
-    .select({ id: cards.id })
+    .select({ id: cards.id, parentId: cards.parentId })
     .from(cards)
     .innerJoin(conversations, eq(conversations.cardId, cards.id))
     .where(eq(conversations.id, input.conversationId))
     .get()
   if (!card) return null
+  const parent = card.parentId
+    ? db
+        .select({ number: cards.number, title: cards.title, branch: cards.branch })
+        .from(cards)
+        .where(eq(cards.id, card.parentId))
+        .get()
+    : undefined
   const reviewing = db
     .select({ id: cardReviews.id })
     .from(cardReviews)
@@ -182,7 +190,15 @@ function deliveryBriefing(db: Db, input: OverviewInput): string | null {
   if (reviewing) {
     return "Tu es la revue d'une PR de cette carte, pas son auteure : tu relis dans son arbre sans y écrire, et tu rends ton verdict avec `submit_review`. N'ouvre pas de PR et ne fusionne rien."
   }
-  return "Si tu livres du code pour cette carte, livre-le par une PR : commite dans ta branche, pousse-la, ouvre la PR vers la branche par défaut du dépôt avec `gh pr create`, puis appelle `request_review` avec son numéro. Une session de revue la relit dans ton arbre ; tant qu'elle relit, n'y écris rien. Son verdict t'arrive en message : corrige, pousse et rappelle `request_review` jusqu'au vert. Ne fusionne jamais la PR toi-même."
+  // La branche d'une parente est poussée par Solera avant que la PR n'en ait besoin
+  // (`cards/parent-branch.ts`) : son nom suffit ici.
+  const target = parent
+    ? `vers \`${parentBranchOf(parent)}\`, la branche de la carte parente #${parent.number}, avec \`gh pr create --base ${parentBranchOf(parent)}\``
+    : 'vers la branche par défaut du dépôt avec `gh pr create`'
+  const end = parent
+    ? 'Au vert, Solera la fusionne lui-même dans la branche de la parente et termine la carte : ne fusionne jamais la PR toi-même.'
+    : 'Ne fusionne jamais la PR toi-même.'
+  return `Si tu livres du code pour cette carte, livre-le par une PR : commite dans ta branche, pousse-la, ouvre la PR ${target}, puis appelle \`request_review\` avec son numéro. Une session de revue la relit dans ton arbre ; tant qu'elle relit, n'y écris rien. Son verdict t'arrive en message : corrige, pousse et rappelle \`request_review\` jusqu'au vert. ${end}`
 }
 
 /** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */

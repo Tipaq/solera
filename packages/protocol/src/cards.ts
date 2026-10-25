@@ -506,6 +506,19 @@ export function appendSubtasks(text: string, labels: readonly string[]): string 
  * dans `git branch`, où le titre seul ne dit pas d'où il vient.
  */
 export function cardBranchName(number: number, title: string): string {
+  return branchName('feat', number, title)
+}
+
+/**
+ * Nom de la branche d'une carte parente (#68) : celle où ses enfants se fusionnent, et
+ * qui part vers la branche par défaut quand elles sont toutes terminées. Un préfixe à
+ * part, pour qu'elle ne se confonde pas dans `git branch` avec la branche d'une session.
+ */
+export function parentBranchName(number: number, title: string): string {
+  return branchName('jalon', number, title)
+}
+
+function branchName(prefix: string, number: number, title: string): string {
   const slug = title
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -514,7 +527,7 @@ export function cardBranchName(number: number, title: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40)
     .replace(/-+$/, '')
-  return slug.length > 0 ? `feat/${number}-${slug}` : `feat/${number}`
+  return slug.length > 0 ? `${prefix}/${number}-${slug}` : `${prefix}/${number}`
 }
 
 /**

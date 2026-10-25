@@ -110,6 +110,7 @@ function insertCard(
       parentId: options.parentId,
       acceptedAt: options.accepted === false ? null : now,
       toClarifySince: null,
+      branch: null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,

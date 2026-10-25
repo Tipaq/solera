@@ -43,7 +43,7 @@ export function useWorktrees(projectId: string | undefined) {
 export function useCreateWorktree(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { name: string; baseRef: string }) =>
+    mutationFn: (input: { name: string; baseRef: string; cardId?: string }) =>
       api.post<WorktreeDto>(`/api/projects/${projectId}/worktrees`, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreesKey(projectId) })
