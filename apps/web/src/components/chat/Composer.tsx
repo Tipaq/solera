@@ -1055,7 +1055,7 @@ export function Composer({
                   title={queueing ? t('composer.send.queue.hint') : steering ? t('composer.steer.hint') : t('composer.send.aria')}
                   className={cx(
                     'flex size-11 shrink-0 items-center justify-center rounded-full md:size-9 pointer-coarse:size-11',
-                    'gradient-accent text-accent-ink transition-[filter,opacity] hover:brightness-110',
+                    'bg-accent text-accent-ink transition-[background-color,opacity] hover:bg-accent-hover',
                     'disabled:pointer-events-none disabled:opacity-35',
                     // Pendant un tour, le bouton d'arrêt reste l'action principale : celui-ci
                     // ne s'affiche que s'il y a réellement quelque chose à envoyer.

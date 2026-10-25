@@ -93,7 +93,7 @@ export function UpdatePrompt() {
         disabled={updating}
         className={cx(
           'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium',
-          'gradient-accent text-accent-ink transition-[filter] hover:brightness-110',
+          'bg-accent text-accent-ink transition-colors hover:bg-accent-hover',
           'disabled:pointer-events-none disabled:opacity-70',
         )}
       >

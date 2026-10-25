@@ -33,8 +33,8 @@ importers:
   apps/catalog:
     dependencies:
       '@solera/ui':
-        specifier: github:Tipaq/solera-ds#e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8
-        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: github:Tipaq/solera-ds#68c517731f4ec827b8f1cdca67d9843bc6641bf1
+        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/68c517731f4ec827b8f1cdca67d9843bc6641bf1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@solera/web':
         specifier: workspace:*
         version: link:../web
@@ -308,8 +308,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/protocol
       '@solera/ui':
-        specifier: github:Tipaq/solera-ds#e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8
-        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        specifier: github:Tipaq/solera-ds#68c517731f4ec827b8f1cdca67d9843bc6641bf1
+        version: https://codeload.github.com/Tipaq/solera-ds/tar.gz/68c517731f4ec827b8f1cdca67d9843bc6641bf1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tanstack/react-query':
         specifier: ^5.64.2
         version: 5.101.4(react@19.2.8)
@@ -3238,8 +3238,8 @@ packages:
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
     engines: {node: '>=10'}
 
-  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8':
-    resolution: {tarball: https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8}
+  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/68c517731f4ec827b8f1cdca67d9843bc6641bf1':
+    resolution: {tarball: https://codeload.github.com/Tipaq/solera-ds/tar.gz/68c517731f4ec827b8f1cdca67d9843bc6641bf1}
     version: 0.1.0
     engines: {node: '>=22.14'}
     peerDependencies:
@@ -9457,7 +9457,7 @@ snapshots:
 
   '@sindresorhus/is@4.6.0': {}
 
-  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/e56a7bd8f05ddd72932b07aa6f0e27b76c7d68e8(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@solera/ui@https://codeload.github.com/Tipaq/solera-ds/tar.gz/68c517731f4ec827b8f1cdca67d9843bc6641bf1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@radix-ui/react-context-menu': 2.3.7(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@radix-ui/react-dialog': 1.1.23(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
