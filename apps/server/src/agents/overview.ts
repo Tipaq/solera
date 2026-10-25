@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
+import { cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
 import { sessionReference } from '@solera/protocol'
 
 /**
@@ -158,6 +158,33 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
   return lines.join(' ')
 }
 
+/**
+ * Comment le travail d'une carte se livre (#68) : par une PR, relue par une session que
+ * Solera lance, jamais fusionnée par la session qui l'a écrite.
+ *
+ * À part de `cardBriefing`, et pour les seules sessions auteures : la relectrice reçoit
+ * sa propre mission, et lui dire d'ouvrir une PR la ferait livrer la revue elle-même.
+ */
+function deliveryBriefing(db: Db, input: OverviewInput): string | null {
+  if (!input.soleraMcp) return null
+  const card = db
+    .select({ id: cards.id })
+    .from(cards)
+    .innerJoin(conversations, eq(conversations.cardId, cards.id))
+    .where(eq(conversations.id, input.conversationId))
+    .get()
+  if (!card) return null
+  const reviewing = db
+    .select({ id: cardReviews.id })
+    .from(cardReviews)
+    .where(eq(cardReviews.reviewerConversationId, input.conversationId))
+    .get()
+  if (reviewing) {
+    return "Tu es la revue d'une PR de cette carte, pas son auteure : tu relis dans son arbre sans y écrire, et tu rends ton verdict avec `submit_review`. N'ouvre pas de PR et ne fusionne rien."
+  }
+  return "Si tu livres du code pour cette carte, livre-le par une PR : commite dans ta branche, pousse-la, ouvre la PR vers la branche par défaut du dépôt avec `gh pr create`, puis appelle `request_review` avec son numéro. Une session de revue la relit dans ton arbre ; tant qu'elle relit, n'y écris rien. Son verdict t'arrive en message : corrige, pousse et rappelle `request_review` jusqu'au vert. Ne fusionne jamais la PR toi-même."
+}
+
 /** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */
 const OWN_CARD_GESTURES =
   "Tu ranges toi-même ta carte avec `move_card` : « à préciser » quand tu attends des réponses, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
@@ -266,7 +293,12 @@ function imageReminder(db: Db, input: OverviewInput): string | null {
 export function projectOverview(db: Db, input: OverviewInput): string | null {
   const now = Date.now()
   // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
-  const briefing = [cardBriefing(db, input), designSystemReminder(db, input), imageReminder(db, input)]
+  const briefing = [
+    cardBriefing(db, input),
+    deliveryBriefing(db, input),
+    designSystemReminder(db, input),
+    imageReminder(db, input),
+  ]
     .filter((part) => part !== null)
     .join('\n\n') || null
 

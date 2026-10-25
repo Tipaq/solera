@@ -407,6 +407,13 @@
       "when": 1792946903117,
       "tag": "0058_card_relations",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1792947442028,
+      "tag": "0059_revues_de_pr",
+      "breakpoints": true
     }
   ]
 }

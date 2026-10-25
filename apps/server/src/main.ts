@@ -22,6 +22,7 @@ import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
+import { ghForge } from './reviews/forge.js'
 import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
@@ -118,7 +119,17 @@ async function main(): Promise<void> {
   watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
-  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions)
+  const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions, {
+    forge: ghForge,
+    // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
+    token: (userId) => {
+      try {
+        return gitCredentials.resolve(userId, 'github.com')?.token
+      } catch {
+        return undefined
+      }
+    },
+  })
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()

@@ -75,6 +75,8 @@ import { DecisionRefusal, type DecisionDeposit, type Decisions } from '../decisi
 import type { AppContext } from '../http/context.js'
 import { describeHttpError, HttpError } from '../http/errors.js'
 import { Refusal } from './refusal.js'
+import type { Forge } from '../reviews/forge.js'
+import { Reviews } from '../reviews/reviews.js'
 import {
   appendOwnDescription,
   cardByNumber,
@@ -322,7 +324,22 @@ export class AgentRequests {
     private readonly worktreeStatus?: WorktreeStatusService,
     /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
     private readonly actions?: ActionRunner,
-  ) {}
+    /** La forge où lire les PR ; sans elle, `request_review` et `submit_review` sont refusés. */
+    review?: { forge: Forge; token?: (userId: string) => string | undefined },
+  ) {
+    this.reviews = review
+      ? new Reviews(
+          ctx,
+          sessions,
+          review.forge,
+          (agent, project, userId) => this.launchConfig(agent, project, userId, {}),
+          decisions,
+          review.token,
+        )
+      : undefined
+  }
+
+  private readonly reviews: Reviews | undefined
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
@@ -418,6 +435,17 @@ export class AgentRequests {
       // C'est aussi pourquoi `request_card_change` n'entre pas dans `FREE_THREAD_TOOLS`.
       if (request.kind === 'request_card_change') {
         this.settle(request, this.requestCardChange(request, requester, project, payload), false)
+        return
+      }
+      if (request.kind === 'request_review' || request.kind === 'submit_review') {
+        if (!this.reviews) throw new Refusal("La revue des PR n'est pas branchée sur cette instance.")
+        this.settle(
+          request,
+          request.kind === 'request_review'
+            ? await this.reviews.request(requester, project, payload)
+            : this.reviews.submit(requester, project, payload),
+          false,
+        )
         return
       }
       if (request.kind === 'move_card') {
