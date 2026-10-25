@@ -2,6 +2,7 @@ import type {
   AgentQuestion,
   AgentSkillDto,
   BackgroundTask,
+  CardCloseOutcome,
   CardColumn,
   CheckpointFile,
   ContentBlock,
@@ -136,6 +137,8 @@ export interface CardFilingItem {
    * ou date d'avant #66, où `moved` disait tout.
    */
   applied: number[] | null
+  /** Ce que les clôtures accordées ont fait (#69) ; vide tant que la demande attend. */
+  closed: CardCloseOutcome[]
 }
 
 /**
@@ -1097,6 +1100,7 @@ export function applyEvent(
         reason: null,
         moved: [],
         applied: null,
+        closed: [],
       })
       break
     }
@@ -1113,6 +1117,7 @@ export function applyEvent(
           reason: event.reason ?? null,
           moved: event.moved,
           applied: event.applied ?? null,
+          closed: event.closed ?? [],
         })
       }
       break

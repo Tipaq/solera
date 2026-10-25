@@ -9,6 +9,7 @@ import type { SessionRelay } from '../sessions/session-relay.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
+import type { CardClosure } from '../cards/close.js'
 import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
 import { resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
@@ -139,6 +140,7 @@ export async function buildApp(
   worktreeStatus: WorktreeStatusService,
   worktreeCleanup: WorktreeCleanup,
   actions: ActionRunner,
+  cardClosure?: CardClosure,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -216,7 +218,7 @@ export async function buildApp(
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
   registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
-  registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks)
+  registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks, cardClosure)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
   registerClaudeSessionRoutes(app, ctx, log, sessions, registry)

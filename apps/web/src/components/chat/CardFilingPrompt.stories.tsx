@@ -40,6 +40,7 @@ const meta = {
       reason: null,
       moved: [],
       applied: null,
+      closed: [],
     },
   },
 } satisfies Meta<typeof CardFilingPrompt>
@@ -115,6 +116,73 @@ export const EnPartie: Story = {
       status: 'accepted',
       moved: [{ number: 23, fromColumn: 'in_progress', toColumn: 'done' }],
       applied: [23],
+    },
+  },
+}
+
+/** Clore une carte finie (#69) : ce que le clic archivera, retirera et supprimera. */
+const closing = {
+  cardId: 'k6',
+  number: 69,
+  title: 'Clore une carte finie : archiver et nettoyer',
+  fromColumn: 'done' as const,
+  close: { conversations: 2, worktrees: ['feat/clore-une-carte'], abandon: [], branch: null },
+  reason: 'PR #57 fusionnée dans main ; la clôture essayée sur une carte de test archive et nettoie comme prévu.',
+}
+
+export const Cloture: Story = {
+  name: 'Clôture',
+  args: { filing: { ...meta.args.filing, cards: [closing] } },
+}
+
+/** Une parente dont deux enfants restent ouvertes : la demande les nomme, le clic les abandonne. */
+export const ClotureParente: Story = {
+  name: 'Clôture d’une parente, avec abandons',
+  args: {
+    filing: {
+      ...meta.args.filing,
+      cards: [
+        {
+          cardId: 'k9',
+          number: 75,
+          title: 'Orchestrer le travail par cartes',
+          fromColumn: 'in_progress',
+          toColumn: 'done',
+          close: {
+            conversations: 3,
+            worktrees: ['feat/lancer-un-jalon', 'feat/onglet-agents'],
+            abandon: [
+              { cardId: 'k10', number: 72, title: 'Lancer un jalon' },
+              { cardId: 'k11', number: 74, title: 'Revoir l’onglet Agents' },
+            ],
+            branch: 'jalon/75-orchestrer',
+          },
+          reason: "Tim a renoncé à #72 et #74 pour ce jalon ; le reste est fusionné dans main.",
+        },
+      ],
+    },
+  },
+}
+
+/** Accordée : ce qui a été fait, et ce qui est resté en place faute d'être poussé. */
+export const ClotureAccordee: Story = {
+  name: 'Clôture accordée',
+  args: {
+    filing: {
+      ...meta.args.filing,
+      cards: [closing],
+      status: 'accepted',
+      applied: [69],
+      closed: [
+        {
+          number: 69,
+          archived: 2,
+          removed: ['feat/clore-une-carte'],
+          kept: [{ name: 'feat/clore-essai', reason: 'unpushed' }],
+          deleted: ['feat/clore-une-carte'],
+          abandoned: [],
+        },
+      ],
     },
   },
 }

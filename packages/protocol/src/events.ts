@@ -85,6 +85,42 @@ const parentToolCallIdSchema = z.string().nullable().default(null)
 const cardFilingRefSchema = z.object({ cardId: z.string(), number: z.number(), title: z.string() })
 
 /**
+ * Ce que la clôture d'une carte touchera (#69), relevé au dépôt pour que la demande se
+ * lise : ses conversations encore ouvertes, ses worktrees, les enfants encore ouvertes
+ * qu'elle abandonnera, la branche de parente qu'elle supprimera. Le clic refait le
+ * relevé : entre-temps, une session a pu s'ouvrir ou un arbre bouger.
+ */
+const cardCloseSchema = z.object({
+  conversations: z.number(),
+  worktrees: z.array(z.string()),
+  abandon: z.array(cardFilingRefSchema),
+  branch: z.string().nullable(),
+})
+
+/**
+ * Pourquoi un worktree ou une branche est resté en place à la clôture : du travail non
+ * commité, des commits que la forge n'a pas, une session au travail, un arbre que
+ * partage une autre carte, un arbre que git n'a pas su juger, un refus de git, ou une
+ * branche de parente dont la PR n'est pas fusionnée.
+ */
+export const cardCloseKeptReasonSchema = z.enum(['dirty', 'unpushed', 'busy', 'shared', 'unreadable', 'refused', 'unmerged'])
+export type CardCloseKeptReason = z.infer<typeof cardCloseKeptReasonSchema>
+
+/** Ce que la clôture d'une carte a réellement fait, écrit au clic. */
+export const cardCloseOutcomeSchema = z.object({
+  number: z.number(),
+  archived: z.number(),
+  /** Les worktrees retirés, par leur nom. */
+  removed: z.array(z.string()),
+  kept: z.array(z.object({ name: z.string(), reason: cardCloseKeptReasonSchema })),
+  /** Les branches supprimées sur la forge. */
+  deleted: z.array(z.string()),
+  /** Les enfants passées en « abandonné ». */
+  abandoned: z.array(z.number()),
+})
+export type CardCloseOutcome = z.infer<typeof cardCloseOutcomeSchema>
+
+/**
  * Portée d'une décision de permission : deux valeurs, et pas trois.
  *
  * `once` ne vaut que pour cet appel ; `session` vaut jusqu'à la fin de l'instance de
@@ -445,6 +481,12 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
           blocks: z.array(cardFilingRefSchema).optional(),
           /** Les cartes qu'elle cessera de bloquer. */
           unblocks: z.array(cardFilingRefSchema).optional(),
+          /**
+           * Clore la carte (#69) : avec `toColumn` (« terminé » par défaut, ou
+           * « abandonné ») si elle n'y est pas déjà, puis archiver ses conversations,
+           * retirer ses worktrees et supprimer ses branches fusionnées.
+           */
+          close: cardCloseSchema.optional(),
           reason: z.string(),
         }),
       )
@@ -476,6 +518,8 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * des événements d'avant #66, où `moved` disait tout : le lecteur s'y replie.
      */
     applied: z.array(z.number()).optional(),
+    /** Ce que les clôtures accordées ont fait, carte par carte (#69). */
+    closed: z.array(cardCloseOutcomeSchema).optional(),
   }),
 
   /**
