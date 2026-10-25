@@ -1,6 +1,6 @@
 import type { ToolPart } from '@solera/opencode-bindings'
 import type { EditDiffDto, SoleraEvent } from '@solera/protocol'
-import { additionDiff } from '../../diff-lines.js'
+import { additionDiff } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 
 /**
@@ -40,7 +40,8 @@ const BUILTIN: Record<string, { name: string; input: (input: Fields) => Fields }
   websearch: { name: 'WebSearch', input: (input) => input },
   todowrite: { name: 'TodoWrite', input: (input) => input },
   task: { name: 'Agent', input: (input) => input },
-  skill: { name: 'Skill', input: (input) => input },
+  // Le `Skill` de Claude nomme la compétence `skill` : la vue du fil lit ce champ.
+  skill: { name: 'Skill', input: (input) => rename(input, { name: 'skill' }) },
   apply_patch: { name: 'ApplyPatch', input: (input) => rename(input, { patchText: 'patch' }) },
 }
 

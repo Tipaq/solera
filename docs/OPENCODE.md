@@ -78,6 +78,11 @@ ses consignes dans son dépôt n'est pas concerné.
 - **Sous-agents** : une session enfant par appel `task`, nommée dans les métadonnées de
   l'appel (`metadata.sessionId`). Ses événements arrivent sur le même flux.
 - **Sortie d'une commande** : cumulée dans `metadata.output` de l'appel en cours.
+- **Intitulé d'un appel** : `state.title`, présent à partir de l'exécution, peut changer
+  sans que l'entrée change. Il part en `presentation.title` ; un état qui n'en porte pas
+  (une erreur) garde le précédent. Le `bash` d'OpenCode n'a pas d'argument `description` :
+  c'est ce titre qui décrit la commande. Le `name` d'un `skill` devient `skill`, comme
+  chez Claude.
 - **Images et fichiers mentionnés** : parts `file` avec une URL `file://`, qu'opencode
   lit lui-même.
 

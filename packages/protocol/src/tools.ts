@@ -1,3 +1,40 @@
+import { z } from 'zod'
+
+/**
+ * Ce que le harnais dit d'un appel, à côté de ses arguments : son intitulé humain
+ * (« Lire le fichier de config »), l'étiquette d'un outil MCP, les fichiers qu'il touche,
+ * et son origine. Séparé de `input` pour que l'intitulé ne se confonde jamais avec un
+ * argument, et que la vue des arguments reste complète dans chaque présentation.
+ */
+export const toolPresentationSchema = z.object({
+  origin: z.enum(['native', 'mcp']).optional(),
+  title: z.string().optional(),
+  label: z.string().optional(),
+  paths: z.array(z.string()).optional(),
+})
+export type ToolPresentation = z.infer<typeof toolPresentationSchema>
+
+/**
+ * Garde l'intitulé écrit par le harnais, sauf quand il ne fait que répéter le nom de
+ * l'outil : « read_file » n'est pas une description. Les chemins viennent des
+ * `locations` d'ACP, bornés comme l'aperçu du journal.
+ */
+export function toolPresentation(title: unknown, names: string[], locations?: unknown): ToolPresentation {
+  const result: ToolPresentation = {}
+  const trimmed = typeof title === 'string' ? title.trim() : ''
+  if (trimmed && !names.some((name) => name.toLowerCase() === trimmed.toLowerCase())) {
+    result.title = trimmed.slice(0, 512)
+  }
+  if (Array.isArray(locations)) {
+    const paths = locations.slice(0, 20).flatMap((location: unknown) => {
+      const path = (location as { path?: unknown } | null)?.path
+      return typeof path === 'string' && path.trim() ? [path.slice(0, 512)] : []
+    })
+    if (paths.length) result.paths = [...new Set(paths)]
+  }
+  return result
+}
+
 /**
  * Vocabulaire canonique des noms d'outils portés par `tool.started.name`.
  *

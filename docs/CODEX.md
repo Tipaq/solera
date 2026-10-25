@@ -46,6 +46,15 @@ visuel. Les items ont un repli générique et un contrôle d'exhaustivité TypeS
 Une requête serveur non implémentée produit un avertissement et une erreur RPC
 explicite. Afficher un outil dynamique ne fournit pas son exécution côté client.
 
+La complétion d'un item fait foi sur son départ. Le runner republie l'entrée
+(`tool.input_updated`) avant la sortie, sans recopier l'item natif : une recherche web
+n'a souvent sa requête et son action (`search`, `openPage`, `findInPage`) qu'à la fin,
+un `fileChange` ses changements définitifs sans `patchUpdated`, et une commande ses
+`commandActions` (lire, lister, chercher), dont le résumé replié se sert. Le nom
+d'action d'un connecteur (`appContext.actionName`) devient l'étiquette d'un outil MCP,
+sans masquer sa requête. Un ancien journal garde la requête web dans la sortie, et le
+fil l'y retrouve (`tool-web-input.ts`).
+
 ## Compatibilité 0.163.0
 
 `thread/readState/changed` est ignorée : l'état lu/non lu natif ne pilote pas celui

@@ -15,6 +15,7 @@ import {
   grokPermissionModeSchema,
   parseElicitationFields,
   parseSlashCommand,
+  toolPresentation,
   type AgentConfig,
   type AgentQuestion,
   type GrokConfig,
@@ -22,6 +23,7 @@ import {
   type McpServerStatus,
   type PlanFollowUpOption,
   type SoleraEvent,
+  type ToolPresentation,
 } from '@solera/protocol'
 import { AcpClient, AcpRpcError } from '../acp/client.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
@@ -120,9 +122,36 @@ interface OpenText {
 /** Ce qu'on a déjà dit d'un appel d'outil, pour ne journaliser que ce qui change. */
 interface ToolTrack {
   native: string
+  /** Nom canonique et entrée normalisée, tels que journalisés en dernier. */
+  name: string
+  normalizedInput: unknown
+  /**
+   * Dernière entrée native reçue. Une mise à jour partielle peut ne porter que le
+   * statut ou le nom : c'est sur cette entrée qu'on renormalise alors.
+   */
+  rawInput: unknown
+  /**
+   * Contenu et sortie native accumulés : ACP n'envoie que ce qui change, et la
+   * notification de clôture arrive souvent sans eux.
+   */
+  content?: unknown
+  rawOutput?: unknown
+  presentation: ToolPresentation
   input: string
   output: string
   diffs: AcpDiff[]
+}
+
+/** Ce qu'un `tool_call` ou un `tool_call_update` d'ACP peut porter : tout y est facultatif. */
+interface ToolCallFields {
+  status?: string | null
+  title?: string | null
+  name?: string | null
+  rawInput?: unknown
+  rawOutput?: unknown
+  content?: unknown
+  locations?: unknown
+  _meta?: unknown
 }
 
 interface PromptUsage {
@@ -165,6 +194,8 @@ export class GrokRunner implements AgentRunner {
 
   private open: OpenText | null = null
   private readonly tools = new Map<string, ToolTrack>()
+  /** Appels clos : une notification de clôture répétée ne doit pas ouvrir un second appel vide. */
+  private readonly closedTools = new Set<string>()
   /** Appels sans carte (`ask_user_question`), à ne pas annoncer quand leurs mises à jour arrivent. */
   private readonly silentTools = new Set<string>()
   private mcpNames: string[] = []
@@ -451,14 +482,16 @@ export class GrokRunner implements AgentRunner {
         // L'écho de ce que Solera a déjà journalisé à l'envoi.
         return
       case 'tool_call':
+        if (this.closedTools.has(update.toolCallId)) return
         this.closeText()
-        this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification)
+        this.onToolCall(update.toolCallId, update, notification)
         this.onToolUpdate(update.toolCallId, update, notification)
         return
       case 'tool_call_update':
+        if (this.closedTools.has(update.toolCallId)) return
         this.closeText()
         if (!this.tools.has(update.toolCallId) && !this.silentTools.has(update.toolCallId)) {
-          this.onToolCall(update.toolCallId, update._meta, update.title, update.rawInput, notification)
+          this.onToolCall(update.toolCallId, update, notification)
         }
         this.onToolUpdate(update.toolCallId, update, notification)
         return
@@ -587,46 +620,70 @@ export class GrokRunner implements AgentRunner {
     })
   }
 
-  private onToolCall(id: string, meta: unknown, title: unknown, rawInput: unknown, raw: unknown): void {
+  private onToolCall(id: string, call: ToolCallFields, raw: unknown): void {
     if (this.tools.has(id) || this.silentTools.has(id)) return
-    const native = nativeToolName(meta, title)
+    const native = nativeToolName(call._meta, call.title, call.name)
     if (native === QUESTION_TOOL) {
       this.silentTools.add(id)
       return
     }
-    const described = describeTool(native, rawInput)
-    this.tools.set(id, { native, input: JSON.stringify(described.input), output: '', diffs: [] })
+    const described = describeTool(native, call.rawInput)
+    // L'intitulé d'ACP est écrit pour un humain (« Lire src/main.ts ») : il sert de
+    // description au fil, à côté des arguments et sans s'y mêler.
+    const presentation = toolPresentation(call.title, [native, described.name], call.locations)
+    this.tools.set(id, {
+      native, name: described.name, normalizedInput: described.input, rawInput: call.rawInput, presentation,
+      input: JSON.stringify(described.input), output: '', diffs: [],
+    })
     this.durations.start(id)
-    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, parentToolCallId: null }, raw)
+    this.ctx.emit({ type: 'tool.started', toolCallId: id, ...described, presentation, parentToolCallId: null }, raw)
   }
 
   /**
    * Une mise à jour d'appel : l'entrée se précise (Grok y ajoute `variant`), la sortie
    * d'une commande grossit dans `rawOutput.output`, puis l'appel se clôt.
    */
-  private onToolUpdate(
-    id: string,
-    update: { status?: string | null; rawInput?: unknown; rawOutput?: unknown; content?: unknown },
-    raw: unknown,
-  ): void {
+  private onToolUpdate(id: string, update: ToolCallFields, raw: unknown): void {
     const track = this.tools.get(id)
     if (!track) {
       if (update.status === 'completed' || update.status === 'failed') this.silentTools.delete(id)
       return
     }
 
-    if (update.rawInput !== undefined) {
-      const described = describeTool(track.native, update.rawInput)
-      const input = JSON.stringify(described.input)
-      if (input !== track.input) {
-        track.input = input
-        this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, input: described.input }, raw)
-      }
+    // Un champ absent ou nul laisse l'existant en place (ACP : « left unchanged »).
+    const native = update._meta != null || update.name != null
+      ? nativeToolName(update._meta, track.native, update.name) : track.native
+    const hasInput = update.rawInput !== undefined && update.rawInput !== null
+    if (hasInput) track.rawInput = update.rawInput
+    const described = hasInput || native !== track.native
+      ? describeTool(native, track.rawInput) : { name: track.name, input: track.normalizedInput }
+    track.native = native
+    const presentation = { ...track.presentation }
+    if (update.title != null) {
+      const { title } = toolPresentation(update.title, [native, described.name])
+      if (title) presentation.title = title
+      else delete presentation.title
     }
+    if (Array.isArray(update.locations)) {
+      const { paths } = toolPresentation(null, [], update.locations)
+      if (paths) presentation.paths = paths
+      else delete presentation.paths
+    }
+    const input = JSON.stringify(described.input)
+    if (input !== track.input || described.name !== track.name || JSON.stringify(presentation) !== JSON.stringify(track.presentation)) {
+      track.input = input
+      track.name = described.name
+      track.normalizedInput = described.input
+      track.presentation = presentation
+      this.ctx.emit({ type: 'tool.input_updated', toolCallId: id, name: described.name, input: described.input, presentation }, raw)
+    }
+
+    const output = commandOutput(update.rawOutput)
+    if (update.content != null) track.content = update.content
+    if (update.rawOutput != null && output === null) track.rawOutput = update.rawOutput
     const diffs = diffsOf(update.content)
     if (diffs.length > 0) track.diffs = diffs
 
-    const output = commandOutput(update.rawOutput)
     if (output !== null && output.length > track.output.length && output.startsWith(track.output)) {
       this.ctx.emit({ type: 'tool.output_delta', toolCallId: id, chunk: output.slice(track.output.length) })
       track.output = output
@@ -634,12 +691,14 @@ export class GrokRunner implements AgentRunner {
 
     if (update.status !== 'completed' && update.status !== 'failed') return
     this.tools.delete(id)
+    this.closedTools.add(id)
+    if (this.closedTools.size > 4096) this.closedTools.delete(this.closedTools.values().next().value!)
     const failed = update.status === 'failed'
     this.ctx.emit(
       {
         type: 'tool.completed',
         toolCallId: id,
-        output: toolOutput(update, track),
+        output: toolOutput(track),
         isError: failed,
         durationMs: this.durations.stop(id),
       },
@@ -698,7 +757,7 @@ export class GrokRunner implements AgentRunner {
    */
   private onPermission(request: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const call = request.toolCall
-    const described = describeTool(nativeToolName(call._meta, call.title), call.rawInput)
+    const described = describeTool(nativeToolName(call._meta, call.title, call.name), call.rawInput)
     const grant = grantKey(described.name, described.input)
     const select = (kind: string): RequestPermissionResponse => {
       const option = request.options.find((entry) => entry.kind === kind)
@@ -1069,11 +1128,11 @@ export class GrokRunner implements AgentRunner {
  * (`{type: "SearchReplace", EditsApplied: {…, tool_output_for_prompt}}`) : le texte
  * destiné au modèle y est rangé sous la variante, quand il y est.
  */
-function toolOutput(update: { rawOutput?: unknown; content?: unknown }, track: ToolTrack): unknown {
+function toolOutput(track: ToolTrack): unknown {
   if (track.output) return track.output
-  const text = contentText(update.content)
+  const text = contentText(track.content)
   if (text) return text
-  const raw = fields(update.rawOutput)
+  const raw = fields(track.rawOutput)
   if (typeof raw.output_for_prompt === 'string') return raw.output_for_prompt
   for (const value of Object.values(raw)) {
     const variant = fields(value)
@@ -1081,5 +1140,5 @@ function toolOutput(update: { rawOutput?: unknown; content?: unknown }, track: T
       if (typeof variant[key] === 'string' && variant[key]) return variant[key]
     }
   }
-  return update.rawOutput ?? ''
+  return track.rawOutput ?? ''
 }

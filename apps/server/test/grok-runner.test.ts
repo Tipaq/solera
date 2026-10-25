@@ -105,7 +105,7 @@ test('un tour : réflexion, texte, outils normalisés, sortie en flux, édition,
   assert.deepEqual(started[0]!.input, { file_path: `${f.cwd}/a.txt` })
   assert.deepEqual(started[3]!.input, { number: 3 })
   assert.deepEqual(f.events.find((event) => event.type === 'tool.input_updated'),
-    { type: 'tool.input_updated', toolCallId: 'c3', input: { file_path: `${f.cwd}/a.txt`, old_string: 'a', new_string: 'b', replace_all: false } })
+    { type: 'tool.input_updated', toolCallId: 'c3', name: 'Edit', presentation: {}, input: { file_path: `${f.cwd}/a.txt`, old_string: 'a', new_string: 'b', replace_all: false } })
   assert.deepEqual(f.events.filter((event) => event.type === 'tool.output_delta').map((event) => event.chunk), ['hi\n', 'there\n'])
   const completed = f.events.filter((event) => event.type === 'tool.completed')
   assert.deepEqual(completed.map((event) => [event.toolCallId, event.output, event.isError]), [
@@ -329,4 +329,28 @@ test('steer par _x.ai/interject, compaction par _x.ai/compact_conversation', asy
   assert.deepEqual(f.events.find((event) => event.type === 'context.compacted'),
     { type: 'context.compacted', trigger: 'manual', preTokens: 900, postTokens: 300 })
   assert.equal(f.count('context.compaction_started'), 1)
+})
+
+test('intitulé, emplacements, identité MCP tardive et sortie reçue avant la clôture survivent aux mises à jour partielles', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn({ steps: [
+    update({ sessionUpdate: 'tool_call', toolCallId: 'late', title: 'use_tool', rawInput: {}, _meta: tool('use_tool', 'use_tool') }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', title: 'Lire la carte du projet', rawInput: { tool_name: 'solera__read_card', tool_input: { number: 3 } } }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', locations: [{ path: 'src/a.ts', line: 3 }], rawOutput: { type: 'MCP', output: { OkayOutput: 'Corps de la carte' } } }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'late', status: 'completed' }),
+    update({ sessionUpdate: 'tool_call', toolCallId: 'text', title: 'Reading source', rawInput: {} }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', name: 'read_file', title: 'Lire le point d’entrée', rawInput: { target_file: 'src/main.ts' }, content: [{ type: 'content', content: { type: 'text', text: 'Source' } }] }),
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', status: 'completed' }),
+    // Une clôture répétée n'ouvre pas un second appel vide.
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'text', status: 'completed' }),
+  ] })
+  assert.equal(f.events.filter((event) => event.type === 'tool.started').length, 2)
+  const updates = f.events.filter((event) => event.type === 'tool.input_updated')
+  const late = updates.filter((event) => event.toolCallId === 'late').at(-1)!
+  assert.equal(late.name, 'solera/read_card')
+  assert.deepEqual(late.input, { number: 3 })
+  assert.deepEqual(late.presentation, { title: 'Lire la carte du projet', paths: ['src/a.ts'] })
+  assert.equal(updates.find((event) => event.toolCallId === 'text')?.name, 'Read')
+  assert.deepEqual(f.events.filter((event) => event.type === 'tool.completed').map((event) => event.output), ['Corps de la carte', 'Source'])
+  for (const event of f.events) soleraEventSchema.parse(event)
 })

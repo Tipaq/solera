@@ -229,3 +229,51 @@ test('projection : la route du fil vérifie l’accès et ses curseurs', async (
     assert.equal((await app.inject({ url: `${url}?${query}`, headers: { 'x-user': 'owner' } })).statusCode, 400)
   }
 })
+
+test('corps : un appel volumineux garde chemins, requêtes, identifiants et intitulé, bornés, sans charger son corps', (t) => {
+  const { log } = fixture(t)
+  const before = log.read('c', 0, 100).at(-1)!.seq
+  const examples = [
+    { name: 'Edit', input: { changes: Array.from({ length: 25 }, (_, i) => ({ path: `src/${i}.ts`, kind: { type: 'update' }, diff: huge })) } },
+    { name: 'WebSearch', input: { type: 'search', queries: ['première', 'seconde'], large: huge } },
+    { name: 'Bash', input: { command: huge, commandActions: [{ type: 'read', path: 'src/a.ts', name: 'a.ts', command: huge }] } },
+    { name: 'TaskUpdate', input: { taskId: '17', subject: 'Vérifier le code', description: huge } },
+    { name: 'NotebookEdit', input: { notebook_path: 'analyse.ipynb', new_source: huge } },
+    { name: 'Skill', input: { skill: 'frontend-design', large: huge } },
+  ]
+  for (const [i, example] of examples.entries()) {
+    log.append('c', { type: 'tool.started', toolCallId: `audit-${i}`, parentToolCallId: null, presentation: { title: 'Intitulé du harnais' }, ...example })
+  }
+  const projected = log.readWithBodies('c', before, 20).map(({ event }) => {
+    if (event.type !== 'tool.started') throw Error('appel attendu')
+    assert.equal(event.presentation?.title, 'Intitulé du harnais')
+    assert.ok(event.inputRef)
+    assert.ok(JSON.stringify(event).length < 14_000)
+    return event.input as Record<string, any>
+  })
+  assert.deepEqual(projected[0]!.changes, Array.from({ length: 20 }, (_, i) => ({ path: `src/${i}.ts` })))
+  assert.deepEqual(projected[1]!.queries, ['première', 'seconde'])
+  assert.equal(projected[2]!.commandActions[0].path, 'src/a.ts')
+  assert.equal(projected[2]!.commandActions[0].command.length, 512)
+  assert.equal(projected[3]!.taskId, '17')
+  assert.equal(projected[4]!.notebook_path, 'analyse.ipynb')
+  assert.equal(projected[5]!.skill, 'frontend-design')
+})
+
+test('corps : une ancienne recherche web de Codex garde sa requête dans l’aperçu de sa sortie structurée', async (t) => {
+  const { log } = fixture(t)
+  const start = log.append('c', { type: 'tool.started', toolCallId: 'web', name: 'WebSearch', input: { query: '' }, parentToolCallId: null })
+  const output = { query: "'stream-json'", action: { type: 'findInPage', pattern: 'stream-json', url: null }, results: [{ snippet: huge }] }
+  log.append('c', { type: 'tool.completed', toolCallId: 'web', output, durationMs: 1, isError: false })
+  const final = log.readWithBodies('c', start.seq - 1, 10)[1]!.event
+  if (final.type !== 'tool.completed') throw Error('clôture attendue')
+  assert.ok(final.outputRef)
+  assert.deepEqual(final.output, { ...output, results: null })
+  assert.ok(JSON.stringify(final).length < 1000)
+  // Un texte tronqué reste un texte.
+  const text = log.readWithBodies('c', 0, 100).find(({ event }) => event.type === 'tool.completed' && event.toolCallId === 'tool')!.event
+  assert.ok(text.type === 'tool.completed' && (text.output === null || typeof text.output === 'string'))
+  const { toolWebInput } = await import('../../web/src/lib/tool-web-input.js')
+  assert.deepEqual(toolWebInput({ name: 'WebSearch', status: 'done', input: { query: '' }, output: final.output }),
+    { query: "'stream-json'", type: 'findInPage', pattern: 'stream-json', url: null })
+})

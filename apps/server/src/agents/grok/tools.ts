@@ -1,5 +1,5 @@
 import type { EditDiffDto } from '@solera/protocol'
-import { additionDiff, unifiedDiff } from '../../diff-lines.js'
+import { additionDiff, unifiedDiff } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 
 /**
@@ -58,9 +58,9 @@ const BUILTIN: Record<string, { name: string; input: (input: Fields) => Fields }
  */
 export const QUESTION_TOOL = 'ask_user_question'
 
-/** Le nom natif d'un appel : celui que Grok déclare, à défaut le titre de l'ACP. */
-export function nativeToolName(meta: unknown, title: unknown): string {
-  return text(fields(fields(meta)['x.ai/tool']).name) ?? text(title) ?? 'tool'
+/** Le nom natif d'un appel : le `name` d'ACP, sinon celui que Grok déclare dans `_meta`, à défaut le titre. */
+export function nativeToolName(meta: unknown, title: unknown, name?: unknown): string {
+  return text(name) ?? text(fields(fields(meta)['x.ai/tool']).name) ?? text(title) ?? 'tool'
 }
 
 /**

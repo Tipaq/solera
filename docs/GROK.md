@@ -71,6 +71,13 @@ Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
   une phrase qui change d'une mise à jour à l'autre. Les outils MCP ne sont pas exposés
   un par un : le modèle les cherche (`search_tool`) puis les appelle par `use_tool`, avec
   `serveur__outil` pour nom.
+- **Mises à jour partielles d'un appel** : chaque `tool_call_update` ne porte que ce qui
+  change, et un champ absent ou nul laisse l'existant. Le `name` d'ACP, quand il vient,
+  passe avant `_meta` ; l'entrée d'un `use_tool` peut n'arriver qu'après le départ, et
+  préciser alors le nom de l'outil MCP. Le `title` et les `locations` sont gardés à part,
+  en `presentation` (intitulé, fichiers), jamais mêlés aux arguments. Le contenu et le
+  `rawOutput` reçus avant une clôture qui n'en porte pas restent la sortie de l'appel, et
+  une clôture répétée n'ouvre pas un second appel.
 - **Sortie d'une commande** : cumulée dans `rawOutput.output`, en octets.
 - **Éditions** : blocs `diff` (`path`, `oldText`, `newText`). Pour `search_replace`, ce
   sont les extraits remplacés, pas les fichiers entiers : le diff affiché est partiel.

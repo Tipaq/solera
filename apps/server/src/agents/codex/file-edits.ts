@@ -1,6 +1,6 @@
 import type { EditDiffDto } from '@solera/protocol'
 import type { FileUpdateChange, ThreadItem } from '@solera/codex-bindings/v2'
-import { additionDiff, deletionDiff } from '../../diff-lines.js'
+import { additionDiff, deletionDiff } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 
 /**

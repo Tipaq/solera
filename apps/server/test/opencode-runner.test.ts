@@ -324,3 +324,21 @@ test('mort du serveur : la conversation passe en erreur et la session se clôt',
   assert.equal(f.statuses.at(-1), 'error')
   assert.ok(f.events.some((event) => event.type === 'error' && event.code === 'runner_failed'))
 })
+
+test('l’intitulé change indépendamment des arguments et survit à une clôture qui n’en porte pas', async (t) => {
+  const f = await runnerFixture(t)
+  await f.turn([
+    busy(), assistant('msg_a'),
+    tool('c', 'bash', { status: 'running', input: { command: 'echo hi' }, title: 'Préparer le salut', time: { start: 1 } }),
+    tool('c', 'bash', { status: 'running', input: { command: 'echo hi' }, title: 'Afficher le salut', time: { start: 1 } }),
+    tool('c', 'bash', { status: 'error', input: { command: 'echo hi' }, error: 'Échec', time: { start: 1, end: 2 } }),
+    idle(),
+  ])
+  const start = f.events.find((event) => event.type === 'tool.started')
+  assert.equal(start?.type === 'tool.started' && start.presentation?.title, 'Préparer le salut')
+  const changes = f.events.filter((event) => event.type === 'tool.input_updated')
+  assert.equal(changes.length, 1)
+  assert.equal(changes[0]!.presentation?.title, 'Afficher le salut')
+  assert.deepEqual(changes[0]!.input, { command: 'echo hi' })
+  for (const event of f.events) soleraEventSchema.parse(event)
+})

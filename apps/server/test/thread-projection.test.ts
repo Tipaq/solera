@@ -147,3 +147,24 @@ test('projection : les demandes propres à Solera (rangement, décision) se rés
     assert.equal(filing?.kind === 'filing' && filing.status, 'refused')
   } finally { f.sqlite.close() }
 })
+
+test('projection : le nom tardif et l’intitulé d’un outil survivent aux pages stockées et aux reconstructions', () => {
+  const f = fixture()
+  try {
+    f.add({ type: 'tool.started', toolCallId: 'late', name: 'WebSearch', input: { query: '' }, parentToolCallId: null })
+    f.build()
+    f.add({ type: 'tool.input_updated', toolCallId: 'late', name: 'WebFetch', input: { url: 'https://example.com' }, presentation: { title: 'Lire le guide' } })
+    // Une mise à jour sans nom ni présentation garde ceux d'avant.
+    f.add({ type: 'tool.input_updated', toolCallId: 'late', input: { url: 'https://example.com/guide' } })
+    f.add({ type: 'tool.completed', toolCallId: 'late', output: 'Guide', isError: false, durationMs: 1 })
+    for (let rebuild = 0; rebuild < 2; rebuild++) {
+      const item = all(f.build()).state.items.find((candidate) => candidate.id === 'late')
+      assert.equal(item?.kind, 'tool')
+      if (item?.kind !== 'tool') throw Error('outil attendu')
+      assert.equal(item.name, 'WebFetch')
+      assert.equal(item.presentation?.title, 'Lire le guide')
+      assert.deepEqual(item.input, { url: 'https://example.com/guide' })
+      f.sqlite.prepare('update thread_projections set version=-1').run()
+    }
+  } finally { f.sqlite.close() }
+})

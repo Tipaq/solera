@@ -29,7 +29,7 @@ import { coalesceDeltas } from './coalesce.js'
  */
 
 /** À monter dès que la sémantique du fold ou le format stocké change. */
-export const THREAD_PROJECTION_VERSION = 1
+export const THREAD_PROJECTION_VERSION = 2
 const PAGE_ITEMS = 200
 const PAGE_BYTES = 512 * 1024
 const BATCH_ROWS = 256

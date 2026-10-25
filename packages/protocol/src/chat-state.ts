@@ -15,6 +15,7 @@ import type {
   PlanFollowUpOption,
   SoleraEvent,
   SlashCommandDto,
+  ToolPresentation,
 } from './index.js'
 
 /**
@@ -55,6 +56,8 @@ export interface ToolItem {
   name: string
   input: unknown
   output: unknown
+  /** Intitulé humain, étiquette MCP et fichiers touchés, quand le harnais les donne. */
+  presentation?: ToolPresentation
   /**
    * Taille réelle de la sortie quand `output` n'en est qu'un aperçu, sinon null. Une
    * relecture d'historique réduit les sorties volumineuses ; la carte demande le corps
@@ -959,6 +962,7 @@ export function applyEvent(
         id: event.toolCallId,
         ts,
         name: event.name,
+        presentation: event.presentation,
         input: event.input,
         inputRef: event.inputRef,
         output: null,
@@ -972,11 +976,17 @@ export function applyEvent(
 
     case 'tool.input_updated': {
       const index = findLastIndex(state.items, (item) => item.kind === 'tool' && item.id === event.toolCallId)
-      if (index !== -1) replaceItem(state, index, {
-          ...(state.items[index] as ToolItem),
+      if (index !== -1) {
+        // Une mise à jour sans nom ni présentation (Claude, OpenCode) garde ceux du départ.
+        const previous = state.items[index] as ToolItem
+        replaceItem(state, index, {
+          ...previous,
+          name: event.name ?? previous.name,
+          presentation: event.presentation ?? previous.presentation,
           input: event.input,
           inputRef: event.inputRef,
         })
+      }
       break
     }
 

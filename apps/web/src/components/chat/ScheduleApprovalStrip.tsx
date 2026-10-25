@@ -6,7 +6,7 @@ import { useTranslate } from '../../lib/i18n'
 import { useSchedules } from '../../lib/schedules'
 import { scheduledTaskIdOf } from '../../lib/solera-tools'
 import { CheckApprovalDialog } from '../schedule/CheckSection'
-import { outputText } from '../tools/payload'
+import { outputText } from '../../lib/tool-payload'
 
 /**
  * Sous l'appel `schedule_task` qui vient de proposer un script de vérification : le

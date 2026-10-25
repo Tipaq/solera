@@ -15,20 +15,46 @@ import { MAX_OUTPUT_BYTES, replayWeight } from './tool-output.js'
 const ref = (field: string, block?: SQL) =>
   sql`json_object('seq', ${events.seq}, 'field', ${field}${block ? sql`, 'block', ${block}` : sql``})`
 
-/** Les champs courts qui suffisent à résumer un appel replié. */
-const preview = (input: SQL) => sql`case when json_type(${input}) = 'object' then
+/** Les champs courts qui suffisent à résumer un appel replié, pour chaque CLI. */
+const scalarPreview = (input: SQL) => sql`case when json_type(${input}) = 'object' then
   (select json_group_object(key, case when type = 'text' then substr(case when key = 'check_script' then ltrim(value, ' ' || char(9) || char(10) || char(13)) else value end, 1, 512) else value end)
-   from json_each(${input}) where key in ('description', 'command', 'file_path', 'path', 'file', 'title', 'query', 'pattern', 'prompt', 'card_number', 'conversation_id', 'url', 'subagent_type', 'check_script')
+   from json_each(${input}) where key in ('description', 'command', 'file_path', 'path', 'notebook_path', 'file', 'title', 'subject', 'query', 'pattern', 'prompt', 'card_number', 'number', 'issue_number', 'conversation_id', 'url', 'uri', 'server', 'subagent_type', 'check_script', 'skill', 'name', 'source', 'taskId', 'task_id', 'id', 'durationMs', 'type')
      and type in ('text', 'integer', 'real', 'true', 'false', 'null')) else null end`
+
+/**
+ * Un tableau d'identifiants, borné à vingt entrées : les chemins d'un patch de Codex,
+ * les requêtes d'une recherche, ce que fait une commande. Jamais le contenu d'un patch
+ * ni d'un fichier tronqué, qui reste à la demande.
+ */
+const identifiers = (input: SQL, key: string, entry: SQL, type: string) => sql`case when json_type(${input}, ${'$.' + key}) = 'array' then
+  json_object(${key}, json((select json_group_array(json(entry)) from
+    (select ${entry} as entry from json_each(${input}, ${'$.' + key}) j where j.type = ${type} limit 20)))) else '{}' end`
+const shortField = (key: string) => sql`case when json_type(j.value, ${'$.' + key}) = 'text' then substr(j.value ->> ${'$.' + key}, 1, 512) end`
+const preview = (input: SQL) => sql`json_patch(json_patch(json_patch(${scalarPreview(input)},
+  ${identifiers(input, 'changes', sql`json_object('path', ${shortField('path')})`, 'object')}),
+  ${identifiers(input, 'queries', sql`json_quote(substr(j.value, 1, 512))`, 'text')}),
+  ${identifiers(input, 'commandActions', sql`json_object('type', ${shortField('type')}, 'path', ${shortField('path')}, 'name', ${shortField('name')},
+    'query', ${shortField('query')}, 'command', ${shortField('command')})`, 'object')})`
 const input = sql`${events.payload} -> '$.input'`
 const output = sql`${events.payload} -> '$.output'`
 
 /** Juste assez de texte pour le résumé d'une carte repliée. */
-const outputPreview = sql`substr(case
+const textOutputPreview = sql`substr(case
   when json_type(${events.payload}, '$.output') = 'text' then ${events.payload} ->> '$.output'
   when json_type(${events.payload}, '$.output[0].text') = 'text' then ${events.payload} ->> '$.output[0].text'
   when json_type(${events.payload}, '$.output.content[0].text') = 'text' then ${events.payload} ->> '$.output.content[0].text'
   end, 1, 512)`
+
+/**
+ * Une recherche web de Codex garde ses arguments finaux dans sa sortie, et les anciens
+ * journaux ne les ont que là : l'aperçu en garde la requête et l'action, sans les
+ * résultats. Encodé en JSON pour qu'un aperçu structuré et un texte passent par le même
+ * `json_set`.
+ */
+const outputPreview = sql`case when json_type(${output}, '$.query') = 'text'
+  and json_type(${output}, '$.action') in ('object', 'null') and json_type(${output}, '$.results') in ('array', 'null') then
+  json_object('query', substr(${output} ->> '$.query', 1, 512), 'action', json(${preview(sql`${output} -> '$.action'`)}), 'results', null)
+  else json_quote(${textOutputPreview}) end`
 
 /**
  * Les blocs d'un message. Une image en `data:` part en URL vers la route d'images,
@@ -51,7 +77,7 @@ export const bodyPayload = sql<string>`case
   when ${events.type} in ('tool.started', 'tool.input_updated') and octet_length(${input}) > ${MAX_OUTPUT_BYTES} then
     json_set(${events.payload}, '$.input', json(${preview(input)}), '$.inputRef', json(${ref('input')}))
   when ${events.type} = 'tool.completed' and (octet_length(${output}) > ${MAX_OUTPUT_BYTES} or instr(${output}, '"image"') > 0) then
-    json_set(${events.payload}, '$.output', ${outputPreview}, '$.outputBytes', octet_length(${output}), '$.outputRef', json(${ref('output')}))
+    json_set(${events.payload}, '$.output', json(${outputPreview}), '$.outputBytes', octet_length(${output}), '$.outputRef', json(${ref('output')}))
   when ${events.type} = 'diff.updated' and octet_length(${events.payload} -> '$.patch') > ${MAX_OUTPUT_BYTES} then
     json_set(${events.payload}, '$.patch', '', '$.patchRef', json(${ref('patch')}))
   else ${events.payload} end`
