@@ -254,6 +254,12 @@ export const cards = sqliteTable(
      * Null pour une carte sans enfant, ou dont aucune enfant n'a encore eu d'arbre.
      */
     branch: text('branch'),
+    /**
+     * La PR de cette branche vers la branche par défaut, ouverte par Solera quand toutes
+     * les enfants sont closes (#68). C'est une personne qui la fusionne, jamais Solera.
+     */
+    branchPrNumber: integer('branch_pr_number'),
+    branchPrUrl: text('branch_pr_url'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),

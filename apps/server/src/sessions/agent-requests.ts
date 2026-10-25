@@ -77,6 +77,7 @@ import type { AppContext } from '../http/context.js'
 import { describeHttpError, HttpError } from '../http/errors.js'
 import { Refusal } from './refusal.js'
 import type { Forge } from '../reviews/forge.js'
+import { ParentPullRequests, type ParentNotifier } from '../reviews/parent-pr.js'
 import { Reviews } from '../reviews/reviews.js'
 import {
   appendOwnDescription,
@@ -326,8 +327,11 @@ export class AgentRequests {
     /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
     private readonly actions?: ActionRunner,
     /** La forge où lire les PR ; sans elle, `request_review` et `submit_review` sont refusés. */
-    review?: { forge: Forge; token?: (userId: string) => string | undefined },
+    review?: { forge: Forge; token?: (userId: string) => string | undefined; notifications?: ParentNotifier },
   ) {
+    this.parentPullRequests = review
+      ? new ParentPullRequests(ctx, review.forge, review.token, review.notifications)
+      : undefined
     this.reviews = review
       ? new Reviews(
           ctx,
@@ -341,10 +345,12 @@ export class AgentRequests {
   }
 
   private readonly reviews: Reviews | undefined
+  private readonly parentPullRequests: ParentPullRequests | undefined
 
   start(logger: FastifyBaseLogger): void {
     this.logger = logger
     this.decisions?.setLogger(logger)
+    this.parentPullRequests?.setLogger(logger)
     this.timer = setInterval(() => void this.sweep(), POLL_MS)
     this.timer.unref()
   }
@@ -380,6 +386,8 @@ export class AgentRequests {
       this.decisions?.sweep()
       // Les PR de cartes enfants au vert, fusionnées quand leur auteure se tait.
       await this.reviews?.mergeReady()
+      // Et la PR d'une parente vers la branche par défaut, quand ses enfants sont closes.
+      await this.parentPullRequests?.sweep()
     } finally {
       this.busy = false
     }

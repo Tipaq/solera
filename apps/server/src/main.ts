@@ -121,6 +121,7 @@ async function main(): Promise<void> {
   // serveur MCP.
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions, {
     forge: ghForge,
+    notifications,
     // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
     token: (userId) => {
       try {
