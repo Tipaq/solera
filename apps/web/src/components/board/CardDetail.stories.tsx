@@ -2,7 +2,7 @@ import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { ArrowLeft } from 'lucide-react'
 import { IconButton } from '@solera/ui'
 import { CardDetail } from './CardDetail'
-import { CARDS, CURRENT, DUPLICATE, PROJECT_ID, SeededBoard } from './card-fixtures'
+import { CARDS, CURRENT, DUPLICATE, FROM_ISSUE, PROJECT_ID, SeededBoard } from './card-fixtures'
 
 const withBoard: Decorator = (Story) => <SeededBoard><Story /></SeededBoard>
 
@@ -53,4 +53,13 @@ export const Vide: Story = {
 export const Doublon: Story = {
   args: { card: DUPLICATE },
   render: (args) => <div className="surface flex h-[30rem] w-[44rem] flex-col border border-line"><CardDetail {...args} /></div>,
+}
+
+/**
+ * Venue d'une issue GitHub (#84) et pas encore triée : la pastille « nouvelle », les trois
+ * gestes, le lien vers l'issue dans les propriétés, et sa discussion lue en direct.
+ */
+export const VenueDUneIssue: Story = {
+  args: { card: FROM_ISSUE },
+  render: (args) => <div className="surface flex h-[40rem] w-[44rem] flex-col border border-line"><CardDetail {...args} /></div>,
 }

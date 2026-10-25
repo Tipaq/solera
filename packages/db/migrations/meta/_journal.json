@@ -435,6 +435,13 @@
       "when": 1792949094801,
       "tag": "0062_decouper_en_cartes",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "6",
+      "when": 1792950595575,
+      "tag": "0063_issues_absorbees",
+      "breakpoints": true
     }
   ]
 }

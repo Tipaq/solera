@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import type { CardConversationDto, CardDto, CardNoteDto, ProjectDto } from '@solera/protocol'
+import type { CardConversationDto, CardDto, CardIssueCommentsDto, CardNoteDto, ProjectDto } from '@solera/protocol'
 
 /**
  * Un petit board de démonstration, pour les stories de la fiche et de la vue *Projet*.
@@ -23,7 +23,7 @@ function card(number: number, title: string, column: CardDto['column'], extra: P
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
     dueAt: null, parent: null, children: [], acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
-    conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [],
+    conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [], issue: null,
     ...extra,
   }
 }
@@ -48,6 +48,21 @@ export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session'
 /** Un doublon encore ouvert : sa fiche propose de l'abandonner. */
 export const DUPLICATE = card(58, 'Ouvrir une conversation neuve depuis « Fils »', 'todo', { duplicateOf: link(fils) })
 
+/** Venue d'une issue GitHub (#84), pas encore triée : elle attend Accepter, Rattacher ou Refuser. */
+export const FROM_ISSUE = card(62, 'Le menu du compte déborde sur mobile', 'todo', {
+  acceptedAt: null,
+  description: 'Sur un écran de 360 px, le menu du compte sort de l’écran. Voir aussi tipaq/solera#12.\n\n*Issue [tipaq/solera#31](https://github.com/tipaq/solera/issues/31), ouverte par @ana.*',
+  issue: { provider: 'github', number: '31', url: 'https://github.com/tipaq/solera/issues/31', state: 'open', pending: null, pushError: null },
+})
+
+export const ISSUE_COMMENTS: CardIssueCommentsDto = {
+  error: null,
+  comments: [
+    { id: '1', author: 'ana', body: 'Même chose sur iPad en portrait.', url: 'https://github.com/tipaq/solera/issues/31#issuecomment-1', createdAt: now - 2 * DAY },
+    { id: '2', author: 'tipaq', body: 'Merci, je regarde avec la refonte du menu.', url: 'https://github.com/tipaq/solera/issues/31#issuecomment-2', createdAt: now - DAY },
+  ],
+}
+
 export const CARDS: CardDto[] = [
   { ...parent, children: [link(CURRENT), link(fils)] }, CURRENT, { ...fils, duplicates: [link(DUPLICATE)] }, gitView, DUPLICATE,
   card(57, 'Vue Git : trois dettes relevées à la relecture du lot 4', 'review', {
@@ -60,6 +75,7 @@ export const CARDS: CardDto[] = [
   card(40, 'Dire toujours quelle branche le serveur de dev sert', 'todo'),
   card(41, 'Un CLI introuvable tue le tir en silence', 'todo', { acceptedAt: null }),
   card(56, 'Les modales ouvrent une infobulle qu’on n’a pas demandée', 'todo'),
+  FROM_ISSUE,
   card(9, 'Réparer schedule-ui-check', 'done', { columnSince: now - 30 * DAY, updatedAt: now - DAY }),
 ]
 
@@ -85,6 +101,7 @@ export function SeededBoard({ children }: { children: ReactNode }) {
     for (const entry of CARDS) {
       client.setQueryData(['card-notes', entry.id], entry.id === CURRENT.id ? NOTES : [])
       client.setQueryData(['card-attachments', entry.id], [])
+      if (entry.issue) client.setQueryData(['card-issue-comments', entry.id], ISSUE_COMMENTS)
     }
     return null
   })

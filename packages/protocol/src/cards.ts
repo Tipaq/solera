@@ -5,6 +5,7 @@ import { z } from 'zod'
 // résulterait mettrait `cardColumnSchema` en zone morte au chargement.
 import type { ConversationStatus } from './api.js'
 import type { AgentKind } from './events.js'
+import type { CardIssueDto } from './issues.js'
 
 /**
  * Colonne du board, c'est-à-dire la position choisie d'une carte dans le workflow.
@@ -292,6 +293,8 @@ export interface CardDto {
   duplicateOf: CardLinkDto | null
   /** Les cartes qui se déclarent doublons de celle-ci. */
   duplicates: CardLinkDto[]
+  /** L'issue dont la carte vient, quand elle a été absorbée d'un outil externe (#84). */
+  issue: CardIssueDto | null
 }
 
 /**

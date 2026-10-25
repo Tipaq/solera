@@ -2251,9 +2251,11 @@ function readCard(number) {
       `SELECT c.id, c.number, c.title, c.column, c.description, c.created_at AS createdAt,
               c.due_at AS dueAt, c.accepted_at AS acceptedAt, c.to_clarify_since AS toClarifySince,
               m.number AS parentNumber, m.title AS parentTitle,
-              m.column AS parentColumn, m.due_at AS parentDueAt
+              m.column AS parentColumn, m.due_at AS parentDueAt,
+              i.url AS issueUrl, i.state AS issueState
        FROM cards AS c
        LEFT JOIN cards AS m ON m.id = c.parent_id
+       LEFT JOIN card_issues AS i ON i.card_id = c.id
        WHERE c.project_id = ? AND c.number = ?`,
     )
     .get(PROJECT_ID, number)
@@ -2686,6 +2688,13 @@ function renderCard(card) {
   const head = []
   if (card.acceptedAt === null) {
     head.push("Carte venue de l'extérieur, pas encore acceptée : elle attend qu'une personne l'accepte, la rattache ou la refuse, et ne lance pas de session.")
+  }
+  if (card.issueUrl) {
+    // Le lien, pour que l'agent aille lire la discussion ou y répondre par le serveur MCP
+    // de l'outil : Solera n'en synchronise que l'état (#84).
+    head.push(
+      `Venue de l'issue ${card.issueUrl} (${card.issueState === 'closed' ? 'fermée' : 'ouverte'}). Solera en suit l'état : terminer ou abandonner la carte ferme l'issue, la rouvrir la rouvre. Pour la discussion, commenter ou étiqueter, passe par le serveur MCP de l'outil s'il t'est branché.`,
+    )
   }
   if (card.toClarifySince) {
     head.push(`À préciser depuis ${ago(card.toClarifySince)} : des questions attendent une réponse avant le code.`)

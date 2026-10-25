@@ -114,7 +114,7 @@ export class SessionRelay {
 
       for (const message of pending) {
         if (message.createdAt < Date.now() - STALE_MS) {
-          this.settle(message.id, message.kind === 'broadcast' ? 'skipped' : 'expired')
+          this.settle(message.id, onlyWhileWorking(message) ? 'skipped' : 'expired')
           continue
         }
         await this.attempt(message, false)
@@ -254,8 +254,9 @@ export class SessionRelay {
     }
 
     // Une annonce ne vaut que pour qui travaille au moment où elle est faite : relancer
-    // une session au repos pour lui dire qu'on redémarre le service n'a pas de sens.
-    if (message.kind === 'broadcast') return { via: 'skipped' }
+    // une session au repos pour lui dire qu'on redémarre le service n'a pas de sens. Un
+    // commentaire d'issue non plus : aucune session ne se lance pour lui (#84).
+    if (onlyWhileWorking(message)) return { via: 'skipped' }
 
     // Une fin de travail a été demandée explicitement : elle relance sans compter.
     if (message.kind === 'message' && !force) {
@@ -423,14 +424,20 @@ and(eq(events.conversationId, conversationId), eq(events.type, 'message.complete
 
   /** Le message tel que le destinataire le lit, voir `formatSessionMessage`. */
   private frame(message: SessionMessageRow): string {
-    const sender = this.conversation(message.fromConversationId)
+    // Un commentaire d'issue ne vient d'aucune session : c'est l'outil qui parle.
+    const sender = message.kind === 'issue_comment' ? null : this.conversation(message.fromConversationId)
     return formatSessionMessage({
       kind: message.kind,
       from: message.fromConversationId,
-      title: sender?.title ?? message.fromConversationId,
-      agent: sender?.agent ?? '?',
+      title: message.kind === 'issue_comment' ? 'GitHub' : (sender?.title ?? message.fromConversationId),
+      agent: message.kind === 'issue_comment' ? '' : (sender?.agent ?? '?'),
       messageId: message.id,
       body: message.body,
     })
   }
+}
+
+/** Ce qui ne se remet qu'à une session qui travaille, et ne relance jamais celle au repos. */
+function onlyWhileWorking(message: SessionMessageRow): boolean {
+  return message.kind === 'broadcast' || message.kind === 'issue_comment'
 }

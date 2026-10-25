@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, InstructionsMode } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -339,6 +339,76 @@ export const cardRelations = sqliteTable(
 )
 
 /**
+ * La source externe d'un projet : le dépôt dont les issues entrent dans le board (#84).
+ *
+ * Une seule par projet pour commencer, d'où la clé. `provider` est là pour ne pas fermer
+ * la porte à un second outil (YouTrack), pas parce qu'il y en a deux.
+ *
+ * Solera fait foi : rien ne sort d'ici vers l'outil que l'état des cartes absorbées.
+ */
+export const issueSources = sqliteTable('issue_sources', {
+  projectId: text('project_id')
+    .primaryKey()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['github'] }).$type<IssueProvider>().notNull(),
+  /** Le dépôt, en `propriétaire/nom`. */
+  repository: text('repository').notNull(),
+  /**
+   * Date de mise à jour de la dernière issue lue, au format de l'outil : la prochaine
+   * lecture repart de là. Null avant la première, qui n'importe que les issues ouvertes.
+   */
+  issuesCursor: text('issues_cursor'),
+  /** Date de création du dernier commentaire vu ; null tant que rien n'a été lu. */
+  commentsCursor: text('comments_cursor'),
+  /** L'identifiant de qui lit, pour ne pas renvoyer à une session ses propres commentaires. */
+  viewer: text('viewer'),
+  polledAt: timestamp('polled_at'),
+  /** La dernière erreur de lecture, effacée par la lecture suivante qui réussit. */
+  error: text('error'),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => users.id),
+  createdAt: timestamp('created_at').notNull(),
+})
+
+/**
+ * Le lien d'une carte vers l'issue dont elle vient (#84).
+ *
+ * Seule la carte venue de l'issue le porte : ses enfants restent locales, aucune
+ * sous-issue n'est créée. Le contenu n'est pas synchronisé, seul l'état l'est.
+ */
+export const cardIssues = sqliteTable(
+  'card_issues',
+  {
+    cardId: text('card_id')
+      .primaryKey()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    provider: text('provider', { enum: ['github'] }).$type<IssueProvider>().notNull(),
+    /** L'identifiant dans l'outil : le numéro de l'issue pour GitHub. */
+    externalId: text('external_id').notNull(),
+    url: text('url').notNull(),
+    /** L'état de l'issue tel que Solera l'a lu ou écrit en dernier. */
+    state: text('state', { enum: ['open', 'closed'] }).$type<IssueState>().notNull(),
+    /**
+     * Ce qu'il reste à écrire dans l'outil, posé par le mouvement de la carte
+     * (`cards/moves.ts`) et effacé une fois écrit. Null quand l'outil est à jour.
+     */
+    pending: text('pending', { enum: ['completed', 'not_planned', 'refused', 'reopen'] }).$type<IssuePush>(),
+    /** La dernière écriture refusée par l'outil, retentée plus tard. */
+    pushError: text('push_error'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('idx_card_issues_external').on(t.projectId, t.provider, t.externalId),
+    index('idx_card_issues_pending').on(t.pending),
+  ],
+)
+
+/**
  * Une ligne par changement de colonne : d'où, vers où, par qui, quand.
  *
  * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
@@ -525,9 +595,10 @@ export const sessionMessages = sqliteTable(
      * `decision`, écrit par le daemon, rend à une session la réponse à sa demande de
      * décision (`agent_requests.kind = 'request_decision'`). Expéditrice et destinataire
      * y sont la même conversation : c'est Solera qui parle, au nom de qui a répondu.
-     * `cards` de même, pour la validation d'un brouillon de cartes (#70).
+     * `cards` de même, pour la validation d'un brouillon de cartes (#70), et
+     * `issue_comment` pour le commentaire laissé sur l'issue de la carte (#84).
      */
-    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision', 'cards'] }).notNull().default('message'),
+    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision', 'cards', 'issue_comment'] }).notNull().default('message'),
     body: text('body').notNull(),
     /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
     replyTo: text('reply_to'),
@@ -1758,6 +1829,8 @@ export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
 export type VaultNoteRow = typeof vaultNotes.$inferSelect
 export type VaultLinkRow = typeof vaultLinks.$inferSelect
 export type VaultIndexStateRow = typeof vaultIndexState.$inferSelect
+export type IssueSourceRow = typeof issueSources.$inferSelect
+export type CardIssueRow = typeof cardIssues.$inferSelect
 
 /**
  * Le fil replié d'une conversation, jetable : le journal reste la seule source. Ici
