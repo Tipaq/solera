@@ -122,12 +122,17 @@ function byteSize(payload: string, raw: string | null): number {
   return Buffer.byteLength(payload) + (raw === null ? 0 : Buffer.byteLength(raw))
 }
 
-/** Index de relecture gardés en mémoire : ceux des conversations ouvertes récemment. */
-const SUPERSESSION_INDEXES = 32
+/**
+ * Budget des index de relecture gardés en mémoire, ceux des conversations ouvertes
+ * récemment. Compté en octets estimés et non en nombre d'index : celui d'une très
+ * longue conversation pèse autant que des dizaines de petites.
+ */
+const SUPERSESSION_INDEX_BYTES = 16 * 1024 * 1024
 
 export class EventLog {
   private readonly bus = new EventEmitter()
   private readonly supersession = new Map<string, SupersessionIndex>()
+  private readonly indexWeights = new WeakMap<SupersessionIndex, { seq: number; bytes: number }>()
 
   constructor(private readonly db: Db) {
     // Une conversation très suivie (plusieurs onglets, mobile et desktop) dépasse
@@ -210,8 +215,12 @@ export class EventLog {
     batch: { ts: number; event: SoleraEvent; raw?: unknown }[],
     /** Provenance commune des `raw` du lot, quand ils viennent d'une même source. */
     rawFormat?: string,
+    /** Écrit le curseur d'un import de transcript dans la même transaction que ses événements. */
+    checkpoint?: (tx: Tx, lastSeq: number) => void,
+    /** Un import en flux ne recompte les tours qu'à la fin, pas à chacun de ses petits lots. */
+    recountTurns = true,
   ): number {
-    if (batch.length === 0) return 0
+    if (batch.length === 0 && !checkpoint) return 0
 
     const entries = writeTransaction(this.db, (tx): JournalEntry[] => {
       const row = tx
@@ -246,18 +255,24 @@ export class EventLog {
         return { conversationId, seq, ts: item.ts, event: item.event }
       })
 
+      checkpoint?.(tx, row.lastSeq + batch.length)
+
       // Le compte de tours est repris ici et pas au fil des insertions : un import
       // amène des messages entiers d'un coup, et une seule requête les couvre tous.
-      tx.update(conversations)
-        .set({
-          lastSeq: row.lastSeq + batch.length,
-          ...(notableSeq > 0 ? { lastNotableSeq: notableSeq } : {}),
-          updatedAt: Date.now(),
-          journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
-          turnCount: TURN_COUNT,
-        })
-        .where(eq(conversations.id, conversationId))
-        .run()
+      // Mais pas à chaque lot d'un import en flux : recompter tout le journal à chaque
+      // fois rendrait l'import quadratique.
+      if (batch.length || recountTurns) {
+        tx.update(conversations)
+          .set({
+            lastSeq: row.lastSeq + batch.length,
+            ...(notableSeq > 0 ? { lastNotableSeq: notableSeq } : {}),
+            updatedAt: Date.now(),
+            journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
+            ...(recountTurns ? { turnCount: TURN_COUNT } : {}),
+          })
+          .where(eq(conversations.id, conversationId))
+          .run()
+      }
 
       return appended
     })
@@ -275,8 +290,8 @@ export class EventLog {
    * d'outils déjà journalisés, dont l'entrée de transcript peut se trouver après ce
    * point quand un tour a été interrompu, et qu'il ne faut pas réimporter en doublon.
    * `subAgentIds` : les appels dont le sous-agent a déjà laissé des traces au journal.
-   * Un fil de sous-agent ne se découpe pas au point de reprise, il a sa propre
-   * chronologie : c'est tout ou rien, et c'est cet ensemble qui le dit.
+   * Il distingue, pour un fichier de sous-agent sans `uuid` commun, celui qui est déjà
+   * journalisé d'un fichier neuf.
    *
    * Contrat Claude : `raw.uuid` est un identifiant d'entrée du transcript de Claude
    * Code, seul CLI à en écrire un. Les `raw` Codex n'en portent pas, la lecture est
@@ -288,8 +303,18 @@ export class EventLog {
     completedToolCallIds: Set<string>
     subAgentIds: Set<string>
   } {
+    // Seuls les identifiants passent en JS : les `raw` natifs comme les payloads
+    // normalisés d'une longue conversation dépassent chacun le tas du daemon.
     const rows = this.db
-      .select({ type: events.type, payload: events.payload, raw: events.raw })
+      .select({
+        type: events.type,
+        uuid: sql<string | null>`case when json_valid(${events.raw}) and json_type(${events.raw}, '$.uuid') = 'text'
+          then ${events.raw} ->> '$.uuid' end`,
+        toolCallId: sql<string | null>`case when json_type(${events.payload}, '$.toolCallId') = 'text'
+          then ${events.payload} ->> '$.toolCallId' end`,
+        parentToolCallId: sql<string | null>`case when json_type(${events.payload}, '$.parentToolCallId') = 'text'
+          then ${events.payload} ->> '$.parentToolCallId' end`,
+      })
       .from(events)
       .where(eq(events.conversationId, conversationId))
       .all()
@@ -299,21 +324,10 @@ export class EventLog {
     const completedToolCallIds = new Set<string>()
     const subAgentIds = new Set<string>()
     for (const row of rows) {
-      if (row.raw) {
-        const raw = JSON.parse(row.raw) as { uuid?: unknown }
-        if (typeof raw.uuid === 'string') uuids.add(raw.uuid)
-      }
-      const payload = JSON.parse(row.payload) as {
-        toolCallId?: unknown
-        parentToolCallId?: unknown
-      }
-      if (row.type === 'tool.started' && typeof payload.toolCallId === 'string') {
-        startedToolCallIds.add(payload.toolCallId)
-      }
-      if (row.type === 'tool.completed' && typeof payload.toolCallId === 'string') {
-        completedToolCallIds.add(payload.toolCallId)
-      }
-      if (typeof payload.parentToolCallId === 'string') subAgentIds.add(payload.parentToolCallId)
+      if (row.uuid !== null) uuids.add(row.uuid)
+      if (row.type === 'tool.started' && row.toolCallId !== null) startedToolCallIds.add(row.toolCallId)
+      if (row.type === 'tool.completed' && row.toolCallId !== null) completedToolCallIds.add(row.toolCallId)
+      if (row.parentToolCallId !== null) subAgentIds.add(row.parentToolCallId)
     }
     return { uuids, startedToolCallIds, completedToolCallIds, subAgentIds }
   }
@@ -449,9 +463,17 @@ export class EventLog {
     // première clé est celle qu'on a relue le moins récemment.
     this.supersession.delete(conversationId)
     this.supersession.set(conversationId, index)
-    if (this.supersession.size > SUPERSESSION_INDEXES) {
-      const stale = this.supersession.keys().next().value
-      if (stale !== undefined) this.supersession.delete(stale)
+    if (this.indexWeights.get(index)?.seq !== index.seq) {
+      let weight = 128 + conversationId.length * 2 + index.diffTurn.size * 48 + index.turnDiffs.size * 80
+      for (const key of index.completed.keys()) weight += 64 + key.length * 2
+      this.indexWeights.set(index, { seq: index.seq, bytes: weight })
+    }
+    // Du plus récent au plus ancien : ce qui dépasse le budget sort, et l'index qu'on
+    // vient de relire passe toujours en premier.
+    let bytes = 0
+    for (const [id, cached] of [...this.supersession].reverse()) {
+      bytes += this.indexWeights.get(cached)?.bytes ?? 0
+      if (bytes > SUPERSESSION_INDEX_BYTES && id !== conversationId) this.supersession.delete(id)
     }
     return index
   }
@@ -708,9 +730,9 @@ export class EventLog {
    * Sortie complète d'un appel d'outil, que la relecture d'historique ne rend qu'en
    * aperçu au-delà d'une certaine taille.
    *
-   * Le filtre sur `toolCallId` est fait par SQLite plutôt qu'en JS : `rawOfTool` juste
-   * en dessous charge tous les appels de la conversation et les parse un par un pour en
-   * retenir un seul, ce qui se paie sur un fil qui en porte des milliers.
+   * Le filtre sur `toolCallId` est fait par SQLite plutôt qu'en JS : charger tous les
+   * appels de la conversation pour en retenir un seul se paie sur un fil qui en porte
+   * des milliers.
    */
   toolOutput(conversationId: string, toolCallId: string): { output: unknown } | null {
     const row = this.db
@@ -740,26 +762,27 @@ export class EventLog {
    * faite par l'adaptateur du CLI concerné, jamais par le frontend.
    */
   rawOfTool(conversationId: string, toolCallId: string): { started: unknown; completed: unknown } {
-    const rows = this.db
-      .select({ type: events.type, payload: events.payload, raw: events.raw })
-      .from(events)
-      .where(
-        and(
-          eq(events.conversationId, conversationId),
-          inArray(events.type, ['tool.started', 'tool.completed']),
-        ),
-      )
-      .orderBy(asc(events.seq))
-      .all()
-
-    const found: { started: unknown; completed: unknown } = { started: null, completed: null }
-    for (const row of rows) {
-      const payload = JSON.parse(row.payload) as { toolCallId?: string }
-      if (payload.toolCallId !== toolCallId || !row.raw) continue
-      if (row.type === 'tool.started') found.started = JSON.parse(row.raw)
-      else found.completed = JSON.parse(row.raw)
+    // Un seul diff chargeait jusqu'ici tous les payloads d'outils de la conversation
+    // (des centaines de Mo) en JS. On garde le dernier natif de chaque sorte, y compris
+    // quand un identifiant d'appel est réutilisé ; `idx_events_native_tool` sert la requête.
+    const latest = (type: 'tool.started' | 'tool.completed'): unknown => {
+      const row = this.db
+        .select({ raw: events.raw })
+        .from(events)
+        .where(
+          and(
+            eq(events.conversationId, conversationId),
+            eq(events.type, type),
+            sql`nullif(${events.raw}, '') is not null`,
+            sql`${events.payload} ->> '$.toolCallId' = ${toolCallId}`,
+          ),
+        )
+        .orderBy(desc(events.seq))
+        .limit(1)
+        .get()
+      return row?.raw ? JSON.parse(row.raw) : null
     }
-    return found
+    return { started: latest('tool.started'), completed: latest('tool.completed') }
   }
 
   /**

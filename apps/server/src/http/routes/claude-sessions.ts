@@ -10,13 +10,13 @@ import {
   type ClaudeSyncDto,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
+import type { TranslatedEvent } from '../../agents/claude/transcript.js'
 import {
-  TRANSCRIPT_RAW_FORMAT,
-  readSubAgentTranscripts,
-  readTranscript,
-  translateTranscript,
-  type TranslatedEvent,
-} from '../../agents/claude/transcript.js'
+  importPreparedTranscript,
+  prepareTranscript,
+  savedTranscript,
+} from '../../agents/claude/transcript-sync.js'
+import { TranscriptChanged } from '../../agents/claude/transcript-reader.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import { readUserSettings } from '../../settings/user-settings.js'
@@ -62,6 +62,8 @@ export function registerClaudeSessionRoutes(
   sessions: SessionManager,
   registry: AgentRegistry,
 ): void {
+  /** Une synchronisation en cours par conversation : deux onglets qui s'ouvrent la partagent. */
+  const syncing = new Map<string, Promise<ClaudeSyncDto>>()
   const loadProject = (projectId: string, userId: string) => {
     const project = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()
     if (!project) throw notFound('project_not_found', 'Project not found.')
@@ -129,25 +131,15 @@ export function registerClaudeSessionRoutes(
       throw badRequest('session_already_imported', 'This session already has a conversation.')
     }
 
-    const entries = await readTranscript(project.workspacePath, sessionId)
-    if (entries.length === 0) {
+    const prepared = await prepareTranscript(project.workspacePath, sessionId)
+    if (!prepared || prepared.mainEntries === 0) {
       throw notFound(
         'transcript_not_found',
         'No transcript found for this session in the project folder.',
       )
     }
-
-    const sidechains = await readSubAgentTranscripts(project.workspacePath, sessionId, entries)
-    const translated = translateTranscript(entries, project.workspacePath, sidechains)
     const info =
       (await getSessionInfo(sessionId, { dir: project.workspacePath }).catch(() => null)) ?? null
-    const firstPrompt = translated.events.find(
-      (item) => item.event.type === 'message.completed' && item.event.role === 'user',
-    )
-    const firstText =
-      firstPrompt?.event.type === 'message.completed'
-        ? (firstPrompt.event.blocks.find((block) => block.type === 'text')?.text ?? null)
-        : null
 
     // Le préréglage du projet puis les défauts du compte, comme pour une conversation
     // ouverte depuis l'interface : adopter une session du CLI n'est pas une raison de
@@ -171,7 +163,7 @@ export function registerClaudeSessionRoutes(
       // Une session importée depuis le CLI ne vient d'aucune carte.
       cardId: null,
       userId: user.id,
-      title: importTitle(info, firstText),
+      title: importTitle(info, prepared.firstPrompt),
       titleSetByUser: false,
       titleSetByAgent: false,
       agent: 'claude',
@@ -202,24 +194,43 @@ export function registerClaudeSessionRoutes(
       createdAt: now,
       updatedAt: now,
     }
+    // Un autre import a pu finir pendant la lecture du transcript.
+    if (linkedSessionIds().has(sessionId)) {
+      throw badRequest('session_already_imported', 'This session already has a conversation.')
+    }
     ctx.db.insert(conversations).values(row).run()
 
     const opening: TranslatedEvent = {
-      ts: translated.events[0]?.ts ?? now,
+      ts: prepared.firstTs ?? now,
       event: {
         type: 'session.started',
         agent: 'claude',
         agentSessionId: sessionId,
         // Le transcript ne déclare ni la liste d'outils ni toujours un modèle : on
         // journalise ce qu'il dit, pas ce qu'on suppose.
-        model: translated.model ?? '',
+        model: prepared.model ?? '',
         cwd: project.workspacePath,
         tools: [],
       },
     }
-    const lastSeq = log.appendBatch(row.id, [opening, ...translated.events], TRANSCRIPT_RAW_FORMAT)
-
-    return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
+    try {
+      const { lastSeq } = await importPreparedTranscript({
+        prepared,
+        db: ctx.db,
+        log,
+        id: row.id,
+        cwd: project.workspacePath,
+        lastSeq: 0,
+        opening,
+        release: async () => true,
+      })
+      return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
+    } catch (error) {
+      // Un import initial qui échoue ne doit pas réserver l'identifiant natif avec un
+      // journal partiel.
+      ctx.db.delete(conversations).where(eq(conversations.id, row.id)).run()
+      throw error
+    }
   })
 
   /**
@@ -247,72 +258,46 @@ export function registerClaudeSessionRoutes(
       return { imported: 0 }
     }
 
-    const cwd = agentCwd(ctx.db, ctx.config.paths.threads, conversation)
-    const entries = await readTranscript(cwd, conversation.agentSessionId)
-    if (entries.length === 0) return { imported: 0 }
-
-    const anchors = log.importAnchors(id)
-    let after = entries
-    if (anchors.uuids.size > 0) {
-      let anchorIndex = -1
-      entries.forEach((entry, index) => {
-        if (typeof entry.uuid === 'string' && anchors.uuids.has(entry.uuid)) anchorIndex = index
-      })
-      // Journal et transcript sans point commun : reprendre au hasard doublerait le
-      // fil, on ne touche à rien.
-      if (anchorIndex === -1) return { imported: 0 }
-      after = entries.slice(anchorIndex + 1)
-    } else if (conversation.lastSeq > 0) {
-      return { imported: 0 }
-    }
-    if (after.length === 0) return { imported: 0 }
-
-    // Un fil de sous-agent vit dans son propre fichier, avec sa propre chronologie :
-    // le découpage au point commun ne lui convient pas, et l'`uuid` non plus, la
-    // plupart de ses entrées ne laissant aucun `raw` qui en porte un. C'est donc tout
-    // ou rien, par sous-agent : dès qu'il a laissé la moindre trace au journal, on le
-    // tient pour importé.
-    const sidechains = await readSubAgentTranscripts(cwd, conversation.agentSessionId, entries)
-    for (const toolCallId of sidechains.keys()) {
-      if (anchors.subAgentIds.has(toolCallId)) sidechains.delete(toolCallId)
-    }
-
-    const events = translateTranscript(after, cwd, sidechains).events.filter((item) => {
-      // Un tour interrompu peut laisser son appel d'outil après le point commun alors
-      // que le flux vivant l'a déjà journalisé. Le début compte autant que le résultat :
-      // un `tool.started` en double rouvre le tour dans le fil replié.
-      if (item.event.type === 'tool.started') {
-        return !anchors.startedToolCallIds.has(item.event.toolCallId)
+    const pending = syncing.get(id)
+    if (pending) return pending
+    const sync = (async (): Promise<ClaudeSyncDto> => {
+      try {
+        const cwd = agentCwd(ctx.db, ctx.config.paths.threads, conversation)
+        // Les repères ne se calculent que sans curseur valable : ils lisent tout le journal.
+        let anchors: ReturnType<EventLog['importAnchors']> | undefined
+        const prepared = await prepareTranscript(
+          cwd,
+          conversation.agentSessionId!,
+          savedTranscript(ctx.db, id, conversation.lastSeq),
+          () => (anchors ??= log.importAnchors(id)),
+          conversation.lastSeq > 0,
+        )
+        if (!prepared) return { imported: 0 }
+        const result = await importPreparedTranscript({
+          prepared,
+          db: ctx.db,
+          log,
+          id,
+          cwd,
+          lastSeq: conversation.lastSeq,
+          anchors,
+          // Un tour a pu démarrer pendant la lecture : il journalise lui-même ce qu'il
+          // produit, et importer par-dessus doublerait le fil.
+          release: () => sessions.releaseRunner(id),
+        })
+        return { imported: result.imported }
+      } catch (error) {
+        // Le CLI vivant gagne les courses. Les lots déjà écrits gardent leur curseur, et
+        // la prochaine ouverture au repos reprend ce qui bougeait encore.
+        if (error instanceof TranscriptChanged) return { imported: 0 }
+        throw error
       }
-      if (item.event.type === 'tool.completed' || item.event.type === 'file.edited') {
-        return !anchors.completedToolCallIds.has(item.event.toolCallId)
-      }
-      return true
-    })
-    if (events.length === 0) return { imported: 0 }
-    const imported = events.length
-
-    // Rien ne tournera plus après ce rattrapage : `releaseRunner` juste en dessous en
-    // fait la garantie. Le lot doit donc laisser le fil au repos, sinon un tour ouvert
-    // en son milieu resterait affiché « en cours » à chaque rechargement. Le
-    // traducteur ne pose sa propre clôture que pour un tour qu'il a vu s'ouvrir, ce
-    // qu'une reprise en plein tour ne lui montre jamais.
-    const last = events.at(-1)?.event.type
-    if (last !== 'turn.completed' && last !== 'session.ended') {
-      events.push({
-        ts: events.at(-1)?.ts ?? Date.now(),
-        event: { type: 'session.ended', reason: 'interrupted' },
-      })
+    })()
+    syncing.set(id, sync)
+    try {
+      return await sync
+    } finally {
+      syncing.delete(id)
     }
-
-    // Un runner encore chaud garde un contexte qui ignore ces tours : on l'arrête,
-    // la reprise au prochain message repartira du fichier, qui a tout. Un tour a pu
-    // démarrer pendant la lecture du transcript, après la vérification de statut
-    // ci-dessus : il journalise lui-même ce qu'il produit, importer par-dessus
-    // doublerait le fil.
-    if (!(await sessions.releaseRunner(id))) return { imported: 0 }
-
-    log.appendBatch(id, events, TRANSCRIPT_RAW_FORMAT)
-    return { imported }
   })
 }

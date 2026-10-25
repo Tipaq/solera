@@ -386,6 +386,13 @@
       "when": 1792865777358,
       "tag": "0055_agent_card_change",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1792941938131,
+      "tag": "0056_curseurs_de_transcript",
+      "breakpoints": true
     }
   ]
 }
