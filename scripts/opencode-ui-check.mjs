@@ -77,7 +77,7 @@ try {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(MemoryRouter, null,
           React.createElement(TooltipProvider, null,
-            React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+            React.createElement(ChatThread, { rows: buildRows(state.items, null, state.turnRunning), conversationId: 'fixture', canDecide: true }),
             state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
           ),
         )))
@@ -108,8 +108,8 @@ try {
     }, modules)
     await page.getByText('src/note.txt', { exact: false }).first().waitFor()
     await page.getByText('Explorer le dossier', { exact: false }).first().waitFor()
-    // Deux appels terminés à la suite se replient en une ligne, qui les nomme.
-    await page.getByText('2 outils', { exact: true }).click()
+    // Les appels restent visibles tant que le tour tourne sans que l'agent ait repris la parole.
+    assert.equal(await page.locator('[data-folded="true"]').count(), 0)
     await page.getByText('echo sortie-en-flux', { exact: false }).first().waitFor()
     await page.getByText('Voir le fil du sous-agent', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')

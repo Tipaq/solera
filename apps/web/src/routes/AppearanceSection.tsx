@@ -1,9 +1,10 @@
-import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote } from 'lucide-react'
+import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AppearanceControls } from '../components/AppearanceControls'
 import { AppearancePresets } from '../components/AppearancePresets'
 import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
+import { ToolStyleControls } from '../components/ToolStyleControls'
 import { useAppearance } from '../lib/appearance'
 import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../lib/i18n'
 import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
@@ -126,6 +127,17 @@ export function AppearanceSection() {
             swatches={false}
           />
           <ReadingPreview />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={t('toolStyle.title')}
+          description={t('toolStyle.description')}
+          icon={<Wrench size={16} />}
+        />
+        <CardBody>
+          <ToolStyleControls />
         </CardBody>
       </Card>
 

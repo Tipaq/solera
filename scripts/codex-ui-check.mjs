@@ -64,7 +64,7 @@ try {
       window.appendEvent = (event) => {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(React.Fragment, null,
-          React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+          React.createElement(ChatThread, { rows: buildRows(state.items, null, state.turnRunning), conversationId: 'fixture', canDecide: true }),
           state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
         ))
       }

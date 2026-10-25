@@ -78,7 +78,7 @@ try {
         state = applyEvent(state, ++seq, Date.now(), event)
         root.render(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(MemoryRouter, null,
           React.createElement(TooltipProvider, null,
-            React.createElement(ChatThread, { rows: buildRows(state.items), conversationId: 'fixture', canDecide: true }),
+            React.createElement(ChatThread, { rows: buildRows(state.items, null, state.turnRunning), conversationId: 'fixture', canDecide: true }),
             state.turnRunning ? React.createElement(TurnActivity, { label: 'Travail en cours' }) : null,
           ),
         )))
@@ -110,11 +110,12 @@ try {
       ] })
     }, modules)
     await page.getByText('calc.py', { exact: false }).first().waitFor()
-    // Les appels terminés à la suite se replient en une ligne, qui les nomme.
-    await page.getByText('3 outils', { exact: true }).click()
+    // Les appels restent visibles tant que l'agent n'a pas repris la parole.
+    assert.equal(await page.locator('[data-folded="true"]').count(), 0)
     // Comme chez Claude, la ligne d'une commande montre la description que le modèle a écrite.
     await page.getByText('Vérifier', { exact: true }).first().waitFor()
-    await page.getByText('solera/read_card', { exact: false }).first().waitFor()
+    // L'outil de Solera porte son libellé et son origine.
+    await page.locator('[data-tool-id="mcp"][data-tool-origin="solera"]', { hasText: 'Lire une carte' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'le fil ne déborde pas')
 
     // Permission : la décision part avec la portée choisie, puis la carte se referme.

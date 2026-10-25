@@ -49,6 +49,7 @@ export function ChatThread({
   conversationId,
   canDecide = false,
   canFileCards = false,
+  mayCollapseTools = true,
   onFork,
   flashedId = null,
   anchors,
@@ -72,6 +73,11 @@ export function ChatThread({
    * laquelle il faut deux noms plutôt qu'un.
    */
   canFileCards?: boolean
+  /**
+   * Faux tant qu'on lit plus haut dans le fil : une série qui se replierait alors
+   * déplacerait ce qu'on est en train de lire. Elle se replie quand on revient au bas.
+   */
+  mayCollapseTools?: boolean
   /** Absent quand le fil n'est pas forkable, un sous-agent n'ayant pas d'existence propre. */
   onFork?: (message: MessageItem) => void
   /** Message que l'on vient d'atteindre, signalé le temps qu'on le repère. */
@@ -125,7 +131,7 @@ export function ChatThread({
 
   function renderRow(row: ChatRow) {
         if (row.kind === 'tool-group') {
-          return <ToolCallGroup key={row.key} tools={row.tools} conversationId={conversationId} />
+          return <ToolCallGroup key={row.key} tools={row.tools} complete={row.complete} mayCollapse={mayCollapseTools} conversationId={conversationId} />
         }
         if (row.kind === 'tool') {
           return <ToolCall key={row.key} tool={row.tool} conversationId={conversationId} />

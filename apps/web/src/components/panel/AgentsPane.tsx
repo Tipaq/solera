@@ -244,7 +244,8 @@ function SubAgentThread({
   onBack: () => void
 }) {
   const t = useTranslate()
-  const rows = useMemo(() => buildRows(agent.items, agent.id), [agent.items, agent.id])
+  const running = agent.status === 'running'
+  const rows = useMemo(() => buildRows(agent.items, agent.id, running), [agent.items, agent.id, running])
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
