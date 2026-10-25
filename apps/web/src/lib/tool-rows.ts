@@ -13,18 +13,16 @@ import { isSoleraTool } from './solera-tools'
  *     lui qui parlait, et deux sous-agents en parallèle deviennent indémêlables. Le
  *     fil principal ne garde donc que l'appel de spawn ; le reste se lit dans le
  *     panneau, découpé par ce même module ;
- *   - une suite d'appels terminés se replie en une ligne, parce qu'elle n'apporte
- *     rien ligne par ligne et éloigne la réponse. Un appel en cours garde la sienne :
- *     c'est le seul qu'on ait une raison de regarder pendant qu'il tourne.
+ *   - une suite d'appels se replie en une ligne une fois que l'agent a repris la
+ *     parole, parce qu'elle n'apporte plus rien ligne par ligne et éloigne la réponse.
+ *     Tant qu'il travaille, chaque appel garde sa ligne : c'est ce qu'on regarde.
  */
 
 export type ChatRow =
   | { kind: 'item'; key: string; item: ChatItem }
   | { kind: 'tool'; key: string; tool: ToolItem }
-  | { kind: 'tool-group'; key: string; tools: ToolItem[] }
-
-/** En dessous, replier coûte un clic et n'économise pas une ligne. */
-const MIN_GROUP_SIZE = 2
+  /** `complete` : la suite est close (texte repris, tour fini) et aucun appel n'y tourne. */
+  | { kind: 'tool-group'; key: string; tools: ToolItem[]; complete: boolean }
 
 /**
  * Découpe un fil en lignes affichables.
@@ -34,47 +32,26 @@ const MIN_GROUP_SIZE = 2
  * (permission, plan, question, erreur, repère) n'a pas d'auteur et reste dans le fil
  * principal : c'est le seul endroit d'où l'on peut répondre à une sollicitation, et le
  * seul où une erreur de session a un sens.
+ *
+ * `turnRunning` dit si le tour est encore en cours : la dernière suite n'est close
+ * qu'avec lui, ou quand du texte la suit.
  */
-export function buildRows(items: ChatItem[], thread: string | null = null): ChatRow[] {
+export function buildRows(items: ChatItem[], thread: string | null = null, turnRunning = false): ChatRow[] {
   const rows: ChatRow[] = []
   let run: ToolItem[] = []
 
   /**
-   * Vide la suite courante.
+   * Vide la suite courante, en une seule ligne quoi qu'elle contienne.
    *
-   * Les appels terminés se regroupent, les appels en cours gardent leur ligne, et
-   * l'ordre chronologique est conservé : plusieurs appels peuvent tourner en parallèle,
-   * et rien ne garantit que celui qui tourne soit le dernier de la suite.
-   *
-   * Le groupe ne se dissout pas quand un appel démarre derrière lui. Il le faisait
-   * auparavant, et c'était visible deux fois : la suite entière se dépliait le temps du
-   * nouvel appel puis se repliait d'un coup, et un groupe ouvert à la main se refermait
-   * en même temps, puisque la ligne disparaissait et que le composant perdait son état.
+   * Sa clé est celle de son premier appel dès qu'il démarre : la suite qui grandit, puis
+   * se clôt, reste le même composant, et un groupe ouvert à la main ne se referme pas
+   * parce qu'un appel de plus est arrivé. C'est `ToolCallGroup` qui décide de replier,
+   * d'après `complete`.
    */
-  const flush = () => {
-    if (run.length === 0) return
-
-    let done: ToolItem[] = []
-    const flushDone = () => {
-      const first = done[0]
-      if (first && done.length >= MIN_GROUP_SIZE) {
-        rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: done })
-      } else {
-        for (const tool of done) rows.push({ kind: 'tool', key: tool.id, tool })
-      }
-      done = []
-    }
-
-    for (const tool of run) {
-      if (tool.status === 'running') {
-        flushDone()
-        rows.push({ kind: 'tool', key: tool.id, tool })
-      } else {
-        done.push(tool)
-      }
-    }
-    flushDone()
-
+  const flush = (closed = false) => {
+    const first = run[0]
+    if (!first) return
+    rows.push({ kind: 'tool-group', key: `tools-${first.id}`, tools: run, complete: closed && run.every((tool) => tool.status !== 'running') })
     run = []
   }
 
@@ -106,12 +83,26 @@ export function buildRows(items: ChatItem[], thread: string | null = null): Chat
     // Un élément qui n'affiche rien ne doit pas interrompre la suite d'outils.
     if (!hasVisibleContent(item)) continue
 
-    flush()
+    flush(speaks(item))
     rows.push({ kind: 'item', key: item.id, item })
   }
-  flush()
+  flush(!turnRunning)
 
+  // Une réflexion ou un repère peut séparer une suite du texte qui la clôt : c'est le
+  // texte suivant, où qu'il soit, ou la fin du tour, qui ferme les suites d'avant.
+  let spoken = !turnRunning
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index]!
+    if (row.kind === 'item' && speaks(row.item)) spoken = true
+    if (row.kind === 'tool-group' && spoken && row.tools.every((tool) => tool.status !== 'running')) row.complete = true
+  }
   return rows
+}
+
+/** L'agent a repris la parole : un message qui porte du texte, en flux ou complet. */
+function speaks(item: ChatItem): boolean {
+  return item.kind === 'message' && (item.streamingText.trim().length > 0 ||
+    item.blocks.some((block) => block.type === 'text' && block.text.trim().length > 0))
 }
 
 function proposesCheck(tool: ToolItem): boolean {

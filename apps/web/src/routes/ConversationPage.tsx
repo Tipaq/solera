@@ -211,7 +211,10 @@ export function ConversationPage() {
   const visibilityFrame = useRef<number | null>(null)
 
   const turns = useMemo(() => buildTurns(stream.state.items), [stream.state.items])
-  const rows = useMemo(() => buildRows(stream.state.items), [stream.state.items])
+  const rows = useMemo(
+    () => buildRows(stream.state.items, null, stream.state.turnRunning),
+    [stream.state.items, stream.state.turnRunning],
+  )
   const subAgents = useMemo(
     () => buildSubAgents(stream.state.items, stream.state.tasks),
     [stream.state.items, stream.state.tasks],
@@ -1290,6 +1293,7 @@ export function ConversationPage() {
               <ChatThread
                 rows={view.rows}
                 conversationId={conversationId}
+                mayCollapseTools={!placed || stuckToBottom}
                 canDecide={isOwner}
                 canFileCards={ownsProject}
                 onFork={isOwner && !forking ? setForkTarget : undefined}

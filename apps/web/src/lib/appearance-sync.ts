@@ -10,10 +10,12 @@ import {
 import { api } from './api'
 import { SYNTAX_THEMES, applySyntaxTheme, currentSyntaxTheme, subscribeSyntaxTheme, type SyntaxTheme } from './syntax-theme'
 import { THEMES, applyTheme, currentTheme, subscribeTheme, type Theme } from './theme'
+import { applyToolStyle, currentToolStyle, resolveToolStyle, subscribeToolStyle } from './tool-style'
 import { useUserSettings } from './user-settings'
 
 /**
- * Thème, palette de code et curseurs d'apparence, enregistrés sur le compte.
+ * Thème, palette de code, présentation des outils et curseurs d'apparence, enregistrés
+ * sur le compte.
  *
  * `localStorage` reste le cache lu par `index.html` avant l'hydratation, sans quoi
  * chaque chargement flasherait les couleurs par défaut. Le compte fait foi : sa copie
@@ -29,7 +31,7 @@ let inFlight = 0
 let adopting = false
 
 function snapshot(): AppearancePrefs {
-  return { theme: currentTheme(), syntax: currentSyntaxTheme(), values: { ...currentAppearance() } }
+  return { theme: currentTheme(), syntax: currentSyntaxTheme(), toolStyle: currentToolStyle(), values: { ...currentAppearance() } }
 }
 
 function schedulePush(): void {
@@ -70,6 +72,9 @@ function adopt(prefs: AppearancePrefs): void {
     ) {
       applySyntaxTheme(prefs.syntax as SyntaxTheme)
     }
+    // Absent d'un compte plus ancien : le défaut, comme un style retiré depuis.
+    const toolStyle = resolveToolStyle(prefs.toolStyle)
+    if (toolStyle !== currentToolStyle()) applyToolStyle(toolStyle)
 
     // Tous les curseurs connus, défaut compris pour ceux absents de la copie : un
     // réglage remis à zéro sur un autre poste doit l'être ici aussi.
@@ -95,6 +100,7 @@ export function useAppearanceSync(): void {
     const unsubscribe = [
       subscribeTheme(schedulePush),
       subscribeSyntaxTheme(schedulePush),
+      subscribeToolStyle(schedulePush),
       subscribeAppearance(schedulePush),
     ]
     return () => {

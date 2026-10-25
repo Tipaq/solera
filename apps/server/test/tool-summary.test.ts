@@ -215,3 +215,44 @@ test('outils : l’entrée définitive d’une commande, d’un MCP, d’un outi
     if (end.type === 'dynamicToolCall') assert.deepEqual(item.presentation, { origin: 'native' })
   }
 })
+
+test('outils : l’origine MCP se lit dans toutes les écritures des adaptateurs, sans classer un outil natif parmi les MCP', async () => {
+  const { toolOrigin, toolLabel, toolIntent, toolPreview } = await import('../../web/src/lib/tool-presentation.js')
+  for (const item of [
+    tool('mcp__solera__read_memory', { file: 'project.md' }),
+    tool('solera/read_memory', { file: 'project.md' }),
+    tool(...Object.values(opencodeTool('solera_read_memory', { file: 'project.md' }, ['solera'])) as [string, unknown]),
+    tool(...Object.values(grokTool('use_tool', { tool_name: 'solera__read_memory', tool_input: { file: 'project.md' } })) as [string, unknown]),
+  ]) {
+    assert.equal(toolOrigin(item.name).kind, 'solera', item.name)
+    assert.equal(toolLabel(item.name), 'Read memory')
+    assert.equal(toolSummary(item)?.text, 'project.md')
+    assert.equal(toolIntent(item), 'context')
+  }
+  assert.equal(toolOrigin(opencodeTool('git_hub_issue_read', {}, ['git', 'git_hub']).name).server, 'git_hub')
+  for (const name of ['Collaboration/spawnAgent', 'Codex/futureTool', 'Hook/PreToolUse', 'apply_patch']) assert.equal(toolOrigin(name).kind, 'native', name)
+  assert.equal(toolOrigin('functions/custom_tool', { origin: 'native' }).kind, 'native')
+  // L'étiquette d'un connecteur nomme l'opération ; sans elle, le nom sans séparateurs.
+  assert.equal(toolLabel('github/issue_read', { origin: 'mcp', label: 'Lire le ticket' }), 'Lire le ticket')
+  assert.equal(toolLabel('github/issue_read'), 'issue read')
+  assert.equal(toolIntent(tool('Bash', { command: 'pnpm test' })), 'verify')
+  assert.equal(toolIntent(tool('Bash', { command: 'ls' })), 'other')
+  assert.equal(toolIntent(tool('Edit', {})), 'change')
+  assert.equal(toolPreview(tool('solera/read_memory', {}, { content: [{ type: 'text', text: '  Trouvé\n  ici ' }] })), 'Trouvé ici')
+  assert.equal(toolPreview({ ...tool('Read', {}), status: 'running' }), 'Waiting for output')
+})
+
+test('outils : une suite ne se clôt qu’au texte qui la suit ou à la fin du tour, et garde sa clé en grandissant', async () => {
+  const { buildRows } = await import('../../web/src/lib/tool-rows.js')
+  const message = (id: string, text: string) => ({ kind: 'message', id, ts: 0, role: 'assistant', blocks: text ? [{ type: 'text', text }] : [{ type: 'thinking', text: 'hmm' }], streamingText: '', streamingThinking: '', parentToolCallId: null }) as never
+  const a = tool('Read', { file_path: 'a' })
+  const b = { ...tool('Read', { file_path: 'b' }), id: 'b', status: 'running' as const }
+  const running = buildRows([a, b], null, true)
+  assert.deepEqual(running.map((row) => [row.kind, row.key, row.kind === 'tool-group' && row.complete]), [['tool-group', 'tools-call', false]])
+  const thinking = buildRows([a, { ...b, status: 'done' }, message('m', '')], null, true)
+  assert.equal(thinking[0]!.kind === 'tool-group' && thinking[0]!.complete, false, 'une réflexion ne clôt pas la suite')
+  const spoken = buildRows([a, { ...b, status: 'done' }, message('m', ''), message('n', 'Voilà.')], null, true)
+  assert.equal(spoken[0]!.key, 'tools-call')
+  assert.equal(spoken[0]!.kind === 'tool-group' && spoken[0]!.complete, true)
+  assert.equal(buildRows([a], null, false)[0]!.kind === 'tool-group' && (buildRows([a], null, false)[0] as { complete: boolean }).complete, true)
+})
