@@ -4,6 +4,8 @@ import { stablePort } from './port'
 import { startServer, type RunningServer } from './server'
 import { loginShellEnv, pathKey } from './shell-env'
 import { text } from './texts'
+import { setupUpdates } from './updates'
+import { setupWindowChrome, windowChromeOptions } from './window-chrome'
 
 /**
  * Processus principal de l'application de bureau.
@@ -14,12 +16,17 @@ import { text } from './texts'
  * hébergée, qui adapte ses écrans au profil `desktop` que le serveur lui annonce.
  */
 
-/** Le fond de l'application, pour qu'aucun éclair blanc ne précède le premier rendu. */
+/**
+ * Le fond de l'application, pour qu'aucun éclair blanc ne précède le premier rendu.
+ * L'interface le remplace ensuite par celui de son thème (`window-chrome.ts`).
+ */
 const BACKGROUND = '#0b0d1c'
 
 let server: RunningServer | null = null
 let origin = ''
 let quitting = false
+/** De quoi relancer le serveur : après une panne, ou une mise à jour qui n'a pas pu partir. */
+let launchSettings: { env: NodeJS.ProcessEnv; port: number } | null = null
 
 // Un profil jetable pour le contrôle de lancement (scripts/desktop-ui-check.mjs), qui ne
 // touche ni aux projets ni aux réglages de l'utilisateur. Avant toute lecture du chemin.
@@ -55,6 +62,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot(): Promise<void> {
+  setupWindowChrome(isAppUrl)
   const env = await loginShellEnv(node, posixLocale(app.getSystemLocale()))
   // Node et npm embarqués en dernier recours : ceux que l'utilisateur maintient passent
   // devant, mais Solera peut installer un CLI et le lancer sur un poste qui n'a rien.
@@ -62,7 +70,18 @@ async function boot(): Promise<void> {
   env[key] = [env[key], dirname(node)].filter(Boolean).join(delimiter)
   const port = await stablePort(join(userData, 'desktop.json'))
 
-  await launch({ env, port })
+  launchSettings = { env, port }
+
+  await launch(launchSettings)
+  setupUpdates({
+    userData,
+    logDir: dirname(logFile),
+    isAppUrl,
+    stopServer,
+    restartServer: async () => {
+      if (launchSettings) await relaunchServer(launchSettings)
+    },
+  })
   openWindow()
 }
 
@@ -119,6 +138,10 @@ async function stopped(code: number | null, settings: { env: NodeJS.ProcessEnv; 
     app.quit()
     return
   }
+  await relaunchServer(settings)
+}
+
+async function relaunchServer(settings: { env: NodeJS.ProcessEnv; port: number }): Promise<void> {
   try {
     await launch(settings)
     for (const win of BrowserWindow.getAllWindows()) win.reload()
@@ -127,8 +150,16 @@ async function stopped(code: number | null, settings: { env: NodeJS.ProcessEnv; 
   }
 }
 
+/** Arrête le serveur sans quitter l'app, et sans que son arrêt passe pour une panne. */
+async function stopServer(): Promise<void> {
+  const running = server
+  server = null
+  await running?.stop()
+}
+
 function openWindow(): void {
   const win = new BrowserWindow({
+    ...windowChromeOptions(BACKGROUND),
     width: 1440,
     height: 920,
     minWidth: 720,
@@ -136,8 +167,17 @@ function openWindow(): void {
     show: false,
     title: 'Solera',
     backgroundColor: BACKGROUND,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: true },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: true,
+      preload: join(__dirname, 'preload.cjs'),
+    },
   })
+  // Le menu reste, ouvert par le bouton de la barre de titre : il ne prend plus une ligne
+  // de la fenêtre.
+  win.setMenuBarVisibility(false)
   win.once('ready-to-show', () => win.show())
   void win.loadURL(origin)
 }

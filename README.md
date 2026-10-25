@@ -338,7 +338,8 @@ image on `ghcr.io/tipaq/solera`, the desktop app (`.dmg` and `.zip` for macOS, a
 `.exe` installer for Windows, `.deb` and AppImage for Linux x64 and arm64), and a
 GitHub release with generated notes. The app
 shows the installed version, checks for newer releases, and on installer-based
-setups can update itself from the UI.
+setups can update itself from the UI. The desktop app updates itself from the same
+releases, through the `latest*.yml` files published next to its packages.
 
 ## Repository layout
 

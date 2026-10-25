@@ -121,14 +121,46 @@
    * Calque de l'application.
    *
    * `dvh` dans un navigateur, où il est la seule unité à suivre la barre d'adresse qui
-   * se replie. `--sg-app-height` par-dessus quand le clavier est ouvert.
+   * se replie. `--sg-app-height` par-dessus quand le clavier est ouvert. Dans l'app de
+   * bureau, il commence sous la barre de titre (`--sg-window-bar`).
    */
   .app-layer {
     position: fixed;
-    top: var(--sg-viewport-top, 0px);
+    top: calc(var(--sg-viewport-top, 0px) + var(--sg-window-bar, 0px));
     right: 0;
     left: 0;
-    height: var(--sg-app-height, 100dvh);
+    height: calc(var(--sg-app-height, 100dvh) - var(--sg-window-bar, 0px));
+  }
+
+  /*
+   * La barre de titre de l'app de bureau (`DesktopTitleBar`), posée sur `<html>` par
+   * `main.tsx`. Tout ce qui se mesure à la fenêtre lui laisse sa hauteur : le calque de
+   * l'application ci-dessus, et les écrans hors calque (première ouverture, connexion).
+   */
+  :root[data-desktop-chrome] {
+    --sg-window-bar: 36px;
+  }
+  :root[data-desktop-chrome] body {
+    padding-top: var(--sg-window-bar);
+  }
+  :root[data-desktop-chrome] .h-dvh {
+    height: calc(100dvh - var(--sg-window-bar));
+  }
+  :root[data-desktop-chrome] .min-h-dvh {
+    min-height: calc(100dvh - var(--sg-window-bar));
+  }
+
+  /*
+   * Hors de macOS, les boutons natifs occupent la droite de la barre : `titlebar-area-*`
+   * décrit la place qu'ils laissent. Sous macOS, les feux sont à gauche.
+   */
+  .desktop-titlebar-content {
+    margin-left: env(titlebar-area-x, 0px);
+    width: env(titlebar-area-width, calc(100% - 150px));
+  }
+  .desktop-titlebar[data-platform='darwin'] .desktop-titlebar-content {
+    margin-left: max(80px, env(titlebar-area-x, 0px));
+    width: auto;
   }
 
   .pb-safe {
