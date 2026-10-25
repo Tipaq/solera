@@ -23,7 +23,7 @@ import type { ToolItem } from '../../lib/chat-fold'
 import { languageFromPath } from '../../lib/highlight'
 import { useTranslate } from '../../lib/i18n'
 import { showSubAgent } from '../../lib/panel'
-import { useToolOutput } from '../../lib/tool-output'
+import { useEventBody, useToolOutput } from '../../lib/tool-output'
 import { readableView } from '../tools/registry'
 import { cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
@@ -205,16 +205,6 @@ export const ToolCall = memo(function ToolCall({
   const [raw, setRaw] = useState(false)
   const summary = summarize(tool.name, tool.input)
 
-  // Une sortie volumineuse n'est pas transférée avec le fil : la relecture n'en rend
-  // qu'un aperçu, et le corps complet se demande ici, à l'ouverture de la carte.
-  const previewed = tool.outputBytes !== null
-  const full = useToolOutput(conversationId, tool.id, open && previewed)
-  const ready = !previewed || full.data !== undefined
-  const output = outputOf(tool, full.data)
-  // Les vues lisibles lisent `tool.output` et distinguent une chaîne d'un tableau de
-  // blocs : les nourrir avec l'aperçu ferait clignoter une image cassée avant le vrai
-  // contenu, d'où l'attente du corps complet plutôt qu'un rendu intermédiaire.
-  const readable = open && ready ? readableView({ ...tool, output }) : null
 
   return (
     <div
@@ -256,27 +246,7 @@ export const ToolCall = memo(function ToolCall({
         ) : null}
       </button>
 
-      {open ? (
-        <div className="flex flex-col gap-2 border-t border-line px-2.5 py-2">
-          {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
-
-          {readable && !raw ? (
-            readable
-          ) : (
-            <>
-              <Payload label={t('toolcall.payload.input')} {...asPayload(tool.input)} />
-              {tool.status !== 'running' ? (
-                <OutputSlot
-                  ready={ready}
-                  error={full.error}
-                  output={output}
-                  language={languageOfInput(tool.input)}
-                />
-              ) : null}
-            </>
-          )}
-        </div>
-      ) : null}
+      {open ? <ToolDetail tool={tool} conversationId={conversationId} raw={raw} setRaw={setRaw} /> : null}
 
       {/* Le fil du sous-agent est ailleurs, dans le panneau : sans ce passage, la
           seule façon d'y arriver serait de le retrouver dans une liste. */}
@@ -298,6 +268,68 @@ export const ToolCall = memo(function ToolCall({
     </div>
   )
 })
+
+/**
+ * Le détail d'une carte ouverte, monté seulement tant qu'elle l'est : la refermer
+ * libère les gros corps et annule une requête en cours.
+ *
+ * Une entrée ou une sortie volumineuse n'est pas transférée avec le fil : la relecture
+ * n'en rend qu'un aperçu et une référence, et le corps complet se demande ici. Les
+ * anciens serveurs, sans référence, gardent la route par identifiant d'appel.
+ */
+function ToolDetail({
+  tool,
+  conversationId,
+  raw,
+  setRaw,
+}: {
+  tool: ToolItem
+  conversationId: string
+  raw: boolean
+  setRaw: (raw: boolean) => void
+}) {
+  const t = useTranslate()
+  const inputBody = useEventBody(conversationId, tool.inputRef)
+  const outputBody = useEventBody(conversationId, tool.outputRef)
+  const legacy = useToolOutput(conversationId, tool.id, tool.outputBytes !== null && !tool.outputRef)
+  const inputReady = !tool.inputRef || inputBody.data !== undefined
+  const outputReady = tool.outputRef
+    ? outputBody.data !== undefined
+    : tool.outputBytes === null || legacy.data !== undefined
+  const input = tool.inputRef ? inputBody.data?.value : tool.input
+  const output = tool.outputRef ? outputBody.data?.value : outputOf(tool, legacy.data)
+  // Les vues lisibles distinguent une chaîne d'un tableau de blocs : les nourrir avec
+  // l'aperçu ferait clignoter une image cassée avant le vrai contenu, d'où l'attente
+  // des corps complets plutôt qu'un rendu intermédiaire.
+  const readable = inputReady && outputReady ? readableView({ ...tool, input, output }) : null
+  return (
+    <div className="flex flex-col gap-2 border-t border-line px-2.5 py-2">
+      {inputBody.error ? (
+        <p className="text-xs text-critical" role="alert">
+          {inputBody.error.message || t('journal.content.error')}
+        </p>
+      ) : null}
+      {!inputReady && !inputBody.error ? <p className="text-xs text-ink-faint">{t('journal.content.loading')}</p> : null}
+      {readable ? <ViewSwitch raw={raw} onChange={setRaw} /> : null}
+
+      {readable && !raw ? (
+        readable
+      ) : (
+        <>
+          {inputReady ? <Payload label={t('toolcall.payload.input')} {...asPayload(input)} /> : null}
+          {tool.status !== 'running' ? (
+            <OutputSlot
+              ready={outputReady}
+              error={outputBody.error ?? legacy.error}
+              output={output}
+              language={languageOfInput(input)}
+            />
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
 
 /**
  * Bascule entre la vue lisible et le payload natif.

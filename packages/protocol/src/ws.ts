@@ -17,6 +17,8 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     t: z.literal('subscribe'),
     conversationId: z.string(),
     afterSeq: z.number().int().min(0),
+    /** Le client veut les corps lourds en références, comme dans la relecture REST. */
+    bodies: z.literal(1).optional(),
   }),
   z.object({ t: z.literal('unsubscribe'), conversationId: z.string() }),
   /**

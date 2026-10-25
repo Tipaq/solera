@@ -21,8 +21,9 @@ function clearHighlights(): void {
 /**
  * Recherche dans la conversation ouverte.
  *
- * Tout se passe côté client : le fil est déjà chargé en entier, donc interroger le
- * serveur reviendrait à redemander ce qu'on a sous les yeux.
+ * Tout se passe côté client, sur le fil affiché. Tant que la recherche est ouverte, la
+ * page charge les tours plus anciens, et le compteur l'annonce jusqu'à ce que
+ * l'historique soit complet.
  *
  * Le surlignage passe par l'API Custom Highlight, qui colore des plages sans modifier
  * le document. Insérer des balises casserait le rendu markdown et les blocs de code ;
@@ -35,11 +36,14 @@ export function ThreadSearch({
   onClose,
   /** Change à chaque événement reçu : les occurrences sont alors recalculées. */
   revision,
+  /** L'historique se charge encore : les occurrences ne sont pas toutes là. */
+  loading = false,
 }: {
   scroller: RefObject<HTMLDivElement | null>
   open: boolean
   onClose: () => void
   revision: number
+  loading?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [count, setCount] = useState(0)
@@ -155,7 +159,9 @@ export function ThreadSearch({
       />
 
       <span className="shrink-0 text-xs text-ink-faint tabular-nums">
-        {query.trim() === ''
+        {loading
+          ? t('journal.history.loading')
+          : query.trim() === ''
           ? ''
           : count === 0
             ? t('thread.search.noResults')

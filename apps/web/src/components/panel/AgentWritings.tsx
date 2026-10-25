@@ -5,7 +5,7 @@ import type { EditTurn, EditedFile } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { useEditDiff } from '../../lib/edits'
 import { languageFromPath } from '../../lib/highlight'
-import { locale, useTranslate } from '../../lib/i18n'
+import { locale, translate, useTranslate } from '../../lib/i18n'
 import { useManualSaves } from '../../lib/manual-edits'
 import { DiffHunks } from '../DiffHunks'
 import { HighlightedCode } from '../chat/HighlightedCode'
@@ -54,7 +54,8 @@ function groupByFile(turns: EditTurn[]): WrittenFile[] {
       entry.turns.unshift({
         id: turn.id,
         rank: index + 1,
-        label: turn.label,
+        // Un tour sans message a un libellé vide : le fold ne parle aucune langue.
+        label: turn.label || translate('activity.turn.noMessage'),
         ts: turn.ts,
         toolCallIds: file.toolCallIds,
       })

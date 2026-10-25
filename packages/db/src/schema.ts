@@ -1621,3 +1621,47 @@ export type WebhookDeliveryRow = typeof webhookDeliveries.$inferSelect
 export type VaultNoteRow = typeof vaultNotes.$inferSelect
 export type VaultLinkRow = typeof vaultLinks.$inferSelect
 export type VaultIndexStateRow = typeof vaultIndexState.$inferSelect
+
+/**
+ * Le fil replié d'une conversation, jetable : le journal reste la seule source. Ici
+ * l'état scalaire du fold et le curseur jusqu'où il a été replié ; les collections
+ * vivent dans `thread_projection_rows`.
+ */
+export const threadProjections = sqliteTable('thread_projections', {
+  conversationId: text('conversation_id')
+    .primaryKey()
+    .references(() => conversations.id, { onDelete: 'cascade' }),
+  version: integer('version').notNull(),
+  cursor: integer('cursor').notNull(),
+  state: text('state').notNull(),
+})
+
+/**
+ * Les collections du fil projeté, une ligne par élément, tâche, tour d'édition ou
+ * point de reprise : rebâtir ou paginer ne garde jamais le fil entier en mémoire.
+ */
+export const threadProjectionRows = sqliteTable(
+  'thread_projection_rows',
+  {
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'cascade' }),
+    category: text('category').notNull(),
+    position: integer('position').notNull(),
+    entryKey: text('entry_key').notNull(),
+    itemKind: text('item_kind').notNull(),
+    related: text('related'),
+    live: integer('live').notNull(),
+    updatedSeq: integer('updated_seq').notNull(),
+    bytes: integer('bytes').notNull(),
+    payload: text('payload').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.conversationId, t.category, t.position] }),
+    index('idx_thread_projection_key').on(t.conversationId, t.category, t.entryKey),
+    index('idx_thread_projection_live').on(t.conversationId, t.live),
+    index('idx_thread_projection_updated').on(t.conversationId, t.updatedSeq),
+    index('idx_thread_projection_related').on(t.conversationId, t.related),
+    index('idx_thread_projection_kind').on(t.conversationId, t.itemKind, t.position),
+  ],
+)

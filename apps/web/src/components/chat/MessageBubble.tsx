@@ -246,6 +246,9 @@ function Attachments({
             <ImageThumbnail
               key={image.url}
               src={image.url}
+              width={image.width}
+              height={image.height}
+              maxHeight={224}
               name={t('message.attachment.alt')}
               alt={t('message.attachment.alt')}
               loading="lazy"

@@ -66,6 +66,7 @@ export function SidePanel({
   conversationId,
   agent,
   editTurns = [],
+  history,
   checkpoints = [],
   canRestore = false,
   turnRunning = false,
@@ -84,6 +85,11 @@ export function SidePanel({
   /** CLI de la conversation, pour les gestes que seuls certains CLI savent faire. */
   agent?: AgentKind
   editTurns?: EditTurn[]
+  /**
+   * L'historique du fil, quand des tours plus anciens restent au serveur : les vues
+   * filtrées sur un tour n'ont que les tours chargés.
+   */
+  history?: { hasMore: boolean; loading: boolean; load: () => Promise<void> }
   /** Points de reprise des tours, pour l'onglet Git filtré sur un tour. */
   checkpoints?: TurnCheckpoint[]
   /** Vrai pour le propriétaire du fil : lui seul peut ramener le workspace en arrière. */
@@ -339,6 +345,17 @@ export function SidePanel({
         >
           <FilesPane scope={scope} label={workspaceLabel} />
         </div>
+      ) : null}
+
+      {history?.hasMore && (tab === 'agents' || tab === 'git') ? (
+        <button
+          type="button"
+          disabled={history.loading}
+          onClick={() => void history.load()}
+          className="shrink-0 border-b border-line p-2 text-xs text-ink-soft hover:text-ink"
+        >
+          {t(history.loading ? 'journal.history.loading' : 'journal.history.earlier')}
+        </button>
       ) : null}
 
       {/* Deux vues montées seulement quand on les regarde : leur contenu vient du

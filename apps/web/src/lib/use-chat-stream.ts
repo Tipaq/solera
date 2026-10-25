@@ -1,21 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { AgentConfig, ConversationStatus, SoleraEvent } from '@solera/protocol'
 import { applyEvent, emptyChatState, isAwaitingUser, type ChatState } from './chat-fold'
-import { fetchJournal } from './conversations'
+import { fetchJournal, type JournalPage } from './conversations'
 import { wsClient } from './ws-client'
-import { locale } from './i18n'
+import { translate } from './i18n'
+import { ApiRequestError } from './api'
+import { fetchThreadPage, mergeThreadPage } from './thread-pages'
+import { JOURNAL_CACHE_BYTES, JOURNAL_CACHE_IDLE_MS, retainedBytes } from './cache-budget'
 
 interface JournalSnapshot {
   state: ChatState
   cursor: number
+  before: number
+  hasMore: boolean
+  bytes: number
 }
 
-const SNAPSHOT_KEY = 'chat-journal-snapshot'
-const MAX_SNAPSHOTS = 4
+const SNAPSHOT_KEY = 'chat-journal-snapshot-v2'
 
 /** Les deltas sont appliqués par lots : un rendu par token effondre le framerate mobile. */
 const FLUSH_INTERVAL_MS = 60
+
+/** Le fold modifie l'objet reçu et ses compteurs de boucles : un instantané garde les siens. */
+function snapshotState(state: ChatState): ChatState {
+  return { ...state, loopFires: new Map(state.loopFires) }
+}
 
 export interface ChatStream {
   state: ChatState
@@ -30,12 +40,16 @@ export interface ChatStream {
    */
   appliedConfig: AgentConfig | null
   /**
-   * Le journal n'a pas fini d'être rejoué. Vrai jusqu'à la dernière page, et non
-   * jusqu'à la première : c'est ce qui permet à la page de garder le fil masqué le
-   * temps qu'il se construise, plutôt que de le montrer pousser par paquets.
+   * La vue d'ouverture n'est pas prête à être placée. Les tours plus anciens ont leur
+   * propre état de chargement : la projection du serveur montre les tours récents
+   * sans replier tout le journal.
    */
   loading: boolean
   error: string | null
+  /** Des tours plus anciens restent sur le serveur. */
+  hasMore: boolean
+  loadingOlder: boolean
+  loadOlder: () => Promise<void>
 }
 
 export function useChatStream(
@@ -49,23 +63,11 @@ export function useChatStream(
   const [appliedConfig, setAppliedConfig] = useState<AgentConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const older = useRef<() => Promise<void>>(async () => {})
+  const loadOlder = useCallback(() => older.current(), [])
   const queryClient = useQueryClient()
-
-  // L'état vit dans une ref : le fold doit voir la valeur courante, pas celle
-  // capturée à la création de l'abonnement.
-  const stateRef = useRef<ChatState>(emptyChatState())
-  const pending = useRef<{ seq: number; ts: number; event: SoleraEvent }[]>([])
-  const flushTimer = useRef<number | null>(null)
-  /**
-   * Dernier `seq` reçu, qui n'est pas `state.lastSeq`.
-   *
-   * Le serveur fusionne les deltas d'une page sous le `seq` du premier fragment de
-   * chaque message, donc l'état s'arrête au dernier `seq` *rendu*, en deçà du dernier
-   * lu. Reprendre sur l'état ferait redemander les fragments déjà fusionnés, que le
-   * garde d'idempotence ne rattraperait pas puisque leur `seq` est plus grand : leur
-   * texte s'ajouterait une seconde fois au message en cours.
-   */
-  const cursor = useRef(0)
 
   useEffect(() => {
     setStatus(initialStatus)
@@ -73,115 +75,225 @@ export function useChatStream(
 
   useEffect(() => {
     if (!conversationId) return
+    const id = conversationId
 
-    let cancelled = false
-    // Cache de l'onglet, effacé avec les autres requêtes à la déconnexion.
-    // Le fold traduit certains événements : une autre langue repart du journal.
-    const snapshotKey = [SNAPSHOT_KEY, conversationId, locale()]
+    const controller = new AbortController()
+    const { signal } = controller
+    // Cache de l'onglet, effacé avec les autres requêtes à la déconnexion. La
+    // projection ne dit rien dans une langue : un changement de langue le garde.
+    const snapshotKey = [SNAPSHOT_KEY, conversationId]
+    queryClient.setQueryDefaults([SNAPSHOT_KEY], { gcTime: JOURNAL_CACHE_IDLE_MS })
     const snapshot = queryClient.getQueryData<JournalSnapshot>(snapshotKey)
-    stateRef.current = snapshot?.state ?? emptyChatState()
-    pending.current = []
-    cursor.current = snapshot?.cursor ?? 0
-    setState(stateRef.current)
+    // L'état du rejeu reste local à cet abonnement : un rappel tardif de la
+    // conversation précédente ne doit jamais toucher au curseur de la suivante.
+    let currentState = snapshot ? snapshotState(snapshot.state) : emptyChatState()
+    let pending: JournalPage = []
+    let flushTimer: number | null = null
+    let replay: Promise<void> | null = null
+    let subscription: { active: boolean; stop: () => void } | null = null
+    // Dernier `seq` examiné, qui n'est pas `state.lastSeq` : le serveur fusionne les
+    // deltas d'une page sous le `seq` du premier fragment. Reprendre sur l'état ferait
+    // redemander des fragments déjà fusionnés, et leur texte s'ajouterait une seconde
+    // fois au message en cours.
+    let cursor = snapshot?.cursor ?? 0
+    let before = snapshot?.before ?? Number.MAX_SAFE_INTEGER
+    let more = snapshot?.hasMore ?? false
+    let initialized = !!snapshot
+    setHasMore(more)
+    setLoadingOlder(false)
+    setState(currentState)
     setLoading(true)
     setError(null)
+    setConnected(false)
+    setWarm(null)
+    setAppliedConfig(null)
 
-    const flush = () => {
-      flushTimer.current = null
-      if (pending.current.length === 0) return
-
-      let next = stateRef.current
-      for (const { seq, ts, event } of pending.current) {
+    const apply = (entries: JournalPage, readThrough: number) => {
+      if (signal.aborted) return
+      for (const { seq, ts, event } of entries) {
         // Un événement déjà appliqué (rejeu après rechargement REST) est ignoré :
         // c'est ce qui garantit qu'une reconnexion ne duplique jamais le fil.
-        if (seq <= next.lastSeq) continue
-        next = applyEvent(next, seq, ts, event)
+        if (seq <= cursor) continue
+        currentState = applyEvent(currentState, seq, ts, event)
+        cursor = seq
       }
-      pending.current = []
-      stateRef.current = next
-      setState(next)
+      cursor = Math.max(cursor, readThrough)
+      setState(currentState)
     }
 
-    const scheduleFlush = () => {
-      if (flushTimer.current !== null) return
-      flushTimer.current = window.setTimeout(flush, FLUSH_INTERVAL_MS)
+    const flush = () => {
+      if (flushTimer !== null) clearTimeout(flushTimer)
+      flushTimer = null
+      if (pending.length === 0) return
+      apply(pending, cursor)
+      pending = []
     }
 
-    const enqueue = (seq: number, ts: number, event: SoleraEvent) => {
-      cursor.current = Math.max(cursor.current, seq)
-      pending.current.push({ seq, ts, event })
-      scheduleFlush()
+    const stopSubscription = () => {
+      if (!subscription) return
+      subscription.active = false
+      subscription.stop()
+      subscription = null
     }
 
-    const loadFromRest = async () => {
-      try {
-        const read = await fetchJournal(conversationId, cursor.current, (entries) => {
-          if (cancelled) return
+    /**
+     * Rattrape par REST : la page du fil projeté à l'ouverture et pour remonter
+     * l'historique (`history`), le journal ensuite. `refresh` recharge la page récente
+     * quand le direct parle d'un message que le client n'a pas.
+     */
+    const loadFromRest = (history: boolean | 'refresh' = false): Promise<void> => {
+      if (signal.aborted) return Promise.resolve()
+      if (replay) return replay
 
-          for (const entry of entries) enqueue(entry.seq, entry.ts, entry.event)
-          // Replié page par page plutôt qu'en un bloc à la fin : le fil reste masqué
-          // pendant ce temps, mais étaler le fold laisse la main à l'interface entre
-          // deux pages, ce qui est ce qui compte sur une conversation longue.
-          flush()
-        })
-        if (cancelled) return
+      // Un événement en direct, de `seq` plus grand, cacherait derrière le garde
+      // d'idempotence ce qui manque encore de l'historique. L'abonnement s'arrête le
+      // temps du REST ; le journal garde ce qui arrive, et l'abonnement suivant le
+      // rejoue après le curseur atteint.
+      stopSubscription()
+      flush()
+      replay = (async () => {
+        try {
+          if (history || !initialized) {
+            try {
+              const page = await fetchThreadPage(
+                id,
+                signal,
+                history === 'refresh' ? 0 : history ? before : undefined,
+                history ? cursor : undefined,
+              )
+              if (signal.aborted) return
+              currentState = history && !page.reset ? mergeThreadPage(currentState, page.state) : page.state
+              cursor = page.cursor
+              if (history !== 'refresh' || page.reset) {
+                before = page.before
+                more = page.hasMore
+              }
+              setHasMore(more)
+              setState(currentState)
+              initialized = true
+            } catch (err) {
+              if (signal.aborted || history || (err instanceof ApiRequestError && ![404, 503].includes(err.status))) {
+                throw err
+              }
+              // Un serveur plus ancien, ou une projection indisponible : le journal reste là.
+              await fetchJournal(id, cursor, apply, signal)
+              initialized = true
+            }
+          } else {
+            await fetchJournal(id, cursor, apply, signal)
+          }
+          if (signal.aborted) return
 
-        cursor.current = Math.max(cursor.current, read)
-        wsClient.setCursor(conversationId, cursor.current)
-        // Un checkpoint seulement après un rattrapage complet : un curseur de
-        // page fusionnée ne doit jamais être associé à un état encore incomplet.
-        flush()
-        queryClient.setQueryData<JournalSnapshot>(snapshotKey, {
-          state: stateRef.current,
-          cursor: cursor.current,
-        })
-        const snapshots = queryClient.getQueryCache().findAll({ queryKey: [SNAPSHOT_KEY] })
-          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
-        for (const old of snapshots.slice(MAX_SNAPSHOTS)) {
-          queryClient.removeQueries({ queryKey: old.queryKey, exact: true })
+          // L'état de lecture ne dépend pas de ce cache de retour, qu'on peut évincer.
+          // Un checkpoint seulement après un rattrapage complet : un curseur de page
+          // fusionnée ne doit jamais aller avec un état encore incomplet.
+          const bytes = retainedBytes(currentState, JOURNAL_CACHE_BYTES)
+          if (bytes <= JOURNAL_CACHE_BYTES) {
+            queryClient.setQueryData<JournalSnapshot>(snapshotKey, {
+              state: snapshotState(currentState),
+              cursor,
+              before,
+              hasMore: more,
+              bytes,
+            })
+          } else queryClient.removeQueries({ queryKey: snapshotKey, exact: true })
+          const snapshots = queryClient
+            .getQueryCache()
+            .findAll({ queryKey: [SNAPSHOT_KEY] })
+            .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
+          let retained = 0
+          for (const old of snapshots) {
+            retained += (old.state.data as JournalSnapshot).bytes
+            if (retained > JOURNAL_CACHE_BYTES) queryClient.removeQueries({ queryKey: old.queryKey, exact: true })
+          }
+          setError(null)
+          setLoading(false)
+        } catch (err) {
+          if (signal.aborted) return
+          setError(err instanceof Error ? err.message : translate('journal.content.error'))
+          setLoading(false)
+        } finally {
+          replay = null
+          if (!signal.aborted) setLoadingOlder(false)
+          if (!signal.aborted) subscribeLive()
         }
-        setLoading(false)
-      } catch (err) {
-        if (cancelled) return
-        setError(err instanceof Error ? err.message : 'Chargement du fil impossible.')
-        setLoading(false)
-      }
+      })()
+      return replay
     }
 
-    // Chargement initial d'abord, abonnement ensuite : le socket reprend exactement
-    // là où l'historique s'arrête.
-    void loadFromRest().then(() => {
-      if (cancelled) return
-
-      unsubscribe = wsClient.subscribe(conversationId, cursor.current, {
-        onEvent: (seq, ts, event) => enqueue(seq, ts, event),
+    function subscribeLive() {
+      const live = { active: true, stop: () => {} }
+      subscription = live
+      let hasConnected = false
+      wsClient.setCursor(id, cursor)
+      live.stop = wsClient.subscribe(id, cursor, {
+        onEvent: (seq: number, ts: number, event: SoleraEvent) => {
+          if (!live.active || signal.aborted || seq <= cursor) return
+          const received = pending.at(-1)?.seq ?? cursor
+          if (seq <= received) return
+          // Un saut peut venir d'un historique compacté ou d'une trame tardive de
+          // l'abonnement précédent. Le REST tranche, avant qu'un état plus récent
+          // ne cache le trou.
+          if (seq > received + 1) {
+            void loadFromRest()
+            return
+          }
+          // Un ancien message, pas encore chargé, peut recevoir d'autres blocs sous le
+          // même identifiant natif. On relit sa ligne avant de replier : en inventer
+          // une ici la doublerait à la pagination.
+          if (
+            more &&
+            (event.type === 'message.completed' || event.type === 'message.delta' || event.type === 'thinking.delta'
+              ? !currentState.items.some((item) => item.kind === 'message' && item.id === event.messageId)
+              : event.type === 'agent.notice' &&
+                event.id &&
+                !currentState.items.some((item) => item.kind === 'notice' && item.id === event.id))
+          ) {
+            void loadFromRest('refresh')
+            return
+          }
+          pending.push({ seq, ts, event })
+          if (flushTimer === null) flushTimer = window.setTimeout(flush, FLUSH_INTERVAL_MS)
+        },
         onStatus: (next, isWarm, applied) => {
+          if (!live.active || signal.aborted) return
           setStatus(next)
           setWarm(isWarm)
           setAppliedConfig(applied)
         },
         onTitle: () => {
+          if (!live.active || signal.aborted) return
           // Le titre vit dans la ligne de conversation, pas dans le journal : il faut
           // relire, ici la sidebar comme l'en-tête.
-          void queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] })
+          void queryClient.invalidateQueries({ queryKey: ['conversation', id] })
           void queryClient.invalidateQueries({ queryKey: ['conversations'] })
         },
-        onCatchupNeeded: () => void loadFromRest(),
+        onCatchupNeeded: () => {
+          if (live.active) void loadFromRest()
+        },
         onConnectionChange: (isConnected) => {
+          if (!live.active || signal.aborted) return
           setConnected(isConnected)
-          // Une reconnexion peut avoir manqué des événements si le socket a été tué
-          // sans que le serveur s'en aperçoive : on rejoue depuis le curseur.
-          if (isConnected) void loadFromRest()
+          // Le premier abonnement suit déjà le REST. Une reconnexion peut avoir manqué
+          // des événements si le socket a été tué sans que le serveur s'en aperçoive :
+          // on rejoue depuis le curseur.
+          if (isConnected && hasConnected) void loadFromRest()
+          if (isConnected) hasConnected = true
         },
       })
-    })
+    }
 
-    let unsubscribe: (() => void) | null = null
+    older.current = () => {
+      if (!more || signal.aborted) return Promise.resolve()
+      setLoadingOlder(true)
+      return loadFromRest(true)
+    }
+    void loadFromRest()
     return () => {
-      cancelled = true
-      unsubscribe?.()
-      if (flushTimer.current !== null) clearTimeout(flushTimer.current)
-      flushTimer.current = null
+      controller.abort()
+      stopSubscription()
+      if (flushTimer !== null) clearTimeout(flushTimer)
+      pending = []
     }
   }, [conversationId, queryClient])
 
@@ -193,6 +305,9 @@ export function useChatStream(
     appliedConfig,
     loading,
     error,
+    hasMore,
+    loadingOlder,
+    loadOlder,
   }
 }
 

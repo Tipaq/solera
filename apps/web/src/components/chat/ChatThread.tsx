@@ -1,10 +1,11 @@
 import { Fragment, type RefObject } from 'react'
-import type { MessageItem, TurnCheckpoint } from '../../lib/chat-fold'
+import { noticeText, type MessageItem, type TurnCheckpoint } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
 import { translate, translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
 import { CardFilingPrompt } from './CardFilingPrompt'
+import { DiffCard } from './DiffCard'
 import { DecisionPrompt } from './DecisionPrompt'
 import { FilingPrompt } from './FilingPrompt'
 import { MessageBubble } from './MessageBubble'
@@ -239,20 +240,12 @@ export function ChatThread({
           case 'plan_progress':
             return <PlanProgress key={item.id} item={item} />
           case 'diff':
-            return (
-              <details key={item.id} className="rounded-lg border border-line bg-surface/60 p-3 text-xs">
-                <summary className="cursor-pointer font-medium">{t('diff.turn.title')}</summary>
-                {item.files.length > 0 ? <ul className="mt-2 space-y-1">
-                  {item.files.map((file) => <li key={file.path} className="break-words">{file.path} <span className="text-positive">+{file.added}</span> <span className="text-critical">−{file.removed}</span></li>)}
-                </ul> : null}
-                {item.patch ? <pre className="mt-2 max-h-96 overflow-auto whitespace-pre">{item.patch}</pre> : null}
-              </details>
-            )
+            return <DiffCard key={item.id} item={item} conversationId={conversationId} />
           case 'notice':
             if (item.level) {
               return (
                 <Banner key={item.id} tone={item.level === 'warning' ? 'caution' : 'info'}>
-                  <span className="whitespace-pre-wrap break-words">{item.text}</span>
+                  <span className="whitespace-pre-wrap break-words">{noticeText(item)}</span>
                   {item.details != null ? (
                     <details className="mt-1">
                       <summary className="cursor-pointer">{t('notice.details')}</summary>
@@ -267,7 +260,7 @@ export function ChatThread({
             return (
               <div key={item.id} className="flex items-center gap-3 py-1">
                 <span className="h-px flex-1 bg-line" />
-                <span className="text-meta text-ink-faint">{item.text}</span>
+                <span className="text-meta text-ink-faint">{noticeText(item)}</span>
                 <span className="h-px flex-1 bg-line" />
               </div>
             )
