@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   attachments,
   cardBlocks,
+  cardIssues,
   cardMoves,
   cardNotes,
   cardRefs,
@@ -44,6 +45,7 @@ import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
+import { queueIssueRefusal, toCardIssueDto } from '../../issues/links.js'
 import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
@@ -295,6 +297,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       if (move.at !== null) arrivals.set(`${move.cardId}:${move.toColumn}`, Number(move.at))
     }
 
+    const issues = new Map(
+      ctx.db.select().from(cardIssues).where(inArray(cardIssues.cardId, ids)).all().map((link) => [link.cardId, toCardIssueDto(link)]),
+    )
+
     const files = new Map(ctx.db.select({ cardId: attachments.cardId, total: count() })
       .from(attachments).where(inArray(attachments.cardId, ids)).groupBy(attachments.cardId)
       .all().map((row) => [row.cardId, row.total]))
@@ -341,6 +347,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       related: byNumber(related.get(row.id)),
       duplicateOf: duplicateOf.get(row.id) ?? null,
       duplicates: byNumber(duplicates.get(row.id)),
+      issue: issues.get(row.id) ?? null,
     }))
   }
 
@@ -554,6 +561,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         recordCardMove(tx, { cardId: id, from: card.column, to: 'abandoned', userId: user.id, at: now })
       })
     }
+    // Une issue refusée se ferme avec un mot, et non comme un simple abandon.
+    queueIssueRefusal(ctx.db, id)
     return readCard(id, card.projectId)
   })
 

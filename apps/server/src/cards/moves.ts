@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, isNotNull } from 'drizzle-orm'
 import { cardMoves, cardRefs, cards, type Db, type Tx } from '@solera/db'
 import { CARD_CLOSED_COLUMNS, syncPromotedSubtasks, type CardColumn } from '@solera/protocol'
+import { queueIssueState } from '../issues/links.js'
 import { syncParentColumn } from './tree.js'
 
 /**
@@ -15,12 +16,13 @@ import { syncParentColumn } from './tree.js'
  * clic, `move_card`, par lequel un agent déplace sa propre carte, et la fusion d'un
  * worktree, qui termine les cartes de ses sessions (`worktrees/merged-cards.ts`).
  *
- * Parce que c'est le seul passage obligé, deux conséquences y vivent aussi :
+ * Parce que c'est le seul passage obligé, ses conséquences y vivent aussi :
  * - quitter « à faire » efface l'état « à préciser », qui n'a de sens que là ;
  * - la colonne de la parente se recalcule d'après ses enfants (`cards/tree.ts`), et ainsi
  *   de suite en remontant ;
  * - les sous-tâches promues vers la carte (`- [ ] #N`, #71) se cochent quand elle se
- *   ferme et se décochent quand elle rouvre.
+ *   ferme et se décochent quand elle rouvre ;
+ * - l'issue d'une carte absorbée (#84) se ferme ou se rouvre avec elle.
  * Un nouveau chemin de déplacement qui écrirait la colonne sans passer par ici
  * laisserait l'un et l'autre faux.
  *
@@ -66,6 +68,7 @@ export function recordCardMove(
   }
   const closed = CARD_CLOSED_COLUMNS.includes(move.to)
   if (closed !== CARD_CLOSED_COLUMNS.includes(move.from)) checkPromotedSubtasks(db, move.cardId, closed, move.at)
+  queueIssueState(db, move.cardId, move.to)
   const row = db.select({ parentId: cards.parentId }).from(cards).where(eq(cards.id, move.cardId)).get()
   syncParentColumn(
     db,

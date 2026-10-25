@@ -170,6 +170,7 @@ const PEER_LABELS = {
   launch: 'message.peer.launch',
   decision: 'message.peer.decision',
   cards: 'message.peer.cards',
+  issue_comment: 'message.peer.issueComment',
 } as const
 
 /**
@@ -199,7 +200,8 @@ function PeerMessage({
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-ink-soft">
           <MessagesSquare size={14} className="shrink-0 text-accent" />
           <span className="shrink-0">{t(PEER_LABELS[envelope.kind])}</span>
-          {projectId ? (
+          {/* Un commentaire d'issue vient de l'outil, pas d'une conversation à ouvrir. */}
+          {projectId && envelope.kind !== 'issue_comment' ? (
             <Link
               to={`/p/${projectId}/c/${envelope.from}`}
               title={t('message.peer.open')}

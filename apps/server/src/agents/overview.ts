@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
-import { cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
+import { cardIssues, cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
 import { sessionReference } from '@solera/protocol'
 import { parentBranchOf } from '../cards/parent-branch.js'
 
@@ -117,9 +117,11 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
       column: cards.column,
       id: cards.id,
       toClarifySince: cards.toClarifySince,
+      issueUrl: cardIssues.url,
     })
     .from(cards)
     .innerJoin(conversations, eq(conversations.cardId, cards.id))
+    .leftJoin(cardIssues, eq(cardIssues.cardId, cards.id))
     .where(eq(conversations.id, input.conversationId))
     .get()
   if (!card) return null
@@ -135,6 +137,10 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
   const lines = [
     `Cette conversation traite la carte #${card.number} « ${card.title} », ${clarifying ? 'à préciser' : COLUMN_WORDS[card.column]}.`,
   ]
+
+  if (card.issueUrl) {
+    lines.push(`Elle vient de l'issue ${card.issueUrl} : sa discussion s'y lit, et un commentaire neuf t'y sera remis tant que tu travailles.`)
+  }
 
   if (previous > 0) {
     lines.push(

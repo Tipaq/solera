@@ -10,6 +10,7 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { CliInstaller } from '../agents/cli-install.js'
 import type { AttachmentStore } from '../attachments/store.js'
 import type { CardClosure } from '../cards/close.js'
+import type { IssueSources } from '../issues/service.js'
 import { bearerSecret, resolveApiToken } from '../auth/api-tokens.js'
 import { resolveSession } from '../auth/sessions.js'
 import type { EventLog } from '../events/event-log.js'
@@ -61,6 +62,7 @@ import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
+import { registerIssueRoutes } from './routes/issues.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerSessionMessageRoutes } from './routes/session-messages.js'
 import { registerFileRoutes } from './routes/files.js'
@@ -141,6 +143,7 @@ export async function buildApp(
   worktreeCleanup: WorktreeCleanup,
   actions: ActionRunner,
   cardClosure?: CardClosure,
+  issues?: IssueSources,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -253,6 +256,7 @@ export async function buildApp(
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments)
+  if (issues) registerIssueRoutes(app, ctx, issues)
   registerJournalRoutes(app, ctx)
   registerUserRoutes(app, ctx)
   registerApiTokenRoutes(app, ctx, registry)

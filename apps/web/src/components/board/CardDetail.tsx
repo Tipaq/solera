@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, Check, ChevronDown, CircleHelp, Copy, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Split, Trash2, X } from 'lucide-react'
+import { Ban, CalendarDays, Check, ChevronDown, CircleDot, CircleHelp, Copy, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Split, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, parentCloseProposed, parseSubtasks, type CardDto } from '@solera/protocol'
@@ -11,6 +11,7 @@ import { Badge, Banner, Button, IconButton, Menu, MenuItem, MenuLabel, MenuSepar
 import { CardAttachments } from './CardAttachments'
 import { CardBlocks } from './CardBlocks'
 import { CardEditor } from './CardEditor'
+import { CardIssueComments, CardIssueLink } from './CardIssue'
 import { CardChooser } from './CardChooser'
 import { CardChildren, CardDue, CardParent } from './CardMeta'
 import { CardProgress } from './CardProgress'
@@ -264,6 +265,11 @@ export function CardDetail({
               <Property icon={<Copy size={13} />} label={t('board.card.duplicateOf')}>
                 <CardDuplicateOf card={card} projectId={projectId} onSelectCard={onSelectCard} />
               </Property>
+              {card.issue ? (
+                <Property icon={<CircleDot size={13} />} label={t('board.card.issue')}>
+                  <CardIssueLink issue={card.issue} />
+                </Property>
+              ) : null}
             </dl>
             <CardChildren card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <CardBlocks card={card} projectId={projectId} onSelectCard={onSelectCard} />
@@ -304,6 +310,7 @@ export function CardDetail({
           </div>
 
           <div className="flex min-w-0 flex-col gap-5 [grid-area:thread]">
+            <CardIssueComments card={card} />
             <CardThread projectId={projectId} card={card} currentConversationId={currentConversationId} />
             {deleteCard.isError ? <p role="alert" className="text-sm text-critical">{t('board.files.error')}</p> : null}
           </div>

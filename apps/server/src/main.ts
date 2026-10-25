@@ -23,6 +23,8 @@ import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { ghForge } from './reviews/forge.js'
+import { IssueSources } from './issues/service.js'
+import { githubIssues } from './issues/github.js'
 import { CardClosure } from './cards/close.js'
 import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
@@ -131,6 +133,8 @@ async function main(): Promise<void> {
   // Clore une carte finie (#69) : l'agent le propose, le clic archive ses sessions, retire
   // ses worktrees et supprime ses branches fusionnées.
   const cardClosure = new CardClosure(db, worktreeStatus, worktreeCleanup, ghForge, githubToken)
+  // Les issues de GitHub qui entrent dans le board, et l'état des cartes qui en repart (#84).
+  const issueSources = new IssueSources(db, { github: githubIssues }, githubToken)
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions, {
     forge: ghForge,
     notifications,
@@ -171,6 +175,7 @@ async function main(): Promise<void> {
     worktreeCleanup,
     actions,
     cardClosure,
+    issueSources,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -188,6 +193,7 @@ async function main(): Promise<void> {
   // doivent décrire les runners de ce process, pas ceux du précédent.
   relay.start(app.log)
   agentRequests.start(app.log)
+  issueSources.start(app.log)
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
   tasks.start(app.log)

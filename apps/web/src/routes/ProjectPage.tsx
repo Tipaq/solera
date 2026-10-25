@@ -1,8 +1,10 @@
 import {
+  CircleDot,
   FileText,
   FolderOpen,
   GitBranch,
   ImagePlus,
+  RefreshCw,
   Save,
   Shapes,
   ShieldAlert,
@@ -48,7 +50,7 @@ import {
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
-import { translate, useTranslate } from '../lib/i18n'
+import { locale, translate, useTranslate } from '../lib/i18n'
 import {
   useDeleteProject,
   useProjects,
@@ -58,6 +60,7 @@ import {
   useUpdateProject,
 } from '../lib/projects'
 import { useCapability } from '../lib/instance'
+import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
 import { VisibilitySelect } from '../components/VisibilitySelect'
 
 export function ProjectPage() {
@@ -139,6 +142,7 @@ export function ProjectPage() {
         <>
           <ProjectImage project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
+          <ProjectIssueSource projectId={project.id} />
           <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
           <ProjectSettings
             projectId={project.id}
@@ -304,6 +308,88 @@ function ProjectDesignSystem({
         </div>
 
         {initialPath ? <PrototypeCandidates projectId={projectId} /> : null}
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Le dépôt GitHub dont les issues entrent dans le board (#84), en cartes non acceptées.
+ *
+ * Une seule source par projet. Rien ne sort vers GitHub que l'état des cartes venues de
+ * ses issues : terminée ferme l'issue, abandonnée la ferme comme non prévue, refusée la
+ * ferme avec un mot.
+ */
+function ProjectIssueSource({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data: source } = useIssueSource(projectId)
+  const setSource = useSetIssueSource(projectId)
+  const poll = usePollIssueSource(projectId)
+  const current = source?.repository ?? ''
+  const [repository, setRepository] = useState(current)
+
+  useEffect(() => {
+    setRepository(current)
+  }, [projectId, current])
+
+  const trimmed = repository.trim()
+  const dirty = trimmed !== current
+  const error = setSource.error instanceof ApiRequestError ? setSource.error.message : null
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.issues.title')}
+        description={t('project.issues.description')}
+        icon={<CircleDot size={16} />}
+      />
+      <CardBody className="flex flex-col gap-4">
+        <Field
+          label={t('project.issues.repository')}
+          hint={t('project.issues.repository.hint')}
+          value={repository}
+          onChange={(event) => setRepository(event.target.value)}
+          placeholder={t('project.issues.repository.placeholder')}
+          spellCheck={false}
+          autoComplete="off"
+        />
+
+        {error ? <Banner>{error}</Banner> : null}
+        {source?.error ? <Banner>{t('project.issues.pollError', { error: source.error })}</Banner> : null}
+        {source && !source.error ? (
+          <p className="text-sm text-ink-faint">
+            {source.polledAt
+              ? t('project.issues.status', {
+                  count: source.cardCount,
+                  date: new Date(source.polledAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }),
+                })
+              : t('project.issues.waiting')}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            disabled={!dirty || !trimmed || setSource.isPending}
+            icon={<Save size={16} />}
+            onClick={() => setSource.mutate(trimmed)}
+          >
+            {t('project.issues.save')}
+          </Button>
+          {dirty ? (
+            <Button variant="ghost" onClick={() => { setSource.reset(); setRepository(current) }}>
+              {t('project.settings.cancel')}
+            </Button>
+          ) : source ? (
+            <>
+              <Button variant="ghost" icon={<RefreshCw size={16} />} disabled={poll.isPending} onClick={() => poll.mutate()}>
+                {t('project.issues.poll')}
+              </Button>
+              <Button variant="ghost" disabled={setSource.isPending} onClick={() => setSource.mutate(null)}>
+                {t('project.issues.unlink')}
+              </Button>
+            </>
+          ) : null}
+        </div>
       </CardBody>
     </Card>
   )
