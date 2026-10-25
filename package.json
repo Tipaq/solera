@@ -41,6 +41,8 @@
     "test:vault-ui": "node scripts/vault-ui-check.mjs",
     "test:web-ui": "node scripts/web-ui-check.mjs",
     "test:desktop-ui": "node scripts/desktop-ui-check.mjs",
+    "test:desktop-update": "node scripts/desktop-update-check.mjs",
+    "test:desktop-updates-ui": "node scripts/desktop-updates-ui-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
     "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "db:generate": "pnpm --filter @solera/db generate",

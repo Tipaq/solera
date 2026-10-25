@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider, UiLabelsProvider } from '@solera/ui'
 import { App } from './App'
+import { DesktopTitleBar } from './components/DesktopTitleBar'
 import { initLocale, translate } from './lib/i18n'
 import { watchThemeColor } from './lib/theme'
 import './styles/index.css'
@@ -16,6 +17,10 @@ const queryClient = new QueryClient({
   },
 })
 
+// Avant le premier rendu : les écrans qui se mesurent à la fenêtre laissent sa place à la
+// barre de titre de l'app de bureau dès leur première image.
+const desktopChrome = window.soleraDesktop?.window
+if (desktopChrome) document.documentElement.dataset.desktopChrome = desktopChrome.platform
 watchThemeColor()
 
 const container = document.getElementById('root')
@@ -38,7 +43,10 @@ void initLocale().then(() => {
             selectPlaceholder: translate('common.select.placeholder'),
           }}
         >
-          <TooltipProvider><App /></TooltipProvider>
+          <TooltipProvider>
+            <DesktopTitleBar />
+            <App />
+          </TooltipProvider>
         </UiLabelsProvider>
       </QueryClientProvider>
     </StrictMode>,

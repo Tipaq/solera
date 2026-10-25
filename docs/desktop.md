@@ -24,8 +24,9 @@ directly:
 
 ### macOS
 
-Open the `.dmg` and drag Solera into Applications. The app is not notarized by
-Apple yet, so the first launch is refused: open **System Settings > Privacy &
+Open the `.dmg` and drag Solera into Applications, and keep it there: that is where
+it can update itself. The app is not notarized by Apple yet, so the first launch is
+refused: open **System Settings > Privacy &
 Security** and click **Open Anyway**. From Terminal, this does the same:
 
 ```bash
@@ -89,10 +90,37 @@ drive the same session from both at once.
   its sessions running; quit with ⌘Q. On Windows and Linux, closing the last window
   quits.
   Nothing runs while the computer sleeps.
-- **Updates.** The app tells you when a release is out (Settings > About). Download
-  the new version and replace the app; there is no automatic update yet.
+- **Updates** are automatic: see [below](#updates).
 - **Not available:** access from other devices and push notifications. Settings hide
   the password, logout, push notifications and user accounts.
+
+## Updates
+
+The app updates itself from the GitHub releases. It checks when it starts, then every
+four hours, downloads a new version in the background and installs it when you quit
+Solera; Settings > About shows the download, then the version that is ready. To
+install it right away, click **Restart and update** there: Solera closes, installs the
+new version and reopens. Running conversations are interrupted and resume with the next
+message. Your data stays where it is.
+
+- **Windows:** the installer runs silently, for your user, as on the first install.
+- **macOS:** Solera replaces its own app in the Applications folder. Run from the disk
+  image, or from a folder where macOS isolates it, it cannot, and About says so. Should
+  macOS refuse the replacement, About tells you to allow Solera under System Settings >
+  Privacy & Security > App Management.
+- **Linux:** the AppImage is replaced in place. The `.deb` is installed only when you
+  click **Restart and update**, since it asks for your administrator password.
+
+The updater keeps its log in `logs/updater.log`, next to the server's. It reads the
+releases of `Tipaq/solera` anonymously: while that repository is private, every check
+fails, quietly, and only this log says so.
+
+## Window
+
+The window has no native title or menu bar: a single bar at the top, in the colours of
+the current theme, holds the window controls of the system (on the left on macOS, on
+the right elsewhere). Drag it to move the window. On Windows and Linux, its menu button opens
+the application menu.
 
 ## Uninstall
 
@@ -112,3 +140,9 @@ that built it (`scripts/desktop-stage.mjs`), then packages with electron-builder
 server answers, the window opens without sign-in, other origins are refused, a
 terminal runs, and quitting stops the server. On Linux it needs a display:
 `xvfb-run`, or WSLg's (`DISPLAY=:0`) under WSL.
+
+`pnpm test:desktop-update --app <installed app> --feed <folder>` checks the update end
+to end: an installed version finds a newer one in a folder served over HTTP
+(`SOLERA_DESKTOP_UPDATE_FEED`), downloads it, then replaces and relaunches itself. The
+workflow runs it with `update-check`, on two versions it packages for the purpose
+(0.0.1 and 0.0.2); the CI does so on Linux and Windows.

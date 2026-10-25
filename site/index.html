@@ -385,7 +385,7 @@
         <li><h3>Shared skills &amp; MCP tools</h3><p>Keep reusable skills in a central library for Claude Code and Codex. Declare external MCP servers once and choose which agents receive them.</p></li>
         <li><h3>A task API</h3><p>Create tasks, follow events, answer requests and receive completion webhooks through <code>/api/v1</code>. Tokens have scopes and optional project restrictions.</p></li>
         <li><h3>Processes in view</h3><p>On Linux, inspect commands and services attached to Solera, their ports and originating conversations. <a href="https://github.com/Tipaq/solera/blob/main/docs/services.md">Detection and limits ↗</a></p></li>
-        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native installations can update from the UI; container installations update through their image.</p></li>
+        <li><h3>Updates from the interface</h3><p>See when a release is available and read what changed. Native installations can update from the UI, container installations through their image, and the desktop app updates itself.</p></li>
       </ul>
     </section>
 
@@ -457,7 +457,7 @@ curl -fsSL https://raw.githubusercontent.com/Tipaq/solera/main/install.sh | bash
         </div>
 
         <div id="panel-desktop" class="tab-panel" role="tabpanel" aria-labelledby="tab-desktop" data-panel="desktop" hidden>
-          <p>Solera Desktop runs the same server and interface in a window of their own, on the machine where you code. Nothing to set up, no account, no password. It is not reachable from other devices, and agents stop when you quit it.</p>
+          <p>Solera Desktop runs the same server and interface in a window of their own, on the machine where you code. Nothing to set up, no account, no password. It is not reachable from other devices, and agents stop when you quit it. It updates itself: each release downloads in the background and installs when you quit.</p>
           <ul>
             <li>macOS, Apple Silicon: <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-mac-arm64.dmg">Solera-mac-arm64.dmg</a></li>
             <li>Windows: <a href="https://github.com/Tipaq/solera/releases/latest/download/Solera-win-x64.exe">Solera-win-x64.exe</a></li>

@@ -96,6 +96,19 @@ try {
   // « C'est prêt » mène à la création du premier projet, dans la coque de l'application.
   await page.waitForURL(/\/bienvenue$/, { timeout: 60_000 })
   await page.getByRole('heading', { level: 1 }).first().waitFor()
+  // La barre de titre de l'interface remplace les barres natives, dès la première ouverture.
+  assert.equal(await page.evaluate(() => window.soleraDesktop?.window?.platform), process.platform)
+  const titlebar = page.locator('.desktop-titlebar')
+  assert.equal((await titlebar.boundingBox())?.height, 36)
+  assert.equal(await titlebar.evaluate((element) => getComputedStyle(element).getPropertyValue('-webkit-app-region')), 'drag')
+  if (process.platform !== 'darwin') {
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMenuBarVisible()), false)
+    await titlebar.getByRole('button', { name: /^(Menu de l'application|Application menu)$/ }).click()
+    await page.keyboard.press('Escape')
+  }
+  // L'app empaquetée par la CI porte une version de développement : elle ne se met pas à jour.
+  const update = await page.evaluate(() => window.soleraDesktop?.updates.state())
+  assert.ok(update && ['unsupported', 'idle'].includes(update.status), `mise à jour : ${JSON.stringify(update)}`)
   assert.equal(await page.getByLabel(/^(Mot de passe|Password)$/).count(), 0, 'pas de mot de passe en bureau')
   assert.equal(await page.getByText(/Créer le premier compte|Create the first account/).count(), 0, 'pas de compte à créer en bureau')
   await page.screenshot({ path: join(shots, 'onboarding.png') })
