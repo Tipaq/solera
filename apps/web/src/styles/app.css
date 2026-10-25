@@ -81,6 +81,16 @@
 
 @layer utilities {
   /*
+   * La colonne du fil, et tout ce qui s'aligne sur elle. Sa largeur maximale suit le
+   * réglage d'apparence (`conversationWidth`), en pixels ; elle ne déborde jamais de la
+   * place disponible.
+   */
+  .sg-conversation-width {
+    width: 100%;
+    max-width: calc(var(--sg-conversation-width, 768) * 1px);
+  }
+
+  /*
    * Fondu du fil à son bord bas.
    *
    * Le fil se coupe net au ras de la barre de saisie, souvent au milieu d'une ligne :
@@ -281,6 +291,68 @@
   .sg-reading .sg-card-ref:hover,
   .sg-reading .sg-card-ref:focus-visible {
     text-decoration-style: solid;
+  }
+
+  /*
+   * Session citée (`session:<id>`). Une puce, à la différence d'une carte : ce qui la
+   * désigne est un identifiant illisible, et c'est la puce qui dit de quelle session il
+   * s'agit — son CLI, son titre courant. Deux cibles : le titre mène à la session, le
+   * ⓘ ouvre l'aperçu au doigt, où le survol n'existe pas ; au pointeur, il s'efface.
+   * Dans le fil comme au-dessus du champ, d'où l'absence de `.sg-reading`.
+   */
+  .sg-session-ref {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    vertical-align: middle;
+    border: 1px solid var(--sg-line);
+    border-radius: var(--radius-sm);
+    background: var(--sg-sunken);
+    font-size: 0.875em;
+    line-height: 1.5;
+  }
+  .sg-session-ref .sg-session-link {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0 0.4em;
+    color: var(--sg-ink);
+    text-decoration: none;
+  }
+  .sg-session-ref .sg-session-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 28ch;
+  }
+  .sg-session-archived .sg-session-title {
+    color: var(--sg-ink-soft);
+  }
+  .sg-session-ref .sg-session-info {
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    color: var(--sg-ink-faint);
+    border-left: 1px solid var(--sg-line);
+  }
+  .sg-session-ref .sg-session-link:hover,
+  .sg-session-ref .sg-session-info:hover {
+    background: var(--sg-accent-wash);
+  }
+  .sg-session-missing {
+    color: var(--sg-ink-faint);
+  }
+  @media (pointer: coarse) {
+    .sg-session-ref .sg-session-link {
+      min-height: 2.75rem;
+    }
+    .sg-session-ref .sg-session-info {
+      display: inline-flex;
+      width: 2.75rem;
+      min-height: 2.75rem;
+    }
   }
 
   /*

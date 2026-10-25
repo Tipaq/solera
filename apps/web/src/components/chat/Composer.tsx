@@ -15,10 +15,14 @@ import {
   MAX_ATTACHMENTS_PER_MESSAGE,
   NATIVE_SLASH_COMMANDS,
   parseSlashCommand,
+  sessionMentionAt,
+  sessionReference,
+  sessionReferenceRanges,
   type AgentConfig,
   type AttachmentDto,
   type AgentSkillDto,
   type CardLinkDto,
+  type ConversationDto,
   type ConversationStatus,
   type McpServerStatus,
   type SlashCommandDto,
@@ -43,6 +47,10 @@ import { ComposerPlusMenu } from './ComposerPlusMenu'
 import { ModelControl } from './ModelControl'
 import { CardPicker } from './CardPicker'
 import { MentionPicker } from './MentionPicker'
+import { SessionPicker } from './SessionPicker'
+import { SessionReference } from './SessionReference'
+import { useInsertEntries, withPrefix, type InsertPrefix } from './ComposerInsert'
+import { matchSessions, useSessionReferences } from '../../lib/session-references'
 
 /** Le `@...` en cours de saisie, repéré autour du curseur. */
 interface MentionToken {
@@ -265,6 +273,7 @@ export function Composer({
   const [uploading, setUploading] = useState(0)
   const [token, setToken] = useState<MentionToken | null>(null)
   const [cardToken, setCardToken] = useState<MentionToken | null>(null)
+  const [sessionToken, setSessionToken] = useState<MentionToken | null>(null)
   const [sigil, setSigil] = useState<SigilToken | null>(null)
   // Partagé par les listes : leurs jetons s'excluent, aucune position du curseur ne
   // pouvant ouvrir un `@`, un `/` et un `$` à la fois.
@@ -329,6 +338,25 @@ export function Composer({
   )
   const cardSuggestions = cardToken ? (cardMatches ?? []) : []
 
+  // `draftKey` est l'identifiant de la conversation : elle ne se propose pas elle-même.
+  const { sessions, loading: loadingSessions } = useSessionReferences(projectId)
+  const sessionSuggestions = useMemo(
+    () => (sessionToken ? matchSessions(sessions, sessionToken.query, draftKey) : []),
+    [sessions, sessionToken, draftKey],
+  )
+  /**
+   * Les sessions que le message cite, montrées au-dessus du champ comme les pièces
+   * jointes : la référence écrite est un identifiant, illisible, et c'est là qu'on
+   * vérifie avant d'envoyer qu'elle désigne la bonne. Un UUID nu n'en est une que s'il
+   * nomme une session du projet.
+   */
+  const cited = useMemo(() => {
+    const ids = sessionReferenceRanges(text, window.location.origin)
+      .filter((ref) => (!ref.projectId || ref.projectId === projectId) && (ref.explicit || sessions.has(ref.id)))
+      .map((ref) => ref.id)
+    return [...new Set(ids)]
+  }, [text, projectId, sessions])
+
   /** Remplace le jeton en cours par le chemin choisi, puis rend la main au champ. */
   const pickMention = (file: FileMatchDto) => {
     const node = textarea.current
@@ -364,6 +392,29 @@ export function Composer({
 
     setText(next)
     setCardToken(null)
+    requestAnimationFrame(() => {
+      node.focus()
+      node.setSelectionRange(caret, caret)
+    })
+  }
+
+  /**
+   * Remplace le `@@` en cours par la référence de la session choisie.
+   *
+   * L'identifiant et non le titre, comme pour une carte : un titre se renomme, et c'est
+   * l'identifiant que l'agent passe à `read_conversation`. La puce au-dessus du champ
+   * dit de quelle session il s'agit.
+   */
+  const pickSession = (session: ConversationDto) => {
+    const node = textarea.current
+    if (!sessionToken || !node) return
+
+    const reference = sessionReference(session.id)
+    const next = `${text.slice(0, sessionToken.start)}${reference} ${text.slice(sessionToken.end)}`
+    const caret = sessionToken.start + reference.length + 1
+
+    setText(next)
+    setSessionToken(null)
     requestAnimationFrame(() => {
       node.focus()
       node.setSelectionRange(caret, caret)
@@ -465,6 +516,7 @@ export function Composer({
     const position = caret ?? value.length
     setToken(mentionAt(value, position))
     setCardToken(cardAt(value, position))
+    setSessionToken(projectId ? sessionMentionAt(value, position) : null)
     // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
     // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
     const found = sigilAt(value, position)
@@ -472,6 +524,28 @@ export function Composer({
     setSigil(found && available ? found : null)
     setActive(0)
   }
+
+  /**
+   * Un préfixe choisi dans « Insérer », écrit au curseur comme s'il avait été tapé : la
+   * liste qu'il ouvre est la même, et le brouillon reste où il était.
+   */
+  const insertPrefix = (prefix: InsertPrefix) => {
+    const node = textarea.current
+    if (!node || disabled) return
+    const result = withPrefix(text, { start: node.selectionStart, end: node.selectionEnd }, prefix)
+    setText(result.text)
+    requestAnimationFrame(() => {
+      node.focus({ preventScroll: true })
+      node.setSelectionRange(result.caret, result.caret)
+      syncToken(result.text, result.caret)
+    })
+  }
+  const inserts = useInsertEntries({
+    project: Boolean(projectId),
+    commands: offered.length > 0,
+    skills: skills.length > 0,
+    agent: config.agent,
+  })
 
   const entries = !sigil
     ? []
@@ -531,7 +605,12 @@ export function Composer({
   ) => {
     if (!canSend) return
 
-    const value = text.trim()
+    // L'adresse d'un fil de ce projet, copiée du navigateur, part sous sa forme stable :
+    // le serveur ne connaît pas l'adresse par laquelle on l'atteint.
+    const value = sessionReferenceRanges(text.trim(), window.location.origin)
+      .filter((ref) => ref.projectId === projectId)
+      .reverse()
+      .reduce((current, ref) => `${current.slice(0, ref.start)}${sessionReference(ref.id)}${current.slice(ref.end)}`, text.trim())
     const sent = attachments
     // Une mention ou une compétence effacée du texte depuis sa sélection ne doit plus
     // partir : c'est le texte qui fait foi, pas ce qui a été cliqué.
@@ -545,6 +624,8 @@ export function Composer({
     setMentioned(new Set())
     setInvoked(new Set())
     setToken(null)
+    setCardToken(null)
+    setSessionToken(null)
     setSigil(null)
     try {
       await action(
@@ -649,7 +730,9 @@ export function Composer({
     // deux jetons s'excluant, une seule liste est ouverte à la fois.
     const listed = sigil
       ? entries.length
-      : cardToken
+      : sessionToken
+        ? sessionSuggestions.length
+        : cardToken
         ? cardSuggestions.length
         : suggestions.length
     if (listed > 0) {
@@ -670,6 +753,12 @@ export function Composer({
           pickEntry(entry)
           return
         }
+        const session = sessionToken ? sessionSuggestions[active] : undefined
+        if (session) {
+          event.preventDefault()
+          pickSession(session)
+          return
+        }
         const card = sigil ? undefined : cardSuggestions[active]
         if (cardToken && card) {
           event.preventDefault()
@@ -687,6 +776,7 @@ export function Composer({
         event.preventDefault()
         setToken(null)
         setCardToken(null)
+        setSessionToken(null)
         setSigil(null)
         return
       }
@@ -727,7 +817,7 @@ export function Composer({
         }}
         // `@container` : les réglages se replient selon la largeur du composer, pas
         // celle de la fenêtre, qui ignore la sidebar.
-        className="@container mx-auto max-w-3xl"
+        className="@container mx-auto sg-conversation-width"
       >
         {error ? (
           <p role="alert" className="mb-1.5 px-1 text-xs text-critical">
@@ -764,6 +854,16 @@ export function Composer({
             />
           ) : null}
 
+          {sessionToken ? (
+            <SessionPicker
+              sessions={sessionSuggestions}
+              active={active}
+              loading={loadingSessions}
+              onPick={pickSession}
+              onHover={setActive}
+            />
+          ) : null}
+
           {cardToken ? (
             <CardPicker
               cards={cardSuggestions}
@@ -782,6 +882,14 @@ export function Composer({
               onPick={pickMention}
               onHover={setActive}
             />
+          ) : null}
+
+          {cited.length > 0 ? (
+            <div aria-label={t('sessionRef.cited')} className="flex flex-wrap gap-1 px-1.5 pt-1">
+              {cited.map((id) => (
+                <SessionReference key={id} id={id} conversation={sessions.get(id)} loading={loadingSessions} />
+              ))}
+            </div>
           ) : null}
 
           {dictation.state === 'recording' && dictation.analyser ? (
@@ -804,6 +912,7 @@ export function Composer({
             }
             onBlur={() => {
               setToken(null)
+              setSessionToken(null)
               setSigil(null)
             }}
             onKeyDown={onKeyDown}
@@ -856,6 +965,8 @@ export function Composer({
               onFind={onFind}
               onDetails={onDetails}
               onHandoff={onHandoff}
+              inserts={inserts}
+              onInsert={insertPrefix}
             />
 
             {/* Dehors, et pas dans le menu : c'est l'action la plus fréquente au doigt. */}

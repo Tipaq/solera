@@ -80,6 +80,26 @@ Les gestes qui passent par le daemon restent soumis à ses gardes : au plus six
 lancements par heure et par compte pour tout ce qui vient hors session, et le daemon
 doit tourner, sinon la demande expire.
 
+## Citer une session
+
+`session:<id>` désigne une conversation de Solera. La forme survit à un renommage et à
+l'archivage, et ne dépend ni de l'hôte du serveur ni du port du bureau. `list_sessions`,
+`search_history` et `read_conversation` la rendent, et `read_conversation` l'accepte
+comme `id`.
+
+Dans un message, l'interface en fait une puce : le CLI et le titre courant de la
+session, avec son aperçu au survol (ou par le ⓘ au doigt). Elle reconnaît aussi
+l'adresse d'un fil copiée du navigateur, et un UUID nu quand il nomme une session du
+projet. Le code reste du code, sauf un `` `session:<id>` `` seul. Dans la barre de
+saisie, `@@` cherche une session du projet, archivées comprises. Le menu « + » →
+**Insérer** liste les préfixes que le champ sait compléter : `@`, `@@`, `#`, `/` et `$`.
+
+Un message qui cite des sessions part au modèle avec quelques lignes de plus : leur
+titre, leur CLI, et si elles sont archivées. Le journal garde le texte tel qu'il a été
+écrit. Rien du fil cité n'est joint, l'agent le lit avec `read_conversation`, et citer
+une session ne réveille pas son agent. Une session d'un autre projet ne livre rien
+d'elle, pas même son titre.
+
 ## Par HTTP, avec un jeton d'API
 
 `POST /api/v1/mcp`, transport « streamable HTTP » de MCP, derrière un jeton d'API qui

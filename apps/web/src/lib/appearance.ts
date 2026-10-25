@@ -26,12 +26,27 @@ export const APPEARANCE_SETTINGS = {
   /*
    * Confort de lecture du fil. Ces trois-là ne touchent qu'au texte des messages, pas
    * à l'interface : agrandir la conversation ne doit pas déplacer la barre latérale.
+   * La largeur, au-dessus, ne déplace pas davantage : elle ne déborde jamais du fil.
    *
    * `readingSoftness` mélange l'encre vers sa nuance atténuée plutôt que de baisser une
    * opacité : un texte translucide laisse passer le fond, et le rendu change selon ce
    * qu'il y a derrière. Plafonné à 0,6, au-delà le texte cesse d'être lisible plutôt
    * que de devenir doux.
    */
+  /*
+   * Largeur maximale du fil, en pixels, et de tout ce qui s'aligne sur lui : la barre de
+   * saisie, sa rangée d'état, le brouillon. Une seule limite, pour qu'ils restent
+   * alignés. Par défaut celle d'avant le réglage ; au-delà de l'espace disponible, la
+   * colonne s'arrête à son bord, d'où le seul plancher.
+   */
+  conversationWidth: {
+    key: 'solera.conversationWidth',
+    property: '--sg-conversation-width',
+    fallback: 768,
+    min: 768,
+    max: 1600,
+    step: 32,
+  },
   readingSize: {
     key: 'solera.readingSize',
     property: '--sg-read-size',

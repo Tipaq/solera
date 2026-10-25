@@ -1,6 +1,11 @@
 import MarkdownIt from 'markdown-it'
 import type Token from 'markdown-it/lib/token.mjs'
-import { VIEWABLE_IMAGE_TYPES, cardReferenceRanges } from '@solera/protocol'
+import {
+  VIEWABLE_IMAGE_TYPES,
+  cardReferenceRanges,
+  sessionReference,
+  sessionReferenceRanges,
+} from '@solera/protocol'
 import { rawFileUrl } from './files-io'
 import type { WorkspaceScope } from './workspace-scope'
 
@@ -392,6 +397,83 @@ function markCardReferences(md: MarkdownIt): void {
 
 markCardReferences(md)
 
+/**
+ * Les sessions citées (`session:<id>`, l'adresse d'un fil copiée du navigateur, un UUID
+ * nu qui en nomme une) deviennent des emplacements vides, où `Markdown` monte la puce
+ * React de la session : son titre courant, son CLI, son aperçu.
+ *
+ * Le titre n'entre pas dans le HTML : un renommage ou un changement d'état ne relance
+ * pas l'analyse de chaque message du fil, seule la puce se redessine. Un UUID nu n'est
+ * transformé que s'il est dans `sessionIds`, une adresse d'un autre projet jamais. Le
+ * code n'est touché que s'il ne contient rien d'autre que la référence : une commande
+ * qui en cite une reste une commande à copier.
+ */
+function markSessionReferences(md: MarkdownIt): void {
+  md.core.ruler.push('sg_session_refs', (state) => {
+    const env = state.env as MarkdownEnv
+    if (!env.projectId) return true
+    const ranges = (value: string) =>
+      sessionReferenceRanges(value, env.origin).filter(
+        (ref) =>
+          (!ref.projectId || ref.projectId === env.projectId) &&
+          (ref.explicit || env.sessionIds?.has(ref.id)),
+      )
+    const slot = (id: string): Token => {
+      const token = new state.Token('html_inline', '', 0)
+      // Pour l'export CSV d'un tableau, qui lit les jetons et non le HTML.
+      token.meta = { sessionReference: sessionReference(id) }
+      token.content = `<span data-sg-session-ref="${md.utils.escapeHtml(id)}"></span>`
+      return token
+    }
+    const text = (content: string): Token => {
+      const token = new state.Token('text', '', 0)
+      token.content = content
+      return token
+    }
+
+    for (const token of state.tokens) {
+      if (token.type !== 'inline' || !token.children) continue
+      const children: Token[] = []
+      let inLink = 0
+      for (let index = 0; index < token.children.length; index += 1) {
+        const child = token.children[index]!
+        if (child.type === 'link_open') {
+          // Un lien vers une session cède la place à sa puce, libellé compris.
+          const href = child.attrGet('href') ?? ''
+          const whole = ranges(href).find((ref) => ref.start === 0 && ref.end === href.length)
+          const close = token.children.findIndex((next, at) => at > index && next.type === 'link_close')
+          if (whole && close !== -1) {
+            children.push(slot(whole.id))
+            index = close
+            continue
+          }
+          inLink += 1
+        }
+        if (child.type === 'link_close') inLink -= 1
+        const found = inLink === 0 && (child.type === 'text' || child.type === 'code_inline')
+          ? ranges(child.content)
+          : []
+        const wholeCode = found.length === 1 && found[0]!.start === 0 && found[0]!.end === child.content.length
+        if (found.length === 0 || (child.type === 'code_inline' && !wholeCode)) {
+          children.push(child)
+          continue
+        }
+        let at = 0
+        for (const ref of found) {
+          if (ref.start > at) children.push(text(child.content.slice(at, ref.start)))
+          children.push(slot(ref.id))
+          at = ref.end
+        }
+        if (at < child.content.length) children.push(text(child.content.slice(at)))
+      }
+      token.children = children
+    }
+    return true
+  })
+}
+
+markSessionReferences(md)
+
 /** Ce que la passe de rendu reçoit et remplit. */
 interface MarkdownEnv {
   /** Chemins possibles rencontrés, à soumettre au serveur. */
@@ -409,6 +491,12 @@ interface MarkdownEnv {
   tasks?: 'interactive'
   /** Numéros des cartes du board auquel le texte se rapporte. Voir `markCardReferences`. */
   cards?: Set<number>
+  /** Le projet dont le texte peut citer les sessions. Voir `markSessionReferences`. */
+  projectId?: string | null
+  /** Les sessions du projet, pour reconnaître un UUID nu. */
+  sessionIds?: ReadonlySet<string>
+  /** L'origine de l'interface, pour reconnaître l'adresse d'un fil copiée du navigateur. */
+  origin?: string
 }
 
 /** Un segment de contenu, tel que le composant React doit le rendre. */
@@ -427,8 +515,8 @@ export interface MarkdownDocument {
 function cellText(inline: Token | undefined): string {
   if (!inline?.children) return inline?.content ?? ''
   return inline.children
-    .filter((child) => child.type === 'text' || child.type === 'code_inline')
-    .map((child) => child.content)
+    .filter((child) => child.type === 'text' || child.type === 'code_inline' || child.meta?.sessionReference)
+    .map((child) => (child.meta?.sessionReference as string | undefined) ?? child.content)
     .join('')
     .trim()
 }
@@ -462,13 +550,7 @@ function tableRows(tokens: Token[], start: number, end: number): string[][] {
  */
 export function parseMarkdown(
   text: string,
-  options: {
-    knownFiles?: Set<string>
-    scope?: WorkspaceScope
-    base?: string
-    tasks?: 'interactive'
-    cards?: Set<number>
-  } = {},
+  options: Omit<MarkdownEnv, 'candidates'> = {},
 ): MarkdownDocument {
   const candidates = new Set<string>()
   const env: MarkdownEnv = { candidates, ...options }

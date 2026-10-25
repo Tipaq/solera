@@ -179,7 +179,7 @@ export function useResumeTyping(inputRef: RefObject<HTMLTextAreaElement | null>)
 }
 
 /** Même contenu, ancré sur ordinateur et dans une feuille sur écran tactile. */
-export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, align, onOpenChange }: {
+export function SettingsSurface({ label, trigger, children, inputRef, disabled, quick = false, align, onOpenChange, onCloseAutoFocus: beforeRestore }: {
   label: string
   trigger: ReactNode
   children: (close: (resumeTyping?: boolean) => void) => ReactNode
@@ -194,6 +194,11 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
    * un clic au-dehors, que `close` ne voit pas passer.
    */
   onOpenChange?: (open: boolean) => void
+  /**
+   * Le contenu qui doit agir une fois la surface refermée, le focus compris, l'empêche
+   * avec `preventDefault` de rendre le focus à son déclencheur.
+   */
+  onCloseAutoFocus?: (event: Event) => void
 }) {
   const [open, setOpen] = useState(false)
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
@@ -237,6 +242,8 @@ export function SettingsSurface({ label, trigger, children, inputRef, disabled, 
     focus?.focus({ preventScroll: true })
   }
   const onCloseAutoFocus = (event: Event) => {
+    beforeRestore?.(event)
+    if (event.defaultPrevented) return
     // Sur téléphone et au clavier, Radix rend le focus au bouton d'ouverture.
     if (!sheet && resumeTyping.current && inputRef.current) {
       event.preventDefault()

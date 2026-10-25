@@ -845,7 +845,7 @@ export class OpencodeRunner implements AgentRunner {
   async send(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<void> {
     if (!this.server || !this.sessionId) throw new Error("La session opencode n'est pas démarrée.")
 
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments)
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     this.ctx.setStatus('running')
     // Un message parti pendant un rechargement verrait ses événements se perdre.
@@ -901,7 +901,7 @@ export class OpencodeRunner implements AgentRunner {
   async steer(text: string, attachments: OutgoingAttachment[], mentions: OutgoingMention[]): Promise<boolean> {
     if (!this.server || !this.sessionId || !this.turnActive) return false
 
-    const { blocks, promptText } = describeOutgoingMessage(text, attachments)
+    const { blocks, promptText } = describeOutgoingMessage(text, attachments, this.ctx.sessionReferenceContext?.(text, this.appliedConfig))
     await this.server.post(`/session/${this.sessionId}/prompt_async`, this.promptBody(promptText, attachments, mentions))
     this.ctx.emit({ type: 'message.completed', messageId: randomUUID(), role: 'user', blocks, parentToolCallId: null })
     return true

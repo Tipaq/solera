@@ -9,15 +9,19 @@ import type { OutgoingAttachment } from './types.js'
  * Chaque runner traduit ensuite vers son protocole natif : images en base64 côté
  * Claude, chemins `localImage` et mentions à part côté Codex. Le journal, lui, doit
  * rester identique quel que soit le CLI, et c'est cette fonction qui le garantit.
+ *
+ * `referenceContext` : ce que Solera dit des sessions que le message cite (voir
+ * `conversations/references.ts`). Il part au modèle, pas au journal.
  */
 export function describeOutgoingMessage(
   text: string,
   attachments: OutgoingAttachment[],
+  referenceContext?: string | null,
 ): { blocks: ContentBlock[]; promptText: string } {
   const blocks: ContentBlock[] = []
 
   const files = attachments.filter((entry) => !entry.inlineImage)
-  const promptText = files.length
+  const attachmentText = files.length
     ? [
         text,
         '',
@@ -27,8 +31,9 @@ export function describeOutgoingMessage(
         .join('\n')
         .trim()
     : text
+  const promptText = referenceContext ? `${attachmentText}\n\n${referenceContext}` : attachmentText
 
-  if (promptText) {
+  if (attachmentText) {
     blocks.push({ type: 'text', text })
   }
 

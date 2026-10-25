@@ -1256,7 +1256,7 @@ export function ConversationPage() {
                 placed ? 'opacity-100 transition-opacity duration-200' : 'opacity-0',
               )}
             >
-            <div className="mx-auto flex max-w-3xl flex-col gap-3 py-3 md:py-6">
+            <div className="mx-auto flex sg-conversation-width flex-col gap-3 py-3 md:py-6">
               {stream.error ? <Banner>{stream.error}</Banner> : null}
               {actionError ? <Banner>{actionError}</Banner> : null}
     
@@ -1382,7 +1382,7 @@ export function ConversationPage() {
               ce même retrait. */}
           {activity || signals.length > 0 ? (
             <div className="px-3 @min-[40rem]:px-12">
-              <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-1.5 pb-2">
+              <div className="mx-auto flex sg-conversation-width items-center justify-between gap-3 px-1.5 pb-2">
                 {activity ? <TurnActivity label={activity} /> : <span />}
                 <SignalRow
                   signals={signals}
@@ -1397,7 +1397,7 @@ export function ConversationPage() {
               composer, dans la même gouttière, et propose les deux issues. */}
           {conversation.worktreeGone ? (
             <div className="px-3 pb-3 @min-[40rem]:px-12">
-              <div className="mx-auto max-w-3xl">
+              <div className="mx-auto sg-conversation-width">
                 <WorktreeGoneIssues
                   key={conversationId}
                   conversationId={conversationId}
