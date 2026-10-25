@@ -30,6 +30,7 @@ import {
   reorderCardsBodySchema,
   toggleSubtask,
   toggleSubtaskBodySchema,
+  promoteSubtaskBodySchema,
   parseSubtasks,
   updateCardBodySchema,
   type CardConversationDto,
@@ -41,6 +42,7 @@ import {
 import { createCard, syncCardReferences } from '../../cards/create.js'
 import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
+import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
@@ -739,6 +741,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     if (!current || current.label !== body.label.trim()) {
       throw conflict('card_subtask_moved', 'The description changed since this list was shown.')
     }
+    // Une sous-tâche promue suit sa carte (#71) : la cocher à la main la ferait mentir.
+    if (current.card !== null) {
+      throw conflict('card_subtask_promoted', 'This subtask follows card #{number}.', { number: current.card })
+    }
     if (current.checked === body.checked) return readCard(id, card.projectId)
 
     const description = toggleSubtask(card.description, body.index, body.checked)
@@ -752,6 +758,22 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     syncCardReferences(ctx.db, card, description)
 
     return readCard(id, card.projectId)
+  })
+
+  /**
+   * Promeut une sous-tâche en carte (#71) : une sœur de celle-ci, et la ligne devient
+   * `- [ ] #N libellé`. Rend la carte d'origine, dont la description a changé ; la
+   * nouvelle se lit dans la ligne, et le board la montre au rechargement de sa liste.
+   */
+  app.post('/api/cards/:id/subtasks/promote', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = promoteSubtaskBodySchema.parse(request.body)
+    const { card } = loadCard(id, user.id)
+
+    const created = promoteSubtask(ctx.db, card, body, { userId: user.id })
+
+    return reply.status(201).send({ card: readCard(id, card.projectId), created: readCard(created.id, card.projectId) })
   })
 
   app.post('/api/projects/:id/cards/order', async (request) => {

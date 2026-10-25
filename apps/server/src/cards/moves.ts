@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { and, eq, isNotNull } from 'drizzle-orm'
-import { cardMoves, cards, type Db, type Tx } from '@solera/db'
-import type { CardColumn } from '@solera/protocol'
+import { cardMoves, cardRefs, cards, type Db, type Tx } from '@solera/db'
+import { CARD_CLOSED_COLUMNS, syncPromotedSubtasks, type CardColumn } from '@solera/protocol'
 import { syncParentColumn } from './tree.js'
 
 /**
@@ -18,7 +18,9 @@ import { syncParentColumn } from './tree.js'
  * Parce que c'est le seul passage obligé, deux conséquences y vivent aussi :
  * - quitter « à faire » efface l'état « à préciser », qui n'a de sens que là ;
  * - la colonne de la parente se recalcule d'après ses enfants (`cards/tree.ts`), et ainsi
- *   de suite en remontant.
+ *   de suite en remontant ;
+ * - les sous-tâches promues vers la carte (`- [ ] #N`, #71) se cochent quand elle se
+ *   ferme et se décochent quand elle rouvre.
  * Un nouveau chemin de déplacement qui écrirait la colonne sans passer par ici
  * laisserait l'un et l'autre faux.
  *
@@ -62,6 +64,8 @@ export function recordCardMove(
       .where(and(eq(cards.id, move.cardId), isNotNull(cards.toClarifySince)))
       .run()
   }
+  const closed = CARD_CLOSED_COLUMNS.includes(move.to)
+  if (closed !== CARD_CLOSED_COLUMNS.includes(move.from)) checkPromotedSubtasks(db, move.cardId, closed, move.at)
   const row = db.select({ parentId: cards.parentId }).from(cards).where(eq(cards.id, move.cardId)).get()
   syncParentColumn(
     db,
@@ -69,4 +73,31 @@ export function recordCardMove(
     { userId: move.userId, conversationId: move.conversationId, at: move.at },
     move.depth ?? 0,
   )
+}
+
+/**
+ * Coche ou décoche, dans les cartes qui la citent, les sous-tâches promues vers une carte.
+ *
+ * La case suit la fermeture et non la revue : « à vérifier » n'est pas fini, et la ligne
+ * dirait le contraire de la carte. Abandonnée compte comme fermée, sans quoi la barre
+ * d'avancement de l'origine n'arriverait jamais au bout. Écrite dans la description et
+ * non déduite à l'affichage : un agent la lit brute, et elle doit y être vraie.
+ *
+ * Les cartes à relire sont celles qui citent la carte : la ligne `#N` fait un backlink,
+ * et c'est lui qui les trouve sans parcourir tout le projet.
+ */
+function checkPromotedSubtasks(db: Db | Tx, cardId: string, checked: boolean, at = Date.now()): void {
+  const card = db.select({ number: cards.number }).from(cards).where(eq(cards.id, cardId)).get()
+  if (!card) return
+  const citing = db
+    .select({ id: cards.id, description: cards.description })
+    .from(cardRefs)
+    .innerJoin(cards, eq(cards.id, cardRefs.sourceId))
+    .where(eq(cardRefs.targetId, cardId))
+    .all()
+  for (const source of citing) {
+    const description = syncPromotedSubtasks(source.description, card.number, checked)
+    if (description === source.description) continue
+    db.update(cards).set({ description, updatedAt: at }).where(eq(cards.id, source.id)).run()
+  }
 }

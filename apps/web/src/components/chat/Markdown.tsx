@@ -1,5 +1,6 @@
 import { useContext, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useCardRefs } from '../../lib/card-refs'
+import { useTranslate } from '../../lib/i18n'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
@@ -27,6 +28,7 @@ export function Markdown({
   text,
   base,
   onToggleTask,
+  onPromoteTask,
 }: {
   text: string
   base?: string
@@ -36,10 +38,17 @@ export function Markdown({
    * le seul texte que l'interface sait réécrire.
    */
   onToggleTask?: (index: number, checked: boolean) => void
+  /**
+   * Offre sur chaque case ouverte un bouton « promouvoir en carte » (#71), et dit
+   * laquelle par son rang. Seulement avec `onToggleTask` : c'est le même texte réécrit.
+   */
+  onPromoteTask?: (index: number) => void
 }) {
+  const t = useTranslate()
   const conversationId = useContext(FileLinkContext)
   const [viewing, setViewing] = useState<{ src: string; name: string } | null>(null)
   const tasks = onToggleTask ? ('interactive' as const) : undefined
+  const taskPromote = onToggleTask && onPromoteTask ? t('board.card.promote.action') : undefined
   // Les cartes du projet, quand l'écran en a un : leurs `#12` deviennent des liens.
   const { projectId, cards: cardsByNumber } = useCardRefs()
   const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
@@ -57,12 +66,13 @@ export function Markdown({
         scope: conversationId ?? undefined,
         base,
         tasks,
+        taskPromote,
         cards,
         projectId,
         sessionIds,
         origin,
       }),
-    [text, conversationId, base, tasks, cards, projectId, sessionIds, origin],
+    [text, conversationId, base, tasks, taskPromote, cards, projectId, sessionIds, origin],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -80,13 +90,14 @@ export function Markdown({
             scope: conversationId ?? undefined,
             base,
             tasks,
+            taskPromote,
             cards,
             projectId,
             sessionIds,
             origin,
           }).segments
         : found.segments,
-    [linkable, text, known, conversationId, base, tasks, cards, projectId, sessionIds, origin, found.segments],
+    [linkable, text, known, conversationId, base, tasks, taskPromote, cards, projectId, sessionIds, origin, found.segments],
   )
   const sessionRefs = useSessionReferencePortals({ root, segments, sessions, loading: loadingSessions })
 
@@ -97,6 +108,13 @@ export function Markdown({
    * quel, il n'y a pas de composant React où accrocher un `onClick`.
    */
   const onClick = (event: MouseEvent<HTMLDivElement>) => {
+    const promote = (event.target as HTMLElement).closest<HTMLElement>('[data-sg-promote]')
+    if (promote && onPromoteTask) {
+      event.preventDefault()
+      onPromoteTask(Number(promote.dataset.sgPromote))
+      return
+    }
+
     const task = (event.target as HTMLElement).closest<HTMLInputElement>('[data-sg-task]')
     if (task && onToggleTask) {
       // La case ne bascule pas d'elle-même : son état vit dans la description, pas

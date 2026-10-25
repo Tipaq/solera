@@ -207,7 +207,7 @@ function deliveryBriefing(db: Db, input: OverviewInput): string | null {
 
 /** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */
 const OWN_CARD_GESTURES =
-  "Tu ranges toi-même ta carte avec `move_card` : « à préciser » quand tu attends des réponses, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
+  "Tu ranges toi-même ta carte avec `move_card` : « à préciser » quand tu attends des réponses, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et promeus en carte sœur avec `promote_subtask` celle qui se révèle trop grosse pour ta session. Si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
 
 /**
  * La clarification avant le code (#67).

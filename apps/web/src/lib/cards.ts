@@ -173,6 +173,19 @@ export function useToggleSubtask(projectId: string, cardId: string) {
   })
 }
 
+/**
+ * Promeut une sous-tâche en carte sœur (#71). Le serveur vérifie la ligne comme pour
+ * cocher, et refuse en 409 quand elle a changé : le board se recharge alors aussi.
+ */
+export function usePromoteSubtask(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (task: { index: number; label: string; title: string; blocks: boolean }) =>
+      api.post<{ card: CardDto; created: CardDto }>(`/api/cards/${cardId}/subtasks/promote`, task),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
 /** Pose le lien « cette carte bloque celle-là », qui survit aux réécritures du texte. */
 export function useAddCardBlock(projectId: string, cardId: string) {
   const queryClient = useQueryClient()

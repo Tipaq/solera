@@ -72,7 +72,7 @@ async function harness(t: TestContext, options: { linked?: boolean; description?
   const sessions = { statusBus: new EventEmitter() } as unknown as SessionManager
   const requests = new AgentRequests(ctx, sessions, {} as AgentRegistry, new EventLog(db))
 
-  const call = async (kind: 'create_card' | 'append_card_description' | 'edit_subtasks' | 'link_card' | 'move_card' | 'relate_cards', payload: Record<string, unknown>) => {
+  const call = async (kind: 'create_card' | 'append_card_description' | 'edit_subtasks' | 'promote_subtask' | 'link_card' | 'move_card' | 'relate_cards', payload: Record<string, unknown>) => {
     const id = randomUUID()
     db.insert(agentRequests)
       .values({ id, projectId: 'project', conversationId: 'session', kind, payload: JSON.stringify(payload), createdAt: Date.now() })
@@ -183,6 +183,42 @@ test('edit_subtasks coche par libellé, ajoute sous la dernière case, et refuse
   const unknown = await call('edit_subtasks', { uncheck: ['Publier'] })
   assert.equal(unknown.isError, true)
   assert.match(unknown.result ?? '', /Aucune sous-tâche « Publier ».*« Lire », « Écrire », « Relire »/)
+})
+
+test('promote_subtask crée une sœur sous la même parente, réécrit la ligne en #N, et la case suit #N', async (t) => {
+  const { db, own, card, call, read, notes } = await harness(t, { description: 'Plan :\n- [ ] Lire\n- [ ] Écrire le moteur\n- [x] Fait' })
+  const parent = card('in_progress')
+  db.update(cards).set({ parentId: parent.id }).where(eq(cards.id, own.id)).run()
+
+  const row = await call('promote_subtask', { subtask: 'Écrire le moteur' })
+  assert.equal(row.isError, false, row.result ?? '')
+  const created = db.select().from(cards).where(eq(cards.title, 'Écrire le moteur')).get()!
+  assert.equal(created.parentId, parent.id, 'une sœur, pas une enfant')
+  assert.equal(created.column, 'todo')
+  assert.equal(created.description, `Promue depuis une sous-tâche de #${own.number}.`)
+  assert.equal(read(own.id).description, `Plan :\n- [ ] Lire\n- [ ] #${created.number} Écrire le moteur\n- [x] Fait`)
+  assert.deepEqual(
+    db.select().from(cardBlocks).all().map((block) => [block.sourceId, block.targetId]),
+    [[created.id, own.id]],
+    'la nouvelle bloque l’origine, par défaut',
+  )
+  assert.ok(db.select().from(cardRefs).all().some((ref) => ref.sourceId === own.id && ref.targetId === created.id))
+  assert.match(notes(created.id)[0]?.body ?? '', /en promouvant une sous-tâche de #1/)
+  assert.match(notes(own.id)[0]?.body ?? '', new RegExp(`promue en carte #${created.number}`))
+
+  // La case suit #N : elle ne se coche pas à la main.
+  const manual = await call('edit_subtasks', { check: [`#${created.number} Écrire le moteur`] })
+  assert.equal(manual.isError, true)
+  assert.match(manual.result ?? '', /suit la carte/)
+
+  assert.match((await call('promote_subtask', { subtask: `#${created.number} Écrire le moteur` })).result ?? '', /déjà la carte/)
+  assert.match((await call('promote_subtask', { subtask: 'Fait' })).result ?? '', /est cochée/)
+  assert.match((await call('promote_subtask', { subtask: 'Publier' })).result ?? '', /Aucune sous-tâche « Publier »/)
+
+  const unblocked = await call('promote_subtask', { subtask: 'Lire', blocks: false, title: 'Lire le code' })
+  assert.equal(unblocked.isError, false, unblocked.result ?? '')
+  assert.equal(db.select().from(cardBlocks).all().length, 1)
+  assert.ok(db.select().from(cards).where(eq(cards.title, 'Lire le code')).get())
 })
 
 test('link_card rattache une conversation lancée sans carte, et la carte démarre', async (t) => {

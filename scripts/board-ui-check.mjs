@@ -178,6 +178,23 @@ try {
   assert.equal(ticked.dueAt !== null, true)
   assert.equal(ticked.parent.number, 11)
 
+  // Promouvoir une sous-tâche en carte (#71) : une sœur sous la même parente, qui bloque
+  // celle-ci, et la ligne devient `#N`, sa case désactivée puisqu'elle suit #N.
+  await panel.locator('li.sg-task-item').nth(1).hover()
+  await panel.locator('button[data-sg-promote="1"]').click()
+  await panel.getByLabel('Titre de la nouvelle carte', { exact: true }).waitFor()
+  await panel.getByText('Elle sera rangée sous #11, comme cette carte.', { exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'promouvoir-sous-tache.png') })
+  await panel.getByRole('button', { name: 'Créer la carte', exact: true }).click()
+  await panel.getByLabel('Titre de la nouvelle carte', { exact: true }).waitFor({ state: 'hidden' })
+  const all = await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json()
+  const sister = all.find((entry) => entry.title === 'Poser les échéances')
+  assert.equal(sister.parent.number, 11)
+  assert.deepEqual(sister.blocks.map((link) => link.number), [number])
+  assert.match(all.find((entry) => entry.id === created.id).description, new RegExp(`- \\[ \\] #${sister.number} Poser les échéances`))
+  await panel.locator('input[type="checkbox"][disabled]').first().waitFor()
+  assert.equal(await panel.locator('input[data-sg-task="1"]').count(), 0)
+
   // Un lien posé à la main, à côté des citations `#12` et sous son propre nom.
   await panel.getByRole('button', { name: 'Déclarer une carte bloquée', exact: true }).click()
   const blocked = page.getByRole('dialog', { name: 'Déclarer une carte bloquée', exact: true })
@@ -284,7 +301,7 @@ try {
   await page.keyboard.press('Space')
   assert.ok((await reordered).ok())
   await page.waitForTimeout(300)
-  assert.equal(await page.locator('[data-card-open]').count(), leaves.length + 1)
+  assert.equal(await page.locator('[data-card-open]').count(), leaves.length + 2, 'la carte créée et sa sœur promue')
 
   // L'arbre de cartes (#83). Une issue entrée de l'extérieur attend en tête de « à faire »,
   // avec sa pastille, et ne lance pas de session tant qu'on ne l'a pas acceptée.
@@ -326,13 +343,13 @@ try {
   await page.getByRole('button', { name: 'Filtrer par parente', exact: true }).click()
   await page.getByRole('menuitemradio', { name: /#11/ }).click()
   await page.waitForFunction(() => new URL(location.href).searchParams.get('parente') === '11')
-  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, 4)
-  for (const child of [2, 4, 10, number]) await page.locator(`[data-card-tile="${child}"]`).waitFor()
+  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, 5)
+  for (const child of [2, 4, 10, number, sister.number]) await page.locator(`[data-card-tile="${child}"]`).waitFor()
   assert.equal(await page.getByRole('button', { name: /^Déplacer la carte/ }).count(), 0, 'Un board filtré ne réordonne pas des colonnes partielles')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-parent-filter.png') })
   await page.getByRole('button', { name: 'Filtrer par parente', exact: true }).click()
   await page.getByRole('menuitemradio', { name: 'Toutes les cartes', exact: true }).click()
-  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, leaves.length + 1)
+  await page.waitForFunction((n) => document.querySelectorAll('[data-card-open]').length === n, leaves.length + 2)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-desktop.png') })
   await page.locator(`[data-card-open="${created.id}"]`).click()
   await editCard(page, panel)
@@ -365,7 +382,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, lien « bloque », référence #n et aperçu, tiroir refermé à côté, glisser par la carte, ordre par arrivée, recherche, clavier, carte non acceptée et à préciser, parente et filtre, mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, promotion d’une sous-tâche, lien « bloque », référence #n et aperçu, tiroir refermé à côté, glisser par la carte, ordre par arrivée, recherche, clavier, carte non acceptée et à préciser, parente et filtre, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

@@ -286,6 +286,7 @@ const REQUEST_WAIT_MS = {
   move_card: 15000,
   append_card_description: 15000,
   edit_subtasks: 15000,
+  promote_subtask: 15000,
   link_card: 15000,
   relate_cards: 15000,
   rename_session: 15000,
@@ -538,7 +539,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, celles qui lui sont liées ou en sont des doublons, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. Sur ta propre carte, tu ranges seul (move_card), tu complètes la description (append_card_description) et tu coches les sous-tâches (edit_subtasks) ; sur n'importe quelle carte, tu poses les liens « liée à » et « doublon de » (relate_cards). L'échéance, la parente, les blocages et la colonne d'une carte existante sont, eux, le choix d'une personne : tu en proposes le changement avec request_card_change.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, celles qui lui sont liées ou en sont des doublons, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. Sur ta propre carte, tu ranges seul (move_card), tu complètes la description (append_card_description) et tu coches les sous-tâches (edit_subtasks) ou en promeus une en carte sœur (promote_subtask) ; sur n'importe quelle carte, tu poses les liens « liée à » et « doublon de » (relate_cards). L'échéance, la parente, les blocages et la colonne d'une carte existante sont, eux, le choix d'une personne : tu en proposes le changement avec request_card_change.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -659,6 +660,20 @@ const ALL_TOOLS = [
         uncheck: { type: 'array', items: { type: 'string' }, description: 'Libellés des sous-tâches à décocher.' },
         add: { type: 'array', items: { type: 'string' }, description: 'Sous-tâches à ajouter, non cochées, une ligne chacune.' },
       },
+    },
+  },
+  {
+    name: 'promote_subtask',
+    description:
+      "Promeut une sous-tâche de la carte de cette conversation en carte à part entière, quand elle se révèle trop grosse pour cette session : une carte sœur, sous la même parente, que start_session pourra confier à une autre session. La ligne devient `- [ ] #N libellé`, et sa case se cochera seule quand #N sera terminée. Par défaut, la nouvelle carte bloque la tienne, puisque ta carte attendait cette sous-tâche ; `blocks: false` si ce n'est pas le cas. Pour un petit pas, garde la case : une carte coûte une session.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        subtask: { type: 'string', description: 'Le libellé de la sous-tâche, tel que read_card le montre.' },
+        title: { type: 'string', description: 'Le titre de la nouvelle carte, quand le libellé n’en fait pas un bon. Par défaut, le libellé.' },
+        blocks: { type: 'boolean', description: 'Vrai par défaut : la nouvelle carte bloque la tienne.' },
+      },
+      required: ['subtask'],
     },
   },
   {
@@ -3953,12 +3968,15 @@ async function callTool(name, args) {
 
   // Les gestes sur la carte de la conversation (#66) : tout se valide dans le daemon,
   // qui relit la description et la carte au moment d'écrire.
-  if (name === 'append_card_description' || name === 'edit_subtasks' || name === 'link_card') {
+  if (name === 'append_card_description' || name === 'edit_subtasks' || name === 'promote_subtask' || name === 'link_card') {
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas quelle carte toucher."), isError: true }
     }
     if (name === 'append_card_description' && !(typeof args?.text === 'string' && args.text.trim())) {
       return { ...text('Le paramètre `text` est requis.'), isError: true }
+    }
+    if (name === 'promote_subtask' && !(typeof args?.subtask === 'string' && args.subtask.trim())) {
+      return { ...text('Le paramètre `subtask` est le libellé de la sous-tâche.'), isError: true }
     }
     if (name === 'link_card' && !Number.isInteger(args?.card)) {
       return { ...text('Le paramètre `card` est le numéro de la carte, sans le `#`.'), isError: true }

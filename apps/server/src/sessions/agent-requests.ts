@@ -86,6 +86,7 @@ import {
   cardNumbers,
   createCardFor,
   editOwnSubtasks,
+  promoteOwnSubtask,
   linkOwnConversation,
   parseDueDay,
   relateCardsFor,
@@ -222,6 +223,7 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'append_card_description',
   'edit_subtasks',
   'link_card',
+  'promote_subtask',
   'relate_cards',
 ])
 
@@ -480,6 +482,10 @@ export class AgentRequests {
       }
       if (request.kind === 'edit_subtasks') {
         this.settle(request, editOwnSubtasks(this.ctx.db, requester, project.id, payload), false)
+        return
+      }
+      if (request.kind === 'promote_subtask') {
+        this.settle(request, promoteOwnSubtask(this.ctx.db, requester, project.id, payload), false)
         return
       }
       if (request.kind === 'link_card') {
