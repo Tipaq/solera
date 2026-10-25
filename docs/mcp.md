@@ -73,7 +73,8 @@ projet partagé, comme dans l'interface et l'API. Ces trois gestes passent par l
   fait sans l'utilisateur, ne s'y appliquent donc pas : la barrière est la portée `mcp`
   du jeton.
 - Ce qui suppose le répertoire de travail d'une session (`find_file_edits`,
-  `create_worktree`, `set_project_image`) ou une vue Web à côté du fil (les outils du
+  `create_worktree`, `set_project_image`, et les deux bouts de la revue d'une PR,
+  `request_review` et `submit_review`) ou une vue Web à côté du fil (les outils du
   design system).
 
 Les gestes qui passent par le daemon restent soumis à ses gardes : au plus six

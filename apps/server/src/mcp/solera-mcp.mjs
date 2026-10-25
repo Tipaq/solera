@@ -288,6 +288,9 @@ const REQUEST_WAIT_MS = {
   relate_cards: 15000,
   rename_session: 15000,
   request_decision: 15000,
+  // Lire la PR sur la forge, puis démarrer le CLI de la session de revue.
+  request_review: 90000,
+  submit_review: 15000,
   // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
   create_worktree: 60000,
   // Le premier calcul d'avancement lance plusieurs git par arbre.
@@ -1198,6 +1201,38 @@ const ALL_TOOLS = [
         },
       },
       required: ['question'],
+    },
+  },
+  {
+    name: 'request_review',
+    description:
+      "Signale la PR que tu viens d'ouvrir pour ta carte, et lance sa revue : Solera lit la PR sur GitHub, vérifie qu'elle propose ta branche et qu'elle est poussée jusqu'à ton dernier commit, puis lance une session de revue dans ton arbre. Son verdict t'arrive en message ; s'il demande des corrections, corrige, commite, pousse et rappelle cet outil avec la même PR. Un commit déjà relu ne relance rien, et au-delà de trois tours l'utilisateur tranche. Ne fusionne jamais la PR toi-même.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pr: {
+          type: 'string',
+          description: 'Le numéro de la PR, ou son URL, tels que `gh pr create` les rend.',
+        },
+      },
+      required: ['pr'],
+    },
+  },
+  {
+    name: 'submit_review',
+    description:
+      "Rend le verdict de ta revue sur la PR que Solera t'a confiée. `approve` s'il ne reste rien de bloquant : la carte passe « à vérifier » et l'auteure est prévenue. `changes` sinon : ton résumé lui est remis, elle corrige et son nouveau commit te revient en message. Ne sert qu'à une session de revue.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        verdict: { type: 'string', enum: ['approve', 'changes'], description: 'Le verdict.' },
+        summary: {
+          type: 'string',
+          description:
+            "Ce que tu as relu et vérifié, et pour `changes`, ce que l'auteure doit corriger : quoi, où, pourquoi, sans qu'elle ait à relire ta session. 4000 caractères au plus ; le détail va dans tes commentaires sur la PR.",
+        },
+      },
+      required: ['verdict', 'summary'],
     },
   },
   {
@@ -2783,6 +2818,21 @@ const CARD_FILING_TOOLS = new Set(['request_card_change'])
 /** Les outils que la famille « Décisions » ouvre. */
 const DECISION_TOOLS = new Set(['request_decision'])
 
+/**
+ * Les deux bouts de la revue d'une PR (#68) : `request_review` pour la session qui a écrit
+ * le code, `submit_review` pour celle que Solera lance pour la relire. Une session est
+ * l'une ou l'autre, jamais les deux, et c'est la ligne de la revue qui le dit : elle est
+ * écrite avant le premier message de la relectrice, donc avant ce process.
+ */
+const IS_REVIEWER = (() => {
+  if (!CURRENT_CONVERSATION) return false
+  try {
+    return Boolean(db.prepare('SELECT 1 FROM card_reviews WHERE reviewer_conversation_id = ?').get(CURRENT_CONVERSATION))
+  } catch {
+    return false
+  }
+})()
+
 /** Les outils du design system lié, qui n'existent pas dans un projet sans DS. */
 const DESIGN_SYSTEM_TOOLS = new Set(['list_components', 'read_component', 'read_ds_page', 'show_prototype'])
 
@@ -2803,6 +2853,8 @@ const offered = (tool) =>
   ((GLOBAL ? MEMORY_ROOT : MEMORY_DIR) !== '' || !MEMORY_TOOLS.has(tool.name)) &&
   (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name)) &&
   (DECISIONS || !DECISION_TOOLS.has(tool.name)) &&
+  (tool.name !== 'request_review' || (Boolean(CURRENT_CONVERSATION) && !IS_REVIEWER)) &&
+  (tool.name !== 'submit_review' || IS_REVIEWER) &&
   (DESIGN_SYSTEM_STATE !== '' || !DESIGN_SYSTEM_TOOLS.has(tool.name))
 
 const text = (value) => ({ content: [{ type: 'text', text: value }] })
@@ -3855,6 +3907,21 @@ async function callTool(name, args) {
       }
     }
     return requestDaemon(name, { title })
+  }
+
+  if (name === 'request_review' || name === 'submit_review') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas quelle revue suivre."), isError: true }
+    }
+    if (name === 'request_review') {
+      const pr = typeof args?.pr === 'number' ? String(args.pr) : typeof args?.pr === 'string' ? args.pr.trim() : ''
+      if (!pr) return { ...text('Le paramètre `pr` est requis : le numéro ou l’URL de ta PR.'), isError: true }
+      return requestDaemon(name, { pr })
+    }
+    if (args?.verdict !== 'approve' && args?.verdict !== 'changes') {
+      return { ...text('Le paramètre `verdict` vaut `approve` ou `changes`.'), isError: true }
+    }
+    return requestDaemon(name, { verdict: args.verdict, summary: typeof args?.summary === 'string' ? args.summary : '' })
   }
 
   if (name === 'move_card') {

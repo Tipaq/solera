@@ -425,6 +425,63 @@ export const cardNotes = sqliteTable(
 )
 
 /**
+ * La revue d'une PR de carte (#68) : la session qui a écrit le code ouvre sa PR et la
+ * signale (`request_review`), une session de revue lancée par le serveur la relit et
+ * rend son verdict (`submit_review`), et les deux se renvoient la balle jusqu'au vert.
+ *
+ * Une ligne par PR, tenue à jour d'un tour à l'autre plutôt qu'une ligne par tour : ce
+ * que la boucle a besoin de savoir, c'est où elle en est. L'historique des tours vit
+ * dans les deux fils et dans les notes de la carte.
+ *
+ * Le webhook « PR ouverte » ne peut pas joindre Solera, et c'est pourquoi la PR est
+ * signalée par la session plutôt qu'observée sur la forge.
+ */
+export const cardReviews = sqliteTable(
+  'card_reviews',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    /** Sans clé étrangère, comme les messages entre sessions : la revue reste lisible. */
+    authorConversationId: text('author_conversation_id').notNull(),
+    /** Null le temps de lancer la session de revue, posé avant son premier message. */
+    reviewerConversationId: text('reviewer_conversation_id'),
+    prNumber: integer('pr_number').notNull(),
+    prUrl: text('pr_url').notNull(),
+    branch: text('branch').notNull(),
+    base: text('base').notNull(),
+    /** Le dernier commit signalé par l'auteur, celui que la revue en cours relit. */
+    headSha: text('head_sha').notNull(),
+    /** Le commit du dernier verdict : un `request_review` sur le même ne relance rien. */
+    reviewedSha: text('reviewed_sha'),
+    round: integer('round').notNull().default(1),
+    /** Trois par défaut ; une personne qui accorde un tour de plus le relève d'un. */
+    maxRounds: integer('max_rounds').notNull().default(3),
+    /**
+     * `reviewing` : la revue tourne ; `changes` : l'auteur corrige ; `approved` : au
+     * vert ; `escalated` : le plafond est atteint et une personne tranche
+     * (`decision_id`) ; `closed` : la PR ne se relit plus.
+     */
+    state: text('state', { enum: ['reviewing', 'changes', 'approved', 'escalated', 'closed'] })
+      .notNull()
+      .default('reviewing'),
+    /** La décision déposée au plafond (`agent_requests.id`). */
+    decisionId: text('decision_id'),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('idx_card_reviews_pr').on(t.projectId, t.prNumber),
+    index('idx_card_reviews_card').on(t.cardId),
+    index('idx_card_reviews_reviewer').on(t.reviewerConversationId),
+  ],
+)
+
+/**
  * Un message d'une session à une autre du même projet.
  *
  * Déposé par le serveur MCP, qui n'a qu'un accès à la base, et remis par le daemon, qui
@@ -561,6 +618,9 @@ export const agentRequests = sqliteTable(
         // Le titre de sa propre session, qui doit être annoncé aux clients.
         'rename_session',
         'request_decision',
+        // La revue d'une PR de carte (#68) : l'auteur la signale, la revue rend son verdict.
+        'request_review',
+        'submit_review',
         // Worktrees : git et l'avancement des arbres ne vivent que dans le daemon.
         'create_worktree',
         'list_worktrees',
@@ -1643,6 +1703,7 @@ export type WorktreeRow = typeof worktrees.$inferSelect
 export type CardRow = typeof cards.$inferSelect
 export type CardNoteRow = typeof cardNotes.$inferSelect
 export type CardMoveRow = typeof cardMoves.$inferSelect
+export type CardReviewRow = typeof cardReviews.$inferSelect
 export type SessionMessageRow = typeof sessionMessages.$inferSelect
 export type AgentRequestRow = typeof agentRequests.$inferSelect
 export type SessionWatchRow = typeof sessionWatches.$inferSelect
