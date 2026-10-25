@@ -32,6 +32,12 @@ export interface Forge {
    * supprime jamais la branche** : son worktree disparaîtrait sous la session qui y vit.
    */
   mergePullRequest(cwd: string, number: number, headSha: string, token?: string): Promise<void>
+  /** Ouvre une PR d'une branche déjà poussée ; rend son numéro et son adresse. */
+  createPullRequest(
+    cwd: string,
+    pr: { head: string; base: string; title: string; body: string },
+    token?: string,
+  ): Promise<{ number: number; url: string }>
 }
 
 /** Refus lisible par l'agent : la forge n'a pas pu répondre, ou la PR n'est pas là. */
@@ -69,6 +75,24 @@ export const ghForge: Forge = {
     } catch (err) {
       throw forgeError(err, `Solera n'a pas pu fusionner la PR #${number}`)
     }
+  },
+
+  async createPullRequest(cwd, pr, token) {
+    let stdout: string
+    try {
+      ;({ stdout } = await gh(
+        cwd,
+        ['pr', 'create', '--head', pr.head, '--base', pr.base, '--title', pr.title, '--body', pr.body],
+        token,
+      ))
+    } catch (err) {
+      throw forgeError(err, `Solera n'a pas pu ouvrir la PR de \`${pr.head}\``)
+    }
+    // `gh pr create` écrit l'adresse de la PR en dernière ligne.
+    const url = stdout.trim().split('\n').at(-1)?.trim() ?? ''
+    const number = Number(/\/pull\/(\d+)/.exec(url)?.[1])
+    if (!Number.isInteger(number)) throw new ForgeError(`PR de \`${pr.head}\` ouverte, mais son adresse est illisible : « ${url} ».`)
+    return { number, url }
   },
 }
 

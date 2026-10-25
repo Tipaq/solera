@@ -11,6 +11,7 @@ import { asc, eq } from 'drizzle-orm'
 import {
   agentRequests,
   cardMoves,
+  cardNotes,
   cardReviews,
   cards,
   conversations,
@@ -106,15 +107,32 @@ async function harness(t: TestContext, { parent = false }: { parent?: boolean } 
   }
   const merged: Array<{ number: number; sha: string }> = []
   let mergeFailure: string | null = null
+  // La lecture d'une PR par sa branche (celle d'une parente) ne trouve rien : ouverte par Solera.
   const forge: Forge = {
-    readPullRequest: async () => ({ ...pr }),
+    readPullRequest: async (_cwd, ref) => {
+      if (ref.startsWith('jalon/')) throw new ForgeError('no pull requests found')
+      return { ...pr }
+    },
     mergePullRequest: async (_cwd, number, sha) => {
       if (mergeFailure) throw new ForgeError(mergeFailure)
       merged.push({ number, sha })
     },
+    createPullRequest: async () => {
+      throw new Error('remplacé plus bas')
+    },
   }
   const failMerge = (reason: string | null) => {
     mergeFailure = reason
+  }
+  const opened: Array<{ head: string; base: string; title: string; body: string }> = []
+  let openFailure: string | null = null
+  forge.createPullRequest = async (_cwd, input) => {
+    if (openFailure) throw new ForgeError(openFailure)
+    opened.push(input)
+    return { number: 100 + opened.length, url: `https://github.com/t/nimbus/pull/${100 + opened.length}` }
+  }
+  const failOpen = (reason: string | null) => {
+    openFailure = reason
   }
 
   const sent: Array<{ id: string; text: string }> = []
@@ -152,7 +170,7 @@ async function harness(t: TestContext, { parent = false }: { parent?: boolean } 
     return (JSON.parse(run.stdout).result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
   }
 
-  return { db, repo, origin, pr, commit, sent, call, review, inbox, tools, decisions, requests, merged, failMerge }
+  return { db, repo, origin, pr, commit, sent, call, review, inbox, tools, decisions, requests, merged, failMerge, opened, failOpen }
 }
 
 test('revue : la PR signalée lance une relectrice sur la carte, dans l’arbre de l’auteure', async (t) => {
@@ -349,4 +367,51 @@ test('revue : une fusion refusée par la forge le dit, et un nouveau commit repa
   assert.equal(again.isError, false, again.result ?? '')
   assert.equal(review().state, 'reviewing')
   assert.equal(review().round, 2)
+})
+
+test('jalon : les enfants closes, Solera ouvre la PR de la parente vers la branche par défaut, sans la fusionner', async (t) => {
+  const { db, pr, call, review, requests, merged, opened, failOpen } = await harness(t, { parent: true })
+  db.insert(cards)
+    .values({
+      id: 'sibling', projectId: 'project', number: 8, title: 'Sœur', description: '', column: 'in_progress',
+      position: 2, createdBy: 'owner', createdAt: 1, updatedAt: 1, parentId: 'parent',
+    })
+    .run()
+  pr.base = PARENT_BRANCH
+  await call(AUTHOR, 'request_review', { pr: '42' })
+  await call(review().reviewerConversationId!, 'submit_review', { verdict: 'approve', summary: 'ok' })
+  assert.equal(merged.length, 1)
+  assert.equal(opened.length, 0, 'Une sœur travaille encore : rien à proposer')
+
+  db.update(cards).set({ column: 'abandoned' }).where(eq(cards.id, 'sibling')).run()
+  failOpen('forge injoignable')
+  await requests.sweep()
+  assert.equal(opened.length, 0)
+  const parent = () => db.select().from(cards).where(eq(cards.id, 'parent')).get()!
+  assert.equal(parent().branchPrNumber, null)
+  const notes = () => db.select().from(cardNotes).where(eq(cardNotes.cardId, 'parent')).all().map((note) => note.body)
+  assert.ok(notes().some((body) => /forge injoignable/.test(body)))
+
+  failOpen(null)
+  await requests.sweep()
+  assert.equal(opened.length, 0, 'Un échec attend avant de retenter')
+})
+
+test('jalon : la PR de la parente part une fois, et liste les PR de ses enfants', async (t) => {
+  const { db, pr, call, review, requests, merged, opened } = await harness(t, { parent: true })
+  pr.base = PARENT_BRANCH
+  await call(AUTHOR, 'request_review', { pr: '42' })
+  await call(review().reviewerConversationId!, 'submit_review', { verdict: 'approve', summary: 'ok' })
+  assert.equal(merged.length, 1)
+  // Le balayage qui a fusionné l'enfant a déjà vu la parente prête.
+  assert.equal(opened.length, 1)
+  assert.equal(opened[0]!.head, PARENT_BRANCH)
+  assert.equal(opened[0]!.base, 'main')
+  assert.match(opened[0]!.body, /#7 Monter vite \(PR #42\)/)
+  const parent = db.select().from(cards).where(eq(cards.id, 'parent')).get()!
+  assert.equal(parent.branchPrNumber, 101)
+
+  await requests.sweep()
+  assert.equal(opened.length, 1, 'Une seule PR')
+  assert.equal(merged.length, 1, 'Et Solera ne la fusionne pas')
 })

@@ -111,6 +111,8 @@ function insertCard(
       acceptedAt: options.accepted === false ? null : now,
       toClarifySince: null,
       branch: null,
+      branchPrNumber: null,
+      branchPrUrl: null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,
