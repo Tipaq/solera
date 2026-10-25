@@ -114,6 +114,25 @@ export const cardBlockBodySchema = z.object({
 })
 
 /**
+ * Les liens informatifs entre cartes (#109) : ils ne changent ni l'ordre du travail ni
+ * la colonne. `related` se lit des deux bouts ; `duplicate_of` va de la copie vers
+ * l'originale.
+ */
+export const CARD_RELATION_KINDS = ['related', 'duplicate_of'] as const
+export const cardRelationKindSchema = z.enum(CARD_RELATION_KINDS)
+export type CardRelationKind = z.infer<typeof cardRelationKindSchema>
+
+/**
+ * Pose un lien informatif depuis la carte de l'URL. Pour `duplicate_of`, remplace
+ * l'originale déjà posée : une copie n'en a qu'une, et le sélecteur de la fiche la
+ * change d'un geste, comme la parente.
+ */
+export const cardRelationBodySchema = z.object({
+  kind: cardRelationKindSchema,
+  targetId: z.string().uuid(),
+})
+
+/**
  * Coche ou décoche la n-ième sous-tâche de la description.
  *
  * `label` voyage avec l'indice et n'est pas décoratif : la description a pu changer
@@ -252,6 +271,12 @@ export interface CardDto {
   blocks: CardLinkDto[]
   /** Cartes qui empêchent celle-ci d'avancer. */
   blockedBy: CardLinkDto[]
+  /** Cartes liées à celle-ci, dans un sens ou dans l'autre : un lien informatif. */
+  related: CardLinkDto[]
+  /** L'originale dont celle-ci est un doublon. */
+  duplicateOf: CardLinkDto | null
+  /** Les cartes qui se déclarent doublons de celle-ci. */
+  duplicates: CardLinkDto[]
 }
 
 /**

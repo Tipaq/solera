@@ -13,6 +13,7 @@ import {
   cardMoves,
   cardNotes,
   cardRefs,
+  cardRelations,
   cards,
   conversations,
   openDatabase,
@@ -71,7 +72,7 @@ async function harness(t: TestContext, options: { linked?: boolean; description?
   const sessions = { statusBus: new EventEmitter() } as unknown as SessionManager
   const requests = new AgentRequests(ctx, sessions, {} as AgentRegistry, new EventLog(db))
 
-  const call = async (kind: 'create_card' | 'append_card_description' | 'edit_subtasks' | 'link_card' | 'move_card', payload: Record<string, unknown>) => {
+  const call = async (kind: 'create_card' | 'append_card_description' | 'edit_subtasks' | 'link_card' | 'move_card' | 'relate_cards', payload: Record<string, unknown>) => {
     const id = randomUUID()
     db.insert(agentRequests)
       .values({ id, projectId: 'project', conversationId: 'session', kind, payload: JSON.stringify(payload), createdAt: Date.now() })
@@ -226,4 +227,37 @@ test('move_card met sa carte « à préciser », dans « à faire », et l’en 
   assert.equal((await call('move_card', { column: 'in_progress' })).isError, false)
   assert.equal(read(own.id).column, 'in_progress')
   assert.equal(read(own.id).toClarifySince, null)
+})
+
+test('relate_cards relie n’importe quelles cartes, signe d’une note, et ne remplace pas une originale', async (t) => {
+  const { db, own, card, call, notes, read } = await harness(t)
+  const other = card('todo')
+  const original = card('todo')
+  const elsewhere = card('review')
+
+  // Par défaut, depuis la carte de la conversation.
+  const related = await call('relate_cards', { kind: 'related', target: other.number })
+  assert.equal(related.isError, false, related.result ?? '')
+  assert.equal(db.select().from(cardRelations).all().length, 1)
+  assert.match(notes(own.id).at(-1)!.body, new RegExp(`liée à #${other.number}`))
+  assert.match((await call('relate_cards', { kind: 'related', target: other.number })).result ?? '', /Rien à changer/)
+
+  // Sur deux cartes qui ne sont pas la sienne : le lien ne défait rien.
+  const duplicate = await call('relate_cards', { kind: 'duplicate_of', card: other.number, target: original.number })
+  assert.equal(duplicate.isError, false, duplicate.result ?? '')
+  assert.match(duplicate.result ?? '', /propose de l'abandonner/)
+  assert.equal(read(other.id).column, 'todo', 'un doublon n’est pas clos par le lien')
+
+  const replace = await call('relate_cards', { kind: 'duplicate_of', card: other.number, target: elsewhere.number })
+  assert.equal(replace.isError, true)
+  assert.match(replace.result ?? '', new RegExp(`déjà doublon de #${original.number}`))
+
+  const cycle = await call('relate_cards', { kind: 'duplicate_of', card: original.number, target: other.number })
+  assert.equal(cycle.isError, true)
+
+  const removed = await call('relate_cards', { kind: 'duplicate_of', card: other.number, target: original.number, remove: true })
+  assert.match(removed.result ?? '', /n'est plus doublon/)
+  assert.equal(db.select().from(cardRelations).all().length, 1)
+
+  assert.equal((await call('relate_cards', { kind: 'blocks', target: other.number })).isError, true)
 })
