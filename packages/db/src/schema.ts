@@ -571,6 +571,79 @@ export const cardReviews = sqliteTable(
 )
 
 /**
+ * Le pilotage d'un jalon lancé (#72) : les enfants d'une carte parente partent en
+ * sessions parallèles, dans l'ordre de leurs liens « bloque », sous la conduite du
+ * serveur (`apps/server/src/milestones/`).
+ *
+ * Tout l'état qui doit survivre à un redémarrage est ici ; le reste (qui travaille, qui
+ * attend une personne) se déduit à chaque tour des cartes, des conversations et des
+ * revues, pour ne jamais diverger de ce qu'elles disent.
+ */
+export const milestoneRuns = sqliteTable(
+  'milestone_runs',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** La carte parente, celle qu'on a lancée. */
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: ['running', 'paused', 'stopped', 'finished'] }).notNull(),
+    concurrency: integer('concurrency').notNull().default(3),
+    /** La configuration du jalon (JSON `AgentConfig`, CLI compris), celle des cartes sans réglage propre. */
+    config: text('config').notNull(),
+    /** Le compte qui a lancé : ses sessions sont les siennes, et c'est lui qu'on prévient. */
+    startedBy: text('started_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp('created_at').notNull(),
+    updatedAt: timestamp('updated_at').notNull(),
+    endedAt: timestamp('ended_at'),
+  },
+  (t) => [
+    // Un seul pilotage vivant par parente : deux se disputeraient les mêmes cartes.
+    uniqueIndex('idx_milestone_runs_active')
+      .on(t.cardId)
+      .where(sql`${t.state} in ('running', 'paused')`),
+  ],
+)
+
+/**
+ * Une carte d'un jalon lancé. Ne garde que ce qui ne se déduit pas : où en est son
+ * lancement, la session qui la porte, et la dernière raison de blocage signalée, pour
+ * ne prévenir qu'une fois.
+ */
+export const milestoneRunCards = sqliteTable(
+  'milestone_run_cards',
+  {
+    runId: text('run_id')
+      .notNull()
+      .references(() => milestoneRuns.id, { onDelete: 'cascade' }),
+    cardId: text('card_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    /** Sa configuration propre (JSON `AgentConfig`), ou null pour celle du jalon. */
+    config: text('config'),
+    /**
+     * `queued` : pas encore lancée ; `launching` : le temps de créer sa session ;
+     * `launched` : sa session existe (lancée par le jalon, ou déjà là au lancement) ;
+     * `failed` : le lancement a échoué, `error` dit pourquoi.
+     */
+    launch: text('launch', { enum: ['queued', 'launching', 'launched', 'failed'] }).notNull(),
+    /** Sans clé étrangère : une conversation supprimée ne doit pas effacer la ligne. */
+    conversationId: text('conversation_id'),
+    error: text('error'),
+    /** La raison de blocage déjà signalée ; effacée quand la carte repart. */
+    notifiedBlock: text('notified_block'),
+    launchedAt: timestamp('launched_at'),
+    updatedAt: timestamp('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.cardId] }), index('idx_milestone_run_cards_card').on(t.cardId)],
+)
+
+/**
  * Un message d'une session à une autre du même projet.
  *
  * Déposé par le serveur MCP, qui n'a qu'un accès à la base, et remis par le daemon, qui
@@ -1831,6 +1904,8 @@ export type VaultLinkRow = typeof vaultLinks.$inferSelect
 export type VaultIndexStateRow = typeof vaultIndexState.$inferSelect
 export type IssueSourceRow = typeof issueSources.$inferSelect
 export type CardIssueRow = typeof cardIssues.$inferSelect
+export type MilestoneRunRow = typeof milestoneRuns.$inferSelect
+export type MilestoneRunCardRow = typeof milestoneRunCards.$inferSelect
 
 /**
  * Le fil replié d'une conversation, jetable : le journal reste la seule source. Ici

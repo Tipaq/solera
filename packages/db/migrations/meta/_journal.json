@@ -442,6 +442,13 @@
       "when": 1792950595575,
       "tag": "0063_issues_absorbees",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "6",
+      "when": 1792952072761,
+      "tag": "0064_lancer_un_jalon",
+      "breakpoints": true
     }
   ]
 }

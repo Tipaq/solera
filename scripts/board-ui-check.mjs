@@ -338,6 +338,16 @@ try {
   await page.keyboard.press('Escape')
   await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-parent.png') })
+
+  // Lancer le jalon (#72) : la section de la parente, puis l'aperçu, sans lancer.
+  const milestone = panel.getByRole('region', { name: 'Jalon', exact: true })
+  await milestone.getByRole('button', { name: 'Lancer le jalon', exact: true }).click()
+  const launchPreview = page.getByRole('dialog', { name: 'Lancer le jalon #11', exact: true })
+  await launchPreview.getByText(/^Partent tout de suite/).waitFor()
+  await launchPreview.getByText(/jalon\/11-/).first().waitFor()
+  await launchPreview.screenshot({ animations: 'disabled', path: join(shots, 'jalon-apercu.png') })
+  await launchPreview.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await preview.waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Fermer', exact: true }).click()
   await panel.waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: 'Filtrer par parente', exact: true }).click()

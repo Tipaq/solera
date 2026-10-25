@@ -13,6 +13,7 @@ import { CardBlocks } from './CardBlocks'
 import { CardEditor } from './CardEditor'
 import { CardIssueComments, CardIssueLink } from './CardIssue'
 import { CardChooser } from './CardChooser'
+import { CardMilestone } from './CardMilestone'
 import { CardChildren, CardDue, CardParent } from './CardMeta'
 import { CardProgress } from './CardProgress'
 import { PromoteSubtask } from './PromoteSubtask'
@@ -288,6 +289,8 @@ export function CardDetail({
           <div className="flex min-w-0 flex-col gap-5 pb-5 [grid-area:desc]">
             <CardStateBanners card={card} projectId={projectId} accepted={accepted} triage={triage} updateCard={updateCard}
               currentConversationId={currentConversationId} />
+            {/* Une parente se lance comme un jalon (#72) : ses enfants partent en sessions. */}
+            {isParent && accepted ? <CardMilestone card={card} projectId={projectId} onSelectCard={onSelectCard} /> : null}
             {editVisible ? null : (
               <div className="flex flex-col gap-2">
                 {card.description ? (

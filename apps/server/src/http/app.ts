@@ -62,6 +62,8 @@ import { registerAttachmentRoutes } from './routes/attachments.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js'
 import { registerCardRoutes } from './routes/cards.js'
+import { registerMilestoneRoutes } from './routes/milestones.js'
+import type { MilestoneRuns } from '../milestones/milestone-runs.js'
 import { registerIssueRoutes } from './routes/issues.js'
 import { registerConversationRoutes } from './routes/conversations.js'
 import { registerSessionMessageRoutes } from './routes/session-messages.js'
@@ -144,6 +146,7 @@ export async function buildApp(
   actions: ActionRunner,
   cardClosure?: CardClosure,
   issues?: IssueSources,
+  milestones?: MilestoneRuns,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -256,6 +259,7 @@ export async function buildApp(
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   registerCardRoutes(app, ctx, attachments)
+  if (milestones) registerMilestoneRoutes(app, ctx, milestones)
   if (issues) registerIssueRoutes(app, ctx, issues)
   registerJournalRoutes(app, ctx)
   registerUserRoutes(app, ctx)

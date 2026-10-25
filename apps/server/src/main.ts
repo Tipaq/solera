@@ -20,6 +20,7 @@ import { registerMaintenanceJobs } from './scheduler/jobs.js'
 import { Scheduler } from './scheduler/scheduler.js'
 import { TaskScheduler } from './scheduler/task-scheduler.js'
 import { AgentRequests } from './sessions/agent-requests.js'
+import { MilestoneRuns } from './milestones/milestone-runs.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { ghForge } from './reviews/forge.js'
@@ -141,6 +142,9 @@ async function main(): Promise<void> {
     token: githubToken,
     closure: cardClosure,
   })
+  // Les jalons lancés (#72) : leurs cartes partent en sessions dans l'ordre de leurs liens
+  // « bloque ». Construit avant l'application, qui expose ses routes, démarré après elle.
+  const milestones = new MilestoneRuns({ db, config }, sessions, registry, notifications)
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
   const scheduler = new Scheduler()
@@ -176,6 +180,7 @@ async function main(): Promise<void> {
     actions,
     cardClosure,
     issueSources,
+    milestones,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
@@ -193,6 +198,9 @@ async function main(): Promise<void> {
   // doivent décrire les runners de ce process, pas ceux du précédent.
   relay.start(app.log)
   agentRequests.start(app.log)
+  // Après `recoverInterrupted` : une session coupée par le redémarrage doit se lire
+  // interrompue, et bloquer sa carte, plutôt que de compter comme au travail.
+  milestones.start(app.log)
   issueSources.start(app.log)
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
