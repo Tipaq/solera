@@ -187,6 +187,27 @@ try {
   const blocking = (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
     .find((entry) => entry.number === 1)
   assert.deepEqual(blocking.blockedBy.map((link) => link.number), [number])
+
+  // Les liens informatifs (#109) : « liée à » en liste, « doublon de » en propriété,
+  // et l'abandon d'un doublon proposé en tête de fiche, sans être appliqué.
+  await panel.getByRole('button', { name: 'Lier une carte', exact: true }).click()
+  const relating = page.getByRole('dialog', { name: 'Lier une carte', exact: true })
+  await relating.getByPlaceholder('Chercher une carte').fill('2')
+  await relating.getByRole('button', { name: /^#2 / }).click()
+  await panel.getByRole('button', { name: 'Délier #2', exact: true }).waitFor()
+  await panel.getByRole('button', { name: 'Choisir l’originale', exact: true }).click()
+  const originals = page.getByRole('dialog', { name: 'Choisir l’originale', exact: true })
+  await originals.getByPlaceholder('Chercher une carte').fill('1')
+  await originals.getByRole('button', { name: /^#1 / }).click()
+  await panel.getByRole('button', { name: 'Abandonner cette carte', exact: true }).waitFor()
+  const linked = await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json()
+  assert.deepEqual(linked.find((entry) => entry.number === 2).related.map((link) => link.number), [number])
+  assert.deepEqual(linked.find((entry) => entry.number === 1).duplicates.map((link) => link.number), [number])
+  assert.equal(linked.find((entry) => entry.id === created.id).column, 'todo', 'le lien ne clôt rien')
+  await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ticket-doublon.png') })
+  await panel.getByRole('button', { name: 'Ce n’est pas un doublon', exact: true }).click()
+  await panel.getByRole('button', { name: 'Abandonner cette carte', exact: true }).waitFor({ state: 'hidden' })
   // Capture depuis le haut du panneau : l'échéance et la parente s'y lisent avant la
   // description, et c'est ce placement-là qu'on vérifie.
   await panel.locator('div.overflow-y-auto').first().evaluate((node) => { node.scrollTop = 0 })

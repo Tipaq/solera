@@ -9,6 +9,7 @@ import {
   cardMoves,
   cardNotes,
   cardRefs,
+  cardRelations,
   cards,
   conversations,
   projects,
@@ -22,6 +23,8 @@ import {
   MAX_ATTACHMENT_BYTES,
   acceptCardBodySchema,
   cardBlockBodySchema,
+  cardRelationBodySchema,
+  cardRelationKindSchema,
   createCardBodySchema,
   createCardNoteBodySchema,
   reorderCardsBodySchema,
@@ -37,6 +40,7 @@ import {
 } from '@solera/protocol'
 import { createCard, syncCardReferences } from '../../cards/create.js'
 import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
+import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
@@ -203,6 +207,43 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const blocks = group(blocking, (row) => row.sourceId)
     const blockedBy = group(blockedByRows, (row) => row.targetId)
 
+    // Les liens informatifs (#109), lus des deux bouts en une requête : « liée à » est
+    // écrit une seule fois, et chacune de ses deux cartes y voit l'autre.
+    const relatedRows = ctx.db
+      .select({ sourceId: cardRelations.sourceId, targetId: cardRelations.targetId, kind: cardRelations.kind })
+      .from(cardRelations)
+      .where(or(inArray(cardRelations.sourceId, ids), inArray(cardRelations.targetId, ids)))
+      .all()
+    const relatedIds = [...new Set(relatedRows.flatMap((row) => [row.sourceId, row.targetId]))]
+    const relatedCards = new Map(
+      (relatedIds.length === 0
+        ? []
+        : ctx.db
+            .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+            .from(cards)
+            .where(inArray(cards.id, relatedIds))
+            .all()
+      ).map((row) => [row.id, row satisfies CardLinkDto]),
+    )
+    const related = new Map<string, CardLinkDto[]>()
+    const duplicateOf = new Map<string, CardLinkDto>()
+    const duplicates = new Map<string, CardLinkDto[]>()
+    const push = (bucket: Map<string, CardLinkDto[]>, key: string, otherId: string) => {
+      const other = relatedCards.get(otherId)
+      if (other) bucket.set(key, [...(bucket.get(key) ?? []), other])
+    }
+    for (const row of relatedRows) {
+      if (row.kind === 'related') {
+        push(related, row.sourceId, row.targetId)
+        push(related, row.targetId, row.sourceId)
+      } else {
+        const original = relatedCards.get(row.targetId)
+        if (original) duplicateOf.set(row.sourceId, original)
+        push(duplicates, row.targetId, row.sourceId)
+      }
+    }
+    const byNumber = (list: CardLinkDto[] | undefined) => (list ?? []).sort((a, b) => a.number - b.number)
+
     // Parentes et enfants lus en deux coups, hors de `rows` : le board ne charge pas
     // toujours tout, et une parente livrée tombe dans les colonnes repliées.
     const parentIds = [...new Set(rows.map((row) => row.parentId).filter((id): id is string => id !== null))]
@@ -295,6 +336,9 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       referencedBy: incoming.get(row.id) ?? [],
       blocks: blocks.get(row.id) ?? [],
       blockedBy: blockedBy.get(row.id) ?? [],
+      related: byNumber(related.get(row.id)),
+      duplicateOf: duplicateOf.get(row.id) ?? null,
+      duplicates: byNumber(duplicates.get(row.id)),
     }))
   }
 
@@ -639,6 +683,38 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const { card } = loadCard(id, user.id)
 
     removeCardBlock(ctx.db, { sourceId: id, targetId: blockedId })
+
+    return readCard(id, card.projectId)
+  })
+
+  /**
+   * Pose un lien informatif depuis la carte de l'URL (#109). « Doublon de » remplace
+   * l'originale déjà posée : c'est le sélecteur de la fiche qui la change.
+   */
+  app.post('/api/cards/:id/relations', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = cardRelationBodySchema.parse(request.body)
+    const { card } = loadCard(id, user.id)
+
+    addCardRelation(ctx.db, {
+      projectId: card.projectId,
+      sourceId: id,
+      targetId: body.targetId,
+      kind: body.kind,
+      replace: true,
+      userId: user.id,
+    })
+
+    return reply.status(201).send(readCard(id, card.projectId))
+  })
+
+  app.delete('/api/cards/:id/relations/:kind/:targetId', async (request) => {
+    const user = requireUser(request)
+    const { id, kind, targetId } = request.params as { id: string; kind: string; targetId: string }
+    const { card } = loadCard(id, user.id)
+
+    removeCardRelation(ctx.db, { sourceId: id, targetId, kind: cardRelationKindSchema.parse(kind) })
 
     return readCard(id, card.projectId)
   })

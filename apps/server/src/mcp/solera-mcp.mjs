@@ -285,6 +285,7 @@ const REQUEST_WAIT_MS = {
   append_card_description: 15000,
   edit_subtasks: 15000,
   link_card: 15000,
+  relate_cards: 15000,
   rename_session: 15000,
   request_decision: 15000,
   // `git worktree add` extrait tout l'arbre : quelques secondes sur un gros dépôt.
@@ -532,7 +533,7 @@ const ALL_TOOLS = [
   {
     name: 'read_card',
     description:
-      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. Sur ta propre carte, tu ranges seul (move_card), tu complètes la description (append_card_description) et tu coches les sous-tâches (edit_subtasks). L'échéance, la parente, les blocages et la colonne d'une carte existante sont, eux, le choix d'une personne : tu en proposes le changement avec request_card_change.",
+      "Lit une carte de ce projet en entier : sa description, son échéance, sa carte parente et ses enfants, ses pièces jointes avec leurs chemins locaux, la colonne où elle est posée, les sessions qui l'ont déjà traitée, les cartes qui la bloquent ou qu'elle bloque, celles qui lui sont liées ou en sont des doublons, et celles qui la citent. Appelle cet outil quand une carte t'est assignée ou citée, avant de commencer : la description dit ce qui est attendu, les sessions passées disent ce qui a déjà été tenté, et une carte bloquée par une autre ne s'ouvre pas avant elle. Sur ta propre carte, tu ranges seul (move_card), tu complètes la description (append_card_description) et tu coches les sous-tâches (edit_subtasks) ; sur n'importe quelle carte, tu poses les liens « liée à » et « doublon de » (relate_cards). L'échéance, la parente, les blocages et la colonne d'une carte existante sont, eux, le choix d'une personne : tu en proposes le changement avec request_card_change.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -665,6 +666,21 @@ const ALL_TOOLS = [
         card: { type: 'integer', description: "Numéro de la carte, tel qu'il s'écrit après le `#`." },
       },
       required: ['card'],
+    },
+  },
+  {
+    name: 'relate_cards',
+    description:
+      "Pose ou retire un lien informatif entre deux cartes du projet : `related` (« liée à », dans les deux sens) quand l'une éclaire l'autre — même sujet vu d'un autre angle, une décision prise dans l'une qui touche l'autre ; `duplicate_of` (« doublon de ») quand `card` demande la même chose que `target`, l'originale. Ces liens ne changent ni l'ordre du travail ni la colonne : tu les poses seul, sur n'importe quelle carte, et une note sur `card` le dit. Pas pour dire qu'une carte attend une autre : c'est un lien « bloque », que tu proposes avec request_card_change. Un doublon n'est pas clos par ce lien : la fiche propose à l'utilisateur de l'abandonner.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['related', 'duplicate_of'], description: '`related` pour « liée à », `duplicate_of` pour « doublon de ».' },
+        target: { type: 'integer', description: "Numéro de l'autre carte ; pour `duplicate_of`, l'originale." },
+        card: { type: 'integer', description: 'Numéro de la carte de départ ; pour `duplicate_of`, la copie. Par défaut, la carte de cette conversation.' },
+        remove: { type: 'boolean', description: 'Vrai pour retirer le lien au lieu de le poser.' },
+      },
+      required: ['kind', 'target'],
     },
   },
   {
@@ -2174,6 +2190,33 @@ function readCard(number) {
     )
     .all(card.id)
 
+  // Les liens informatifs (#109) : « liée à » s'écrit une fois, et se lit des deux bouts.
+  card.related = db
+    .prepare(
+      `SELECT o.number AS number, o.title AS title, o.column AS column
+       FROM card_relations AS r
+       JOIN cards AS o ON o.id = CASE WHEN r.source_id = ? THEN r.target_id ELSE r.source_id END
+       WHERE r.kind = 'related' AND (r.source_id = ? OR r.target_id = ?) ORDER BY o.number`,
+    )
+    .all(card.id, card.id, card.id)
+
+  card.duplicateOf =
+    db
+      .prepare(
+        `SELECT t.number AS number, t.title AS title, t.column AS column
+         FROM card_relations AS r JOIN cards AS t ON t.id = r.target_id
+         WHERE r.kind = 'duplicate_of' AND r.source_id = ?`,
+      )
+      .get(card.id) ?? null
+
+  card.duplicates = db
+    .prepare(
+      `SELECT sc.number AS number, sc.title AS title, sc.column AS column
+       FROM card_relations AS r JOIN cards AS sc ON sc.id = r.source_id
+       WHERE r.kind = 'duplicate_of' AND r.target_id = ? ORDER BY sc.number`,
+    )
+    .all(card.id)
+
   card.attachments = db.prepare(
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
   ).all(card.id)
@@ -2584,6 +2627,9 @@ function renderCard(card) {
     )
   }
   if (card.blocks.length > 0) parts.push(`Bloque :\n${link(card.blocks)}`)
+  if (card.duplicateOf) parts.push(`Doublon de :\n${link([card.duplicateOf])}`)
+  if (card.duplicates.length > 0) parts.push(`Doublons de celle-ci :\n${link(card.duplicates)}`)
+  if (card.related.length > 0) parts.push(`Liée à :\n${link(card.related)}`)
   if (card.references.length > 0) parts.push(`Cette carte cite :\n${link(card.references)}`)
   if (card.referencedBy.length > 0) parts.push(`Citée par :\n${link(card.referencedBy)}`)
 
@@ -3844,6 +3890,19 @@ async function callTool(name, args) {
       return { ...text('Le paramètre `card` est le numéro de la carte, sans le `#`.'), isError: true }
     }
     return requestDaemon(name, args ?? {})
+  }
+
+  if (name === 'relate_cards') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas qui signe le lien."), isError: true }
+    }
+    if (args?.kind !== 'related' && args?.kind !== 'duplicate_of') {
+      return { ...text('Le paramètre `kind` vaut `related` (liée à) ou `duplicate_of` (doublon de).'), isError: true }
+    }
+    if (!Number.isInteger(args?.target) || (args?.card !== undefined && !Number.isInteger(args.card))) {
+      return { ...text('`target` et `card` sont des numéros de carte, sans le `#`.'), isError: true }
+    }
+    return requestDaemon(name, args)
   }
 
   if (name === 'request_card_change') {

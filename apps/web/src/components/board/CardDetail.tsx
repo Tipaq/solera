@@ -1,4 +1,4 @@
-import { CalendarDays, Check, ChevronDown, CircleHelp, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
+import { Ban, CalendarDays, Check, ChevronDown, CircleHelp, Copy, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, parentCloseProposed, parseSubtasks, type CardDto } from '@solera/protocol'
@@ -14,6 +14,7 @@ import { CardEditor } from './CardEditor'
 import { CardChooser } from './CardChooser'
 import { CardChildren, CardDue, CardParent } from './CardMeta'
 import { CardProgress } from './CardProgress'
+import { CardDuplicateOf, CardRelated } from './CardRelations'
 import { CardThread } from './CardThread'
 import { ColumnDot } from './ColumnDot'
 import { COLUMN_TONES, columnLabel } from './columns'
@@ -247,9 +248,13 @@ export function CardDetail({
               <Property icon={<CalendarDays size={13} />} label={t('board.card.due')}>
                 <CardDue card={card} projectId={projectId} />
               </Property>
+              <Property icon={<Copy size={13} />} label={t('board.card.duplicateOf')}>
+                <CardDuplicateOf card={card} projectId={projectId} onSelectCard={onSelectCard} />
+              </Property>
             </dl>
             <CardChildren card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <CardBlocks card={card} projectId={projectId} onSelectCard={onSelectCard} />
+            <CardRelated card={card} projectId={projectId} onSelectCard={onSelectCard} />
             <CardLinkList title={t('board.card.references')} links={card.references} onSelect={onSelectCard} />
             <CardLinkList title={t('board.card.referencedBy')} links={card.referencedBy} onSelect={onSelectCard} />
             <CardAttachments key={card.id} cardId={card.id} projectId={projectId} />
@@ -360,6 +365,21 @@ function CardStateBanners({
             <Button size="sm" variant="secondary" icon={<Check size={14} />} disabled={busy}
               onClick={() => updateCard.mutate({ id: card.id, toClarify: false })}>
               {t('board.card.toClarify.clear')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {/* Un doublon encore ouvert : l'abandonner est proposé ici et nulle part ailleurs,
+          parce que le lien, un agent le pose seul, et que clore reste un clic. */}
+      {card.duplicateOf && !CARD_CLOSED_COLUMNS.includes(card.column) ? (
+        <div className="flex flex-col gap-2">
+          <Banner tone="caution">
+            {t('board.card.duplicateOf.body', { number: card.duplicateOf.number, title: card.duplicateOf.title })}
+          </Banner>
+          <div>
+            <Button size="sm" variant="secondary" icon={<Ban size={14} />} disabled={busy}
+              onClick={() => updateCard.mutate({ id: card.id, column: 'abandoned' })}>
+              {t('board.card.duplicateOf.abandon')}
             </Button>
           </div>
         </div>

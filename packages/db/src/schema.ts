@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, InstructionsMode } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, InstructionsMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -291,6 +291,42 @@ export const cardBlocks = sqliteTable(
 )
 
 /**
+ * Liens informatifs posés à la main (#109) : « liée à », et « doublon de » d'une carte
+ * vers son originale.
+ *
+ * Une troisième table plutôt qu'un `kind` sur `card_blocks` : ceux-ci ne changent ni
+ * l'ordre du travail ni la colonne, et c'est pourquoi un agent les pose seul, sans clic,
+ * quand un blocage passe par une demande. Les mêler obligerait chaque lecture d'un
+ * blocage à filtrer ce qui n'en est pas un.
+ *
+ * « Liée à » est symétrique et s'écrit une seule fois, la plus petite des deux clés en
+ * `source` : le lire des deux bouts ne demande qu'un `OR`, et le poser depuis l'autre
+ * carte ne fait pas de doublon. « Doublon de » va de la copie vers l'originale, et une
+ * copie n'a qu'une originale.
+ */
+export const cardRelations = sqliteTable(
+  'card_relations',
+  {
+    sourceId: text('source_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    targetId: text('target_id')
+      .notNull()
+      .references(() => cards.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ['related', 'duplicate_of'] }).$type<CardRelationKind>().notNull(),
+    /** La personne qui l'a posé, ou le compte de la session. */
+    createdBy: text('created_by').references(() => users.id),
+    /** La session qui l'a posé, s'il vient d'un agent. Sans clé étrangère, comme les notes. */
+    conversationId: text('conversation_id'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sourceId, t.targetId, t.kind] }),
+    index('idx_card_relations_target').on(t.targetId),
+  ],
+)
+
+/**
  * Une ligne par changement de colonne : d'où, vers où, par qui, quand.
  *
  * Table étroite et en ajout seul, parce que `cards` ne porte que `column` et
@@ -520,6 +556,8 @@ export const agentRequests = sqliteTable(
         'append_card_description',
         'edit_subtasks',
         'link_card',
+        // Les liens informatifs entre cartes (#109) : ils ne défont rien.
+        'relate_cards',
         // Le titre de sa propre session, qui doit être annoncé aux clients.
         'rename_session',
         'request_decision',

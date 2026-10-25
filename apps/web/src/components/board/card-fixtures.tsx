@@ -23,7 +23,7 @@ function card(number: number, title: string, column: CardDto['column'], extra: P
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
     dueAt: null, parent: null, children: [], acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
-    conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [],
+    conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [],
     ...extra,
   }
 }
@@ -37,6 +37,7 @@ export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session'
   parent: link(parent),
   blocks: [link(fils)],
   referencedBy: [link(gitView)],
+  related: [link(gitView)],
   noteCount: 1,
   conversations: [
     session('c-old', 'Card display dans le right panel', 'claude', 'idle', 6 * DAY),
@@ -44,8 +45,11 @@ export const CURRENT = card(27, 'Lire la carte traitée sans quitter la session'
   ],
 })
 
+/** Un doublon encore ouvert : sa fiche propose de l'abandonner. */
+export const DUPLICATE = card(58, 'Ouvrir une conversation neuve depuis « Fils »', 'todo', { duplicateOf: link(fils) })
+
 export const CARDS: CardDto[] = [
-  { ...parent, children: [link(CURRENT), link(fils)] }, CURRENT, fils, gitView,
+  { ...parent, children: [link(CURRENT), link(fils)] }, CURRENT, { ...fils, duplicates: [link(DUPLICATE)] }, gitView, DUPLICATE,
   card(57, 'Vue Git : trois dettes relevées à la relecture du lot 4', 'review', {
     conversations: [session('c-57', 'Lot 4 : trois dettes', 'codex', 'idle', DAY)],
   }),

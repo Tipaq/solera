@@ -56,7 +56,9 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * restent à `cardFiling` ; `append_card_description` et `edit_subtasks` écrivent sur la
  * description de sa carte, mais en fin et sans rien réécrire, ou en cochant une case qui
  * se décoche ; `create_card` pose parente, échéance et blocages, mais sur une carte qui
- * n'était encore le choix de personne ; `set_project_image` remplace, mais n'est le jugement de personne et se
+ * n'était encore le choix de personne ; `relate_cards` relie n'importe quelles cartes,
+ * mais par un lien « liée à » ou « doublon de » qui ne change ni l'ordre ni la colonne,
+ * et ne remplace pas une originale déjà posée ; `set_project_image` remplace, mais n'est le jugement de personne et se
  * reprend d'un clic ; `rename_session` de même, borné à la session qui l'appelle, et le
  * titre qu'une personne a donné l'emporte toujours sur le sien ; `start_session` coûte cher, mais ne sort pas du projet. Le
  * `check_script` de `schedule_task` fait tourner du code hors de toute session, mais il

@@ -6,6 +6,7 @@ import type {
   CardDto,
   CardLinkDto,
   CardNoteDto,
+  CardRelationKind,
   CardSearchDto,
   ProjectDto,
 } from '@solera/protocol'
@@ -187,6 +188,25 @@ export function useRemoveCardBlock(projectId: string, cardId: string) {
   return useMutation({
     mutationFn: (blockedId: string) =>
       api.delete<CardDto>(`/api/cards/${cardId}/blocks/${blockedId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+/** Un lien informatif (#109) : « liée à », ou « doublon de » vers l'originale. */
+export function useAddCardRelation(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (link: { kind: CardRelationKind; targetId: string }) =>
+      api.post<CardDto>(`/api/cards/${cardId}/relations`, link),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
+  })
+}
+
+export function useRemoveCardRelation(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (link: { kind: CardRelationKind; targetId: string }) =>
+      api.delete<CardDto>(`/api/cards/${cardId}/relations/${link.kind}/${link.targetId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })
 }

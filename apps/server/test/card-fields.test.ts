@@ -324,6 +324,62 @@ test('liens « bloque » : affirmés, survivants à une réécriture de descript
   assert.deepEqual(removed.json().blocks, [])
 })
 
+test('liens informatifs : « liée à » se lit des deux bouts, « doublon de » n’a qu’une originale', async (t) => {
+  const { app, create } = await harness(t)
+  const originale = await create('L’originale')
+  const copie = await create('La copie')
+  const voisine = await create('La voisine')
+  const list = async (): Promise<Map<string, CardDto>> =>
+    new Map((await app.inject('/api/projects/project/cards')).json().map((row: CardDto) => [row.id, row]))
+  const numbers = (links: { number: number }[]) => links.map((link) => link.number)
+
+  const related = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${voisine.id}/relations`,
+    payload: { kind: 'related', targetId: originale.id },
+  })
+  assert.equal(related.statusCode, 201, related.body)
+  // Posé depuis l'autre bout, le même lien ne fait pas de doublon.
+  await app.inject({ method: 'POST', url: `/api/cards/${originale.id}/relations`, payload: { kind: 'related', targetId: voisine.id } })
+  let cards = await list()
+  assert.deepEqual(numbers(cards.get(originale.id)!.related), [voisine.number])
+  assert.deepEqual(numbers(cards.get(voisine.id)!.related), [originale.number])
+
+  const duplicate = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${copie.id}/relations`,
+    payload: { kind: 'duplicate_of', targetId: originale.id },
+  })
+  assert.equal(duplicate.json().duplicateOf.number, originale.number)
+  cards = await list()
+  assert.deepEqual(numbers(cards.get(originale.id)!.duplicates), [copie.number])
+  // Rien ne bouge dans l'ordre du travail ni dans la colonne.
+  assert.deepEqual(cards.get(copie.id)!.blockedBy, [])
+  assert.equal(cards.get(copie.id)!.column, 'todo')
+
+  const cycle = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${originale.id}/relations`,
+    payload: { kind: 'duplicate_of', targetId: copie.id },
+  })
+  assert.equal(cycle.statusCode, 409, 'deux cartes doublons l’une de l’autre n’ont plus d’originale')
+  const self = await app.inject({ method: 'POST', url: `/api/cards/${copie.id}/relations`, payload: { kind: 'related', targetId: copie.id } })
+  assert.equal(self.statusCode, 400)
+
+  // Depuis la fiche, choisir une autre originale remplace la première.
+  const moved = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${copie.id}/relations`,
+    payload: { kind: 'duplicate_of', targetId: voisine.id },
+  })
+  assert.equal(moved.json().duplicateOf.number, voisine.number)
+
+  const unlinked = await app.inject({ method: 'DELETE', url: `/api/cards/${originale.id}/relations/related/${voisine.id}` })
+  assert.deepEqual(unlinked.json().related, [], '« liée à » se retire depuis l’un ou l’autre bout')
+  const cleared = await app.inject({ method: 'DELETE', url: `/api/cards/${copie.id}/relations/duplicate_of/${voisine.id}` })
+  assert.equal(cleared.json().duplicateOf, null)
+})
+
 test('sous-tâches : cochées par leur rang, refusées quand la description a bougé', async (t) => {
   const { app, create } = await harness(t)
   const description = [

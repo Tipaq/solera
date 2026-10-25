@@ -2,7 +2,7 @@ import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { ArrowLeft } from 'lucide-react'
 import { IconButton } from '@solera/ui'
 import { CardDetail } from './CardDetail'
-import { CARDS, CURRENT, PROJECT_ID, SeededBoard } from './card-fixtures'
+import { CARDS, CURRENT, DUPLICATE, PROJECT_ID, SeededBoard } from './card-fixtures'
 
 const withBoard: Decorator = (Story) => <SeededBoard><Story /></SeededBoard>
 
@@ -46,5 +46,11 @@ export const Panneau: Story = {
 /** Une carte nue : ni énoncé, ni propriété, ni fil. */
 export const Vide: Story = {
   args: { card: CARDS.find((entry) => entry.number === 40)! },
+  render: (args) => <div className="surface flex h-[30rem] w-[44rem] flex-col border border-line"><CardDetail {...args} /></div>,
+}
+
+/** Un doublon encore ouvert : le lien a pu être posé par un agent, l'abandon reste un clic. */
+export const Doublon: Story = {
+  args: { card: DUPLICATE },
   render: (args) => <div className="surface flex h-[30rem] w-[44rem] flex-col border border-line"><CardDetail {...args} /></div>,
 }

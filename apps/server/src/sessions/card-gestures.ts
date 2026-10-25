@@ -3,14 +3,17 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { cardNotes, cards, conversations, writeTransaction, type CardRow, type ConversationRow, type Db, type Tx } from '@solera/db'
 import {
   CARD_CLOSED_COLUMNS,
+  CARD_RELATION_KINDS,
   appendCardPrecision,
   appendSubtasks,
   parseSubtasks,
   toggleSubtask,
 } from '@solera/protocol'
 import { addCardBlock } from '../cards/blocks.js'
+import { addCardRelation, duplicateOf, removeCardRelation } from '../cards/relations.js'
 import { createCard, syncCardReferences } from '../cards/create.js'
 import { recordCardMove } from '../cards/moves.js'
+import { HttpError } from '../http/errors.js'
 import { Refusal } from './refusal.js'
 
 /**
@@ -19,7 +22,8 @@ import { Refusal } from './refusal.js'
  * Tout ici s'ajoute ou se reprend d'un geste, et c'est le critère qui le met dans le
  * socle plutôt que derrière un clic : créer une carte complète, compléter la description
  * de **sa** carte sans réécrire ce qui précède, y cocher ou ajouter des sous-tâches, et
- * rattacher à une carte la conversation lancée sans elle. Ce qui défait le choix d'une
+ * rattacher à une carte la conversation lancée sans elle, relier deux cartes par un lien
+ * informatif (« liée à », « doublon de »). Ce qui défait le choix d'une
  * personne — un verdict, l'échéance ou la parente d'une carte existante — se propose,
  * par `request_card_change`.
  *
@@ -316,4 +320,80 @@ export function linkOwnConversation(db: Db, requester: ConversationRow, projectI
     noteFrom(tx, card.id, requester.id, 'Session rattachée à cette carte.', at)
   })
   return `Conversation rattachée à #${card.number} « ${card.title} »${card.column === 'todo' ? ', passée en « en cours »' : ''}. Lis-la avec read_card si ce n'est pas fait : sa description dit ce qui est attendu.`
+}
+
+// --- relate_cards ----------------------------------------------------------------
+
+/**
+ * Pose ou retire un lien informatif entre deux cartes du projet (#109) : « liée à », ou
+ * « doublon de » de `card` vers l'originale `target`.
+ *
+ * Sur n'importe quelles cartes, pas seulement la sienne : le lien ne change ni l'ordre
+ * ni la colonne, se retire d'un geste, et une note sur `card` dit quelle session l'a
+ * posé. Deux limites pourtant. Une originale déjà posée n'est pas remplacée : ce serait
+ * défaire un lien qu'une personne a peut-être posé. Et un doublon n'est pas clos : la
+ * fiche propose de l'abandonner, et c'est un clic.
+ */
+export function relateCardsFor(db: Db, requester: ConversationRow, projectId: string, payload: Record<string, unknown>): string {
+  const kind = payload.kind
+  if (!CARD_RELATION_KINDS.includes(kind as never)) {
+    throw new Refusal('Le paramètre `kind` vaut `related` (liée à) ou `duplicate_of` (doublon de).')
+  }
+  const relation = kind as (typeof CARD_RELATION_KINDS)[number]
+  if (!Number.isInteger(payload.target)) throw new Refusal('Le paramètre `target` est le numéro de la carte, sans le `#`.')
+  if (payload.card !== undefined && !Number.isInteger(payload.card)) {
+    throw new Refusal('Le paramètre `card` est le numéro de la carte, sans le `#`.')
+  }
+  const card = payload.card === undefined ? ownCard(db, requester, projectId) : cardByNumber(db, projectId, payload.card as number)
+  const target = cardByNumber(db, projectId, payload.target as number)
+  if (card.id === target.id) throw new Refusal(`Une carte ne se lie pas à elle-même (#${card.number}).`)
+
+  const words = relation === 'related' ? `liée à #${target.number}` : `doublon de #${target.number}`
+
+  if (payload.remove === true) {
+    const removed = writeTransaction(db, (tx) => {
+      const gone = removeCardRelation(tx, { sourceId: card.id, targetId: target.id, kind: relation })
+      if (gone) noteFrom(tx, card.id, requester.id, `N'est plus ${words}.`)
+      return gone
+    })
+    return removed
+      ? `#${card.number} n'est plus ${words}.`
+      : `Rien à retirer : #${card.number} n'était pas ${words}.`
+  }
+
+  if (relation === 'duplicate_of') {
+    const current = duplicateOf(db, card.id)
+    if (current && current.id !== target.id) {
+      throw new Refusal(
+        `Refusé : #${card.number} est déjà doublon de #${current.number}. Si c'est faux, retire ce lien avec remove: true, puis pose le bon.`,
+      )
+    }
+  }
+
+  const outcome = writeTransaction(db, (tx) => {
+    try {
+      const result = addCardRelation(tx, {
+        projectId,
+        sourceId: card.id,
+        targetId: target.id,
+        kind: relation,
+        replace: false,
+        userId: requester.userId,
+        conversationId: requester.id,
+      })
+      if (result.kind !== 'unchanged') noteFrom(tx, card.id, requester.id, `Marquée ${words}.`)
+      return result
+    } catch (error) {
+      if (error instanceof HttpError && error.code === 'card_relation_cycle') {
+        throw new Refusal(`Refusé : #${target.number} est déjà doublon de #${card.number}. Une seule des deux est l'originale.`)
+      }
+      throw error
+    }
+  })
+  if (outcome.kind === 'unchanged') return `Rien à changer : #${card.number} est déjà ${words}.`
+  const closing =
+    relation === 'duplicate_of' && !CARD_CLOSED_COLUMNS.includes(card.column)
+      ? ` La fiche de #${card.number} propose de l'abandonner ; c'est un clic de l'utilisateur, ou une demande request_card_change.`
+      : ''
+  return `#${card.number} « ${card.title} » est désormais ${words} « ${target.title} ».${closing}`
 }

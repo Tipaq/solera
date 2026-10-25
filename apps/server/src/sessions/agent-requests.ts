@@ -83,6 +83,7 @@ import {
   editOwnSubtasks,
   linkOwnConversation,
   parseDueDay,
+  relateCardsFor,
 } from './card-gestures.js'
 import { assertUsableWorkspace, insertProject } from '../projects/create.js'
 import { defaultBase } from '../worktrees/assess.js'
@@ -214,6 +215,7 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'append_card_description',
   'edit_subtasks',
   'link_card',
+  'relate_cards',
 ])
 
 /**
@@ -432,6 +434,10 @@ export class AgentRequests {
       }
       if (request.kind === 'link_card') {
         this.settle(request, linkOwnConversation(this.ctx.db, requester, project.id, payload), false)
+        return
+      }
+      if (request.kind === 'relate_cards') {
+        this.settle(request, relateCardsFor(this.ctx.db, requester, project.id, payload), false)
         return
       }
       if (request.kind === 'start_session') {

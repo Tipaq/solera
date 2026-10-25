@@ -90,7 +90,7 @@ export function CardBlocks({
   )
 }
 
-function BlockList({
+export function BlockList({
   title,
   links,
   onSelect,
@@ -113,7 +113,7 @@ function BlockList({
   )
 }
 
-function LinkButton({
+export function LinkButton({
   link,
   onSelect,
 }: {
