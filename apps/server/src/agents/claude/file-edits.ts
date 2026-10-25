@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs'
 import type { EditDiffDto } from '@solera/protocol'
-import { additionDiff, unifiedDiff } from '../../diff-lines.js'
+import { additionDiff, unifiedDiff } from '@solera/protocol'
 
 /**
  * Modifications de fichiers déduites des appels d'outils de Claude Code.

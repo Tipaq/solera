@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
+import { toolEdits } from '../../lib/tool-edits'
 import { translate, type MessageKey } from '../../lib/i18n'
 import { DiffHunks } from '../DiffHunks'
 import { ImageThumbnail } from '../ImageThumbnail'
@@ -11,7 +12,7 @@ import { Markdown } from '../chat/Markdown'
 import { cx } from '@solera/ui'
 import { prototypeUrl } from '../../lib/prototypes'
 import { Code, Empty, Plain, Section } from './parts'
-import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from './payload'
+import { fields, flag, imageBlock, list, outputLines, outputText, scalar, stripLineNumbers, text } from '../../lib/tool-payload'
 
 /**
  * Rendu lisible d'un appel d'outil.
@@ -163,11 +164,19 @@ const write: ToolView = (tool) => {
  * Claude Code transmet l'extrait remplacé et son remplaçant, sans état antérieur du
  * fichier : les deux sont affichés côte à côte plutôt que maquillés en diff complet,
  * dont les numéros de ligne seraient inventés. Codex transmet un vrai diff unifié par
- * fichier, qui se rend comme n'importe quel diff.
+ * fichier, qui se rend comme n'importe quel diff ; l'`apply_patch` d'OpenCode, un patch
+ * natif d'un seul tenant, rendu tel quel.
  */
 const edit: ToolView = (tool) => {
-  const changes = list(tool.input, 'changes')
-  if (changes !== null) return <CodexChanges changes={changes} />
+  const edits = toolEdits(tool)
+  if (edits?.changes?.length) return <CodexChanges changes={edits.changes} />
+  if (edits?.patch) {
+    return (
+      <Section label={translate('tool.change.modified')} hint={edits.paths.join(' · ') || null}>
+        <Code content={edits.patch} language="diff" />
+      </Section>
+    )
+  }
 
   const path = text(tool.input, 'file_path')
   const before = fields(tool.input)?.old_string
@@ -240,6 +249,9 @@ function matchesView(inputLabelKey: MessageKey, keys: string[]): ToolView {
       .filter((hint): hint is string => hint !== null)
       .join(' · ')
     const lines = pending(tool) ? null : outputLines(tool.output)
+    // Une sortie structurée (la recherche web de Codex) n'est pas une liste de lignes :
+    // la vue générique la montre mieux qu'un « aucun résultat ».
+    if (!pending(tool) && lines === null && fields(tool.output)) return null
 
     return (
       <>
@@ -342,6 +354,7 @@ const webFetch: ToolView = (tool) => {
 
   const question = text(tool.input, 'prompt')
   const answer = pending(tool) ? null : outputText(tool.output)
+  if (!pending(tool) && answer === null && fields(tool.output)) return null
 
   return (
     <>
@@ -484,11 +497,18 @@ export const genericView: ToolView = (tool) => {
   const short = entries.filter(([, value]) => isShort(value))
   const long = entries.filter(([, value]) => !isShort(value))
   const output = pending(tool) ? null : tool.output
+  // Une entrée que le CLI n'a pas su structurer (un patch, un argument brut) reste lisible.
+  const rawInput = typeof tool.input === 'string' && tool.input.length > 0 ? tool.input : null
 
-  if (entries.length === 0 && output === null) return null
+  if (entries.length === 0 && output === null && rawInput === null) return null
 
   return (
     <>
+      {rawInput !== null ? (
+        <Section label={translate('toolcall.payload.input')}>
+          <Plain content={rawInput} />
+        </Section>
+      ) : null}
       {short.length > 0 ? (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md border border-line bg-sunken p-2 text-xs">
           {short.map(([key, value]) => (
@@ -510,7 +530,7 @@ export const genericView: ToolView = (tool) => {
         </Section>
       ))}
 
-      {output === null ? null : typeof output === 'string' || Array.isArray(output) ? (
+      {output === null ? null : outputText(output) !== null || Array.isArray(output) ? (
         <TextOutput tool={tool} />
       ) : (
         <Section label={translate('tool.output.label')}>
@@ -541,6 +561,7 @@ export const VIEWS: Record<string, ToolView> = {
   ViewImage: viewImage,
   Write: write,
   Edit: edit,
+  ApplyPatch: edit,
   Glob: matchesView('tool.search.patternLabel', ['pattern']),
   Grep: matchesView('tool.search.patternLabel', ['pattern']),
   WebSearch: webSearch,

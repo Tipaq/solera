@@ -5,6 +5,7 @@ import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
 import { cardColumnSchema } from './cards.js'
+import { toolPresentationSchema } from './tools.js'
 
 /**
  * Schéma d'événements normalisé (invariant I3 de la spec).
@@ -291,6 +292,7 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     type: z.literal('tool.started'),
     toolCallId: z.string(),
     name: z.string(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
     parentToolCallId: z.string().nullable(),
@@ -303,6 +305,9 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('tool.input_updated'),
     toolCallId: z.string(),
+    /** Codex peut changer la nature d'un appel à sa complétion, Grok préciser son nom natif. */
+    name: z.string().optional(),
+    presentation: toolPresentationSchema.optional(),
     input: z.unknown(),
     inputRef: eventBodyRefSchema.optional(),
   }),

@@ -1,9 +1,11 @@
 /**
  * Diff unifié entre deux textes, ligne à ligne.
  *
- * Écrit ici plutôt qu'ajouté en dépendance : c'est le seul endroit où Solera doit
- * *calculer* un diff, git le fournissant partout ailleurs. Le format produit est
- * exactement celui que git émet, donc le même analyseur le rend côté client.
+ * Écrit ici plutôt qu'ajouté en dépendance : Solera ne *calcule* un diff que pour les
+ * extraits des outils, git le fournissant partout ailleurs. Il vit dans le protocole
+ * parce que le serveur en tire les diffs de fichiers et le fil ses compteurs de lignes :
+ * les deux alignent les lignes de la même façon. Le format produit est exactement celui
+ * que git émet, donc le même analyseur le rend côté client.
  */
 
 /**
@@ -114,4 +116,34 @@ export function additionDiff(path: string, content: string): string {
 
 export function deletionDiff(path: string, content: string): string {
   return wholeFileDiff(path, content, 'removed')
+}
+
+/**
+ * Lignes ajoutées et retirées entre deux extraits, pour le compteur d'un outil
+ * d'édition. Le saut de ligne final ne compte pas pour une ligne de plus.
+ *
+ * Rend `null` plutôt que de calculer trop cher : le fil le recalcule pour chaque
+ * édition d'une longue conversation, sur le fil principal du navigateur.
+ */
+export function countTextChanges(before: string, after: string): { added: number; removed: number } | null {
+  if (before.length + after.length > 1_000_000) return null
+  const lines = (value: string) => value === '' ? [] : value.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n')
+  const left = lines(before)
+  const right = lines(after)
+  // Le début et la fin communs sortent de la table : un fragment édité au milieu d'un
+  // long passage ne coûte que sa partie changée.
+  let start = 0
+  while (start < left.length && start < right.length && left[start] === right[start]) start += 1
+  let endLeft = left.length
+  let endRight = right.length
+  while (endLeft > start && endRight > start && left[endLeft - 1] === right[endRight - 1]) {
+    endLeft -= 1
+    endRight -= 1
+  }
+  const removed = left.slice(start, endLeft)
+  const added = right.slice(start, endRight)
+  if (removed.length === 0 || added.length === 0) return { added: added.length, removed: removed.length }
+  if ((removed.length + 1) * (added.length + 1) > 1_000_000) return null
+  const ops = align(removed, added)
+  return { added: ops.filter((op) => op.kind === '+').length, removed: ops.filter((op) => op.kind === '-').length }
 }

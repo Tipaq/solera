@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ChatItem, ToolItem } from './chat-fold'
-import { outputText } from '../components/tools/payload'
+import { outputText } from './tool-payload'
 import { openWebPage } from './web-pane'
 
 /**
@@ -22,7 +22,7 @@ export function isPrototypeTool(name: string): boolean {
 /** L'adresse de l'aperçu qu'un appel réussi a rendue, sur l'origine de Solera. */
 export function prototypeUrl(tool: ToolItem): string | null {
   if (!isPrototypeTool(tool.name) || tool.status !== 'done') return null
-  const output = outputText(tool.output) ?? outputText((tool.output as { content?: unknown } | null)?.content)
+  const output = outputText(tool.output)
   const path = output?.match(RELAY_URL)?.[1]
   return path ? new URL(path, window.location.origin).href : null
 }

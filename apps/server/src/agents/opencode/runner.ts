@@ -3,12 +3,14 @@ import { statSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import {
   parseSlashCommand,
+  toolPresentation,
   usableSlashCommands,
   type AgentConfig,
   type AgentQuestion,
   type McpServer,
   type McpServerStatus,
   type OpencodeConfig,
+  type ToolPresentation,
 } from '@solera/protocol'
 import type {
   Command,
@@ -83,6 +85,7 @@ interface OpenPart {
 
 /** Ce qu'on a déjà dit d'un appel d'outil, pour ne journaliser que ce qui change. */
 interface ToolTrack {
+  presentation: ToolPresentation
   input: string
   output: string
 }
@@ -631,16 +634,20 @@ export class OpencodeRunner implements AgentRunner {
     const { state } = part
     const described = describeTool(part.tool, state.input, this.mcpServers.map((server) => server.name))
     const input = JSON.stringify(described.input)
-
     let track = this.tools.get(part.callID)
+    // Le titre n'existe qu'à partir de l'exécution : un état qui n'en porte pas garde le précédent.
+    const presentation = 'title' in state && state.title !== undefined
+      ? toolPresentation(state.title, [part.tool, described.name]) : track?.presentation ?? {}
+
     if (!track) {
-      track = { input, output: '' }
+      track = { input, presentation, output: '' }
       this.tools.set(part.callID, track)
-      this.ctx.emit({ type: 'tool.started', toolCallId: part.callID, ...described, parentToolCallId: parent }, raw)
-    } else if (input !== track.input) {
+      this.ctx.emit({ type: 'tool.started', toolCallId: part.callID, ...described, presentation, parentToolCallId: parent }, raw)
+    } else if (input !== track.input || JSON.stringify(presentation) !== JSON.stringify(track.presentation)) {
       // L'entrée arrive vide tant que le modèle l'écrit, puis complète à l'exécution.
       track.input = input
-      this.ctx.emit({ type: 'tool.input_updated', toolCallId: part.callID, input: described.input }, raw)
+      track.presentation = presentation
+      this.ctx.emit({ type: 'tool.input_updated', toolCallId: part.callID, input: described.input, presentation }, raw)
     }
 
     const metadata = 'metadata' in state ? (state.metadata ?? {}) : {}

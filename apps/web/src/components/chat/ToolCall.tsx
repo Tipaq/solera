@@ -29,6 +29,8 @@ import { cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 import { ScheduleApprovalStrip } from './ScheduleApprovalStrip'
 import { isSoleraTool } from '../../lib/solera-tools'
+import { toolSummary } from '../../lib/tool-summary'
+import { toolWebInput } from '../../lib/tool-web-input'
 
 /**
  * Rendu d'un appel d'outil, et d'une suite d'appels repliée derrière une ligne.
@@ -52,51 +54,6 @@ const TOOL_ICONS: Record<string, ReactNode> = {
   Task: <Bot size={14} />,
   Agent: <Bot size={14} />,
   ExitPlanMode: <ListChecks size={14} />,
-}
-
-/** `mono` distingue un fragment de code d'une phrase : les deux ne se lisent pas pareil. */
-interface ToolSummary {
-  text: string
-  mono: boolean
-}
-
-/**
- * Résumé d'une ligne.
- *
- * La description passe avant tout le reste : elle dit ce que l'appel cherche à faire,
- * là où la commande ou le chemin ne disent que comment. Claude Code en joint une à ses
- * appels `Bash` et à ses sous-agents, et elle vaut mieux qu'un `sed -n '334,364p'`
- * tronqué au milieu. Elle n'est pas garantie pour autant : Codex n'en produit aucune,
- * et le repli sur le paramètre identifiant reprend alors la main.
- *
- * La commande, elle, ne disparaît pas : elle reste sous l'entrée de l'appel déplié.
- */
-function summarize(name: string, input: unknown): ToolSummary | null {
-  if (typeof input !== 'object' || input === null) return null
-  const fields = input as Record<string, unknown>
-
-  const description = fields.description
-  if (typeof description === 'string' && description.length > 0) {
-    return { text: description, mono: false }
-  }
-
-  // Le titre qu'un agent donne à sa session se lit comme une phrase, pas comme du code.
-  if (isSoleraTool(name, 'rename_session') && typeof fields.title === 'string' && fields.title.length > 0) {
-    return { text: fields.title, mono: false }
-  }
-
-  const candidates =
-    name === 'Bash'
-      ? ['command']
-      : name === 'WebFetch' || name === 'WebSearch'
-        ? ['url', 'query']
-        : ['file_path', 'path', 'pattern', 'prompt']
-
-  for (const key of candidates) {
-    const value = fields[key]
-    if (typeof value === 'string' && value.length > 0) return { text: value, mono: true }
-  }
-  return null
 }
 
 /**
@@ -203,8 +160,7 @@ export const ToolCall = memo(function ToolCall({
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const [raw, setRaw] = useState(false)
-  const summary = summarize(tool.name, tool.input)
-
+  const summary = toolSummary(tool)
 
   return (
     <div
@@ -298,10 +254,12 @@ function ToolDetail({
     : tool.outputBytes === null || legacy.data !== undefined
   const input = tool.inputRef ? inputBody.data?.value : tool.input
   const output = tool.outputRef ? outputBody.data?.value : outputOf(tool, legacy.data)
+  // Les vues lisent les arguments définitifs ; la vue brute garde ceux du journal.
+  const readableInput = toolWebInput({ ...tool, input, output })
   // Les vues lisibles distinguent une chaîne d'un tableau de blocs : les nourrir avec
   // l'aperçu ferait clignoter une image cassée avant le vrai contenu, d'où l'attente
   // des corps complets plutôt qu'un rendu intermédiaire.
-  const readable = inputReady && outputReady ? readableView({ ...tool, input, output }) : null
+  const readable = inputReady && outputReady ? readableView({ ...tool, input: readableInput, output }) : null
   return (
     <div className="flex flex-col gap-2 border-t border-line px-2.5 py-2">
       {inputBody.error ? (

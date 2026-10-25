@@ -40,14 +40,16 @@ export function list(value: unknown, key: string): unknown[] | null {
  * Claude Code rend le contenu d'un `tool_result`, qui est soit une chaîne, soit une
  * suite de blocs dont seuls les blocs texte nous intéressent (une image de capture
  * d'écran n'a rien à faire dans un `<pre>`). Codex rend directement la sortie agrégée
- * de la commande. Tout le reste n'est pas du texte et rend `null` : c'est le signal
- * qu'il faut une vue spécialisée, ou la vue brute.
+ * de la commande. Un outil MCP rend ses blocs sous `content`, quel que soit le CLI qui
+ * l'appelle (Codex passe le résultat MCP tel quel). Tout le reste n'est pas du texte et
+ * rend `null` : c'est le signal qu'il faut une vue spécialisée, ou la vue brute.
  */
 export function outputText(output: unknown): string | null {
   if (typeof output === 'string') return output
 
-  if (Array.isArray(output)) {
-    const parts = output
+  const content = Array.isArray(output) ? output : fields(output)?.content
+  if (Array.isArray(content)) {
+    const parts = content
       .map((block) => text(block, 'text'))
       .filter((part): part is string => part !== null)
     return parts.length > 0 ? parts.join('\n') : null
