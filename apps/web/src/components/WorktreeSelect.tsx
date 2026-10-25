@@ -25,6 +25,11 @@ interface WorktreeSelectProps {
    * suggère `feat/12-slug`, que rien n'empêche de réécrire avant de valider.
    */
   suggestedName?: string
+  /**
+   * La carte lancée : sans base saisie, une carte enfant part de la branche de sa
+   * parente, où elle sera fusionnée. C'est le serveur qui la connaît et la crée.
+   */
+  cardId?: string
 }
 
 /**
@@ -38,6 +43,7 @@ export function WorktreeSelect({
   isRepository,
   layout = 'select',
   suggestedName,
+  cardId,
 }: WorktreeSelectProps) {
   const { data: worktrees } = useWorktrees(isRepository ? projectId : undefined)
   const { data: branchInfo } = useBranches(isRepository ? projectId : undefined)
@@ -70,7 +76,12 @@ export function WorktreeSelect({
     const branch = name.trim()
     if (!branch) return
     createWorktree.mutate(
-      { name: branch, baseRef: baseRef.trim() || branchInfo?.current || 'HEAD' },
+      {
+        name: branch,
+        baseRef: baseRef.trim() || branchInfo?.current || 'HEAD',
+        // Sans base choisie, le serveur fait partir la carte d'une parente de sa branche.
+        ...(cardId && !baseRef.trim() ? { cardId } : {}),
+      },
       {
         onSuccess: (created) => {
           onChange(created.id)

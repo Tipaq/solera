@@ -27,6 +27,11 @@ export interface PullRequest {
 export interface Forge {
   /** `ref` : un numéro ou une URL de PR, comme `gh pr view` les accepte. */
   readPullRequest(cwd: string, ref: string, token?: string): Promise<PullRequest>
+  /**
+   * Fusionne en squash, à condition que la PR soit toujours au commit relu. **Ne
+   * supprime jamais la branche** : son worktree disparaîtrait sous la session qui y vit.
+   */
+  mergePullRequest(cwd: string, number: number, headSha: string, token?: string): Promise<void>
 }
 
 /** Refus lisible par l'agent : la forge n'a pas pu répondre, ou la PR n'est pas là. */
@@ -43,15 +48,7 @@ export class ForgeError extends Error {}
 export const ghForge: Forge = {
   async readPullRequest(cwd, ref, token) {
     try {
-      const { stdout } = await run(
-        'gh',
-        ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state'],
-        {
-          cwd,
-          timeout: GH_TIMEOUT_MS,
-          env: { ...process.env, GH_PROMPT_DISABLED: '1', ...(token ? { GH_TOKEN: token } : {}) },
-        },
-      )
+      const { stdout } = await gh(cwd, ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state'], token)
       const value = JSON.parse(stdout) as Record<string, unknown>
       return {
         number: Number(value.number),
@@ -62,13 +59,31 @@ export const ghForge: Forge = {
         state: value.state === 'MERGED' ? 'MERGED' : value.state === 'CLOSED' ? 'CLOSED' : 'OPEN',
       }
     } catch (err) {
-      const stderr = (err as { stderr?: string }).stderr?.trim()
-      const code = (err as { code?: string }).code
-      throw new ForgeError(
-        code === 'ENOENT'
-          ? "`gh` n'est pas installé sur la machine du serveur : Solera ne peut pas lire la PR."
-          : `Solera n'a pas pu lire la PR « ${ref} » : ${stderr?.split('\n')[0] || (err instanceof Error ? err.message : String(err))}`,
-      )
+      throw forgeError(err, `Solera n'a pas pu lire la PR « ${ref} »`)
     }
   },
+
+  async mergePullRequest(cwd, number, headSha, token) {
+    try {
+      await gh(cwd, ['pr', 'merge', String(number), '--squash', '--match-head-commit', headSha], token)
+    } catch (err) {
+      throw forgeError(err, `Solera n'a pas pu fusionner la PR #${number}`)
+    }
+  },
+}
+
+function gh(cwd: string, args: string[], token?: string) {
+  return run('gh', args, {
+    cwd,
+    timeout: GH_TIMEOUT_MS,
+    env: { ...process.env, GH_PROMPT_DISABLED: '1', ...(token ? { GH_TOKEN: token } : {}) },
+  })
+}
+
+function forgeError(err: unknown, what: string): ForgeError {
+  const stderr = (err as { stderr?: string }).stderr?.trim()
+  if ((err as { code?: string }).code === 'ENOENT') {
+    return new ForgeError("`gh` n'est pas installé sur la machine du serveur : Solera ne peut pas parler à la forge.")
+  }
+  return new ForgeError(`${what} : ${stderr?.split('\n')[0] || (err instanceof Error ? err.message : String(err))}`)
 }

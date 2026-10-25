@@ -248,6 +248,12 @@ export const cards = sqliteTable(
      * la carte quitte « à faire », par quelque chemin que ce soit (`cards/moves.ts`).
      */
     toClarifySince: timestamp('to_clarify_since'),
+    /**
+     * La branche d'une carte parente, où ses enfants se fusionnent (#68) : créée et
+     * poussée au premier besoin, puis gardée pour qu'un titre renommé ne la déplace pas.
+     * Null pour une carte sans enfant, ou dont aucune enfant n'a encore eu d'arbre.
+     */
+    branch: text('branch'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),
@@ -465,8 +471,15 @@ export const cardReviews = sqliteTable(
      * `reviewing` : la revue tourne ; `changes` : l'auteur corrige ; `approved` : au
      * vert ; `escalated` : le plafond est atteint et une personne tranche
      * (`decision_id`) ; `closed` : la PR ne se relit plus.
+     *
+     * Pour une carte enfant dont la PR vise la branche de sa parente, le vert devient
+     * `to_merge` : le serveur fusionne dès que la session auteure est au repos
+     * (`merging` le temps de l'appel), puis `merged`, ou `merge_failed` avec la raison
+     * en note sur la carte.
      */
-    state: text('state', { enum: ['reviewing', 'changes', 'approved', 'escalated', 'closed'] })
+    state: text('state', {
+      enum: ['reviewing', 'changes', 'approved', 'escalated', 'closed', 'to_merge', 'merging', 'merged', 'merge_failed'],
+    })
       .notNull()
       .default('reviewing'),
     /** La décision déposée au plafond (`agent_requests.id`). */

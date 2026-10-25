@@ -63,6 +63,7 @@ import {
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { advanceCardOnLaunch } from '../cards/create.js'
+import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
@@ -377,6 +378,8 @@ export class AgentRequests {
       // Les échéances des décisions, sur le même balayage que les rangements accordés :
       // une requête indexée sur le genre et la clôture, vide la plupart du temps.
       this.decisions?.sweep()
+      // Les PR de cartes enfants au vert, fusionnées quand leur auteure se tait.
+      await this.reviews?.mergeReady()
     } finally {
       this.busy = false
     }
@@ -752,8 +755,8 @@ export class AgentRequests {
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
-    const worktreeId = await this.launchTree(requester, project, payload.worktree)
     const card = this.launchCard(project.id, payload.card)
+    const worktreeId = await this.launchTree(requester, project, payload.worktree, card?.id ?? null)
     const title =
       typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 200) : undefined
 
@@ -949,6 +952,8 @@ export class AgentRequests {
     requester: Requester,
     project: ProjectRow,
     value: unknown,
+    /** La carte de la session lancée : un arbre neuf part de la branche de sa parente. */
+    cardId: string | null,
   ): Promise<string | null> {
     if (value === undefined || value === null || value === '') return requester.worktreeId
     if (typeof value !== 'string') throw new Refusal('Le paramètre `worktree` doit être une chaîne.')
@@ -963,7 +968,8 @@ export class AgentRequests {
     if (existing) return existing.id
 
     assertWorktreeName(name)
-    const row = await createWorktree(this.ctx, project, requester.userId, name, 'HEAD')
+    const base = (await parentBranchFor(this.ctx.db, project, cardId)) ?? 'HEAD'
+    const row = await createWorktree(this.ctx, project, requester.userId, name, base)
     this.worktreeStatus?.forget(project.id)
     return row.id
   }
@@ -1005,7 +1011,12 @@ export class AgentRequests {
       if (requested && (!/^[A-Za-z0-9._/@{}^~-]+$/.test(requested) || requested.startsWith('-'))) {
         throw new Refusal(`Base invalide « ${requested} » : un nom de branche, de tag ou de commit.`)
       }
-      const base = requested || (await defaultBase(project.workspacePath)) || 'HEAD'
+      // La carte d'une parente travaille sur la branche de celle-ci, où elle sera fusionnée.
+      const base =
+        requested ||
+        (await parentBranchFor(this.ctx.db, project, requester.cardId)) ||
+        (await defaultBase(project.workspacePath)) ||
+        'HEAD'
       row = await createWorktree(this.ctx, project, requester.userId, branch, base)
       origin = row.baseRef === branch
         ? `La branche « ${branch} » existait : elle est reprise telle quelle.`

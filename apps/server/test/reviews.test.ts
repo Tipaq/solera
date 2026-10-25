@@ -26,7 +26,7 @@ import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { Decisions } from '../src/decisions/decisions.js'
 import { EventLog } from '../src/events/event-log.js'
-import type { Forge, PullRequest } from '../src/reviews/forge.js'
+import { ForgeError, type Forge, type PullRequest } from '../src/reviews/forge.js'
 import { ESCALATION_OPTIONS } from '../src/reviews/reviews.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
@@ -44,7 +44,7 @@ const LOOSE = 'loose'
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).trim()
 
-async function harness(t: TestContext) {
+async function harness(t: TestContext, { parent = false }: { parent?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-reviews-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const repo = join(dir, 'repo')
@@ -52,6 +52,11 @@ async function harness(t: TestContext) {
   await writeFile(join(repo, 'a.txt'), 'un\n')
   git(repo, 'add', '.')
   git(repo, 'commit', '-qm', 'départ')
+  // Une forge locale : la branche d'une parente doit y être poussée.
+  const origin = join(dir, 'origin.git')
+  git(dir, 'init', '-q', '--bare', '-b', 'main', origin)
+  git(repo, 'remote', 'add', 'origin', origin)
+  git(repo, 'push', '-q', 'origin', 'main')
   git(repo, 'checkout', '-qb', 'feat/7-monter-vite')
   const commit = async (text: string) => {
     await writeFile(join(repo, 'a.txt'), text)
@@ -69,10 +74,18 @@ async function harness(t: TestContext) {
   db.insert(projects)
     .values({ id: 'project', name: 'Nimbus', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 })
     .run()
+  if (parent) {
+    db.insert(cards)
+      .values({
+        id: 'parent', projectId: 'project', number: 6, title: 'Jalon vite', description: '', column: 'in_progress',
+        position: 0, createdBy: 'owner', createdAt: 1, updatedAt: 1,
+      })
+      .run()
+  }
   db.insert(cards)
     .values({
       id: 'card', projectId: 'project', number: 7, title: 'Monter vite', description: '', column: 'in_progress',
-      position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1,
+      position: 1, createdBy: 'owner', createdAt: 1, updatedAt: 1, parentId: parent ? 'parent' : null,
     })
     .run()
   const now = Date.now()
@@ -91,7 +104,18 @@ async function harness(t: TestContext) {
     number: 42, url: 'https://github.com/t/nimbus/pull/42', head: 'feat/7-monter-vite',
     headSha: git(repo, 'rev-parse', 'HEAD'), base: 'main', state: 'OPEN',
   }
-  const forge: Forge = { readPullRequest: async () => ({ ...pr }) }
+  const merged: Array<{ number: number; sha: string }> = []
+  let mergeFailure: string | null = null
+  const forge: Forge = {
+    readPullRequest: async () => ({ ...pr }),
+    mergePullRequest: async (_cwd, number, sha) => {
+      if (mergeFailure) throw new ForgeError(mergeFailure)
+      merged.push({ number, sha })
+    },
+  }
+  const failMerge = (reason: string | null) => {
+    mergeFailure = reason
+  }
 
   const sent: Array<{ id: string; text: string }> = []
   const bus = new EventEmitter()
@@ -128,7 +152,7 @@ async function harness(t: TestContext) {
     return (JSON.parse(run.stdout).result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
   }
 
-  return { db, repo, pr, commit, sent, call, review, inbox, tools, decisions }
+  return { db, repo, origin, pr, commit, sent, call, review, inbox, tools, decisions, requests, merged, failMerge }
 }
 
 test('revue : la PR signalée lance une relectrice sur la carte, dans l’arbre de l’auteure', async (t) => {
@@ -259,4 +283,70 @@ test('revue : au plafond, une décision part, et « un tour de plus » relève l
   assert.equal(extra.isError, false, extra.result ?? '')
   assert.equal(review().state, 'changes')
   assert.equal(review().maxRounds, 4)
+})
+
+const PARENT_BRANCH = 'jalon/6-jalon-vite'
+
+test('revue : une carte enfant vise la branche de sa parente, que Solera crée et pousse', async (t) => {
+  const { db, repo, origin, pr, call, review } = await harness(t, { parent: true })
+
+  const wrong = await call(AUTHOR, 'request_review', { pr: '42' })
+  assert.equal(wrong.isError, true)
+  assert.match(wrong.result ?? '', /gh pr edit 42 --base jalon\/6-jalon-vite/)
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'parent')).get()!.branch, PARENT_BRANCH)
+  assert.equal(git(origin, 'rev-parse', PARENT_BRANCH), git(repo, 'rev-parse', 'main'), 'Poussée depuis la branche par défaut')
+
+  pr.base = PARENT_BRANCH
+  const asked = await call(AUTHOR, 'request_review', { pr: '42' })
+  assert.equal(asked.isError, false, asked.result ?? '')
+  assert.equal(review().base, PARENT_BRANCH)
+
+  const brief = projectOverview(db, { projectId: 'project', conversationId: AUTHOR, soleraMcp: true } as Parameters<typeof projectOverview>[1]) ?? ''
+  assert.match(brief, /gh pr create --base jalon\/6-jalon-vite/)
+})
+
+test('revue : au vert, la PR d’une enfant se fusionne quand l’auteure se tait, et la carte se termine', async (t) => {
+  const { db, pr, call, review, inbox, requests, merged } = await harness(t, { parent: true })
+  pr.base = PARENT_BRANCH
+  await call(AUTHOR, 'request_review', { pr: '42' })
+  const reviewer = review().reviewerConversationId!
+
+  db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, AUTHOR)).run()
+  const approve = await call(reviewer, 'submit_review', { verdict: 'approve', summary: 'Rien à redire.' })
+  assert.equal(approve.isError, false, approve.result ?? '')
+  assert.equal(review().state, 'to_merge')
+  assert.equal(merged.length, 0, 'Pas de fusion sous une session qui travaille')
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'card')).get()!.column, 'in_progress')
+
+  db.update(conversations).set({ status: 'idle' }).where(eq(conversations.id, AUTHOR)).run()
+  await requests.sweep()
+  assert.deepEqual(merged, [{ number: 42, sha: pr.headSha }])
+  assert.equal(review().state, 'merged')
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'card')).get()!.column, 'done')
+  const move = db.select().from(cardMoves).where(eq(cardMoves.toColumn, 'done')).get()!
+  assert.equal(move.userId, null)
+  assert.match(inbox(AUTHOR).at(-1)!.body, /fusionnée dans `jalon\/6-jalon-vite`/)
+
+  await requests.sweep()
+  assert.equal(merged.length, 1, 'Une seule fusion')
+})
+
+test('revue : une fusion refusée par la forge le dit, et un nouveau commit repasse par la revue', async (t) => {
+  const { db, pr, commit, call, review, inbox, requests, failMerge } = await harness(t, { parent: true })
+  pr.base = PARENT_BRANCH
+  await call(AUTHOR, 'request_review', { pr: '42' })
+  const reviewer = review().reviewerConversationId!
+  // Le balayage qui traite le verdict tente déjà la fusion : l'auteure est au repos.
+  failMerge('conflit avec la base')
+  await call(reviewer, 'submit_review', { verdict: 'approve', summary: 'ok' })
+  await requests.sweep()
+  assert.equal(review().state, 'merge_failed')
+  assert.match(inbox(AUTHOR).at(-1)!.body, /conflit avec la base/)
+  assert.equal(db.select().from(cards).where(eq(cards.id, 'card')).get()!.column, 'in_progress')
+
+  pr.headSha = await commit('rebasé\n')
+  const again = await call(AUTHOR, 'request_review', { pr: '42' })
+  assert.equal(again.isError, false, again.result ?? '')
+  assert.equal(review().state, 'reviewing')
+  assert.equal(review().round, 2)
 })

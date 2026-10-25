@@ -333,6 +333,7 @@ export function DraftConversationPage() {
                 }}
                 isRepository={project?.git !== null && project !== undefined}
                 suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
+                cardId={card?.id}
               />
             ) : null}
           </div>
