@@ -457,6 +457,30 @@
   .sg-markdown li.sg-task-item > input[data-sg-task] {
     cursor: pointer;
   }
+  /* « Promouvoir en carte » (#71) : discret, révélé au survol de sa ligne, et toujours
+     visible là où rien ne survole — un téléphone n'aurait sinon aucun moyen de l'ouvrir. */
+  .sg-markdown .sg-task-promote {
+    margin-left: 0.5em;
+    border-radius: var(--radius-sm);
+    padding: 0 0.3em;
+    font-size: var(--text-meta);
+    color: var(--sg-ink-faint);
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .sg-markdown li.sg-task-item:hover > .sg-task-promote,
+  .sg-markdown li.sg-task-item:hover > p > .sg-task-promote,
+  .sg-markdown .sg-task-promote:focus-visible {
+    opacity: 1;
+  }
+  .sg-markdown .sg-task-promote:hover {
+    color: var(--sg-accent);
+  }
+  @media (hover: none) {
+    .sg-markdown .sg-task-promote {
+      opacity: 1;
+    }
+  }
 
   .sg-markdown blockquote {
     border-left: 2px solid var(--sg-line-strong);

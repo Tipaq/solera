@@ -632,6 +632,8 @@ export const agentRequests = sqliteTable(
         'append_card_description',
         'edit_subtasks',
         'link_card',
+        // Promouvoir une sous-tâche de sa carte en carte sœur (#71).
+        'promote_subtask',
         // Les liens informatifs entre cartes (#109) : ils ne défont rien.
         'relate_cards',
         // Le titre de sa propre session, qui doit être annoncé aux clients.

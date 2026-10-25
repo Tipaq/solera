@@ -12,6 +12,7 @@ import {
 import { addCardBlock } from '../cards/blocks.js'
 import { addCardRelation, duplicateOf, removeCardRelation } from '../cards/relations.js'
 import { createCard, syncCardReferences } from '../cards/create.js'
+import { promoteSubtask } from '../cards/promote.js'
 import { recordCardMove } from '../cards/moves.js'
 import { HttpError } from '../http/errors.js'
 import { Refusal } from './refusal.js'
@@ -261,6 +262,9 @@ export function editOwnSubtasks(
       }
       const target = named.find((subtask) => subtask.checked !== checked)
       if (!target) continue
+      if (target.card !== null) {
+        throw new Refusal(`« ${label} » suit la carte #${target.card} : sa case se coche quand #${target.card} est terminée.`)
+      }
       description = toggleSubtask(description, target.index, checked) ?? description
       changed.push(`${checked ? 'cochée' : 'décochée'} « ${label} »`)
     }
@@ -276,6 +280,55 @@ export function editOwnSubtasks(
   syncCardReferences(db, card, description)
   const parts = [...changed, ...(add.length > 0 ? [`${add.length} ajoutée(s)`] : [])]
   return `Sous-tâches de #${card.number} mises à jour : ${parts.join(', ')}.`
+}
+
+// --- promote_subtask --------------------------------------------------------------
+
+/**
+ * Promeut une sous-tâche de sa carte en carte sœur (#71), quand elle se révèle trop
+ * grosse pour la session.
+ *
+ * Seul et dans le socle : c'est `create_card` avec la parente de sa carte, puis une ligne
+ * de sa description réécrite comme `edit_subtasks` le fait d'une case. Seulement sur sa
+ * carte, comme les autres gestes sur la description.
+ */
+export function promoteOwnSubtask(db: Db, requester: ConversationRow, projectId: string, payload: Record<string, unknown>): string {
+  const label = typeof payload.subtask === 'string' ? payload.subtask.replace(/\s+/g, ' ').trim() : ''
+  if (!label) throw new Refusal('Le paramètre `subtask` est le libellé de la sous-tâche, tel que read_card le montre.')
+  const title = typeof payload.title === 'string' ? payload.title.trim() : undefined
+  if (title !== undefined && (title === '' || title.length > TITLE_MAX)) {
+    throw new Refusal(`Le paramètre \`title\` tient en 1 à ${TITLE_MAX} caractères.`)
+  }
+  if (payload.blocks !== undefined && typeof payload.blocks !== 'boolean') throw new Refusal('Le paramètre `blocks` est vrai ou faux.')
+  const blocks = payload.blocks !== false
+  const card = ownCard(db, requester, projectId)
+
+  const subtasks = parseSubtasks(card.description)
+  const named = subtasks.filter((subtask) => subtask.label === label)
+  if (named.length === 0) {
+    const known = subtasks.map((subtask) => `« ${subtask.label} »`).join(', ')
+    throw new Refusal(`Aucune sous-tâche « ${label} » sur #${card.number}.${known ? ` Celles qui existent : ${known}.` : ''}`)
+  }
+  const target = named.find((subtask) => subtask.card === null && !subtask.checked)
+  if (!target) {
+    const promoted = named.find((subtask) => subtask.card !== null)
+    throw new Refusal(
+      promoted ? `« ${label} » est déjà la carte #${promoted.card}.` : `« ${label} » est cochée : elle n'a plus rien à porter.`,
+    )
+  }
+
+  const created = promoteSubtask(db, card, { index: target.index, label, ...(title ? { title } : {}), blocks }, {
+    userId: requester.userId,
+    conversationId: requester.id,
+  })
+  noteFrom(db, created.id, requester.id, `Carte ouverte depuis cette session, en promouvant une sous-tâche de #${card.number}.`)
+  noteFrom(db, card.id, requester.id, `Sous-tâche « ${label} » promue en carte #${created.number}.`)
+  const parent = created.parentId ? db.select({ number: cards.number }).from(cards).where(eq(cards.id, created.parentId)).get() : undefined
+  return [
+    `Carte #${created.number} « ${created.title} » créée dans « à faire »${parent ? `, enfant de #${parent.number} comme #${card.number}` : ''}${blocks ? `, elle bloque #${card.number}` : ''}.`,
+    `La sous-tâche est devenue « #${created.number} ${label} » : sa case se cochera quand #${created.number} sera terminée.`,
+    `Pour la faire traiter : start_session avec card=${created.number}.`,
+  ].join(' ')
 }
 
 /**

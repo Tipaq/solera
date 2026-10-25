@@ -7,8 +7,8 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { asc, eq } from 'drizzle-orm'
-import { cardMoves, conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
-import { parseSubtasks, toggleSubtask, type CardDto } from '@solera/protocol'
+import { cardMoves, cards, conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
+import { parseSubtasks, promoteSubtaskLine, syncPromotedSubtasks, toggleSubtask, type CardDto } from '@solera/protocol'
 import { projectOverview } from '../src/agents/overview.js'
 import { AttachmentStore } from '../src/attachments/store.js'
 import { advanceCardOnLaunch, createCard } from '../src/cards/create.js'
@@ -424,6 +424,73 @@ test('sous-tâches : cochées par leur rang, refusées quand la description a bo
     toggleSubtask('  - [x] fait', 0, false),
     '  - [ ] fait',
   )
+})
+
+test('promouvoir une sous-tâche : une sœur, la ligne en #N, et sa case qui suit la fermeture de #N', async (t) => {
+  const { app, db, create } = await harness(t)
+  const parent = await create('Le jalon')
+  const origin = await create('La carte d’origine', '- [ ] Lire\n- [ ] Écrire le moteur')
+  await app.inject({ method: 'PATCH', url: `/api/cards/${origin.id}`, payload: { parentId: parent.id } })
+
+  const stale = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${origin.id}/subtasks/promote`,
+    payload: { index: 1, label: 'Un autre libellé' },
+  })
+  assert.equal(stale.statusCode, 409, stale.body)
+
+  const promoted = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${origin.id}/subtasks/promote`,
+    payload: { index: 1, label: 'Écrire le moteur' },
+  })
+  assert.equal(promoted.statusCode, 201, promoted.body)
+  const { card, created } = promoted.json() as { card: CardDto; created: CardDto }
+  assert.equal(created.title, 'Écrire le moteur')
+  assert.equal(created.parent?.id, parent.id)
+  assert.equal(card.description, `- [ ] Lire\n- [ ] #${created.number} Écrire le moteur`)
+  assert.deepEqual(card.blockedBy.map((link) => link.id), [created.id])
+  assert.equal(parseSubtasks(card.description)[1]?.card, created.number)
+
+  const again = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${origin.id}/subtasks/promote`,
+    payload: { index: 1, label: `#${created.number} Écrire le moteur` },
+  })
+  assert.equal(again.statusCode, 409)
+  const manual = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${origin.id}/subtasks`,
+    payload: { index: 1, checked: true, label: `#${created.number} Écrire le moteur` },
+  })
+  assert.equal(manual.statusCode, 409, 'la case d’une sous-tâche promue suit sa carte')
+
+  const description = () => db.select().from(cards).where(eq(cards.id, origin.id)).get()?.description
+  const move = async (column: string) => {
+    const response = await app.inject({ method: 'PATCH', url: `/api/cards/${created.id}`, payload: { column } })
+    assert.equal(response.statusCode, 200, response.body)
+  }
+  await move('review')
+  assert.match(description() ?? '', /- \[ \] #\d+ Écrire/, '« à vérifier » n’est pas fini')
+  await move('done')
+  assert.match(description() ?? '', /- \[x\] #\d+ Écrire/)
+  await move('in_progress')
+  assert.match(description() ?? '', /- \[ \] #\d+ Écrire/, 'rouverte, la case se décoche')
+  await move('abandoned')
+  assert.match(description() ?? '', /- \[x\] #\d+ Écrire/, 'abandonnée compte comme fermée')
+
+  // Sans parente, la sœur n'en a pas non plus ; et une citation en prose ne bouge pas.
+  const alone = await create('Seule', '- [ ] Voir #1\n- [ ] #1 déjà là')
+  assert.equal(syncPromotedSubtasks(alone.description, 1, true), '- [ ] Voir #1\n- [x] #1 déjà là')
+  assert.equal(promoteSubtaskLine('  * [ ] Une ligne', 0, 7), '  * [ ] #7 Une ligne')
+  const solo = await app.inject({
+    method: 'POST',
+    url: `/api/cards/${alone.id}/subtasks/promote`,
+    payload: { index: 0, label: 'Voir #1', title: 'Voir la une', blocks: false },
+  })
+  assert.equal(solo.statusCode, 201, solo.body)
+  assert.equal((solo.json() as { created: CardDto }).created.parent, null)
+  assert.equal((solo.json() as { created: CardDto }).created.title, 'Voir la une')
 })
 
 test('card_moves : les trois chemins qui changent une colonne écrivent une ligne', async (t) => {

@@ -3,6 +3,7 @@ import type Token from 'markdown-it/lib/token.mjs'
 import {
   VIEWABLE_IMAGE_TYPES,
   cardReferenceRanges,
+  promotedCard,
   sessionReference,
   sessionReferenceRanges,
 } from '@solera/protocol'
@@ -53,10 +54,15 @@ const TASK_MARKER = /^\[([ xX])\]\s+/
  * description d'une carte a besoin, où cocher réécrit la ligne du markdown. Partout
  * ailleurs — un message d'agent, un fichier lu — il n'y a rien à réécrire, et une case
  * cliquable qui ne garde pas son état serait un mensonge.
+ *
+ * Une sous-tâche promue (`- [ ] #12 …`, #71) suit sa carte : sa case reste désactivée,
+ * mais compte dans les rangs. Les autres cases ouvertes reçoivent, avec `taskPromote`,
+ * un bouton `data-sg-promote` qui porte le même rang.
  */
 md.core.ruler.push('sg_task_lists', (state) => {
   const tokens = state.tokens
   const interactive = (state.env as MarkdownEnv).tasks === 'interactive'
+  const promote = (state.env as MarkdownEnv).taskPromote
   // Le rang de la case dans le document est son adresse : c'est par lui que le panneau
   // dit au serveur laquelle cocher, et il doit compter comme `parseSubtasks` du
   // protocole — donc sans les `- [ ]` des blocs de code, que markdown-it n'ouvre pas
@@ -82,10 +88,17 @@ md.core.ruler.push('sg_task_lists', (state) => {
 
     const checkbox = new state.Token('html_inline', '', 0)
     const checked = match[1] === ' ' ? '' : ' checked'
-    checkbox.content = interactive
+    const promoted = promotedCard(first.content) !== null
+    checkbox.content = interactive && !promoted
       ? `<input type="checkbox" data-sg-task="${rank}"${checked}>`
       : `<input type="checkbox" disabled${checked}>`
     inline.children?.unshift(checkbox)
+    if (interactive && promote && !promoted && !checked) {
+      const button = new state.Token('html_inline', '', 0)
+      const label = md.utils.escapeHtml(promote)
+      button.content = `<button type="button" class="sg-task-promote" data-sg-promote="${rank}" title="${label}">${label}</button>`
+      inline.children?.push(button)
+    }
     rank += 1
   }
 
@@ -489,6 +502,8 @@ interface MarkdownEnv {
   base?: string
   /** Cases à cocher cliquables, avec leur rang en `data-sg-task`. Voir `sg_task_lists`. */
   tasks?: 'interactive'
+  /** Libellé du bouton « promouvoir en carte » des cases cliquables, quand on l'offre. */
+  taskPromote?: string
   /** Numéros des cartes du board auquel le texte se rapporte. Voir `markCardReferences`. */
   cards?: Set<number>
   /** Le projet dont le texte peut citer les sessions. Voir `markSessionReferences`. */

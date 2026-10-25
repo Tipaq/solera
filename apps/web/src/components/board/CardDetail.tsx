@@ -14,6 +14,7 @@ import { CardEditor } from './CardEditor'
 import { CardChooser } from './CardChooser'
 import { CardChildren, CardDue, CardParent } from './CardMeta'
 import { CardProgress } from './CardProgress'
+import { PromoteSubtask } from './PromoteSubtask'
 import { CardDuplicateOf, CardRelated } from './CardRelations'
 import { CardThread } from './CardThread'
 import { ColumnDot } from './ColumnDot'
@@ -122,6 +123,11 @@ export function CardDetail({
         if (!task || toggleSubtask.isPending) return
         toggleSubtask.mutate({ index, checked, label: task.label })
       }
+  // La sous-tâche dont on ouvre la promotion en carte (#71), par son rang. Sur une carte
+  // close, rien à promouvoir : la sœur naîtrait d'un travail déclaré fini.
+  const [promoting, setPromoting] = useState<number | null>(null)
+  const promoted = promoting === null ? undefined : subtasks[promoting]
+  const promoteSubtask = checkSubtask && !closed ? setPromoting : undefined
 
   const remove = () => {
     if (!confirm(translate('board.card.remove.confirm', { number: card.number }))) return
@@ -273,13 +279,16 @@ export function CardDetail({
               <div className="flex flex-col gap-2">
                 {card.description ? (
                   <div className="min-w-0 break-words text-sm leading-relaxed text-ink-soft">
-                    <Markdown text={card.description} onToggleTask={checkSubtask} />
+                    <Markdown text={card.description} onToggleTask={checkSubtask} onPromoteTask={promoteSubtask} />
                   </div>
                 ) : (
                   <button type="button" onClick={() => setEditing(true)} className="py-2 text-left text-sm text-ink-faint hover:text-accent">
                     {t('board.editor.addDescription')}
                   </button>
                 )}
+                {promoted && promoteSubtask ? (
+                  <PromoteSubtask key={promoted.index} card={card} projectId={projectId} subtask={promoted} onClose={() => setPromoting(null)} />
+                ) : null}
                 <CardProgress subtasks={subtasks} />
                 {toggleSubtask.isError ? <p role="alert" className="text-sm text-critical">{t('board.card.subtasks.error')}</p> : null}
               </div>

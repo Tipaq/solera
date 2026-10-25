@@ -40,6 +40,7 @@ const SOLERA_LABELS: Record<string, MessageKey> = {
   create_card: 'soleraTool.create_card',
   append_card_description: 'soleraTool.append_card_description',
   edit_subtasks: 'soleraTool.edit_subtasks',
+  promote_subtask: 'soleraTool.promote_subtask',
   link_card: 'soleraTool.link_card',
   list_actions: 'soleraTool.list_actions',
   register_action: 'soleraTool.register_action',

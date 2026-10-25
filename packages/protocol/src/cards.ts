@@ -147,6 +147,21 @@ export const toggleSubtaskBodySchema = z.object({
 })
 
 /**
+ * Promeut la n-ième sous-tâche en carte (#71) : une sœur de la carte d'origine, sous la
+ * même parente, et la ligne devient `- [ ] #N libellé`.
+ *
+ * `index` et `label` se vérifient comme pour cocher. `title` remplace le libellé quand
+ * il ne fait pas un bon titre ; `blocks` pose « la nouvelle bloque l'origine », proposé
+ * par défaut puisque l'origine attendait cette sous-tâche.
+ */
+export const promoteSubtaskBodySchema = z.object({
+  index: z.number().int().min(0),
+  label: z.string().max(DESCRIPTION_MAX),
+  title: z.string().trim().min(1).max(TITLE_MAX).optional(),
+  blocks: z.boolean().default(true),
+})
+
+/**
  * Ordre des cartes, colonne par colonne, du haut vers le bas.
  *
  * Un déplacement touche une colonne quand il monte ou descend une carte, deux quand il
@@ -342,6 +357,11 @@ export interface CardSubtask {
   checked: boolean
   /** Le texte après la case, tel qu'il est écrit — markdown non rendu. */
   label: string
+  /**
+   * La carte vers laquelle la sous-tâche a été promue (#71), quand la ligne s'ouvre sur
+   * `#N`. Sa case suit alors la carte et ne se coche plus à la main.
+   */
+  card: number | null
 }
 
 /** Une puce de liste portant une case, à la façon de GitHub. */
@@ -368,9 +388,74 @@ export function parseSubtasks(text: string): CardSubtask[] {
     if (inCode) continue
     const match = SUBTASK_LINE.exec(line)
     if (!match) continue
-    found.push({ index: found.length, checked: match[2] !== ' ', label: match[4]?.trim() ?? '' })
+    const label = match[4]?.trim() ?? ''
+    found.push({ index: found.length, checked: match[2] !== ' ', label, card: promotedCard(label) })
   }
   return found
+}
+
+/** Une sous-tâche promue s'ouvre sur la référence de sa carte : `#12 libellé`. */
+const PROMOTED_LABEL = /^#(\d+)(?!\w)/
+
+/** Le numéro de la carte d'une sous-tâche promue, ou null pour une sous-tâche ordinaire. */
+export function promotedCard(label: string): number | null {
+  const match = PROMOTED_LABEL.exec(label)
+  const number = match ? Number(match[1]) : NaN
+  return Number.isSafeInteger(number) && number > 0 ? number : null
+}
+
+/**
+ * Les lignes de sous-tâches d'un texte découpé en lignes : leur rang dans le texte et ce
+ * que l'expression en a lu. Le même parcours que `parseSubtasks`, blocs de code sautés,
+ * pour que le rang d'une ligne réécrite soit celui qu'on a affiché.
+ */
+function* subtaskLines(lines: readonly string[]): Generator<{ line: number; match: RegExpExecArray }> {
+  let inCode = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    if (CODE_FENCE.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
+    const match = SUBTASK_LINE.exec(line)
+    if (match) yield { line: i, match }
+  }
+}
+
+/**
+ * Réécrit la n-ième sous-tâche en référence à la carte qui la reprend : `- [ ] #N
+ * libellé`. Le libellé reste, pour qu'un agent qui lit la description brute comprenne
+ * la ligne sans ouvrir #N ; la case est décochée, puisque #N vient de naître.
+ *
+ * Rend `null` quand l'indice n'existe plus, comme `toggleSubtask`.
+ */
+export function promoteSubtaskLine(text: string, index: number, card: number): string | null {
+  const lines = text.split('\n')
+  let seen = 0
+  for (const { line, match } of subtaskLines(lines)) {
+    if (seen === index) {
+      lines[line] = `${match[1]} ${match[3]}#${card} ${match[4]?.trim() ?? ''}`.trimEnd()
+      return lines.join('\n')
+    }
+    seen += 1
+  }
+  return null
+}
+
+/**
+ * Coche ou décoche toutes les sous-tâches promues vers la carte `card`. Rend le texte
+ * tel quel quand aucune ne change, pour que l'appelant sache s'il y a à écrire.
+ */
+export function syncPromotedSubtasks(text: string, card: number, checked: boolean): string {
+  const lines = text.split('\n')
+  let changed = false
+  for (const { line, match } of subtaskLines(lines)) {
+    if (promotedCard(match[4]?.trim() ?? '') !== card || (match[2] !== ' ') === checked) continue
+    lines[line] = `${match[1]}${checked ? 'x' : ' '}${match[3]}${match[4]}`
+    changed = true
+  }
+  return changed ? lines.join('\n') : text
 }
 
 /**
