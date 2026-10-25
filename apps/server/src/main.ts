@@ -23,6 +23,7 @@ import { AgentRequests } from './sessions/agent-requests.js'
 import { SessionRelay } from './sessions/session-relay.js'
 import { GitCredentialStore } from './git-credentials/store.js'
 import { ghForge } from './reviews/forge.js'
+import { CardClosure } from './cards/close.js'
 import { installCredentialLauncher } from './git-credential/helper.js'
 import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
@@ -119,17 +120,22 @@ async function main(): Promise<void> {
   watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
+  // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
+  const githubToken = (userId: string) => {
+    try {
+      return gitCredentials.resolve(userId, 'github.com')?.token
+    } catch {
+      return undefined
+    }
+  }
+  // Clore une carte finie (#69) : l'agent le propose, le clic archive ses sessions, retire
+  // ses worktrees et supprime ses branches fusionnées.
+  const cardClosure = new CardClosure(db, worktreeStatus, worktreeCleanup, ghForge, githubToken)
   const agentRequests = new AgentRequests({ db, config }, sessions, registry, log, decisions, worktreeStatus, actions, {
     forge: ghForge,
     notifications,
-    // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
-    token: (userId) => {
-      try {
-        return gitCredentials.resolve(userId, 'github.com')?.token
-      } catch {
-        return undefined
-      }
-    },
+    token: githubToken,
+    closure: cardClosure,
   })
   // Construit avant l'application, qui expose la route capable de le reprogrammer, mais
   // démarré après elle, faute de logger avant.
@@ -164,6 +170,7 @@ async function main(): Promise<void> {
     worktreeStatus,
     worktreeCleanup,
     actions,
+    cardClosure,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

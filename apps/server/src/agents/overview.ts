@@ -198,7 +198,11 @@ function deliveryBriefing(db: Db, input: OverviewInput): string | null {
   const end = parent
     ? 'Au vert, Solera la fusionne lui-même dans la branche de la parente et termine la carte : ne fusionne jamais la PR toi-même.'
     : 'Ne fusionne jamais la PR toi-même.'
-  return `Si tu livres du code pour cette carte, livre-le par une PR : commite dans ta branche, pousse-la, ouvre la PR ${target}, puis appelle \`request_review\` avec son numéro. Une session de revue la relit dans ton arbre ; tant qu'elle relit, n'y écris rien. Son verdict t'arrive en message : corrige, pousse et rappelle \`request_review\` jusqu'au vert. ${end}`
+  // La clôture (#69) passe par la famille `cardFiling` : sans elle, l'agent n'a pas l'outil.
+  const close = input.cardFiling
+    ? " Une fois la PR fusionnée et le résultat vérifié, propose de clore la carte avec `request_card_change` et `close: true`, en disant ce que tu as vérifié : le clic archive ses conversations, la tienne comprise, et retire ton worktree."
+    : ''
+  return `Si tu livres du code pour cette carte, livre-le par une PR : commite dans ta branche, pousse-la, ouvre la PR ${target}, puis appelle \`request_review\` avec son numéro. Une session de revue la relit dans ton arbre ; tant qu'elle relit, n'y écris rien. Son verdict t'arrive en message : corrige, pousse et rappelle \`request_review\` jusqu'au vert. ${end}${close}`
 }
 
 /** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */

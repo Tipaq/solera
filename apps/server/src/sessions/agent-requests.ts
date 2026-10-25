@@ -62,6 +62,7 @@ import {
   type ActionRunner,
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
+import { isCloseTarget, type CardClosure } from '../cards/close.js'
 import { advanceCardOnLaunch } from '../cards/create.js'
 import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
@@ -199,6 +200,8 @@ function describeCardChange(line: Extract<SoleraEvent, { type: 'card_filing.requ
   const day = (ts: number | null) => (ts === null ? 'aucune' : new Date(ts).toLocaleDateString('fr-FR'))
   return [
     line.toColumn ? `vers « ${COLUMN_WORDS[line.toColumn]} »` : null,
+    line.close ? 'clore : archiver ses conversations, retirer ses worktrees, supprimer ses branches fusionnées' : null,
+    line.close?.abandon.length ? `abandonner ${line.close.abandon.map((card) => `#${card.number}`).join(', ')}` : null,
     line.parent ? (line.parent.to ? `sous #${line.parent.to.number}` : 'détachée de sa parente') : null,
     line.dueAt ? `échéance ${day(line.dueAt.to)}` : null,
     line.blocks ? `bloque ${line.blocks.map((card) => `#${card.number}`).join(', ')}` : null,
@@ -327,8 +330,15 @@ export class AgentRequests {
     /** Absent des tests qui n'en ont pas l'usage : `run_action` y est alors refusé. */
     private readonly actions?: ActionRunner,
     /** La forge où lire les PR ; sans elle, `request_review` et `submit_review` sont refusés. */
-    review?: { forge: Forge; token?: (userId: string) => string | undefined; notifications?: ParentNotifier },
+    review?: {
+      forge: Forge
+      token?: (userId: string) => string | undefined
+      notifications?: ParentNotifier
+      /** La clôture d'une carte (#69) ; sans elle, `close` est refusé. */
+      closure?: CardClosure
+    },
   ) {
+    this.closure = review?.closure
     this.parentPullRequests = review
       ? new ParentPullRequests(ctx, review.forge, review.token, review.notifications)
       : undefined
@@ -345,6 +355,7 @@ export class AgentRequests {
   }
 
   private readonly reviews: Reviews | undefined
+  private readonly closure: CardClosure | undefined
   private readonly parentPullRequests: ParentPullRequests | undefined
 
   start(logger: FastifyBaseLogger): void {
@@ -445,7 +456,7 @@ export class AgentRequests {
       // appartient à un projet, et un fil libre n'a aucun board à proposer de ranger.
       // C'est aussi pourquoi `request_card_change` n'entre pas dans `FREE_THREAD_TOOLS`.
       if (request.kind === 'request_card_change') {
-        this.settle(request, this.requestCardChange(request, requester, project, payload), false)
+        this.settle(request, await this.requestCardChange(request, requester, project, payload), false)
         return
       }
       if (request.kind === 'request_review' || request.kind === 'submit_review') {
@@ -1612,12 +1623,12 @@ export class AgentRequests {
    * Pas de borne horaire par-dessus l'invariant : rien ne s'applique sans clic, donc une
    * boucle d'erreur ne produit qu'une demande, celle qui attend déjà.
    */
-  private requestCardChange(
+  private async requestCardChange(
     request: AgentRequestRow,
     requester: ConversationRow,
     project: ProjectRow,
     payload: Record<string, unknown>,
-  ): string {
+  ): Promise<string> {
     this.assertCardFilingAllowed(requester)
 
     const changes = Array.isArray(payload.changes) ? payload.changes : null
@@ -1681,7 +1692,19 @@ export class AgentRequests {
         reason: reason.slice(0, MAX_CARD_MOVE_REASON_CHARS),
       }
 
-      if (change.column !== undefined) {
+      if (change.close !== undefined && typeof change.close !== 'boolean') {
+        throw new Refusal(`Le champ \`close\` de #${number} vaut true ou false.`)
+      }
+      if (change.close === true) {
+        if (!this.closure) throw new Refusal("La clôture des cartes n'est pas branchée sur cette instance.")
+        // « Terminé » par défaut ; « abandonné » renonce au travail et se clôt pareil.
+        const target = change.column ?? 'done'
+        if (!isCloseTarget(target)) {
+          throw new Refusal(`Une clôture range #${number} en « terminé » (par défaut) ou en « abandonné » : retire \`column\` ou donne done ou abandoned.`)
+        }
+        if (card.column !== target) line.toColumn = target
+        line.close = await this.closure.plan(project, card, target)
+      } else if (change.column !== undefined) {
         const column = cardColumnSchema.safeParse(change.column)
         if (!column.success) {
           throw new Refusal(`Colonne inconnue pour #${number} : ${cardColumnSchema.options.join(', ')}.`)
@@ -1749,8 +1772,8 @@ export class AgentRequests {
       if (blocks.length > 0) line.blocks = blocks.map(ref)
       if (unblocks.length > 0) line.unblocks = unblocks.map(ref)
 
-      if (!line.toColumn && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
-        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
+      if (!line.toColumn && !line.close && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
+        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
       }
       proposed.push(line)
     }

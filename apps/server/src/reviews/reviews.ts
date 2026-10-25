@@ -432,7 +432,7 @@ export class Reviews {
     this.note(review.cardId, sender.id, `${tag} fusionnée en squash dans \`${review.base}\`, la branche de la carte parente : carte terminée. La branche \`${review.branch}\` et son worktree restent en place.`)
     this.send(project.id, sender, author.id, [
       `${tag} est fusionnée dans \`${review.base}\`, et la carte est terminée.`,
-      "Ta branche et ton worktree restent en place : n'y pousse plus rien pour cette carte. Termine ton tour.",
+      "Ta branche et ton worktree restent en place jusqu'à la clôture de la carte : n'y pousse plus rien pour elle. Si le résultat est vérifié, propose de la clore avec `request_card_change` et `close: true` ; sinon vérifie-le d'abord. Puis termine ton tour.",
     ].join('\n\n'))
   }
 

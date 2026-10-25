@@ -31,6 +31,7 @@ import {
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
+  type CardCloseOutcome,
   type CardColumn,
   type CardLinkDto,
   type ConversationDto,
@@ -42,6 +43,7 @@ import {
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
+import { isCloseTarget, type CardClosure } from '../../cards/close.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
 import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { recordCardMove } from '../../cards/moves.js'
@@ -141,6 +143,8 @@ export function registerConversationRoutes(
   registry: AgentRegistry,
   attachments: AttachmentStore,
   webhooks: WebhookService,
+  /** La clôture des cartes (#69) ; sans elle, une demande `close` ne s'accorde pas. */
+  closure?: CardClosure,
 ): void {
   /**
    * Résout les pièces jointes à envoyer, dans l'ordre choisi par le client.
@@ -1142,14 +1146,24 @@ export function registerConversationRoutes(
       reason: string | null,
       moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[],
       applied?: number[],
+      closed?: CardCloseOutcome[],
     ) => {
       const now = Date.now()
       ctx.db
         .update(agentRequests)
         .set({ resolvedAt: now, ...(decision === 'accepted' ? { acceptedAt: now } : {}) })
-        .where(eq(agentRequests.id, requestId))
+        .where(and(eq(agentRequests.id, requestId), isNull(agentRequests.resolvedAt)))
         .run()
-      log.append(id, { type: 'card_filing.resolved', requestId, decision, decidedBy: user.id, reason, moved, ...(applied ? { applied } : {}) })
+      log.append(id, {
+        type: 'card_filing.resolved',
+        requestId,
+        decision,
+        decidedBy: user.id,
+        reason,
+        moved,
+        ...(applied ? { applied } : {}),
+        ...(closed ? { closed } : {}),
+      })
     }
 
     if (body.decision === 'refused') {
@@ -1180,7 +1194,8 @@ export function registerConversationRoutes(
           .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, projectId)))
           .get()
         if (!card) return null
-        if (proposed.toColumn && card.column !== proposed.fromColumn) return null
+        if ((proposed.toColumn || proposed.close) && card.column !== proposed.fromColumn) return null
+        if (proposed.close && !closure) return null
         if (proposed.parent && card.parentId !== (proposed.parent.from?.cardId ?? null)) return null
         if (proposed.dueAt && card.dueAt !== proposed.dueAt.from) return null
         let parentId: string | null | undefined
@@ -1242,7 +1257,30 @@ export function registerConversationRoutes(
       }
     })
 
-    close('accepted', null, moved, live.map(({ card }) => card.number))
+    // Les clôtures après la transaction : elles parlent à git et à la forge, et prennent
+    // quelques secondes. La demande est marquée résolue avant, pour qu'un second clic
+    // pendant ce temps ne la rejoue pas.
+    const closing = live.filter(({ proposed }) => proposed.close)
+    if (closing.length === 0 || !closure) {
+      close('accepted', null, moved, live.map(({ card }) => card.number))
+      return { ok: true }
+    }
+    ctx.db.update(agentRequests).set({ resolvedAt: now, acceptedAt: now }).where(eq(agentRequests.id, requestId)).run()
+    const projectRow = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()!
+    const closed: CardCloseOutcome[] = []
+    for (const { card, proposed } of closing) {
+      const target = proposed.toColumn ?? card.column
+      if (!isCloseTarget(target)) continue
+      // Une clôture qui casse en route n'empêche ni les suivantes ni l'écriture du
+      // résultat : la colonne est déjà posée, et le journal doit dire ce qui a eu lieu.
+      try {
+        closed.push(...(await closure.apply(projectRow, card.id, target, user.id, proposed.close!.abandon.map((child) => child.cardId))))
+      } catch (err) {
+        request.log.warn({ err, card: card.number }, 'clôture de carte en échec')
+      }
+    }
+    close('accepted', null, moved, live.map(({ card }) => card.number), closed)
+    sessions.statusBus.emit('lists', { conversationId: id })
     return { ok: true }
   })
 

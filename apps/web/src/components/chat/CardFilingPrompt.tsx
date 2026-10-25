@@ -1,6 +1,6 @@
 import { ArrowRight, Columns3 } from 'lucide-react'
 import { useState } from 'react'
-import type { CardColumn } from '@solera/protocol'
+import type { CardCloseKeptReason, CardCloseOutcome, CardColumn } from '@solera/protocol'
 import type { CardFilingItem } from '../../lib/chat-fold'
 import { formatDay } from '../../lib/dates'
 import { decideCardFiling } from '../../lib/conversations'
@@ -19,6 +19,10 @@ import { Badge, Button, cx } from '@solera/ui'
  *
  * Le bouton n'apparaît qu'au **propriétaire du projet**, et non du fil : c'est le board
  * qu'on range. Les autres voient la proposition et sa réponse, sans pouvoir trancher.
+ *
+ * Une clôture (#69) dit ce qu'elle touchera — conversations, worktrees, enfants
+ * abandonnées, branche de parente —, puis, accordée, ce qu'elle a réellement fait et ce
+ * qu'elle a laissé en place.
  */
 export function CardFilingPrompt({
   conversationId,
@@ -56,6 +60,8 @@ export function CardFilingPrompt({
   // carte a pu partir d'une autre colonne entre le dépôt et le clic, et c'est ce
   // mouvement-là qui est dans le Journal.
   const movedByNumber = new Map(filing.moved.map((move) => [move.number, move]))
+  const closedByNumber = new Map(filing.closed.map((outcome) => [outcome.number, outcome]))
+  const closing = filing.cards.length === 1 && filing.cards[0]!.close !== undefined
 
   return (
     <div
@@ -70,9 +76,13 @@ export function CardFilingPrompt({
         <Columns3 size={16} className="mt-0.5 shrink-0 text-accent" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">
-            {filing.status === 'pending'
-              ? t('cardFiling.title.pending', { count: String(filing.cards.length) })
-              : t('cardFiling.title.past', { count: String(filing.cards.length) })}
+            {closing
+              ? filing.status === 'pending'
+                ? t('cardFiling.title.close.pending')
+                : t('cardFiling.title.close.past')
+              : filing.status === 'pending'
+                ? t('cardFiling.title.pending', { count: String(filing.cards.length) })
+                : t('cardFiling.title.past', { count: String(filing.cards.length) })}
           </p>
           <ul className="mt-1.5 space-y-1.5">
             {filing.cards.map((card) => {
@@ -116,7 +126,11 @@ export function CardFilingPrompt({
                       {t('cardFiling.change.unblocks', { cards: card.unblocks.map((other) => `#${other.number}`).join(', ') })}
                     </span>
                   ) : null}
+                  {card.close ? <ClosePlanLines close={card.close} /> : null}
                   <span className="mt-0.5 block text-ink-soft">{card.reason}</span>
+                  {closedByNumber.has(card.number) ? (
+                    <CloseOutcomeLines outcome={closedByNumber.get(card.number)!} />
+                  ) : null}
                   {skipped ? <span className="mt-0.5 block text-ink-faint">{t('cardFiling.notApplied')}</span> : null}
                 </li>
               )
@@ -136,9 +150,11 @@ export function CardFilingPrompt({
       {filing.status === 'pending' && canDecide ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <Button size="sm" disabled={busy} onClick={() => void decide('accepted')}>
-            {filing.cards.length > 1
-              ? t('cardFiling.accept.many', { count: String(filing.cards.length) })
-              : t('cardFiling.accept')}
+            {closing
+              ? t('cardFiling.accept.close')
+              : filing.cards.length > 1
+                ? t('cardFiling.accept.many', { count: String(filing.cards.length) })
+                : t('cardFiling.accept')}
           </Button>
           <Button
             size="sm"
@@ -157,6 +173,61 @@ export function CardFilingPrompt({
 
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}
     </div>
+  )
+}
+
+type ClosePlan = NonNullable<CardFilingItem['cards'][number]['close']>
+
+/** Ce que la clôture touchera, relevé au dépôt. */
+function ClosePlanLines({ close }: { close: ClosePlan }) {
+  const t = useTranslate()
+  return (
+    <span className="mt-0.5 block text-ink">
+      <span className="block">
+        {t('cardFiling.close.plan', { conversations: String(close.conversations) })}
+        {close.worktrees.length > 0 ? ` ${t('cardFiling.close.worktrees', { names: close.worktrees.join(', ') })}` : ''}
+      </span>
+      {close.abandon.length > 0 ? (
+        <span className="block text-caution">
+          {t('cardFiling.close.abandon', { cards: close.abandon.map((child) => `#${child.number} ${child.title}`).join(', ') })}
+        </span>
+      ) : null}
+      {close.branch ? <span className="block">{t('cardFiling.close.branch', { name: close.branch })}</span> : null}
+    </span>
+  )
+}
+
+const KEPT_KEYS: Record<CardCloseKeptReason, MessageKey> = {
+  dirty: 'cardFiling.close.kept.dirty',
+  unpushed: 'cardFiling.close.kept.unpushed',
+  busy: 'cardFiling.close.kept.busy',
+  shared: 'cardFiling.close.kept.shared',
+  unreadable: 'cardFiling.close.kept.unreadable',
+  refused: 'cardFiling.close.kept.refused',
+  unmerged: 'cardFiling.close.kept.unmerged',
+}
+
+/** Ce que la clôture a fait, et ce qu'elle a laissé en place. */
+function CloseOutcomeLines({ outcome }: { outcome: CardCloseOutcome }) {
+  const t = useTranslate()
+  return (
+    <span className="mt-1 block text-ink-soft">
+      <span className="block">{t('cardFiling.close.archived', { count: String(outcome.archived) })}</span>
+      {outcome.abandoned.length > 0 ? (
+        <span className="block">{t('cardFiling.close.abandoned', { cards: outcome.abandoned.map((n) => `#${n}`).join(', ') })}</span>
+      ) : null}
+      {outcome.removed.length > 0 ? (
+        <span className="block">{t('cardFiling.close.removed', { names: outcome.removed.join(', ') })}</span>
+      ) : null}
+      {outcome.deleted.length > 0 ? (
+        <span className="block">{t('cardFiling.close.deleted', { names: outcome.deleted.join(', ') })}</span>
+      ) : null}
+      {outcome.kept.map((kept) => (
+        <span key={kept.name} className="block text-caution">
+          {t('cardFiling.close.kept', { name: kept.name, why: t(KEPT_KEYS[kept.reason]) })}
+        </span>
+      ))}
+    </span>
   )
 }
 
