@@ -21,8 +21,10 @@ const SERVER_PORT = process.env.SOLERA_PORT ?? '7417'
  * C'est donc un chiffre qu'on peut décider de relever, pas une fatalité. Mais il se
  * relève en sachant ce qu'on achète, d'où le garde ci-dessous plutôt qu'un échec muet.
  *
- * Mesuré au 2026-10-14 : 1 542 309 octets, soit 74 % du budget. L'audit des postes et
- * de ce qui reste découpable est dans `docs/audits/2026-10-14-bundle-web/`.
+ * Mesuré au 2026-10-25 : 1 770 522 octets, soit 84 % du budget, après avoir sorti
+ * CodeMirror du paquet principal une fois de plus (l'éditeur du script de vérification
+ * d'une tâche planifiée l'y ramenait : 2 111 086 octets, le build échouait). L'audit des
+ * postes et de ce qui reste découpable est dans `docs/audits/2026-10-14-bundle-web/`.
  */
 const PRECACHE_BUDGET_BYTES = 2 * 1024 * 1024
 

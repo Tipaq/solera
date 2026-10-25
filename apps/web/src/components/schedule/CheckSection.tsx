@@ -9,9 +9,20 @@ import {
   type ScheduledTaskDto,
 } from '@solera/protocol'
 import { Badge, Banner, Button, Field, IconButton } from '@solera/ui'
-import { ScriptEditor } from './ScriptEditor'
+import { Suspense, lazy } from 'react'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useApproveScheduleCheck, useTestScheduleCheck } from '../../lib/schedules'
+
+/**
+ * L'éditeur du script, chargé à part.
+ *
+ * Il porte CodeMirror, environ 340 Ko, et le formulaire d'une tâche planifiée vit dans
+ * le paquet principal : importé d'ici, l'éditeur y entraînait CodeMirror entier pour un
+ * champ qu'on n'ouvre qu'en ajoutant une vérification. C'est ce qui a fait dépasser le
+ * budget de précache (2 Mio, `vite.config.ts`). Le morceau reste précaché par le
+ * service worker : l'éditeur s'ouvre hors ligne comme avant.
+ */
+const ScriptEditor = lazy(() => import('./ScriptEditor').then((m) => ({ default: m.ScriptEditor })))
 
 /**
  * La vérification avant le tour, dans le formulaire d'une tâche : le script, son délai,
@@ -61,7 +72,10 @@ export function CheckSection({
 
       {script === null ? null : (
         <>
-          <ScriptEditor value={script} onChange={onScriptChange} label={t('schedule.check.title')} maxHeight="18rem" />
+          {/* L'attente occupe la place de l'éditeur, pour que le formulaire ne saute pas. */}
+          <Suspense fallback={<div className="min-h-40 rounded-md border border-line bg-sunken" />}>
+            <ScriptEditor value={script} onChange={onScriptChange} label={t('schedule.check.title')} maxHeight="18rem" />
+          </Suspense>
           <p className="text-xs text-ink-faint">{t('schedule.check.contract', { skip: CHECK_SKIP_EXIT_CODE })}</p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-40">
