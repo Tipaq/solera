@@ -5,6 +5,7 @@ import { mcpServerStatusSchema } from './mcp.js'
 import { slashCommandSchema } from './commands.js'
 import { agentSkillSchema } from './skills.js'
 import { cardColumnSchema } from './cards.js'
+import { cardDraftCreatedSchema, cardDraftRefSchema, cardDraftSchema } from './card-draft.js'
 import { toolPresentationSchema } from './tools.js'
 
 /**
@@ -520,6 +521,36 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     applied: z.array(z.number()).optional(),
     /** Ce que les clôtures accordées ont fait, carte par carte (#69). */
     closed: z.array(cardCloseOutcomeSchema).optional(),
+  }),
+
+  /**
+   * Un agent propose un découpage en cartes (`propose_cards`, #70), et ne crée rien.
+   *
+   * Posé dans le journal de la conversation qui propose, comme `card_filing.requested`.
+   * Le brouillon y est entier : c'est lui que le bloc éditable affiche, et c'est sa
+   * version corrigée que la route de validation reçoit. Une nouvelle proposition de la
+   * même conversation remplace celle qui attendait (`superseded`).
+   */
+  z.object({
+    type: z.literal('card_draft.proposed'),
+    requestId: z.string(),
+    draft: cardDraftSchema,
+  }),
+  z.object({
+    type: z.literal('card_draft.resolved'),
+    requestId: z.string(),
+    decision: z.enum(['created', 'refused', 'superseded']),
+    decidedBy: z.string().nullable(),
+    /** La parente des cartes créées, neuve ou existante ; null sans parente ou sans création. */
+    parent: cardDraftRefSchema.nullable().default(null),
+    /** Les cartes créées, dans l'ordre du brouillon validé. Vide hors création. */
+    created: z.array(cardDraftCreatedSchema).default([]),
+    /**
+     * Le brouillon tel qu'il a été validé, corrections de la personne comprises : c'est
+     * lui que le bloc montre ensuite, et non celui de l'agent, dont une carte ou un lien
+     * a pu être retiré. Absent hors création.
+     */
+    draft: cardDraftSchema.optional(),
   }),
 
   /**

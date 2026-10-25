@@ -1,3 +1,4 @@
+import type { CardDraft, CardDraftCreated, CardDraftRef } from './card-draft.js'
 import type {
   AgentQuestion,
   AgentSkillDto,
@@ -142,6 +143,23 @@ export interface CardFilingItem {
 }
 
 /**
+ * Un brouillon de découpage en cartes (`propose_cards`, #70), en attente ou clos.
+ *
+ * Le fil le montre comme un bloc éditable tant qu'il attend : la personne corrige, puis
+ * crée ou refuse. Une nouvelle proposition de la même session le clôt en `superseded`.
+ */
+export interface CardDraftItem {
+  kind: 'cardDraft'
+  id: string
+  draft: CardDraft
+  status: 'pending' | 'created' | 'refused' | 'superseded'
+  /** La parente des cartes créées, une fois la validation faite. */
+  parent: CardDraftRef | null
+  /** Les cartes créées, vides tant que rien ne l'est. */
+  created: CardDraftCreated[]
+}
+
+/**
  * Une décision que la session a demandée (`request_decision`), en attente ou close.
  *
  * Elle ne bloque rien : l'agent a continué, ou fini son tour. Le fil la montre à sa place
@@ -260,6 +278,7 @@ export type ChatItem = (
   | PermissionItem
   | FilingItem
   | CardFilingItem
+  | CardDraftItem
   | DecisionItem
   | QuestionItem
   | ElicitationItem
@@ -1118,6 +1137,32 @@ export function applyEvent(
           moved: event.moved,
           applied: event.applied ?? null,
           closed: event.closed ?? [],
+        })
+      }
+      break
+    }
+
+    case 'card_draft.proposed': {
+      appendItem(state, {
+        kind: 'cardDraft',
+        id: event.requestId,
+        draft: event.draft,
+        status: 'pending',
+        parent: null,
+        created: [],
+      })
+      break
+    }
+
+    case 'card_draft.resolved': {
+      const index = findLastIndex(state.items, (item) => item.kind === 'cardDraft' && item.id === event.requestId)
+      if (index !== -1) {
+        replaceItem(state, index, {
+          ...(state.items[index] as CardDraftItem),
+          ...(event.draft ? { draft: event.draft } : {}),
+          status: event.decision,
+          parent: event.parent,
+          created: event.created,
         })
       }
       break

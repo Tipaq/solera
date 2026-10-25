@@ -63,6 +63,7 @@ import {
 } from '../actions/actions.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { isCloseTarget, type CardClosure } from '../cards/close.js'
+import { readAgentDraft } from '../cards/drafts.js'
 import { advanceCardOnLaunch } from '../cards/create.js'
 import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
@@ -225,6 +226,7 @@ const CHANGES_LISTS = new Set<AgentRequestRow['kind']>([
   'link_card',
   'promote_subtask',
   'relate_cards',
+  'propose_cards',
 ])
 
 /**
@@ -496,6 +498,10 @@ export class AgentRequests {
         this.settle(request, relateCardsFor(this.ctx.db, requester, project.id, payload), false)
         return
       }
+      if (request.kind === 'propose_cards') {
+        this.settle(request, this.proposeCards(request, requester, project, payload), false)
+        return
+      }
       if (request.kind === 'start_session') {
         const { text, launchedId } = await this.startSession(request, requester, project, payload)
         this.settle(request, text, false, launchedId)
@@ -523,6 +529,7 @@ export class AgentRequests {
       if (
         request.kind === 'move_conversation' ||
         request.kind === 'request_card_change' ||
+        request.kind === 'propose_cards' ||
         request.kind === 'request_decision'
       ) {
         this.closeFiling(request.id)
@@ -1609,6 +1616,70 @@ export class AgentRequests {
         "Refusé : le rangement de projet n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
       )
     }
+  }
+
+  // --- propose_cards -------------------------------------------------------------
+
+  /**
+   * Dépose un brouillon de découpage en cartes (#70), et ne crée rien.
+   *
+   * Même motif que `request_card_change` : la demande apparaît dans le fil qui la pose,
+   * et c'est un clic du propriétaire du projet qui la tranche. L'écart tient à ce qu'un
+   * brouillon se *corrige* : la personne renomme, retire une carte ou un lien dans le
+   * bloc, et pour le reste le dit à l'agent, qui en redépose une version entière. La
+   * nouvelle **remplace** donc celle qui attendait, là où une seconde demande de
+   * changement est refusée : refuser obligerait l'agent à demander qu'on clique
+   * « Refuser » avant de pouvoir proposer la correction qu'on vient de lui demander.
+   *
+   * Dans le socle, et pas dans la famille `cardFiling` : rien ne s'écrit sans clic, et
+   * une carte qu'un agent crée seul (`create_card`) est déjà du socle.
+   */
+  private proposeCards(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    project: ProjectRow,
+    payload: Record<string, unknown>,
+  ): string {
+    const draft = readAgentDraft(this.ctx.db, project.id, requester.splitCardId, payload)
+
+    const waiting = this.ctx.db
+      .select({ id: agentRequests.id })
+      .from(agentRequests)
+      .where(
+        and(
+          eq(agentRequests.kind, 'propose_cards'),
+          eq(agentRequests.conversationId, requester.id),
+          isNull(agentRequests.resolvedAt),
+          ne(agentRequests.id, request.id),
+        ),
+      )
+      .all()
+    for (const previous of waiting) {
+      this.closeFiling(previous.id)
+      this.log.append(requester.id, {
+        type: 'card_draft.resolved',
+        requestId: previous.id,
+        decision: 'superseded',
+        decidedBy: null,
+        parent: null,
+        created: [],
+      })
+    }
+
+    this.log.append(requester.id, { type: 'card_draft.proposed', requestId: request.id, draft })
+    this.notifyLists(requester.id)
+    this.notifyAwaiting([project.ownerId])
+
+    const parent = draft.parent
+      ? draft.parent.kind === 'existing'
+        ? ` sous #${draft.parent.card.number}`
+        : ` sous un jalon neuf, « ${draft.parent.title} »`
+      : ''
+    return [
+      `Brouillon déposé : ${draft.cards.length} carte(s)${parent}.${waiting.length > 0 ? ' Il remplace le précédent, qui attendait encore.' : ''}`,
+      "Rien n'est créé : le bloc s'affiche dans ce fil, la personne le corrige puis clique « Créer ». Tu recevras alors un message avec les numéros des cartes.",
+      "Termine ton tour maintenant. Si elle demande d'autres corrections dans le fil, redépose un brouillon entier avec propose_cards : il remplacera celui-ci.",
+    ].join('\n')
   }
 
   // --- request_card_change -------------------------------------------------------

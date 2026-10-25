@@ -251,6 +251,8 @@ const AGENT_CARD_TARGETS = [...AGENT_CARD_COLUMNS, 'to_clarify']
  */
 const MAX_PRECISION_CHARS = 4000
 const MAX_SUBTASKS = 30
+/** D'accord avec `MAX_DRAFT_CARDS` de `packages/protocol/src/card-draft.ts`. */
+const MAX_DRAFT_CARDS = 20
 
 /** Une description entière peut faire des pages ; le board n'en rend qu'un aperçu. */
 const CARD_EXCERPT_CHARS = 160
@@ -289,6 +291,7 @@ const REQUEST_WAIT_MS = {
   promote_subtask: 15000,
   link_card: 15000,
   relate_cards: 15000,
+  propose_cards: 15000,
   rename_session: 15000,
   request_decision: 15000,
   // Lire la PR sur la forge, puis démarrer le CLI de la session de revue.
@@ -701,6 +704,67 @@ const ALL_TOOLS = [
         remove: { type: 'boolean', description: 'Vrai pour retirer le lien au lieu de le poser.' },
       },
       required: ['kind', 'target'],
+    },
+  },
+  {
+    name: 'propose_cards',
+    description:
+      "Propose un découpage en cartes, **sans rien créer** : un brouillon — une parente et des cartes enfants, avec leurs descriptions, sous-tâches et dépendances — s'affiche dans cette conversation comme un bloc que l'utilisateur corrige (renommer, retirer une carte ou un lien) puis valide d'un clic. C'est ce clic qui crée tout, et tu reçois alors un message avec les numéros. Sert quand l'utilisateur te dicte un chantier à découper, ou qu'une carte se révèle trop grosse pour une seule session. Avant : list_cards et read_card sur les cartes proches, pour ne pas doubler ce qui existe (cite-les dans `related` plutôt que de les recréer), et lis le code concerné. Pour une correction demandée dans le fil, redépose un brouillon **entier** : il remplace celui qui attendait. Ne crée pas ces cartes toi-même avec create_card.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        parent: {
+          type: 'integer',
+          description:
+            "Numéro d'une carte existante, ouverte, sous laquelle ranger les cartes. Par défaut, la carte d'où le découpage est parti, s'il y en a une ; 0 pour aucune parente.",
+        },
+        milestone: {
+          type: 'object',
+          description: 'Une parente neuve, créée avec les cartes : le jalon du chantier. À la place de `parent`.',
+          properties: {
+            title: { type: 'string', description: 'Le nom du jalon.' },
+            description: { type: 'string', description: 'Ce que le jalon vise, en markdown : la cible, ce qui est décidé, ce qui reste ouvert.' },
+            due: { type: 'string', description: "Échéance au format AAAA-MM-JJ, seulement si l'utilisateur en a donné une." },
+          },
+          required: ['title'],
+        },
+        cards: {
+          type: 'array',
+          description: `Les cartes, de 1 à ${MAX_DRAFT_CARDS}, dans l'ordre où elles se liront. Une carte est un travail d'une session : une PR. Les petits pas vont en sous-tâches.`,
+          items: {
+            type: 'object',
+            properties: {
+              key: {
+                type: 'string',
+                description: 'Une clé courte et unique dans le brouillon (« a », « api », « 2 »), par laquelle les autres cartes la citent dans `after`. Par défaut, sa position à partir de 1.',
+              },
+              title: { type: 'string', description: "Titre court, à la manière d'un ticket : ce qu'il faut faire." },
+              description: {
+                type: 'string',
+                description: "Description en markdown, compréhensible sans ce fil : le besoin, ce qui est décidé, les fichiers concernés. `#12` cite une carte.",
+              },
+              subtasks: { type: 'array', items: { type: 'string' }, description: 'Sous-tâches cochables, une ligne chacune.' },
+              after: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Clés des cartes du brouillon qui doivent être finies avant celle-ci (liens « bloque »).',
+              },
+              blocked_by: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: 'Numéros des cartes existantes qui doivent être finies avant celle-ci.',
+              },
+              related: {
+                type: 'array',
+                items: { type: 'integer' },
+                description: 'Numéros des cartes existantes proches, qui seront liées à celle-ci (« liée à »).',
+              },
+            },
+            required: ['title'],
+          },
+        },
+      },
+      required: ['cards'],
     },
   },
   {
@@ -3993,6 +4057,20 @@ async function callTool(name, args) {
     }
     if (!Number.isInteger(args?.target) || (args?.card !== undefined && !Number.isInteger(args.card))) {
       return { ...text('`target` et `card` sont des numéros de carte, sans le `#`.'), isError: true }
+    }
+    return requestDaemon(name, args)
+  }
+
+  if (name === 'propose_cards') {
+    if (!CURRENT_CONVERSATION) {
+      return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas dans quel fil montrer le brouillon."), isError: true }
+    }
+    // Revalidé par le daemon, qui seul résout les numéros de carte et les clés.
+    if (!Array.isArray(args?.cards) || args.cards.length === 0) {
+      return { ...text('Le paramètre `cards` est requis : au moins une carte, avec son `title`.'), isError: true }
+    }
+    if (args.cards.length > MAX_DRAFT_CARDS) {
+      return { ...text(`Trop de cartes dans un brouillon (${args.cards.length}, ${MAX_DRAFT_CARDS} au plus).`), isError: true }
     }
     return requestDaemon(name, args)
   }

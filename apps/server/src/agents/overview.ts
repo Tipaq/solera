@@ -160,6 +160,42 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 }
 
 /**
+ * Le découpage en cartes (#70) : la conversation n'est pas venue écrire du code, mais
+ * transformer une dictée en un brouillon de cartes que la personne validera.
+ *
+ * Dit à chaque démarrage, et pas seulement au premier message : la personne dicte en
+ * vrac, parfois en plusieurs fois, et une reprise doit savoir qu'elle est toujours en
+ * train de découper. Le constat de départ de la carte, c'est qu'elle ajoutait beaucoup de
+ * contexte « par peur de ne pas être comprise » : la consigne de lire le board et le
+ * code avant de questionner est ce qui doit la dispenser de tout dire.
+ */
+function splitBriefing(db: Db, input: OverviewInput): string | null {
+  if (!input.soleraMcp) return null
+  const row = db
+    .select({ purpose: conversations.purpose, splitCardId: conversations.splitCardId })
+    .from(conversations)
+    .where(eq(conversations.id, input.conversationId))
+    .get()
+  if (row?.purpose !== 'split') return null
+
+  const start = row.splitCardId
+    ? db.select({ number: cards.number, title: cards.title }).from(cards).where(eq(cards.id, row.splitCardId)).get()
+    : undefined
+  return [
+    `Cette conversation sert à **découper un chantier en cartes**, pas à écrire du code : l'utilisateur dicte en vrac — des idées, des bugs, une fonctionnalité — et tu en fais un brouillon qu'il validera.${
+      start
+        ? ` Le découpage part de la carte #${start.number} « ${start.title} » : lis-la avec \`read_card\`, et les cartes du brouillon seront ses enfants.`
+        : ''
+    }`,
+    "1. Lis le board (`list_cards`, puis `read_card` sur les cartes proches) pour ne pas doubler ce qui existe, et le code concerné, pour que tes cartes nomment les bons fichiers. Ne modifie aucun fichier.",
+    "2. S'il te manque de quoi découper, pose tes questions dans ta réponse, toutes à la fois, et termine ton tour. Ne demande pas ce que le code ou le board te disent déjà.",
+    `3. Dépose le brouillon avec \`propose_cards\`${start ? '' : " : une parente neuve (`milestone`) pour un chantier qui en vaut la peine, ou une carte existante (`parent`)"}. Une carte est le travail d'une session et d'une PR ; les petits pas vont en sous-tâches. Chaque description se comprend sans ce fil. Les dépendances entre cartes du brouillon passent par \`after\`, celles envers des cartes existantes par \`blocked_by\`, et une carte proche qui existe déjà se cite dans \`related\` plutôt que de se recréer.`,
+    "4. Écris comme ce projet écrit ses cartes : lis-en deux ou trois récentes du même genre et reprends leur forme — leurs sections, leur ton, ce qu'elles disent de ce qui est tranché et de ce qui reste ouvert.",
+    "L'utilisateur corrige le brouillon dans le bloc, ou te le dit dans le fil : dans ce cas, redépose-le **entier** avec `propose_cards`, il remplace le précédent. Ne crée pas les cartes toi-même avec `create_card` : c'est son clic « Créer » qui les crée, et tu en recevras les numéros.",
+  ].join('\n')
+}
+
+/**
  * Comment le travail d'une carte se livre (#68) : par une PR, relue par une session que
  * Solera lance, jamais fusionnée par la session qui l'a écrite.
  *
@@ -315,6 +351,7 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   // La carte d'abord, puis l'image : ce qui est demandé passe avant ce qui est suggéré.
   const briefing = [
     cardBriefing(db, input),
+    splitBriefing(db, input),
     deliveryBriefing(db, input),
     designSystemReminder(db, input),
     imageReminder(db, input),

@@ -525,8 +525,9 @@ export const sessionMessages = sqliteTable(
      * `decision`, écrit par le daemon, rend à une session la réponse à sa demande de
      * décision (`agent_requests.kind = 'request_decision'`). Expéditrice et destinataire
      * y sont la même conversation : c'est Solera qui parle, au nom de qui a répondu.
+     * `cards` de même, pour la validation d'un brouillon de cartes (#70).
      */
-    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision'] }).notNull().default('message'),
+    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision', 'cards'] }).notNull().default('message'),
     body: text('body').notNull(),
     /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
     replyTo: text('reply_to'),
@@ -636,6 +637,8 @@ export const agentRequests = sqliteTable(
         'promote_subtask',
         // Les liens informatifs entre cartes (#109) : ils ne défont rien.
         'relate_cards',
+        // Un brouillon de découpage en cartes (#70) : rien n'est créé avant le clic.
+        'propose_cards',
         // Le titre de sa propre session, qui doit être annoncé aux clients.
         'rename_session',
         'request_decision',
@@ -780,6 +783,20 @@ export const conversations = sqliteTable(
      * traitée, elles redeviennent des conversations ordinaires.
      */
     cardId: text('card_id'),
+    /**
+     * Ce que la conversation est venue faire, quand ce n'est pas le travail ordinaire :
+     * `split`, découper un chantier en cartes depuis une dictée (#70). Son briefing le dit
+     * à l'agent à chaque démarrage, et c'est pour ça que l'état vit ici et non dans le
+     * premier message, qu'une reprise ne relit pas.
+     */
+    purpose: text('purpose', { enum: ['split'] }),
+    /**
+     * La carte d'où le découpage est parti, proposée comme parente des cartes du
+     * brouillon. Pas `cardId` : la conversation ne *traite* pas cette carte, elle n'en
+     * fait pas avancer la colonne et ne livre pas de PR pour elle. Sans cascade, comme
+     * `cardId`.
+     */
+    splitCardId: text('split_card_id'),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),

@@ -407,7 +407,7 @@ export class Decisions {
       .from(agentRequests)
       .where(
         and(
-          inArray(agentRequests.kind, ['request_decision', 'request_card_change', 'move_conversation']),
+          inArray(agentRequests.kind, ['request_decision', 'request_card_change', 'propose_cards', 'move_conversation']),
           isNull(agentRequests.resolvedAt),
           isNull(agentRequests.acceptedAt),
           isNotNull(agentRequests.settledAt),
@@ -473,6 +473,19 @@ export class Decisions {
           question: readDecisionPayload(row.payload).question,
           worktreeBranch: null,
           expiresAt: row.expiresAt,
+          createdAt: row.createdAt,
+        })
+      } else if (row.kind === 'propose_cards') {
+        // Le brouillon de cartes (#70) : c'est aussi le propriétaire du projet qui crée.
+        if (!requester || !row.projectId || owners.get(row.projectId) !== userId) continue
+        const payload = JSON.parse(row.payload) as { cards?: unknown }
+        items.push({
+          kind: 'propose_cards',
+          id: row.id,
+          conversationId: row.conversationId,
+          projectId: row.projectId,
+          conversationTitle: requester.title,
+          count: Array.isArray(payload.cards) ? payload.cards.length : 0,
           createdAt: row.createdAt,
         })
       } else if (row.kind === 'request_card_change') {

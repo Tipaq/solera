@@ -162,6 +162,8 @@ export function registerClaudeSessionRoutes(
       worktreeId: null,
       // Une session importée depuis le CLI ne vient d'aucune carte.
       cardId: null,
+      purpose: null,
+      splitCardId: null,
       userId: user.id,
       title: importTitle(info, prepared.firstPrompt),
       titleSetByUser: false,

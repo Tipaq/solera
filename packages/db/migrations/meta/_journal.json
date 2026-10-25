@@ -428,6 +428,13 @@
       "when": 1792948179820,
       "tag": "0061_pr_de_parente",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1792949094801,
+      "tag": "0062_decouper_en_cartes",
+      "breakpoints": true
     }
   ]
 }

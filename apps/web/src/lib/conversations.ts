@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  CardDraftDecisionBody,
   AgentConfig,
   ElicitationAction,
   ElicitationValue,
@@ -119,6 +120,9 @@ export function useCreateConversation(projectId: string | null) {
       worktreeId?: string | null
       /** Carte traitée, quand le brouillon a été ouvert depuis le board. */
       cardId?: string | null
+      /** Découper en cartes (#70), et la carte d'où le découpage part. */
+      purpose?: 'split' | null
+      splitCardId?: string | null
       /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */
       firstMessage?: {
         clientMessageId: string
@@ -270,6 +274,11 @@ export function decideCardFiling(
   decision: 'accepted' | 'refused',
 ): Promise<unknown> {
   return api.post(`/api/conversations/${conversationId}/card-filings/${requestId}`, { decision })
+}
+
+/** Crée le brouillon de cartes tel que corrigé, ou le refuse (#70). */
+export function decideCardDraft(conversationId: string, requestId: string, body: CardDraftDecisionBody): Promise<unknown> {
+  return api.post(`/api/conversations/${conversationId}/card-drafts/${requestId}`, body)
 }
 
 export function answerQuestion(

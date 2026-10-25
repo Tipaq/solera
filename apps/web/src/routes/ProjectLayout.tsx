@@ -7,6 +7,7 @@ import {
   Palette,
   Plus,
   SlidersHorizontal,
+  Split,
   SquareKanban,
   Target,
 } from 'lucide-react'
@@ -121,7 +122,7 @@ export function ProjectLayout() {
   ]
 
   /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */
-  const action =
+  const create =
     onBoard || onSchedules ? (
       <Button
         size="sm"
@@ -134,6 +135,16 @@ export function ProjectLayout() {
         {t(onBoard ? 'project.action.newCard' : 'project.action.newTask')}
       </Button>
     ) : null
+  // Le découpage d'un chantier en cartes (#70), à côté de la carte seule : les deux
+  // répondent à « j'ai du travail à poser sur le board ».
+  const action = onBoard ? (
+    <>
+      <Button size="sm" variant="secondary" icon={<Split size={15} />} onClick={() => navigate(`/p/${projectId}/c/new?split=new`)}>
+        {t('split.action')}
+      </Button>
+      {create}
+    </>
+  ) : create
 
   return (
     <div className="flex h-full min-h-0 flex-col">

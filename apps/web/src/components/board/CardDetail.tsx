@@ -1,4 +1,4 @@
-import { Ban, CalendarDays, Check, ChevronDown, CircleHelp, Copy, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
+import { Ban, CalendarDays, Check, ChevronDown, CircleHelp, Copy, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Split, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, parentCloseProposed, parseSubtasks, type CardDto } from '@solera/protocol'
@@ -199,6 +199,13 @@ export function CardDetail({
           <IconButton label={t('card.detail.more')} size="sm"><MoreHorizontal size={15} /></IconButton>
         }>
           <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>{t('board.card.edit')}</MenuItem>
+          {/* Découper la carte en cartes enfants (#70) : une conversation propose le
+              brouillon, qu'on valide avant que rien ne soit créé. */}
+          {!closed && accepted ? (
+            <MenuItem icon={<Split size={14} />} onSelect={() => navigate(`/p/${projectId}/c/new?split=${card.id}`)}>
+              {t('split.action')}
+            </MenuItem>
+          ) : null}
           {!closed && card.toClarifySince === null ? (
             <MenuItem icon={<CircleHelp size={14} />} onSelect={() => updateCard.mutate({ id: card.id, toClarify: true })}>
               {t('board.card.toClarify.mark')}

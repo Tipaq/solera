@@ -111,6 +111,8 @@ const NOTABLE = new Set<SoleraEvent['type']>([
   // proposition est invisible et tient pourtant la place de l'unique demande en attente
   // de la conversation, qui ne peut alors plus rien proposer.
   'card_filing.requested',
+  // Un brouillon de cartes (#70) attend lui aussi un clic du propriétaire du projet.
+  'card_draft.proposed',
   // Une décision attend une personne, souvent pendant des heures : comme les deux
   // rangements, elle doit se voir dans la liste tant que personne n'a répondu.
   'decision.requested',
