@@ -23,6 +23,7 @@ import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { sessionReferenceContext } from '../conversations/references.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
 import { adoptSessionTitle, sessionTitleReminder } from '../conversations/title.js'
@@ -1063,6 +1064,14 @@ export class SessionManager {
         ].filter((part) => part !== null)
         return parts.length > 0 ? parts.join('\n\n') : null
       },
+      // Résolu à chaque envoi : un titre change, une session s'archive entre deux messages.
+      sessionReferenceContext: (text, current) =>
+        sessionReferenceContext(
+          this.db,
+          conversation.projectId,
+          text,
+          builtinMcpEnabled(this.config.mcp.soleraServer, current),
+        ),
       memoryDir,
       maskedInstructionRoots: () => {
         const current = instructions()

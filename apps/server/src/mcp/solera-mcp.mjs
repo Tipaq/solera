@@ -468,7 +468,7 @@ const ALL_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        id: { type: 'string', description: 'Identifiant rendu par search_history.' },
+        id: { type: 'string', description: 'Identifiant rendu par search_history ou list_sessions, nu ou sous sa forme session:<id>.' },
         before: {
           type: 'integer',
           description:
@@ -1541,6 +1541,15 @@ function searchHistory(query, limit) {
 }
 
 /**
+ * La forme qu'une session a dans un message, `session:<id>`, comme celle que rendent
+ * les listes. Doit rester d'accord avec `packages/protocol/src/session-references.ts`.
+ */
+const sessionReference = (id) => `session:${id}`
+
+/** L'identifiant nu, que l'agent l'ait recopié tel quel ou sous sa forme de référence. */
+const sessionId = (value) => value.trim().replace(/^session:/i, '')
+
+/**
  * Messages d'un fil, appels d'outils exclus.
  *
  * L'extraction reprend celle de l'index de recherche : mêmes blocs de texte, même
@@ -1958,7 +1967,7 @@ function renderSessions(rows, withinMinutes) {
     const tree = git
       ? `, branche ${git.branch}${git.dirty > 0 ? `, ${git.dirty} fichier(s) modifié(s)` : ''}`
       : ''
-    return `- ${row.id} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
+    return `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | ${describeActivity(row)} | ${where}${tree} | ${ago(row.updatedAt)}\n  ${row.title}`
   })
   return `${rows.length} conversation(s), fenêtre de ${withinMinutes} min :\n${lines.join('\n')}`
 }
@@ -2647,7 +2656,7 @@ function renderSearch(query, results) {
 
   const lines = results.map(
     (row) =>
-      `- ${row.id} | ${row.agent} | échange du ${asDate(row.ts)} | ${row.title}\n  ${row.excerpt}`,
+      `- ${row.id} | ${sessionReference(row.id)} | ${row.agent} | échange du ${asDate(row.ts)} | ${row.title}\n  ${row.excerpt}`,
   )
   return `${results.length} conversation(s) pour « ${query} » :\n${lines.join('\n')}`
 }
@@ -2690,7 +2699,7 @@ function renderThread(found, before) {
   // « ouverte le » et non une date nue : search_history date le message qui correspond,
   // celle-ci date la création du fil. Deux dates justes pour un même objet se lisent
   // comme une contradiction tant qu'aucune des deux ne dit ce qu'elle mesure.
-  const header = `${conversation.title} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
+  const header = `${conversation.title} | ${sessionReference(conversation.id)} (${conversation.agent}, ouverte le ${asDate(conversation.createdAt)})`
   if (messages.length === 0) return `${header}\n\nAucun message dans ce fil.`
 
   const scoped = before === null ? messages : messages.filter((message) => message.seq < before)
@@ -3492,7 +3501,7 @@ async function callGlobalTool(name, args) {
   if (name === 'list_projects') return text(renderProjects(listProjects()))
 
   if (name === 'read_conversation') {
-    const id = typeof args?.id === 'string' ? args.id.trim() : ''
+    const id = typeof args?.id === 'string' ? sessionId(args.id) : ''
     let row = id ? globalConversation(id, false) : null
     if (!row) return { ...text(`Aucune conversation « ${id} » que ce compte voie. list_sessions donne leurs identifiants.`), isError: true }
     let waited = ''
@@ -3550,7 +3559,7 @@ async function callTool(name, args) {
   }
 
   if (name === 'read_conversation') {
-    const id = typeof args?.id === 'string' ? args.id : ''
+    const id = typeof args?.id === 'string' ? sessionId(args.id) : ''
     const found = id ? readConversation(id) : null
     if (!found) {
       return {

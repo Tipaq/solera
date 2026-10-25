@@ -11,11 +11,12 @@ import {
   cx,
   useMediaQuery,
 } from '@solera/ui'
-import { ArrowRightLeft, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
-import { useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
+import { ArrowRightLeft, AtSign, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
+import { useRef, useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { SettingsSurface, type SettingGroup, type SettingsStatus } from './ComposerSettings'
+import { InsertList, InsertMenuItems, type InsertEntry, type InsertPrefix } from './ComposerInsert'
 import { SettingOptions, SettingsHeading } from './SettingsPanel'
 import { SkillsInventory, SkillsMenu } from './SkillsInventory'
 
@@ -42,7 +43,7 @@ import { SkillsInventory, SkillsMenu } from './SkillsInventory'
  * réglages : sans elle, des approbations coupées ou un mode Plan deviendraient
  * invisibles une fois le menu refermé.
  */
-type View = 'root' | 'skills' | 'mcp' | 'settings' | { group: string }
+type View = 'root' | 'insert' | 'skills' | 'mcp' | 'settings' | { group: string }
 
 /**
  * La bibliothèque de skills se règle avec les skills et non avec le reste : c'est le
@@ -80,6 +81,31 @@ interface ComposerPlusMenuProps {
   onDetails?: () => void
   /** Continuer le fil dans un autre CLI : il se décrit avec ses détails, il en part. */
   onHandoff?: () => void
+  /** Ce que le champ sait compléter, voir `useInsertEntries`. Vide, l'entrée disparaît. */
+  inserts: InsertEntry[]
+  /**
+   * Écrit le préfixe choisi dans le champ. Appelé une fois le menu refermé : le focus
+   * qu'il rend au champ ne doit pas lui être repris par le déclencheur.
+   */
+  onInsert: (prefix: InsertPrefix) => void
+}
+
+/**
+ * Le préfixe choisi, gardé jusqu'à la fermeture du menu ou de la surface : c'est là que
+ * Radix rend le focus, et qu'on le détourne vers le champ.
+ */
+function usePendingInsert(onInsert: (prefix: InsertPrefix) => void) {
+  const pending = useRef<InsertPrefix | null>(null)
+  return {
+    pick: (prefix: InsertPrefix) => { pending.current = prefix },
+    onCloseAutoFocus: (event: Event) => {
+      const prefix = pending.current
+      pending.current = null
+      if (!prefix) return
+      event.preventDefault()
+      onInsert(prefix)
+    },
+  }
 }
 
 /** Le raccourci de la recherche dans le fil, écrit comme le clavier de la machine. */
@@ -126,18 +152,24 @@ function PlusTrigger({ status, disabled, ...rest }: {
  * l'inventaire des skills et les réglages au complet, s'ouvrent en boîte : elles
  * portent une recherche, un défilement et des sections, qu'un menu ne sait pas tenir.
  */
-function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands, onFind, onDetails, onHandoff }: ComposerPlusMenuProps) {
+function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, canAttach, projectId, config, skills, commands, onFind, onDetails, onHandoff, inserts, onInsert }: ComposerPlusMenuProps) {
   const t = useTranslate()
+  const insert = usePendingInsert(onInsert)
   const settingsGroups = groups.filter((group) => !IN_SKILLS_MENU.includes(group.key))
   const librarySetting = groups.find((group) => group.key === 'skillLibrary')
   const lists = settingsGroups.filter((group) => !group.toggle)
   const toggles = settingsGroups.filter((group) => group.toggle)
 
   return (
-    <Menu align="start" trigger={<PlusTrigger status={status} disabled={disabled} />}>
+    <Menu align="start" trigger={<PlusTrigger status={status} disabled={disabled} />} onCloseAutoFocus={insert.onCloseAutoFocus}>
       <MenuItem icon={<Paperclip size={16} />} disabled={disabled || !canAttach} onSelect={onAttach}>
         {t('composer.attach.label')}
       </MenuItem>
+      {inserts.length > 0 ? (
+        <MenuSub icon={<AtSign size={16} />} label={t('composer.insert.label')}>
+          <InsertMenuItems entries={inserts} onPick={insert.pick} />
+        </MenuSub>
+      ) : null}
       <MenuSub icon={<BookOpen size={16} />} label={t('composer.plus.skills')}>
         <SkillsMenu projectId={projectId} config={config} skills={skills} commands={commands} library={librarySetting} />
       </MenuSub>
@@ -231,9 +263,12 @@ function PlusSheet({
   onFind,
   onDetails,
   onHandoff,
+  inserts,
+  onInsert,
 }: ComposerPlusMenuProps) {
   const t = useTranslate()
   const [view, setView] = useState<View>('root')
+  const insert = usePendingInsert(onInsert)
   const settingsGroups = groups.filter((group) => !IN_SKILLS_MENU.includes(group.key))
   const librarySetting = groups.find((group) => group.key === 'skillLibrary')
   const opened = typeof view === 'object' ? groups.find((group) => group.key === view.group) : undefined
@@ -242,7 +277,9 @@ function PlusSheet({
     opened?.label ??
     (view === 'root'
       ? t('composer.plus.title')
-      : view === 'skills'
+      : view === 'insert'
+        ? t('composer.insert.label')
+        : view === 'skills'
         ? t('composer.skills.title')
         : view === 'mcp'
           ? t('composer.plus.mcp')
@@ -259,6 +296,7 @@ function PlusSheet({
       // Rouvrir doit rendre la première vue : un panneau qui se souvient de la
       // branche où on l'a laissé fait manquer les trois autres.
       onOpenChange={(open) => { if (!open) setView('root') }}
+      onCloseAutoFocus={insert.onCloseAutoFocus}
       trigger={<PlusTrigger status={status} disabled={disabled} />}
     >
       {(close) => (
@@ -283,6 +321,11 @@ function PlusSheet({
                 >
                   {t('composer.attach.label')}
                 </Entry>
+                {inserts.length > 0 ? (
+                  <Entry icon={<AtSign size={16} />} submenu onClick={() => setView('insert')}>
+                    {t('composer.insert.label')}
+                  </Entry>
+                ) : null}
                 <Entry icon={<BookOpen size={16} />} submenu onClick={() => setView('skills')}>
                   {t('composer.plus.skills')}
                 </Entry>
@@ -317,6 +360,9 @@ function PlusSheet({
                   {t('composer.plus.settings')}
                 </Entry>
               </div>
+            ) : null}
+            {view === 'insert' ? (
+              <InsertList entries={inserts} onPick={(prefix) => { insert.pick(prefix); close() }} />
             ) : null}
             {view === 'settings' ? (
               <SettingsMenu

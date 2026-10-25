@@ -1,14 +1,16 @@
-import { useContext, useMemo, useState, type MouseEvent } from 'react'
+import { useContext, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useCardRefs } from '../../lib/card-refs'
 import { openTab } from '../../lib/editor-tabs'
 import { FileLinkContext, useKnownFiles } from '../../lib/file-links'
 import { parseMarkdown } from '../../lib/markdown'
+import { useSessionReferences } from '../../lib/session-references'
 import { setPanelOpen, setPanelTab } from '../../lib/panel'
 import { ImageLightbox } from '../panel/ImageView'
 import { openInPanel } from '../WebLink'
 import { useCardRefPreview } from '../board/CardRefPreview'
 import { CodeBlock } from './CodeBlock'
 import { MarkdownTable } from './MarkdownTable'
+import { useSessionReferencePortals } from './SessionReference'
 
 /**
  * Rendu d'un texte markdown.
@@ -42,12 +44,25 @@ export function Markdown({
   const { projectId, cards: cardsByNumber } = useCardRefs()
   const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
   const cardRefs = useCardRefPreview(projectId, cardsByNumber)
+  // Et ses sessions : un `session:<id>` devient la puce de la session citée.
+  const { sessions, ids: sessionIds, loading: loadingSessions } = useSessionReferences(projectId)
+  const origin = window.location.origin
+  const root = useRef<HTMLDivElement>(null)
 
   // Première passe : ce que le texte cite. Elle ne produit aucun lien de fichier, mais
   // son HTML est celui affiché tant que la réponse du serveur n'est pas là.
   const found = useMemo(
-    () => parseMarkdown(text, { scope: conversationId ?? undefined, base, tasks, cards }),
-    [text, conversationId, base, tasks, cards],
+    () =>
+      parseMarkdown(text, {
+        scope: conversationId ?? undefined,
+        base,
+        tasks,
+        cards,
+        projectId,
+        sessionIds,
+        origin,
+      }),
+    [text, conversationId, base, tasks, cards, projectId, sessionIds, origin],
   )
   const known = useKnownFiles(found.candidates)
 
@@ -66,10 +81,14 @@ export function Markdown({
             base,
             tasks,
             cards,
+            projectId,
+            sessionIds,
+            origin,
           }).segments
         : found.segments,
-    [linkable, text, known, conversationId, base, tasks, cards, found.segments],
+    [linkable, text, known, conversationId, base, tasks, cards, projectId, sessionIds, origin, found.segments],
   )
+  const sessionRefs = useSessionReferencePortals({ root, segments, sessions, loading: loadingSessions })
 
   /**
    * Ouverture d'un chemin cité.
@@ -115,8 +134,9 @@ export function Markdown({
   return (
     // Sur le conteneur entier et non segment par segment : un `#12` peut aussi bien
     // tomber dans une cellule de tableau, rendue par son propre composant.
-    <div className="sg-reading flex flex-col gap-3" {...cardRefs.handlers}>
+    <div ref={root} className="sg-reading flex flex-col gap-3" {...cardRefs.handlers}>
       {cardRefs.preview}
+      {sessionRefs}
       {segments.map((segment, index) => {
         // L'index comme clé : les segments n'ont pas d'identité propre et la liste est
         // reconstruite entièrement à chaque changement du texte.
@@ -128,16 +148,21 @@ export function Markdown({
         if (segment.kind === 'table') {
           return <MarkdownTable key={key} html={segment.html} rows={segment.rows} />
         }
-        return (
-          <div
-            key={key}
-            className="sg-markdown"
-            onClick={onClick}
-            dangerouslySetInnerHTML={{ __html: segment.html }}
-          />
-        )
+        return <MarkdownHtml key={key} html={segment.html} onClick={onClick} />
       })}
       {viewing ? <ImageLightbox src={viewing.src} name={viewing.name} onClose={() => setViewing(null)} /> : null}
     </div>
   )
+}
+
+/**
+ * Un bloc de HTML rendu, gardé tel quel tant que son texte ne change pas.
+ *
+ * React réécrit `innerHTML` dès que l'objet `__html` change, même à texte égal : chaque
+ * rendu du fil effaçait alors les puces de session montées dedans, et la sélection du
+ * lecteur avec. L'objet ne change donc qu'avec le texte.
+ */
+function MarkdownHtml({ html, onClick }: { html: string; onClick: (event: MouseEvent<HTMLDivElement>) => void }) {
+  const markup = useMemo(() => ({ __html: html }), [html])
+  return <div className="sg-markdown" onClick={onClick} dangerouslySetInnerHTML={markup} />
 }

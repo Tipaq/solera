@@ -1,5 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
+import { sessionReference } from '@solera/protocol'
 
 /**
  * Ce qui se passe sur le projet, injecté au démarrage d'une session.
@@ -97,7 +98,7 @@ function describe(row: Row, now: number): string {
         : 'terminée'
 
   const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
-  return `- ${row.title}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
+  return `- ${row.title} | ${sessionReference(row.id)}\n  ${row.agent}, ${state}, ${where}, ${size(row.tokens)}, ouverte ${ago(row.createdAt, now)}, dernier échange ${ago(row.updatedAt, now)}`
 }
 
 /**
@@ -287,6 +288,9 @@ export function projectOverview(db: Db, input: OverviewInput): string | null {
   if (input.soleraMcp) {
     parts.push(
       'Les outils du serveur `solera` donnent la suite : `search_history` et `read_conversation` pour ce qui a été décidé avant, `list_sessions` et `find_file_edits` pour ce que les autres font en ce moment, `send_session_message` pour prévenir l\'une d\'elles ou lui poser une question quand ça ne peut pas attendre l\'utilisateur, `notify_when_done` pour être relancé quand elle aura fini plutôt que de la surveiller, `broadcast_session_message` avant un geste qui touche toutes celles qui travaillent, `list_cards` et `read_card` pour le travail que ce projet s\'est donné, `create_card` pour y noter ce qui sort de ton sujet, `start_session` pour confier un travail à une nouvelle session quand l\'utilisateur le demande, `list_worktrees` et `create_worktree` pour travailler dans un arbre à l\'écart des autres plutôt que par `git worktree add`, que Solera ne verrait pas, `schedule_task` pour planifier un travail récurrent ou différé qui survit à cette session, `list_actions` et `register_action` pour les boutons du projet qui lancent d\'un clic un serveur, des tests ou un script.',
+    )
+    parts.push(
+      "Pour citer une de ces sessions, dans ta réponse comme dans un message, écris `session:<id>` : l'interface en fait un lien qui porte son titre, et `read_conversation` accepte cette forme. La citer ne prévient pas son agent.",
     )
   }
 

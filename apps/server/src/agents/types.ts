@@ -92,6 +92,11 @@ export interface RunnerContext {
    */
   projectOverview(config: AgentConfig): string | null
   /**
+   * Ce que Solera dit des sessions qu'un message cite (`session:<id>`), à joindre au
+   * texte envoyé au modèle. Null quand il n'en cite aucune.
+   */
+  sessionReferenceContext?(text: string, config: AgentConfig): string | null
+  /**
    * Dossiers dont les `CLAUDE.md` et `AGENTS.md` sont à masquer au CLI, parce que le
    * projet garde ses consignes dans Solera (SOLERA.md) et qu'elles arrivent déjà par
    * `projectOverview`. Vide quand le projet les garde dans son dépôt.

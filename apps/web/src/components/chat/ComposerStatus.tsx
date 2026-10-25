@@ -30,7 +30,7 @@ export function ComposerStatus({
   return (
     <div
       className={cx(
-        'mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-1',
+        'mx-auto flex sg-conversation-width flex-wrap items-center gap-x-3 gap-y-1',
         'px-1.5 pt-2 text-meta text-ink-faint',
       )}
     >

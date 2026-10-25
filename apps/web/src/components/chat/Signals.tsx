@@ -153,7 +153,7 @@ const STATE_DOT: Record<ThreadState, string> = {
   unread: 'bg-ink',
 }
 
-const STATE_LABEL = {
+export const STATE_LABEL = {
   working: 'signal.running',
   awaiting: 'signal.awaiting',
   broken: 'signal.error',

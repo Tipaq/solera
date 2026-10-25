@@ -298,7 +298,7 @@ export function DraftConversationPage() {
       </HeaderBand>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-6 md:py-10">
+        <div className="mx-auto flex sg-conversation-width flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
             <h1 className="text-lg font-semibold tracking-tight">{t('draft.title')}</h1>
             <p className="text-sm text-ink-faint">

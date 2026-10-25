@@ -126,8 +126,9 @@ function buildUserInput(
   attachments: OutgoingAttachment[],
   mentions: OutgoingMention[],
   skills: Map<string, string>,
+  referenceContext?: string | null,
 ): { blocks: ContentBlock[]; input: UserInput[] } {
-  const { blocks, promptText } = describeOutgoingMessage(text, attachments)
+  const { blocks, promptText } = describeOutgoingMessage(text, attachments, referenceContext)
   const input: UserInput[] = []
 
   // Devant le texte, comme le fait le TUI : la compétence est le cadre dans lequel la
@@ -1248,7 +1249,13 @@ export class CodexRunner implements AgentRunner {
   ): Promise<void> {
     if (!this.client || !this.threadId) throw new Error('La session Codex n\'est pas démarrée.')
 
-    const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
+    const { blocks, input } = buildUserInput(
+      text,
+      attachments,
+      mentions,
+      this.resolveSkills(skills),
+      this.ctx.sessionReferenceContext?.(text, this.appliedConfig),
+    )
     this.ctx.emit({
       type: 'message.completed',
       messageId: randomUUID(),
@@ -1332,7 +1339,13 @@ export class CodexRunner implements AgentRunner {
   ): Promise<boolean> {
     if (!this.client || !this.threadId || !this.turnId) return false
 
-    const { blocks, input } = buildUserInput(text, attachments, mentions, this.resolveSkills(skills))
+    const { blocks, input } = buildUserInput(
+      text,
+      attachments,
+      mentions,
+      this.resolveSkills(skills),
+      this.ctx.sessionReferenceContext?.(text, this.appliedConfig),
+    )
     this.pendingSteer = { blocks }
     try {
       await this.client.call('turn/steer', {
