@@ -2235,6 +2235,7 @@ export const fr: Catalog = {
   'board.card.toClarify.mark': 'Marquer à préciser',
   'board.card.toClarify.body': 'À préciser : des questions attendent une réponse avant le code. Elles sont dans le fil de la session et dans les notes.',
   'board.card.toClarify.clear': 'Précisée',
+  'board.card.toClarify.openThread': 'Ouvrir le fil',
   'board.parent.label': 'Filtrer par parente',
   'board.parent.all': 'Toutes les cartes',
   'board.card.blocks.add': 'Déclarer une carte bloquée',

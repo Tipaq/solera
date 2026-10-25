@@ -1,8 +1,8 @@
-import { CalendarDays, Check, ChevronDown, CircleHelp, ListTree, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
+import { CalendarDays, Check, ChevronDown, CircleHelp, ListTree, MessageSquare, MoreHorizontal, Pencil, Play, Plus, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, parentCloseProposed, parseSubtasks, type CardDto } from '@solera/protocol'
-import { useCardSaving, useDeleteCard, useToggleSubtask, useTriageCard, useUpdateCard } from '../../lib/cards'
+import { clarifyingThread, latestSession, useCardSaving, useDeleteCard, useToggleSubtask, useTriageCard, useUpdateCard } from '../../lib/cards'
 import { useCardDraft } from '../../lib/card-drafts'
 import { useCurrentUser } from '../../lib/session'
 import { locale, translate, useTranslate } from '../../lib/i18n'
@@ -75,9 +75,8 @@ export function CardDetail({
   const accepted = card.acceptedAt !== null
   const toggleSubtask = useToggleSubtask(projectId, card.id)
   const saving = useCardSaving(card.id)
-  const latestSession = card.conversations.filter((session) => !session.archivedAt)
-    .sort((a, b) => b.createdAt - a.createdAt)[0]
-  const resumable = latestSession && latestSession.id !== currentConversationId ? latestSession : undefined
+  const latest = latestSession(card)
+  const resumable = latest && latest.id !== currentConversationId ? latest : undefined
 
   const { data: user } = useCurrentUser()
   const { draft, setDraft, acknowledge } = useCardDraft(user?.id ?? '', card.id)
@@ -263,7 +262,8 @@ export function CardDetail({
           </aside>
 
           <div className="flex min-w-0 flex-col gap-5 pb-5 [grid-area:desc]">
-            <CardStateBanners card={card} projectId={projectId} accepted={accepted} triage={triage} updateCard={updateCard} />
+            <CardStateBanners card={card} projectId={projectId} accepted={accepted} triage={triage} updateCard={updateCard}
+              currentConversationId={currentConversationId} />
             {editVisible ? null : (
               <div className="flex flex-col gap-2">
                 {card.description ? (
@@ -303,15 +303,21 @@ function CardStateBanners({
   accepted,
   triage,
   updateCard,
+  currentConversationId,
 }: {
   card: CardDto
   projectId: string
   accepted: boolean
   triage: ReturnType<typeof useTriageCard>
   updateCard: ReturnType<typeof useUpdateCard>
+  currentConversationId?: string
 }) {
   const t = useTranslate()
+  const navigate = useNavigate()
   const busy = triage.isPending || updateCard.isPending
+  // Lu depuis le fil même, le lien y ramènerait : on y est déjà.
+  const thread = clarifyingThread(card)
+  const openThread = thread && thread.id !== currentConversationId ? thread : undefined
   return (
     <>
       {!accepted && card.column === 'todo' ? (
@@ -344,7 +350,13 @@ function CardStateBanners({
       {card.toClarifySince !== null && card.column === 'todo' ? (
         <div className="flex flex-col gap-2">
           <Banner tone="caution">{t('board.card.toClarify.body')}</Banner>
-          <div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {openThread ? (
+              <Button size="sm" icon={<MessageSquare size={14} />}
+                onClick={() => navigate(`/p/${projectId}/c/${openThread.id}`)}>
+                {t('board.card.toClarify.openThread')}
+              </Button>
+            ) : null}
             <Button size="sm" variant="secondary" icon={<Check size={14} />} disabled={busy}
               onClick={() => updateCard.mutate({ id: card.id, toClarify: false })}>
               {t('board.card.toClarify.clear')}

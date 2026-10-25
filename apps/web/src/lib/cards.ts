@@ -2,6 +2,7 @@ import { useIsMutating, useMutation, useQueries, useQuery, useQueryClient } from
 import { useMemo } from 'react'
 import type {
   CardColumn,
+  CardConversationDto,
   CardDto,
   CardLinkDto,
   CardNoteDto,
@@ -357,4 +358,21 @@ export function ancestorIds(cards: readonly CardDto[], card: CardDto): Set<strin
     cursor = byId.get(cursor)?.parent?.id
   }
   return found
+}
+
+/** La session la plus récente de la carte qui n'est pas archivée, celle qu'on reprend. */
+export function latestSession(card: CardDto): CardConversationDto | undefined {
+  return card.conversations.filter((session) => !session.archivedAt).sort((a, b) => b.createdAt - a.createdAt)[0]
+}
+
+/**
+ * Le fil où une carte « à préciser » attend des réponses (#67).
+ *
+ * La plus récente session vivante : c'est elle qui a posé les questions, ou qui les
+ * a reprises. Le DTO ne dit pas laquelle a posé l'état, et la plus récente est celle
+ * où répondre sans faire relire une conversation déjà dépassée.
+ */
+export function clarifyingThread(card: CardDto): CardConversationDto | undefined {
+  if (card.column !== 'todo' || card.toClarifySince === null) return undefined
+  return latestSession(card)
 }

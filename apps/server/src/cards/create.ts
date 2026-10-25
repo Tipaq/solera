@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, eq, inArray, max } from 'drizzle-orm'
+import { and, eq, inArray, isNull, max } from 'drizzle-orm'
 import { cardRefs, cards, writeTransaction, type CardRow, type Db } from '@solera/db'
 import { parseCardReferences, type CardColumn } from '@solera/protocol'
 import type { AppContext } from '../http/context.js'
@@ -13,12 +13,16 @@ import { resolveParent, syncParentColumn } from './tree.js'
  * active : la colonne est une position choisie, et seul un geste la change. Une carte
  * déjà plus loin dans le workflow ne recule pas — relancer une session sur une carte
  * en relecture n'annule pas la relecture.
+ *
+ * Une carte « à préciser » ne bouge pas non plus : passer « en cours » effacerait l'état
+ * avant que le briefing de la session ne le voie, et c'est à elle de juger, réponses
+ * lues, si la carte est assez claire pour reprendre (#67).
  */
 export function advanceCardOnLaunch(ctx: AppContext, cardId: string, userId: string): void {
   const moved = ctx.db
     .update(cards)
     .set({ column: 'in_progress', updatedAt: Date.now() })
-    .where(and(eq(cards.id, cardId), eq(cards.column, 'todo')))
+    .where(and(eq(cards.id, cardId), eq(cards.column, 'todo'), isNull(cards.toClarifySince)))
     .run()
 
   // L'un des trois chemins qui changent une colonne, et le plus facile à oublier

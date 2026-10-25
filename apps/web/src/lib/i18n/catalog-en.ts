@@ -2239,6 +2239,7 @@ export const en = {
   'board.card.toClarify.mark': 'Mark as to clarify',
   'board.card.toClarify.body': 'To clarify: questions await an answer before any code. They are in the session thread and in the notes.',
   'board.card.toClarify.clear': 'Clarified',
+  'board.card.toClarify.openThread': 'Open the thread',
   'board.parent.label': 'Filter by parent',
   'board.parent.all': 'All cards',
   'board.card.blocks.add': 'Mark a card as blocked',
