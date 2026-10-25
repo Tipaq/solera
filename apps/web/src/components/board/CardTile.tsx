@@ -3,6 +3,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { CalendarDays, CheckSquare, Clock, GitBranch, GripVertical, Link2, ListTree, MessageSquare, Paperclip } from 'lucide-react'
 import { parseSubtasks, type CardDto, type ProjectDto } from '@solera/protocol'
 import type { KeyboardEventHandler, MouseEventHandler, TouchEventHandler } from 'react'
+import { Link } from 'react-router-dom'
+import { clarifyingThread } from '../../lib/cards'
 import { daysUntil, formatDay, relativeDate, shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
@@ -62,6 +64,7 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
   // Une échéance ne colore la tuile que quand il est trop tard ou presque : une date
   // posée pour dans trois semaines est une information, pas une alerte.
   const days = card.dueAt === null ? null : daysUntil(card.dueAt)
+  const thread = clarifyingThread(card)
 
   const body = (
     <>
@@ -188,6 +191,23 @@ export function CardTile({ card, project, selected = false, overlay = false, dis
       <button data-card-open={card.id} type="button" onClick={onOpen} className="w-full p-3.5 text-left">
         {body}
       </button>
+
+      {/* Hors du bouton de la carte, un lien ne pouvant pas vivre dans un bouton : une
+          carte « à préciser » attend une réponse dans un fil, et y aller est le seul
+          geste utile à faire depuis le board (#67). Le pointeur arrêté ici ne saisit pas
+          la carte. */}
+      {thread ? (
+        <Link
+          to={`/p/${card.projectId}/c/${thread.id}`}
+          data-card-thread={card.number}
+          onMouseDown={(event) => event.stopPropagation()}
+          onTouchStart={(event) => event.stopPropagation()}
+          className="mx-3.5 mb-3 -mt-1.5 inline-flex items-center gap-1 rounded text-meta font-medium text-caution hover:underline"
+        >
+          <MessageSquare size={11} />
+          {t('board.card.toClarify.openThread')}
+        </Link>
+      ) : null}
 
       {!disabled ? <button
         type="button"

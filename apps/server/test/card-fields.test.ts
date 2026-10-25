@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import multipart from '@fastify/multipart'
 import { asc, eq } from 'drizzle-orm'
-import { cardMoves, openDatabase, projects, runMigrations, users } from '@solera/db'
+import { cardMoves, conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
 import { parseSubtasks, toggleSubtask, type CardDto } from '@solera/protocol'
+import { projectOverview } from '../src/agents/overview.js'
 import { AttachmentStore } from '../src/attachments/store.js'
 import { advanceCardOnLaunch, createCard } from '../src/cards/create.js'
 import type { Config } from '../src/config.js'
@@ -196,6 +197,40 @@ test('à préciser : ramène en « à faire », et s\'efface dès que la carte e
 
   await patch({ column: 'done' })
   assert.equal((await patch({ toClarify: true })).statusCode, 409, 'une carte fermée n\'a plus rien à préciser')
+})
+
+test('à préciser au lancement : la carte reste « à faire », et le briefing demande de relire les questions', async (t) => {
+  const { app, ctx, db, create } = await harness(t)
+  const card = await create('Floue')
+  const briefing = () =>
+    projectOverview(db, { projectId: 'project', conversationId: 'session', soleraMcp: true, cardFiling: false }) ?? ''
+  db.insert(conversations).values({
+    id: 'session', projectId: 'project', userId: 'owner', title: 'Sur la carte', agent: 'claude', config: '{}',
+    status: 'running', cardId: card.id, createdAt: 1, updatedAt: 1,
+  }).run()
+
+  // Une carte neuve : clarifier avant le code, en lisant le code d'abord.
+  assert.match(briefing(), /Avant d'écrire du code, lis la carte puis le code qu'elle concerne/)
+  assert.match(briefing(), /termine ton tour sans écrire de code/)
+
+  // Relancée après les questions : le lancement ne l'efface pas, le briefing le dit.
+  await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { toClarify: true } })
+  advanceCardOnLaunch(ctx, card.id, 'owner')
+  const after: CardDto = (await app.inject('/api/projects/project/cards')).json().find((row: CardDto) => row.id === card.id)
+  assert.equal(after.column, 'todo')
+  assert.equal(typeof after.toClarifySince, 'number', 'le lancement ne lève pas l\'état')
+  assert.match(briefing(), /« Floue », à préciser\./)
+  assert.match(briefing(), /une session précédente a posé des questions/)
+  assert.doesNotMatch(briefing(), /Avant d'écrire du code, lis la carte/)
+
+  // En relecture, plus rien à cadrer.
+  await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { column: 'review' } })
+  assert.doesNotMatch(briefing(), /Avant d'écrire du code|à préciser »\s*:/)
+
+  // Sans les outils de Solera, ni l'une ni l'autre : elles nomment des outils absents.
+  await app.inject({ method: 'PATCH', url: `/api/cards/${card.id}`, payload: { column: 'todo' } })
+  const bare = projectOverview(db, { projectId: 'project', conversationId: 'session', soleraMcp: false, cardFiling: false }) ?? ''
+  assert.doesNotMatch(bare, /move_card/)
 })
 
 test('non acceptée : acceptée, rattachée ou refusée, et sans session tant qu\'elle attend', async (t) => {

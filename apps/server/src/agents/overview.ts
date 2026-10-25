@@ -110,7 +110,13 @@ function describe(row: Row, now: number): string {
  */
 function cardBriefing(db: Db, input: OverviewInput): string | null {
   const card = db
-    .select({ number: cards.number, title: cards.title, column: cards.column, id: cards.id })
+    .select({
+      number: cards.number,
+      title: cards.title,
+      column: cards.column,
+      id: cards.id,
+      toClarifySince: cards.toClarifySince,
+    })
     .from(cards)
     .innerJoin(conversations, eq(conversations.cardId, cards.id))
     .where(eq(conversations.id, input.conversationId))
@@ -124,8 +130,9 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
     .all()
 
   const previous = before?.total ?? 0
+  const clarifying = card.column === 'todo' && card.toClarifySince !== null
   const lines = [
-    `Cette conversation traite la carte #${card.number} « ${card.title} », ${COLUMN_WORDS[card.column]}.`,
+    `Cette conversation traite la carte #${card.number} « ${card.title} », ${clarifying ? 'à préciser' : COLUMN_WORDS[card.column]}.`,
   ]
 
   if (previous > 0) {
@@ -144,6 +151,8 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
           : "Terminé, abandonné, l'échéance, la parente et les blocages, eux, se posent dans l'interface et jamais par toi."
       }`,
     )
+    if (clarifying) lines.push(RESUME_CLARIFICATION)
+    else if (OPEN_COLUMNS.has(card.column)) lines.push(CLARIFY_FIRST)
   }
 
   return lines.join(' ')
@@ -151,7 +160,35 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 
 /** Ce qu'un agent fait seul sur sa carte (#66), dit dans les deux cas du briefing. */
 const OWN_CARD_GESTURES =
-  "Tu ranges toi-même ta carte avec `move_card` : « à préciser » si elle ne dit pas assez pour écrire du code, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
+  "Tu ranges toi-même ta carte avec `move_card` : « à préciser » quand tu attends des réponses, « en cours » quand tu travailles, « à vérifier » quand ton travail attend une relecture. Coche ses sous-tâches à mesure avec `edit_subtasks`, et si le cahier des charges change en route, complète sa description avec `append_card_description`, sans réécrire ce qui précède."
+
+/**
+ * La clarification avant le code (#67).
+ *
+ * Une carte écrite vite laisse des trous que l'agent comble par des suppositions, et on
+ * ne le découvre qu'à la relecture, quand le code est écrit. Lire le code avant de
+ * questionner est ce qui distingue une question utile (« ce champ existe déjà dans tel
+ * fichier, on l'étend ? ») d'une question générique. Finir son tour sans coder est la
+ * moitié de la consigne : un modèle pose ses questions puis enchaîne sur ses propres
+ * hypothèses si on ne lui dit pas d'attendre.
+ *
+ * Pas dite sur une carte en relecture ou fermée : ce qu'il y reste à faire n'est plus
+ * de cadrer le travail.
+ */
+const CLARIFY_FIRST =
+  "Avant d'écrire du code, lis la carte puis le code qu'elle concerne, pour juger si elle dit assez pour travailler et pour poser des questions précises plutôt que génériques. Si elle suffit, travaille. Sinon, mets-la « à préciser » avec `move_card`, pose tes questions dans ta réponse, laisse-les aussi en note avec `add_card_note` pour qu'on les voie depuis le board, et termine ton tour sans écrire de code : la réponse viendra dans ce fil. Avec elle, ramène la carte « en cours », et si le cahier des charges a changé, complète sa description avec `append_card_description`."
+
+/**
+ * La reprise d'une carte laissée « à préciser » : une session précédente a posé des
+ * questions, et la réponse est peut-être dans le premier message de celle-ci. Le
+ * lancement ne la fait pas passer « en cours » (`advanceCardOnLaunch`), pour que ce
+ * soit dit ici.
+ */
+const RESUME_CLARIFICATION =
+  "Elle est « à préciser » : une session précédente a posé des questions, qui sont dans ses notes (`read_card`). Relis-les avec les réponses de l'utilisateur avant d'écrire du code. Si elles suffisent, ramène la carte « en cours » avec `move_card`, et complète sa description avec `append_card_description` si le cahier des charges a changé ; sinon, pose ce qui reste et termine ton tour."
+
+/** Les colonnes où le travail n'est pas encore cadré, et où la clarification se dit. */
+const OPEN_COLUMNS = new Set(['todo', 'in_progress'])
 
 /** Les colonnes en toutes lettres : les valeurs stockées sont des identifiants. */
 const COLUMN_WORDS: Record<string, string> = {

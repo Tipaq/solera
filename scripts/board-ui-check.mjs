@@ -272,6 +272,10 @@ try {
   const incoming = todo.locator('[data-card-tile="13"]')
   await incoming.getByText('nouvelle', { exact: true }).waitFor()
   await todo.locator('[data-card-tile="6"]').getByText('à préciser', { exact: true }).waitFor()
+  // Sa session attend une réponse : la tuile mène à son fil (#67).
+  const threadLink = todo.locator('[data-card-thread="6"]')
+  assert.equal(await threadLink.textContent(), 'Ouvrir le fil')
+  assert.match(await threadLink.getAttribute('href') ?? '', /^\/p\/[^/]+\/c\/[^/]+$/)
   await incoming.scrollIntoViewIfNeeded()
   await todo.screenshot({ animations: 'disabled', path: join(shots, 'board-todo-states.png') })
   await incoming.locator('[data-card-open]').click()

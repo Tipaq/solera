@@ -1660,6 +1660,32 @@ Check the installed CLIs against their latest releases: run \`claude --version\`
         outputTokens: 2450,
       }),
     },
+    // La session de la carte « à préciser » (#67) : elle a lu la carte et le code, posé
+    // ses questions, et attend. C'est le fil où mène « Ouvrir le fil » du board.
+    {
+      projectId: nimbusId,
+      cardId: cardIds.get(6),
+      title: 'Dark mode for the map layer',
+      agent: 'claude',
+      model: 'claude-sonnet-5',
+      config: claudeConfig,
+      status: 'idle',
+      ageDays: 0.2,
+      spanSec: 9,
+      costUsd: 0.0814,
+      inputTokens: 11,
+      outputTokens: 640,
+      events: simpleThread({
+        agent: 'claude',
+        model: 'claude-sonnet-5',
+        cwd: nimbusRoot,
+        user: 'Work on card #6, Dark mode for the map layer.',
+        assistant:
+          "Before writing code, two questions — I've marked the card *to clarify* and left them as a note:\n\n1. `src/lib/radar-tiles.ts` only knows the light tile set. Should the dark set come from the same provider (its `dark_all` style), or do you have another source in mind?\n2. The theme can be *system*. Should the map follow the OS switch live, or only on reload?",
+        costUsd: 0.0814,
+        outputTokens: 640,
+      }),
+    },
     {
       projectId: nimbusId,
       title: 'Migrate icons to Lucide',
