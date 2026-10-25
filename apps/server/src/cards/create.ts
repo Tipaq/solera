@@ -64,6 +64,8 @@ export interface CreateCardOptions {
   accepted?: boolean
   /** La session qui crée, quand c'en est une, pour le mouvement éventuel de la parente. */
   conversationId?: string
+  /** L'échéance, en minuit local du jour, quand celle qui crée en donne une. */
+  dueAt?: number | null
 }
 
 function insertCard(
@@ -98,9 +100,9 @@ function insertCard(
       // En fin de colonne : une idée neuve n'est pas prioritaire par le seul fait
       // d'être neuve, et s'insérer en tête déclasserait ce qui a déjà été trié.
       position: (last?.position ?? 0) + 1,
-      // Pas d'échéance à la création : une carte ouverte par un agent pour noter ce
-      // qu'il a croisé n'a pas de date à proposer, elle se pose à la main.
-      dueAt: null,
+      // Pas d'échéance par défaut : une carte ouverte pour noter ce qu'on a croisé n'a
+      // pas de date à proposer. Un agent qui découpe un chantier daté en donne une.
+      dueAt: options.dueAt ?? null,
       parentId: options.parentId,
       acceptedAt: options.accepted === false ? null : now,
       toClarifySince: null,

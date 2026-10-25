@@ -174,7 +174,7 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   // Et le serveur du projet, lui, les porte tous : ce qui tombe n'est que ce qui parle
   // d'un projet, pas la moitié du serveur par accident.
   const scoped = list('private').map((tool) => tool.name)
-  assert.equal(scoped.length, 31)
+  assert.equal(scoped.length, 34)
   for (const tool of free) assert.ok(scoped.includes(tool.name), tool.name)
 
   // Pas de `scope` à offrir : des trois portées de SOLERA.md, un fil libre n'a que la
@@ -190,18 +190,18 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
     ['edit_instructions', 'read_instructions', 'rename_session', 'write_instructions'],
   )
   const scopedWithoutMemory = list('private', '').map((tool) => tool.name)
-  assert.equal(scopedWithoutMemory.length, 28)
+  assert.equal(scopedWithoutMemory.length, 31)
   for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
     assert.ok(!scopedWithoutMemory.includes(tool), tool)
   }
 
-  // `request_card_move` est la troisième famille, et le seul outil qu'un fil libre ne
+  // `request_card_change` est la troisième famille, et le seul outil qu'un fil libre ne
   // voit **jamais**, accordé ou non : une carte appartient à un projet, il n'y aurait
   // rien à désigner. C'est pourquoi il n'entre pas dans `FREE_THREAD_TOOLS`.
   const granted = { SOLERA_MCP_CARD_FILING: '1' }
-  assert.ok(list('private', undefined, granted).some((tool) => tool.name === 'request_card_move'))
-  assert.ok(!scoped.includes('request_card_move'))
-  assert.ok(!list('', undefined, granted).some((tool) => tool.name === 'request_card_move'))
+  assert.ok(list('private', undefined, granted).some((tool) => tool.name === 'request_card_change'))
+  assert.ok(!scoped.includes('request_card_change'))
+  assert.ok(!list('', undefined, granted).some((tool) => tool.name === 'request_card_change'))
 })
 
 test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux côtés', async (t) => {

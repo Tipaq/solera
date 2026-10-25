@@ -157,8 +157,8 @@ try {
   const mover = db.prepare("SELECT id, title FROM conversations WHERE project_id = ? AND id != ? AND archived_at IS NULL LIMIT 1").get(project.id, session)
   db.prepare(
     `INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at, settled_at, result, is_error)
-     VALUES (?, ?, ?, 'request_card_move', ?, ?, ?, 'Demande déposée.', 0)`,
-  ).run(randomUUID(), project.id, mover.id, JSON.stringify({ moves: [{ card: 1, column: 'done', reason: 'Livrée.' }] }), Date.now(), Date.now())
+     VALUES (?, ?, ?, 'request_card_change', ?, ?, ?, 'Demande déposée.', 0)`,
+  ).run(randomUUID(), project.id, mover.id, JSON.stringify({ changes: [{ card: 1, column: 'done', reason: 'Livrée.' }] }), Date.now(), Date.now())
   ask({ question: 'Fermer l’issue #18 comme doublon de #12 ?', options: ['Oui', 'Non'] })
   await section.getByText('Fermer l’issue #18', { exact: false }).waitFor({ timeout: 15000 })
   await section.getByText(mover.title).waitFor()

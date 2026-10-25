@@ -36,6 +36,7 @@ import {
   type CardSearchDto,
 } from '@solera/protocol'
 import { createCard, syncCardReferences } from '../../cards/create.js'
+import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
@@ -627,29 +628,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = cardBlockBodySchema.parse(request.body)
     const { card } = loadCard(id, user.id)
 
-    if (body.blockedId === id) {
-      throw badRequest('card_block_self', 'A card cannot block itself.')
-    }
-    const target = ctx.db
-      .select({ id: cards.id })
-      .from(cards)
-      .where(and(eq(cards.id, body.blockedId), eq(cards.projectId, card.projectId)))
-      .get()
-    if (!target) throw notFound('card_not_found', 'Card not found.')
-    // Un blocage réciproque est une impasse qu'aucune des deux cartes ne peut lever :
-    // la refuser ici évite de l'afficher comme un état normal.
-    const reverse = ctx.db
-      .select({ sourceId: cardBlocks.sourceId })
-      .from(cardBlocks)
-      .where(and(eq(cardBlocks.sourceId, target.id), eq(cardBlocks.targetId, id)))
-      .get()
-    if (reverse) throw conflict('card_block_cycle', 'These two cards would block each other.')
-
-    ctx.db
-      .insert(cardBlocks)
-      .values({ sourceId: id, targetId: target.id, createdBy: user.id, createdAt: Date.now() })
-      .onConflictDoNothing()
-      .run()
+    addCardBlock(ctx.db, { projectId: card.projectId, sourceId: id, targetId: body.blockedId, userId: user.id })
 
     return reply.status(201).send(readCard(id, card.projectId))
   })
@@ -659,10 +638,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const { id, blockedId } = request.params as { id: string; blockedId: string }
     const { card } = loadCard(id, user.id)
 
-    ctx.db
-      .delete(cardBlocks)
-      .where(and(eq(cardBlocks.sourceId, id), eq(cardBlocks.targetId, blockedId)))
-      .run()
+    removeCardBlock(ctx.db, { sourceId: id, targetId: blockedId })
 
     return readCard(id, card.projectId)
   })

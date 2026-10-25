@@ -105,14 +105,12 @@ export interface FilingItem {
 export interface CardFilingItem {
   kind: 'cardFiling'
   id: string
-  cards: {
-    cardId: string
-    number: number
-    title: string
-    fromColumn: CardColumn
-    toColumn: CardColumn
-    reason: string
-  }[]
+  /**
+   * Les changements proposés, carte par carte : la colonne, et depuis #66 la parente,
+   * l'échéance et les liens « bloque ». Chacun est facultatif, une ligne en porte au
+   * moins un.
+   */
+  cards: Extract<SoleraEvent, { type: 'card_filing.requested' }>['cards']
   status: 'pending' | 'accepted' | 'refused' | 'impossible'
   /** Code du motif d'un `impossible`, traduit à l'affichage. Null partout ailleurs. */
   reason: string | null
@@ -121,6 +119,11 @@ export interface CardFilingItem {
    * attend : entre le dépôt et le clic, une carte peut avoir bougé toute seule.
    */
   moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[]
+  /**
+   * Les cartes dont le clic a appliqué les changements, ou `null` : la demande attend,
+   * ou date d'avant #66, où `moved` disait tout.
+   */
+  applied: number[] | null
 }
 
 /**
@@ -1150,6 +1153,7 @@ export function applyEvent(
         status: 'pending',
         reason: null,
         moved: [],
+        applied: null,
       })
       break
     }
@@ -1165,6 +1169,7 @@ export function applyEvent(
           status: event.decision,
           reason: event.reason ?? null,
           moved: event.moved,
+          applied: event.applied ?? null,
         })
       }
       break

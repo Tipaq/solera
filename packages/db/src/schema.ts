@@ -316,7 +316,7 @@ export const cardMoves = sqliteTable(
     userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
     /**
      * La session qui a déplacé la carte d'elle-même, par `move_card`. Null pour un geste
-     * de personne, y compris une demande `request_card_move` accordée d'un clic : le
+     * de personne, y compris une demande `request_card_change` accordée d'un clic : le
      * mouvement est alors celui de qui a cliqué. `user_id` reste rempli pour un agent, au
      * nom du propriétaire de la conversation, pour que tout lecteur qui ne regarde que lui
      * continue de savoir pour qui le geste a été fait.
@@ -509,9 +509,17 @@ export const agentRequests = sqliteTable(
         'schedule_task',
         'create_project',
         'move_conversation',
-        'request_card_move',
+        // Proposer un changement de carte que seul un clic applique : colonne, parente,
+        // échéance, liens « bloque ». Appelé `request_card_move` avant #66, qui l'a
+        // élargi au-delà de la colonne (migration 0055).
+        'request_card_change',
         // Le déplacement direct de sa propre carte, que l'agent fait seul.
         'move_card',
+        // Les autres gestes qu'un agent fait seul sur sa carte (#66) : ils s'ajoutent ou
+        // se reprennent, et ne défont le choix de personne.
+        'append_card_description',
+        'edit_subtasks',
+        'link_card',
         // Le titre de sa propre session, qui doit être annoncé aux clients.
         'rename_session',
         'request_decision',
@@ -548,7 +556,7 @@ export const agentRequests = sqliteTable(
     launchedConversationId: text('launched_conversation_id'),
     /**
      * Quand l'utilisateur a accordé un rangement — celui d'une conversation
-     * (`move_conversation`) ou celui d'une ou plusieurs cartes (`request_card_move`).
+     * (`move_conversation`) ou celui d'une ou plusieurs cartes (`request_card_change`).
      *
      * Pour une conversation, la promesse vit dans la ligne et non en mémoire : un
      * déplacement accepté doit survivre au redémarrage du serveur, là où un runner, lui,

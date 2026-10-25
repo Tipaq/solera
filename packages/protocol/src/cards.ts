@@ -379,6 +379,102 @@ export function toggleSubtask(text: string, index: number, checked: boolean): st
 }
 
 /**
+ * La section où un agent complète la description de sa carte (#66).
+ *
+ * Un agent ajoute et ne réécrit pas : ce qui précède est la consigne d'une personne, et
+ * un compte rendu de session l'effacerait. Une section à part, en fin de texte, garde
+ * les deux lisibles d'un coup d'œil ; chaque ajout y est daté et signé, et doublé d'une
+ * note sur la carte, qui en est l'historique.
+ */
+export const CARD_PRECISIONS_HEADING = '## Précisions'
+
+/** La section où vont les sous-tâches ajoutées à une description qui n'en avait pas. */
+export const CARD_SUBTASKS_HEADING = '## Sous-tâches'
+
+/** Un titre de premier ou de second niveau, qui ferme la section en cours. */
+const SECTION_BREAK = /^#{1,2}\s/
+
+/**
+ * Ajoute un bloc en fin de section, en la créant à la fin du texte si elle n'existe pas.
+ *
+ * La section court jusqu'au titre suivant de même niveau ou plus haut : si une personne
+ * a écrit sous elle, l'ajout reste dans la section et ne se mêle pas à son texte.
+ */
+export function appendToSection(text: string, heading: string, block: string): string {
+  const lines = text.split('\n')
+  let start = -1
+  let end = lines.length
+  let inCode = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    if (CODE_FENCE.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
+    if (start === -1) {
+      if (line.trim() === heading) start = i
+    } else if (SECTION_BREAK.test(line)) {
+      end = i
+      break
+    }
+  }
+
+  if (start === -1) {
+    const head = text.trimEnd()
+    return `${head}${head ? '\n\n' : ''}${heading}\n\n${block}`
+  }
+  const before = lines.slice(0, start).join('\n')
+  const section = lines.slice(start, end).join('\n').trimEnd()
+  const after = lines.slice(end).join('\n')
+  return `${start > 0 ? `${before}\n` : ''}${section}\n\n${block}${after ? `\n\n${after}` : ''}`
+}
+
+/**
+ * Ajoute une précision datée et signée à la section `CARD_PRECISIONS_HEADING`.
+ *
+ * `day` est écrit tel quel (`2026-10-24`) : la description se lit hors de l'interface,
+ * dans un dépôt ou par un agent, et une date relative y vieillirait mal.
+ */
+export function appendCardPrecision(text: string, entry: { day: string; author: string; body: string }): string {
+  return appendToSection(text, CARD_PRECISIONS_HEADING, `**${entry.day} · ${entry.author}**\n\n${entry.body.trim()}`)
+}
+
+/**
+ * Ajoute des sous-tâches non cochées : sous la dernière qui existe, avec sa puce et son
+ * retrait, ou dans une section `CARD_SUBTASKS_HEADING` s'il n'y en a aucune.
+ *
+ * Un libellé tient sur une ligne : un saut de ligne y ferait une seconde ligne qui ne
+ * serait plus une case.
+ */
+export function appendSubtasks(text: string, labels: readonly string[]): string {
+  const clean = labels.map((label) => label.replace(/\s+/g, ' ').trim()).filter((label) => label !== '')
+  if (clean.length === 0) return text
+
+  const lines = text.split('\n')
+  let last = -1
+  let prefix = '- ['
+  let inCode = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? ''
+    if (CODE_FENCE.test(line)) {
+      inCode = !inCode
+      continue
+    }
+    if (inCode) continue
+    const match = SUBTASK_LINE.exec(line)
+    if (match) {
+      last = i
+      prefix = match[1] ?? prefix
+    }
+  }
+
+  if (last === -1) return appendToSection(text, CARD_SUBTASKS_HEADING, clean.map((label) => `- [ ] ${label}`).join('\n'))
+  lines.splice(last + 1, 0, ...clean.map((label) => `${prefix} ] ${label}`))
+  return lines.join('\n')
+}
+
+/**
  * Nom de branche proposé pour la première session d'une carte.
  *
  * Le numéro passe devant pour que la branche se relie à sa carte au premier coup d'œil

@@ -127,7 +127,7 @@ export type AwaitingRequestDto =
       createdAt: number
     }
   | {
-      kind: 'request_card_move'
+      kind: 'request_card_change'
       id: string
       /** La conversation qui demande : c'est dans son fil qu'est le bouton. */
       conversationId: string

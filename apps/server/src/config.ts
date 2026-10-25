@@ -84,19 +84,19 @@ const configSchema = z.object({
        */
       projectFiling: z.boolean().default(false),
       /**
-       * Laisse les agents proposer le déplacement d'une carte du board
-       * (`request_card_move`), que l'utilisateur accorde d'un clic.
+       * Laisse les agents proposer de changer une carte du board — colonne, parente,
+       * échéance, blocages — (`request_card_change`), que l'utilisateur accorde d'un clic.
        *
-       * Faux par défaut comme le réglage de conversation qu'il chapeaute. À faux,
-       * l'entrée disparaît aussi de l'interface, par le même raisonnement que
-       * `soleraServer`.
+       * Vrai par défaut comme le réglage de conversation qu'il chapeaute (#66) : rien ne
+       * change sans le clic. À faux, l'entrée disparaît aussi de l'interface, par le même
+       * raisonnement que `soleraServer`.
        */
-      cardFiling: z.boolean().default(false),
+      cardFiling: z.boolean().default(true),
       /**
        * Laisse les agents demander une décision (`request_decision`), que l'utilisateur
        * tranche plus tard sans que la session attende.
        *
-       * Vrai par défaut, à la différence des trois précédents : c'est un veto, pas une
+       * Vrai par défaut, comme `cardFiling` : c'est un veto, pas une
        * portée. Le réglage de conversation qu'il chapeaute est déjà faux par défaut, et
        * rien ne s'applique sans une personne ; l'éteindre ici fait disparaître l'entrée
        * de l'interface, par le même raisonnement que `soleraServer`.

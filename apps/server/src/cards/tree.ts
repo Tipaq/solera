@@ -85,12 +85,24 @@ export function setCardParent(
 ): void {
   const next = parentId === null ? null : resolveParent(db, card, parentId)
   if (next === card.parentId) return
+  writeTransaction(db, (tx) => writeCardParent(tx, card, next, by))
+}
+
+/**
+ * L'écriture de `setCardParent`, dans la transaction de l'appelant : une demande
+ * `request_card_change` accordée applique toute sa liste d'un tenant. `next` doit avoir
+ * été vérifiée par `resolveParent`.
+ */
+export function writeCardParent(
+  tx: Db | Tx,
+  card: Pick<CardRow, 'id' | 'parentId'>,
+  next: string | null,
+  by: { userId: string | null; conversationId?: string },
+): void {
   const at = Date.now()
-  writeTransaction(db, (tx) => {
-    tx.update(cards).set({ parentId: next, updatedAt: at }).where(eq(cards.id, card.id)).run()
-    syncParentColumn(tx, card.parentId, { ...by, at })
-    syncParentColumn(tx, next, { ...by, at })
-  })
+  tx.update(cards).set({ parentId: next, updatedAt: at }).where(eq(cards.id, card.id)).run()
+  syncParentColumn(tx, card.parentId, { ...by, at })
+  syncParentColumn(tx, next, { ...by, at })
 }
 
 /**

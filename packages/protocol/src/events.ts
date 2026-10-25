@@ -58,6 +58,9 @@ export type ContentBlock = z.infer<typeof contentBlockSchema>
  */
 const parentToolCallIdSchema = z.string().nullable().default(null)
 
+/** Une carte nommée dans une demande de changement : de quoi l'afficher sans relire la base. */
+const cardFilingRefSchema = z.object({ cardId: z.string(), number: z.number(), title: z.string() })
+
 /**
  * Portée d'une décision de permission : deux valeurs, et pas trois.
  *
@@ -361,8 +364,9 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
   }),
 
   /**
-   * Un agent propose le déplacement d'une ou plusieurs cartes du board, et attend un
-   * clic. Même motif que `filing.*`, avec trois écarts que la carte #54 arbitre.
+   * Un agent propose de changer une ou plusieurs cartes du board, et attend un clic :
+   * leur colonne, et depuis #66 leur parente, leur échéance et leurs liens « bloque ».
+   * Même motif que `filing.*`, avec trois écarts que la carte #54 arbitre.
    *
    * **Posée dans le journal de la conversation qui demande**, et non dans celui d'un fil
    * déplacé : une carte n'a pas de fil à elle. C'est pourtant le **propriétaire du
@@ -388,6 +392,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * `fromColumn` est l'état au dépôt, affiché pour que la demande se lise ; c'est la
      * colonne relue **au clic** qui part dans `card_moves`, la carte ayant pu bouger
      * entre-temps.
+     *
+     * Chaque changement est facultatif, mais une ligne en porte au moins un. `toColumn`
+     * l'est devenu avec #66 ; les demandes d'avant l'ont toutes, et se relisent pareil.
+     * Une parente ou une échéance porte sa valeur au dépôt (`from`) : au clic, une carte
+     * dont la valeur a changé entre-temps sort du lot, comme une carte qui a bougé.
      */
     cards: z
       .array(
@@ -396,7 +405,15 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
           number: z.number(),
           title: z.string(),
           fromColumn: cardColumnSchema,
-          toColumn: cardColumnSchema,
+          toColumn: cardColumnSchema.optional(),
+          /** La parente avant et après ; `to: null` détache la carte. */
+          parent: z.object({ from: cardFilingRefSchema.nullable(), to: cardFilingRefSchema.nullable() }).optional(),
+          /** L'échéance avant et après, en minuit local ; `to: null` l'enlève. */
+          dueAt: z.object({ from: z.number().nullable(), to: z.number().nullable() }).optional(),
+          /** Les cartes que celle-ci bloquera. */
+          blocks: z.array(cardFilingRefSchema).optional(),
+          /** Les cartes qu'elle cessera de bloquer. */
+          unblocks: z.array(cardFilingRefSchema).optional(),
           reason: z.string(),
         }),
       )
@@ -423,6 +440,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     moved: z
       .array(z.object({ number: z.number(), fromColumn: cardColumnSchema, toColumn: cardColumnSchema }))
       .default([]),
+    /**
+     * Les cartes dont les changements ont été appliqués, colonne comprise ou non. Absent
+     * des événements d'avant #66, où `moved` disait tout : le lecteur s'y replie.
+     */
+    applied: z.array(z.number()).optional(),
   }),
 
   /**

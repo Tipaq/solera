@@ -10,8 +10,10 @@ import Fastify from 'fastify'
 import { asc, eq } from 'drizzle-orm'
 import {
   agentRequests,
+  cardBlocks,
   cardMoves,
   cards,
+  events,
   conversations,
   openDatabase,
   projects,
@@ -92,12 +94,12 @@ async function harness(t: TestContext, as: 'owner' | 'other' = 'owner') {
   t.after(() => app.close())
 
   /** Dépose une demande comme le serveur MCP le fait, et laisse le daemon la traiter. */
-  const propose = async (moves: { card: number; column: string; reason: string }[]) => {
+  const propose = async (moves: Record<string, unknown>[]) => {
     const id = randomUUID()
     db.insert(agentRequests)
       .values({
-        id, projectId: 'project', conversationId: 'session', kind: 'request_card_move',
-        payload: JSON.stringify({ moves }), createdAt: Date.now(),
+        id, projectId: 'project', conversationId: 'session', kind: 'request_card_change',
+        payload: JSON.stringify({ changes: moves }), createdAt: Date.now(),
       })
       .run()
     await requests.sweep()
@@ -168,7 +170,7 @@ test('une seconde demande de la même conversation est refusée tant que la prem
 
   const two = await propose([{ card: second.number, column: 'done', reason: 'Finie aussi.' }])
   assert.equal(two.row.isError, true)
-  assert.match(two.row.result ?? '', /déjà une proposition de rangement de carte en attente/)
+  assert.match(two.row.result ?? '', /déjà une proposition de changement de carte en attente/)
 
   // Et la demande refusée d'entrée ne tient pas la place : `resolved_at` est posé, sinon
   // la conversation ne pourrait plus jamais rien proposer.
@@ -279,4 +281,89 @@ test('la famille refusée refuse la demande, la base restant l’autorité', asy
   const refused = await propose([{ card: one.number, column: 'done', reason: 'Finie hier.' }])
   assert.equal(refused.row.isError, true)
   assert.match(refused.row.result ?? '', /n'est pas accordé à cette conversation|n’est pas accordé/)
+})
+
+/** Le dernier `card_filing.resolved` du fil, tel que l'interface le relira. */
+function resolved(db: ReturnType<typeof openDatabase>['db']) {
+  const rows = db.select().from(events).where(eq(events.type, 'card_filing.resolved')).all()
+  return JSON.parse(rows.at(-1)!.payload) as { decision: string; moved: unknown[]; applied?: number[] }
+}
+
+test('au-delà de la colonne : parente, échéance et blocages se proposent, et s’appliquent au clic (#66)', async (t) => {
+  const { db, card, propose, decide, moves } = await harness(t)
+  const milestone = card('Le jalon', 'todo')
+  const step = card('Une étape', 'todo')
+  const next = card('La suite', 'todo')
+  const freed = card('Bloquée pour rien', 'todo')
+  db.insert(cardBlocks).values({ sourceId: next.id, targetId: freed.id, createdBy: 'owner', createdAt: 1 }).run()
+
+  const { id, row } = await propose([
+    { card: step.number, parent: milestone.number, due: '2026-11-15', blocks: [next.number], reason: 'Le jalon la liste dans son tableau.' },
+    { card: next.number, unblocks: [freed.number], reason: 'La dépendance a été levée par #2.' },
+  ])
+  assert.equal(row.isError, false, row.result ?? '')
+  assert.match(row.result ?? '', /sous #1, échéance .*, bloque #3/)
+
+  // Rien ne change avant le clic.
+  const before = db.select().from(cards).where(eq(cards.id, step.id)).get()!
+  assert.equal(before.parentId, null)
+  assert.equal(before.dueAt, null)
+
+  assert.equal((await decide(id, 'accepted')).statusCode, 200)
+  const after = db.select().from(cards).where(eq(cards.id, step.id)).get()!
+  assert.equal(after.parentId, milestone.id)
+  assert.equal(after.dueAt, new Date(2026, 10, 15).getTime())
+  const links = db.select().from(cardBlocks).all()
+  assert.deepEqual(
+    links.map((link) => [link.sourceId, link.targetId, link.createdBy]),
+    [[step.id, next.id, 'owner']],
+  )
+  // Aucune colonne demandée, aucun mouvement inventé ; mais les deux cartes sont dites
+  // appliquées.
+  assert.deepEqual(moves(), [])
+  assert.deepEqual(resolved(db).applied, [step.number, next.number])
+})
+
+test('au clic, une carte dont l’échéance ou la parente a changé depuis le dépôt sort du lot', async (t) => {
+  const { db, card, propose, decide } = await harness(t)
+  const milestone = card('Le jalon', 'todo')
+  const dated = card('Datée à la main entre-temps', 'todo')
+  const kept = card('Inchangée', 'todo')
+  const { id } = await propose([
+    { card: dated.number, due: '2026-12-01', reason: 'Le jalon tombe le 1er.' },
+    { card: kept.number, parent: milestone.number, reason: 'Une étape du jalon.' },
+  ])
+
+  const chosen = new Date(2026, 10, 20).getTime()
+  db.update(cards).set({ dueAt: chosen }).where(eq(cards.id, dated.id)).run()
+
+  assert.equal((await decide(id, 'accepted')).statusCode, 200)
+  assert.equal(db.select().from(cards).where(eq(cards.id, dated.id)).get()?.dueAt, chosen)
+  assert.equal(db.select().from(cards).where(eq(cards.id, kept.id)).get()?.parentId, milestone.id)
+  assert.deepEqual(resolved(db).applied, [kept.number])
+})
+
+test('au dépôt : une ligne sans changement, une boucle de parentes ou un lien déjà posé sont refusés', async (t) => {
+  const { db, card, propose } = await harness(t)
+  const top = card('En haut', 'todo')
+  const below = card('En dessous', 'todo')
+  db.update(cards).set({ parentId: top.id }).where(eq(cards.id, below.id)).run()
+  db.insert(cardBlocks).values({ sourceId: top.id, targetId: below.id, createdBy: 'owner', createdAt: 1 }).run()
+
+  const empty = await propose([{ card: top.number, reason: 'Pour voir.' }])
+  assert.match(empty.row.result ?? '', /Rien à changer pour #1/)
+
+  const loop = await propose([{ card: top.number, parent: below.number, reason: 'À l’envers.' }])
+  assert.match(loop.row.result ?? '', /ne peut pas devenir la parente/)
+
+  const twice = await propose([{ card: top.number, blocks: [below.number], reason: 'Encore.' }])
+  assert.match(twice.row.result ?? '', /bloque déjà/)
+
+  const reverse = await propose([{ card: below.number, blocks: [top.number], reason: 'Dans l’autre sens.' }])
+  assert.match(reverse.row.result ?? '', /se bloqueraient/)
+
+  // 0 détache, et une échéance vide s'enlève : les sentinelles des schémas d'outils.
+  const detach = await propose([{ card: below.number, parent: 0, reason: 'Elle vit seule.' }])
+  assert.equal(detach.row.isError, false, detach.row.result ?? '')
+  assert.match(detach.row.result ?? '', /détachée de sa parente/)
 })

@@ -365,8 +365,8 @@ test('« À décider » liste aussi les rangements de cartes en attente, pour le
   )
   db.insert(agentRequests)
     .values({
-      id: 'move', projectId: 'project', conversationId: PLAIN, kind: 'request_card_move',
-      payload: JSON.stringify({ moves: [{ card: 7, column: 'done', reason: 'PR fusionnée.' }] }), createdAt: Date.now(),
+      id: 'move', projectId: 'project', conversationId: PLAIN, kind: 'request_card_change',
+      payload: JSON.stringify({ changes: [{ card: 7, column: 'done', reason: 'PR fusionnée.' }] }), createdAt: Date.now(),
     })
     .run()
   await ctxRequests.sweep()
@@ -375,7 +375,7 @@ test('« À décider » liste aussi les rangements de cartes en attente, pour le
   const mine = (await app.inject({ method: 'GET', url: '/api/awaiting' })).json()
   assert.deepEqual(mine.requests, [
     {
-      kind: 'request_card_move', id: 'move', conversationId: PLAIN, projectId: 'project',
+      kind: 'request_card_change', id: 'move', conversationId: PLAIN, projectId: 'project',
       conversationTitle: `Session ${PLAIN}`, count: 1, createdAt: mine.requests[0].createdAt,
     },
   ])

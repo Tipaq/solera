@@ -114,7 +114,7 @@ test('terminé et abandonné restent des verdicts : ni vers eux, ni hors d’eux
     const { db, own, move, columnOf } = await harness(t, 'review')
     const row = await move({ column: target })
     assert.equal(row.isError, true)
-    assert.match(row.result ?? '', /request_card_move/)
+    assert.match(row.result ?? '', /request_card_change/)
     assert.equal(columnOf(own!), 'review')
     assert.deepEqual(db.select().from(cardMoves).all(), [])
   }
