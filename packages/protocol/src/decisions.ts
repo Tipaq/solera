@@ -127,7 +127,8 @@ export type AwaitingRequestDto =
       createdAt: number
     }
   | {
-      kind: 'request_card_change'
+      /** Un changement de cartes à accorder, ou un brouillon de cartes à valider (#70). */
+      kind: 'request_card_change' | 'propose_cards'
       id: string
       /** La conversation qui demande : c'est dans son fil qu'est le bouton. */
       conversationId: string

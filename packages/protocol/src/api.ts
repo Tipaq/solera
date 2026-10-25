@@ -306,6 +306,13 @@ export const createConversationBodySchema = z.object({
    * que rien n'est envoyé, il n'y a pas de conversation à rattacher.
    */
   cardId: z.string().uuid().nullable().default(null),
+  /**
+   * Découper un chantier en cartes (#70) plutôt que travailler : la session lit, pose
+   * ses questions et propose un brouillon. `splitCardId` est la carte d'où le découpage
+   * part, proposée comme parente ; elle n'est pas rattachée comme `cardId`.
+   */
+  purpose: z.literal('split').nullable().default(null),
+  splitCardId: z.string().uuid().nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
    * Premier message, envoyé dans la foulée de la création.
@@ -329,6 +336,8 @@ export const createConversationBodySchema = z.object({
 export const createFreeConversationBodySchema = createConversationBodySchema.omit({
   worktreeId: true,
   cardId: true,
+  purpose: true,
+  splitCardId: true,
 })
 
 /** Ordre manuel des conversations d'un projet, du haut vers le bas. */

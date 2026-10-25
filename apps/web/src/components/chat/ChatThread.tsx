@@ -4,6 +4,7 @@ import type { ChatRow } from '../../lib/tool-rows'
 import { translate, translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { CardDraftPrompt } from './CardDraftPrompt'
 import { CardFilingPrompt } from './CardFilingPrompt'
 import { DiffCard } from './DiffCard'
 import { DecisionPrompt } from './DecisionPrompt'
@@ -197,6 +198,9 @@ export function ChatThread({
                 canDecide={canFileCards}
               />
             )
+          case 'cardDraft':
+            // Le propriétaire du projet aussi : c'est son board que le brouillon remplit.
+            return <CardDraftPrompt key={item.id} conversationId={conversationId} item={item} canDecide={canFileCards} />
           case 'decision':
             return <DecisionPrompt key={item.id} item={item} canDecide={canDecide} />
           case 'question':

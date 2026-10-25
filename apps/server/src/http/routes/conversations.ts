@@ -9,11 +9,14 @@ import {
   conversationReads,
   conversations,
   projects,
+  sessionMessages,
   worktrees,
   writeTransaction,
   type ConversationRow,
 } from '@solera/db'
 import {
+  cardDraftDecisionBodySchema,
+  type CardDraft,
   createConversationBodySchema,
   createFreeConversationBodySchema,
   moveConversationBodySchema,
@@ -46,6 +49,7 @@ import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
 import { isCloseTarget, type CardClosure } from '../../cards/close.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
 import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
+import { createDraftCards, type DraftCreation } from '../../cards/drafts.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { resolveParent, writeCardParent } from '../../cards/tree.js'
 import { createConversation } from '../../conversations/create.js'
@@ -336,6 +340,15 @@ export function registerConversationRoutes(
       assertCardInProject(ctx, body.cardId, id)
       assertCardAccepted(ctx, body.cardId)
     }
+    // Un découpage se lit à la racine du projet, sans arbre ni carte rattachée : la
+    // session propose des cartes, elle n'écrit pas de code (#70).
+    if (body.purpose === 'split' && (body.worktreeId || body.cardId)) {
+      throw badRequest('split_without_worktree', 'A card split runs at the project root, without a worktree or a linked card.')
+    }
+    if (body.splitCardId) {
+      if (body.purpose !== 'split') throw badRequest('split_card_without_purpose', 'splitCardId only goes with purpose "split".')
+      assertCardInProject(ctx, body.splitCardId, id)
+    }
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
@@ -349,6 +362,8 @@ export function registerConversationRoutes(
       config,
       worktreeId: body.worktreeId,
       cardId: body.cardId,
+      purpose: body.purpose,
+      splitCardId: body.splitCardId,
       title: body.title,
       origin: null,
       firstMessage: firstMessage && {
@@ -559,6 +574,8 @@ export function registerConversationRoutes(
       // bandeau. Elle reprend à la racine du projet.
       worktreeId: checkWorktree(ctx.db, source.worktreeId).gone ? null : source.worktreeId,
       cardId: source.cardId,
+      purpose: source.purpose,
+      splitCardId: source.splitCardId,
       title: body.title ?? source.title,
       origin: null,
       handoff: {
@@ -1282,6 +1299,93 @@ export function registerConversationRoutes(
     close('accepted', null, moved, live.map(({ card }) => card.number), closed)
     sessions.statusBus.emit('lists', { conversationId: id })
     return { ok: true }
+  })
+
+  /**
+   * Crée ou refuse le brouillon de cartes qu'un agent a proposé (#70).
+   *
+   * Même contrôle que les rangements de cartes : `:id` est la conversation qui propose,
+   * et c'est le **propriétaire du projet** qui tranche, puisque c'est son board qui se
+   * remplit. Le corps porte le brouillon tel que la personne l'a corrigé dans le bloc ;
+   * le journal garde celui de l'agent, et la clôture dit ce qui a été créé.
+   *
+   * Créé, le brouillon revient à la session en message (`cards`) : elle apprend les
+   * numéros sans relire le board, et peut le dire. Refusé, rien ne part : la personne dit
+   * dans le fil ce qui ne va pas, et c'est ce message-là qui relance l'agent.
+   */
+  app.post('/api/conversations/:id/card-drafts/:requestId', async (request) => {
+    const user = requireUser(request)
+    const { id, requestId } = request.params as { id: string; requestId: string }
+    const body = cardDraftDecisionBodySchema.parse(request.body)
+    const conversation = await loadReadable(id, user.id)
+
+    const project = conversation.projectId
+      ? ctx.db.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, conversation.projectId)).get()
+      : null
+    if (!project || project.ownerId !== user.id) {
+      throw forbidden('card_draft_forbidden', 'Only the project owner can create cards from a draft.')
+    }
+
+    const row = ctx.db
+      .select()
+      .from(agentRequests)
+      .where(and(eq(agentRequests.id, requestId), eq(agentRequests.kind, 'propose_cards'), eq(agentRequests.conversationId, id)))
+      .get()
+    if (!row) throw notFound('card_draft_not_found', 'Card draft not found.')
+    if (row.resolvedAt !== null) throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
+
+    const close = (
+      decision: 'created' | 'refused',
+      outcome: DraftCreation & { draft?: CardDraft },
+    ) => {
+      const now = Date.now()
+      // Conditionnelle : deux clics qui se croisent ne créent pas deux fois.
+      const closed = ctx.db
+        .update(agentRequests)
+        .set({ resolvedAt: now, ...(decision === 'created' ? { acceptedAt: now } : {}) })
+        .where(and(eq(agentRequests.id, requestId), isNull(agentRequests.resolvedAt)))
+        .run()
+      if (closed.changes === 0) throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
+      log.append(id, { type: 'card_draft.resolved', requestId, decision, decidedBy: user.id, ...outcome })
+    }
+
+    if (body.decision === 'refused') {
+      close('refused', { parent: null, created: [] })
+      return { ok: true }
+    }
+
+    // La création et la clôture dans la même transaction : un échec de l'une défait
+    // l'autre, et un double clic perd la course sur `resolved_at` sans rien créer.
+    const outcome = writeTransaction(ctx.db, () => {
+      const created = createDraftCards(ctx.db, {
+        projectId: conversation.projectId!,
+        userId: user.id,
+        conversationId: id,
+        draft: body.draft,
+      })
+      close('created', { ...created, draft: body.draft })
+      ctx.db
+        .insert(sessionMessages)
+        .values({
+          id: randomUUID(),
+          projectId: conversation.projectId!,
+          fromConversationId: id,
+          toConversationId: id,
+          kind: 'cards',
+          body: [
+            'Ton brouillon de cartes a été validé et créé.',
+            created.parent ? `Parente : #${created.parent.number} « ${created.parent.title} ».` : null,
+            ...created.created.map((card) => `- #${card.number} « ${card.title} »`),
+          ]
+            .filter((line) => line !== null)
+            .join('\n'),
+          replyTo: requestId,
+          createdAt: Date.now(),
+        })
+        .run()
+      return created
+    })
+    return { ok: true, ...outcome }
   })
 
   /**

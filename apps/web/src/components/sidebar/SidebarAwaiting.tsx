@@ -122,7 +122,9 @@ function AwaitingLine({ request, onNavigate }: {
   const label =
     request.kind === 'request_card_change'
       ? t(request.count > 1 ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count: request.count })
-      : t('awaiting.moveConversation')
+      : request.kind === 'propose_cards'
+        ? t(request.count > 1 ? 'awaiting.cardDraft.other' : 'awaiting.cardDraft.one', { count: request.count })
+        : t('awaiting.moveConversation')
   return (
     <NavLink
       to={conversationPath({ id: request.conversationId, projectId: request.projectId })}
@@ -130,7 +132,7 @@ function AwaitingLine({ request, onNavigate }: {
       title={`${label} — ${request.conversationTitle}`}
       className={({ isActive }) => cx(ROW, isActive && 'bg-accent-wash text-ink')}
     >
-      {request.kind === 'request_card_change'
+      {request.kind === 'request_card_change' || request.kind === 'propose_cards'
         ? <Columns3 size={14} className="shrink-0 text-ink-faint" />
         : <FolderInput size={14} className="shrink-0 text-ink-faint" />}
       <span className="min-w-0 flex-1 truncate">{request.conversationTitle}</span>

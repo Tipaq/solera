@@ -169,6 +169,7 @@ const PEER_LABELS = {
   done: 'message.peer.done',
   launch: 'message.peer.launch',
   decision: 'message.peer.decision',
+  cards: 'message.peer.cards',
 } as const
 
 /**

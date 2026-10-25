@@ -162,8 +162,15 @@ export function DraftConversationPage() {
   // envoyé : c'est une valeur de départ, comme le CLI, et la puce se retire.
   const [detached, setDetached] = useState(false)
   const { data: cards } = useCards(projectId)
-  const requestedCard = params.get('card')
-  const card = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
+  // `?split=` ouvre un découpage en cartes (#70) : `new` pour un chantier neuf, ou l'id
+  // de la carte à découper. La conversation part alors à la racine, sans arbre, et la
+  // carte n'est pas rattachée — elle sera la parente du brouillon, pas un travail engagé.
+  const split = params.get('split')
+  const splitting = split !== null && Boolean(projectId)
+  const requestedCard = splitting ? (split === 'new' ? null : split) : params.get('card')
+  const pickedCard = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
+  const card = splitting ? undefined : pickedCard
+  const splitCard = splitting ? pickedCard : undefined
   /**
    * Le composer lit son texte initial une seule fois, au montage. Le rendre avant que
    * la carte soit connue le figerait sans sa mention, et la poser après n'y changerait
@@ -178,7 +185,7 @@ export function DraftConversationPage() {
   const cardWorktree = card?.conversations.findLast((session) => session.worktreeId)?.worktreeId
   const [worktreeId, setWorktreeId] = useState<string | null>(null)
   const [worktreeTouched, setWorktreeTouched] = useState(false)
-  const effectiveWorktreeId = worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
+  const effectiveWorktreeId = splitting ? null : worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
 
   // Le préréglage du projet d'abord, les défauts du compte ensuite : un projet qui
   // nomme ses serveurs MCP ou ses répertoires supplémentaires parle de lui-même, et
@@ -241,9 +248,10 @@ export function DraftConversationPage() {
       config: effective,
       worktreeId: effectiveWorktreeId,
       cardId: card?.id ?? null,
+      ...(splitting ? { purpose: 'split' as const, splitCardId: splitCard?.id ?? null } : {}),
       // Le titre de la carte plutôt que l'extrait du message : la conversation traite
       // un travail nommé, et le CLI n'a plus à en proposer un.
-      title: card?.title,
+      title: card?.title ?? (splitCard ? t('split.sessionTitle', { title: splitCard.title }) : undefined),
       firstMessage: { clientMessageId: uuidv4(), text, attachmentIds, mentions, skills },
     })
 
@@ -275,7 +283,7 @@ export function DraftConversationPage() {
             <AgentIcon agent={agent} size={11} />
             <span className="truncate">{project?.name ?? t('destination.none')}</span>
           </div>
-          <p className="truncate text-sm font-medium">{t('draft.title')}</p>
+          <p className="truncate text-sm font-medium">{t(splitting ? 'split.draft.title' : 'draft.title')}</p>
         </div>
         {/* Le board depuis le brouillon : c'est ici qu'on se demande sur quoi partir,
             et la liste des cartes est la réponse. Le lien manque à cet endroit précis
@@ -300,9 +308,9 @@ export function DraftConversationPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex sg-conversation-width flex-col gap-4 px-4 py-6 md:py-10">
           <div className="mb-2 flex flex-col gap-1">
-            <h1 className="text-lg font-semibold tracking-tight">{t('draft.title')}</h1>
+            <h1 className="text-lg font-semibold tracking-tight">{t(splitting ? 'split.draft.title' : 'draft.title')}</h1>
             <p className="text-sm text-ink-faint">
-              {projectId ? t('draft.subtitle') : t('draft.subtitle.free')}
+              {splitting ? t('split.draft.subtitle') : projectId ? t('draft.subtitle') : t('draft.subtitle.free')}
             </p>
           </div>
 
@@ -323,7 +331,7 @@ export function DraftConversationPage() {
                 navigate(next ? `/p/${next}/c/new${search}` : `/c/new${search}`, { replace: true })
               }}
             />
-            {projectId ? (
+            {projectId && !splitting ? (
               <WorktreeSelect
                 projectId={projectId}
                 value={effectiveWorktreeId}
@@ -410,6 +418,17 @@ export function DraftConversationPage() {
             <p className="text-xs text-ink-faint">{t('draft.commands.unavailable')}</p>
           ) : null}
 
+          {splitCard ? (
+            <div className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3 py-2">
+              <span className="shrink-0 text-xs text-ink-faint">{t('split.draft.from')}</span>
+              <span className="text-xs font-medium text-ink-faint">#{splitCard.number}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">{splitCard.title}</span>
+              <IconButton label={t('split.draft.detach')} onClick={() => setDetached(true)}>
+                <X size={14} />
+              </IconButton>
+            </div>
+          ) : null}
+
           {card ? (
             <div className="flex items-center gap-2 rounded-md border border-line bg-sunken px-3 py-2">
               <span className="text-xs font-medium text-ink-faint">#{card.number}</span>
@@ -426,7 +445,13 @@ export function DraftConversationPage() {
               // Le brouillon d'une conversation pas encore créée appartient à son projet :
               // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
               // par carte, sinon celui de la création libre écraserait la mention posée ici.
-              draftKey={card ? `new:${projectId ?? ''}:card:${card.id}` : `new:${projectId ?? ''}`}
+              draftKey={
+                card
+                  ? `new:${projectId ?? ''}:card:${card.id}`
+                  : splitting
+                    ? `new:${projectId ?? ''}:split:${splitCard?.id ?? 'new'}`
+                    : `new:${projectId ?? ''}`
+              }
               // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
               // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
               initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}

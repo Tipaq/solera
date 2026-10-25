@@ -30,6 +30,9 @@ export interface CreateConversationInput {
   worktreeId: string | null
   /** Carte traitée, quand la conversation est lancée depuis le board. */
   cardId: string | null
+  /** Découper en cartes (#70), et la carte d'où le découpage part. Absents ailleurs. */
+  purpose?: 'split' | null
+  splitCardId?: string | null
   title?: string
   /**
    * Texte dont tirer le titre provisoire, quand le premier message ne s'y prête pas :
@@ -76,6 +79,8 @@ export async function createConversation(
     projectId: input.projectId,
     worktreeId: input.worktreeId,
     cardId: input.cardId,
+    purpose: input.purpose ?? null,
+    splitCardId: input.splitCardId ?? null,
     userId: input.userId,
     title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,

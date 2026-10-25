@@ -68,7 +68,7 @@ projet partagé, comme dans l'interface et l'API. Ces trois gestes passent par l
   `read_session_messages`) : un client hors session n'a pas de tour où être relancé ;
   `read_conversation` avec `wait_seconds` en tient lieu.
 - Les demandes qui attendent le clic d'une personne (`move_conversation`,
-  `request_card_change`, `request_decision`) et `create_project` : en mode global,
+  `request_card_change`, `propose_cards`, `request_decision`) et `create_project` : en mode global,
   l'appelant est cette personne. Les familles d'autorisation, qui bornent ce qu'un agent
   fait sans l'utilisateur, ne s'y appliquent donc pas : la barrière est la portée `mcp`
   du jeton.

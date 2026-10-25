@@ -16,6 +16,7 @@ import {
   Settings,
   ShieldQuestion,
   Square,
+  Split,
   SquareKanban,
   SquareTerminal,
   X,
@@ -244,6 +245,13 @@ export function CommandPalette({
         icon: <SquareKanban size={14} />,
         label: t('palette.action.board'),
         run: () => go(`/p/${projectId}/board`),
+      })
+      // Découper un chantier en cartes (#70) : dicter en vrac, valider un brouillon.
+      entries.push({
+        key: 'cmd-split',
+        icon: <Split size={14} />,
+        label: t('split.action'),
+        run: () => go(`/p/${projectId}/c/new?split=new`),
       })
     }
 
