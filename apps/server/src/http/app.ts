@@ -89,6 +89,8 @@ import { registerVaultRoutes } from './routes/vault.js'
 import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
+import { registerPullRequestRoutes } from './routes/pull-requests.js'
+import { ProjectPullRequests, ghListPullRequests } from '../reviews/pull-requests.js'
 import { registerWebRoutes } from './routes/web.js'
 import { registerFrameGuard } from './frame-guard.js'
 import { registerLocalOriginGuard } from './local-origin.js'
@@ -147,6 +149,7 @@ export async function buildApp(
   cardClosure?: CardClosure,
   issues?: IssueSources,
   milestones?: MilestoneRuns,
+  pullRequests?: ProjectPullRequests,
 ): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -258,6 +261,20 @@ export async function buildApp(
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
+  // Un jeton GitHub enregistré passe devant `gh`, comme pour la revue ; un jeton qui ne
+  // se déchiffre plus laisse `gh` répondre avec le sien.
+  registerPullRequestRoutes(
+    app,
+    ctx,
+    pullRequests ??
+      new ProjectPullRequests(ctx.db, ghListPullRequests, (userId) => {
+        try {
+          return gitCredentials.resolve(userId, 'github.com')?.token
+        } catch {
+          return undefined
+        }
+      }),
+  )
   registerCardRoutes(app, ctx, attachments)
   if (milestones) registerMilestoneRoutes(app, ctx, milestones)
   if (issues) registerIssueRoutes(app, ctx, issues)

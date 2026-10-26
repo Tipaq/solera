@@ -17,6 +17,11 @@ import { launchBrowser } from './checks/browser.mjs'
  * qui réclame, l'ordre des groupes, la branche de chaque session lue dans la liste
  * d'état des worktrees, le filtre `s:` et `#N`, le pliage des terminées, et la ligne à
  * deux étages au téléphone. Elle écrit ses captures dans `portage/`, à côté du dessin.
+ *
+ * Le badge de PR (#115) : le projet de démo n'a pas de forge, la liste des PR est donc
+ * simulée au niveau de la page. La suite tient qu'une PR ouverte fait passer une session
+ * finie dans « Prête à relire », que le badge porte `#N` et son mot, et qu'une session
+ * de la racine n'en porte pas.
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -89,7 +94,28 @@ try {
   const running = conversations.find((entry) => entry.status === 'running' && entry.worktreeId)
   assert.ok(awaiting && running, 'Le jeu d’essai porte une session qui attend et une qui tourne dans un worktree')
 
+  // ─── Les PR, simulées : une en checks sur l'arbre qui tourne, une prête ailleurs ──
+  const trees = await (await context.request.get(`${base}/api/projects/${nimbus.id}/worktrees/status`)).json()
+  const branchOf = (conversation) => {
+    const tree = trees.worktrees.find((entry) => entry.id === conversation.worktreeId)
+    return tree ? (tree.branch ?? tree.name) : null
+  }
+  const runningBranch = branchOf(running)
+  // Une session finie, dans un autre arbre : sa PR ouverte doit la faire passer en relecture.
+  const withPr = conversations.find(
+    (entry) => entry.worktreeId && ['idle', 'completed'].includes(entry.status) && branchOf(entry) && branchOf(entry) !== runningBranch,
+  )
+  const pullRequest = (number, branch, state, failed = []) => ({
+    number, url: `https://github.com/demo/nimbus/pull/${number}`, title: `PR de ${branch}`, branch, base: 'main', state,
+    checks: { passed: 0, pending: state === 'checks' ? 1 : 0, failed }, review: null, updatedAt: Date.now(),
+  })
+  const pullRequests = [pullRequest(18, runningBranch, 'checks')]
+  if (withPr) pullRequests.push(pullRequest(17, branchOf(withPr), 'ready'))
+
   const page = await context.newPage()
+  await page.route('**/api/projects/*/pull-requests', (route) =>
+    route.fulfill({ json: { available: true, fetchedAt: Date.now(), pullRequests } }),
+  )
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-10-21-page-projet/portage')
@@ -112,7 +138,7 @@ try {
   // Ce qui te demande quelque chose passe d'abord, et les terminées n'y sont pas.
   await nowRows.first().getByText(/^(Attend |Interrompue|En erreur)/).waitFor()
   await now.getByRole('link', { name: new RegExp(running.title) }).waitFor()
-  const finished = conversations.filter((entry) => entry.status === 'idle' && !entry.card)
+  const finished = conversations.filter((entry) => entry.status === 'idle' && !entry.card && entry.id !== withPr?.id)
   for (const entry of finished) {
     assert.equal(await now.getByRole('link', { name: entry.title, exact: true }).count(), 0, `${entry.title} est finie : elle reste à l’onglet`)
   }
@@ -139,13 +165,25 @@ try {
   const runningRow = section('En cours').getByRole('link', { name: new RegExp(running.title) })
   await runningRow.waitFor()
   // La branche vient de la liste d'état des worktrees, sans lecture par fil.
-  const trees = await (await context.request.get(`${base}/api/projects/${nimbus.id}/worktrees/status`)).json()
   const tree = trees.worktrees.find((entry) => entry.id === running.worktreeId)
   await runningRow.getByText(tree.branch ?? tree.name, { exact: true }).waitFor()
   // Une session de la racine dit « racine · branche ».
   await page.getByText(/^racine · /).first().waitFor()
   // La ligne qui attend dit depuis quand, en ambre.
   await section('Te demande quelque chose').getByText(/^Attend /).first().waitFor()
+
+  // ─── Le badge de PR (#115) ─────────────────────────────────────────────────
+  // Une PR en checks ne sort pas la session de « En cours » : elle travaille encore.
+  await runningRow.getByText('#18', { exact: true }).filter({ visible: true }).waitFor()
+  await runningRow.getByText('checks…', { exact: true }).filter({ visible: true }).waitFor()
+  if (withPr) {
+    const reviewRow = section('Prête à relire').getByRole('link', { name: new RegExp(withPr.title) })
+    await reviewRow.getByText('#17', { exact: true }).filter({ visible: true }).waitFor()
+    await reviewRow.getByText('prête', { exact: true }).filter({ visible: true }).waitFor()
+  }
+  // La racine ne porte pas de PR : c'est elle que les PR visent.
+  const rootRow = page.getByRole('link').filter({ hasText: /racine · / }).first()
+  assert.equal(await rootRow.getByText(/^#\d+$/).count(), 0, 'Une session de la racine n’a pas de badge')
 
   // Les terminées se plient après trois lignes.
   const done = section('Terminées')
@@ -189,6 +227,9 @@ try {
   await treeRow.waitFor()
   // L'en-tête porte la branche : la ligne ne la répète pas.
   assert.equal(await treeRow.getByText(tree.branch ?? tree.name, { exact: true }).count(), 0, 'La ligne perd sa colonne branche')
+  // Le badge de PR passe dans l'en-tête (#115) : la ligne ne le porte plus.
+  await treeGroup.getByText('#18', { exact: true }).filter({ visible: true }).waitFor()
+  assert.equal(await treeRow.getByText('#18', { exact: true }).count(), 0, 'La ligne perd son badge de PR')
   await page.getByRole('region', { name: /^main racine du projet/ }).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'b3-activite-par-worktree.png') })
   await page.getByRole('radio', { name: 'État', exact: true }).click()
@@ -216,7 +257,7 @@ try {
   await page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true }).getByRole('link', { name: /^Jalons/ }).waitFor()
 
   assert.deepEqual(errors, [])
-  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, filtre, pliage, téléphone ; captures dans ' + shots)
+  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, filtre, pliage, téléphone ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

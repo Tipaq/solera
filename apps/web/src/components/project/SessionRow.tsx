@@ -1,9 +1,10 @@
 import { FolderGit2, GitBranch } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { ConversationDto } from '@solera/protocol'
+import type { ConversationDto, ProjectPullRequestDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { StateDot } from '../chat/Signals'
+import { PrBadge } from './PrBadge'
 import { conversationPath } from '../../lib/conversation-route'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
@@ -34,7 +35,7 @@ const SUMMARY_TONE: Record<SessionSummary['tone'], string> = {
  * reprenne.
  */
 export const SESSION_ROW_COLUMNS =
-  'md:grid md:grid-cols-[0.375rem_1rem_12rem_minmax(0,1fr)_3.5rem_10rem_4rem] xl:grid-cols-[0.375rem_1rem_18rem_minmax(0,1fr)_3.5rem_15rem_4rem]'
+  'md:grid md:grid-cols-[0.375rem_1rem_12rem_minmax(0,1fr)_3.5rem_10rem_6.5rem_4rem] xl:grid-cols-[0.375rem_1rem_18rem_minmax(0,1fr)_3.5rem_15rem_7.5rem_4rem]'
 
 /**
  * Les mêmes, sous l'en-tête d'un worktree (planche B3) : la colonne de la branche tombe,
@@ -47,17 +48,17 @@ export const SESSION_ROW_COLUMNS_IN_TREE =
  * Une session sur une ligne, dans l'onglet Activité d'un projet.
  *
  * **Huit colonnes, toujours à la même place** (planche B4) : point d'état, agent, nom,
- * résumé d'une ligne, carte, worktree et branche, PR, âge. La PR n'a pas encore de
- * colonne : son badge arrive avec #115, qui l'insérera avant l'âge. Le résumé d'une
- * ligne n'existe pas encore non plus (#113) : en attendant, la colonne dit l'attente ou
- * l'erreur, et rien sinon.
+ * résumé d'une ligne, carte, worktree et branche, PR, âge. La PR est celle de la
+ * branche, quelle que soit la session qui l'a ouverte : la relecture d'une PR, qui vit
+ * dans le même arbre, porte le même badge. Le résumé d'une ligne n'existe pas encore
+ * (#113) : en attendant, la colonne dit l'attente ou l'erreur, et rien sinon.
  *
  * **Au téléphone** (planche E1), la ligne passe sur deux étages — le nom et l'âge, puis
- * le résumé et la branche — et la carte tombe : elle est le plus souvent dans le nom de
- * la branche.
+ * le résumé, la branche et la PR — et la carte tombe : elle est le plus souvent dans le
+ * nom de la branche.
  *
- * **Sous l'en-tête d'un worktree** (`inTree`, planche B3), la ligne perd sa colonne
- * worktree et branche : l'en-tête la dit pour toutes ses lignes.
+ * **Sous l'en-tête d'un worktree** (`inTree`, planche B3), la ligne perd ses colonnes
+ * worktree et branche, et PR : l'en-tête les dit pour toutes ses lignes.
  *
  * Toute la ligne mène au fil. La carte n'est donc pas un lien à part : un lien dans un
  * lien n'est pas du HTML valide, et son titre reste au survol.
@@ -68,12 +69,15 @@ export function SessionRow({
   summary,
   place,
   inTree = false,
+  pr = null,
 }: {
   conversation: Pick<ConversationDto, 'id' | 'projectId' | 'title' | 'agent' | 'card' | 'updatedAt'>
   marker: SessionMarker
   summary: SessionSummary | null
   place: SessionPlace
   inTree?: boolean
+  /** La PR de la branche de la session, si elle en a une. Jamais montrée sous un en-tête de worktree, qui la porte. */
+  pr?: ProjectPullRequestDto | null
 }) {
   const t = useTranslate()
   const age = shortAge(conversation.updatedAt)
@@ -136,7 +140,14 @@ export function SessionRow({
         </span>
 
         {inTree ? null : (
-          <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">{where}</span>
+          <>
+            <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">
+              {where}
+              {pr ? <PrBadge pr={pr} className="ml-1.5 shrink-0 md:hidden" /> : null}
+            </span>
+
+            <span className="hidden min-w-0 md:block">{pr ? <PrBadge pr={pr} /> : null}</span>
+          </>
         )}
 
         <span className="hidden text-right text-xs text-ink-faint tabular-nums md:block">{age}</span>
