@@ -14,7 +14,9 @@ import { api } from './api'
 
 const runKey = (cardId: string) => ['milestone-run', cardId]
 const planKey = (cardId: string) => ['milestone-plan', cardId]
-const activeKey = (projectId: string) => ['milestone-runs', projectId]
+/** Le préfixe des listes de jalons lancés : une pause doit rafraîchir celle du projet. */
+const ACTIVE_PREFIX = 'milestone-runs'
+const activeKey = (projectId: string) => [ACTIVE_PREFIX, projectId]
 
 /** Un jalon qui tourne se relit à ce rythme : c'est la vue de qui travaille où. */
 const LIVE_REFETCH_MS = 3_000
@@ -79,7 +81,7 @@ export function useUpdateMilestone(cardId: string) {
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)
       // Le bandeau et la frise suivent : une pause s'y lit, un arrêt les retire.
-      void queryClient.invalidateQueries({ queryKey: ['milestone-runs'] })
+      void queryClient.invalidateQueries({ queryKey: [ACTIVE_PREFIX] })
     },
   })
 }

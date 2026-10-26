@@ -328,6 +328,8 @@ try {
     cards: [
       runCard(running.card, 0, 'working', { conversationId: running.id }),
       runCard(first, 0, 'done'),
+      // Au repos sans PR : bloquée pour le pilotage, mais rien n'est demandé à personne.
+      runCard({ id: 'au-repos', number: 999, title: 'Au repos sans PR' }, 0, 'blocked', { blockReason: 'idle' }),
       runCard(second, 1, 'queued'),
       ...rest.map((card) => runCard(card, 2, 'waiting', { blockedBy: [blocker] })),
     ],
@@ -350,6 +352,8 @@ try {
   await banner.getByText('1/3 sessions occupées').waitFor()
   await banner.getByText(`1/${milestoneRun.cards.length} fusionnées`).waitFor()
   await banner.getByText(/^1 prête en file$/).waitFor()
+  // Une session au repos sans PR n'a rien demandé : elle ne compte pas dans « te demande ».
+  assert.equal(await banner.getByText(/te demande/).count(), 0)
   const milestoneLabel = `Jalon #${parent.number} · ses sessions`
   assert.equal((await headings.first().innerText()).replace(/\s*\d+$/, '').trim(), milestoneLabel, 'Le groupe du jalon passe en premier')
   await section(milestoneLabel.replace(/[#·]/g, '.')).getByRole('link', { name: new RegExp(running.title) }).waitFor()
@@ -373,6 +377,9 @@ try {
   await page.getByRole('button', { name: 'Mettre en pause' }).click()
   await page.getByRole('button', { name: 'Reprendre' }).waitFor()
   assert.equal(pauses, 1)
+  // Une carte sans enfant n'est pas un jalon : la vue ne promet pas de la lancer.
+  await page.goto(`${base}/p/${nimbus.id}/timeline/${running.card.number}`)
+  await page.getByText(`#${running.card.number} n’est pas un jalon`).waitFor()
 
   // C3 : la ligne du jalon dans la frise, qui mène à sa vue.
   await page.goto(`${base}/p/${nimbus.id}/timeline`)

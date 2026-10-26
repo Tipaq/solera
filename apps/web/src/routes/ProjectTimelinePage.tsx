@@ -109,11 +109,7 @@ export function ProjectTimelinePage() {
             <span className="min-w-0 truncate">{milestone.card.title}</span>
           </span>
           <span className="pl-5 text-xs text-ink-faint">
-            {milestone.card.dueAt === null
-              ? t('timeline.noDate')
-              : milestone.done === milestone.cards.length
-                ? t('timeline.delivered', { day: formatDay(milestone.card.dueAt) })
-                : relativeDate(milestone.card.dueAt)}
+            {dueLine(milestone)}
             {milestone.cards.length > 0
               ? ` · ${t('timeline.progress', { done: milestone.done, total: milestone.cards.length })}`
               : ''}
@@ -140,6 +136,13 @@ export function ProjectTimelinePage() {
     }
   })
 
+  /** L'échéance d'un jalon, telle que sa ligne la dit, lancé ou non. */
+  function dueLine(milestone: (typeof milestones)[number]): string {
+    if (milestone.card.dueAt === null) return t('timeline.noDate')
+    if (milestone.done === milestone.cards.length) return t('timeline.delivered', { day: formatDay(milestone.card.dueAt) })
+    return relativeDate(milestone.card.dueAt)
+  }
+
   /** La ligne d'un jalon lancé (C3) : même forme, l'exécution en plus. */
   function launchedRow(milestone: (typeof milestones)[number], run: MilestoneRunDto): TimelineRow {
     const counts = milestoneCounts(run)
@@ -159,6 +162,7 @@ export function ProjectTimelinePage() {
               <span className="tabular-nums">#{milestone.card.number}</span> {milestone.card.title}
             </span>
           </span>
+          <span className="pl-5 text-xs text-ink-faint">{dueLine(milestone)}</span>
           <span className="flex min-w-0 items-center gap-1.5 pl-5 text-xs text-ink-faint">
             <Badge tone={run.state === 'paused' ? 'caution' : 'accent'}>
               {t(run.state === 'paused' ? 'milestoneRun.paused' : 'milestoneRun.launched')}
@@ -192,7 +196,7 @@ export function ProjectTimelinePage() {
               </>
             ),
             title: entry
-              ? `#${card.number} ${card.title} · ${t(`milestone.status.${entry.status}`)}`
+              ? `#${card.number} ${card.title} · ${t(`milestoneRun.status.${entry.status}`)}`
               : `#${card.number} ${card.title}`,
             onOpen: () =>
               entry?.conversationId ? navigate(`/p/${projectId}/c/${entry.conversationId}`) : open(card.number),
@@ -259,13 +263,18 @@ export function ProjectTimelinePage() {
 /**
  * La teinte d'une barre d'un jalon lancé : son exécution. Une carte que le pilotage ne
  * suit pas (ajoutée sans être reprise, ou écartée) garde celle d'une carte au repos.
+ *
+ * Le retard l'emporte sur l'exécution tant que la carte n'est pas fusionnée : c'est la
+ * seule chose que la frise dit en rouge, et un jalon qui tourne ne l'efface pas.
  */
 function executionOf(
   entry: MilestoneRunCardDto | undefined,
   span: { loose: boolean; late: boolean },
 ): Pick<TimelineBar, 'tone' | 'loose'> {
   if (!entry) return { tone: span.late ? 'late' : 'neutral', loose: span.loose }
-  switch (milestoneToneOf(entry.status)) {
+  const tone = milestoneToneOf(entry.status)
+  if (span.late && tone !== 'merged') return { tone: 'late', loose: false }
+  switch (tone) {
     case 'merged':
       return { tone: 'done', loose: false }
     case 'working':

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { MilestoneRunCardDto, MilestoneRunDto } from '@solera/protocol'
 import { Badge, cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
-import { milestoneCounts, milestoneToneOf, type MilestoneTone } from '../../lib/milestone-view'
+import { milestoneCounts, milestoneOrder, milestoneToneOf, type MilestoneTone } from '../../lib/milestone-view'
 
 /** La teinte d'un segment : l'exécution de sa carte, du vert fusionné au lavis qui attend. */
 export const MILESTONE_SEGMENT_TONES: Record<MilestoneTone, string> = {
@@ -26,10 +26,10 @@ export function MilestoneSegments({ cards, className }: { cards: MilestoneRunCar
   const t = useTranslate()
   return (
     <span role="img" aria-label={t('milestoneRun.segments')} className={cx('flex min-w-0 gap-1', className)}>
-      {cards.map((card) => (
+      {milestoneOrder(cards).map((card) => (
         <span
           key={card.cardId}
-          title={`#${card.number} ${card.title} · ${t(`milestone.status.${card.status}`)}`}
+          title={`#${card.number} ${card.title} · ${t(`milestoneRun.status.${card.status}`)}`}
           className={cx('h-1.5 min-w-1.5 flex-1 rounded-full', MILESTONE_SEGMENT_TONES[milestoneToneOf(card.status)])}
         />
       ))}

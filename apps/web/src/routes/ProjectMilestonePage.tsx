@@ -8,7 +8,7 @@ import type { SessionSummary } from '../components/project/SessionRow'
 import { useActivityRows } from '../lib/activity-rows'
 import { useCards } from '../lib/cards'
 import { formatDay, relativeDate } from '../lib/dates'
-import { useTranslate, type MessageKey } from '../lib/i18n'
+import { useTranslate } from '../lib/i18n'
 import { milestoneCounts, milestoneQueue, milestoneToneOf, milestoneWaves, type MilestoneTone } from '../lib/milestone-view'
 import { useMilestoneRun, useUpdateMilestone } from '../lib/milestones'
 import { useProjects } from '../lib/projects'
@@ -48,10 +48,27 @@ export function ProjectMilestonePage() {
   const t = useTranslate()
   const { data: cards, isPending } = useCards(projectId)
   const card = cards?.find((entry) => String(entry.number) === number)
-  const { data: run, isPending: runPending } = useMilestoneRun(card?.id ?? '', Boolean(card))
+  // Une carte sans enfant n'est pas un jalon : le serveur refuserait de la lire, et elle
+  // ne peut pas être lancée. On le dit au lieu de promettre un lancement impossible.
+  const parent = Boolean(card && cards?.some((entry) => entry.parent?.id === card.id))
+  const { data: run, isPending: runPending, isError, error } = useMilestoneRun(card?.id ?? '', parent)
 
-  if (isPending || (card && runPending)) return null
+  if (isPending || (parent && runPending)) return null
   if (!projectId || !card) return <EmptyState icon={<Flag size={22} />} title={t('milestoneRun.notFound')} />
+  if (!parent) {
+    return (
+      <EmptyState
+        icon={<Flag size={22} />}
+        title={t('milestoneRun.notParent', { number: card.number })}
+        description={t('milestoneRun.notParentHint')}
+        action={
+          <Link to={`/p/${projectId}/board?carte=${card.number}`} className="text-sm text-accent hover:underline">
+            {t('milestoneRun.openCard')}
+          </Link>
+        }
+      />
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -64,7 +81,9 @@ export function ProjectMilestonePage() {
           {t('milestoneRun.back')}
         </Link>
       </div>
-      {run ? (
+      {isError ? (
+        <EmptyState icon={<Flag size={22} />} title={t('milestoneRun.loadFailed')} description={error.message} />
+      ) : run ? (
         <MilestoneView projectId={projectId} run={run} dueAt={card.dueAt} />
       ) : (
         <EmptyState
@@ -214,19 +233,6 @@ function queueLine(
   return `${t('milestoneRun.queue', { cards })} — ${next}`
 }
 
-const STATUS_WORDS: Record<MilestoneRunCardDto['status'], MessageKey> = {
-  waiting: 'milestoneRun.status.waiting',
-  queued: 'milestoneRun.status.queued',
-  launching: 'milestoneRun.status.launching',
-  working: 'milestoneRun.status.working',
-  reviewing: 'milestoneRun.status.reviewing',
-  merging: 'milestoneRun.status.merging',
-  blocked: 'milestoneRun.status.blocked',
-  done: 'milestoneRun.status.done',
-  abandoned: 'milestoneRun.status.abandoned',
-  failed: 'milestoneRun.status.failed',
-}
-
 /**
  * Une carte d'une vague : son point, son numéro et son titre, puis son état et ce que sa
  * session te demande, puis « après #N ». Elle mène à sa session, ou à défaut au board.
@@ -277,7 +283,7 @@ function WaveCard({
           <span className="min-w-0 truncate text-ink">{entry.title}</span>
         </span>
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-ink-soft">
-          {t(STATUS_WORDS[entry.status])}
+          {t(`milestoneRun.status.${entry.status}`)}
           {detail ? (
             <span className={cx('min-w-0 truncate', SUMMARY_TONES[detail.tone])}>· {detail.text}</span>
           ) : null}

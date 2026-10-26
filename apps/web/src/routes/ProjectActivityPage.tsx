@@ -293,7 +293,8 @@ export function ProjectActivityPage() {
               return renderSection(
                 `milestone-${run.cardId}`,
                 t('projectActivity.group.milestone', { number: run.cardNumber }),
-                'working',
+                // Le point de sa ligne la plus pressante : l'ambre si une session attend.
+                GROUP_MARKER[members[0]?.group ?? 'running'],
                 members,
                 false,
               )
