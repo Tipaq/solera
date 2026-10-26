@@ -27,6 +27,7 @@
     "test:images-ui": "node scripts/fil-images-ui-check.mjs",
     "test:explorer-ui": "node scripts/explorer-ui-check.mjs",
     "test:places-ui": "node scripts/places-ui-check.mjs",
+    "test:project-activity-ui": "node scripts/project-activity-ui-check.mjs",
     "test:composer-ui": "node scripts/composer-ui-check.mjs",
     "test:session-references-ui": "node scripts/session-references-ui-check.mjs",
     "test:worktree-gone-ui": "node scripts/worktree-gone-ui-check.mjs",

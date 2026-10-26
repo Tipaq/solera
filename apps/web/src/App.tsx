@@ -70,6 +70,14 @@ const OnboardingPage = lazy(() =>
   import('./routes/OnboardingPage').then((m) => ({ default: m.OnboardingPage })),
 )
 
+/**
+ * L'onglet Activité d'un projet, chargé à part : le paquet principal frôle la limite de
+ * précache, et cette vue n'est pas celle d'arrivée.
+ */
+const ProjectActivityPage = lazy(() =>
+  import('./routes/ProjectActivityPage').then((m) => ({ default: m.ProjectActivityPage })),
+)
+
 /** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
 function OnboardingExit() {
   const { data: projects } = useProjects()
@@ -192,6 +200,7 @@ export function App() {
               aussi, leur bande nommant la session plutôt que le projet. */}
           <Route path="/p/:projectId" element={<ProjectLayout />}>
             <Route index element={<ProjectOverviewPage />} />
+            <Route path="activity" element={<Suspense fallback={null}><ProjectActivityPage /></Suspense>} />
             <Route path="board" element={<BoardPage />} />
             <Route path="schedules" element={<SchedulePage />} />
             <Route path="timeline" element={<ProjectTimelinePage />} />

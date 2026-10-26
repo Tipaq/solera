@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import type { CardDto, ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
 import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from './conversation-status'
 import { isUnread } from './reads'
+import { threadState } from './signals'
 
 /**
  * Ce que les pages de lieu lisent d'une conversation : son statut vivant, et non celui
@@ -110,4 +111,16 @@ export function demandsOf(
     review: cards.filter((card) => card.column === 'review'),
     uncommitted: project?.git?.changedFiles ?? 0,
   }
+}
+
+/**
+ * Les sessions qui te demandent quelque chose : une question, une permission, **ou une
+ * erreur** — dans les deux cas c'est à toi d'agir. Le compteur ambre de l'onglet
+ * Activité, et son premier groupe.
+ */
+export function askingCount(live: LiveConversation[]): number {
+  return live.filter((entry) => {
+    const state = threadState({ status: entry.status, busy: entry.running, unread: false })
+    return state === 'broken' || state === 'awaiting'
+  }).length
 }

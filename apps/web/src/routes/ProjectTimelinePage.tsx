@@ -9,7 +9,8 @@ import { useTranslate } from '../lib/i18n'
 import { cardSpan, milestoneIdsOf, milestonesOf, unplacedOf, windowOf } from '../lib/timeline'
 
 /**
- * La **Chronologie** d'un projet : ses jalons en lignes, ses cartes en barres.
+ * Les **Jalons** d'un projet (l'onglet s'appelait « Chronologie » jusqu'à #110) : ses
+ * jalons en lignes, ses cartes en barres. L’adresse est restée `timeline`.
  *
  * Elle ne lit rien de neuf — les jalons se déduisent de la liste des cartes, un jalon
  * *étant* une carte (décision de la carte #32). Aucune requête de plus que le board.
