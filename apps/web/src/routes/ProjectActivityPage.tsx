@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronRight, Layers, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { EmptyState, cx } from '@solera/ui'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { EmptyState, SegmentedControl, cx } from '@solera/ui'
 import { Marker, SessionRow, type SessionMarker } from '../components/project/SessionRow'
+import { WorktreeGroups } from '../components/project/WorktreeGroups'
 import {
   ACTIVITY_GROUPS,
   isActiveFilter,
@@ -11,11 +12,17 @@ import {
   type ActivityGroup,
 } from '../lib/activity-groups'
 import { useActivityRows } from '../lib/activity-rows'
+import { useAllConversations } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
+import { useWorktreeStatuses } from '../lib/worktrees'
 
 /** Lignes montrées des terminées avant « … N de plus » : la planche B1 en plie au-delà. */
 const DONE_SHOWN = 3
+
+/** Le regroupement de la liste, porté par l'adresse : les réglages y renvoient. */
+type Grouping = 'state' | 'worktree'
+const GROUPING_PARAM = 'groupe'
 
 const GROUP_LABEL: Record<ActivityGroup, MessageKey> = {
   asking: 'projectActivity.group.asking',
@@ -43,8 +50,9 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * Les lignes viennent de `useActivityRows`, que le bloc « En ce moment » de l'Aperçu lit
  * aussi.
  *
- * Le regroupement par worktree (B3) est la carte #111 : la bascule « Grouper par » viendra
- * avec elle, et c'est pourquoi la barre ne la montre pas encore.
+ * La bascule « Grouper par » range les mêmes lignes sous leur arbre (planche B3, voir
+ * `WorktreeGroups`). Elle n'a de sens que dans un dépôt git : ailleurs, elle n'est pas
+ * montrée.
  */
 export function ProjectActivityPage() {
   const { projectId } = useParams()
@@ -52,10 +60,19 @@ export function ProjectActivityPage() {
   const [query, setQuery] = useState('')
   const [folded, setFolded] = useState<ReadonlySet<ActivityGroup>>(() => new Set())
   const [allDone, setAllDone] = useState(false)
+  const [params, setParams] = useSearchParams()
 
   const { data: projects, isPending } = useProjects()
   const project = projects?.find((entry) => entry.id === projectId)
   const rows = useActivityRows(projectId, project)
+  // Les mêmes requêtes que celles des lignes, partagées par React Query : le regroupement
+  // par worktree lit aussi les arbres sans session et la date de leur dernière session.
+  const { data: trees } = useWorktreeStatuses(project?.git ? projectId : undefined)
+  const { data: conversations } = useAllConversations()
+  const mine = useMemo(
+    () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
+    [conversations, projectId],
+  )
 
   const filter = useMemo(() => parseActivityFilter(query), [query])
   const shown = useMemo(
@@ -73,6 +90,18 @@ export function ProjectActivityPage() {
 
   if (isPending) return null
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
+
+  const grouping: Grouping = project.git && params.get(GROUPING_PARAM) === 'worktree' ? 'worktree' : 'state'
+  const setGrouping = (next: Grouping) =>
+    setParams(
+      (current) => {
+        const updated = new URLSearchParams(current)
+        if (next === 'worktree') updated.set(GROUPING_PARAM, 'worktree')
+        else updated.delete(GROUPING_PARAM)
+        return updated
+      },
+      { replace: true },
+    )
 
   // Les compteurs disent tout le projet, pas ce que le filtre laisse : ils répondent à
   // « où en est-on », le filtre à « où est-ce ».
@@ -123,10 +152,36 @@ export function ProjectActivityPage() {
             className="min-h-9 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-ink-faint"
           />
         </div>
+        {project.git ? (
+          <div className="hidden items-center gap-2 sm:flex">
+            <span aria-hidden className="text-sm text-ink-faint">
+              {t('projectActivity.groupBy.label')}
+            </span>
+            <SegmentedControl<Grouping>
+              label={t('projectActivity.groupBy.label')}
+              value={grouping}
+              onChange={setGrouping}
+              segments={[
+                { value: 'state', label: t('projectActivity.groupBy.state') },
+                { value: 'worktree', label: t('projectActivity.groupBy.worktree') },
+              ]}
+            />
+          </div>
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {rows.length === 0 ? (
+        {grouping === 'worktree' ? (
+          <WorktreeGroups
+            projectId={projectId}
+            rows={shown}
+            status={trees}
+            rootGit={project.git}
+            conversations={mine}
+            filtering={isActiveFilter(filter)}
+            words={filter.words}
+          />
+        ) : rows.length === 0 ? (
           <EmptyState icon={<Layers size={20} />} title={t('projectActivity.empty')} description={t('projectActivity.emptyHint')} />
         ) : shown.length === 0 ? (
           <EmptyState title={t('projectActivity.noMatch')} />

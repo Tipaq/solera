@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { UNREADABLE, assessWorktree, defaultBase, listWorktrees } from './assess.js'
+import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches } from './assess.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 
 /**
@@ -251,7 +251,13 @@ export class WorktreeStatusService {
         Math.max(b.lastEditAt ?? 0, b.lastCommitAt ?? 0) - Math.max(a.lastEditAt ?? 0, a.lastCommitAt ?? 0),
     )
 
-    return { base, computedAt: Date.now(), fresh: true, worktrees: result }
+    const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
+    const branches = await looseBranches(repo, base, checkedOut).catch((err: unknown) => {
+      console.warn('[worktrees] branches illisibles :', err)
+      return []
+    })
+
+    return { base, computedAt: Date.now(), fresh: true, worktrees: result, branches }
   }
 
   /**

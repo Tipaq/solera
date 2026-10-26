@@ -368,3 +368,53 @@ export async function assessWorktree(
     lastEditAt: await lastEdit(entry.path, entries.map((e) => e.path)),
   }
 }
+
+/** Branche locale qu'aucun arbre n'a extraite. */
+export interface LooseBranch {
+  name: string
+  /** Rien que la base n'ait déjà : fusionnée, squash et cherry-pick compris. */
+  merged: boolean
+}
+
+/** Au-delà, une branche n'est plus jugée sur son contenu : elle compte pour non fusionnée. */
+const MAX_BRANCHES_JUDGED = 100
+
+/**
+ * Les branches locales qu'aucun arbre n'a extraites, la base exceptée, jugées comme un
+ * arbre l'est : par leur contenu et non par leur ancestralité. L'ancestralité
+ * d'abord, en une commande pour toutes ; `merge-tree` ensuite, pour les seules qui ne
+ * sont pas déjà ancêtres de la base.
+ */
+export async function looseBranches(
+  repo: string,
+  base: string | null,
+  checkedOut: ReadonlySet<string>,
+): Promise<LooseBranch[]> {
+  const listed = await git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
+  if (listed.code !== 0) return []
+  const names = listed.stdout
+    .split('\n')
+    .map((name) => name.trim())
+    .filter((name) => name && name !== base && !checkedOut.has(name))
+  if (!base || names.length === 0) return names.map((name) => ({ name, merged: false }))
+
+  const ancestors = await git(repo, ['for-each-ref', '--format=%(refname:short)', `--merged=${base}`, 'refs/heads/'])
+  const merged = new Set(ancestors.code === 0 ? ancestors.stdout.split('\n').map((name) => name.trim()) : [])
+  const baseTree = await line(repo, ['rev-parse', `${base}^{tree}`]).catch(() => null)
+  let judged = 0
+  const result: LooseBranch[] = []
+  for (const name of names) {
+    if (merged.has(name)) {
+      result.push({ name, merged: true })
+      continue
+    }
+    if (!baseTree || judged >= MAX_BRANCHES_JUDGED) {
+      result.push({ name, merged: false })
+      continue
+    }
+    judged += 1
+    const tree = await mergedTree(repo, base, `refs/heads/${name}`)
+    result.push({ name, merged: tree !== null && !tree.conflicts && tree.tree === baseTree })
+  }
+  return result
+}

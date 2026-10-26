@@ -183,9 +183,15 @@ export function DraftConversationPage() {
   // retomber dans le bon arbre sans y penser. Le plus récent l'emporte, une carte ayant
   // pu changer de branche en route.
   const cardWorktree = card?.conversations.findLast((session) => session.worktreeId)?.worktreeId
-  const [worktreeId, setWorktreeId] = useState<string | null>(null)
+  // `?worktree=` ouvre le brouillon dans un arbre déjà là : « Reprendre » un arbre sans
+  // session, depuis l'Activité groupée par worktree (#111).
+  const [worktreeId, setWorktreeId] = useState<string | null>(() => params.get('worktree'))
   const [worktreeTouched, setWorktreeTouched] = useState(false)
-  const effectiveWorktreeId = splitting ? null : worktreeTouched ? worktreeId : (cardWorktree ?? worktreeId)
+  const effectiveWorktreeId = splitting
+    ? null
+    : worktreeTouched || params.has('worktree')
+      ? worktreeId
+      : (cardWorktree ?? worktreeId)
 
   // Le préréglage du projet d'abord, les défauts du compte ensuite : un projet qui
   // nomme ses serveurs MCP ou ses répertoires supplémentaires parle de lui-même, et

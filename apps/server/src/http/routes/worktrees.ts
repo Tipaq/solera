@@ -85,7 +85,7 @@ export function registerWorktreeRoutes(
     const { id } = request.params as { id: string }
     const project = loadProject(id, user.id)
     if (!(await readGitStatus(project.workspacePath))) {
-      return { base: null, computedAt: Date.now(), fresh: true, worktrees: [] }
+      return { base: null, computedAt: Date.now(), fresh: true, worktrees: [], branches: [] }
     }
     return worktreeStatus.get(project)
   })

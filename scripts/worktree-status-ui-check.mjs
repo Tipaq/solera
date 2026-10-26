@@ -131,7 +131,7 @@ try {
   console.log('OK : états calculés sur la démo.')
 
   // « À décider » est réservé à ce qu'un agent demande : une fusion n'y propose plus de
-  // nettoyer l'arbre, qui reste dans les Chantiers.
+  // nettoyer l'arbre, qui reste dans l'Activité, sans session.
   const { page, errors, project } = desktop
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('heading', { level: 1 }).first().waitFor()
@@ -140,24 +140,33 @@ try {
   assert.ok(existsSync(docs), "L'arbre fusionné reste en place")
   console.log('OK : une fusion ne propose rien dans « À décider ».')
 
-  // Vue Chantiers, dans les réglages du projet, à la place de l'ancienne liste.
+  // Les réglages ne gardent qu'un renvoi vers l'Activité groupée par worktree (#111).
   await page.goto(`${base}/p/${project.id}/settings#worktrees`)
-  const board = page.locator('#worktrees').locator('..')
-  await board.getByRole('heading', { name: 'Chantiers' }).waitFor()
-  const names = await board.locator('li > div > div > span.font-mono').allInnerTexts()
-  assert.deepEqual(names, ['feat/gone', 'feat/offline-cache', 'feat/radar-prefetch', 'docs/readme', 'fix/squashed-typo'], `ordre : ${names}`)
-  await board.getByText('Créé hors de Solera', { exact: true }).first().waitFor()
-  await board.getByText('Introuvable', { exact: true }).first().waitFor()
-  await board.getByRole('link', { name: 'Add offline caching for forecasts' }).waitFor()
-  await board.getByRole('link', { name: /^Carte #\d+$/ }).first().waitFor()
-  await board.scrollIntoViewIfNeeded()
-  await board.screenshot({ path: join(shots, 'board-desktop.png') })
-  assert.deepEqual(errors, [])
-  console.log('OK : vue Chantiers sur grand écran.')
+  await page.getByRole('button', { name: "Ouvrir l'Activité par worktree" }).click()
+  await page.waitForURL(`**/p/${project.id}/activity?groupe=worktree`)
+  await page.getByRole('radio', { name: 'Worktree', checked: true }).waitFor()
 
-  // Nettoyer l'arbre fusionné : la confirmation dit qu'il n'y a rien à perdre, propose
+  // Les arbres habités ont leur groupe ; les autres sont « Sans session », fusionnés
+  // d'abord, introuvable en dernier.
+  const region = (name) => page.getByRole('region', { name: new RegExp(`^${name.replace(/[/.]/g, '\\$&')}`) })
+  const offline = region('feat/offline-cache')
+  await offline.getByRole('link', { name: /Add offline caching for forecasts/ }).waitFor()
+  await offline.getByText(/\d+ modifiés?$/).first().waitFor()
+  const idle = region('Sans session')
+  await idle.waitFor()
+  const idleNames = await idle.locator('li span.font-mono').allInnerTexts()
+  assert.deepEqual(idleNames.slice(0, 2).sort(), ['docs/readme', 'fix/squashed-typo'], `ordre : ${idleNames}`)
+  assert.equal(idleNames.at(-1), 'feat/gone', `ordre : ${idleNames}`)
+  await idle.getByText('dossier absent du disque', { exact: true }).waitFor()
+  await idle.getByRole('button', { name: 'Oublier', exact: true }).waitFor()
+  await idle.getByRole('button', { name: 'Nettoyer les 2 fusionnés' }).waitFor()
+  await page.screenshot({ path: join(shots, 'activity-worktrees-desktop.png') })
+  assert.deepEqual(errors, [])
+  console.log('OK : Activité groupée par worktree sur grand écran.')
+
+  // Nettoyer un arbre fusionné : la confirmation dit qu'il n'y a rien à perdre, propose
   // la branche, puis l'arbre et la branche disparaissent.
-  const squashedRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }) }).first()
+  const squashedRow = idle.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }) }).first()
   await squashedRow.getByRole('button', { name: 'Nettoyer', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nettoyer fix/squashed-typo' })
   await dialog.getByText("Rien ici que la base n'ait déjà.", { exact: true }).waitFor()
@@ -170,10 +179,19 @@ try {
   assert.equal(git(repoRoot, 'branch', '--list', 'fix/squashed-typo'), '', 'La branche est supprimée')
   console.log('OK : nettoyage en un geste.')
 
-  // Un arbre non commité : la confirmation dit ce qui serait perdu, et la session qui y
-  // vit, archivée d'office pour ne pas repartir à la racine sans le dire.
-  const offlineRow = board.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'feat/offline-cache' }) }).first()
-  await offlineRow.getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  // « Nettoyer les N fusionnés » : le reste des fusionnés part d'un seul geste.
+  await idle.getByRole('button', { name: 'Nettoyer le fusionné' }).click()
+  const batch = page.getByRole('dialog', { name: 'Nettoyer le fusionné' })
+  await batch.getByText('docs/readme', { exact: true }).waitFor()
+  await batch.getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  await batch.waitFor({ state: 'hidden' })
+  await page.locator('span.font-mono', { hasText: 'docs/readme' }).waitFor({ state: 'detached' })
+  assert.ok(!existsSync(docs), 'Le dossier fusionné est retiré')
+  console.log('OK : nettoyage des fusionnés en un geste.')
+
+  // Un arbre habité et non commité se nettoie depuis son en-tête : la confirmation dit
+  // ce qui serait perdu, et la session qui y vit, archivée d'office.
+  await offline.getByRole('button', { name: 'Nettoyer feat/offline-cache' }).click()
   const dirtyDialog = page.getByRole('dialog', { name: 'Nettoyer feat/offline-cache' })
   await dirtyDialog.getByText(/fichiers? modifiés?/).first().waitFor()
   const archive = dirtyDialog.getByRole('switch', { name: /^Archiver 1 session qui vit dans l'arbre$/ })
@@ -188,15 +206,13 @@ try {
 
   // Téléphone : la vue ne déborde pas.
   const phone = await session({ width: 390, height: 844 }, true)
-  await phone.page.goto(`${base}/p/${project.id}/settings#worktrees`)
-  const phoneBoard = phone.page.locator('#worktrees').locator('..')
-  await phoneBoard.getByRole('heading', { name: 'Chantiers' }).waitFor()
-  await phoneBoard.scrollIntoViewIfNeeded()
+  await phone.page.goto(`${base}/p/${project.id}/activity?groupe=worktree`)
+  await phone.page.getByRole('region', { name: /^Sans session/ }).waitFor()
   await delay(600)
   assert.ok(await phone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Pas de défilement horizontal au téléphone')
-  await phoneBoard.screenshot({ path: join(shots, 'board-phone.png') })
+  await phone.page.screenshot({ path: join(shots, 'activity-worktrees-phone.png') })
   assert.deepEqual(phone.errors, [])
-  console.log('OK : vue Chantiers au téléphone.')
+  console.log('OK : Activité par worktree au téléphone.')
   console.log(`Captures : ${shots}`)
 } finally {
   await browser?.close()

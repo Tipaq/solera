@@ -1,6 +1,7 @@
 import {
   CircleDot,
   FileText,
+  FolderGit2,
   FolderOpen,
   GitBranch,
   ImagePlus,
@@ -33,7 +34,6 @@ import type { SettingGroup } from '../components/chat/ComposerSettings'
 import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
 import { ProjectAvatar } from '../components/ProjectAvatar'
-import { WorktreeBoard } from '../components/WorktreeBoard'
 import {
   Badge,
   Banner,
@@ -121,7 +121,23 @@ export function ProjectPage() {
         </CardBody>
       </Card>
 
-      <WorktreeBoard projectId={project.id} isRepository={project.git !== null} />
+      {/* La vue Chantiers a rejoint l'Activité, groupée par worktree (#111) : les
+          réglages n'en gardent qu'un renvoi, pour ne pas tenir la même vue à deux places. */}
+      {project.git ? (
+        <Card>
+          <div id="worktrees" className="scroll-mt-4" />
+          <CardHeader
+            title={t('project.worktrees.title')}
+            description={t('project.worktrees.description')}
+            icon={<FolderGit2 size={16} />}
+          />
+          <CardBody>
+            <Button variant="ghost" onClick={() => navigate(`/p/${project.id}/activity?groupe=worktree`)}>
+              {t('project.worktrees.open')}
+            </Button>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader

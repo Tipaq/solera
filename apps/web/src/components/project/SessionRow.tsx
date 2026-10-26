@@ -37,6 +37,13 @@ export const SESSION_ROW_COLUMNS =
   'md:grid md:grid-cols-[0.375rem_1rem_12rem_minmax(0,1fr)_3.5rem_10rem_4rem] xl:grid-cols-[0.375rem_1rem_18rem_minmax(0,1fr)_3.5rem_15rem_4rem]'
 
 /**
+ * Les mêmes, sous l'en-tête d'un worktree (planche B3) : la colonne de la branche tombe,
+ * puisque l'en-tête la porte.
+ */
+export const SESSION_ROW_COLUMNS_IN_TREE =
+  'md:grid md:grid-cols-[0.375rem_1rem_12rem_minmax(0,1fr)_3.5rem_4rem] xl:grid-cols-[0.375rem_1rem_18rem_minmax(0,1fr)_3.5rem_4rem]'
+
+/**
  * Une session sur une ligne, dans l'onglet Activité d'un projet.
  *
  * **Huit colonnes, toujours à la même place** (planche B4) : point d'état, agent, nom,
@@ -49,6 +56,9 @@ export const SESSION_ROW_COLUMNS =
  * le résumé et la branche — et la carte tombe : elle est le plus souvent dans le nom de
  * la branche.
  *
+ * **Sous l'en-tête d'un worktree** (`inTree`, planche B3), la ligne perd sa colonne
+ * worktree et branche : l'en-tête la dit pour toutes ses lignes.
+ *
  * Toute la ligne mène au fil. La carte n'est donc pas un lien à part : un lien dans un
  * lien n'est pas du HTML valide, et son titre reste au survol.
  */
@@ -57,11 +67,13 @@ export function SessionRow({
   marker,
   summary,
   place,
+  inTree = false,
 }: {
   conversation: Pick<ConversationDto, 'id' | 'projectId' | 'title' | 'agent' | 'card' | 'updatedAt'>
   marker: SessionMarker
   summary: SessionSummary | null
   place: SessionPlace
+  inTree?: boolean
 }) {
   const t = useTranslate()
   const age = shortAge(conversation.updatedAt)
@@ -85,7 +97,7 @@ export function SessionRow({
         to={conversationPath(conversation)}
         className={cx(
           'grid grid-cols-[0.375rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-2.5 md:items-center md:py-2',
-          SESSION_ROW_COLUMNS,
+          inTree ? SESSION_ROW_COLUMNS_IN_TREE : SESSION_ROW_COLUMNS,
           'hover:bg-sunken/60 focus-visible:bg-sunken/60 focus-visible:outline-none',
         )}
       >
@@ -123,7 +135,9 @@ export function SessionRow({
           ) : null}
         </span>
 
-        <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">{where}</span>
+        {inTree ? null : (
+          <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">{where}</span>
+        )}
 
         <span className="hidden text-right text-xs text-ink-faint tabular-nums md:block">{age}</span>
       </Link>
