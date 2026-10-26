@@ -96,7 +96,10 @@ try {
   await page.keyboard.press('Escape')
   await tooltip.waitFor({ state: 'hidden' })
 
-  const menu = page.getByRole('button', { name: 'Actions du projet Nimbus', exact: true })
+  // Un déclencheur de menu porte aussi une infobulle : elle se tait quand le menu s'ouvre,
+  // et le focus revient au déclencheur à la fermeture. Les actions du projet ont quitté la
+  // barre latérale ; celles d'une conversation y sont restées.
+  const menu = page.getByRole('button', { name: 'Actions de la conversation', exact: true }).first()
   await menu.focus()
   await page.keyboard.press('Enter')
   await page.getByRole('menu').waitFor()
@@ -105,10 +108,10 @@ try {
   await page.getByRole('menu').waitFor({ state: 'hidden' })
   assert.equal(await menu.evaluate((element) => element === document.activeElement), true)
 
-  const addProject = page.getByRole('link', { name: 'Ajouter un projet', exact: true })
+  const addProject = page.getByRole('link', { name: 'Créer un projet', exact: true })
   await addProject.hover()
   await tooltip.waitFor()
-  assert.equal(await tooltip.textContent(), 'Ajouter un projet')
+  assert.equal(await tooltip.textContent(), 'Créer un projet')
   const box = await tooltip.boundingBox()
   assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 1440)
   await page.screenshot({ path: '/tmp/solera-tooltips-desktop.png' })

@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Composants réels et images locales, sans daemon ni base de production.
 const web = fileURLToPath(new URL('../apps/web/', import.meta.url))
@@ -18,9 +19,17 @@ let diagnostics = ''
 for (const stream of [vite.stdout, vite.stderr]) stream.on('data', (chunk) => { diagnostics = (diagnostics + chunk).slice(-6000) })
 let browser
 
+// La visionneuse ouverte depuis le fil : celle du panneau (`panel/ImageView.tsx`), en
+// boîte de dialogue. Le panneau lui-même est vérifié par `frontend-ui-check`.
 async function mount(page) {
+  // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
+  const modules = {
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/conversation-config.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/ImageThumbnail.tsx'),
+  }
   await page.goto(origin)
-  await page.evaluate(async () => {
+  await page.evaluate(async (modules) => {
     const refresh = (await import('/@react-refresh')).default
     refresh.injectIntoGlobalHook(window)
     window.$RefreshReg$ = () => {}
@@ -33,8 +42,10 @@ async function mount(page) {
     await import('/src/styles/index.css')
     const React = (await import('/node_modules/.vite/deps/react.js')).default
     const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+    const { QueryClient, QueryClientProvider } = await import(modules.query)
+    const { MemoryRouter } = await import(modules.router)
+    const { TooltipProvider } = await import(modules.ui)
     const { Markdown } = await import('/src/components/chat/Markdown.tsx')
-    const { ImageGallery } = await import('/src/components/chat/ImageViewer.tsx')
     const { readableView } = await import('/src/components/tools/registry.tsx')
     const canvas = document.createElement('canvas')
     canvas.width = 1600; canvas.height = 1000
@@ -42,15 +53,20 @@ async function mount(page) {
     ctx.fillStyle = '#367a90'; ctx.fillRect(0, 0, 1600, 1000)
     ctx.fillStyle = '#efc873'; ctx.fillRect(400, 200, 800, 600)
     const src = canvas.toDataURL('image/png')
-    const root = document.getElementById('check')
-    createRoot(root).render(React.createElement('main', null,
-      React.createElement(Markdown, { text: `![markdown.png](${src})` }),
-      React.createElement(ImageGallery, { images: [{ src, alt: 'generation.png' }, { src: canvas.toDataURL('image/jpeg'), alt: 'photo.jpg' }] }),
-      readableView({ name: 'Read', input: { file_path: 'read.png' }, status: 'completed', output: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: src.split(',')[1] } }] }),
-      readableView({ name: 'mcp_image', input: {}, status: 'completed', output: { content: [{ type: 'image', mimeType: 'image/png', data: src.split(',')[1] }] } })
-    ))
-  })
+    const data = src.split(',')[1]
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const h = React.createElement
+    createRoot(document.getElementById('check')).render(
+      h(QueryClientProvider, { client }, h(MemoryRouter, null, h(TooltipProvider, null, h('main', null,
+        h(Markdown, { text: `![markdown.png](${src})` }),
+        readableView({ name: 'Read', input: { file_path: 'shots/read.png' }, status: 'completed', output: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }] }),
+        readableView({ name: 'ViewImage', input: { path: 'shots/view.png' }, status: 'completed', output: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }] }),
+      )))),
+    )
+  }, modules)
 }
+
+const percent = async (dialog) => Number((await dialog.getByRole('status').textContent()).replace(/\D/g, ''))
 
 try {
   for (let i = 0; i < 150; i++) {
@@ -60,75 +76,81 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1440, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: width < 700, isMobile: width < 700, permissions: ['clipboard-read', 'clipboard-write'], serviceWorkers: 'block' })
+    const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: width < 700, isMobile: width < 700, serviceWorkers: 'block' })
     const page = await context.newPage()
     page.setDefaultTimeout(10000)
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.route(`${origin}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+    await page.route(`${origin}/api/**`, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }))
     await mount(page)
-    const opener = page.getByRole('button', { name: 'Agrandir l’image : generation.png', exact: true })
+
     console.log(width, 'ouverture')
+    const opener = page.getByRole('button', { name: 'shots/read.png', exact: true })
     await opener.click()
-    const dialog = page.getByRole('dialog')
-    await dialog.getByText('1600 × 1000').waitFor()
-    await dialog.getByRole('button', { name: 'Zoomer', exact: true }).click()
-    await dialog.getByText('125%', { exact: true }).waitFor()
-    const surface = dialog.locator('.touch-none')
-    const box = await surface.boundingBox()
-    await page.mouse.move(box.x + 100, box.y + 100)
-    await page.mouse.down()
-    await page.mouse.move(box.x + 130, box.y + 120)
-    await page.mouse.up()
-    assert.match(await dialog.locator('img').getAttribute('style'), /translate\(30px, 20px\)/)
-    await dialog.getByRole('button', { name: 'Faire pivoter' }).click()
-    assert.match(await dialog.locator('img').getAttribute('style'), /rotate\(90deg\)/)
-    await dialog.getByRole('button', { name: 'Adapter à l’écran' }).click()
-    await dialog.getByText('100%', { exact: true }).waitFor()
-    const downloaded = page.waitForEvent('download')
-    await dialog.getByRole('button', { name: 'Télécharger l’original' }).click()
-    assert.equal((await downloaded).suggestedFilename(), 'generation.png')
-    console.log(width, 'copie')
-    await dialog.getByRole('button', { name: 'Copier l’image' }).click()
-    await dialog.getByText('Image copiée', { exact: true }).waitFor()
-    assert.ok(await page.evaluate(async () => (await navigator.clipboard.read())[0].types.includes('image/png')))
-    await page.keyboard.press('ArrowRight')
-    await dialog.getByRole('heading', { name: 'photo.jpg' }).waitFor()
-    console.log(width, 'copie')
-    await dialog.getByRole('button', { name: 'Copier l’image' }).click()
-    await dialog.getByText('Image copiée', { exact: true }).waitFor()
-    await dialog.getByRole('button', { name: 'Taille réelle' }).click()
-    assert.ok(await dialog.locator('img').evaluate((img) => img.getBoundingClientRect().width >= 1599))
-    await dialog.getByRole('button', { name: 'Adapter à l’écran' }).click()
-    if (width < 700) {
+    const dialog = page.getByRole('dialog', { name: 'read.png en plein écran' })
+    await dialog.waitFor()
+    const image = dialog.locator('img')
+    await page.waitForFunction(() => document.querySelector('[role=dialog] img')?.naturalWidth === 1600)
+    const fit = await percent(dialog)
+    assert.ok(fit > 0 && fit < 100, `ajustée à ${fit} %`)
+    assert.ok(await image.evaluate((img) => img.getBoundingClientRect().width <= innerWidth))
+
+    console.log(width, 'zoom et glissement')
+    await dialog.getByRole('button', { name: 'Agrandir', exact: true }).click()
+    assert.equal(await percent(dialog), Math.round(fit * 1.25))
+    await dialog.getByRole('button', { name: 'Réduire', exact: true }).click()
+    assert.equal(await percent(dialog), fit)
+    const box = await dialog.locator('.touch-none').boundingBox()
+    if (width >= 700) {
+      await page.mouse.move(box.x + 100, box.y + 100)
+      await page.mouse.down()
+      await page.mouse.move(box.x + 130, box.y + 120)
+      await page.mouse.up()
+      assert.match(await image.getAttribute('style'), /translate\(30px, 20px\)/)
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.wheel(0, -100)
+      await page.waitForFunction((fit) => Number(document.querySelector('[role=dialog] [role=status]').textContent.replace(/\D/g, '')) > fit, fit)
+    } else {
       const cdp = await context.newCDPSession(page)
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 130, y: 400, id: 1 }, { x: 230, y: 400, id: 2 }] })
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 90, y: 400, id: 1 }, { x: 270, y: 400, id: 2 }] })
+      const y = box.y + box.height / 2
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 130, y, id: 1 }, { x: 230, y, id: 2 }] })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 110, y, id: 1 }, { x: 250, y, id: 2 }] })
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 80, y, id: 1 }, { x: 280, y, id: 2 }] })
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-      assert.ok(await dialog.locator('img').evaluate((el) => Number(el.style.transform.match(/scale\(([^)]+)/)[1]) > 1))
-      await dialog.getByRole('button', { name: 'Adapter à l’écran' }).click()
       await cdp.detach()
+      assert.ok(await percent(dialog) > fit, 'le pincement zoome')
     }
+
+    console.log(width, 'raccourcis')
+    await page.keyboard.press('0')
+    await dialog.getByText('100 %', { exact: true }).waitFor()
+    assert.ok(await image.evaluate((img) => img.getBoundingClientRect().width >= 1599))
+    await page.keyboard.press('f')
+    await page.waitForFunction((fit) => document.querySelector('[role=dialog] [role=status]').textContent.replace(/\D/g, '') === String(fit), fit)
+    assert.equal(await image.evaluate((img) => img.style.transform), 'translate(0px, 0px)')
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
     await page.screenshot({ path: `/tmp/image-viewer-${width}.png` })
+
     console.log(width, 'fermeture')
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'hidden' })
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Agrandir l’image : generation.png')
-    await page.getByRole('button', { name: 'Agrandir l’image : read.png', exact: true }).click()
-    await dialog.waitFor()
-    await dialog.getByRole('button', { name: 'Fermer', exact: true }).click()
-    await page.getByRole('button', { name: 'Agrandir l’image : Visualisateur d’images', exact: true }).click()
-    await dialog.waitFor()
-    console.log(width, 'fermeture')
+    // Radix rend le focus à la vignette qui a ouvert la visionneuse.
+    assert.equal(await opener.evaluate((element) => element === document.activeElement), true)
+    await page.getByRole('button', { name: 'shots/view.png', exact: true }).click()
+    const view = page.getByRole('dialog', { name: 'view.png en plein écran' })
+    await view.waitFor()
+    await view.getByRole('button', { name: 'Fermer', exact: true }).click()
+    await view.waitFor({ state: 'hidden' })
+    await page.getByRole('img', { name: 'markdown.png', exact: true }).click()
+    const markdown = page.getByRole('dialog', { name: 'markdown.png en plein écran' })
+    await markdown.waitFor()
     await page.keyboard.press('Escape')
-    await page.getByRole('button', { name: 'markdown.png', exact: true }).click()
-    await dialog.getByRole('heading', { name: 'markdown.png' }).waitFor()
-    await page.keyboard.press('Escape')
+    await markdown.waitFor({ state: 'hidden' })
     assert.deepEqual(errors, [])
     await context.close()
   }
-  console.log('OK : galerie, outils Read/MCP, zoom, rotation, taille réelle, copie PNG/JPEG, téléchargement, clavier et focus ; ordinateur et téléphone.')
+  console.log('OK : vignettes Read et ViewImage, image markdown, zoom, glissement, molette, pincement, raccourcis, Échap et focus ; ordinateur et téléphone.')
 } finally {
   await browser?.close()
   vite.kill('SIGTERM')
