@@ -1538,10 +1538,10 @@ export class AgentRequests {
       }
 
       // Revérifié jusqu'au bout : entre l'accord et la fin du tour, le fil a pu être
-      // archivé ou rangé ailleurs, et un travail de fond a pu partir. Celui-là se laisse
-      // finir, comme un tour ; le reste rend l'accord caduc.
+      // archivé ou rangé ailleurs, et un travail de fond a pu partir. Tout cela rend
+      // l'accord caduc, travail de fond compris : on n'attend pas sa fin, qui n'a pas de
+      // terme connu, pour déplacer le fil sans que personne ne l'ait vu partir.
       const stale = recheck(this.ctx.db, this.ctx.config, request, filing.fromProjectId)
-      if (stale === 'background_running') continue
       if (stale) {
         this.resolveFiling(request, target, 'impossible', stale)
         continue

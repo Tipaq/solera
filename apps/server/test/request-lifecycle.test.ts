@@ -180,16 +180,21 @@ test('un déplacement accordé tard est revérifié au clic, et devient « plus 
   assert.equal((await decideFiling(cut.id, 'accepted')).json().reason, 'option_disabled')
 })
 
-test('un déplacement accordé attend un travail de fond au lieu de le couper', async (t) => {
-  const { db, deposit, requests, row, decideFiling } = await harness(t)
+test('un déplacement accordé devient « plus applicable » si un travail de fond part avant d’être appliqué', async (t) => {
+  const { db, deposit, requests, row, lastEvent, decideFiling } = await harness(t)
   const move = await deposit('move_conversation', { project: 'elsewhere' })
   assert.equal((await decideFiling(move.id, 'accepted')).statusCode, 200)
   assert.notEqual(row(move.id).acceptedAt, null)
 
-  // Accordé sans travail de fond, puis il en part un avant que le balayage applique.
+  // Accordé sans travail de fond, puis il en part un avant que le balayage applique :
+  // on n'attend pas sa fin, l'accord tombe.
   db.update(conversations).set({ backgroundCount: 1 }).where(eq(conversations.id, 'session')).run()
   await requests.sweep()
-  assert.equal(row(move.id).resolvedAt, null)
+  assert.notEqual(row(move.id).resolvedAt, null)
+  assert.deepEqual(
+    [lastEvent('session', 'filing.resolved')?.decision, lastEvent('session', 'filing.resolved')?.reason],
+    ['impossible', 'background_running'],
+  )
   assert.equal(db.select().from(conversations).where(eq(conversations.id, 'session')).get()!.projectId, 'project')
 })
 
