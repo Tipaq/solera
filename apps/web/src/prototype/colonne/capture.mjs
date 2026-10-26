@@ -26,13 +26,13 @@ async function shot({ dir, file, query, phone }) {
 const STATES = ['one', 'mixed', 'many']
 for (const mode of ['tree', 'project']) {
   await shot({ dir: 'ordinateur', file: `${mode === 'tree' ? '1-arbre' : '2-projet'}-0-vide`, query: `state=empty&mode=${mode}` })
-  for (const variant of ['A', 'B', 'C']) {
+  for (const variant of ['A', 'B', 'C', 'D']) {
     for (const [i, state] of STATES.entries()) {
       await shot({ dir: 'ordinateur', file: `${mode === 'tree' ? '1-arbre' : '2-projet'}-${variant}-${i + 1}-${state}`, query: `variant=${variant}&state=${state}&mode=${mode}` })
     }
   }
 }
-for (const variant of ['A', 'B', 'C']) {
+for (const variant of ['A', 'B', 'C', 'D']) {
   await shot({ dir: 'telephone', file: `${variant}-melange-projet`, query: `variant=${variant}&state=mixed&mode=project`, phone: true })
   await shot({ dir: 'telephone', file: `${variant}-plus-de-5-arbre`, query: `variant=${variant}&state=many&mode=tree`, phone: true })
 }

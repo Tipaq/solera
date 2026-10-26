@@ -46,7 +46,7 @@ import {
   type ThreadDot,
 } from './data'
 
-export type Variant = 'A' | 'B' | 'C'
+export type Variant = 'A' | 'B' | 'C' | 'D'
 export type Mode = 'tree' | 'project'
 
 /** `null` = *Sans projet*, une entrée du sélecteur comme les autres. */
@@ -246,7 +246,7 @@ interface RowProps {
   onOpen: () => void
 }
 
-const ROWS: Record<Variant, (props: RowProps) => ReactNode> = { A: RowA, B: RowB, C: RowC }
+const ROWS: Record<Variant, (props: RowProps) => ReactNode> = { A: RowA, B: RowB, C: RowC, D: RowA }
 
 /**
  * La section unique. **Absente quand rien n'attend**, comme « À décider » aujourd'hui.
@@ -342,6 +342,74 @@ function ActivitySection({ demands, coarse, openThread, onOpenThread }: Pick<
       {rest > 0 ? (
         <button type="button" className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint', h(coarse))}>
           <Activity size={14} className="shrink-0" />+ {rest} autres sessions actives
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * D — « Tout dans l'Activité ». Un seul bloc pour la colonne : ce qui t'attend en tête,
+ * avec les lignes de A, puis les non-lus, puis ce qui tourne. **Une seule coupure pour
+ * le tout** — 7 lignes, 3 au doigt — donc la hauteur ne dépend plus du nombre de
+ * demandes : la zone basse garde sa place quoi qu'il arrive. L'en-tête porte les deux
+ * comptes, ambre pour ce qui attend, accent pour ce qui tourne.
+ */
+function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThread }: Pick<
+  ColumnProps,
+  'demands' | 'coarse' | 'current' | 'mode' | 'openThread' | 'onOpenThread'
+>) {
+  const ordered = orderDemands(demands, mode === 'project' ? current : undefined)
+  const blocked = new Set(demands.filter((demand) => demand.tier === 'blocked').map((demand) => demand.threadId))
+  const live = THREADS.filter((thread) => !blocked.has(thread.id) && thread.dot !== null && thread.id !== openThread)
+  const unread = live.filter((thread) => thread.dot === 'unread')
+  const running = live.filter((thread) => thread.dot === 'working')
+  const rows = [
+    ...ordered.map((demand) => ({ key: demand.id, demand, thread: undefined as Thread | undefined })),
+    ...[...unread, ...running].map((thread) => ({ key: thread.id, demand: undefined as Demand | undefined, thread })),
+  ]
+  const shown = rows.slice(0, coarse ? 3 : 7)
+  const hiddenDemands = ordered.length - shown.filter((row) => row.demand).length
+  const hiddenSessions = rows.length - shown.length - hiddenDemands
+
+  return (
+    <div data-shot="activite" className="shrink-0 border-b border-line px-2 py-1.5">
+      <SectionHeader icon={Activity} label="Activité" coarse={coarse}>
+        {demands.length > 0 ? <CountPill tone="caution" count={demands.length} /> : null}
+        {running.length > 0 ? <CountPill tone="accent" count={running.length} /> : null}
+      </SectionHeader>
+      {rows.length === 0 ? <p className="px-2 py-1.5 text-xs text-ink-faint">Aucune session en cours</p> : null}
+      <ul>
+        {shown.map((row, index) => {
+          // Un pas de plus entre ce qui t'attend et le reste : l'espace sépare, pas un titre.
+          const gap = index > 0 && !row.demand && shown[index - 1]!.demand
+          return (
+            <li key={row.key} className={cx(gap && 'mt-1.5')}>
+              {row.demand ? (
+                <RowA demand={row.demand} coarse={coarse} active={openThread === row.demand.threadId} onOpen={() => onOpenThread(row.demand!.threadId)} />
+              ) : (
+                <button type="button" onClick={() => onOpenThread(row.thread!.id)} className={rowClass(coarse, false)}>
+                  <Avatar project={projectOf(row.thread!.projectId)} className="size-3.5" />
+                  <span className={cx('min-w-0 flex-1 truncate', row.thread!.dot === 'unread' && 'font-medium text-ink')}>{row.thread!.title}</span>
+                  <span className="shrink-0 text-meta tabular-nums text-ink-faint">{row.thread!.age}</span>
+                  <Dot state={row.thread!.dot} />
+                </button>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {hiddenDemands + hiddenSessions > 0 ? (
+        <button type="button" className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint hover:bg-surface-high hover:text-ink', h(coarse))}>
+          <Activity size={14} className="shrink-0" />
+          <span>
+            +{' '}
+            {[
+              hiddenDemands > 0 ? `${hiddenDemands} demande${hiddenDemands > 1 ? 's' : ''}` : null,
+              hiddenSessions > 0 ? `${hiddenSessions} session${hiddenSessions > 1 ? 's' : ''}` : null,
+            ].filter(Boolean).join(' · ')}
+          </span>
+          {hiddenDemands > 0 ? <span className="ml-auto pr-1"><Dot state="awaiting" /></span> : null}
         </button>
       ) : null}
     </div>
@@ -589,8 +657,12 @@ export function Column(props: ColumnProps) {
         </ul>
       </nav>
 
-      <DemandSection {...props} />
-      <ActivitySection {...props} />
+      {props.variant === 'D' ? <UnifiedActivity {...props} /> : (
+        <>
+          <DemandSection {...props} />
+          <ActivitySection {...props} />
+        </>
+      )}
 
       <div data-shot="zone-basse" className="relative min-h-0 flex-1 overflow-y-auto px-2 pt-1.5 pb-4">
         <SwitcherLine {...props} />
