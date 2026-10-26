@@ -105,6 +105,26 @@ try {
   const asking = conversations.filter((entry) => ['awaiting_input', 'error', 'interrupted'].includes(entry.status)).length
   assert.match(await row.getByRole('link', { name: /^Activité/ }).innerText(), new RegExp(`${asking}$`))
 
+  // ─── L'Aperçu : « En ce moment » sous les tuiles (#114, planche A1) ─────────
+  const now = page.getByRole('region', { name: 'En ce moment', exact: true })
+  await now.waitFor()
+  const nowRows = now.getByRole('listitem')
+  // Ce qui te demande quelque chose passe d'abord, et les terminées n'y sont pas.
+  await nowRows.first().getByText(/^(Attend |Interrompue|En erreur)/).waitFor()
+  await now.getByRole('link', { name: new RegExp(running.title) }).waitFor()
+  const finished = conversations.filter((entry) => entry.status === 'idle' && !entry.card)
+  for (const entry of finished) {
+    assert.equal(await now.getByRole('link', { name: entry.title, exact: true }).count(), 0, `${entry.title} est finie : elle reste à l’onglet`)
+  }
+  // Le bloc vient après les tuiles.
+  const tileTop = (await page.getByRole('link', { name: /attend ta réponse/i }).boundingBox()).y
+  assert.ok((await now.boundingBox()).y > tileTop, 'Le bloc vient sous les tuiles')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'a1-apercu-en-ce-moment.png') })
+  await now.getByRole('link', { name: /^Toute l'activité/ }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/activity`)
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await row.waitFor()
+
   // ─── Les groupes, dans l'ordre ─────────────────────────────────────────────
   await row.getByRole('link', { name: /^Activité/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/activity`)

@@ -2280,6 +2280,8 @@ export const fr: Catalog = {
   'project.view.overview': "Aperçu",
   'project.overview.milestone': "Jalon courant",
   'project.overview.due': "Échéances proches",
+  'project.overview.now': "En ce moment",
+  'project.overview.allActivity': "Toute l'activité",
   'project.view.timeline': "Jalons",
   'project.view.activity': "Activité",
   'projectActivity.group.asking': "Te demande quelque chose",

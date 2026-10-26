@@ -2,6 +2,7 @@ import {
   AlarmClock,
   ArrowUpRight,
   CalendarClock,
+  CircleDot,
   Flag,
   GitBranch,
   History,
@@ -15,6 +16,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { DemandTile } from '../components/places/DemandTile'
+import { SessionRow } from '../components/project/SessionRow'
 import {
   JOURNAL_KIND_ICONS,
   journalDestination,
@@ -23,6 +25,8 @@ import {
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { demandsOf, oldest, useLiveConversations } from '../lib/activity'
+import { ACTIVITY_GROUPS } from '../lib/activity-groups'
+import { useActivityRows, type ActivityRow } from '../lib/activity-rows'
 import { useCards } from '../lib/cards'
 import { milestoneIdsOf, milestonesOf, type Milestone } from '../lib/timeline'
 import { useAllConversations } from '../lib/conversations'
@@ -47,6 +51,9 @@ const DUE_SHOWN = 4
 /** Lignes de journal montrées : même borne que les échéances, pour que les trois
     colonnes de la grille gardent la même hauteur quand elles sont pleines. */
 const JOURNAL_SHOWN = 4
+
+/** Sessions montrées dans « En ce moment » : au-delà, l'onglet Activité est à un lien. */
+const NOW_SHOWN = 8
 
 /**
  * L'**Aperçu** d'un projet : la vue d'arrivée, et la seule sans action propre — elle ne
@@ -92,6 +99,20 @@ export function ProjectOverviewPage() {
   )
 
   const [creatingTask, setCreatingTask] = useState(false)
+
+  /*
+    Les sessions vivantes, dans l'ordre des groupes de l'Activité : ce qui te demande
+    quelque chose d'abord, puis ce qui est prêt à relire, puis ce qui travaille. Les
+    terminées n'en sont pas, l'onglet les garde.
+  */
+  const rows = useActivityRows(projectId, project)
+  const now = useMemo(
+    () =>
+      ACTIVITY_GROUPS.filter((group) => group !== 'done')
+        .flatMap((group) => rows.filter((row) => row.group === group))
+        .slice(0, NOW_SHOWN),
+    [rows],
+  )
 
   /*
     Le jalon courant : le premier qui n'est pas livré, dans l'ordre de sa date. Un seul,
@@ -201,6 +222,10 @@ export function ProjectOverviewPage() {
           </div>
         )}
 
+        {/* Le bandeau du jalon lancé viendra ici, entre les tuiles et « En ce moment »,
+            avec la carte qui le porte (après #72). */}
+        <NowBlock projectId={projectId} rows={now} />
+
         {/* Le **jalon courant** et les **échéances proches**, à la place du résumé du
             board. L'audit du 2026-10-14 écarte explicitement ce résumé — « il redit le
             board au rabais ; avec l'onglet à portée d'œil, il n'a plus d'objet » — et
@@ -260,6 +285,47 @@ function SectionHeading({
       <h3 className="min-w-0 flex-1 truncate text-sm font-medium text-ink-soft">{title}</h3>
       {children}
     </div>
+  )
+}
+
+/**
+ * **En ce moment** : les sessions vivantes en lignes, celles de l'onglet Activité
+ * (planche A1 de `docs/audits/2026-10-21-page-projet/final/`).
+ *
+ * Les tuiles du dessus comptent, cette liste nomme : la redite est voulue, et c'est
+ * pourquoi la liste ne remplace pas les tuiles (la variante A2 a été écartée). La ligne
+ * est celle de l'Activité, avec ses colonnes, pour qu'une session se reconnaisse d'une
+ * vue à l'autre.
+ *
+ * Aucune session vivante : le bloc n'est pas rendu, comme les tuiles à zéro.
+ */
+function NowBlock({ projectId, rows }: { projectId: string; rows: ActivityRow[] }) {
+  const t = useTranslate()
+  if (rows.length === 0) return null
+
+  return (
+    <section aria-label={t('project.overview.now')} className="flex min-w-0 flex-col gap-2">
+      <SectionHeading icon={<CircleDot size={14} />} title={t('project.overview.now')}>
+        <Link
+          to={`/p/${projectId}/activity`}
+          className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
+        >
+          {t('project.overview.allActivity')}
+          <ArrowUpRight size={13} />
+        </Link>
+      </SectionHeading>
+      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line">
+        {rows.map((row) => (
+          <SessionRow
+            key={row.entry.conversation.id}
+            conversation={row.entry.conversation}
+            marker={row.marker}
+            summary={row.summary}
+            place={row.place}
+          />
+        ))}
+      </ul>
+    </section>
   )
 }
 
