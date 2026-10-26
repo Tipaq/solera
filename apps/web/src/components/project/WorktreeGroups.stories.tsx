@@ -44,6 +44,7 @@ function row(
     place: place.tree
       ? { root: false, branch: place.tree.branch, path: place.tree.path }
       : { root: true, branch: 'main', path: null },
+    pr: null,
   }
 }
 

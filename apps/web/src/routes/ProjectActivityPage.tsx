@@ -224,6 +224,7 @@ export function ProjectActivityPage() {
                         marker={row.marker}
                         summary={row.summary}
                         place={row.place}
+                        pr={row.pr}
                       />
                     ))}
                     {rest > 0 ? (

@@ -20,15 +20,18 @@ export const ACTIVITY_GROUPS: ActivityGroup[] = ['asking', 'review', 'running', 
  * question (tranché par Tim le 2026-10-25). C'est la charte de `threadState` qui dit ce
  * qu'est une erreur, interruption comprise.
  *
+ * **Prête à relire** : la carte de la session est en *À vérifier*, ou sa branche porte
+ * une PR ouverte (#115), quel que soit l'état des checks. Une PR en échec attend aussi
+ * quelqu'un ; une PR fusionnée, plus personne.
+ *
  * Ce qui travaille passe avant la relecture : une carte posée en *À vérifier* alors que
  * sa session tourne encore n'est pas prête, elle le sera à la fin du tour.
  */
-export function activityGroupOf(entry: LiveConversation, column: CardColumn | null): ActivityGroup {
+export function activityGroupOf(entry: LiveConversation, column: CardColumn | null, openPr = false): ActivityGroup {
   const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
   if (state === 'broken' || state === 'awaiting') return 'asking'
   if (state === 'working') return 'running'
-  // Les PR ouvertes s'y ajouteront avec leur badge (#115).
-  if (column === 'review') return 'review'
+  if (column === 'review' || openPr) return 'review'
   return 'done'
 }
 

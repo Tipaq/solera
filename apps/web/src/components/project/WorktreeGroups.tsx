@@ -7,9 +7,11 @@ import { ApiRequestError } from '../../lib/api'
 import type { ActivityRow } from '../../lib/activity-rows'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
+import { pullRequestFor, usePullRequests } from '../../lib/pull-requests'
 import { groupByWorktree, idleGestureOf, lastActivity, type IdleGesture } from '../../lib/worktree-groups'
 import { useCleanWorktree } from '../../lib/worktrees'
 import { WorktreeCleanupDialog, plural } from '../WorktreeCleanupDialog'
+import { PrBadge } from './PrBadge'
 import { SessionRow } from './SessionRow'
 
 /** La clé de pliage d'un groupe : un chemin d'arbre, ou l'un des trois groupes fixes. */
@@ -54,6 +56,12 @@ export function WorktreeGroups({
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [cleaning, setCleaning] = useState<WorktreeStatusDto | null>(null)
   const [batch, setBatch] = useState(false)
+
+  const { data: pullRequests } = usePullRequests(projectId)
+  const pullRequestBadge = (branch: string | null) => {
+    const pr = pullRequestFor(pullRequests, branch)
+    return pr ? <PrBadge pr={pr} className="shrink-0" /> : null
+  }
 
   const base = status?.base ?? null
   const grouping = groupByWorktree(
@@ -154,11 +162,15 @@ export function WorktreeGroups({
               )}
             </>
           }
-          // La place du badge de PR (#115), avant le compteur.
+          // Le badge de PR de la branche (#115), avant le compteur : les lignes dessous ne
+          // le portent plus.
           trailing={
-            <IconButton size="sm" label={t('worktrees.clean.title', { name: tree.name })} onClick={() => setCleaning(tree)}>
-              <BrushCleaning size={14} />
-            </IconButton>
+            <>
+              {pullRequestBadge(tree.branch)}
+              <IconButton size="sm" label={t('worktrees.clean.title', { name: tree.name })} onClick={() => setCleaning(tree)}>
+                <BrushCleaning size={14} />
+              </IconButton>
+            </>
           }
           count={members.length}
         >
@@ -185,6 +197,7 @@ export function WorktreeGroups({
                 marker={row.marker}
                 summary={row.summary}
                 place={row.place}
+                pr={row.pr}
               />
             ))}
           </ul>

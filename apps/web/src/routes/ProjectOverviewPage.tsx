@@ -322,6 +322,7 @@ function NowBlock({ projectId, rows }: { projectId: string; rows: ActivityRow[] 
             marker={row.marker}
             summary={row.summary}
             place={row.place}
+            pr={row.pr}
           />
         ))}
       </ul>

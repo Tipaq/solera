@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { ProjectDto } from '@solera/protocol'
+import type { ProjectDto, ProjectPullRequestDto } from '@solera/protocol'
 import type { SessionMarker, SessionSummary } from '../components/project/SessionRow'
 import { useLiveConversations, type LiveConversation } from './activity'
 import { activityGroupOf, sessionPlaceOf, type ActivityGroup, type SessionPlace } from './activity-groups'
@@ -7,6 +7,7 @@ import { useCards } from './cards'
 import { useAllConversations } from './conversations'
 import { shortAge } from './dates'
 import { useTranslate } from './i18n'
+import { isOpenPullRequest, pullRequestFor, usePullRequests } from './pull-requests'
 import { threadState } from './signals'
 import { useWorktreeStatuses } from './worktrees'
 
@@ -17,6 +18,8 @@ export interface ActivityRow {
   marker: SessionMarker
   summary: SessionSummary | null
   place: SessionPlace
+  /** La PR de la branche de la session (#115) ; jamais pour la racine. */
+  pr: ProjectPullRequestDto | null
 }
 
 /**
@@ -26,14 +29,16 @@ export interface ActivityRow {
  * l'autre.
  *
  * Rien n'est lu par fil. Les sessions viennent de la liste partagée avec la colonne, leur
- * état du socket, leur branche de **la** liste d'état des worktrees du projet (#78), et
- * la colonne de leur carte du board.
+ * état du socket, leur branche de **la** liste d'état des worktrees du projet (#78), la
+ * colonne de leur carte du board, et la PR de leur branche de **la** liste des PR du
+ * projet (#115).
  */
 export function useActivityRows(projectId: string | undefined, project: ProjectDto | undefined): ActivityRow[] {
   const t = useTranslate()
   const { data: conversations } = useAllConversations()
   const { data: cards } = useCards(projectId)
   const { data: trees } = useWorktreeStatuses(project?.git ? projectId : undefined)
+  const { data: pullRequests } = usePullRequests(project?.git ? projectId : undefined)
 
   const mine = useMemo(
     () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
@@ -49,18 +54,22 @@ export function useActivityRows(projectId: string | undefined, project: ProjectD
     return live
       .map((entry): ActivityRow => {
         const card = entry.conversation.card
-        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null)
+        const place = sessionPlaceOf(entry.conversation, trees, rootBranch)
+        // La branche par défaut ne porte pas de PR : c'est elle que les PR visent.
+        const pr = place.root ? null : pullRequestFor(pullRequests, place.branch)
+        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null, isOpenPullRequest(pr))
         const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
         return {
           entry,
           group,
           marker: markerOf(group, state),
           summary: summaryOf(entry, state, t),
-          place: sessionPlaceOf(entry.conversation, trees, rootBranch),
+          place,
+          pr,
         }
       })
       .sort((a, b) => b.entry.conversation.updatedAt - a.entry.conversation.updatedAt)
-  }, [live, cards, trees, project, t])
+  }, [live, cards, trees, pullRequests, project, t])
 }
 
 function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): SessionMarker {
