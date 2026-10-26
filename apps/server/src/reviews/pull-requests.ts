@@ -8,6 +8,7 @@ import type {
   PullRequestBadgeState,
   PullRequestReviewState,
 } from '@solera/protocol'
+import type { MergedPullRequest, MergedPullRequestSource } from '../worktrees/landed.js'
 
 const run = promisify(execFile)
 
@@ -19,10 +20,14 @@ const GH_TIMEOUT_MS = 20_000
  */
 const TTL_MS = 60_000
 
-/** Assez pour couvrir les PR ouvertes et les fusions récentes d'un projet actif. */
-const LIST_LIMIT = 60
+/**
+ * Assez pour couvrir les PR ouvertes et l'historique des fusions d'un projet actif :
+ * l'état des worktrees y lit les branches fusionnées par squash (#126), et un arbre
+ * oublié depuis des semaines doit encore y trouver sa PR.
+ */
+const LIST_LIMIT = 200
 
-const FIELDS = 'number,title,url,headRefName,baseRefName,state,isDraft,mergedAt,updatedAt,statusCheckRollup'
+const FIELDS = 'number,title,url,headRefName,headRefOid,baseRefName,state,isDraft,mergedAt,updatedAt,statusCheckRollup'
 
 /** Une PR telle que `gh pr list --json` la rend, réduite à ce que le badge lit. */
 export interface RawPullRequest {
@@ -30,6 +35,8 @@ export interface RawPullRequest {
   title: string
   url: string
   headRefName: string
+  /** Le commit de tête de la PR, celui qui a été fusionné pour une PR fusionnée. */
+  headRefOid?: string
   baseRefName: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
   isDraft: boolean
@@ -128,9 +135,30 @@ export function pullRequestsByBranch(
 
 const rank = (pr: ProjectPullRequestDto) => (pr.state === 'merged' ? 0 : 1)
 
+function mergedOf(raw: RawPullRequest[]): MergedPullRequest[] {
+  return raw.flatMap((pr) =>
+    pr.state === 'MERGED' && pr.headRefName && pr.headRefOid
+      ? [
+          {
+            number: pr.number,
+            branch: pr.headRefName,
+            base: pr.baseRefName,
+            head: pr.headRefOid,
+            mergedAt: Date.parse(pr.mergedAt ?? '') || 0,
+          },
+        ]
+      : [],
+  )
+}
+
+interface Listing {
+  dto: ProjectPullRequestListDto
+  merged: MergedPullRequest[]
+}
+
 interface CacheEntry {
-  value: ProjectPullRequestListDto | null
-  pending: Promise<ProjectPullRequestListDto> | null
+  value: Listing | null
+  pending: Promise<Listing> | null
 }
 
 /**
@@ -153,9 +181,23 @@ export class ProjectPullRequests {
   ) {}
 
   async get(project: ProjectRow, userId: string): Promise<ProjectPullRequestListDto> {
+    return (await this.listing(project, userId)).dto
+  }
+
+  /**
+   * Les PR fusionnées du projet, tirées de la même lecture que les badges : l'état des
+   * worktrees les lit sans appeler la forge une fois de plus. Sans utilisateur à
+   * l'origine, c'est le jeton du propriétaire du projet qui sert.
+   */
+  merged: MergedPullRequestSource = async (project) => {
+    const listing = await this.listing(project, project.ownerId)
+    return listing.dto.available ? listing.merged : null
+  }
+
+  private async listing(project: ProjectRow, userId: string): Promise<Listing> {
     const entry = this.cache.get(project.id) ?? { value: null, pending: null }
     this.cache.set(project.id, entry)
-    const fresh = entry.value && this.now() - entry.value.fetchedAt < TTL_MS
+    const fresh = entry.value && this.now() - entry.value.dto.fetchedAt < TTL_MS
     if (fresh) return entry.value!
     entry.pending ??= this.fetch(project, userId).finally(() => {
       entry.pending = null
@@ -164,14 +206,14 @@ export class ProjectPullRequests {
     return entry.value ?? next
   }
 
-  private async fetch(project: ProjectRow, userId: string): Promise<ProjectPullRequestListDto> {
+  private async fetch(project: ProjectRow, userId: string): Promise<Listing> {
     let raw: RawPullRequest[]
     try {
       raw = await this.list(project.workspacePath, this.token?.(userId))
     } catch {
       // `gh` absent, non connecté, ou un dépôt sans remote GitHub : pas de badge, et on
       // ne réessaie qu'à la minute suivante.
-      return { available: false, fetchedAt: this.now(), pullRequests: [] }
+      return { dto: { available: false, fetchedAt: this.now(), pullRequests: [] }, merged: [] }
     }
     const reviews = new Map(
       this.db
@@ -181,6 +223,9 @@ export class ProjectPullRequests {
         .all()
         .map((row) => [row.prNumber, row.state] as const),
     )
-    return { available: true, fetchedAt: this.now(), pullRequests: pullRequestsByBranch(raw, reviews) }
+    return {
+      dto: { available: true, fetchedAt: this.now(), pullRequests: pullRequestsByBranch(raw, reviews) },
+      merged: mergedOf(raw),
+    }
   }
 }
