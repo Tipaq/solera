@@ -36,7 +36,7 @@ import {
   SquareKanban,
   type LucideIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
 import { AgentIcon } from '../../components/AgentIcon'
 import { Logo } from '../../components/Logo'
@@ -371,10 +371,24 @@ function ActivitySection({ demands, coarse, openThread, onOpenThread }: Pick<
  * demandes : la zone basse garde sa place quoi qu'il arrive. L'en-tête porte les deux
  * comptes, ambre pour ce qui attend, accent pour ce qui tourne.
  */
-function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThread }: Pick<
+/**
+ * Combien de lignes l'Activité peut montrer : **moins d'un quart de la hauteur de la
+ * colonne**, en-tête, marges et ligne « + N » comprises. 32 px par ligne, au plus 7.
+ * À 900 px, ça donne 4 lignes ; à 700, 2 ; à 1 200, 6.
+ */
+function activityBudget(columnHeight: number, total: number): number {
+  const budget = columnHeight / 4
+  const fixed = 1 + 12 + 32 // filet, marges du bloc, en-tête
+  const fits = (n: number) => fixed + n * 32 + (n > 0 ? 6 : 0) + (n < total ? 32 : 0) < budget
+  let n = Math.min(7, total)
+  while (n > 0 && !fits(n)) n -= 1
+  return n
+}
+
+function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThread, columnHeight }: Pick<
   ColumnProps,
   'demands' | 'coarse' | 'current' | 'mode' | 'openThread' | 'onOpenThread'
->) {
+> & { columnHeight: number }) {
   const ordered = orderDemands(demands, mode === 'project' ? current : undefined)
   const blocked = new Set(demands.filter((demand) => demand.tier === 'blocked').map((demand) => demand.threadId))
   const live = THREADS.filter((thread) => !blocked.has(thread.id) && thread.dot !== null && thread.id !== openThread)
@@ -385,7 +399,7 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
     ...[...unread, ...running].map((thread) => ({ key: thread.id, demand: undefined as Demand | undefined, thread })),
   ]
   // Au doigt, l'en-tête seul : ses deux comptes disent tout, et il ouvre la liste entière.
-  const shown = coarse ? [] : rows.slice(0, 7)
+  const shown = coarse ? [] : rows.slice(0, activityBudget(columnHeight, rows.length))
   const hiddenDemands = ordered.length - shown.filter((row) => row.demand).length
   const hiddenSessions = rows.length - shown.length - hiddenDemands
 
@@ -660,6 +674,16 @@ function ProjectZone({ current, demands, coarse, openThread, onOpenThread }: Pic
 /* ——— La colonne entière ——— */
 
 export function Column(props: ColumnProps) {
+  // La hauteur de la colonne, suivie au redimensionnement : c'est elle qui règle l'Activité.
+  const root = useRef<HTMLDivElement>(null)
+  const [columnHeight, setColumnHeight] = useState(900)
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setColumnHeight(entry!.contentRect.height))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
   const { coarse, mode } = props
   const places: { icon: LucideIcon; label: string; count: ReactNode; active?: boolean }[] = [
     { icon: MessagesSquare, label: 'Fils', count: THREADS.length },
@@ -669,7 +693,7 @@ export function Column(props: ColumnProps) {
   ]
 
   return (
-    <div className="flex h-full flex-col">
+    <div ref={root} className="flex h-full flex-col">
       <header className="flex h-13 shrink-0 items-center gap-2 border-b border-line px-4">
         <Logo size={20} className="text-accent" />
         <span className="text-heading font-semibold tracking-tight">Solera</span>
@@ -705,7 +729,7 @@ export function Column(props: ColumnProps) {
         </ul>
       </nav>
 
-      {props.variant === 'D' ? <UnifiedActivity {...props} /> : (
+      {props.variant === 'D' ? <UnifiedActivity {...props} columnHeight={columnHeight} /> : (
         <>
           <DemandSection {...props} />
           <ActivitySection {...props} />
