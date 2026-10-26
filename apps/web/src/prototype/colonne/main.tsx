@@ -89,9 +89,13 @@ function Prototype() {
     return { open: new URLSearchParams(location.search).get('modal') === 'open' || focus !== undefined, focus }
   })
   activityBus.open = (focus) => setModal({ open: true, focus })
+  // Une page de projet ouverte depuis la colonne : le centre la nomme, rien de plus.
+  const [page, setPage] = useState<string | null>(null)
+  activityBus.page = setPage
   const info = VARIANTS.find((entry) => entry.id === variant)!
   // Le projet suit la conversation ouverte : en ouvrir une d'ailleurs ramène la colonne.
   const open = (id: string) => {
+    setPage(null)
     setOpenThread(id)
     setCurrent(threadOf(id).projectId)
   }
@@ -130,7 +134,7 @@ function Prototype() {
           <aside data-shot="colonne" className="surface h-full w-[16.5rem] shrink-0 border-r border-line">{column}</aside>
           <main className="flex flex-1 flex-col">
             <header className="flex h-13 items-center border-b border-line px-4 text-sm font-medium">
-              {threadOf(openThread).title}
+              {page ?? threadOf(openThread).title}
             </header>
             <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-ink-faint">
               <div className="max-w-md space-y-2">

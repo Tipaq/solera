@@ -9,7 +9,14 @@ import {
   ArrowUpRight,
   BookOpen,
   CalendarClock,
-  ChevronDown,
+  ChevronsUpDown,
+  Archive,
+  MoreHorizontal,
+  Palette,
+  Pencil,
+  SlidersHorizontal,
+  Square,
+  Target,
   ChevronRight,
   Columns3,
   FilePlus2,
@@ -98,7 +105,7 @@ const h = (coarse: boolean, fine = 'h-8') => (coarse ? 'h-11' : fine)
  * chaque bloc : `main.tsx` y branche son ouverture. Une demande ouvre la modale dépliée
  * sur elle.
  */
-export const activityBus: { open: (demandId?: string) => void } = { open: () => {} }
+export const activityBus: { open: (demandId?: string) => void; page: (label: string) => void } = { open: () => {}, page: () => {} }
 
 function SectionHeader({ icon: Icon, iconClass, label, children, coarse }: {
   icon: LucideIcon
@@ -518,104 +525,108 @@ function TreeZone({ demands, coarse, openThread, onOpenThread }: Pick<
 }
 
 /**
- * Le sélecteur, **une ligne** : le projet courant ouvre la liste, et le bouton de bout
- * de ligne bascule d'un clic entre l'arbre et le projet. La ligne existe dans les deux
- * modes, pour que la bascule soit toujours au même endroit.
+ * La ligne du projet, en mode projet seulement — **une ligne**, et elle garde tout ce que
+ * la ligne d'un projet porte dans l'arbre :
+ * - le **nom** mène à l'Aperçu (`/p/:id`), comme aujourd'hui ;
+ * - le **chevron** ouvre la liste des projets, avec leur point de nouveauté ;
+ * - le **+** ouvre une conversation dans ce projet ;
+ * - le **⋯** est le menu du projet de l'arbre, inchangé : ses vues, ses réglages, le
+ *   renommer, sa couleur. Tableau, Worktrees et Planifiées vivent là et sur la page du
+ *   projet, plus en lignes permanentes sous le sélecteur.
+ *
+ * La bascule arbre ↔ projet n'est plus ici : elle est sur la ligne du lieu *Projets*,
+ * qui existe dans les deux modes (Q40).
  */
-function SwitcherLine({ mode, onMode, current, onCurrent, demands, openThread, coarse }: Pick<
+function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse }: Pick<
   ColumnProps,
-  'mode' | 'onMode' | 'current' | 'onCurrent' | 'demands' | 'openThread' | 'coarse'
+  'onMode' | 'current' | 'onCurrent' | 'demands' | 'openThread' | 'coarse'
 >) {
   const project = projectOf(current)
+  const name = project?.name ?? 'Sans projet'
   const others = [{ id: null as string | null, name: 'Sans projet', project: undefined as Project | undefined },
     ...PROJECTS.map((entry) => ({ id: entry.id as string | null, name: entry.name, project: entry as Project | undefined }))]
-  // Le point du bouton dit qu'il y a du nouveau **ailleurs** que dans le projet affiché.
-  const elsewhere = mode === 'project' && others.some((entry) => entry.id !== current && groupDot(entry.id, demands, openThread))
+  // Le point du chevron dit qu'il y a du nouveau **ailleurs** que dans le projet affiché.
+  const elsewhere = others.some((entry) => entry.id !== current && groupDot(entry.id, demands, openThread))
+  const go = (page: string) => activityBus.page(`${page} — ${name}`)
 
   return (
-    <div data-shot="selecteur" className={cx('mb-1 flex items-center gap-0.5 rounded-md border border-line pr-0.5', h(coarse, 'h-9'))}>
+    <div data-shot="selecteur" className={cx('group mb-1 flex items-center gap-0.5 rounded-md pr-0.5 text-ink transition-colors hover:bg-surface-high', h(coarse, 'h-9'))}>
+      <button
+        type="button"
+        onClick={() => (project ? go('Aperçu') : undefined)}
+        title={project ? `Ouvrir l’Aperçu de ${name}` : undefined}
+        className="flex h-full min-w-0 items-center gap-2 rounded-md pl-2 text-left text-sm font-semibold"
+      >
+        {project ? <Avatar project={project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
+        <span className="min-w-0 truncate">{name}</span>
+      </button>
       <Menu
         align="start"
         trigger={
-          <button type="button" className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold text-ink hover:bg-surface-high">
-            {mode === 'tree'
-              ? <ListTree size={16} className="shrink-0 text-ink-faint" />
-              : project ? <Avatar project={project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
-            <span className="min-w-0 truncate">{mode === 'tree' ? 'Tous les projets' : project?.name ?? 'Sans projet'}</span>
-            <ChevronDown size={14} className="shrink-0 text-ink-faint" />
-            {elsewhere ? <span className="ml-auto pr-1"><Dot state={elsewhere ? 'unread' : null} /></span> : null}
+          <button
+            type="button"
+            aria-label="Changer de projet"
+            title="Changer de projet"
+            className={cx('relative inline-flex shrink-0 items-center justify-center rounded-md text-ink-faint hover:bg-surface-high hover:text-ink', coarse ? 'size-11' : 'size-7')}
+          >
+            <ChevronsUpDown size={14} />
+            {elsewhere ? <span className="absolute top-1 right-1"><Dot state="unread" /></span> : null}
           </button>
         }
       >
-        <MenuItem icon={<ListTree size={14} />} onSelect={() => onMode('tree')}>Tous les projets</MenuItem>
-        <MenuSeparator />
         {others.map((entry) => (
           <MenuItem
             key={entry.id ?? 'none'}
             icon={entry.project ? <Avatar project={entry.project} className="size-3.5" /> : <MessagesSquare size={14} />}
-            onSelect={() => { onCurrent(entry.id); onMode('project') }}
+            onSelect={() => onCurrent(entry.id)}
           >
             <span className="flex items-center gap-2">
-              <span className={cx('flex-1 truncate', mode === 'project' && entry.id === current && 'font-semibold')}>{entry.name}</span>
+              <span className={cx('flex-1 truncate', entry.id === current && 'font-semibold')}>{entry.name}</span>
               <Dot state={groupDot(entry.id, demands, openThread)} />
             </span>
           </MenuItem>
         ))}
+        <MenuSeparator />
+        <MenuItem icon={<ListTree size={14} />} onSelect={() => onMode('tree')}>Afficher tous les projets</MenuItem>
       </Menu>
-      {mode === 'project' ? (
-        <IconButton label="Nouvelle conversation dans ce projet" size="sm"><Plus size={14} /></IconButton>
+      <span className="flex-1" />
+      <IconButton label={`Nouvelle conversation dans ${name}`} size="sm"><Plus size={14} /></IconButton>
+      {project ? (
+        <Menu trigger={<IconButton label={`Actions de ${name}`} size="sm"><MoreHorizontal size={14} /></IconButton>}>
+          <MenuItem icon={<Target size={14} />} onSelect={() => go('Aperçu')}>Aperçu</MenuItem>
+          <MenuItem icon={<SquareKanban size={14} />} onSelect={() => go('Tableau')}>Tableau</MenuItem>
+          <MenuItem icon={<GitBranch size={14} />} onSelect={() => go('Worktrees')}>Worktrees</MenuItem>
+          <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go('Planifiées')}>Planifiées</MenuItem>
+          <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go('Réglages')}>Réglages du projet</MenuItem>
+          <MenuSeparator />
+          <MenuItem icon={<Pencil size={14} />} onSelect={() => undefined}>Renommer</MenuItem>
+          <MenuItem icon={<Palette size={14} />} onSelect={() => undefined}>Couleur…</MenuItem>
+          <MenuItem icon={<Archive size={14} />} onSelect={() => undefined}>Archiver le projet</MenuItem>
+        </Menu>
       ) : null}
-      <IconButton
-        label={mode === 'tree' ? 'N’afficher qu’un projet' : 'Afficher tous les projets'}
-        size="sm"
-        onClick={() => onMode(mode === 'tree' ? 'project' : 'tree')}
-        className={cx(mode === 'project' && 'text-ink')}
-      >
-        {mode === 'tree' ? <SquareKanban size={14} /> : <ListTree size={14} />}
-      </IconButton>
     </div>
   )
 }
 
+/** Sous la ligne du projet : ses conversations, directement. */
 function ProjectZone({ current, demands, coarse, openThread, onOpenThread }: Pick<
   ColumnProps,
   'current' | 'demands' | 'coarse' | 'openThread' | 'onOpenThread'
 >) {
   const threads = THREADS.filter((thread) => thread.projectId === current)
-  const links: { icon: LucideIcon; label: string; meta?: string }[] = current === null ? [] : [
-    { icon: SquareKanban, label: 'Tableau', meta: '2 à vérifier' },
-    { icon: GitBranch, label: 'Worktrees', meta: '4' },
-    { icon: CalendarClock, label: 'Planifiées', meta: '1' },
-  ]
   return (
-    <div data-shot="zone-projet">
-      {links.length > 0 ? (
-        <ul className="mb-1.5">
-          {links.map((link) => (
-            <li key={link.label}>
-              <button type="button" className={cx('group flex w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink-soft transition-colors hover:bg-surface-high hover:text-ink', h(coarse))}>
-                <link.icon size={15} className="shrink-0 text-ink-faint" />
-                <span className="flex-1 truncate">{link.label}</span>
-                <span className="shrink-0 text-meta tabular-nums text-ink-faint">{link.meta}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <p className="px-2.5 pb-0.5 text-meta font-semibold uppercase tracking-wider text-ink-faint">Conversations</p>
-      <ul>
-        {threads.map((thread) => (
-          <ThreadLine
-            key={thread.id}
-            thread={thread}
-            demands={demands}
-            coarse={coarse}
-            active={thread.id === openThread}
-            onOpen={() => onOpenThread(thread.id)}
-          />
-        ))}
-      </ul>
-    </div>
+    <ul data-shot="zone-projet">
+      {threads.map((thread) => (
+        <ThreadLine
+          key={thread.id}
+          thread={thread}
+          demands={demands}
+          coarse={coarse}
+          active={thread.id === openThread}
+          onOpen={() => onOpenThread(thread.id)}
+        />
+      ))}
+    </ul>
   )
 }
 
@@ -660,6 +671,18 @@ export function Column(props: ColumnProps) {
               )}>
                 <place.icon size={16} className="mr-1.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{place.label}</span>
+                {place.active ? (
+                  /* La bascule arbre ↔ projet, d'un clic, sur la ligne du lieu qu'elle
+                     règle : présente dans les deux modes, sans ligne de plus en arbre. */
+                  <IconButton
+                    label={mode === 'tree' ? 'N’afficher qu’un projet' : 'Afficher tous les projets'}
+                    size="sm"
+                    onClick={() => props.onMode(mode === 'tree' ? 'project' : 'tree')}
+                    className="-mr-1.5"
+                  >
+                    {mode === 'tree' ? <Square size={13} /> : <ListTree size={14} />}
+                  </IconButton>
+                ) : null}
                 <span className="shrink-0 text-meta tabular-nums text-ink-faint">{place.count}</span>
               </div>
             </li>
@@ -675,7 +698,7 @@ export function Column(props: ColumnProps) {
       )}
 
       <div data-shot="zone-basse" className="relative min-h-0 flex-1 overflow-y-auto px-2 pt-1.5 pb-4">
-        <SwitcherLine {...props} />
+        {mode === 'project' ? <SwitcherLine {...props} /> : null}
         {mode === 'tree' ? <TreeZone {...props} /> : <ProjectZone {...props} />}
       </div>
 
