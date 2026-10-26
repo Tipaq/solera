@@ -158,7 +158,10 @@ export interface PendingRequestCounts {
   move: number
 }
 
-/** `GET /api/conversations/pending-requests?ids=…` : les seuls fils qui en ont. */
+/**
+ * `GET /api/conversations/pending-requests?ids=…` : les seuls fils qui en ont, avec leur
+ * projet pour que « Voir les demandes » les ouvre.
+ */
 export interface PendingRequestsDto {
-  conversations: ({ id: string } & PendingRequestCounts)[]
+  conversations: ({ id: string; projectId: string | null } & PendingRequestCounts)[]
 }

@@ -17,6 +17,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
+import { useGuardedArchive } from '../components/ArchiveRequestsDialog'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { ArrangeFreeThreadButton } from '../components/ArrangeConversation'
@@ -50,7 +51,6 @@ import {
   sendMessage,
   steerConversation,
   useAllConversations,
-  useArchiveConversation,
   useContinueAtProjectRoot,
   useConversation,
 } from '../lib/conversations'
@@ -1508,18 +1508,22 @@ function WorktreeGoneIssues({
   agent: AgentKind
   canAct: boolean
 }) {
-  const archive = useArchiveConversation()
+  // Archiver retire les demandes en attente du fil : une fenêtre le dit d'abord (#119).
+  const archive = useGuardedArchive()
   const continueAtRoot = useContinueAtProjectRoot()
   const error = archive.error ?? continueAtRoot.error
   return (
-    <WorktreeGoneNotice
-      agent={agent}
-      canAct={canAct}
-      pending={archive.isPending || continueAtRoot.isPending}
-      error={error instanceof Error ? error.message : undefined}
-      onArchive={() => archive.mutate({ id: conversationId, archived: true })}
-      onContinue={() => continueAtRoot.mutate(conversationId)}
-    />
+    <>
+      <WorktreeGoneNotice
+        agent={agent}
+        canAct={canAct}
+        pending={archive.pending || continueAtRoot.isPending}
+        error={error instanceof Error ? error.message : undefined}
+        onArchive={() => archive.archive([conversationId])}
+        onContinue={() => continueAtRoot.mutate(conversationId)}
+      />
+      {archive.dialog}
+    </>
   )
 }
 

@@ -815,13 +815,19 @@ export function registerConversationRoutes(
     const ids = [...new Set(raw.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 200)
     if (ids.length === 0) return { conversations: [] }
     const owned = ctx.db
-      .select({ id: conversations.id })
+      .select({ id: conversations.id, projectId: conversations.projectId })
       .from(conversations)
       .where(and(inArray(conversations.id, ids), eq(conversations.userId, user.id)))
       .all()
-      .map((row) => row.id)
-    const counts = pendingRequests(ctx.db, owned)
-    return { conversations: owned.flatMap((id) => (counts.has(id) ? [{ id, ...counts.get(id)! }] : [])) }
+    const counts = pendingRequests(ctx.db, owned.map((row) => row.id))
+    // Dans l'ordre demandé : le premier fil est celui que « Voir les demandes » ouvre.
+    return {
+      conversations: ids.flatMap((id) => {
+        const row = owned.find((entry) => entry.id === id)
+        const entry = counts.get(id)
+        return row && entry ? [{ id, projectId: row.projectId, ...entry }] : []
+      }),
+    }
   })
 
   app.patch('/api/conversations/:id', async (request) => {

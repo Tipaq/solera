@@ -272,8 +272,8 @@ test('la fenêtre d’archivage compte les demandes en attente de chaque fil', a
   const response = await app.inject({ method: 'GET', url: '/api/conversations/pending-requests?ids=session,quiet,unknown' })
   assert.equal(response.statusCode, 200, response.body)
   assert.deepEqual(response.json().conversations, [
-    { id: 'session', decision: 1, cardChange: 1, cardDraft: 0, move: 1 },
-    { id: 'quiet', decision: 0, cardChange: 0, cardDraft: 0, move: 1 },
+    { id: 'session', projectId: 'project', decision: 1, cardChange: 1, cardDraft: 0, move: 1 },
+    { id: 'quiet', projectId: 'project', decision: 0, cardChange: 0, cardDraft: 0, move: 1 },
   ])
 })
 
