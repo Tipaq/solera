@@ -670,8 +670,10 @@ export const sessionMessages = sqliteTable(
      * y sont la même conversation : c'est Solera qui parle, au nom de qui a répondu.
      * `cards` de même, pour la validation d'un brouillon de cartes (#70), et
      * `issue_comment` pour le commentaire laissé sur l'issue de la carte (#84).
+     * `outcome`, écrit par le daemon, dit à une session l'issue d'une demande qui
+     * attendait un clic ; le relais ne le remet que pendant un tour, sans relancer (#119).
      */
-    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision', 'cards', 'issue_comment'] }).notNull().default('message'),
+    kind: text('kind', { enum: ['message', 'broadcast', 'done', 'decision', 'cards', 'issue_comment', 'outcome'] }).notNull().default('message'),
     body: text('body').notNull(),
     /** Message auquel celui-ci répond, pour compter la profondeur d'un échange. */
     replyTo: text('reply_to'),

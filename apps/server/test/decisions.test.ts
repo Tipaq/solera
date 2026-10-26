@@ -307,7 +307,8 @@ test('décisions : à l’échéance, le défaut s’applique ou la session appr
   const { db, decisions, ask, row, messages } = await harness(t)
 
   const withDefault = await ask(ALLOWED, { question: 'On pousse ?', options: ['Oui', 'Non'], default: 'Non' })
-  const withoutDefault = await ask(CARDED, { question: 'Quelle version ?' })
+  // Une échéance demandée sans défaut : sans elle, la décision attendrait qu'on tranche.
+  const withoutDefault = await ask(CARDED, { question: 'Quelle version ?', expires_in_hours: 12 })
   assert.equal(withoutDefault.isError, false, withoutDefault.result ?? '')
 
   // Rien n'échoit avant l'heure.
@@ -335,7 +336,7 @@ test('décisions : à l’échéance, le défaut s’applique ou la session appr
   assert.match(notes[1]!.body, /expirée sans réponse/)
 })
 
-test('décisions : archiver la session retire sa demande, sans rien lui remettre', async (t) => {
+test('décisions : archiver la session retire sa demande, et la session l’apprend sans être relancée', async (t) => {
   const { db, ask, row, messages, requests } = await harness(t)
 
   const asked = await ask(CARDED, { question: 'On garde la branche ?', options: ['Oui', 'Non'] })
@@ -345,7 +346,8 @@ test('décisions : archiver la session retire sa demande, sans rien lui remettre
   const withdrawn = row(asked.id)
   assert.ok(withdrawn.resolvedAt)
   assert.deepEqual(JSON.parse(withdrawn.answer!), { by: 'withdrawn' })
-  assert.equal(messages(CARDED).length, 0)
+  // Une issue, pas une réponse : le relais ne la remet que pendant un tour (#119).
+  assert.deepEqual(messages(CARDED).map((message) => message.kind), ['outcome'])
   // La question est sur la carte, l'issue non : personne n'a tranché.
   const notes = db.select().from(cardNotes).where(eq(cardNotes.cardId, 'card')).all()
   assert.equal(notes.length, 1)

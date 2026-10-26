@@ -84,7 +84,8 @@ export interface DecisionDto {
   context: string
   options: string[]
   defaultOption: string | null
-  expiresAt: number
+  /** Null pour une décision sans échéance (#119) : elle attend qu'une personne tranche. */
+  expiresAt: number | null
   status: DecisionStatus
   answer: {
     option: string | null
@@ -123,7 +124,8 @@ export type AwaitingRequestDto =
       question: string
       /** Pour une proposition de nettoyage : la branche, de quoi recomposer la question. */
       worktreeBranch: string | null
-      expiresAt: number
+      /** Null sans échéance. */
+      expiresAt: number | null
       createdAt: number
     }
   | {
@@ -146,3 +148,22 @@ export type AwaitingRequestDto =
       conversationTitle: string
       createdAt: number
     }
+
+/**
+ * Ce qu'un fil a de demandes en attente d'un clic, par genre (#119) : ce que la fenêtre
+ * d'avant l'archivage récapitule, puisqu'archiver les retire.
+ */
+export interface PendingRequestCounts {
+  decision: number
+  cardChange: number
+  cardDraft: number
+  move: number
+}
+
+/**
+ * `GET /api/conversations/pending-requests?ids=…` : les seuls fils qui en ont, avec leur
+ * projet pour que « Voir les demandes » les ouvre.
+ */
+export interface PendingRequestsDto {
+  conversations: ({ id: string; projectId: string | null } & PendingRequestCounts)[]
+}

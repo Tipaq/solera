@@ -202,3 +202,9 @@ export const SansDroit: Story = {
   name: 'Sans droit de décider',
   args: { canDecide: false },
 }
+
+/** Revérifié au clic (#119) : le fil a changé de projet depuis la proposition. */
+export const PlusApplicable: Story = {
+  name: 'Plus applicable',
+  args: { filing: { ...meta.args.filing, status: 'impossible', reason: 'project_changed' } },
+}

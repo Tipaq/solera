@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { FilingItem } from '../../lib/chat-fold'
 import { decideFiling } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
+import { staleReasonLabel } from '../../lib/request-reasons'
 import { Badge, Button, cx } from '@solera/ui'
 
 /**
@@ -132,6 +133,8 @@ export function FilingPrompt({
  * une phrase : le journal est rejoué dans la langue de qui le relit.
  */
 function reasonLabel(reason: string, t: (key: MessageKey) => string): string {
+  const stale = staleReasonLabel(reason, t)
+  if (stale) return stale
   if (reason === 'project_not_found') return t('filing.reason.projectGone')
   if (reason === 'conversation_scheduled') return t('filing.reason.scheduled')
   return t('filing.reason.unknown')

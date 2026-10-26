@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gt, isNotNull, isNull } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, isNotNull, isNull, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { randomUUID } from 'node:crypto'
 import {
@@ -67,6 +67,8 @@ const DONE_EXCERPT_CHARS = 1500
 type Outcome =
   | { via: 'steer' | 'queue' | 'wake' | 'failed' | 'skipped' }
   | { via: 'held'; reason: 'loop' | 'rate' }
+  /** Une issue de demande devant une session qui ne travaille pas : elle attend son tour. */
+  | { via: 'wait' }
 
 const STATUS_WORDS: Record<string, string> = {
   idle: 'au repos',
@@ -107,10 +109,30 @@ export class SessionRelay {
       const pending = this.db
         .select()
         .from(sessionMessages)
-        .where(isNull(sessionMessages.deliveredAt))
+        .where(and(isNull(sessionMessages.deliveredAt), ne(sessionMessages.kind, 'outcome')))
         .orderBy(asc(sessionMessages.createdAt))
         .limit(100)
         .all()
+      // Les issues de demande à part, et seulement celles d'une session qui travaille :
+      // elles attendent son prochain tour aussi longtemps qu'il le faut, et ne doivent
+      // ni occuper la fenêtre des autres messages ni expirer avant d'avoir été lues.
+      const outcomes = this.db
+        .select({ message: sessionMessages })
+        .from(sessionMessages)
+        .innerJoin(conversations, eq(conversations.id, sessionMessages.toConversationId))
+        .where(
+          and(
+            isNull(sessionMessages.deliveredAt),
+            eq(sessionMessages.kind, 'outcome'),
+            eq(conversations.status, 'running'),
+          ),
+        )
+        .orderBy(asc(sessionMessages.createdAt))
+        .limit(100)
+        .all()
+        .map((row) => row.message)
+
+      for (const message of outcomes) await this.attempt(message, false)
 
       for (const message of pending) {
         if (message.createdAt < Date.now() - STALE_MS) {
@@ -168,6 +190,7 @@ export class SessionRelay {
       return { via: 'failed' }
     })
 
+    if (outcome.via === 'wait') return
     if (outcome.via !== 'held') {
       this.settle(message.id, outcome.via)
       return
@@ -233,6 +256,16 @@ export class SessionRelay {
     if (!recipient || recipient.archivedAt !== null) return { via: 'failed' }
 
     const text = this.frame(message)
+
+    // Une issue de demande ne relance jamais : glissée dans un tour ouvert, ou laissée
+    // pour le suivant. Ni file ni réveil, même devant une sollicitation — la file
+    // ouvrirait un tour de plus, et c'est précisément ce qu'elle ne doit pas faire.
+    if (message.kind === 'outcome') {
+      if (recipient.status === 'running' && (await this.sessions.steer(recipient.id, message.id, text))) {
+        return { via: 'steer' }
+      }
+      return { via: 'wait' }
+    }
 
     // L'identifiant du message sert d'identifiant client : si la remise est rejouée
     // après un échec d'écriture du marquage, la déduplication du gestionnaire l'avale.

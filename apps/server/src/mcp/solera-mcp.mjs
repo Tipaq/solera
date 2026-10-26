@@ -1180,7 +1180,7 @@ const ALL_TOOLS = [
   {
     name: 'move_conversation',
     description:
-      "Demande à ranger une conversation dans un projet. **Ne déplace rien** : dépose une demande qui apparaît dans le fil concerné et attend un clic de son propriétaire — c'est lui qui décide d'un rangement, jamais toi. Sert quand une conversation sans projet relève clairement d'un projet (le tien, ou un que tu viens de déclarer avec create_project), ou quand elle travaille visiblement dans le mauvais. Un seul identifiant par appel, et une seule demande en attente à la fois. Le déplacement détache le worktree et la carte, et fait perdre la reprise de la session native du CLI ; le travail non commité, lui, reste dans le projet de départ. La demande affiche ce prix, l'utilisateur tranche.",
+      "Demande à ranger une conversation dans un projet. **Ne déplace rien** : dépose une demande qui apparaît dans le fil concerné et attend un clic de son propriétaire — c'est lui qui décide d'un rangement, jamais toi. Sert quand une conversation sans projet relève clairement d'un projet (le tien, ou un que tu viens de déclarer avec create_project), ou quand elle travaille visiblement dans le mauvais. Un seul identifiant par appel, et une seule demande en attente à la fois. Le déplacement détache le worktree et la carte, et fait perdre la reprise de la session native du CLI ; le travail non commité, lui, reste dans le projet de départ. La demande affiche ce prix, l'utilisateur tranche ; son issue t'arrive en message à ton prochain tour, sans te relancer.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1200,7 +1200,7 @@ const ALL_TOOLS = [
   {
     name: 'request_card_change',
     description:
-      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte.",
+      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1258,7 +1258,7 @@ const ALL_TOOLS = [
   {
     name: 'request_decision',
     description:
-      "Demande à l'utilisateur de trancher un choix, **sans attendre sa réponse** : la demande ne bloque pas, et la réponse t'arrivera plus tard en message dans cette conversation, ce qui te relancera si tu as fini ton tour. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent et engage quelque chose qu'on ne défait pas facilement ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas. Une seule demande en attente à la fois ; à l'échéance, ton choix par défaut s'applique, ou tu apprends que personne n'a répondu.",
+      "Demande à l'utilisateur de trancher un choix, **sans attendre sa réponse** : la demande ne bloque pas, et la réponse t'arrivera plus tard en message dans cette conversation, ce qui te relancera si tu as fini ton tour. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent et engage quelque chose qu'on ne défait pas facilement ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas. Une seule demande en attente à la fois. Sans échéance, elle attend que l'utilisateur tranche ; avec une échéance, ton choix par défaut s'applique à son terme, ou tu apprends que personne n'a répondu.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1278,12 +1278,12 @@ const ALL_TOOLS = [
         },
         default: {
           type: 'string',
-          description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`.",
+          description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`. Il pose une échéance, celle de `expires_in_hours` ou à défaut le maximum réglé pour la session.",
         },
         expires_in_hours: {
           type: 'number',
           description:
-            "Délai de réponse en heures ; ramené au maximum que l'utilisateur a réglé pour cette session, qui s'applique s'il est omis.",
+            "Délai de réponse en heures, ramené au maximum que l'utilisateur a réglé pour cette session. Omis et sans `default`, la décision n'a pas d'échéance : elle attend qu'on la tranche.",
         },
       },
       required: ['question'],

@@ -227,7 +227,8 @@ test('refusé, le brouillon se clôt sans rien créer ni relancer la session', a
   const { id } = await propose({ cards: [{ title: 'A' }] })
   assert.equal((await decide(id, { decision: 'refused' })).statusCode, 200)
   assert.equal(allCards().length, 0)
-  assert.equal(db.select().from(sessionMessages).all().length, 0)
+  // La session l'apprend (#119), par une issue que le relais ne remet que pendant un tour.
+  assert.deepEqual(db.select({ kind: sessionMessages.kind }).from(sessionMessages).all(), [{ kind: 'outcome' }])
   const row = db.select().from(agentRequests).where(and(eq(agentRequests.id, id))).get()
   assert.notEqual(row?.resolvedAt, null)
 })

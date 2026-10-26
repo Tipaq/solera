@@ -1,6 +1,7 @@
 import { Archive, ArchiveRestore, FolderX, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useGuardedArchive } from '../ArchiveRequestsDialog'
 import type { ConversationDto } from '@solera/protocol'
 import { ArrangeConversationMenu, useArrangeConversation } from '../ArrangeConversation'
 import {
@@ -46,6 +47,8 @@ export function ConversationLine({
   const rename = useRenameConversation()
   const remove = useDeleteConversation()
   const setArchived = useArchiveConversation()
+  // Archiver retire les demandes en attente du fil : une fenêtre le dit d'abord (#119).
+  const guarded = useGuardedArchive()
   const setPinned = usePinConversation()
   const isArchived = conversation.archivedAt !== null
   const navigate = useNavigate()
@@ -196,7 +199,9 @@ export function ConversationLine({
           <MenuItem
             icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
             disabled={!conversation.isOwner}
-            onSelect={() => setArchived.mutate({ id: conversation.id, archived: !isArchived })}
+            onSelect={() =>
+              isArchived ? setArchived.mutate({ id: conversation.id, archived: false }) : guarded.archive([conversation.id])
+            }
           >
             {isArchived ? t('shell.conversation.unarchive') : t('shell.conversation.archive')}
           </MenuItem>
@@ -225,6 +230,7 @@ export function ConversationLine({
         </Menu>
       </span>
       {arrange.dialogs}
+      {guarded.dialog}
     </li>
   )
 }

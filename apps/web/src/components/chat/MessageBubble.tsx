@@ -171,6 +171,7 @@ const PEER_LABELS = {
   decision: 'message.peer.decision',
   cards: 'message.peer.cards',
   issue_comment: 'message.peer.issueComment',
+  outcome: 'message.peer.outcome',
 } as const
 
 /**

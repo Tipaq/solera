@@ -420,6 +420,12 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * sait pas y reprendre sa session. L'agent repart alors d'une sélection du fil.
      */
     resumable: z.boolean(),
+    /**
+     * Le projet du fil au dépôt, null pour un fil libre : au clic, un fil rangé ailleurs
+     * entre-temps rend la demande plus applicable (#119). Absent des événements d'avant,
+     * qui ne revérifient pas ce point.
+     */
+    fromProjectId: z.string().nullable().optional(),
   }),
   z.object({
     type: z.literal('filing.resolved'),
@@ -542,8 +548,13 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('card_draft.resolved'),
     requestId: z.string(),
-    decision: z.enum(['created', 'refused', 'superseded']),
+    decision: z.enum(['created', 'refused', 'superseded', 'impossible']),
     decidedBy: z.string().nullable(),
+    /**
+     * Pourquoi `impossible` (#119) : le fil a été archivé, ou a changé de projet depuis
+     * le dépôt. Facultatif, le journal étant rejoué indéfiniment (I2).
+     */
+    reason: z.string().nullable().optional(),
     /** La parente des cartes créées, neuve ou existante ; null sans parente ou sans création. */
     parent: cardDraftRefSchema.nullable().default(null),
     /** Les cartes créées, dans l'ordre du brouillon validé. Vide hors création. */
@@ -572,7 +583,8 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     context: z.string(),
     options: z.array(z.string()),
     defaultOption: z.string().nullable(),
-    expiresAt: z.number(),
+    /** Null pour une décision posée sans échéance (#119), qui attend qu'on tranche. */
+    expiresAt: z.number().nullable(),
   }),
   z.object({
     type: z.literal('decision.resolved'),

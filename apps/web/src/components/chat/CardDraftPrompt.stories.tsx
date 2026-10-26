@@ -19,6 +19,7 @@ const meta = {
       kind: 'cardDraft',
       id: 'r1',
       status: 'pending',
+      reason: null,
       parent: null,
       created: [],
       draft: {
@@ -101,4 +102,10 @@ export const Remplace: Story = {
 export const AutreMembre: Story = {
   name: 'Vu par un autre membre',
   args: { canDecide: false },
+}
+
+/** Retiré avec son fil, archivé avant le clic (#119). */
+export const PlusApplicable: Story = {
+  name: 'Plus applicable',
+  args: { item: { ...meta.args.item, status: 'impossible', reason: 'conversation_archived' } },
 }

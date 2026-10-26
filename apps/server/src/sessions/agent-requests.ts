@@ -99,6 +99,16 @@ import { createScheduledTask } from '../scheduler/tasks.js'
 import { readUserSettings } from '../settings/user-settings.js'
 import { createWorktree } from '../worktrees/create.js'
 import { resolveConversationCwd } from '../workspace.js'
+import {
+  AWAITING_KINDS,
+  describeCardFilingOutcome,
+  describeDraftOutcome,
+  describeFilingOutcome,
+  filingTargetId,
+  recheck,
+  tellOutcome,
+  type StaleReason,
+} from './request-lifecycle.js'
 import type { SessionManager } from './session-manager.js'
 
 /**
@@ -139,6 +149,9 @@ const POLL_MS = 500
  * pire que ne rien lancer.
  */
 const STALE_MS = 5 * 60 * 1000
+
+/** Les genres qui, une fois déposés, attendent le clic d'une personne. */
+const AWAITS_CLICK = new Set<AgentRequestRow['kind']>(AWAITING_KINDS)
 
 /**
  * Profondeur maximale d'une chaîne de lancements : l'utilisateur ouvre une session, qui
@@ -293,20 +306,6 @@ const WORKTREE_STATE_WORDS: Record<WorktreeState, string> = {
   merged: 'fusionné, rien à garder (à nettoyer)',
 }
 
-/**
- * Le fil que `move_conversation` déplace : celui que l'agent a nommé, ou le sien.
- *
- * Relu de la charge plutôt que stocké en colonne : c'est l'argument de l'outil, et la
- * demande n'en normalise rien. Le dépôt et le balayage qui applique doivent lire la même
- * chose, d'où cette fonction et non deux ternaires.
- */
-function filingTargetId(request: AgentRequestRow): string {
-  const payload = JSON.parse(request.payload) as { conversation?: unknown }
-  return typeof payload.conversation === 'string' && payload.conversation.trim()
-    ? payload.conversation.trim()
-    : request.conversationId
-}
-
 interface StartSessionPayload {
   prompt?: unknown
   title?: unknown
@@ -389,12 +388,17 @@ export class AgentRequests {
 
       for (const request of pending) {
         if (request.createdAt < Date.now() - STALE_MS) {
+          // Une demande qui attend un clic se ferme aussi : sans `resolved_at`, elle
+          // tiendrait pour toujours la place de l'unique demande en attente de la
+          // conversation, sans jamais apparaître nulle part (#119).
+          if (AWAITS_CLICK.has(request.kind)) this.closeFiling(request.id)
           this.settle(request, "Demande expirée : Solera ne l'a pas traitée à temps.", true)
           continue
         }
         await this.handle(request)
       }
 
+      this.withdrawOrphans()
       await this.applyFilings()
       // Les échéances des décisions, sur le même balayage que les rangements accordés :
       // une requête indexée sur le genre et la clôture, vide la plupart du temps.
@@ -526,14 +530,7 @@ export class AgentRequests {
       }
       // Un rangement refusé d'entrée n'attend plus rien : sans cette clôture il tiendrait
       // indéfiniment la place de l'unique demande en attente de la conversation.
-      if (
-        request.kind === 'move_conversation' ||
-        request.kind === 'request_card_change' ||
-        request.kind === 'propose_cards' ||
-        request.kind === 'request_decision'
-      ) {
-        this.closeFiling(request.id)
-      }
+      if (AWAITS_CLICK.has(request.kind)) this.closeFiling(request.id)
       this.settle(request, describeHttpError(err), true)
     }
   }
@@ -1450,6 +1447,7 @@ export class AgentRequests {
       projectId: destination.id,
       projectName: destination.name,
       ...price,
+      fromProjectId: target.projectId,
     })
     this.notifyLists(target.id)
     this.notifyAwaiting([target.userId])
@@ -1462,7 +1460,7 @@ export class AgentRequests {
       target.id === requester.id
         ? 'Accordée, le déplacement a lieu dès que ce tour est fini : la session redémarre dans le nouveau projet, avec ses outils, et sans la session native du CLI.'
         : 'Accordée, le déplacement a lieu dès que cette conversation ne travaille plus.',
-      "N'en redépose pas : une seule demande de rangement peut attendre à la fois.",
+      "N'en redépose pas : une seule demande de rangement peut attendre à la fois. Son issue, accordée, refusée ou plus applicable, t'arrivera en message à ton prochain tour, sans te relancer.",
     ]
     return lines.join('\n')
   }
@@ -1539,8 +1537,18 @@ export class AgentRequests {
         continue
       }
 
+      // Revérifié jusqu'au bout : entre l'accord et la fin du tour, le fil a pu être
+      // archivé ou rangé ailleurs, et un travail de fond a pu partir. Tout cela rend
+      // l'accord caduc, travail de fond compris : on n'attend pas sa fin, qui n'a pas de
+      // terme connu, pour déplacer le fil sans que personne ne l'ait vu partir.
+      const stale = recheck(this.ctx.db, this.ctx.config, request, filing.fromProjectId)
+      if (stale) {
+        this.resolveFiling(request, target, 'impossible', stale)
+        continue
+      }
+
       const destination = this.ctx.db
-        .select({ id: projects.id })
+        .select({ id: projects.id, name: projects.name })
         .from(projects)
         .where(eq(projects.id, filing.projectId))
         .get()
@@ -1576,7 +1584,7 @@ export class AgentRequests {
     request: AgentRequestRow,
     target: ConversationRow,
     decision: 'accepted' | 'impossible',
-    reason: 'project_not_found' | 'conversation_scheduled' | null,
+    reason: 'project_not_found' | 'conversation_scheduled' | StaleReason | null,
   ): void {
     this.log.append(target.id, {
       type: 'filing.resolved',
@@ -1589,6 +1597,85 @@ export class AgentRequests {
     })
     this.closeFiling(request.id)
     this.notifyLists(target.id)
+    const filing = this.log.openFiling(target.id, request.id)
+    tellOutcome(this.ctx.db, request, describeFilingOutcome(target.title, filing?.projectName ?? null, decision, reason))
+  }
+
+  /**
+   * Retire les rangements et brouillons dont le fil a été archivé ou supprimé (#119).
+   *
+   * Balayé plutôt qu'appelé à l'archivage, comme les décisions : un fil s'archive en
+   * plusieurs endroits (la route, le nettoyage d'un worktree, la clôture d'une carte, la
+   * suppression d'une tâche planifiée), et aucun ne doit pouvoir l'oublier. Les
+   * décisions, elles, sont retirées par `Decisions.sweep`.
+   */
+  private withdrawOrphans(): void {
+    const open = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(
+        and(
+          inArray(agentRequests.kind, ['move_conversation', 'request_card_change', 'propose_cards']),
+          isNull(agentRequests.resolvedAt),
+          isNotNull(agentRequests.settledAt),
+          eq(agentRequests.isError, false),
+        ),
+      )
+      .all()
+    if (open.length === 0) return
+
+    const ids = new Set(open.flatMap((row) => [row.conversationId, ...(row.kind === 'move_conversation' ? [filingTargetId(row)] : [])]))
+    const threads = new Map(
+      this.ctx.db
+        .select()
+        .from(conversations)
+        .where(inArray(conversations.id, [...ids]))
+        .all()
+        .map((row) => [row.id, row]),
+    )
+    const gone = (id: string): StaleReason | null => {
+      const thread = threads.get(id)
+      return !thread ? 'conversation_deleted' : thread.archivedAt !== null ? 'conversation_archived' : null
+    }
+
+    const awaiting = new Set<string>()
+    for (const request of open) {
+      const targetId = request.kind === 'move_conversation' ? filingTargetId(request) : request.conversationId
+      const reason = gone(request.conversationId) ?? gone(targetId)
+      if (!reason) continue
+
+      this.closeFiling(request.id)
+      // Le journal où la demande s'affiche : celui du fil déplacé pour un rangement de
+      // conversation, celui du demandeur sinon. Un fil supprimé n'en a plus.
+      const journal = threads.get(targetId)
+      if (request.kind === 'move_conversation') {
+        if (journal) {
+          this.log.append(journal.id, { type: 'filing.resolved', requestId: request.id, decision: 'impossible', decidedBy: null, reason })
+          const filing = this.log.openFiling(journal.id, request.id)
+          tellOutcome(this.ctx.db, request, describeFilingOutcome(journal.title, filing?.projectName ?? null, 'impossible', reason))
+        }
+      } else if (journal) {
+        this.log.append(
+          journal.id,
+          request.kind === 'request_card_change'
+            ? { type: 'card_filing.resolved', requestId: request.id, decision: 'impossible', decidedBy: null, reason, moved: [] }
+            : { type: 'card_draft.resolved', requestId: request.id, decision: 'impossible', decidedBy: null, reason, parent: null, created: [] },
+        )
+        tellOutcome(
+          this.ctx.db,
+          request,
+          request.kind === 'request_card_change'
+            ? describeCardFilingOutcome('impossible', reason)
+            : describeDraftOutcome('impossible', reason),
+        )
+      }
+      for (const thread of [threads.get(request.conversationId), journal]) if (thread) awaiting.add(thread.userId)
+      if (request.projectId) {
+        const owner = this.ctx.db.select({ ownerId: projects.ownerId }).from(projects).where(eq(projects.id, request.projectId)).get()
+        if (owner) awaiting.add(owner.ownerId)
+      }
+    }
+    this.notifyAwaiting([...awaiting])
   }
 
   /** La demande n'attend plus rien : ni l'agent, ni l'utilisateur, ni ce balayage. */
@@ -1872,11 +1959,12 @@ export class AgentRequests {
         : `Demande déposée pour ${proposed.length} cartes : ${proposed.map((line) => `#${line.number} (${describeCardChange(line)})`).join(', ')}.`,
       "Elle attend un clic dans cette conversation, et rien n'est changé avant. C'est le propriétaire du projet qui tranche, et le changement sera inscrit à son nom.",
       proposed.length === 1
-        ? 'Accordée ou refusée, tu le liras dans ce fil.'
+        ? null
         : 'Un seul clic accorde la liste entière, ou la refuse entière.',
+      "Son issue, accordée, refusée ou plus applicable, t'arrivera en message à ton prochain tour, sans te relancer : ne l'attends pas.",
       "N'en redépose pas : une seule proposition de changement de carte peut attendre à la fois.",
     ]
-    return lines.join('\n')
+    return lines.filter((line) => line !== null).join('\n')
   }
 
   /**
