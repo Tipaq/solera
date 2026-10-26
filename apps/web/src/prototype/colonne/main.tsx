@@ -18,7 +18,7 @@ const VARIANTS: { id: Variant; name: string; tranche: string }[] = [
   { id: 'A', name: 'Le point seul', tranche: 'Le blocage n’est qu’un point ambre ; la ligne est celle du fil.' },
   { id: 'B', name: 'La demande en clair', tranche: 'La ligne dit ce qui est demandé ; l’icône du genre passe en ambre.' },
   { id: 'C', name: 'Le fil bloqué déplié', tranche: 'Un fil bloqué prend deux lignes : le fil, puis ce qu’il attend.' },
-  { id: 'D', name: 'Tout dans l’Activité', tranche: 'Un seul bloc : ce qui t’attend en tête, puis non-lus et en cours, coupé à 7 lignes (3 au doigt) pour le tout.' },
+  { id: 'D', name: 'Tout dans l’Activité', tranche: 'Un seul bloc : ce qui t’attend en tête, puis non-lus et en cours, coupé à 7 lignes pour le tout ; au doigt, l’en-tête seul.' },
 ]
 
 function useParam<T extends string>(key: string, fallback: T): [T, (value: T) => void] {

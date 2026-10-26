@@ -368,7 +368,8 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
     ...ordered.map((demand) => ({ key: demand.id, demand, thread: undefined as Thread | undefined })),
     ...[...unread, ...running].map((thread) => ({ key: thread.id, demand: undefined as Demand | undefined, thread })),
   ]
-  const shown = rows.slice(0, coarse ? 3 : 7)
+  // Au doigt, l'en-tête seul : ses deux comptes disent tout, et il ouvre la liste entière.
+  const shown = coarse ? [] : rows.slice(0, 7)
   const hiddenDemands = ordered.length - shown.filter((row) => row.demand).length
   const hiddenSessions = rows.length - shown.length - hiddenDemands
 
@@ -378,7 +379,7 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
         {demands.length > 0 ? <CountPill tone="caution" count={demands.length} /> : null}
         {running.length > 0 ? <CountPill tone="accent" count={running.length} /> : null}
       </SectionHeader>
-      {rows.length === 0 ? <p className="px-2 py-1.5 text-xs text-ink-faint">Aucune session en cours</p> : null}
+      {rows.length === 0 && !coarse ? <p className="px-2 py-1.5 text-xs text-ink-faint">Aucune session en cours</p> : null}
       <ul>
         {shown.map((row, index) => {
           // Un pas de plus entre ce qui t'attend et le reste : l'espace sépare, pas un titre.
@@ -399,7 +400,7 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
           )
         })}
       </ul>
-      {hiddenDemands + hiddenSessions > 0 ? (
+      {!coarse && hiddenDemands + hiddenSessions > 0 ? (
         <button type="button" className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint hover:bg-surface-high hover:text-ink', h(coarse))}>
           <Activity size={14} className="shrink-0" />
           <span>
