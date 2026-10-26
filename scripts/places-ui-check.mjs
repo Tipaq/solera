@@ -187,7 +187,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline`)
   await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
   const unplaced = cards.filter(
-    (entry) => entry.milestone === null && entry.dueAt === null
+    (entry) => entry.parent === null && entry.dueAt === null
       && entry.column !== 'done' && entry.column !== 'abandoned',
   )
   if (unplaced.length > 0) {
@@ -294,10 +294,12 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-chronologie.png') })
 
   // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
-  // une, et il se partage par lien comme les deux autres.
+  // une, et il se partage par lien comme les deux autres. L'ancien nom du paramètre,
+  // d'avant l'arbre de cartes (#83), mène encore au filtre.
   await page.goto(`${base}/projects/board?jalon=${milestone.id}`)
+  await page.waitForURL(`**/projects/board?parente=${milestone.id}`)
   await page.getByRole('button', { name: /^Retirer le filtre/ }).waitFor()
-  const attached = cards.filter((entry) => entry.milestone?.id === milestone.id)
+  const attached = cards.filter((entry) => entry.parent?.id === milestone.id)
   assert.ok(attached.length > 0, 'Le jeu d’essai rattache des cartes à son jalon')
   /* Attendre une **tuile** et non la colonne : la colonne est rendue avant que les
      cartes du projet arrivent, et compter à ce moment-là rend zéro quel que soit le
