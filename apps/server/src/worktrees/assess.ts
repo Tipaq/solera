@@ -13,6 +13,11 @@ import type { WorktreeState } from '@solera/protocol'
  * le travail. On compare donc des contenus, par `git merge-tree`, qui calcule une
  * fusion sans toucher ni à l'arbre ni aux refs.
  *
+ * Le contenu ne suffit plus quand la base a avancé après un squash : la branche entre
+ * alors en conflit avec ce que la base a fait de ses propres fichiers. Une PR fusionnée
+ * sur la forge tranche dans ce cas (#126), pourvu que la branche n'ait rien de plus que
+ * le commit qu'elle a fusionné. Sans forge, le jugement par contenu reste seul.
+ *
  * Tout est lecture : aucune commande ici n'écrit dans le dépôt, hors les objets
  * temporaires que `merge-tree` et `stash create` déposent dans la base d'objets, que
  * `gc` ramasse.
@@ -168,8 +173,16 @@ export interface WorktreeAssessment {
   untracked: number
   conflicts: boolean
   unmergedCommits: boolean
+  /** La PR fusionnée qui a porté les commits, quand c'est elle et non le contenu qui l'a dit. */
+  mergedPullRequest: number | null
   lastCommitAt: number | null
   lastEditAt: number | null
+}
+
+/** Une PR fusionnée dans la base, et le commit de tête qu'elle a porté. */
+export interface LandedPullRequest {
+  number: number
+  head: string
 }
 
 const MISSING: WorktreeAssessment = {
@@ -180,6 +193,7 @@ const MISSING: WorktreeAssessment = {
   untracked: 0,
   conflicts: false,
   unmergedCommits: false,
+  mergedPullRequest: null,
   lastCommitAt: null,
   lastEditAt: null,
 }
@@ -230,6 +244,19 @@ async function mergedTree(
   const tree = result.stdout.split('\n')[0]?.trim() ?? ''
   if (!/^[0-9a-f]{40,64}$/.test(tree)) return null
   return { tree, conflicts: result.code !== 0 }
+}
+
+/**
+ * La PR fusionnée qui contient tout `head` : son commit de tête est `head` ou en
+ * descend. Une branche qui a reçu un commit après la fusion n'en a donc aucune, et un
+ * commit que le dépôt n'a pas (poussé d'ailleurs, puis ramassé) ne prouve rien.
+ */
+async function landedVia(repo: string, head: string, landed: readonly LandedPullRequest[]): Promise<number | null> {
+  for (const pr of landed) {
+    const result = await git(repo, ['merge-base', '--is-ancestor', head, pr.head])
+    if (result.code === 0) return pr.number
+  }
+  return null
 }
 
 interface StatusEntry {
@@ -296,8 +323,12 @@ export async function assessWorktree(
   repo: string,
   base: string,
   entry: Pick<WorktreeEntry, 'path' | 'head' | 'prunable'> & { branch?: string | null },
-  /** Force le chemin des git antérieurs à 2.40, pour les tests ; sinon lu sur la version. */
-  options: { legacyGit?: boolean } = {},
+  options: {
+    /** Force le chemin des git antérieurs à 2.40, pour les tests ; sinon lu sur la version. */
+    legacyGit?: boolean
+    /** Les PR fusionnées de cette branche ; vide ou absent sans forge. */
+    landed?: readonly LandedPullRequest[]
+  } = {},
 ): Promise<WorktreeAssessment> {
   if (entry.prunable || !entry.head) return MISSING
   const dir = await stat(entry.path).catch(() => null)
@@ -318,6 +349,16 @@ export async function assessWorktree(
     const merged = await mergedTree(repo, base, entry.head)
     conflicts = merged?.conflicts ?? false
     commitsInBase = merged !== null && !merged.conflicts && merged.tree === baseTree
+  }
+  // Le contenu a divergé, mais la forge dit ces commits fusionnés : un conflit avec ce
+  // que la base a fait depuis n'est plus une fusion à venir.
+  let mergedPullRequest: number | null = null
+  if (!commitsInBase && options.landed?.length) {
+    mergedPullRequest = await landedVia(repo, entry.head, options.landed)
+    if (mergedPullRequest !== null) {
+      commitsInBase = true
+      conflicts = false
+    }
   }
 
   // Le non commité : `stash create` fabrique le commit sans rien ranger, puis on juge
@@ -364,6 +405,7 @@ export async function assessWorktree(
     untracked: untracked.length,
     conflicts,
     unmergedCommits: !commitsInBase,
+    mergedPullRequest,
     lastCommitAt: lastCommit ? Number(lastCommit) * 1000 : null,
     lastEditAt: await lastEdit(entry.path, entries.map((e) => e.path)),
   }
@@ -389,6 +431,8 @@ export async function looseBranches(
   repo: string,
   base: string | null,
   checkedOut: ReadonlySet<string>,
+  /** Les PR fusionnées par branche ; une branche qu'elles contiennent est fusionnée. */
+  landed: ReadonlyMap<string, readonly LandedPullRequest[]> = new Map(),
 ): Promise<LooseBranch[]> {
   const listed = await git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
   if (listed.code !== 0) return []
@@ -405,6 +449,11 @@ export async function looseBranches(
   const result: LooseBranch[] = []
   for (const name of names) {
     if (merged.has(name)) {
+      result.push({ name, merged: true })
+      continue
+    }
+    const prs = landed.get(name)
+    if (prs?.length && (await landedVia(repo, `refs/heads/${name}`, prs)) !== null) {
       result.push({ name, merged: true })
       continue
     }
