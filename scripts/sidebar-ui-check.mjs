@@ -255,15 +255,30 @@ try {
     .or(column.getByText('Aucune tâche planifiée')).waitFor()
 
   // La modale d'activité : quatre filtres qui portent leur compte, plus un par projet.
-  await activity.getByRole('button', { name: /^Activité/ }).click()
+  const openActivity = activity.getByRole('button', { name: /^Activité/ })
+  await openActivity.click()
   const dialog = page.getByRole('dialog', { name: 'Activité globale' })
   for (const name of ['Tout', 'À débloquer', 'En cours', 'Non lues']) {
     await dialog.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
   }
+  // Ouverte d'un clic, Radix donne le focus à « Fermer » : son infobulle ne doit pas
+  // s'ouvrir pour autant, elle ne suit que le focus clavier (carte #56).
+  assert.equal(await page.getByRole('tooltip').count(), 0)
   await dialog.getByRole('button', { name: 'Tous les projets' }).click()
   await page.getByRole('menuitem', { name: 'Nimbus' }).click()
   await page.screenshot({ path: join(shots, 'modale-activite.png') })
   await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  // Ouverte au clavier, le même focus est visible : l'aide du bouton s'affiche, et le
+  // premier Échap la ferme avant la modale.
+  await openActivity.focus()
+  await page.keyboard.press('Enter')
+  await dialog.getByRole('button', { name: 'Fermer' }).and(page.locator(':focus')).waitFor()
+  await page.getByRole('tooltip', { name: 'Fermer' }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
 
   // Le menu du compte : Services et Réglages y sont entrés, la colonne n'en garde qu'une.
   assert.equal(await column.getByRole('link', { name: 'Services' }).count(), 0)
@@ -315,13 +330,10 @@ try {
   }
   await usage.getByText('Fenêtre de 5 h').waitFor()
   await usage.getByText('Hebdomadaire').waitFor()
-  // Le focus va au panneau et non à son premier bouton : une infobulle ouverte avec la
-  // modale, par-dessus son contenu, est ce que le focus automatique de Radix produit
-  // quand on le laisse faire.
+  // Ouverte depuis un menu à la souris : le focus que Radix pose sur le premier bouton
+  // n'ouvre pas son infobulle par-dessus le contenu.
   assert.equal(await page.getByRole('tooltip').count(), 0)
   await usage.screenshot({ path: join(shots, 'modale-consommation.png') })
-  // Et le panneau focalisé rend bien la main : sans ça, détourner le focus fermerait
-  // la porte de sortie au clavier.
   await page.keyboard.press('Escape')
   await usage.waitFor({ state: 'hidden' })
 
