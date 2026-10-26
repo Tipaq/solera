@@ -2,36 +2,20 @@ import { ChevronDown, ChevronRight, Layers, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { EmptyState, cx } from '@solera/ui'
-import { Marker, SessionRow, type SessionMarker, type SessionSummary } from '../components/project/SessionRow'
-import { useLiveConversations, type LiveConversation } from '../lib/activity'
+import { Marker, SessionRow, type SessionMarker } from '../components/project/SessionRow'
 import {
   ACTIVITY_GROUPS,
-  activityGroupOf,
   isActiveFilter,
   matchesActivity,
   parseActivityFilter,
-  sessionPlaceOf,
   type ActivityGroup,
-  type SessionPlace,
 } from '../lib/activity-groups'
-import { useCards } from '../lib/cards'
-import { useAllConversations } from '../lib/conversations'
-import { shortAge } from '../lib/dates'
+import { useActivityRows } from '../lib/activity-rows'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
-import { threadState } from '../lib/signals'
-import { useWorktreeStatuses } from '../lib/worktrees'
 
 /** Lignes montrées des terminées avant « … N de plus » : la planche B1 en plie au-delà. */
 const DONE_SHOWN = 3
-
-interface Row {
-  entry: LiveConversation
-  group: ActivityGroup
-  marker: SessionMarker
-  summary: SessionSummary | null
-  place: SessionPlace
-}
 
 const GROUP_LABEL: Record<ActivityGroup, MessageKey> = {
   asking: 'projectActivity.group.asking',
@@ -56,9 +40,8 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * chose — une question, une permission ou une erreur —, ce qui est prêt à relire, ce qui
  * travaille, ce qui est fini. Les terminées se plient après trois lignes.
  *
- * Rien n'est lu par fil. Les sessions viennent de la liste partagée avec la colonne, leur
- * état du socket, leur branche de **la** liste d'état des worktrees du projet (#78), et
- * la colonne de leur carte du board.
+ * Les lignes viennent de `useActivityRows`, que le bloc « En ce moment » de l'Aperçu lit
+ * aussi.
  *
  * Le regroupement par worktree (B3) est la carte #111 : la bascule « Grouper par » viendra
  * avec elle, et c'est pourquoi la barre ne la montre pas encore.
@@ -71,37 +54,8 @@ export function ProjectActivityPage() {
   const [allDone, setAllDone] = useState(false)
 
   const { data: projects, isPending } = useProjects()
-  const { data: conversations } = useAllConversations()
-  const { data: cards } = useCards(projectId)
   const project = projects?.find((entry) => entry.id === projectId)
-  const { data: trees } = useWorktreeStatuses(project?.git ? projectId : undefined)
-
-  const mine = useMemo(
-    () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
-    [conversations, projectId],
-  )
-  const live = useLiveConversations(mine)
-
-  const rows = useMemo(() => {
-    // La colonne du board plutôt que celle figée dans la conversation : le board se
-    // relit à chaque déplacement de carte, la liste des conversations non.
-    const columns = new Map((cards ?? []).map((card) => [card.id, card.column]))
-    const rootBranch = project?.git?.branch ?? null
-    return live
-      .map((entry): Row => {
-        const card = entry.conversation.card
-        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null)
-        const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
-        return {
-          entry,
-          group,
-          marker: markerOf(group, state),
-          summary: summaryOf(entry, state, t),
-          place: sessionPlaceOf(entry.conversation, trees, rootBranch),
-        }
-      })
-      .sort((a, b) => b.entry.conversation.updatedAt - a.entry.conversation.updatedAt)
-  }, [live, cards, trees, project, t])
+  const rows = useActivityRows(projectId, project)
 
   const filter = useMemo(() => parseActivityFilter(query), [query])
   const shown = useMemo(
@@ -237,31 +191,4 @@ export function ProjectActivityPage() {
       </div>
     </div>
   )
-}
-
-function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): SessionMarker {
-  if (group === 'asking') return state === 'broken' ? 'broken' : 'awaiting'
-  if (group === 'running') return 'working'
-  if (group === 'review') return 'review'
-  return state === 'unread' ? 'unread' : 'quiet'
-}
-
-/**
- * La quatrième colonne, en attendant le résumé d'une ligne (#113) et la question en
- * attente (#112) : depuis quand une session attend, ou qu'elle est tombée. Rien sinon,
- * plutôt qu'un texte qui ferait croire à un résumé.
- */
-function summaryOf(
-  entry: LiveConversation,
-  state: ReturnType<typeof threadState>,
-  t: ReturnType<typeof useTranslate>,
-): SessionSummary | null {
-  if (state === 'awaiting') return { text: t('projectActivity.row.waiting', { age: shortAge(entry.since) }), tone: 'caution' }
-  if (state === 'broken') {
-    return {
-      text: t(entry.status === 'interrupted' ? 'projectActivity.row.interrupted' : 'projectActivity.row.error'),
-      tone: 'critical',
-    }
-  }
-  return null
 }

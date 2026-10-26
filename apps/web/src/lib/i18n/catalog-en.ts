@@ -2284,6 +2284,8 @@ export const en = {
   'project.view.overview': "Overview",
   'project.overview.milestone': "Current milestone",
   'project.overview.due': "Due soon",
+  'project.overview.now': "Right now",
+  'project.overview.allActivity': "All activity",
   'project.view.timeline': "Milestones",
   'project.view.activity': "Activity",
   'projectActivity.group.asking': "Needs you",
