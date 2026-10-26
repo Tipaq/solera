@@ -63,6 +63,55 @@ export interface SettingGroup {
    * d'attente s'allume ainsi, l'inflexion étant ce que fait l'envoi quand elle est éteinte.
    */
   toggle?: SettingToggle
+  /**
+   * Présent quand la valeur a été changée dans ce fil et non héritée du compte ou du
+   * projet (#120, Q33) : le menu la marque, et ceci la rend à l'héritage.
+   */
+  resetToInherited?: () => void
+}
+
+/**
+ * Les champs de configuration qu'une catégorie règle : ce qui dit si elle est héritée ou
+ * changée à un niveau. Partagé par le composer et les écrans de réglages.
+ */
+export const SETTING_FIELDS: Record<string, string[]> = {
+  model: ['model'],
+  effort: ['effort', 'reasoningEffort', 'variant'],
+  account: ['account'],
+  permission: ['permissionMode'],
+  approval: ['askForApproval'],
+  sandbox: ['sandbox'],
+  'permission-edit': ['permissions'],
+  'permission-bash': ['permissions'],
+  'permission-webfetch': ['permissions'],
+  mode: ['collaborationMode', 'primaryAgent'],
+  speed: ['fastMode'],
+  ultracode: ['ultracode'],
+  outputStyle: ['outputStyle'],
+  advisor: ['advisorModel'],
+  webSearch: ['webSearch'],
+  skillLibrary: ['skillLibrary'],
+  agentMemory: ['agentMemory'],
+  queue: ['queueMessages'],
+  decisions: ['decisions'],
+  decisionHours: ['decisionMaxHours'],
+  proposeCards: ['proposeCards'],
+  cardFiling: ['cardFiling'],
+  projectFiling: ['projectFiling'],
+}
+
+/** Marque les catégories que ce fil a changées, et leur donne de quoi revenir à l'héritage. */
+export function markChangedHere(
+  groups: SettingGroup[],
+  overrides: readonly string[],
+  reset: ((fields: string[]) => void) | undefined,
+): SettingGroup[] {
+  if (!reset || overrides.length === 0) return groups
+  const changed = new Set(overrides)
+  return groups.map((group) => {
+    const fields = (SETTING_FIELDS[group.key] ?? []).filter((field) => changed.has(field))
+    return fields.length > 0 ? { ...group, resetToInherited: () => reset(fields) } : group
+  })
 }
 
 /**

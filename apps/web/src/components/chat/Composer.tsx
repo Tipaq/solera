@@ -42,7 +42,9 @@ import { AttachmentTray } from './AttachmentTray'
 import { DictationStrip } from './DictationStrip'
 import { useAgentSettings } from './agent-settings'
 import { TokenPicker } from './TokenPicker'
-import { settingsStatus } from './ComposerSettings'
+import { markChangedHere, settingsStatus } from './ComposerSettings'
+
+const NO_OVERRIDES: readonly string[] = []
 import { ComposerPlusMenu } from './ComposerPlusMenu'
 import { ModelControl } from './ModelControl'
 import { CardPicker } from './CardPicker'
@@ -164,6 +166,12 @@ interface ComposerProps {
   onCommand?(name: string): Promise<void>
   onInterrupt(): void
   onConfigChange(config: AgentConfig): void
+  /**
+   * Les champs que ce fil change à ce qu'il hérite du compte et du projet (#120), et de
+   * quoi les y rendre. Absents d'un brouillon, qui n'a encore rien hérité.
+   */
+  configOverrides?: readonly string[]
+  onConfigReset?: (fields: string[]) => void
   configError?: string
   onConfigRetry?: () => void
   /** Occupation de la fenêtre de contexte, absente tant qu'aucun tour n'a eu lieu. */
@@ -244,6 +252,8 @@ export function Composer({
   onCommand,
   onInterrupt,
   onConfigChange,
+  configOverrides = NO_OVERRIDES,
+  onConfigReset,
   configError,
   onConfigRetry,
   context,
@@ -297,13 +307,15 @@ export function Composer({
   const filePicker = useRef<HTMLInputElement>(null)
 
   const running = status === 'running' || status === 'awaiting_input'
-  const { groups, summary, mcpPanel, mcpItems, mcpSummary, catalogError } = useAgentSettings({
+  const settingsOfCli = useAgentSettings({
     config,
     onConfigChange,
     appliedConfig,
     mcpInventory,
     disabled,
   })
+  const { summary, mcpPanel, mcpItems, mcpSummary, catalogError } = settingsOfCli
+  const groups = markChangedHere(settingsOfCli.groups, configOverrides, onConfigReset)
 
   // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
   // conversation hors de l'écran rend la saisie inutilisable.

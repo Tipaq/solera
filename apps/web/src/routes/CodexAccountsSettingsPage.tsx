@@ -37,7 +37,8 @@ import {
 const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
-export function CodexAccountsSettingsPage() {
+/** `bare` : rendue dans la section Abonnements, qui porte déjà l'en-tête (#120). */
+export function CodexAccountsSettingsPage({ bare = false }: { bare?: boolean } = {}) {
   const t = useTranslate()
   const { data } = useCodexAccounts()
   const create = useCreateCodexAccount()
@@ -65,10 +66,12 @@ export function CodexAccountsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader
-        title={t('codexAccounts.section.title')}
-        description={t('codexAccounts.section.description')}
-      />
+      {bare ? null : (
+        <SectionHeader
+          title={t('codexAccounts.section.title')}
+          description={t('codexAccounts.section.description')}
+        />
+      )}
 
       <Banner tone="info">{t('codexAccounts.banner')}</Banner>
 

@@ -21,14 +21,13 @@ import { AccountSection } from '../../routes/AccountSection'
 import { ApiTokensSettingsPage } from '../../routes/ApiTokensSettingsPage'
 import { AppearanceSection } from '../../routes/AppearanceSection'
 import { ArchivingSettingsPage } from '../../routes/ArchivingSettingsPage'
-import { ClaudeAccountsSettingsPage } from '../../routes/ClaudeAccountsSettingsPage'
-import { CodexAccountsSettingsPage } from '../../routes/CodexAccountsSettingsPage'
-import { GrokAccountsSettingsPage } from '../../routes/GrokAccountsSettingsPage'
-import { CliDefaultsSettingsPage } from '../../routes/CliDefaultsSettingsPage'
 import { DictationSettingsPage } from '../../routes/DictationSettingsPage'
 import { DisplaySection } from '../../routes/DisplaySection'
 import { GitCredentialsSettingsPage } from '../../routes/GitCredentialsSettingsPage'
 import { InstructionsSettingsPage } from '../../routes/InstructionsSettingsPage'
+import { ModelDefaultsSettingsPage } from '../../routes/ModelDefaultsSettingsPage'
+import { PermissionsSettingsPage } from '../../routes/PermissionsSettingsPage'
+import { SubscriptionsSettingsPage } from '../../routes/SubscriptionsSettingsPage'
 import { McpSettingsPage } from '../../routes/McpSettingsPage'
 import { NotificationsSection } from '../../routes/NotificationsSection'
 import { SecretsSettingsPage } from '../../routes/SecretsSettingsPage'
@@ -56,10 +55,9 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   affichage: DisplaySection,
   notifications: NotificationsSection,
   dictee: DictationSettingsPage,
-  cli: CliDefaultsSettingsPage,
-  'comptes-claude': ClaudeAccountsSettingsPage,
-  'comptes-codex': CodexAccountsSettingsPage,
-  'comptes-grok': GrokAccountsSettingsPage,
+  permissions: PermissionsSettingsPage,
+  modeles: ModelDefaultsSettingsPage,
+  abonnements: SubscriptionsSettingsPage,
   mcp: McpSettingsPage,
   consignes: InstructionsSettingsPage,
   skills: SkillLibrarySettingsPage,

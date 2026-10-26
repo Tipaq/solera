@@ -1,7 +1,8 @@
-import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, IdCard, MessageCircleQuestion, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
+import { BookOpen, Box, Brain, Clock, Columns3, Compass, FilePen, FolderInput, Globe, IdCard, ListPlus, MessageCircleQuestion, MessageSquareText, ShieldCheck, Sparkles, SquareTerminal, UserRoundSearch, UsersRound, Zap } from 'lucide-react'
 import { cloneElement, useMemo, type ReactElement, type ReactNode } from 'react'
 import {
   CLI_DEFAULT,
+  type AgentRequestPolicy,
   claudeEffortSchema,
   codexModeSchema,
   DEFAULT_CLAUDE_CONFIG,
@@ -205,89 +206,141 @@ function agentMemoryOptions(t: Translate): SettingChoice<MemoryChoice>[] {
 const memoryChoice = (enabled: boolean): MemoryChoice => (enabled ? 'on' : 'off')
 
 /**
- * Le rangement de projet : déclarer un projet, et demander le déplacement d'une
- * conversation. Deux valeurs comme les réglages voisins, et l'allumé porte le ton de
- * mise en garde — c'est une portée qui agit au-dessus du projet où la session travaille.
- */
-type FilingChoice = 'on' | 'off'
-
-function projectFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
-  return [
-    { value: 'off', label: t('composer.projectFiling.off'), hint: t('composer.projectFiling.off.hint') },
-    { value: 'on', label: t('composer.projectFiling.on'), hint: t('composer.projectFiling.on.hint'), tone: 'caution' },
-  ]
-}
-
-const filingChoice = (enabled: boolean): FilingChoice => (enabled ? 'on' : 'off')
-
-/**
- * Le rangement de carte : proposer le déplacement d'une carte du board, en disant
- * pourquoi. Même forme et même ton que le rangement de projet — une portée qu'on accorde,
- * pas une capacité qu'on retire —, et la même raison : la colonne d'une carte est un choix
- * qu'une personne a posé. Sans ton d'alerte sur « on » : c'est la valeur par défaut, et
- * c'est le clic d'une personne qui applique ce que l'agent propose.
- */
-function cardFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
-  return [
-    { value: 'off', label: t('composer.cardFiling.off'), hint: t('composer.cardFiling.off.hint') },
-    { value: 'on', label: t('composer.cardFiling.on'), hint: t('composer.cardFiling.on.hint') },
-  ]
-}
-
-/**
- * Les décisions : demander à une personne de trancher, sans attendre (`request_decision`).
+ * Ce que Solera fait des demandes de l'agent (#120, Q12) : trois états pour chacune,
+ * Interdit, Demande mon accord, Automatique, et la même ligne partout où elle se règle —
+ * le composer, les réglages du compte et du projet, la visite.
  *
- * Un seul réglage pour l'interrupteur et le délai maximal, plutôt qu'un interrupteur et
- * un champ : « refusées » ou « accordées, X h au plus » se lisent d'une seule valeur, et
- * trois délais couvrent les usages — une demi-journée, une journée, un week-end. Un
- * délai posé ailleurs (par l'API) reste choisissable plutôt que d'être réécrit en silence.
+ * « Automatique » porte le ton de mise en garde : la demande s'applique sans clic, au nom
+ * de la personne qui l'a réglé.
+ */
+export type RequestFamily = 'decisions' | 'proposeCards' | 'cardFiling' | 'projectFiling'
+
+const POLICY_HINTS: Record<RequestFamily, Record<AgentRequestPolicy, MessageKey>> = {
+  decisions: {
+    deny: 'composer.decisions.deny.hint',
+    ask: 'composer.decisions.ask.hint',
+    auto: 'composer.decisions.auto.hint',
+  },
+  proposeCards: {
+    deny: 'composer.proposeCards.deny.hint',
+    ask: 'composer.proposeCards.ask.hint',
+    auto: 'composer.proposeCards.auto.hint',
+  },
+  cardFiling: {
+    deny: 'composer.cardFiling.deny.hint',
+    ask: 'composer.cardFiling.ask.hint',
+    auto: 'composer.cardFiling.auto.hint',
+  },
+  projectFiling: {
+    deny: 'composer.projectFiling.deny.hint',
+    ask: 'composer.projectFiling.ask.hint',
+    auto: 'composer.projectFiling.auto.hint',
+  },
+}
+
+const POLICY_LABELS: Record<RequestFamily, MessageKey> = {
+  decisions: 'composer.setting.decisions',
+  proposeCards: 'composer.setting.proposeCards',
+  cardFiling: 'composer.setting.cardFiling',
+  projectFiling: 'composer.setting.projectFiling',
+}
+
+const POLICY_ICONS: Record<RequestFamily, ReactNode> = {
+  decisions: <MessageCircleQuestion size={14} />,
+  proposeCards: <ListPlus size={14} />,
+  cardFiling: <Columns3 size={14} />,
+  projectFiling: <FolderInput size={14} />,
+}
+
+export function policyOptions(t: Translate, family: RequestFamily): SettingChoice<AgentRequestPolicy>[] {
+  return [
+    { value: 'deny', label: t('composer.policy.deny'), hint: t(POLICY_HINTS[family].deny) },
+    { value: 'ask', label: t('composer.policy.ask'), hint: t(POLICY_HINTS[family].ask) },
+    { value: 'auto', label: t('composer.policy.auto'), hint: t(POLICY_HINTS[family].auto), tone: 'caution' },
+  ]
+}
+
+/**
+ * Le délai maximal d'une décision, réglé à part de son état : il ne vaut que lorsqu'elle
+ * attend quelqu'un. Trois délais couvrent les usages — une demi-journée, une journée, un
+ * week-end. Un délai posé ailleurs (par l'API) reste choisissable plutôt que d'être
+ * réécrit en silence.
  */
 const DECISION_HOURS = [4, 24, 72]
 
-function decisionOptions(t: Translate, current: number): SettingChoice<string>[] {
+function decisionHourOptions(t: Translate, current: number): SettingChoice<string>[] {
   const hours = DECISION_HOURS.includes(current) ? DECISION_HOURS : [...DECISION_HOURS, current].sort((a, b) => a - b)
-  return [
-    { value: 'off', label: t('composer.decisions.off'), hint: t('composer.decisions.off.hint') },
-    ...hours.map((value) => ({
-      value: String(value),
-      label: t('composer.decisions.on', { hours: value }),
-      hint: t('composer.decisions.on.hint'),
-      tone: 'caution' as const,
-    })),
-  ]
+  return hours.map((value) => ({ value: String(value), label: t('composer.decisions.hours', { hours: value }) }))
 }
 
-const decisionChoice = (config: { decisions: boolean; decisionMaxHours: number }): string =>
-  config.decisions ? String(config.decisionMaxHours) : 'off'
+export interface RequestAvailability {
+  decisions: boolean
+  proposeCards: boolean
+  cardFiling: boolean
+  projectFiling: boolean
+}
 
-function decisionsSetting<C extends AgentConfig>(
+/**
+ * Ce que l'instance laisse régler. Faux tant que le registre n'a pas répondu : la ligne
+ * apparaît alors au chargement, plutôt que de s'afficher d'abord puis de disparaître.
+ */
+export function requestAvailabilityOf(
+  registry: { soleraServer: boolean; decisions: boolean; cardFiling: boolean; projectFiling: boolean } | undefined,
+): RequestAvailability {
+  const solera = registry?.soleraServer === true
+  return {
+    decisions: solera && registry?.decisions === true,
+    proposeCards: solera,
+    cardFiling: solera && registry?.cardFiling === true,
+    projectFiling: solera && registry?.projectFiling === true,
+  }
+}
+
+/**
+ * Les lignes des demandes à Solera, pour n'importe quel CLI : ces réglages ne dépendent
+ * pas du CLI (Q32). Une famille que l'instance coupe (`[mcp]` de `config.toml`) n'a pas de
+ * ligne du tout : c'est un plafond.
+ */
+export function requestSettings<C extends AgentConfig>(
   current: C,
   applied: C | null,
   onConfigChange: (config: C) => void,
   t: Translate,
-): SettingGroup {
-  const options = decisionOptions(t, current.decisionMaxHours)
-  return setting({
-    key: 'decisions',
-    label: t('composer.setting.decisions'),
-    icon: <MessageCircleQuestion size={14} />,
-    options,
-    value: decisionChoice(current),
-    onChange: (choice) =>
-      onConfigChange({
-        ...current,
-        decisions: choice !== 'off',
-        decisionMaxHours: choice === 'off' ? current.decisionMaxHours : Number(choice),
+  available: RequestAvailability,
+): SettingGroup[] {
+  const families: RequestFamily[] = ['decisions', 'proposeCards', 'cardFiling', 'projectFiling']
+  const groups: SettingGroup[] = []
+  for (const family of families) {
+    if (!available[family]) continue
+    const options = policyOptions(t, family)
+    groups.push(
+      setting({
+        key: family,
+        label: t(POLICY_LABELS[family]),
+        icon: POLICY_ICONS[family],
+        options,
+        value: current[family],
+        onChange: (choice) => onConfigChange({ ...current, [family]: choice }),
+        // Les outils sont listés au lancement du serveur MCP : passer d'« Interdit » à un
+        // autre état attend la relance de la session.
+        notice: notice(appliedLabel(applied?.[family], current[family], options), t),
       }),
-    // L'outil est listé au lancement du serveur MCP : l'allumer ou l'éteindre attend la
-    // relance de la session. Le délai, lui, est relu par le daemon à chaque dépôt.
-    notice: notice(
-      applied && applied.decisions !== current.decisions
-        ? appliedLabel(decisionChoice(applied), decisionChoice(current), decisionOptions(t, applied.decisionMaxHours))
-        : null,
-      t,
-    ),
-  })
+    )
+    if (family === 'decisions' && current.decisions === 'ask') {
+      // Relu par le daemon à chaque dépôt : pas de relance à attendre.
+      groups.push(
+        setting({
+          key: 'decisionHours',
+          label: t('composer.setting.decisionHours'),
+          icon: <Clock size={14} />,
+          options: decisionHourOptions(t, current.decisionMaxHours),
+          value: String(current.decisionMaxHours),
+          onChange: (choice) => onConfigChange({ ...current, decisionMaxHours: Number(choice) }),
+        }),
+      )
+    }
+  }
+  return groups
 }
 
 /**
@@ -743,25 +796,19 @@ export function useAgentSettings({
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
   const libraryOptionList = skillLibraryOptions(t)
   const memoryOptionList = agentMemoryOptions(t)
-  const filingOptionList = projectFilingOptions(t)
-  const cardFilingOptionList = cardFilingOptions(t)
   const mcpServers = mcpRegistry?.servers ?? []
   // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
   // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
   // s'afficher d'abord puis de disparaître sous le curseur.
   const soleraAvailable = mcpRegistry?.soleraServer === true
-  // Les outils de rangement vivent dans le serveur MCP de Solera : l'entrée disparaît
-  // quand l'instance coupe l'un ou l'autre, un réglage inopérant valant moins que pas
-  // de réglage du tout.
-  const filingAvailable = soleraAvailable && mcpRegistry?.projectFiling === true
   // La mémoire ne dépend pas du serveur MCP de Solera, elle : Claude la tient
   // nativement, dans le dossier que Solera lui désigne. Seule l'instance peut la
   // retirer de l'interface.
   const memoryAvailable = mcpRegistry?.agentMemory === true
-  // Même dépendance que le rangement de projet : l'outil vit dans le serveur MCP de
-  // Solera, l'entrée disparaît quand l'instance coupe l'un ou l'autre.
-  const cardFilingAvailable = soleraAvailable && mcpRegistry?.cardFiling === true
-  const decisionsAvailable = soleraAvailable && mcpRegistry?.decisions === true
+  // Les demandes à Solera vivent dans son serveur MCP : leur ligne disparaît quand
+  // l'instance coupe le serveur ou la famille, un réglage inopérant valant moins que pas
+  // de réglage du tout. Les brouillons de cartes n'ont pas de plafond d'instance.
+  const requestAvailability = requestAvailabilityOf(mcpRegistry)
 
   /**
    * Comptes Claude supplémentaires du compte Solera. Demandés pour Claude seulement,
@@ -991,47 +1038,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(filingAvailable
-        ? [
-            setting({
-              key: 'projectFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.projectFiling'),
-              icon: <FolderInput size={14} />,
-              options: filingOptionList,
-              value: filingChoice(claude.projectFiling),
-              onChange: (choice) => onConfigChange({ ...claude, projectFiling: choice === 'on' }),
-              // Les outils sont listés au lancement du serveur MCP : le changement
-              // attend la relance de la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'claude' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(claude.projectFiling), filingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(cardFilingAvailable
-        ? [
-            setting({
-              key: 'cardFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.cardFiling'),
-              icon: <Columns3 size={14} />,
-              options: cardFilingOptionList,
-              value: filingChoice(claude.cardFiling),
-              onChange: (choice) => onConfigChange({ ...claude, cardFiling: choice === 'on' }),
-              // L'outil est listé au lancement du serveur MCP : le changement attend la
-              // relance de la session, comme le rangement de projet.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'claude' ? filingChoice(appliedConfig.cardFiling) : undefined, filingChoice(claude.cardFiling), cardFilingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(decisionsAvailable
-        ? [decisionsSetting(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t)]
-        : []),
+      ...requestSettings(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t, requestAvailability),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
@@ -1188,47 +1195,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(filingAvailable
-        ? [
-            setting({
-              key: 'projectFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.projectFiling'),
-              icon: <FolderInput size={14} />,
-              options: filingOptionList,
-              value: filingChoice(codex.projectFiling),
-              onChange: (choice) => onConfigChange({ ...codex, projectFiling: choice === 'on' }),
-              // Les outils sont listés au lancement du serveur MCP : le changement
-              // attend la relance de la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'codex' ? filingChoice(appliedConfig.projectFiling) : undefined, filingChoice(codex.projectFiling), filingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(cardFilingAvailable
-        ? [
-            setting({
-              key: 'cardFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.cardFiling'),
-              icon: <Columns3 size={14} />,
-              options: cardFilingOptionList,
-              value: filingChoice(codex.cardFiling),
-              onChange: (choice) => onConfigChange({ ...codex, cardFiling: choice === 'on' }),
-              // L'outil est listé au lancement du serveur MCP : le changement attend la
-              // relance de la session, comme le rangement de projet.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'codex' ? filingChoice(appliedConfig.cardFiling) : undefined, filingChoice(codex.cardFiling), cardFilingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(decisionsAvailable
-        ? [decisionsSetting(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t)]
-        : []),
+      ...requestSettings(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t, requestAvailability),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
@@ -1371,47 +1338,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(filingAvailable
-        ? [
-            setting({
-              key: 'projectFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.projectFiling'),
-              icon: <FolderInput size={14} />,
-              options: filingOptionList,
-              value: filingChoice(opencode.projectFiling),
-              onChange: (choice) => onConfigChange({ ...opencode, projectFiling: choice === 'on' }),
-              // Les outils sont listés au lancement du serveur MCP : le changement
-              // attend la relance de la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(applied ? filingChoice(applied.projectFiling) : undefined, filingChoice(opencode.projectFiling), filingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(cardFilingAvailable
-        ? [
-            setting({
-              key: 'cardFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.cardFiling'),
-              icon: <Columns3 size={14} />,
-              options: cardFilingOptionList,
-              value: filingChoice(opencode.cardFiling),
-              onChange: (choice) => onConfigChange({ ...opencode, cardFiling: choice === 'on' }),
-              // L'outil est listé au lancement du serveur MCP : le changement attend la
-              // relance de la session, comme le rangement de projet.
-              notice: notice(
-                appliedLabel(applied ? filingChoice(applied.cardFiling) : undefined, filingChoice(opencode.cardFiling), cardFilingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(decisionsAvailable
-        ? [decisionsSetting(opencode, applied, onConfigChange, t)]
-        : []),
+      ...requestSettings(opencode, applied, onConfigChange, t, requestAvailability),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
@@ -1564,43 +1491,7 @@ export function useAgentSettings({
             }),
           ]
         : []),
-      ...(filingAvailable
-        ? [
-            setting({
-              key: 'projectFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.projectFiling'),
-              icon: <FolderInput size={14} />,
-              options: filingOptionList,
-              value: filingChoice(grok.projectFiling),
-              onChange: (choice) => onConfigChange({ ...grok, projectFiling: choice === 'on' }),
-              notice: notice(
-                appliedLabel(applied ? filingChoice(applied.projectFiling) : undefined, filingChoice(grok.projectFiling), filingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(cardFilingAvailable
-        ? [
-            setting({
-              key: 'cardFiling',
-              toggle: { on: 'on' },
-              label: t('composer.setting.cardFiling'),
-              icon: <Columns3 size={14} />,
-              options: cardFilingOptionList,
-              value: filingChoice(grok.cardFiling),
-              onChange: (choice) => onConfigChange({ ...grok, cardFiling: choice === 'on' }),
-              notice: notice(
-                appliedLabel(applied ? filingChoice(applied.cardFiling) : undefined, filingChoice(grok.cardFiling), cardFilingOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(decisionsAvailable
-        ? [decisionsSetting(grok, applied, onConfigChange, t)]
-        : []),
+      ...requestSettings(grok, applied, onConfigChange, t, requestAvailability),
       setting({
         key: 'queue',
         toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },

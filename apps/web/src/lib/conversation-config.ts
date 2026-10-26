@@ -53,6 +53,27 @@ class ConfigWriter {
 
   retry = () => { if (this.snapshot.chosen) this.change(this.snapshot.chosen) }
 
+  /**
+   * Rend des champs à ce que le fil hérite du compte et du projet (#120) : la marque
+   * « changé dans ce fil » qu'on retire d'un clic. Dans la même file que les choix, pour
+   * qu'un retrait ne passe pas devant un choix fait juste avant.
+   */
+  reset = (fields: string[]) => {
+    if (fields.length === 0) return
+    const revision = ++this.revision
+    this.publish({ chosen: null, error: null })
+    this.pending = (this.pending ?? Promise.resolve()).then(async () => {
+      try {
+        await api.patch(`/api/conversations/${this.id}`, { overrides: { unset: fields } })
+        await this.client.invalidateQueries({ queryKey: ['conversation', this.id] })
+      } catch (error) {
+        if (revision === this.revision) this.publish({ chosen: null, error: error instanceof Error ? error : new Error(String(error)) })
+      } finally {
+        if (revision === this.revision) this.pending = null
+      }
+    })
+  }
+
   /** Un message attend les réglages choisis, y compris ceux ajoutés pendant l'attente. */
   flush = async () => {
     while (this.pending) await this.pending
@@ -75,5 +96,17 @@ export function useConversationConfig(conversation: ConversationDto | undefined)
   const snapshot = useSyncExternalStore(writer.subscribe, writer.getSnapshot)
   const stored = useMemo(() => conversation ? agentConfigSchema.parse(conversation.config) : null, [conversation])
 
-  return { config: snapshot.chosen ?? stored, error: snapshot.error, change: writer.change, retry: writer.retry, flush: writer.flush }
+  // Les champs que ce fil change à son héritage. Vide pendant qu'un choix s'écrit : le
+  // serveur dira, à la relecture, s'il diffère vraiment de ce qui est hérité.
+  const overrides = useMemo(() => Object.keys(conversation?.configOverrides ?? {}), [conversation])
+
+  return {
+    config: snapshot.chosen ?? stored,
+    overrides,
+    error: snapshot.error,
+    change: writer.change,
+    reset: writer.reset,
+    retry: writer.retry,
+    flush: writer.flush,
+  }
 }

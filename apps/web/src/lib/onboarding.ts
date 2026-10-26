@@ -1,4 +1,4 @@
-import type { AgentConfig, InstanceProfile, OnboardingPermission } from '@solera/protocol'
+import type { AgentConfig, InstanceProfile } from '@solera/protocol'
 
 /**
  * La visite de première ouverture : quelles étapes, dans quel ordre, d'après ce que
@@ -39,51 +39,12 @@ export function onboardingSteps({ profile, needsSetup }: OnboardingShape): Onboa
 }
 
 /**
- * Le réflexe choisi, traduit dans le vocabulaire de chaque CLI.
- *
- * Les quatre réflexes sont ceux de Claude ; les autres CLI n'ont pas tous les quatre, et
- * la traduction prend le garde-fou le plus proche plutôt que d'inventer un mode.
- */
-export function withPermissionChoice(config: AgentConfig, choice: OnboardingPermission): AgentConfig {
-  switch (config.agent) {
-    case 'claude':
-      return {
-        ...config,
-        permissionMode: ({ manual: 'manual', auto: 'auto', acceptEdits: 'acceptEdits', bypass: 'bypassPermissions' } as const)[choice],
-      }
-    case 'codex':
-      return {
-        ...config,
-        askForApproval: choice === 'manual' ? 'untrusted' : choice === 'auto' ? 'on-request' : 'never',
-        sandbox: choice === 'bypass' ? 'danger-full-access' : 'workspace-write',
-      }
-    case 'opencode':
-      return {
-        ...config,
-        permissions: {
-          ...config.permissions,
-          edit: choice === 'manual' || choice === 'auto' ? 'ask' : 'allow',
-          bash: choice === 'bypass' ? 'allow' : 'ask',
-        },
-      }
-    case 'grok':
-      // L'ACP de Grok n'a pas d'`acceptEdits` : son `auto` laisserait un classifieur lancer
-      // les commandes, que ce réflexe promet de demander. Le plus proche est `default`.
-      return {
-        ...config,
-        permissionMode: ({ manual: 'default', auto: 'auto', acceptEdits: 'default', bypass: 'bypassPermissions' } as const)[choice],
-      }
-  }
-}
-
-/**
- * Les familles d'autorisation que la visite règle, communes aux quatre CLI.
- *
- * `agentMemory` et `skillLibrary` en font partie, mais chacune a son étape : la mémoire
+ * Les deux familles que la visite règle elle-même, chacune dans son étape : la mémoire
  * avec les consignes, parce que ce sont les deux choses qu'une session laisse aux
- * suivantes ; la bibliothèque avec les skills.
+ * suivantes ; la bibliothèque avec les skills. Les demandes à Solera ont leurs trois
+ * états, réglés par l'étape Permissions avec le composant des réglages (#120).
  */
-export type OnboardingFamily = 'soleraMcp' | 'agentMemory' | 'projectFiling' | 'cardFiling' | 'decisions' | 'skillLibrary'
+export type OnboardingFamily = 'agentMemory' | 'skillLibrary'
 
 export function withFamily(config: AgentConfig, family: OnboardingFamily, on: boolean): AgentConfig {
   return { ...config, [family]: on }

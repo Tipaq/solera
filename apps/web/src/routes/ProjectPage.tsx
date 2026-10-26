@@ -8,33 +8,18 @@ import {
   RefreshCw,
   Save,
   Shapes,
-  ShieldAlert,
-  SlidersHorizontal,
   SquareKanban,
   Trash2,
   TriangleAlert,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  agentKindSchema,
-  defaultConfigFor,
-  EMPTY_CONFIG_LAYER,
-  layerOverridesFor,
-  resolveAgentConfig,
-  type AgentConfig,
-  type AgentKind,
-  type ConfigLayer,
-  type ProjectDto,
-  type ProjectVisibility,
-} from '@solera/protocol'
-import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
-import { useAgentSettings } from '../components/chat/agent-settings'
+import { type ProjectDto, type ProjectVisibility } from '@solera/protocol'
+import { ModelDefaultsSettings, PermissionsSettings } from '../components/settings/LayeredSettings'
+import { SectionHeader } from '../components/settings/SectionHeader'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ProjectInstructions } from '../components/instructions/Instructions'
 import { ProjectMemory } from '../components/instructions/ProjectMemory'
-import type { SettingGroup } from '../components/chat/ComposerSettings'
-import { useUserSettings } from '../lib/user-settings'
 import { PathField } from '../components/PathField'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import {
@@ -44,12 +29,9 @@ import {
   Card,
   CardBody,
   CardHeader,
-  ChoiceList,
   EmptyState,
   Field,
-  Select,
   Switch,
-  type Choice,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
@@ -162,7 +144,7 @@ export function ProjectPage() {
           <ProjectImage project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectIssueSource projectId={project.id} />
-          <ProjectDefaults projectId={project.id} defaults={project.configLayer} />
+          <ProjectAgentSettings project={project} />
           <ProjectSettings
             projectId={project.id}
             initialName={project.name}
@@ -442,145 +424,23 @@ function PrototypeCandidates({ projectId }: { projectId: string }) {
   )
 }
 /**
- * Les préréglages du projet : le socle des conversations qui s'y ouvrent.
+ * Les réglages des agents propres au projet (#120, Q33) : les mêmes sections que celles
+ * du compte, chaque ligne disant si elle en hérite ou si le projet la change.
  *
- * Partagé, à la différence des défauts de compte, et pour ce que le projet a de propre :
- * les serveurs MCP utiles à ce dépôt le sont pour tout le monde, et les répertoires
- * supplémentaires ne veulent rien dire ailleurs. D'où l'écriture réservée au
- * propriétaire, comme le reste des réglages du projet.
- *
- * Chaque CLI est indépendant, et peut ne rien dire : « les défauts de compte » n'est pas
- * un préréglage vide mais une absence, qui laisse chacun démarrer avec les siens. Rien
- * n'est appliqué aux conversations déjà ouvertes, qui portent chacune sa configuration.
+ * Partagés, à la différence des réglages du compte : ce que le projet change vaut pour
+ * tous ses membres, et le reste vient du compte de chacun. D'où l'écriture réservée au
+ * propriétaire, comme le reste des réglages du projet. Les conversations qui n'ont pas
+ * changé une valeur la suivent à la relance de leur session.
  */
-function ProjectDefaults({
-  projectId,
-  defaults,
-}: {
-  projectId: string
-  defaults: ConfigLayer
-}) {
+function ProjectAgentSettings({ project }: { project: ProjectDto }) {
   const t = useTranslate()
-  const update = useUpdateProject()
-  const { data: settings } = useUserSettings()
-
-  const [agent, setAgent] = useState<AgentKind>('claude')
-  /**
-   * Ce qui vient d'être choisi, tant que la liste des projets n'a pas été relue. Sans
-   * lui, chaque réglage reviendrait à sa valeur d'avant le temps de l'aller-retour, et
-   * couper le préréglage le ferait réapparaître sous le curseur.
-   */
-  const [pending, setPending] = useState<{ [K in AgentKind]?: AgentConfig | null }>({})
-
-  const account = settings?.agentDefaults[agent] ?? defaultConfigFor(agent)
-  // Le projet « règle » ce CLI dès qu'il en change un champ, commun ou propre (#120).
-  const layered = Object.keys(layerOverridesFor(defaults, agent)).length > 0
-  const stored =
-    agent in pending ? (pending[agent] ?? null) : layered ? resolveAgentConfig(agent, [settings?.agentLayer ?? EMPTY_CONFIG_LAYER, defaults]) : null
-  const preset = stored?.agent === agent ? stored : null
-
-  const write = (config: AgentConfig | null) => {
-    setPending((current) => ({ ...current, [agent]: config }))
-    update.mutate({ id: projectId, defaultConfig: { agent, config } })
-  }
-
-  const { groups, mcp, catalogError } = useAgentSettings({
-    config: preset ?? account,
-    onConfigChange: write,
-  })
-
-  const agents: Choice<AgentKind>[] = agentKindSchema.options.map((value) => ({
-    value,
-    label: AGENT_LABELS[value],
-    hint: AGENT_META[value].vendor,
-    icon: <AgentIcon agent={value} size={16} />,
-  }))
-
-  const sources: Choice<'account' | 'project'>[] = [
-    {
-      value: 'account',
-      label: t('project.defaults.source.account'),
-      hint: t('project.defaults.source.account.hint'),
-    },
-    {
-      value: 'project',
-      label: t('project.defaults.source.project'),
-      hint: t('project.defaults.source.project.hint'),
-    },
-  ]
-
+  const level = { kind: 'project', project } as const
   return (
-    <Card>
-      <CardHeader
-        title={t('project.defaults.title')}
-        description={t('project.defaults.description')}
-        icon={<SlidersHorizontal size={16} />}
-      />
-      <CardBody className="flex flex-col gap-4">
-        <ChoiceList label={t('draft.cli.legend')} value={agent} options={agents} onChange={setAgent} />
-
-        <ChoiceList
-          label={t('project.defaults.source')}
-          value={preset ? 'project' : 'account'}
-          options={sources}
-          // Le préréglage part de ce qui était montré, c'est-à-dire des défauts du
-          // compte : accepter le socle proposé ne doit pas demander de le ressaisir.
-          onChange={(source) => write(source === 'project' ? (preset ?? account) : null)}
-        />
-
-        {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-        {update.isError ? <Banner>{t('project.defaults.save.error')}</Banner> : null}
-
-        {/* Rien à déplier tant que le projet ne dit rien de ce CLI : les réglages
-            affichés seraient ceux du compte, et un clic les figerait pour tout le
-            monde sans que personne l'ait demandé. */}
-        {preset ? (
-          <>
-            {groups.map((group) => (
-              <GroupField key={group.key} group={group} />
-            ))}
-
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-ink-soft">
-                {t('project.defaults.mcp.label')}
-              </span>
-              {/* Le contrôle porte déjà son icône et son décompte : l'encadrer d'un
-                  second repère ferait deux prises pour un seul réglage. */}
-              <div className="flex">{mcp}</div>
-              <p className="text-xs text-ink-faint">{t('project.defaults.mcp.hint')}</p>
-            </div>
-
-            <p className="text-xs text-ink-faint">{t('project.defaults.applies')}</p>
-          </>
-        ) : null}
-      </CardBody>
-    </Card>
-  )
-}
-
-/**
- * Une catégorie de réglage, en liste déroulante, comme sur l'écran des défauts de CLI :
- * celle des modèles est trop longue pour être dépliée, et aligner les autres dessus vaut
- * mieux qu'un écran où chaque réglage a sa forme propre.
- */
-function GroupField({ group }: { group: SettingGroup }) {
-  const selected = group.options.find((option) => option.value === group.value)
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <Select
-        label={group.label}
-        value={group.value}
-        options={group.options}
-        onChange={group.onChange}
-      />
-      {selected?.tone === 'caution' ? (
-        <p className="flex items-start gap-1.5 text-xs text-caution">
-          <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-          <span>{selected.hint}</span>
-        </p>
-      ) : null}
-    </div>
+    <section className="flex flex-col gap-4">
+      <SectionHeader title={t('project.agentSettings.title')} description={t('project.agentSettings.description')} />
+      <PermissionsSettings level={level} />
+      <ModelDefaultsSettings level={level} />
+    </section>
   )
 }
 

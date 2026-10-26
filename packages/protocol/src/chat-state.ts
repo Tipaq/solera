@@ -111,7 +111,7 @@ export interface FilingItem {
    * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
    * aucun bouton.
    */
-  automatic: boolean
+  automatic?: boolean
 }
 
 /**
@@ -149,7 +149,7 @@ export interface CardFilingItem {
    * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
    * aucun bouton.
    */
-  automatic: boolean
+  automatic?: boolean
 }
 
 /**
@@ -173,7 +173,7 @@ export interface CardDraftItem {
    * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
    * aucun bouton.
    */
-  automatic: boolean
+  automatic?: boolean
 }
 
 /**
@@ -197,7 +197,7 @@ export interface DecisionItem {
    * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
    * aucun bouton.
    */
-  automatic: boolean
+  automatic?: boolean
 }
 
 /** Une question posée par l'agent, en attente ou déjà tranchée. */

@@ -37,7 +37,8 @@ import {
 const errorOf = (error: unknown): string | null =>
   error instanceof ApiRequestError ? error.message : null
 
-export function GrokAccountsSettingsPage() {
+/** `bare` : rendue dans la section Abonnements, qui porte déjà l'en-tête (#120). */
+export function GrokAccountsSettingsPage({ bare = false }: { bare?: boolean } = {}) {
   const t = useTranslate()
   const { data } = useGrokAccounts()
   const create = useCreateGrokAccount()
@@ -65,10 +66,12 @@ export function GrokAccountsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader
-        title={t('grokAccounts.section.title')}
-        description={t('grokAccounts.section.description')}
-      />
+      {bare ? null : (
+        <SectionHeader
+          title={t('grokAccounts.section.title')}
+          description={t('grokAccounts.section.description')}
+        />
+      )}
 
       <Banner tone="info">{t('grokAccounts.banner')}</Banner>
 

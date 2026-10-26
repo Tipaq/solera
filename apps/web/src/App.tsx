@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import { AppShell } from './components/AppShell'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import { visibleSections } from './components/settings/sections'
-import { openSettings } from './lib/settings-dialog'
+import { LEGACY_SETTINGS_SECTIONS, openSettings } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { useProjects } from './lib/projects'
@@ -99,11 +99,13 @@ function LegacySettingsRoute() {
   const { data: instance } = useInstance()
   // Parmi les sections que cette instance montre : une adresse vers une section cachée
   // (les notifications, en bureau) ouvre la modale sur sa section par défaut.
-  const known = visibleSections(user?.isAdmin, instance?.capabilities).find((entry) => entry.id === section)
+  const legacy = section ? LEGACY_SETTINGS_SECTIONS[section] : undefined
+  const wanted = legacy?.section ?? section
+  const known = visibleSections(user?.isAdmin, instance?.capabilities).find((entry) => entry.id === wanted)
 
   useEffect(() => {
-    openSettings(known?.id ?? null)
-  }, [known?.id])
+    openSettings(known?.id ?? null, legacy?.subscription)
+  }, [known?.id, legacy?.subscription])
 
   // « projets » n'a jamais été une section : c'était déjà une redirection vers le
   // formulaire de création, et il reste le bon endroit où arriver.

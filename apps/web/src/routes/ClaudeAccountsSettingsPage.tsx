@@ -48,7 +48,8 @@ const errorOf = (error: unknown): string | null =>
 
 type AddMode = 'guided' | 'paste'
 
-export function ClaudeAccountsSettingsPage() {
+/** `bare` : rendue dans la section Abonnements, qui porte déjà l'en-tête (#120). */
+export function ClaudeAccountsSettingsPage({ bare = false }: { bare?: boolean } = {}) {
   const t = useTranslate()
   const { data } = useClaudeAccounts()
 
@@ -63,10 +64,12 @@ export function ClaudeAccountsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader
-        title={t('claudeAccounts.section.title')}
-        description={t('claudeAccounts.section.description')}
-      />
+      {bare ? null : (
+        <SectionHeader
+          title={t('claudeAccounts.section.title')}
+          description={t('claudeAccounts.section.description')}
+        />
+      )}
 
       <Banner tone="info">{t('claudeAccounts.banner')}</Banner>
 
