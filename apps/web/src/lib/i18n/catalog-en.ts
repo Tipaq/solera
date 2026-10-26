@@ -2453,7 +2453,7 @@ export const en = {
     'The "{name}" worktree will be detached: its {files} uncommitted files stay here, in this project.',
   'filing.cost.card': 'Card #{number} "{title}" will be detached.',
   'filing.cost.resume':
-    "The CLI session won't be able to resume: the working directory changes, so the agent restarts without its context. The thread itself stays whole.",
+    "This CLI can't resume its session from the new working directory: the agent restarts with a selection of the thread instead of its full memory. The thread itself stays whole.",
   'filing.accept': 'File it',
   'filing.refuse': 'Leave it here',
   'filing.status.accepted': 'Filed',

@@ -2449,7 +2449,7 @@ export const fr: Catalog = {
     'Le worktree « {name} » sera détaché : ses {files} fichiers non commités restent ici, dans ce projet.',
   'filing.cost.card': 'La carte #{number} « {title} » sera détachée.',
   'filing.cost.resume':
-    "La session du CLI ne pourra pas reprendre : le répertoire de travail change, l'agent repart sans son contexte. Le fil, lui, reste entier.",
+    "Ce CLI ne sait pas reprendre sa session depuis le nouveau répertoire de travail : l'agent repart d'une sélection du fil plutôt que de sa mémoire entière. Le fil, lui, reste entier.",
   'filing.accept': 'Ranger',
   'filing.refuse': 'Laisser ici',
   'filing.status.accepted': 'Rangée',

@@ -292,18 +292,48 @@ function renderItem(item: HandoffItem): string {
   }
 }
 
+/**
+ * `handoff` : le fil continue dans un autre CLI. `relocation` : le même fil, rangé
+ * ailleurs, dont le CLI ne sait pas reprendre sa session depuis le nouveau dossier.
+ */
+export type HandoffKind = 'handoff' | 'relocation'
+
 /** L'en-tête, qui dit d'où vient ce fil et comment relire ce qui manque. */
-export function renderHandoffHeader(source: HandoffSource, target: AgentKind): string {
+export function renderHandoffHeader(
+  source: HandoffSource,
+  target: AgentKind,
+  kind: HandoffKind = 'handoff',
+): string {
+  if (kind === 'relocation') return renderRelocationHeader(source)
   return [
     `# Suite d'une conversation menée avec ${AGENT_NAMES[source.agent]}`,
     '',
     `Cette conversation continue « ${source.title} » (id ${source.id}), menée avec ${AGENT_NAMES[source.agent]} dans Solera, et poursuivie maintenant avec ${AGENT_NAMES[target]}. Ce qui suit n'est pas un résumé : ce sont des messages du fil d'origine, en entier et dans l'ordre, avec les appels d'outils qui tenaient. Le raisonnement, l'état des outils et les pièces jointes ne sont pas transférés. ${
-      source.rereadable
-        ? "Les parties omises sont signalées par une référence : relis-les avec l'outil `read_conversation` du serveur MCP `solera` (paramètres `id` et `before`) dès qu'un détail te manque, plutôt que de le deviner."
-        : "Les parties omises sont signalées, mais cette conversation n'appartient à aucun projet et ne peut pas les relire : si un détail te manque, demande-le plutôt que de le deviner."
+      rereadHint(source)
     }`,
     '',
     "La demande à traiter est le premier message de cette conversation, après ce bloc : c'est elle qui fait foi, le fil ci-dessous n'est que son contexte. Si ta mémoire de projet ou une autre session dit autre chose que ce fil, c'est ce fil que tu continues : signale la contradiction plutôt que de trancher en silence.",
+  ].join('\n')
+}
+
+function rereadHint(source: HandoffSource): string {
+  return source.rereadable
+    ? "Les parties omises sont signalées par une référence : relis-les avec l'outil `read_conversation` du serveur MCP `solera` (paramètres `id` et `before`) dès qu'un détail te manque, plutôt que de le deviner."
+    : "Les parties omises sont signalées, mais cette conversation n'appartient à aucun projet et ne peut pas les relire : si un détail te manque, demande-le plutôt que de le deviner."
+}
+
+/**
+ * Le fil n'a pas changé de CLI : il a changé de dossier, et la session native est
+ * restée dans l'ancien. Ce qui suit tient lieu de mémoire, et le message suivant de
+ * l'utilisateur est la suite du fil, pas une nouvelle demande.
+ */
+function renderRelocationHeader(source: HandoffSource): string {
+  return [
+    '# Suite de cette conversation, dans un nouveau répertoire de travail',
+    '',
+    `Cette conversation, « ${source.title} » (id ${source.id}), a été rangée ailleurs dans Solera et son répertoire de travail a changé. ${AGENT_NAMES[source.agent]} ne sait pas reprendre sa session depuis un autre dossier : tu repars sans ta mémoire du fil. Ce qui suit la remplace. Ce n'est pas un résumé : ce sont des messages de ce fil, en entier et dans l'ordre, avec les appels d'outils qui tenaient. Le raisonnement, l'état des outils et les pièces jointes ne sont pas repris. ${rereadHint(source)}`,
+    '',
+    "Le prochain message de l'utilisateur continue ce fil : réponds-y comme si la conversation n'avait pas été interrompue. Les chemins cités plus bas peuvent désigner l'ancien dossier ; vérifie où tu es avant de t'y fier.",
   ].join('\n')
 }
 
@@ -314,8 +344,13 @@ function renderOmitted(source: HandoffSource, omitted: NonNullable<HandoffSelect
 }
 
 /** Le texte entier, prêt à injecter. */
-export function renderHandoff(source: HandoffSource, target: AgentKind, selection: HandoffSelection): string {
-  const parts = [renderHandoffHeader(source, target), '## Fil d\'origine']
+export function renderHandoff(
+  source: HandoffSource,
+  target: AgentKind,
+  selection: HandoffSelection,
+  kind: HandoffKind = 'handoff',
+): string {
+  const parts = [renderHandoffHeader(source, target, kind), '## Fil d\'origine']
   if (selection.head) parts.push(renderItem(selection.head))
   if (selection.omitted) {
     const before = selection.tail[0]?.seq ?? selection.omitted.toSeq + 1
@@ -342,6 +377,7 @@ export function buildHandoff(
   source: HandoffSource,
   target: AgentKind,
   budgetTokens: number,
+  kind: HandoffKind = 'handoff',
 ): HandoffResult {
   if (items.length === 0) throw new HandoffError('handoff_empty', 'This conversation has no message to carry over.')
 
@@ -354,10 +390,10 @@ export function buildHandoff(
   }
 
   const selection = selectHandoff(items, budgetBytes - fixed)
-  const text = renderHandoff(source, target, selection)
+  const text = renderHandoff(source, target, selection, kind)
   return {
     text,
-    bytes: Buffer.byteLength(text) - Buffer.byteLength(renderHandoffHeader(source, target)),
+    bytes: Buffer.byteLength(text) - Buffer.byteLength(renderHandoffHeader(source, target, kind)),
     budgetTokens,
     selected: selection.tail.length + (selection.head ? 1 : 0),
     omitted: selection.omitted?.messages ?? 0,

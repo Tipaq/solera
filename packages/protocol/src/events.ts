@@ -415,7 +415,10 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     /** Ce qui part avec le déplacement, pour que la demande affiche son prix. */
     worktree: z.object({ name: z.string(), dirtyFiles: z.number() }).nullable(),
     card: z.object({ number: z.number(), title: z.string() }).nullable(),
-    /** Faux quand la session n'avait de toute façon pas de reprise CLI. */
+    /**
+     * Vrai quand le déplacement coûte la reprise CLI : le dossier change et ce CLI ne
+     * sait pas y reprendre sa session. L'agent repart alors d'une sélection du fil.
+     */
     resumable: z.boolean(),
   }),
   z.object({

@@ -70,7 +70,7 @@ import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { adoptSessionTitle } from '../conversations/title.js'
-import { moveConversation } from '../conversations/move.js'
+import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
 import type { EventLog } from '../events/event-log.js'
 import { readGitStatus } from '../git.js'
@@ -1441,7 +1441,7 @@ export class AgentRequests {
       }
     }
 
-    const price = await this.filingPrice(target)
+    const price = await this.filingPrice(target, destination.id)
     this.log.append(target.id, {
       type: 'filing.requested',
       requestId: request.id,
@@ -1475,7 +1475,7 @@ export class AgentRequests {
    * qu'il y a un worktree aurait rendu indéplaçable toute session ayant travaillé dans un
    * arbre, le détachement n'existant pas.
    */
-  private async filingPrice(target: ConversationRow): Promise<{
+  private async filingPrice(target: ConversationRow, projectId: string): Promise<{
     worktree: { name: string; dirtyFiles: number } | null
     card: { number: number; title: string } | null
     resumable: boolean
@@ -1499,7 +1499,8 @@ export class AgentRequests {
     return {
       worktree: tree ? { name: tree.name, dirtyFiles: status?.changedFiles ?? 0 } : null,
       card,
-      resumable: target.agentSessionId !== null,
+      // Le seul cas où l'agent perd sa session native, et repart d'une sélection du fil.
+      resumable: planSessionCarry(this.ctx, target, projectId).carry === 'relay',
     }
   }
 
@@ -1548,7 +1549,7 @@ export class AgentRequests {
         continue
       }
 
-      const result = await moveConversation(this.ctx, this.sessions, target, destination.id)
+      const result = await moveConversation(this.ctx, this.sessions, this.log, target, destination.id)
       if (!result.ok) {
         // `busy` : un tour tourne, on retentera au prochain balayage. C'est tout le
         // mécanisme d'attente, et il n'y en a pas d'autre.

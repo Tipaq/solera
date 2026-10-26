@@ -7,6 +7,7 @@ import {
   conversations,
   permissionRequests,
   projects,
+  worktrees,
   type ConversationRow,
   type Db,
 } from '@solera/db'
@@ -22,6 +23,7 @@ import {
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
+import { copyTranscript } from '../agents/claude/transcript.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { projectOverview } from '../agents/overview.js'
@@ -1337,6 +1339,16 @@ export class SessionManager {
     // elle, visait l'ancien dépôt.
     await this.stopRunner(conversationId, { keepQueue: true })
     this.checkpoints.delete(conversationId)
+
+    // Comme au rangement : recopié sous la racine, le transcript y est relu par Solera
+    // et prolongé par le CLI. Un échec ne coûte que la resynchronisation.
+    const gone = conversation.worktreeId
+      ? this.db.select({ path: worktrees.path }).from(worktrees).where(eq(worktrees.id, conversation.worktreeId)).get()
+      : undefined
+    if (conversation.agent === 'claude' && conversation.agentSessionId && gone) {
+      const root = this.resolveCwd({ ...conversation, worktreeId: null })
+      await copyTranscript(gone.path, root, conversation.agentSessionId).catch(() => false)
+    }
 
     const patch: Partial<ConversationRow> = {
       worktreeId: null,
