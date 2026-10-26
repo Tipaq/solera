@@ -3341,6 +3341,7 @@ export const en = {
   'portfolioActivity.card.noSession': "no session",
   'portfolioActivity.card.review': "Card in To review for {age}",
   'portfolioActivity.card.reviewArchived': "Card in To review for {age} — the session that did it is archived",
+  'portfolioActivity.card.reviewHidden': "Card in To review for {age} — done by a session you can't see",
   'portfolioActivity.card.toClarify': "Card to clarify for {age}",
   'portfolio.action.newProject': "Project",
   'portfolio.filter.project': "Projects",

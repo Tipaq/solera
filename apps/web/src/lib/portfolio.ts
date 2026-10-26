@@ -61,9 +61,9 @@ function cardDemandOf(card: CardDto): { group: ActivityGroup; since: number } | 
 
 /**
  * Les cartes qui réclament quelqu'un et qu'aucune ligne de session ne porte : la session
- * qui les a faites est archivée, ou il n'y en a jamais eu. Une carte portée par une
- * session visible se lit déjà sur la ligne de celle-ci, et la compter deux fois ferait
- * douter du total.
+ * qui les a faites est archivée ou privée à quelqu'un d'autre, ou il n'y en a jamais eu.
+ * Une carte portée par une session visible se lit déjà sur la ligne de celle-ci, et la
+ * compter deux fois ferait douter du total.
  */
 function orphanCardsOf(cards: PortfolioCard[], live: LiveConversation[]) {
   const carried = new Set(live.flatMap((entry) => (entry.conversation.card ? [entry.conversation.card.id] : [])))
@@ -73,6 +73,22 @@ function orphanCardsOf(cards: PortfolioCard[], live: LiveConversation[]) {
     return demand ? [{ card, ...demand }] : []
   })
 }
+
+/**
+ * Ce qu'est devenue la session qui a mis en *À vérifier* une carte qu'aucune ligne ne
+ * porte. Une session encore ouverte qu'on ne voit pas est la session privée de
+ * quelqu'un d'autre, dans un projet partagé : la dire archivée serait faux.
+ */
+function reviewerOf(card: CardDto): 'none' | 'hidden' | 'archived' {
+  if (card.conversations.length === 0) return 'none'
+  return card.conversations.some((entry) => entry.archivedAt === null) ? 'hidden' : 'archived'
+}
+
+const REVIEW_LABEL = {
+  none: 'portfolioActivity.card.review',
+  hidden: 'portfolioActivity.card.reviewHidden',
+  archived: 'portfolioActivity.card.reviewArchived',
+} as const
 
 /**
  * Les lignes de l'Activité du portefeuille, la plus récente d'abord : les sessions de
@@ -120,9 +136,7 @@ export function usePortfolioActivityRows(): { rows: PortfolioRow[]; isPending: b
       summary:
         group === 'review'
           ? {
-              text: t(card.conversations.length > 0 ? 'portfolioActivity.card.reviewArchived' : 'portfolioActivity.card.review', {
-                age: shortAge(since),
-              }),
+              text: t(REVIEW_LABEL[reviewerOf(card)], { age: shortAge(since) }),
               tone: 'soft',
             }
           : { text: t('portfolioActivity.card.toClarify', { age: shortAge(since) }), tone: 'caution' },

@@ -3335,6 +3335,7 @@ export const fr: Catalog = {
   'portfolioActivity.card.noSession': "aucune session",
   'portfolioActivity.card.review': "Carte en À vérifier depuis {age}",
   'portfolioActivity.card.reviewArchived': "Carte en À vérifier depuis {age} — la session qui l'a faite est archivée",
+  'portfolioActivity.card.reviewHidden': "Carte en À vérifier depuis {age} — faite par une session que tu ne vois pas",
   'portfolioActivity.card.toClarify': "Carte à préciser depuis {age}",
   'portfolio.action.newProject': "Projet",
   'portfolio.filter.project': "Projets",
