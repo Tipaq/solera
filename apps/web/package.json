@@ -9,7 +9,8 @@
     "icons:sync": "node scripts/sync-file-icons.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "prototype:colonne": "vite --port 5433 --strictPort --host 0.0.0.0"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
