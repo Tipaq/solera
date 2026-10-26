@@ -16,7 +16,6 @@ import {
   Pencil,
   SlidersHorizontal,
   Focus,
-  ChevronLeft,
   Target,
   ChevronRight,
   Columns3,
@@ -561,8 +560,8 @@ function TreeZone({ demands, coarse, openThread, onOpenThread, onMode, onCurrent
  *   renommer, sa couleur. Tableau, Worktrees et Planifiées vivent là et sur la page du
  *   projet, plus en lignes permanentes sous le sélecteur.
  *
- * - le **‹** en tête revient à l'arbre. On en sort par où l'on est entré : l'entrée est
- *   sur la ligne du projet dans l'arbre, la sortie sur la ligne du projet ici.
+ * - le **⇅ en tête** ouvre la liste des projets ; « Tous les projets », en haut de la
+ *   liste, revient à l'arbre.
  */
 function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse }: Pick<
   ColumnProps,
@@ -578,19 +577,7 @@ function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse 
 
   return (
     <div data-shot="selecteur" className={cx('group mb-1 flex items-center gap-0.5 rounded-md pr-0.5 text-ink transition-colors hover:bg-surface-high', h(coarse, 'h-9'))}>
-      {/* Le retour à l'arbre, en tête de ligne, là où l'on cherche un « retour ». */}
-      <IconButton label="Tous les projets" size="sm" onClick={() => onMode('tree')}>
-        <ChevronLeft size={15} />
-      </IconButton>
-      <button
-        type="button"
-        onClick={() => (project ? go('Aperçu') : undefined)}
-        title={project ? `Ouvrir l’Aperçu de ${name}` : undefined}
-        className="flex h-full min-w-0 items-center gap-2 rounded-md pl-0.5 text-left text-sm font-semibold"
-      >
-        {project ? <Avatar project={project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
-        <span className="min-w-0 truncate">{name}</span>
-      </button>
+      {/* ⇅ en tête : changer de projet, ou revenir à tous les projets en haut de sa liste. */}
       <Menu
         align="start"
         trigger={
@@ -605,6 +592,8 @@ function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse 
           </button>
         }
       >
+        <MenuItem icon={<ListTree size={14} />} onSelect={() => onMode('tree')}>Tous les projets</MenuItem>
+        <MenuSeparator />
         {others.map((entry) => (
           <MenuItem
             key={entry.id ?? 'none'}
@@ -617,9 +606,16 @@ function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse 
             </span>
           </MenuItem>
         ))}
-        <MenuSeparator />
-        <MenuItem icon={<ListTree size={14} />} onSelect={() => onMode('tree')}>Afficher tous les projets</MenuItem>
       </Menu>
+      <button
+        type="button"
+        onClick={() => (project ? go('Aperçu') : undefined)}
+        title={project ? `Ouvrir l’Aperçu de ${name}` : undefined}
+        className="flex h-full min-w-0 items-center gap-2 rounded-md pl-0.5 text-left text-sm font-semibold"
+      >
+        {project ? <Avatar project={project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
+        <span className="min-w-0 truncate">{name}</span>
+      </button>
       <span className="flex-1" />
       <IconButton label={`Nouvelle conversation dans ${name}`} size="sm"><Plus size={14} /></IconButton>
       {project ? (
