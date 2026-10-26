@@ -34,10 +34,8 @@ import { SkillsInventory, SkillsMenu } from './SkillsInventory'
  * s'empilent, chacune avec son retour : un troisième menu n'aurait nulle part où
  * s'ouvrir sur un écran de 320 px.
  *
- * Dans les deux cas, un réglage se lit sans être ouvert — sa valeur en vigueur est à
- * droite de son intitulé — et le panneau complet reste au bout, sous « Tous les
- * réglages… », parce qu'il est le seul endroit où plusieurs réglages se comparent d'un
- * coup d'œil.
+ * Dans les deux cas, un réglage se lit sans être ouvert : sa valeur en vigueur est à
+ * droite de son intitulé.
  *
  * La pastille d'alerte vit ici parce que ce bouton est le seul chemin vers les
  * réglages : sans elle, des approbations coupées ou un mode Plan deviendraient

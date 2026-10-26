@@ -135,7 +135,7 @@ try {
   let stored = await settings()
   assert.equal(stored.agentDefaults.claude.permissionMode, 'acceptEdits')
   assert.equal(stored.agentDefaults.codex.askForApproval, 'never')
-  assert.equal(stored.agentDefaults.grok.permissionMode, 'auto')
+  assert.equal(stored.agentDefaults.grok.permissionMode, 'default')
   // Allumée par défaut depuis #66 : le clic l'éteint, aux quatre défauts.
   for (const agent of ['claude', 'codex', 'opencode', 'grok']) {
     assert.equal(stored.agentDefaults[agent].cardFiling, false, `cardFiling pour ${agent}`)

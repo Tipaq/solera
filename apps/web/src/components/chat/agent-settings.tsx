@@ -224,12 +224,13 @@ const filingChoice = (enabled: boolean): FilingChoice => (enabled ? 'on' : 'off'
  * Le rangement de carte : proposer le déplacement d'une carte du board, en disant
  * pourquoi. Même forme et même ton que le rangement de projet — une portée qu'on accorde,
  * pas une capacité qu'on retire —, et la même raison : la colonne d'une carte est un choix
- * qu'une personne a posé.
+ * qu'une personne a posé. Sans ton d'alerte sur « on » : c'est la valeur par défaut, et
+ * c'est le clic d'une personne qui applique ce que l'agent propose.
  */
 function cardFilingOptions(t: Translate): SettingChoice<FilingChoice>[] {
   return [
     { value: 'off', label: t('composer.cardFiling.off'), hint: t('composer.cardFiling.off.hint') },
-    { value: 'on', label: t('composer.cardFiling.on'), hint: t('composer.cardFiling.on.hint'), tone: 'caution' },
+    { value: 'on', label: t('composer.cardFiling.on'), hint: t('composer.cardFiling.on.hint') },
   ]
 }
 
