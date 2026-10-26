@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   agentRequests,
@@ -41,6 +41,7 @@ import {
   type EditDiffDto,
   type HandoffDto,
   type JournalPageDto,
+  type PendingRequestsDto,
   type ToolOutputDto,
 } from '@solera/protocol'
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
@@ -73,6 +74,14 @@ import { assertCardAccepted, assertCardInProject, readCardLink } from './cards.j
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
+import {
+  describeCardFilingOutcome,
+  describeDraftOutcome,
+  describeFilingOutcome,
+  pendingRequests,
+  recheck,
+  tellOutcome,
+} from '../../sessions/request-lifecycle.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
@@ -795,6 +804,26 @@ export function registerConversationRoutes(
     })
   })
 
+  /**
+   * Les demandes en attente des fils qu'on s'apprête à archiver (#119), pour la fenêtre
+   * qui prévient : archiver les retire. Seuls les fils de l'appelant comptent, et seuls
+   * ceux qui en ont sont rendus — une liste vide veut dire « archiver sans demander ».
+   */
+  app.get('/api/conversations/pending-requests', async (request): Promise<PendingRequestsDto> => {
+    const user = requireUser(request)
+    const raw = (request.query as { ids?: string }).ids ?? ''
+    const ids = [...new Set(raw.split(',').map((id) => id.trim()).filter(Boolean))].slice(0, 200)
+    if (ids.length === 0) return { conversations: [] }
+    const owned = ctx.db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(and(inArray(conversations.id, ids), eq(conversations.userId, user.id)))
+      .all()
+      .map((row) => row.id)
+    const counts = pendingRequests(ctx.db, owned)
+    return { conversations: owned.flatMap((id) => (counts.has(id) ? [{ id, ...counts.get(id)! }] : [])) }
+  })
+
   app.patch('/api/conversations/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -1061,25 +1090,34 @@ export function registerConversationRoutes(
       throw badRequest('filing_already_decided', 'This filing request has already been decided.')
     }
 
-    if (body.decision === 'refused') {
+    const target = ctx.db.select({ title: conversations.title }).from(conversations).where(eq(conversations.id, id)).get()
+    const resolve = (decision: 'refused' | 'impossible', reason: string | null) => {
       ctx.db
         .update(agentRequests)
         .set({ resolvedAt: Date.now() })
         .where(eq(agentRequests.id, requestId))
         .run()
-      log.append(id, {
-        type: 'filing.resolved',
-        requestId,
-        decision: 'refused',
-        decidedBy: user.id,
-        reason: null,
-      })
+      log.append(id, { type: 'filing.resolved', requestId, decision, decidedBy: user.id, reason })
+      tellOutcome(ctx.db, row, describeFilingOutcome(target?.title ?? filing.conversationTitle, filing.projectName, decision, reason))
+    }
+
+    if (body.decision === 'refused') {
+      resolve('refused', null)
       return { ok: true }
     }
 
-    // Revérifié au clic et non au dépôt : le projet de destination a pu disparaître
-    // entre les deux. Ce qui reste du contrôle — un tour en cours, un worktree qui a
-    // changé — est l'affaire du balayage, qui réessaie.
+    // Revérifié au clic (#119) : entre le dépôt et maintenant, le fil a pu être archivé
+    // ou rangé ailleurs, l'option a pu être coupée, un travail de fond a pu partir. La
+    // demande devient alors « plus applicable » au lieu de s'exécuter, et la réponse dit
+    // seulement que le clic a été entendu : le journal porte le reste.
+    const stale = recheck(ctx.db, ctx.config, row, filing.fromProjectId)
+    if (stale) {
+      resolve('impossible', stale)
+      return { ok: true, applied: false, reason: stale }
+    }
+
+    // Le projet de destination, lui, a pu disparaître. Ce qui reste du contrôle — un
+    // tour en cours — est l'affaire du balayage, qui réessaie.
     const destination = ctx.db
       .select({ ownerId: projects.ownerId, visibility: projects.visibility })
       .from(projects)
@@ -1089,18 +1127,7 @@ export function registerConversationRoutes(
       !destination ||
       (destination.ownerId !== user.id && destination.visibility !== 'shared')
     ) {
-      ctx.db
-        .update(agentRequests)
-        .set({ resolvedAt: Date.now() })
-        .where(eq(agentRequests.id, requestId))
-        .run()
-      log.append(id, {
-        type: 'filing.resolved',
-        requestId,
-        decision: 'impossible',
-        decidedBy: user.id,
-        reason: 'project_not_found',
-      })
+      resolve('impossible', 'project_not_found')
       throw notFound('project_not_found', 'Project not found.')
     }
 
@@ -1181,11 +1208,20 @@ export function registerConversationRoutes(
         ...(applied ? { applied } : {}),
         ...(closed ? { closed } : {}),
       })
+      tellOutcome(ctx.db, row, describeCardFilingOutcome(decision, reason, applied, filing.cards.length))
     }
 
     if (body.decision === 'refused') {
       close('refused', null, [])
       return { ok: true }
+    }
+
+    // Le fil, l'option et le projet revérifiés au clic (#119) : un fil rangé ailleurs
+    // depuis ferait chercher les cartes dans le board d'un autre projet.
+    const stale = recheck(ctx.db, ctx.config, row)
+    if (stale) {
+      close('impossible', stale, [])
+      return { ok: true, applied: false, reason: stale }
     }
 
     // Relu au clic et non pris de la demande : entre le dépôt et maintenant, une carte a
@@ -1202,7 +1238,7 @@ export function registerConversationRoutes(
     // destination : sa colonne, et depuis #66 sa parente et son échéance quand la
     // demande les touche. Un lien « bloque » devenu impossible (la carte visée a disparu,
     // ou bloque désormais celle-ci) la retire aussi : le clic ne pose rien à moitié.
-    const projectId = conversation.projectId!
+    const projectId = row.projectId!
     const live = filing.cards
       .map((proposed) => {
         const card = ctx.db
@@ -1335,8 +1371,8 @@ export function registerConversationRoutes(
     if (row.resolvedAt !== null) throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
 
     const close = (
-      decision: 'created' | 'refused',
-      outcome: DraftCreation & { draft?: CardDraft },
+      decision: 'created' | 'refused' | 'impossible',
+      outcome: DraftCreation & { draft?: CardDraft; reason?: string },
     ) => {
       const now = Date.now()
       // Conditionnelle : deux clics qui se croisent ne créent pas deux fois.
@@ -1351,7 +1387,17 @@ export function registerConversationRoutes(
 
     if (body.decision === 'refused') {
       close('refused', { parent: null, created: [] })
+      tellOutcome(ctx.db, row, describeDraftOutcome('refused', null))
       return { ok: true }
+    }
+
+    // Revérifié au clic (#119) : un fil archivé ou rangé ailleurs depuis ne remplit plus
+    // le board où le brouillon a été proposé.
+    const stale = recheck(ctx.db, ctx.config, row)
+    if (stale) {
+      close('impossible', { parent: null, created: [], reason: stale })
+      tellOutcome(ctx.db, row, describeDraftOutcome('impossible', stale))
+      return { ok: true, applied: false, reason: stale }
     }
 
     // La création et la clôture dans la même transaction : un échec de l'une défait

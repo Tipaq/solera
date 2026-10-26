@@ -80,3 +80,11 @@ export const SansDroit: Story = {
   name: 'Sans droit de décider',
   args: { canDecide: false },
 }
+
+/** Revérifié au clic (#119) : un travail de fond tournait, le déplacement l'aurait coupé. */
+export const PlusApplicable: Story = {
+  name: 'Plus applicable',
+  args: {
+    filing: { ...meta.args.filing, status: 'impossible', reason: 'background_running' },
+  },
+}

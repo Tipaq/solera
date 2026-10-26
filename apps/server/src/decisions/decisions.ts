@@ -33,6 +33,7 @@ import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
+import { tellOutcome } from '../sessions/request-lifecycle.js'
 
 /**
  * Les décisions qu'une session demande à une personne (`request_decision`).
@@ -526,8 +527,9 @@ export class Decisions {
    *
    * La réponse part en `session_messages` et non directement au runner : le relais la
    * remet par les gestes ordinaires (inflexion, file ou relance), et un redémarrage
-   * entre la clôture et la remise ne la perd pas. Un retrait ne part pas : la session
-   * archivée n'a plus personne à qui parler.
+   * entre la clôture et la remise ne la perd pas. Un retrait part en `outcome`, qui ne
+   * relance pas : la session apprend à son prochain tour que la question a été retirée
+   * avec son fil, et qu'aucun défaut n'a été appliqué à sa place (#119).
    */
   private close(row: AgentRequestRow, answer: DecisionAnswer): void {
     const now = Date.now()
@@ -574,7 +576,17 @@ export class Decisions {
       })
     }
 
-    if (requester && answer.by !== 'withdrawn' && requester.projectId) {
+    if (requester && answer.by === 'withdrawn') {
+      tellOutcome(
+        this.ctx.db,
+        row,
+        [
+          'Ta demande de décision a été retirée : son fil a été archivé, ou la session qui la posait a disparu.',
+          `Question : « ${payload.question} »`,
+          "Personne n'y a répondu, et aucun choix par défaut n'a été appliqué à ta place. Ne la redépose pas sans que l'utilisateur le demande.",
+        ].join('\n'),
+      )
+    } else if (requester && requester.projectId) {
       this.ctx.db
         .insert(sessionMessages)
         .values({

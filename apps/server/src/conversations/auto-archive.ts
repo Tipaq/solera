@@ -3,6 +3,7 @@ import { agentRequests, conversationReads, conversations, type Db } from '@soler
 import { deleteCheckpoints } from '../checkpoints.js'
 import type { Config } from '../config.js'
 import { readAppSettings } from '../settings/app-settings.js'
+import { AWAITING_KINDS } from '../sessions/request-lifecycle.js'
 import { resolveConversationCwd } from '../workspace.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -40,9 +41,11 @@ export function runArchivePass(db: Db, config: Config): number | null {
  *   perdre le travail plutôt que le ranger. Le curseur est celui du propriétaire et non
  *   de tous les lecteurs : dans un projet partagé, un compte qui ne passe jamais
  *   maintiendrait sinon tous les fils en vie indéfiniment ;
- * - une décision en attente, jamais. La session n'a pas fini son travail : elle attend la
- *   réponse pour le reprendre, et l'archiver retirerait sa demande. Une décision échue
- *   ne protège plus rien, le balayage des demandes la clôt.
+ * - une demande en attente d'un clic, jamais : décision, rangement de conversation ou de
+ *   cartes, brouillon de cartes — déposée par le fil, ou visant ce fil pour un
+ *   déplacement. Archiver la retirerait, et rien ne doit disparaître sans que la personne
+ *   l'ait vu : c'est la fenêtre d'avant l'archivage manuel qui le lui dit (#119). Une
+ *   décision échue ne protège plus rien, le balayage des demandes la clôt.
  *
  * Renvoie le nombre de conversations rangées.
  */
@@ -62,16 +65,23 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
       ),
   )
 
-  const awaitsDecision = exists(
+  // Le fil d'un déplacement : celui que l'agent a nommé, ou le sien, comme le lit
+  // `filingTargetId`.
+  const filingTarget = sql`coalesce(nullif(trim(json_extract(${agentRequests.payload}, '$.conversation')), ''), ${agentRequests.conversationId})`
+  const awaitsRequest = exists(
     db
       .select({ one: sql`1` })
       .from(agentRequests)
       .where(
         and(
-          eq(agentRequests.conversationId, conversations.id),
-          eq(agentRequests.kind, 'request_decision'),
+          inArray(agentRequests.kind, [...AWAITING_KINDS]),
           isNull(agentRequests.resolvedAt),
-          gt(agentRequests.expiresAt, now),
+          eq(agentRequests.isError, false),
+          or(isNull(agentRequests.expiresAt), gt(agentRequests.expiresAt, now)),
+          or(
+            eq(agentRequests.conversationId, conversations.id),
+            and(eq(agentRequests.kind, 'move_conversation'), sql`${filingTarget} = ${conversations.id}`),
+          ),
         ),
       ),
   )
@@ -90,7 +100,7 @@ export function archiveStaleConversations(db: Db, afterDays: number): number {
         eq(conversations.loopCount, 0),
         lt(conversations.updatedAt, now - afterDays * DAY_MS),
         ownerCaughtUp,
-        not(awaitsDecision),
+        not(awaitsRequest),
       ),
     )
     .all()

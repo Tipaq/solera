@@ -11,6 +11,7 @@ import type { CardDraftItem } from '../../lib/chat-fold'
 import { decideCardDraft } from '../../lib/conversations'
 import { formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
+import { staleReasonLabel } from '../../lib/request-reasons'
 import { Badge, Button, IconButton, cx } from '@solera/ui'
 
 const INPUT =
@@ -73,6 +74,7 @@ export function CardDraftPrompt({
     created: t('cardDraft.status.created'),
     refused: t('cardDraft.status.refused'),
     superseded: t('cardDraft.status.superseded'),
+    impossible: t('cardDraft.status.impossible'),
   }
   const cardLink = (number: number) => (projectId ? `/p/${projectId}/board?carte=${number}` : null)
 
@@ -233,6 +235,11 @@ export function CardDraftPrompt({
 
           {editable && problems.some((problem) => problem.code === 'cycle') ? (
             <p className="mt-2 text-xs text-critical">{t('cardDraft.problem.cycle')}</p>
+          ) : null}
+          {item.status === 'impossible' ? (
+            <p className="mt-1.5 text-xs text-ink-soft">
+              {(item.reason ? staleReasonLabel(item.reason, t) : null) ?? t('cardDraft.reason.unknown')}
+            </p>
           ) : null}
         </div>
         {!pending ? (

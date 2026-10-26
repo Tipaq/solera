@@ -5,6 +5,7 @@ import type { CardFilingItem } from '../../lib/chat-fold'
 import { formatDay } from '../../lib/dates'
 import { decideCardFiling } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
+import { staleReasonLabel } from '../../lib/request-reasons'
 import { Badge, Button, cx } from '@solera/ui'
 
 /**
@@ -267,6 +268,8 @@ function columnLabel(column: CardColumn, t: (key: MessageKey) => string): string
  * phrase : le journal est rejoué dans la langue de qui le relit.
  */
 function reasonLabel(reason: string, t: (key: MessageKey) => string): string {
+  const stale = staleReasonLabel(reason, t)
+  if (stale) return stale
   if (reason === 'cards_gone') return t('cardFiling.reason.cardsGone')
   return t('cardFiling.reason.unknown')
 }

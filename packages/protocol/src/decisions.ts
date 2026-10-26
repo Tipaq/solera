@@ -146,3 +146,19 @@ export type AwaitingRequestDto =
       conversationTitle: string
       createdAt: number
     }
+
+/**
+ * Ce qu'un fil a de demandes en attente d'un clic, par genre (#119) : ce que la fenêtre
+ * d'avant l'archivage récapitule, puisqu'archiver les retire.
+ */
+export interface PendingRequestCounts {
+  decision: number
+  cardChange: number
+  cardDraft: number
+  move: number
+}
+
+/** `GET /api/conversations/pending-requests?ids=…` : les seuls fils qui en ont. */
+export interface PendingRequestsDto {
+  conversations: ({ id: string } & PendingRequestCounts)[]
+}

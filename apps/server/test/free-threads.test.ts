@@ -241,7 +241,11 @@ test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux
 test('un déplacement accordé s’applique au premier balayage où la conversation se tait', async (t) => {
   const { db, dir, thread } = await harness(t)
   const free = thread('free', null, 'owner')
-  db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, free.id)).run()
+  // L'option accordée, et qui le reste : le balayage la revérifie avant d'appliquer (#119).
+  db.update(conversations)
+    .set({ status: 'running', config: JSON.stringify({ ...DEFAULT_CLAUDE_CONFIG, projectFiling: true }) })
+    .where(eq(conversations.id, free.id))
+    .run()
 
   const log = new EventLog(db)
   // Le vrai gestionnaire refuse de relâcher un runner qui travaille, et c'est ce refus

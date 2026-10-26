@@ -152,7 +152,9 @@ export interface CardDraftItem {
   kind: 'cardDraft'
   id: string
   draft: CardDraft
-  status: 'pending' | 'created' | 'refused' | 'superseded'
+  status: 'pending' | 'created' | 'refused' | 'superseded' | 'impossible'
+  /** Code du motif d'un `impossible`, traduit à l'affichage. Null partout ailleurs. */
+  reason: string | null
   /** La parente des cartes créées, une fois la validation faite. */
   parent: CardDraftRef | null
   /** Les cartes créées, vides tant que rien ne l'est. */
@@ -1148,6 +1150,7 @@ export function applyEvent(
         id: event.requestId,
         draft: event.draft,
         status: 'pending',
+        reason: null,
         parent: null,
         created: [],
       })
@@ -1161,6 +1164,7 @@ export function applyEvent(
           ...(state.items[index] as CardDraftItem),
           ...(event.draft ? { draft: event.draft } : {}),
           status: event.decision,
+          reason: event.reason ?? null,
           parent: event.parent,
           created: event.created,
         })
