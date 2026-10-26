@@ -67,9 +67,11 @@ export function withPermissionChoice(config: AgentConfig, choice: OnboardingPerm
         },
       }
     case 'grok':
+      // L'ACP de Grok n'a pas d'`acceptEdits` : son `auto` laisserait un classifieur lancer
+      // les commandes, que ce réflexe promet de demander. Le plus proche est `default`.
       return {
         ...config,
-        permissionMode: ({ manual: 'default', auto: 'auto', acceptEdits: 'auto', bypass: 'bypassPermissions' } as const)[choice],
+        permissionMode: ({ manual: 'default', auto: 'auto', acceptEdits: 'default', bypass: 'bypassPermissions' } as const)[choice],
       }
   }
 }

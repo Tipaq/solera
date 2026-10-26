@@ -122,7 +122,7 @@ try {
   assert.deepEqual(token.token.scopes, ['mcp'])
   assert.equal(token.token.webhookUrl, null)
   // Le jeton se montre avec le guide de branchement, valable pour tout client MCP.
-  const reveal = card('Votre jeton')
+  const reveal = card('Ton jeton')
   await reveal.getByText('Solera parle le protocole MCP standard', { exact: false }).waitFor()
   assert.ok(await reveal.getByText(`Authorization: Bearer ${token.secret}`, { exact: true }).isVisible())
   assert.ok(await reveal.getByText('HTTP « streamable »', { exact: false }).isVisible())
@@ -152,7 +152,7 @@ try {
 
   // Depuis les serveurs donnés aux agents, un renvoi vers celui de Solera.
   await page.goto(`${base}/settings/mcp`)
-  const pointer = page.locator('p', { hasText: 'Ce sont des serveurs que vos agents utilisent' })
+  const pointer = page.locator('p', { hasText: 'Ce sont des serveurs que tes agents utilisent' })
   await pointer.waitFor()
   await pointer.getByRole('button', { name: 'API et MCP' }).click()
   await page.getByRole('heading', { name: 'API REST', exact: true }).waitFor()

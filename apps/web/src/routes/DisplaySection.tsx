@@ -82,7 +82,7 @@ export function DisplaySection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title="Affichage" description={t('display.rule')} />
+      <SectionHeader title={t('settings.section.display')} description={t('display.rule')} />
 
       <section className="flex flex-col gap-2">
         <h3 className="px-1 text-sm font-medium text-ink">{t('display.places')}</h3>

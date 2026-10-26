@@ -59,8 +59,8 @@ export interface SettingGroup {
   /**
    * Rendu en interrupteur dans le menu des réglages, plutôt qu'en liste d'options.
    *
-   * Réservé à ce qui s'allume : un réglage à deux valeurs nommées — infléchir ou
-   * mettre en file — garde sa liste, parce que chacune des deux mérite sa phrase.
+   * Réservé à ce qui s'allume ou s'écarte d'un comportement ordinaire : la file
+   * d'attente s'allume ainsi, l'inflexion étant ce que fait l'envoi quand elle est éteinte.
    */
   toggle?: SettingToggle
 }
