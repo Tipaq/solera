@@ -9,6 +9,8 @@ import { conversationPath } from '../../lib/conversation-route'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import type { SessionPlace } from '../../lib/activity-groups'
+import type { SessionRequest } from '../../lib/session-requests'
+import { SessionRequestPreview } from './SessionRequestPreview'
 
 /**
  * Le point d'une ligne : la charte de la colonne (`threadState`), plus un vert pour
@@ -62,6 +64,12 @@ export const SESSION_ROW_COLUMNS_IN_TREE =
  *
  * Toute la ligne mène au fil. La carte n'est donc pas un lien à part : un lien dans un
  * lien n'est pas du HTML valide, et son titre reste au survol.
+ *
+ * **Une session qui te demande quelque chose se déplie** (planche B2) quand la liste le
+ * permet (`onToggle`) : la ligne devient le bouton qui ouvre l'aperçu en place, et
+ * « Ouvrir le fil » passe dans l'aperçu. Pas de tiroir : il cacherait les colonnes
+ * worktree et PR. Les chiffres du clavier choisissent parmi les options numérotées.
+ * Chaque ligne porte `data-session-row`, pour que la liste la parcoure à ↑ et ↓.
  */
 export function SessionRow({
   conversation,
@@ -70,14 +78,20 @@ export function SessionRow({
   place,
   inTree = false,
   pr = null,
+  request = null,
+  expanded = false,
+  onToggle,
 }: {
-  conversation: Pick<ConversationDto, 'id' | 'projectId' | 'title' | 'agent' | 'card' | 'updatedAt'>
+  conversation: Pick<ConversationDto, 'id' | 'projectId' | 'title' | 'agent' | 'card' | 'updatedAt' | 'isOwner'>
   marker: SessionMarker
   summary: SessionSummary | null
   place: SessionPlace
   inTree?: boolean
   /** La PR de la branche de la session, si elle en a une. Jamais montrée sous un en-tête de worktree, qui la porte. */
   pr?: ProjectPullRequestDto | null
+  request?: SessionRequest | null
+  expanded?: boolean
+  onToggle?: () => void
 }) {
   const t = useTranslate()
   const age = shortAge(conversation.updatedAt)
@@ -95,63 +109,103 @@ export function SessionRow({
     </>
   )
 
-  return (
-    <li>
-      <Link
-        to={conversationPath(conversation)}
+  const cells = (
+    <>
+      <span className="mt-[0.45rem] self-start md:mt-0 md:self-center">
+        <Marker marker={marker} />
+      </span>
+
+      <span className="hidden text-ink-faint md:inline-flex">
+        <AgentIcon agent={conversation.agent} size={14} />
+      </span>
+
+      {/* Au téléphone, le nom et l'âge partagent le premier étage. */}
+      <span className="flex min-w-0 items-baseline gap-2 md:contents">
+        <span className="min-w-0 flex-1 truncate text-sm text-ink md:flex-none">{conversation.title}</span>
+        <span className="shrink-0 text-xs text-ink-faint tabular-nums md:hidden">{age}</span>
+      </span>
+
+      <span
         className={cx(
-          'grid grid-cols-[0.375rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-2.5 md:items-center md:py-2',
-          inTree ? SESSION_ROW_COLUMNS_IN_TREE : SESSION_ROW_COLUMNS,
-          'hover:bg-sunken/60 focus-visible:bg-sunken/60 focus-visible:outline-none',
+          'col-start-2 min-w-0 truncate text-sm md:col-start-auto',
+          summary ? SUMMARY_TONE[summary.tone] : 'hidden md:block',
         )}
       >
-        <span className="mt-[0.45rem] self-start md:mt-0 md:self-center">
-          <Marker marker={marker} />
-        </span>
+        {summary?.text}
+      </span>
 
-        <span className="hidden text-ink-faint md:inline-flex">
-          <AgentIcon agent={conversation.agent} size={14} />
-        </span>
+      <span className="hidden md:block">
+        {conversation.card ? (
+          <span
+            title={conversation.card.title}
+            className="rounded-md bg-sunken px-1.5 py-0.5 font-mono text-xs text-ink-soft"
+          >
+            #{conversation.card.number}
+          </span>
+        ) : null}
+      </span>
 
-        {/* Au téléphone, le nom et l'âge partagent le premier étage. */}
-        <span className="flex min-w-0 items-baseline gap-2 md:contents">
-          <span className="min-w-0 flex-1 truncate text-sm text-ink md:flex-none">{conversation.title}</span>
-          <span className="shrink-0 text-xs text-ink-faint tabular-nums md:hidden">{age}</span>
-        </span>
+      {inTree ? null : (
+        <>
+          <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">
+            {where}
+            {pr ? <PrBadge pr={pr} className="ml-1.5 shrink-0 md:hidden" /> : null}
+          </span>
 
-        <span
-          className={cx(
-            'col-start-2 min-w-0 truncate text-sm md:col-start-auto',
-            summary ? SUMMARY_TONE[summary.tone] : 'hidden md:block',
-          )}
+          <span className="hidden min-w-0 md:block">{pr ? <PrBadge pr={pr} /> : null}</span>
+        </>
+      )}
+
+      <span className="hidden text-right text-xs text-ink-faint tabular-nums md:block">{age}</span>
+    </>
+  )
+  const path = conversationPath(conversation)
+  const rowClass = cx(
+    'grid w-full grid-cols-[0.375rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-2.5 text-left md:items-center md:py-2',
+    inTree ? SESSION_ROW_COLUMNS_IN_TREE : SESSION_ROW_COLUMNS,
+    'hover:bg-sunken/60 focus-visible:bg-sunken/60 focus-visible:outline-none',
+  )
+  const foldable = request !== null && onToggle !== undefined
+
+  return (
+    <li
+      onKeyDown={
+        foldable && expanded
+          ? (event) => {
+              // Un chiffre choisit l'option numérotée, sauf quand on écrit.
+              if (!/^[1-9]$/.test(event.key) || event.metaKey || event.ctrlKey || event.altKey) return
+              if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+              const choice = event.currentTarget.querySelector<HTMLButtonElement>(`[data-choice="${event.key}"]`)
+              if (!choice || choice.disabled) return
+              event.preventDefault()
+              choice.click()
+            }
+          : undefined
+      }
+    >
+      {foldable ? (
+        <button
+          type="button"
+          data-session-row
+          aria-expanded={expanded}
+          onClick={onToggle}
+          className={cx(rowClass, expanded && 'bg-sunken/60')}
         >
-          {summary?.text}
-        </span>
-
-        <span className="hidden md:block">
-          {conversation.card ? (
-            <span
-              title={conversation.card.title}
-              className="rounded-md bg-sunken px-1.5 py-0.5 font-mono text-xs text-ink-soft"
-            >
-              #{conversation.card.number}
-            </span>
-          ) : null}
-        </span>
-
-        {inTree ? null : (
-          <>
-            <span className="col-start-2 flex min-w-0 items-center gap-1.5 md:col-start-auto">
-              {where}
-              {pr ? <PrBadge pr={pr} className="ml-1.5 shrink-0 md:hidden" /> : null}
-            </span>
-
-            <span className="hidden min-w-0 md:block">{pr ? <PrBadge pr={pr} /> : null}</span>
-          </>
-        )}
-
-        <span className="hidden text-right text-xs text-ink-faint tabular-nums md:block">{age}</span>
-      </Link>
+          {cells}
+        </button>
+      ) : (
+        <Link to={path} data-session-row className={rowClass}>
+          {cells}
+        </Link>
+      )}
+      {foldable && expanded ? (
+        <SessionRequestPreview
+          conversationPath={path}
+          conversationId={conversation.id}
+          request={request}
+          canDecide={conversation.isOwner}
+        />
+      ) : null}
     </li>
   )
 }

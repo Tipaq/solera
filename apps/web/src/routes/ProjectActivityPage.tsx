@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Layers, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type KeyboardEvent } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState, SegmentedControl, cx } from '@solera/ui'
 import { Marker, SessionRow, type SessionMarker } from '../components/project/SessionRow'
@@ -48,7 +48,8 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * travaille, ce qui est fini. Les terminées se plient après trois lignes.
  *
  * Les lignes viennent de `useActivityRows`, que le bloc « En ce moment » de l'Aperçu lit
- * aussi.
+ * aussi. Une ligne qui te demande quelque chose se déplie en place, avec de quoi
+ * répondre sans ouvrir le fil (planche B2, #112).
  *
  * La bascule « Grouper par » range les mêmes lignes sous leur arbre (planche B3, voir
  * `WorktreeGroups`). Elle n'a de sens que dans un dépôt git : ailleurs, elle n'est pas
@@ -61,6 +62,8 @@ export function ProjectActivityPage() {
   const [folded, setFolded] = useState<ReadonlySet<ActivityGroup>>(() => new Set())
   const [allDone, setAllDone] = useState(false)
   const [params, setParams] = useSearchParams()
+  // Les aperçus dépliés (planche B2) : plusieurs à la fois, ↑ et ↓ n'en referment aucun.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 
   const { data: projects, isPending } = useProjects()
   const project = projects?.find((entry) => entry.id === projectId)
@@ -108,6 +111,25 @@ export function ProjectActivityPage() {
   const counts = Object.fromEntries(
     ACTIVITY_GROUPS.map((group) => [group, rows.filter((row) => row.group === group).length]),
   ) as Record<ActivityGroup, number>
+
+  const toggleRow = (id: string) =>
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  /** ↑ et ↓ passent d'une ligne à l'autre, à travers les groupes, sans rien replier. */
+  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    if (!(event.target instanceof HTMLElement) || !event.target.hasAttribute('data-session-row')) return
+    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>('[data-session-row]')]
+    const next = rows[rows.indexOf(event.target) + (event.key === 'ArrowDown' ? 1 : -1)]
+    if (!next) return
+    event.preventDefault()
+    next.focus()
+  }
 
   const toggle = (group: ActivityGroup) =>
     setFolded((current) => {
@@ -170,7 +192,7 @@ export function ProjectActivityPage() {
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={moveFocus}>
         {grouping === 'worktree' ? (
           <WorktreeGroups
             projectId={projectId}
@@ -180,6 +202,8 @@ export function ProjectActivityPage() {
             conversations={mine}
             filtering={isActiveFilter(filter)}
             words={filter.words}
+            expanded={expanded}
+            onToggle={toggleRow}
           />
         ) : rows.length === 0 ? (
           <EmptyState icon={<Layers size={20} />} title={t('projectActivity.empty')} description={t('projectActivity.emptyHint')} />
@@ -225,6 +249,9 @@ export function ProjectActivityPage() {
                         summary={row.summary}
                         place={row.place}
                         pr={row.pr}
+                        request={row.request}
+                        expanded={expanded.has(row.entry.conversation.id)}
+                        onToggle={() => toggleRow(row.entry.conversation.id)}
                       />
                     ))}
                     {rest > 0 ? (

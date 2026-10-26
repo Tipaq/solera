@@ -16,7 +16,7 @@ import { launchBrowser } from './checks/browser.mjs'
  * Ce que la suite tient : la rangée à six vues, le compteur ambre qui ne compte que ce
  * qui réclame, l'ordre des groupes, la branche de chaque session lue dans la liste
  * d'état des worktrees, le filtre `s:` et `#N`, le pliage des terminées, et la ligne à
- * deux étages au téléphone. Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * deux étages au téléphone, et la demande dépliée sous sa ligne (#112). Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
  * Le badge de PR (#115) : le projet de démo n'a pas de forge, la liste des PR est donc
  * simulée au niveau de la page. La suite tient qu'une PR ouverte fait passer une session
@@ -161,7 +161,9 @@ try {
   assert.deepEqual(shown, order.filter((label) => shown.includes(label)), 'Les groupes suivent l’ordre arrêté')
 
   const section = (name) => page.getByRole('region', { name: new RegExp(`^${name}`) })
-  await section('Te demande quelque chose').getByRole('link', { name: new RegExp(awaiting.title) }).waitFor()
+  // Une session qui te demande quelque chose se déplie au lieu de mener au fil (#112).
+  const awaitingRow = section('Te demande quelque chose').getByRole('button', { name: new RegExp(awaiting.title) })
+  await awaitingRow.waitFor()
   const runningRow = section('En cours').getByRole('link', { name: new RegExp(running.title) })
   await runningRow.waitFor()
   // La branche vient de la liste d'état des worktrees, sans lecture par fil.
@@ -184,6 +186,45 @@ try {
   // La racine ne porte pas de PR : c'est elle que les PR visent.
   const rootRow = page.getByRole('link').filter({ hasText: /racine · / }).first()
   assert.equal(await rootRow.getByText(/^#\d+$/).count(), 0, 'Une session de la racine n’a pas de badge')
+
+  // ─── La demande dépliée sous sa ligne (#112, planche B2) ────────────────────
+  // La quatrième colonne dit la demande elle-même, lue dans le journal.
+  const { prompts } = await (await context.request.get(`${base}/api/projects/${nimbus.id}/prompts`)).json()
+  const prompt = prompts.find((entry) => entry.conversationId === awaiting.id)
+  assert.equal(prompt?.kind, 'permission', 'Le jeu d’essai fait attendre une permission')
+  const command = prompt.event.input.command
+  await awaitingRow.getByText(new RegExp(`^Attend .+ · Bash : ${command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)).waitFor()
+  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'false')
+  await awaitingRow.click()
+  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'true')
+  const preview = section('Te demande quelque chose').getByRole('listitem').filter({ has: page.getByRole('button', { name: new RegExp(awaiting.title) }) })
+  await preview.getByText('Permission demandée', { exact: true }).waitFor()
+  await preview.getByText(command, { exact: true }).waitFor()
+  for (const name of ['Refuser', 'Autoriser pour la session', 'Autoriser']) {
+    await preview.getByRole('button', { name, exact: true }).waitFor()
+  }
+  assert.equal(
+    await preview.getByRole('link', { name: 'Ouvrir le fil' }).getAttribute('href'),
+    `/p/${nimbus.id}/c/${awaiting.id}`,
+  )
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'b2-demande-depliee.png') })
+  // La réponse part par la route du fil. Le jeu d'essai n'a pas de CLI derrière la
+  // demande : le serveur la dit expirée, et l'aperçu le montre au lieu d'attendre.
+  const [decision] = await Promise.all([
+    page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/conversations/${awaiting.id}/permissions/${prompt.requestId}`)),
+    preview.getByRole('button', { name: 'Refuser', exact: true }).click(),
+  ])
+  assert.deepEqual(decision.request().postDataJSON(), { decision: 'denied', scope: 'once' })
+  await preview.getByText('Cette demande a expiré, la session est terminée.').waitFor()
+  // ↑ et ↓ passent d'une ligne à l'autre sans refermer l'aperçu ; Espace le replie.
+  await awaitingRow.focus()
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-session-row')), true)
+  assert.notEqual(await page.evaluate(() => document.activeElement?.textContent), await awaitingRow.textContent())
+  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'true')
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Space')
+  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'false')
 
   // Les terminées se plient après trois lignes.
   const done = section('Terminées')
@@ -257,7 +298,7 @@ try {
   await page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true }).getByRole('link', { name: /^Jalons/ }).waitFor()
 
   assert.deepEqual(errors, [])
-  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, filtre, pliage, téléphone ; captures dans ' + shots)
+  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

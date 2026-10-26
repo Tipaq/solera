@@ -8,6 +8,7 @@ import { useAllConversations } from './conversations'
 import { shortAge } from './dates'
 import { useTranslate } from './i18n'
 import { isOpenPullRequest, pullRequestFor, usePullRequests } from './pull-requests'
+import { requestLine, useSessionRequests, type SessionRequest } from './session-requests'
 import { threadState } from './signals'
 import { useWorktreeStatuses } from './worktrees'
 
@@ -20,6 +21,8 @@ export interface ActivityRow {
   place: SessionPlace
   /** La PR de la branche de la session (#115) ; jamais pour la racine. */
   pr: ProjectPullRequestDto | null
+  /** Ce que la session te demande, à déplier sous sa ligne (#112). */
+  request: SessionRequest | null
 }
 
 /**
@@ -31,7 +34,8 @@ export interface ActivityRow {
  * Rien n'est lu par fil. Les sessions viennent de la liste partagée avec la colonne, leur
  * état du socket, leur branche de **la** liste d'état des worktrees du projet (#78), la
  * colonne de leur carte du board, et la PR de leur branche de **la** liste des PR du
- * projet (#115).
+ * projet (#115). Leurs demandes ouvertes viennent d'une requête pour tout le projet, et
+ * des décisions de la section « À décider » (#112).
  */
 export function useActivityRows(projectId: string | undefined, project: ProjectDto | undefined): ActivityRow[] {
   const t = useTranslate()
@@ -45,6 +49,7 @@ export function useActivityRows(projectId: string | undefined, project: ProjectD
     [conversations, projectId],
   )
   const live = useLiveConversations(mine)
+  const requests = useSessionRequests(projectId, live)
 
   return useMemo(() => {
     // La colonne du board plutôt que celle figée dans la conversation : le board se
@@ -57,19 +62,24 @@ export function useActivityRows(projectId: string | undefined, project: ProjectD
         const place = sessionPlaceOf(entry.conversation, trees, rootBranch)
         // La branche par défaut ne porte pas de PR : c'est elle que les PR visent.
         const pr = place.root ? null : pullRequestFor(pullRequests, place.branch)
-        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null, isOpenPullRequest(pr))
+        const request = requests.get(entry.conversation.id) ?? null
+        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null, {
+          openPr: isOpenPullRequest(pr),
+          requested: request !== null,
+        })
         const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
         return {
           entry,
           group,
           marker: markerOf(group, state),
-          summary: summaryOf(entry, state, t),
+          summary: summaryOf(entry, state, request, t),
           place,
           pr,
+          request,
         }
       })
       .sort((a, b) => b.entry.conversation.updatedAt - a.entry.conversation.updatedAt)
-  }, [live, cards, trees, pullRequests, project, t])
+  }, [live, requests, cards, trees, pullRequests, project, t])
 }
 
 function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): SessionMarker {
@@ -80,15 +90,22 @@ function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): 
 }
 
 /**
- * La quatrième colonne, en attendant le résumé d'une ligne (#113) et la question en
- * attente (#112) : depuis quand une session attend, ou qu'elle est tombée. Rien sinon,
- * plutôt qu'un texte qui ferait croire à un résumé.
+ * La quatrième colonne, en attendant le résumé d'une ligne (#113) : ce que la session te
+ * demande et depuis quand, « Attend 3 min · » puis la question (planche B2), ou qu'elle
+ * est tombée. Rien sinon, plutôt qu'un texte qui ferait croire à un résumé.
  */
 function summaryOf(
   entry: LiveConversation,
   state: ReturnType<typeof threadState>,
+  request: SessionRequest | null,
   t: ReturnType<typeof useTranslate>,
 ): SessionSummary | null {
+  if (request) {
+    return {
+      text: t('projectActivity.row.asking', { age: shortAge(request.requestedAt), request: requestLine(request, t) }),
+      tone: 'caution',
+    }
+  }
   if (state === 'awaiting') return { text: t('projectActivity.row.waiting', { age: shortAge(entry.since) }), tone: 'caution' }
   if (state === 'broken') {
     return {

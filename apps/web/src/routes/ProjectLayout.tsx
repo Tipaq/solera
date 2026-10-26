@@ -31,6 +31,7 @@ import { HeaderBand } from '../components/HeaderBand'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
 import { askingCount, useLiveConversations } from '../lib/activity'
+import { useSessionRequests } from '../lib/session-requests'
 import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
@@ -81,6 +82,7 @@ export function ProjectLayout() {
     [conversations, projectId],
   )
   const live = useLiveConversations(mine)
+  const requests = useSessionRequests(projectId, live)
 
   const project = projects?.find((entry) => entry.id === projectId)
   const onBoard = useMatch('/p/:projectId/board') !== null
@@ -109,7 +111,7 @@ export function ProjectLayout() {
       icon: <Layers size={15} />,
       /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de
          sessions : le compte d'un onglet est une demande, d'où l'ambre. */
-      count: askingCount(live),
+      count: askingCount(live, requests),
       tone: 'caution',
     },
     {

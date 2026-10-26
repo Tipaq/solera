@@ -37,7 +37,7 @@ function row(
   summary: ActivityRow['summary'] = null,
 ): ActivityRow {
   return {
-    entry: { conversation: conv, status: conv.status, running: false, awaiting: false, unread: false, settledAt: conv.updatedAt, since: conv.updatedAt },
+    entry: { conversation: conv, status: conv.status, running: false, awaiting: false, unread: false, settledAt: conv.updatedAt, since: conv.updatedAt, seq: conv.lastNotableSeq },
     group,
     marker,
     summary,
@@ -45,6 +45,7 @@ function row(
       ? { root: false, branch: place.tree.branch, path: place.tree.path }
       : { root: true, branch: 'main', path: null },
     pr: null,
+    request: null,
   }
 }
 
@@ -103,6 +104,8 @@ const meta = {
     conversations: CONVERSATIONS,
     filtering: false,
     words: [],
+    expanded: new Set(),
+    onToggle: () => {},
   },
   parameters: {
     docs: {

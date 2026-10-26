@@ -23,6 +23,11 @@ export interface LiveConversation {
   settledAt: number
   /** Depuis quand elle est dans cet état : la dernière écriture du journal. */
   since: number
+  /**
+   * Dernier `seq` notable, poussé ou relu : il avance à chaque demande ouverte ou
+   * tranchée, ce qui dit aux demandes en attente (#112) quand se relire.
+   */
+  seq: number
 }
 
 /**
@@ -46,6 +51,7 @@ export function useLiveConversations(
         background: liveBackground(entry.id) > 0,
         unread: entry.id !== openId && isUnread(entry, liveSeq(entry.id)),
         settledAt: liveSettledAt(entry.id),
+        seq: liveSeq(entry.id),
       })),
     )
   const serialized = useSyncExternalStore(subscribeStatus, snapshot, snapshot)
@@ -56,6 +62,7 @@ export function useLiveConversations(
       background: boolean
       unread: boolean
       settledAt: number
+      seq: number
     }[]
     return conversations.flatMap((conversation, index) => {
       const state = states[index]!
@@ -73,6 +80,7 @@ export function useLiveConversations(
         unread: state.unread && !running,
         settledAt: state.settledAt,
         since: conversation.updatedAt,
+        seq: Math.max(state.seq, conversation.lastNotableSeq),
       }]
     })
   }, [conversations, serialized])
@@ -115,11 +123,13 @@ export function demandsOf(
 
 /**
  * Les sessions qui te demandent quelque chose : une question, une permission, **ou une
- * erreur** — dans les deux cas c'est à toi d'agir. Le compteur ambre de l'onglet
+ * erreur** — dans les deux cas c'est à toi d'agir —, plus celles dont une demande reste
+ * ouverte sans tenir le fil en attente : une décision, une question asynchrone (#112). Le compteur ambre de l'onglet
  * Activité, et son premier groupe.
  */
-export function askingCount(live: LiveConversation[]): number {
+export function askingCount(live: LiveConversation[], requests?: ReadonlyMap<string, unknown>): number {
   return live.filter((entry) => {
+    if (requests?.has(entry.conversation.id)) return true
     const state = threadState({ status: entry.status, busy: entry.running, unread: false })
     return state === 'broken' || state === 'awaiting'
   }).length

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { PermissionItem } from '../../lib/chat-fold'
 import { decidePermission } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
+import { permissionTarget } from '../../lib/session-requests'
 import { Badge, Button, cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 
@@ -38,7 +39,7 @@ export function PermissionPrompt({
     }
   }
 
-  const summary = summarizeInput(permission.input)
+  const summary = permissionTarget(permission.input)
 
   return (
     <div
@@ -110,23 +111,4 @@ export function PermissionPrompt({
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}
     </div>
   )
-}
-
-/**
- * Ce qui identifie réellement l'appel : la commande, le chemin, l'URL. À défaut, l'entrée
- * complète en JSON. Le langage suit, pour ne pas colorer une commande comme du JSON.
- */
-function summarizeInput(input: unknown): { content: string; language: string } | null {
-  if (input === null || input === undefined) return null
-  if (typeof input === 'string') return { content: input, language: '' }
-
-  const fields = input as Record<string, unknown>
-  if (typeof fields.command === 'string' && fields.command.length > 0) {
-    return { content: fields.command, language: 'bash' }
-  }
-  for (const key of ['file_path', 'path', 'url']) {
-    const value = fields[key]
-    if (typeof value === 'string' && value.length > 0) return { content: value, language: '' }
-  }
-  return { content: JSON.stringify(input, null, 2), language: 'json' }
 }

@@ -38,6 +38,7 @@ import {
   type CardColumn,
   type CardLinkDto,
   type ConversationDto,
+  type ConversationPromptDto,
   type EditDiffDto,
   type HandoffDto,
   type JournalPageDto,
@@ -63,6 +64,7 @@ import {
   readHandoffItems,
 } from '../../conversations/handoff.js'
 import { conversationMetrics } from '../../conversations/metrics.js'
+import { pendingPromptOf } from '../v1/task-view.js'
 import type { WebhookService } from '../../webhooks/service.js'
 import {
   checkWorktree,
@@ -327,6 +329,41 @@ export function registerConversationRoutes(
         row.worktreeRemovedAt !== null,
       ),
     )
+  })
+
+  /**
+   * Les demandes que les sessions d'un projet attendent, pour l'onglet Activité (#112) :
+   * la question ou la permission se lit et se tranche sous la ligne, sans ouvrir le fil.
+   *
+   * Ne replie que les fils qui attendent — `awaiting_input`, ou une question asynchrone
+   * restée ouverte sur un fil au repos —, et chacun sur ses dernières entrées seulement :
+   * la liste ne paie pas l'historique de tout le projet. Les archivées en sont, comme
+   * dans l'Activité : une session rangée qui réclame réclame encore.
+   */
+  app.get('/api/projects/:id/prompts', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+
+    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+    if (!project) throw notFound('project_not_found', 'Project not found.')
+    if (project.ownerId !== user.id && project.visibility !== 'shared') {
+      throw notFound('project_not_found', 'Project not found.')
+    }
+
+    const asking = new Set(log.openAsyncQuestionConversationIds())
+    const rows = ctx.db
+      .select({ id: conversations.id, status: conversations.status })
+      .from(conversations)
+      .where(eq(conversations.projectId, id))
+      .all()
+
+    const prompts: ConversationPromptDto[] = []
+    for (const row of rows) {
+      if (row.status !== 'awaiting_input' && !asking.has(row.id)) continue
+      const pending = pendingPromptOf(log, row.id)
+      if (pending) prompts.push({ conversationId: row.id, ...pending })
+    }
+    return { prompts }
   })
 
   app.post('/api/projects/:id/conversations', async (request, reply) => {
