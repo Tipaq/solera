@@ -1,101 +1,150 @@
 import { useMemo } from 'react'
-import type { CardDto, ProjectDto } from '@solera/protocol'
+import { CARD_CLOSED_COLUMNS, type CardDto, type ProjectDto } from '@solera/protocol'
+import type { SessionMarker, SessionSummary } from '../components/project/SessionRow'
+import { askingCount, useLiveConversations, type LiveConversation } from './activity'
+import type { ActivityGroup } from './activity-groups'
+import { activityRowsOf, type ActivityRow } from './activity-rows'
 import { useAllCards } from './cards'
 import { useAllConversations } from './conversations'
-import { useLiveConversations } from './activity'
+import { shortAge } from './dates'
+import { useTranslate } from './i18n'
 import { useProjects } from './projects'
+import { usePortfolioPullRequests } from './pull-requests'
+import { usePortfolioSessionRequests } from './session-requests'
+import { usePortfolioWorktreeStatuses } from './worktrees'
 
 /** Une carte du portefeuille, qui sait d'où elle vient. */
 export type PortfolioCard = CardDto & { project: ProjectDto }
 
 /**
- * Ce qu'une carte demande à une personne, et dans quel ordre on s'en occupe.
- *
- * Groupé par la **demande** et non par la colonne : c'est ce qui distingue la vue
- * *Travail* du board global, qui montre les mêmes cartes rangées par état. L'une répond
- * à « où en est le chantier », l'autre à « par quoi je m'y remets ».
- *
- * La maquette F7 nommait un quatrième groupe, « À trancher — une carte de décision
- * attend une personne ». Il n'est pas là, et **il ne viendra pas** : rien ne distingue
- * une carte de décision d'une autre, et la carte #32 a refusé ce qui aurait pu le faire
- * — les étiquettes, écartées le 2026-10-15
- * (`docs/audits/2026-10-15-champs-de-carte/`). Le seul classement qu'une carte gagnera
- * est le jalon, qui dit à quelle livraison elle appartient, pas ce qu'elle réclame.
- *
- * Ce qui attend une personne se lit donc là où c'est vrai : dans l'état des sessions
- * rattachées, ci-dessous.
+ * Une ligne de l'Activité du portefeuille (#117, planche D1) : une session, comme dans
+ * un projet, ou une carte qui réclame quelqu'un sans qu'aucune session ne la porte.
+ * Les deux savent leur projet, pour la colonne Projet et le regroupement par projet.
  */
-export type WorkKind = 'awaiting' | 'review' | 'running'
+export type PortfolioRow =
+  | (ActivityRow & { kind: 'session'; key: string; project: ProjectDto; updatedAt: number })
+  | {
+      kind: 'card'
+      key: string
+      project: ProjectDto
+      card: PortfolioCard
+      group: ActivityGroup
+      marker: SessionMarker
+      summary: SessionSummary
+      /** Depuis quand elle réclame : son entrée en *À vérifier*, ou sa mise « à préciser ». */
+      updatedAt: number
+    }
 
-export const WORK_KINDS: readonly WorkKind[] = ['awaiting', 'review', 'running']
-
-export const WORK_LABELS = {
-  awaiting: 'portfolio.work.awaiting',
-  review: 'portfolio.work.review',
-  running: 'portfolio.work.running',
-} as const satisfies Record<WorkKind, string>
-
-/** Teinte du point de groupe : ce qui attend un humain, ce qui tourne tout seul. */
-export const WORK_DOTS: Record<WorkKind, string> = {
-  awaiting: 'bg-caution',
-  review: 'bg-caution',
-  running: 'bg-accent',
-}
-
-export interface WorkItem {
-  card: PortfolioCard
-  /** Ce que la ligne dit à droite : l'état des sessions rattachées, ou leur nombre. */
-  sessions: number
-  awaiting: boolean
-  running: boolean
+/** Les projets du portefeuille, et leurs conversations vivantes. */
+function usePortfolioLive(): { projects: ProjectDto[]; live: LiveConversation[]; isPending: boolean } {
+  const { data: projects, isPending } = useProjects()
+  const { data: conversations } = useAllConversations()
+  const visible = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
+  const mine = useMemo(() => {
+    const ids = new Set(visible.map((project) => project.id))
+    return (conversations ?? []).filter((entry) => entry.projectId !== null && ids.has(entry.projectId))
+  }, [conversations, visible])
+  return { projects: visible, live: useLiveConversations(mine), isPending }
 }
 
 /**
- * Les cartes qui réclament une personne, tous projets confondus.
- *
- * Une carte n'apparaît que dans **un** groupe, le premier qui la réclame : une carte
- * dont la session attend une réponse n'a pas aussi besoin d'être comptée « en cours »,
- * et la lire deux fois ferait douter du total.
+ * Ce qu'une carte sans session demande, ou null si elle ne demande rien : *À vérifier*
+ * attend une relecture, « à préciser » des réponses. Le reste du board est un
+ * inventaire, que l'onglet d'à côté montre déjà.
  */
-export function useWorkGroups(): {
-  groups: { kind: WorkKind; items: WorkItem[] }[]
-  total: number
-  isPending: boolean
-} {
-  const { data: projects } = useProjects()
-  const { data: conversations } = useAllConversations()
-  const visible = useMemo(
-    () => (projects ?? []).filter((project) => !project.archivedAt),
-    [projects],
+function cardDemandOf(card: CardDto): { group: ActivityGroup; since: number } | null {
+  if (CARD_CLOSED_COLUMNS.includes(card.column)) return null
+  if (card.column === 'review') return { group: 'review', since: card.columnSince }
+  if (card.toClarifySince !== null) return { group: 'asking', since: card.toClarifySince }
+  return null
+}
+
+/**
+ * Les cartes qui réclament quelqu'un et qu'aucune ligne de session ne porte : la session
+ * qui les a faites est archivée, ou il n'y en a jamais eu. Une carte portée par une
+ * session visible se lit déjà sur la ligne de celle-ci, et la compter deux fois ferait
+ * douter du total.
+ */
+function orphanCardsOf(cards: PortfolioCard[], live: LiveConversation[]) {
+  const carried = new Set(live.flatMap((entry) => (entry.conversation.card ? [entry.conversation.card.id] : [])))
+  return cards.flatMap((card) => {
+    if (carried.has(card.id)) return []
+    const demand = cardDemandOf(card)
+    return demand ? [{ card, ...demand }] : []
+  })
+}
+
+/**
+ * Les lignes de l'Activité du portefeuille, la plus récente d'abord : les sessions de
+ * tous les projets visibles, calculées comme dans un projet (`activityRowsOf`), et les
+ * cartes qui réclament quelqu'un sans session. C'est ce qui reste de l'ancienne vue
+ * *Travail* : son regroupement par demande est devenu celui des groupes de l'Activité.
+ *
+ * Trois requêtes pour tous les projets — arbres, PR, demandes ouvertes — au lieu de
+ * trois par projet. Les cartes, elles, se lisent projet par projet, mais ce sont celles
+ * du board du portefeuille et de son onglet : React Query les partage.
+ */
+export function usePortfolioActivityRows(): { rows: PortfolioRow[]; isPending: boolean } {
+  const t = useTranslate()
+  const { projects, live, isPending } = usePortfolioLive()
+  const { cards } = useAllCards(projects)
+  const { data: trees } = usePortfolioWorktreeStatuses()
+  const { data: pullRequests } = usePortfolioPullRequests()
+  const requests = usePortfolioSessionRequests(live)
+
+  const rows = useMemo(() => {
+    const byId = new Map(projects.map((project) => [project.id, project]))
+    const sessions = activityRowsOf(
+      live,
+      requests,
+      cards,
+      (projectId) => ({
+        trees: projectId ? trees?.projects[projectId] : undefined,
+        pullRequests: projectId ? pullRequests?.projects[projectId] : undefined,
+        rootBranch: (projectId ? byId.get(projectId)?.git?.branch : null) ?? null,
+      }),
+      t,
+    ).flatMap((row): PortfolioRow[] => {
+      const project = byId.get(row.entry.conversation.projectId ?? '')
+      return project
+        ? [{ ...row, kind: 'session', key: row.entry.conversation.id, project, updatedAt: row.entry.conversation.updatedAt }]
+        : []
+    })
+    const orphans = orphanCardsOf(cards, live).map(({ card, group, since }): PortfolioRow => ({
+      kind: 'card',
+      key: `card-${card.id}`,
+      project: card.project,
+      card,
+      group,
+      marker: group === 'review' ? 'review' : 'awaiting',
+      summary:
+        group === 'review'
+          ? {
+              text: t(card.conversations.length > 0 ? 'portfolioActivity.card.reviewArchived' : 'portfolioActivity.card.review', {
+                age: shortAge(since),
+              }),
+              tone: 'soft',
+            }
+          : { text: t('portfolioActivity.card.toClarify', { age: shortAge(since) }), tone: 'caution' },
+      updatedAt: since,
+    }))
+    return [...sessions, ...orphans].sort((a, b) => b.updatedAt - a.updatedAt)
+  }, [projects, live, requests, cards, trees, pullRequests, t])
+
+  return { rows, isPending }
+}
+
+/**
+ * Le compte ambre de l'onglet Activité du portefeuille : ce qui te demande quelque
+ * chose, sessions et cartes « à préciser » sans session. Sans les arbres ni les PR,
+ * dont le groupe « te demande » ne dépend pas : la coque ne les lit donc pas.
+ */
+export function usePortfolioAskingCount(): number {
+  const { projects, live } = usePortfolioLive()
+  const { cards } = useAllCards(projects)
+  const requests = usePortfolioSessionRequests(live)
+  return useMemo(
+    () => askingCount(live, requests) + orphanCardsOf(cards, live).filter((entry) => entry.group === 'asking').length,
+    [live, requests, cards],
   )
-  const { cards, isPending } = useAllCards(visible)
-  const live = useLiveConversations(conversations ?? [])
-
-  return useMemo(() => {
-    // L'état vivant par conversation : une carte le lit pour celles qui lui sont
-    // rattachées, plutôt que de se fier au `status` figé par la dernière requête.
-    const byId = new Map(live.map((entry) => [entry.conversation.id, entry]))
-    const buckets = new Map<WorkKind, WorkItem[]>(WORK_KINDS.map((kind) => [kind, []]))
-
-    for (const card of cards) {
-      if (card.column === 'done' || card.column === 'abandoned') continue
-      const attached = card.conversations
-        .map((session) => byId.get(session.id))
-        .filter((entry) => entry !== undefined)
-      const awaiting = attached.some((entry) => entry.awaiting)
-      const running = attached.some((entry) => entry.running)
-      const item: WorkItem = { card, sessions: card.conversations.length, awaiting, running }
-
-      if (awaiting) buckets.get('awaiting')!.push(item)
-      else if (card.column === 'review') buckets.get('review')!.push(item)
-      else if (running) buckets.get('running')!.push(item)
-    }
-
-    const groups = WORK_KINDS.map((kind) => ({ kind, items: buckets.get(kind)! }))
-    return {
-      groups,
-      total: groups.reduce((sum, group) => sum + group.items.length, 0),
-      isPending,
-    }
-  }, [cards, live, isPending])
 }

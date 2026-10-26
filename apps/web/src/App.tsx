@@ -19,7 +19,6 @@ import { PortfolioBoardPage } from './routes/PortfolioBoardPage'
 import { PortfolioJournalPage } from './routes/PortfolioJournalPage'
 import { PortfolioLayout } from './routes/PortfolioLayout'
 import { PortfolioTimelinePage } from './routes/PortfolioTimelinePage'
-import { PortfolioWorkPage } from './routes/PortfolioWorkPage'
 import { ProjectJournalPage } from './routes/ProjectJournalPage'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
@@ -76,6 +75,11 @@ const OnboardingPage = lazy(() =>
  */
 const ProjectActivityPage = lazy(() =>
   import('./routes/ProjectActivityPage').then((m) => ({ default: m.ProjectActivityPage })),
+)
+
+/** L'Activité du portefeuille (#117), chargée à part pour la même raison. */
+const PortfolioActivityPage = lazy(() =>
+  import('./routes/PortfolioActivityPage').then((m) => ({ default: m.PortfolioActivityPage })),
 )
 
 /**
@@ -191,7 +195,9 @@ export function App() {
           <Route path="/projects" element={<PortfolioLayout />}>
             <Route index element={<ProjectsPage />} />
             <Route path="board" element={<PortfolioBoardPage />} />
-            <Route path="work" element={<PortfolioWorkPage />} />
+            <Route path="activity" element={<Suspense fallback={null}><PortfolioActivityPage /></Suspense>} />
+            {/* Travail s'est fondu dans l'Activité (#117) : l'ancienne adresse y mène. */}
+            <Route path="work" element={<Navigate to="/projects/activity" replace />} />
             <Route path="timeline" element={<PortfolioTimelinePage />} />
             <Route path="journal" element={<PortfolioJournalPage />} />
           </Route>

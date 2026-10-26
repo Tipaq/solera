@@ -90,7 +90,8 @@ export function sessionPlaceOf(
  * - `s:attend`, `s:relire`, `s:cours`, `s:fini` (ou leurs équivalents anglais) gardent
  *   un groupe ; un début de mot suffit, et plusieurs `s:` s'additionnent ;
  * - `#61` garde les sessions de la carte 61 ;
- * - le reste est du texte libre, cherché dans le nom, la branche et le titre de la carte.
+ * - le reste est du texte libre, cherché dans le nom, la branche et le titre de la carte,
+ *   et dans le portefeuille le nom du projet.
  */
 export interface ActivityFilter {
   /** Null sans jeton `s:` ; vide quand un `s:` ne désigne aucun groupe. */
@@ -137,6 +138,8 @@ export interface ActivityRowFacts {
   title: string
   branch: string | null
   card: { number: number; title: string } | null
+  /** Le nom du projet, dans le portefeuille où les projets se mêlent. */
+  project?: string
 }
 
 export function matchesActivity(filter: ActivityFilter, row: ActivityRowFacts): boolean {
@@ -144,7 +147,7 @@ export function matchesActivity(filter: ActivityFilter, row: ActivityRowFacts): 
   // filtre qui ne filtre pas sans le dire.
   if (filter.groups && !filter.groups.includes(row.group)) return false
   if (filter.cards.length > 0 && (!row.card || !filter.cards.includes(row.card.number))) return false
-  const haystack = [row.title, row.branch ?? '', row.card?.title ?? ''].join('\n').toLocaleLowerCase()
+  const haystack = [row.title, row.branch ?? '', row.card?.title ?? '', row.project ?? ''].join('\n').toLocaleLowerCase()
   return filter.words.every((word) => haystack.includes(word))
 }
 

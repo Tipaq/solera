@@ -169,7 +169,7 @@ try {
   const awaiting = page.getByRole('link', { name: /attend ta réponse/ })
   await awaiting.waitFor()
   assert.match(await awaiting.innerText(), /depuis/, 'La tuile d’attente dit depuis quand')
-  await page.getByRole('link', { name: /à relire/ }).waitFor()
+  await page.getByRole('link', { name: /^à relire/ }).waitFor()
   assert.equal(
     await page.getByText(/cartes$/).count(),
     0,
@@ -220,7 +220,7 @@ try {
   await page.goto(`${base}/p/${docs.id}`)
   await page.getByText('Rien ne réclame ici.', { exact: true }).waitFor()
 
-  // ─── Le portefeuille : Projets, Board global, Travail ─────────────────────
+  // ─── Le portefeuille : Projets, Board global, Activité ─────────────────────
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
@@ -268,15 +268,23 @@ try {
   }
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
 
-  // *Travail* : groupé par ce que les cartes demandent, et non par colonne.
+  // L'Activité du portefeuille (#117) : la liste d'un projet, une colonne Projet en
+  // plus, et Travail qui s'y fond. L'ancienne adresse y mène.
   await page.goto(`${base}/projects/work`)
-  await page.getByRole('heading', { name: /^À vérifier/ }).waitFor()
-  assert.equal(
-    await page.getByRole('heading', { name: /^À faire/ }).count(),
-    0,
-    'Travail groupe par demande, pas par colonne : « À faire » ne réclame rien',
-  )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail.png') })
+  await page.waitForURL(/\/projects\/activity$/)
+  const review = page.locator('section[aria-labelledby="portfolio-activity-review"]')
+  await review.waitFor()
+  // La carte en *À vérifier* du jeu d'essai, par sa session ou par une ligne de carte.
+  await review.getByText('#4', { exact: true }).waitFor()
+  await page.getByText(nimbus.name, { exact: true }).first().waitFor()
+  assert.equal(await page.getByRole('heading', { name: /^À faire/ }).count(), 0, "L'Activité groupe par demande, pas par colonne")
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite.png') })
+  // Grouper par projet : un en-tête par projet, et plus de groupe d'état.
+  await page.getByRole('radio', { name: 'Projet' }).click()
+  await page.waitForURL(/groupe=project/)
+  await page.locator(`section[aria-labelledby="portfolio-activity-project-${nimbus.id}"]`).waitFor()
+  assert.equal(await review.count(), 0, 'Grouper par projet retire les groupes d’état')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite-par-projet.png') })
 
   // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
   // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
@@ -394,7 +402,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Travail, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Activité, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   GitHeadDto,
+  PortfolioWorktreeStatusDto,
   WorktreeCleanupPlanDto,
   WorktreeCleanupResultDto,
   WorktreeDto,
@@ -28,6 +29,21 @@ export function useWorktreeStatuses(projectId: string | undefined) {
     enabled: Boolean(projectId),
     staleTime: 15_000,
     refetchInterval: (query) => (query.state.data && !query.state.data.fresh ? 2_000 : false),
+  })
+}
+
+/**
+ * La même liste pour tous les projets visibles et non archivés, par projet : l'Activité
+ * du portefeuille (#117) la lit d'une requête plutôt que d'une par projet. On repasse
+ * tant qu'un des projets a répondu d'une liste périmée.
+ */
+export function usePortfolioWorktreeStatuses() {
+  return useQuery({
+    queryKey: ['worktree-status'],
+    queryFn: () => api.get<PortfolioWorktreeStatusDto>('/api/worktrees/status'),
+    staleTime: 15_000,
+    refetchInterval: (query) =>
+      query.state.data && Object.values(query.state.data.projects).some((list) => !list.fresh) ? 2_000 : false,
   })
 }
 

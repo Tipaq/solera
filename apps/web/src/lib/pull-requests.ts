@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import type { ProjectPullRequestDto, ProjectPullRequestListDto } from '@solera/protocol'
+import type { PortfolioPullRequestsDto, ProjectPullRequestDto, ProjectPullRequestListDto } from '@solera/protocol'
 import { api } from './api'
 
 /**
@@ -14,6 +14,16 @@ export function usePullRequests(projectId: string | undefined) {
     queryKey: ['pull-requests', projectId ?? ''],
     queryFn: () => api.get<ProjectPullRequestListDto>(`/api/projects/${projectId}/pull-requests`),
     enabled: Boolean(projectId),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+}
+
+/** Les mêmes pour tous les projets visibles, d'une requête : l'Activité du portefeuille (#117). */
+export function usePortfolioPullRequests() {
+  return useQuery({
+    queryKey: ['pull-requests'],
+    queryFn: () => api.get<PortfolioPullRequestsDto>('/api/pull-requests'),
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

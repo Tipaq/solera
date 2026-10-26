@@ -37,11 +37,28 @@ export function useSessionRequests(
   projectId: string | undefined,
   live: LiveConversation[],
 ): ReadonlyMap<string, SessionRequest> {
+  return useRequests(projectId, live)
+}
+
+/**
+ * Les mêmes, pour tous les projets visibles et non archivés : l'Activité du
+ * portefeuille (#117), d'une requête pour tous.
+ */
+export function usePortfolioSessionRequests(live: LiveConversation[]): ReadonlyMap<string, SessionRequest> {
+  return useRequests(null, live)
+}
+
+/** `null` pour tous les projets, `undefined` tant que le projet n'est pas connu. */
+function useRequests(projectId: string | null | undefined, live: LiveConversation[]): ReadonlyMap<string, SessionRequest> {
   const signature = live.map((entry) => `${entry.conversation.id}:${entry.status}:${entry.seq}`).join(',')
   const { data: prompts } = useQuery({
     queryKey: ['prompts', projectId, signature],
     queryFn: async () =>
-      (await api.get<{ prompts: ConversationPromptDto[] }>(`/api/projects/${projectId}/prompts`)).prompts,
+      (
+        await api.get<{ prompts: ConversationPromptDto[] }>(
+          projectId === null ? '/api/prompts' : `/api/projects/${projectId}/prompts`,
+        )
+      ).prompts,
     enabled: projectId !== undefined,
     placeholderData: (previous) => previous,
   })
@@ -50,7 +67,7 @@ export function useSessionRequests(
   return useMemo(() => {
     const requests = new Map<string, SessionRequest>()
     for (const entry of awaiting ?? []) {
-      if (entry.kind !== 'decision' || entry.projectId !== projectId) continue
+      if (entry.kind !== 'decision' || (projectId !== null && entry.projectId !== projectId)) continue
       requests.set(entry.conversationId, {
         kind: 'decision',
         requestId: entry.id,
