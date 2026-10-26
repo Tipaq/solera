@@ -107,8 +107,8 @@ try {
   )
   // La rangée porte les vues, et l'Aperçu est la seule sans action propre.
   const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
-  // L'ordre de l'audit, et les cinq : la rangée est la même sur les cinq vues.
-  for (const view of ['Aperçu', 'Board', 'Planifiées', 'Chronologie', 'Journal']) {
+  // L'ordre de l'audit, et les six depuis #110 : la rangée est la même sur toutes les vues.
+  for (const view of ['Aperçu', 'Activité', 'Board', 'Planifiées', 'Jalons', 'Journal']) {
     await row.getByRole('link', { name: new RegExp(`^${view}`) }).waitFor()
   }
   assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
@@ -183,7 +183,7 @@ try {
     date**, sans quoi la vue mentirait par omission, et une carte-jalon n'est pas sa
     propre barre.
   */
-  await row.getByRole('link', { name: /^Chronologie/ }).click()
+  await row.getByRole('link', { name: /^Jalons/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline`)
   await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
   const unplaced = cards.filter(

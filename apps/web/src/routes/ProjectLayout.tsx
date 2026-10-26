@@ -3,6 +3,7 @@ import {
   Flag,
   GitBranch,
   History,
+  Layers,
   MoreHorizontal,
   Palette,
   Plus,
@@ -11,6 +12,7 @@ import {
   SquareKanban,
   Target,
 } from 'lucide-react'
+import { useMemo } from 'react'
 import { Outlet, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
 import {
@@ -28,7 +30,9 @@ import {
 import { HeaderBand } from '../components/HeaderBand'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
+import { askingCount, useLiveConversations } from '../lib/activity'
 import { useCards } from '../lib/cards'
+import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
 import { PROJECT_COLORS } from '../lib/project-colors'
 import { useProjects, useUpdateProject } from '../lib/projects'
@@ -70,7 +74,13 @@ export function ProjectLayout() {
   const { data: projects, isPending } = useProjects()
   const { data: cards } = useCards(projectId)
   const { data: schedules } = useSchedules()
+  const { data: conversations } = useAllConversations()
   const updateProject = useUpdateProject()
+  const mine = useMemo(
+    () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
+    [conversations, projectId],
+  )
+  const live = useLiveConversations(mine)
 
   const project = projects?.find((entry) => entry.id === projectId)
   const onBoard = useMatch('/p/:projectId/board') !== null
@@ -92,6 +102,15 @@ export function ProjectLayout() {
       end: true,
       label: t('project.view.overview'),
       icon: <Target size={15} />,
+    },
+    {
+      to: `/p/${projectId}/activity`,
+      label: t('project.view.activity'),
+      icon: <Layers size={15} />,
+      /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de
+         sessions : le compte d'un onglet est une demande, d'où l'ambre. */
+      count: askingCount(live),
+      tone: 'caution',
     },
     {
       to: `/p/${projectId}/board`,
