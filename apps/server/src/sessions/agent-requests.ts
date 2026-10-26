@@ -50,6 +50,8 @@ import {
   type SoleraEvent,
   type WorktreeState,
   type ProjectActionRunResult,
+  allowsRequest,
+  type AgentRequestPolicy,
 } from '@solera/protocol'
 import type { ZodError } from 'zod'
 import {
@@ -68,6 +70,7 @@ import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -578,6 +581,17 @@ export class AgentRequests {
    * global passe `agent` quand il en veut un autre, et la description de l'outil le lui
    * dit.
    */
+  /** Le chemin d'accord que partagent le clic et le réglage « Automatique » (#120). */
+  private acceptDeps(): AcceptDeps {
+    return {
+      db: this.ctx.db,
+      config: this.ctx.config,
+      log: this.log,
+      closure: this.closure,
+      warn: (err, card) => this.logger?.warn({ err, card }, 'clôture de carte en échec'),
+    }
+  }
+
   private principal(request: AgentRequestRow): Requester {
     if (!request.userId) {
       throw new Refusal("La demande ne vient d'aucune session ni d'aucun compte : Solera ne sait pas pour qui agir.")
@@ -1255,6 +1269,9 @@ export class AgentRequests {
     requester: ConversationRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
+    // « Demande mon accord » et « Automatique » se confondent ici : déclarer un projet
+    // n'a jamais attendu de clic, il est borné par `PROJECTS_PER_HOUR`. Seul « Interdit »
+    // retire l'outil.
     this.assertFilingAllowed(requester)
 
     const given = typeof payload.path === 'string' ? payload.path.trim() : ''
@@ -1355,7 +1372,7 @@ export class AgentRequests {
     requester: ConversationRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    this.assertFilingAllowed(requester)
+    const policy = this.assertFilingAllowed(requester)
 
     const targetId =
       typeof payload.conversation === 'string' && payload.conversation.trim()
@@ -1434,6 +1451,9 @@ export class AgentRequests {
       }
     }
 
+    // « Automatique » n'accorde qu'au nom de la personne qui l'a réglé : ranger le fil
+    // d'un autre membre du projet attend toujours son clic.
+    const automatic = policy === 'auto' && target.userId === requester.userId
     const price = await this.filingPrice(target, destination.id)
     this.log.append(target.id, {
       type: 'filing.requested',
@@ -1444,8 +1464,32 @@ export class AgentRequests {
       projectName: destination.name,
       ...price,
       fromProjectId: target.projectId,
+      ...(automatic ? { automatic: true } : {}),
     })
     this.notifyLists(target.id)
+
+    if (automatic) {
+      const accepted = acceptFiling(this.acceptDeps(), {
+        conversationId: target.id,
+        row: request,
+        filing: { conversationTitle: target.title, projectId: destination.id, projectName: destination.name, fromProjectId: target.projectId },
+        userId: target.userId,
+        automatic: true,
+      })
+      if (!accepted.ok) {
+        return `Le rangement est réglé sur « Automatique », mais il n'est pas applicable maintenant : ${describeFilingOutcome(target.title, destination.name, 'impossible', accepted.reason)}`
+      }
+      return [
+        target.id === requester.id
+          ? `Rangement accordé d'office (réglage « Automatique ») : cette conversation sera rangée dans « ${destination.name} » dès que ce tour sera fini.`
+          : `Rangement accordé d'office (réglage « Automatique ») : « ${target.title} » sera rangée dans « ${destination.name} » dès qu'elle ne travaillera plus.`,
+        target.id === requester.id
+          ? 'La session redémarrera dans le nouveau projet, avec ses outils, et sans la session native du CLI.'
+          : null,
+      ]
+        .filter((line) => line !== null)
+        .join('\n')
+    }
     this.notifyAwaiting([target.userId])
 
     const lines = [
@@ -1689,17 +1733,19 @@ export class AgentRequests {
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
    * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
    */
-  private assertFilingAllowed(requester: ConversationRow): void {
+  private assertFilingAllowed(requester: ConversationRow): AgentRequestPolicy {
     if (!this.ctx.config.mcp.projectFiling) {
       throw new Refusal(
         "Refusé : cette instance de Solera n'ouvre pas le rangement aux agents (`[mcp] project_filing` dans config.toml).",
       )
     }
-    if (!parseAgentConfig(requester.config).projectFiling) {
+    const policy = parseAgentConfig(requester.config).projectFiling
+    if (!allowsRequest(policy)) {
       throw new Refusal(
-        "Refusé : le rangement de projet n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
+        "Refusé : le rangement de projet est interdit à cette conversation. L'utilisateur peut le permettre dans ses réglages de permissions, et relancer la session.",
       )
     }
+    return policy
   }
 
   // --- propose_cards -------------------------------------------------------------
@@ -1724,6 +1770,14 @@ export class AgentRequests {
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): string {
+    // Une session de découpage (#70) n'existe que pour proposer, et son brouillon se
+    // corrige toujours avant d'être créé : le réglage ne la concerne pas.
+    const policy = requester.purpose === 'split' ? 'ask' : parseAgentConfig(requester.config).proposeCards
+    if (!allowsRequest(policy)) {
+      throw new Refusal(
+        "Refusé : les brouillons de cartes sont interdits à cette conversation. L'utilisateur peut les permettre dans ses réglages de permissions, et relancer la session.",
+      )
+    }
     const draft = readAgentDraft(this.ctx.db, project.id, requester.splitCardId, payload)
 
     const waiting = this.ctx.db
@@ -1752,6 +1806,28 @@ export class AgentRequests {
 
     this.log.append(requester.id, { type: 'card_draft.proposed', requestId: request.id, draft })
     this.notifyLists(requester.id)
+
+    if (policy === 'auto' && requester.userId === project.ownerId) {
+      const accepted = acceptDraft(this.acceptDeps(), {
+        conversationId: requester.id,
+        row: request,
+        projectId: project.id,
+        draft,
+        userId: project.ownerId,
+        automatic: true,
+      })
+      this.notifyLists(requester.id)
+      if (!accepted.ok) {
+        return `Les brouillons de cartes sont réglés sur « Automatique », mais celui-ci n'a pas pu être créé : ${accepted.reason === 'already_decided' ? 'il a déjà été tranché' : describeDraftOutcome('impossible', accepted.reason)}`
+      }
+      return [
+        "Cartes créées d'office (réglage « Automatique ») :",
+        accepted.parent ? `Parente : #${accepted.parent.number} « ${accepted.parent.title} ».` : null,
+        ...accepted.created.map((card) => `- #${card.number} « ${card.title} »`),
+      ]
+        .filter((line) => line !== null)
+        .join('\n')
+    }
     this.notifyAwaiting([project.ownerId])
 
     const parent = draft.parent
@@ -1790,7 +1866,7 @@ export class AgentRequests {
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
-    this.assertCardFilingAllowed(requester)
+    const policy = this.assertCardFilingAllowed(requester)
 
     const changes = Array.isArray(payload.changes) ? payload.changes : null
     if (!changes || changes.length === 0) {
@@ -1947,6 +2023,22 @@ export class AgentRequests {
       cards: proposed,
     })
     this.notifyLists(requester.id)
+
+    // « Automatique » écrit au nom du propriétaire du projet, qui tranche d'habitude :
+    // seulement quand c'est lui qui l'a réglé, pour son propre board.
+    if (policy === 'auto' && requester.userId === project.ownerId) {
+      const accepted = await acceptCardFiling(this.acceptDeps(), {
+        conversationId: requester.id,
+        row: request,
+        cards: proposed,
+        userId: project.ownerId,
+        automatic: true,
+      })
+      this.notifyLists(requester.id)
+      return accepted.ok
+        ? `Changement appliqué d'office (réglage « Automatique ») : ${describeCardFilingOutcome('accepted', null, accepted.applied, proposed.length)}`
+        : `Le rangement de carte est réglé sur « Automatique », mais rien n'a pu être appliqué : ${describeCardFilingOutcome('impossible', accepted.reason)}`
+    }
     this.notifyAwaiting([project.ownerId])
 
     const lines = [
@@ -1969,17 +2061,19 @@ export class AgentRequests {
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
    * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
    */
-  private assertCardFilingAllowed(requester: ConversationRow): void {
+  private assertCardFilingAllowed(requester: ConversationRow): AgentRequestPolicy {
     if (!this.ctx.config.mcp.cardFiling) {
       throw new Refusal(
         "Refusé : cette instance de Solera n'ouvre pas le rangement de carte aux agents (`[mcp] card_filing` dans config.toml).",
       )
     }
-    if (!parseAgentConfig(requester.config).cardFiling) {
+    const policy = parseAgentConfig(requester.config).cardFiling
+    if (!allowsRequest(policy)) {
       throw new Refusal(
-        "Refusé : le rangement de carte n'est pas accordé à cette conversation. L'utilisateur peut le cocher dans les réglages de la session, et la relancer.",
+        "Refusé : le rangement de carte est interdit à cette conversation. L'utilisateur peut le permettre dans ses réglages de permissions, et relancer la session.",
       )
     }
+    return policy
   }
 
   // --- move_card -----------------------------------------------------------------
@@ -2137,9 +2231,10 @@ export class AgentRequests {
         "Refusé : cette instance de Solera n'ouvre pas les demandes de décision aux agents (`[mcp] decisions` dans config.toml). Décide selon tes instructions, ou pose ta question dans ta réponse.",
       )
     }
-    if (!parseAgentConfig(requester.config).decisions) {
+    const policy = parseAgentConfig(requester.config).decisions
+    if (!allowsRequest(policy)) {
       throw new Refusal(
-        "Refusé : les demandes de décision ne sont pas accordées à cette conversation. Décide selon tes instructions, ou pose ta question dans ta réponse. L'utilisateur peut cocher « Décisions » dans les réglages de la session, et la relancer.",
+        "Refusé : les demandes de décision sont interdites à cette conversation. Décide selon tes instructions, ou pose ta question dans ta réponse. L'utilisateur peut les permettre dans ses réglages de permissions, et relancer la session.",
       )
     }
     if (!requester.projectId) {
@@ -2150,7 +2245,7 @@ export class AgentRequests {
     const project = this.requireProject(requester.projectId)
     if (!this.decisions) throw new Refusal('Les décisions ne sont pas disponibles sur ce serveur.')
     try {
-      return this.decisions.request(request, requester, project, payload)
+      return this.decisions.request(request, requester, project, payload, policy === 'auto')
     } catch (err) {
       if (err instanceof DecisionRefusal) throw new Refusal(err.message)
       throw err

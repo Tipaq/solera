@@ -48,6 +48,7 @@ export const SHARED_CONFIG_FIELDS = [
   'additionalDirectories',
   'projectFiling',
   'cardFiling',
+  'proposeCards',
   'decisions',
   'decisionMaxHours',
   'queueMessages',

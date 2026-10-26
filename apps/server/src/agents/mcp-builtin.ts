@@ -91,6 +91,11 @@ export interface BuiltinMcpParams {
    */
   decisions: boolean
   /**
+   * Ouvre `propose_cards` : déposer un brouillon de cartes. Réglé depuis #120 ; une
+   * session de découpage l'a toujours.
+   */
+  proposeCards: boolean
+  /**
    * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
    * (`design-system/storybooks.ts`). Vide quand le projet n'a pas de DS : le `.mjs`
    * retire alors les outils du design system de son catalogue.
@@ -120,6 +125,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
     projectFiling,
     cardFiling,
     decisions,
+    proposeCards,
     designSystemState,
   } = params
   if (!builtinMcpEnabled(enabled, config)) return null
@@ -148,6 +154,7 @@ export function builtinMcpServer(params: BuiltinMcpParams): McpServer | null {
         ...(projectFiling ? { SOLERA_MCP_FILING: '1' } : {}),
         ...(cardFiling ? { SOLERA_MCP_CARD_FILING: '1' } : {}),
         ...(decisions ? { SOLERA_MCP_DECISIONS: '1' } : {}),
+        ...(proposeCards ? { SOLERA_MCP_PROPOSE_CARDS: '1' } : {}),
         SOLERA_MCP_DESIGN_SYSTEM: designSystemState,
       },
     },

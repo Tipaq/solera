@@ -12,6 +12,7 @@ import {
   type Db,
 } from '@solera/db'
 import {
+  allowsRequest,
   diffAgentConfig,
   parseAgentConfig,
   RESUMES_FROM_OTHER_DIRECTORY,
@@ -1003,9 +1004,12 @@ export class SessionManager {
           // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
           // trois outils `*_memory` de son catalogue.
           memoryDir: memoryDir(current) ?? '',
-          projectFiling: this.config.mcp.projectFiling && current.projectFiling,
-          cardFiling: this.config.mcp.cardFiling && current.cardFiling,
-          decisions: this.config.mcp.decisions && current.decisions,
+          // Trois états depuis #120 : l'outil existe dès que la demande n'est pas
+          // interdite, qu'elle attende un clic ou s'applique d'elle-même.
+          projectFiling: this.config.mcp.projectFiling && allowsRequest(current.projectFiling),
+          cardFiling: this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
+          decisions: this.config.mcp.decisions && allowsRequest(current.decisions),
+          proposeCards: conversation.purpose === 'split' || allowsRequest(current.proposeCards),
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
@@ -1061,7 +1065,7 @@ export class SessionManager {
                 projectId,
                 conversationId,
                 soleraMcp,
-                cardFiling: soleraMcp && this.config.mcp.cardFiling && current.cardFiling,
+                cardFiling: soleraMcp && this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
                 prototypesDir,
               })
             : null,

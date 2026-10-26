@@ -23,6 +23,33 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
+ * Ce que Solera fait d'une demande de l'agent (#120, Q12) : la refuser d'office, attendre
+ * l'accord d'une personne, ou l'appliquer tout de suite.
+ *
+ * - `deny` : l'outil disparaît du serveur MCP, et le daemon refuse s'il est appelé quand
+ *   même ;
+ * - `ask` : la demande attend un clic, dans le fil et dans la section des demandes ;
+ * - `auto` : la demande s'applique dès son dépôt, au nom de la personne qui a réglé
+ *   « Automatique », et seule une ligne dans le fil le dit. Elle ne passe pas par la
+ *   section. Pour une décision, l'option par défaut de l'agent est retenue sans notifier
+ *   personne.
+ *
+ * Les configurations d'avant portaient un booléen : vrai voulait dire « l'agent peut
+ * demander », c'est-à-dire `ask`, et faux `deny`. Ils se relisent ainsi, à la lecture
+ * comme dans l'API publique, sans migration.
+ */
+export const agentRequestPolicySchema = z.preprocess(
+  (value) => (value === true ? 'ask' : value === false ? 'deny' : value),
+  z.enum(['deny', 'ask', 'auto']),
+)
+export type AgentRequestPolicy = 'deny' | 'ask' | 'auto'
+
+/** L'agent peut-il faire cette demande du tout ? */
+export function allowsRequest(policy: AgentRequestPolicy): boolean {
+  return policy !== 'deny'
+}
+
+/**
  * ## Les familles d'autorisation du serveur MCP de Solera, et le critère d'ouverture
  *
  * Les booléens qui suivent découpent les outils du serveur intégré en familles. Il y en
@@ -152,7 +179,7 @@ const skillLibrarySchema = z.boolean().default(true)
  * configuration, donc personne d'autre que l'utilisateur ne peut recocher celui-ci.
  * C'est l'argument qui vaut pour toutes les familles.
  */
-const projectFilingSchema = z.boolean().default(false)
+const projectFilingSchema = agentRequestPolicySchema.default('ask')
 
 /**
  * Ouvre à l'agent `request_card_change` : proposer de changer une ou plusieurs cartes du
@@ -177,7 +204,18 @@ const projectFilingSchema = z.boolean().default(false)
  * ajouts à sa description et à ses sous-tâches. Ce qui reste ici est exactement ce
  * qu'ils refusent.
  */
-const cardFilingSchema = z.boolean().default(true)
+const cardFilingSchema = agentRequestPolicySchema.default('ask')
+
+/**
+ * `propose_cards` : déposer un brouillon de découpage en cartes (#70), que la personne
+ * corrige puis crée d'un clic. Sans réglage jusqu'à #120, ce qui revenait à `ask` ; en
+ * `auto`, le brouillon de l'agent est créé tel quel dès son dépôt.
+ *
+ * Dans le socle et non une famille au sens du critère plus haut : rien ne s'écrit sans
+ * l'accord réglé ici, et une carte qu'un agent crée seul (`create_card`) est déjà du
+ * socle. Le réglage existe pour le troisième état, pas pour garder l'outil.
+ */
+const proposeCardsSchema = agentRequestPolicySchema.default('ask')
 
 /** Plafond de `decisionMaxHours` : une semaine, au-delà la question ne parle plus du présent. */
 export const MAX_DECISION_HOURS = 168
@@ -198,7 +236,7 @@ export const DEFAULT_DECISION_HOURS = 24
  * disparaître l'entrée. Ce plafond-là est **allumé par défaut**, à la différence des
  * autres : rien ne s'applique sans une personne, et l'outil ne sort pas du projet.
  */
-const decisionsSchema = z.boolean().default(false)
+const decisionsSchema = agentRequestPolicySchema.default('deny')
 
 /**
  * Délai maximal d'une décision, en heures : celui que l'agent demande y est ramené, et
@@ -235,6 +273,7 @@ export const claudeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -389,6 +428,7 @@ export const codexConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -447,6 +487,7 @@ export const opencodeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -484,6 +525,7 @@ export const grokConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -522,9 +564,10 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -551,9 +594,10 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -572,9 +616,10 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -591,9 +636,10 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   account: null,

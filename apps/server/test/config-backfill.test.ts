@@ -80,20 +80,20 @@ const identity = { adapter: () => ({ resolveDefaults: async (config: AgentConfig
 
 test('la migration ne perd aucun réglage, et ne retient que les écarts', async (t) => {
   const db = await database(t)
-  const timClaude: AgentConfig = { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', effort: 'high', cardFiling: false }
-  legacyAccount(db, 'tim', { claude: timClaude, codex: { ...DEFAULT_CODEX_CONFIG, cardFiling: false } })
+  const timClaude: AgentConfig = { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', effort: 'high', cardFiling: 'deny' }
+  legacyAccount(db, 'tim', { claude: timClaude, codex: { ...DEFAULT_CODEX_CONFIG, cardFiling: 'deny' } })
   // Le préréglage du projet : les défauts du propriétaire, plus les décisions.
   db.update(projects)
-    .set({ defaultConfig: JSON.stringify({ claude: { ...timClaude, decisions: true }, codex: null }) })
+    .set({ defaultConfig: JSON.stringify({ claude: { ...timClaude, decisions: 'ask' }, codex: null }) })
     .where(eq(projects.id, 'solera'))
     .run()
 
   // Un fil qui n'a rien changé, au modèle résolu à la création ; un fil qui a changé son
   // mode ; un fil libre ; un fil Codex ; un fil de l'autre compte, sans réglages.
-  legacyConversation(db, 'inchange', { ...timClaude, decisions: true })
-  legacyConversation(db, 'plan', { ...timClaude, decisions: true, permissionMode: 'plan' })
+  legacyConversation(db, 'inchange', { ...timClaude, decisions: 'ask' })
+  legacyConversation(db, 'plan', { ...timClaude, decisions: 'ask', permissionMode: 'plan' })
   legacyConversation(db, 'libre', { ...timClaude, effort: 'max' }, null)
-  legacyConversation(db, 'codex', { ...DEFAULT_CODEX_CONFIG, cardFiling: false, model: 'gpt-5.5' })
+  legacyConversation(db, 'codex', { ...DEFAULT_CODEX_CONFIG, cardFiling: 'deny', model: 'gpt-5.5' })
   legacyConversation(db, 'autre', { ...DEFAULT_CLAUDE_CONFIG, model: 'default' }, 'solera', 'other')
 
   const before = new Map(
@@ -115,11 +115,11 @@ test('la migration ne perd aucun réglage, et ne retient que les écarts', async
   assert.equal('agentDefaults' in stored, false)
   assert.deepEqual(stored.collapsedProjects, ['p'])
   assert.equal(stored.agentLayer.claude.model, 'opus')
-  assert.equal(stored.agentLayer.shared.cardFiling, false)
+  assert.equal(stored.agentLayer.shared.cardFiling, 'deny')
 
   // Le projet : seul l'écart au compte de Tim.
   const project = readProjectLayer(db.select().from(projects).where(eq(projects.id, 'solera')).get()!.defaultConfig)
-  assert.deepEqual(project.shared, { decisions: true })
+  assert.deepEqual(project.shared, { decisions: 'ask' })
   assert.deepEqual(project.claude, {})
 
   // Les fils : leurs seuls changements.
@@ -129,11 +129,11 @@ test('la migration ne perd aucun réglage, et ne retient que les écarts', async
   // Le modèle de Codex résolu à la création ne se distingue pas d'un choix : il est gardé.
   // Les décisions du préréglage Claude valent désormais pour tout le projet (un champ
   // partagé) : le fil Codex, qui ne les avait pas, le garde en écart.
-  assert.deepEqual(readOverrides(row(db, 'codex')), { model: 'gpt-5.5', decisions: false })
+  assert.deepEqual(readOverrides(row(db, 'codex')), { model: 'gpt-5.5', decisions: 'deny' })
   // L'alias `default` de Claude, lui, était le défaut du CLI : il redevient hérité. Le
   // compte de « other » n'a rien réglé, et le projet ne lui ouvre que les décisions —
   // qu'il n'avait pas : c'est un écart, gardé.
-  assert.deepEqual(readOverrides(row(db, 'autre')), { decisions: false })
+  assert.deepEqual(readOverrides(row(db, 'autre')), { decisions: 'deny' })
 
   // Une seconde passe ne trouve plus rien à faire.
   assert.deepEqual(backfillConfigLayers(db), { accounts: 0, projects: 0, conversations: 0 })

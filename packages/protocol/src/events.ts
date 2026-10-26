@@ -426,6 +426,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * qui ne revérifient pas ce point.
      */
     fromProjectId: z.string().nullable().optional(),
+    /**
+     * Appliquée d'office par le réglage « Automatique » (#120), sans clic : le fil le dit
+     * en une ligne, et la demande n'est pas passée par la section. Absent sinon.
+     */
+    automatic: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('filing.resolved'),
@@ -438,6 +443,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * champ doivent continuer à se relire.
      */
     reason: z.string().nullable().optional(),
+    /**
+     * Appliquée d'office par le réglage « Automatique » (#120), sans clic : le fil le dit
+     * en une ligne, et la demande n'est pas passée par la section. Absent sinon.
+     */
+    automatic: z.boolean().optional(),
   }),
 
   /**
@@ -530,6 +540,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     applied: z.array(z.number()).optional(),
     /** Ce que les clôtures accordées ont fait, carte par carte (#69). */
     closed: z.array(cardCloseOutcomeSchema).optional(),
+    /**
+     * Appliquée d'office par le réglage « Automatique » (#120), sans clic : le fil le dit
+     * en une ligne, et la demande n'est pas passée par la section. Absent sinon.
+     */
+    automatic: z.boolean().optional(),
   }),
 
   /**
@@ -565,6 +580,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
      * a pu être retiré. Absent hors création.
      */
     draft: cardDraftSchema.optional(),
+    /**
+     * Appliquée d'office par le réglage « Automatique » (#120), sans clic : le fil le dit
+     * en une ligne, et la demande n'est pas passée par la section. Absent sinon.
+     */
+    automatic: z.boolean().optional(),
   }),
 
   /**
@@ -594,6 +614,11 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     option: z.string().nullable(),
     text: z.string().nullable(),
     decidedBy: z.string().nullable(),
+    /**
+     * Tranchée d'office par le réglage « Automatique » (#120) : l'option par défaut de
+     * l'agent, retenue dès le dépôt, sans notifier personne. `by` vaut alors `default`.
+     */
+    automatic: z.boolean().optional(),
   }),
 
   // Questions posées par l'agent

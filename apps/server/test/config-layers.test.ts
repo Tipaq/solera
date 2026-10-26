@@ -26,16 +26,16 @@ import {
 const layer = (patch: Partial<ConfigLayer>): ConfigLayer => ({ ...EMPTY_CONFIG_LAYER, ...patch })
 
 test('le niveau le plus précis gagne, champ par champ', () => {
-  const account = layer({ shared: { cardFiling: false }, claude: { model: 'opus', effort: 'high' } })
-  const project = layer({ shared: { decisions: true }, claude: { effort: 'low' } })
+  const account = layer({ shared: { cardFiling: 'deny' }, claude: { model: 'opus', effort: 'high' } })
+  const project = layer({ shared: { decisions: 'ask' }, claude: { effort: 'low' } })
   const config = resolveAgentConfig('claude', [account, project], { permissionMode: 'plan' })
   assert.equal(config.agent, 'claude')
   if (config.agent !== 'claude') return
   // Le projet n'a changé que l'effort et les décisions : le modèle reste celui du compte.
   assert.equal(config.model, 'opus')
   assert.equal(config.effort, 'low')
-  assert.equal(config.cardFiling, false)
-  assert.equal(config.decisions, true)
+  assert.equal(config.cardFiling, 'deny')
+  assert.equal(config.decisions, 'ask')
   assert.equal(config.permissionMode, 'plan')
   // Rien n'a parlé du reste : les défauts du protocole.
   assert.equal(config.soleraMcp, DEFAULT_CLAUDE_CONFIG.soleraMcp)
@@ -50,7 +50,7 @@ test('un champ partagé vaut pour tous les CLI, une exception par CLI l’emport
 
 test('d’où vient chaque valeur', () => {
   const account = layer({ claude: { model: 'opus' } })
-  const project = layer({ shared: { cardFiling: false } })
+  const project = layer({ shared: { cardFiling: 'deny' } })
   const sources = configSources(
     'claude',
     [
@@ -78,9 +78,9 @@ test('un niveau illisible perd ses champs invalides, pas ses voisins', () => {
 })
 
 test('régler un champ partagé efface ses exceptions, rendre à l’héritage le retire', () => {
-  let current = layer({ shared: { cardFiling: true }, codex: { cardFiling: false, model: 'gpt' } })
-  current = patchConfigLayer(current, { scope: 'shared', set: { cardFiling: false } })
-  assert.deepEqual(current.shared, { cardFiling: false })
+  let current = layer({ shared: { cardFiling: 'ask' }, codex: { cardFiling: 'deny', model: 'gpt' } })
+  current = patchConfigLayer(current, { scope: 'shared', set: { cardFiling: 'deny' } })
+  assert.deepEqual(current.shared, { cardFiling: 'deny' })
   assert.deepEqual(current.codex, { model: 'gpt' })
 
   current = patchConfigLayer(current, { scope: 'codex', unset: ['model'], set: { sandbox: 'read-only' } })
@@ -98,12 +98,12 @@ test('null reste une valeur posée : seul `unset` rend un champ à l’héritage
 test('une configuration entière ne retient que ses écarts', () => {
   const below = { ...DEFAULT_CLAUDE_CONFIG, model: 'opus' }
   const next = layerWithFullConfig(
-    layer({ codex: { cardFiling: false } }),
-    { ...below, effort: 'max', cardFiling: false },
+    layer({ codex: { cardFiling: 'deny' } }),
+    { ...below, effort: 'max', cardFiling: 'deny' },
     below,
   )
   assert.deepEqual(next.claude, { effort: 'max' })
-  assert.deepEqual(next.shared, { cardFiling: false })
+  assert.deepEqual(next.shared, { cardFiling: 'deny' })
   // L'exception du Codex tombe : la valeur partagée vaut maintenant pour lui aussi.
   assert.deepEqual(next.codex, {})
 })
@@ -125,13 +125,18 @@ test('les écarts ignorent l’ordre des clés, pas celui des listes', () => {
 
 test('le compte d’avant garde tout, même ce qui égale le défaut du protocole', () => {
   const legacy = {
-    claude: { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', additionalDirectories: ['/tmp/x'] },
-    codex: { ...DEFAULT_CODEX_CONFIG },
+    claude: { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', additionalDirectories: ['/tmp/x'], projectFiling: 'deny' as const },
+    codex: { ...DEFAULT_CODEX_CONFIG, projectFiling: 'deny' as const },
   }
-  const account = accountLayerFromLegacy(legacy)
+  // Tels qu'ils étaient stockés avant les trois états : des booléens.
+  const stored = {
+    claude: { ...legacy.claude, projectFiling: false, cardFiling: true },
+    codex: { ...legacy.codex, projectFiling: false, cardFiling: true },
+  }
+  const account = accountLayerFromLegacy(stored)
   // Les champs partagés, identiques chez les deux, en commun.
-  assert.equal(account.shared.cardFiling, DEFAULT_CLAUDE_CONFIG.cardFiling)
-  assert.equal(account.shared.projectFiling, false)
+  assert.equal(account.shared.cardFiling, 'ask')
+  assert.equal(account.shared.projectFiling, 'deny')
   assert.equal(account.claude.model, 'opus')
   assert.equal(account.claude.permissionMode, 'manual')
   assert.equal(account.codex.sandbox, 'workspace-write')
@@ -146,13 +151,13 @@ test('le compte d’avant garde tout, même ce qui égale le défaut du protocol
 
 test('deux CLI qui divergeaient gardent chacun leur valeur', () => {
   const account = accountLayerFromLegacy({
-    claude: { ...DEFAULT_CLAUDE_CONFIG, cardFiling: true },
-    codex: { ...DEFAULT_CODEX_CONFIG, cardFiling: false },
+    claude: { ...DEFAULT_CLAUDE_CONFIG, cardFiling: 'ask' },
+    codex: { ...DEFAULT_CODEX_CONFIG, cardFiling: 'deny' },
   })
-  assert.equal(account.shared.cardFiling, true)
-  assert.equal(account.codex.cardFiling, false)
-  assert.equal(resolveAgentConfig('codex', [account]).cardFiling, false)
-  assert.equal(resolveAgentConfig('claude', [account]).cardFiling, true)
+  assert.equal(account.shared.cardFiling, 'ask')
+  assert.equal(account.codex.cardFiling, 'deny')
+  assert.equal(resolveAgentConfig('codex', [account]).cardFiling, 'deny')
+  assert.equal(resolveAgentConfig('claude', [account]).cardFiling, 'ask')
 })
 
 test('la lecture d’un compte d’avant passe par la même conversion', () => {
@@ -168,15 +173,15 @@ test('la lecture d’un compte d’avant passe par la même conversion', () => {
 })
 
 test('le préréglage de projet d’avant ne garde que ses écarts au compte', () => {
-  const owner = layer({ claude: { model: 'opus' }, shared: { cardFiling: false } })
+  const owner = layer({ claude: { model: 'opus' }, shared: { cardFiling: 'deny' } })
   const raw = JSON.stringify({
-    claude: { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', cardFiling: false, decisions: true, additionalDirectories: ['/srv'] },
+    claude: { ...DEFAULT_CLAUDE_CONFIG, model: 'opus', cardFiling: 'deny', decisions: 'ask', additionalDirectories: ['/srv'] },
     codex: null,
   })
   const legacy = readLegacyProjectConfigs(raw)
   assert.ok(legacy?.claude)
   const project = layerFromFullConfigs(legacy, (agent) => resolveAgentConfig(agent, [owner]))
-  assert.deepEqual(project.shared, { decisions: true, additionalDirectories: ['/srv'] })
+  assert.deepEqual(project.shared, { decisions: 'ask', additionalDirectories: ['/srv'] })
   assert.deepEqual(project.claude, {})
   // Pour le propriétaire, rien ne change.
   assert.deepEqual(resolveAgentConfig('claude', [owner, project]), legacy.claude)
@@ -187,8 +192,8 @@ test('la forme d’avant les préréglages par CLI se relit encore', () => {
   assert.deepEqual(Object.keys(readLegacyProjectConfigs(raw) ?? {}), ['codex'])
   assert.equal(readProjectLayer(raw).codex.sandbox, 'read-only')
   // Un niveau n'est pas une forme d'avant.
-  assert.equal(readLegacyProjectConfigs(JSON.stringify(layer({ shared: { decisions: true } }))), null)
-  assert.equal(readProjectLayer(JSON.stringify(layer({ shared: { decisions: true } }))).shared.decisions, true)
+  assert.equal(readLegacyProjectConfigs(JSON.stringify(layer({ shared: { decisions: 'ask' } }))), null)
+  assert.equal(readProjectLayer(JSON.stringify(layer({ shared: { decisions: 'ask' } }))).shared.decisions, 'ask')
   assert.deepEqual(readProjectLayer(null), EMPTY_CONFIG_LAYER)
   assert.deepEqual(readProjectLayer('{pas du json'), EMPTY_CONFIG_LAYER)
 })

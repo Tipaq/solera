@@ -8,7 +8,7 @@ import {
   type ConversationRow,
   type Db,
 } from '@solera/db'
-import { parseAgentConfig, type PendingRequestCounts } from '@solera/protocol'
+import { allowsRequest, parseAgentConfig, type PendingRequestCounts } from '@solera/protocol'
 import type { Config } from '../config.js'
 
 /**
@@ -71,9 +71,9 @@ function conversation(db: Db, id: string): ConversationRow | undefined {
 }
 
 /** Une configuration illisible ne prouve pas que l'option est restée ouverte. */
-function granted(raw: string, flag: 'projectFiling' | 'cardFiling'): boolean {
+function granted(raw: string, flag: 'projectFiling' | 'cardFiling' | 'proposeCards'): boolean {
   try {
-    return parseAgentConfig(raw)[flag] === true
+    return allowsRequest(parseAgentConfig(raw)[flag])
   } catch {
     return false
   }
@@ -113,6 +113,9 @@ export function recheck(
   if (requester.projectId !== request.projectId) return 'project_changed'
   if (request.kind === 'request_card_change') {
     if (!config.mcp.cardFiling || !granted(requester.config, 'cardFiling')) return 'option_disabled'
+  }
+  if (request.kind === 'propose_cards' && requester.purpose !== 'split') {
+    if (!granted(requester.config, 'proposeCards')) return 'option_disabled'
   }
   return null
 }
