@@ -147,3 +147,21 @@ export function useCreateNote() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: VAULT_KEY }),
   })
 }
+
+/**
+ * *Garder en note* : le fil devient une ébauche du vault (carte #118). Les intitulés
+ * des deux voix sont ceux de l'interface, dans sa langue.
+ */
+export function useKeepConversationAsNote() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { conversationId: string; roles: { user: string; assistant: string } }) =>
+      api.post<VaultNoteDto>('/api/vault/notes/from-conversation', input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: VAULT_KEY }),
+  })
+}
+
+/** L'adresse d'une note dans l'interface. */
+export function notePath(note: Pick<VaultNoteDto, 'path'>): string {
+  return `/vault/note/${note.path.split('/').map(encodeURIComponent).join('/')}`
+}

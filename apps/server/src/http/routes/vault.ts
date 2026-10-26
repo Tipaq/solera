@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import {
   vaultCreateNoteBodySchema,
+  vaultNoteFromConversationBodySchema,
   vaultNotePathQuerySchema,
   vaultNotesQuerySchema,
   vaultWriteNoteBodySchema,
@@ -14,6 +15,11 @@ import {
   type VaultTreeDto,
   type VaultWriteNoteDto,
 } from '@solera/protocol'
+import { eq } from 'drizzle-orm'
+import { conversations } from '@solera/db'
+import { readHandoffItems } from '../../conversations/handoff.js'
+import { renderConversationNote } from '../../conversations/note.js'
+import type { EventLog } from '../../events/event-log.js'
 import { isUncommitted, noteHistory } from '../../vault/git.js'
 import type { VaultIndex } from '../../vault/index-service.js'
 import {
@@ -49,6 +55,7 @@ export function registerVaultRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   vault: VaultIndex,
+  log: EventLog,
 ): void {
   /** La racine, ou l'erreur qui dit qu'il n'y a pas de vault — et non une liste vide. */
   const requireRoot = (): string => {
@@ -185,6 +192,38 @@ export function registerVaultRoutes(
       // Un titre de niveau 1 et rien d'autre : la note s'ouvre sur son titre, et c'est
       // ce que tout éditeur de vault écrit à la création.
       await writeNoteText(root, path, `# ${body.title.trim()}\n\n`, null)
+      await vault.indexNote(path)
+      return readNoteFacts(ctx.db, path)?.note ?? null
+    })
+
+    if (!note) throw notFound('vault_note_not_indexed', 'This note is not in the index.')
+    return reply.status(201).send(note)
+  })
+
+  /**
+   * *Garder en note* : le fil devient une ébauche, à soi, que l'on classera ensuite.
+   *
+   * Réservé à l'auteur du fil, comme tout rangement. La conversation reste où elle
+   * est : la note en est une copie, et l'archiver ou la supprimer est un autre geste.
+   */
+  app.post('/api/vault/notes/from-conversation', async (request, reply): Promise<VaultNoteDto> => {
+    const user = requireUser(request)
+    const body = vaultNoteFromConversationBodySchema.parse(request.body)
+    const conversation = ctx.db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, body.conversationId))
+      .get()
+    if (!conversation || conversation.userId !== user.id) {
+      throw notFound('conversation_not_found', 'Conversation not found.')
+    }
+    const root = requireRoot()
+    const title = conversation.title.trim().slice(0, 200) || conversation.id
+
+    const note = await guard(async () => {
+      const path = await freeNotePath(root, notePathFor('', title))
+      const content = renderConversationNote(title, readHandoffItems(log, conversation.id), body.roles)
+      await writeNoteText(root, path, content, null)
       await vault.indexNote(path)
       return readNoteFacts(ctx.db, path)?.note ?? null
     })

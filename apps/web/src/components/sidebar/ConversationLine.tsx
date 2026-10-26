@@ -2,7 +2,7 @@ import { Archive, ArchiveRestore, FolderX, MoreHorizontal, Pencil, Pin, Trash2 }
 import { useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
-import { ArrangeConversationMenu } from '../ArrangeConversation'
+import { ArrangeConversationMenu, useArrangeConversation } from '../ArrangeConversation'
 import {
   useArchiveConversation,
   useDeleteConversation,
@@ -51,6 +51,8 @@ export function ConversationLine({
   const navigate = useNavigate()
   const openId = useOpenConversationId()
   const [editing, setEditing] = useState(false)
+  // Tenu ici et non dans le menu, qui démonte son contenu en se refermant.
+  const arrange = useArrangeConversation(conversation)
   // Le statut du socket prime sur celui de la liste, qui date de son chargement.
   const status = useLiveStatus(conversation.id) ?? conversation.status
   const background = useLiveBackground(conversation.id)
@@ -189,7 +191,7 @@ export function ConversationLine({
               c'est le même registre — ce qu'on fait d'un fil sans y entrer. Un tir de
               tâche planifiée reste où sa tâche l'a mis. */}
           {conversation.isOwner && conversation.scheduleId === null ? (
-            <ArrangeConversationMenu conversation={conversation} />
+            <ArrangeConversationMenu conversation={conversation} arrange={arrange} />
           ) : null}
           <MenuItem
             icon={isArchived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
@@ -222,6 +224,7 @@ export function ConversationLine({
           </MenuItem>
         </Menu>
       </span>
+      {arrange.dialogs}
     </li>
   )
 }

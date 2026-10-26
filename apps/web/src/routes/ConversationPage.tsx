@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
+import { ArrangeFreeThreadButton } from '../components/ArrangeConversation'
 import { HeaderBand } from '../components/HeaderBand'
 import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
@@ -973,7 +974,13 @@ export function ConversationPage() {
             {/* Un fil libre n'a pas de projet à remonter : la ligne dit alors qu'il n'en
                 a pas, plutôt que de rester vide ou de pointer vers `/p/null`. */}
             {conversation.projectId === null ? (
-              <span className="block truncate text-xs text-ink-faint">{t('destination.none')}</span>
+              // Le fil libre, et lui seul, se range d'ici : il n'a pas de projet à
+              // nommer en lien, la ligne ouvre donc la modale de rangement (carte #118).
+              conversation.isOwner && conversation.scheduleId === null ? (
+                <ArrangeFreeThreadButton conversation={conversation} />
+              ) : (
+                <span className="block truncate text-xs text-ink-faint">{t('destination.none')}</span>
+              )
             ) : (
               <Link
                 to={`/p/${conversation.projectId}`}
