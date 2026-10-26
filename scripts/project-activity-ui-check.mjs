@@ -227,6 +227,9 @@ try {
   await treeRow.waitFor()
   // L'en-tête porte la branche : la ligne ne la répète pas.
   assert.equal(await treeRow.getByText(tree.branch ?? tree.name, { exact: true }).count(), 0, 'La ligne perd sa colonne branche')
+  // Le badge de PR passe dans l'en-tête (#115) : la ligne ne le porte plus.
+  await treeGroup.getByText('#18', { exact: true }).filter({ visible: true }).waitFor()
+  assert.equal(await treeRow.getByText('#18', { exact: true }).count(), 0, 'La ligne perd son badge de PR')
   await page.getByRole('region', { name: /^main racine du projet/ }).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'b3-activite-par-worktree.png') })
   await page.getByRole('radio', { name: 'État', exact: true }).click()
