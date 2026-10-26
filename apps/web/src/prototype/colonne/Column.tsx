@@ -15,8 +15,8 @@ import {
   Palette,
   Pencil,
   SlidersHorizontal,
-  Folder,
-  Folders,
+  Focus,
+  ChevronLeft,
   Target,
   ChevronRight,
   Columns3,
@@ -470,10 +470,16 @@ function groupDot(projectId: string | null, demands: Demand[], openThread: strin
   return null
 }
 
-function TreeZone({ demands, coarse, openThread, onOpenThread }: Pick<
+/**
+ * L'arbre. On **entre** dans un projet depuis sa ligne : l'icône « N'afficher que ce
+ * projet » au survol, ou la première entrée de son ⋯ — au doigt, où rien ne se survole,
+ * le ⋯ seul. C'est le geste inverse du « ‹ » de la ligne du projet.
+ */
+function TreeZone({ demands, coarse, openThread, onOpenThread, onMode, onCurrent }: Pick<
   ColumnProps,
-  'demands' | 'coarse' | 'openThread' | 'onOpenThread'
+  'demands' | 'coarse' | 'openThread' | 'onOpenThread' | 'onMode' | 'onCurrent'
 >) {
+  const focus = (id: string | null) => { onCurrent(id); onMode('project') }
   const openProject = threadOf(openThread).projectId
   const groups: { id: string | null; name: string; project?: Project }[] = [
     { id: null, name: 'Sans projet' },
@@ -493,9 +499,29 @@ function TreeZone({ demands, coarse, openThread, onOpenThread }: Pick<
                 {group.project ? <Avatar project={group.project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
                 <span className="truncate">{group.name}</span>
               </span>
-              <span className="flex shrink-0 items-center gap-1 pr-1">
+              <span className={cx('flex shrink-0 items-center gap-1 pr-1', !coarse && 'group-hover:hidden group-has-[[data-state=open]]:hidden')}>
                 {working ? <Dot state="working" /> : null}
                 <Dot state={demanding} />
+              </span>
+              <span className={cx('shrink-0 items-center', coarse ? 'flex' : 'hidden group-hover:flex group-has-[[data-state=open]]:flex')}>
+                {coarse ? null : (
+                  <IconButton label={`N’afficher que ${group.name}`} size="sm" onClick={() => focus(group.id)}>
+                    <Focus size={14} />
+                  </IconButton>
+                )}
+                <IconButton label={`Nouvelle conversation dans ${group.name}`} size="sm"><Plus size={14} /></IconButton>
+                <Menu trigger={<IconButton label={`Actions de ${group.name}`} size="sm"><MoreHorizontal size={14} /></IconButton>}>
+                  <MenuItem icon={<Focus size={14} />} onSelect={() => focus(group.id)}>N’afficher que ce projet</MenuItem>
+                  {group.project ? (
+                    <>
+                      <MenuSeparator />
+                      <MenuItem icon={<Target size={14} />} onSelect={() => activityBus.page(`Aperçu — ${group.name}`)}>Aperçu</MenuItem>
+                      <MenuItem icon={<SquareKanban size={14} />} onSelect={() => activityBus.page(`Tableau — ${group.name}`)}>Tableau</MenuItem>
+                      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => activityBus.page(`Planifiées — ${group.name}`)}>Planifiées</MenuItem>
+                      <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => activityBus.page(`Réglages — ${group.name}`)}>Réglages du projet</MenuItem>
+                    </>
+                  ) : null}
+                </Menu>
               </span>
               <span className="inline-flex size-7 items-center justify-center text-ink-faint">
                 <ChevronRight size={14} className={cx('transition-transform', open && 'rotate-90')} />
@@ -535,8 +561,8 @@ function TreeZone({ demands, coarse, openThread, onOpenThread }: Pick<
  *   renommer, sa couleur. Tableau, Worktrees et Planifiées vivent là et sur la page du
  *   projet, plus en lignes permanentes sous le sélecteur.
  *
- * La bascule arbre ↔ projet n'est plus ici : elle est sur la ligne du lieu *Projets*,
- * qui existe dans les deux modes (Q40).
+ * - le **‹** en tête revient à l'arbre. On en sort par où l'on est entré : l'entrée est
+ *   sur la ligne du projet dans l'arbre, la sortie sur la ligne du projet ici.
  */
 function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse }: Pick<
   ColumnProps,
@@ -552,11 +578,15 @@ function SwitcherLine({ onMode, current, onCurrent, demands, openThread, coarse 
 
   return (
     <div data-shot="selecteur" className={cx('group mb-1 flex items-center gap-0.5 rounded-md pr-0.5 text-ink transition-colors hover:bg-surface-high', h(coarse, 'h-9'))}>
+      {/* Le retour à l'arbre, en tête de ligne, là où l'on cherche un « retour ». */}
+      <IconButton label="Tous les projets" size="sm" onClick={() => onMode('tree')}>
+        <ChevronLeft size={15} />
+      </IconButton>
       <button
         type="button"
         onClick={() => (project ? go('Aperçu') : undefined)}
         title={project ? `Ouvrir l’Aperçu de ${name}` : undefined}
-        className="flex h-full min-w-0 items-center gap-2 rounded-md pl-2 text-left text-sm font-semibold"
+        className="flex h-full min-w-0 items-center gap-2 rounded-md pl-0.5 text-left text-sm font-semibold"
       >
         {project ? <Avatar project={project} /> : <MessagesSquare size={16} className="shrink-0 text-ink-faint" />}
         <span className="min-w-0 truncate">{name}</span>
@@ -672,30 +702,6 @@ export function Column(props: ColumnProps) {
               )}>
                 <place.icon size={16} className="mr-1.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{place.label}</span>
-                {place.active ? (
-                  /* La bascule arbre ↔ projet, sur la ligne du lieu qu'elle règle : deux
-                     positions toujours visibles, la courante surlignée. Un seul bouton à
-                     icône changeante ne disait ni où l'on est, ni qu'on peut revenir. */
-                  <span data-shot="bascule" className="-mr-1.5 flex shrink-0 rounded-md bg-canvas/40 p-0.5">
-                    {([['tree', Folders, 'Tous les projets'], ['project', Folder, 'Un seul projet']] as const).map(([value, Icon, label]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        aria-pressed={mode === value}
-                        aria-label={label}
-                        title={label}
-                        onClick={() => props.onMode(value)}
-                        className={cx(
-                          'inline-flex items-center justify-center rounded transition-colors',
-                          coarse ? 'size-9' : 'size-6',
-                          mode === value ? 'bg-surface-high text-ink shadow-card' : 'text-ink-faint hover:text-ink',
-                        )}
-                      >
-                        <Icon size={13} />
-                      </button>
-                    ))}
-                  </span>
-                ) : null}
                 <span className="shrink-0 text-meta tabular-nums text-ink-faint">{place.count}</span>
               </div>
             </li>
