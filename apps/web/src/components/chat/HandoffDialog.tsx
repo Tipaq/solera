@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   agentKindSchema,
-  defaultConfigFor,
   type AgentConfig,
   type AgentKind,
   type ConversationDto,
@@ -16,7 +15,7 @@ import { handoffConversation } from '../../lib/conversations'
 import { conversationPath } from '../../lib/conversation-route'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects } from '../../lib/projects'
-import { useUserSettings } from '../../lib/user-settings'
+import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 import { Banner, Button, ChoiceList, IconButton, Select } from '@solera/ui'
 
 /**
@@ -61,7 +60,7 @@ export function HandoffDialog({
   const { data: catalog, isPending: modelsPending } = useAgentModels(agent, open)
   const project = projects?.find((entry) => entry.id === source.projectId)
   const defaults = useMemo(
-    () => project?.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent),
+    () => inheritedConfigFor(agent, userSettings, project),
     [project, userSettings, agent],
   )
   // Comme au brouillon : une configuration faite pour un CLI est abandonnée dès qu'on

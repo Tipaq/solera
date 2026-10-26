@@ -54,6 +54,7 @@ import { createDraftCards, type DraftCreation } from '../../cards/drafts.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { resolveParent, writeCardParent } from '../../cards/tree.js'
 import { createConversation } from '../../conversations/create.js'
+import { overridesFor, patchOverrides, readOverrides } from '../../conversations/config-inheritance.js'
 import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo } from '../../conversations/scope.js'
 import {
@@ -128,6 +129,7 @@ export function conversationToDto(
     forkedFromId: row.forkedFromId,
     handoffFromId: row.handoffFromId,
     config: parseAgentConfig(row.config),
+    configOverrides: readOverrides(row),
     status: row.status,
     lastSeq: row.lastSeq,
     lastNotableSeq: row.lastNotableSeq,
@@ -864,12 +866,23 @@ export function registerConversationRoutes(
       // session traitait déjà ce travail », il ne lance rien.
     }
 
+    // La conversation ne retient que ce qu'elle change à son héritage (#120). Une
+    // configuration entière, le chemin des clients d'avant, se ramène à ses écarts.
     if (body.config !== undefined) {
       if (body.config.agent !== conversation.agent) {
         throw badRequest('config_agent_immutable', 'The CLI of a conversation cannot change.')
       }
-      patch.config = JSON.stringify(body.config)
+      const overrides = await overridesFor(
+        ctx.db,
+        (config) => sessions.resolveDefaults(config),
+        conversation,
+        body.config,
+      )
+      patch.configOverrides = JSON.stringify(overrides)
+    } else if (body.overrides !== undefined) {
+      patch.configOverrides = JSON.stringify(patchOverrides(ctx.db, conversation, body.overrides))
     }
+    const configChanged = patch.configOverrides !== undefined
 
     if (Object.keys(patch).length > 0) {
       ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
@@ -877,7 +890,10 @@ export function registerConversationRoutes(
 
     // Le SDK applique modèle, effort et mode de permission à chaud : la session garde
     // son contexte. Le repli par redémarrage est géré, et signalé, par le gestionnaire.
-    if (body.config !== undefined) await sessions.reloadConfig(id)
+    if (configChanged) {
+      await sessions.refreshConfig(id)
+      await sessions.reloadConfig(id)
+    }
 
     return { ok: true }
   })

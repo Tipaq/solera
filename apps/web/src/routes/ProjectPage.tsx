@@ -19,9 +19,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   agentKindSchema,
   defaultConfigFor,
+  EMPTY_CONFIG_LAYER,
+  layerOverridesFor,
+  resolveAgentConfig,
   type AgentConfig,
   type AgentKind,
-  type ProjectAgentDefaults,
+  type ConfigLayer,
   type ProjectDto,
   type ProjectVisibility,
 } from '@solera/protocol'
@@ -159,7 +162,7 @@ export function ProjectPage() {
           <ProjectImage project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectIssueSource projectId={project.id} />
-          <ProjectDefaults projectId={project.id} defaults={project.defaultConfig} />
+          <ProjectDefaults projectId={project.id} defaults={project.configLayer} />
           <ProjectSettings
             projectId={project.id}
             initialName={project.name}
@@ -455,7 +458,7 @@ function ProjectDefaults({
   defaults,
 }: {
   projectId: string
-  defaults: ProjectAgentDefaults
+  defaults: ConfigLayer
 }) {
   const t = useTranslate()
   const update = useUpdateProject()
@@ -469,11 +472,12 @@ function ProjectDefaults({
    */
   const [pending, setPending] = useState<{ [K in AgentKind]?: AgentConfig | null }>({})
 
-  const stored = agent in pending ? (pending[agent] ?? null) : defaults[agent]
-  // Le CLI de la valeur retenue fait foi : une configuration Claude n'a rien à régler
-  // pour Codex, et l'écran en montrerait les mauvaises options.
-  const preset = stored?.agent === agent ? stored : null
   const account = settings?.agentDefaults[agent] ?? defaultConfigFor(agent)
+  // Le projet « règle » ce CLI dès qu'il en change un champ, commun ou propre (#120).
+  const layered = Object.keys(layerOverridesFor(defaults, agent)).length > 0
+  const stored =
+    agent in pending ? (pending[agent] ?? null) : layered ? resolveAgentConfig(agent, [settings?.agentLayer ?? EMPTY_CONFIG_LAYER, defaults]) : null
+  const preset = stored?.agent === agent ? stored : null
 
   const write = (config: AgentConfig | null) => {
     setPending((current) => ({ ...current, [agent]: config }))

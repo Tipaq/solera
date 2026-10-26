@@ -159,7 +159,7 @@ export function registerTaskRoutes(
         token,
         project,
         body,
-        readUserSettings(ctx.db, user.id).agentDefaults,
+        readUserSettings(ctx.db, user.id).agentLayer,
       )
 
       const clientMessageId = randomUUID()

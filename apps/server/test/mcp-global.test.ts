@@ -110,6 +110,8 @@ async function harness(t: TestContext) {
       return true
     },
     statusBus: new EventEmitter(),
+    // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
+    resolveDefaults: async (config: AgentConfig) => config,
   } as unknown as SessionManager
   const registry = {
     adapter: () => ({

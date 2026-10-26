@@ -5,7 +5,6 @@ import { z } from 'zod'
 import { getSessionInfo, listSessions } from '@anthropic-ai/claude-agent-sdk'
 import { conversations, projects, type ConversationRow } from '@solera/db'
 import {
-  readProjectDefaults,
   type ClaudeSessionsDto,
   type ClaudeSyncDto,
 } from '@solera/protocol'
@@ -19,7 +18,7 @@ import {
 import { TranscriptChanged } from '../../agents/claude/transcript-reader.js'
 import type { EventLog } from '../../events/event-log.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
-import { readUserSettings } from '../../settings/user-settings.js'
+import { inheritedConfig } from '../../conversations/config-inheritance.js'
 import { agentCwd } from '../../workspace.js'
 import { samePath } from '../../agents/paths.js'
 import { badRequest, notFound } from '../errors.js'
@@ -144,9 +143,8 @@ export function registerClaudeSessionRoutes(
     // Le préréglage du projet puis les défauts du compte, comme pour une conversation
     // ouverte depuis l'interface : adopter une session du CLI n'est pas une raison de
     // repartir des défauts du protocole, que la personne a peut-être justement changés.
-    const defaults =
-      readProjectDefaults(project.defaultConfig).claude ??
-      readUserSettings(ctx.db, user.id).agentDefaults.claude
+    // Elle ne change rien elle-même : elle hérite de tout, et suit les niveaux (#120).
+    const defaults = inheritedConfig(ctx.db, { userId: user.id, projectId: project.id, agent: 'claude' })
     const config = await registry.adapter('claude').resolveDefaults(defaults)
 
     const [lowest] = ctx.db
@@ -176,6 +174,7 @@ export function registerClaudeSessionRoutes(
       originLabel: null,
       scheduleId: null,
       config: JSON.stringify(config),
+      configOverrides: '{}',
       status: 'idle',
       backgroundCount: 0,
       loopCount: 0,

@@ -39,10 +39,8 @@ import {
   updateProjectActionBodySchema,
   agentKindSchema,
   cardColumnSchema,
-  defaultConfigFor,
   formatSessionMessage,
   parseAgentConfig,
-  readProjectDefaults,
   scheduleCadenceSchema,
   type ScheduleCadence,
   type AgentConfig,
@@ -69,6 +67,7 @@ import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
+import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -912,10 +911,7 @@ export class AgentRequests {
     userId: string,
     payload: StartSessionPayload,
   ): Promise<AgentConfig> {
-    const base =
-      readProjectDefaults(project.defaultConfig)[agent] ??
-      readUserSettings(this.ctx.db, userId).agentDefaults[agent] ??
-      defaultConfigFor(agent)
+    const base = inheritedConfig(this.ctx.db, { userId, projectId: project.id, agent })
 
     const requestedModel = typeof payload.model === 'string' ? payload.model.trim() : ''
     const requestedEffort = typeof payload.effort === 'string' ? payload.effort.trim().toLowerCase() : ''

@@ -65,6 +65,8 @@ async function harness(t: TestContext) {
     },
     // Le daemon y annonce les listes qu'une demande a changées.
     statusBus: new EventEmitter(),
+    // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
+    resolveDefaults: async (config: AgentConfig) => config,
   } as unknown as SessionManager
   const registry = {
     adapter: () => ({

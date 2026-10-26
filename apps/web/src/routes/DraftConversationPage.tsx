@@ -5,7 +5,6 @@ import {
   AGENT_CAPABILITIES,
   agentKindSchema,
   cardBranchName,
-  defaultConfigFor,
   type AgentConfig,
   type AgentKind,
 } from '@solera/protocol'
@@ -34,7 +33,7 @@ import { useAllConversations, useCreateConversation } from '../lib/conversations
 import { useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
 import { useAgentUsage, usageAccountOf } from '../lib/usage'
-import { useUserSettings } from '../lib/user-settings'
+import { inheritedConfigFor, useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
 /** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
@@ -193,14 +192,12 @@ export function DraftConversationPage() {
       ? worktreeId
       : (cardWorktree ?? worktreeId)
 
-  // Le préréglage du projet d'abord, les défauts du compte ensuite : un projet qui
-  // nomme ses serveurs MCP ou ses répertoires supplémentaires parle de lui-même, et
-  // c'est plus précis qu'un défaut de compte valable partout. Ceux du protocole tant
-  // que rien n'est chargé : ils ne sont qu'un point de départ le temps d'un
-  // aller-retour, et rien n'est envoyé avant le premier message.
+  // Ce que le fil héritera, champ par champ : le compte, puis le projet (#120). Les
+  // défauts du protocole tant que rien n'est chargé : ils ne sont qu'un point de départ
+  // le temps d'un aller-retour, et rien n'est envoyé avant le premier message. Le serveur
+  // ne retiendra de la configuration envoyée que ce que le brouillon aura changé.
   const { data: userSettings } = useUserSettings()
-  const defaults =
-    project?.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
+  const defaults = inheritedConfigFor(agent, userSettings, project)
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(

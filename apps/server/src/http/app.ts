@@ -226,7 +226,7 @@ export async function buildApp(
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals)
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, registry)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks, cardClosure)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)
@@ -291,7 +291,7 @@ export async function buildApp(
   registerScheduleRoutes(app, ctx, sessions, registry, tasks)
   registerActionRoutes(app, ctx, sessions, actions)
   registerSttRoutes(app, ctx, secrets)
-  registerUserSettingsRoutes(app, ctx)
+  registerUserSettingsRoutes(app, ctx, registry)
   registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)

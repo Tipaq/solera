@@ -5,11 +5,14 @@ import { cards, conversations, projectImages, projects, users, writeTransaction 
 import {
   createProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
-  NO_PROJECT_DEFAULTS,
+  EMPTY_CONFIG_LAYER,
+  layerWithFullConfig,
+  patchConfigLayer,
+  resolveAgentConfig,
   parseRemoteUrl,
-  readProjectDefaults,
+  readProjectLayer,
   reorderProjectsBodySchema,
-  serializeProjectDefaults,
+  serializeProjectLayer,
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
@@ -27,7 +30,9 @@ import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { projectCwd } from '../../workspace.js'
-import { writeProjectsDir } from '../../settings/user-settings.js'
+import { readUserSettings, writeProjectsDir } from '../../settings/user-settings.js'
+import type { AgentRegistry } from '../../agents/registry.js'
+import { refreshConversationConfigs } from '../../conversations/config-inheritance.js'
 import { visibilityFilter } from '../../projects/scope.js'
 import {
   projectImageDto,
@@ -46,6 +51,8 @@ export function registerProjectRoutes(
   attachments: AttachmentStore,
   cloneJobs: CloneJobs,
   terminals: TerminalManager,
+  /** Comme pour les réglages du compte : absent, les fils recalculent à leur lancement. */
+  registry?: Pick<AgentRegistry, 'adapter'>,
 ): void {
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
@@ -111,7 +118,7 @@ export function registerProjectRoutes(
           archivedAt: project.archivedAt,
           createdAt: project.createdAt,
           conversationCount,
-          defaultConfig: readProjectDefaults(project.defaultConfig),
+          configLayer: readProjectLayer(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           designSystemPath: project.designSystemPath,
           turnCheckpoints: project.turnCheckpoints,
@@ -136,7 +143,7 @@ export function registerProjectRoutes(
       ownerName: user.displayName,
       isOwner: true,
       conversationCount: 0,
-      defaultConfig: NO_PROJECT_DEFAULTS,
+      configLayer: EMPTY_CONFIG_LAYER,
       activeTerminals: 0,
       git: await readGitStatus(row.workspacePath),
     }
@@ -258,14 +265,20 @@ export function registerProjectRoutes(
     }
     if (body.visibility !== undefined) patch.visibility = body.visibility
     if (body.color !== undefined) patch.color = body.color
-    if (body.defaultConfig !== undefined) {
-      // Relu puis réécrit en entier : l'écran n'édite qu'un CLI à la fois, et écrire
-      // les deux écraserait le préréglage que l'autre onglet vient peut-être de poser.
-      const current = readProjectDefaults(project.defaultConfig)
-      patch.defaultConfig = serializeProjectDefaults({
-        ...current,
-        [body.defaultConfig.agent]: body.defaultConfig.config,
-      })
+    // Le niveau du projet, relu puis réécrit : un écran n'en change que quelques champs,
+    // et deux onglets ouverts ne doivent pas s'écraser l'un l'autre (#120).
+    if (body.configLayer !== undefined) {
+      patch.defaultConfig = serializeProjectLayer(patchConfigLayer(readProjectLayer(project.defaultConfig), body.configLayer))
+    } else if (body.defaultConfig !== undefined) {
+      // Le chemin des clients d'avant : une configuration entière, ou `null` pour ne plus
+      // rien régler pour ce CLI. Seuls ses écarts au compte de l'appelant sont retenus.
+      const { agent, config } = body.defaultConfig
+      const current = readProjectLayer(project.defaultConfig)
+      patch.defaultConfig = serializeProjectLayer(
+        config === null
+          ? { ...current, [agent]: {} }
+          : layerWithFullConfig(current, config, resolveAgentConfig(agent, [readUserSettings(ctx.db, user.id).agentLayer])),
+      )
     }
     if (body.designSystemPath !== undefined) {
       patch.designSystemPath =
@@ -276,6 +289,9 @@ export function registerProjectRoutes(
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
+    }
+    if (patch.defaultConfig !== undefined && registry) {
+      await refreshConversationConfigs(ctx.db, registry, { projectId: id })
     }
     return { ok: true }
   })

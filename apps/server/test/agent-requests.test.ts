@@ -73,6 +73,8 @@ async function harness(t: TestContext) {
       sent.push({ to, text })
     },
     statusBus,
+    // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
+    resolveDefaults: async (config: AgentConfig) => config,
   } as unknown as SessionManager
   const registry = {
     adapter: (agent: string) => ({

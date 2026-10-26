@@ -21,7 +21,7 @@ import {
   sessionMessages,
   users,
 } from '@solera/db'
-import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
+import { DEFAULT_CLAUDE_CONFIG, type AgentConfig } from '@solera/protocol'
 import { projectOverview } from '../src/agents/overview.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
@@ -142,6 +142,8 @@ async function harness(t: TestContext, { parent = false }: { parent?: boolean } 
     sendMessage: async (id: string, _client: string, text: string) => {
       sent.push({ id, text })
     },
+    // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
+    resolveDefaults: async (config: AgentConfig) => config,
   } as unknown as SessionManager
   const registry = { adapter: () => ({ resolveDefaults: async (config: unknown) => config }) } as unknown as AgentRegistry
   const ctx = { db, config: { mcp: { decisions: true } } as unknown as Config }

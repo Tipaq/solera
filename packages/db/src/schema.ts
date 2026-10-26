@@ -55,12 +55,12 @@ export const projects = sqliteTable(
     visibility: text('visibility').$type<'private' | 'shared'>().notNull(),
     color: text('color'),
     /**
-     * JSON `ProjectAgentDefaults` : un préréglage de la barre de saisie par CLI, socle
-     * des conversations du projet sous les défauts du compte. Le CLI lui-même n'est
-     * pas une propriété du projet : il est choisi par conversation (colonne
-     * `conversations.agent`), pour qu'un même projet porte du Claude et du Codex — d'où
-     * un préréglage par CLI plutôt qu'un seul. La forme d'avant, une configuration
-     * seule, se relit encore (`readProjectDefaults`).
+     * JSON `ConfigLayer` : ce que le projet change aux défauts du compte, champ par
+     * champ, en commun et par CLI (#120). Le CLI lui-même n'est pas une propriété du
+     * projet : il est choisi par conversation (colonne `conversations.agent`), pour
+     * qu'un même projet porte du Claude et du Codex. Les formes d'avant l'héritage, une
+     * configuration complète par CLI ou une seule, sont converties au démarrage
+     * (`config-backfill.ts`) et se relisent encore (`readProjectLayer`).
      */
     defaultConfig: text('default_config'),
     /**
@@ -1004,8 +1004,22 @@ export const conversations = sqliteTable(
      * redeviennent des conversations ordinaires.
      */
     scheduleId: text('schedule_id'),
-    /** JSON AgentConfig. */
+    /**
+     * JSON `AgentConfig` : la configuration complète que ce fil reçoit, l'héritage puis
+     * ses propres changements. Recalculée à chaque lancement de session et à chaque
+     * changement d'un niveau du dessus ; c'est elle que lisent les runners et les gardes
+     * du serveur MCP.
+     */
     config: text('config').notNull(),
+    /**
+     * JSON `ConfigOverrides` : ce que ce fil change à ce qu'il hérite, et rien d'autre
+     * (#120). La source de vérité ; `config` en est le calcul.
+     *
+     * `null` pour une ligne d'avant l'héritage que la migration du démarrage n'a pas
+     * encore vue : `config` y vaut alors pour un changement de chaque champ, ce qui ne
+     * perd rien.
+     */
+    configOverrides: text('config_overrides'),
     status: text('status')
       .$type<'idle' | 'running' | 'awaiting_input' | 'interrupted' | 'error'>()
       .notNull(),

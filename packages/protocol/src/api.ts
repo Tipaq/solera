@@ -8,7 +8,7 @@ import { elicitationActionSchema, elicitationContentSchema } from './elicitation
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
 import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
-import type { ProjectAgentDefaults } from './project-defaults.js'
+import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 
 export const conversationStatusSchema = z.enum([
@@ -157,6 +157,11 @@ export const updateProjectBodySchema = z
       .refine((value) => value.config === null || value.config.agent === value.agent, {
         message: 'The configuration must belong to the named agent.',
       }),
+    /**
+     * Un changement du niveau du projet, champ par champ (#120) : ce que l'écran des
+     * réglages du projet envoie. `defaultConfig` reste lu pour les clients d'avant.
+     */
+    configLayer: configLayerPatchSchema,
     /** Chemin absolu d'un dossier qui porte un `.storybook/` ; `null` délie le DS. */
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),
@@ -221,8 +226,11 @@ export interface ProjectDto {
   archivedAt: number | null
   createdAt: number
   conversationCount: number
-  /** Préréglages du projet, socle des conversations qui s'y ouvrent. */
-  defaultConfig: ProjectAgentDefaults
+  /**
+   * Ce que le projet change aux défauts du compte, champ par champ : le niveau entre le
+   * compte et la conversation (#120).
+   */
+  configLayer: ConfigLayer
   /** Null pour un projet d'avant le réglage : le mode se résout alors d'après le dossier. */
   instructionsMode: InstructionsMode | null
   /** Le design system lié, null s'il n'y en a pas. */
@@ -350,8 +358,21 @@ export const updateConversationBodySchema = z
     title: z.string().min(1).max(200),
     pinned: z.boolean(),
     archived: z.boolean(),
-    /** Prend effet au message suivant : le runner est relancé en reprise. */
+    /**
+     * La configuration entière voulue. La conversation n'en retient que ce qui diffère
+     * de ce qu'elle hérite (#120). Prend effet au message suivant : le runner est relancé
+     * en reprise.
+     */
     config: agentConfigSchema,
+    /**
+     * Des champs changés dans ce fil, et des champs rendus à l'héritage (la marque qu'on
+     * retire d'un clic). Préféré à `config` : il ne fige pas, par accident, une valeur
+     * héritée que l'écran affichait avant qu'un défaut ne change.
+     */
+    overrides: z.object({
+      set: z.record(z.string(), z.unknown()).optional(),
+      unset: z.array(z.string().max(64)).max(64).optional(),
+    }),
     /** Rattache la conversation à une carte du même projet, ou l'en détache avec `null`. */
     cardId: z.string().uuid().nullable(),
   })
@@ -544,7 +565,10 @@ export interface ConversationDto {
   forkedFromId: string | null
   /** Conversation que celle-ci continue dans un autre CLI. Null sinon. */
   handoffFromId: string | null
+  /** La configuration qui s'appliquera au prochain lancement : l'héritage, puis ce fil. */
   config: unknown
+  /** Ce que ce fil change à ce qu'il hérite, champ par champ (#120). */
+  configOverrides: ConfigOverrides
   status: ConversationStatus
   lastSeq: number
   /**
