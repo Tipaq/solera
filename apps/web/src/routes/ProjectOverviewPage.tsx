@@ -17,6 +17,7 @@ import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { DemandTile } from '../components/places/DemandTile'
 import { SessionRow } from '../components/project/SessionRow'
+import { MilestoneBanner } from '../components/project/MilestoneBanner'
 import {
   JOURNAL_KIND_ICONS,
   journalDestination,
@@ -27,6 +28,7 @@ import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { demandsOf, oldest, useLiveConversations } from '../lib/activity'
 import { ACTIVITY_GROUPS } from '../lib/activity-groups'
 import { useActivityRows, type ActivityRow } from '../lib/activity-rows'
+import { useActiveMilestones } from '../lib/milestones'
 import { useCards } from '../lib/cards'
 import { milestoneIdsOf, milestonesOf, type Milestone } from '../lib/timeline'
 import { useAllConversations } from '../lib/conversations'
@@ -106,6 +108,7 @@ export function ProjectOverviewPage() {
     terminées n'en sont pas, l'onglet les garde.
   */
   const rows = useActivityRows(projectId, project)
+  const { data: runs } = useActiveMilestones(projectId)
   const now = useMemo(
     () =>
       ACTIVITY_GROUPS.filter((group) => group !== 'done')
@@ -222,8 +225,11 @@ export function ProjectOverviewPage() {
           </div>
         )}
 
-        {/* Le bandeau du jalon lancé viendra ici, entre les tuiles et « En ce moment »,
-            avec la carte qui le porte (après #72). */}
+        {/* Le bandeau du jalon lancé (#116), entre les tuiles et « En ce moment » : le
+            même que celui de l'Activité. */}
+        {(runs ?? []).map((run) => (
+          <MilestoneBanner key={run.id} projectId={projectId} run={run} />
+        ))}
         <NowBlock projectId={projectId} rows={now} />
 
         {/* Le **jalon courant** et les **échéances proches**, à la place du résumé du

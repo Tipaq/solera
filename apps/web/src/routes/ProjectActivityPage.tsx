@@ -2,6 +2,7 @@ import { ChevronDown, ChevronRight, Layers, Search } from 'lucide-react'
 import { useMemo, useState, type KeyboardEvent } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState, SegmentedControl, cx } from '@solera/ui'
+import { MilestoneBanner } from '../components/project/MilestoneBanner'
 import { Marker, SessionRow, type SessionMarker } from '../components/project/SessionRow'
 import { WorktreeGroups } from '../components/project/WorktreeGroups'
 import {
@@ -11,9 +12,11 @@ import {
   parseActivityFilter,
   type ActivityGroup,
 } from '../lib/activity-groups'
-import { useActivityRows } from '../lib/activity-rows'
+import { useActivityRows, type ActivityRow } from '../lib/activity-rows'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate, type MessageKey } from '../lib/i18n'
+import { milestoneCardIndex } from '../lib/milestone-view'
+import { useActiveMilestones } from '../lib/milestones'
 import { useProjects } from '../lib/projects'
 import { useWorktreeStatuses } from '../lib/worktrees'
 
@@ -51,6 +54,11 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * aussi. Une ligne qui te demande quelque chose se déplie en place, avec de quoi
  * répondre sans ouvrir le fil (planche B2, #112).
  *
+ * **Un jalon lancé** (planche C1, #116) pose son bandeau en tête de la liste, et les
+ * sessions de ses cartes forment un groupe à elles, avant les groupes d'état. Leurs
+ * lignes n'y sont plus redites : le groupe du jalon dit déjà où elles en sont, par leur
+ * point. Sans jalon lancé, ni bandeau ni groupe.
+ *
  * La bascule « Grouper par » range les mêmes lignes sous leur arbre (planche B3, voir
  * `WorktreeGroups`). Elle n'a de sens que dans un dépôt git : ailleurs, elle n'est pas
  * montrée.
@@ -59,7 +67,8 @@ export function ProjectActivityPage() {
   const { projectId } = useParams()
   const t = useTranslate()
   const [query, setQuery] = useState('')
-  const [folded, setFolded] = useState<ReadonlySet<ActivityGroup>>(() => new Set())
+  // Les groupes pliés : un groupe d'état par son nom, celui d'un jalon par sa parente.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
   const [allDone, setAllDone] = useState(false)
   const [params, setParams] = useSearchParams()
   // Les aperçus dépliés (planche B2) : plusieurs à la fois, ↑ et ↓ n'en referment aucun.
@@ -68,6 +77,8 @@ export function ProjectActivityPage() {
   const { data: projects, isPending } = useProjects()
   const project = projects?.find((entry) => entry.id === projectId)
   const rows = useActivityRows(projectId, project)
+  const { data: runs } = useActiveMilestones(projectId)
+  const runCards = useMemo(() => milestoneCardIndex(runs), [runs])
   // Les mêmes requêtes que celles des lignes, partagées par React Query : le regroupement
   // par worktree lit aussi les arbres sans session et la date de leur dernière session.
   const { data: trees } = useWorktreeStatuses(project?.git ? projectId : undefined)
@@ -131,13 +142,70 @@ export function ProjectActivityPage() {
     next.focus()
   }
 
-  const toggle = (group: ActivityGroup) =>
+  const toggle = (group: string) =>
     setFolded((current) => {
       const next = new Set(current)
       if (next.has(group)) next.delete(group)
       else next.add(group)
       return next
     })
+
+  function renderSection(key: string, label: string, marker: SessionMarker, members: ActivityRow[], capped: boolean) {
+    if (members.length === 0) return null
+    const open = !folded.has(key)
+    const visible = capped ? members.slice(0, DONE_SHOWN) : members
+    const rest = members.length - visible.length
+    const headingId = `activity-${key}`
+    return (
+      <section key={key} aria-labelledby={headingId}>
+        <h2 id={headingId} className="sticky top-0 z-10 border-y border-line bg-sunken first:border-t-0">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => toggle(key)}
+            className="flex w-full items-center gap-2.5 px-4 py-1.5 text-left text-sm text-ink-soft hover:text-ink"
+          >
+            {open ? (
+              <ChevronDown size={14} aria-hidden className="shrink-0 text-ink-faint" />
+            ) : (
+              <ChevronRight size={14} aria-hidden className="shrink-0 text-ink-faint" />
+            )}
+            <Marker marker={marker} decorative />
+            {label}
+            <span className="text-xs text-ink-faint tabular-nums">{members.length}</span>
+          </button>
+        </h2>
+        {open ? (
+          <ul className="divide-y divide-line">
+            {visible.map((row) => (
+              <SessionRow
+                key={row.entry.conversation.id}
+                conversation={row.entry.conversation}
+                marker={row.marker}
+                summary={row.summary}
+                place={row.place}
+                pr={row.pr}
+                request={row.request}
+                expanded={expanded.has(row.entry.conversation.id)}
+                onToggle={() => toggleRow(row.entry.conversation.id)}
+              />
+            ))}
+            {rest > 0 ? (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => setAllDone(true)}
+                  className="w-full px-4 py-2 text-left text-sm text-ink-faint hover:text-ink md:pl-[3.375rem]"
+                >
+                  {t('projectActivity.more', { count: rest })}
+                </button>
+              </li>
+            ) : null}
+          </ul>
+        ) : null}
+      </section>
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -193,6 +261,11 @@ export function ProjectActivityPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto" onKeyDown={moveFocus}>
+        {(runs ?? []).map((run) => (
+          <div key={run.id} className="border-b border-line px-4 py-3">
+            <MilestoneBanner projectId={projectId} run={run} />
+          </div>
+        ))}
         {grouping === 'worktree' ? (
           <WorktreeGroups
             projectId={projectId}
@@ -210,66 +283,33 @@ export function ProjectActivityPage() {
         ) : shown.length === 0 ? (
           <EmptyState title={t('projectActivity.noMatch')} />
         ) : (
-          ACTIVITY_GROUPS.map((group) => {
-            const members = shown.filter((row) => row.group === group)
-            if (members.length === 0) return null
-            const open = !folded.has(group)
-            // Un filtre actif montre tout ce qu'il a trouvé : plier ce qu'on cherche
-            // le cacherait une seconde fois.
-            const capped = group === 'done' && !allDone && !isActiveFilter(filter)
-            const visible = capped ? members.slice(0, DONE_SHOWN) : members
-            const rest = members.length - visible.length
-            const headingId = `activity-${group}`
-            return (
-              <section key={group} aria-labelledby={headingId}>
-                <h2 id={headingId} className="sticky top-0 z-10 border-y border-line bg-sunken first:border-t-0">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    onClick={() => toggle(group)}
-                    className="flex w-full items-center gap-2.5 px-4 py-1.5 text-left text-sm text-ink-soft hover:text-ink"
-                  >
-                    {open ? (
-                      <ChevronDown size={14} aria-hidden className="shrink-0 text-ink-faint" />
-                    ) : (
-                      <ChevronRight size={14} aria-hidden className="shrink-0 text-ink-faint" />
-                    )}
-                    <Marker marker={GROUP_MARKER[group]} decorative />
-                    {t(GROUP_LABEL[group])}
-                    <span className="text-xs text-ink-faint tabular-nums">{members.length}</span>
-                  </button>
-                </h2>
-                {open ? (
-                  <ul className="divide-y divide-line">
-                    {visible.map((row) => (
-                      <SessionRow
-                        key={row.entry.conversation.id}
-                        conversation={row.entry.conversation}
-                        marker={row.marker}
-                        summary={row.summary}
-                        place={row.place}
-                        pr={row.pr}
-                        request={row.request}
-                        expanded={expanded.has(row.entry.conversation.id)}
-                        onToggle={() => toggleRow(row.entry.conversation.id)}
-                      />
-                    ))}
-                    {rest > 0 ? (
-                      <li>
-                        <button
-                          type="button"
-                          onClick={() => setAllDone(true)}
-                          className="w-full px-4 py-2 text-left text-sm text-ink-faint hover:text-ink md:pl-[3.375rem]"
-                        >
-                          {t('projectActivity.more', { count: rest })}
-                        </button>
-                      </li>
-                    ) : null}
-                  </ul>
-                ) : null}
-              </section>
-            )
-          })
+          <>
+            {(runs ?? []).map((run) => {
+              const members = shown
+                .filter((row) => runCards.get(row.entry.conversation.card?.id ?? '')?.run.id === run.id)
+                // Dans l'ordre des groupes d'état, puis du plus récent : ce qui te
+                // demande quelque chose d'abord, comme partout ailleurs.
+                .sort((a, b) => ACTIVITY_GROUPS.indexOf(a.group) - ACTIVITY_GROUPS.indexOf(b.group))
+              return renderSection(
+                `milestone-${run.cardId}`,
+                t('projectActivity.group.milestone', { number: run.cardNumber }),
+                'working',
+                members,
+                false,
+              )
+            })}
+            {ACTIVITY_GROUPS.map((group) =>
+              renderSection(
+                group,
+                t(GROUP_LABEL[group]),
+                GROUP_MARKER[group],
+                shown.filter((row) => row.group === group && !runCards.has(row.entry.conversation.card?.id ?? '')),
+                // Un filtre actif montre tout ce qu'il a trouvé : plier ce qu'on cherche
+                // le cacherait une seconde fois.
+                group === 'done' && !allDone && !isActiveFilter(filter),
+              ),
+            )}
+          </>
         )}
       </div>
     </div>

@@ -14,7 +14,7 @@ const row = (number: number, title: string, layer: number, extra: Partial<Milest
 })
 
 const RUN: MilestoneRunDto = {
-  id: 'run', cardId: PARENT.id, state: 'running', concurrency: 3, agent: 'claude', model: 'claude-opus-5-5',
+  id: 'run', cardId: PARENT.id, cardNumber: PARENT.number, cardTitle: PARENT.title, state: 'running', concurrency: 3, agent: 'claude', model: 'claude-opus-5-5',
   branch: 'jalon/75-orchestrer-le-travail-par-cartes', busy: 2, createdAt: Date.now() - 3_600_000, endedAt: null,
   cards: [
     row(66, 'Ce qu’un agent fait avec les cartes', 0, { status: 'done', conversationId: 'c66', worktreeName: 'feat/66-agent-cartes' }),

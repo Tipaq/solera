@@ -22,6 +22,10 @@ import { launchBrowser } from './checks/browser.mjs'
  * simulée au niveau de la page. La suite tient qu'une PR ouverte fait passer une session
  * finie dans « Prête à relire », que le badge porte `#N` et son mot, et qu'une session
  * de la racine n'en porte pas.
+ *
+ * Le jalon lancé (#116) : le pilotage est simulé de la même façon. La suite tient le
+ * bandeau et le groupe du jalon, leur absence sans jalon lancé, la vue par vagues et sa
+ * file, la pause, et la ligne de la frise qui mène à la vue.
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -297,8 +301,90 @@ try {
   await page.goto(`${base}/projects`)
   await page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true }).getByRole('link', { name: /^Jalons/ }).waitFor()
 
+  // ─── Le jalon lancé (#116, planches C1, C2 et C3) ──────────────────────────
+  // Sans jalon lancé, ni bandeau ni groupe.
+  await page.goto(`${base}/p/${nimbus.id}/activity`)
+  await headings.first().waitFor()
+  assert.equal(await page.getByRole('region', { name: /^Jalon #\d+ lancé/ }).count(), 0, 'Pas de bandeau sans jalon lancé')
+  assert.equal(await page.getByRole('heading', { name: /^Jalon #/ }).count(), 0, 'Pas de groupe sans jalon lancé')
+
+  // Le pilotage est simulé : lancer pour de vrai demanderait une forge et des CLI. Le
+  // jalon est la parente du jeu d'essai, et la session qui tourne porte une de ses cartes.
+  const cards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
+  const parent = cards.find((card) => cards.some((child) => child.parent?.id === card.id))
+  assert.ok(parent && running.card, 'Le jeu d’essai a un jalon, et la session qui tourne une carte')
+  const children = cards.filter((card) => card.parent?.id === parent.id && card.id !== running.card.id)
+  const runCard = (card, layer, status, extra = {}) => ({
+    cardId: card.id, number: card.number, title: card.title, layer, status, blockReason: null, blockedBy: [],
+    conversationId: null, conversationTitle: null, conversationStatus: null, worktreeName: null,
+    agent: null, model: null, error: null, ...extra,
+  })
+  const [first, second, ...rest] = children
+  assert.ok(first && second, 'Le jalon du jeu d’essai a au moins deux autres cartes')
+  const blocker = { number: second.number, title: second.title, outside: false, abandoned: false }
+  const milestoneRun = {
+    id: 'run', cardId: parent.id, cardNumber: parent.number, cardTitle: parent.title, state: 'running', concurrency: 3,
+    agent: 'claude', model: 'claude-opus-5-5', branch: 'jalon/demo', busy: 1, createdAt: Date.now() - 50 * 60_000, endedAt: null,
+    cards: [
+      runCard(running.card, 0, 'working', { conversationId: running.id }),
+      runCard(first, 0, 'done'),
+      runCard(second, 1, 'queued'),
+      ...rest.map((card) => runCard(card, 2, 'waiting', { blockedBy: [blocker] })),
+    ],
+  }
+  let pauses = 0
+  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [milestoneRun] }))
+  await page.route(`**/api/cards/${parent.id}/milestone`, async (route) => {
+    if (route.request().method() === 'PATCH') {
+      assert.deepEqual(route.request().postDataJSON(), { state: 'paused' })
+      pauses += 1
+      return route.fulfill({ json: { ...milestoneRun, state: 'paused' } })
+    }
+    return route.fulfill({ json: milestoneRun })
+  })
+
+  // C1 : le bandeau en tête, et le groupe du jalon avant les groupes d'état.
+  await page.reload()
+  const banner = page.getByRole('region', { name: `Jalon #${parent.number} lancé`, exact: true })
+  await banner.waitFor()
+  await banner.getByText('1/3 sessions occupées').waitFor()
+  await banner.getByText(`1/${milestoneRun.cards.length} fusionnées`).waitFor()
+  await banner.getByText(/^1 prête en file$/).waitFor()
+  const milestoneLabel = `Jalon #${parent.number} · ses sessions`
+  assert.equal((await headings.first().innerText()).replace(/\s*\d+$/, '').trim(), milestoneLabel, 'Le groupe du jalon passe en premier')
+  await section(milestoneLabel.replace(/[#·]/g, '.')).getByRole('link', { name: new RegExp(running.title) }).waitFor()
+  assert.equal(await section('En cours').getByRole('link', { name: new RegExp(running.title) }).count(), 0, 'Ses sessions ne sont pas redites')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-de-l-activite.png') })
+
+  // Le même bandeau sur l'Aperçu, entre les tuiles et « En ce moment ».
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await banner.waitFor()
+  assert.ok((await banner.boundingBox()).y < (await now.boundingBox()).y, 'Le bandeau vient avant « En ce moment »')
+
+  // C2 : la vue du jalon, par vagues, avec la file en pied.
+  await banner.getByRole('link', { name: 'Voir le jalon' }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
+  await page.getByRole('region', { name: 'Vague 1 · sans dépendance' }).waitFor()
+  await page.getByRole('region', { name: 'Vague 2' }).getByText(`#${second.number}`).waitFor()
+  if (rest.length > 0) await page.getByRole('region', { name: 'Vague 3' }).getByText(`après #${second.number}`).first().waitFor()
+  await page.getByText(new RegExp(`^File : #${second.number} — la prochaine place libre part sur #${second.number}`)).waitFor()
+  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).getAttribute('aria-current'), 'page', 'La vue vit sous l’onglet Jalons')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'c2-la-vue-du-jalon.png') })
+  await page.getByRole('button', { name: 'Mettre en pause' }).click()
+  await page.getByRole('button', { name: 'Reprendre' }).waitFor()
+  assert.equal(pauses, 1)
+
+  // C3 : la ligne du jalon dans la frise, qui mène à sa vue.
+  await page.goto(`${base}/p/${nimbus.id}/timeline`)
+  const launchedHead = page.getByRole('button', { name: new RegExp(`#${parent.number} .*lancé`) })
+  await launchedHead.waitFor()
+  await launchedHead.getByText(/^1 session · /).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'c3-le-jalon-dans-la-frise.png') })
+  await launchedHead.click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
+
   assert.deepEqual(errors, [])
-  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone ; captures dans ' + shots)
+  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

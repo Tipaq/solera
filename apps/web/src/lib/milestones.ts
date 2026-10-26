@@ -14,6 +14,7 @@ import { api } from './api'
 
 const runKey = (cardId: string) => ['milestone-run', cardId]
 const planKey = (cardId: string) => ['milestone-plan', cardId]
+const activeKey = (projectId: string) => ['milestone-runs', projectId]
 
 /** Un jalon qui tourne se relit à ce rythme : c'est la vue de qui travaille où. */
 const LIVE_REFETCH_MS = 3_000
@@ -28,6 +29,22 @@ export function useMilestoneRun(cardId: string, enabled: boolean) {
       const state = query.state.data?.state
       return state === 'running' || state === 'paused' ? LIVE_REFETCH_MS : false
     },
+  })
+}
+
+/** Sans jalon lancé, le projet se relit moins souvent : on attend seulement qu'il parte. */
+const IDLE_REFETCH_MS = 15_000
+
+/**
+ * Les jalons lancés d'un projet, en marche ou en pause (#116) : le bandeau de l'Activité
+ * et de l'Aperçu, le groupe de leurs sessions et leur ligne dans la frise.
+ */
+export function useActiveMilestones(projectId: string | undefined) {
+  return useQuery({
+    queryKey: activeKey(projectId ?? ''),
+    queryFn: () => api.get<MilestoneRunDto[]>(`/api/projects/${projectId}/milestones/active`),
+    enabled: Boolean(projectId),
+    refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS),
   })
 }
 
@@ -50,6 +67,7 @@ export function useLaunchMilestone(projectId: string, cardId: string) {
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)
       void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
+      void queryClient.invalidateQueries({ queryKey: activeKey(projectId) })
     },
   })
 }
@@ -58,6 +76,10 @@ export function useUpdateMilestone(cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: UpdateMilestoneRunBody) => api.patch<MilestoneRunDto>(`/api/cards/${cardId}/milestone`, body),
-    onSuccess: (run) => queryClient.setQueryData(runKey(cardId), run),
+    onSuccess: (run) => {
+      queryClient.setQueryData(runKey(cardId), run)
+      // Le bandeau et la frise suivent : une pause s'y lit, un arrêt les retire.
+      void queryClient.invalidateQueries({ queryKey: ['milestone-runs'] })
+    },
   })
 }

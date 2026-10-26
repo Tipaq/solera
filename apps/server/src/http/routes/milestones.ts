@@ -24,6 +24,21 @@ export function registerMilestoneRoutes(app: FastifyInstance, ctx: AppContext, m
     return { card, project }
   }
 
+  /**
+   * Les jalons lancés d'un projet, en marche ou en pause : le bandeau de l'Activité et
+   * de l'Aperçu, et la frise des Jalons (#116). Une liste, pas un seul : rien n'empêche
+   * deux parentes de tourner ensemble.
+   */
+  app.get('/api/projects/:id/milestones/active', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = ctx.db.select().from(projects).where(eq(projects.id, id)).get()
+    if (!project || (project.ownerId !== user.id && project.visibility !== 'shared')) {
+      throw notFound('project_not_found', 'Project not found.')
+    }
+    return milestones.activeRuns(project.id).map((run) => milestones.read(run))
+  })
+
   app.get('/api/cards/:id/milestone/plan', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

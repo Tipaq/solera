@@ -13,8 +13,12 @@ export interface TimelineBar {
   prefix?: ReactNode
   /** Sans date promise : la barre constate au lieu de promettre, donc elle pointille. */
   loose?: boolean
-  /** En retard, ou livré : les deux seules teintes de la vue. */
-  tone?: 'neutral' | 'late' | 'done'
+  /**
+   * En retard, ou livré : les deux seules teintes d'une carte au repos. Celles d'un jalon
+   * lancé (#116) disent son exécution : `running` tourne, `blocked` attend une personne,
+   * `queued` attend une place.
+   */
+  tone?: 'neutral' | 'late' | 'done' | 'running' | 'blocked' | 'queued'
   title?: string
   onOpen?: () => void
 }
@@ -36,6 +40,9 @@ const TONES = {
   neutral: 'bg-accent-wash text-accent',
   late: 'bg-critical/12 text-critical',
   done: 'bg-positive/12 text-positive',
+  running: 'bg-accent/20 text-accent',
+  blocked: 'bg-caution/15 text-caution',
+  queued: 'bg-surface-high text-ink-soft',
 } as const
 
 /**

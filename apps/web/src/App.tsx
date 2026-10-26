@@ -78,6 +78,14 @@ const ProjectActivityPage = lazy(() =>
   import('./routes/ProjectActivityPage').then((m) => ({ default: m.ProjectActivityPage })),
 )
 
+/**
+ * La vue d'un jalon lancé (#116), chargée à part : on n'y vient que par le bandeau de
+ * l'Activité ou la frise des Jalons.
+ */
+const ProjectMilestonePage = lazy(() =>
+  import('./routes/ProjectMilestonePage').then((m) => ({ default: m.ProjectMilestonePage })),
+)
+
 /** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
 function OnboardingExit() {
   const { data: projects } = useProjects()
@@ -206,6 +214,7 @@ export function App() {
             <Route path="board" element={<BoardPage />} />
             <Route path="schedules" element={<SchedulePage />} />
             <Route path="timeline" element={<ProjectTimelinePage />} />
+            <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
             <Route path="journal" element={<ProjectJournalPage />} />
           </Route>
           <Route path="/p/:projectId/settings" element={<ProjectPage />} />

@@ -152,6 +152,9 @@ export interface MilestoneRunCardDto {
 export interface MilestoneRunDto {
   id: string
   cardId: string
+  /** Le numéro et le titre de la parente : le bandeau et la frise la nomment (#116). */
+  cardNumber: number
+  cardTitle: string
   state: MilestoneRunState
   concurrency: number
   agent: AgentKind
