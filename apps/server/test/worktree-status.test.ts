@@ -10,7 +10,7 @@ import { cards, conversationPaths, conversations, openDatabase, projects, runMig
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
 import { touchedPaths } from '../src/events/touched-paths.js'
-import { assessWorktree, defaultBase, listWorktrees, parseWorktreeList } from '../src/worktrees/assess.js'
+import { assessWorktree, defaultBase, listWorktrees, looseBranches, parseWorktreeList } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
@@ -258,6 +258,35 @@ test('introuvable : dossier disparu, entrée prunable', async (t) => {
   assert.equal((await assessWorktree(repo, 'main', { path: join(trees, 'nowhere'), head: null, prunable: false })).state, 'missing')
 })
 
+test('les branches sans arbre : la base et les extraites exclues, fusionnée jugée sur le contenu', async (t) => {
+  const { repo, trees } = repository(t)
+  const tree = addTree(repo, trees, 'feat/extraite')
+  write(tree, 'a.ts', 'a\n')
+  commitAll(tree, 'a')
+
+  // Ancêtre de main : fusionnée par fast-forward.
+  git(repo, 'branch', 'ancetre', 'main')
+  // Squashée dans main : hors de l'ancestralité, mais rien que main n'ait.
+  git(repo, 'switch', '-c', 'squashee')
+  write(repo, 'b.ts', 'b\n')
+  commitAll(repo, 'b')
+  git(repo, 'switch', 'main')
+  write(repo, 'b.ts', 'b\n')
+  commitAll(repo, 'b squash')
+  // Du travail que main n'a pas.
+  git(repo, 'switch', '-c', 'en-cours')
+  write(repo, 'c.ts', 'c\n')
+  commitAll(repo, 'c')
+  git(repo, 'switch', 'main')
+
+  const checkedOut = new Set((await listWorktrees(repo)).flatMap((entry) => (entry.branch ? [entry.branch] : [])))
+  const branches = await looseBranches(repo, 'main', checkedOut)
+  assert.deepEqual(
+    branches.map((b) => `${b.name}:${b.merged}`).sort(),
+    ['ancetre:true', 'en-cours:false', 'squashee:true'],
+  )
+})
+
 test('la liste de git : arbre principal en tête, branche et HEAD détachée', async (t) => {
   const { repo, trees } = repository(t)
   addTree(repo, trees, 'feat/one')
@@ -363,6 +392,7 @@ test('le service réconcilie git et la base, et rattache les sessions', async (t
   const ghost = byPath.get(join(trees, 'ghost'))!
   assert.deepEqual([ghost.id, ghost.state, ghost.name, ghost.external], ['wt-ghost', 'missing', 'feat/ghost', false])
   assert.equal(first.worktrees[0]?.id, 'wt-ghost', "l'introuvable passe en tête")
+  assert.deepEqual(first.branches, [], 'toutes les branches sont extraites')
 
   // Resservi du cache tant que rien ne l'invalide ; un tour terminé le périme, et la
   // liste périmée est rendue tout de suite pendant que la suivante se calcule.

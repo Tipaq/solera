@@ -24,7 +24,7 @@ function row(
     },
     marker,
     summary: rest.summary ?? null,
-    place: rest.place ?? { root: true, branch: 'main' },
+    place: rest.place ?? { root: true, branch: 'main', path: null },
   }
 }
 
@@ -33,17 +33,17 @@ const ROWS: Row[] = [
   row('a', 'Dessiner la page projet', 'awaiting', 42, {
     card: 73,
     summary: { text: 'Attend 3 min', tone: 'caution' },
-    place: { root: false, branch: 'design/page-projet' },
+    place: { root: false, branch: 'design/page-projet', path: '/wt/design/page-projet' },
   }),
   row('b', 'Vue Git, lot 3', 'broken', 120, {
     agent: 'codex',
     card: 50,
     summary: { text: 'Interrompue', tone: 'critical' },
-    place: { root: false, branch: 'feat/vue-git-lot-3' },
+    place: { root: false, branch: 'feat/vue-git-lot-3', path: '/wt/feat/vue-git-lot-3' },
   }),
   row('c', 'Lier un design system au projet', 'review', 55, {
     card: 62,
-    place: { root: false, branch: 'feat/ds-lie-au-projet' },
+    place: { root: false, branch: 'feat/ds-lie-au-projet', path: '/wt/feat/ds-lie-au-projet' },
   }),
   row('d', 'Flow de projet, cards et jalons', 'working', 50),
   row('e', 'Sessions inachevées et worktrees', 'unread', 60 * 5),

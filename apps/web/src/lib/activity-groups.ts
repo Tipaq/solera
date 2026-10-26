@@ -37,6 +37,11 @@ export interface SessionPlace {
   root: boolean
   /** La branche extraite, ou le nom du worktree quand git ne la donne pas. Null si inconnue. */
   branch: string | null
+  /**
+   * Le chemin de l'arbre, qui sert de clé au regroupement par worktree. Null à la racine,
+   * et pour un arbre que la liste ne connaît pas (pas encore lue, ou disparu).
+   */
+  path: string | null
 }
 
 /**
@@ -52,13 +57,13 @@ export function sessionPlaceOf(
   trees: WorktreeStatusListDto | undefined,
   rootBranch: string | null,
 ): SessionPlace {
-  if (!conversation.worktreeId) return { root: true, branch: rootBranch }
+  if (!conversation.worktreeId) return { root: true, branch: rootBranch, path: null }
   const tree = trees?.worktrees.find(
     (entry) =>
       entry.id === conversation.worktreeId ||
       entry.conversations.some((link) => link.id === conversation.id && link.link === 'worktree'),
   )
-  return { root: false, branch: tree ? (tree.branch ?? tree.name) : null }
+  return { root: false, branch: tree ? (tree.branch ?? tree.name) : null, path: tree?.path ?? null }
 }
 
 /**

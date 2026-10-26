@@ -153,7 +153,7 @@ function DecisionBody({ decision }: { decision: DecisionDto }) {
         <Link
           to={
             worktree
-              ? `/p/${decision.projectId}/settings#worktrees`
+              ? `/p/${decision.projectId}/activity?groupe=worktree`
               : conversationPath({ id: decision.conversationId, projectId: decision.projectId || null })
           }
           onClick={() => openDecision(null)}

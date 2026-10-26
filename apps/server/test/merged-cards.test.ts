@@ -49,6 +49,7 @@ async function harness(t: TestContext, column: CardColumn = 'review') {
         ...tree,
       },
     ],
+    branches: [],
   })
   const columnOf = () => db.select({ column: cards.column }).from(cards).where(eq(cards.id, 'card')).get()?.column
 

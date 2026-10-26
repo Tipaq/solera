@@ -687,6 +687,11 @@ export interface WorktreeStatusListDto {
   /** Faux quand la liste rendue date du calcul précédent, le suivant étant en cours. */
   fresh: boolean
   worktrees: WorktreeStatusDto[]
+  /**
+   * Les branches locales qu'aucun arbre n'a extraites, la base exceptée. `merged` se
+   * juge sur le contenu, comme l'état d'un arbre.
+   */
+  branches: { name: string; merged: boolean }[]
 }
 
 /**

@@ -181,6 +181,20 @@ try {
   assert.equal(await section('Terminées').getByRole('listitem').count(), 0)
   await page.getByRole('button', { name: /^Terminées/ }).click()
 
+  // ─── Grouper par worktree (#111, planche B3) ────────────────────────────────
+  await page.getByRole('radio', { name: 'Worktree', exact: true }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/activity?groupe=worktree`)
+  const treeGroup = page.getByRole('region', { name: new RegExp(`^${(tree.branch ?? tree.name).replace(/[/.]/g, '\\$&')}`) })
+  const treeRow = treeGroup.getByRole('link', { name: new RegExp(running.title) })
+  await treeRow.waitFor()
+  // L'en-tête porte la branche : la ligne ne la répète pas.
+  assert.equal(await treeRow.getByText(tree.branch ?? tree.name, { exact: true }).count(), 0, 'La ligne perd sa colonne branche')
+  await page.getByRole('region', { name: /^main racine du projet/ }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'b3-activite-par-worktree.png') })
+  await page.getByRole('radio', { name: 'État', exact: true }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/activity`)
+  await section('En cours').waitFor()
+
   // ─── Sombre ───────────────────────────────────────────────────────────────
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'b1-activite-par-etat-sombre.png') })
