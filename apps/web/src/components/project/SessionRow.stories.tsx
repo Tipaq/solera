@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ComponentProps } from 'react'
+import { useState, type ComponentProps } from 'react'
 import type { ProjectPullRequestDto, PullRequestBadgeState } from '@solera/protocol'
+import type { SessionRequest } from '../../lib/session-requests'
 import { SessionRow } from './SessionRow'
 
 const MINUTE = 60_000
@@ -22,6 +23,7 @@ function row(
       agent: rest.agent ?? 'claude',
       card: rest.card ? { id: `card-${rest.card}`, number: rest.card, title: `Carte ${rest.card}`, column: 'in_progress' } : null,
       updatedAt: Date.now() - ago * MINUTE,
+      isOwner: true,
     },
     marker,
     summary: rest.summary ?? null,
@@ -129,3 +131,90 @@ export const Etats: Story = {
   render: () => <List rows={ROWS} />,
 }
 
+
+const QUESTION: SessionRequest = {
+  kind: 'question',
+  requestId: 'q1',
+  requestedAt: Date.now() - 3 * MINUTE,
+  event: {
+    type: 'question.requested',
+    requestId: 'q1',
+    questions: [
+      {
+        id: 'jalon',
+        header: 'Jalon',
+        question: 'Le jalon lancé (#72), où le voit-on sur la page projet ?',
+        options: [
+          { label: 'En tête de l’Activité', description: '', preview: null },
+          { label: 'Un onglet Jalon', description: '', preview: null },
+          { label: 'Dans la Chronologie', description: '', preview: null },
+        ],
+        multiSelect: false,
+        allowOther: true,
+        secret: false,
+      },
+    ],
+  },
+}
+
+const PERMISSION: SessionRequest = {
+  kind: 'permission',
+  requestId: 'p1',
+  requestedAt: Date.now() - 12 * MINUTE,
+  event: {
+    type: 'permission.requested',
+    requestId: 'p1',
+    toolName: 'Bash',
+    input: { command: 'pnpm install --ignore-scripts' },
+    suggestions: [],
+    title: 'Autoriser une commande',
+  },
+}
+
+/** Deux lignes qui te demandent quelque chose, dépliables au clic, à l'Espace et au chiffre. */
+function Foldable() {
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['a', 'g']))
+  const rows: (Row & { request: SessionRequest })[] = [
+    {
+      ...ROWS[0]!,
+      summary: { text: 'Attend 3 min · Le jalon lancé (#72), où le voit-on sur la page projet ?', tone: 'caution' },
+      request: QUESTION,
+    },
+    {
+      ...row('g', 'Tri des nouveautés de Sillage', 'awaiting', 65, {
+        card: 65,
+        place: { root: false, branch: 'feat/tri-sillage', path: '/wt/feat/tri-sillage' },
+        summary: { text: 'Attend 12 min · Bash : pnpm install --ignore-scripts', tone: 'caution' },
+      }),
+      request: PERMISSION,
+    },
+  ]
+  const toggle = (id: string) =>
+    setOpen((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  return (
+    <ul className="divide-y divide-line border-y border-line">
+      {rows.map((entry) => (
+        <SessionRow
+          key={entry.conversation.id}
+          {...entry}
+          expanded={open.has(entry.conversation.id)}
+          onToggle={() => toggle(entry.conversation.id)}
+        />
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * La planche B2 : la question et la permission dépliées sous leur ligne. Les réponses
+ * partent vers un serveur que la story n'a pas, et reviennent donc en erreur.
+ */
+export const Depliee: Story = {
+  name: 'Demande dépliée',
+  render: () => <Foldable />,
+}

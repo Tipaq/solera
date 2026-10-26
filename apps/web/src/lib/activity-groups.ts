@@ -24,12 +24,26 @@ export const ACTIVITY_GROUPS: ActivityGroup[] = ['asking', 'review', 'running', 
  * une PR ouverte (#115), quel que soit l'état des checks. Une PR en échec attend aussi
  * quelqu'un ; une PR fusionnée, plus personne.
  *
+ * Une demande ouverte y monte aussi quand le fil ne l'attend pas : une décision (#77)
+ * laisse la session poursuivre, mais elle reste une question qui t'est posée (#112).
+ *
  * Ce qui travaille passe avant la relecture : une carte posée en *À vérifier* alors que
  * sa session tourne encore n'est pas prête, elle le sera à la fin du tour.
  */
-export function activityGroupOf(entry: LiveConversation, column: CardColumn | null, openPr = false): ActivityGroup {
+export function activityGroupOf(
+  entry: LiveConversation,
+  column: CardColumn | null,
+  {
+    openPr = false,
+    requested = false,
+  }: {
+    openPr?: boolean
+    /** Une demande reste ouverte sans tenir le fil : une décision, une question asynchrone. */
+    requested?: boolean
+  } = {},
+): ActivityGroup {
   const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
-  if (state === 'broken' || state === 'awaiting') return 'asking'
+  if (requested || state === 'broken' || state === 'awaiting') return 'asking'
   if (state === 'working') return 'running'
   if (column === 'review' || openPr) return 'review'
   return 'done'

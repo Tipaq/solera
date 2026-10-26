@@ -125,6 +125,15 @@ function digest(log: EventLog, conversationId: string): Digest {
 }
 
 /**
+ * La demande encore ouverte d'une conversation — permission, question, plan ou saisie —,
+ * ou null. Le même repliage que la consultation d'une tâche, borné aux dernières entrées :
+ * l'onglet Activité d'un projet le lit pour chaque session qui attend (#112).
+ */
+export function pendingPromptOf(log: EventLog, conversationId: string): TaskPendingDto | null {
+  return digest(log, conversationId).pending
+}
+
+/**
  * Ce qu'une tâche coûte gratuitement : sa ligne de table, sans toucher au journal.
  *
  * `baseUrl` sert à composer le lien vers l'interface : une tâche lancée par un agent

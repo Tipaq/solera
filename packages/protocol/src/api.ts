@@ -4,6 +4,7 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 // conversation et ce fichier de la puce de carte. Rien n'en subsiste à l'exécution,
 // donc aucun cycle de module.
 import type { CardLinkDto } from './cards.js'
+import type { TaskPendingDto } from './v1.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
 import { agentKindSchema, type AgentKind } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
@@ -580,6 +581,15 @@ export interface ConversationDto {
    * La sidebar s'en sert pour le sortir de la liste principale et le ranger sous sa tâche.
    */
   scheduleId: string | null
+}
+
+/**
+ * La demande qu'une session attend, vue depuis la liste d'un projet : l'onglet Activité
+ * la déplie sous la ligne pour y répondre sans ouvrir le fil (#112). La demande est
+ * l'événement journalisé tel quel, comme pour `GET /api/v1/tasks/:id`.
+ */
+export interface ConversationPromptDto extends TaskPendingDto {
+  conversationId: string
 }
 
 export interface JournalPageDto {

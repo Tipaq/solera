@@ -40,6 +40,8 @@ export function WorktreeGroups({
   conversations,
   filtering,
   words,
+  expanded,
+  onToggle,
 }: {
   projectId: string
   /** Les lignes que le filtre garde, dans l'ordre de la liste. */
@@ -51,6 +53,9 @@ export function WorktreeGroups({
   /** Un filtre est posé : les arbres sans session ne restent que si leur nom y répond. */
   filtering: boolean
   words: string[]
+  /** Les aperçus dépliés, les mêmes qu'en regroupement par état (#112). */
+  expanded: ReadonlySet<string>
+  onToggle: (conversationId: string) => void
 }) {
   const t = useTranslate()
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
@@ -96,6 +101,9 @@ export function WorktreeGroups({
           marker={row.marker}
           summary={row.summary}
           place={row.place}
+          request={row.request}
+          expanded={expanded.has(row.entry.conversation.id)}
+          onToggle={() => onToggle(row.entry.conversation.id)}
           inTree
         />
       ))}
@@ -197,6 +205,9 @@ export function WorktreeGroups({
                 marker={row.marker}
                 summary={row.summary}
                 place={row.place}
+                request={row.request}
+                expanded={expanded.has(row.entry.conversation.id)}
+                onToggle={() => onToggle(row.entry.conversation.id)}
                 pr={row.pr}
               />
             ))}
