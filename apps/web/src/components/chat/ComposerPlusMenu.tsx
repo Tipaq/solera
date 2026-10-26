@@ -280,14 +280,17 @@ function ChangedHereDot() {
   )
 }
 
+/**
+ * Sur l'icône d'une catégorie, le point seul : un texte ici passerait avant l'intitulé
+ * dans le nom de l'entrée. La catégorie ouverte le dit en toutes lettres, par son
+ * « Revenir au réglage hérité ».
+ */
 function ChangedHereIcon({ group }: { group: SettingGroup }) {
   if (!group.resetToInherited) return <>{group.icon}</>
   return (
     <span className="relative inline-flex">
       {group.icon}
-      <span className="absolute -right-1 -top-1">
-        <ChangedHereDot />
-      </span>
+      <span aria-hidden className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent" />
     </span>
   )
 }

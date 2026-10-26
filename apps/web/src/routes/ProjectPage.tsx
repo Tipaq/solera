@@ -16,7 +16,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { ModelDefaultsSettings, PermissionsSettings } from '../components/settings/LayeredSettings'
-import { SectionHeader } from '../components/settings/SectionHeader'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ProjectInstructions } from '../components/instructions/Instructions'
 import { ProjectMemory } from '../components/instructions/ProjectMemory'
@@ -436,8 +435,15 @@ function ProjectAgentSettings({ project }: { project: ProjectDto }) {
   const t = useTranslate()
   const level = { kind: 'project', project } as const
   return (
-    <section className="flex flex-col gap-4">
-      <SectionHeader title={t('project.agentSettings.title')} description={t('project.agentSettings.description')} />
+    <section className="flex flex-col gap-4" aria-labelledby="project-agent-settings">
+      {/* Les autres blocs de la page sont des cartes à un seul réglage ; celui-ci en
+          réunit plusieurs, et son titre les annonce. */}
+      <div className="flex flex-col gap-1 pt-2">
+        <h2 id="project-agent-settings" className="text-base font-semibold text-ink">
+          {t('project.agentSettings.title')}
+        </h2>
+        <p className="text-sm text-ink-faint">{t('project.agentSettings.description')}</p>
+      </div>
       <PermissionsSettings level={level} />
       <ModelDefaultsSettings level={level} />
     </section>

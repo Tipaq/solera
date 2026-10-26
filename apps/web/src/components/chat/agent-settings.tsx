@@ -830,6 +830,9 @@ export function useAgentSettings({
           ? (grokAccountList?.accounts ?? []).filter((account) => account.status === 'ready')
           : null
     if (accounts === null) return []
+    // Pas avant que la liste soit là : un compte encore en chargement se lirait « supprimé ».
+    const loaded = claude ? claudeAccountList : codex ? codexAccountList : grokAccountList
+    if (loaded === undefined) return []
     if (accounts.length === 0 && !chosen) return []
     const known: SettingChoice<string>[] = [
       { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') },

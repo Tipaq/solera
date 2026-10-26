@@ -90,6 +90,14 @@ try {
   }
   const button = (name) => page.getByRole('button', { name, exact: true })
   const settings = async () => (await context.request.get(`${base}/api/me/settings`)).json()
+  /** Les réglages s'écrivent au clic, sans « Continuer » : on attend que la route l'ait pris. */
+  const expectSettings = async (ready) => {
+    for (let tries = 0; tries < 50; tries++) {
+      if (ready(await settings())) return
+      await page.waitForTimeout(100)
+    }
+    throw new Error('les réglages ne sont pas arrivés au compte')
+  }
   const shot = (name) => page.screenshot({ path: join(shots, `${name}.png`), fullPage: true })
 
   // Une base sans compte : pas de page de connexion, la visite commence par le créer.
@@ -125,20 +133,25 @@ try {
   await shot('04-agents')
   await button('Continuer').click()
 
-  // Le réflexe et une famille, écrits aux quatre défauts de compte à « Continuer ».
+  // Les mêmes blocs que la section Permissions des réglages (#120, Q34) : chaque choix
+  // s'écrit au compte tout de suite, une demande à Solera pour tous les CLI, le réflexe
+  // pour le CLI choisi.
   await heading("Ce que l'agent fait sans demander")
-  await page.getByRole('radio', { name: /^Accepter les modifications/ }).click()
-  await page.getByRole('switch', { name: /^Rangement de carte/ }).click()
+  await page.getByRole('radiogroup', { name: 'Rangement de carte' }).getByRole('radio', { name: 'Automatique' }).click()
+  await page.getByRole('combobox', { name: 'Permissions' }).click()
+  await page.getByRole('option', { name: /^Éditions acceptées/ }).click()
   await shot('05-autorisations')
+  await expectSettings((stored) => stored.agentDefaults.claude.permissionMode === 'acceptEdits')
   await button('Continuer').click()
   await heading('Consignes et mémoire')
   let stored = await settings()
   assert.equal(stored.agentDefaults.claude.permissionMode, 'acceptEdits')
-  assert.equal(stored.agentDefaults.codex.askForApproval, 'never')
-  assert.equal(stored.agentDefaults.grok.permissionMode, 'default')
-  // Allumée par défaut depuis #66 : le clic l'éteint, aux quatre défauts.
+  // Le réflexe d'un CLI ne déborde plus sur les autres : il se règle CLI par CLI.
+  assert.equal(stored.agentDefaults.codex.askForApproval, 'on-request')
+  // Une demande à Solera vaut pour les quatre CLI, rangée une fois en commun.
+  assert.equal(stored.agentLayer.shared.cardFiling, 'auto')
   for (const agent of ['claude', 'codex', 'opencode', 'grok']) {
-    assert.equal(stored.agentDefaults[agent].cardFiling, false, `cardFiling pour ${agent}`)
+    assert.equal(stored.agentDefaults[agent].cardFiling, 'auto', `cardFiling pour ${agent}`)
   }
 
   // La mémoire est la famille `agentMemory`, et les consignes ont leur défaut de projet.
