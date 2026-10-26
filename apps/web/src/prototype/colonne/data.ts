@@ -101,11 +101,12 @@ export function dotOf(thread: Thread, demands: Demand[]): ThreadDot {
 const TIER_RANK = { blocked: 0, decision: 1, grant: 2 } as const
 
 /**
- * L'ordre de la section : en mode projet, les demandes du projet courant d'abord ; puis,
- * dans chaque moitié, bloqué → à décider → à accorder.
+ * L'ordre de la section : bloqué → à décider → à accorder, quel que soit le projet
+ * (Q37 : un agent bloqué ne passe jamais derrière un accord) ; en mode projet, le
+ * projet courant passe devant **dans chaque rang**.
  */
 export function orderDemands(demands: Demand[], currentProject: string | null | undefined): Demand[] {
   const here = (demand: Demand) =>
     currentProject !== undefined && threadOf(demand.threadId).projectId === currentProject ? 0 : 1
-  return [...demands].sort((a, b) => here(a) - here(b) || TIER_RANK[a.tier] - TIER_RANK[b.tier])
+  return [...demands].sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || here(a) - here(b))
 }

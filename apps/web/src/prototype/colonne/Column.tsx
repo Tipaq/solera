@@ -74,12 +74,12 @@ const DOT_CLASS: Record<Exclude<ThreadDot, null>, string> = {
   unread: 'bg-ink',
 }
 
-function Dot({ state }: { state: ThreadDot }) {
+export function Dot({ state }: { state: ThreadDot }) {
   if (!state) return null
   return <span className={cx('block size-1.5 shrink-0 rounded-full', DOT_CLASS[state])} />
 }
 
-function Avatar({ project, className = 'size-4' }: { project?: Project; className?: string }) {
+export function Avatar({ project, className = 'size-4' }: { project?: Project; className?: string }) {
   if (!project) return <MessagesSquare size={14} className="shrink-0 text-ink-faint" />
   // Solera a son image dans la vraie colonne : le prototype la rend par le logo.
   if (project.id === 'solera') return <Logo size={14} className={cx('shrink-0 text-accent', className)} />
@@ -93,6 +93,13 @@ function Avatar({ project, className = 'size-4' }: { project?: Project; classNam
 /** La hauteur d'une ligne de 32 px, 44 au doigt — ici forcée par le prototype. */
 const h = (coarse: boolean, fine = 'h-8') => (coarse ? 'h-11' : fine)
 
+/**
+ * Le prototype ouvre la modale d'Activité d'ici sans faire descendre un rappel dans
+ * chaque bloc : `main.tsx` y branche son ouverture. Une demande ouvre la modale dépliée
+ * sur elle.
+ */
+export const activityBus: { open: (demandId?: string) => void } = { open: () => {} }
+
 function SectionHeader({ icon: Icon, iconClass, label, children, coarse }: {
   icon: LucideIcon
   iconClass?: string
@@ -103,6 +110,7 @@ function SectionHeader({ icon: Icon, iconClass, label, children, coarse }: {
   return (
     <button
       type="button"
+      onClick={() => activityBus.open()}
       className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface-high', h(coarse))}
     >
       <Icon size={14} className={cx('shrink-0', iconClass ?? 'text-ink-faint')} />
@@ -127,7 +135,7 @@ function CountPill({ tone, count }: { tone: 'caution' | 'accent'; count: number 
 
 /* ——— La section des demandes, trois variantes ——— */
 
-const KIND_ICON: Record<string, LucideIcon> = {
+export const KIND_ICON: Record<string, LucideIcon> = {
   permission: ShieldQuestion,
   question: MessageCircleQuestion,
   plan: ListChecks,
@@ -252,7 +260,7 @@ const ROWS: Record<Variant, (props: RowProps) => ReactNode> = { A: RowA, B: RowB
  * La section unique. **Absente quand rien n'attend**, comme « À décider » aujourd'hui.
  * Globale dans les deux modes ; en mode projet, le projet courant passe devant.
  */
-function DemandSection({ variant, demands, current, mode, coarse, openThread, onOpenThread }: Pick<
+function DemandSection({ variant, demands, current, mode, coarse, openThread }: Pick<
   ColumnProps,
   'variant' | 'demands' | 'current' | 'mode' | 'coarse' | 'openThread' | 'onOpenThread'
 >) {
@@ -287,7 +295,7 @@ function DemandSection({ variant, demands, current, mode, coarse, openThread, on
                 demand={demand}
                 coarse={coarse}
                 active={openThread === demand.threadId}
-                onOpen={() => onOpenThread(demand.threadId)}
+                onOpen={() => activityBus.open(demand.id)}
               />
             </li>
           )
@@ -296,6 +304,7 @@ function DemandSection({ variant, demands, current, mode, coarse, openThread, on
       {rest > 0 ? (
         <button
           type="button"
+          onClick={() => activityBus.open()}
           className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink', h(coarse))}
         >
           <MessageCircleQuestion size={14} className="shrink-0" />
@@ -340,7 +349,7 @@ function ActivitySection({ demands, coarse, openThread, onOpenThread }: Pick<
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint', h(coarse))}>
+        <button type="button" onClick={() => activityBus.open()} className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint', h(coarse))}>
           <Activity size={14} className="shrink-0" />+ {rest} autres sessions actives
         </button>
       ) : null}
@@ -387,7 +396,7 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
           return (
             <li key={row.key} className={cx(gap && 'mt-1.5')}>
               {row.demand ? (
-                <RowA demand={row.demand} coarse={coarse} active={openThread === row.demand.threadId} onOpen={() => onOpenThread(row.demand!.threadId)} />
+                <RowA demand={row.demand} coarse={coarse} active={openThread === row.demand.threadId} onOpen={() => activityBus.open(row.demand!.id)} />
               ) : (
                 <button type="button" onClick={() => onOpenThread(row.thread!.id)} className={rowClass(coarse, false)}>
                   <Avatar project={projectOf(row.thread!.projectId)} className="size-3.5" />
@@ -401,7 +410,7 @@ function UnifiedActivity({ demands, coarse, current, mode, openThread, onOpenThr
         })}
       </ul>
       {!coarse && hiddenDemands + hiddenSessions > 0 ? (
-        <button type="button" className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint hover:bg-surface-high hover:text-ink', h(coarse))}>
+        <button type="button" onClick={() => activityBus.open()} className={cx('flex w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint hover:bg-surface-high hover:text-ink', h(coarse))}>
           <Activity size={14} className="shrink-0" />
           <span>
             +{' '}

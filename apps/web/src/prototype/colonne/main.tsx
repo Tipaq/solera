@@ -11,7 +11,8 @@ import { createRoot } from 'react-dom/client'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cx, TooltipProvider, UiLabelsProvider } from '@solera/ui'
 import '../../styles/index.css'
-import { Column, type CurrentProject, type Mode, type Variant } from './Column'
+import { activityBus, Column, type CurrentProject, type Mode, type Variant } from './Column'
+import { ActivityModal } from './ActivityModal'
 import { DEMANDS, SCENARIOS, threadOf, type Scenario } from './data'
 
 const VARIANTS: { id: Variant; name: string; tranche: string }[] = [
@@ -79,7 +80,15 @@ function Prototype() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
-  const demands = DEMANDS[state]
+  // Une demande tranchée dans la modale quitte la colonne aussi : c'est le parcours entier.
+  const [answered, setAnswered] = useState<string[]>([])
+  useEffect(() => setAnswered([]), [state])
+  const demands = DEMANDS[state].filter((demand) => !answered.includes(demand.id))
+  const [modal, setModal] = useState<{ open: boolean; focus?: string }>(() => {
+    const focus = new URLSearchParams(location.search).get('focus') ?? undefined
+    return { open: new URLSearchParams(location.search).get('modal') === 'open' || focus !== undefined, focus }
+  })
+  activityBus.open = (focus) => setModal({ open: true, focus })
   const info = VARIANTS.find((entry) => entry.id === variant)!
   // Le projet suit la conversation ouverte : en ouvrir une d'ailleurs ramène la colonne.
   const open = (id: string) => {
@@ -133,6 +142,17 @@ function Prototype() {
           </main>
         </>
       )}
+
+      <ActivityModal
+        open={modal.open}
+        focus={modal.focus}
+        onOpenChange={(open) => setModal((previous) => ({ ...previous, open }))}
+        demands={demands}
+        onAnswer={(id) => setAnswered((previous) => [...previous, id])}
+        onOpenThread={open}
+        current={current}
+        projectMode={mode === 'project'}
+      />
 
       {bar === 'on' ? (
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-2xl bg-black/90 px-3 py-2 text-white shadow-pop ring-1 ring-white/20">
