@@ -8,7 +8,7 @@ import type {
   PullRequestBadgeState,
   PullRequestReviewState,
 } from '@solera/protocol'
-import type { LandedPullRequest } from '../worktrees/assess.js'
+import type { MergedPullRequest, MergedPullRequestSource } from '../worktrees/landed.js'
 
 const run = promisify(execFile)
 
@@ -135,49 +135,18 @@ export function pullRequestsByBranch(
 
 const rank = (pr: ProjectPullRequestDto) => (pr.state === 'merged' ? 0 : 1)
 
-/** Une PR fusionnée, réduite à ce qui juge une branche. */
-export interface MergedPullRequest {
-  number: number
-  branch: string
-  base: string
-  /** Le commit fusionné. */
-  head: string
-}
-
-/**
- * Les PR fusionnées dont le contenu est arrivé dans `base`, par branche : celles qui
- * visaient la base, et celles qui visaient une branche elle-même fusionnée dans la base
- * par une PR (la branche d'un jalon, #68), de proche en proche.
- *
- * `base` peut être `origin/main` quand la branche locale manque : la forge, elle, dit
- * `main`.
- */
-export function landedPullRequests(merged: readonly MergedPullRequest[], base: string): Map<string, LandedPullRequest[]> {
-  const landed = new Set([base.replace(/^origin\//, '')])
-  for (let grew = true; grew; ) {
-    grew = false
-    for (const pr of merged) {
-      if (landed.has(pr.base) && !landed.has(pr.branch)) {
-        landed.add(pr.branch)
-        grew = true
-      }
-    }
-  }
-  const byBranch = new Map<string, LandedPullRequest[]>()
-  for (const pr of merged) {
-    if (!landed.has(pr.base)) continue
-    byBranch.set(pr.branch, [...(byBranch.get(pr.branch) ?? []), { number: pr.number, head: pr.head }])
-  }
-  return byBranch
-}
-
-/** Les PR fusionnées d'un projet ; null quand la forge n'a pas répondu. */
-export type MergedPullRequestSource = (project: ProjectRow) => Promise<MergedPullRequest[] | null>
-
 function mergedOf(raw: RawPullRequest[]): MergedPullRequest[] {
   return raw.flatMap((pr) =>
     pr.state === 'MERGED' && pr.headRefName && pr.headRefOid
-      ? [{ number: pr.number, branch: pr.headRefName, base: pr.baseRefName, head: pr.headRefOid }]
+      ? [
+          {
+            number: pr.number,
+            branch: pr.headRefName,
+            base: pr.baseRefName,
+            head: pr.headRefOid,
+            mergedAt: Date.parse(pr.mergedAt ?? '') || 0,
+          },
+        ]
       : [],
   )
 }

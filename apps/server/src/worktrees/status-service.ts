@@ -2,9 +2,9 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { landedPullRequests, type MergedPullRequestSource } from '../reviews/pull-requests.js'
 import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches } from './assess.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
+import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.

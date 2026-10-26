@@ -8,7 +8,9 @@ import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import { EventLog } from '../src/events/event-log.js'
-import { ProjectPullRequests, landedPullRequests, type RawPullRequest } from '../src/reviews/pull-requests.js'
+import { ProjectPullRequests, type RawPullRequest } from '../src/reviews/pull-requests.js'
+import { assessWorktree, listWorktrees } from '../src/worktrees/assess.js'
+import { landedPullRequests } from '../src/worktrees/landed.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
@@ -115,7 +117,7 @@ function setup(t: TestContext) {
     pr(3, 'feat/closed', 'CLOSED', closed.head),
     pr(4, 'feat/loose', 'MERGED', loose.head),
   ]
-  return { db, project, forge, paths: { squashed: squashed.path, later: later.path, closed: closed.path, orphan: orphan.path } }
+  return { repo, db, project, forge, paths: { squashed: squashed.path, later: later.path, closed: closed.path, orphan: orphan.path } }
 }
 
 test('une PR fusionnée par squash rend la branche fusionnée, même après que la base a avancé', async (t) => {
@@ -151,13 +153,41 @@ test('sans forge, le contenu juge seul : le squash rattrapé par la base reste �
   }
 })
 
-test("une PR fusionnée dans la branche d'un jalon compte quand le jalon est fusionné dans la base", () => {
+test("une PR fusionnée dans la branche d'un jalon compte si le jalon est fusionné dans la base après elle", () => {
   const merged = [
-    { number: 1, branch: 'feat/a', base: 'jalon/x', head: 'a' },
-    { number: 2, branch: 'jalon/x', base: 'main', head: 'x' },
-    { number: 3, branch: 'feat/b', base: 'jalon/y', head: 'b' },
+    { number: 1, branch: 'feat/a', base: 'jalon/x', head: 'a', mergedAt: 10 },
+    { number: 2, branch: 'jalon/x', base: 'main', head: 'x', mergedAt: 20 },
+    // Fusionnée dans le jalon après sa fusion dans main : elle attend la suivante.
+    { number: 3, branch: 'feat/late', base: 'jalon/x', head: 'l', mergedAt: 30 },
+    { number: 4, branch: 'feat/b', base: 'jalon/y', head: 'b', mergedAt: 10 },
+    // De proche en proche : une sous-branche du jalon, fusionnée avant lui.
+    { number: 5, branch: 'feat/a-1', base: 'feat/a', head: 'a1', mergedAt: 5 },
   ]
   const landed = landedPullRequests(merged, 'origin/main')
-  assert.deepEqual([...landed.keys()].sort(), ['feat/a', 'jalon/x'])
+  assert.deepEqual([...landed.keys()].sort(), ['feat/a', 'feat/a-1', 'jalon/x'])
   assert.deepEqual(landed.get('feat/a'), [{ number: 1, head: 'a' }])
+})
+
+test('du non commité sur une branche fusionnée par PR, et un commit de PR que le dépôt ne connaît pas', async (t) => {
+  const { repo, paths, forge } = setup(t)
+  const entry = (await listWorktrees(repo)).find((e) => e.path === paths.squashed)!
+  const landed = [{ number: 1, head: forge[0]!.headRefOid! }]
+
+  // Le non commité que la base a déjà : toujours fusionné.
+  write(paths.squashed, 'src/app.ts', 'export const app = 7\n')
+  let result = await assessWorktree(repo, 'main', entry, { landed })
+  assert.deepEqual([result.state, result.mergedPullRequest], ['merged', 1])
+  // Du vrai travail par-dessus : non commité, la PR n'y change rien.
+  write(paths.squashed, 'src/app.ts', 'export const app = 8\n')
+  result = await assessWorktree(repo, 'main', entry, { landed })
+  assert.equal(result.state, 'dirty')
+  // Sans `--merge-base`, le non commité ne se juge pas, mais ne dit pas de conflit inventé.
+  write(paths.squashed, 'src/app.ts', 'export const app = 7\n')
+  result = await assessWorktree(repo, 'main', entry, { landed, legacyGit: true })
+  assert.deepEqual([result.state, result.conflicts], ['dirty', false])
+
+  // Un commit fusionné qui n'est pas dans le dépôt ne prouve rien.
+  git(paths.squashed, 'checkout', '--', '.')
+  result = await assessWorktree(repo, 'main', entry, { landed: [{ number: 1, head: '0'.repeat(40) }] })
+  assert.deepEqual([result.state, result.mergedPullRequest], ['unmerged', null])
 })

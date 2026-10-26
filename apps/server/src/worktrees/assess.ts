@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
 import type { WorktreeState } from '@solera/protocol'
+import type { LandedPullRequest } from './landed.js'
 
 /**
  * L'avancement d'un worktree par rapport à la branche par défaut du dépôt.
@@ -177,12 +178,6 @@ export interface WorktreeAssessment {
   mergedPullRequest: number | null
   lastCommitAt: number | null
   lastEditAt: number | null
-}
-
-/** Une PR fusionnée dans la base, et le commit de tête qu'elle a porté. */
-export interface LandedPullRequest {
-  number: number
-  head: string
 }
 
 const MISSING: WorktreeAssessment = {
@@ -374,10 +369,11 @@ export async function assessWorktree(
       // Sans `--merge-base`, fusionner le stash emporte aussi les commits de la branche :
       // la réponse ne juge le non commité que si ces commits sont déjà dans la base.
       // Sinon il compte comme du travail à garder, ce qu'il est au moins en partie, et
-      // l'arbre n'est jamais dit fusionné à tort.
+      // l'arbre n'est jamais dit fusionné à tort. Des commits livrés par une PR, eux, ne
+      // sont dans la base qu'en substance : les emporter dirait un conflit qui n'en est pas un.
       const merged = modern
         ? await mergedTree(repo, base, stash, entry.head)
-        : commitsInBase
+        : commitsInBase && mergedPullRequest === null
           ? await mergedTree(repo, base, stash)
           : null
       trackedInBase = merged !== null && !merged.conflicts && merged.tree === baseTree
