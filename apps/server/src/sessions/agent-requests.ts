@@ -141,6 +141,18 @@ const POLL_MS = 500
 const STALE_MS = 5 * 60 * 1000
 
 /**
+ * Les genres qui, une fois déposés, attendent le clic d'une personne : leur ligne reste
+ * ouverte (`resolved_at` nul) après la réponse rendue à l'agent, et c'est elle qui
+ * porte l'invariant « une seule en attente à la fois ».
+ */
+const AWAITS_CLICK = new Set<AgentRequestRow['kind']>([
+  'move_conversation',
+  'request_card_change',
+  'propose_cards',
+  'request_decision',
+])
+
+/**
  * Profondeur maximale d'une chaîne de lancements : l'utilisateur ouvre une session, qui
  * en lance une, qui peut en lancer une dernière. Au-delà, chaque étage s'éloigne d'une
  * personne qui regarde, et c'est ainsi qu'un essaim se forme sans que personne l'ait voulu.
@@ -389,6 +401,10 @@ export class AgentRequests {
 
       for (const request of pending) {
         if (request.createdAt < Date.now() - STALE_MS) {
+          // Une demande qui attend un clic se ferme aussi : sans `resolved_at`, elle
+          // tiendrait pour toujours la place de l'unique demande en attente de la
+          // conversation, sans jamais apparaître nulle part (#119).
+          if (AWAITS_CLICK.has(request.kind)) this.closeFiling(request.id)
           this.settle(request, "Demande expirée : Solera ne l'a pas traitée à temps.", true)
           continue
         }
@@ -526,14 +542,7 @@ export class AgentRequests {
       }
       // Un rangement refusé d'entrée n'attend plus rien : sans cette clôture il tiendrait
       // indéfiniment la place de l'unique demande en attente de la conversation.
-      if (
-        request.kind === 'move_conversation' ||
-        request.kind === 'request_card_change' ||
-        request.kind === 'propose_cards' ||
-        request.kind === 'request_decision'
-      ) {
-        this.closeFiling(request.id)
-      }
+      if (AWAITS_CLICK.has(request.kind)) this.closeFiling(request.id)
       this.settle(request, describeHttpError(err), true)
     }
   }
