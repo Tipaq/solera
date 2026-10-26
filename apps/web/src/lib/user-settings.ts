@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { resolveAgentConfig } from '@solera/protocol'
 import type {
   AgentConfig,
   AgentKind,
+  ConfigLayer,
   BoardOrder,
   NotificationPrefs,
   OnboardingState,
@@ -19,6 +21,22 @@ export function useUserSettings(enabled = true) {
     queryFn: () => api.get<UserSettingsDto>('/api/me/settings'),
     enabled,
   })
+}
+
+/**
+ * Ce qu'un fil de ce CLI reçoit avant d'avoir rien changé : les défauts du protocole, le
+ * compte, puis le projet, champ par champ (#120). Le serveur fait le même calcul ; celui-ci
+ * sert aux brouillons, qui n'ont pas encore de conversation.
+ */
+export function inheritedConfigFor(
+  agent: AgentKind,
+  settings: UserSettingsDto | undefined,
+  project?: { configLayer: ConfigLayer } | null,
+): AgentConfig {
+  const layers: ConfigLayer[] = []
+  if (settings) layers.push(settings.agentLayer)
+  if (project) layers.push(project.configLayer)
+  return resolveAgentConfig(agent, layers)
 }
 
 /** Le défaut d'un CLI, remplacé en bloc : la route ne fusionne pas champ par champ. */

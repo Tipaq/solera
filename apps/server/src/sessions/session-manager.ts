@@ -12,6 +12,8 @@ import {
   type Db,
 } from '@solera/db'
 import {
+  allowsRequest,
+  diffAgentConfig,
   parseAgentConfig,
   RESUMES_FROM_OTHER_DIRECTORY,
   type AgentConfig,
@@ -73,6 +75,7 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
 import { linkedWorktreePaths } from '../worktrees/linked.js'
+import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
 interface QueuedMessage {
@@ -1001,9 +1004,12 @@ export class SessionManager {
           // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
           // trois outils `*_memory` de son catalogue.
           memoryDir: memoryDir(current) ?? '',
-          projectFiling: this.config.mcp.projectFiling && current.projectFiling,
-          cardFiling: this.config.mcp.cardFiling && current.cardFiling,
-          decisions: this.config.mcp.decisions && current.decisions,
+          // Trois états depuis #120 : l'outil existe dès que la demande n'est pas
+          // interdite, qu'elle attende un clic ou s'applique d'elle-même.
+          projectFiling: this.config.mcp.projectFiling && allowsRequest(current.projectFiling),
+          cardFiling: this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
+          decisions: this.config.mcp.decisions && allowsRequest(current.decisions),
+          proposeCards: conversation.purpose === 'split' || allowsRequest(current.proposeCards),
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
@@ -1059,7 +1065,7 @@ export class SessionManager {
                 projectId,
                 conversationId,
                 soleraMcp,
-                cardFiling: soleraMcp && this.config.mcp.cardFiling && current.cardFiling,
+                cardFiling: soleraMcp && this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
                 prototypesDir,
               })
             : null,
@@ -1158,10 +1164,15 @@ export class SessionManager {
           .run()
       },
 
+      // Le CLI a changé un réglage de lui-même (sortie du mode plan, par exemple) : c'est
+      // un changement de ce fil, retenu comme tel pour que la relance ne le défasse pas.
       updateConfig: (config) => {
+        const row = this.loadConversation(conversationId)
+        const changed = diffAgentConfig(config, parseAgentConfig(row.config)) as Record<string, unknown>
+        const overrides = patchOverrides(this.db, row, { set: changed })
         this.db
           .update(conversations)
-          .set({ config: JSON.stringify(config) })
+          .set({ config: JSON.stringify(config), configOverrides: JSON.stringify(overrides) })
           .where(eq(conversations.id, conversationId))
           .run()
       },
@@ -1258,7 +1269,9 @@ export class SessionManager {
 
   private async startRunner(conversationId: string): Promise<AgentRunner> {
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
-    const fresh = this.loadConversation(conversationId)
+    // La configuration est recalculée de ses niveaux à chaque lancement : c'est là qu'un
+    // défaut changé au compte ou au projet rejoint le fil (#120, Q10).
+    const fresh = await refreshConversationConfig(this.db, this.registry, this.loadConversation(conversationId))
     // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
     this.refuseMissingCwd(fresh)
     await this.makeRoom()
@@ -1853,6 +1866,22 @@ export class SessionManager {
 
     // Écriture conditionnelle : le résumé a pu arriver après un renommage.
     adoptSessionTitle(this.db, this.statusBus, conversationId, title, 'cli')
+  }
+
+  /**
+   * Remplace les sentinelles `CLI_DEFAULT` d'une configuration par ce que son CLI annonce.
+   * Un catalogue injoignable la laisse telle quelle : la relance réessaiera.
+   */
+  async resolveDefaults(config: AgentConfig): Promise<AgentConfig> {
+    return this.registry.adapter(config.agent).resolveDefaults(config).catch(() => config)
+  }
+
+  /**
+   * Recalcule la configuration d'un fil depuis ses niveaux (#120) et l'écrit si elle a
+   * bougé. Le runner vivant n'est pas touché : il la reprendra à sa relance.
+   */
+  async refreshConfig(conversationId: string): Promise<ConversationRow> {
+    return refreshConversationConfig(this.db, this.registry, this.loadConversation(conversationId))
   }
 
   /**

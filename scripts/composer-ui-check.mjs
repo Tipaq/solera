@@ -109,7 +109,8 @@ async function mount(page) {
         key: id, config: settings.config, draftKey: `composer-test-${id}`, status, disabled,
         commands: [{ name: '/compact', description: 'Déclarée par le CLI' }], skills: [], mcpInventory: [{ name: 'CLI externe', external: true, tools: [{ name: 'read' }] }],
         appliedConfig: data?.config.agent === 'claude' ? { ...data.config, permissionMode: 'manual' } : null,
-        onConfigChange: settings.change, configError: settings.error?.message, onConfigRetry: settings.retry,
+        onConfigChange: settings.change, configOverrides: settings.overrides, onConfigReset: settings.reset,
+        configError: settings.error?.message, onConfigRetry: settings.retry,
         // La modale du contexte change d'axe selon le CLI : Claude découpe la fenêtre
         // par catégorie, Codex ne sait parler que de la nature des jetons.
         context: id === 'claude' ? window.claudeContext : window.codexContext,
@@ -140,6 +141,9 @@ try {
     page.on('pageerror', (error) => errors.push(error.message))
     const stored = structuredClone(initial)
     const patches = []
+    // Ce que chaque fil change à son héritage (#120) : le fil Codex a changé ses approbations.
+    const overrides = { codex: { askForApproval: 'on-request' }, claude: {} }
+    const resets = []
     const messages = []
     let hold = null
     let failNext = false
@@ -160,7 +164,13 @@ try {
         return route.fulfill({ json: { ok: true } })
       }
       if (path.startsWith('/api/conversations/')) {
-        if (request.method() === 'GET') return route.fulfill({ json: { id, config: stored[id] } })
+        if (request.method() === 'GET') return route.fulfill({ json: { id, config: stored[id], configOverrides: overrides[id] ?? {} } })
+        if (request.method() === 'PATCH' && request.postDataJSON().overrides) {
+          const { unset } = request.postDataJSON().overrides
+          resets.push(unset)
+          for (const field of unset) delete overrides[id][field]
+          return route.fulfill({ json: { ok: true } })
+        }
         if (request.method() === 'PATCH') {
           const config = request.postDataJSON().config
           patches.push(config)
@@ -585,6 +595,14 @@ try {
         await page.keyboard.press('Escape')
         await page.keyboard.press('Escape')
         await page.keyboard.press('Escape')
+        await page.getByRole('menu').first().waitFor({ state: 'hidden' })
+        // Un réglage changé dans ce fil porte sa marque, et revient à l'héritage d'un clic.
+        await plus.click()
+        await page.getByRole('menuitem', { name: /^Réglages de la session/ }).click()
+        await page.getByRole('menuitem', { name: /^Approbations/ }).click()
+        await page.getByRole('menuitem', { name: 'Revenir au réglage hérité' }).click()
+        await page.evaluate(() => window.settings.flush())
+        assert.deepEqual(resets, [['askForApproval']])
         await page.getByRole('menu').first().waitFor({ state: 'hidden' })
       }
       // Au doigt, la vue d'un réglage tient le focus et suit le viewport visuel.

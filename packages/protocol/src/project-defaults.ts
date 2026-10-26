@@ -5,84 +5,95 @@ import {
   codexConfigSchema,
   opencodeConfigSchema,
   grokConfigSchema,
-  type ClaudeConfig,
-  type CodexConfig,
-  type OpencodeConfig,
-  type GrokConfig,
+  DEFAULT_CONFIGS,
+  type AgentConfig,
 } from './agent-config.js'
+import {
+  EMPTY_CONFIG_LAYER,
+  isEmptyLayer,
+  layerFromFullConfigs,
+  readConfigLayer,
+  type ConfigLayer,
+} from './config-layers.js'
 
 /**
- * Préréglages d'un projet : avec quoi ses conversations s'ouvrent, avant les défauts
- * du compte.
+ * Le niveau d'un projet : ce que ses conversations changent aux défauts du compte de
+ * chacun, champ par champ (#120).
  *
- * Réglage partagé et non personnel, à la différence de `AgentDefaults` : il décrit le
- * projet, pas celui qui le lit. Les serveurs MCP utiles à un dépôt le sont pour tout
- * le monde, et les répertoires supplémentaires — retirés des défauts de compte parce
- * qu'ils désignent des dossiers précis — retrouvent ici le seul endroit où ils ont un
- * sens. Seul le propriétaire du projet peut les écrire.
+ * Réglage partagé et non personnel : il décrit le projet, pas celui qui le lit. Les
+ * serveurs MCP utiles à un dépôt le sont pour tout le monde, et les répertoires
+ * supplémentaires — qui désignent des dossiers précis — trouvent ici le seul endroit où
+ * ils ont un sens. Seul le propriétaire du projet peut l'écrire.
  *
- * Un préréglage par CLI, comme pour le compte, et pour la même raison : les garde-fous
- * de Claude et ceux de Codex ne se traduisent pas les uns dans les autres. `null`
- * signifie « ce projet ne dit rien de ce CLI », et les défauts du compte reprennent la
- * main — ce n'est pas la même chose qu'un préréglage vide.
+ * Un champ absent est hérité du compte de la personne qui ouvre la conversation. Deux
+ * membres d'un projet partagé ont donc les mêmes réglages là où le projet en a posé, et
+ * chacun les siens ailleurs.
  */
-export interface ProjectAgentDefaults {
-  claude: ClaudeConfig | null
-  codex: CodexConfig | null
-  opencode: OpencodeConfig | null
-  grok: GrokConfig | null
-}
+export type ProjectConfigLayer = ConfigLayer
 
-export const NO_PROJECT_DEFAULTS: ProjectAgentDefaults = {
-  claude: null,
-  codex: null,
-  opencode: null,
-  grok: null,
-}
+/** Les configurations complètes d'avant l'héritage, un CLI par clé. */
+export type LegacyProjectConfigs = Partial<Record<AgentConfig['agent'], AgentConfig>>
+
+const legacyProjectDefaultsSchema = z.object({
+  claude: claudeConfigSchema.nullable().default(null).catch(null),
+  codex: codexConfigSchema.nullable().default(null).catch(null),
+  opencode: opencodeConfigSchema.nullable().default(null).catch(null),
+  grok: grokConfigSchema.nullable().default(null).catch(null),
+})
 
 /**
- * Tolérant comme celui des réglages de compte : un CLI dont la configuration a dérivé
- * du protocole retombe sur « rien de dit », plutôt que de rendre le projet illisible.
- */
-export const projectAgentDefaultsSchema = z
-  .object({
-    claude: claudeConfigSchema.nullable().default(null).catch(null),
-    codex: codexConfigSchema.nullable().default(null).catch(null),
-    opencode: opencodeConfigSchema.nullable().default(null).catch(null),
-    grok: grokConfigSchema.nullable().default(null).catch(null),
-  })
-  .catch(NO_PROJECT_DEFAULTS)
-
-/**
- * Relit la colonne `projects.default_config`.
+ * Lit la colonne `projects.default_config` quand elle est encore dans une forme d'avant
+ * l'héritage : une configuration complète par CLI, ou une seule configuration sans le CLI
+ * en clé. `null` quand la colonne est vide ou déjà un niveau.
  *
- * La forme d'avant les préréglages par CLI y est encore possible : une configuration
- * seule, sans le CLI en clé. Elle se range sous le CLI que porte son discriminant,
- * plutôt que d'être silencieusement perdue à la première lecture.
+ * Utilisée par la migration, qui retient ce qui diffère du compte du propriétaire.
  */
-export function readProjectDefaults(raw: string | null | undefined): ProjectAgentDefaults {
-  if (!raw) return NO_PROJECT_DEFAULTS
-
+export function readLegacyProjectConfigs(raw: string | null | undefined): LegacyProjectConfigs | null {
+  if (!raw) return null
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return NO_PROJECT_DEFAULTS
+    return null
   }
+  if (!parsed || typeof parsed !== 'object' || 'shared' in parsed) return null
 
-  const legacy = agentConfigSchema.safeParse(parsed)
-  if (legacy.success) return { ...NO_PROJECT_DEFAULTS, [legacy.data.agent]: legacy.data }
+  const single = agentConfigSchema.safeParse(parsed)
+  if (single.success) return { [single.data.agent]: single.data }
 
-  return projectAgentDefaultsSchema.parse(parsed)
+  const perAgent = legacyProjectDefaultsSchema.safeParse(parsed)
+  if (!perAgent.success) return null
+  const result: LegacyProjectConfigs = {}
+  for (const [agent, config] of Object.entries(perAgent.data)) {
+    if (config) (result as Record<string, AgentConfig>)[agent] = config
+  }
+  return result
 }
 
 /**
- * Ce qui doit être écrit en colonne pour un préréglage remplacé.
+ * Relit la colonne `projects.default_config`.
  *
- * `null` quand plus aucun CLI n'a de préréglage : la colonne retrouve son état de
- * projet neuf, et rien ne distingue « vidé » de « jamais réglé ».
+ * Une forme d'avant l'héritage ne devrait plus s'y trouver après la migration du
+ * démarrage. Si elle s'y trouve quand même, elle se lit sans rien perdre : chaque champ
+ * qui diffère du défaut du protocole est retenu.
  */
-export function serializeProjectDefaults(defaults: ProjectAgentDefaults): string | null {
-  if (!defaults.claude && !defaults.codex && !defaults.opencode && !defaults.grok) return null
-  return JSON.stringify(defaults)
+export function readProjectLayer(raw: string | null | undefined): ProjectConfigLayer {
+  if (!raw) return EMPTY_CONFIG_LAYER
+  const legacy = readLegacyProjectConfigs(raw)
+  if (legacy) return layerFromFullConfigs(legacy, (agent) => DEFAULT_CONFIGS[agent])
+  try {
+    return readConfigLayer(JSON.parse(raw))
+  } catch {
+    return EMPTY_CONFIG_LAYER
+  }
+}
+
+/**
+ * Ce qui doit être écrit en colonne pour un niveau remplacé.
+ *
+ * `null` quand le projet ne change plus rien : la colonne retrouve son état de projet
+ * neuf, et rien ne distingue « vidé » de « jamais réglé ».
+ */
+export function serializeProjectLayer(layer: ProjectConfigLayer): string | null {
+  return isEmptyLayer(layer) ? null : JSON.stringify(layer)
 }

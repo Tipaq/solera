@@ -11,7 +11,6 @@ import {
   MAX_SCHEDULE_PROMPT_CHARS,
   MIN_SCHEDULE_DURATION_MINUTES,
   agentKindSchema,
-  defaultConfigFor,
   nextScheduleRun,
   scheduleCadenceSchema,
   type AgentConfig,
@@ -29,7 +28,7 @@ import { CheckSection } from './CheckSection'
 import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
-import { useUserSettings } from '../../lib/user-settings'
+import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 
 /**
  * Création et modification d'une tâche planifiée.
@@ -106,10 +105,9 @@ export function ScheduleDialog({
   }
   const [checkTimeout, setCheckTimeout] = useState(String(task?.check?.timeoutSeconds ?? DEFAULT_CHECK_TIMEOUT_SECONDS))
 
-  // Même ordre que pour une conversation neuve : le préréglage du projet, puis les
-  // défauts du compte. Une configuration d'un autre CLI est abandonnée, pas convertie.
-  const defaults =
-    project.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
+  // Ce qu'une conversation neuve du projet hérite, champ par champ. Une configuration
+  // d'un autre CLI est abandonnée, pas convertie.
+  const defaults = inheritedConfigFor(agent, userSettings, project)
   const config = edited?.agent === agent ? edited : defaults
   const { groups, catalogError } = useAgentSettings({ config, onConfigChange: setEdited })
 

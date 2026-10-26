@@ -107,6 +107,11 @@ export interface FilingItem {
   status: 'pending' | 'accepted' | 'refused' | 'impossible'
   /** Code du motif d'un `impossible`, traduit à l'affichage. Null partout ailleurs. */
   reason: string | null
+  /**
+   * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
+   * aucun bouton.
+   */
+  automatic?: boolean
 }
 
 /**
@@ -140,6 +145,11 @@ export interface CardFilingItem {
   applied: number[] | null
   /** Ce que les clôtures accordées ont fait (#69) ; vide tant que la demande attend. */
   closed: CardCloseOutcome[]
+  /**
+   * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
+   * aucun bouton.
+   */
+  automatic?: boolean
 }
 
 /**
@@ -159,6 +169,11 @@ export interface CardDraftItem {
   parent: CardDraftRef | null
   /** Les cartes créées, vides tant que rien ne l'est. */
   created: CardDraftCreated[]
+  /**
+   * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
+   * aucun bouton.
+   */
+  automatic?: boolean
 }
 
 /**
@@ -178,6 +193,11 @@ export interface DecisionItem {
   status: 'pending' | 'user' | 'default' | 'expired' | 'withdrawn'
   option: string | null
   text: string | null
+  /**
+   * Appliquée d'office par le réglage « Automatique » (#120) : le fil le dit, et n'offre
+   * aucun bouton.
+   */
+  automatic?: boolean
 }
 
 /** Une question posée par l'agent, en attente ou déjà tranchée. */
@@ -1094,6 +1114,7 @@ export function applyEvent(
         resumable: event.resumable,
         status: 'pending',
         reason: null,
+        automatic: event.automatic === true,
       })
       break
     }
@@ -1108,6 +1129,7 @@ export function applyEvent(
           ...(state.items[index] as FilingItem),
           status: event.decision,
           reason: event.reason ?? null,
+          automatic: (state.items[index] as FilingItem).automatic || event.automatic === true,
         })
       }
       break
@@ -1123,6 +1145,7 @@ export function applyEvent(
         moved: [],
         applied: null,
         closed: [],
+        automatic: false,
       })
       break
     }
@@ -1140,6 +1163,7 @@ export function applyEvent(
           moved: event.moved,
           applied: event.applied ?? null,
           closed: event.closed ?? [],
+          automatic: event.automatic === true,
         })
       }
       break
@@ -1154,6 +1178,7 @@ export function applyEvent(
         reason: null,
         parent: null,
         created: [],
+        automatic: false,
       })
       break
     }
@@ -1168,6 +1193,7 @@ export function applyEvent(
           reason: event.reason ?? null,
           parent: event.parent,
           created: event.created,
+          automatic: event.automatic === true,
         })
       }
       break
@@ -1184,6 +1210,7 @@ export function applyEvent(
         status: 'pending',
         option: null,
         text: null,
+        automatic: false,
       })
       break
     }
@@ -1199,6 +1226,7 @@ export function applyEvent(
           status: event.by,
           option: event.option,
           text: event.text,
+          automatic: event.automatic === true,
         })
       }
       break

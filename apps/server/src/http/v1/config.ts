@@ -2,9 +2,10 @@ import type { ApiTokenRow, ProjectRow } from '@solera/db'
 import {
   isPermissiveConfig,
   mergeAgentConfig,
-  readProjectDefaults,
+  readProjectLayer,
+  resolveAgentConfig,
+  type ConfigLayer,
   type AgentConfig,
-  type AgentDefaults,
   type AgentKind,
   type CreateTaskBody,
 } from '@solera/protocol'
@@ -24,10 +25,10 @@ export async function resolveTaskConfig(
   token: ApiTokenRow,
   project: ProjectRow,
   body: CreateTaskBody,
-  defaults: AgentDefaults,
+  account: ConfigLayer,
 ): Promise<{ agent: AgentKind; config: AgentConfig }> {
   const agent = body.agent ?? token.agent
-  const base = baseConfigFor(agent, token, project, defaults)
+  const base = baseConfigFor(agent, token, account, readProjectLayer(project.defaultConfig))
 
   let merged: AgentConfig
   let rejected: string[]
@@ -70,19 +71,19 @@ export async function resolveTaskConfig(
 /**
  * Le socle sur lequel la surcharge s'applique.
  *
- * Les configurations ne se fusionnent pas entre elles : chaque niveau est complet, et
- * le premier qui parle du bon CLI l'emporte. Empiler un réglage Claude sur un réglage
- * Codex ne voudrait rien dire.
+ * La configuration du jeton est complète, choisie dans un formulaire pour son CLI : elle
+ * l'emporte telle quelle. Une tâche qui vise un autre CLI hérite du compte puis du projet,
+ * champ par champ, comme une conversation ouverte dans l'interface (#120).
  */
 function baseConfigFor(
   agent: AgentKind,
   token: ApiTokenRow,
-  project: ProjectRow,
-  defaults: AgentDefaults,
+  account: ConfigLayer,
+  projectLayer: ConfigLayer,
 ): AgentConfig {
   if (agent === token.agent) return JSON.parse(token.config) as AgentConfig
 
-  return readProjectDefaults(project.defaultConfig)[agent] ?? defaults[agent]
+  return resolveAgentConfig(agent, [account, projectLayer])
 }
 
 /**

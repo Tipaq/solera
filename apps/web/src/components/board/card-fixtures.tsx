@@ -88,7 +88,7 @@ const NOTES: CardNoteDto[] = [{
 const PROJECT = {
   id: PROJECT_ID, name: 'Solera', image: null, workspacePath: '/srv/solera', ownerId: 'u1', ownerName: 'Tim',
   visibility: 'private', color: null, isOwner: true, position: 0, archivedAt: null, createdAt: now - 60 * DAY,
-  conversationCount: 12, defaultConfig: {}, instructionsMode: null, activeTerminals: 0, git: null,
+  conversationCount: 12, configLayer: { shared: {}, claude: {}, codex: {}, opencode: {}, grok: {} }, instructionsMode: null, activeTerminals: 0, git: null,
 } as unknown as ProjectDto
 
 /** Pose le board de démonstration dans le cache avant le premier rendu de la story. */

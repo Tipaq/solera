@@ -281,7 +281,7 @@ test('décisions : refusées par l’instance, sans le drapeau, en fil libre, et
 
   const refused = await ask(PLAIN, { question: 'On pousse ?' })
   assert.equal(refused.isError, true)
-  assert.match(refused.result ?? '', /pas accordées/)
+  assert.match(refused.result ?? '', /sont interdites/)
   assert.ok(refused.resolvedAt, 'Un refus ne tient pas la place de la demande en attente')
 
   const free = await ask(FREE, { question: 'On pousse ?' }, null)

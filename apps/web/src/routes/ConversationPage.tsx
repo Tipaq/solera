@@ -248,7 +248,7 @@ export function ConversationPage() {
   // nouveau champ récupère ainsi ses valeurs par défaut au lieu d'arriver trouée.
   // Déclaré ici et non après les retours anticipés, où il vivait : la rangée de signaux
   // en a besoin, et un hook ne peut pas se déclarer plus bas.
-  const { config, error: configError, change: updateConfig, retry: retryConfig, flush: flushConfig } = useConversationConfig(conversation)
+  const { config, overrides: configOverrides, error: configError, change: updateConfig, reset: resetConfig, retry: retryConfig, flush: flushConfig } = useConversationConfig(conversation)
   // Le catalogue décrit la connexion du CLI ; une conversation sur une clé API d'un
   // compte supplémentaire est, elle, facturée à l'usage, et le montant y a un sens.
   const { data: claudeAccounts } = useClaudeAccounts(conversation?.agent === 'claude')
@@ -1432,6 +1432,8 @@ export function ConversationPage() {
             onCommand={runCommand}
             onInterrupt={() => void interruptConversation(conversationId)}
             onConfigChange={updateConfig}
+            configOverrides={configOverrides}
+            onConfigReset={resetConfig}
             configError={configError?.message}
             onConfigRetry={retryConfig}
             mcpInventory={stream.state.mcp}

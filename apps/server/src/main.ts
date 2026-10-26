@@ -45,6 +45,7 @@ import { TerminalManager } from './terminals/terminal-manager.js'
 import { linkedDesignSystems, prototypesRoot, StorybookSupervisor } from './design-system/storybooks.js'
 import { VaultIndex } from './vault/index-service.js'
 import { backfillCommandPaths } from './worktrees/backfill.js'
+import { backfillConfigLayers } from './conversations/config-backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
@@ -59,6 +60,8 @@ async function main(): Promise<void> {
   const { db, sqlite } = openDatabase(config.paths.database)
   runPendingMigrations(db, migrationsFolder())
   backfillCommandPaths(db)
+  // L'héritage vivant (#120) : les copies complètes deviennent des écarts, sans perte.
+  backfillConfigLayers(db)
   await purgeExpiredSessions(db)
   purgeIdempotencyKeys(db)
 

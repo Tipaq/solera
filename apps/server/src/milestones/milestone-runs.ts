@@ -19,9 +19,7 @@ import {
 } from '@solera/db'
 import {
   cardBranchName,
-  defaultConfigFor,
   parseAgentConfig,
-  readProjectDefaults,
   MILESTONE_BUSY_STATUSES,
   type AgentConfig,
   type ConversationStatus,
@@ -44,7 +42,7 @@ import type { AppContext } from '../http/context.js'
 import { badRequest, conflict } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
-import { readUserSettings } from '../settings/user-settings.js'
+import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { createWorktree } from '../worktrees/create.js'
 import { deriveStatus, layerCards, type DerivedStatus } from './graph.js'
 
@@ -676,11 +674,7 @@ export class MilestoneRuns {
 
   /** La configuration d'une session neuve dans ce projet : celle du projet, puis du compte. */
   private defaultConfig(project: ProjectRow, userId: string): AgentConfig {
-    return (
-      readProjectDefaults(project.defaultConfig).claude ??
-      readUserSettings(this.ctx.db, userId).agentDefaults.claude ??
-      defaultConfigFor('claude')
-    )
+    return inheritedConfig(this.ctx.db, { userId, projectId: project.id, agent: 'claude' })
   }
 
   private note(cardId: string, userId: string | null, body: string): void {

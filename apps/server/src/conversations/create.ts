@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@solera/db'
-import type { AgentConfig, AgentKind } from '@solera/protocol'
+import { resolveAgentConfig, type AgentConfig, type AgentKind } from '@solera/protocol'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { inheritedLayers, overridesFor } from './config-inheritance.js'
 
 const PROVISIONAL_TITLE_MAX = 60
 
@@ -25,7 +26,10 @@ export interface CreateConversationInput {
   projectId: string | null
   userId: string
   agent: AgentKind
-  /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
+  /**
+   * La configuration voulue, entière. La conversation n'en retient que ce qui diffère de
+   * son héritage (#120), et sa configuration effective est recalculée des niveaux.
+   */
   config: AgentConfig
   worktreeId: string | null
   /** Carte traitée, quand la conversation est lancée depuis le board. */
@@ -74,6 +78,11 @@ export async function createConversation(
   input: CreateConversationInput,
 ): Promise<ConversationRow> {
   const now = Date.now()
+  const owner = { userId: input.userId, projectId: input.projectId, agent: input.agent }
+  const overrides = await overridesFor(db, (config) => sessions.resolveDefaults(config), owner, input.config)
+  const config = await sessions.resolveDefaults(
+    resolveAgentConfig(input.agent, inheritedLayers(db, owner).map((named) => named.layer), overrides),
+  )
   const row: ConversationRow = {
     id: randomUUID(),
     projectId: input.projectId,
@@ -92,7 +101,8 @@ export async function createConversation(
     createdByTokenId: input.origin?.tokenId ?? null,
     originLabel: input.origin?.label ?? null,
     scheduleId: input.scheduleId ?? null,
-    config: JSON.stringify(input.config),
+    config: JSON.stringify(config),
+    configOverrides: JSON.stringify(overrides),
     status: 'idle',
     backgroundCount: 0,
     loopCount: 0,

@@ -23,9 +23,36 @@ export type ClaudePermissionMode = z.infer<typeof claudePermissionModeSchema>
 export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
+ * Ce que Solera fait d'une demande de l'agent (#120, Q12) : la refuser d'office, attendre
+ * l'accord d'une personne, ou l'appliquer tout de suite.
+ *
+ * - `deny` : l'outil disparaît du serveur MCP, et le daemon refuse s'il est appelé quand
+ *   même ;
+ * - `ask` : la demande attend un clic, dans le fil et dans la section des demandes ;
+ * - `auto` : la demande s'applique dès son dépôt, au nom de la personne qui a réglé
+ *   « Automatique », et seule une ligne dans le fil le dit. Elle ne passe pas par la
+ *   section. Pour une décision, l'option par défaut de l'agent est retenue sans notifier
+ *   personne.
+ *
+ * Les configurations d'avant portaient un booléen : vrai voulait dire « l'agent peut
+ * demander », c'est-à-dire `ask`, et faux `deny`. Ils se relisent ainsi, à la lecture
+ * comme dans l'API publique, sans migration.
+ */
+export const agentRequestPolicySchema = z.preprocess(
+  (value) => (value === true ? 'ask' : value === false ? 'deny' : value),
+  z.enum(['deny', 'ask', 'auto']),
+)
+export type AgentRequestPolicy = 'deny' | 'ask' | 'auto'
+
+/** L'agent peut-il faire cette demande du tout ? */
+export function allowsRequest(policy: AgentRequestPolicy): boolean {
+  return policy !== 'deny'
+}
+
+/**
  * ## Les familles d'autorisation du serveur MCP de Solera, et le critère d'ouverture
  *
- * Les booléens qui suivent découpent les outils du serveur intégré en familles. Il y en
+ * Les réglages qui suivent découpent les outils du serveur intégré en familles. Il y en
  * a cinq, et la question « faut-il une sixième ? » se tranche par ce critère, écrit
  * ici une fois pour ne pas rouvrir le débat à chaque carte :
  *
@@ -73,8 +100,8 @@ export const claudeEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max
  * shell : la relecture protège le clic, pas l'agent de lui-même.
  *
  * **Quatre étages d'héritage**, les mêmes pour toutes les familles : conversation →
- * préréglage de projet (`projects.default_config`) → défaut de compte → `config.toml`.
- * Les trois premiers sont des points de départ (`??`), le dernier seul est un plafond
+ * projet (`projects.default_config`) → compte → `config.toml`. Les trois premiers se
+ * fusionnent champ par champ (`config-layers.ts`, #120), le dernier seul est un plafond
  * (`&&`), et c'est lui qui fait *disparaître* l'entrée de l'interface. Toutes les
  * couches intérieures veulent donc dire la même chose, ce qui est la condition pour que
  * la valeur affichée se lise ; un étage qui plafonnerait parfois et proposerait parfois
@@ -141,18 +168,19 @@ const skillLibrarySchema = z.boolean().default(true)
  * Ouvre à l'agent les deux outils de rangement : déclarer un projet, et demander le
  * déplacement d'une conversation.
  *
- * Faux par défaut, comme `decisions` et à la différence des autres familles : ces
- * deux outils agissent au-dessus du projet où la session travaille, et c'est une portée
- * qu'on accorde plutôt qu'une capacité qu'on retire. Vetoable pour l'instance entière
- * dans `config.toml`, où `[mcp] project_filing = false` fait aussi disparaître l'entrée
- * de l'interface.
+ * Trois états depuis #120 (`agentRequestPolicySchema`), « Demande mon accord » par
+ * défaut (Q12) : le déplacement attend un clic, et c'est ce clic qui accorde une portée
+ * au-dessus du projet. En « Automatique », il est accordé au dépôt et a lieu à la fin du
+ * tour ; `create_project`, qui n'a jamais attendu de clic, ne distingue pas les deux.
+ * Vetoable pour l'instance entière dans `config.toml`, où `[mcp] project_filing = false`
+ * fait aussi disparaître l'entrée de l'interface.
  *
- * Un seul booléen de conversation suffit à tenir un agent, alors que les étages
- * héritent en `??` et non en `&&` : aucun des outils du serveur MCP ne touche à une
- * configuration, donc personne d'autre que l'utilisateur ne peut recocher celui-ci.
- * C'est l'argument qui vaut pour toutes les familles.
+ * Un seul réglage de conversation suffit à tenir un agent, alors que les niveaux héritent
+ * champ par champ et non en `&&` : aucun des outils du serveur MCP ne touche à une
+ * configuration, donc personne d'autre que l'utilisateur ne peut le rouvrir. C'est
+ * l'argument qui vaut pour toutes les familles.
  */
-const projectFilingSchema = z.boolean().default(false)
+const projectFilingSchema = agentRequestPolicySchema.default('ask')
 
 /**
  * Ouvre à l'agent `request_card_change` : proposer de changer une ou plusieurs cartes du
@@ -165,9 +193,10 @@ const projectFilingSchema = z.boolean().default(false)
  * `config.toml`, où `[mcp] card_filing = false` fait aussi disparaître l'entrée de
  * l'interface.
  *
- * **Vrai par défaut** depuis #66, à la différence de `projectFiling` : l'outil **ne
- * change rien**, il dépose une demande que l'utilisateur accorde d'un clic, et c'est le
- * clic qui écrit au nom de la personne. Une proposition ne coûte qu'une lecture, et la
+ * **« Demande mon accord » par défaut** (ouvert depuis #66) : l'outil **ne change
+ * rien**, il dépose une demande que le propriétaire du projet accorde d'un clic, et c'est
+ * le clic qui écrit au nom de la personne. En « Automatique » (#120), l'accord est donné
+ * au dépôt, au nom du propriétaire, et seulement quand c'est lui qui l'a réglé. Une proposition ne coûte qu'une lecture, et la
  * clôture d'une carte finie (#69) en a besoin dans toutes les sessions. C'est aussi ce
  * qui permet d'autoriser toutes les colonnes, `abandoned` comprise : le tabou visait
  * l'acte, pas la proposition.
@@ -177,7 +206,18 @@ const projectFilingSchema = z.boolean().default(false)
  * ajouts à sa description et à ses sous-tâches. Ce qui reste ici est exactement ce
  * qu'ils refusent.
  */
-const cardFilingSchema = z.boolean().default(true)
+const cardFilingSchema = agentRequestPolicySchema.default('ask')
+
+/**
+ * `propose_cards` : déposer un brouillon de découpage en cartes (#70), que la personne
+ * corrige puis crée d'un clic. Sans réglage jusqu'à #120, ce qui revenait à `ask` ; en
+ * `auto`, le brouillon de l'agent est créé tel quel dès son dépôt.
+ *
+ * Dans le socle et non une famille au sens du critère plus haut : rien ne s'écrit sans
+ * l'accord réglé ici, et une carte qu'un agent crée seul (`create_card`) est déjà du
+ * socle. Le réglage existe pour le troisième état, pas pour garder l'outil.
+ */
+const proposeCardsSchema = agentRequestPolicySchema.default('ask')
 
 /** Plafond de `decisionMaxHours` : une semaine, au-delà la question ne parle plus du présent. */
 export const MAX_DECISION_HOURS = 168
@@ -187,7 +227,9 @@ export const DEFAULT_DECISION_HOURS = 24
  * Ouvre à l'agent `request_decision` : demander à une personne de trancher, sans se
  * bloquer en attendant. La réponse lui revient en message, et le relance.
  *
- * **Faux par défaut**, comme `projectFiling` : c'est une portée qu'on accorde. Le critère la
+ * **« Interdit » par défaut** (Q4 du grilling de #120) : c'est une portée qu'on accorde.
+ * En « Automatique », personne n'est sollicité : l'option par défaut de l'agent est
+ * retenue au dépôt, et le fil le dit. Le critère la
  * retient parce que l'outil n'agit pas sur la base mais sur quelqu'un — il notifie une
  * personne et lui demande un choix — et qu'un agent qui demande tout ne sert plus à rien.
  * Pensé d'abord pour les sessions que personne ne regarde (une tâche planifiée la reçoit
@@ -198,7 +240,7 @@ export const DEFAULT_DECISION_HOURS = 24
  * disparaître l'entrée. Ce plafond-là est **allumé par défaut**, à la différence des
  * autres : rien ne s'applique sans une personne, et l'outil ne sort pas du projet.
  */
-const decisionsSchema = z.boolean().default(false)
+const decisionsSchema = agentRequestPolicySchema.default('deny')
 
 /**
  * Délai maximal d'une décision, en heures : celui que l'agent demande y est ramené, et
@@ -235,6 +277,7 @@ export const claudeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -389,6 +432,7 @@ export const codexConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -447,6 +491,7 @@ export const opencodeConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -484,6 +529,7 @@ export const grokConfigSchema = z.object({
   agentMemory: agentMemorySchema,
   projectFiling: projectFilingSchema,
   cardFiling: cardFilingSchema,
+  proposeCards: proposeCardsSchema,
   decisions: decisionsSchema,
   decisionMaxHours: decisionMaxHoursSchema,
   skillLibrary: skillLibrarySchema,
@@ -522,9 +568,10 @@ export const DEFAULT_CLAUDE_CONFIG: ClaudeConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -551,9 +598,10 @@ export const DEFAULT_CODEX_CONFIG: CodexConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -572,9 +620,10 @@ export const DEFAULT_OPENCODE_CONFIG: OpencodeConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   queueMessages: false,
@@ -591,9 +640,10 @@ export const DEFAULT_GROK_CONFIG: GrokConfig = {
   mcpServers: [],
   soleraMcp: true,
   agentMemory: true,
-  projectFiling: false,
-  cardFiling: true,
-  decisions: false,
+  projectFiling: 'ask',
+  cardFiling: 'ask',
+  proposeCards: 'ask',
+  decisions: 'deny',
   decisionMaxHours: DEFAULT_DECISION_HOURS,
   skillLibrary: true,
   account: null,

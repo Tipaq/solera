@@ -11,7 +11,7 @@ import {
   cx,
   useMediaQuery,
 } from '@solera/ui'
-import { ArrowRightLeft, AtSign, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, Search, SlidersHorizontal } from 'lucide-react'
+import { ArrowRightLeft, AtSign, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, RotateCcw, Search, SlidersHorizontal } from 'lucide-react'
 import { useRef, useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
@@ -157,6 +157,7 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
   const librarySetting = groups.find((group) => group.key === 'skillLibrary')
   const lists = settingsGroups.filter((group) => !group.toggle)
   const toggles = settingsGroups.filter((group) => group.toggle)
+  const changedToggles = toggles.filter((group) => group.resetToInherited)
 
   return (
     <Menu align="start" trigger={<PlusTrigger status={status} disabled={disabled} />} onCloseAutoFocus={insert.onCloseAutoFocus}>
@@ -195,9 +196,17 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
         {lists.map((group) => {
           const current = group.options.find((option) => option.value === group.value)
           return (
-            <MenuSub key={group.key} icon={group.icon} label={group.label}
+            <MenuSub key={group.key} icon={<ChangedHereIcon group={group} />} label={group.label}
               value={current?.short ?? current?.label ?? group.value} tone={current?.tone} disabled={disabled}>
               {group.notice ? <p className="px-2.5 py-1.5 text-xs text-caution">{group.notice}</p> : null}
+              {group.resetToInherited ? (
+                <>
+                  <MenuItem icon={<RotateCcw size={16} />} onSelect={group.resetToInherited} disabled={disabled}>
+                    {t('composer.changedHere.reset')}
+                  </MenuItem>
+                  <MenuSeparator />
+                </>
+              ) : null}
               <MenuRadioGroup value={group.value} onValueChange={group.onChange}>
                 {group.options.map((option) => (
                   <MenuRadioItem key={option.value} value={option.value}
@@ -233,14 +242,56 @@ function PlusMenu({ groups, status, mcpItems, mcpSummary, disabled, onAttach, ca
               }}
             >
               <span className="flex flex-col">
-                <span>{toggle.label ?? group.label}</span>
+                <span className="flex items-center gap-1.5">
+                  {toggle.label ?? group.label}
+                  {group.resetToInherited ? <ChangedHereDot /> : null}
+                </span>
                 {toggle.hint ?? on?.hint ? <span className="text-meta text-ink-faint">{toggle.hint ?? on?.hint}</span> : null}
               </span>
             </MenuCheckboxItem>
           )
         })}
+        {changedToggles.length > 0 ? (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<RotateCcw size={16} />} disabled={disabled}
+              onSelect={() => changedToggles.forEach((group) => group.resetToInherited?.())}>
+              {t('composer.changedHere.resetToggles')}
+            </MenuItem>
+          </>
+        ) : null}
       </MenuSub>
     </Menu>
+  )
+}
+
+/**
+ * La marque d'une valeur changée dans ce fil (#120, Q33) : un point sur l'icône, et le
+ * menu de la catégorie offre de revenir à l'héritage. Une phrase lue par les lecteurs
+ * d'écran, le point seul n'étant qu'une couleur.
+ */
+function ChangedHereDot() {
+  const t = useTranslate()
+  return (
+    <span className="inline-flex items-center" title={t('composer.changedHere')}>
+      <span aria-hidden className="size-1.5 rounded-full bg-accent" />
+      <span className="sr-only">{t('composer.changedHere')}</span>
+    </span>
+  )
+}
+
+/**
+ * Sur l'icône d'une catégorie, le point seul : un texte ici passerait avant l'intitulé
+ * dans le nom de l'entrée. La catégorie ouverte le dit en toutes lettres, par son
+ * « Revenir au réglage hérité ».
+ */
+function ChangedHereIcon({ group }: { group: SettingGroup }) {
+  if (!group.resetToInherited) return <>{group.icon}</>
+  return (
+    <span className="relative inline-flex">
+      {group.icon}
+      <span aria-hidden className="absolute -right-1 -top-1 size-1.5 rounded-full bg-accent" />
+    </span>
   )
 }
 
@@ -416,8 +467,12 @@ function SettingsMenu({ groups, disabled, onOpenGroup }: {
   disabled: boolean
   onOpenGroup: (key: string) => void
 }) {
+  const t = useTranslate()
   const lists = groups.filter((group) => !group.toggle)
   const toggles = groups.filter((group) => group.toggle)
+  // Au doigt, une seule ligne rend tout à l'héritage : un bouton de plus par réglage
+  // marqué ferait une pile de vues pour un geste qui tient en un.
+  const changed = groups.filter((group) => group.resetToInherited)
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-1 pb-[max(0.25rem,var(--sg-safe-bottom))]">
@@ -426,7 +481,7 @@ function SettingsMenu({ groups, disabled, onOpenGroup }: {
         return (
           <Entry
             key={group.key}
-            icon={group.icon}
+            icon={<ChangedHereIcon group={group} />}
             submenu
             disabled={disabled}
             value={current?.short ?? current?.label ?? group.value}
@@ -456,6 +511,16 @@ function SettingsMenu({ groups, disabled, onOpenGroup }: {
           />
         )
       })}
+      {changed.length > 0 ? (
+        <>
+          <div className="my-1 h-px bg-line" />
+          <Entry icon={<RotateCcw size={16} />} disabled={disabled}
+            hint={changed.map((group) => group.label).join(', ')}
+            onClick={() => changed.forEach((group) => group.resetToInherited?.())}>
+            {t('composer.changedHere.resetAll')}
+          </Entry>
+        </>
+      ) : null}
     </div>
   )
 }

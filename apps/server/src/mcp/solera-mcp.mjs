@@ -155,6 +155,12 @@ const CARD_FILING = process.env.SOLERA_MCP_CARD_FILING === '1'
 const DECISIONS = process.env.SOLERA_MCP_DECISIONS === '1'
 
 /**
+ * `propose_cards`, réglé depuis #120 comme les autres demandes à Solera : à faux, l'outil
+ * n'est pas listé. Une session de découpage (#70) l'a toujours, c'est son seul objet.
+ */
+const PROPOSE_CARDS = process.env.SOLERA_MCP_PROPOSE_CARDS === '1'
+
+/**
  * Le fichier d'état du Storybook du design system lié, que le daemon tient à jour
  * (`apps/server/src/design-system/storybooks.ts`) : son adresse, ou son échec.
  *
@@ -2913,6 +2919,9 @@ const CARD_FILING_TOOLS = new Set(['request_card_change'])
 /** Les outils que la famille « Décisions » ouvre. */
 const DECISION_TOOLS = new Set(['request_decision'])
 
+/** Le brouillon de cartes, qui a son propre réglage depuis #120. */
+const PROPOSE_CARDS_TOOLS = new Set(['propose_cards'])
+
 /**
  * Les deux bouts de la revue d'une PR (#68) : `request_review` pour la session qui a écrit
  * le code, `submit_review` pour celle que Solera lance pour la relire. Une session est
@@ -2948,6 +2957,7 @@ const offered = (tool) =>
   ((GLOBAL ? MEMORY_ROOT : MEMORY_DIR) !== '' || !MEMORY_TOOLS.has(tool.name)) &&
   (CARD_FILING || !CARD_FILING_TOOLS.has(tool.name)) &&
   (DECISIONS || !DECISION_TOOLS.has(tool.name)) &&
+  (PROPOSE_CARDS || !PROPOSE_CARDS_TOOLS.has(tool.name)) &&
   (tool.name !== 'request_review' || (Boolean(CURRENT_CONVERSATION) && !IS_REVIEWER)) &&
   (tool.name !== 'submit_review' || IS_REVIEWER) &&
   (DESIGN_SYSTEM_STATE !== '' || !DESIGN_SYSTEM_TOOLS.has(tool.name))
@@ -4071,6 +4081,9 @@ async function callTool(name, args) {
   }
 
   if (name === 'propose_cards') {
+    if (!PROPOSE_CARDS) {
+      return { ...text(`Outil inconnu : ${name}`), isError: true }
+    }
     if (!CURRENT_CONVERSATION) {
       return { ...text("Cette session ne sait pas qui elle est : Solera ne saurait pas dans quel fil montrer le brouillon."), isError: true }
     }
@@ -4355,7 +4368,7 @@ async function callTool(name, args) {
 }
 
 log(
-  `prêt, ${GLOBAL ? `mode global, compte=${USER.username}${ALLOWED_PROJECTS.length ? `, ${ALLOWED_PROJECTS.length} projet(s) permis` : ''}` : PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DECISIONS ? ', décisions accordées' : ''}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
+  `prêt, ${GLOBAL ? `mode global, compte=${USER.username}${ALLOWED_PROJECTS.length ? `, ${ALLOWED_PROJECTS.length} projet(s) permis` : ''}` : PROJECT_ID ? `projet=${PROJECT_ID}` : 'fil libre'}, ${TOOLS.filter(offered).length} outils${MEMORY_DIR ? '' : ', mémoire refusée'}${FILING ? ', rangement accordé' : ''}${CARD_FILING ? ', rangement de carte accordé' : ''}${DECISIONS ? ', décisions accordées' : ''}${PROPOSE_CARDS ? '' : ', brouillons de cartes refusés'}${DESIGN_SYSTEM_STATE ? ', design system lié' : ''}`,
 )
 
 /** La file des appels du mode global, voir `tools/call`. */

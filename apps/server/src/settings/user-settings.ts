@@ -1,9 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { userSettings, type Db } from '@solera/db'
 import {
+  DEFAULT_CONFIGS,
   DEFAULT_ONBOARDING,
+  layerWithFullConfig,
+  patchConfigLayer,
   storedUserSettingsSchema,
   type AgentConfig,
+  type ConfigLayerPatch,
   type AgentKind,
   type AppearancePrefs,
   type BoardOrder,
@@ -31,28 +35,46 @@ export function readUserSettings(db: Db, userId: string): UserSettings {
 }
 
 /**
- * Remplace le défaut d'un CLI sans toucher à celui de l'autre.
+ * Écrit la charge d'un compte.
  *
- * La ligne est relue avant d'être réécrite : la charge JSON portera d'autres réglages,
- * et un `insert` bâti sur le seul corps de la requête les effacerait.
+ * `agentDefaults` est un calcul de la lecture (le protocole sous `agentLayer`), jamais
+ * stocké : l'écrire figerait une copie que la lecture suivante ignorerait de toute façon.
  */
-export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfig): void {
-  const current = readUserSettings(db, userId)
-  const data = JSON.stringify({
-    ...current,
-    agentDefaults: {
-      ...current.agentDefaults,
-      // Les répertoires supplémentaires désignent des dossiers d'un projet précis :
-      // les figer dans un défaut de compte les emmènerait dans des conversations qui
-      // n'ont rien à voir.
-      [config.agent]: { ...config, additionalDirectories: [] },
-    },
-  })
-
+function save(db: Db, userId: string, settings: UserSettings): void {
+  const { agentDefaults: _computed, ...stored } = settings
+  const data = JSON.stringify(stored)
   db.insert(userSettings)
     .values({ userId, data })
     .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
     .run()
+}
+
+/**
+ * Change le niveau du compte, champ par champ (#120).
+ *
+ * Les répertoires supplémentaires n'y entrent pas : ils désignent des dossiers d'un projet
+ * précis, et les figer au compte les emmènerait dans des conversations qui n'ont rien à
+ * voir. Leur place est le niveau du projet.
+ */
+export function writeUserAgentLayer(db: Db, userId: string, patch: ConfigLayerPatch): void {
+  const current = readUserSettings(db, userId)
+  const set = { ...patch.set }
+  delete set.additionalDirectories
+  save(db, userId, { ...current, agentLayer: patchConfigLayer(current.agentLayer, { ...patch, set }) })
+}
+
+/**
+ * Range au niveau du compte la configuration entière d'un CLI, telle que l'envoient les
+ * écrans d'avant l'héritage : seuls ses écarts aux défauts du protocole sont retenus.
+ */
+export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfig): void {
+  const current = readUserSettings(db, userId)
+  const agentLayer = layerWithFullConfig(
+    current.agentLayer,
+    { ...config, additionalDirectories: [] } as AgentConfig,
+    DEFAULT_CONFIGS[config.agent],
+  )
+  save(db, userId, { ...current, agentLayer })
 }
 
 /**
@@ -64,23 +86,13 @@ export function writeUserAgentDefault(db: Db, userId: string, config: AgentConfi
  */
 export function writeCollapsedProjects(db: Db, userId: string, projectIds: string[]): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, collapsedProjects: [...new Set(projectIds)] })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, collapsedProjects: [...new Set(projectIds)] })
 }
 
 /** Les CLI masqués tant qu'ils manquent, remplacés en bloc comme les projets repliés. */
 export function writeHiddenAgents(db: Db, userId: string, agents: AgentKind[]): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, hiddenAgents: [...new Set(agents)] })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, hiddenAgents: [...new Set(agents)] })
 }
 
 /** L'ordre du board d'un projet, sans toucher à celui des autres. */
@@ -90,45 +102,25 @@ export function writeBoardOrder(db: Db, userId: string, projectId: string, order
   // Le manuel est le défaut : l'écrire ne ferait que grossir la charge.
   if (order === 'manual') delete boardOrder[projectId]
   else boardOrder[projectId] = order
-  const data = JSON.stringify({ ...current, boardOrder })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, boardOrder })
 }
 
 /** Le dossier parent proposé à la prochaine création de projet, ou `null` pour l'oublier. */
 export function writeProjectsDir(db: Db, userId: string, projectsDir: string | null): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, projectsDir })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, projectsDir })
 }
 
 /** Thème et curseurs, remplacés en bloc : l'interface envoie toujours l'état complet. */
 export function writeAppearance(db: Db, userId: string, appearance: AppearancePrefs): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, appearance })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, appearance })
 }
 
 /** Les sortes de notifications voulues, remplacées en bloc comme l'apparence. */
 export function writeNotificationPrefs(db: Db, userId: string, notifications: NotificationPrefs): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, notifications })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, notifications })
 }
 
 function parseData(data: string | undefined): unknown {
@@ -151,12 +143,7 @@ function parseData(data: string | undefined): unknown {
  */
 export function writeOnboarding(db: Db, userId: string, onboarding: OnboardingState): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, onboarding })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, onboarding })
 }
 
 /** La visite due, à sa première étape : ce qu'un compte reçoit en naissant. */
@@ -167,10 +154,5 @@ export function armOnboarding(db: Db, userId: string): void {
 /** Les défauts des projets à venir, remplacés en bloc. */
 export function writeProjectDefaults(db: Db, userId: string, projectDefaults: ProjectDefaults): void {
   const current = readUserSettings(db, userId)
-  const data = JSON.stringify({ ...current, projectDefaults })
-
-  db.insert(userSettings)
-    .values({ userId, data })
-    .onConflictDoUpdate({ target: userSettings.userId, set: { data } })
-    .run()
+  save(db, userId, { ...current, projectDefaults })
 }

@@ -1,22 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   agentRequests,
-  cardBlocks,
   cards,
   conversationHandoffs,
   conversationReads,
   conversations,
   projects,
-  sessionMessages,
   worktrees,
-  writeTransaction,
   type ConversationRow,
 } from '@solera/db'
 import {
   cardDraftDecisionBodySchema,
-  type CardDraft,
   createConversationBodySchema,
   createFreeConversationBodySchema,
   moveConversationBodySchema,
@@ -34,8 +30,6 @@ import {
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
-  type CardCloseOutcome,
-  type CardColumn,
   type CardLinkDto,
   type ConversationDto,
   type ConversationPromptDto,
@@ -48,13 +42,10 @@ import {
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
 import { isInlineImage, type AttachmentStore } from '../../attachments/store.js'
-import { isCloseTarget, type CardClosure } from '../../cards/close.js'
+import type { CardClosure } from '../../cards/close.js'
 import { advanceCardOnLaunch } from '../../cards/create.js'
-import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
-import { createDraftCards, type DraftCreation } from '../../cards/drafts.js'
-import { recordCardMove } from '../../cards/moves.js'
-import { resolveParent, writeCardParent } from '../../cards/tree.js'
 import { createConversation } from '../../conversations/create.js'
+import { overridesFor, patchOverrides, readOverrides } from '../../conversations/config-inheritance.js'
 import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo } from '../../conversations/scope.js'
 import {
@@ -81,10 +72,10 @@ import {
   describeDraftOutcome,
   describeFilingOutcome,
   pendingRequests,
-  recheck,
   tellOutcome,
 } from '../../sessions/request-lifecycle.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from '../../sessions/request-accept.js'
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -130,6 +121,7 @@ export function conversationToDto(
     forkedFromId: row.forkedFromId,
     handoffFromId: row.handoffFromId,
     config: parseAgentConfig(row.config),
+    configOverrides: readOverrides(row),
     status: row.status,
     lastSeq: row.lastSeq,
     lastNotableSeq: row.lastNotableSeq,
@@ -161,6 +153,15 @@ export function registerConversationRoutes(
   /** La clôture des cartes (#69) ; sans elle, une demande `close` ne s'accorde pas. */
   closure?: CardClosure,
 ): void {
+  /** Ce que le chemin d'accord partagé avec le réglage « Automatique » demande (#120). */
+  const acceptDeps = (request: FastifyRequest): AcceptDeps => ({
+    db: ctx.db,
+    config: ctx.config,
+    log,
+    closure,
+    warn: (err, card) => request.log.warn({ err, card }, 'clôture de carte en échec'),
+  })
+
   /**
    * Résout les pièces jointes à envoyer, dans l'ordre choisi par le client.
    *
@@ -901,12 +902,23 @@ export function registerConversationRoutes(
       // session traitait déjà ce travail », il ne lance rien.
     }
 
+    // La conversation ne retient que ce qu'elle change à son héritage (#120). Une
+    // configuration entière, le chemin des clients d'avant, se ramène à ses écarts.
     if (body.config !== undefined) {
       if (body.config.agent !== conversation.agent) {
         throw badRequest('config_agent_immutable', 'The CLI of a conversation cannot change.')
       }
-      patch.config = JSON.stringify(body.config)
+      const overrides = await overridesFor(
+        ctx.db,
+        (config) => sessions.resolveDefaults(config),
+        conversation,
+        body.config,
+      )
+      patch.configOverrides = JSON.stringify(overrides)
+    } else if (body.overrides !== undefined) {
+      patch.configOverrides = JSON.stringify(patchOverrides(ctx.db, conversation, body.overrides))
     }
+    const configChanged = patch.configOverrides !== undefined
 
     if (Object.keys(patch).length > 0) {
       ctx.db.update(conversations).set(patch).where(eq(conversations.id, id)).run()
@@ -914,7 +926,10 @@ export function registerConversationRoutes(
 
     // Le SDK applique modèle, effort et mode de permission à chaud : la session garde
     // son contexte. Le repli par redémarrage est géré, et signalé, par le gestionnaire.
-    if (body.config !== undefined) await sessions.reloadConfig(id)
+    if (configChanged) {
+      await sessions.refreshConfig(id)
+      await sessions.reloadConfig(id)
+    }
 
     return { ok: true }
   })
@@ -1133,52 +1148,22 @@ export function registerConversationRoutes(
       throw badRequest('filing_already_decided', 'This filing request has already been decided.')
     }
 
-    const target = ctx.db.select({ title: conversations.title }).from(conversations).where(eq(conversations.id, id)).get()
-    const resolve = (decision: 'refused' | 'impossible', reason: string | null) => {
-      ctx.db
-        .update(agentRequests)
-        .set({ resolvedAt: Date.now() })
-        .where(eq(agentRequests.id, requestId))
-        .run()
-      log.append(id, { type: 'filing.resolved', requestId, decision, decidedBy: user.id, reason })
-      tellOutcome(ctx.db, row, describeFilingOutcome(target?.title ?? filing.conversationTitle, filing.projectName, decision, reason))
-    }
-
     if (body.decision === 'refused') {
-      resolve('refused', null)
+      const target = ctx.db.select({ title: conversations.title }).from(conversations).where(eq(conversations.id, id)).get()
+      ctx.db.update(agentRequests).set({ resolvedAt: Date.now() }).where(eq(agentRequests.id, requestId)).run()
+      log.append(id, { type: 'filing.resolved', requestId, decision: 'refused', decidedBy: user.id, reason: null })
+      tellOutcome(ctx.db, row, describeFilingOutcome(target?.title ?? filing.conversationTitle, filing.projectName, 'refused', null))
       return { ok: true }
     }
 
-    // Revérifié au clic (#119) : entre le dépôt et maintenant, le fil a pu être archivé
-    // ou rangé ailleurs, l'option a pu être coupée, un travail de fond a pu partir. La
-    // demande devient alors « plus applicable » au lieu de s'exécuter, et la réponse dit
-    // seulement que le clic a été entendu : le journal porte le reste.
-    const stale = recheck(ctx.db, ctx.config, row, filing.fromProjectId)
-    if (stale) {
-      resolve('impossible', stale)
-      return { ok: true, applied: false, reason: stale }
+    // Revérifié au clic (#119), dans le chemin que partage le réglage « Automatique »
+    // (#120) : la demande devient « plus applicable » au lieu de s'exécuter, et la réponse
+    // dit seulement que le clic a été entendu, le journal porte le reste.
+    const accepted = acceptFiling(acceptDeps(request), { conversationId: id, row, filing, userId: user.id, automatic: false })
+    if (!accepted.ok) {
+      if (accepted.reason === 'project_not_found') throw notFound('project_not_found', 'Project not found.')
+      return { ok: true, applied: false, reason: accepted.reason }
     }
-
-    // Le projet de destination, lui, a pu disparaître. Ce qui reste du contrôle — un
-    // tour en cours — est l'affaire du balayage, qui réessaie.
-    const destination = ctx.db
-      .select({ ownerId: projects.ownerId, visibility: projects.visibility })
-      .from(projects)
-      .where(eq(projects.id, filing.projectId))
-      .get()
-    if (
-      !destination ||
-      (destination.ownerId !== user.id && destination.visibility !== 'shared')
-    ) {
-      resolve('impossible', 'project_not_found')
-      throw notFound('project_not_found', 'Project not found.')
-    }
-
-    ctx.db
-      .update(agentRequests)
-      .set({ acceptedAt: Date.now() })
-      .where(eq(agentRequests.id, requestId))
-      .run()
     return { ok: true }
   })
 
@@ -1228,154 +1213,33 @@ export function registerConversationRoutes(
       throw badRequest('filing_already_decided', 'This filing request has already been decided.')
     }
 
-    const close = (
-      decision: 'refused' | 'impossible' | 'accepted',
-      reason: string | null,
-      moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[],
-      applied?: number[],
-      closed?: CardCloseOutcome[],
-    ) => {
-      const now = Date.now()
+    if (body.decision === 'refused') {
       ctx.db
         .update(agentRequests)
-        .set({ resolvedAt: now, ...(decision === 'accepted' ? { acceptedAt: now } : {}) })
+        .set({ resolvedAt: Date.now() })
         .where(and(eq(agentRequests.id, requestId), isNull(agentRequests.resolvedAt)))
         .run()
-      log.append(id, {
-        type: 'card_filing.resolved',
-        requestId,
-        decision,
-        decidedBy: user.id,
-        reason,
-        moved,
-        ...(applied ? { applied } : {}),
-        ...(closed ? { closed } : {}),
-      })
-      tellOutcome(ctx.db, row, describeCardFilingOutcome(decision, reason, applied, filing.cards.length))
-    }
-
-    if (body.decision === 'refused') {
-      close('refused', null, [])
+      log.append(id, { type: 'card_filing.resolved', requestId, decision: 'refused', decidedBy: user.id, reason: null, moved: [] })
+      tellOutcome(ctx.db, row, describeCardFilingOutcome('refused', null, [], filing.cards.length))
       return { ok: true }
     }
 
-    // Le fil, l'option et le projet revérifiés au clic (#119) : un fil rangé ailleurs
-    // depuis ferait chercher les cartes dans le board d'un autre projet.
-    const stale = recheck(ctx.db, ctx.config, row)
-    if (stale) {
-      close('impossible', stale, [])
-      return { ok: true, applied: false, reason: stale }
-    }
-
-    // Relu au clic et non pris de la demande : entre le dépôt et maintenant, une carte a
-    // pu être supprimée ou changée par quelqu'un.
-    //
-    // Le test porte sur la valeur **de départ** et non sur la valeur visée. Tester
-    // l'arrivée ne retirait du lot que les cartes ayant déjà rejoint la colonne
-    // proposée : une carte qu'une personne venait de ranger dans une *troisième*
-    // colonne était quand même poussée là où l'agent la voulait, et la demande affichait
-    // encore la colonne du dépôt. Le clic défaisait alors un choix humain plus récent que
-    // la proposition — exactement ce que la famille `cardFiling` existe pour empêcher.
-    //
-    // Toute carte qui a changé depuis le dépôt sort donc du lot, quelle que soit sa
-    // destination : sa colonne, et depuis #66 sa parente et son échéance quand la
-    // demande les touche. Un lien « bloque » devenu impossible (la carte visée a disparu,
-    // ou bloque désormais celle-ci) la retire aussi : le clic ne pose rien à moitié.
-    const projectId = row.projectId!
-    const live = filing.cards
-      .map((proposed) => {
-        const card = ctx.db
-          .select()
-          .from(cards)
-          .where(and(eq(cards.id, proposed.cardId), eq(cards.projectId, projectId)))
-          .get()
-        if (!card) return null
-        if ((proposed.toColumn || proposed.close) && card.column !== proposed.fromColumn) return null
-        if (proposed.close && !closure) return null
-        if (proposed.parent && card.parentId !== (proposed.parent.from?.cardId ?? null)) return null
-        if (proposed.dueAt && card.dueAt !== proposed.dueAt.from) return null
-        let parentId: string | null | undefined
-        if (proposed.parent) {
-          try {
-            parentId = proposed.parent.to ? resolveParent(ctx.db, card, proposed.parent.to.cardId) : null
-          } catch {
-            return null
-          }
-        }
-        for (const target of proposed.blocks ?? []) {
-          const exists = ctx.db.select({ id: cards.id }).from(cards).where(and(eq(cards.id, target.cardId), eq(cards.projectId, projectId))).get()
-          const reverse = ctx.db
-            .select({ sourceId: cardBlocks.sourceId })
-            .from(cardBlocks)
-            .where(and(eq(cardBlocks.sourceId, target.cardId), eq(cardBlocks.targetId, card.id)))
-            .get()
-          if (!exists || reverse) return null
-        }
-        return { card, proposed, parentId }
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-
-    // Plus une seule carte applicable : il n'y a plus de proposition à accorder, et le
-    // dire vaut mieux que d'écrire une acceptation qui n'a rien changé.
-    if (live.length === 0) {
-      // L'écriture est conservée alors que la route répond une erreur, et c'est
-      // délibéré : la demande *est* résolue, elle n'attend plus rien et ne doit pas
-      // continuer d'occuper la place de l'unique demande en attente de la conversation.
-      // L'appelant reçoit un 400 pour une opération qui a bien changé l'état.
-      close('impossible', 'cards_gone', [])
-      throw badRequest('card_filing_stale', 'None of these cards can still be changed.')
-    }
-
-    // Une seule transaction pour toute la liste : un lot à moitié écrit laisserait le
-    // Journal raconter des changements qui n'ont pas tous eu lieu, et c'est exactement
-    // ce que l'en-tête de `card_moves` interdit.
-    //
     // Chaque geste est attribué à qui a cliqué, et non à la session qui a proposé : c'est
     // le geste d'une personne, tout l'objet de la demande d'accord.
-    const now = Date.now()
-    const by = { userId: user.id }
-    const moved: { number: number; fromColumn: CardColumn; toColumn: CardColumn }[] = []
-    writeTransaction(ctx.db, (tx) => {
-      for (const { card, proposed, parentId } of live) {
-        if (parentId !== undefined) writeCardParent(tx, card, parentId, by)
-        if (proposed.dueAt) tx.update(cards).set({ dueAt: proposed.dueAt.to, updatedAt: now }).where(eq(cards.id, card.id)).run()
-        for (const target of proposed.blocks ?? []) {
-          addCardBlock(tx, { projectId, sourceId: card.id, targetId: target.cardId, userId: user.id })
-        }
-        for (const target of proposed.unblocks ?? []) removeCardBlock(tx, { sourceId: card.id, targetId: target.cardId })
-        if (proposed.toColumn) {
-          // Relue après la parente : rattacher une carte peut avoir changé la colonne
-          // d'une parente, jamais la sienne.
-          tx.update(cards).set({ column: proposed.toColumn, updatedAt: now }).where(eq(cards.id, card.id)).run()
-          recordCardMove(tx, { cardId: card.id, from: card.column, to: proposed.toColumn, ...by, at: now })
-          moved.push({ number: card.number, fromColumn: card.column, toColumn: proposed.toColumn })
-        }
-      }
+    const accepted = await acceptCardFiling(acceptDeps(request), {
+      conversationId: id,
+      row,
+      cards: filing.cards,
+      userId: user.id,
+      automatic: false,
     })
-
-    // Les clôtures après la transaction : elles parlent à git et à la forge, et prennent
-    // quelques secondes. La demande est marquée résolue avant, pour qu'un second clic
-    // pendant ce temps ne la rejoue pas.
-    const closing = live.filter(({ proposed }) => proposed.close)
-    if (closing.length === 0 || !closure) {
-      close('accepted', null, moved, live.map(({ card }) => card.number))
-      return { ok: true }
+    if (!accepted.ok) {
+      // La demande *est* résolue alors que la route répond une erreur, et c'est
+      // délibéré : elle n'attend plus rien, et l'appelant apprend qu'aucune carte n'a pu
+      // changer.
+      if (accepted.reason === 'cards_gone') throw badRequest('card_filing_stale', 'None of these cards can still be changed.')
+      return { ok: true, applied: false, reason: accepted.reason }
     }
-    ctx.db.update(agentRequests).set({ resolvedAt: now, acceptedAt: now }).where(eq(agentRequests.id, requestId)).run()
-    const projectRow = ctx.db.select().from(projects).where(eq(projects.id, projectId)).get()!
-    const closed: CardCloseOutcome[] = []
-    for (const { card, proposed } of closing) {
-      const target = proposed.toColumn ?? card.column
-      if (!isCloseTarget(target)) continue
-      // Une clôture qui casse en route n'empêche ni les suivantes ni l'écriture du
-      // résultat : la colonne est déjà posée, et le journal doit dire ce qui a eu lieu.
-      try {
-        closed.push(...(await closure.apply(projectRow, card.id, target, user.id, proposed.close!.abandon.map((child) => child.cardId))))
-      } catch (err) {
-        request.log.warn({ err, card: card.number }, 'clôture de carte en échec')
-      }
-    }
-    close('accepted', null, moved, live.map(({ card }) => card.number), closed)
     sessions.statusBus.emit('lists', { conversationId: id })
     return { ok: true }
   })
@@ -1413,67 +1277,31 @@ export function registerConversationRoutes(
     if (!row) throw notFound('card_draft_not_found', 'Card draft not found.')
     if (row.resolvedAt !== null) throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
 
-    const close = (
-      decision: 'created' | 'refused' | 'impossible',
-      outcome: DraftCreation & { draft?: CardDraft; reason?: string },
-    ) => {
-      const now = Date.now()
-      // Conditionnelle : deux clics qui se croisent ne créent pas deux fois.
+    if (body.decision === 'refused') {
       const closed = ctx.db
         .update(agentRequests)
-        .set({ resolvedAt: now, ...(decision === 'created' ? { acceptedAt: now } : {}) })
+        .set({ resolvedAt: Date.now() })
         .where(and(eq(agentRequests.id, requestId), isNull(agentRequests.resolvedAt)))
         .run()
       if (closed.changes === 0) throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
-      log.append(id, { type: 'card_draft.resolved', requestId, decision, decidedBy: user.id, ...outcome })
-    }
-
-    if (body.decision === 'refused') {
-      close('refused', { parent: null, created: [] })
+      log.append(id, { type: 'card_draft.resolved', requestId, decision: 'refused', decidedBy: user.id, parent: null, created: [] })
       tellOutcome(ctx.db, row, describeDraftOutcome('refused', null))
       return { ok: true }
     }
 
-    // Revérifié au clic (#119) : un fil archivé ou rangé ailleurs depuis ne remplit plus
-    // le board où le brouillon a été proposé.
-    const stale = recheck(ctx.db, ctx.config, row)
-    if (stale) {
-      close('impossible', { parent: null, created: [], reason: stale })
-      tellOutcome(ctx.db, row, describeDraftOutcome('impossible', stale))
-      return { ok: true, applied: false, reason: stale }
-    }
-
-    // La création et la clôture dans la même transaction : un échec de l'une défait
-    // l'autre, et un double clic perd la course sur `resolved_at` sans rien créer.
-    const outcome = writeTransaction(ctx.db, () => {
-      const created = createDraftCards(ctx.db, {
-        projectId: conversation.projectId!,
-        userId: user.id,
-        conversationId: id,
-        draft: body.draft,
-      })
-      close('created', { ...created, draft: body.draft })
-      ctx.db
-        .insert(sessionMessages)
-        .values({
-          id: randomUUID(),
-          projectId: conversation.projectId!,
-          fromConversationId: id,
-          toConversationId: id,
-          kind: 'cards',
-          body: [
-            'Ton brouillon de cartes a été validé et créé.',
-            created.parent ? `Parente : #${created.parent.number} « ${created.parent.title} ».` : null,
-            ...created.created.map((card) => `- #${card.number} « ${card.title} »`),
-          ]
-            .filter((line) => line !== null)
-            .join('\n'),
-          replyTo: requestId,
-          createdAt: Date.now(),
-        })
-        .run()
-      return created
+    const accepted = acceptDraft(acceptDeps(request), {
+      conversationId: id,
+      row,
+      projectId: conversation.projectId!,
+      draft: body.draft,
+      userId: user.id,
+      automatic: false,
     })
+    if (!accepted.ok) {
+      if (accepted.reason === 'already_decided') throw badRequest('card_draft_already_decided', 'This draft has already been decided.')
+      return { ok: true, applied: false, reason: accepted.reason }
+    }
+    const { ok: _ok, ...outcome } = accepted
     return { ok: true, ...outcome }
   })
 

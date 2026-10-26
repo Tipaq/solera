@@ -48,6 +48,7 @@
     "test:desktop-update": "node scripts/desktop-update-check.mjs",
     "test:desktop-updates-ui": "node scripts/desktop-updates-ui-check.mjs",
     "test:onboarding-ui": "node scripts/onboarding-ui-check.mjs",
+    "test:settings-ui": "node scripts/settings-ui-check.mjs",
     "test:windows-feedback-ui": "node scripts/windows-feedback-ui-check.mjs",
     "db:generate": "pnpm --filter @solera/db generate",
     "db:migrate": "pnpm --filter @solera/server migrate",

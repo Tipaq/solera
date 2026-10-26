@@ -151,6 +151,11 @@ export class Decisions {
     requester: ConversationRow,
     project: ProjectRow,
     payload: Record<string, unknown>,
+    /**
+     * Le réglage « Automatique » (#120) : personne n'est sollicité, l'option par défaut
+     * de l'agent est retenue dès le dépôt, et le fil le dit en une ligne.
+     */
+    automatic = false,
   ): DecisionDeposit {
     const question = typeof payload.question === 'string' ? payload.question.trim() : ''
     if (!question) throw new DecisionRefusal('Le paramètre `question` est requis.')
@@ -219,6 +224,7 @@ export class Decisions {
     }
 
     const normalized: DecisionPayload = { question, context, options, defaultOption: fallback }
+    if (automatic) return this.decideAutomatically(request, requester, normalized)
     const expiresAt = hours === null ? null : Date.now() + hours * HOUR_MS
     this.ctx.db
       .update(agentRequests)
@@ -254,6 +260,60 @@ export class Decisions {
         this.awaitingChanged([requester.userId])
         void this.notify(request.id, requester, project, question)
       },
+    }
+  }
+
+  /**
+   * Une décision tranchée d'office (#120) : la demande est close au dépôt, sans
+   * notification ni message à l'agent — le retour de son outil lui dit ce qui est retenu,
+   * et un message le relancerait pour rien. Elle ne passe donc pas par « À décider ».
+   *
+   * Sans option par défaut, rien n'est choisi à sa place : il l'apprend de la même façon,
+   * et décide selon ses instructions.
+   */
+  private decideAutomatically(
+    request: AgentRequestRow,
+    requester: ConversationRow,
+    normalized: DecisionPayload,
+  ): DecisionDeposit {
+    const now = Date.now()
+    const option = normalized.defaultOption
+    const answer: DecisionAnswer = option ? { by: 'default', option } : { by: 'expired' }
+    this.ctx.db
+      .update(agentRequests)
+      .set({
+        payload: JSON.stringify(normalized),
+        expiresAt: null,
+        resolvedAt: now,
+        answer: JSON.stringify(answer),
+        ...(option ? { acceptedAt: now } : {}),
+      })
+      .where(eq(agentRequests.id, request.id))
+      .run()
+    this.log.append(requester.id, {
+      type: 'decision.requested',
+      requestId: request.id,
+      question: normalized.question,
+      context: normalized.context,
+      options: normalized.options,
+      defaultOption: option,
+      expiresAt: null,
+    })
+    this.log.append(requester.id, {
+      type: 'decision.resolved',
+      requestId: request.id,
+      by: answer.by,
+      option: option ?? null,
+      text: null,
+      decidedBy: null,
+      automatic: true,
+    })
+    this.noteOnCard(requester, `Décision prise d'office : ${normalized.question}`, option)
+    return {
+      text: option
+        ? `Les décisions de cette session sont réglées sur « Automatique » : personne n'est sollicité, et ton option par défaut, « ${option} », est retenue. Continue avec elle.`
+        : "Les décisions de cette session sont réglées sur « Automatique » : personne n'est sollicité, et tu n'as pas donné d'option par défaut. Décide selon tes instructions, et dis dans ta réponse ce que tu as choisi.",
+      announce: () => {},
     }
   }
 

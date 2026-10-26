@@ -280,7 +280,7 @@ test('la famille refusée refuse la demande, la base restant l’autorité', asy
 
   const refused = await propose([{ card: one.number, column: 'done', reason: 'Finie hier.' }])
   assert.equal(refused.row.isError, true)
-  assert.match(refused.row.result ?? '', /n'est pas accordé à cette conversation|n’est pas accordé/)
+  assert.match(refused.row.result ?? '', /est interdit à cette conversation/)
 })
 
 /** Le dernier `card_filing.resolved` du fil, tel que l'interface le relira. */

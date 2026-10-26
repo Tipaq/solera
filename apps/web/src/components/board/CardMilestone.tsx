@@ -7,7 +7,6 @@ import {
   MAX_MILESTONE_CONCURRENCY,
   MILESTONE_QUOTA_WARNING,
   agentKindSchema,
-  defaultConfigFor,
   type AgentConfig,
   type AgentKind,
   type CardDto,
@@ -23,7 +22,7 @@ import { useAgentSettings } from '../chat/agent-settings'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useLaunchMilestone, useMilestonePlan, useMilestoneRun, useUpdateMilestone } from '../../lib/milestones'
 import { useProjects } from '../../lib/projects'
-import { useUserSettings } from '../../lib/user-settings'
+import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 
 type Tone = 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'
 
@@ -183,8 +182,7 @@ function LaunchDialog({ card, projectId, onClose }: { card: CardDto; projectId: 
   const { data: projects } = useProjects()
   const { data: userSettings } = useUserSettings()
   const project = projects?.find((entry) => entry.id === projectId)
-  const defaultsFor = (agent: AgentKind): AgentConfig =>
-    project?.defaultConfig[agent] ?? userSettings?.agentDefaults[agent] ?? defaultConfigFor(agent)
+  const defaultsFor = (agent: AgentKind): AgentConfig => inheritedConfigFor(agent, userSettings, project)
 
   const [concurrency, setConcurrency] = useState(String(DEFAULT_MILESTONE_CONCURRENCY))
   const [agent, setAgent] = useState<AgentKind>('claude')

@@ -21,7 +21,7 @@ import {
   users,
   worktrees,
 } from '@solera/db'
-import { DEFAULT_CLAUDE_CONFIG, startMilestoneBodySchema, type CardColumn, type ConversationStatus } from '@solera/protocol'
+import { DEFAULT_CLAUDE_CONFIG, startMilestoneBodySchema, type AgentConfig, type CardColumn, type ConversationStatus } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { HttpError } from '../src/http/errors.js'
@@ -98,6 +98,8 @@ async function harness(t: TestContext) {
     sendMessage: async (id: string, _client: string, text: string) => {
       sent.push({ id, text })
     },
+    // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
+    resolveDefaults: async (config: AgentConfig) => config,
   } as unknown as SessionManager
   const registry = { adapter: () => ({ resolveDefaults: async (config: unknown) => config }) } as unknown as AgentRegistry
   const ctx = { db, config: { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config }

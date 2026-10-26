@@ -12,11 +12,21 @@ import {
   DEFAULT_CODEX_CONFIG,
   DEFAULT_OPENCODE_CONFIG,
   DEFAULT_GROK_CONFIG,
+  type AgentConfig,
   type ClaudeConfig,
   type CodexConfig,
   type OpencodeConfig,
   type GrokConfig,
 } from './agent-config.js'
+import {
+  CONFIG_LAYER_AGENTS,
+  EMPTY_CONFIG_LAYER,
+  configLayerPatchSchema,
+  configLayerSchema,
+  layerFromFullConfigs,
+  resolveAgentConfig,
+  type ConfigLayer,
+} from './config-layers.js'
 
 /**
  * Ordre des cartes d'une colonne : `manual` suit le glisser-déposer, `recent` met en tête
@@ -34,6 +44,15 @@ export type BoardOrder = z.infer<typeof boardOrderSchema>
  * le mode de permission engage celui qui lit les réponses, pas l'instance.
  */
 export interface UserSettingsDto {
+  /**
+   * Ce que ce compte change aux défauts du protocole, champ par champ (#120). C'est ce qui
+   * est stocké, et ce que les écrans de réglages lisent pour dire « modifié ici ».
+   */
+  agentLayer: ConfigLayer
+  /**
+   * La configuration qu'un fil libre de ce compte reçoit, CLI par CLI : les défauts du
+   * protocole sous `agentLayer`. Calculée à la lecture, jamais stockée.
+   */
   agentDefaults: AgentDefaults
   /**
    * Projets repliés dans la sidebar.
@@ -244,9 +263,48 @@ export const appearancePrefsSchema = z.object({
     .refine((values) => Object.keys(values).length <= 32),
 })
 
+/**
+ * Le niveau du compte, tiré des défauts complets d'avant l'héritage (#120).
+ *
+ * Chaque champ d'un CLI réglé est retenu, même égal au défaut du protocole : la valeur
+ * pouvait être un choix, et la retenir ne change rien à ce qui s'applique. Les CLI absents
+ * de la charge (écrite avant eux) restent sans réglage.
+ */
+export function accountLayerFromLegacy(raw: unknown): ConfigLayer {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return EMPTY_CONFIG_LAYER
+  const record = raw as Record<string, unknown>
+  const parsed = agentDefaultsSchema.parse(record)
+  const configs: Partial<Record<AgentKind, AgentConfig>> = {}
+  for (const agent of CONFIG_LAYER_AGENTS) {
+    if (agent in record) configs[agent] = { ...parsed[agent], additionalDirectories: [] } as AgentConfig
+  }
+  return layerFromFullConfigs(configs)
+}
+
+/** Les configurations d'un fil libre de ce compte, CLI par CLI. */
+export function resolveAccountDefaults(layer: ConfigLayer): AgentDefaults {
+  return {
+    claude: resolveAgentConfig('claude', [layer]) as ClaudeConfig,
+    codex: resolveAgentConfig('codex', [layer]) as CodexConfig,
+    opencode: resolveAgentConfig('opencode', [layer]) as OpencodeConfig,
+    grok: resolveAgentConfig('grok', [layer]) as GrokConfig,
+  }
+}
+
+/**
+ * Un compte d'avant l'héritage n'a que `agentDefaults` : il est converti à la lecture, et
+ * la conversion s'écrit au premier enregistrement comme au démarrage (`config-backfill`).
+ */
+function withAgentLayer(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const record = raw as Record<string, unknown>
+  if ('agentLayer' in record) return record
+  return { ...record, agentLayer: accountLayerFromLegacy(record.agentDefaults) }
+}
+
 export const storedUserSettingsSchema = z
-  .object({
-    agentDefaults: agentDefaultsSchema.catch(DEFAULT_AGENT_DEFAULTS),
+  .preprocess(withAgentLayer, z.object({
+    agentLayer: configLayerSchema,
     // Jamais purgée des projets supprimés : une liste d'identifiants inconnus ne coûte
     // rien à qui la lit, et la nettoyer demanderait de toucher ce réglage à chaque
     // suppression, y compris pour les comptes qui ne se connectent plus.
@@ -258,8 +316,10 @@ export const storedUserSettingsSchema = z
     notifications: notificationPrefsSchema.default(DEFAULT_NOTIFICATION_PREFS).catch(DEFAULT_NOTIFICATION_PREFS),
     projectDefaults: projectDefaultsSchema.default(DEFAULT_PROJECT_DEFAULTS).catch(DEFAULT_PROJECT_DEFAULTS),
     onboarding: onboardingStateSchema.default(DEFAULT_ONBOARDING).catch(DEFAULT_ONBOARDING),
-  })
+  }))
+  .transform((stored): UserSettingsDto => ({ ...stored, agentDefaults: resolveAccountDefaults(stored.agentLayer) }))
   .catch({
+    agentLayer: EMPTY_CONFIG_LAYER,
     agentDefaults: DEFAULT_AGENT_DEFAULTS,
     collapsedProjects: [],
     boardOrder: {},
@@ -278,6 +338,12 @@ export const updateUserSettingsBodySchema = z.object({
    * les deux écraserait celui qu'un autre onglet vient peut-être de changer.
    */
   agentDefault: agentConfigSchema.optional(),
+  /**
+   * Un changement du niveau du compte, champ par champ (#120) : ce que les écrans de
+   * réglages envoient. `agentDefault`, la configuration entière, reste lu pour les
+   * clients d'avant, et se range de la même façon.
+   */
+  agentLayer: configLayerPatchSchema.optional(),
   /** La liste entière : c'est un état d'affichage, pas un journal d'ouvertures. */
   collapsedProjects: z.array(z.string().uuid()).optional(),
   /** L'ordre d'un seul board ; les autres projets gardent le leur. */
