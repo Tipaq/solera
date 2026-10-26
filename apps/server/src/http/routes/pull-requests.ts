@@ -37,9 +37,15 @@ export function registerPullRequestRoutes(app: FastifyInstance, ctx: AppContext,
       .where(and(visibilityFilter(user.id), isNull(projects.archivedAt)))
       .all()
     const lists = await Promise.all(
-      rows.map(async (project) =>
-        (await readGitStatus(project.workspacePath)) ? ([project.id, await pullRequests.get(project, user.id)] as const) : null,
-      ),
+      rows.map(async (project) => {
+        if (!(await readGitStatus(project.workspacePath))) return null
+        // Un projet en échec sort de la liste au lieu de faire tomber les autres.
+        try {
+          return [project.id, await pullRequests.get(project, user.id)] as const
+        } catch {
+          return null
+        }
+      }),
     )
     return { projects: Object.fromEntries(lists.filter((entry) => entry !== null)) }
   })
