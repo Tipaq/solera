@@ -287,7 +287,9 @@ test('revue : au plafond, une décision part, et « un tour de plus » relève l
   const decision = db.select().from(agentRequests).where(eq(agentRequests.id, escalated.decisionId!)).get()!
   assert.equal(decision.kind, 'request_decision')
   assert.equal(decision.conversationId, reviewer)
-  assert.ok(decision.settledAt && decision.expiresAt, 'Déposée comme celle d’un agent : visible dans « À décider »')
+  assert.ok(decision.settledAt && !decision.isError, 'Déposée comme celle d’un agent : visible dans « À décider »')
+  // Sans défaut, elle n'a pas d'échéance (#119) : elle attend qu'une personne tranche.
+  assert.equal(decision.expiresAt, null)
   assert.match(inbox(AUTHOR).at(-1)!.body, /plafond/)
 
   const blocked = await call(AUTHOR, 'request_review', { pr: '42' })

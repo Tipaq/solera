@@ -307,7 +307,8 @@ test('décisions : à l’échéance, le défaut s’applique ou la session appr
   const { db, decisions, ask, row, messages } = await harness(t)
 
   const withDefault = await ask(ALLOWED, { question: 'On pousse ?', options: ['Oui', 'Non'], default: 'Non' })
-  const withoutDefault = await ask(CARDED, { question: 'Quelle version ?' })
+  // Une échéance demandée sans défaut : sans elle, la décision attendrait qu'on tranche.
+  const withoutDefault = await ask(CARDED, { question: 'Quelle version ?', expires_in_hours: 12 })
   assert.equal(withoutDefault.isError, false, withoutDefault.result ?? '')
 
   // Rien n'échoit avant l'heure.

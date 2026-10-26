@@ -3519,6 +3519,7 @@ export const en = {
   "decision.status.withdrawn": "Withdrawn",
   "decision.expiresIn": "Expires in {left}",
   "decision.expiring": "Expiring now",
+  "decision.noDeadline": "No deadline",
   "decision.dialog.missing": "This decision cannot be found.",
   "decision.dialog.options": "Proposed answers",
   "decision.dialog.default": "Applied if nobody answers",

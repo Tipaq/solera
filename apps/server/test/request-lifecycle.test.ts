@@ -74,7 +74,10 @@ async function harness(t: TestContext) {
   }
 
   const log = new EventLog(db)
-  const ctx = { db, config: { mcp: { cardFiling: true, projectFiling: true, decisions: true } } as unknown as Config }
+  const ctx = {
+    db,
+    config: { mcp: { cardFiling: true, projectFiling: true, decisions: true }, paths: { threads: join(dir, 'threads') } } as unknown as Config,
+  }
   const bus = new EventEmitter()
   // `releaseRunner` : le déplacement accordé relâche le runner, qu'aucun test ne fait tourner.
   const sessions = { statusBus: bus, releaseRunner: async () => true } as unknown as SessionManager
@@ -321,4 +324,21 @@ test('le relais ne remet une issue que pendant un tour, sans jamais relancer', a
   await relay.sweep()
   assert.equal(pending().deliveredVia, 'steer')
   assert.deepEqual(sent, [])
+})
+
+test('une décision sans échéance ni défaut attend qu’on la tranche, sans jamais échoir', async (t) => {
+  const { db, deposit, requests, row } = await harness(t)
+  const open = await deposit('request_decision', { question: 'On garde ce chantier ?', options: ['Oui', 'Non'] })
+  assert.equal(open.isError, false, open.result ?? '')
+  assert.equal(row(open.id).expiresAt, null)
+  assert.match(open.result ?? '', /n'a pas d'échéance/)
+  await requests.sweep()
+  assert.equal(row(open.id).resolvedAt, null)
+
+  // Un défaut, lui, pose l'échéance maximale de la session : sans elle, il ne
+  // s'appliquerait jamais.
+  db.update(agentRequests).set({ resolvedAt: Date.now() }).where(eq(agentRequests.id, open.id)).run()
+  const withDefault = await deposit('request_decision', { question: 'Et celui-ci ?', options: ['Oui', 'Non'], default: 'Non' })
+  assert.equal(withDefault.isError, false, withDefault.result ?? '')
+  assert.notEqual(row(withDefault.id).expiresAt, null)
 })

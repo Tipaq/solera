@@ -3516,6 +3516,7 @@ export const fr: Catalog = {
   "decision.status.withdrawn": "Retirée",
   "decision.expiresIn": "Expire dans {left}",
   "decision.expiring": "Expire maintenant",
+  "decision.noDeadline": "Sans échéance",
   "decision.dialog.missing": "Cette décision est introuvable.",
   "decision.dialog.options": "Réponses proposées",
   "decision.dialog.default": "Appliquée si personne ne répond",

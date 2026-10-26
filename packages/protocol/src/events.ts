@@ -583,7 +583,8 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     context: z.string(),
     options: z.array(z.string()),
     defaultOption: z.string().nullable(),
-    expiresAt: z.number(),
+    /** Null pour une décision posée sans échéance (#119), qui attend qu'on tranche. */
+    expiresAt: z.number().nullable(),
   }),
   z.object({
     type: z.literal('decision.resolved'),

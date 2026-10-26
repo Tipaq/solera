@@ -173,7 +173,8 @@ export interface DecisionItem {
   question: string
   options: string[]
   defaultOption: string | null
-  expiresAt: number
+  /** Null sans échéance (#119). */
+  expiresAt: number | null
   status: 'pending' | 'user' | 'default' | 'expired' | 'withdrawn'
   option: string | null
   text: string | null

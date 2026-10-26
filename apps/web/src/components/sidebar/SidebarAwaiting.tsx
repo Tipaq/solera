@@ -112,9 +112,11 @@ function AwaitingLine({ request, onNavigate }: {
         <span className="min-w-0 flex-1 truncate">{question}</span>
         {/* Le temps restant seul : la phrase entière est dans l'infobulle, et la colonne
             n'a pas la place de la porter à côté de la question. */}
-        <span className="shrink-0 text-meta tabular-nums text-ink-faint">
-          {formatAgo(Math.max(0, request.expiresAt - Date.now()))}
-        </span>
+        {request.expiresAt !== null ? (
+          <span className="shrink-0 text-meta tabular-nums text-ink-faint">
+            {formatAgo(Math.max(0, request.expiresAt - Date.now()))}
+          </span>
+        ) : null}
       </button>
     )
   }

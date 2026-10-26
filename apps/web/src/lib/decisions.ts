@@ -88,8 +88,9 @@ export function useAwaitingLive(): void {
   }, [count])
 }
 
-/** « Expire dans 23 h » ou « Échéance passée », pour une décision en attente. */
-export function decisionDue(expiresAt: number, now = Date.now()): string {
+/** « Expire dans 23 h », « Échéance passée » ou « Sans échéance », pour une décision en attente. */
+export function decisionDue(expiresAt: number | null, now = Date.now()): string {
+  if (expiresAt === null) return translate('decision.noDeadline')
   const left = expiresAt - now
   return left > 0
     ? translate('decision.expiresIn', { left: formatAgo(left) })

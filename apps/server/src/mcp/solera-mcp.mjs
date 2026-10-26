@@ -1258,7 +1258,7 @@ const ALL_TOOLS = [
   {
     name: 'request_decision',
     description:
-      "Demande à l'utilisateur de trancher un choix, **sans attendre sa réponse** : la demande ne bloque pas, et la réponse t'arrivera plus tard en message dans cette conversation, ce qui te relancera si tu as fini ton tour. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent et engage quelque chose qu'on ne défait pas facilement ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas. Une seule demande en attente à la fois ; à l'échéance, ton choix par défaut s'applique, ou tu apprends que personne n'a répondu.",
+      "Demande à l'utilisateur de trancher un choix, **sans attendre sa réponse** : la demande ne bloque pas, et la réponse t'arrivera plus tard en message dans cette conversation, ce qui te relancera si tu as fini ton tour. Sers-t'en quand tes instructions prévoient de demander, ou qu'un choix sort de ce qu'elles couvrent et engage quelque chose qu'on ne défait pas facilement ; pour le reste, décide seul : une session qui demande tout ne sert plus à rien. La demande apparaît dans « À décider » et notifie l'utilisateur. Ensuite, termine ton tour ou continue ce qui n'en dépend pas. Une seule demande en attente à la fois. Sans échéance, elle attend que l'utilisateur tranche ; avec une échéance, ton choix par défaut s'applique à son terme, ou tu apprends que personne n'a répondu.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -1278,12 +1278,12 @@ const ALL_TOOLS = [
         },
         default: {
           type: 'string',
-          description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`.",
+          description: "Le choix appliqué si personne ne répond à temps ; il reprend exactement l'un des `options`. Il pose une échéance, celle de `expires_in_hours` ou à défaut le maximum réglé pour la session.",
         },
         expires_in_hours: {
           type: 'number',
           description:
-            "Délai de réponse en heures ; ramené au maximum que l'utilisateur a réglé pour cette session, qui s'applique s'il est omis.",
+            "Délai de réponse en heures, ramené au maximum que l'utilisateur a réglé pour cette session. Omis et sans `default`, la décision n'a pas d'échéance : elle attend qu'on la tranche.",
         },
       },
       required: ['question'],

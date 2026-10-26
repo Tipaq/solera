@@ -185,12 +185,17 @@ export class Decisions {
       throw new DecisionRefusal('`default` doit reprendre exactement l’un des `options`.')
     }
 
+    // Pas d'échéance imposée (#119) : certaines décisions ne doivent pas avoir de fin.
+    // L'agent en pose une s'il la veut, bornée au maximum réglé pour la session ; un
+    // choix par défaut en demande une, sans quoi il ne s'appliquerait jamais.
     const maxHours = parseAgentConfig(requester.config).decisionMaxHours
     const asked =
       typeof payload.expires_in_hours === 'number' && Number.isFinite(payload.expires_in_hours)
         ? payload.expires_in_hours
-        : maxHours
-    const hours = Math.min(Math.max(asked, MIN_DECISION_HOURS), maxHours)
+        : fallback
+          ? maxHours
+          : null
+    const hours = asked === null ? null : Math.min(Math.max(asked, MIN_DECISION_HOURS), maxHours)
 
     // Une seule décision en attente à la fois par conversation, comme pour les
     // rangements : tant que personne n'a répondu, l'agent n'a rien à ajouter.
@@ -202,7 +207,7 @@ export class Decisions {
           eq(agentRequests.kind, 'request_decision'),
           eq(agentRequests.conversationId, requester.id),
           isNull(agentRequests.resolvedAt),
-          isNotNull(agentRequests.expiresAt),
+          deposited(),
           ne(agentRequests.id, request.id),
         ),
       )
@@ -214,7 +219,7 @@ export class Decisions {
     }
 
     const normalized: DecisionPayload = { question, context, options, defaultOption: fallback }
-    const expiresAt = Date.now() + hours * HOUR_MS
+    const expiresAt = hours === null ? null : Date.now() + hours * HOUR_MS
     this.ctx.db
       .update(agentRequests)
       .set({ payload: JSON.stringify(normalized), expiresAt })
@@ -234,11 +239,13 @@ export class Decisions {
 
     const text = [
       "Demande déposée : l'utilisateur la voit dans « À décider » et en est notifié.",
-      `Ne l'attends pas : termine ton tour, ou continue ce qui n'en dépend pas. La réponse t'arrivera en message, au plus tard le ${stamp(expiresAt)} ; ${
-        fallback
-          ? `sans réponse d'ici là, Solera répondra « ${fallback} » à sa place`
-          : "sans réponse d'ici là, Solera te dira que personne n'a répondu"
-      }.`,
+      expiresAt === null
+        ? "Ne l'attends pas : termine ton tour, ou continue ce qui n'en dépend pas. Elle n'a pas d'échéance : la réponse t'arrivera en message quand l'utilisateur aura tranché, et te relancera."
+        : `Ne l'attends pas : termine ton tour, ou continue ce qui n'en dépend pas. La réponse t'arrivera en message, au plus tard le ${stamp(expiresAt)} ; ${
+            fallback
+              ? `sans réponse d'ici là, Solera répondra « ${fallback} » à sa place`
+              : "sans réponse d'ici là, Solera te dira que personne n'a répondu"
+          }.`,
       "N'en redépose pas : une seule demande de décision peut attendre à la fois.",
     ].join('\n')
     return {
@@ -267,7 +274,7 @@ export class Decisions {
         and(
           eq(agentRequests.kind, 'request_decision'),
           isNull(agentRequests.resolvedAt),
-          isNotNull(agentRequests.expiresAt),
+          deposited(),
         ),
       )
       .all()
@@ -363,7 +370,7 @@ export class Decisions {
         and(
           eq(agentRequests.kind, 'request_decision'),
           ownedBy(userId),
-          isNotNull(agentRequests.expiresAt),
+          deposited(),
           scope === 'pending' ? isNull(agentRequests.resolvedAt) : undefined,
         ),
       )
@@ -389,7 +396,7 @@ export class Decisions {
           eq(agentRequests.kind, 'request_decision'),
           ownedBy(userId),
           isNull(agentRequests.resolvedAt),
-          isNotNull(agentRequests.expiresAt),
+          deposited(),
         ),
       )
       .all().length
@@ -453,7 +460,7 @@ export class Decisions {
     for (const row of rows) {
       const requester = threads.get(row.conversationId)
       if (row.kind === 'request_decision' && row.worktreePath) {
-        if (!row.projectId || owners.get(row.projectId) !== userId || row.expiresAt === null) continue
+        if (!row.projectId || owners.get(row.projectId) !== userId) continue
         items.push({
           kind: 'decision',
           id: row.id,
@@ -465,7 +472,7 @@ export class Decisions {
           createdAt: row.createdAt,
         })
       } else if (row.kind === 'request_decision') {
-        if (!requester || requester.userId !== userId || !requester.projectId || row.expiresAt === null) continue
+        if (!requester || requester.userId !== userId || !requester.projectId) continue
         items.push({
           kind: 'decision',
           id: row.id,
@@ -696,7 +703,7 @@ export class Decisions {
         and(
           eq(agentRequests.id, id),
           eq(agentRequests.kind, 'request_decision'),
-          isNotNull(agentRequests.expiresAt),
+          deposited(),
         ),
       )
       .get()
@@ -774,7 +781,7 @@ export class Decisions {
         context: payload.context,
         options: payload.options,
         defaultOption: payload.defaultOption,
-        expiresAt: row.expiresAt ?? row.createdAt,
+        expiresAt: row.expiresAt,
         status: answer?.by ?? 'pending',
         answer: answer
           ? {
@@ -800,6 +807,15 @@ function ownedBy(userId: string) {
     and(isNull(agentRequests.worktreePath), eq(conversations.userId, userId)),
     and(isNotNull(agentRequests.worktreePath), eq(projects.ownerId, userId)),
   )
+}
+
+/**
+ * Une décision bien déposée : traitée par le daemon et acceptée. Elle disait avant
+ * « avec une échéance », que le dépôt posait toujours ; une décision peut désormais n'en
+ * pas avoir (#119).
+ */
+function deposited() {
+  return and(isNotNull(agentRequests.settledAt), eq(agentRequests.isError, false))
 }
 
 /** Le fil qu'un `move_conversation` déplace : celui que l'agent a nommé, ou le sien. */

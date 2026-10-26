@@ -84,7 +84,8 @@ export interface DecisionDto {
   context: string
   options: string[]
   defaultOption: string | null
-  expiresAt: number
+  /** Null pour une décision sans échéance (#119) : elle attend qu'une personne tranche. */
+  expiresAt: number | null
   status: DecisionStatus
   answer: {
     option: string | null
@@ -123,7 +124,8 @@ export type AwaitingRequestDto =
       question: string
       /** Pour une proposition de nettoyage : la branche, de quoi recomposer la question. */
       worktreeBranch: string | null
-      expiresAt: number
+      /** Null sans échéance. */
+      expiresAt: number | null
       createdAt: number
     }
   | {
