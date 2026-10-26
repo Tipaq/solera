@@ -1,8 +1,9 @@
 import { FolderGit2, GitBranch } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import type { ConversationDto, ProjectPullRequestDto } from '@solera/protocol'
+import type { ConversationDto, ProjectDto, ProjectPullRequestDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
+import { ProjectAvatar } from '../ProjectAvatar'
 import { StateDot } from '../chat/Signals'
 import { PrBadge } from './PrBadge'
 import { conversationPath } from '../../lib/conversation-route'
@@ -24,7 +25,7 @@ export interface SessionSummary {
   tone: 'caution' | 'critical' | 'soft'
 }
 
-const SUMMARY_TONE: Record<SessionSummary['tone'], string> = {
+export const SUMMARY_TONE: Record<SessionSummary['tone'], string> = {
   caution: 'text-caution',
   critical: 'text-critical',
   soft: 'text-ink-soft',
@@ -47,6 +48,13 @@ export const SESSION_ROW_COLUMNS_IN_TREE =
   'md:grid md:grid-cols-[0.375rem_1rem_12rem_minmax(0,1fr)_3.5rem_4rem] xl:grid-cols-[0.375rem_1rem_18rem_minmax(0,1fr)_3.5rem_4rem]'
 
 /**
+ * Les mêmes, avec la colonne Projet après l'agent : l'Activité du portefeuille (planche
+ * D1), qui mêle les sessions de tous les projets.
+ */
+export const SESSION_ROW_COLUMNS_WITH_PROJECT =
+  'md:grid md:grid-cols-[0.375rem_1rem_7rem_12rem_minmax(0,1fr)_3.5rem_10rem_6.5rem_4rem] xl:grid-cols-[0.375rem_1rem_8.5rem_18rem_minmax(0,1fr)_3.5rem_15rem_7.5rem_4rem]'
+
+/**
  * Une session sur une ligne, dans l'onglet Activité d'un projet.
  *
  * **Huit colonnes, toujours à la même place** (planche B4) : point d'état, agent, nom,
@@ -61,6 +69,9 @@ export const SESSION_ROW_COLUMNS_IN_TREE =
  *
  * **Sous l'en-tête d'un worktree** (`inTree`, planche B3), la ligne perd ses colonnes
  * worktree et branche, et PR : l'en-tête les dit pour toutes ses lignes.
+ *
+ * **Dans le portefeuille** (`project`, planche D1), une colonne Projet s'ajoute après
+ * l'agent : la pastille et le nom. Au téléphone, seule la pastille reste, devant le nom.
  *
  * Toute la ligne mène au fil. La carte n'est donc pas un lien à part : un lien dans un
  * lien n'est pas du HTML valide, et son titre reste au survol.
@@ -81,6 +92,7 @@ export function SessionRow({
   request = null,
   expanded = false,
   onToggle,
+  project,
 }: {
   conversation: Pick<ConversationDto, 'id' | 'projectId' | 'title' | 'agent' | 'card' | 'updatedAt' | 'isOwner'>
   marker: SessionMarker
@@ -92,6 +104,8 @@ export function SessionRow({
   request?: SessionRequest | null
   expanded?: boolean
   onToggle?: () => void
+  /** Le projet de la session, pour la colonne Projet du portefeuille. */
+  project?: Pick<ProjectDto, 'name' | 'image' | 'color'>
 }) {
   const t = useTranslate()
   const age = shortAge(conversation.updatedAt)
@@ -119,8 +133,11 @@ export function SessionRow({
         <AgentIcon agent={conversation.agent} size={14} />
       </span>
 
+      {project ? <ProjectCell project={project} /> : null}
+
       {/* Au téléphone, le nom et l'âge partagent le premier étage. */}
       <span className="flex min-w-0 items-baseline gap-2 md:contents">
+        {project ? <ProjectAvatar project={project} className="size-3 self-center md:hidden" /> : null}
         <span className="min-w-0 flex-1 truncate text-sm text-ink md:flex-none">{conversation.title}</span>
         <span className="shrink-0 text-xs text-ink-faint tabular-nums md:hidden">{age}</span>
       </span>
@@ -162,7 +179,7 @@ export function SessionRow({
   const path = conversationPath(conversation)
   const rowClass = cx(
     'grid w-full grid-cols-[0.375rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-4 py-2.5 text-left md:items-center md:py-2',
-    inTree ? SESSION_ROW_COLUMNS_IN_TREE : SESSION_ROW_COLUMNS,
+    inTree ? SESSION_ROW_COLUMNS_IN_TREE : project ? SESSION_ROW_COLUMNS_WITH_PROJECT : SESSION_ROW_COLUMNS,
     'hover:bg-sunken/60 focus-visible:bg-sunken/60 focus-visible:outline-none',
   )
   const foldable = request !== null && onToggle !== undefined
@@ -207,6 +224,16 @@ export function SessionRow({
         />
       ) : null}
     </li>
+  )
+}
+
+/** La colonne Projet du portefeuille : sa pastille et son nom, sur toutes les largeurs sauf le téléphone. */
+export function ProjectCell({ project }: { project: Pick<ProjectDto, 'name' | 'image' | 'color'> }) {
+  return (
+    <span className="hidden min-w-0 items-center gap-1.5 md:flex">
+      <ProjectAvatar project={project} className="size-4" />
+      <span className="truncate text-sm text-ink-soft">{project.name}</span>
+    </span>
   )
 }
 

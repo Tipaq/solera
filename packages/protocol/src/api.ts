@@ -734,6 +734,14 @@ export interface WorktreeStatusListDto {
 }
 
 /**
+ * L'état des worktrees de tous les projets visibles et non archivés, par identifiant de
+ * projet, pour l'Activité du portefeuille (#117). Un projet hors dépôt n'y figure pas.
+ */
+export interface PortfolioWorktreeStatusDto {
+  projects: Record<string, WorktreeStatusListDto>
+}
+
+/**
  * Ce que « Nettoyer » ferait d'un arbre, lu avant de confirmer : rien ne disparaît en
  * silence, la confirmation liste ce qui serait perdu et ce qui s'arrêterait.
  */

@@ -1,5 +1,11 @@
 import { useMemo } from 'react'
-import type { ProjectDto, ProjectPullRequestDto } from '@solera/protocol'
+import type {
+  CardDto,
+  ProjectDto,
+  ProjectPullRequestDto,
+  ProjectPullRequestListDto,
+  WorktreeStatusListDto,
+} from '@solera/protocol'
 import type { SessionMarker, SessionSummary } from '../components/project/SessionRow'
 import { useLiveConversations, type LiveConversation } from './activity'
 import { activityGroupOf, sessionPlaceOf, type ActivityGroup, type SessionPlace } from './activity-groups'
@@ -51,38 +57,66 @@ export function useActivityRows(projectId: string | undefined, project: ProjectD
   const live = useLiveConversations(mine)
   const requests = useSessionRequests(projectId, live)
 
-  return useMemo(() => {
-    // La colonne du board plutôt que celle figée dans la conversation : le board se
-    // relit à chaque déplacement de carte, la liste des conversations non.
-    const columns = new Map((cards ?? []).map((card) => [card.id, card.column]))
-    const rootBranch = project?.git?.branch ?? null
-    return live
-      .map((entry): ActivityRow => {
-        const card = entry.conversation.card
-        const place = sessionPlaceOf(entry.conversation, trees, rootBranch)
-        // La branche par défaut ne porte pas de PR : c'est elle que les PR visent.
-        const pr = place.root ? null : pullRequestFor(pullRequests, place.branch)
-        const request = requests.get(entry.conversation.id) ?? null
-        const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null, {
-          openPr: isOpenPullRequest(pr),
-          requested: request !== null,
-        })
-        const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
-        return {
-          entry,
-          group,
-          marker: markerOf(group, state),
-          summary: summaryOf(entry, state, request, t),
-          place,
-          pr,
-          request,
-        }
-      })
-      .sort((a, b) => b.entry.conversation.updatedAt - a.entry.conversation.updatedAt)
-  }, [live, requests, cards, trees, pullRequests, project, t])
+  return useMemo(
+    () =>
+      activityRowsOf(live, requests, cards ?? [], () => ({
+        trees,
+        pullRequests,
+        rootBranch: project?.git?.branch ?? null,
+      }), t),
+    [live, requests, cards, trees, pullRequests, project, t],
+  )
 }
 
-function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): SessionMarker {
+/** Ce qu'une ligne lit de son projet : ses arbres, ses PR, et la branche de sa racine. */
+export interface ActivityProjectFacts {
+  trees: WorktreeStatusListDto | undefined
+  pullRequests: ProjectPullRequestListDto | undefined
+  rootBranch: string | null
+}
+
+/**
+ * Les lignes, la plus récente d'abord, de sessions qui peuvent venir de plusieurs
+ * projets : l'Activité d'un projet n'en passe qu'un, celle du portefeuille (#117) tous.
+ * `factsOf` dit, pour le projet d'une session, où lire sa branche et sa PR.
+ */
+export function activityRowsOf(
+  live: LiveConversation[],
+  requests: ReadonlyMap<string, SessionRequest>,
+  cards: Pick<CardDto, 'id' | 'column'>[],
+  factsOf: (projectId: string | null) => ActivityProjectFacts,
+  t: ReturnType<typeof useTranslate>,
+): ActivityRow[] {
+  // La colonne du board plutôt que celle figée dans la conversation : le board se
+  // relit à chaque déplacement de carte, la liste des conversations non.
+  const columns = new Map(cards.map((card) => [card.id, card.column]))
+  return live
+    .map((entry): ActivityRow => {
+      const card = entry.conversation.card
+      const { trees, pullRequests, rootBranch } = factsOf(entry.conversation.projectId)
+      const place = sessionPlaceOf(entry.conversation, trees, rootBranch)
+      // La branche par défaut ne porte pas de PR : c'est elle que les PR visent.
+      const pr = place.root ? null : pullRequestFor(pullRequests, place.branch)
+      const request = requests.get(entry.conversation.id) ?? null
+      const group = activityGroupOf(entry, card ? (columns.get(card.id) ?? card.column) : null, {
+        openPr: isOpenPullRequest(pr),
+        requested: request !== null,
+      })
+      const state = threadState({ status: entry.status, busy: entry.running, unread: entry.unread })
+      return {
+        entry,
+        group,
+        marker: markerOf(group, state),
+        summary: summaryOf(entry, state, request, t),
+        place,
+        pr,
+        request,
+      }
+    })
+    .sort((a, b) => b.entry.conversation.updatedAt - a.entry.conversation.updatedAt)
+}
+
+export function markerOf(group: ActivityGroup, state: ReturnType<typeof threadState>): SessionMarker {
   if (group === 'asking') return state === 'broken' ? 'broken' : 'awaiting'
   if (group === 'running') return 'working'
   if (group === 'review') return 'review'
