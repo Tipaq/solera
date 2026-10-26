@@ -15,7 +15,8 @@ import {
   Palette,
   Pencil,
   SlidersHorizontal,
-  Square,
+  Folder,
+  Folders,
   Target,
   ChevronRight,
   Columns3,
@@ -672,16 +673,28 @@ export function Column(props: ColumnProps) {
                 <place.icon size={16} className="mr-1.5 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{place.label}</span>
                 {place.active ? (
-                  /* La bascule arbre ↔ projet, d'un clic, sur la ligne du lieu qu'elle
-                     règle : présente dans les deux modes, sans ligne de plus en arbre. */
-                  <IconButton
-                    label={mode === 'tree' ? 'N’afficher qu’un projet' : 'Afficher tous les projets'}
-                    size="sm"
-                    onClick={() => props.onMode(mode === 'tree' ? 'project' : 'tree')}
-                    className="-mr-1.5"
-                  >
-                    {mode === 'tree' ? <Square size={13} /> : <ListTree size={14} />}
-                  </IconButton>
+                  /* La bascule arbre ↔ projet, sur la ligne du lieu qu'elle règle : deux
+                     positions toujours visibles, la courante surlignée. Un seul bouton à
+                     icône changeante ne disait ni où l'on est, ni qu'on peut revenir. */
+                  <span data-shot="bascule" className="-mr-1.5 flex shrink-0 rounded-md bg-canvas/40 p-0.5">
+                    {([['tree', Folders, 'Tous les projets'], ['project', Folder, 'Un seul projet']] as const).map(([value, Icon, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        aria-pressed={mode === value}
+                        aria-label={label}
+                        title={label}
+                        onClick={() => props.onMode(value)}
+                        className={cx(
+                          'inline-flex items-center justify-center rounded transition-colors',
+                          coarse ? 'size-9' : 'size-6',
+                          mode === value ? 'bg-surface-high text-ink shadow-card' : 'text-ink-faint hover:text-ink',
+                        )}
+                      >
+                        <Icon size={13} />
+                      </button>
+                    ))}
+                  </span>
                 ) : null}
                 <span className="shrink-0 text-meta tabular-nums text-ink-faint">{place.count}</span>
               </div>
