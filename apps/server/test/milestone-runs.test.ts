@@ -294,7 +294,11 @@ test('jalon : pause, reprise, arrêt', async (t) => {
   await launch({ concurrency: 1 })
   await milestones.sweep()
   const run = milestones.latestRun(parentId)!
+  const [active] = milestones.activeRuns('project').map((entry) => milestones.read(entry))
+  assert.equal(active?.cardNumber, 10, 'le bandeau nomme la parente')
+  assert.equal(active?.cardTitle, 'Jalon vite')
   milestones.update(run, 'owner', { state: 'paused' })
+  assert.equal(milestones.activeRuns('project').length, 1, 'un jalon en pause reste lancé')
   setColumn(11, 'done')
   await milestones.sweep()
   assert.equal(sent.length, 1, 'rien ne part en pause')
@@ -306,6 +310,7 @@ test('jalon : pause, reprise, arrêt', async (t) => {
 
   const stopped = milestones.update(milestones.latestRun(parentId)!, 'owner', { state: 'stopped' })
   assert.equal(stopped.state, 'stopped')
+  assert.equal(milestones.activeRuns('project').length, 0, 'un jalon arrêté n’a plus de bandeau')
   setColumn(12, 'done')
   await milestones.sweep()
   assert.equal(sent.length, 2, 'un jalon arrêté ne lance plus rien')

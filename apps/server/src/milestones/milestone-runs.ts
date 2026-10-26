@@ -257,6 +257,16 @@ export class MilestoneRuns {
     )
   }
 
+  /** Les pilotages vivants d'un projet, en marche ou en pause, le plus ancien d'abord (#116). */
+  activeRuns(projectId: string): MilestoneRunRow[] {
+    return this.ctx.db
+      .select()
+      .from(milestoneRuns)
+      .where(and(eq(milestoneRuns.projectId, projectId), inArray(milestoneRuns.state, ['running', 'paused'])))
+      .orderBy(milestoneRuns.createdAt)
+      .all()
+  }
+
   read(run: MilestoneRunRow): MilestoneRunDto {
     const facts = this.gather(run)
     const config = parseAgentConfig(run.config)
@@ -288,6 +298,8 @@ export class MilestoneRuns {
     return {
       id: run.id,
       cardId: run.cardId,
+      cardNumber: facts?.parent.number ?? 0,
+      cardTitle: facts?.parent.title ?? '',
       state: run.state,
       concurrency: run.concurrency,
       agent: config.agent,
