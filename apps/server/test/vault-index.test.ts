@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import Fastify from 'fastify'
-import { openDatabase, runMigrations, users, type Db } from '@solera/db'
+import { conversations, openDatabase, runMigrations, users, type Db } from '@solera/db'
+import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
 import type {
   VaultNoteContentDto,
   VaultNoteDto,
@@ -18,6 +19,7 @@ import type {
   VaultWriteNoteDto,
 } from '@solera/protocol'
 import type { Config } from '../src/config.js'
+import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerVaultRoutes } from '../src/http/routes/vault.js'
 import { writeAppSettings } from '../src/settings/app-settings.js'
@@ -86,7 +88,7 @@ async function harness(t: TestContext) {
 }
 
 /** L'application réduite aux routes du vault, et un utilisateur déjà connecté. */
-async function routes(t: TestContext, db: Db, vault: VaultIndex, config: Config) {
+async function routes(t: TestContext, db: Db, vault: VaultIndex, config: Config, log = new EventLog(db)) {
   db.insert(users)
     .values({ id: 'tim', username: 'tim', displayName: 'Tim', passwordHash: '', createdAt: 1 })
     .run()
@@ -96,7 +98,7 @@ async function routes(t: TestContext, db: Db, vault: VaultIndex, config: Config)
     request.user = db.select().from(users).where(eq(users.id, 'tim')).get()
   })
   registerErrorHandler(app)
-  registerVaultRoutes(app, { db, config }, vault)
+  registerVaultRoutes(app, { db, config }, vault, log)
   t.after(() => app.close())
   return app
 }
@@ -523,6 +525,49 @@ test('créer une note : dans un dossier, ou en ébauche sans dossier', async (t)
     payload: { title: 'a/b' },
   })
   assert.equal(slashed.json<VaultNoteDto>().path, 'a-b.md')
+})
+
+test('garder un fil en note : ses messages en ébauche, et seulement pour son auteur', async (t) => {
+  const { db, vault, config, vaultDir } = await harness(t)
+  const log = new EventLog(db)
+  const app = await routes(t, db, vault, config, log)
+  db.insert(users)
+    .values({ id: 'other', username: 'other', displayName: 'Other', passwordHash: '', createdAt: 1 })
+    .run()
+
+  db.insert(conversations).values({
+    id: 'free', projectId: null, userId: 'tim', title: 'Une question sur le xérès',
+    agent: 'claude', config: JSON.stringify(DEFAULT_CLAUDE_CONFIG), status: 'idle',
+    position: 0, createdAt: 1, updatedAt: 1,
+  }).run()
+  log.append('free', { type: 'message.completed', messageId: 'u1', role: 'user', blocks: [{ type: 'text', text: 'Comment marche une solera ?' }], parentToolCallId: null })
+  log.append('free', { type: 'tool.started', toolCallId: 't1', name: 'WebSearch', input: { q: 'solera' }, parentToolCallId: null } as never)
+  log.append('free', { type: 'message.completed', messageId: 'a1', role: 'assistant', blocks: [{ type: 'text', text: 'On recomplète la vieille barrique avec la jeune.' }], parentToolCallId: null })
+
+  const roles = { user: 'Moi', assistant: 'Claude' }
+  const kept = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes/from-conversation',
+    payload: { conversationId: 'free', roles },
+  })
+  assert.equal(kept.statusCode, 201, kept.body)
+  const note = kept.json<VaultNoteDto>()
+  assert.equal(note.path, 'Une question sur le xérès.md')
+  assert.equal(note.folder, '', 'Une ébauche, à soi')
+  const text = await readFile(join(vaultDir, note.path), 'utf8')
+  assert.equal(
+    text,
+    '# Une question sur le xérès\n\n## Moi\n\nComment marche une solera ?\n\n## Claude\n\nOn recomplète la vieille barrique avec la jeune.\n',
+  )
+
+  // Le fil d'un autre ne se range pas d'ici, et ne se voit pas exister.
+  db.update(conversations).set({ userId: 'other' }).where(eq(conversations.id, 'free')).run()
+  const refused = await app.inject({
+    method: 'POST',
+    url: '/api/vault/notes/from-conversation',
+    payload: { conversationId: 'free', roles },
+  })
+  assert.equal(refused.statusCode, 404)
 })
 
 test('l’historique d’une note est celui de git, et dit quand il n’y en a pas', async (t) => {

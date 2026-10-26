@@ -1,5 +1,6 @@
+import { cp, mkdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { ContentBlock, SoleraEvent } from '@solera/protocol'
 import { toWorkspacePath } from '../paths.js'
 import { editedPath } from './file-edits.js'
@@ -54,6 +55,39 @@ export function transcriptPath(cwd: string, sessionId: string): string {
   const configDir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
   const slug = cwd.replace(/[^a-zA-Z0-9]/g, '-')
   return join(configDir, 'projects', slug, `${sessionId}.jsonl`)
+}
+
+/**
+ * Recopie une session sous le dossier d'un autre cwd, pour qu'elle y reprenne.
+ *
+ * Le CLI retrouverait la session par son seul identifiant (essayé le 2026-10-26 avec la
+ * 2.1.302), mais il continuerait d'écrire dans l'ancien dossier, et tout ce que Solera
+ * lit du transcript (resynchronisation, fork) le cherche sous le cwd courant. Copiée,
+ * la session est reprise et prolongée là : le CLI préfère le fichier du cwd quand les
+ * deux existent. Le dossier de même nom, qui tient les transcripts des sous-agents,
+ * part avec. Une copie déjà présente n'est pas écrasée, et l'original reste où il est.
+ *
+ * Faux quand il n'y avait rien à copier.
+ */
+export async function copyTranscript(fromCwd: string, toCwd: string, sessionId: string): Promise<boolean> {
+  const from = transcriptPath(fromCwd, sessionId)
+  const to = transcriptPath(toCwd, sessionId)
+  if (from === to) return true
+  await mkdir(dirname(to), { recursive: true })
+  try {
+    await cp(from, to, { force: false, errorOnExist: false })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw err
+  }
+  await cp(from.replace(/\.jsonl$/, ''), to.replace(/\.jsonl$/, ''), {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  }).catch((err: NodeJS.ErrnoException) => {
+    if (err.code !== 'ENOENT') throw err
+  })
+  return true
 }
 
 /** Les entrées du transcript, ou une liste vide si le fichier n'existe pas. */

@@ -188,6 +188,20 @@ export interface VaultWriteNoteDto {
  * même geste : le `+` d'un dossier donne un dossier, l'**ébauche** n'en donne pas. Une
  * ébauche n'a donc pas de droit à hériter, et aucun agent ne la voit — c'est à soi.
  */
+/**
+ * *Garder en note* : un fil libre devient une ébauche du vault (carte #118).
+ *
+ * Les intitulés des deux voix viennent de l'interface, dans sa langue : c'est le seul
+ * texte que Solera ajoute à ce que le fil a dit.
+ */
+export const vaultNoteFromConversationBodySchema = z.object({
+  conversationId: z.string().min(1),
+  roles: z.object({
+    user: z.string().trim().min(1).max(80),
+    assistant: z.string().trim().min(1).max(80),
+  }),
+})
+
 export const vaultCreateNoteBodySchema = z.object({
   /** Vide pour une ébauche. */
   folder: z.string().max(512).default(''),

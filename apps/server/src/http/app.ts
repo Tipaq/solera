@@ -278,7 +278,7 @@ export async function buildApp(
   registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx)
   registerTreeRoutes(app, ctx)
-  registerVaultRoutes(app, ctx, vault)
+  registerVaultRoutes(app, ctx, vault, log)
   registerWebRoutes(app)
   registerDesignSystemRelay(app, storybooks)
   registerFileRoutes(app, ctx)

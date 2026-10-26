@@ -868,7 +868,7 @@ export function registerConversationRoutes(
       }
     }
 
-    const result = await moveConversation(ctx, sessions, conversation, body.projectId)
+    const result = await moveConversation(ctx, sessions, log, conversation, body.projectId)
     if (!result.ok) {
       throw result.refusal === 'scheduled'
         ? badRequest('conversation_scheduled', 'A scheduled run stays where its task put it.')

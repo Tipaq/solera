@@ -239,7 +239,7 @@ test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux
 })
 
 test('un déplacement accordé s’applique au premier balayage où la conversation se tait', async (t) => {
-  const { db, thread } = await harness(t)
+  const { db, dir, thread } = await harness(t)
   const free = thread('free', null, 'owner')
   db.update(conversations).set({ status: 'running' }).where(eq(conversations.id, free.id)).run()
 
@@ -253,7 +253,7 @@ test('un déplacement accordé s’applique au premier balayage où la conversat
     statusBus: new EventEmitter(),
   } as unknown as SessionManager
   const requests = new AgentRequests(
-    { db, config: { mcp: { projectFiling: true } } as unknown as Config },
+    { db, config: { mcp: { projectFiling: true }, paths: { threads: join(dir, 'threads') } } as unknown as Config },
     sessions,
     {} as unknown as AgentRegistry,
     log,

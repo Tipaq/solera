@@ -194,6 +194,40 @@ try {
   await column.getByRole('button', { name: 'Réduire la liste' }).click()
   assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
 
+  /*
+    Ranger pendant un tour (carte #118). Le serveur refuse, et le refus doit se lire :
+    il arrivait après la fermeture du menu `⋯`, qui démonte son contenu, et le clic ne
+    faisait rien. Le dialogue propose d'arrêter le tour ; l'arrêt demandé, le
+    rangement est retenté aussitôt, et un refus d'une autre nature se dit à son tour.
+  */
+  const interrupts = []
+  let moveAttempts = 0
+  await page.route('**/api/conversations/fixture-0/project', (route) => {
+    moveAttempts += 1
+    return interrupts.length === 0
+      ? route.fulfill({ status: 400, json: { error: { code: 'conversation_busy', message: 'A conversation cannot be moved while a turn is running.' } } })
+      : route.fulfill({ status: 400, json: { error: { code: 'conversation_scheduled', message: 'A scheduled run stays where its task put it.' } } })
+  })
+  await page.route('**/api/conversations/fixture-0/interrupt', (route) => {
+    interrupts.push(route.request().method())
+    return route.fulfill({ status: 204 })
+  })
+  const busyRow = column.getByRole('link', { name: /Session de travail 1(?!\d)/ }).first().locator('xpath=ancestor::li[1]')
+  await busyRow.hover()
+  await busyRow.getByRole('button', { name: 'Actions de la conversation' }).click()
+  await page.getByRole('menuitem', { name: 'Ranger…' }).click()
+  await page.getByRole('menuitem', { name: /^Dans / }).first().click()
+  const busy = page.getByRole('dialog', { name: 'Un tour est en cours' })
+  await busy.waitFor()
+  await page.screenshot({ path: join(shots, 'ranger-pendant-un-tour.png') })
+  await busy.getByRole('button', { name: 'Arrêter le tour et ranger' }).click()
+  await page.getByRole('dialog', { name: 'Ce fil n’a pas été rangé' }).or(page.getByRole('dialog', { name: "Ce fil n'a pas été rangé" })).waitFor()
+  assert.deepEqual(interrupts, ['POST'])
+  assert.equal(moveAttempts, 2)
+  await page.getByRole('button', { name: 'Fermer' }).click()
+  await page.unroute('**/api/conversations/fixture-0/project')
+  await page.unroute('**/api/conversations/fixture-0/interrupt')
+
   // *Sans projet* ouvre la liste, avant les projets : une boîte de réception, et non un
   // cas particulier qu'on range en bas. Son lien n'a pas de segment de projet — écrire
   // `/p/null/c/<id>` donnerait une adresse qui se charge et ne trouve rien.
@@ -419,7 +453,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne, par compte), tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
