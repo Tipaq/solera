@@ -4028,4 +4028,10 @@ export const fr: Catalog = {
   "forYou.elicitation": "{server} : {message}",
   "forYou.decision.due": "{due} · {fallback}",
   "forYou.history.link": "Historique de ce qui t’attend",
+  "shell.project.focus": "N’afficher que {name}",
+  "shell.project.focusOnly": "N’afficher que ce projet",
+  "shell.project.focusFree": "N’afficher que les fils sans projet",
+  "shell.focus.switch": "Changer de projet",
+  "shell.focus.switchNew": "Changer de projet, du nouveau ailleurs",
+  "shell.focus.all": "Tous les projets",
 }

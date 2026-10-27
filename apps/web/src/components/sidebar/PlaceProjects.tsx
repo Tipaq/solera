@@ -19,7 +19,10 @@ import {
   Archive,
   CalendarClock,
   ChevronRight,
+  ChevronsUpDown,
+  Focus,
   FolderPlus,
+  ListTree,
   MessagesSquare,
   MoreHorizontal,
   Palette,
@@ -31,10 +34,11 @@ import {
   Target,
   Users,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { NavLink, useMatch, useNavigate } from 'react-router-dom'
 import type { ConversationDto, ProjectDto } from '@solera/protocol'
 import { useOpenConversationId } from '../../lib/conversation-route'
+import { currentProjectFocus, setProjectFocus, useProjectFocus } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { PROJECT_COLORS } from '../../lib/project-colors'
 import { useUpdateProject } from '../../lib/projects'
@@ -98,8 +102,13 @@ function useDragSensors() {
  * n'est surlignée quand ce qui est ouvert n'appartient pas à ce lieu. On retrouve la
  * colonne telle qu'on l'a laissée ; c'est la bande du haut qui dit où l'on est.
  *
- * Plus de `ProjectSwitcher` au-dessus — 12 rem de haut à lui seul — ni de bouton *tous
- * les projets* : les projets sont là, dépliés ou non.
+ * **Ou un seul projet à la fois** (#51), au choix et local au navigateur : l'arbre tient
+ * mal à trente projets, le sélecteur coûte trop cher à trois, d'où un réglage et non un
+ * remplacement. Le `ProjectSwitcher` d'avant `075ee35` a été retiré pour ses 12 rem de
+ * haut, et cette raison tient toujours : le mode projet ne lui ajoute qu'**une ligne**
+ * (`FocusedProject`), ⇅ pour changer de projet, le nom, + et ⋯. On y entre depuis la
+ * ligne d'un projet de l'arbre ; on en sort par « Tous les projets », en tête de la
+ * liste ⇅. Le projet affiché suit la conversation qu'on ouvre.
  */
 export function PlaceProjects({ projects, conversations, onNavigate, onReorder }: {
   projects: ProjectDto[]
@@ -111,6 +120,7 @@ export function PlaceProjects({ projects, conversations, onNavigate, onReorder }
   const sensors = useDragSensors()
   /** Le projet ouvert au centre, quelle que soit sa page : son groupe suit. */
   const openProjectId = useMatch('/p/:projectId/*')?.params.projectId
+  const focus = useProjectFocus()
 
   /**
    * Le repli vient du compte, pas du navigateur : on referme un projet parce qu'on n'y
@@ -153,6 +163,20 @@ export function PlaceProjects({ projects, conversations, onNavigate, onReorder }
     () => conversations.filter((entry) => entry.projectId === null),
     [conversations],
   )
+
+  // Un projet retiré depuis ne s'affiche pas seul : l'arbre reprend, sans effacer le
+  // choix — la liste des projets peut simplement ne pas être encore là.
+  const focused = focus === null ? null : projects.find((project) => project.id === focus)
+  if (focus !== undefined && focused !== undefined) {
+    return (
+      <FocusedProject
+        project={focused}
+        projects={projects}
+        conversations={conversations}
+        onNavigate={onNavigate}
+      />
+    )
+  }
 
   if (projects.length === 0 && free.length === 0) {
     return (
@@ -251,6 +275,12 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
           ) : null}
         </button>
 
+        <span className="hidden shrink-0 group-hover:flex group-focus-within:flex pointer-coarse:hidden">
+          <IconButton label={t('shell.project.focusFree')} size="sm" onClick={() => setProjectFocus(null)}>
+            <Focus size={14} />
+          </IconButton>
+        </span>
+
         <Tooltip label={t('shell.conversation.new')}>
           <NavLink
             to="/c/new"
@@ -327,28 +357,8 @@ function ProjectGroup({
   onNavigate: () => void
 }) {
   const t = useTranslate()
-  const navigate = useNavigate()
   const updateProject = useUpdateProject()
   const openConversationId = useOpenConversationId()
-  /*
-    Le groupe liste **toutes** les sessions du projet, actives comprises. Elles en
-    étaient retirées tant qu'elles figuraient dans l'activité, pour ne pas les écrire
-    deux fois — mais une session qu'un agent vient de lancer naissait alors invisible
-    de son propre projet, et n'y apparaissait qu'une fois calmée. Un sommaire de projet
-    qui perd sa ligne au moment où elle devient intéressante ne sert plus à rien ;
-    l'activité, elle, est un triage transversal, et la répétition est son prix.
-
-    Les tirs planifiés restent dehors : une tâche horaire poserait vingt-quatre lignes
-    par jour. Le groupe ne montre donc que les sessions, et le lieu *Planifiées* juste
-    au-dessus les tâches elles-mêmes — jamais ce qu'elles ont lancé. C'est la décision de
-    la carte #35, prise quand la colonne dépliait encore les vues d'un projet sous sa
-    ligne ; la carte #31 a depuis retiré ces sous-liens, et l'historique des tirs, sur la
-    vue *Planifiées* du projet, est devenu l'unique route vers le fil d'un tir.
-  */
-  const sessions = useMemo(
-    () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),
-    [conversations],
-  )
   /*
     Les deux points d'état de la ligne, selon la charte de `threadState` : celui du
     travail en cours, et celui de ce qui réclame — le plus urgent des fils qui attendent
@@ -366,14 +376,6 @@ function ProjectGroup({
       .filter((entry) => entry.awaiting || entry.unread)
       .map((entry) => threadState({ status: entry.status, busy: entry.running, unread: entry.unread })),
   )
-  const archived = useMemo(
-    () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),
-    [conversations],
-  )
-  const [showAll, setShowAll] = useState(false)
-  const visible = showAll
-    ? sessions
-    : sessions.filter((entry, index) => index < SESSIONS_SHOWN || entry.id === openConversationId)
   const [editing, setEditing] = useState(false)
 
   /**
@@ -449,10 +451,11 @@ function ProjectGroup({
         )}
 
         {/*
-          Au repos les deux points d'état, au survol le `+` et le `⋯` : ils **cèdent la
-          place**, on n'ajoute pas. C'est la limite du parti — la ligne porte quatre
-          cibles et pas une de plus, et au doigt, où il n'y a pas de survol, les deux
-          boutons sont permanents et le nom est tronqué d'autant.
+          Au repos les deux points d'état, au survol « N'afficher que ce projet », le `+`
+          et le `⋯` : ils **cèdent la place**, on n'ajoute pas. La ligne portait quatre
+          cibles et pas une de plus ; le mode projet (#51) lui en donne une cinquième,
+          au survol seulement. Au doigt, où il n'y a pas de survol, le `+` et le `⋯`
+          sont permanents, et l'entrée dans le projet est la tête du `⋯`.
 
           Les points disent ce que les sessions réclament, sans aller chercher les
           cartes : la colonne tient déjà toutes les conversations, elle n'a pas de
@@ -470,6 +473,11 @@ function ProjectGroup({
         {/* Visibles tant que le menu est ouvert : le focus est parti dans le menu, et
             sans son déclencheur à l'écran il s'ancrerait dans le coin de la fenêtre. */}
         <span className="hidden shrink-0 items-center group-hover:flex group-focus-within:flex has-[[data-state=open]]:flex pointer-coarse:flex">
+          <span className="contents pointer-coarse:hidden">
+            <IconButton label={t('shell.project.focus', { name: project.name })} size="sm" onClick={() => setProjectFocus(project.id)}>
+              <Focus size={14} />
+            </IconButton>
+          </span>
           <Tooltip label={t('shell.project.newConversation', { name: project.name })}>
             <NavLink
               to={`/p/${project.id}/c/new`}
@@ -481,50 +489,25 @@ function ProjectGroup({
             </NavLink>
           </Tooltip>
 
-          {project.isOwner ? (
-            <Menu
-              trigger={
-                <IconButton label={t('shell.project.actions', { name: project.name })} size="sm" data-row-menu>
-                  <MoreHorizontal size={14} />
-                </IconButton>
-              }
-            >
-              {/* Les vues en second rang, et seulement ici : la colonne n'a pas de
-                  rangée d'onglets sous les yeux, donc le menu est le seul endroit d'où
-                  l'on va droit au board sans passer par l'Aperçu. La bande d'un projet,
-                  elle, ne les redit pas — sa rangée est juste en dessous. */}
-              <MenuItem icon={<Target size={14} />} onSelect={() => { onNavigate(); navigate(`/p/${project.id}`) }}>
-                {t('project.view.overview')}
-              </MenuItem>
-              <MenuItem icon={<SquareKanban size={14} />} onSelect={() => { onNavigate(); navigate(`/p/${project.id}/board`) }}>
-                {t('shell.project.board')}
-              </MenuItem>
-              <MenuItem icon={<CalendarClock size={14} />} onSelect={() => { onNavigate(); navigate(`/p/${project.id}/schedules`) }}>
-                {t('place.schedules.title')}
-              </MenuItem>
-              <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => { onNavigate(); navigate(`/p/${project.id}/settings`) }}>
-                {t('shell.project.settings')}
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem icon={<Pencil size={14} />} onSelect={() => setEditing(true)}>
-                {t('shell.rename')}
-              </MenuItem>
-              <MenuLabel>
-                <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
-              </MenuLabel>
-              <MenuSwatchRow>
-                {PROJECT_COLORS.map((entry) => (
-                  <MenuSwatch
-                    key={entry.value ?? 'default'}
-                    color={entry.value}
-                    label={t(entry.label)}
-                    selected={project.color === entry.value}
-                    onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-                  />
-                ))}
-              </MenuSwatchRow>
-            </Menu>
-          ) : null}
+          {/* Pour tout le monde, à la différence d'avant #51 : sa première entrée fait
+              entrer dans le projet, et au doigt c'est le seul chemin. */}
+          <Menu
+            trigger={
+              <IconButton label={t('shell.project.actions', { name: project.name })} size="sm" data-row-menu>
+                <MoreHorizontal size={14} />
+              </IconButton>
+            }
+          >
+            <MenuItem icon={<Focus size={14} />} onSelect={() => setProjectFocus(project.id)}>
+              {t('shell.project.focusOnly')}
+            </MenuItem>
+            {project.isOwner ? (
+              <>
+                <MenuSeparator />
+                <ProjectMenuEntries project={project} onNavigate={onNavigate} onRename={() => setEditing(true)} />
+              </>
+            ) : null}
+          </Menu>
         </span>
 
         <TooltipButton
@@ -558,41 +541,323 @@ function ProjectGroup({
             : undefined}
         >
           {/* Plus aucun sous-lien de vue, et plus d'en-tête « Sessions » : les onglets
-              portent les vues — c'est la fin de l'hésitation « je clique le sous-lien ou
-              l'onglet ? » — et sous un projet déplié il n'y a que des sessions, ce que
-              le filet de couleur dit déjà. Le `+` qui créait une conversation est
-              remonté sur la ligne du projet, où le survol l'offre. */}
-          {sessions.length === 0 ? (
-            <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
-          ) : (
-            <ul>
-              {visible.map((conversation) => (
-                <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
-              ))}
-            </ul>
-          )}
-
-          {/* « 26 autres sessions… » plutôt que « Voir les 26 sessions » : le reste est
-              compté, et le libellé ne promet pas une page qui n'existe pas. */}
-          {sessions.length > visible.length || showAll ? (
-            <button
-              type="button"
-              onClick={() => setShowAll((value) => !value)}
-              className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
-            >
-              <MessagesSquare size={14} className="shrink-0" />
-              {showAll
-                ? t('shell.sessions.less')
-                : t('shell.sessions.more', { count: sessions.length - visible.length })}
-            </button>
-          ) : null}
-
-          {archived.length > 0 ? (
-            <ArchivedSection conversations={archived} onNavigate={onNavigate} />
-          ) : null}
+              portent les vues, et sous un projet déplié il n'y a que des sessions, ce que
+              le filet de couleur dit déjà. */}
+          <ProjectSessions conversations={conversations} onNavigate={onNavigate} />
         </div>
       ) : null}
     </li>
+  )
+}
+
+/**
+ * Les sessions d'un projet, ou des fils libres : ce qu'un groupe de l'arbre montre une
+ * fois déplié, et ce que montre le mode projet sous sa ligne.
+ */
+function ProjectSessions({ conversations, onNavigate }: {
+  conversations: ConversationDto[]
+  onNavigate: () => void
+}) {
+  const t = useTranslate()
+  const openConversationId = useOpenConversationId()
+  /*
+    Le groupe liste **toutes** les sessions du projet, actives comprises. Elles en
+    étaient retirées tant qu'elles figuraient dans l'activité, pour ne pas les écrire
+    deux fois — mais une session qu'un agent vient de lancer naissait alors invisible
+    de son propre projet, et n'y apparaissait qu'une fois calmée. Un sommaire de projet
+    qui perd sa ligne au moment où elle devient intéressante ne sert plus à rien ;
+    l'activité, elle, est un triage transversal, et la répétition est son prix.
+
+    Les tirs planifiés restent dehors : une tâche horaire poserait vingt-quatre lignes
+    par jour. Le groupe ne montre donc que les sessions, et le lieu *Planifiées* juste
+    au-dessus les tâches elles-mêmes — jamais ce qu'elles ont lancé. C'est la décision de
+    la carte #35, prise quand la colonne dépliait encore les vues d'un projet sous sa
+    ligne ; la carte #31 a depuis retiré ces sous-liens, et l'historique des tirs, sur la
+    vue *Planifiées* du projet, est devenu l'unique route vers le fil d'un tir.
+  */
+  const sessions = useMemo(
+    () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),
+    [conversations],
+  )
+  const archived = useMemo(
+    () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),
+    [conversations],
+  )
+  const [showAll, setShowAll] = useState(false)
+  const visible = showAll
+    ? sessions
+    : sessions.filter((entry, index) => index < SESSIONS_SHOWN || entry.id === openConversationId)
+
+  return (
+    <>
+      {/* Plus aucun sous-lien de vue, et plus d'en-tête « Sessions » : les onglets
+          portent les vues — c'est la fin de l'hésitation « je clique le sous-lien ou
+          l'onglet ? » — et sous un projet déplié il n'y a que des sessions, ce que
+          le filet de couleur dit déjà. Le `+` qui créait une conversation est
+          remonté sur la ligne du projet, où le survol l'offre. */}
+      {sessions.length === 0 ? (
+        <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
+      ) : (
+        <ul>
+          {visible.map((conversation) => (
+            <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
+          ))}
+        </ul>
+      )}
+
+      {/* « 26 autres sessions… » plutôt que « Voir les 26 sessions » : le reste est
+          compté, et le libellé ne promet pas une page qui n'existe pas. */}
+      {sessions.length > visible.length || showAll ? (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
+        >
+          <MessagesSquare size={14} className="shrink-0" />
+          {showAll
+            ? t('shell.sessions.less')
+            : t('shell.sessions.more', { count: sessions.length - visible.length })}
+        </button>
+      ) : null}
+
+      {archived.length > 0 ? (
+        <ArchivedSection conversations={archived} onNavigate={onNavigate} />
+      ) : null}
+    </>
+  )
+}
+
+/**
+ * Les entrées du `⋯` d'un projet que l'on possède, les mêmes dans l'arbre et sur la ligne
+ * du mode projet : ses vues, ses réglages, le renommer, sa couleur.
+ */
+function ProjectMenuEntries({ project, onNavigate, onRename }: {
+  project: ProjectDto
+  onNavigate: () => void
+  onRename: () => void
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const updateProject = useUpdateProject()
+  const go = (path: string) => { onNavigate(); navigate(path) }
+  return (
+    <>
+      {/* Les vues en second rang, et seulement ici : la colonne n'a pas de rangée
+          d'onglets sous les yeux, donc le menu est le seul endroit d'où l'on va droit
+          au board sans passer par l'Aperçu. */}
+      <MenuItem icon={<Target size={14} />} onSelect={() => go(`/p/${project.id}`)}>
+        {t('project.view.overview')}
+      </MenuItem>
+      <MenuItem icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
+        {t('shell.project.board')}
+      </MenuItem>
+      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/schedules`)}>
+        {t('place.schedules.title')}
+      </MenuItem>
+      <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
+        {t('shell.project.settings')}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem icon={<Pencil size={14} />} onSelect={onRename}>
+        {t('shell.rename')}
+      </MenuItem>
+      <MenuLabel>
+        <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
+      </MenuLabel>
+      <MenuSwatchRow>
+        {PROJECT_COLORS.map((entry) => (
+          <MenuSwatch
+            key={entry.value ?? 'default'}
+            color={entry.value}
+            label={t(entry.label)}
+            selected={project.color === entry.value}
+            onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
+          />
+        ))}
+      </MenuSwatchRow>
+    </>
+  )
+}
+
+/**
+ * Le projet affiché suit la conversation qu'on ouvre (#51) : ouvrir un fil d'un autre
+ * projet ramène la colonne sur le sien. Un choix fait à la main par ⇅ tient tant qu'on
+ * n'ouvre pas d'autre fil — un rechargement non plus ne le défait pas.
+ *
+ * Monté par la colonne et non par ce lieu : un fil ouvert depuis *Fils* ou la palette
+ * compte aussi, et on retrouve son projet en revenant à *Projets*. Rien en mode arbre :
+ * le projet du fil ouvert s'y déplie déjà d'office.
+ */
+export function useFocusFollowsConversation(conversations: ConversationDto[]) {
+  const openId = useOpenConversationId()
+  const open = conversations.find((entry) => entry.id === openId)
+  // `undefined` tant que le fil n'est pas chargé : rien ne bouge sur une liste en route.
+  const target = open ? open.projectId : undefined
+  /** Le fil déjà pris en compte : celui qu'on a sous les yeux au chargement l'est. */
+  const followed = useRef(openId)
+  useEffect(() => {
+    if (target === undefined || followed.current === openId) return
+    followed.current = openId
+    if (currentProjectFocus() !== undefined) setProjectFocus(target)
+  }, [openId, target])
+}
+
+/**
+ * Le mode projet : **une ligne**, puis les conversations du projet, directement.
+ *
+ * - **⇅ en tête** ouvre la liste des projets : « Tous les projets » en haut, qui revient
+ *   à l'arbre, puis *Sans projet*, puis chaque projet dans l'ordre de l'arbre, avec son
+ *   point de nouveauté. Un point sur ⇅ dit qu'il y a du nouveau ailleurs ;
+ * - le **nom** ouvre l'Aperçu, comme dans l'arbre ;
+ * - **+** et **⋯** sont ceux de l'arbre.
+ *
+ * Ni Tableau, ni Worktrees, ni Planifiées en lignes dessous : ils sont dans le ⋯ et sur la
+ * page du projet. Réordonner les projets se fait dans l'arbre.
+ */
+function FocusedProject({ project, projects, conversations, onNavigate }: {
+  /** `null` : les fils libres. */
+  project: ProjectDto | null
+  projects: ProjectDto[]
+  conversations: ConversationDto[]
+  onNavigate: () => void
+}) {
+  const t = useTranslate()
+  const updateProject = useUpdateProject()
+  const openConversationId = useOpenConversationId()
+  const [editing, setEditing] = useState(false)
+  const projectId = project?.id ?? null
+  const mine = useMemo(
+    () => conversations.filter((entry) => entry.projectId === projectId),
+    [conversations, projectId],
+  )
+  const elsewhere = useMemo(
+    () => conversations.filter((entry) => entry.projectId !== projectId && !entry.archivedAt && !entry.scheduleId),
+    [conversations, projectId],
+  )
+  const newElsewhere = useHasUnread(elsewhere, openConversationId)
+  const name = project?.name ?? t('destination.none')
+
+  const commitRename = (draft: string) => {
+    setEditing(false)
+    const next = draft.trim()
+    if (project && next && next !== project.name) updateProject.mutate({ id: project.id, name: next })
+  }
+
+  return (
+    <div className="px-2 pb-4">
+      <div
+        data-project-focus
+        className="group mb-1 flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
+      >
+        <Menu
+          align="start"
+          trigger={
+            <button
+              type="button"
+              aria-label={newElsewhere ? t('shell.focus.switchNew') : t('shell.focus.switch')}
+              className="relative inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-11"
+            >
+              <ChevronsUpDown size={14} />
+              {newElsewhere ? (
+                <span aria-hidden className="absolute top-0.5 right-0.5"><StateDot state="unread" labelled={false} /></span>
+              ) : null}
+            </button>
+          }
+        >
+          <MenuItem icon={<ListTree size={14} />} onSelect={() => setProjectFocus(undefined)}>
+            {t('shell.focus.all')}
+          </MenuItem>
+          <MenuSeparator />
+          <FocusChoice
+            label={t('destination.none')}
+            icon={<MessagesSquare size={14} />}
+            current={projectId === null}
+            conversations={conversations.filter((entry) => entry.projectId === null && !entry.archivedAt)}
+            onSelect={() => setProjectFocus(null)}
+          />
+          {projects.map((entry) => (
+            <FocusChoice
+              key={entry.id}
+              label={entry.name}
+              icon={<ProjectAvatar project={entry} className="size-3.5" />}
+              current={entry.id === projectId}
+              conversations={conversations.filter((item) => item.projectId === entry.id && !item.archivedAt && !item.scheduleId)}
+              onSelect={() => setProjectFocus(entry.id)}
+            />
+          ))}
+        </Menu>
+
+        {editing && project ? (
+          <RenameInput
+            value={project.name}
+            onCommit={commitRename}
+            onCancel={() => setEditing(false)}
+            className="h-7 min-w-0 flex-1 rounded border border-accent bg-sunken px-1.5 text-sm text-ink outline-none"
+          />
+        ) : project ? (
+          <NavLink
+            to={`/p/${project.id}`}
+            onClick={onNavigate}
+            title={project.name}
+            className="flex h-full min-w-0 flex-1 items-center gap-2 pl-0.5 text-sm font-semibold"
+          >
+            <ProjectAvatar project={project} className="size-4" />
+            <span className="truncate">{project.name}</span>
+          </NavLink>
+        ) : (
+          <span className="flex h-full min-w-0 flex-1 items-center gap-2 pl-0.5 text-sm font-semibold">
+            <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
+            <span className="truncate">{name}</span>
+          </span>
+        )}
+
+        <Tooltip label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}>
+          <NavLink
+            to={project ? `/p/${project.id}/c/new` : '/c/new'}
+            onClick={onNavigate}
+            aria-label={project ? t('shell.project.newConversation', { name }) : t('shell.conversation.new')}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:size-9"
+          >
+            <Plus size={14} />
+          </NavLink>
+        </Tooltip>
+
+        {project?.isOwner ? (
+          <Menu
+            trigger={
+              <IconButton label={t('shell.project.actions', { name })} size="sm" data-row-menu>
+                <MoreHorizontal size={14} />
+              </IconButton>
+            }
+          >
+            <ProjectMenuEntries project={project} onNavigate={onNavigate} onRename={() => setEditing(true)} />
+          </Menu>
+        ) : null}
+      </div>
+
+      <ProjectSessions conversations={mine} onNavigate={onNavigate} />
+    </div>
+  )
+}
+
+/** Une entrée de la liste ⇅, avec le point de nouveauté de son projet. */
+function FocusChoice({ label, icon, current, conversations, onSelect }: {
+  label: string
+  icon: ReactNode
+  current: boolean
+  conversations: ConversationDto[]
+  onSelect: () => void
+}) {
+  const t = useTranslate()
+  const openConversationId = useOpenConversationId()
+  const fresh = useHasUnread(conversations, openConversationId)
+  return (
+    <MenuItem icon={icon} onSelect={onSelect}>
+      <span className="flex min-w-0 items-center gap-2">
+        <span className={cx('min-w-0 flex-1 truncate', current && 'font-semibold')}>{label}</span>
+        {fresh ? <span title={t('shell.project.unread')}><StateDot state="unread" labelled={false} /></span> : null}
+      </span>
+    </MenuItem>
   )
 }
 
