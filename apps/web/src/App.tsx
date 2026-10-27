@@ -1,10 +1,9 @@
-import { Suspense, lazy, useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
-import { SettingsDialog } from './components/settings/SettingsDialog'
 import { AppearanceSync } from './lib/appearance-sync'
 import { visibleSections } from './components/settings/sections'
-import { LEGACY_SETTINGS_SECTIONS, openSettings } from './lib/settings-dialog'
+import { LEGACY_SETTINGS_SECTIONS, openSettings, useSettingsDialog } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
 import { useProjects } from './lib/projects'
@@ -12,23 +11,11 @@ import { useUserSettings } from './lib/user-settings'
 import { ConversationPage } from './routes/ConversationPage'
 import { DraftConversationPage } from './routes/DraftConversationPage'
 import { HomePage } from './routes/HomePage'
-import { ServicesPage } from './routes/ServicesPage'
-import { DecisionsPage } from './routes/DecisionsPage'
 import { LoginPage } from './routes/LoginPage'
-import { BoardPage } from './routes/BoardPage'
-import { PortfolioBoardPage } from './routes/PortfolioBoardPage'
-import { PortfolioJournalPage } from './routes/PortfolioJournalPage'
 import { PortfolioLayout } from './routes/PortfolioLayout'
-import { PortfolioTimelinePage } from './routes/PortfolioTimelinePage'
-import { ProjectJournalPage } from './routes/ProjectJournalPage'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
-import { ProjectTimelinePage } from './routes/ProjectTimelinePage'
-import { ProjectPage } from './routes/ProjectPage'
 import { ProjectsPage } from './routes/ProjectsPage'
-import { NewProjectPage } from './routes/NewProjectPage'
-import { SchedulePage } from './routes/SchedulePage'
-import { SchedulesPage } from './routes/SchedulesPage'
 
 /**
  * L'éditeur de skill, chargé à part.
@@ -90,6 +77,70 @@ const PortfolioActivityPage = lazy(() =>
 const ProjectMilestonePage = lazy(() =>
   import('./routes/ProjectMilestonePage').then((m) => ({ default: m.ProjectMilestonePage })),
 )
+
+/**
+ * Les vues qu'on n'ouvre pas au démarrage, chargées à part (#128).
+ *
+ * Le paquet d'entrée remontait vers la limite de précache du service worker (2 Mio,
+ * dont le dépassement **casse le build**) : 91 % au 2026-10-27, un peu plus à chaque
+ * carte. On arrive sur l'accueil ou sur une conversation ; le board, les réglages d'un
+ * projet, les tâches planifiées, les jalons, le journal, les décisions et les services
+ * sont des destinations, et leur code peut attendre qu'on y aille. Chaque morceau reste
+ * précaché (`globPatterns`) : la navigation marche hors ligne et n'attend pas le réseau.
+ *
+ * Restent dans le tronc les layouts, qui portent les onglets et la bande, et les vues
+ * d'arrivée : l'accueil, le portefeuille, la vue d'ensemble d'un projet, la conversation.
+ */
+const NewProjectPage = lazy(() => import('./routes/NewProjectPage').then((m) => ({ default: m.NewProjectPage })))
+const PortfolioBoardPage = lazy(() =>
+  import('./routes/PortfolioBoardPage').then((m) => ({ default: m.PortfolioBoardPage })),
+)
+const PortfolioTimelinePage = lazy(() =>
+  import('./routes/PortfolioTimelinePage').then((m) => ({ default: m.PortfolioTimelinePage })),
+)
+const PortfolioJournalPage = lazy(() =>
+  import('./routes/PortfolioJournalPage').then((m) => ({ default: m.PortfolioJournalPage })),
+)
+const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({ default: m.SchedulesPage })))
+const DecisionsPage = lazy(() => import('./routes/DecisionsPage').then((m) => ({ default: m.DecisionsPage })))
+const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
+const BoardPage = lazy(() => import('./routes/BoardPage').then((m) => ({ default: m.BoardPage })))
+const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ default: m.SchedulePage })))
+const ProjectTimelinePage = lazy(() =>
+  import('./routes/ProjectTimelinePage').then((m) => ({ default: m.ProjectTimelinePage })),
+)
+const ProjectJournalPage = lazy(() =>
+  import('./routes/ProjectJournalPage').then((m) => ({ default: m.ProjectJournalPage })),
+)
+const ProjectPage = lazy(() => import('./routes/ProjectPage').then((m) => ({ default: m.ProjectPage })))
+
+/** Une vue chargée à part, sans voile d'attente : elle arrive quand son code est là. */
+function Deferred({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>
+}
+
+const SettingsDialog = lazy(() =>
+  import('./components/settings/SettingsDialog').then((m) => ({ default: m.SettingsDialog })),
+)
+
+/**
+ * La modale des réglages, chargée à sa première ouverture.
+ *
+ * Elle importe toutes ses sections — jetons d'API, comptes, abonnements, permissions —
+ * pour une modale que la plupart des visites n'ouvrent pas. Une fois chargée, elle reste
+ * montée : la fermeture garde son animation, et la réouverture est immédiate.
+ */
+function SettingsDialogMount() {
+  const { open } = useSettingsDialog()
+  const [wanted, setWanted] = useState(open)
+  if (open && !wanted) setWanted(true)
+  if (!wanted) return null
+  return (
+    <Suspense fallback={null}>
+      <SettingsDialog />
+    </Suspense>
+  )
+}
 
 /** Après la visite : la création du premier projet s'il n'y en a aucun, sinon l'accueil. */
 function OnboardingExit() {
@@ -180,11 +231,11 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <AppearanceSync />
       {/* Hors des routes : les réglages s'ouvrent depuis n'importe où — le menu du
           compte, la palette, une phrase d'explication — et ne remplacent pas la vue
           qu'on avait sous les yeux. */}
-      <AppearanceSync />
-      <SettingsDialog />
+      <SettingsDialogMount />
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/bienvenue" element={<OnboardingExit />} />
@@ -193,25 +244,25 @@ export function App() {
           {/* Le portefeuille a la même grammaire qu'un projet, un cran au-dessus. La
               création d'un projet reste dehors : c'est un formulaire, pas une vue du
               portefeuille, et il doit s'ouvrir plein écran. */}
-          <Route path="/projects/new" element={<NewProjectPage />} />
+          <Route path="/projects/new" element={<Deferred><NewProjectPage /></Deferred>} />
           <Route path="/projects" element={<PortfolioLayout />}>
             <Route index element={<ProjectsPage />} />
-            <Route path="board" element={<PortfolioBoardPage />} />
+            <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
             <Route path="activity" element={<Suspense fallback={null}><PortfolioActivityPage /></Suspense>} />
             {/* Travail s'est fondu dans l'Activité (#117) : l'ancienne adresse y mène. */}
             <Route path="work" element={<Navigate to="/projects/activity" replace />} />
-            <Route path="timeline" element={<PortfolioTimelinePage />} />
-            <Route path="journal" element={<PortfolioJournalPage />} />
+            <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
+            <Route path="journal" element={<Deferred><PortfolioJournalPage /></Deferred>} />
           </Route>
-          <Route path="/schedules" element={<SchedulesPage />} />
-          <Route path="/decisions" element={<DecisionsPage />} />
+          <Route path="/schedules" element={<Deferred><SchedulesPage /></Deferred>} />
+          <Route path="/decisions" element={<Deferred><DecisionsPage /></Deferred>} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
               Pas de voile d'attente : la page arrive quand son code est là, plutôt que
               de faire clignoter un écran vide entre deux notes. */}
           <Route path="/vault/parcourir" element={<Suspense fallback={null}><VaultBrowsePage /></Suspense>} />
           <Route path="/vault/note/*" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
-          <Route path="/services" element={<ServicesPage />} />
+          <Route path="/services" element={<Deferred><ServicesPage /></Deferred>} />
           {/* Les vues d'un projet partagent une coque : la bande, qui ne dépend pas de
               la vue, et la rangée d'onglets qui les porte. Les réglages restent dehors —
               ils ne sont pas une vue mais une destination du `⋯` — et les conversations
@@ -219,13 +270,13 @@ export function App() {
           <Route path="/p/:projectId" element={<ProjectLayout />}>
             <Route index element={<ProjectOverviewPage />} />
             <Route path="activity" element={<Suspense fallback={null}><ProjectActivityPage /></Suspense>} />
-            <Route path="board" element={<BoardPage />} />
-            <Route path="schedules" element={<SchedulePage />} />
-            <Route path="timeline" element={<ProjectTimelinePage />} />
+            <Route path="board" element={<Deferred><BoardPage /></Deferred>} />
+            <Route path="schedules" element={<Deferred><SchedulePage /></Deferred>} />
+            <Route path="timeline" element={<Deferred><ProjectTimelinePage /></Deferred>} />
             <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
-            <Route path="journal" element={<ProjectJournalPage />} />
+            <Route path="journal" element={<Deferred><ProjectJournalPage /></Deferred>} />
           </Route>
-          <Route path="/p/:projectId/settings" element={<ProjectPage />} />
+          <Route path="/p/:projectId/settings" element={<Deferred><ProjectPage /></Deferred>} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />

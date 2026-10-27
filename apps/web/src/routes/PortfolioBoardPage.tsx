@@ -14,7 +14,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { ChevronDown, Flag, ListFilter, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CARD_COLUMNS, type AgentKind, type CardColumn } from '@solera/protocol'
 import { Menu, MenuCheckboxItem, MenuLabel, cx } from '@solera/ui'
@@ -32,6 +32,8 @@ const COLUMNS: readonly CardColumn[] = CARD_COLUMNS.filter((column) => column !=
 /** Les filtres actifs vivent dans l'adresse : un board filtré se partage par lien. */
 const PROJECT_PARAM = 'projet'
 const MILESTONE_PARAM = 'parente'
+/** L'ancien nom du filtre, d'avant l'arbre de cartes (#83) : un lien qui le porte y mène encore. */
+const LEGACY_MILESTONE_PARAM = 'jalon'
 const AGENT_PARAM = 'agent'
 
 const collisionDetection: CollisionDetection = (args) => {
@@ -69,6 +71,14 @@ export function PortfolioBoardPage() {
   const t = useTranslate()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
+
+  useEffect(() => {
+    if (!params.has(LEGACY_MILESTONE_PARAM)) return
+    const next = new URLSearchParams(params)
+    for (const value of next.getAll(LEGACY_MILESTONE_PARAM)) next.append(MILESTONE_PARAM, value)
+    next.delete(LEGACY_MILESTONE_PARAM)
+    setParams(next, { replace: true })
+  }, [params, setParams])
 
   const { data: projects } = useProjects()
   const visible = useMemo(

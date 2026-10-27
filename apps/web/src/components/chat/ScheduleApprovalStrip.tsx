@@ -1,12 +1,16 @@
 import { ShieldAlert, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Button } from '@solera/ui'
 import type { ToolItem } from '../../lib/chat-fold'
 import { useTranslate } from '../../lib/i18n'
 import { useSchedules } from '../../lib/schedules'
 import { scheduledTaskIdOf } from '../../lib/solera-tools'
-import { CheckApprovalDialog } from '../schedule/CheckSection'
 import { outputText } from '../../lib/tool-payload'
+
+/** Hors du paquet d'entrée (#128) : chargé quand le bandeau paraît, pas au démarrage. */
+const CheckApprovalDialog = lazy(() =>
+  import('../schedule/CheckSection').then((m) => ({ default: m.CheckApprovalDialog })),
+)
 
 /**
  * Sous l'appel `schedule_task` qui vient de proposer un script de vérification : le
@@ -41,7 +45,9 @@ export function ScheduleApprovalStrip({ tool }: { tool: ToolItem }) {
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
         {t('schedule.check.review')}
       </Button>
-      <CheckApprovalDialog task={task} open={open} onOpenChange={setOpen} />
+      <Suspense fallback={null}>
+        <CheckApprovalDialog task={task} open={open} onOpenChange={setOpen} />
+      </Suspense>
     </div>
   )
 }
