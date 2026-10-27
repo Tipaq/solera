@@ -23,6 +23,8 @@ export interface ServiceProcess {
   ports: number[]
   startedAt: number
   memoryBytes: number
+  /** Temps CPU cumulé de l'arbre, en secondes : la route en tire une charge entre deux scans. */
+  cpuSeconds: number
   /** L'entrée et tout ce qui en descend. */
   processCount: number
   /** Les descendants par nom, du plus nombreux au plus rare. */
@@ -39,13 +41,15 @@ export interface FoldableProcess extends ProcessNode {
 
 interface ObservedProcess extends FoldableProcess {
   status: string
+  cpuTicks: number
 }
 
 /** Le nom peut contenir des espaces et des parenthèses. */
-export function processIdentity(line: string): { parent: number; start: string } {
+export function processIdentity(line: string): { parent: number; start: string; cpuTicks: number } {
   const fields = line.slice(line.lastIndexOf(')') + 2).trim().split(/\s+/)
   if (!/^\d+$/.test(fields[19] ?? '')) throw new Error('Invalid process stat')
-  return { parent: Number(fields[1]), start: fields[19]! }
+  // `utime` et `stime`, champs 14 et 15 de `stat`, en tops d'horloge.
+  return { parent: Number(fields[1]), start: fields[19]!, cpuTicks: Number(fields[11] ?? 0) + Number(fields[12] ?? 0) }
 }
 
 export function listeningSockets(table: string): Map<string, number> {
@@ -173,10 +177,12 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
         const ports = new Set<number>()
         const members: ServiceProcess['members'] = []
         let memoryBytes = 0
+        let cpuTicks = 0
         for (const member of entry.members) {
           const current = nodes.get(member)!
           members.push({ pid: member, start: current.start })
           memoryBytes += Number(/^VmRSS:\s+(\d+)/m.exec(current.status)?.[1] ?? 0) * 1024
+          cpuTicks += current.cpuTicks
           for (const fd of await readdir(`/proc/${member}/fd`).catch(() => [] as string[])) {
             const target = await readlink(`/proc/${member}/fd/${fd}`).catch(() => '')
             const inode = /^socket:\[(\d+)\]$/.exec(target)?.[1]
@@ -198,6 +204,7 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
           cwd, ports: [...ports].sort((a, b) => a - b),
           startedAt: Math.round(bootTime + Number(node.start) / hz * 1000),
           memoryBytes,
+          cpuSeconds: cpuTicks / hz,
           processCount: entry.members.length,
           processes: summarize(entry.members.slice(1).map((member) => basename(nodes.get(member)!.argv[0] ?? '') || nodes.get(member)!.name)),
           members,

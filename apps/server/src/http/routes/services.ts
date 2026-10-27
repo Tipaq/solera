@@ -5,6 +5,7 @@ import { controlServiceApp, scanServiceApps, type ServiceApp } from '../../servi
 import { readProcessHost } from '../../services/ownership.js'
 import { processOrigins } from '../../services/origins.js'
 import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '../../services/processes.js'
+import { readSystemLoad } from '../../services/system.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -13,6 +14,25 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
   const origins = processOrigins(ctx.config.paths.data)
   let pending: Promise<ServiceProcess[]> | undefined
   let cached: { processes: ServiceProcess[]; at: number } | undefined
+  /**
+   * Le temps CPU de chaque entrée au scan précédent : la charge d'un service est l'écart
+   * entre deux scans, rapporté au temps écoulé. Une entrée disparue sort au scan suivant.
+   */
+  let cpuBefore = new Map<string, { seconds: number; at: number }>()
+  let cpuNow = new Map<string, number | null>()
+  let measured = 0
+  const measure = (entries: { id: string; cpuSeconds: number | null }[], at: number) => {
+    const next = new Map<string, { seconds: number; at: number }>()
+    cpuNow = new Map()
+    for (const entry of entries) {
+      if (entry.cpuSeconds === null) continue
+      const before = cpuBefore.get(entry.id)
+      const elapsed = before ? (at - before.at) / 1000 : 0
+      cpuNow.set(entry.id, before && elapsed > 0 ? Math.max(0, (entry.cpuSeconds - before.seconds) / elapsed) : null)
+      next.set(entry.id, { seconds: entry.cpuSeconds, at })
+    }
+    cpuBefore = next
+  }
   const scan = async (fresh = false): Promise<ServiceProcess[]> => {
     if (!fresh && cached && Date.now() - cached.at < 2000) return cached.processes
     return pending ??= scanServiceProcesses(origins).then((processes) => {
@@ -28,14 +48,17 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
   const attribution = (userId: string, isAdmin: boolean) => {
     const allProjects = ctx.db.select().from(projects).all()
     const allConversations = new Map(ctx.db.select({
-      id: conversations.id, projectId: conversations.projectId, title: conversations.title,
+      id: conversations.id, projectId: conversations.projectId, title: conversations.title, userId: conversations.userId,
     }).from(conversations).all().map((row) => [row.id, row]))
     return (origin: ServiceProcess['origin']) => {
+      const conversation = origin?.conversationId ? allConversations.get(origin.conversationId) : undefined
       const project = allProjects.find((candidate) => candidate.id === origin?.projectId)
-      if (project ? project.ownerId !== userId && project.visibility !== 'shared' : !isAdmin) return null
-      const conversation = origin?.conversationId && allConversations.get(origin.conversationId)
-      const linked = conversation && conversation.projectId === project?.id ? conversation : null
-      return { project: project ?? null, conversation: linked || null }
+      // Une conversation sans projet appartient à qui l'a ouverte : ce qu'elle lance est
+      // à lui, et n'est pas une origine inconnue réservée à l'admin.
+      const free = !project && conversation?.projectId === null && conversation.userId === userId
+      if (!free && (project ? project.ownerId !== userId && project.visibility !== 'shared' : !isAdmin)) return null
+      const linked = conversation && conversation.projectId === (project?.id ?? null) ? conversation : null
+      return { project: project ?? null, conversation: linked ?? null }
     }
   }
 
@@ -49,14 +72,14 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
         id: entry.id, kind: entry.kind, pid: entry.pid, name: entry.name, command: entry.command,
         parentPid: entry.parentPid, parentName: entry.parentName, launcherPid: entry.launcherPid,
         stopsWithSolera: entry.stopsWithSolera, cwd: entry.cwd, ports: entry.ports,
-        startedAt: entry.startedAt, memoryBytes: entry.memoryBytes,
+        startedAt: entry.startedAt, memoryBytes: entry.memoryBytes, cpu: cpuNow.get(entry.id) ?? null,
         processCount: entry.processCount, processes: entry.processes,
         projectId: project?.id ?? null, projectName: project?.name ?? null,
         conversationId: linked?.id ?? null, conversationTitle: linked?.title ?? null,
         origin: entry.origin ? entry.origin.conversationId ? 'agent' : 'terminal' : 'unknown',
         // Un lanceur se pilote depuis sa conversation ou son terminal ; un outil d'agent
         // (serveur MCP) arrêté ici casserait la conversation sans rien libérer d'utile.
-        canStop: !!entry.origin && !!project && (entry.kind === 'command' || entry.kind === 'detached'),
+        canStop: !!entry.origin && (!!project || linked?.userId === userId) && (entry.kind === 'command' || entry.kind === 'detached'),
       }]
     })
   }
@@ -74,12 +97,13 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
       const seen = attribute(entry.origin)
       if (!seen) return []
       const { project, conversation } = seen
-      const manageable = !!project || isAdmin
+      const manageable = !!project || conversation?.userId === userId || isAdmin
       const running = ['active', 'activating', 'reloading'].includes(entry.state)
       return [{
         id: entry.id, unit: entry.unit, description: entry.description, executable: entry.executable, command: entry.command,
         state: entry.state, subState: entry.subState, result: entry.result, mainPid: entry.mainPid,
         ports: entry.ports, cwd: entry.cwd, startedAt: entry.startedAt, memoryBytes: entry.memoryBytes,
+        cpu: cpuNow.get(entry.id) ?? null,
         enabled: entry.enabled, transient: entry.transient,
         projectId: project?.id ?? null, projectName: project?.name ?? null,
         conversationId: conversation?.id ?? null, conversationTitle: conversation?.title ?? null,
@@ -95,10 +119,16 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   app.get('/api/services', async (request): Promise<ServicesDto> => {
     const user = requireUser(request)
-    if (process.platform !== 'linux') return { supported: false, scannedAt: Date.now(), services: [], apps: [] }
-    const [processes, apps] = await Promise.all([scan(), scanServiceApps(origins)])
+    if (process.platform !== 'linux') return { supported: false, scannedAt: Date.now(), services: [], apps: [], system: null }
+    const [processes, apps, system] = await Promise.all([scan(), scanServiceApps(origins), readSystemLoad().catch(() => null)])
+    // Une mesure par scan et non par requête : deux onglets ouverts ne doivent pas
+    // ramener l'intervalle à quelques millisecondes.
+    if (measured !== cached!.at) {
+      measure([...processes, ...apps], cached!.at)
+      measured = cached!.at
+    }
     return {
-      supported: true, scannedAt: cached!.at,
+      supported: true, scannedAt: cached!.at, system,
       services: visible(processes, user.id, user.isAdmin),
       apps: visibleApps(apps, user.id, user.isAdmin),
     }

@@ -60,8 +60,9 @@ async function server(t: TestContext, cwd: string, environment: Record<string, s
 }
 
 test('identité /proc : noms avec espaces et parenthèses', () => {
-  const fields = ['S', '42', ...Array.from({ length: 17 }, () => '0'), '123456']
-  assert.deepEqual(processIdentity(`55 (a ) tricky name) ${fields.join(' ')}`), { parent: 42, start: '123456' })
+  // `utime` et `stime` aux positions 11 et 12 après le nom : le temps CPU de l'arbre.
+  const fields = ['S', '42', ...Array.from({ length: 9 }, () => '0'), '300', '50', ...Array.from({ length: 6 }, () => '0'), '123456']
+  assert.deepEqual(processIdentity(`55 (a ) tricky name) ${fields.join(' ')}`), { parent: 42, start: '123456', cpuTicks: 350 })
 })
 
 test('parenté et cgroups : tmux exclu, orphelin pris en charge, autres unités autonomes', () => {
@@ -272,6 +273,36 @@ test('API : aucune attribution par dossier, visibilité privée, arrêt autoris�
   assert.equal((await app.inject({ method: 'POST', url: `/api/services/${found.id}/stop`, headers: { 'x-test-user': 'other' } })).statusCode, 202)
   await exited
   assert.equal((await app.inject({ method: 'POST', url: `/api/services/${found.id}/stop`, headers: { 'x-test-user': 'owner' } })).statusCode, 404)
+})
+
+test('API : une conversation sans projet est à son auteur, pas une origine inconnue', { skip: process.platform !== 'linux' }, async (t) => {
+  const dir = await directory(t)
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  for (const id of ['owner', 'other', 'admin']) db.insert(users).values({ id, username: id, displayName: id, passwordHash: '', isAdmin: id === 'admin', createdAt: 1 }).run()
+  db.insert(conversations).values({ id: 'free', projectId: null, userId: 'owner', title: 'Fil libre', agent: 'claude', config: '{}', status: 'idle', createdAt: 1, updatedAt: 1 }).run()
+  const origins = processOrigins(dir)
+  const tracked = await server(t, dir, origins.environment(null, 'free'))
+  const app = Fastify()
+  app.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-test-user']))).get()
+  })
+  registerErrorHandler(app)
+  registerServiceRoutes(app, { db, config: { paths: { data: dir } } as Config })
+  t.after(() => app.close())
+  const list = async (user: string): Promise<ServiceDto[]> =>
+    (await app.inject({ url: '/api/services', headers: { 'x-test-user': user } })).json<ServicesDto>().services
+  const mine = (await list('owner')).find((entry) => entry.pid === tracked.pid)!
+  assert.equal(mine.projectId, null)
+  assert.equal(mine.conversationId, 'free')
+  assert.equal(mine.conversationTitle, 'Fil libre')
+  assert.equal(mine.canStop, true)
+  // Le fil d'un autre ne se voit pas ; l'admin le voit, sans pouvoir l'arrêter.
+  assert.equal((await list('other')).some((entry) => entry.pid === tracked.pid), false)
+  const seenByAdmin = (await list('admin')).find((entry) => entry.pid === tracked.pid)!
+  assert.equal(seenByAdmin.conversationTitle, 'Fil libre')
+  assert.equal(seenByAdmin.canStop, false)
 })
 
 test('apps : lecture de systemctl show, jeton d’origine, exécutable sans arguments', () => {

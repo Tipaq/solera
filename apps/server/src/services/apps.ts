@@ -45,6 +45,7 @@ export interface ServiceApp {
   cwd: string | null
   startedAt: number | null
   memoryBytes: number | null
+  cpuSeconds: number | null
   /** Activée au démarrage de la session utilisateur : elle reviendra après un arrêt et un redémarrage. */
   enabled: boolean
   transient: boolean
@@ -127,7 +128,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
   if (names.length === 0) return []
 
   const [{ stdout }, tcp, tcp6, uptime] = await Promise.all([
-    systemctl(['show', ...names, '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,ControlGroup,WorkingDirectory,MemoryCurrent,ActiveEnterTimestampMonotonic,UnitFileState,Transient,InvocationID,Environment,ExecStart']),
+    systemctl(['show', ...names, '--property=Id,Description,LoadState,ActiveState,SubState,Result,MainPID,ControlGroup,WorkingDirectory,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestampMonotonic,UnitFileState,Transient,InvocationID,Environment,ExecStart']),
     readFile('/proc/net/tcp', 'utf8').catch(() => ''),
     readFile('/proc/net/tcp6', 'utf8').catch(() => ''),
     readFile('/proc/uptime', 'utf8'),
@@ -144,6 +145,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
     // Repli sur l'environnement du processus principal, qu'un `EnvironmentFile=` aurait garni.
     const environ = !token && mainPid ? await readFile(`/proc/${mainPid}/environ`, 'utf8').catch(() => '') : ''
     const monotonic = counter(unit.ActiveEnterTimestampMonotonic)
+    const cpuNanoseconds = counter(unit.CPUUsageNSec)
     apps.push({
       id: `${unit.Id}#${unit.InvocationID ?? ''}`,
       unit: unit.Id,
@@ -159,6 +161,8 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
       cwd: unit.WorkingDirectory?.replace(/^[!-]+/, '') || null,
       startedAt: running && monotonic ? Math.round(bootTime + monotonic / 1000) : null,
       memoryBytes: running ? counter(unit.MemoryCurrent) : null,
+      // Cumulé par systemd sur le cgroup de l'unité ; absent sans comptabilité CPU.
+      cpuSeconds: running && cpuNanoseconds !== null ? cpuNanoseconds / 1e9 : null,
       enabled: (unit.UnitFileState ?? '').startsWith('enabled'),
       transient: unit.Transient === 'yes',
       origin: token ? origins.byToken(token) : origins.resolve(environ),
