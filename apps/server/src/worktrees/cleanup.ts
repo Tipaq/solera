@@ -29,6 +29,23 @@ function residents(tree: WorktreeStatusDto): string[] {
 }
 
 /**
+ * Les sessions non archivées qui vivent hors de l'arbre mais y ont écrit, souvent une
+ * session de la racine qui l'a créé. Le nettoyage ne les range pas : elles continuent,
+ * et leur CLI est relancé sans l'arbre à leur prochain message (`recycleIfTreesGone`).
+ * La confirmation les nomme, pour que ce redémarrage ne surprenne personne.
+ */
+function linkedOutside(db: Db, tree: WorktreeStatusDto): { id: string; title: string; running: boolean }[] {
+  const ids = tree.conversations.filter((entry) => entry.link === 'edited').map((entry) => entry.id)
+  if (ids.length === 0) return []
+  return db
+    .select({ id: conversations.id, title: conversations.title, status: conversations.status })
+    .from(conversations)
+    .where(and(inArray(conversations.id, ids), isNull(conversations.archivedAt)))
+    .all()
+    .map(({ id, title, status }) => ({ id, title, running: isBusy(status) }))
+}
+
+/**
  * Les sessions liées à l'arbre qui travaillent en ce moment, qu'elles y vivent ou y
  * écrivent par chemins absolus (`create_worktree`) : le nettoyage les attend toutes,
  * plutôt que de retirer un dossier sous un agent qui s'en sert.
@@ -126,6 +143,7 @@ export class WorktreeCleanup {
       branchDeletable: tree.branch !== null && tree.branch !== list.base,
       conversations: open.map(({ id, title }) => ({ id, title })),
       busy: busyIn(this.db, tree),
+      restarted: linkedOutside(this.db, tree),
       services: (await this.servicesUnder(path)).map((s) => ({ id: s.id, label: s.label, kind: s.kind })),
       terminals: this.terminals.underCwd(path).length,
       card: card ? { id: card.id, number: card.number, title: card.title } : null,

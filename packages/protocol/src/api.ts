@@ -762,6 +762,12 @@ export interface WorktreeCleanupPlanDto {
   conversations: { id: string; title: string }[]
   /** Celles d'entre elles qui travaillent : le nettoyage attend la fin de leur tour. */
   busy: { id: string; title: string }[]
+  /**
+   * Sessions non archivées hors de l'arbre qui y ont écrit : gardées, leur CLI relancé
+   * sans l'arbre à leur prochain message. `running` : elle travaille, et figure aussi
+   * dans `busy`.
+   */
+  restarted: { id: string; title: string; running: boolean }[]
   /** Services et démos dont le répertoire est dans l'arbre. */
   services: { id: string; label: string; kind: 'app' | 'process' }[]
   terminals: number
