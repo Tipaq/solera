@@ -385,6 +385,47 @@ test('« À décider » liste aussi les rangements de cartes en attente, pour le
   assert.equal(theirs.requests.length, 0)
 })
 
+test('l’historique de ce qui t’attend porte les accords, et l’accord se relit dans son journal (#121)', async (t) => {
+  const { db, app, requests, ask } = await harness(t)
+  const ctxRequests = new AgentRequests(
+    { db, config: { mcp: { cardFiling: true } } as unknown as Config },
+    { statusBus: new EventEmitter() } as unknown as SessionManager,
+    {} as AgentRegistry,
+    new EventLog(db),
+  )
+  db.insert(agentRequests)
+    .values({
+      id: 'move', projectId: 'project', conversationId: PLAIN, kind: 'request_card_change',
+      payload: JSON.stringify({ changes: [{ card: 7, column: 'done', reason: 'PR fusionnée.' }] }), createdAt: Date.now(),
+    })
+    .run()
+  await ctxRequests.sweep()
+  await requests.sweep()
+  await ask(ALLOWED, { question: 'On pousse ?', options: ['Oui', 'Non'] })
+
+  const pending = (await app.inject({ method: 'GET', url: '/api/awaiting/history' })).json()
+  assert.deepEqual(pending.entries.map((entry: { kind: string }) => entry.kind).sort(), ['decision', 'request_card_change'])
+  const accord = pending.entries.find((entry: { kind: string }) => entry.kind === 'request_card_change')
+  assert.equal(accord.status, 'pending')
+  assert.equal(accord.projectName, 'Nimbus')
+  assert.equal(accord.count, 1)
+
+  const entry = await app.inject({ method: 'GET', url: '/api/awaiting/move/request' })
+  assert.equal(entry.statusCode, 200)
+  assert.equal(entry.json().conversationId, PLAIN)
+  assert.equal(entry.json().event.type, 'card_filing.requested')
+  const stranger = await app.inject({ method: 'GET', url: '/api/awaiting/move/request', headers: { 'x-as': 'other' } })
+  assert.equal(stranger.statusCode, 404)
+  assert.equal((await app.inject({ method: 'GET', url: '/api/awaiting/history', headers: { 'x-as': 'other' } })).json().entries.length, 0)
+
+  // Refusé, il quitte l'attente mais reste dans l'historique complet.
+  db.update(agentRequests).set({ resolvedAt: Date.now() }).where(eq(agentRequests.id, 'move')).run()
+  const after = (await app.inject({ method: 'GET', url: '/api/awaiting/history' })).json()
+  assert.equal(after.entries.some((item: { kind: string }) => item.kind === 'request_card_change'), false)
+  const all = (await app.inject({ method: 'GET', url: '/api/awaiting/history?status=all' })).json()
+  assert.equal(all.entries.find((item: { kind: string }) => item.kind === 'request_card_change').status, 'closed')
+})
+
 test('décisions : l’archivage automatique épargne une session qui attend sa réponse', async (t) => {
   const { db, ask } = await harness(t)
   const asked = await ask(ALLOWED, { question: 'On pousse ?', options: ['Oui', 'Non'] })

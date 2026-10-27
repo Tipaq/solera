@@ -1016,6 +1016,31 @@ export class EventLog {
   }
 
   /**
+   * L'événement qui a ouvert un accord, quel que soit son genre, avec sa place dans le
+   * journal : la modale d'Activité (#121) le replie comme le fil pour en montrer le bloc.
+   */
+  requestEntry(
+    conversationId: string,
+    type: 'filing.requested' | 'card_filing.requested' | 'card_draft.proposed',
+    requestId: string,
+  ): { seq: number; ts: number; event: SoleraEvent } | null {
+    const rows = this.db
+      .select({ seq: events.seq, ts: events.ts, payload: events.payload })
+      .from(events)
+      .where(and(eq(events.conversationId, conversationId), eq(events.type, type)))
+      .orderBy(asc(events.seq))
+      .all()
+
+    for (const row of rows) {
+      const event = this.parseStored(row.seq, row.payload)
+      if (event.type === type && 'requestId' in event && event.requestId === requestId) {
+        return { seq: row.seq, ts: row.ts, event }
+      }
+    }
+    return null
+  }
+
+  /**
    * Les événements sont validés à la relecture, pas seulement castés.
    *
    * C'est ce qui applique les valeurs par défaut du schéma aux entrées écrites avant

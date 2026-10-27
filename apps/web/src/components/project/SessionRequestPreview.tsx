@@ -70,13 +70,17 @@ export function SessionRequestPreview({
         </Link>
       </div>
       <div className="mt-2">
-        <RequestBody conversationId={conversationId} request={request} canDecide={canDecide} />
+        <SessionRequestBody conversationId={conversationId} request={request} canDecide={canDecide} />
       </div>
     </div>
   )
 }
 
-function RequestBody({
+/**
+ * Le corps seul, sans l'en-tête : la modale d'Activité (#121) le reprend sous sa propre
+ * ligne, pour trancher une permission ou une question par les mêmes routes.
+ */
+export function SessionRequestBody({
   conversationId,
   request,
   canDecide,

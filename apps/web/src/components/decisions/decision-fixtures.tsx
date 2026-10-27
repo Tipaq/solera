@@ -93,11 +93,11 @@ export const DECISIONS = [PENDING, OPEN_QUESTION, ANSWERED, DEFAULTED, EXPIRED, 
 /** Ce que la colonne liste : deux décisions, un rangement de cartes, un de conversation. */
 export const AWAITING: AwaitingRequestDto[] = [
   {
-    kind: 'decision', id: PENDING.id, conversationId: PENDING.conversationId, projectId: 'p1',
+    kind: 'decision', id: PENDING.id, conversationId: PENDING.conversationId, projectId: 'p1', conversationTitle: PENDING.conversationTitle,
     question: PENDING.question, worktreeBranch: null, expiresAt: PENDING.expiresAt, createdAt: PENDING.createdAt,
   },
   {
-    kind: 'decision', id: OPEN_QUESTION.id, conversationId: 'c2', projectId: 'p1',
+    kind: 'decision', id: OPEN_QUESTION.id, conversationId: 'c2', projectId: 'p1', conversationTitle: OPEN_QUESTION.conversationTitle,
     question: OPEN_QUESTION.question, worktreeBranch: null, expiresAt: OPEN_QUESTION.expiresAt, createdAt: now - 2 * HOUR,
   },
   {
@@ -114,7 +114,7 @@ export const AWAITING: AwaitingRequestDto[] = [
 export const AWAITING_MANY: AwaitingRequestDto[] = [
   ...AWAITING,
   ...[1, 2, 3].map((n): AwaitingRequestDto => ({
-    kind: 'decision', id: `extra-${n}`, conversationId: `c-extra-${n}`, projectId: 'p1',
+    kind: 'decision', id: `extra-${n}`, conversationId: `c-extra-${n}`, projectId: 'p1', conversationTitle: `Tâche de nuit ${n}`,
     question: `Question ${n} d'une tâche planifiée de nuit`, worktreeBranch: null, expiresAt: now + (n + 2) * HOUR, createdAt: now - n * HOUR,
   })),
 ]

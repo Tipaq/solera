@@ -4,13 +4,26 @@ import type { Decisions } from '../../decisions/decisions.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Les décisions du compte — celles qui attendent, l'historique, la réponse — et la
- * section « À décider » de la colonne, qui y ajoute les deux rangements en attente.
+ * Les décisions du compte — celles qui attendent, l'historique, la réponse — et ce qui
+ * t'attend dans l'Activité de la colonne (#121), qui y ajoute les accords en attente.
  */
 export function registerDecisionRoutes(app: FastifyInstance, decisions: Decisions): void {
   app.get('/api/awaiting', async (request) => {
     const user = requireUser(request)
     return { requests: decisions.awaiting(user.id) }
+  })
+
+  // Avant `/api/awaiting/:id/request` : `history` n'est pas un identifiant.
+  app.get('/api/awaiting/history', async (request) => {
+    const user = requireUser(request)
+    const { status } = request.query as { status?: string }
+    return { entries: decisions.history(user.id, status === 'all' ? 'all' : 'pending') }
+  })
+
+  app.get('/api/awaiting/:id/request', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    return decisions.requestEntry(user.id, id)
   })
 
   app.get('/api/decisions', async (request) => {
