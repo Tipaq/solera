@@ -72,3 +72,55 @@ export function setDisplay(name: DisplayKey, value: boolean): void {
 export function useDisplaySettings(): Record<DisplayKey, boolean> {
   return useSyncExternalStore(subscribe, currentDisplay, currentDisplay)
 }
+
+// --- Le mode « un seul projet » de la zone basse (#51) ------------------------------
+
+/**
+ * Ce que montre la zone basse du lieu *Projets* : l'arbre de tous les projets
+ * (`undefined`), ou un seul — un projet par son identifiant, ou les fils libres (`null`).
+ *
+ * Une clé de plus, et du même magasin local que les autres pour la même raison : la place
+ * n'est pas la même d'un poste à l'autre, et l'arbre tient mal à trente projets là où le
+ * sélecteur coûte trop cher à trois. Le choix vaut le projet lui-même, qui change souvent
+ * — c'est ce qui fait que la colonne s'en souvient en revenant.
+ *
+ * Le repli des projets de l'arbre (`collapsedProjects`, réglage de compte) n'est pas
+ * touché : on retrouve ses replis en revenant à l'arbre.
+ */
+export type ProjectFocus = string | null | undefined
+
+const FOCUS_KEY = 'solera.display.projectFocus'
+/** Ce que vaut « Sans projet » dans le stockage, qui ne garde que des chaînes. */
+const FREE = '-'
+
+function readFocus(): ProjectFocus {
+  const raw = localStorage.getItem(FOCUS_KEY)
+  if (raw === null || raw === '') return undefined
+  return raw === FREE ? null : raw
+}
+
+let focus = readFocus()
+const focusListeners = new Set<() => void>()
+
+export function currentProjectFocus(): ProjectFocus {
+  return focus
+}
+
+export function setProjectFocus(value: ProjectFocus): void {
+  if (focus === value) return
+  if (value === undefined) localStorage.removeItem(FOCUS_KEY)
+  else localStorage.setItem(FOCUS_KEY, value === null ? FREE : value)
+  focus = value
+  for (const listener of focusListeners) listener()
+}
+
+export function useProjectFocus(): ProjectFocus {
+  return useSyncExternalStore(
+    (listener) => {
+      focusListeners.add(listener)
+      return () => focusListeners.delete(listener)
+    },
+    currentProjectFocus,
+    currentProjectFocus,
+  )
+}

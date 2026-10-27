@@ -1,9 +1,10 @@
 import { FolderPlus, PanelLeftClose, Plus, Search, X } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { ConversationDto } from '@solera/protocol'
 import { useAllConversations } from '../../lib/conversations'
 import { useRefreshLists, useStatusFeed } from '../../lib/conversation-status'
-import { useDisplaySettings } from '../../lib/display-settings'
+import { useDisplaySettings, useProjectFocus } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
 import { useProjects, useReorderProjects } from '../../lib/projects'
 import { unreadNow } from '../../lib/reads'
@@ -18,10 +19,12 @@ import { SidebarActivity } from '../SidebarActivity'
 import { AccountMenu } from './AccountMenu'
 import { PlaceKnowledge } from './PlaceKnowledge'
 import { PlacePlanned } from './PlacePlanned'
-import { PlaceProjects } from './PlaceProjects'
+import { PlaceProjects, useFocusFollowsConversation } from './PlaceProjects'
 import { PlaceThreads } from './PlaceThreads'
 import { PLACE_ICONS, PLACE_LABELS, SidebarPlaces, type PlaceSpec } from './SidebarPlaces'
 import { cx, IconButton } from '@solera/ui'
+
+const EMPTY: ConversationDto[] = []
 
 /** Le raccourci porte la touche que la plateforme utilise réellement. */
 const SEARCH_HINT = navigator.userAgent.includes('Mac') ? '⌘ K' : 'Ctrl K'
@@ -53,6 +56,7 @@ export function Sidebar({
   const wide = useMediaQuery('(min-width: 48rem)')
   const display = useDisplaySettings()
   const requested = useSidebarPlace()
+  const focus = useProjectFocus()
   const { data: projects } = useProjects()
   const { data: conversations } = useAllConversations()
   const { data: schedules } = useSchedules()
@@ -62,6 +66,7 @@ export function Sidebar({
   const reorderProjects = useReorderProjects()
   const scroller = useRef<HTMLDivElement>(null)
   useStatusFeed()
+  useFocusFollowsConversation(conversations ?? EMPTY)
   const { refreshing, refresh } = useRefreshLists()
 
   // Les tirs planifiés ne comptent pas dans l'activité : une tâche qui tourne toute
@@ -187,6 +192,8 @@ export function Sidebar({
         projects={projects}
         onNavigate={onNavigate}
         coarse={!wide}
+        // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
+        focus={place === 'projects' ? focus : undefined}
       />
 
       {/* La seule partie qui défile. Ce qui déborde passe sous le pli : le haut de la

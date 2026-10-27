@@ -283,6 +283,49 @@ try {
   await conversationRow.click()
   await page.waitForURL(`**/c/${hero.id}`)
 
+  /*
+    Le mode « un seul projet » (#51). On y entre depuis la ligne du projet dans l'arbre ;
+    la ligne du projet tient en une ligne — ⇅, le nom vers l'Aperçu, +, ⋯ — et les
+    conversations suivent directement, sans liens de vues. Le choix se retient au
+    rechargement, suit la conversation qu'on ouvre ailleurs, et revenir à l'arbre ne
+    touche pas aux replis du compte.
+  */
+  const collapsedBefore = (await (await context.request.get(`${base}/api/me/settings`)).json()).collapsedProjects
+  await projectRow.hover()
+  await projectLine.getByRole('button', { name: `N’afficher que ${project.name}`, exact: true }).click()
+  const focusLine = column.locator('[data-project-focus]')
+  await focusLine.waitFor()
+  assert.equal(await focusLine.getByRole('link', { name: project.name, exact: true }).getAttribute('href'), `/p/${project.id}`)
+  assert.equal(await column.getByRole('button', { name: 'Sans projet', exact: true }).count(), 0, 'un seul groupe à la fois')
+  assert.equal(await column.getByRole('link', { name: /^Tableau/ }).count(), 0, 'pas de liens de vues sous la ligne')
+  await column.locator(`a[href$="/c/${hero.id}"]`).first().waitFor()
+  await page.screenshot({ path: join(shots, 'mode-projet.png') })
+
+  const switcher = focusLine.getByRole('button', { name: /^Changer de projet/ })
+  await switcher.click()
+  await page.getByRole('menuitem', { name: 'Tous les projets', exact: true }).waitFor()
+  await page.screenshot({ path: join(shots, 'mode-projet-liste.png') })
+  await page.getByRole('menuitem', { name: /^Sans projet/ }).click()
+  await column.locator('a[href="/c/fixture-libre"]').waitFor()
+  // Le choix fait à la main tient au rechargement, sur le même fil.
+  await page.reload()
+  await column.locator('[data-project-focus]').waitFor()
+  await column.locator('a[href="/c/fixture-libre"]').waitFor()
+  // Un fil d'un autre projet, ouvert depuis *Fils*, ramène la colonne sur son projet.
+  await places.getByRole('button', { name: /^Fils/ }).click()
+  await column.locator('a[href$="/c/fixture-1"]').first().click()
+  await page.waitForURL('**/c/fixture-1')
+  await places.getByRole('button', { name: /^Projets/ }).click()
+  await focusLine.getByRole('link', { name: project.name, exact: true }).waitFor()
+
+  // « Tous les projets » revient à l'arbre, replis du compte intacts.
+  await switcher.click()
+  await page.getByRole('menuitem', { name: 'Tous les projets', exact: true }).click()
+  await focusLine.waitFor({ state: 'detached' })
+  await column.getByRole('button', { name: 'Sans projet', exact: true }).waitFor()
+  const collapsedAfter = (await (await context.request.get(`${base}/api/me/settings`)).json()).collapsedProjects
+  assert.deepEqual(collapsedAfter, collapsedBefore)
+
   // Lieu *Planifiées* : les tâches par échéance, tous projets confondus.
   await places.getByRole('button', { name: /^Planifiées/ }).click()
   await column.getByRole('heading', { name: /Aujourd’hui|Cette semaine|Plus tard|En sommeil/ }).first()
@@ -453,7 +496,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

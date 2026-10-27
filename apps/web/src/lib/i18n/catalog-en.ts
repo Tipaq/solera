@@ -4032,6 +4032,12 @@ export const en = {
   "forYou.elicitation": "{server}: {message}",
   "forYou.decision.due": "{due} · {fallback}",
   "forYou.history.link": "History of what waited for you",
+  "shell.project.focus": "Show only {name}",
+  "shell.project.focusOnly": "Show only this project",
+  "shell.project.focusFree": "Show only threads without a project",
+  "shell.focus.switch": "Switch project",
+  "shell.focus.switchNew": "Switch project, something new elsewhere",
+  "shell.focus.all": "All projects",
 } as const
 
 /**
