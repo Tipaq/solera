@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { zipSync, type Zippable } from 'fflate'
+import type { Zippable } from 'fflate'
 import type {
   AdoptLibrarySkillBody,
   ApiError,
@@ -156,6 +156,9 @@ async function zipFolder(files: File[]): Promise<Blob> {
   for (const file of files) {
     entries[file.webkitRelativePath || file.name] = new Uint8Array(await file.arrayBuffer())
   }
+  // Importé ici (#128) : on n'envoie un dossier qu'à l'ajout d'un skill, et le paquet
+  // d'entrée n'a pas à porter le compresseur pour ça.
+  const { zipSync } = await import('fflate')
   return new Blob([zipSync(entries)], { type: 'application/zip' })
 }
 

@@ -1,9 +1,12 @@
 import * as Dialog from '@radix-ui/react-dialog'
+import { Suspense, lazy } from 'react'
 import { PlugZap, X } from 'lucide-react'
 import { IconButton } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import { setMcpRegistryOpen, useMcpRegistryOpen } from '../../lib/mcp-registry'
-import { McpRegistry } from './McpRegistry'
+
+/** Chargé à l'ouverture (#128) : le contenu n'est rendu que modale ouverte. */
+const McpRegistry = lazy(() => import('./McpRegistry').then((m) => ({ default: m.McpRegistry })))
 
 /**
  * Le registre des serveurs MCP, en modale.
@@ -41,7 +44,9 @@ export function McpRegistryDialog() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <McpRegistry />
+            <Suspense fallback={null}>
+              <McpRegistry />
+            </Suspense>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

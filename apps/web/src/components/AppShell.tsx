@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { useLocation, useMatch } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
 import { useAppearanceSync } from '../lib/appearance-sync'
@@ -16,7 +16,6 @@ import { useTranslate } from '../lib/i18n'
 import { useCapability } from '../lib/instance'
 import { resizeHandle } from '../lib/resize-handle'
 import { useMediaQuery, useVisualViewport } from '../lib/viewport'
-import { CommandPalette } from './CommandPalette'
 import { Logo } from './Logo'
 import { UpdatePrompt } from './UpdatePrompt'
 import { Toaster } from './Toaster'
@@ -27,6 +26,13 @@ import { HeaderBand } from './HeaderBand'
 import { McpRegistryDialog } from './mcp/McpRegistryDialog'
 import { Sidebar } from './sidebar/Sidebar'
 import { cx } from '@solera/ui'
+
+/**
+ * La palette, hors du paquet d'entrée (#128). Montée dès le premier rendu comme avant,
+ * donc ses listes se chargent pendant qu'elle est fermée : seul son code arrive un
+ * instant après la coque, depuis le précache.
+ */
+const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ default: m.CommandPalette })))
 
 /**
  * Desktop : sidebar persistante. Mobile : la même sidebar en tiroir plein écran.
@@ -220,7 +226,9 @@ export function AppShell() {
         )}
       </aside>
 
-      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <Suspense fallback={null}>
+        <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      </Suspense>
       {/* Montée ici et pas dans le composer : elle s'ouvre depuis le « + », donc depuis
           un menu, et un dialogue rendu dans un menu meurt avec lui à la sélection. */}
       <McpRegistryDialog />

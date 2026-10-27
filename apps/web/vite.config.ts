@@ -25,6 +25,12 @@ const SERVER_PORT = process.env.SOLERA_PORT ?? '7417'
  * CodeMirror du paquet principal une fois de plus (l'éditeur du script de vérification
  * d'une tâche planifiée l'y ramenait : 2 111 086 octets, le build échouait). L'audit des
  * postes et de ce qui reste découpable est dans `docs/audits/2026-10-14-bundle-web/`.
+ *
+ * Mesuré au 2026-10-27 : 1 564 961 octets, soit 75 %, après être remonté à 1 907 504
+ * (91 %) en deux jours de cartes. Les vues secondaires (board, tâches planifiées, jalons,
+ * journal, décisions, services, réglages d'un projet), la modale des réglages, la palette
+ * et quelques dialogues rares sont passés à la demande (#128). Le plus gros poste restant
+ * est `catalog-en.ts`, ~220 Ko, chargé d'office parce qu'il sert de repli synchrone.
  */
 const PRECACHE_BUDGET_BYTES = 2 * 1024 * 1024
 
