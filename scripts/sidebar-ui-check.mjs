@@ -315,6 +315,9 @@ try {
   await places.getByRole('button', { name: /^Fils/ }).click()
   await column.locator('a[href$="/c/fixture-1"]').first().click()
   await page.waitForURL('**/c/fixture-1')
+  // L'adresse change avant que le fil soit rendu : la navigation est une transition, et
+  // changer de lieu avant son commit l'abandonne — le fil n'a jamais été ouvert.
+  await column.locator('a[href$="/c/fixture-1"][aria-current="page"]').first().waitFor()
   await places.getByRole('button', { name: /^Projets/ }).click()
   await focusLine.getByRole('link', { name: project.name, exact: true }).waitFor()
 
