@@ -9,35 +9,36 @@ import {
   type AgentKind,
 } from '@solera/protocol'
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
-import { AGENT_LABELS, AGENT_META, AgentIcon } from '../components/AgentIcon'
-import { AgentInstallRow } from '../components/AgentInstallRow'
+import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
-import { AccountChoice } from '../components/chat/AccountChoice'
-import { UsageBar, readAge } from '../components/chat/UsageBar'
+import { DraftAccount } from '../components/chat/DraftAccount'
+import { DraftAgentPicker } from '../components/chat/DraftAgentPicker'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
 import {
-  hiddenAgent,
+  useAgentAuth,
   useAgentAvailability,
   useHiddenAgents,
   unavailableReason,
   versionMismatch,
 } from '../lib/agents'
+import { useClaudeAccounts } from '../lib/claude-accounts'
+import { useCodexAccounts } from '../lib/codex-accounts'
+import { useGrokAccounts } from '../lib/grok-accounts'
+import { usageAccountOf } from '../lib/usage'
+import { useUsagePeek } from '../lib/usage-peek'
 import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-sessions'
 import { useProjectCommands } from '../lib/commands'
 import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
-import { useAgentUsage, usageAccountOf } from '../lib/usage'
 import { inheritedConfigFor, useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
-/** Les cartes de choix suivent l'enum du protocole : un CLI ajouté apparaît seul. */
-const AGENTS = agentKindSchema.options.map((value) => ({ value, ...AGENT_META[value] }))
 
 /** Jour et heure courts : assez pour situer une session, sans manger la ligne. */
 function formatDay(ts: number): string {
@@ -47,56 +48,6 @@ function formatDay(ts: number): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-/**
- * Consommation du CLI retenu, avant d'écrire quoi que ce soit.
- *
- * C'est le moment où le choix est encore ouvert : voir qu'une fenêtre est à 95 % ici
- * évite de le découvrir au milieu d'un tour. La lecture est celle du panneau détaillé,
- * et son cache de cinq minutes côté serveur fait qu'ouvrir un brouillon ne démarre pas
- * un CLI à chaque fois.
- *
- * Rien ne s'affiche tant qu'il n'y a rien à montrer : pas de squelette, pas de cadre
- * vide. La sonde met plusieurs secondes à froid, et le brouillon sert d'abord à taper
- * un message, pas à regarder des jauges apparaître.
- */
-function DraftUsage({
-  agent,
-  account,
-  enabled,
-}: {
-  agent: AgentKind
-  account: string | null
-  enabled: boolean
-}) {
-  const t = useTranslate()
-  const { data: usage, error } = useAgentUsage(agent, enabled, account)
-
-  // La consommation n'est pas ce qu'on est venu chercher : quand la sonde échoue, une
-  // ligne suffit, alors qu'un bandeau d'erreur crierait plus fort que le formulaire.
-  if (error) return <p className="text-xs text-ink-faint">{t('draft.usage.unavailable')}</p>
-  // Un compte supplémentaire sans jauge : le choix vient d'être fait d'après l'usage, et
-  // une absence muette se lirait comme une panne. La raison est dite sous son option.
-  if (!usage || !usage.limitsAvailable || usage.windows.length === 0) return null
-
-  return (
-    <section className="flex flex-col gap-2.5 rounded-lg border border-line px-3 py-3 text-xs text-ink-soft">
-      <div className="flex items-baseline justify-between gap-3">
-        <span className="font-medium">
-          {usage.plan
-            ? t('draft.usage.titleWithPlan', { plan: usage.plan })
-            : t('draft.usage.title')}
-        </span>
-        <span className="text-meta text-ink-faint">
-          {t('usage.readAt', { age: readAge(usage.fetchedAt) })}
-        </span>
-      </div>
-      {usage.windows.map((window) => (
-        <UsageBar key={window.id} window={window} />
-      ))}
-    </section>
-  )
 }
 
 /**
@@ -110,6 +61,22 @@ function DraftUsage({
 const NO_MCP_INVENTORY: McpServerStatus[] = []
 const NO_COMMANDS: SlashCommandDto[] = []
 const NO_SKILLS: AgentSkillDto[] = []
+
+/**
+ * Le nombre de comptes supplémentaires prêts, par CLI : un seul suffit pour qu'un CLI
+ * sans connexion propre reste utilisable. Listes déjà en cache pour le composer.
+ */
+function useExtraAccounts(): Record<AgentKind, number> {
+  const { data: claude } = useClaudeAccounts()
+  const { data: codex } = useCodexAccounts()
+  const { data: grok } = useGrokAccounts()
+  return {
+    claude: claude?.accounts.length ?? 0,
+    codex: codex?.accounts.filter((account) => account.status === 'ready').length ?? 0,
+    grok: grok?.accounts.filter((account) => account.status === 'ready').length ?? 0,
+    opencode: 0,
+  }
+}
 
 export function DraftConversationPage() {
   const { projectId } = useParams()
@@ -128,12 +95,22 @@ export function DraftConversationPage() {
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null)
   const { data: availability } = useAgentAvailability()
   const t = useTranslate()
-  // Les CLI masqués par le compte ne sont ni proposés à l'installation ni dans le
-  // choix, tant qu'ils manquent : qui n'utilise que Claude Code n'a pas à les enjamber.
+  // Les CLI masqués par le compte ne sont pas proposés à l'installation tant qu'ils
+  // manquent : qui n'utilise que Claude Code n'a pas à les enjamber.
   const hiddenAgents = useHiddenAgents()
-  const hiddenRows = (availability?.agents ?? []).filter(
-    (entry) => entry.reason !== 'disabled' && hiddenAgent(entry, hiddenAgents.hidden),
-  )
+  const { data: auth } = useAgentAuth()
+  const { data: peek } = useUsagePeek()
+  const extraAccounts = useExtraAccounts()
+
+  /**
+   * Installé mais sans connexion : la pastille se grise, sauf si un compte
+   * supplémentaire prêt peut porter la session à la place de la connexion du CLI.
+   * Une connexion `unknown` ne grise rien — mieux vaut un échec au premier tour qu'un
+   * agent utilisable refusé sur une sonde muette.
+   */
+  const loggedOut = (kind: AgentKind) =>
+    auth?.entries.find((entry) => entry.agent === kind && entry.account === null)?.status === 'logged_out'
+  const unusable = (kind: AgentKind) => loggedOut(kind) && extraAccounts[kind] === 0
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -144,13 +121,14 @@ export function DraftConversationPage() {
   // `?agent=` de l'URL. Basculer sous les doigts de quelqu'un qui vient de désigner un
   // CLI serait pire que de le laisser voir qu'il manque.
   const installed = (kind: AgentKind) =>
-    availability?.agents.find((a) => a.agent === kind)?.installed !== false
-  const fallback = availability?.agents.find((a) => a.installed)?.agent
+    availability?.agents.find((a) => a.agent === kind)?.installed !== false && !unusable(kind)
+  const fallback = availability?.agents.find((a) => a.installed && !unusable(a.agent))?.agent
   const agent =
     chosenAgent ?? (requested.success || installed(suggested) ? suggested : (fallback ?? suggested))
 
   const selectedAvailability = availability?.agents.find((a) => a.agent === agent)
   const blocked = unavailableReason(selectedAvailability)
+    ?? (unusable(agent) ? t('draft.agent.loggedOut', { label: AGENT_LABELS[agent] }) : null)
   const selectedVersionNotice = versionMismatch(selectedAvailability)
 
   const [config, setConfig] = useState<AgentConfig | null>(null)
@@ -310,12 +288,9 @@ export function DraftConversationPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex sg-conversation-width flex-col gap-4 px-4 py-6 md:py-10">
-          <div className="mb-2 flex flex-col gap-1">
-            <h1 className="text-lg font-semibold tracking-tight">{t(splitting ? 'split.draft.title' : 'draft.title')}</h1>
-            <p className="text-sm text-ink-faint">
-              {splitting ? t('split.draft.subtitle') : projectId ? t('draft.subtitle') : t('draft.subtitle.free')}
-            </p>
-          </div>
+          {/* Le titre est déjà dans la bande : la page n'en répète que ce qui explique
+              un découpage, qui ne se devine pas. */}
+          {splitting ? <p className="text-sm text-ink-faint">{t('split.draft.subtitle')}</p> : null}
 
           {/* Premier contrôle de la page : c'est lui qui fait apparaître ou disparaître
               le reste. Changer de destination change d'URL plutôt que d'état local —
@@ -349,71 +324,35 @@ export function DraftConversationPage() {
             ) : null}
           </div>
 
-          {/* Radios natifs : choix compact, avec navigation au clavier par flèches. */}
-          <fieldset className="flex flex-col gap-1.5">
-            <legend className="mb-1.5 text-xs font-medium text-ink-soft">{t('draft.cli.legend')}</legend>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {AGENTS.filter((option) => !hiddenRows.some((entry) => entry.agent === option.value)).map((option) => {
-                const selected = option.value === agent
-                const entry = availability?.agents.find((a) => a.agent === option.value)
-                // Indisponible seulement quand le serveur l'a dit. Tant que la sonde n'a
-                // pas répondu, la carte reste active : griser par défaut ferait clignoter
-                // le formulaire à chaque ouverture, et bloquerait un choix valide si la
-                // route échouait.
-                const unavailable = unavailableReason(entry)
-                return (
-                  <label
-                    key={option.value}
-                    title={unavailable ?? option.blurb}
-                    className={cx(
-                      'flex min-h-11 items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors has-focus-visible:ring-2 has-focus-visible:ring-accent',
-                      unavailable
-                        ? 'cursor-not-allowed border-line bg-surface-high opacity-60'
-                        : selected
-                          ? 'border-accent bg-accent-wash'
-                          : 'border-line hover:border-line-strong hover:bg-surface-high',
-                    )}
-                  >
-                    <input type="radio" name="draft-agent" value={option.value}
-                      aria-label={AGENT_LABELS[option.value]}
-                      checked={selected} disabled={unavailable !== null}
-                      onChange={() => setChosenAgent(option.value)}
-                      className="size-3.5 shrink-0 accent-[var(--sg-accent)]" />
-                    <AgentIcon agent={option.value} size={16} />
-                    <span className="min-w-0 text-sm font-medium text-ink">
-                      {AGENT_LABELS[option.value]}
-                      {unavailable ? <span className="mt-0.5 block text-xs font-normal text-ink-faint">{unavailable}</span> : null}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-            {selectedVersionNotice ? <p className="text-xs text-caution">{selectedVersionNotice}</p> : null}
-            {/* Le cas où aucun CLI n'est installé, et celui d'un `?agent=` qui en désigne
-                un absent : les options seules laisseraient l'écran sans explication de ce
-                que la barre de saisie refuse. */}
-            {blocked ? <Banner>{blocked}</Banner> : null}
-
-            {/* Un rang par CLI manquant, sauf ceux que le compte a masqués. */}
-            {availability?.agents
-              .filter((entry) => !hiddenAgent(entry, hiddenAgents.hidden))
-              .map((entry) => (
-                <AgentInstallRow key={entry.agent} entry={entry} onDismiss={() => hiddenAgents.hide(entry.agent)} />
-              ))}
-            {/* Une ligne discrète pour retrouver ce qu'on a masqué : le masque n'est pas
-                une configuration, il ne faut pas aller le défaire dans les réglages. */}
-            {hiddenRows.length > 0 ? (
-              <p className="text-xs text-ink-faint">
-                {t('agent.install.hidden', { labels: hiddenRows.map((entry) => AGENT_LABELS[entry.agent]).join(', ') })}{' '}
-                <button type="button" className="underline hover:text-ink" onClick={hiddenAgents.reveal}>
-                  {t('agent.install.reveal')}
-                </button>
-              </p>
-            ) : null}
-          </fieldset>
+          <DraftAgentPicker
+            value={agent}
+            onChange={setChosenAgent}
+            availability={availability?.agents}
+            stateOf={(kind) =>
+              availability?.agents.find((a) => a.agent === kind)?.installed === false
+                ? 'missing'
+                : unusable(kind) ? 'loggedOut' : 'ready'}
+            accountOf={(kind) => (kind === agent ? usageAccountOf(effective) : null)}
+            peek={peek}
+            hidden={hiddenAgents.hidden}
+            onHide={hiddenAgents.hide}
+          />
+          {selectedVersionNotice ? <p className="-mt-2 text-xs text-caution">{selectedVersionNotice}</p> : null}
+          {/* Le cas où aucun CLI n'est prêt, et celui d'un `?agent=` qui en désigne un
+              absent ou sans connexion : les cartes seules laisseraient l'écran sans
+              explication de ce que la barre de saisie refuse. */}
+          {blocked ? <Banner>{blocked}</Banner> : null}
 
           {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}
-          <AccountChoice config={effective} onChange={setConfig} enabled={blocked === null} />
+          {blocked === null ? (
+            <DraftAccount
+              config={effective}
+              onChange={setConfig}
+              disabled={createConversation.isPending}
+              auth={auth?.entries.find((entry) => entry.agent === agent && entry.account === null)}
+              peek={peek}
+            />
+          ) : null}
 
           {/* Le 502 de la sonde dit que le CLI n'a pas répondu ; le taire laisserait
               croire qu'il n'y a simplement aucune commande dans ce dossier. */}
@@ -478,8 +417,6 @@ export function DraftConversationPage() {
               worktreeId={effectiveWorktreeId}
             />
           )}
-
-          <DraftUsage agent={agent} account={usageAccountOf(effective)} enabled={blocked === null} />
 
           {/* Sessions commencées au CLI dans ce dossier : plutôt qu'une nouvelle
               conversation, on peut adopter l'une d'elles. Importer ne copie rien,
