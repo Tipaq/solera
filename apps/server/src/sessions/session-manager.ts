@@ -1127,6 +1127,15 @@ export class SessionManager {
             .where(eq(conversations.id, conversationId))
             .run()
         }
+        // Le signal de limite d'un vrai tour nourrit l'aperçu gratuit de la consommation,
+        // rangé sous le compte de la conversation : celui avec lequel le runner a été lancé.
+        if (event.type === 'usage.updated' && event.rateLimit) {
+          this.registry.usageLedger.recordLive(
+            conversation.agent,
+            'account' in config ? config.account : null,
+            event.rateLimit,
+          )
+        }
         if (event.type === 'file.edited') {
           this.checkpoints.get(conversationId)?.edited.add(event.path)
         }

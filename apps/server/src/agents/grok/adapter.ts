@@ -17,6 +17,8 @@ import { CLIENT_INFO } from '../codex/client-info.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { GrokUsageReader } from './billing.js'
+import { readGrokAuth } from './auth.js'
+import type { AgentAuth } from '../auth.js'
 import { GrokCatalog } from './catalog.js'
 import { grokProbe } from './launch.js'
 import { GrokRunner } from './runner.js'
@@ -146,6 +148,11 @@ export class GrokAdapter implements AgentAdapter {
    */
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  /** Lu sur le disque à chaque appel : rien à mettre en cache. */
+  auth(): Promise<AgentAuth> {
+    return readGrokAuth()
   }
 
   /** `credential` est ici le `GROK_HOME` du compte, voir `GrokAccountHomes`. */

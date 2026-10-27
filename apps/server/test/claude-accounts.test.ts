@@ -19,6 +19,7 @@ import { registerAgentRoutes } from '../src/http/routes/agents.js'
 import { registerClaudeAccountRoutes } from '../src/http/routes/claude-accounts.js'
 import type { AgentAdapter, AgentRegistry } from '../src/agents/registry.js'
 import type { CliInstaller } from '../src/agents/cli-install.js'
+import { UsageLedger } from '../src/agents/usage-ledger.js'
 import type { AppContext } from '../src/http/context.js'
 
 const TOKEN = 'sk-ant-oat01-' + 'a'.repeat(40)
@@ -46,7 +47,7 @@ async function harness(t: TestContext) {
       return { agent: 'claude', plan: accountId, limitsAvailable: true, windows: [], credits: null, fetchedAt: 1 } as AgentUsage
     },
   } as unknown as AgentAdapter
-  const registry = { find: (agent: string) => (agent === 'claude' ? adapter : undefined), all: () => [adapter] } as unknown as AgentRegistry
+  const registry = { usageLedger: new UsageLedger(), find: (agent: string) => (agent === 'claude' ? adapter : undefined), all: () => [adapter] } as unknown as AgentRegistry
 
   const app = Fastify()
   app.addHook('preHandler', async (request) => {

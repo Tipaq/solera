@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentKindSchema } from './events.js'
+import { agentKindSchema, type AgentKind } from './events.js'
 
 /**
  * Consommation du compte, telle que le CLI la déclare.
@@ -49,3 +49,44 @@ export const agentUsageSchema = z.object({
   fetchedAt: z.number(),
 })
 export type AgentUsage = z.infer<typeof agentUsageSchema>
+
+/**
+ * Connexion d'un CLI, lue sans ouvrir de session : `claude auth status`, `codex login
+ * status`, ou la présence d'un fichier d'identifiants. `unknown` quand le CLI ne dit
+ * rien de bon marché, ou que la lecture a échoué — jamais une erreur pour toute la liste.
+ */
+export interface AgentAuthDto {
+  agent: AgentKind
+  /** Null : la connexion propre du CLI, partagée par tous les utilisateurs. */
+  account: string | null
+  status: 'ready' | 'logged_out' | 'unknown'
+  /** Moyen de connexion tel que le CLI le nomme (`claude.ai`, `chatgpt`, `api_key`...). */
+  method: string | null
+  /** Formule déclarée (`max`...), quand le CLI la donne. */
+  plan: string | null
+  /** Courriel ou libellé du compte, quand le CLI le donne. */
+  identity: string | null
+}
+
+/** Dernier signal de limite vu pendant un vrai tour, par type de fenêtre. */
+export interface UsageLiveWindowDto {
+  type: string
+  status: 'allowed' | 'allowed_warning' | 'rejected'
+  /** Souvent null chez Claude, dont le `rate_limit_event` ne donne que le statut. */
+  utilization: number | null
+  resetsAt: number | null
+  /** Moment où le signal a été reçu, en millisecondes. */
+  at: number
+}
+
+/**
+ * Aperçu gratuit de la consommation : rien n'est sondé pour le construire. `probed` est
+ * la dernière lecture complète gardée en mémoire depuis le démarrage, quel que soit son
+ * âge (`fetchedAt` le dit), `live` ce que les tours ont rapporté en passant.
+ */
+export interface UsagePeekDto {
+  agent: AgentKind
+  account: string | null
+  probed: AgentUsage | null
+  live: UsageLiveWindowDto[]
+}

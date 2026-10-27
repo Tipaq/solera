@@ -70,6 +70,8 @@ async function main(): Promise<void> {
   // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
   // les caches de catalogue et de quota, qui ne doivent exister qu'une fois.
   const registry = createAgentRegistry(config)
+  // L'aperçu de consommation survit au redémarrage par les signaux des derniers tours.
+  registry.usageLedger.seed(db)
   // La clé vit à côté de la base, pas dedans : c'est ce qui fait qu'une base copiée
   // seule ne livre pas les secrets qu'elle contient.
   const encryptionKey = loadOrCreateKey(config.paths.data)

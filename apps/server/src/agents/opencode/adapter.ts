@@ -19,6 +19,8 @@ import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } 
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { OpencodeCatalog } from './model-catalog.js'
 import { withProbeServer } from './probe.js'
+import { readOpencodeAuth } from './auth.js'
+import type { AgentAuth } from '../auth.js'
 import { OpencodeRunner } from './runner.js'
 import { describeEdit } from './tools.js'
 
@@ -184,6 +186,11 @@ export class OpencodeAdapter implements AgentAdapter {
       credits: null,
       fetchedAt: Date.now(),
     }
+  }
+
+  /** Lu sur le disque à chaque appel : rien à mettre en cache. */
+  auth(): Promise<AgentAuth> {
+    return readOpencodeAuth()
   }
 
   async resolveDefaults(config: AgentConfig): Promise<AgentConfig> {
