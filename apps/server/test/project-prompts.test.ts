@@ -36,10 +36,15 @@ async function harness(t: TestContext, as: 'owner' | 'stranger' = 'owner') {
     .values({ id: 'project', name: 'Test', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 })
     .run()
 
-  const conversation = (id: string, status: 'idle' | 'running' | 'awaiting_input') =>
+  const project = (id: string, values: Partial<typeof projects.$inferInsert> = {}) =>
+    db.insert(projects)
+      .values({ id, name: id, workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1, ...values })
+      .run()
+
+  const conversation = (id: string, status: 'idle' | 'running' | 'awaiting_input', projectId = 'project') =>
     db.insert(conversations)
       .values({
-        id, projectId: 'project', userId: 'owner', title: id, agent: 'claude',
+        id, projectId, userId: 'owner', title: id, agent: 'claude',
         config: JSON.stringify(DEFAULT_CLAUDE_CONFIG), status, createdAt: 1, updatedAt: 1,
       })
       .run()
@@ -60,7 +65,11 @@ async function harness(t: TestContext, as: 'owner' | 'stranger' = 'owner') {
     const response = await app.inject({ method: 'GET', url: '/api/projects/project/prompts' })
     return { status: response.statusCode, body: response.json() as { prompts: ConversationPromptDto[] } }
   }
-  return { conversation, log, prompts, app, db }
+  const all = async () => {
+    const response = await app.inject({ method: 'GET', url: '/api/prompts' })
+    return { status: response.statusCode, body: response.json() as { prompts: ConversationPromptDto[] } }
+  }
+  return { conversation, log, prompts, all, project, app, db }
 }
 
 const permission = (requestId: string) => ({
@@ -132,7 +141,23 @@ test('les demandes de tous les fils du compte, projets et fils libres confondus 
     .run()
   log.append('theirs', permission('not-mine'))
 
-  const response = await app.inject({ method: 'GET', url: '/api/prompts' })
+  const response = await app.inject({ method: 'GET', url: '/api/me/prompts' })
   const body = response.json() as { prompts: ConversationPromptDto[] }
   assert.deepEqual(body.prompts.map((entry) => entry.conversationId).sort(), ['free', 'waiting'])
+})
+
+test("le portefeuille rend les demandes de tous les projets visibles, sauf les archivés et ceux des autres", async (t) => {
+  const { conversation, log, all, project } = await harness(t)
+  project('archived', { archivedAt: 2 })
+  project('foreign', { ownerId: 'stranger' })
+  project('shared', { ownerId: 'stranger', visibility: 'shared' })
+  conversation('here', 'awaiting_input')
+  conversation('elsewhere', 'awaiting_input', 'shared')
+  conversation('shelved', 'awaiting_input', 'archived')
+  conversation('hidden', 'awaiting_input', 'foreign')
+  for (const id of ['here', 'elsewhere', 'shelved', 'hidden']) log.append(id, permission(`ask-${id}`))
+
+  const { status, body } = await all()
+  assert.equal(status, 200)
+  assert.deepEqual(body.prompts.map((entry) => entry.conversationId).sort(), ['elsewhere', 'here'])
 })

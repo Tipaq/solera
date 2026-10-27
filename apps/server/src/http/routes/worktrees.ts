@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { conversations, projects, worktrees, type ProjectRow } from '@solera/db'
 import {
   createWorktreeBodySchema,
+  type PortfolioWorktreeStatusDto,
   worktreeCleanupBodySchema,
   type WorktreeCleanupPlanDto,
   type WorktreeCleanupResultDto,
@@ -19,6 +20,7 @@ import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
 import { conflict, forbidden, notFound } from '../errors.js'
 import { parentBranchFor } from '../../cards/parent-branch.js'
+import { visibilityFilter } from '../../projects/scope.js'
 import { requireUser } from '../require-user.js'
 
 /**
@@ -88,6 +90,32 @@ export function registerWorktreeRoutes(
       return { base: null, computedAt: Date.now(), fresh: true, worktrees: [], branches: [] }
     }
     return worktreeStatus.get(project)
+  })
+
+  /**
+   * La même liste pour tous les projets visibles et non archivés, l'Activité du
+   * portefeuille (#117) la lisant d'une requête plutôt que d'une par projet. Chaque
+   * projet sort de son cache comme ci-dessus ; un calcul en échec en retire le projet
+   * au lieu de faire tomber les autres.
+   */
+  app.get('/api/worktrees/status', async (request): Promise<PortfolioWorktreeStatusDto> => {
+    const user = requireUser(request)
+    const rows = ctx.db
+      .select()
+      .from(projects)
+      .where(and(visibilityFilter(user.id), isNull(projects.archivedAt)))
+      .all()
+    const lists = await Promise.all(
+      rows.map(async (project) => {
+        if (!(await readGitStatus(project.workspacePath))) return null
+        try {
+          return [project.id, await worktreeStatus.get(project)] as const
+        } catch {
+          return null
+        }
+      }),
+    )
+    return { projects: Object.fromEntries(lists.filter((entry) => entry !== null)) }
   })
 
   /** Ce que « Nettoyer » ferait d'un arbre, pour la confirmation. 404 si le chemin n'est pas un arbre du projet. */

@@ -6,7 +6,7 @@ import { closePanelButton } from './panel.mjs'
 
 /**
  * La visionneuse d'images : les trois repères, le zoom, le glissement, le plein écran
- * hors de la coque, et le repli de l'arborescence à l'ouverture d'une image large.
+ * hors de la coque, et l'arborescence qui reste ouverte devant une image large.
  *
  * La fixture est un PNG fabriqué ici plutôt qu'un fichier commité : il faut une taille
  * connue (plus large que le seuil de repli) et un poids réel pour la ligne de pied, et
@@ -31,13 +31,16 @@ export async function checkImage({ page, base, project }) {
 
   // L'arborescence nomme ses entrées par leur nom court, suivi de la lettre d'état
   // git (`?` pour une fixture non suivie).
-  await panel.getByRole('button', { name: /^image-check/ }).first().click()
-  await panel.getByRole('button', { name: /^large\.png/ }).first().click()
+  await panel.getByRole('treeitem', { name: /^image-check/ }).first().click()
+  await panel.getByRole('treeitem', { name: /^large\.png/ }).first().click()
   const viewer = panel.locator('[data-image-viewer]')
   await viewer.waitFor()
 
-  // Une image large replie l'arborescence d'elle-même : c'est la place qu'elle réclame.
-  await showTree.waitFor()
+  // Une image large ne replie plus l'arborescence (9f2b6a16) : son ouverture
+  // appartient à qui regarde, et l'ajustement prend la place qui reste.
+  await viewer.getByRole('status').waitFor()
+  assert.equal(await showTree.count(), 0, 'Une image large laisse l’arborescence ouverte')
+  await panel.getByRole('button', { name: "Masquer l'arborescence", exact: true }).waitFor()
 
   // Le pied dit ce qu'on regarde : dimensions, poids réel, format.
   await viewer.getByText(new RegExp(`${WIDTH} × ${HEIGHT} · \\d`)).waitFor()
@@ -98,6 +101,9 @@ export async function checkImage({ page, base, project }) {
   // Au téléphone : le panneau recouvre déjà l'écran, donc la visionneuse y est en
   // plein écran sans l'avoir demandé, et les gestes ne sont plus les mêmes.
   await page.setViewportSize({ width: 390, height: 844 })
+  // L'arborescence restée ouverte se pose par-dessus au téléphone : y rouvrir
+  // l'image la referme, comme on choisit un fichier au doigt.
+  await panel.getByRole('treeitem', { name: /^large\.png/ }).first().click()
   const band = panel.locator('header').first()
   await band.getByText('large.png', { exact: true }).waitFor()
   assert.equal(
@@ -112,13 +118,13 @@ export async function checkImage({ page, base, project }) {
 
   // Le retour de la bande ramène à l'arbre, comme on remonte d'un dossier.
   await band.getByRole('button', { name: "Afficher l'arborescence", exact: true }).click()
-  await panel.getByRole('button', { name: /^large\.png/ }).first().waitFor()
+  await panel.getByRole('treeitem', { name: /^large\.png/ }).first().waitFor()
   assert.equal(await band.getByText('large.png', { exact: true }).count(), 0, 'La bande redit le répertoire')
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await (await closePanelButton(page)).click()
   await panel.waitFor({ state: 'hidden' })
-  console.log('OK : visionneuse d’images — repères, zoom, double-clic, plein écran hors coque et repli de l’arbre.')
+  console.log('OK : visionneuse d’images — repères, zoom, double-clic, plein écran hors coque, arbre laissé ouvert.')
 }
 
 /** PNG en niveaux de gris, une bande dégradée : la largeur seule compte pour le test. */

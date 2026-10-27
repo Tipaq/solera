@@ -1,4 +1,4 @@
-import { Flag, FolderPlus, History, Plus, SquareKanban, Target } from 'lucide-react'
+import { Flag, FolderPlus, History, Layers, Plus, SquareKanban } from 'lucide-react'
 import { useMemo } from 'react'
 import { Outlet, useMatch, useNavigate } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
@@ -7,7 +7,7 @@ import { HeaderBand } from '../components/HeaderBand'
 import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
-import { useWorkGroups } from '../lib/portfolio'
+import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
 
 /**
@@ -18,7 +18,8 @@ import { useProjects } from '../lib/projects'
  * passaient au second plan, alors que c'est leur page. Le transversal ensuite : *Travail*
  * et le board global ont désormais leur propre largeur au lieu de prendre celle des
  * projets — et c'est ce qui a permis d'écarter un cinquième lieu « Travail », le
- * transversal appartenant à la page qui montre déjà tous les projets.
+ * transversal appartenant à la page qui montre déjà tous les projets. *Travail* s'est
+ * depuis fondu dans l'Activité (#117), la même liste que celle d'un projet.
  *
  * Pas de `⋯` dans la bande, à la différence d'un projet : un portefeuille n'a pas de
  * gestes à soi. Un menu n'aurait porté que les vues, que la rangée dit déjà.
@@ -33,7 +34,7 @@ export function PortfolioLayout() {
     [projects],
   )
   const { cards } = useAllCards(visible)
-  const work = useWorkGroups()
+  const asking = usePortfolioAskingCount()
   const onProjects = useMatch('/projects') !== null
 
   const openCards = cards.filter((card) => !CARD_CLOSED_COLUMNS.includes(card.column))
@@ -47,19 +48,19 @@ export function PortfolioLayout() {
       count: visible.length,
     },
     {
+      to: '/projects/activity',
+      label: t('project.view.activity'),
+      icon: <Layers size={15} />,
+      // Ce qui te demande quelque chose, comme l'onglet d'un projet : une demande, pas
+      // un inventaire, et la seule teinte d'alerte de la rangée.
+      count: asking,
+      tone: 'caution',
+    },
+    {
       to: '/projects/board',
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
       count: openCards.length,
-    },
-    {
-      to: '/projects/work',
-      label: t('portfolio.view.work'),
-      icon: <Target size={15} />,
-      count: work.total,
-      // Ce groupe ne dit que ce qui **réclame** : son compte est une demande, pas un
-      // inventaire, et c'est la seule teinte d'alerte de la rangée.
-      tone: 'caution',
     },
     {
       to: '/projects/timeline',

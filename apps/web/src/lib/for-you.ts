@@ -129,7 +129,7 @@ export function useForYou(live: LiveConversation[], focus?: string | null): ForY
   const signature = live.map((entry) => `${entry.conversation.id}:${entry.status}:${entry.seq}`).join(',')
   const { data: prompts } = useQuery({
     queryKey: ['prompts', 'all', signature],
-    queryFn: async () => (await api.get<{ prompts: ConversationPromptDto[] }>('/api/prompts')).prompts,
+    queryFn: async () => (await api.get<{ prompts: ConversationPromptDto[] }>('/api/me/prompts')).prompts,
     placeholderData: (previous) => previous,
   })
   const { data: awaiting } = useAwaiting()

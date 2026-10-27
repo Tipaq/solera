@@ -4,6 +4,7 @@ import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@so
 import type { EventLog } from '../events/event-log.js'
 import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches } from './assess.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
+import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
@@ -49,6 +50,11 @@ export class WorktreeStatusService {
   constructor(
     private readonly db: Db,
     log: EventLog,
+    /**
+     * Les PR fusionnées sur la forge, qui reconnaissent un squash après que la base a
+     * avancé (#126). Sans elle, ou quand la forge ne répond pas, seul le contenu juge.
+     */
+    private readonly mergedPullRequests?: MergedPullRequestSource,
   ) {
     // La fin d'un tour est le moment où l'arbre a le plus de chances d'avoir changé ;
     // une édition hors du cwd peut rattacher la session à un nouvel arbre.
@@ -171,7 +177,12 @@ export class WorktreeStatusService {
 
   private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
     const repo = project.workspacePath
-    const [entries, base] = await Promise.all([listWorktrees(repo), defaultBase(repo)])
+    const [entries, base, merged] = await Promise.all([
+      listWorktrees(repo),
+      defaultBase(repo),
+      this.mergedPullRequests?.(project).catch(() => null) ?? null,
+    ])
+    const landed = base && merged ? landedPullRequests(merged, base) : new Map<string, never[]>()
     const rows = this.db
       .select()
       .from(worktrees)
@@ -215,7 +226,9 @@ export class WorktreeStatusService {
     // illisible, seul : il ne doit ni faire échouer la liste entière, ni la laisser
     // périmée pour toujours.
     const assessed = await mapLimited(list, CONCURRENCY, (tree) =>
-      (base ? assessWorktree(repo, base, tree) : assessWorktree(repo, 'HEAD', { ...tree, head: null })).catch(
+      (base
+        ? assessWorktree(repo, base, tree, { landed: tree.branch ? landed.get(tree.branch) : undefined })
+        : assessWorktree(repo, 'HEAD', { ...tree, head: null })).catch(
         (err: unknown) => {
           console.warn(`[worktrees] arbre illisible ${tree.path} :`, err)
           return UNREADABLE
@@ -252,7 +265,7 @@ export class WorktreeStatusService {
     )
 
     const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
-    const branches = await looseBranches(repo, base, checkedOut).catch((err: unknown) => {
+    const branches = await looseBranches(repo, base, checkedOut, landed).catch((err: unknown) => {
       console.warn('[worktrees] branches illisibles :', err)
       return []
     })

@@ -48,6 +48,7 @@ import { createConversation } from '../../conversations/create.js'
 import { overridesFor, patchOverrides, readOverrides } from '../../conversations/config-inheritance.js'
 import { moveConversation } from '../../conversations/move.js'
 import { conversationVisibleTo } from '../../conversations/scope.js'
+import { visibilityFilter } from '../../projects/scope.js'
 import {
   buildHandoff,
   clampHandoffTokens,
@@ -351,21 +352,39 @@ export function registerConversationRoutes(
       throw notFound('project_not_found', 'Project not found.')
     }
 
-    const asking = new Set(log.openAsyncQuestionConversationIds())
     const rows = ctx.db
       .select({ id: conversations.id, status: conversations.status })
       .from(conversations)
       .where(eq(conversations.projectId, id))
       .all()
+    return { prompts: promptsOf(rows) }
+  })
 
+  /**
+   * Les mêmes, pour tous les projets visibles et non archivés : l'Activité du
+   * portefeuille (#117) les lit d'une requête plutôt que d'une par projet.
+   */
+  app.get('/api/prompts', async (request) => {
+    const user = requireUser(request)
+    const rows = ctx.db
+      .select({ id: conversations.id, status: conversations.status })
+      .from(conversations)
+      .innerJoin(projects, eq(projects.id, conversations.projectId))
+      .where(and(visibilityFilter(user.id), isNull(projects.archivedAt)))
+      .all()
+    return { prompts: promptsOf(rows) }
+  })
+
+  function promptsOf(rows: { id: string; status: string }[]): ConversationPromptDto[] {
+    const asking = new Set(log.openAsyncQuestionConversationIds())
     const prompts: ConversationPromptDto[] = []
     for (const row of rows) {
       if (row.status !== 'awaiting_input' && !asking.has(row.id)) continue
       const pending = pendingPromptOf(log, row.id)
       if (pending) prompts.push({ conversationId: row.id, ...pending })
     }
-    return { prompts }
-  })
+    return prompts
+  }
 
   /**
    * Les mêmes demandes, pour tous les fils du compte : la modale d'Activité (#121) les
@@ -374,22 +393,14 @@ export function registerConversationRoutes(
    * Seuls les fils de la personne : c'est elle seule qui tranche une permission ou une
    * question, et un fil d'un projet partagé ne l'attend pas.
    */
-  app.get('/api/prompts', async (request) => {
+  app.get('/api/me/prompts', async (request) => {
     const user = requireUser(request)
-    const asking = new Set(log.openAsyncQuestionConversationIds())
     const rows = ctx.db
       .select({ id: conversations.id, status: conversations.status })
       .from(conversations)
       .where(eq(conversations.userId, user.id))
       .all()
-
-    const prompts: ConversationPromptDto[] = []
-    for (const row of rows) {
-      if (row.status !== 'awaiting_input' && !asking.has(row.id)) continue
-      const pending = pendingPromptOf(log, row.id)
-      if (pending) prompts.push({ conversationId: row.id, ...pending })
-    }
-    return { prompts }
+    return { prompts: promptsOf(rows) }
   })
 
   app.post('/api/projects/:id/conversations', async (request, reply) => {
