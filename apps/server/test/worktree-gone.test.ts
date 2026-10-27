@@ -6,6 +6,7 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import {
+  conversationPaths,
   conversations,
   openDatabase,
   projects,
@@ -24,6 +25,7 @@ import type { SecretStore } from '../src/secrets/store.js'
 import { SessionManager } from '../src/sessions/session-manager.js'
 import { projectCwd, resolveConversationCwd } from '../src/workspace.js'
 import { directoryGone } from '../src/worktrees/gone.js'
+import { linkedWorktreePaths } from '../src/worktrees/linked.js'
 
 /**
  * Une conversation dont le worktree a disparu (cartes #60 et #61).
@@ -278,4 +280,118 @@ test('une conversation supprimée avec un message en file ne fait pas de rejet n
   const internals = h.sessions as unknown as { flushQueue(id: string): Promise<void>; runners: Map<string, { status: string }> }
   internals.runners.get('conv')!.status = 'idle'
   await internals.flushQueue('conv')
+})
+
+/**
+ * Une session de la racine qui a créé ou écrit un worktree le reçoit en dossier en plus
+ * (`linkedWorktreePaths`). Retiré, il ne doit ni être passé à un CLI, ni rester dans les
+ * arguments d'un Claude lancé avant le retrait : c'est la session de la racine qui
+ * cessait alors de répondre.
+ */
+
+/** `other` vit à la racine et a écrit dans l'arbre, comme après `create_worktree`. */
+function linkRootSession(h: Awaited<ReturnType<typeof harness>>) {
+  h.db.insert(conversationPaths).values({ conversationId: 'other', path: h.worktreePath, lastTs: 1 }).run()
+}
+
+/** Un runner vivant de `other`, lancé avec l'arbre parmi ses dossiers en plus. */
+function linkedRunner(h: Awaited<ReturnType<typeof harness>>, status: ConversationRow['status'] = 'idle') {
+  const runner = h.liveRunner('other', status)
+  const internals = h.sessions as unknown as { runners: Map<string, { linkedTrees?: string[] }> }
+  internals.runners.get('other')!.linkedTrees = [h.worktreePath]
+  return runner
+}
+
+test('un worktree lié disparu n\'est plus passé au CLI, et se marque retiré', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  assert.deepEqual(linkedWorktreePaths(h.db, 'other', 'project'), [h.worktreePath])
+
+  await rm(h.worktreePath, { recursive: true })
+  let marked = 0
+  assert.deepEqual(linkedWorktreePaths(h.db, 'other', 'project', () => { marked += 1 }), [])
+  assert.notEqual(h.removedAt(), null)
+  assert.equal(marked, 1)
+})
+
+test('un worktree lié retiré par Solera n\'est plus passé au CLI', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  h.db.update(worktrees).set({ removedAt: 5 }).where(eq(worktrees.id, 'wt')).run()
+  assert.deepEqual(linkedWorktreePaths(h.db, 'other', 'project'), [])
+})
+
+test('le CLI de la racine lancé avec un arbre retiré depuis est relancé au tour suivant', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  const runner = linkedRunner(h)
+  // Retiré par le nettoyage ou la suppression : seul `removedAt` le dit.
+  h.db.update(worktrees).set({ removedAt: 5 }).where(eq(worktrees.id, 'wt')).run()
+
+  await assert.rejects(h.sessions.sendMessage('other', 'c1', 'on continue'), new RegExp(LAUNCH_ATTEMPT))
+  assert.equal(runner.stopped, true)
+  assert.deepEqual(runner.sent, [])
+  assert.deepEqual(h.launched, ['claude'], 'un CLI neuf est lancé, sans l\'arbre')
+})
+
+test('un arbre lié emporté par git hors de Solera relance aussi le CLI, et se marque', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  const runner = linkedRunner(h)
+  await rm(h.worktreePath, { recursive: true })
+
+  await assert.rejects(h.sessions.sendMessage('other', 'c1', 'on continue'), new RegExp(LAUNCH_ATTEMPT))
+  assert.equal(runner.stopped, true)
+  assert.notEqual(h.removedAt(), null)
+  assert.deepEqual(h.lists, ['other'])
+})
+
+test('le CLI de la racine garde son process tant que ses arbres liés existent', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  const runner = linkedRunner(h)
+
+  await h.sessions.sendMessage('other', 'c1', 'on continue')
+  assert.deepEqual(runner.sent, ['on continue'])
+  assert.equal(runner.stopped, false)
+  assert.deepEqual(h.launched, [])
+})
+
+test('un tour en cours n\'est jamais coupé pour un arbre lié retiré', async (t) => {
+  const h = await harness(t)
+  linkRootSession(h)
+  const runner = linkedRunner(h, 'running')
+  await rm(h.worktreePath, { recursive: true })
+
+  // En file : il partira à la fin du tour, vers un CLI relancé.
+  await h.sessions.sendMessage('other', 'c1', 'à la fin du tour')
+  assert.equal(runner.stopped, false)
+  assert.equal(h.sessions.activeCount(), 1)
+})
+
+test('steer refuse un dossier disparu, sans couper le tour en cours', async (t) => {
+  const h = await harness(t)
+  const runner = Object.assign(h.liveRunner('conv', 'running'), {
+    steered: [] as string[],
+    async steer(text: string) { this.steered.push(text); return true },
+  })
+  await rm(h.worktreePath, { recursive: true })
+
+  await assert.rejects(h.sessions.steer('conv', 'c1', 'infléchis'), missing)
+  assert.deepEqual(runner.steered, [])
+  assert.equal(runner.stopped, false)
+  assert.notEqual(h.removedAt(), null)
+})
+
+test('compacter refuse un dossier disparu, arrête le runner au repos et n\'en lance aucun', async (t) => {
+  const h = await harness(t)
+  const runner = h.liveRunner('conv')
+  await rm(h.worktreePath, { recursive: true })
+
+  await assert.rejects(h.sessions.compact('conv'), missing)
+  assert.equal(runner.stopped, true)
+  assert.deepEqual(h.launched, [])
+
+  await assert.rejects(h.sessions.compact('conv'), missing)
+  assert.deepEqual(h.launched, [])
 })

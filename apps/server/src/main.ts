@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   // Nettoyer un chantier ferme ses terminaux et range ses sessions. C'est un geste de la
   // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
   // agent demande à une personne, et les propositions d'avant sont retirées ici.
-  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
+  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, sessions)
   decisions.retireWorktreeProposals()
   // Une fusion détectée passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
   watchMergedCards(db, worktreeStatus)

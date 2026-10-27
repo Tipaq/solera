@@ -136,7 +136,7 @@ async function harness(t: TestContext) {
   const log = new EventLog(db)
   const status = new WorktreeStatusService(db, log)
   const terminals = { underCwd: () => [] as string[], close: () => undefined } as unknown as TerminalManager
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => undefined)
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => undefined, releaseRunner: async () => true })
   const closure = new CardClosure(db, status, cleanup, forge)
   const ctx = { db, config: { mcp: { cardFiling: true } } as unknown as Config }
   const sessions = { statusBus: new EventEmitter() } as unknown as SessionManager

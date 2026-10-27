@@ -74,7 +74,7 @@ import {
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
-import { linkedWorktreePaths } from '../worktrees/linked.js'
+import { anyWorktreeGone, linkedWorktreePaths } from '../worktrees/linked.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -110,6 +110,13 @@ interface ManagedRunner {
    * temps. Voir `reloadConfig`.
    */
   pendingRestart: string | null
+  /**
+   * Les worktrees liés que le CLI a reçus comme dossiers en plus (`workTrees`), au
+   * dernier appel. Claude ne les lit qu'au lancement : un arbre retiré depuis resterait
+   * dans ses arguments, et c'est ce qui fait relancer le process au tour suivant (voir
+   * `recycleIfTreesGone`). Absent tant que le CLI ne les a pas demandés.
+   */
+  linkedTrees?: readonly string[]
 }
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
@@ -587,7 +594,9 @@ export class SessionManager {
     return adapter.fork(
       {
         agentSessionId: conversation.agentSessionId,
-        cwd: this.resolveCwd(conversation),
+        // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu,
+        // la route l'a déjà refusé.
+        cwd: this.refuseMissingCwd(conversation),
         accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
       },
       adapter.forkCut(this.log, conversationId, throughSeq),
@@ -805,12 +814,15 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return 'unavailable'
 
+    // Refusé avant de sortir le message de la file : il y attend le rattachement.
+    const conversation = this.loadConversation(conversationId)
+    const cwd = this.refuseMissingCwd(conversation)
+
     const index = queue.indexOf(entry)
     queue.splice(index, 1)
     if (queue.length === 0) this.queues.delete(conversationId)
 
-    const conversation = this.loadConversation(conversationId)
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), entry.mentions)
+    const resolved = this.resolveMentions(cwd, entry.mentions)
 
     let steered = false
     try {
@@ -1089,9 +1101,17 @@ export class SessionManager {
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
           : [],
-      // Un fil libre n'a pas de projet, donc pas de worktree.
-      workTrees: () =>
-        conversation.projectId ? linkedWorktreePaths(this.db, conversationId, conversation.projectId) : [],
+      // Un fil libre n'a pas de projet, donc pas de worktree. Ce qui est rendu est
+      // retenu sur le runner : c'est ce qui dira, au tour suivant, s'il faut le relancer.
+      workTrees: () => {
+        if (!conversation.projectId) return []
+        const paths = linkedWorktreePaths(this.db, conversationId, conversation.projectId, () =>
+          this.statusBus.emit('lists', { conversationId }),
+        )
+        const managed = this.runners.get(conversationId)
+        if (managed) managed.linkedTrees = paths
+        return paths
+      },
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SoleraEvent, raw?: unknown) => {
@@ -1322,6 +1342,9 @@ export class SessionManager {
    * qui remplace le composer par un bandeau), et un événement par essai empilerait
    * autant de bandeaux. Le runner encore vivant est arrêté, sa file gardée pour le
    * rattachement, et les listes relues pour que le fil voie l'état.
+   *
+   * Sauf au milieu d'un tour, où passent `steer` et un fork : le couper laisserait le
+   * fil en `running` sans fin de tour. Il s'arrêtera au prochain envoi, au repos.
    */
   private refuseMissingCwd(conversation: ConversationRow): string {
     try {
@@ -1330,11 +1353,31 @@ export class SessionManager {
       return cwd
     } catch (err) {
       if (isWorkingDirectoryMissing(err)) {
-        void this.stopRunner(conversation.id, { keepQueue: true })
+        if (!this.isBusy(conversation.id)) void this.stopRunner(conversation.id, { keepQueue: true })
         this.statusBus.emit('lists', { conversationId: conversation.id })
       }
       throw err
     }
+  }
+
+  /**
+   * Relance au prochain tour un CLI dont un worktree lié est parti depuis son lancement.
+   *
+   * Une session de la racine qui a créé ou écrit un arbre le reçoit en dossier en plus,
+   * et Claude ne relit cette liste qu'au lancement : l'arbre retiré — par le nettoyage,
+   * la suppression ou git hors de Solera — resterait dans ses arguments, et la session
+   * cessait de répondre. Vérifié à l'envoi plutôt qu'au retrait : c'est le seul moment
+   * où tous les retraits sont visibles, y compris ceux que personne n'annonce, et un
+   * envoi n'arrive qu'au repos, donc aucun tour n'est coupé. Le runner est arrêté comme
+   * par `refuseMissingCwd`, file gardée : `ensureRunner` en lance un neuf, en reprise.
+   */
+  private async recycleIfTreesGone(conversationId: string): Promise<void> {
+    const managed = this.runners.get(conversationId)
+    if (!managed?.linkedTrees || this.isBusy(conversationId)) return
+    const gone = anyWorktreeGone(this.db, managed.linkedTrees, () =>
+      this.statusBus.emit('lists', { conversationId }),
+    )
+    if (gone) await this.stopRunner(conversationId, { keepQueue: true })
   }
 
   /**
@@ -1508,8 +1551,10 @@ export class SessionManager {
       const managed = this.runners.get(conversationId)
       if (!managed) return false
 
+      // Le même refus que `deliver` : l'agent n'a rien à faire d'une consigne pour un
+      // dossier qui n'existe plus, et le fil montre déjà le bandeau.
       const conversation = this.loadConversation(conversationId)
-      const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
+      const resolved = this.resolveMentions(this.refuseMissingCwd(conversation), mentions)
 
       steered = await managed.runner.steer(text, attachments, resolved, skills)
       if (steered) this.touch(conversationId)
@@ -1599,6 +1644,7 @@ export class SessionManager {
     // l'envoi, pas laisser une session lancée avec un message perdu.
     const resolved = this.resolveMentions(cwd, mentions)
 
+    await this.recycleIfTreesGone(conversationId)
     const runner = await this.ensureRunner(conversation)
     // Après le démarrage du runner, qui peut prendre des secondes, et juste avant
     // l'envoi : la capture doit être au plus près du premier geste de l'agent.
@@ -1749,7 +1795,11 @@ export class SessionManager {
       )
     }
 
+    // Comme `deliver` : pas de CLI relancé dans un dossier disparu, ni gardé avec un
+    // worktree lié qui l'est.
     const conversation = this.loadConversation(conversationId)
+    this.refuseMissingCwd(conversation)
+    await this.recycleIfTreesGone(conversationId)
     const runner = await this.ensureRunner(conversation)
     const compacted = await runner.compact()
     if (compacted) this.touch(conversationId)

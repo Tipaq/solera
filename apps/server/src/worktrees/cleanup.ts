@@ -45,6 +45,13 @@ function busyIn(db: Db, tree: WorktreeStatusDto): { id: string; title: string }[
     .map(({ id, title }) => ({ id, title }))
 }
 
+/** Ce que le nettoyage demande au gestionnaire de sessions pour celles qu'il range. */
+export interface CleanupSessions {
+  dropCheckpoints(conversationId: string): Promise<void>
+  /** Arrête le CLI s'il est au repos ; faux s'il tourne. */
+  releaseRunner(conversationId: string): Promise<boolean>
+}
+
 /**
  * Nettoyer un chantier en un geste : arrêter ce qui y tourne, ranger ses sessions,
  * retirer l'arbre et sa branche.
@@ -61,7 +68,7 @@ export class WorktreeCleanup {
     dataDirectory: string,
     private readonly status: WorktreeStatusService,
     private readonly terminals: TerminalManager,
-    private readonly dropCheckpoints: (conversationId: string) => Promise<void>,
+    private readonly sessions: CleanupSessions,
   ) {
     this.origins = processOrigins(dataDirectory)
   }
@@ -162,8 +169,14 @@ export class WorktreeCleanup {
         .set({ archivedAt: Date.now() })
         .where(and(inArray(conversations.id, ids), isNull(conversations.archivedAt)))
         .run().changes
-      // Les captures de tour vivent dans le dépôt de l'arbre : à retirer avant lui.
-      for (const id of ids) await this.dropCheckpoints(id).catch(() => undefined)
+      // Les captures de tour vivent dans le dépôt de l'arbre : à retirer avant lui. Le
+      // CLI resté chaud aussi, dont le cwd va disparaître : aucune ne travaille, le
+      // refus plus haut l'a vérifié. Les sessions de la racine liées à l'arbre gardent
+      // le leur, relancé à leur prochain tour sans l'arbre (`recycleIfTreesGone`).
+      for (const id of ids) {
+        await this.sessions.dropCheckpoints(id).catch(() => undefined)
+        await this.sessions.releaseRunner(id).catch(() => false)
+      }
     }
 
     // `worktree remove --force` retire aussi une entrée dont le dossier a disparu, et

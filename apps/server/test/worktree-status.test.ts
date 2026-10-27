@@ -440,7 +440,11 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const closed: string[] = []
   const terminals = { underCwd: () => [] as string[], close: (id: string) => closed.push(id) } as unknown as TerminalManager
   const dropped: string[] = []
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async (id) => { dropped.push(id) })
+  const released: string[] = []
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, {
+    dropCheckpoints: async (id) => { dropped.push(id) },
+    releaseRunner: async (id) => { released.push(id); return true },
+  })
 
   assert.equal(await cleanup.plan(projectRow, join(trees, 'nowhere')), null, 'un chemin hors du projet est refusé')
   assert.equal(await cleanup.plan(projectRow, repo), null, "l'arbre principal n'est pas un chantier")
@@ -468,6 +472,8 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const result = (await cleanup.run(projectRow, { path: known, deleteBranch: true, stopServices: true }))!
   assert.deepEqual([result.removed, result.branchDeleted, result.archived], [true, true, 1])
   assert.deepEqual(dropped, ['c1', 'c2'])
+  // Le CLI des sessions rangées est arrêté ; celui de la session de la racine, non.
+  assert.deepEqual(released, ['c1', 'c2'])
   assert.ok(!(await listWorktrees(repo)).some((e) => e.path === known))
   assert.ok(!git(repo, 'branch', '--list', 'feat/known'))
   assert.ok(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-known')).get()?.removedAt)
@@ -503,7 +509,7 @@ test('nettoyer : un arbre que git refuse de retirer reste, et sa perte de commit
   const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
   const status = new WorktreeStatusService(db, new EventLog(db))
   const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => {}, releaseRunner: async () => true })
 
   // Un commit que la base n'a pas, puis du non commité par-dessus : l'état dit « non
   // commité », mais le plan sait aussi que supprimer la branche perdrait le commit.
