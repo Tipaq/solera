@@ -102,7 +102,6 @@ const PortfolioJournalPage = lazy(() =>
   import('./routes/PortfolioJournalPage').then((m) => ({ default: m.PortfolioJournalPage })),
 )
 const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({ default: m.SchedulesPage })))
-const DecisionsPage = lazy(() => import('./routes/DecisionsPage').then((m) => ({ default: m.DecisionsPage })))
 const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
 const BoardPage = lazy(() => import('./routes/BoardPage').then((m) => ({ default: m.BoardPage })))
 const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ default: m.SchedulePage })))
@@ -255,7 +254,6 @@ export function App() {
             <Route path="journal" element={<Deferred><PortfolioJournalPage /></Deferred>} />
           </Route>
           <Route path="/schedules" element={<Deferred><SchedulesPage /></Deferred>} />
-          <Route path="/decisions" element={<Deferred><DecisionsPage /></Deferred>} />
           {/* Avant la note : « parcourir » ne doit pas être pris pour un chemin de note.
               Pas de voile d'attente : la page arrive quand son code est là, plutôt que
               de faire clignoter un écran vide entre deux notes. */}

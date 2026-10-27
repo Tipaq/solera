@@ -62,12 +62,11 @@ export function AppShell() {
   const projectsRoute = useMatch('/projects')
   const portfolioRoute = useMatch('/projects/*')
   const plannedRoute = useMatch('/schedules')
-  const decisionsRoute = useMatch('/decisions')
   const vaultRoute = useMatch('/vault/*')
   const vaultRootRoute = useMatch('/vault')
   const contextualHeader = Boolean(
     conversationRoute || freeConversationRoute || servicesRoute
-    || projectRoute || projectRootRoute || projectsRoute || portfolioRoute || plannedRoute || decisionsRoute
+    || projectRoute || projectRootRoute || projectsRoute || portfolioRoute || plannedRoute
     || vaultRoute || vaultRootRoute,
   )
   const navInactive = wide ? hidden : !navOpen

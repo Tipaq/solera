@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, History, MessagesSquare, X } from 'lucide-react'
+import { Activity, MessagesSquare, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
@@ -228,17 +228,6 @@ export function ActivityDialog({
                 ))}
               </ul>
             )}
-            {/* La liste n'a que ce qui attend encore : ce qui a attendu se relit là. */}
-            {filter === 'forYou' ? (
-              <NavLink
-                to="/decisions"
-                onClick={onNavigate}
-                className="mt-1 flex min-h-11 items-center justify-center gap-1.5 rounded-md text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-9"
-              >
-                <History size={13} aria-hidden />
-                {t('forYou.history.link')}
-              </NavLink>
-            ) : null}
           </div>
         </Dialog.Content>
       </Dialog.Portal>

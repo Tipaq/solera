@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AwaitingRequestDto, DecisionDto, RequestHistoryDto } from '@solera/protocol'
+import type { AwaitingRequestDto, DecisionDto } from '@solera/protocol'
 import { api } from './api'
 import { formatAgo } from './loops'
 import { translate } from './i18n'
@@ -24,16 +24,6 @@ export function useAwaiting() {
     queryFn: async () => (await api.get<{ requests: AwaitingRequestDto[] }>('/api/awaiting')).requests,
     staleTime: 15_000,
     refetchInterval: 60_000,
-  })
-}
-
-/** L'historique de ce qui t'attend, accords compris : la page `/decisions` (#121). */
-export function useRequestHistory(scope: 'pending' | 'all') {
-  return useQuery({
-    queryKey: [...DECISIONS_KEY, 'history', scope],
-    queryFn: async () =>
-      (await api.get<{ entries: RequestHistoryDto[] }>(`/api/awaiting/history?status=${scope}`)).entries,
-    staleTime: 15_000,
   })
 }
 

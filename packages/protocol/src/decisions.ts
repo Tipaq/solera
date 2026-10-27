@@ -183,28 +183,3 @@ export interface AwaitingRequestEntryDto {
   event: SoleraEvent
 }
 
-/**
- * L'issue d'un accord dans l'historique. `closed` : refusé, ou devenu impossible avant
- * le clic ; la ligne ne dit pas lequel, le fil le dit.
- */
-export type AccordStatus = 'pending' | 'accepted' | 'closed'
-
-/**
- * Une ligne de l'historique de ce qui t'attend (`GET /api/awaiting/history`) : une
- * décision, ou un des trois accords qu'un clic tranche.
- */
-export type RequestHistoryDto =
-  | { kind: 'decision'; decision: DecisionDto }
-  | {
-      kind: 'request_card_change' | 'propose_cards' | 'move_conversation'
-      id: string
-      conversationId: string
-      conversationTitle: string
-      projectId: string | null
-      projectName: string
-      /** Cartes à changer ou à créer ; 1 pour un rangement de conversation. */
-      count: number
-      status: AccordStatus
-      createdAt: number
-      resolvedAt: number | null
-    }
