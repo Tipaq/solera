@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import type { AgentKind } from '@solera/protocol'
 
 /**
  * Ouverture des réglages, partagée hors de React.
@@ -20,8 +21,7 @@ export type SettingsSectionId =
   | 'notifications'
   | 'dictee'
   | 'permissions'
-  | 'modeles'
-  | 'abonnements'
+  | 'agents'
   | 'mcp'
   | 'consignes'
   | 'skills'
@@ -36,27 +36,27 @@ export type SettingsSectionId =
 
 export const FIRST_SECTION: SettingsSectionId = 'compte'
 
-/** Les CLI qui ont des abonnements à emprunter, l'onglet ouvert dans « Abonnements ». */
-export type SubscriptionAgent = 'claude' | 'codex' | 'grok'
-
 /**
- * Les adresses d'avant la refonte des réglages (#120) : « Défauts des CLI » est devenue
- * « Modèles par défaut », et les trois pages de comptes se sont réunies en « Abonnements ».
- * Un lien gardé quelque part doit continuer à mener au bon endroit.
+ * Les adresses d'avant : « Défauts des CLI » devenue « Modèles par défaut », les trois
+ * pages de comptes réunies en « Abonnements » (#120), puis ces deux sections fondues en
+ * une seule, « Agents », un onglet par CLI. Un lien gardé quelque part doit continuer à
+ * mener au bon endroit, et au bon onglet quand l'adresse le disait.
  */
-export const LEGACY_SETTINGS_SECTIONS: Record<string, { section: SettingsSectionId; subscription?: SubscriptionAgent }> = {
-  cli: { section: 'modeles' },
-  'comptes-claude': { section: 'abonnements', subscription: 'claude' },
-  'comptes-codex': { section: 'abonnements', subscription: 'codex' },
-  'comptes-grok': { section: 'abonnements', subscription: 'grok' },
+export const LEGACY_SETTINGS_SECTIONS: Record<string, { section: SettingsSectionId; agent?: AgentKind }> = {
+  cli: { section: 'agents' },
+  modeles: { section: 'agents' },
+  abonnements: { section: 'agents' },
+  'comptes-claude': { section: 'agents', agent: 'claude' },
+  'comptes-codex': { section: 'agents', agent: 'codex' },
+  'comptes-grok': { section: 'agents', agent: 'grok' },
 }
 
 interface State {
   open: boolean
   /** Null au téléphone : la liste est alors la page, et rien n'est encore choisi. */
   section: SettingsSectionId | null
-  /** L'onglet d'« Abonnements » à montrer d'abord, quand une adresse le dit. */
-  subscription?: SubscriptionAgent
+  /** L'onglet d'« Agents » à montrer d'abord, quand l'appelant le dit. */
+  agent?: AgentKind
 }
 
 let state: State = { open: false, section: null }
@@ -79,9 +79,12 @@ export function useSettingsDialog(): State {
   )
 }
 
-/** Sans section, la modale s'ouvre sur sa liste — la première au large. */
-export function openSettings(section: SettingsSectionId | null = null, subscription?: SubscriptionAgent): void {
-  state = { open: true, section, subscription }
+/**
+ * Sans section, la modale s'ouvre sur sa liste — la première au large. `agent` choisit
+ * l'onglet de la section « Agents » : `openSettings('agents', 'codex')`.
+ */
+export function openSettings(section: SettingsSectionId | null = null, agent?: AgentKind): void {
+  state = { open: true, section, agent }
   emit()
 }
 

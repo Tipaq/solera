@@ -167,8 +167,8 @@ function LegacySettingsRoute() {
   const known = visibleSections(user?.isAdmin, instance?.capabilities).find((entry) => entry.id === wanted)
 
   useEffect(() => {
-    openSettings(known?.id ?? null, legacy?.subscription)
-  }, [known?.id, legacy?.subscription])
+    openSettings(known?.id ?? null, legacy?.agent)
+  }, [known?.id, legacy?.agent])
 
   // « projets » n'a jamais été une section : c'était déjà une redirection vers le
   // formulaire de création, et il reste le bon endroit où arriver.

@@ -237,57 +237,74 @@ export function PermissionsSettings({ level }: { level: SettingsLevel }) {
 /**
  * « Modèles par défaut » : le modèle, l'effort et l'abonnement de chaque CLI (Q32). Les
  * options propres à un CLI sont repliées dans « Avancé » ; l'envoi pendant un tour, qui
- * vaut pour tous, a sa carte.
+ * vaut pour tous, a sa carte. Au projet, le choix du CLI est dans la carte ; aux
+ * réglages du compte, la section Agents a déjà un onglet par CLI et pose les deux
+ * cartes elle-même.
  */
 export function ModelDefaultsSettings({ level }: { level: SettingsLevel }) {
-  const t = useTranslate()
   const [agent, setAgent] = useState<AgentKind>('claude')
+  return (
+    <div className="flex flex-col gap-4">
+      <AgentModelCard level={level} agent={agent} picker={<AgentPicker agent={agent} onChange={setAgent} />} />
+      <SharedModelCard level={level} />
+    </div>
+  )
+}
+
+/** Modèle, effort et abonnement d'un CLI, et son repli « Avancé ». */
+export function AgentModelCard({ level, agent, picker }: { level: SettingsLevel; agent: AgentKind; picker?: ReactNode }) {
+  const t = useTranslate()
   const current = useLevelConfig(level, agent)
   const { groups, catalogError } = useAgentSettings({ config: current.config, onConfigChange: current.write, disabled: isReadOnly(level) })
-  const shared = useLevelConfig(level, 'claude')
-  const sharedGroups = useAgentSettings({ config: shared.config, onConfigChange: shared.write, disabled: isReadOnly(level) }).groups
   const context = rowContext(level, current)
   const advanced = pick(groups, ADVANCED_KEYS)
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card>
-        <CardHeader
-          title={t('settings.models.agent.title')}
-          description={t('settings.models.agent.description')}
-          icon={<SlidersHorizontal size={16} />}
-        />
-        <CardBody className="flex flex-col gap-5">
-          <AgentPicker agent={agent} onChange={setAgent} />
-          {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
-          {current.error ? <Banner>{t('settings.layer.saveError')}</Banner> : null}
-          {current.ready ? (
-            <>
-              <Rows groups={pick(groups, MODEL_KEYS)} context={context} />
-              {advanced.length > 0 ? (
-                <details className="group flex flex-col gap-4">
-                  <summary className="cursor-pointer text-sm font-medium text-ink-soft">{t('settings.models.advanced')}</summary>
-                  <div className="pt-4">
-                    <Rows groups={advanced} context={context} />
-                  </div>
-                </details>
-              ) : null}
-            </>
-          ) : null}
-        </CardBody>
-      </Card>
+    <Card>
+      <CardHeader
+        title={t('settings.models.agent.title')}
+        description={t('settings.models.agent.description')}
+        icon={<SlidersHorizontal size={16} />}
+      />
+      <CardBody className="flex flex-col gap-5">
+        {picker}
+        {catalogError ? <Banner tone="caution">{t('composer.catalog.unavailable')}</Banner> : null}
+        {current.error ? <Banner>{t('settings.layer.saveError')}</Banner> : null}
+        {current.ready ? (
+          <>
+            <Rows groups={pick(groups, MODEL_KEYS)} context={context} />
+            {advanced.length > 0 ? (
+              <details className="group flex flex-col gap-4">
+                <summary className="cursor-pointer text-sm font-medium text-ink-soft">{t('settings.models.advanced')}</summary>
+                <div className="pt-4">
+                  <Rows groups={advanced} context={context} />
+                </div>
+              </details>
+            ) : null}
+          </>
+        ) : null}
+      </CardBody>
+    </Card>
+  )
+}
 
-      <Card>
-        <CardHeader
-          title={t('settings.models.shared.title')}
-          description={t('settings.models.shared.description')}
-          icon={<Users size={16} />}
-        />
-        <CardBody>
-          {shared.ready ? <Rows groups={pick(sharedGroups, ['queue'])} context={rowContext(level, shared)} /> : null}
-        </CardBody>
-      </Card>
-    </div>
+/** Ce qui ne dépend pas du CLI : l'envoi pendant un tour. */
+export function SharedModelCard({ level }: { level: SettingsLevel }) {
+  const t = useTranslate()
+  const shared = useLevelConfig(level, 'claude')
+  const { groups } = useAgentSettings({ config: shared.config, onConfigChange: shared.write, disabled: isReadOnly(level) })
+
+  return (
+    <Card>
+      <CardHeader
+        title={t('settings.models.shared.title')}
+        description={t('settings.models.shared.description')}
+        icon={<Users size={16} />}
+      />
+      <CardBody>
+        {shared.ready ? <Rows groups={pick(groups, ['queue'])} context={rowContext(level, shared)} /> : null}
+      </CardBody>
+    </Card>
   )
 }
 

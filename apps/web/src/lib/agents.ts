@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   PREFERRED_CLI_RELEASES,
   isCompatibleVersion,
+  type AgentAuthDto,
   type AgentAvailabilityDto,
   type AgentAvailabilityListDto,
   type AgentEffortDto,
@@ -13,6 +14,10 @@ import { useMemo } from 'react'
 import { translate, type MessageKey } from './i18n'
 import { api } from './api'
 import { useUpdateHiddenAgents, useUserSettings } from './user-settings'
+
+interface AgentAuthListDto {
+  entries: AgentAuthDto[]
+}
 
 /**
  * Présence et version des CLI sur la machine du serveur.
@@ -33,6 +38,30 @@ export function useAgentAvailability() {
       query.state.data?.agents.some((a) => a.install.status === 'running') ? 2000 : false,
   })
 }
+
+/**
+ * La connexion propre de chaque CLI (`account` nul), et celle des comptes
+ * supplémentaires, telles que le serveur les a lues. La sonde lance le CLI : une minute
+ * de fraîcheur suffit, et « Vérifier » force une relecture par `?refresh=1`.
+ */
+export function useAgentAuth() {
+  return useQuery({
+    queryKey: AGENT_AUTH_KEY,
+    queryFn: () => api.get<AgentAuthListDto>('/api/agents/auth'),
+    staleTime: 60 * 1000,
+  })
+}
+
+/** Relit la connexion sans le cache du serveur, après un `login` fait au terminal. */
+export function useRefreshAgentAuth() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.get<AgentAuthListDto>('/api/agents/auth?refresh=1'),
+    onSuccess: (data) => queryClient.setQueryData(AGENT_AUTH_KEY, data),
+  })
+}
+
+const AGENT_AUTH_KEY = ['agents', 'auth'] as const
 
 /**
  * Installe la version testée d'un CLI. Le serveur répond avant la fin ; c'est la sonde
