@@ -57,12 +57,26 @@ export function forYouIcon(entry: ForYouRequest): LucideIcon {
 export function forYouTitle(entry: ForYouRequest, t: Translate): string {
   if (entry.tier === 'blocked') return entry.request ? requestLine(entry.request, t) : entry.conversationTitle
   if (entry.tier === 'decision') return decisionQuestion(entry.awaiting.question, entry.awaiting.worktreeBranch, t)
-  const { awaiting } = entry
-  if (awaiting.kind === 'move_conversation') return t('forYou.title.move')
-  const many = awaiting.count > 1
-  return awaiting.kind === 'request_card_change'
-    ? t(many ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count: awaiting.count })
-    : t(many ? 'awaiting.cardDraft.other' : 'awaiting.cardDraft.one', { count: awaiting.count })
+  return accordText(entry.awaiting.kind, 'count' in entry.awaiting ? entry.awaiting.count : 1, 'title', t)
+}
+
+export type AccordKind = 'request_card_change' | 'propose_cards' | 'move_conversation'
+
+/**
+ * Ce qu'un accord demande : en titre (« 3 cartes à ranger »), pour la modale et
+ * l'historique, ou en un mot (« 3 cartes »), pour le repère de la colonne.
+ */
+export function accordText(kind: AccordKind, count: number, form: 'title' | 'short', t: Translate): string {
+  if (kind === 'move_conversation') return t(form === 'title' ? 'forYou.title.move' : 'awaiting.moveConversation')
+  const many = count > 1
+  if (kind === 'request_card_change') {
+    return form === 'title'
+      ? t(many ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count })
+      : t(many ? 'forYou.short.cards.other' : 'forYou.short.cards.one', { count })
+  }
+  return form === 'title'
+    ? t(many ? 'awaiting.cardDraft.other' : 'awaiting.cardDraft.one', { count })
+    : t(many ? 'forYou.short.drafts.other' : 'forYou.short.drafts.one', { count })
 }
 
 /** Le genre de la demande, en tête de son dépliage. */
@@ -85,11 +99,13 @@ function kindLabel(entry: ForYouRequest, t: Translate): string {
  * dessous, son rang en étiquette, l'âge ou l'échéance. Un clic la déplie sur place,
  * une seule à la fois, pour y répondre sans ouvrir le fil.
  */
-export function ForYouItem({ entry, project, open, onToggle, onOpenThread, threadPath }: {
+export function ForYouItem({ entry, project, open, onToggle, onOpenThread, threadPath, onVerdict }: {
   entry: ForYouRequest
   project?: ProjectDto
   open: boolean
   onToggle: () => void
+  /** La réponse est partie d'ici : son verdict, que la ligne dira en partant. */
+  onVerdict?: (verdict: string) => void
   /** Appelé avant d'aller au fil : la modale se ferme. */
   onOpenThread: () => void
   threadPath: string
@@ -140,8 +156,8 @@ export function ForYouItem({ entry, project, open, onToggle, onOpenThread, threa
         <div className="px-3 pb-3 sm:pl-[2.6rem]">
           <p className="mb-2 flex flex-wrap items-center gap-x-1.5 text-xs">
             <span className={blocked ? 'text-caution' : 'text-ink-soft'}>{kindLabel(entry, t)}</span>
-            <span className="text-ink-faint">· {t('projectActivity.preview.since', { age: shortAge(entry.since) })}</span>
-            {blocked ? <span className="text-ink-faint">· {t('forYou.halted')}</span> : null}
+            <span className="text-ink-faint">{t('forYou.detail.since', { age: shortAge(entry.since) })}</span>
+            {blocked ? <span className="text-ink-faint">{t('forYou.halted')}</span> : null}
             <button
               type="button"
               onClick={openThread}
@@ -151,20 +167,25 @@ export function ForYouItem({ entry, project, open, onToggle, onOpenThread, threa
               <ArrowUpRight size={12} aria-hidden />
             </button>
           </p>
-          <ForYouAnswer entry={entry} onOpenThread={openThread} />
+          <ForYouAnswer entry={entry} onOpenThread={openThread} onVerdict={onVerdict} />
         </div>
       ) : null}
     </li>
   )
 }
 
-/** La seconde où la ligne dit qu'elle est réglée, avant de partir. */
-export function ForYouSettled({ entry }: { entry: ForYouRequest }) {
+/**
+ * La seconde où la ligne dit son verdict, avant de partir. Sans verdict connu — la
+ * demande a été tranchée ailleurs, dans le fil ou depuis un autre écran —, « Réglé ».
+ */
+export function ForYouSettled({ entry, verdict }: { entry: ForYouRequest; verdict?: string }) {
   const t = useTranslate()
   return (
     <li role="status" className="flex min-h-14 items-center gap-3 rounded-md bg-positive/10 px-3 py-2 text-sm text-positive">
       <Check size={15} aria-hidden className="shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{t('forYou.settled')} — {forYouTitle(entry, t)}</span>
+      <span className="min-w-0 flex-1 truncate">
+        {t('forYou.settled.line', { verdict: verdict ?? t('forYou.settled'), title: forYouTitle(entry, t) })}
+      </span>
     </li>
   )
 }
@@ -175,10 +196,14 @@ export function ForYouSettled({ entry }: { entry: ForYouRequest }) {
  * par le bloc même du fil, replié de son événement. Un plan se relit en entier : il
  * renvoie au fil.
  */
-function ForYouAnswer({ entry, onOpenThread }: { entry: ForYouRequest; onOpenThread: () => void }) {
+function ForYouAnswer({ entry, onOpenThread, onVerdict }: {
+  entry: ForYouRequest
+  onOpenThread: () => void
+  onVerdict?: (verdict: string) => void
+}) {
   const t = useTranslate()
-  if (entry.tier === 'decision') return <DecisionAnswer id={entry.awaiting.id} />
-  if (entry.tier === 'accord') return <AccordAnswer id={entry.awaiting.id} />
+  if (entry.tier === 'decision') return <DecisionAnswer id={entry.awaiting.id} onVerdict={onVerdict} />
+  if (entry.tier === 'accord') return <AccordAnswer id={entry.awaiting.id} onVerdict={onVerdict} />
 
   const { request } = entry
   if (request && (request.kind === 'permission' || request.kind === 'question')) {
@@ -187,6 +212,7 @@ function ForYouAnswer({ entry, onOpenThread }: { entry: ForYouRequest; onOpenThr
         conversationId={entry.conversationId}
         request={request}
         canDecide={entry.conversation.isOwner}
+        onAnswered={onVerdict}
       />
     )
   }
@@ -194,7 +220,8 @@ function ForYouAnswer({ entry, onOpenThread }: { entry: ForYouRequest; onOpenThr
     <>
       <p className="text-sm text-ink-soft">
         {request?.kind === 'plan' ? t('projectActivity.request.plan')
-          : request?.kind === 'elicitation' ? `${request.event.serverName} : ${request.event.message}`
+          : request?.kind === 'elicitation'
+            ? t('forYou.elicitation', { server: request.event.serverName, message: request.event.message })
             : t('forYou.blocked.open')}
       </p>
       <div className="mt-3 flex justify-end">
@@ -205,22 +232,29 @@ function ForYouAnswer({ entry, onOpenThread }: { entry: ForYouRequest; onOpenThr
 }
 
 /** Une décision : ses choix, celui par défaut marqué, un champ libre, et l'échéance. */
-function DecisionAnswer({ id }: { id: string }) {
+function DecisionAnswer({ id, onVerdict }: { id: string; onVerdict?: (verdict: string) => void }) {
   const t = useTranslate()
   const { data: decision, isError } = useDecision(id)
   if (isError) return <p className="text-xs text-ink-faint">{t('forYou.gone')}</p>
   if (!decision) return <p className="text-xs text-ink-faint">{t('forYou.loading')}</p>
-  return <DecisionChoices decision={decision} />
+  return <DecisionChoices decision={decision} onVerdict={onVerdict} />
 }
 
-function DecisionChoices({ decision }: { decision: DecisionDto }) {
+function DecisionChoices({ decision, onVerdict }: { decision: DecisionDto; onVerdict?: (verdict: string) => void }) {
   const t = useTranslate()
   const answer = useAnswerDecision()
   const [text, setText] = useState('')
   const busy = answer.isPending || decision.status !== 'pending'
   const send = (option: string | null, note: string) => {
     if (busy || (option === null && note.trim() === '')) return
-    answer.mutate({ id: decision.id, option, text: note.trim() })
+    answer.mutate(
+      { id: decision.id, option, text: note.trim() },
+      {
+        onSuccess: () => onVerdict?.(t('forYou.verdict.answered', {
+          answer: option !== null ? decisionOption(decision, option, t) : note.trim(),
+        })),
+      },
+    )
   }
 
   return (
@@ -264,10 +298,12 @@ function DecisionChoices({ decision }: { decision: DecisionDto }) {
         </label>
       )}
       <p className="mt-2 text-xs text-ink-faint">
-        {decisionDue(decision.expiresAt)} ·{' '}
-        {decision.defaultOption
-          ? t('decision.dialog.fallback', { option: decisionOption(decision, decision.defaultOption, t) })
-          : t('decision.dialog.noFallback')}
+        {t('forYou.decision.due', {
+          due: decisionDue(decision.expiresAt),
+          fallback: decision.defaultOption
+            ? t('decision.dialog.fallback', { option: decisionOption(decision, decision.defaultOption, t) })
+            : t('decision.dialog.noFallback'),
+        })}
       </p>
       {answer.isError ? <p className="mt-2 text-xs text-critical">{answer.error.message}</p> : null}
     </>
@@ -279,7 +315,7 @@ function DecisionChoices({ decision }: { decision: DecisionDto }) {
  * changera, puis refuser ou accorder, par la route du fil ; la ligne part quand le
  * serveur dit que la demande n'attend plus.
  */
-function AccordAnswer({ id }: { id: string }) {
+function AccordAnswer({ id, onVerdict }: { id: string; onVerdict?: (verdict: string) => void }) {
   const t = useTranslate()
   const { data, isError } = useQuery({
     queryKey: ['awaiting-request', id],
@@ -291,8 +327,16 @@ function AccordAnswer({ id }: { id: string }) {
   if (!data) return <p className="text-xs text-ink-faint">{t('forYou.loading')}</p>
 
   const item = applyEvent(emptyChatState(), data.seq, data.ts, data.event).items[0]
-  if (item?.kind === 'filing') return <FilingPrompt conversationId={data.conversationId} filing={item} canDecide />
-  if (item?.kind === 'cardFiling') return <CardFilingPrompt conversationId={data.conversationId} filing={item} canDecide />
-  if (item?.kind === 'cardDraft') return <CardDraftPrompt conversationId={data.conversationId} item={item} canDecide />
+  const decided = (decision: 'accepted' | 'refused') =>
+    onVerdict?.(t(decision === 'accepted' ? 'forYou.verdict.accepted' : 'forYou.verdict.refused'))
+  if (item?.kind === 'filing') {
+    return <FilingPrompt conversationId={data.conversationId} filing={item} canDecide onDecided={decided} />
+  }
+  if (item?.kind === 'cardFiling') {
+    return <CardFilingPrompt conversationId={data.conversationId} filing={item} canDecide onDecided={decided} />
+  }
+  if (item?.kind === 'cardDraft') {
+    return <CardDraftPrompt conversationId={data.conversationId} item={item} canDecide onDecided={decided} />
+  }
   return <p className="text-xs text-ink-faint">{t('forYou.gone')}</p>
 }

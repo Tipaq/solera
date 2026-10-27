@@ -79,6 +79,6 @@ function List() {
 export const Reglee: Story = {
   name: 'Réglée',
   render: () => (
-    <ul className="surface w-[640px] rounded-xl border border-line p-2"><ForYouSettled entry={FOR_YOU[0]!} /></ul>
+    <ul className="surface w-[640px] rounded-xl border border-line p-2"><ForYouSettled entry={FOR_YOU[0]!} verdict="Autorisé" /></ul>
   ),
 }

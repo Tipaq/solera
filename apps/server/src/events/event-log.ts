@@ -1027,7 +1027,11 @@ export class EventLog {
     const rows = this.db
       .select({ seq: events.seq, ts: events.ts, payload: events.payload })
       .from(events)
-      .where(and(eq(events.conversationId, conversationId), eq(events.type, type)))
+      .where(and(
+        eq(events.conversationId, conversationId),
+        eq(events.type, type),
+        sql`json_extract(${events.payload}, '$.requestId') = ${requestId}`,
+      ))
       .orderBy(asc(events.seq))
       .all()
 

@@ -11,7 +11,7 @@ import { useTranslate } from '../lib/i18n'
 import { formatAgo } from '../lib/loops'
 import { threadState } from '../lib/signals'
 import { ActivityDialog, activityGroups, entryFilter, type ActivityFilter } from './activity/ActivityDialog'
-import { forYouTitle } from './activity/ForYouItem'
+import { accordText, forYouTitle } from './activity/ForYouItem'
 import { ProjectAvatar } from './ProjectAvatar'
 import { StateDot } from './chat/Signals'
 import { cx } from '@solera/ui'
@@ -262,7 +262,7 @@ function ForYouLine({ entry, project, onOpen }: {
       ? entry.awaiting.expiresAt !== null
         ? <span className="shrink-0 text-meta tabular-nums text-ink-faint">{formatAgo(Math.max(0, entry.awaiting.expiresAt - Date.now()))}</span>
         : null
-      : <span className="shrink-0 truncate text-meta text-ink-faint">{accordShort(entry, t)}</span>
+      : <span className="shrink-0 truncate text-meta text-ink-faint">{accordText(entry.awaiting.kind, 'count' in entry.awaiting ? entry.awaiting.count : 1, 'short', t)}</span>
 
   return (
     <li>
@@ -279,16 +279,6 @@ function ForYouLine({ entry, project, onOpen }: {
       </button>
     </li>
   )
-}
-
-/** « 3 cartes », « 2 brouillons », « à ranger » : ce qu'un accord demande, en un mot. */
-function accordShort(entry: Extract<ForYouRequest, { tier: 'accord' }>, t: ReturnType<typeof useTranslate>): string {
-  const { awaiting } = entry
-  if (awaiting.kind === 'move_conversation') return t('awaiting.moveConversation')
-  const many = awaiting.count > 1
-  return awaiting.kind === 'request_card_change'
-    ? t(many ? 'forYou.short.cards.other' : 'forYou.short.cards.one', { count: awaiting.count })
-    : t(many ? 'forYou.short.drafts.other' : 'forYou.short.drafts.one', { count: awaiting.count })
 }
 
 /**

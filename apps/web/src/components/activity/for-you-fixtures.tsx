@@ -49,7 +49,7 @@ export const ENTRIES: LiveConversation[] = [
 
 export const FOR_YOU: ForYouRequest[] = [
   {
-    tier: 'blocked', key: 'blocked:c-perm', conversationId: PERMISSION.id, conversationTitle: PERMISSION.title,
+    tier: 'blocked', key: 'blocked:perm-1', conversationId: PERMISSION.id, conversationTitle: PERMISSION.title,
     projectId: 'p1', since: now - 4 * MINUTE, conversation: PERMISSION,
     request: {
       kind: 'permission', requestId: 'perm-1', requestedAt: now - 4 * MINUTE,
@@ -60,7 +60,7 @@ export const FOR_YOU: ForYouRequest[] = [
     },
   },
   {
-    tier: 'blocked', key: 'blocked:c-question', conversationId: QUESTION.id, conversationTitle: QUESTION.title,
+    tier: 'blocked', key: 'blocked:q-1', conversationId: QUESTION.id, conversationTitle: QUESTION.title,
     projectId: 'p2', since: now - 12 * MINUTE, conversation: QUESTION,
     request: {
       kind: 'question', requestId: 'q-1', requestedAt: now - 12 * MINUTE,
@@ -75,7 +75,7 @@ export const FOR_YOU: ForYouRequest[] = [
     },
   },
   {
-    tier: 'blocked', key: 'blocked:c-plan', conversationId: PLAN.id, conversationTitle: PLAN.title,
+    tier: 'blocked', key: 'blocked:plan-1', conversationId: PLAN.id, conversationTitle: PLAN.title,
     projectId: null, since: now - 30 * MINUTE, conversation: PLAN,
     request: {
       kind: 'plan', requestId: 'plan-1', requestedAt: now - 30 * MINUTE,

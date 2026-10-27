@@ -181,7 +181,8 @@ try {
   // La troisième se tranche sur place, sans ouvrir le fil.
   await overview.getByRole('button', { name: /Publier la note de version/ }).click()
   await overview.getByRole('button', { name: 'Plus tard' }).click()
-  await overview.getByText('Réglé', { exact: false }).waitFor()
+  // La ligne dit le verdict donné une seconde, puis part.
+  await overview.getByText('Répondu « Plus tard »', { exact: false }).waitFor()
   await overview.getByRole('button', { name: /Publier la note de version/ }).waitFor({ state: 'detached' })
   assert.equal(JSON.parse(db.prepare('SELECT answer FROM agent_requests WHERE id = ?').get(third).answer).option, 'Plus tard')
 

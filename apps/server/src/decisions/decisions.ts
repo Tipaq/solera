@@ -613,6 +613,11 @@ export class Decisions {
    * L'historique complet de ce qui t'attend (#121) : les décisions, et les trois accords
    * qu'un clic tranche — rangement de conversation, changement de cartes, brouillon.
    * Les plus récents d'abord. `pending` ne garde que ce qui attend encore.
+   *
+   * Bornée aux `limit` plus récents de chaque sorte, comme la liste des décisions : la
+   * page est un historique à relire, pas une archive. Un accord dont le fil demandeur
+   * a disparu y reste, sans titre, là où `awaiting()` l'écarte : ce qui a eu lieu reste
+   * lisible.
    */
   history(userId: string, scope: 'pending' | 'all', limit = 200): RequestHistoryDto[] {
     const rows = this.ctx.db
@@ -626,6 +631,7 @@ export class Decisions {
         ),
       )
       .orderBy(desc(agentRequests.createdAt))
+      .limit(limit)
       .all()
 
     const conversationIds = new Set<string>()

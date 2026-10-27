@@ -29,10 +29,13 @@ export function CardFilingPrompt({
   conversationId,
   filing,
   canDecide,
+  onDecided,
 }: {
   conversationId: string
   filing: CardFilingItem
   canDecide: boolean
+  /** Le clic est parti : la modale d'Activité (#121) en dit le verdict une seconde. */
+  onDecided?: (decision: 'accepted' | 'refused') => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +52,7 @@ export function CardFilingPrompt({
     setError(null)
     try {
       await decideCardFiling(conversationId, filing.id, decision)
+      onDecided?.(decision)
     } catch (err) {
       // L'événement `card_filing.resolved` viendra du serveur : on n'anticipe pas l'état
       // ici, sinon l'affichage cesserait d'être un pur fold du journal.

@@ -10,6 +10,7 @@ import { conversationPath } from '../lib/conversation-route'
 import { decisionDue, openDecision, useRequestHistory } from '../lib/decisions'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { decisionOption, decisionQuestion } from '../components/decisions/decision-text'
+import { accordText } from '../components/activity/ForYouItem'
 
 /** Deux teintes qui disent quelque chose, comme au Journal : ce qui attend, ce qui a échu. */
 const STATUS_TONES: Record<DecisionStatus, 'caution' | 'positive' | 'neutral'> = {
@@ -133,12 +134,7 @@ function DecisionRow({ decision }: { decision: DecisionDto }) {
  */
 function AccordRow({ accord }: { accord: Exclude<RequestHistoryDto, { kind: 'decision' }> }) {
   const t = useTranslate()
-  const many = accord.count > 1
-  const title = accord.kind === 'move_conversation'
-    ? t('forYou.title.move')
-    : accord.kind === 'request_card_change'
-      ? t(many ? 'awaiting.cardMove.other' : 'awaiting.cardMove.one', { count: accord.count })
-      : t(many ? 'awaiting.cardDraft.other' : 'awaiting.cardDraft.one', { count: accord.count })
+  const title = accordText(accord.kind, accord.count, 'title', t)
   const Icon = accord.kind === 'move_conversation' ? FolderInput : Columns3
 
   return (

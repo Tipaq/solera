@@ -60,7 +60,7 @@ type Story = StoryObj<typeof meta>
 export const PourToi: Story = { name: 'Pour toi' }
 
 /** Ouverte depuis la colonne sur une permission : dépliée sur elle. */
-export const Depliee: Story = { name: 'Dépliée sur une demande', args: { expanded: 'blocked:c-perm' } }
+export const Depliee: Story = { name: 'Dépliée sur une demande', args: { expanded: 'blocked:perm-1' } }
 
 /** Tout : ce qui t'attend, puis les sessions non lues et en cours. */
 export const Tout: Story = { name: 'Tout', args: { filter: 'all' } }

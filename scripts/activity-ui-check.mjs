@@ -139,6 +139,8 @@ try {
   // Elle s'ouvre sur ce qui attend, et non sur l'inventaire.
   assert.match(await pressed(), /^Pour toi/)
   assert.equal(await requests.count(), 2)
+  // Ce qui a attendu se relit sur la page d'historique.
+  await overview.getByRole('link', { name: 'Historique de ce qui t’attend', exact: true }).waitFor()
   // Un clic déplie la demande sur place ; sans demande lisible dans le journal, elle
   // renvoie au fil.
   await requests.first().click()

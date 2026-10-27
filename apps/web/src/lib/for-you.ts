@@ -86,11 +86,16 @@ export function assembleForYou(
   const rows: ForYouRequest[] = []
   for (const entry of live) {
     const { conversation } = entry
+    // Le fil d'un coéquipier, dans un projet partagé, ne t'attend pas : c'est à lui de
+    // répondre. Il reste dans l'Activité comme une session.
+    if (!conversation.isOwner) continue
     const request = requests.get(conversation.id) ?? null
     if (!entry.awaiting && !request) continue
     rows.push({
       tier: 'blocked',
-      key: `blocked:${conversation.id}`,
+      // Une ligne par demande (Q24) : deux permissions qui se suivent dans un fil sont
+      // deux lignes, et la première dit son verdict avant de céder la place.
+      key: request ? `blocked:${request.requestId}` : `blocked:${conversation.id}`,
       conversationId: conversation.id,
       conversationTitle: conversation.title,
       projectId: conversation.projectId,

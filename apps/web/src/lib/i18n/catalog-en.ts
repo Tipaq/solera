@@ -4006,7 +4006,7 @@ export const en = {
   "forYou.short.cards.other": "{count} cards",
   "forYou.short.drafts.one": "{count} draft",
   "forYou.short.drafts.other": "{count} drafts",
-  "forYou.halted": "the agent is stopped",
+  "forYou.halted": "· the agent is stopped",
   "forYou.settled": "Settled",
   "forYou.loading": "Reading the request…",
   "forYou.gone": "This request can no longer be read here.",
@@ -4020,6 +4020,18 @@ export const en = {
   "forYou.history.accepted": "Approved",
   "forYou.history.closed": "Refused or stale",
   "forYou.history.pending": "Pending",
+  "forYou.verdict.denied": "Denied",
+  "forYou.verdict.allowedSession": "Allowed for the session",
+  "forYou.verdict.allowed": "Allowed",
+  "forYou.verdict.answered": "Answered “{answer}”",
+  "forYou.verdict.joiner": ", ",
+  "forYou.verdict.accepted": "Approved",
+  "forYou.verdict.refused": "Refused",
+  "forYou.settled.line": "{verdict} — {title}",
+  "forYou.detail.since": "· waiting for {age}",
+  "forYou.elicitation": "{server}: {message}",
+  "forYou.decision.due": "{due} · {fallback}",
+  "forYou.history.link": "History of what waited for you",
 } as const
 
 /**

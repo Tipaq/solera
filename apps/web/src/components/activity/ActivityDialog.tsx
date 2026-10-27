@@ -1,6 +1,6 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Activity, MessagesSquare, X } from 'lucide-react'
+import { Activity, History, MessagesSquare, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
 import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
@@ -23,11 +23,13 @@ const SETTLED_MS = 1_100
 
 /**
  * Ce que la colonne et la modale se partagent : les quatre groupes, tous projets
- * confondus. Un fil bloqué est dans « Pour toi » et nulle part ailleurs ; un fil qui
- * tourne et attend un accord est dans les deux (Q38).
+ * confondus. Un fil bloqué — en attente, ou une question ouverte alors qu'il tourne —
+ * est dans « Pour toi » et nulle part ailleurs ; seul un fil qui tourne et attend une
+ * décision ou un accord est dans les deux (Q38).
  */
 export function activityGroups(entries: LiveConversation[], forYou: ForYouRequest[]) {
-  const sessions = entries.filter((entry) => !entry.awaiting)
+  const blocked = new Set(forYou.flatMap((entry) => (entry.tier === 'blocked' ? [entry.conversationId] : [])))
+  const sessions = entries.filter((entry) => !blocked.has(entry.conversation.id))
   return {
     forYou,
     // Les plus récentes d'abord, parce que c'est la coupure de la colonne qui tranche.
@@ -88,12 +90,13 @@ export function ActivityDialog({
   const selected = projects.find((project) => project.id === projectId)
   const projectOf = (id: string | null) => projects.find((project) => project.id === id)
   const groups = activityGroups(entries, forYou)
-  const settled = useSettled(forYou, expanded, onExpanded)
+  const [verdicts, setVerdicts] = useState<Record<string, string>>({})
 
   const inScope = (id: string | null) => projectId === undefined || id === projectId
   const requests = filter === 'forYou' || filter === 'all'
     ? forYou.filter((entry) => inScope(entry.projectId))
     : []
+  const settled = useSettled(forYou, requests, expanded, onExpanded)
   const sessions = (filter === 'unread' ? groups.unread
     : filter === 'running' ? groups.running
       : filter === 'all' ? [...groups.sessions].sort((a, b) => rank(a) - rank(b)) : [])
@@ -195,7 +198,12 @@ export function ActivityDialog({
             ) : (
               <ul className="divide-y divide-line/50">
                 {requests.map((entry, index) => (
-                  <SettledBefore key={entry.key} settled={settled} index={index}>
+                  <SettledBefore
+                    key={entry.key}
+                    settled={settled}
+                    index={index}
+                    verdict={settled ? verdicts[settled.entry.key] : undefined}
+                  >
                     <ForYouItem
                       entry={entry}
                       project={projectOf(entry.projectId)}
@@ -203,11 +211,12 @@ export function ActivityDialog({
                       onToggle={() => onExpanded(expanded === entry.key ? null : entry.key)}
                       onOpenThread={() => onNavigate()}
                       threadPath={conversationPath({ id: entry.conversationId, projectId: entry.projectId })}
+                      onVerdict={(verdict) => setVerdicts((current) => ({ ...current, [entry.key]: verdict }))}
                     />
                   </SettledBefore>
                 ))}
                 {settled && settled.index >= requests.length && (filter === 'forYou' || filter === 'all')
-                  ? <ForYouSettled entry={settled.entry} />
+                  ? <ForYouSettled entry={settled.entry} verdict={verdicts[settled.entry.key]} />
                   : null}
                 {sessions.map((entry) => (
                   <SessionRow
@@ -219,6 +228,17 @@ export function ActivityDialog({
                 ))}
               </ul>
             )}
+            {/* La liste n'a que ce qui attend encore : ce qui a attendu se relit là. */}
+            {filter === 'forYou' ? (
+              <NavLink
+                to="/decisions"
+                onClick={onNavigate}
+                className="mt-1 flex min-h-11 items-center justify-center gap-1.5 rounded-md text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:min-h-9"
+              >
+                <History size={13} aria-hidden />
+                {t('forYou.history.link')}
+              </NavLink>
+            ) : null}
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -235,31 +255,36 @@ interface Settled { entry: ForYouRequest; index: number }
 
 /**
  * La demande dépliée qui vient de partir de la liste — tranchée ici ou ailleurs : elle
- * le dit une seconde, à sa place, puis s'efface et replie la ligne.
+ * dit son verdict une seconde, à sa place dans la liste affichée, puis s'efface et
+ * replie la ligne.
+ *
+ * Partir se juge sur la liste entière, la place sur la liste affichée : un filtre de
+ * projet qui masque la ligne dépliée ne la fait pas passer pour réglée.
  */
 function useSettled(
-  forYou: ForYouRequest[],
+  all: ForYouRequest[],
+  shown: ForYouRequest[],
   expanded: string | null,
   onExpanded: (key: string | null) => void,
 ): Settled | null {
   const [settled, setSettled] = useState<Settled | null>(null)
   const last = useRef<Settled | null>(null)
-  const present = expanded === null ? -1 : forYou.findIndex((entry) => entry.key === expanded)
+  const gone = expanded !== null && !all.some((entry) => entry.key === expanded)
+  const index = expanded === null ? -1 : shown.findIndex((entry) => entry.key === expanded)
 
   useEffect(() => {
     if (expanded === null) {
       last.current = null
       return
     }
-    if (present !== -1) {
-      last.current = { entry: forYou[present]!, index: present }
+    if (!gone) {
+      last.current = index === -1 ? null : { entry: shown[index]!, index }
       return
     }
-    if (!last.current) return
-    setSettled(last.current)
+    if (last.current) setSettled(last.current)
     last.current = null
     onExpanded(null)
-  }, [expanded, present, forYou, onExpanded])
+  }, [expanded, gone, index, shown, onExpanded])
 
   useEffect(() => {
     if (!settled) return
@@ -270,14 +295,15 @@ function useSettled(
   return settled
 }
 
-function SettledBefore({ settled, index, children }: {
+function SettledBefore({ settled, index, verdict, children }: {
   settled: Settled | null
   index: number
+  verdict?: string
   children: ReactNode
 }) {
   return (
     <>
-      {settled?.index === index ? <ForYouSettled entry={settled.entry} /> : null}
+      {settled?.index === index ? <ForYouSettled entry={settled.entry} verdict={verdict} /> : null}
       {children}
     </>
   )
