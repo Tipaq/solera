@@ -1115,6 +1115,7 @@ export class AgentRequests {
         tree.ahead > 0 ? `${tree.ahead} commit(s) en avance` : null,
         tree.behind > 0 ? `${tree.behind} en retard` : null,
         tree.conflicts ? 'conflit prévisible' : null,
+        tree.mergedPullRequest !== null ? `PR #${tree.mergedPullRequest} fusionnée` : null,
       ].filter(Boolean)
       const sessions = tree.conversations.map((entry) => {
         const who = entry.id === requester.id ? 'toi' : `« ${titles.get(entry.id) ?? entry.id} »`

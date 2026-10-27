@@ -707,6 +707,11 @@ export interface WorktreeStatusDto {
    * arbre `dirty` peut en porter aussi, et supprimer sa branche les perdrait.
    */
   unmergedCommits: boolean
+  /**
+   * La PR fusionnée sur la forge qui dit la branche fusionnée, quand le contenu seul ne
+   * le pouvait plus (un squash, puis la base qui avance) ; null sinon.
+   */
+  mergedPullRequest: number | null
   /** Le commit de tête : une proposition de nettoyage vaut pour lui seul. */
   head: string | null
   lastCommitAt: number | null
@@ -723,9 +728,17 @@ export interface WorktreeStatusListDto {
   worktrees: WorktreeStatusDto[]
   /**
    * Les branches locales qu'aucun arbre n'a extraites, la base exceptée. `merged` se
-   * juge sur le contenu, comme l'état d'un arbre.
+   * juge comme l'état d'un arbre : sur le contenu, ou sur une PR fusionnée.
    */
   branches: { name: string; merged: boolean }[]
+}
+
+/**
+ * L'état des worktrees de tous les projets visibles et non archivés, par identifiant de
+ * projet, pour l'Activité du portefeuille (#117). Un projet hors dépôt n'y figure pas.
+ */
+export interface PortfolioWorktreeStatusDto {
+  projects: Record<string, WorktreeStatusListDto>
 }
 
 /**

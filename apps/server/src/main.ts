@@ -49,6 +49,7 @@ import { backfillConfigLayers } from './conversations/config-backfill.js'
 import { WorktreeCleanup } from './worktrees/cleanup.js'
 import { watchMergedCards } from './worktrees/merged-cards.js'
 import { WorktreeStatusService } from './worktrees/status-service.js'
+import { ProjectPullRequests, ghListPullRequests } from './reviews/pull-requests.js'
 
 async function main(): Promise<void> {
   const config = loadConfig()
@@ -115,8 +116,19 @@ async function main(): Promise<void> {
   // Les décisions que les sessions demandent : déposées et échues par le balayage des
   // demandes d'agent, tranchées par la route. Elles notifient par l'aiguillage.
   const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
+  // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
+  const githubToken = (userId: string) => {
+    try {
+      return gitCredentials.resolve(userId, 'github.com')?.token
+    } catch {
+      return undefined
+    }
+  }
+  // Les PR du projet, lues une fois par minute : les badges de l'Activité, et l'état des
+  // worktrees qui y reconnaît une branche fusionnée par squash (#126).
+  const pullRequests = new ProjectPullRequests(db, ghListPullRequests, githubToken)
   // L'avancement des worktrees, par projet, invalidé à chaque fin de tour.
-  const worktreeStatus = new WorktreeStatusService(db, log)
+  const worktreeStatus = new WorktreeStatusService(db, log, pullRequests.merged)
   // Nettoyer un chantier ferme ses terminaux et range ses sessions. C'est un geste de la
   // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
   // agent demande à une personne, et les propositions d'avant sont retirées ici.
@@ -126,14 +138,6 @@ async function main(): Promise<void> {
   watchMergedCards(db, worktreeStatus)
   // Lancements, cartes, projets, rangements et décisions demandés par les agents, par le
   // serveur MCP.
-  // Un jeton qui ne se déchiffre plus ne doit pas empêcher la revue : `gh` a le sien.
-  const githubToken = (userId: string) => {
-    try {
-      return gitCredentials.resolve(userId, 'github.com')?.token
-    } catch {
-      return undefined
-    }
-  }
   // Clore une carte finie (#69) : l'agent le propose, le clic archive ses sessions, retire
   // ses worktrees et supprime ses branches fusionnées.
   const cardClosure = new CardClosure(db, worktreeStatus, worktreeCleanup, ghForge, githubToken)
@@ -184,6 +188,7 @@ async function main(): Promise<void> {
     cardClosure,
     issueSources,
     milestones,
+    pullRequests,
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')

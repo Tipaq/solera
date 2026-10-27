@@ -22,7 +22,6 @@ import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
 import { ArrangeFreeThreadButton } from '../components/ArrangeConversation'
 import { HeaderBand } from '../components/HeaderBand'
-import { HandoffDialog } from '../components/chat/HandoffDialog'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
@@ -82,6 +81,11 @@ import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useGitHead, useWorktrees } from '../lib/worktrees'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+
+/** Le passage de relais, chargé à son ouverture (#128) : hors du paquet d'entrée. */
+const HandoffDialog = lazy(() =>
+  import('../components/chat/HandoffDialog').then((m) => ({ default: m.HandoffDialog })),
+)
 
 /**
  * Chargé à la demande : l'éditeur embarque CodeMirror, et le mettre dans le paquet
@@ -1214,7 +1218,9 @@ export function ConversationPage() {
         </ConfirmDialog>
 
         {handoffOpen ? (
-          <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
+          <Suspense fallback={null}>
+            <HandoffDialog open={handoffOpen} onOpenChange={setHandoffOpen} source={conversation} />
+          </Suspense>
         ) : null}
 
         <ThreadSearch

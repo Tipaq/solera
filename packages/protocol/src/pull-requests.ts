@@ -44,3 +44,11 @@ export interface ProjectPullRequestListDto {
   /** Une PR par branche au plus : l'ouverte, sinon la dernière fusionnée. */
   pullRequests: ProjectPullRequestDto[]
 }
+
+/**
+ * Les PR de tous les projets visibles et non archivés, par identifiant de projet, pour
+ * l'Activité du portefeuille (#117). Un projet hors dépôt n'y figure pas.
+ */
+export interface PortfolioPullRequestsDto {
+  projects: Record<string, ProjectPullRequestListDto>
+}

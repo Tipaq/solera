@@ -16,7 +16,7 @@ const ROOT = '/home/alex/.local/share/solera/worktrees/p-nimbus'
 function tree(name: string, state: WorktreeStatusDto['state'], extra: Partial<WorktreeStatusDto> = {}): WorktreeStatusDto {
   return {
     id: `wt-${name}`, name, path: `${ROOT}/${name.replace(/\//g, '__')}`, branch: name, external: false, state,
-    ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, unmergedCommits: false, head: null,
+    ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, unmergedCommits: false, mergedPullRequest: null, head: null,
     lastCommitAt: null, lastEditAt: null, conversations: [], ...extra,
   }
 }

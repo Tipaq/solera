@@ -30,7 +30,7 @@ const STEPS: Record<Exclude<OnboardingStepId, 'ready'>, (props: StepProps) => Re
   work: WorkStep,
 }
 
-/** La synchronisation d'apparence vit dans la coque, absente ici : montée à part, avec un compte. */
+/** La synchronisation d'apparence est montée par l'app authentifiée, absente ici : montée à part, avec un compte. */
 function AppearanceSyncGate() {
   useAppearanceSync()
   return null

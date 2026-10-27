@@ -13,7 +13,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import {
   actionView,
@@ -25,7 +25,9 @@ import {
 import { useTranslate } from '../../lib/i18n'
 import { showTerminal } from '../../lib/panel'
 import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
-import { ActionDialog } from './ActionDialog'
+
+/** L'édition d'une action, chargée à son ouverture (#128) : hors du paquet d'entrée. */
+const ActionDialog = lazy(() => import('./ActionDialog').then((m) => ({ default: m.ActionDialog })))
 
 /**
  * Les actions d'un projet, présentées comme les listes des réglages. Chaque élément
@@ -114,11 +116,13 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const dialogs = (
     <>
       {editing ? (
-        <ActionDialog
-          projectId={projectId}
-          action={editing === 'new' ? undefined : editing}
-          onClose={() => setEditing(null)}
-        />
+        <Suspense fallback={null}>
+          <ActionDialog
+            projectId={projectId}
+            action={editing === 'new' ? undefined : editing}
+            onClose={() => setEditing(null)}
+          />
+        </Suspense>
       ) : null}
 
       <ConfirmDialog
