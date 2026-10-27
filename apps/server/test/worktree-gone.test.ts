@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -394,4 +394,68 @@ test('compacter refuse un dossier disparu, arrête le runner au repos et n\'en l
 
   await assert.rejects(h.sessions.compact('conv'), missing)
   assert.deepEqual(h.launched, [])
+})
+
+/**
+ * *Ramener à la racine du projet* : le même rattachement, pour un fil dont l'arbre
+ * existe encore. Seule la session déménage ; l'arbre reste, et rien ne bouge en plein
+ * tour.
+ */
+
+test('*Ramener à la racine* déplace une session au repos, arrête son CLI et laisse l\'arbre', async (t) => {
+  const h = await harness(t)
+  // Claude range ses sessions par cwd : le transcript de l'arbre doit suivre sous la racine.
+  const previous = process.env.CLAUDE_CONFIG_DIR
+  process.env.CLAUDE_CONFIG_DIR = join(h.dir, 'claude')
+  t.after(() => {
+    if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR
+    else process.env.CLAUDE_CONFIG_DIR = previous
+  })
+  const { transcriptPath } = await import('../src/agents/claude/transcript.js')
+  const source = transcriptPath(h.worktreePath, 'native')
+  await mkdir(join(source, '..'), { recursive: true })
+  await writeFile(source, '{"type":"user"}\n')
+  const runner = h.liveRunner('conv')
+
+  const row = await h.sessions.returnToProjectRoot('conv')
+  assert.equal(row.worktreeId, null)
+  assert.equal(h.row('conv').worktreeId, null)
+  assert.equal(h.row('conv').agentSessionId, 'native')
+  assert.equal(runner.stopped, true)
+  assert.equal(h.sessions.isWarm('conv'), false)
+  assert.equal(h.sessions.workingDirectory('conv'), h.workspace)
+  assert.ok(h.lists.includes('conv'))
+  assert.equal(await readFile(transcriptPath(h.workspace, 'native'), 'utf8'), '{"type":"user"}\n')
+  // L'arbre n'est pas touché : ni son dossier, ni sa ligne.
+  assert.equal(directoryGone(h.worktreePath), false)
+  assert.equal(h.removedAt(), null)
+})
+
+test('*Ramener à la racine* est refusé pendant un tour, et pendant une sollicitation', async (t) => {
+  const h = await harness(t)
+  for (const status of ['running', 'awaiting_input'] as const) {
+    const runner = h.liveRunner('conv', status)
+    await assert.rejects(
+      h.sessions.returnToProjectRoot('conv'),
+      (err: unknown) =>
+        err instanceof HttpError && err.statusCode === 409 && err.code === 'conversation_busy_return_to_root',
+    )
+    assert.equal(runner.stopped, false)
+    assert.equal(h.row('conv').worktreeId, 'wt')
+  }
+})
+
+test('*Ramener à la racine* refuse un fil qui y est déjà', async (t) => {
+  const h = await harness(t)
+  await assert.rejects(
+    h.sessions.returnToProjectRoot('other'),
+    (err: unknown) => err instanceof HttpError && err.code === 'conversation_not_in_worktree',
+  )
+})
+
+test('*Ramener à la racine* : opencode repart sur une session neuve', async (t) => {
+  const h = await harness(t, { agent: 'opencode' })
+  const row = await h.sessions.returnToProjectRoot('conv')
+  assert.equal(row.agentSessionId, null)
+  assert.equal(h.row('conv').worktreeId, null)
 })

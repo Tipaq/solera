@@ -1386,10 +1386,8 @@ export class SessionManager {
    *
    * Refusé tant que le worktree existe : ce n'est pas un déplacement ordinaire, c'est la
    * seule issue d'un fil qui ne peut plus tourner, et le proposer ailleurs ferait
-   * quitter son arbre à un fil qui y travaille. La session native est gardée quand le
-   * CLI sait la reprendre depuis un autre dossier (`RESUMES_FROM_OTHER_DIRECTORY`),
-   * sinon il repart sur une session neuve, ce que le bandeau a dit avant le clic. Les
-   * messages restés en file partent alors, depuis la racine.
+   * quitter son arbre à un fil qui y travaille sans qu'on l'ait demandé — c'est le
+   * rôle de `returnToProjectRoot`. Le rattachement lui-même est `reattachAtRoot`.
    */
   async continueAtProjectRoot(conversationId: string): Promise<ConversationRow> {
     const conversation = this.loadConversation(conversationId)
@@ -1399,6 +1397,42 @@ export class SessionManager {
         'This conversation still has its worktree: there is nothing to reattach.',
       )
     }
+    return this.reattachAtRoot(conversation)
+  }
+
+  /**
+   * *Ramener à la racine du projet* : le même rattachement, demandé pour un fil dont le
+   * worktree existe encore. Seule la session déménage : l'arbre, sa branche et son
+   * travail restent où ils sont, et les fichiers qu'elle y a écrits le lui laissent en
+   * dossier en plus (`linkedWorktreePaths`).
+   *
+   * Refusé pendant un tour ou une sollicitation ouverte : le CLI tourne alors dans
+   * l'arbre, et lui changer de dossier sous les pieds ne se rattraperait pas. Au repos,
+   * son runner est arrêté, et le tour suivant part de la racine.
+   */
+  async returnToProjectRoot(conversationId: string): Promise<ConversationRow> {
+    const conversation = this.loadConversation(conversationId)
+    if (!conversation.worktreeId) {
+      throw conflict('conversation_not_in_worktree', 'This conversation already works at the project root.')
+    }
+    if (this.isBusy(conversationId)) {
+      throw conflict('conversation_busy_return_to_root', 'A turn is running: wait for it to end before moving the session.')
+    }
+    return this.reattachAtRoot(conversation)
+  }
+
+  /**
+   * Ce que partagent les deux gestes, le dossier de l'arbre présent ou non.
+   *
+   * La session native est gardée quand le CLI sait la reprendre depuis un autre dossier
+   * (`RESUMES_FROM_OTHER_DIRECTORY`), sinon il repart sur une session neuve, ce que
+   * l'interface a dit avant le clic. Pour Claude, qui range ses sessions par cwd, le
+   * transcript est recopié sous la racine : il vit dans `~/.claude`, pas dans l'arbre,
+   * donc la copie vaut que le dossier soit parti ou non. Les messages restés en file
+   * partent ensuite, depuis la racine.
+   */
+  private async reattachAtRoot(conversation: ConversationRow): Promise<ConversationRow> {
+    const conversationId = conversation.id
     // Arrêté ici et attendu : aucun arrêt en cours ne doit tomber après l'écriture, et
     // un runner resté chaud garderait l'ancien cwd en mémoire. La capture ouverte,
     // elle, visait l'ancien dépôt.
@@ -1407,12 +1441,12 @@ export class SessionManager {
 
     // Comme au rangement : recopié sous la racine, le transcript y est relu par Solera
     // et prolongé par le CLI. Un échec ne coûte que la resynchronisation.
-    const gone = conversation.worktreeId
+    const tree = conversation.worktreeId
       ? this.db.select({ path: worktrees.path }).from(worktrees).where(eq(worktrees.id, conversation.worktreeId)).get()
       : undefined
-    if (conversation.agent === 'claude' && conversation.agentSessionId && gone) {
+    if (conversation.agent === 'claude' && conversation.agentSessionId && tree) {
       const root = this.resolveCwd({ ...conversation, worktreeId: null })
-      await copyTranscript(gone.path, root, conversation.agentSessionId).catch(() => false)
+      await copyTranscript(tree.path, root, conversation.agentSessionId).catch(() => false)
     }
 
     const patch: Partial<ConversationRow> = {

@@ -1025,6 +1025,24 @@ export function registerConversationRoutes(
     )
   })
 
+  /**
+   * *Ramener à la racine du projet* — la conversation quitte un worktree qui existe
+   * encore. L'arbre reste ; seule la session déménage, au repos.
+   */
+  app.post('/api/conversations/:id/return-to-root', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadWritable(id, user.id)
+    const row = await sessions.returnToProjectRoot(id)
+    return conversationToDto(
+      row,
+      user.id,
+      readCursor(id, user.id),
+      readCardLink(ctx, row.cardId),
+      false,
+    )
+  })
+
   app.delete('/api/conversations/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
