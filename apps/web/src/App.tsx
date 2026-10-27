@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { SettingsDialog } from './components/settings/SettingsDialog'
+import { AppearanceSync } from './lib/appearance-sync'
 import { visibleSections } from './components/settings/sections'
 import { LEGACY_SETTINGS_SECTIONS, openSettings } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
@@ -182,6 +183,7 @@ export function App() {
       {/* Hors des routes : les réglages s'ouvrent depuis n'importe où — le menu du
           compte, la palette, une phrase d'explication — et ne remplacent pas la vue
           qu'on avait sous les yeux. */}
+      <AppearanceSync />
       <SettingsDialog />
       <Routes>
         <Route path="/login" element={<Navigate to="/" replace />} />

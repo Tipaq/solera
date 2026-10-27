@@ -27,7 +27,7 @@ export async function checkEditor({ page, context, base, project }) {
   const save = panel.getByRole('button', { name: 'Enregistrer', exact: true })
   const waitText = (text) => page.waitForFunction((text) => document.querySelector('[data-panel="workspace"] .cm-content')?.textContent.includes(text), text)
   const waitClean = () => panel.getByRole('status').filter({ hasText: 'À jour' }).waitFor()
-  const treeFile = (path) => panel.getByRole('button', { name: path, exact: true }).first()
+  const treeFile = (path) => panel.getByRole('tree', { name: 'Fichiers', exact: true }).getByRole('treeitem', { name: path, exact: true }).first()
 
   await treeFile('package.json').click()
   await code.fill(draftA)
@@ -43,6 +43,9 @@ export async function checkEditor({ page, context, base, project }) {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.evaluate(() => localStorage.setItem('solera.panelTree', '1'))
   await page.reload()
+  // L'ouverture du panneau ne survit pas au rechargement (`lib/panel.ts`) : le
+  // brouillon, lui, doit y être et se compter en rouvrant.
+  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
   await panel.getByRole('button', { name: 'Brouillons conservés (1)', exact: true }).click()
   await recovery.getByRole('button', { name: 'package.json', exact: true }).click()
   await waitText('"uiCheck": "a"')
