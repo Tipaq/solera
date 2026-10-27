@@ -13,9 +13,10 @@ import { launchBrowser } from './checks/browser.mjs'
 
 // Les décisions de bout en bout, avec les vrais composants et la vraie API, dans une base
 // temporaire : une session accordée dépose une décision par la même file que le serveur
-// MCP, le toast et la section « À décider » apparaissent sans recharger, on répond dans
+// MCP, le toast et la ligne de l'Activité apparaissent sans recharger, on répond dans
 // le dialogue, la réponse part en message, l'historique et le fil la gardent. Un
-// rangement de cartes en attente rejoint la section et mène à sa conversation. Aucun CLI
+// rangement de cartes en attente rejoint l'Activité, une décision s'y tranche sur place
+// dans la modale (#121), et l'historique porte les deux. Aucun CLI
 // ne tourne : la remise de la réponse échoue sans conséquence.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -90,10 +91,16 @@ try {
     `INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, card_id, created_at, updated_at)
      VALUES (?, ?, ?, 'Veille des dépendances', 'codex', ?, 'idle', ?, ?, ?)`,
   ).run(session, project.id, project.ownerId, JSON.stringify(sessionConfig), card.id, now, now)
-  const ask = (payload) => {
+  // Une décision à la fois par session : la troisième vient d'un second fil.
+  const writer = randomUUID()
+  db.prepare(
+    `INSERT INTO conversations (id, project_id, user_id, title, agent, config, status, created_at, updated_at)
+     VALUES (?, ?, ?, 'Rédiger la note de version', 'codex', ?, 'idle', ?, ?)`,
+  ).run(writer, project.id, project.ownerId, JSON.stringify(sessionConfig), now, now)
+  const ask = (payload, from = session) => {
     const id = randomUUID()
     db.prepare("INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at) VALUES (?, ?, ?, 'request_decision', ?, ?)")
-      .run(id, project.id, session, JSON.stringify(payload), Date.now())
+      .run(id, project.id, from, JSON.stringify(payload), Date.now())
     return id
   }
 
@@ -109,8 +116,10 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('group', { name: 'Suivi des conversations', exact: true }).waitFor()
-  const section = page.getByRole('region', { name: 'À décider' })
-  assert.equal(await section.count(), 0, 'Pas de section tant que rien n’attend')
+  // Ce qui t'attend est en tête de l'Activité (#121) : plus de section à part.
+  const section = page.getByRole('group', { name: 'Suivi des conversations', exact: true })
+  assert.equal(await page.getByRole('region', { name: 'À décider' }).count(), 0)
+  assert.equal(await section.getByRole('button', { name: /Monter vite/ }).count(), 0, 'Rien tant que rien n’attend')
 
   // La session demande : le toast et la section apparaissent, sans recharger.
   const first = ask({
@@ -140,7 +149,7 @@ try {
   await dialog.getByText('Répondu par Alex').waitFor()
   await dialog.screenshot({ path: join(shots, 'decisions-answered.png') })
   await page.keyboard.press('Escape')
-  await section.waitFor({ state: 'detached' })
+  await section.getByText('Monter vite en 7.0 maintenant ?').waitFor({ state: 'detached' })
 
   const stored = db.prepare('SELECT answer, accepted_at AS acceptedAt, resolved_at AS resolvedAt FROM agent_requests WHERE id = ?').get(first)
   assert.deepEqual(JSON.parse(stored.answer), {
@@ -152,20 +161,36 @@ try {
   const notes = db.prepare('SELECT body FROM card_notes WHERE card_id = ? AND conversation_id = ? ORDER BY created_at').all(card.id, session)
   assert.equal(notes.length, 2)
 
-  // Un rangement de cartes en attente, puis une seconde décision : la section porte les
-  // deux, et le rangement mène à la conversation où se trouve son bouton.
+  // Un rangement de cartes en attente, puis deux décisions : l'Activité porte les trois,
+  // un clic ouvre la modale dépliée sur la demande, et une décision s'y tranche.
   const mover = db.prepare("SELECT id, title FROM conversations WHERE project_id = ? AND id != ? AND archived_at IS NULL LIMIT 1").get(project.id, session)
   db.prepare(
     `INSERT INTO agent_requests (id, project_id, conversation_id, kind, payload, created_at, settled_at, result, is_error)
      VALUES (?, ?, ?, 'request_card_change', ?, ?, ?, 'Demande déposée.', 0)`,
   ).run(randomUUID(), project.id, mover.id, JSON.stringify({ changes: [{ card: 1, column: 'done', reason: 'Livrée.' }] }), Date.now(), Date.now())
   ask({ question: 'Fermer l’issue #18 comme doublon de #12 ?', options: ['Oui', 'Non'] })
+  const third = ask({ question: 'Publier la note de version ?', options: ['Oui', 'Plus tard'] }, writer)
   await section.getByText('Fermer l’issue #18', { exact: false }).waitFor({ timeout: 15000 })
-  await section.getByText(mover.title).waitFor()
   await page.waitForTimeout(300)
   await section.screenshot({ path: join(shots, 'decisions-section-mixed.png') })
-  await section.getByRole('link', { name: new RegExp(mover.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) }).click()
+
+  // Un clic sur une demande de la colonne ouvre la modale dépliée sur elle.
+  const overview = page.getByRole('dialog', { name: 'Activité globale' })
+  await section.getByRole('button', { name: /Fermer l’issue #18/ }).click()
+  await overview.getByRole('button', { name: /Non$/ }).waitFor()
+  // La troisième se tranche sur place, sans ouvrir le fil.
+  await overview.getByRole('button', { name: /Publier la note de version/ }).click()
+  await overview.getByRole('button', { name: 'Plus tard' }).click()
+  // La ligne dit le verdict donné une seconde, puis part.
+  await overview.getByText('Répondu « Plus tard »', { exact: false }).waitFor()
+  await overview.getByRole('button', { name: /Publier la note de version/ }).waitFor({ state: 'detached' })
+  assert.equal(JSON.parse(db.prepare('SELECT answer FROM agent_requests WHERE id = ?').get(third).answer).option, 'Plus tard')
+
+  // Le rangement : déplié, puis « Ouvrir le fil » ferme la modale.
+  await overview.getByRole('button', { name: /1 carte à ranger/ }).click()
+  await overview.getByRole('button', { name: 'Ouvrir le fil' }).click()
   await page.waitForURL(`**/c/${mover.id}`)
+  await overview.waitFor({ state: 'hidden' })
 
   // Le fil de la session demandeuse : la question et son issue, à leur place.
   await page.goto(`${base}/p/${project.id}/c/${session}`)
@@ -177,7 +202,9 @@ try {
 
   // L'historique.
   await page.goto(`${base}/decisions`)
-  await page.getByRole('tab', { name: 'Toutes' }).click()
+  // Ce qui t'attend, accords compris (#121).
+  await page.getByRole('main').getByText('1 carte à ranger').waitFor()
+  await page.getByRole('tab', { name: 'Tout l’historique' }).click()
   await page.getByRole('main').getByText('Monter vite en 7.0 maintenant ?').waitFor()
   await page.waitForTimeout(300)
   await page.getByRole('main').screenshot({ path: join(shots, 'decisions-history.png') })

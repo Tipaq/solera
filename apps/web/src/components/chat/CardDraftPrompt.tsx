@@ -34,10 +34,13 @@ export function CardDraftPrompt({
   conversationId,
   item,
   canDecide,
+  onDecided,
 }: {
   conversationId: string
   item: CardDraftItem
   canDecide: boolean
+  /** Le clic est parti : la modale d'Activité (#121) en dit le verdict une seconde. */
+  onDecided?: (decision: 'accepted' | 'refused') => void
 }) {
   const t = useTranslate()
   const { projectId } = useParams()
@@ -63,6 +66,7 @@ export function CardDraftPrompt({
       // Les lignes vides du champ de sous-tâches ne sont que de la saisie en cours.
       const clean = { ...draft, cards: draft.cards.map((card) => ({ ...card, subtasks: card.subtasks.map((line) => line.trim()).filter(Boolean) })) }
       await decideCardDraft(conversationId, item.id, decision === 'created' ? { decision, draft: clean } : { decision })
+      onDecided?.(decision === 'created' ? 'accepted' : 'refused')
     } catch (err) {
       // La clôture viendra du serveur, par le journal : on n'anticipe pas l'état ici.
       setError(err instanceof Error ? err.message : t('cardDraft.error.generic'))

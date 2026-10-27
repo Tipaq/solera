@@ -108,13 +108,17 @@ try {
   const activity = page.getByRole('group', { name: 'Suivi des conversations', exact: true })
   const header = activity.getByRole('button', { name: /^Activité/ })
   await header.waitFor()
-  // L'en-tête porte les deux compteurs ; il n'y a plus ni repli ni second bouton.
-  await activity.getByRole('button', { name: 'Activité 2 à débloquer 7 en cours', exact: true }).waitFor()
-  // Sept lignes au plus, et le reste compté sur une ligne plutôt que listé.
-  assert.equal(await activity.getByRole('link').count(), 7)
-  await activity.getByRole('button', { name: '+ 2 autres sessions actives', exact: true }).waitFor()
-  // Les attentes précèdent le travail en cours, sans déplier quoi que ce soit.
-  assert.match(await activity.getByRole('link').first().innerText(), /Valider les migrations/)
+  // L'en-tête porte les deux compteurs : ambre ce qui t'attend, accent ce qui tourne.
+  await activity.getByRole('button', { name: 'Activité 2 pour toi 7 en cours', exact: true }).waitFor()
+  // Le bloc tient sous le quart de la colonne (#121) : à 900 px, quatre lignes, et le
+  // reste compté sur une ligne plutôt que listé.
+  assert.equal(await activity.locator('li').count(), 4)
+  await activity.getByRole('button', { name: '+ 5 sessions', exact: true }).waitFor()
+  const blockBox = await activity.boundingBox()
+  assert.ok(blockBox.height < 900 / 4, `l'Activité fait ${blockBox.height} px`)
+  // Ce qui t'attend précède le travail en cours : les deux fils bloqués d'abord.
+  assert.match(await activity.locator('li').first().innerText(), /Valider les migrations|Attendre le choix utilisateur/)
+  assert.equal(await activity.getByRole('link').count(), 2)
   await activity.getByRole('link', { name: /Compiler la nouvelle interface/ }).waitFor()
   await page.screenshot({ path: join(shots, 'activity-expanded.png') })
 
@@ -122,20 +126,29 @@ try {
   const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
   const all = overview.getByRole('button', { name: /^Tout / })
   const pressed = () => overview.locator('button[aria-pressed=true]').innerText()
+  // Une demande de « Pour toi » est un bouton qui se déplie, pas un lien.
+  const requests = overview.locator('li > button[aria-expanded]')
   await overview.waitFor()
   // Quatre filtres qui portent leur compte, plus un filtre par projet.
   await overview.getByRole('button', { name: 'Tout 9', exact: true }).waitFor()
-  await overview.getByRole('button', { name: 'À débloquer 2', exact: true }).waitFor()
+  await overview.getByRole('button', { name: 'Pour toi 2', exact: true }).waitFor()
   await overview.getByRole('button', { name: 'En cours 7', exact: true }).waitFor()
-  // Le non-lu est suspendu tant qu'une session produit : seules les deux attentes
-  // réclament une relecture, les sept qui tournent ne demandent rien encore.
-  await overview.getByRole('button', { name: 'Non lues 2', exact: true }).waitFor()
-  // Elle s'ouvre sur ce qui attend, et non sur l'inventaire : deux attentes, donc
-  // « à débloquer » et ses deux lignes seules.
-  assert.match(await pressed(), /^À débloquer/)
-  assert.equal(await overview.getByRole('link').count(), 2)
+  // Le non-lu est suspendu tant qu'une session produit, et un fil bloqué est dans
+  // « Pour toi » et nulle part ailleurs : rien n'est à relire.
+  await overview.getByRole('button', { name: 'Non lues 0', exact: true }).waitFor()
+  // Elle s'ouvre sur ce qui attend, et non sur l'inventaire.
+  assert.match(await pressed(), /^Pour toi/)
+  assert.equal(await requests.count(), 2)
+  // Ce qui a attendu se relit sur la page d'historique.
+  await overview.getByRole('link', { name: 'Historique de ce qui t’attend', exact: true }).waitFor()
+  // Un clic déplie la demande sur place ; sans demande lisible dans le journal, elle
+  // renvoie au fil.
+  await requests.first().click()
+  await overview.getByText('Cette demande se lit dans le fil.').waitFor()
+  await requests.first().click()
   await all.click()
-  assert.equal(await overview.getByRole('link').count(), 9)
+  assert.equal(await overview.getByRole('link').count(), 7)
+  assert.equal(await requests.count(), 2)
   // Le projet s'écrit en clair : la place existe, contrairement à la colonne.
   await overview.getByText('Autre projet', { exact: true }).waitFor()
   await page.screenshot({ path: join(shots, 'activity-overview.png') })
@@ -156,16 +169,16 @@ try {
   await overview.getByRole('link', { name: /Compiler la nouvelle interface.*En erreur/ }).waitFor()
 
   // Les filtres se croisent avec celui du projet.
-  await overview.getByRole('button', { name: 'À débloquer 2', exact: true }).click()
-  assert.equal(await overview.getByRole('link').count(), 2)
+  await overview.getByRole('button', { name: 'Pour toi 2', exact: true }).click()
+  assert.equal(await requests.count(), 2)
   await overview.getByRole('button', { name: 'Tous les projets', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Atlas API', exact: true }).click()
-  assert.equal(await overview.getByRole('link').count(), 1)
+  assert.equal(await requests.count(), 1)
   await all.click()
-  assert.equal(await overview.getByRole('link').count(), 3)
+  assert.equal(await requests.count() + await overview.getByRole('link').count(), 3)
   await overview.getByRole('button', { name: 'Atlas API', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Tous les projets', exact: true }).click()
-  assert.equal(await overview.getByRole('link').count(), 9)
+  assert.equal(await overview.getByRole('link').count(), 7)
   await overview.getByRole('button', { name: 'Fermer', exact: true }).click()
 
   // Une nouvelle conversation, lancée depuis un autre client, rejoint le total.
@@ -192,21 +205,21 @@ try {
     await overview.waitFor({ state: 'hidden' })
     return label
   }
-  assert.match(await openOn(), /^À débloquer/)
+  assert.match(await openOn(), /^Pour toi/)
   // La portée projet ne se retient pas plus que l'onglet : gardée d'une fois sur
-  // l'autre, elle ouvrirait « à débloquer 2 » au-dessus d'une liste vide.
+  // l'autre, elle ouvrirait « Pour toi 2 » au-dessus d'une liste vide.
   await header.click()
   await overview.getByRole('button', { name: 'Tous les projets', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Docs', exact: true }).click()
-  // Docs n'a que des sessions en cours : l'onglet des attentes y est vide.
-  assert.equal(await overview.getByRole('link').count(), 0)
+  // Docs n'a que des sessions en cours : rien ne t'y attend.
+  assert.equal(await requests.count(), 0)
   await page.keyboard.press('Escape')
   await overview.waitFor({ state: 'hidden' })
   await header.click()
   await overview.waitFor()
-  assert.match(await pressed(), /^À débloquer/)
+  assert.match(await pressed(), /^Pour toi/)
   await overview.getByRole('button', { name: 'Tous les projets', exact: true }).waitFor()
-  assert.equal(await overview.getByRole('link').count(), 2)
+  assert.equal(await requests.count(), 2)
   await page.keyboard.press('Escape')
   await overview.waitFor({ state: 'hidden' })
   // Les deux attentes se posent : il ne reste plus qu'à relire.
@@ -219,9 +232,9 @@ try {
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
-  // Au doigt, l'activité est coupée à deux lignes : le reste part dans la modale.
-  await activity.getByRole('link').nth(1).waitFor()
-  assert.equal(await activity.getByRole('link').count(), 2)
+  // Au doigt, l'en-tête seul : ses compteurs disent l'état, la modale porte le reste.
+  await header.waitFor()
+  assert.equal(await activity.locator('li').count(), 0)
   await page.screenshot({ path: join(shots, 'activity-mobile.png') })
   await header.click()
   await overview.getByRole('link', { name: /Session démarrée ailleurs/ }).waitFor()
@@ -242,7 +255,7 @@ try {
   await overview.waitFor()
   assert.match(await pressed(), /^Tout/)
   assert.deepEqual(errors, [])
-  console.log('OK : compteurs d’en-tête, sept lignes et le reste compté, modale ouverte sur le premier groupe non vide puis ses quatre filtres croisés d’un projet, statuts temps réel, fins de tour, arrière-plan, nouvelles sessions et mobile.')
+  console.log('OK : compteurs d’en-tête, lignes sous le quart de la colonne et le reste compté, en-tête seul au doigt, modale ouverte sur le premier groupe non vide puis ses quatre filtres croisés d’un projet, statuts temps réel, fins de tour, arrière-plan, nouvelles sessions et mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

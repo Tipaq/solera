@@ -69,7 +69,7 @@ async function harness(t: TestContext, as: 'owner' | 'stranger' = 'owner') {
     const response = await app.inject({ method: 'GET', url: '/api/prompts' })
     return { status: response.statusCode, body: response.json() as { prompts: ConversationPromptDto[] } }
   }
-  return { conversation, log, prompts, all, project }
+  return { conversation, log, prompts, all, project, app, db }
 }
 
 const permission = (requestId: string) => ({
@@ -120,6 +120,30 @@ test('un fil qui ne réclame rien ne rend rien, une question asynchrone ouverte 
 test('un projet privé reste fermé à qui ne le possède pas', async (t) => {
   const { prompts } = await harness(t, 'stranger')
   assert.equal((await prompts()).status, 404)
+})
+
+test('les demandes de tous les fils du compte, projets et fils libres confondus (#121)', async (t) => {
+  const { conversation, log, app, db } = await harness(t)
+  conversation('waiting', 'awaiting_input')
+  log.append('waiting', permission('open'))
+  db.insert(conversations)
+    .values({
+      id: 'free', projectId: null, userId: 'owner', title: 'free', agent: 'claude',
+      config: JSON.stringify(DEFAULT_CLAUDE_CONFIG), status: 'awaiting_input', createdAt: 1, updatedAt: 1,
+    })
+    .run()
+  log.append('free', permission('loose'))
+  db.insert(conversations)
+    .values({
+      id: 'theirs', projectId: 'project', userId: 'stranger', title: 'theirs', agent: 'claude',
+      config: JSON.stringify(DEFAULT_CLAUDE_CONFIG), status: 'awaiting_input', createdAt: 1, updatedAt: 1,
+    })
+    .run()
+  log.append('theirs', permission('not-mine'))
+
+  const response = await app.inject({ method: 'GET', url: '/api/me/prompts' })
+  const body = response.json() as { prompts: ConversationPromptDto[] }
+  assert.deepEqual(body.prompts.map((entry) => entry.conversationId).sort(), ['free', 'waiting'])
 })
 
 test("le portefeuille rend les demandes de tous les projets visibles, sauf les archivés et ceux des autres", async (t) => {

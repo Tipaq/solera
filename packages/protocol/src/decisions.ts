@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { SoleraEvent } from './events.js'
 
 /**
  * Les décisions : ce qu'une session demande à une personne de trancher, sans se bloquer
@@ -121,6 +122,8 @@ export type AwaitingRequestDto =
       id: string
       conversationId: string
       projectId: string
+      /** Le fil qui demande ; vide pour une proposition de nettoyage, qui n'en a pas. */
+      conversationTitle: string
       question: string
       /** Pour une proposition de nettoyage : la branche, de quoi recomposer la question. */
       worktreeBranch: string | null
@@ -167,3 +170,41 @@ export interface PendingRequestCounts {
 export interface PendingRequestsDto {
   conversations: ({ id: string; projectId: string | null } & PendingRequestCounts)[]
 }
+
+/**
+ * `GET /api/awaiting/:id/request` : l'événement du journal qui a ouvert un accord, tel
+ * que le fil le replie. La modale d'Activité (#121) en montre le bloc pour l'accorder sur
+ * place, par la même route que le fil.
+ */
+export interface AwaitingRequestEntryDto {
+  conversationId: string
+  seq: number
+  ts: number
+  event: SoleraEvent
+}
+
+/**
+ * L'issue d'un accord dans l'historique. `closed` : refusé, ou devenu impossible avant
+ * le clic ; la ligne ne dit pas lequel, le fil le dit.
+ */
+export type AccordStatus = 'pending' | 'accepted' | 'closed'
+
+/**
+ * Une ligne de l'historique de ce qui t'attend (`GET /api/awaiting/history`) : une
+ * décision, ou un des trois accords qu'un clic tranche.
+ */
+export type RequestHistoryDto =
+  | { kind: 'decision'; decision: DecisionDto }
+  | {
+      kind: 'request_card_change' | 'propose_cards' | 'move_conversation'
+      id: string
+      conversationId: string
+      conversationTitle: string
+      projectId: string | null
+      projectName: string
+      /** Cartes à changer ou à créer ; 1 pour un rangement de conversation. */
+      count: number
+      status: AccordStatus
+      createdAt: number
+      resolvedAt: number | null
+    }

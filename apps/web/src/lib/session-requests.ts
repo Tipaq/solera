@@ -83,7 +83,7 @@ function useRequests(projectId: string | null | undefined, live: LiveConversatio
   }, [awaiting, prompts, projectId])
 }
 
-function requestOf(prompt: ConversationPromptDto): SessionRequest | null {
+export function requestOf(prompt: ConversationPromptDto): SessionRequest | null {
   const { requestId, requestedAt, event } = prompt
   switch (event.type) {
     case 'permission.requested':

@@ -292,7 +292,7 @@ try {
   const openActivity = activity.getByRole('button', { name: /^Activité/ })
   await openActivity.click()
   const dialog = page.getByRole('dialog', { name: 'Activité globale' })
-  for (const name of ['Tout', 'À débloquer', 'En cours', 'Non lues']) {
+  for (const name of ['Pour toi', 'Non lues', 'En cours', 'Tout']) {
     await dialog.getByRole('button', { name: new RegExp(`^${name}`) }).waitFor()
   }
   // Ouverte d'un clic, Radix donne le focus à « Fermer » : son infobulle ne doit pas

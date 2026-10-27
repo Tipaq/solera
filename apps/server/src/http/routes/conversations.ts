@@ -386,6 +386,23 @@ export function registerConversationRoutes(
     return prompts
   }
 
+  /**
+   * Les mêmes demandes, pour tous les fils du compte : la modale d'Activité (#121) les
+   * déplie dans « Pour toi », tous projets confondus, fils libres compris.
+   *
+   * Seuls les fils de la personne : c'est elle seule qui tranche une permission ou une
+   * question, et un fil d'un projet partagé ne l'attend pas.
+   */
+  app.get('/api/me/prompts', async (request) => {
+    const user = requireUser(request)
+    const rows = ctx.db
+      .select({ id: conversations.id, status: conversations.status })
+      .from(conversations)
+      .where(eq(conversations.userId, user.id))
+      .all()
+    return { prompts: promptsOf(rows) }
+  })
+
   app.post('/api/projects/:id/conversations', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

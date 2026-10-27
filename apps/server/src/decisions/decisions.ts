@@ -24,6 +24,8 @@ import {
   parseAgentConfig,
   type AnswerDecisionBody,
   type AwaitingRequestDto,
+  type AwaitingRequestEntryDto,
+  type RequestHistoryDto,
   type DecisionAnswer,
   type DecisionDto,
   type DecisionPayload,
@@ -526,6 +528,7 @@ export class Decisions {
           id: row.id,
           conversationId: row.conversationId,
           projectId: row.projectId,
+          conversationTitle: '',
           question: readDecisionPayload(row.payload).question,
           worktreeBranch: readWorktree(row)?.branch ?? null,
           expiresAt: row.expiresAt,
@@ -538,6 +541,7 @@ export class Decisions {
           id: row.id,
           conversationId: row.conversationId,
           projectId: requester.projectId,
+          conversationTitle: requester.title,
           question: readDecisionPayload(row.payload).question,
           worktreeBranch: null,
           expiresAt: row.expiresAt,
@@ -585,6 +589,122 @@ export class Decisions {
       }
     }
     return items
+  }
+
+  /**
+   * L'événement qui a ouvert un accord en attente, pour que la modale d'Activité (#121)
+   * en montre le bloc. Le droit est celui de la section : un accord qu'elle ne liste pas
+   * pour ce compte n'existe pas pour lui.
+   */
+  requestEntry(userId: string, id: string): AwaitingRequestEntryDto {
+    const request = this.awaiting(userId).find((entry) => entry.id === id)
+    if (!request || request.kind === 'decision') {
+      throw new HttpError(404, 'request_not_found', 'Request not found.')
+    }
+    const type = request.kind === 'move_conversation'
+      ? 'filing.requested'
+      : request.kind === 'request_card_change' ? 'card_filing.requested' : 'card_draft.proposed'
+    const entry = this.log.requestEntry(request.conversationId, type, id)
+    if (!entry) throw new HttpError(404, 'request_not_found', 'Request not found.')
+    return { conversationId: request.conversationId, ...entry }
+  }
+
+  /**
+   * L'historique complet de ce qui t'attend (#121) : les décisions, et les trois accords
+   * qu'un clic tranche — rangement de conversation, changement de cartes, brouillon.
+   * Les plus récents d'abord. `pending` ne garde que ce qui attend encore.
+   *
+   * Bornée aux `limit` plus récents de chaque sorte, comme la liste des décisions : la
+   * page est un historique à relire, pas une archive. Un accord dont le fil demandeur
+   * a disparu y reste, sans titre, là où `awaiting()` l'écarte : ce qui a eu lieu reste
+   * lisible.
+   */
+  history(userId: string, scope: 'pending' | 'all', limit = 200): RequestHistoryDto[] {
+    const rows = this.ctx.db
+      .select()
+      .from(agentRequests)
+      .where(
+        and(
+          inArray(agentRequests.kind, ['request_card_change', 'propose_cards', 'move_conversation']),
+          deposited(),
+          scope === 'pending' ? and(isNull(agentRequests.resolvedAt), isNull(agentRequests.acceptedAt)) : undefined,
+        ),
+      )
+      .orderBy(desc(agentRequests.createdAt))
+      .limit(limit)
+      .all()
+
+    const conversationIds = new Set<string>()
+    for (const row of rows) {
+      conversationIds.add(row.kind === 'move_conversation' ? filingTarget(row) : row.conversationId)
+    }
+    const threads = new Map(
+      conversationIds.size === 0
+        ? []
+        : this.ctx.db
+            .select({ id: conversations.id, title: conversations.title, userId: conversations.userId, projectId: conversations.projectId })
+            .from(conversations)
+            .where(inArray(conversations.id, [...conversationIds]))
+            .all()
+            .map((row) => [row.id, row]),
+    )
+    const projectIds = new Set<string>()
+    for (const row of rows) if (row.projectId) projectIds.add(row.projectId)
+    for (const thread of threads.values()) if (thread.projectId) projectIds.add(thread.projectId)
+    const projectRows = new Map(
+      projectIds.size === 0
+        ? []
+        : this.ctx.db
+            .select({ id: projects.id, name: projects.name, ownerId: projects.ownerId })
+            .from(projects)
+            .where(inArray(projects.id, [...projectIds]))
+            .all()
+            .map((row) => [row.id, row]),
+    )
+
+    const accords: RequestHistoryDto[] = []
+    for (const row of rows) {
+      const status = row.acceptedAt !== null ? 'accepted' : row.resolvedAt !== null ? 'closed' : 'pending'
+      if (row.kind === 'move_conversation') {
+        // Le fil rangé appartient à qui le possède : c'est à lui que la demande s'adressait.
+        const target = threads.get(filingTarget(row))
+        if (!target || target.userId !== userId) continue
+        accords.push({
+          kind: 'move_conversation',
+          id: row.id,
+          conversationId: target.id,
+          conversationTitle: target.title,
+          projectId: target.projectId,
+          projectName: target.projectId ? (projectRows.get(target.projectId)?.name ?? '') : '',
+          count: 1,
+          status,
+          createdAt: row.createdAt,
+          resolvedAt: row.resolvedAt ?? row.acceptedAt,
+        })
+        continue
+      }
+      // Le board appartient au projet : c'est son propriétaire qui range et qui crée.
+      const project = row.projectId ? projectRows.get(row.projectId) : undefined
+      if (!project || project.ownerId !== userId) continue
+      const payload = JSON.parse(row.payload) as { cards?: unknown; changes?: unknown; moves?: unknown }
+      const listed = row.kind === 'propose_cards' ? payload.cards : (payload.changes ?? payload.moves)
+      accords.push({
+        kind: row.kind as 'request_card_change' | 'propose_cards',
+        id: row.id,
+        conversationId: row.conversationId,
+        conversationTitle: threads.get(row.conversationId)?.title ?? '',
+        projectId: project.id,
+        projectName: project.name,
+        count: Array.isArray(listed) ? listed.length : 0,
+        status,
+        createdAt: row.createdAt,
+        resolvedAt: row.resolvedAt,
+      })
+    }
+
+    const decisions: RequestHistoryDto[] = this.list(userId, scope, limit).map((decision) => ({ kind: 'decision', decision }))
+    const at = (entry: RequestHistoryDto) => (entry.kind === 'decision' ? entry.decision.createdAt : entry.createdAt)
+    return [...decisions, ...accords].sort((a, b) => at(b) - at(a)).slice(0, limit)
   }
 
   // --- La clôture -----------------------------------------------------------------

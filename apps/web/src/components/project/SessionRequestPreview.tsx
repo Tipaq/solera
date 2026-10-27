@@ -70,27 +70,34 @@ export function SessionRequestPreview({
         </Link>
       </div>
       <div className="mt-2">
-        <RequestBody conversationId={conversationId} request={request} canDecide={canDecide} />
+        <SessionRequestBody conversationId={conversationId} request={request} canDecide={canDecide} />
       </div>
     </div>
   )
 }
 
-function RequestBody({
+/**
+ * Le corps seul, sans l'en-tête : la modale d'Activité (#121) le reprend sous sa propre
+ * ligne, pour trancher une permission ou une question par les mêmes routes.
+ */
+export function SessionRequestBody({
   conversationId,
   request,
   canDecide,
+  onAnswered,
 }: {
   conversationId: string
   request: SessionRequest
   canDecide: boolean
+  /** La réponse est partie : son verdict, pour la ligne qui va la dire une seconde. */
+  onAnswered?: (verdict: string) => void
 }) {
   const t = useTranslate()
   switch (request.kind) {
     case 'question':
-      return <QuestionBody conversationId={conversationId} request={request} canDecide={canDecide} />
+      return <QuestionBody conversationId={conversationId} request={request} canDecide={canDecide} onAnswered={onAnswered} />
     case 'permission':
-      return <PermissionBody conversationId={conversationId} request={request} canDecide={canDecide} />
+      return <PermissionBody conversationId={conversationId} request={request} canDecide={canDecide} onAnswered={onAnswered} />
     case 'decision':
       return (
         <div className="flex flex-wrap items-center gap-3">
@@ -121,10 +128,12 @@ function PermissionBody({
   conversationId,
   request,
   canDecide,
+  onAnswered,
 }: {
   conversationId: string
   request: Extract<SessionRequest, { kind: 'permission' }>
   canDecide: boolean
+  onAnswered?: (verdict: string) => void
 }) {
   const t = useTranslate()
   const [busy, setBusy] = useState(false)
@@ -136,6 +145,8 @@ function PermissionBody({
     setError(null)
     try {
       await decidePermission(conversationId, request.requestId, decision, scope)
+      onAnswered?.(t(decision === 'denied' ? 'forYou.verdict.denied'
+        : scope === 'session' ? 'forYou.verdict.allowedSession' : 'forYou.verdict.allowed'))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('permission.error.generic'))
       setBusy(false)
@@ -180,10 +191,12 @@ function QuestionBody({
   conversationId,
   request,
   canDecide,
+  onAnswered,
 }: {
   conversationId: string
   request: Extract<SessionRequest, { kind: 'question' }>
   canDecide: boolean
+  onAnswered?: (verdict: string) => void
 }) {
   const t = useTranslate()
   const [choices, setChoices] = useState<Record<string, string[]>>({})
@@ -199,6 +212,7 @@ function QuestionBody({
     setError(null)
     try {
       await answerQuestion(conversationId, request.requestId, 'answered', answers)
+      onAnswered?.(t('forYou.verdict.answered', { answer: Object.values(answers).flat().join(t('forYou.verdict.joiner')) }))
     } catch (err) {
       setError(err instanceof Error ? err.message : t('question.error.generic'))
       setBusy(false)

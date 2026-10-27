@@ -1,14 +1,14 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { AwaitingRequestDto, DecisionDto } from '@solera/protocol'
+import type { AwaitingRequestDto, DecisionDto, RequestHistoryDto } from '@solera/protocol'
 import { api } from './api'
 import { formatAgo } from './loops'
 import { translate } from './i18n'
 import { wsClient } from './ws-client'
 
 /**
- * Les décisions qu'une session demande (`request_decision`), et la section « À
- * décider » qui y ajoute les deux rangements en attente.
+ * Les décisions qu'une session demande (`request_decision`), et ce qui t'attend dans
+ * l'Activité (#121), qui y ajoute les accords en attente.
  *
  * Tout ce qui attend une personne est relu sur le signal `awaiting-changed` du socket,
  * et toutes les minutes en repli : une échéance passe sans que personne n'ait rien fait,
@@ -27,11 +27,12 @@ export function useAwaiting() {
   })
 }
 
-export function useDecisions(scope: 'pending' | 'all') {
+/** L'historique de ce qui t'attend, accords compris : la page `/decisions` (#121). */
+export function useRequestHistory(scope: 'pending' | 'all') {
   return useQuery({
-    queryKey: [...DECISIONS_KEY, scope],
+    queryKey: [...DECISIONS_KEY, 'history', scope],
     queryFn: async () =>
-      (await api.get<{ decisions: DecisionDto[] }>(`/api/decisions?status=${scope}`)).decisions,
+      (await api.get<{ entries: RequestHistoryDto[] }>(`/api/awaiting/history?status=${scope}`)).entries,
     staleTime: 15_000,
   })
 }
