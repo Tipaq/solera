@@ -1,4 +1,4 @@
-import { ChevronDown, GaugeCircle, Info, LogOut, MessageCircleQuestion, Palette, Server, Settings } from 'lucide-react'
+import { ChevronDown, GaugeCircle, Info, LogOut, Palette, Server, Settings } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslate } from '../../lib/i18n'
@@ -6,8 +6,8 @@ import { useCapability } from '../../lib/instance'
 import { useCurrentUser, useLogout } from '../../lib/session'
 import { useDisplaySettings } from '../../lib/display-settings'
 import { openSettings } from '../../lib/settings-dialog'
-import { useVersionInfo, useUpdateNotice } from '../../lib/system'
-import { THEMES, THEME_LABELS, useTheme } from '../../lib/theme'
+import { useUpdateNotice } from '../../lib/system'
+import { THEME_LABELS, useTheme, type Theme } from '../../lib/theme'
 import { UpdateDot } from '../UpdateDot'
 import { UsagePanel } from '../UsagePanel'
 import { cx, Menu, MenuItem, MenuSeparator } from '@solera/ui'
@@ -31,6 +31,12 @@ import { cx, Menu, MenuItem, MenuSeparator } from '@solera/ui'
  *
  * *Raccourcis*, la septième entrée, manque encore : aucun écran ne les liste (carte #20).
  */
+/**
+ * Clair et sombre seulement : le sombre contrasté chargeait la ligne, et il reste à
+ * portée dans les réglages d'apparence.
+ */
+const MENU_THEMES: readonly Theme[] = ['light', 'dark']
+
 export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   const t = useTranslate()
   const navigate = useNavigate()
@@ -40,7 +46,6 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
   // Sans mot de passe, une déconnexion ne laisserait qu'une page de connexion sans issue.
   const passwordAuth = useCapability('passwordAuth')
   const updateNotice = useUpdateNotice()
-  const { data: version } = useVersionInfo()
   const [theme, setTheme] = useTheme()
   const [usageOpen, setUsageOpen] = useState(false)
 
@@ -100,24 +105,19 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
             {t('services.title')}
           </MenuItem>
         ) : null}
-        {/* L'historique des décisions : la section « À décider » de la colonne y mène,
-            mais elle disparaît quand rien n'attend, et l'historique reste à relire. */}
-        <MenuItem icon={<MessageCircleQuestion size={14} />} onSelect={() => go('/decisions')}>
-          {t('decision.page.title')}
-        </MenuItem>
         <MenuItem icon={<Settings size={14} />} onSelect={() => settings()}>
           {t('shell.settings.fallback')}
         </MenuItem>
         <MenuSeparator />
         {/* Le thème en segmenté dans le menu : le choisir se voit tout de suite, et un
-            sous-menu pour trois valeurs coûterait un aller-retour de plus. Des boutons
+            sous-menu pour deux valeurs coûterait un aller-retour de plus. Des boutons
             nus plutôt que des entrées de menu, qui refermeraient le panneau à chaque
             essai. */}
         <div className="flex items-center gap-2.5 px-2.5 py-2 text-sm text-ink-soft">
           <Palette size={14} className="shrink-0" />
           <span className="flex-1">{t('shell.account.theme')}</span>
           <span className="flex items-center gap-0.5 rounded-md bg-sunken p-0.5">
-            {THEMES.map((option) => (
+            {MENU_THEMES.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -134,17 +134,7 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
           </span>
         </div>
         <MenuItem icon={<Info size={14} />} onSelect={() => settings('a-propos')}>
-          <span className="flex items-center gap-2">
-            {t('about.title')}
-            {version ? (
-              <span className={cx(
-                'rounded-full px-1.5 py-px text-micro tabular-nums',
-                updateNotice ? 'bg-accent-wash text-accent' : 'text-ink-faint',
-              )}>
-                {version.version}
-              </span>
-            ) : null}
-          </span>
+          {t('about.title')}
         </MenuItem>
         {passwordAuth ? (
           <>
