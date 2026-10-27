@@ -1,7 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { useLocation, useMatch } from 'react-router-dom'
 import { Outlet } from 'react-router-dom'
-import { useAppearanceSync } from '../lib/appearance-sync'
 import { useRememberContext } from '../lib/last-context'
 import { setPanelScope } from '../lib/panel'
 import { useRevalidateLists } from '../lib/conversation-status'
@@ -40,7 +39,6 @@ const CommandPalette = lazy(() => import('./CommandPalette').then((m) => ({ defa
  */
 export function AppShell() {
   const t = useTranslate()
-  useAppearanceSync()
   // La section « À décider » et la pastille de l'icône suivent le socket d'ici : la
   // colonne est démontée au téléphone quand le tiroir est fermé, la pastille non.
   useAwaitingLive()

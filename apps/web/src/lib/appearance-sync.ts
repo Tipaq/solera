@@ -122,3 +122,14 @@ export function useAppearanceSync(): void {
     adopt(appearance)
   }, [appearance])
 }
+
+/**
+ * Montée à côté de la modale Réglages, hors des routes, et non dans la coque : la
+ * modale s'ouvre aussi par `/settings/…` pendant que l'accueil cherche où renvoyer, la
+ * coque pas encore montée. Un geste fait là n'aurait pas été envoyé, puis la copie du
+ * compte, arrivée au montage, l'aurait défait.
+ */
+export function AppearanceSync(): null {
+  useAppearanceSync()
+  return null
+}

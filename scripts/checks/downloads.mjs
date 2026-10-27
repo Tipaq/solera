@@ -102,7 +102,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
 
   await panel.getByRole('button', { name: `Actions de ${binaryName}`, exact: true }).click()
   await expectDownload(binaryName, () => page.getByRole('menuitem', { name: 'Télécharger', exact: true }).click())
-  await panel.getByRole('button', { name: /^page\.html(?:\s|$)/ }).click({ button: 'right' })
+  await panel.getByRole('treeitem', { name: /^page\.html(?:\s|$)/ }).click({ button: 'right' })
   await expectDownload('page.html', () => page.getByRole('menuitem', { name: 'Télécharger', exact: true }).click())
   assert.equal(await page.evaluate(() => window.downloadHtmlExecuted), undefined)
 

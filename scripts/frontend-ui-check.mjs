@@ -104,11 +104,16 @@ try {
   const description = page.getByRole('textbox', { name: 'Description', exact: true })
   const save = page.getByRole('button', { name: 'Enregistrer', exact: true })
   const close = page.getByRole('button', { name: 'Fermer', exact: true })
+  // La fiche s'ouvre en lecture ; l'édition est dans son menu « Plus d’actions ».
+  const editCard = async () => {
+    await page.getByRole('button', { name: 'Plus d’actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Modifier la carte', exact: true }).click()
+    await description.waitFor()
+  }
   const openCard = async (number) => {
     await page.goto(`${board}?carte=${number}`)
     await page.getByLabel(`Carte #${number}`, { exact: true }).waitFor()
-    if (await description.count() === 0) await page.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
-    await description.waitFor()
+    if (await description.count() === 0) await editCard()
   }
 
   await openCard(2)
@@ -161,37 +166,33 @@ try {
   await save.click()
   await page.getByText('Brouillon conservé dans cet onglet.', { exact: false }).waitFor({ state: 'hidden' })
   await page.reload()
-  await page.getByRole('button', { name: 'Modifier la carte', exact: true }).click()
-  await description.waitFor()
+  await page.getByLabel('Carte #2', { exact: true }).waitFor()
+  await editCard()
   assert.equal(await description.inputValue(), newerDraft, 'Successful changes must be persisted by the API')
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardDraft:')).length), 0)
   const latestSession = card.conversations.filter((session) => !session.archivedAt).sort((a, b) => b.createdAt - a.createdAt)[0]
   assert.ok(latestSession)
-  await page.getByRole('button', { name: 'Reprendre la session', exact: true }).click()
+  await page.getByRole('button', { name: 'Reprendre', exact: true }).click()
   await page.waitForURL(`**/c/${latestSession.id}`)
   await openCard(2)
-  await page.getByRole('button', { name: 'Nouvelle session', exact: true }).click()
+  await page.getByRole('button', { name: 'Session', exact: true }).click()
   await page.waitForURL(`**/c/new?card=${card.id}`)
   console.log('OK : brouillons par carte, échec et sauvegarde concurrente, reprise et nouvelle session.')
 
 
   await page.goto(`${board}?carte=2`)
-  await page.getByRole('button', { name: 'Modifier la carte', exact: true }).waitFor()
+  await page.getByLabel('Carte #2', { exact: true }).getByRole('region', { name: 'Fil', exact: true }).waitFor()
   assert.equal(await description.count(), 0, 'A saved card opens for reading')
   const noteField = page.getByRole('textbox', { name: 'Ajouter une note', exact: true })
   const addNote = page.getByRole('button', { name: 'Ajouter une note', exact: true })
   const noteA = 'Une note à conserver après fermeture.'
   const noteB = 'Une deuxième note écrite pendant la publication.'
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await noteField.fill(noteA)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.reload()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await noteField.waitFor()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   const noteEndpoint = `**/api/cards/${card.id}/notes`
   await page.route(noteEndpoint, (route) => route.request().method() === 'POST'
@@ -199,7 +200,6 @@ try {
     : route.continue())
   await addNote.click()
   await page.getByRole('alert').filter({ hasText: 'La note n’a pas été enregistrée.' }).waitFor()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await noteField.inputValue(), noteA)
   await page.unroute(noteEndpoint)
   let releaseNote, noteSent
@@ -214,7 +214,6 @@ try {
   await noteField.fill(noteB)
   await close.click()
   await page.getByRole('button', { name: /#2 Offline caching for forecasts/ }).click()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   assert.equal(await page.getByRole('button', { name: 'Enregistrement…', exact: true }).isDisabled(), true)
   releaseNote()
   await page.getByText(noteA, { exact: true }).waitFor()
@@ -223,14 +222,13 @@ try {
   await addNote.click()
   await page.getByText(noteB, { exact: true }).waitFor()
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Ajouter une note"]')?.value === '')
-  assert.equal(await page.getByText(noteA, { exact: true }).isVisible(), false, 'Older notes are collapsed')
-  await page.getByText(/^Notes précédentes \(/).click()
-  await page.getByText(noteA, { exact: true }).waitFor()
+  // Le fil se lit dans l'ordre : sessions et notes par date, la plus récente en bas.
+  const thread = await page.getByRole('region', { name: 'Fil', exact: true }).innerText()
+  assert.ok(thread.indexOf(noteA) < thread.indexOf(noteB), 'Notes read in chronological order')
   assert.equal(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith('solera.cardNoteDraft:')).length), 0)
   await page.reload()
-  await page.getByLabel('Carte #2', { exact: true }).getByRole('tab', { name: /^Activité/ }).click()
   await page.getByText(noteB, { exact: true }).waitFor()
-  console.log('OK : lecture de carte, brouillons de notes, échec de publication et dernière note en premier.')
+  console.log('OK : lecture de carte, brouillons de notes, échec de publication et fil chronologique.')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(board)
@@ -257,6 +255,11 @@ try {
     await page.keyboard.press(i === 0 ? 'Shift+Tab' : 'Tab')
     assert.equal(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label')), 'Carte #1')
   }
+  // Le parcours s'arrête sur un bouton-icône de la fiche : au clavier, son aide
+  // s'ouvre, et le premier Échap la ferme avant la fiche.
+  await page.getByRole('tooltip').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('tooltip').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
   await page.waitForFunction((id) => document.activeElement?.getAttribute('data-card-open') === id, firstCard.id)
   await opener.click()
@@ -491,8 +494,9 @@ try {
   // L'enregistrement sur le compte est différé d'une demi-seconde, le temps que le
   // curseur se pose. Recharger avant son départ ferait réappliquer l'ancienne copie
   // du compte : c'est elle qui fait foi, pas le cache local.
-  const settingsSaved = page.waitForResponse((response) =>
+  const appearanceSaved = () => page.waitForResponse((response) =>
     response.url().endsWith('/api/me/settings') && response.request().method() === 'PATCH')
+  const settingsSaved = appearanceSaved()
   await page.keyboard.press('ArrowRight')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px')
   await settingsSaved
@@ -507,10 +511,13 @@ try {
   await hue.focus()
   await page.keyboard.press('ArrowRight')
   const customHue = await hue.inputValue()
+  const presetSaved = appearanceSaved()
   await neutral.check()
   assert.equal(await page.evaluate(() => localStorage.getItem('solera.tint')), '0')
   assert.equal(await hue.inputValue(), customHue, 'A background preset preserves the accent hue')
   assert.equal(await size.getAttribute('aria-valuetext'), '16 px', 'A preset preserves reading settings')
+  // Même règle que pour la taille : le rechargement attend l'envoi au compte.
+  await presetSaved
   await openSettings(page, 'apparence')
   await neutral.waitFor()
   assert.equal(await neutral.isChecked(), true)

@@ -38,7 +38,7 @@ export async function checkMedia({ page, context, base, project }) {
   if (await showTree.count()) await showTree.click()
   // L'arborescence nomme ses entrées par leur nom court, suivi de la lettre d'état git
   // (`?` pour ces fixtures non suivies) ; le dossier se déplie une fois.
-  const open = (name) => panel.getByRole('button', { name: new RegExp(`^${name.replace('.', '\\.')}\\b`) }).first().click()
+  const open = (name) => panel.getByRole('treeitem', { name: new RegExp(`^${name.replace('.', '\\.')}\\b`) }).first().click()
   await open('media-check')
 
   await open('tone.wav')

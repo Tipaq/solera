@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { AppearanceSync } from './lib/appearance-sync'
 import { visibleSections } from './components/settings/sections'
 import { LEGACY_SETTINGS_SECTIONS, openSettings, useSettingsDialog } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
@@ -230,6 +231,7 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <AppearanceSync />
       {/* Hors des routes : les réglages s'ouvrent depuis n'importe où — le menu du
           compte, la palette, une phrase d'explication — et ne remplacent pas la vue
           qu'on avait sous les yeux. */}
