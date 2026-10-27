@@ -83,15 +83,24 @@ const MARK_INTERVAL_MS = 2000
  * que le serveur vient de confirmer, et relire toute la liste pour lui ferait clignoter
  * la sidebar à chaque tour. La clé partielle attrape la liste globale comme celles par
  * projet, qui portent les mêmes objets.
+ *
+ * Une liste où le curseur est déjà à cette valeur n'est pas réécrite : une liste neuve
+ * rend tous ses lecteurs — la sidebar, l'activité, les puces des messages —, et rien
+ * n'y aurait changé.
  */
 function applyReadCursor(
   queryClient: QueryClient,
   conversationId: string,
   lastReadSeq: number,
 ): void {
-  queryClient.setQueriesData<ConversationDto[]>({ queryKey: ['conversations'] }, (list) =>
-    list?.map((entry) => (entry.id === conversationId ? { ...entry, lastReadSeq } : entry)),
-  )
+  for (const [queryKey, list] of queryClient.getQueriesData<ConversationDto[]>({ queryKey: ['conversations'] })) {
+    if (!Array.isArray(list)) continue
+    if (!list.some((entry) => entry.id === conversationId && entry.lastReadSeq !== lastReadSeq)) continue
+    queryClient.setQueryData<ConversationDto[]>(
+      queryKey,
+      list.map((entry) => (entry.id === conversationId ? { ...entry, lastReadSeq } : entry)),
+    )
+  }
 }
 
 /**

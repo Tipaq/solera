@@ -52,7 +52,19 @@ export function subscribeStatus(listener: () => void): () => void {
   }
 }
 
+/**
+ * Avance à chaque changement des tables, avant que les abonnés soient prévenus.
+ *
+ * Pour les instantanés composés : à version égale, rien n'a bougé, et celui de la
+ * lecture précédente vaut encore — sans relire une table par conversation.
+ */
+let version = 0
+export function statusVersion(): number {
+  return version
+}
+
 function emit(): void {
+  version += 1
   for (const listener of listeners) listener()
 }
 
@@ -197,7 +209,18 @@ export function useStatusFeed(): void {
         if (wasBusy && !busy) {
           settledAt.set(conversationId, Date.now())
           // Un tour fini a pu commiter ou écrire dans un arbre : les chantiers se relisent.
-          void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          // Ceux de son projet seulement, et la vue du portefeuille qui les contient : les
+          // autres projets n'ont pas bougé, et chaque relecture y coûte des commandes git.
+          // Un fil libre, ou dont on ne connaît pas le projet, relit tout comme avant.
+          const projectId = queryClient
+            .getQueryData<ConversationDto[]>(['conversations', 'all'])
+            ?.find((entry) => entry.id === conversationId)?.projectId
+          if (projectId) {
+            void queryClient.invalidateQueries({ queryKey: ['worktree-status', projectId] })
+            void queryClient.invalidateQueries({ queryKey: ['worktree-status'], exact: true })
+          } else {
+            void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+          }
         }
         if (busy) settledAt.delete(conversationId)
         statuses.set(conversationId, status)

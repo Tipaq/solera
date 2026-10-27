@@ -1,6 +1,6 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useRef, useSyncExternalStore } from 'react'
 import type { CardDto, ConversationDto, ConversationStatus, ProjectDto } from '@solera/protocol'
-import { liveBackground, liveSeq, liveSettledAt, liveStatus, subscribeStatus } from './conversation-status'
+import { liveBackground, liveSeq, liveSettledAt, liveStatus, statusVersion, subscribeStatus } from './conversation-status'
 import { isUnread } from './reads'
 import { threadState } from './signals'
 
@@ -30,11 +30,38 @@ export interface LiveConversation {
   seq: number
 }
 
+/** L'état vivant d'une conversation, tel que l'instantané le retient. */
+interface LiveState {
+  status: ConversationStatus
+  background: boolean
+  unread: boolean
+  settledAt: number
+  seq: number
+}
+
+function sameStates(a: LiveState[], b: LiveState[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((state, index) => {
+      const other = b[index]!
+      return (
+        state.status === other.status &&
+        state.background === other.background &&
+        state.unread === other.unread &&
+        state.settledAt === other.settledAt &&
+        state.seq === other.seq
+      )
+    })
+  )
+}
+
 /**
  * Les conversations, relues à chaque poussée du socket.
  *
- * L'instantané est une chaîne et non un tableau d'objets : `useSyncExternalStore`
- * compare par identité, et un tableau recomposé à chaque lecture rendrait sans fin.
+ * L'instantané est un tableau gardé tant que son contenu ne bouge pas :
+ * `useSyncExternalStore` compare par identité, et un tableau recomposé à chaque lecture
+ * rendrait sans fin. Il n'est recomposé qu'après une poussée — la version des tables —
+ * ou quand la liste change : un rendu sans l'une ni l'autre le relit tel quel.
  *
  * Une session rangée qui travaille encore reste comptée — c'est elle qui réclame, pas
  * son classement.
@@ -44,26 +71,37 @@ export function useLiveConversations(
   /** La conversation ouverte, qui n'est jamais « non lue » : on est dedans. */
   openId?: string,
 ): LiveConversation[] {
-  const snapshot = () =>
-    JSON.stringify(
-      conversations.map((entry) => ({
-        status: liveStatus(entry.id) ?? entry.status,
-        background: liveBackground(entry.id) > 0,
-        unread: entry.id !== openId && isUnread(entry, liveSeq(entry.id)),
-        settledAt: liveSettledAt(entry.id),
-        seq: liveSeq(entry.id),
-      })),
-    )
-  const serialized = useSyncExternalStore(subscribeStatus, snapshot, snapshot)
+  const cache = useRef<{
+    version: number
+    conversations: ConversationDto[]
+    openId: string | undefined
+    states: LiveState[]
+  } | null>(null)
+  const snapshot = (): LiveState[] => {
+    const version = statusVersion()
+    const previous = cache.current
+    if (
+      previous &&
+      previous.version === version &&
+      previous.conversations === conversations &&
+      previous.openId === openId
+    ) {
+      return previous.states
+    }
+    const next = conversations.map((entry) => ({
+      status: liveStatus(entry.id) ?? entry.status,
+      background: liveBackground(entry.id) > 0,
+      unread: entry.id !== openId && isUnread(entry, liveSeq(entry.id)),
+      settledAt: liveSettledAt(entry.id),
+      seq: liveSeq(entry.id),
+    }))
+    const states = previous && sameStates(previous.states, next) ? previous.states : next
+    cache.current = { version, conversations, openId, states }
+    return states
+  }
+  const states = useSyncExternalStore(subscribeStatus, snapshot, snapshot)
 
   return useMemo(() => {
-    const states = JSON.parse(serialized) as {
-      status: ConversationStatus
-      background: boolean
-      unread: boolean
-      settledAt: number
-      seq: number
-    }[]
     return conversations.flatMap((conversation, index) => {
       const state = states[index]!
       const awaiting = state.status === 'awaiting_input'
@@ -83,7 +121,7 @@ export function useLiveConversations(
         seq: Math.max(state.seq, conversation.lastNotableSeq),
       }]
     })
-  }, [conversations, serialized])
+  }, [conversations, states])
 }
 
 /**

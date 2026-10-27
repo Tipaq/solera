@@ -1,5 +1,5 @@
 import { ChevronRight, Waves } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { TaskItem } from '../../lib/chat-fold'
 import { useTranslate } from '../../lib/i18n'
 import { cx } from '@solera/ui'
@@ -14,7 +14,7 @@ import { formatDuration } from './ToolCall'
  * pousse la conversation hors de l'écran. La ligne dit ce qui a fini, le contenu
  * attend qu'on le demande.
  */
-export function TaskResult({ item }: { item: TaskItem }) {
+export const TaskResult = memo(function TaskResult({ item }: { item: TaskItem }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
 
@@ -53,7 +53,7 @@ export function TaskResult({ item }: { item: TaskItem }) {
       ) : null}
     </div>
   )
-}
+})
 
 const STATUS_KEYS = {
   completed: 'task.status.completed',

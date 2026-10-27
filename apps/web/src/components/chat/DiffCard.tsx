@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { DiffItem } from '../../lib/chat-fold'
 import { useTranslate } from '../../lib/i18n'
 import { useEventBody } from '../../lib/tool-output'
@@ -7,7 +7,7 @@ import { useEventBody } from '../../lib/tool-output'
  * Le diff d'un tour. Un patch volumineux reste au serveur, et ne se demande qu'à
  * l'ouverture : refermer la carte le libère.
  */
-export function DiffCard({ item, conversationId }: { item: DiffItem; conversationId: string }) {
+export const DiffCard = memo(function DiffCard({ item, conversationId }: { item: DiffItem; conversationId: string }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   return (
@@ -31,7 +31,7 @@ export function DiffCard({ item, conversationId }: { item: DiffItem; conversatio
       ) : null}
     </details>
   )
-}
+})
 
 function RemotePatch({ item, conversationId }: { item: DiffItem; conversationId: string }) {
   const t = useTranslate()

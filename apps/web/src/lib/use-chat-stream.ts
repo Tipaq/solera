@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { AgentConfig, ConversationStatus, SoleraEvent } from '@solera/protocol'
-import { applyEvent, emptyChatState, isAwaitingUser, type ChatState } from './chat-fold'
+import { applyEvents, emptyChatState, isAwaitingUser, type ChatItem, type ChatState } from './chat-fold'
 import { fetchJournal, type JournalPage } from './conversations'
 import { wsClient } from './ws-client'
 import { translate } from './i18n'
@@ -108,24 +108,30 @@ export function useChatStream(
     setWarm(null)
     setAppliedConfig(null)
 
-    const apply = (entries: JournalPage, readThrough: number) => {
+    const apply = (entries: JournalPage, readThrough: number, live = false) => {
       if (signal.aborted) return
-      for (const { seq, ts, event } of entries) {
-        // Un événement déjà appliqué (rejeu après rechargement REST) est ignoré :
-        // c'est ce qui garantit qu'une reconnexion ne duplique jamais le fil.
-        if (seq <= cursor) continue
-        currentState = applyEvent(currentState, seq, ts, event)
+      // Un événement déjà appliqué (rejeu après rechargement REST) est ignoré :
+      // c'est ce qui garantit qu'une reconnexion ne duplique jamais le fil.
+      currentState = applyEvents(currentState, entries, (seq) => {
+        if (seq <= cursor) return true
         cursor = seq
-      }
+        return false
+      })
       cursor = Math.max(cursor, readThrough)
-      setState(currentState)
+      // Un lot du direct passe après la frappe : un rendu du fil toutes les 60 ms ne
+      // doit pas retarder la touche qu'on vient d'enfoncer dans la barre de saisie. Le
+      // rattrapage REST, lui, reste synchrone : `setLoading(false)` le suit, et la vue
+      // ne doit pas se placer sur un fil qui n'a pas encore reçu ses tours.
+      const next = currentState
+      if (live) startTransition(() => setState(next))
+      else setState(next)
     }
 
     const flush = () => {
       if (flushTimer !== null) clearTimeout(flushTimer)
       flushTimer = null
       if (pending.length === 0) return
-      apply(pending, cursor)
+      apply(pending, cursor, true)
       pending = []
     }
 
@@ -244,10 +250,8 @@ export function useChatStream(
           if (
             more &&
             (event.type === 'message.completed' || event.type === 'message.delta' || event.type === 'thinking.delta'
-              ? !currentState.items.some((item) => item.kind === 'message' && item.id === event.messageId)
-              : event.type === 'agent.notice' &&
-                event.id &&
-                !currentState.items.some((item) => item.kind === 'notice' && item.id === event.id))
+              ? !hasItem(currentState.items, 'message', event.messageId)
+              : event.type === 'agent.notice' && event.id && !hasItem(currentState.items, 'notice', event.id))
           ) {
             void loadFromRest('refresh')
             return
@@ -309,6 +313,19 @@ export function useChatStream(
     loadingOlder,
     loadOlder,
   }
+}
+
+/**
+ * Le fil contient-il cet élément ? Cherché depuis la fin : le message qu'un delta
+ * prolonge est presque toujours le dernier, et le parcours depuis le début coûtait le
+ * fil entier à chaque token.
+ */
+function hasItem(items: ChatItem[], kind: ChatItem['kind'], id: string): boolean {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i]!
+    if (item.kind === kind && item.id === id) return true
+  }
+  return false
 }
 
 /**

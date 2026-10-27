@@ -190,11 +190,20 @@ export function LineStage({
   )
 }
 
-/** Même rendu qu'un diff ordinaire : une ligne à la fois, `ignoreIllegals` compris. */
+/**
+ * Même rendu qu'un diff ordinaire : une ligne à la fois, `ignoreIllegals` compris.
+ *
+ * L'objet `__html` est mémoïsé comme dans `HighlightedCode` : React réécrit `innerHTML`
+ * dès que l'objet change, même à texte égal. Le langage reste vide tant que la
+ * bibliothèque n'est pas là, ce qui suffit à relancer la coloration à son arrivée.
+ */
 function Code({ text, language }: { text: string; language: string }) {
-  const rendered = highlight(text, language)
-  return rendered.applied ? (
-    <span className="hljs" dangerouslySetInnerHTML={{ __html: rendered.html }} />
+  const markup = useMemo(() => {
+    const rendered = highlight(text, language)
+    return rendered.applied ? { __html: rendered.html } : null
+  }, [text, language])
+  return markup ? (
+    <span className="hljs" dangerouslySetInnerHTML={markup} />
   ) : (
     <>{text}</>
   )

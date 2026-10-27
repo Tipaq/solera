@@ -1,5 +1,5 @@
 import { ShieldQuestion } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { PermissionItem } from '../../lib/chat-fold'
 import { decidePermission } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
@@ -7,7 +7,7 @@ import { permissionTarget } from '../../lib/session-requests'
 import { Badge, Button, cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 
-export function PermissionPrompt({
+export const PermissionPrompt = memo(function PermissionPrompt({
   conversationId,
   permission,
   canDecide,
@@ -111,4 +111,4 @@ export function PermissionPrompt({
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}
     </div>
   )
-}
+})

@@ -12,7 +12,7 @@ import {
   useMediaQuery,
 } from '@solera/ui'
 import { ChevronDown } from 'lucide-react'
-import { useState, type ComponentPropsWithRef, type RefObject } from 'react'
+import { memo, useState, type ComponentPropsWithRef, type RefObject } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { AgentIcon } from '../AgentIcon'
@@ -131,8 +131,10 @@ export function modelIdName(resolved: string | null | undefined): string | null 
  * Le mode s'y ajoute en bout de menu (voir `MODE_KEYS`), en second accès à ce que le
  * « + » règle déjà. La puce, elle, n'en dit rien : l'effort s'y efface déjà sous 26 rem
  * de barre, et le mode Plan garde son étiquette propre dans la rangée.
+ *
+ * Mémoïsé : le composer se redessine à chaque frappe, la puce n'a pas à le suivre.
  */
-export function ModelControl({ agent, groups, disabled, inputRef }: {
+export const ModelControl = memo(function ModelControl({ agent, groups, disabled, inputRef }: {
   agent: AgentKind
   groups: SettingGroup[]
   disabled: boolean
@@ -203,7 +205,7 @@ export function ModelControl({ agent, groups, disabled, inputRef }: {
       )}
     </SettingsSurface>
   )
-}
+})
 
 /** La puce elle-même, commune aux deux présentations. */
 function ModelChip({ agent, label, value, chip, effort, disabled, ...rest }: {

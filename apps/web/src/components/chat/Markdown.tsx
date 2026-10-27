@@ -50,8 +50,8 @@ export function Markdown({
   const tasks = onToggleTask ? ('interactive' as const) : undefined
   const taskPromote = onToggleTask && onPromoteTask ? t('board.card.promote.action') : undefined
   // Les cartes du projet, quand l'écran en a un : leurs `#12` deviennent des liens.
-  const { projectId, cards: cardsByNumber } = useCardRefs()
-  const cards = useMemo(() => (cardsByNumber.size > 0 ? new Set(cardsByNumber.keys()) : undefined), [cardsByNumber])
+  // Index partagés par tous les messages : construits une fois par réponse, pas par bulle.
+  const { projectId, cards: cardsByNumber, numbers: cards } = useCardRefs()
   const cardRefs = useCardRefPreview(projectId, cardsByNumber)
   // Et ses sessions : un `session:<id>` devient la puce de la session citée.
   const { sessions, ids: sessionIds, loading: loadingSessions } = useSessionReferences(projectId)

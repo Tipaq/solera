@@ -1,12 +1,12 @@
 import { ClipboardCheck } from 'lucide-react'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { PlanItem } from '../../lib/chat-fold'
 import { decidePlan } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import { Badge, Button, cx } from '@solera/ui'
 import { Markdown } from './Markdown'
 
-export function PlanReview({
+export const PlanReview = memo(function PlanReview({
   conversationId,
   item,
   canDecide,
@@ -112,4 +112,4 @@ export function PlanReview({
       {error ? <p className="mt-2 text-xs text-critical">{error}</p> : null}
     </div>
   )
-}
+})

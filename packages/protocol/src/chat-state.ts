@@ -687,7 +687,27 @@ export function hasVisibleContent(item: ChatItem): boolean {
  * la réglette des tours définitivement vide.
  */
 function appendItem(state: ChatState, item: ChatItem): void {
-  state.items = [...state.items, item]
+  writableItems(state).push(item)
+}
+
+/**
+ * Tableau du lot en cours, que `applyEvents` a déjà recopié : personne d'autre ne le
+ * tient tant que le lot n'est pas rendu, on peut donc l'écrire en place. Hors lot,
+ * null, et chaque écriture recopie comme avant.
+ */
+let batchItems: ChatItem[] | null = null
+let batching = false
+
+/**
+ * Le tableau des éléments, prêt à être écrit : une copie neuve, sauf dans un lot où
+ * elle a déjà été faite. Recopier le fil entier à chaque delta coûtait O(n) par token ;
+ * un lot ne le recopie qu'une fois, et le tableau rendu change d'identité pareil.
+ */
+function writableItems(state: ChatState): ChatItem[] {
+  if (batching && state.items === batchItems) return state.items
+  state.items = [...state.items]
+  if (batching) batchItems = state.items
+  return state.items
 }
 
 /**
@@ -699,9 +719,8 @@ function appendItem(state: ChatState, item: ChatItem): void {
  * identité et ne sont pas redessinés.
  */
 function replaceItem<T extends ChatItem>(state: ChatState, index: number, next: T): void {
-  const items = [...state.items]
+  const items = writableItems(state)
   items[index] = { ...next, position: items[index]?.position }
-  state.items = items
 }
 
 function findLastIndex(items: ChatItem[], predicate: (item: ChatItem) => boolean): number {
@@ -1516,7 +1535,11 @@ export function applyEvent(
     case 'prompt.injected': {
       const key = loopKey(event.text)
       const seen = state.loopFires.get(key)
-      state.loopFires.set(key, { count: (seen?.count ?? 0) + 1, lastAt: ts })
+      // Recopiée comme la table des travaux : une vue mémoïsée sur les compteurs doit
+      // voir la référence changer quand une boucle tire.
+      const loopFires = new Map(state.loopFires)
+      loopFires.set(key, { count: (seen?.count ?? 0) + 1, lastAt: ts })
+      state.loopFires = loopFires
       break
     }
 
@@ -1610,6 +1633,30 @@ export function applyEvent(
   }
   state.lastSeq = Math.max(state.lastSeq, seq)
   return { ...state }
+}
+
+/**
+ * Applique un lot d'événements, dans l'ordre, au même résultat qu'autant d'appels à
+ * `applyEvent` — mais le tableau des éléments n'est recopié qu'une fois pour tout le
+ * lot. `skip` écarte un événement sans l'appliquer (le garde d'idempotence du direct).
+ */
+export function applyEvents(
+  state: ChatState,
+  entries: Iterable<{ seq: number; ts: number; event: SoleraEvent }>,
+  skip?: (seq: number) => boolean,
+): ChatState {
+  batching = true
+  batchItems = null
+  try {
+    for (const { seq, ts, event } of entries) {
+      if (skip?.(seq)) continue
+      state = applyEvent(state, seq, ts, event)
+    }
+  } finally {
+    batching = false
+    batchItems = null
+  }
+  return state
 }
 
 /** Forme JSON de l'état, pour le transport et pour la projection SQLite. */

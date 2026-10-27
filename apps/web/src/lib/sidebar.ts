@@ -50,11 +50,15 @@ export function setSidebarHidden(next: boolean): void {
  * conversations à chacun rendrait la poignée pâteuse. `persist` n'est vrai qu'en fin de
  * geste, une écriture par image dans `localStorage` étant synchrone.
  *
+ * Posée sur la sidebar elle-même et non sur `:root` : elle seule la lit (sa largeur et
+ * la marge de son repli). Une variable réécrite à la racine fait recalculer les styles
+ * du document entier, fil compris, à chaque image du glissement.
+ *
  * Renvoie la largeur réellement retenue, bornes appliquées.
  */
-export function setSidebarWidth(px: number, persist: boolean): number {
+export function setSidebarWidth(sidebar: HTMLElement, px: number, persist: boolean): number {
   const width = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, px)))
-  document.documentElement.style.setProperty('--sidebar-desktop-width', `${width}px`)
+  sidebar.style.setProperty('--sidebar-desktop-width', `${width}px`)
   if (persist) localStorage.setItem(WIDTH_KEY, String(width))
   return width
 }
@@ -63,9 +67,9 @@ export function setSidebarWidth(px: number, persist: boolean): number {
  * Rétablit la largeur choisie. Sans valeur enregistrée, rien n'est écrit : la largeur
  * par défaut reste celle de la feuille de style, au lieu d'en exister une seconde ici.
  */
-export function restoreSidebarWidth(): void {
+export function restoreSidebarWidth(sidebar: HTMLElement): void {
   const stored = Number(localStorage.getItem(WIDTH_KEY))
-  if (Number.isFinite(stored) && stored > 0) setSidebarWidth(stored, false)
+  if (Number.isFinite(stored) && stored > 0) setSidebarWidth(sidebar, stored, false)
 }
 
 /**

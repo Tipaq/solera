@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X, Zap } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
@@ -42,6 +42,12 @@ import { useWebPane } from '../../lib/web-pane'
 import { QuickOpen } from './QuickOpen'
 import { HeaderBand } from '../HeaderBand'
 
+/** Instances uniques : une liste vide recréée à chaque rendu ferait rendre les vues. */
+const NO_EDIT_TURNS: EditTurn[] = []
+const NO_CHECKPOINTS: TurnCheckpoint[] = []
+const NO_SUB_AGENTS: SubAgent[] = []
+const NO_BACKGROUND: BackgroundWork[] = []
+
 /**
  * Panneau latéral droit.
  *
@@ -61,17 +67,17 @@ import { HeaderBand } from '../HeaderBand'
  * parce qu'elles n'ont pas d'objet : un fil sans projet n'a pas de répertoire de
  * travail, donc rien à parcourir, rien à comparer, nulle part où ouvrir un shell.
  */
-export function SidePanel({
+export const SidePanel = memo(function SidePanel({
   projectId,
   conversationId,
   agent,
-  editTurns = [],
+  editTurns = NO_EDIT_TURNS,
   history,
-  checkpoints = [],
+  checkpoints = NO_CHECKPOINTS,
   canRestore = false,
   turnRunning = false,
-  subAgents = [],
-  background = [],
+  subAgents = NO_SUB_AGENTS,
+  background = NO_BACKGROUND,
   open,
   docked = false,
   canDock = false,
@@ -171,13 +177,16 @@ export function SidePanel({
   const readingFile = !wide && tab === 'files' && !treeOpen && Boolean(openFile)
   const bandTitle = readingFile && openFile ? (openFile.split('/').pop() ?? openFile) : workspaceLabel
 
-  /** Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé. */
-  const openInFiles = (path: string) => {
+  /**
+   * Ouvrir un fichier depuis un diff : l'onglet naît sous les yeux de qui l'a demandé.
+   * Stable : les vues qui le reçoivent sont mémoïsées.
+   */
+  const openInFiles = useCallback((path: string) => {
     openTab(scope, path)
     setPanelTab('files')
     // Ouvrir depuis une palette ou un diff doit montrer le fichier sur téléphone.
     if ((aside.current?.clientWidth ?? 0) < 560) setPanelTree(false, false)
-  }
+  }, [scope])
 
   useEffect(restorePanelWidth, [])
 
@@ -475,7 +484,7 @@ export function SidePanel({
     </aside>
     </PanelFocus>
   )
-}
+})
 
 /**
  * Les vues, dans la bande.

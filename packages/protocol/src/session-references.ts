@@ -13,6 +13,17 @@ export function sessionReference(id: string): string {
 
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 const ROUTE = new RegExp(`^(?:/p/(${UUID}))?/c/(${UUID})/?$`, 'i')
+/**
+ * Compilée une fois : l'appel tourne à chaque frappe du composer. `matchAll` travaille
+ * sur une copie de l'expression, donc le `lastIndex` de celle-ci reste à zéro d'un appel
+ * à l'autre malgré le drapeau `g`.
+ */
+const REFERENCE = new RegExp(
+  `https?://[^\\s<>"\`]+|(?:/p/${UUID})?/c/${UUID}(?:[?#][^\\s<>"\`]*)?|session:${UUID}|${UUID}`,
+  'gi',
+)
+/** Sans drapeau `g` : `test` ne garde alors aucun état entre deux appels. */
+const ANY_UUID = new RegExp(UUID, 'i')
 
 export interface SessionReferenceRange {
   start: number
@@ -44,12 +55,11 @@ function sameOrigin(a: string, b: string): boolean {
  * du navigateur ; sans elle, seuls les chemins `/p/…/c/…` sont reconnus.
  */
 export function sessionReferenceRanges(text: string, origin?: string): SessionReferenceRange[] {
-  const pattern = new RegExp(
-    `https?://[^\\s<>"\`]+|(?:/p/${UUID})?/c/${UUID}(?:[?#][^\\s<>"\`]*)?|session:${UUID}|${UUID}`,
-    'gi',
-  )
+  // Chaque référence retenue contient un UUID, l'adresse comprise : sans UUID nulle part,
+  // rien ne peut sortir, et le texte se rend sans parcourir les quatre alternatives.
+  if (!ANY_UUID.test(text)) return []
   const ranges: SessionReferenceRange[] = []
-  for (const match of text.matchAll(pattern)) {
+  for (const match of text.matchAll(REFERENCE)) {
     const start = match.index
     const value = match[0]
     // Collé à un mot ou à un chemin : un morceau d'autre chose.

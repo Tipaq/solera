@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { memo, useEffect, useRef, useState, type RefObject } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import type { TurnCheckpoint } from '../../lib/chat-fold'
@@ -64,7 +64,7 @@ import {
  * auteurs confondus. « Ses écritures » raconte ce que l'agent a écrit dans ce fil
  * d'après le journal — deux questions différentes, et la frontière doit rester lisible.
  */
-export function GitPane({
+export const GitPane = memo(function GitPane({
   scope,
   projectId,
   conversationId,
@@ -365,7 +365,7 @@ export function GitPane({
       ) : null}
     </GitActionsProvider>
   )
-}
+})
 
 /**
  * Les bandeaux, qui lisent le contexte des gestes : ils vivent donc sous le

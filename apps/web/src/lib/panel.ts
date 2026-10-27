@@ -72,20 +72,25 @@ export function setPanelExpanded(next: boolean): void {
   for (const notify of listeners) notify()
 }
 
+/** En deçà, le fil et les changements ne tiennent plus côte à côte. */
+const DOCK_MIN_WIDTH = 960
+
 /** La place réelle après la sidebar décide si le fil et les changements tiennent. */
 export function usePanelLayout() {
-  const [width, setWidth] = useState(0)
+  // Le booléen et non la largeur : l'observateur se déclenche à chaque image d'une
+  // animation de la sidebar ou du panneau, et une largeur stockée re-rendait la page
+  // entière à chacune. Un booléen inchangé, React l'ignore.
+  const [canDock, setCanDock] = useState(false)
   const isExpanded = useSyncExternalStore(subscribe, () => expanded, () => false)
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (!node) return
-    setWidth(node.clientWidth)
+    setCanDock(node.clientWidth >= DOCK_MIN_WIDTH)
     const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(entry.contentRect.width)
+      if (entry) setCanDock(entry.contentRect.width >= DOCK_MIN_WIDTH)
     })
     observer.observe(node)
     return () => observer.disconnect()
   }, [])
-  const canDock = width >= 960
   return { containerRef, canDock, docked: canDock && !isExpanded }
 }
 

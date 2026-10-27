@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 import { useTranslate } from '../../lib/i18n'
 import { useEditorDraftPaths } from '../../lib/editor-documents'
 import { useCurrentUser } from '../../lib/session'
@@ -23,7 +23,7 @@ import { FileTree } from './FileTree'
 /** À tenir en accord avec les seuils `@min-[35rem]` et `@max-[35rem]` ci-dessous. */
 const NARROW_PX = 560
 
-export function FilesPane({ scope, label }: {
+export const FilesPane = memo(function FilesPane({ scope, label }: {
   scope: string
   /** Le dossier du workspace, écrit en tête de colonne. */
   label: string
@@ -117,4 +117,4 @@ export function FilesPane({ scope, label }: {
       </div>
     </div>
   )
-}
+})

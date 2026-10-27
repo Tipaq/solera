@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Check, Copy, Download, WrapText } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { memo, useState, type ReactNode } from 'react'
 import { useCopy } from '../../lib/clipboard'
 import { downloadText } from '../../lib/download'
 import { translate, useTranslate } from '../../lib/i18n'
@@ -69,8 +69,11 @@ export function ToolbarButton({
  * Le retour à la ligne est un réglage par bloc et non global : une longue commande
  * shell se lit mieux repliée, alors qu'un tableau de valeurs alignées se lit mieux en
  * défilement horizontal.
+ *
+ * Mémoïsé : ses deux props sont des chaînes, et le message qui le contient rend pour
+ * bien d'autres raisons que son code.
  */
-export function CodeBlock({ language, code }: { language: string; code: string }) {
+export const CodeBlock = memo(function CodeBlock({ language, code }: { language: string; code: string }) {
   const [wrap, setWrap] = useState(false)
   const { state, copy } = useCopy()
   const t = useTranslate()
@@ -115,4 +118,4 @@ export function CodeBlock({ language, code }: { language: string; code: string }
       />
     </div>
   )
-}
+})

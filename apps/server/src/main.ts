@@ -280,6 +280,8 @@ async function main(): Promise<void> {
     terminals.shutdown()
     storybooks.shutdown()
     await app.close()
+    // Les derniers fragments de flux encore en tampon, avant que la base se ferme.
+    log.flush()
     sqlite.close()
     process.exit(0)
   }

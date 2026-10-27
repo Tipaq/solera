@@ -1,4 +1,4 @@
-import { Fragment, type RefObject } from 'react'
+import { memo, Fragment, type RefCallback, type RefObject } from 'react'
 import { noticeText, type MessageItem, type TurnCheckpoint } from '../../lib/chat-fold'
 import type { ChatRow } from '../../lib/tool-rows'
 import { translate, translateError, useTranslate } from '../../lib/i18n'
@@ -35,6 +35,9 @@ const ERROR_DETAILS: Record<string, (message: string) => string> = {
 /** La raison de `restartForConfig`, en anglais et telle que l'écrivaient les journaux d'avant. */
 const LIVE_CHANGE_REFUSED = new Set(['the CLI cannot apply this change live', 'le CLI ne gère pas ce changement à chaud'])
 
+/** Les refs d'ancre, par table d'ancres : elles survivent aux rendus du fil. */
+const ANCHOR_REFS = new WeakMap<RefObject<Map<string, HTMLElement>>, Map<string, RefCallback<HTMLDivElement>>>()
+
 /**
  * Rendu d'un fil de conversation.
  *
@@ -45,7 +48,7 @@ const LIVE_CHANGE_REFUSED = new Set(['the CLI cannot apply this change live', 'l
  * Ce que la page apporte en plus (ancres de tours, mise en évidence, fork) est
  * optionnel : le panneau n'a ni réglette ni bouton de fork à proposer.
  */
-export function ChatThread({
+export const ChatThread = memo(function ChatThread({
   rows,
   conversationId,
   canDecide = false,
@@ -91,6 +94,32 @@ export function ChatThread({
   onRestoreCheckpoint?: (checkpoint: TurnCheckpoint) => void
 }) {
   const t = useTranslate()
+
+  // Un ref par message utilisateur, gardé d'un rendu à l'autre : une fonction neuve à
+  // chaque rendu fait détacher puis rattacher chaque ancre par React, à chaque lot du
+  // direct. Les fonctions ne tiennent que leur identifiant, l'ancre vit dans `anchors`.
+  const anchorRef = (id: string): RefCallback<HTMLDivElement> | undefined => {
+    if (!anchors) return undefined
+    let anchorRefs = ANCHOR_REFS.get(anchors)
+    if (!anchorRefs) {
+      anchorRefs = new Map()
+      ANCHOR_REFS.set(anchors, anchorRefs)
+    }
+    let ref = anchorRefs.get(id)
+    if (!ref) {
+      ref = (node) => {
+        if (!node) return
+        anchors.current.set(id, node)
+        // Corps en bloc : `Map.delete` renvoie un booléen, or React attend une
+        // fonction de nettoyage sans valeur de retour.
+        return () => {
+          anchors.current.delete(id)
+        }
+      }
+      anchorRefs.set(id, ref)
+    }
+    return ref
+  }
 
   // Le repère d'un tour se pose à sa fin : juste avant le message utilisateur suivant,
   // ou sous le dernier élément du fil. Le tour est reconnu par le message qui l'ouvre.
@@ -149,19 +178,7 @@ export function ChatThread({
                 key={item.id}
                 data-seq={item.seq}
                 className={cx(flashedId === item.id && 'sg-flash-turn')}
-                ref={
-                  anchors && item.role === 'user'
-                    ? (node) => {
-                        if (!node) return
-                        anchors.current.set(item.id, node)
-                        // Corps en bloc : `Map.delete` renvoie un booléen, or React
-                        // attend une fonction de nettoyage sans valeur de retour.
-                        return () => {
-                          anchors.current.delete(item.id)
-                        }
-                      }
-                    : undefined
-                }
+                ref={item.role === 'user' ? anchorRef(item.id) : undefined}
               >
                 <MessageBubble
                   message={item}
@@ -276,4 +293,4 @@ export function ChatThread({
             )
         }
   }
-}
+})

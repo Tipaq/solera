@@ -62,6 +62,17 @@ export function useVisualViewport(): void {
      */
     let resting = Number.POSITIVE_INFINITY
 
+    /*
+     * `clear` est rejoué à chaque `resize` et `scroll` du viewport : l'appel n'est fait
+     * que s'il y a un décalage à défaire, faute de quoi il ne ferait rien de toute façon.
+     */
+    const resetScroll = () => {
+      if (
+        viewport.offsetTop !== 0 || viewport.offsetLeft !== 0
+        || window.scrollY !== 0 || window.scrollX !== 0
+      ) window.scrollTo(0, 0)
+    }
+
     const clear = () => {
       root.style.removeProperty('--sg-app-height')
       root.style.removeProperty('--sg-viewport-top')
@@ -74,7 +85,7 @@ export function useVisualViewport(): void {
        * au doigt. Remettre le document à zéro recale les deux viewports et force ce
        * recalcul. Sans décalage, l'appel ne fait rien.
        */
-      window.scrollTo(0, 0)
+      resetScroll()
     }
 
     const hasInputFocus = () => document.activeElement instanceof HTMLElement
@@ -124,7 +135,7 @@ export function useVisualViewport(): void {
         apply()
         // `apply` ne touche à rien si le clavier n'était pas reconnu : le recalage du
         // document doit quand même avoir lieu.
-        window.scrollTo(0, 0)
+        resetScroll()
       }, 350)
     }
 

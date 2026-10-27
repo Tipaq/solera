@@ -1,5 +1,5 @@
 import { Archive, ArchiveRestore, FolderX, MoreHorizontal, Pencil, Pin, Trash2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useGuardedArchive } from '../ArchiveRequestsDialog'
 import type { ConversationDto } from '@solera/protocol'
@@ -31,8 +31,12 @@ import { cx, IconButton, Menu, MenuItem, MenuSeparator } from '@solera/ui'
  *
  * Plus de signet : la section *Signets* a disparu de la colonne, et avec elle le bouton
  * et l'entrée de menu qui la remplissaient.
+ *
+ * Mémoïsée : la liste est réécrite à chaque curseur de lecture, et seule la ligne dont
+ * l'objet a changé doit rendre. Le reste de son état vient de ses propres abonnements
+ * (statut vivant, route ouverte, réglages), qui la rendent d'eux-mêmes.
  */
-export function ConversationLine({
+export const ConversationLine = memo(function ConversationLine({
   conversation,
   project,
   onNavigate,
@@ -233,4 +237,4 @@ export function ConversationLine({
       {guarded.dialog}
     </li>
   )
-}
+})

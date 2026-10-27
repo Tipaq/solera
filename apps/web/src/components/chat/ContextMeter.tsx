@@ -4,7 +4,7 @@ import {
   type ContextEntry,
 } from '@solera/protocol'
 import { ConfirmDialog, cx } from '@solera/ui'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { ContextState } from '../../lib/chat-fold'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 
@@ -348,8 +348,10 @@ function TokensDetail({
  * jusqu'ici gardé la jauge inerte. Elle est levée par le contenu de la modale, qui
  * explique l'état de la fenêtre avant de proposer quoi que ce soit, et par l'intitulé
  * du bouton, qui annonce un détail et pas une action.
+ *
+ * Mémoïsé : le composer se redessine à chaque frappe, la jauge n'a pas à le suivre.
  */
-export function ContextButton({ context, model, onCompact, canCompact }: {
+export const ContextButton = memo(function ContextButton({ context, model, onCompact, canCompact }: {
   context: ContextState
   /** Modèle en vigueur, nommé dans le détail. */
   model: string
@@ -446,4 +448,4 @@ export function ContextButton({ context, model, onCompact, canCompact }: {
       </ConfirmDialog>
     </>
   )
-}
+})

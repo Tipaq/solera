@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useSyncExternalStore } from 'react'
+import { createContext, useContext, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { api } from './api'
 import { workspaceApiBase, type WorkspaceScope } from './workspace-scope'
 
@@ -132,8 +132,9 @@ export function useKnownFiles(candidates: Set<string>): Set<string> {
   )
 
   // `candidates` est un ensemble neuf à chaque analyse : la clé de dépendance est son
-  // contenu, sinon l'effet repartirait à chaque rendu.
-  const key = [...candidates].sort().join('\n')
+  // contenu, sinon l'effet repartirait à chaque rendu. Calculée par analyse et non par
+  // rendu : le tri ne se refait que si l'ensemble change.
+  const key = useMemo(() => [...candidates].sort().join('\n'), [candidates])
   useEffect(() => {
     if (!scope || key.length === 0) return
     request(scope, key.split('\n'))

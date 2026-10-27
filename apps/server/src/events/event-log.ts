@@ -142,18 +142,182 @@ const BODY_TYPES = new Set<SoleraEvent['type']>([
  */
 const SUPERSESSION_INDEX_BYTES = 16 * 1024 * 1024
 
+/**
+ * Les fragments de flux que `appendStreamed` peut retenir un instant avant de les écrire.
+ *
+ * Un tour en livre un par token, et chacun coûtait une transaction entière. Ils ont en
+ * commun ce qui rend le report sans effet : aucun n'est `NOTABLE`, aucun n'est indexé
+ * par la recherche (`message.completed` seul), aucun ne révèle de chemin
+ * (`touched-paths.ts`), et aucun n'ouvre ni ne ferme une interaction. Une requête qui
+ * filtre sur un autre type rend donc le même résultat, tampon plein ou vide.
+ */
+const STREAMED_TYPES = new Set<SoleraEvent['type']>(['message.delta', 'thinking.delta', 'tool.output_delta'])
+
+/**
+ * Délai maximal d'un fragment dans le tampon. Sous les 60 ms de la projection, et c'est
+ * aussi tout ce qu'un arrêt brutal du daemon peut faire perdre : des fragments qui
+ * n'ont été ni écrits ni diffusés, donc qu'aucun client n'a vus.
+ */
+const STREAM_FLUSH_MS = 50
+
+/** Lignes par `insert` multiple : sept paramètres chacune, loin de la limite de SQLite. */
+const INSERT_CHUNK = 500
+
+/** Un fragment retenu, déjà sérialisé : son contenu est figé à l'instant où il arrive. */
+interface PendingDelta {
+  ts: number
+  event: SoleraEvent
+  payload: string
+  raw: string | null
+  rawFormat: string | null
+}
+
 export class EventLog {
   /** Le fil projeté de chaque conversation, tenu à jour après chaque écriture. */
   readonly thread: ThreadProjection
   private readonly bus = new EventEmitter()
   private readonly supersession = new Map<string, SupersessionIndex>()
   private readonly indexWeights = new WeakMap<SupersessionIndex, { seq: number; bytes: number }>()
+  /** Les fragments de flux pas encore écrits, par conversation, dans leur ordre d'arrivée. */
+  private readonly pending = new Map<string, PendingDelta[]>()
+  private flushTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly db: Db) {
     // Une conversation très suivie (plusieurs onglets, mobile et desktop) dépasse
     // vite la limite par défaut de 10 écouteurs.
     this.bus.setMaxListeners(200)
     this.thread = new ThreadProjection(db, this)
+  }
+
+  /**
+   * Journalise un événement venu du CLI en direct, en regroupant les fragments de flux.
+   *
+   * Un fragment (`STREAMED_TYPES`) est retenu au plus `STREAM_FLUSH_MS`, puis écrit
+   * avec ceux qui l'ont suivi en une seule transaction. Tout autre événement passe par
+   * `append`, qui vide d'abord le tampon de sa conversation.
+   *
+   * Ce qui garde l'invariant I2 et la numérotation intacts :
+   *
+   * - un fragment n'est diffusé qu'après son écriture, comme par `append` : un client ne
+   *   peut pas voir un `seq` qui n'existerait pas après un redémarrage ;
+   * - le `seq` est attribué à l'écriture, dans l'ordre d'arrivée, et toute autre écriture
+   *   ou lecture du journal de cette conversation vide le tampon avant de commencer :
+   *   les numéros sont ceux qu'`append` aurait donnés, et ce qu'on lit est toujours un
+   *   préfixe de ce qui sera diffusé ;
+   * - `ts` est pris à l'arrivée et le payload sérialisé à l'arrivée : le contenu stocké
+   *   est celui qu'`append` aurait stocké.
+   *
+   * Le seul écart est le délai, et ce qu'un arrêt brutal emporte : les fragments des
+   * dernières 50 ms, jamais écrits ni diffusés, donc invisibles pour tout le monde.
+   */
+  appendStreamed(conversationId: string, event: SoleraEvent, raw?: unknown, rawFormat?: string): void {
+    if (!STREAMED_TYPES.has(event.type)) {
+      this.append(conversationId, event, raw, rawFormat)
+      return
+    }
+    const queue = this.pending.get(conversationId) ?? []
+    if (queue.length === 0) this.pending.set(conversationId, queue)
+    queue.push({
+      ts: Date.now(),
+      event,
+      payload: JSON.stringify(event),
+      raw: raw === undefined ? null : JSON.stringify(raw),
+      rawFormat: raw === undefined ? null : (rawFormat ?? null),
+    })
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null
+        this.flush()
+      }, STREAM_FLUSH_MS)
+      this.flushTimer.unref()
+    }
+  }
+
+  /**
+   * Écrit et diffuse les fragments retenus : ceux d'une conversation, ou de toutes.
+   *
+   * Appelée en tête de chaque lecture et de chaque écriture du journal d'une
+   * conversation, et par quiconque lit `lastSeq` pour prédire le `seq` du prochain
+   * événement (`openPermissionRequest`). Ne lève jamais : elle passe aussi par un
+   * minuteur, où une exception tuerait le process.
+   */
+  flush(conversationId?: string): void {
+    if (this.pending.size === 0) return
+    if (conversationId !== undefined) {
+      const queue = this.pending.get(conversationId)
+      if (!queue) return
+      this.pending.delete(conversationId)
+      this.writePending(conversationId, queue)
+    } else {
+      // Retirées avant l'écriture : un abonné qui journalise pendant la diffusion
+      // repart d'un tampon neuf, sans réécrire ce qui vient de l'être.
+      const all = [...this.pending]
+      this.pending.clear()
+      for (const [id, queue] of all) this.writePending(id, queue)
+    }
+    if (this.pending.size === 0 && this.flushTimer) {
+      clearTimeout(this.flushTimer)
+      this.flushTimer = null
+    }
+  }
+
+  private writePending(conversationId: string, queue: PendingDelta[]): void {
+    let entries: JournalEntry[]
+    try {
+      entries = writeTransaction(this.db, (tx): JournalEntry[] => {
+        const row = tx
+          .select({ lastSeq: conversations.lastSeq })
+          .from(conversations)
+          .where(eq(conversations.id, conversationId))
+          .get()
+        // Supprimée entre-temps : `append` aurait levé, ces fragments n'ont nulle part où aller.
+        if (!row) return []
+
+        let bytes = 0
+        const values = queue.map((item, index) => {
+          bytes += byteSize(item.payload, item.raw)
+          return {
+            conversationId,
+            seq: row.lastSeq + index + 1,
+            ts: item.ts,
+            type: item.event.type,
+            payload: item.payload,
+            raw: item.raw,
+            rawFormat: item.rawFormat,
+          }
+        })
+        for (let start = 0; start < values.length; start += INSERT_CHUNK) {
+          tx.insert(events).values(values.slice(start, start + INSERT_CHUNK)).run()
+        }
+
+        tx.update(conversations)
+          .set({
+            lastSeq: row.lastSeq + queue.length,
+            // Le `ts` du dernier fragment : la valeur qu'`append` aurait laissée.
+            updatedAt: queue.at(-1)!.ts,
+            journalBytes: sql`${conversations.journalBytes} + ${bytes}`,
+          })
+          .where(eq(conversations.id, conversationId))
+          .run()
+
+        return queue.map((item, index) => ({
+          conversationId,
+          seq: row.lastSeq + index + 1,
+          ts: item.ts,
+          event: item.event,
+        }))
+      })
+    } catch (err) {
+      // Rien n'a été diffusé ni écrit : le journal reste cohérent, sans ces fragments.
+      console.error('Écriture des fragments de flux impossible', conversationId, err)
+      return
+    }
+
+    for (const entry of entries) {
+      this.bus.emit(conversationId, entry)
+      this.bus.emit(ALL_EVENTS, entry)
+    }
+    if (entries.length) this.thread.schedule(conversationId)
   }
 
   /**
@@ -166,6 +330,7 @@ export class EventLog {
     raw?: unknown,
     rawFormat?: string,
   ): JournalEntry {
+    this.flush(conversationId)
     const ts = Date.now()
 
     const entry = writeTransaction(this.db, (tx): JournalEntry => {
@@ -237,6 +402,7 @@ export class EventLog {
     /** Un import en flux ne recompte les tours qu'à la fin, pas à chacun de ses petits lots. */
     recountTurns = true,
   ): number {
+    this.flush(conversationId)
     if (batch.length === 0 && !checkpoint) return 0
 
     const entries = writeTransaction(this.db, (tx): JournalEntry[] => {
@@ -321,6 +487,7 @@ export class EventLog {
     completedToolCallIds: Set<string>
     subAgentIds: Set<string>
   } {
+    this.flush(conversationId)
     // Seuls les identifiants passent en JS : les `raw` natifs comme les payloads
     // normalisés d'une longue conversation dépassent chacun le tas du daemon.
     const rows = this.db
@@ -351,6 +518,7 @@ export class EventLog {
   }
 
   read(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
+    this.flush(conversationId)
     const rows = this.db
       .select()
       .from(events)
@@ -395,6 +563,7 @@ export class EventLog {
       unfiltered?: boolean
     },
   ): { entries: JournalEntry[]; nextAfter: number } {
+    this.flush(conversationId)
     // Revenir sur un fil projeté inchangé ne demande pas d'index de supplantation.
     const lastSeq =
       this.db
@@ -452,6 +621,7 @@ export class EventLog {
 
   /** Le rattrapage du socket garde tous les `seq`, mais la représentation légère de REST. */
   readWithBodies(conversationId: string, afterSeq: number, limit: number): JournalEntry[] {
+    this.flush(conversationId)
     return this.db
       .select({ seq: events.seq, ts: events.ts, payload: bodyPayload })
       .from(events)
@@ -484,6 +654,7 @@ export class EventLog {
     field: 'input' | 'output' | 'patch',
     block?: number,
   ): { value: unknown } | null {
+    this.flush(conversationId)
     const path = block === undefined ? `$.${field}` : `$.blocks[${block}].${field}`
     const row = this.db
       .select({
@@ -508,6 +679,7 @@ export class EventLog {
 
   /** L'URL `data:` d'une image de message, servie à part du fil. */
   eventImage(conversationId: string, seq: number, block: number): string | null {
+    this.flush(conversationId)
     const row = this.db
       .select({ url: sql<string | null>`${events.payload} ->> ${`$.blocks[${block}].url`}` })
       .from(events)
@@ -592,6 +764,7 @@ export class EventLog {
    * dernières entrées, et `limit` borne la lecture.
    */
   latest(conversationId: string, types: string[], limit: number): JournalEntry[] {
+    this.flush(conversationId)
     const rows = this.db
       .select()
       .from(events)
@@ -638,6 +811,7 @@ export class EventLog {
    * et une fois par tour suffit pour une ligne de sidebar.
    */
   refreshTurnCount(conversationId: string): void {
+    this.flush(conversationId)
     this.db
       .update(conversations)
       .set({ turnCount: TURN_COUNT })
@@ -647,6 +821,7 @@ export class EventLog {
 
   /** Nombre d'événements d'un type, sans les charger. */
   count(conversationId: string, type: string): number {
+    this.flush(conversationId)
     const row = this.db
       .select({ n: sql<number>`count(*)` })
       .from(events)
@@ -665,6 +840,7 @@ export class EventLog {
    * indéfiniment une question posée et une conversation coincée en attente.
    */
   openPrompts(conversationId: string): { kind: PromptKind; requestId: string }[] {
+    this.flush(conversationId)
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
       .from(events)
@@ -716,6 +892,7 @@ export class EventLog {
    * niveau remplace, une fin de travail retire, une fin de session vide tout.
    */
   openBackgroundTasks(conversationId: string): BackgroundTask[] {
+    this.flush(conversationId)
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
       .from(events)
@@ -758,6 +935,7 @@ export class EventLog {
    * interdit.
    */
   copyThrough(fromConversationId: string, toConversationId: string, throughSeq: number): number {
+    this.flush(fromConversationId)
     const rows = this.db
       .select()
       .from(events)
@@ -812,6 +990,7 @@ export class EventLog {
     throughSeq: number,
     opts: { topLevelOnly?: boolean } = {},
   ): unknown {
+    this.flush(conversationId)
     const conditions = [
       eq(events.conversationId, conversationId),
       eq(events.type, type),
@@ -841,6 +1020,7 @@ export class EventLog {
    * des milliers.
    */
   toolOutput(conversationId: string, toolCallId: string): { output: unknown } | null {
+    this.flush(conversationId)
     const row = this.db
       .select({ payload: events.payload })
       .from(events)
@@ -868,6 +1048,7 @@ export class EventLog {
    * faite par l'adaptateur du CLI concerné, jamais par le frontend.
    */
   rawOfTool(conversationId: string, toolCallId: string): { started: unknown; completed: unknown } {
+    this.flush(conversationId)
     // Un seul diff chargeait jusqu'ici tous les payloads d'outils de la conversation
     // (des centaines de Mo) en JS. On garde le dernier natif de chaque sorte, y compris
     // quand un identifiant d'appel est réutilisé ; `idx_events_native_tool` sert la requête.
@@ -903,6 +1084,7 @@ export class EventLog {
     toolCallId: string,
     path: string,
   ): 'created' | 'modified' | 'deleted' | null {
+    this.flush(conversationId)
     const rows = this.db
       .select({ payload: events.payload })
       .from(events)
@@ -922,6 +1104,7 @@ export class EventLog {
 
   /** Nombre d'événements d'un type donné, avant et après un point de coupe. */
   countByType(conversationId: string, type: string, throughSeq: number): { kept: number; total: number } {
+    this.flush(conversationId)
     const rows = this.db
       .select({ seq: events.seq })
       .from(events)
@@ -941,6 +1124,7 @@ export class EventLog {
    * de décision mais une raison de sortie.
    */
   openQueuedMessages(conversationId: string): string[] {
+    this.flush(conversationId)
     const rows = this.db
       .select({ type: events.type, payload: events.payload })
       .from(events)
@@ -975,6 +1159,7 @@ export class EventLog {
     conversationId: string,
     requestId: string,
   ): Extract<SoleraEvent, { type: 'filing.requested' }> | null {
+    this.flush(conversationId)
     const rows = this.db
       .select({ seq: events.seq, payload: events.payload })
       .from(events)
@@ -1001,6 +1186,7 @@ export class EventLog {
     conversationId: string,
     requestId: string,
   ): Extract<SoleraEvent, { type: 'card_filing.requested' }> | null {
+    this.flush(conversationId)
     const rows = this.db
       .select({ seq: events.seq, payload: events.payload })
       .from(events)
@@ -1024,6 +1210,7 @@ export class EventLog {
     type: 'filing.requested' | 'card_filing.requested' | 'card_draft.proposed',
     requestId: string,
   ): { seq: number; ts: number; event: SoleraEvent } | null {
+    this.flush(conversationId)
     const rows = this.db
       .select({ seq: events.seq, ts: events.ts, payload: events.payload })
       .from(events)
@@ -1067,6 +1254,9 @@ export class EventLog {
   }
 
   subscribe(conversationId: string, listener: (entry: JournalEntry) => void): () => void {
+    // Vidé avant l'abonnement : un abonné qui relit ensuite le journal ne recevrait pas
+    // deux fois, par le bus puis par la lecture, des fragments écrits entre les deux.
+    this.flush(conversationId)
     this.bus.on(conversationId, listener)
     return () => this.bus.off(conversationId, listener)
   }

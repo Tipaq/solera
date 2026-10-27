@@ -1,5 +1,5 @@
 import { Circle, CircleCheck, CircleDot } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import type { ToolItem } from '../../lib/chat-fold'
 import { parseUnifiedDiff } from '../../lib/diff'
 import { languageFromPath } from '../../lib/highlight'
@@ -224,11 +224,7 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
                 dit de quel fichier il parle ; un ajout ou une suppression porte le
                 contenu brut, qui n'a rien à comparer. */}
             {kind === 'update' ? (
-              <div className="overflow-hidden rounded-md border border-line bg-sunken">
-                {parseUnifiedDiff(`diff --git a/${path} b/${path}\n${diff}`).map((file) => (
-                  <DiffHunks key={file.path} hunks={file.hunks} path={path} />
-                ))}
-              </div>
+              <CodexDiff path={path} diff={diff} />
             ) : (
               <Code content={diff} language={languageFromPath(path)} />
             )}
@@ -236,6 +232,21 @@ function CodexChanges({ changes }: { changes: unknown[] }) {
         )
       })}
     </>
+  )
+}
+
+/**
+ * Le diff d'un `update` Codex, analysé une fois par contenu et non à chaque rendu de
+ * l'appel : le fil rend souvent pendant un tour, et ce diff-là ne bouge plus.
+ */
+function CodexDiff({ path, diff }: { path: string; diff: string }) {
+  const files = useMemo(() => parseUnifiedDiff(`diff --git a/${path} b/${path}\n${diff}`), [path, diff])
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-sunken">
+      {files.map((file) => (
+        <DiffHunks key={file.path} hunks={file.hunks} path={path} />
+      ))}
+    </div>
   )
 }
 

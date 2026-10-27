@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { highlight, isHighlighterReady, loadHighlighter } from '../../lib/highlight'
+import { useMemo } from 'react'
+import { highlight, useHighlighterReady } from '../../lib/highlight'
 import { cx } from '@solera/ui'
 
 /**
@@ -8,6 +8,11 @@ import { cx } from '@solera/ui'
  * La bibliothèque de coloration est chargée à la demande : le premier bloc affiché de
  * la session apparaît d'abord en clair, puis se colore, plutôt que d'être retenu le
  * temps du téléchargement.
+ *
+ * La coloration se calcule au rendu, une fois par texte et par langage, et repasse
+ * quand la bibliothèque arrive. L'objet `__html` suit le même mémo : React réécrit
+ * `innerHTML` dès que l'objet change, même à texte égal, et chaque rendu du fil
+ * reconstruisait sinon le DOM de tous ses blocs de code.
  */
 export function HighlightedCode({
   code,
@@ -21,27 +26,19 @@ export function HighlightedCode({
   wrap?: boolean
   className?: string
 }) {
-  const [rendered, setRendered] = useState(() => highlight(code, language))
-
-  useEffect(() => {
-    setRendered(highlight(code, language))
-    if (isHighlighterReady()) return
-
-    let cancelled = false
-    void loadHighlighter().then(() => {
-      if (!cancelled) setRendered(highlight(code, language))
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [code, language])
+  const ready = useHighlighterReady()
+  const markup = useMemo(() => {
+    // Sans langage, `highlight` rend le code en clair : c'est l'état d'avant le chargement.
+    const rendered = highlight(code, ready ? language : '')
+    return rendered.applied ? { __html: rendered.html } : null
+  }, [code, language, ready])
 
   return (
     <pre className={cx('overflow-x-auto', wrap && 'break-words whitespace-pre-wrap', className)}>
-      {rendered.applied ? (
+      {markup ? (
         // Les jetons sont des `<span>` de classes `hljs-*`, stylés avec les tokens de
         // thème (voir index.css).
-        <code className="hljs" dangerouslySetInnerHTML={{ __html: rendered.html }} />
+        <code className="hljs" dangerouslySetInnerHTML={markup} />
       ) : (
         // Rendu comme texte : React échappe, on n'a rien à assainir nous-mêmes.
         <code>{code}</code>

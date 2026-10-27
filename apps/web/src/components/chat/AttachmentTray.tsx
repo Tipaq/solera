@@ -1,4 +1,5 @@
 import { FileText, Loader, X } from 'lucide-react'
+import { memo } from 'react'
 import type { AttachmentDto } from '@solera/protocol'
 import { formatBytes } from '../../lib/attachments'
 import { useTranslate } from '../../lib/i18n'
@@ -12,8 +13,10 @@ import { DraftImage } from './DraftImage'
  * fichier est impossible, et c'est le cas d'usage le plus fréquent depuis un téléphone.
  * La vignette s'ouvre dans la visionneuse du fil, pour relire une capture avant de
  * l'envoyer.
+ *
+ * Mémoïsé : le composer se redessine à chaque frappe, les pièces jointes n'ont pas à le suivre.
  */
-export function AttachmentTray({
+export const AttachmentTray = memo(function AttachmentTray({
   attachments,
   uploading,
   onRemove,
@@ -66,4 +69,4 @@ export function AttachmentTray({
       ) : null}
     </div>
   )
-}
+})

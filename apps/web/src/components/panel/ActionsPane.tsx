@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Loader, Plus, Zap } from 'lucide-react'
 import { useActions } from '../../lib/actions'
 import { useTranslate } from '../../lib/i18n'
@@ -8,7 +9,7 @@ import { Banner, Button, EmptyState } from '@solera/ui'
  * L'onglet Actions du panneau : la liste complète, et l'endroit où l'on en crée. Le
  * lanceur de l'en-tête montre la même liste sans quitter ce qu'on regarde.
  */
-export function ActionsPane({ projectId, conversationId }: { projectId: string; conversationId?: string }) {
+export const ActionsPane = memo(function ActionsPane({ projectId, conversationId }: { projectId: string; conversationId?: string }) {
   const t = useTranslate()
   const { data, error, isPending } = useActions()
   const { handlers, create, dialogs, failure } = useActionDialogs(projectId, conversationId)
@@ -60,4 +61,4 @@ export function ActionsPane({ projectId, conversationId }: { projectId: string; 
       {dialogs}
     </div>
   )
-}
+})
