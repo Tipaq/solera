@@ -1,10 +1,10 @@
 import type { UsageWindow } from '@solera/protocol'
 import { translate, useTranslate } from '../../lib/i18n'
+import { resetMoment } from '../../lib/usage-peek'
 import { cx } from '@solera/ui'
 
 /**
- * Une fenêtre de quota, telle que le CLI la déclare. Partagée par le panneau détaillé
- * et par la page de brouillon, qui montrent la même mesure à deux moments.
+ * Une fenêtre de quota, telle que le CLI la déclare. Montrée par la modale de consommation.
  */
 
 /**
@@ -66,8 +66,11 @@ export function UsageBar({ window }: { window: UsageWindow }) {
         />
       </div>
 
-      {reset ? (
-        <p className="text-meta text-ink-faint">{t('usage.reset.label', { reset })}</p>
+      {reset && window.resetsAt !== null ? (
+        <p className="text-meta text-ink-faint">
+          {t('usage.reset.label', { reset })}
+          <span className="tabular-nums"> · {resetMoment(window.resetsAt)}</span>
+        </p>
       ) : null}
     </div>
   )
