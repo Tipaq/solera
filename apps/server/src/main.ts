@@ -70,6 +70,8 @@ async function main(): Promise<void> {
   // Partagé entre le gestionnaire de sessions et les routes : les adaptateurs portent
   // les caches de catalogue et de quota, qui ne doivent exister qu'une fois.
   const registry = createAgentRegistry(config)
+  // L'aperçu de consommation survit au redémarrage par les signaux des derniers tours.
+  registry.usageLedger.seed(db)
   // La clé vit à côté de la base, pas dedans : c'est ce qui fait qu'une base copiée
   // seule ne livre pas les secrets qu'elle contient.
   const encryptionKey = loadOrCreateKey(config.paths.data)
@@ -132,7 +134,7 @@ async function main(): Promise<void> {
   // Nettoyer un chantier ferme ses terminaux et range ses sessions. C'est un geste de la
   // vue Chantiers : une fusion ne le propose plus dans « À décider », réservé à ce qu'un
   // agent demande à une personne, et les propositions d'avant sont retirées ici.
-  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, (id) => sessions.dropCheckpoints(id))
+  const worktreeCleanup = new WorktreeCleanup(db, config.paths.data, worktreeStatus, terminals, sessions)
   decisions.retireWorktreeProposals()
   // Une fusion détectée passe en « Terminé » les cartes des sessions qui vivaient dans l'arbre.
   watchMergedCards(db, worktreeStatus)

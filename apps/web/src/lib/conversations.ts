@@ -91,6 +91,25 @@ export function useContinueAtProjectRoot() {
   })
 }
 
+/**
+ * *Ramener à la racine du projet* : une conversation quitte un worktree qui existe
+ * encore. L'arbre reste ; ses listes d'état changent, puisque le fil n'y vit plus.
+ */
+export function useReturnToProjectRoot() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      api.post<ConversationDto>(`/api/conversations/${id}/return-to-root`, {}),
+    onSuccess: (conversation) => {
+      queryClient.setQueryData(['conversation', conversation.id], conversation)
+      void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+      void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+      // La pastille de l'en-tête dit la branche de la racine, plus celle de l'arbre.
+      void queryClient.invalidateQueries({ queryKey: ['git-head', conversation.id] })
+    },
+  })
+}
+
 export function useConversations(projectId: string | undefined) {
   return useQuery({
     queryKey: conversationsKey(projectId ?? ''),

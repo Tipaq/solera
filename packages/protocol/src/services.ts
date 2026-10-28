@@ -28,6 +28,11 @@ export interface ServiceDto {
   ports: number[]
   startedAt: number
   memoryBytes: number
+  /**
+   * Part d'un cœur consommée depuis le scan précédent (1 = un cœur plein), l'arbre
+   * entier compris. Null au premier scan : il faut deux mesures pour une charge.
+   */
+  cpu: number | null
   /** L'entrée et tout ce qui en descend. */
   processCount: number
   /** Les descendants par nom, du plus nombreux au plus rare. */
@@ -63,6 +68,8 @@ export interface ServiceAppDto {
   cwd: string | null
   startedAt: number | null
   memoryBytes: number | null
+  /** Comme pour un processus : part d'un cœur depuis le scan précédent. */
+  cpu: number | null
   /** Relancée à l'ouverture de la session utilisateur, donc après un redémarrage. */
   enabled: boolean
   transient: boolean
@@ -79,9 +86,27 @@ export interface ServiceAppDto {
 
 export type ServiceAppAction = 'stop' | 'restart' | 'reset'
 
+/**
+ * La machine qui fait tourner Solera, à côté de ce que Solera y fait tourner : ce qui
+ * dit si un service de plus tient encore. Sous WSL, ce sont les chiffres de la VM.
+ */
+export interface SystemLoadDto {
+  /** Charge de tous les cœurs depuis la mesure précédente, de 0 à 1. Null à la première. */
+  cpu: number | null
+  cores: number
+  /** Charge moyenne sur 1, 5 et 15 minutes, au sens de `uptime`. */
+  load: [number, number, number]
+  memoryTotal: number
+  /** Ce que le noyau peut rendre sans swapper (`MemAvailable`), pas seulement le libre. */
+  memoryAvailable: number
+  swapTotal: number
+  swapFree: number
+}
+
 export interface ServicesDto {
   supported: boolean
   scannedAt: number
   services: ServiceDto[]
   apps: ServiceAppDto[]
+  system: SystemLoadDto | null
 }

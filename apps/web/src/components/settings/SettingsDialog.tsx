@@ -18,6 +18,7 @@ import { UpdateDot } from '../UpdateDot'
 import { SETTINGS_GROUPS, visibleSections } from './sections'
 import { AboutSection } from '../../routes/AboutSection'
 import { AccountSection } from '../../routes/AccountSection'
+import { AgentsSettingsPage } from '../../routes/AgentsSettingsPage'
 import { ApiTokensSettingsPage } from '../../routes/ApiTokensSettingsPage'
 import { AppearanceSection } from '../../routes/AppearanceSection'
 import { ArchivingSettingsPage } from '../../routes/ArchivingSettingsPage'
@@ -25,9 +26,7 @@ import { DictationSettingsPage } from '../../routes/DictationSettingsPage'
 import { DisplaySection } from '../../routes/DisplaySection'
 import { GitCredentialsSettingsPage } from '../../routes/GitCredentialsSettingsPage'
 import { InstructionsSettingsPage } from '../../routes/InstructionsSettingsPage'
-import { ModelDefaultsSettingsPage } from '../../routes/ModelDefaultsSettingsPage'
 import { PermissionsSettingsPage } from '../../routes/PermissionsSettingsPage'
-import { SubscriptionsSettingsPage } from '../../routes/SubscriptionsSettingsPage'
 import { McpSettingsPage } from '../../routes/McpSettingsPage'
 import { NotificationsSection } from '../../routes/NotificationsSection'
 import { SecretsSettingsPage } from '../../routes/SecretsSettingsPage'
@@ -56,8 +55,7 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   notifications: NotificationsSection,
   dictee: DictationSettingsPage,
   permissions: PermissionsSettingsPage,
-  modeles: ModelDefaultsSettingsPage,
-  abonnements: SubscriptionsSettingsPage,
+  agents: AgentsSettingsPage,
   mcp: McpSettingsPage,
   consignes: InstructionsSettingsPage,
   skills: SkillLibrarySettingsPage,

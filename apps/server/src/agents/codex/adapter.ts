@@ -22,6 +22,8 @@ import { describeEdit } from './file-edits.js'
 import { CodexModelCatalog } from './model-catalog.js'
 import { CodexRunner } from './runner.js'
 import { CodexUsageReader } from './usage.js'
+import { CodexAuthReader } from './auth.js'
+import type { AgentAuth } from '../auth.js'
 
 /**
  * Point de coupe d'un fork : identifiant natif du dernier tour conservé.
@@ -48,6 +50,7 @@ export class CodexAdapter implements AgentAdapter {
 
   private readonly catalog: CodexModelCatalog
   private readonly usageReader: CodexUsageReader
+  private readonly authReader: CodexAuthReader
   readonly cli: CliBinary
 
   constructor(config: Config) {
@@ -58,6 +61,7 @@ export class CodexAdapter implements AgentAdapter {
     // les modèles d'une version que les conversations, elles, n'utilisent pas.
     this.catalog = new CodexModelCatalog(() => this.cli.executable())
     this.usageReader = new CodexUsageReader(() => this.cli.executable())
+    this.authReader = new CodexAuthReader(() => this.cli.executable())
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -165,6 +169,10 @@ export class CodexAdapter implements AgentAdapter {
 
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  auth(force: boolean): Promise<AgentAuth> {
+    return this.authReader.read(force)
   }
 
   /** `credential` est ici le `CODEX_HOME` du compte, voir `CodexAccountHomes`. */

@@ -9,12 +9,14 @@ import type {
 } from '@solera/protocol'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
+import type { AgentAuth } from './auth.js'
 import { ClaudeAdapter } from './claude/adapter.js'
 import type { CliBinary } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
 import { GrokAdapter } from './grok/adapter.js'
 import { OpencodeAdapter } from './opencode/adapter.js'
 import type { AgentRunner, RunnerContext } from './types.js'
+import { UsageLedger } from './usage-ledger.js'
 
 export class ForkError extends Error {}
 
@@ -98,6 +100,12 @@ export interface AgentAdapter {
    */
   usageForAccount?(accountId: string, credential: string, force: boolean): Promise<AgentUsage>
   /**
+   * La connexion propre du CLI, lue sans ouvrir de session (commande d'état, fichier
+   * d'identifiants). Absente chez un CLI qui n'a rien de bon marché à dire : la route
+   * répond alors `unknown`. `force` court-circuite le cache.
+   */
+  auth?(force: boolean): Promise<AgentAuth>
+  /**
    * Commandes en `/` que le CLI reconnaît dans ce dossier, sans qu'une session tourne.
    * Sert le brouillon, où rien n'est encore lancé ; un CLI sans commandes en `/`
    * répond vide. `force` court-circuite le cache, pour un bouton de rafraîchissement.
@@ -115,6 +123,12 @@ export interface AgentAdapter {
 
 export class AgentRegistry {
   private readonly adapters: ReadonlyMap<AgentKind, AgentAdapter>
+  /**
+   * Ce qu'on sait de la consommation sans sonder. Porté par le registre parce qu'il est
+   * déjà partagé entre le gestionnaire de sessions, qui y dépose les signaux des tours,
+   * et les routes, qui y déposent les lectures et le servent.
+   */
+  readonly usageLedger = new UsageLedger()
 
   constructor(adapters: AgentAdapter[]) {
     this.adapters = new Map(adapters.map((adapter) => [adapter.kind, adapter]))

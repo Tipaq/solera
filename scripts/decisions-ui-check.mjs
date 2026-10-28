@@ -200,15 +200,6 @@ try {
   await page.waitForTimeout(300)
   await page.getByRole('main').screenshot({ path: join(shots, 'decisions-thread.png') })
 
-  // L'historique.
-  await page.goto(`${base}/decisions`)
-  // Ce qui t'attend, accords compris (#121).
-  await page.getByRole('main').getByText('1 carte à ranger').waitFor()
-  await page.getByRole('tab', { name: 'Tout l’historique' }).click()
-  await page.getByRole('main').getByText('Monter vite en 7.0 maintenant ?').waitFor()
-  await page.waitForTimeout(300)
-  await page.getByRole('main').screenshot({ path: join(shots, 'decisions-history.png') })
-
   // La sorte « Décisions » se coupe dans les réglages, comme les autres.
   // Les réglages sont une modale : l'ancienne adresse l'ouvre sur la bonne section.
   await page.goto(`${base}/settings/notifications`)
@@ -225,8 +216,10 @@ try {
   await phone.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   const mobile = await phone.newPage()
   mobile.on('pageerror', (error) => errors.push(error.message))
-  await mobile.goto(`${base}/decisions`)
-  await mobile.getByRole('main').getByText('Fermer l’issue #18', { exact: false }).click()
+  // Depuis le fil qui la pose : la page `/decisions` n'existe plus.
+  await mobile.goto(`${base}/p/${project.id}/c/${session}`)
+  await mobile.getByRole('main').getByText('Fermer l’issue #18', { exact: false }).first().waitFor()
+  await mobile.getByRole('main').getByRole('button', { name: 'Répondre' }).last().click()
   await mobile.getByRole('dialog').getByRole('radio', { name: 'Oui' }).waitFor()
   await mobile.waitForTimeout(300)
   await mobile.screenshot({ path: join(shots, 'decisions-phone-dialog.png') })

@@ -48,7 +48,7 @@ const errorOf = (error: unknown): string | null =>
 
 type AddMode = 'guided' | 'paste'
 
-/** `bare` : rendue dans la section Abonnements, qui porte déjà l'en-tête (#120). */
+/** `bare` : rendue dans l'onglet du CLI de la section Agents, qui porte déjà l'en-tête. */
 export function ClaudeAccountsSettingsPage({ bare = false }: { bare?: boolean } = {}) {
   const t = useTranslate()
   const { data } = useClaudeAccounts()

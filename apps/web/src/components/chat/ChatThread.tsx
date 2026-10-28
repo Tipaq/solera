@@ -31,6 +31,8 @@ const ERROR_DETAILS: Record<string, (message: string) => string> = {
     const reason = /\(([^]*)\)\.?$/.exec(message)?.[1] ?? message
     return LIVE_CHANGE_REFUSED.has(reason) ? translate('error.config_applied_by_restart.live') : reason
   },
+  worktree_released_by_restart: (message) =>
+    translate('error.worktree_released_by_restart.detail', { names: /: ([^]*?)\.?$/.exec(message)?.[1] ?? message }),
 }
 /** La raison de `restartForConfig`, en anglais et telle que l'écrivaient les journaux d'avant. */
 const LIVE_CHANGE_REFUSED = new Set(['the CLI cannot apply this change live', 'le CLI ne gère pas ce changement à chaud'])

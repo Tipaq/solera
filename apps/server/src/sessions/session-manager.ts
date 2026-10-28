@@ -74,7 +74,7 @@ import {
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
-import { linkedWorktreePaths } from '../worktrees/linked.js'
+import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -117,6 +117,13 @@ interface ManagedRunner {
    * temps. Voir `reloadConfig`.
    */
   pendingRestart: string | null
+  /**
+   * Les worktrees liés que le CLI a reçus comme dossiers en plus (`workTrees`), au
+   * dernier appel. Claude ne les lit qu'au lancement : un arbre retiré depuis resterait
+   * dans ses arguments, et c'est ce qui fait relancer le process au tour suivant (voir
+   * `recycleIfTreesGone`). Absent tant que le CLI ne les a pas demandés.
+   */
+  linkedTrees?: readonly string[]
 }
 
 /** Fenêtre de déduplication des envois (invariant I5). Voir sendMessage(). */
@@ -603,7 +610,9 @@ export class SessionManager {
     return adapter.fork(
       {
         agentSessionId: conversation.agentSessionId,
-        cwd: this.resolveCwd(conversation),
+        // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu,
+        // la route l'a déjà refusé.
+        cwd: this.refuseMissingCwd(conversation),
         accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
       },
       adapter.forkCut(this.log, conversationId, throughSeq),
@@ -821,12 +830,15 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (!managed) return 'unavailable'
 
+    // Refusé avant de sortir le message de la file : il y attend le rattachement.
+    const conversation = this.loadConversation(conversationId)
+    const cwd = this.refuseMissingCwd(conversation)
+
     const index = queue.indexOf(entry)
     queue.splice(index, 1)
     if (queue.length === 0) this.queues.delete(conversationId)
 
-    const conversation = this.loadConversation(conversationId)
-    const resolved = this.resolveMentions(this.resolveCwd(conversation), entry.mentions)
+    const resolved = this.resolveMentions(cwd, entry.mentions)
 
     let steered = false
     try {
@@ -1105,9 +1117,17 @@ export class SessionManager {
         this.config.skills.library && current.skillLibrary
           ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
           : [],
-      // Un fil libre n'a pas de projet, donc pas de worktree.
-      workTrees: () =>
-        conversation.projectId ? linkedWorktreePaths(this.db, conversationId, conversation.projectId) : [],
+      // Un fil libre n'a pas de projet, donc pas de worktree. Ce qui est rendu est
+      // retenu sur le runner : c'est ce qui dira, au tour suivant, s'il faut le relancer.
+      workTrees: () => {
+        if (!conversation.projectId) return []
+        const paths = linkedWorktreePaths(this.db, conversationId, conversation.projectId, () =>
+          this.statusBus.emit('lists', { conversationId }),
+        )
+        const managed = this.runners.get(conversationId)
+        if (managed) managed.linkedTrees = paths
+        return paths
+      },
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SoleraEvent, raw?: unknown) => {
@@ -1143,6 +1163,15 @@ export class SessionManager {
             })
             .where(eq(conversations.id, conversationId))
             .run()
+        }
+        // Le signal de limite d'un vrai tour nourrit l'aperçu gratuit de la consommation,
+        // rangé sous le compte de la conversation : celui avec lequel le runner a été lancé.
+        if (event.type === 'usage.updated' && event.rateLimit) {
+          this.registry.usageLedger.recordLive(
+            conversation.agent,
+            'account' in config ? config.account : null,
+            event.rateLimit,
+          )
         }
         if (event.type === 'file.edited') {
           this.checkpoints.get(conversationId)?.edited.add(event.path)
@@ -1333,6 +1362,9 @@ export class SessionManager {
    * qui remplace le composer par un bandeau), et un événement par essai empilerait
    * autant de bandeaux. Le runner encore vivant est arrêté, sa file gardée pour le
    * rattachement, et les listes relues pour que le fil voie l'état.
+   *
+   * Sauf au milieu d'un tour, où passent `steer` et un fork : le couper laisserait le
+   * fil en `running` sans fin de tour. Il s'arrêtera au prochain envoi, au repos.
    */
   private refuseMissingCwd(conversation: ConversationRow): string {
     try {
@@ -1341,11 +1373,45 @@ export class SessionManager {
       return cwd
     } catch (err) {
       if (isWorkingDirectoryMissing(err)) {
-        void this.stopRunner(conversation.id, { keepQueue: true })
+        if (!this.isBusy(conversation.id)) void this.stopRunner(conversation.id, { keepQueue: true })
         this.statusBus.emit('lists', { conversationId: conversation.id })
       }
       throw err
     }
+  }
+
+  /**
+   * Relance au prochain tour un CLI dont un worktree lié est parti depuis son lancement.
+   *
+   * Une session de la racine qui a créé ou écrit un arbre le reçoit en dossier en plus,
+   * et Claude ne relit cette liste qu'au lancement : l'arbre retiré — par le nettoyage,
+   * la suppression ou git hors de Solera — resterait dans ses arguments, et la session
+   * cessait de répondre. Vérifié à l'envoi plutôt qu'au retrait : c'est le seul moment
+   * où tous les retraits sont visibles, y compris ceux que personne n'annonce, et un
+   * envoi n'arrive qu'au repos, donc aucun tour n'est coupé. Le runner est arrêté comme
+   * par `refuseMissingCwd`, file gardée : `ensureRunner` en lance un neuf, en reprise.
+   *
+   * C'est la même reprise qu'après la mise en veille d'une session inactive
+   * (`sessionIdleTimeoutMin`), pas un chemin à part. Elle est dite dans le fil, comme
+   * un réglage appliqué en relançant : l'agent qui ne voit plus l'arbre ne doit pas
+   * surprendre, et le prochain tour paie le rechargement du contexte.
+   */
+  private async recycleIfTreesGone(conversationId: string): Promise<void> {
+    const managed = this.runners.get(conversationId)
+    if (!managed?.linkedTrees || this.isBusy(conversationId)) return
+    const gone = goneWorktrees(this.db, managed.linkedTrees, () =>
+      this.statusBus.emit('lists', { conversationId }),
+    )
+    if (gone.length === 0) return
+    await this.stopRunner(conversationId, { keepQueue: true })
+    this.log.append(conversationId, {
+      type: 'error',
+      code: 'worktree_released_by_restart',
+      // Le nom du dossier, pas son chemin : c'est celui que la colonne des worktrees
+      // montre. La phrase entière, pour les lecteurs du journal sans catalogue.
+      message: `Agent restarted without the removed worktree: ${gone.map((path) => path.split('/').pop() ?? path).join(', ')}.`,
+      recoverable: true,
+    })
   }
 
   /**
@@ -1354,10 +1420,8 @@ export class SessionManager {
    *
    * Refusé tant que le worktree existe : ce n'est pas un déplacement ordinaire, c'est la
    * seule issue d'un fil qui ne peut plus tourner, et le proposer ailleurs ferait
-   * quitter son arbre à un fil qui y travaille. La session native est gardée quand le
-   * CLI sait la reprendre depuis un autre dossier (`RESUMES_FROM_OTHER_DIRECTORY`),
-   * sinon il repart sur une session neuve, ce que le bandeau a dit avant le clic. Les
-   * messages restés en file partent alors, depuis la racine.
+   * quitter son arbre à un fil qui y travaille sans qu'on l'ait demandé — c'est le
+   * rôle de `returnToProjectRoot`. Le rattachement lui-même est `reattachAtRoot`.
    */
   async continueAtProjectRoot(conversationId: string): Promise<ConversationRow> {
     const conversation = this.loadConversation(conversationId)
@@ -1367,6 +1431,42 @@ export class SessionManager {
         'This conversation still has its worktree: there is nothing to reattach.',
       )
     }
+    return this.reattachAtRoot(conversation)
+  }
+
+  /**
+   * *Ramener à la racine du projet* : le même rattachement, demandé pour un fil dont le
+   * worktree existe encore. Seule la session déménage : l'arbre, sa branche et son
+   * travail restent où ils sont, et les fichiers qu'elle y a écrits le lui laissent en
+   * dossier en plus (`linkedWorktreePaths`).
+   *
+   * Refusé pendant un tour ou une sollicitation ouverte : le CLI tourne alors dans
+   * l'arbre, et lui changer de dossier sous les pieds ne se rattraperait pas. Au repos,
+   * son runner est arrêté, et le tour suivant part de la racine.
+   */
+  async returnToProjectRoot(conversationId: string): Promise<ConversationRow> {
+    const conversation = this.loadConversation(conversationId)
+    if (!conversation.worktreeId) {
+      throw conflict('conversation_not_in_worktree', 'This conversation already works at the project root.')
+    }
+    if (this.isBusy(conversationId)) {
+      throw conflict('conversation_busy_return_to_root', 'A turn is running: wait for it to end before moving the session.')
+    }
+    return this.reattachAtRoot(conversation)
+  }
+
+  /**
+   * Ce que partagent les deux gestes, le dossier de l'arbre présent ou non.
+   *
+   * La session native est gardée quand le CLI sait la reprendre depuis un autre dossier
+   * (`RESUMES_FROM_OTHER_DIRECTORY`), sinon il repart sur une session neuve, ce que
+   * l'interface a dit avant le clic. Pour Claude, qui range ses sessions par cwd, le
+   * transcript est recopié sous la racine : il vit dans `~/.claude`, pas dans l'arbre,
+   * donc la copie vaut que le dossier soit parti ou non. Les messages restés en file
+   * partent ensuite, depuis la racine.
+   */
+  private async reattachAtRoot(conversation: ConversationRow): Promise<ConversationRow> {
+    const conversationId = conversation.id
     // Arrêté ici et attendu : aucun arrêt en cours ne doit tomber après l'écriture, et
     // un runner resté chaud garderait l'ancien cwd en mémoire. La capture ouverte,
     // elle, visait l'ancien dépôt.
@@ -1375,12 +1475,12 @@ export class SessionManager {
 
     // Comme au rangement : recopié sous la racine, le transcript y est relu par Solera
     // et prolongé par le CLI. Un échec ne coûte que la resynchronisation.
-    const gone = conversation.worktreeId
+    const tree = conversation.worktreeId
       ? this.db.select({ path: worktrees.path }).from(worktrees).where(eq(worktrees.id, conversation.worktreeId)).get()
       : undefined
-    if (conversation.agent === 'claude' && conversation.agentSessionId && gone) {
+    if (conversation.agent === 'claude' && conversation.agentSessionId && tree) {
       const root = this.resolveCwd({ ...conversation, worktreeId: null })
-      await copyTranscript(gone.path, root, conversation.agentSessionId).catch(() => false)
+      await copyTranscript(tree.path, root, conversation.agentSessionId).catch(() => false)
     }
 
     const patch: Partial<ConversationRow> = {
@@ -1519,8 +1619,10 @@ export class SessionManager {
       const managed = this.runners.get(conversationId)
       if (!managed) return false
 
+      // Le même refus que `deliver` : l'agent n'a rien à faire d'une consigne pour un
+      // dossier qui n'existe plus, et le fil montre déjà le bandeau.
       const conversation = this.loadConversation(conversationId)
-      const resolved = this.resolveMentions(this.resolveCwd(conversation), mentions)
+      const resolved = this.resolveMentions(this.refuseMissingCwd(conversation), mentions)
 
       steered = await managed.runner.steer(text, attachments, resolved, skills)
       if (steered) this.touch(conversationId)
@@ -1610,6 +1712,7 @@ export class SessionManager {
     // l'envoi, pas laisser une session lancée avec un message perdu.
     const resolved = this.resolveMentions(cwd, mentions)
 
+    await this.recycleIfTreesGone(conversationId)
     const runner = await this.ensureRunner(conversation)
     // Après le démarrage du runner, qui peut prendre des secondes, et juste avant
     // l'envoi : la capture doit être au plus près du premier geste de l'agent.
@@ -1760,7 +1863,11 @@ export class SessionManager {
       )
     }
 
+    // Comme `deliver` : pas de CLI relancé dans un dossier disparu, ni gardé avec un
+    // worktree lié qui l'est.
     const conversation = this.loadConversation(conversationId)
+    this.refuseMissingCwd(conversation)
+    await this.recycleIfTreesGone(conversationId)
     const runner = await this.ensureRunner(conversation)
     const compacted = await runner.compact()
     if (compacted) this.touch(conversationId)

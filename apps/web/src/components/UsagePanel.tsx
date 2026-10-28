@@ -1,14 +1,16 @@
 import * as Dialog from '@radix-ui/react-dialog'
 import { RefreshCw, X } from 'lucide-react'
 import { useMemo } from 'react'
-import type { AgentKind } from '@solera/protocol'
+import type { AgentAuthDto, AgentKind, UsageLiveWindowDto } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from './AgentIcon'
 import { locale, useTranslate } from '../lib/i18n'
-import { useAgentAvailability } from '../lib/agents'
+import { useAgentAuth, useAgentAvailability } from '../lib/agents'
+import { openSettings } from '../lib/settings-dialog'
+import { liveLabel, peekOf, resetMoment, useUsagePeek } from '../lib/usage-peek'
 import { useClaudeAccounts } from '../lib/claude-accounts'
 import { useCodexAccounts } from '../lib/codex-accounts'
 import { useAccountUsage, useRefreshUsage, type AccountUsageEntry, type UsageTarget } from '../lib/usage'
-import { Banner, IconButton, cx } from '@solera/ui'
+import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { UsageBar, readAge } from './chat/UsageBar'
 
 /**
@@ -32,6 +34,8 @@ import { UsageBar, readAge } from './chat/UsageBar'
  * section, parce que chacun a sa propre limite.
  */
 
+const NO_LIVE: UsageLiveWindowDto[] = []
+
 /** Deux barres grises le temps qu'un CLI réponde : la section garde sa place. */
 function UsageSkeleton() {
   return (
@@ -50,7 +54,14 @@ function UsageSkeleton() {
  * Un CLI et ses fenêtres. Présentation seule : la lecture est menée une fois pour
  * toutes par la modale, qui sait combien de CLI elle a et depuis quand.
  */
-function UsageSection({ entry, accountLabel }: { entry: AccountUsageEntry; accountLabel?: string }) {
+function UsageSection({ entry, accountLabel, auth, live }: {
+  entry: AccountUsageEntry
+  accountLabel?: string
+  /** La connexion du CLI telle que le serveur l'a lue ; absente pour un compte supplémentaire. */
+  auth?: AgentAuthDto
+  /** Ce que les tours ont dit de la limite, plus frais que la sonde quand une session tourne. */
+  live: UsageLiveWindowDto[]
+}) {
   const t = useTranslate()
   const { agent, account, usage, error, isPending } = entry
   // Un compte Claude supplémentaire n'a pas de jauge, mais pas pour la même raison
@@ -87,6 +98,16 @@ function UsageSection({ entry, accountLabel }: { entry: AccountUsageEntry; accou
         ) : null}
       </h3>
 
+      {/* Qui consomme : l'identité et la méthode de connexion, ce que `/status` dit
+          dans le CLI. Deux connexions sur la même machine ne se distinguent que par là. */}
+      {auth && (auth.identity || auth.method) ? (
+        <p className="-mt-1.5 truncate text-meta text-ink-faint">
+          {[auth.identity, auth.method].filter(Boolean).join(' · ')}
+        </p>
+      ) : null}
+
+      <LiveNotice live={live} />
+
       {isPending ? <UsageSkeleton /> : null}
 
       {error ? <Banner>{error.message || t('usage.error')}</Banner> : null}
@@ -111,6 +132,14 @@ function UsageSection({ entry, accountLabel }: { entry: AccountUsageEntry; accou
                   {usage.credits.enabled ? t('usage.credits.enabled') : t('usage.credits.disabled')}
                 </span>
               </div>
+              {usage.credits.utilization !== null ? (
+                <div className="h-1.5 overflow-hidden rounded-full bg-surface-high">
+                  <div
+                    className={cx('h-full rounded-full', usage.credits.utilization >= 0.9 ? 'bg-critical' : usage.credits.utilization >= 0.75 ? 'bg-caution' : 'bg-accent')}
+                    style={{ width: `${Math.min(Math.round(usage.credits.utilization * 100), 100)}%` }}
+                  />
+                </div>
+              ) : null}
               {usage.credits.detail ? (
                 <p className="text-meta text-ink-faint">{usage.credits.detail}</p>
               ) : null}
@@ -123,19 +152,63 @@ function UsageSection({ entry, accountLabel }: { entry: AccountUsageEntry; accou
 }
 
 /**
+ * Une limite atteinte, ou presque, pendant un tour : la sonde peut dater de cinq
+ * minutes, le CLI vient de le dire. Rien quand tout va bien — la jauge le dit déjà.
+ */
+function LiveNotice({ live }: { live: UsageLiveWindowDto[] }) {
+  const t = useTranslate()
+  const alert = live.find((window) => window.status === 'rejected') ?? live.find((window) => window.status === 'allowed_warning')
+  if (!alert) return null
+  const at = alert.resetsAt ? resetMoment(alert.resetsAt) : null
+  return (
+    <p className={cx('text-sm', alert.status === 'rejected' ? 'text-critical' : 'text-caution')}>
+      {alert.status === 'rejected'
+        ? (at ? t('usage.live.blockedUntil', { window: liveLabel(alert), at }) : t('usage.live.blocked', { window: liveLabel(alert) }))
+        : t('usage.live.warning', { window: liveLabel(alert) })}
+    </p>
+  )
+}
+
+/** Un CLI installé sans connexion : rien à sonder, un chemin pour la faire. */
+function LoggedOutSection({ agent, onNavigate }: { agent: AgentKind; onNavigate: () => void }) {
+  const t = useTranslate()
+  return (
+    <section className="flex items-center gap-2 border-b border-line px-3 py-3.5 last:border-b-0">
+      <AgentIcon agent={agent} size={14} decorative />
+      <span className="min-w-0 flex-1 truncate text-sm text-ink">
+        {AGENT_LABELS[agent]}
+        <span className="text-ink-faint"> · {t('usage.loggedOut')}</span>
+      </span>
+      <Button size="sm" variant="ghost" onClick={() => { onNavigate(); openSettings('agents', agent) }}>
+        {t('usage.connect')}
+      </Button>
+    </section>
+  )
+}
+
+/**
  * Les CLI lançables, et leur consommation.
  *
  * `agent` est le CLI mis en tête : celui du fil d'où l'on ouvre. Il est toujours
  * montré, même absent de la liste des disponibles — il vient d'une conversation qui
  * tourne avec lui, et refuser d'en lire la consommation serait incompréhensible.
  */
-function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | null }) {
+function UsageDialog({ agent, account, onClose }: { agent?: AgentKind; account: string | null; onClose: () => void }) {
   const t = useTranslate()
   const { data: availability, isPending: listing } = useAgentAvailability()
+  const { data: auth } = useAgentAuth()
+  const { data: peek } = useUsagePeek()
+  const authOf = (kind: AgentKind) => auth?.entries.find((entry) => entry.agent === kind && entry.account === null)
 
   const installed = useMemo(
     () => (availability?.agents ?? []).filter((a) => a.installed).map((a) => a.agent),
     [availability],
+  )
+  // Sonder un CLI dont la connexion manque ne rapporterait qu'une erreur, au prix d'un
+  // process : il a sa ligne à part, qui mène à la connexion.
+  const loggedOut = useMemo(
+    () => new Set(auth?.entries.filter((entry) => entry.account === null && entry.status === 'logged_out').map((entry) => entry.agent)),
+    [auth],
   )
   const { data: claudeList } = useClaudeAccounts(installed.includes('claude'))
   const { data: codexList } = useCodexAccounts(installed.includes('codex'))
@@ -166,7 +239,7 @@ function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | 
   // passe en tête, sur le compte qu'il utilise, et n'est pas répété plus bas.
   const targets = useMemo<UsageTarget[]>(() => {
     const ordered: UsageTarget[] = installed.flatMap((kind) => [
-      { agent: kind, account: null },
+      ...(loggedOut.has(kind) ? [] : [{ agent: kind, account: null }]),
       ...extra
         .filter((entry) => entry.agent === kind)
         .map((entry) => ({ agent: entry.agent, account: entry.account })),
@@ -174,7 +247,7 @@ function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | 
     if (!agent) return ordered
     const lead = { agent, account }
     return [lead, ...ordered.filter((target) => target.agent !== agent || target.account !== account)]
-  }, [installed, extra, agent, account])
+  }, [installed, extra, agent, account, loggedOut])
 
   const { entries, fetchedAt, isFetching } = useAccountUsage(targets)
   const refresh = useRefreshUsage(targets)
@@ -209,7 +282,12 @@ function UsageDialog({ agent, account }: { agent?: AgentKind; account: string | 
             key={`${entry.agent}:${entry.account ?? ''}`}
             entry={entry}
             accountLabel={entry.account ? accountLabels.get(entry.account) : undefined}
+            auth={entry.account === null ? authOf(entry.agent) : undefined}
+            live={peekOf(peek, entry.agent, entry.account)?.live ?? NO_LIVE}
           />
+        ))}
+        {installed.filter((kind) => loggedOut.has(kind)).map((kind) => (
+          <LoggedOutSection key={`logged-out:${kind}`} agent={kind} onNavigate={onClose} />
         ))}
 
         {/* La liste des CLI arrive après le premier rendu : tant qu'elle manque, il n'y
@@ -261,7 +339,7 @@ export function UsagePanel({
             'sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
           )}
         >
-          <UsageDialog agent={agent} account={account} />
+          <UsageDialog agent={agent} account={account} onClose={() => onOpenChange(false)} />
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

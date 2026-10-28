@@ -12,6 +12,7 @@ type PluralPrefix =
   | 'worktrees.clean.sessions'
   | 'worktrees.clean.services'
   | 'worktrees.clean.terminals'
+  | 'worktrees.clean.restarted'
   | 'projectActivity.tree.changed'
   | 'projectActivity.idle.trees'
   | 'projectActivity.idle.merged'
@@ -150,6 +151,12 @@ export function WorktreeCleanupDialog({
           {plan.terminals > 0 ? (
             <p className="text-ink-faint">{plural('worktrees.clean.terminals', plan.terminals)}</p>
           ) : null}
+          {/* Pas un choix non plus : ces sessions ne sont pas rangées, mais leur CLI
+              perd l'arbre et repart à leur prochain message. Une session au travail
+              est aussi dans `busy`, qui retient le nettoyage : on la signale ici. */}
+          {plan.restarted.length > 0 ? (
+            <RestartedSessions sessions={plan.restarted} />
+          ) : null}
           {error ? <Banner>{t('worktrees.clean.failed', { message: error })}</Banner> : null}
         </>
       )}
@@ -178,5 +185,18 @@ function CleanupChoice({
         {detail ? <span className="block truncate text-xs text-ink-faint" title={detail}>{detail}</span> : null}
       </span>
     </li>
+  )
+}
+
+function RestartedSessions({ sessions }: { sessions: { id: string; title: string; running: boolean }[] }) {
+  const t = useTranslate()
+  const names = sessions
+    .map((session) => (session.running ? t('worktrees.clean.restarted.running', { title: session.title }) : session.title))
+    .join(', ')
+  return (
+    <div className="text-ink-faint">
+      <p>{plural('worktrees.clean.restarted', sessions.length)}</p>
+      <p className="truncate text-xs" title={names}>{names}</p>
+    </div>
   )
 }

@@ -21,6 +21,8 @@ import { describeEdit } from './file-edits.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
+import { ClaudeAuthReader } from './auth.js'
+import type { AgentAuth } from '../auth.js'
 
 /**
  * Point de coupe d'un fork : l'`uuid` d'une entrée du fichier de transcript.
@@ -61,6 +63,7 @@ export class ClaudeAdapter implements AgentAdapter {
   private readonly catalog: ClaudeModelCatalog
   private readonly commandCatalog: ClaudeCommandCatalog
   private readonly usageReader: ClaudeUsageReader
+  private readonly authReader: ClaudeAuthReader
   readonly cli: CliBinary
 
   constructor(config: Config) {
@@ -72,6 +75,7 @@ export class ClaudeAdapter implements AgentAdapter {
     this.catalog = new ClaudeModelCatalog(() => this.cli.executable())
     this.commandCatalog = new ClaudeCommandCatalog(() => this.cli.executable())
     this.usageReader = new ClaudeUsageReader(() => this.cli.executable())
+    this.authReader = new ClaudeAuthReader(() => this.cli.executable())
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -168,6 +172,10 @@ export class ClaudeAdapter implements AgentAdapter {
 
   usage(force: boolean): Promise<AgentUsage> {
     return this.usageReader.read(force)
+  }
+
+  auth(force: boolean): Promise<AgentAuth> {
+    return this.authReader.read(force)
   }
 
   /** `credential` est le dossier de la connexion de jauge ; vide, le compte n'en a pas. */

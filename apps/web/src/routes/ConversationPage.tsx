@@ -16,7 +16,7 @@ import { useAutoOpenPrototypes } from '../lib/prototypes'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
-import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
+import { AGENT_CAPABILITIES, RESUMES_FROM_OTHER_DIRECTORY, type AgentKind } from '@solera/protocol'
 import { useGuardedArchive } from '../components/ArchiveRequestsDialog'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
@@ -51,6 +51,7 @@ import {
   steerConversation,
   useAllConversations,
   useContinueAtProjectRoot,
+  useReturnToProjectRoot,
   useConversation,
 } from '../lib/conversations'
 import { ApiRequestError } from '../lib/api'
@@ -1144,6 +1145,18 @@ export function ConversationPage() {
                   {placeBranch ? ` · ${placeBranch}` : null}
                 </Meta>
 
+                {/* À côté de l'arbre qu'elle fait quitter. Un arbre disparu a déjà son
+                    issue, le bandeau à la place du composer. */}
+                {worktree && isOwner && !conversation.worktreeGone ? (
+                  <ReturnToRootAction
+                    key={conversationId}
+                    conversationId={conversationId}
+                    agent={conversation.agent}
+                    worktreeName={worktree.name}
+                    running={stream.status === 'running' || stream.status === 'awaiting_input'}
+                  />
+                ) : null}
+
                 {/* Une branche dit d'où elle vient : sans ça, deux fils presque identiques
                     dans la sidebar sont impossibles à distinguer. Le lien disparaît si
                     l'originale a été supprimée, la référence devenant orpheline. */}
@@ -1577,6 +1590,60 @@ function WorktreeGoneIssues({
         onContinue={() => continueAtRoot.mutate(conversationId)}
       />
       {archive.dialog}
+    </>
+  )
+}
+
+/**
+ * *Ramener à la racine du projet* : le fil quitte un worktree qui existe encore. La
+ * confirmation dit que l'arbre reste, et si l'agent garde sa session ou repart sur une
+ * neuve. Pendant un tour, le geste attend, et dit pourquoi en toutes lettres : une
+ * infobulle n'existe pas au doigt.
+ */
+function ReturnToRootAction({
+  conversationId,
+  agent,
+  worktreeName,
+  running,
+}: {
+  conversationId: string
+  agent: AgentKind
+  worktreeName: string
+  running: boolean
+}) {
+  const t = useTranslate()
+  const [confirming, setConfirming] = useState(false)
+  const returnToRoot = useReturnToProjectRoot()
+  return (
+    <>
+      <span className="flex basis-full flex-wrap items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<FolderTree size={14} />}
+          disabled={running}
+          onClick={() => { returnToRoot.reset(); setConfirming(true) }}
+        >
+          {t('conversation.returnToRoot.action')}
+        </Button>
+        {running ? <span className="text-ink-faint">{t('conversation.returnToRoot.running')}</span> : null}
+      </span>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('conversation.returnToRoot.title')}
+        confirmLabel={t('conversation.returnToRoot.confirm')}
+        busy={returnToRoot.isPending || running}
+        onConfirm={() => returnToRoot.mutate(conversationId, { onSuccess: () => setConfirming(false) })}
+      >
+        <p>{t('conversation.returnToRoot.body', { name: worktreeName })}</p>
+        <p>
+          {RESUMES_FROM_OTHER_DIRECTORY[agent]
+            ? t('conversation.returnToRoot.keepsSession')
+            : t('conversation.returnToRoot.newSession')}
+        </p>
+        {returnToRoot.error ? <Banner>{returnToRoot.error.message}</Banner> : null}
+      </ConfirmDialog>
     </>
   )
 }

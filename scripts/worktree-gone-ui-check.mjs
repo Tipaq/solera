@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +18,9 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
 const data = await mkdtemp(join(tmpdir(), 'solera-ui-check-'))
+// Les captures restent après la suite, à côté de la base temporaire et non dedans.
+const shots = join(tmpdir(), 'solera-worktree-gone-shots')
+await mkdir(shots, { recursive: true })
 const processes = []
 let browser
 
@@ -128,6 +131,45 @@ try {
   await page.unroute(`${heroUrl}/project-root`)
   await page.unroute('**/api/conversations')
   console.log('OK : worktree disparu, bandeau à la place du composer, Archiver et Continuer à la racine.')
+
+  // Un arbre vivant : la session se ramène à la racine depuis les détails, et l'arbre
+  // reste. La démo laisse ce fil au travail : le geste attend, et dit pourquoi.
+  const openDetails = async () => {
+    await page.getByRole('button', { name: 'Joindre, skills, serveurs, réglages', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Détails de la conversation', exact: true }).click()
+    const details = page.getByRole('dialog', { name: 'Détails de la conversation' })
+    await details.waitFor()
+    return details
+  }
+  let details = await openDetails()
+  let bringBack = details.getByRole('button', { name: 'Ramener à la racine du projet', exact: true })
+  await bringBack.waitFor()
+  assert.ok(await bringBack.isDisabled(), 'Pas de déménagement pendant un tour')
+  await details.getByText('Un tour est en cours : la session se ramène une fois au repos.', { exact: true }).waitFor()
+  await details.screenshot({ path: join(shots, 'details-return-to-root-running.png') })
+  await page.keyboard.press('Escape')
+  await details.waitFor({ state: 'hidden' })
+
+  // Au repos — le fil du radar —, la confirmation dit que l'arbre reste, et le fil
+  // passe à la racine.
+  const radar = conversations.find((entry) => entry.title === 'Radar tile prefetching')
+  await page.goto(`${base}/p/${project.id}/c/${radar.id}`)
+  await page.locator('textarea').waitFor()
+  details = await openDetails()
+  await details.getByRole('button', { name: 'Ramener à la racine du projet', exact: true }).click()
+  const confirm = page.getByRole('dialog', { name: 'Ramener la session à la racine du projet ?' })
+  await confirm.getByText(/Le worktree feat\/radar-prefetch reste tel quel/).waitFor()
+  await confirm.getByText("L'agent reprend la même session.", { exact: true }).waitFor()
+  await confirm.screenshot({ path: join(shots, 'return-to-root-confirm.png') })
+  await confirm.getByRole('button', { name: 'Ramener', exact: true }).click()
+  await confirm.waitFor({ state: 'hidden' })
+  await details.getByRole('button', { name: 'Ramener à la racine du projet', exact: true }).waitFor({ state: 'detached' })
+  await details.locator('[title="Dossier du projet"]').waitFor()
+  const moved = await (await context.request.get(`${base}/api/conversations/${radar.id}`)).json()
+  assert.equal(moved.worktreeId, null)
+  const trees = await (await context.request.get(`${base}/api/projects/${project.id}/worktrees`)).json()
+  assert.ok(trees.some((tree) => tree.name === 'feat/radar-prefetch'), "L'arbre reste")
+  console.log('OK : arbre vivant, Ramener à la racine depuis les détails, refusé pendant un tour.')
 
   assert.deepEqual(errors, [])
 } finally {

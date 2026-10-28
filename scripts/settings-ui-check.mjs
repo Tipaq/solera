@@ -9,7 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
-// Les réglages des agents (#120) : les trois groupes de la modale, les demandes à Solera
+// Les réglages des agents (#120) : les trois groupes de la modale, la section Agents, les demandes à Solera
 // en trois états au compte, les anciennes adresses, et l'héritage au projet — hérité,
 // modifié ici, rendu à l'héritage. Vrais composants et vraie API, base temporaire,
 // aucun CLI lancé.
@@ -108,7 +108,7 @@ try {
   }
   const dialog = page.getByRole('dialog')
   const nav = await dialog.getByRole('button').allTextContents()
-  const order = ['Permissions', 'Modèles par défaut', 'Abonnements', 'Consignes', 'Skills', 'Serveurs MCP']
+  const order = ['Permissions', 'Agents', 'Consignes', 'Skills', 'Serveurs MCP']
   const positions = order.map((label) => nav.findIndex((text) => text.startsWith(label)))
   assert.ok(positions.every((position) => position >= 0), `sections des agents : ${nav.join(' | ')}`)
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'ordre des sections des agents')
@@ -123,13 +123,17 @@ try {
   await shot(requests, '01-demandes-compte')
   await shot(card('Le réflexe du CLI'), '02-reflexe-compte')
 
-  // Les adresses d'avant mènent aux sections qui les remplacent.
+  // Les adresses d'avant mènent à la section qui les remplace, Agents, et à l'onglet du
+  // CLI quand elles le nommaient.
   await page.goto(`${base}/settings/cli`)
-  await page.getByRole('heading', { name: 'Modèles par défaut', level: 2 }).or(page.getByRole('heading', { name: 'Modèles par défaut', exact: true })).first().waitFor()
+  await page.getByRole('heading', { name: 'Agents', exact: true }).first().waitFor()
+  await page.getByRole('tab', { name: 'Claude', selected: true }).waitFor()
   await page.getByRole('combobox', { name: 'Modèle' }).waitFor()
   await shot(card('Modèle, effort et abonnement'), '03-modeles')
   await page.goto(`${base}/settings/comptes-codex`)
   await page.getByRole('tab', { name: 'Codex', selected: true }).waitFor()
+  await page.goto(`${base}/settings/abonnements`)
+  await page.getByRole('tab', { name: 'Claude', selected: true }).waitFor()
 
   // Le projet : hérité du compte, modifié ici, puis rendu à l'héritage (Q33).
   const projects = await (await context.request.get(`${base}/api/projects`)).json()

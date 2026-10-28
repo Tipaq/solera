@@ -31,19 +31,11 @@ export function AgentInstallRow({ entry, onDismiss }: { entry: AgentAvailability
   if (entry.installed || entry.reason === 'disabled') return null
 
   const label = AGENT_LABELS[entry.agent]
-  // Dès le clic et avant la réponse du serveur, un départ sans rien de reçu : le rang ne
-  // doit pas rester muet le temps de l'aller-retour.
-  const progress: InstallProgress | null =
-    entry.install.status === 'running'
-      ? { startedAt: entry.install.startedAt, fetched: entry.install.fetched, current: entry.install.current }
-      : install.isPending
-        ? { startedAt: Date.now(), fetched: 0, current: null }
-        : null
+  const progress = installProgress(entry, install.isPending)
   if (progress) {
-    const version = entry.install.status === 'running' ? entry.install.version : entry.preferredVersion
     return (
       <div className="rounded-lg border border-line p-3">
-        <AgentInstallProgress label={label} version={version} progress={progress} />
+        <AgentInstallProgress label={label} version={progress.version} progress={progress} />
       </div>
     )
   }
@@ -69,6 +61,22 @@ export function AgentInstallRow({ entry, onDismiss }: { entry: AgentAvailability
   )
 }
 
+/**
+ * L'avancement à montrer, ou null quand rien ne s'installe. Dès le clic et avant la
+ * réponse du serveur (`pending`), un départ sans rien de reçu : le rang ne doit pas
+ * rester muet le temps de l'aller-retour.
+ */
+export function installProgress(
+  entry: AgentAvailabilityDto,
+  pending: boolean,
+): (InstallProgress & { version: string }) | null {
+  if (entry.install.status === 'running') {
+    const { startedAt, fetched, current, version } = entry.install
+    return { startedAt, fetched, current, version }
+  }
+  return pending ? { startedAt: Date.now(), fetched: 0, current: null, version: entry.preferredVersion } : null
+}
+
 /** Le temps écoulé depuis `startedAt`, en secondes, rafraîchi chaque seconde. */
 function useElapsed(startedAt: number): number {
   const [now, setNow] = useState(() => Date.now())
@@ -86,7 +94,7 @@ function useElapsed(startedAt: number): number {
  * temps écoulé répond à la question qu'on se pose devant un bouton muet : « est-ce que
  * c'est planté ? ».
  */
-function AgentInstallProgress({ label, version, progress }: { label: string; version: string; progress: InstallProgress }) {
+export function AgentInstallProgress({ label, version, progress }: { label: string; version: string; progress: InstallProgress }) {
   const t = useTranslate()
   const elapsed = useElapsed(progress.startedAt)
   const minutes = Math.floor(elapsed / 60)

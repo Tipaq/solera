@@ -190,7 +190,20 @@ try {
   console.log('OK : nettoyage des fusionnés en un geste.')
 
   // Un arbre habité et non commité se nettoie depuis son en-tête : la confirmation dit
-  // ce qui serait perdu, et la session qui y vit, archivée d'office.
+  // ce qui serait perdu, et la session qui y vit, archivée d'office. La démo n'a pas de
+  // session de la racine qui y ait écrit : le plan en reçoit deux, dont une au travail,
+  // qui figure alors aussi parmi celles que le nettoyage attend.
+  const planRoute = '**/api/projects/*/worktrees/cleanup?*'
+  await page.route(planRoute, async (route) => {
+    const response = await route.fetch()
+    const plan = await response.json()
+    plan.restarted = [
+      { id: 'root-1', title: 'Plan the release', running: false },
+      { id: 'root-2', title: 'Orchestrate the agents', running: true },
+    ]
+    plan.busy = [...plan.busy, { id: 'root-2', title: 'Orchestrate the agents' }]
+    await route.fulfill({ response, json: plan })
+  })
   await offline.getByRole('button', { name: 'Nettoyer feat/offline-cache' }).click()
   const dirtyDialog = page.getByRole('dialog', { name: 'Nettoyer feat/offline-cache' })
   await dirtyDialog.getByText(/fichiers? modifiés?/).first().waitFor()
@@ -198,9 +211,13 @@ try {
   await archive.waitFor()
   assert.ok(await archive.isDisabled(), 'Archiver n’est pas un choix')
   await dirtyDialog.getByRole('switch', { name: /Passer la carte #\d+ en Terminé/ }).waitFor()
+  await dirtyDialog.getByText(/^2 sessions hors de l'arbre y ont écrit : elles continuent/).waitFor()
+  await dirtyDialog.getByText('Plan the release, Orchestrate the agents (au travail)', { exact: true }).waitFor()
+  assert.ok(await dirtyDialog.getByRole('button', { name: 'Nettoyer', exact: true }).isDisabled(), 'Une session liée au travail retient le nettoyage')
   await dirtyDialog.screenshot({ path: join(shots, 'cleanup-dialog-dirty.png') })
   await dirtyDialog.getByRole('button', { name: 'Annuler', exact: true }).click()
   await dirtyDialog.waitFor({ state: 'hidden' })
+  await page.unroute(planRoute)
   assert.deepEqual(errors, [])
   console.log('OK : confirmation sur un arbre non commité.')
 

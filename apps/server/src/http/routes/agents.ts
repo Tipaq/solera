@@ -1,6 +1,14 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentKindSchema, PREFERRED_CLI_RELEASES, type ProjectCommandsDto } from '@solera/protocol'
+import {
+  agentKindSchema,
+  PREFERRED_CLI_RELEASES,
+  type AgentAuthDto,
+  type AgentKind,
+  type ProjectCommandsDto,
+  type UsagePeekDto,
+} from '@solera/protocol'
+import { UNKNOWN_AUTH } from '../../agents/auth.js'
 import type { CliInstaller } from '../../agents/cli-install.js'
 import type { AgentAdapter, AgentRegistry } from '../../agents/registry.js'
 import type { ClaudeAccountStore } from '../../claude-accounts/store.js'
@@ -69,6 +77,18 @@ export function registerAgentRoutes(
     }
     return null
   }
+  /**
+   * Vrai quand le compte appartient à l'utilisateur, sans rien résoudre ni créer : la
+   * connexion du CLI (null) est partagée, un compte supplémentaire n'est qu'à son
+   * propriétaire.
+   */
+  const ownsAccount = (agent: AgentKind, userId: string, accountId: string | null): boolean => {
+    if (accountId === null) return true
+    if (agent === 'claude') return claudeAccounts.find(userId, accountId) !== undefined
+    if (agent === 'codex') return codexAccounts.store.find(userId, accountId) !== undefined
+    if (agent === 'grok') return grokAccounts.store.find(userId, accountId) !== undefined
+    return false
+  }
   const resolveAdapter = (agent: string): AgentAdapter => {
     const adapter = registry.find(agent)
     if (!adapter) throw new HttpError(404, 'unknown_agent', 'Unknown CLI: {agent}.', { agent })
@@ -99,6 +119,45 @@ export function registerAgentRoutes(
       })),
     )
     return { agents }
+  })
+
+  /**
+   * Connexion de chaque CLI installé et activé, sans ouvrir de session : la page de
+   * brouillon la montre à côté du choix du CLI. Un adaptateur qui échoue ou n'a rien de
+   * bon marché à dire répond `unknown` pour lui seul, jamais une erreur pour la liste.
+   * `?refresh=1` court-circuite les caches.
+   */
+  app.get('/api/agents/auth', async (request): Promise<{ entries: AgentAuthDto[] }> => {
+    requireUser(request)
+    const force = (request.query as { refresh?: string }).refresh === '1'
+
+    const entries = await Promise.all(
+      registry.all().map(async (adapter): Promise<AgentAuthDto | null> => {
+        const cli = await adapter.cli.describe().catch(() => null)
+        if (!cli?.enabled || !cli.installed) return null
+        const auth = await (adapter.auth?.(force) ?? Promise.resolve(UNKNOWN_AUTH)).catch(() => UNKNOWN_AUTH)
+        return {
+          agent: adapter.kind,
+          account: null,
+          status: auth.status,
+          method: auth.method,
+          plan: auth.plan,
+          identity: auth.identity,
+        }
+      }),
+    )
+    return { entries: entries.filter((entry) => entry !== null) }
+  })
+
+  /**
+   * Aperçu gratuit de la consommation : la dernière lecture complète gardée en mémoire et
+   * les signaux de limite des vrais tours, par CLI et par compte. Ne sonde jamais — c'est
+   * `/api/agents/:agent/usage` qui coûte un process. Seuls la connexion du CLI et les
+   * comptes de l'utilisateur y figurent.
+   */
+  app.get('/api/agents/usage/peek', async (request): Promise<{ entries: UsagePeekDto[] }> => {
+    const user = requireUser(request)
+    return { entries: registry.usageLedger.peek((agent, account) => ownsAccount(agent, user.id, account)) }
   })
 
   /**
@@ -136,12 +195,19 @@ export function registerAgentRoutes(
     const force = refresh === '1'
 
     try {
-      if (!account) return await adapter.usage(force)
+      if (!account) {
+        const usage = await adapter.usage(force)
+        registry.usageLedger.recordProbe(adapter.kind, null, usage)
+        return usage
+      }
       const credential = accountCredential(adapter.kind, user.id, account)
       if (credential === null || !adapter.usageForAccount) {
         throw new HttpError(404, 'agent_account_not_found', 'Unknown account for this CLI.')
       }
-      return await adapter.usageForAccount(account, credential, force)
+      const usage = await adapter.usageForAccount(account, credential, force)
+      // Gardée pour l'aperçu gratuit, sous le compte qui l'a produite.
+      registry.usageLedger.recordProbe(adapter.kind, account, usage)
+      return usage
     } catch (err) {
       if (err instanceof HttpError) throw err
       throw cliUnavailable(

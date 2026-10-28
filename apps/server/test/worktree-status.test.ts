@@ -430,8 +430,13 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
     { id: 'c2', projectId: 'project', userId: 'owner', title: 'two', agent: 'claude', config: '{}', status: 'idle', worktreeId: 'wt-known', archivedAt: 1, createdAt: 1, updatedAt: 1 },
     // Une session de la racine qui a cité l'arbre dans une commande : elle n'y vit pas.
     { id: 'c3', projectId: 'project', userId: 'owner', title: 'root', agent: 'claude', config: '{}', status: 'running', createdAt: 1, updatedAt: 1 },
+    // Archivée, une session de la racine n'a plus de prochain message : la confirmation la tait.
+    { id: 'c4', projectId: 'project', userId: 'owner', title: 'old root', agent: 'claude', config: '{}', status: 'idle', archivedAt: 1, createdAt: 1, updatedAt: 1 },
   ] as never).run()
-  db.insert(conversationPaths).values({ conversationId: 'c3', path: known, lastTs: 1 }).run()
+  db.insert(conversationPaths).values([
+    { conversationId: 'c3', path: known, lastTs: 1 },
+    { conversationId: 'c4', path: join(known, 'src/k.ts'), lastTs: 1 },
+  ]).run()
   const external = addTree(repo, trees, 'feat/external')
   write(external, 'notes.md', 'keep?\n')
 
@@ -440,7 +445,11 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const closed: string[] = []
   const terminals = { underCwd: () => [] as string[], close: (id: string) => closed.push(id) } as unknown as TerminalManager
   const dropped: string[] = []
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async (id) => { dropped.push(id) })
+  const released: string[] = []
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, {
+    dropCheckpoints: async (id) => { dropped.push(id) },
+    releaseRunner: async (id) => { released.push(id); return true },
+  })
 
   assert.equal(await cleanup.plan(projectRow, join(trees, 'nowhere')), null, 'un chemin hors du projet est refusé')
   assert.equal(await cleanup.plan(projectRow, repo), null, "l'arbre principal n'est pas un chantier")
@@ -454,9 +463,13 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   // La session de la racine qui a écrit dans l'arbre tourne : elle y travaille peut-être,
   // le nettoyage l'attend aussi, sans pour autant l'archiver.
   assert.deepEqual(plan.busy.map((c) => c.id), ['c3'])
+  // La confirmation la nomme : gardée, relancée sans l'arbre, et dite au travail.
+  assert.deepEqual(plan.restarted, [{ id: 'c3', title: 'root', running: true }])
   await assert.rejects(cleanup.run(projectRow, { path: known, deleteBranch: true, stopServices: true }), /working in this worktree/)
   db.update(conversations).set({ status: 'idle' }).where(sqlEq(conversations.id, 'c3')).run()
-  assert.deepEqual((await cleanup.plan(projectRow, known))!.busy, [])
+  const idle = (await cleanup.plan(projectRow, known))!
+  assert.deepEqual(idle.busy, [])
+  assert.deepEqual(idle.restarted, [{ id: 'c3', title: 'root', running: false }])
 
   // Une session qui vit dans l'arbre et travaille : le nettoyage attend la fin de son tour.
   db.update(conversations).set({ status: 'running' }).where(sqlEq(conversations.id, 'c1')).run()
@@ -468,6 +481,8 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
   const result = (await cleanup.run(projectRow, { path: known, deleteBranch: true, stopServices: true }))!
   assert.deepEqual([result.removed, result.branchDeleted, result.archived], [true, true, 1])
   assert.deepEqual(dropped, ['c1', 'c2'])
+  // Le CLI des sessions rangées est arrêté ; celui de la session de la racine, non.
+  assert.deepEqual(released, ['c1', 'c2'])
   assert.ok(!(await listWorktrees(repo)).some((e) => e.path === known))
   assert.ok(!git(repo, 'branch', '--list', 'feat/known'))
   assert.ok(db.select().from(worktrees).where(sqlEq(worktrees.id, 'wt-known')).get()?.removedAt)
@@ -477,7 +492,7 @@ test('nettoyer : plan puis exécution, arbre connu et arbre externe, branche et 
 
   // Un arbre externe, non commité : le plan le dit, et il se nettoie en gardant la branche.
   const external2 = (await cleanup.plan(projectRow, external))!
-  assert.deepEqual([external2.state, external2.untracked, external2.conversations], ['dirty', 1, []])
+  assert.deepEqual([external2.state, external2.untracked, external2.conversations, external2.restarted], ['dirty', 1, [], []])
   const kept = (await cleanup.run(projectRow, { path: external, deleteBranch: false, stopServices: false }))!
   assert.deepEqual([kept.removed, kept.branchDeleted], [true, false])
   assert.equal(git(repo, 'branch', '--list', 'feat/external').trim(), 'feat/external')
@@ -503,7 +518,7 @@ test('nettoyer : un arbre que git refuse de retirer reste, et sa perte de commit
   const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
   const status = new WorktreeStatusService(db, new EventLog(db))
   const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
-  const cleanup = new WorktreeCleanup(db, dir, status, terminals, async () => {})
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => {}, releaseRunner: async () => true })
 
   // Un commit que la base n'a pas, puis du non commité par-dessus : l'état dit « non
   // commité », mais le plan sait aussi que supprimer la branche perdrait le commit.
