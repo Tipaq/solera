@@ -2,6 +2,7 @@ import { TooltipButton } from '@solera/ui'
 import { openSettings } from '../../lib/settings-dialog'
 import { ArrowUp, Clock, Loader2, Mic, Square } from 'lucide-react'
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -129,6 +130,28 @@ function defaultPastedName(mimeType: string): string {
 /** Au-delà, le champ défile au lieu de manger la conversation. */
 const MAX_TEXTAREA_PX = 200
 
+/**
+ * Le navigateur sait dimensionner le champ sur son contenu (`field-sizing`), sans le
+ * reflow forcé que coûte la lecture de `scrollHeight` à chaque frappe. Safari et Firefox
+ * ne le savent pas encore : ils gardent la mesure en JavaScript. Le plafond reste celui
+ * de `max-h-[200px]`, et l'écart avec la mesure arrondie est sous le pixel.
+ */
+const FIELD_SIZING = typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content')
+
+/** Même jeton, mêmes bornes : le précédent est gardé, pour ne pas relancer ce qui en dépend. */
+function sameToken<T extends { query: string; start: number; end: number; sigil?: string }>(
+  current: T | null,
+  next: T | null,
+): T | null {
+  if (current === null || next === null) return next
+  return current.query === next.query &&
+    current.start === next.start &&
+    current.end === next.end &&
+    current.sigil === next.sigil
+    ? current
+    : next
+}
+
 interface ComposerProps {
   config: AgentConfig
   status: ConversationStatus
@@ -240,7 +263,12 @@ interface ComposerProps {
   footer?: ReactNode
 }
 
-export function Composer({
+/**
+ * Mémoïsé : la page qui le porte se redessine à chaque événement du fil, et la saisie
+ * n'a à suivre que ce qui la concerne. L'effet tient tant que l'appelant passe des
+ * props stables.
+ */
+export const Composer = memo(function Composer({
   config,
   status,
   disabled,
@@ -315,13 +343,17 @@ export function Composer({
     disabled,
   })
   const { summary, mcpPanel, mcpItems, mcpSummary, catalogError } = settingsOfCli
-  const groups = markChangedHere(settingsOfCli.groups, configOverrides, onConfigReset)
+  const groups = useMemo(
+    () => markChangedHere(settingsOfCli.groups, configOverrides, onConfigReset),
+    [settingsOfCli.groups, configOverrides, onConfigReset],
+  )
 
   // Hauteur suivant le contenu, plafonnée : sur mobile, un champ qui pousse la
-  // conversation hors de l'écran rend la saisie inutilisable.
+  // conversation hors de l'écran rend la saisie inutilisable. Avec `field-sizing`, c'est
+  // le navigateur qui s'en charge, sans mesure.
   useEffect(() => {
     const node = textarea.current
-    if (!node) return
+    if (!node || FIELD_SIZING) return
     node.style.height = 'auto'
     node.style.height = `${Math.min(node.scrollHeight, MAX_TEXTAREA_PX)}px`
   }, [text])
@@ -526,16 +558,29 @@ export function Composer({
 
   const syncToken = (value: string, caret: number | null) => {
     const position = caret ?? value.length
-    setToken(mentionAt(value, position))
-    setCardToken(cardAt(value, position))
-    setSessionToken(projectId ? sessionMentionAt(value, position) : null)
+    // Un jeton identique garde son objet : les listes qui en dépendent ne se recalculent
+    // pas, et React n'a rien à redessiner.
+    const mention = mentionAt(value, position)
+    setToken((current) => sameToken(current, mention))
+    const card = cardAt(value, position)
+    setCardToken((current) => sameToken(current, card))
+    const session = projectId ? sessionMentionAt(value, position) : null
+    setSessionToken((current) => sameToken(current, session))
     // Un sigle dont le CLI n'a rien publié n'ouvre pas de liste : mieux vaut ne rien
     // proposer que d'annoncer un vide à chaque `$` d'une commande shell citée.
     const found = sigilAt(value, position)
     const available = found?.sigil === '/' ? offered.length > 0 : skills.length > 0
-    setSigil(found && available ? found : null)
+    const nextSigil = found && available ? found : null
+    setSigil((current) => sameToken(current, nextSigil))
     setActive(0)
   }
+
+  /**
+   * La synchronisation que vient de faire la frappe, que la sélection qui la suit
+   * n'a pas à refaire : même texte, même curseur, mêmes listes. Effacée par toute
+   * touche et par la perte du focus, qui peuvent fermer une liste sans toucher au texte.
+   */
+  const typed = useRef<{ value: string; caret: number | null; offered: SlashCommandDto[]; skills: AgentSkillDto[]; projectId?: string } | null>(null)
 
   /**
    * Un préfixe choisi dans « Insérer », écrit au curseur comme s'il avait été tapé : la
@@ -552,6 +597,12 @@ export function Composer({
       syncToken(result.text, result.caret)
     })
   }
+  // Une référence stable pour le menu « + », mémoïsé : elle appelle toujours la version
+  // du dernier rendu, celle qui voit le texte courant.
+  const latestInsert = useRef(insertPrefix)
+  latestInsert.current = insertPrefix
+  const onInsert = useCallback((prefix: InsertPrefix) => latestInsert.current(prefix), [])
+  const onAttach = useCallback(() => filePicker.current?.click(), [])
   const inserts = useInsertEntries({
     project: Boolean(projectId),
     commands: offered.length > 0,
@@ -708,12 +759,12 @@ export function Composer({
     }
   }
 
-  const removeAttachment = (id: string) => {
+  const removeAttachment = useCallback((id: string) => {
     // Retiré de l'écran d'abord : le fichier téléversé qui subsisterait côté serveur
     // est de toute façon ramassé comme orphelin.
     setAttachments((current) => current.filter((entry) => entry.id !== id))
     void discardAttachment(id).catch(() => {})
-  }
+  }, [])
 
   /**
    * Collage d'un fichier, typiquement une capture d'écran.
@@ -737,6 +788,7 @@ export function Composer({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    typed.current = null
     // La liste ouverte capte d'abord les touches de navigation et de validation :
     // sinon Entrée enverrait le message au lieu d'insérer l'entrée sélectionnée. Les
     // deux jetons s'excluant, une seule liste est ouverte à la fois.
@@ -804,7 +856,7 @@ export function Composer({
 
   // Ce que la rangée doit montrer des réglages sans ouvrir le menu : la pastille du
   // « + », et le mode Plan en toutes lettres.
-  const settings = settingsStatus(groups, summary, t)
+  const settings = useMemo(() => settingsStatus(groups, summary, t), [groups, summary, t])
   const modelGroup = groups.find((group) => group.key === 'model')
   const modelLabel =
     modelGroup?.options.find((option) => option.value === modelGroup.value)?.label ||
@@ -914,15 +966,32 @@ export function Composer({
             ref={textarea}
             value={text}
             onChange={(event) => {
-              setText(event.target.value)
-              syncToken(event.target.value, event.target.selectionStart)
+              const { value, selectionStart } = event.target
+              setText(value)
+              syncToken(value, selectionStart)
+              typed.current = { value, caret: selectionStart, offered, skills, projectId }
             }}
             // Le curseur peut entrer dans un `@` déjà écrit, ou en sortir, sans que le
             // texte change : la liste doit suivre le curseur, pas seulement la frappe.
-            onSelect={(event) =>
-              syncToken(event.currentTarget.value, event.currentTarget.selectionStart)
-            }
+            // La sélection qui suit une frappe, elle, retomberait sur le même résultat.
+            onSelect={(event) => {
+              const { value, selectionStart } = event.currentTarget
+              const last = typed.current
+              typed.current = null
+              if (
+                last &&
+                last.value === value &&
+                last.caret === selectionStart &&
+                last.offered === offered &&
+                last.skills === skills &&
+                last.projectId === projectId
+              ) {
+                return
+              }
+              syncToken(value, selectionStart)
+            }}
             onBlur={() => {
+              typed.current = null
               setToken(null)
               setSessionToken(null)
               setSigil(null)
@@ -934,6 +1003,7 @@ export function Composer({
             placeholder={disabled ? t('composer.placeholder.readonly') : t('composer.placeholder.write')}
             className={cx(
               'max-h-[200px] w-full resize-none bg-transparent px-2 py-2',
+              FIELD_SIZING && '[field-sizing:content]',
               'text-heading leading-relaxed text-ink outline-none',
               'placeholder:text-ink-faint disabled:opacity-60',
               variant === 'draft' && 'min-h-28',
@@ -968,7 +1038,7 @@ export function Composer({
               mcpSummary={mcpSummary}
               disabled={disabled}
               inputRef={textarea}
-              onAttach={() => filePicker.current?.click()}
+              onAttach={onAttach}
               canAttach={attachments.length < MAX_ATTACHMENTS_PER_MESSAGE}
               projectId={projectId}
               config={config}
@@ -978,7 +1048,7 @@ export function Composer({
               onDetails={onDetails}
               onHandoff={onHandoff}
               inserts={inserts}
-              onInsert={insertPrefix}
+              onInsert={onInsert}
             />
 
             {/* Dehors, et pas dans le menu : c'est l'action la plus fréquente au doigt. */}
@@ -1090,4 +1160,4 @@ export function Composer({
       {footer}
     </div>
   )
-}
+})

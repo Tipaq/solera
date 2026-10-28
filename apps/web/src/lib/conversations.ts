@@ -17,11 +17,18 @@ export const conversationsKey = (projectId: string | null) => ['conversations', 
 const ALL_CONVERSATIONS_KEY = ['conversations', 'all']
 
 /** Toutes les conversations visibles, pour la sidebar. Une requête, pas une par projet. */
-export function useAllConversations() {
+/**
+ * `select` : ne lire qu'une partie de la liste. Le composant ne rend alors que lorsque
+ * cette partie change, et non à chaque réécriture de la liste — le curseur de lecture
+ * du fil ouvert la réécrit toutes les deux secondes pendant un tour. La fonction doit
+ * être stable (`useCallback`), sinon elle repasse à chaque rendu.
+ */
+export function useAllConversations<T = ConversationDto[]>(select?: (list: ConversationDto[]) => T) {
   return useQuery({
     queryKey: ALL_CONVERSATIONS_KEY,
     queryFn: () => api.get<ConversationDto[]>('/api/conversations'),
     staleTime: 10_000,
+    select,
   })
 }
 

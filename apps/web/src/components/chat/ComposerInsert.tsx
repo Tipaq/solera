@@ -1,4 +1,5 @@
 import { MenuItem } from '@solera/ui'
+import { useMemo } from 'react'
 import type { AgentKind } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { Entry } from './ComposerPlusMenu'
@@ -29,7 +30,8 @@ export function useInsertEntries({ project, commands, skills, agent }: {
   const t = useTranslate()
   // Claude et Grok rangent leurs skills parmi leurs commandes : un seul `/` pour les deux.
   const combined = agent === 'claude' || agent === 'grok'
-  return [
+  // Mémoïsé : la liste part au menu « + », qui ne se redessine pas tant qu'elle ne bouge pas.
+  return useMemo(() => [
     ...(project
       ? [
           { prefix: '@' as const, label: t('composer.insert.file'), hint: t('composer.insert.fileHint') },
@@ -45,7 +47,7 @@ export function useInsertEntries({ project, commands, skills, agent }: {
         }]
       : []),
     ...(skills ? [{ prefix: '$' as const, label: t('composer.insert.skill'), hint: t('composer.insert.skillHint') }] : []),
-  ]
+  ], [project, commands, skills, combined, t])
 }
 
 /** Au pointeur : le préfixe à droite, à la place d'un raccourci, puisque c'en est un. */

@@ -80,7 +80,9 @@ export function AppShell() {
   useEffect(() => setPanelScope(pathname), [pathname])
   const revalidateLists = useRevalidateLists()
 
-  useEffect(restoreSidebarWidth, [])
+  useEffect(() => {
+    if (aside.current) restoreSidebarWidth(aside.current)
+  }, [])
 
   useEffect(() => {
     if (!wide && navOpen) revalidateLists()
@@ -124,7 +126,9 @@ export function AppShell() {
   const handle = resizeHandle({
     widthAt: (clientX) => clientX,
     current: () => aside.current?.getBoundingClientRect().width ?? null,
-    apply: setSidebarWidth,
+    apply: (width, persist) => {
+      if (aside.current) setSidebarWidth(aside.current, width, persist)
+    },
   })
 
   return (
@@ -251,7 +255,7 @@ export function AppShell() {
             autres reçoivent celui-ci. Il ne s'efface sur grand écran que si la colonne
             de gauche est dépliée : sinon il porterait seul le bouton qui la ramène. */}
         {!contextualHeader ? (
-          <HeaderBand className={cx('bg-canvas/85 backdrop-blur-md', !hidden && 'md:hidden')}>
+          <HeaderBand className={cx('bg-canvas/85', !hidden && 'md:hidden')}>
             <span className="flex items-center gap-1.5 md:hidden">
               <Logo size={18} className="text-accent" />
               <span className="font-medium">Solera</span>

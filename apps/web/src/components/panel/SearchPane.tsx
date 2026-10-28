@@ -1,5 +1,5 @@
 import { CaseSensitive, ChevronRight, Loader, Regex, Search, WholeWord, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, ConfirmDialog, IconButton, TooltipButton, cx } from '@solera/ui'
 import type { ContentFileDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
@@ -27,7 +27,7 @@ import {
  * — et chacune peut être tronquée sans l'autre. Elles se présentent sous deux titres
  * pour cette raison, et pas seulement pour la mise en page.
  */
-export function SearchPane({ scope, onOpenFile }: {
+export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
   scope: string
   onOpenFile: (path: string) => void
 }) {
@@ -261,7 +261,7 @@ export function SearchPane({ scope, onOpenFile }: {
       </ConfirmDialog>
     </div>
   )
-}
+})
 
 function Section({ children }: { children: string }) {
   return (

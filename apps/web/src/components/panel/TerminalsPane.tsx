@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { clearFocusedTerminal, useFocusedTerminal } from '../../lib/panel'
@@ -20,7 +20,7 @@ import { TerminalView } from './TerminalView'
  * coupée parce qu'on regarde l'autre, et remonter un terminal repartirait d'un écran
  * vide alors que le pty, lui, a continué.
  */
-export function TerminalsPane({
+export const TerminalsPane = memo(function TerminalsPane({
   projectId,
   /** Présente en vue conversation : le nouveau terminal s'ouvre dans son répertoire. */
   conversationId,
@@ -194,4 +194,4 @@ export function TerminalsPane({
       ))}
     </div>
   )
-}
+})

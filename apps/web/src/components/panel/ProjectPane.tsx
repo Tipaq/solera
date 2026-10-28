@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight, Circle, CircleCheck, CircleDot, Eye, Link2, Loader, Plus, RotateCw, SquareKanban, Unlink } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { CardDto, CardLinkDto } from '@solera/protocol'
 import { useCards, useCreateCard } from '../../lib/cards'
@@ -45,7 +45,7 @@ export interface ProjectPaneSession {
  * Une carte ouverte depuis l'un ou l'autre s'empile par-dessus, avec un retour : on ne
  * quitte pas la session pour lire la voisine.
  */
-export function ProjectPane({
+export const ProjectPane = memo(function ProjectPane({
   projectId,
   conversationId,
   session,
@@ -121,7 +121,7 @@ export function ProjectPane({
       )}
     </div>
   )
-}
+})
 
 function Live() {
   return (
@@ -191,7 +191,8 @@ function SessionSegment({
   onOpen: (number: number) => void
 }) {
   const t = useTranslate()
-  const plan = visibleAgentPlan(session.items)
+  // Relu seulement quand le fil bouge : le panneau se redessine pour bien d'autres raisons.
+  const plan = useMemo(() => visibleAgentPlan(session.items), [session.items])
   const attach = useAttachCard(projectId)
 
   if (session.card && current) {
@@ -309,7 +310,7 @@ function NoCard({ projectId, conversationId, session, cards }: {
   const t = useTranslate()
   const attach = useAttachCard(projectId)
   const create = useCreateCard(projectId)
-  const suggestion = suggestCard(session.items, cards)
+  const suggestion = useMemo(() => suggestCard(session.items, cards), [session.items, cards])
   const busy = attach.isPending || create.isPending
   const attachTo = (cardId: string) => attach.mutate({ id: conversationId, cardId })
   /**

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import type { DiffHunk } from '../lib/diff'
 import { highlight, languageFromPath, useHighlighterReady } from '../lib/highlight'
 import { cx } from '@solera/ui'
@@ -60,14 +61,20 @@ export function DiffHunks({ hunks, path }: { hunks: DiffHunk[]; path: string }) 
  * un littéral de gabarit peut donc être mal coloré, ce que `ignoreIllegals` rend
  * inoffensif, et que la lecture d'un diff pardonne largement.
  */
-function DiffCode({ text, language }: { text: string; language: string }) {
-  const rendered = highlight(text, language)
+const DiffCode = memo(function DiffCode({ text, language }: { text: string; language: string }) {
+  // Mémoïsé avec son objet `__html` : React réécrit `innerHTML` dès que l'objet change,
+  // même à texte égal, et un diff de quelques centaines de lignes se recolorait et se
+  // reconstruisait entier à chaque rendu de son appelant.
+  const markup = useMemo(() => {
+    const rendered = highlight(text, language)
+    return rendered.applied ? { __html: rendered.html } : null
+  }, [text, language])
 
-  return rendered.applied ? (
+  return markup ? (
     // Les jetons sont des `<span>` de classes `hljs-*`, stylés avec les tokens de thème.
-    <span className="hljs" dangerouslySetInnerHTML={{ __html: rendered.html }} />
+    <span className="hljs" dangerouslySetInnerHTML={markup} />
   ) : (
     // Rendu comme texte : React échappe, on n'a rien à assainir nous-mêmes.
     <>{text}</>
   )
-}
+})

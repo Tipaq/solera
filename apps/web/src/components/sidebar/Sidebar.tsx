@@ -1,5 +1,5 @@
 import { FolderPlus, PanelLeftClose, Plus, Search, X } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ConversationDto } from '@solera/protocol'
 import { useAllConversations } from '../../lib/conversations'
@@ -51,6 +51,13 @@ export function Sidebar({
   onCollapse: () => void
   onSearch: () => void
 }) {
+  // La coque passe une fonction neuve à chaque rendu. Les lignes de la colonne sont
+  // mémoïsées : elles reçoivent une fonction stable, qui appelle toujours la dernière.
+  const latestNavigate = useRef(onNavigate)
+  useLayoutEffect(() => {
+    latestNavigate.current = onNavigate
+  })
+  const stableNavigate = useCallback(() => latestNavigate.current(), [])
   const t = useTranslate()
   const navigate = useNavigate()
   const wide = useMediaQuery('(min-width: 48rem)')
@@ -184,13 +191,13 @@ export function Sidebar({
         </button>
       </div>
 
-      <SidebarPlaces places={places} current={place} onNavigate={onNavigate} />
+      <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
 
       {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas. */}
       <SidebarActivity
         conversations={attended}
         projects={projects}
-        onNavigate={onNavigate}
+        onNavigate={stableNavigate}
         coarse={!wide}
         // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
         focus={place === 'projects' ? focus : undefined}
@@ -204,24 +211,24 @@ export function Sidebar({
           <PlaceProjects
             projects={projects ?? []}
             conversations={conversations ?? []}
-            onNavigate={onNavigate}
+            onNavigate={stableNavigate}
             onReorder={(ids) => reorderProjects.mutate(ids)}
           />
         ) : place === 'knowledge' ? (
-          <PlaceKnowledge state={vaultState} onNavigate={onNavigate} />
+          <PlaceKnowledge state={vaultState} onNavigate={stableNavigate} />
         ) : place === 'planned' ? (
-          <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={onNavigate} />
+          <PlacePlanned tasks={schedules ?? []} projects={projects ?? []} onNavigate={stableNavigate} />
         ) : (
           <PlaceThreads
             conversations={threads}
             projects={projects ?? []}
-            onNavigate={onNavigate}
+            onNavigate={stableNavigate}
             onSearch={onSearch}
           />
         )}
       </div>
 
-      <AccountMenu onNavigate={onNavigate} />
+      <AccountMenu onNavigate={stableNavigate} />
     </div>
   )
 }

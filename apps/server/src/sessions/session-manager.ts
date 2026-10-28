@@ -91,6 +91,13 @@ interface ManagedRunner {
   runner: AgentRunner
   lastActivity: number
   status: ConversationStatus
+  /**
+   * Le dernier statut que `setStatus` a écrit en base pour ce runner, `undefined` avant
+   * le premier. Distinct de `status`, qui part de `idle` alors que la ligne peut dire
+   * `interrupted` ou `error` : seul un statut réellement écrit permet de sauter la
+   * réécriture d'une valeur identique.
+   */
+  persistedStatus?: ConversationStatus
   idleTimer: NodeJS.Timeout | null
   /**
    * Travaux de fond vivants, tels que le dernier `background.updated` les décrit.
@@ -384,7 +391,14 @@ export class SessionManager {
     const managed = this.runners.get(conversationId)
     if (managed) managed.status = status
 
-    this.db.update(conversations).set({ status }).where(eq(conversations.id, conversationId)).run()
+    // Codex répète `running` à chaque `thread/status/changed` : la ligne le dit déjà,
+    // seul ce process l'écrit tant que le runner vit. La diffusion, elle, part quand
+    // même : elle porte `journalBytes`, que le mode détaillé de la sidebar affiche, et le
+    // client écarte de lui-même une poussée dont rien n'a bougé.
+    if (managed?.persistedStatus !== status) {
+      this.db.update(conversations).set({ status }).where(eq(conversations.id, conversationId)).run()
+      if (managed) managed.persistedStatus = status
+    }
     this.broadcastStatus(conversationId, status, this.isWarm(conversationId))
 
     // Le tour vient de se terminer : c'est le seul moment où un message en attente
@@ -423,7 +437,9 @@ export class SessionManager {
     // `lastNotableSeq` et les métriques sont relus en base à chaque diffusion : le
     // journal est écrit avant le changement de statut, donc les valeurs sont fraîches,
     // et une transition de statut se compte en quelques-unes par tour. Aucun compteur
-    // en mémoire à tenir en plus.
+    // en mémoire à tenir en plus. Les fragments de flux en tampon sont écrits d'abord :
+    // ils passent sur le fil avant ce statut, et `journalBytes` les compte.
+    this.log.flush(conversationId)
     const row = this.db
       .select({
         lastNotableSeq: conversations.lastNotableSeq,
@@ -1095,7 +1111,8 @@ export class SessionManager {
       resumeSessionId: conversation.agentSessionId,
 
       emit: (event: SoleraEvent, raw?: unknown) => {
-        this.log.append(conversationId, event, raw, adapter.rawFormat)
+        // Les fragments de flux sont écrits par lots ; tout le reste l'est sur-le-champ.
+        this.log.appendStreamed(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)
         // Le journal suffit au fil ouvert, qui le replie ; la liste des conversations et
         // tout lecteur hors de ce process n'ont que la ligne de conversation pour savoir
@@ -1179,6 +1196,9 @@ export class SessionManager {
 
       openPermissionRequest: (toolName, input) => {
         const id = randomUUID()
+        // Le `seq` prédit est celui du `permission.requested` qui suit : les fragments
+        // encore en tampon doivent avoir pris le leur avant qu'on lise `lastSeq`.
+        this.log.flush(conversationId)
         const current = this.db
           .select({ lastSeq: conversations.lastSeq })
           .from(conversations)

@@ -1,7 +1,7 @@
 import { TooltipButton } from '@solera/ui'
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { memo, useMemo, useState, type ReactNode } from 'react'
 import type { BackgroundWork } from '../../lib/background'
 import { stopBackgroundTask } from '../../lib/conversations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
@@ -27,7 +27,7 @@ import { EmptyState, cx } from '@solera/ui'
  * ses appels : lui donner un rendu à part obligerait à tenir deux vues en accord pour
  * un seul contenu.
  */
-export function AgentsPane({
+export const AgentsPane = memo(function AgentsPane({
   conversationId,
   scope,
   agent,
@@ -100,7 +100,7 @@ export function AgentsPane({
       />
     </div>
   )
-}
+})
 
 type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
 

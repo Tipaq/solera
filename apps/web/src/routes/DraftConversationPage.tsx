@@ -1,5 +1,5 @@
 import { History, SquareKanban, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
@@ -110,6 +110,8 @@ function DraftUsage({
 const NO_MCP_INVENTORY: McpServerStatus[] = []
 const NO_COMMANDS: SlashCommandDto[] = []
 const NO_SKILLS: AgentSkillDto[] = []
+/** Rien à interrompre avant le premier envoi ; une seule instance, pour le composer mémoïsé. */
+const NO_INTERRUPT = () => {}
 
 export function DraftConversationPage() {
   const { projectId } = useParams()
@@ -197,7 +199,9 @@ export function DraftConversationPage() {
   // le temps d'un aller-retour, et rien n'est envoyé avant le premier message. Le serveur
   // ne retiendra de la configuration envoyée que ce que le brouillon aura changé.
   const { data: userSettings } = useUserSettings()
-  const defaults = inheritedConfigFor(agent, userSettings, project)
+  // Mémoïsé : une configuration neuve à chaque rendu changerait celle du composer, et
+  // casserait sa mémoïsation.
+  const defaults = useMemo(() => inheritedConfigFor(agent, userSettings, project), [agent, userSettings, project])
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -240,13 +244,15 @@ export function DraftConversationPage() {
   // les fichiers n'auraient nulle part où aller.
   const drop = useFileDrop(!cardPending && blocked === null)
 
-  const send = async (
+  // Stable tant que ce qu'il envoie ne change pas : le composer est mémoïsé.
+  const createAsync = createConversation.mutateAsync
+  const send = useCallback(async (
     text: string,
     attachmentIds: string[],
     mentions: string[],
     skills: string[],
   ) => {
-    const created = await createConversation.mutateAsync({
+    const created = await createAsync({
       agent,
       config: effective,
       worktreeId: effectiveWorktreeId,
@@ -263,7 +269,7 @@ export function DraftConversationPage() {
     navigate(projectId ? `/p/${projectId}/c/${created.id}` : `/c/${created.id}`, {
       replace: true,
     })
-  }
+  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, t, navigate, projectId])
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
@@ -472,7 +478,7 @@ export function DraftConversationPage() {
               // création de la conversation, laissant un fil vide et un message perdu.
               disabled={createConversation.isPending || blocked !== null}
               onSend={send}
-              onInterrupt={() => {}}
+              onInterrupt={NO_INTERRUPT}
               onConfigChange={setConfig}
               projectId={projectId}
               worktreeId={effectiveWorktreeId}

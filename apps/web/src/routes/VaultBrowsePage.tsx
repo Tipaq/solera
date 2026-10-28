@@ -128,7 +128,7 @@ export function VaultBrowsePage() {
           <EmptyState icon={<FileText size={22} />} title={t('vault.browse.empty')} />
         ) : (
           <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 bg-canvas/95 backdrop-blur">
+            <thead className="sticky top-0 bg-canvas/95">
               <tr>
                 {COLUMNS.map((column) => (
                   <th

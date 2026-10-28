@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { GitCompare, Undo2 } from 'lucide-react'
 import type { TurnCheckpoint } from '../../lib/chat-fold'
 import { hasChanges, sumLines } from '../../lib/checkpoints'
@@ -12,7 +13,7 @@ import { cx } from '@solera/ui'
  * pas, et une capture manquée non plus : le fil n'a pas à annoncer ce qu'il ne peut
  * pas montrer.
  */
-export function TurnChanges({
+export const TurnChanges = memo(function TurnChanges({
   checkpoint,
   onShow,
   onRestore,
@@ -68,4 +69,4 @@ export function TurnChanges({
       ) : null}
     </div>
   )
-}
+})

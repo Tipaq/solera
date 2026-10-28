@@ -232,15 +232,28 @@ export function ConversationPage() {
    * Le journal peut rester sur un travail de fond que plus rien ne fait tourner : un
    * démon tué net n'écrit pas la fin de session qui l'aurait éteint. Une session
    * froide n'a plus de process, donc plus de travail de fond, quoi qu'en dise le fil.
+   *
+   * Mémoïsé sur les seuls champs que la construction lit, pas sur l'état entier : lui
+   * change à chaque lot du direct, et une liste neuve à chaque fois refaisait les
+   * signaux et redessinait le panneau. Sans travail de fond, le fil n'est pas parcouru.
    */
   const background = useMemo(
-    () => (stream.warm === false ? NO_BACKGROUND : buildBackground(stream.state)),
-    [stream.warm, stream.state],
+    () =>
+      stream.warm === false || stream.state.background.length === 0
+        ? NO_BACKGROUND
+        : buildBackground(stream.state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `buildBackground` ne lit que ces champs.
+    [stream.warm, stream.state.items, stream.state.background, stream.state.tasks],
   )
-  /** Même raison que le travail de fond : une tâche planifiée ne tire que si le CLI vit. */
+  /**
+   * Même raison que le travail de fond : une tâche planifiée ne tire que si le CLI vit.
+   * Les compteurs de tirs changent d'identité à chaque tir, comme la table des travaux.
+   */
   const loops = useMemo(
-    () => (stream.warm === false ? NO_LOOPS : buildLoops(stream.state)),
-    [stream.warm, stream.state],
+    () =>
+      stream.warm === false || stream.state.loops.length === 0 ? NO_LOOPS : buildLoops(stream.state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `buildLoops` ne lit que ces champs.
+    [stream.warm, stream.state.loops, stream.state.loopFires],
   )
   /**
    * Réveillé périodiquement pour que l'ancienneté du dernier réveil d'une boucle ne
@@ -825,6 +838,111 @@ export function ConversationPage() {
   // Lu seulement quand le dialogue de détails est ouvert : la plupart des fils n'en ont pas.
   const handoff = useHandoff(conversationId, metaOpen && Boolean(conversation?.handoffFromId))
 
+  // Ce que reçoit la barre de saisie, stable d'un rendu à l'autre : la page se redessine
+  // à chaque lot du direct, et des fonctions neuves à chaque fois casseraient la
+  // mémoïsation du composer, donc la fluidité de la frappe pendant qu'un agent écrit.
+  // Déclaré avant la garde ci-dessous, un hook ne pouvant pas se déclarer après.
+  const conversationProjectId = conversation?.projectId ?? null
+
+  const compact = useCallback(async () => {
+    if (!conversationId) return
+    setCompacting(true)
+    setActionError(null)
+    try {
+      await compactConversation(conversationId)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : t('conversation.compact.error'))
+    } finally {
+      setCompacting(false)
+    }
+  }, [conversationId, t])
+  const onCompact = useCallback(() => void compact(), [compact])
+
+  /**
+   * Commandes que Solera exécute lui-même, lancées depuis le composer.
+   *
+   * L'erreur remonte au champ de saisie, qui rend la commande telle quelle, plutôt qu'à
+   * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.
+   */
+  const runCommand = useCallback(
+    async (name: string) => {
+      if (!conversationId) return
+      await flushConfig()
+      if (name === 'compact') await compactConversation(conversationId)
+    },
+    [conversationId, flushConfig],
+  )
+
+  const send = useCallback(
+    async (text: string, attachmentIds: string[], mentions: string[], skills: string[]) => {
+      if (!conversationId) return
+      await flushConfig()
+      await sendMessage(conversationId, text, attachmentIds, mentions, skills)
+      void queryClient.invalidateQueries({ queryKey: conversationsKey(conversationProjectId) })
+    },
+    [conversationId, conversationProjectId, flushConfig, queryClient],
+  )
+
+  /**
+   * Envoi pendant un tour, infléchi plutôt que mis en file.
+   *
+   * Le tour peut se terminer entre le rendu du bouton et le clic : le serveur refuse
+   * alors franchement, et l'envoi ordinaire prend le relais. Depuis qu'infléchir est
+   * le comportement par défaut de l'envoi, ce repli n'est plus un changement de geste
+   * dans le dos de l'utilisateur — c'est le même geste, qui tombe sur un tour fermé.
+   */
+  const steer = useCallback(
+    async (text: string, attachmentIds: string[], mentions: string[], skills: string[]) => {
+      if (!conversationId) return
+      await flushConfig()
+      try {
+        await steerConversation(conversationId, text, attachmentIds, mentions, skills)
+      } catch (err) {
+        if (!(err instanceof ApiRequestError) || err.code !== 'steer_unavailable') throw err
+        await sendMessage(conversationId, text, attachmentIds, mentions, skills)
+        void queryClient.invalidateQueries({ queryKey: conversationsKey(conversationProjectId) })
+      }
+    },
+    [conversationId, conversationProjectId, flushConfig, queryClient],
+  )
+
+  const onFind = useCallback(() => setFindOpen(true), [])
+  const onDetails = useCallback(() => setMetaOpen(true), [])
+  const onHandoff = useCallback(() => setHandoffOpen(true), [])
+  const onInterrupt = useCallback(() => {
+    if (conversationId) void interruptConversation(conversationId)
+  }, [conversationId])
+  const onShowChanges = useCallback((checkpoint: TurnCheckpoint) => showCheckpoint(checkpoint.key), [])
+
+  const agentKind = conversation?.agent
+  const composerFooter = useMemo(
+    () =>
+      agentKind ? <ComposerStatus agent={agentKind} connected={stream.connected} warm={stream.warm} /> : null,
+    [agentKind, stream.connected, stream.warm],
+  )
+
+  // Ce que reçoit le panneau, pour la même raison : il est mémoïsé, ses vues aussi. Les
+  // valeurs de repli ne servent jamais, le panneau n'étant rendu qu'après la garde.
+  const history = useMemo(
+    () => ({ hasMore: stream.hasMore, loading: stream.loadingOlder, load: loadOlder }),
+    [stream.hasMore, stream.loadingOlder, loadOlder],
+  )
+  const sessionTitle = conversation?.title ?? ''
+  const sessionCard = conversation?.card ?? null
+  const contextRatio = stream.state.context?.ratio ?? null
+  const session = useMemo(
+    () => ({
+      title: sessionTitle,
+      card: sessionCard,
+      items: stream.state.items,
+      running: stream.state.turnRunning,
+      activity,
+      model: stream.state.model,
+      contextRatio,
+    }),
+    [sessionTitle, sessionCard, stream.state.items, stream.state.turnRunning, activity, stream.state.model, contextRatio],
+  )
+
   // `config` est nul exactement quand la conversation l'est, mais le typage ne le sait
   // pas : il rejoint la garde plutôt que d'être forcé plus bas.
   if (!conversationId || !conversation || !config) return null
@@ -855,64 +973,6 @@ export function ConversationPage() {
   const continued = conversation.handoffFromId
     ? allConversations?.find((entry) => entry.id === conversation.handoffFromId)
     : undefined
-
-  const compact = async () => {
-    setCompacting(true)
-    setActionError(null)
-    try {
-      await compactConversation(conversationId)
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : t('conversation.compact.error'))
-    } finally {
-      setCompacting(false)
-    }
-  }
-
-  /**
-   * Commandes que Solera exécute lui-même, lancées depuis le composer.
-   *
-   * L'erreur remonte au champ de saisie, qui rend la commande telle quelle, plutôt qu'à
-   * la bannière de la page : le geste part du champ, et c'est là qu'on la relance.
-   */
-  const runCommand = async (name: string) => {
-    await flushConfig()
-    if (name === 'compact') await compactConversation(conversationId)
-  }
-
-  const send = async (
-    text: string,
-    attachmentIds: string[],
-    mentions: string[],
-    skills: string[],
-  ) => {
-    await flushConfig()
-    await sendMessage(conversationId, text, attachmentIds, mentions, skills)
-    void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
-  }
-
-  /**
-   * Envoi pendant un tour, infléchi plutôt que mis en file.
-   *
-   * Le tour peut se terminer entre le rendu du bouton et le clic : le serveur refuse
-   * alors franchement, et l'envoi ordinaire prend le relais. Depuis qu'infléchir est
-   * le comportement par défaut de l'envoi, ce repli n'est plus un changement de geste
-   * dans le dos de l'utilisateur — c'est le même geste, qui tombe sur un tour fermé.
-   */
-  const steer = async (
-    text: string,
-    attachmentIds: string[],
-    mentions: string[],
-    skills: string[],
-  ) => {
-    await flushConfig()
-    try {
-      await steerConversation(conversationId, text, attachmentIds, mentions, skills)
-    } catch (err) {
-      if (!(err instanceof ApiRequestError) || err.code !== 'steer_unavailable') throw err
-      await sendMessage(conversationId, text, attachmentIds, mentions, skills)
-      void queryClient.invalidateQueries({ queryKey: conversationsKey(conversation.projectId) })
-    }
-  }
 
   // `relative` porte le bouton de retour en bas, et la hauteur retire l'en-tête
   // mobile de la coque, absent en desktop.
@@ -1313,7 +1373,7 @@ export function ConversationPage() {
                 flashedId={flashed}
                 anchors={turnAnchors}
                 checkpoints={stream.state.checkpoints}
-                onShowChanges={(checkpoint) => showCheckpoint(checkpoint.key)}
+                onShowChanges={onShowChanges}
                 onRestoreCheckpoint={isOwner && !stream.state.turnRunning ? setRestoreTarget : undefined}
               />
     
@@ -1428,15 +1488,15 @@ export function ConversationPage() {
             status={stream.status}
             disabled={!isOwner}
             context={stream.state.context}
-            onCompact={isOwner ? () => void compact() : undefined}
-            onFind={() => setFindOpen(true)}
-            onDetails={() => setMetaOpen(true)}
-            onHandoff={() => setHandoffOpen(true)}
+            onCompact={isOwner ? onCompact : undefined}
+            onFind={onFind}
+            onDetails={onDetails}
+            onHandoff={onHandoff}
             canCompact={!compacting && !stream.state.compacting && stream.status === 'idle'}
             onSteer={canSteer ? steer : undefined}
             onSend={send}
             onCommand={runCommand}
-            onInterrupt={() => void interruptConversation(conversationId)}
+            onInterrupt={onInterrupt}
             onConfigChange={updateConfig}
             configOverrides={configOverrides}
             onConfigReset={resetConfig}
@@ -1448,13 +1508,7 @@ export function ConversationPage() {
             appliedConfig={stream.appliedConfig}
             projectId={conversation.projectId ?? undefined}
             worktreeId={conversation.worktreeId}
-            footer={
-              <ComposerStatus
-                agent={conversation.agent}
-                connected={stream.connected}
-                warm={stream.warm}
-              />
-            }
+            footer={composerFooter}
           />
           )}
         </div>
@@ -1475,7 +1529,7 @@ export function ConversationPage() {
             }
             agent={conversation.agent}
             editTurns={stream.state.editTurns}
-            history={{ hasMore: stream.hasMore, loading: stream.loadingOlder, load: loadOlder }}
+            history={history}
             checkpoints={stream.state.checkpoints}
             canRestore={isOwner && !stream.state.turnRunning}
             turnRunning={stream.state.turnRunning}
@@ -1484,15 +1538,7 @@ export function ConversationPage() {
             open={panel.open}
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}
-            session={{
-              title: conversation.title,
-              card: conversation.card,
-              items: stream.state.items,
-              running: stream.state.turnRunning,
-              activity,
-              model: stream.state.model,
-              contextRatio: stream.state.context?.ratio ?? null,
-            }}
+            session={session}
           />
         </Suspense>
       ) : null}

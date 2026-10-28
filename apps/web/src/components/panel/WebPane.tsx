@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Globe, Loader, MonitorPlay, RotateCw, X } from 'lucide-react'
-import { Component, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
+import { memo, Component, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { sanitizeReaderTree, type ReaderElement } from '@solera/protocol'
 import { Banner, Button, IconButton, SegmentedControl } from '@solera/ui'
@@ -23,7 +23,7 @@ import { ImageLightbox } from './ImageView'
  * site l'accepte ; sinon la vue le dit et propose la lecture ou le navigateur, plutôt
  * qu'un cadre vide dont on ne saurait pas pourquoi il l'est.
  */
-export function WebPane({ scope }: { scope: string }) {
+export const WebPane = memo(function WebPane({ scope }: { scope: string }) {
   const t = useTranslate()
   const client = useQueryClient()
   const pane = useWebPane(scope)
@@ -213,7 +213,7 @@ export function WebPane({ scope }: { scope: string }) {
       {viewing ? <ImageLightbox src={viewing.src} name={viewing.name} onClose={() => setViewing(null)} /> : null}
     </div>
   )
-}
+})
 
 /**
  * Le texte lu, inséré nœud par nœud.

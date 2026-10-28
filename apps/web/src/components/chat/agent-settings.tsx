@@ -604,25 +604,6 @@ export function useAgentSettings({
   }, [catalog, config, resolvedModel, t])
 
   /**
-   * Le mode rapide n'est proposé que s'il peut servir : un compte qui y a droit, et un
-   * modèle qui le gère. Absent sinon, plutôt que grisé, comme l'effort ; et absent sur
-   * un CLI qui ne connaît pas la notion, dont le catalogue laisse `fastMode` null.
-   */
-  const speedOffered =
-    claude !== null &&
-    catalog?.fastMode?.available === true &&
-    supportsFastMode(catalog.models, resolvedModel)
-
-  /**
-   * Ultracode n'impose plus `xhigh` depuis Claude Code 2.1.284, mais le CLI le refuse
-   * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.296) : le réglage
-   * n'existe que là, comme le mode rapide.
-   */
-  const supportsUltracode = (model: string): boolean =>
-    effortsFor(catalog?.models, model).some((effort) => effort.value === 'xhigh')
-  const ultracodeOffered = claude !== null && supportsUltracode(resolvedModel)
-
-  /**
    * Styles de réponse annoncés par le CLI, derrière une entrée « par défaut » : la
    * configuration vide veut dire « laisser le style habituel », et Radix refuse une
    * option de valeur vide, d'où la même sentinelle d'affichage que l'approbation.
@@ -723,92 +704,12 @@ export function useAgentSettings({
     ]
   }, [effortOptions, opencode, t])
 
-  // L'approbation peut être un objet granulaire, que Solera n'édite pas : il est
-  // alors affiché comme une option non modifiable plutôt que comme un select vide.
-  const approval = config.agent === 'codex' ? config.askForApproval : CLI_DEFAULT
-  const granular = typeof approval !== 'string'
-
-  // Radix refuse une option de valeur vide : la sentinelle « le CLI décide » a donc
-  // besoin d'une valeur d'affichage propre, traduite dans les deux sens ci-dessous.
-  const approvalValue: ApprovalChoice = granular
-    ? 'granular'
-    : approval === CLI_DEFAULT
-      ? CLI_DEFAULT_CHOICE
-      : approval
-
-  const approvalOptions: SettingChoice<ApprovalChoice>[] = granular
-    ? [
-        {
-          value: 'granular',
-          label: t('composer.approval.granular'),
-          hint: t('composer.approval.granular.hint'),
-          disabled: true,
-        },
-        ...codexApprovalOptions(t),
-      ]
-    : codexApprovalOptions(t)
-
-  /**
-   * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le
-   * nouveau modèle ne le connaît pas ferait échouer le tour côté CLI : on retombe
-   * alors sur le repli annoncé par le catalogue.
-   */
-  const clampEffort = (model: string, current: string): string => {
-    if (effortsFor(catalog?.models, model).some((effort) => effort.value === current)) {
-      return current
-    }
-    return catalog?.models.find((entry) => entry.value === model)?.defaultEffort ?? ''
-  }
-
-  /** Même repli, ramené dans l'enum du protocole que `ClaudeConfig.effort` exige. */
-  const clampClaudeEffort = (model: string, current: string): ClaudeConfig['effort'] => {
-    const parsed = claudeEffortSchema.safeParse(clampEffort(model, current))
-    return parsed.success ? parsed.data : DEFAULT_CLAUDE_CONFIG.effort
-  }
-
-  /**
-   * Intitulé de la valeur en cours. Le repli sur la valeur brute couvre la sentinelle
-   * `CLI_DEFAULT`, qui n'a pas d'option nommée dans les listes de modèles.
-   */
-  const labelOf = <T extends string>(options: SettingChoice<T>[], value: T): string =>
-    options.find((option) => option.value === value)?.label || value || t('composer.select.default')
-
-  /**
-   * Un créneau du résumé.
-   *
-   * Le ton vient de l'option choisie, et non d'une seconde liste de valeurs
-   * dangereuses tenue en parallèle. Un garde-fou levé reste visible à toute largeur.
-   */
-  const segment = <T extends string>(
-    key: string,
-    options: SettingChoice<T>[],
-    value: T,
-  ): SummarySegment => {
-    const tone = options.find((option) => option.value === value)?.tone
-    return { key, label: labelOf(options, value), tone }
-  }
-
   // Le registre est partagé par toute l'instance : la requête est mise en cache par
   // React Query et ne repart pas à chaque conversation ouverte.
   const mcpRegistry = useMcpServers().data
   // Absent quand l'instance a coupé la bibliothèque : un réglage sans effet n'a pas à
   // occuper le panneau, comme le serveur MCP de Solera.
   const libraryAvailable = useSkillLibrary(null).data?.enabled === true
-  const libraryOptionList = skillLibraryOptions(t)
-  const memoryOptionList = agentMemoryOptions(t)
-  const mcpServers = mcpRegistry?.servers ?? []
-  // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
-  // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
-  // s'afficher d'abord puis de disparaître sous le curseur.
-  const soleraAvailable = mcpRegistry?.soleraServer === true
-  // La mémoire ne dépend pas du serveur MCP de Solera, elle : Claude la tient
-  // nativement, dans le dossier que Solera lui désigne. Seule l'instance peut la
-  // retirer de l'interface.
-  const memoryAvailable = mcpRegistry?.agentMemory === true
-  // Les demandes à Solera vivent dans son serveur MCP : leur ligne disparaît quand
-  // l'instance coupe le serveur ou la famille, un réglage inopérant valant moins que pas
-  // de réglage du tout. Les brouillons de cartes n'ont pas de plafond d'instance.
-  const requestAvailability = requestAvailabilityOf(mcpRegistry)
 
   /**
    * Comptes Claude supplémentaires du compte Solera. Demandés pour Claude seulement,
@@ -846,695 +747,837 @@ export function useAgentSettings({
     }
     return known
   }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, t])
-  const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
 
-  const permissionOptionList = permissionOptions(t)
-  const sandboxOptionList = codexSandboxOptions(t)
-  const speedOptionList = speedOptions(t)
-  const ultracodeOptionList = ultracodeOptions(t)
-  const queueOptionList = queueOptions(t)
-  const opencodePermissionList = opencodePermissionOptions(t)
-  const grokPermissionList = grokPermissionOptions(t)
-  const webSearchOptionList = webSearchOptions(t)
+  /**
+   * Les catégories, le résumé et le contrôle MCP, construits d'un bloc.
+   *
+   * Mémoïsés : le composer appelle ce hook à chaque frappe, et rien de ce qui suit ne
+   * dépend du texte saisi. Tout ne vient que de la configuration, des catalogues et des
+   * listes déjà mémoïsées plus haut, d'où des références stables tant qu'elles ne
+   * bougent pas — et des contrôles en aval qui n'ont pas à se redessiner.
+   */
+  const built = useMemo(() => {
+    /**
+     * Le mode rapide n'est proposé que s'il peut servir : un compte qui y a droit, et un
+     * modèle qui le gère. Absent sinon, plutôt que grisé, comme l'effort ; et absent sur
+     * un CLI qui ne connaît pas la notion, dont le catalogue laisse `fastMode` null.
+     */
+    const speedOffered =
+      claude !== null &&
+      catalog?.fastMode?.available === true &&
+      supportsFastMode(catalog.models, resolvedModel)
 
-  let groups: SettingGroup[] = []
-  let summary: SummarySegment[] = []
-  let mcp: ReactElement<McpControlProps> | null = null
+    /**
+     * Ultracode n'impose plus `xhigh` depuis Claude Code 2.1.284, mais le CLI le refuse
+     * toujours sur un modèle qui ne gère pas ce niveau (sondé sur 2.1.296) : le réglage
+     * n'existe que là, comme le mode rapide.
+     */
+    const supportsUltracode = (model: string): boolean =>
+      effortsFor(catalog?.models, model).some((effort) => effort.value === 'xhigh')
+    const ultracodeOffered = claude !== null && supportsUltracode(resolvedModel)
 
-  if (claude) {
-    groups = [
-      setting({
-        key: 'model',
-        label: t('composer.setting.model'),
-        icon: <Sparkles size={14} />,
-        options: modelOptions,
-        value: resolvedModel,
-        onChange: (model) =>
-          onConfigChange({
-            ...claude,
-            model,
-            effort: clampClaudeEffort(model, claude.effort),
-            // Garder le mode rapide sur un modèle qui ne le gère pas ferait basculer
-            // le CLI sur Opus sans prévenir : il retombe avec le modèle.
-            fastMode: claude.fastMode && supportsFastMode(catalog?.models, model),
-            ultracode: claude.ultracode && supportsUltracode(model),
-          }),
-      }),
-      // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
-      // réglage sans effet n'a pas à occuper le panneau.
-      ...(effortOptions.length > 0
-        ? [
-            setting({
-              key: 'effort',
-              label: t('composer.setting.effort'),
-              icon: <Brain size={14} />,
-              options: effortOptions,
-              value: claude.effort,
-              onChange: (effort) => {
-                // Les options sont génériques sur des chaînes ; l'enum du protocole
-                // fait foi, une valeur inconnue ne part pas.
-                const parsed = claudeEffortSchema.safeParse(effort)
-                if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
-              },
-            }),
-          ]
-        : []),
-      ...(speedOffered
-        ? [
-            setting({
-              key: 'speed',
-              toggle: { on: 'fast', label: t('composer.speed.toggle') },
-              label: t('composer.setting.speed'),
-              icon: <Zap size={14} />,
-              options: speedOptionList,
-              value: claude.fastMode ? 'fast' : 'standard',
-              onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
-            }),
-          ]
-        : []),
-      ...(ultracodeOffered
-        ? [
-            setting({
-              key: 'ultracode',
-              toggle: { on: 'on' },
-              label: t('composer.setting.ultracode'),
-              icon: <UsersRound size={14} />,
-              options: ultracodeOptionList,
-              value: claude.ultracode ? 'on' : 'off',
-              // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
-              // l'éteindre laisse le niveau où il est.
-              onChange: (choice) => onConfigChange({ ...claude, ultracode: choice === 'on' }),
-            }),
-          ]
-        : []),
-      ...(accountOptions.length > 0
-        ? [
-            setting({
-              key: 'account',
-              label: t('composer.setting.account'),
-              icon: <IdCard size={14} />,
-              options: accountOptions,
-              value: accountChoice(claude.account),
-              onChange: (choice) =>
-                onConfigChange({ ...claude, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le jeton arrive par l'environnement du process : changer de compte
-              // attend la relance de la session, comme le mode de permission.
-              notice: notice(
-                appliedLabel(
-                  appliedConfig?.agent === 'claude' ? accountChoice(appliedConfig.account) : undefined,
-                  accountChoice(claude.account),
-                  accountOptions,
-                ),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      setting({
-        key: 'permission',
-        label: t('composer.setting.permission'),
-        icon: <ShieldCheck size={14} />,
-        options: permissionOptionList,
-        value: claude.permissionMode,
-        onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
-        // Le seul réglage du panneau que Claude Code refuse de changer en vol : entrer
-        // dans « Tout autoriser » comme en sortir demande de relancer la session. Le
-        // CLI est comparé aussi : un `appliedConfig` reçu à l'instant où l'on bascule
-        // de CLI décrirait encore la session de l'autre.
-        notice: notice(
-          appliedLabel(
-            appliedConfig?.agent === 'claude' ? appliedConfig.permissionMode : undefined,
-            claude.permissionMode,
-            permissionOptionList,
-          ),
-          t,
-        ),
-      }),
-      // Absents quand le catalogue n'en annonce pas, comme l'effort : un CLI sans
-      // styles ou sans modèles n'a pas à montrer un sélecteur vide.
-      ...(outputStyleOptions.length > 0
-        ? [
-            setting({
-              key: 'outputStyle',
-              label: t('composer.setting.outputStyle'),
-              icon: <MessageSquareText size={14} />,
-              options: outputStyleOptions,
-              value: claude.outputStyle || CLI_DEFAULT_CHOICE,
-              onChange: (style) =>
-                onConfigChange({ ...claude, outputStyle: style === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : style }),
-            }),
-          ]
-        : []),
-      ...(advisorOptions.length > 0
-        ? [
-            setting({
-              key: 'advisor',
-              label: t('composer.setting.advisor'),
-              icon: <UserRoundSearch size={14} />,
-              options: advisorOptions,
-              value: claude.advisorModel || CLI_DEFAULT_CHOICE,
-              onChange: (model) =>
-                onConfigChange({ ...claude, advisorModel: model === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : model }),
-            }),
-          ]
-        : []),
-      ...(libraryAvailable
-        ? [
-            setting({
-              key: 'skillLibrary',
-              toggle: { on: 'on' },
-              label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={14} />,
-              options: libraryOptionList,
-              value: libraryChoice(claude.skillLibrary),
-              onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
-              // Comme le mode de permission : Claude ne reçoit ses plugins qu'au
-              // lancement, le changement attend la relance de la session.
-              notice: notice(
-                appliedLabel(
-                  appliedConfig?.agent === 'claude' ? libraryChoice(appliedConfig.skillLibrary) : undefined,
-                  libraryChoice(claude.skillLibrary),
-                  libraryOptionList,
-                ),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(memoryAvailable
-        ? [
-            setting({
-              key: 'agentMemory',
-              toggle: { on: 'on' },
-              label: t('composer.setting.agentMemory'),
-              icon: <Brain size={14} />,
-              options: memoryOptionList,
-              value: memoryChoice(claude.agentMemory),
-              onChange: (choice) => onConfigChange({ ...claude, agentMemory: choice === 'on' }),
-              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
-              // dans l'environnement du serveur MCP : le changement attend la relance de
-              // la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'claude' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(claude.agentMemory), memoryOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...requestSettings(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t, requestAvailability),
-      setting({
-        key: 'queue',
-        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
-        label: t('composer.setting.queue'),
-        icon: <Clock size={14} />,
-        options: queueOptionList,
-        value: queueChoice(claude.queueMessages),
-        onChange: (choice) => onConfigChange({ ...claude, queueMessages: choice === 'queue' }),
-      }),
-    ]
+    // L'approbation peut être un objet granulaire, que Solera n'édite pas : il est
+    // alors affiché comme une option non modifiable plutôt que comme un select vide.
+    const approval = config.agent === 'codex' ? config.askForApproval : CLI_DEFAULT
+    const granular = typeof approval !== 'string'
 
-    summary = [
-      segment('model', modelOptions, resolvedModel),
-      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort)] : []),
-      // Le mode rapide coûte à chaque tour : tant qu'il est allumé, il se lit dans le
-      // résumé, comme un garde-fou levé se lit dans le sien.
-      ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
-      ...(ultracodeOffered && claude.ultracode ? [segment('ultracode', ultracodeOptionList, 'on')] : []),
-      // Un autre abonnement que celui du CLI paie le tour : ça se lit dans le résumé.
-      ...(claude.account ? [segment('account', accountOptions, claude.account)] : []),
-      segment('permission', permissionOptionList, claude.permissionMode),
-    ]
+    // Radix refuse une option de valeur vide : la sentinelle « le CLI décide » a donc
+    // besoin d'une valeur d'affichage propre, traduite dans les deux sens ci-dessous.
+    const approvalValue: ApprovalChoice = granular
+      ? 'granular'
+      : approval === CLI_DEFAULT
+        ? CLI_DEFAULT_CHOICE
+        : approval
 
-    mcp = (
-      <McpControl
-        servers={mcpServers}
-        inventory={mcpInventory}
-        selected={claude.mcpServers}
-        onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
-        solera={soleraAvailable ? claude.soleraMcp : null}
-        onSoleraChange={(soleraMcp) => onConfigChange({ ...claude, soleraMcp })}
-        strict={claude.strictMcp}
-        onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
-        disabled={disabled}
-      />
-    )
-  } else if (codex) {
-    groups = [
-      setting({
-        key: 'model',
-        label: t('composer.setting.model'),
-        icon: <Sparkles size={14} />,
-        options: modelOptions,
-        value: resolvedModel,
-        onChange: (model) =>
-          onConfigChange({
-            ...codex,
-            model,
-            reasoningEffort: clampEffort(model, codex.reasoningEffort),
-          }),
-      }),
-      ...(codexModeOptions.length > 0
-        ? [
-            setting({
-              key: 'mode',
-              label: t('composer.setting.mode'),
-              icon: <Compass size={14} />,
-              options: codexModeOptions,
-              value: codex.collaborationMode,
-              onChange: (collaborationMode) => onConfigChange({ ...codex, collaborationMode }),
-            }),
-          ]
-        : []),
-      ...(effortOptions.length > 0
-        ? [
-            setting({
-              key: 'effort',
-              label: t('composer.setting.effort'),
-              icon: <Brain size={14} />,
-              options: effortOptions,
-              value: resolvedEffort,
-              onChange: (reasoningEffort) => onConfigChange({ ...codex, reasoningEffort }),
-            }),
-          ]
-        : []),
-      ...(accountOptions.length > 0
-        ? [
-            setting({
-              key: 'account',
-              label: t('composer.setting.account'),
-              icon: <IdCard size={14} />,
-              options: accountOptions,
-              value: accountChoice(codex.account),
-              onChange: (choice) =>
-                onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le home du compte est l'environnement de l'app-server : changer de
-              // compte attend la relance de la session.
-              notice: notice(
-                appliedLabel(
-                  appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
-                  accountChoice(codex.account),
-                  accountOptions,
-                ),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      setting({
-        key: 'approval',
-        label: t('composer.setting.approval'),
-        icon: <ShieldCheck size={14} />,
-        options: approvalOptions,
-        value: approvalValue,
-        onChange: (choice) => {
-          // 'granular' n'est qu'un repère d'affichage, il n'est pas sélectionnable et
-          // ne doit jamais repartir vers le serveur.
-          if (choice === 'granular') return
-          onConfigChange({
-            ...codex,
-            askForApproval: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
-          })
-        },
-      }),
-      setting({
-        key: 'sandbox',
-        label: t('composer.setting.sandbox'),
-        icon: <Box size={14} />,
-        options: sandboxOptionList,
-        value: codex.sandbox,
-        onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
-      }),
-      // Appliqué à chaud par Codex, d'où l'absence de mention d'attente.
-      ...(libraryAvailable
-        ? [
-            setting({
-              key: 'skillLibrary',
-              toggle: { on: 'on' },
-              label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={14} />,
-              options: libraryOptionList,
-              value: libraryChoice(codex.skillLibrary),
-              onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
-            }),
-          ]
-        : []),
-      ...(memoryAvailable
-        ? [
-            setting({
-              key: 'agentMemory',
-              toggle: { on: 'on' },
-              label: t('composer.setting.agentMemory'),
-              icon: <Brain size={14} />,
-              options: memoryOptionList,
-              value: memoryChoice(codex.agentMemory),
-              onChange: (choice) => onConfigChange({ ...codex, agentMemory: choice === 'on' }),
-              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
-              // dans l'environnement du serveur MCP : le changement attend la relance de
-              // la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(appliedConfig?.agent === 'codex' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(codex.agentMemory), memoryOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...requestSettings(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t, requestAvailability),
-      setting({
-        key: 'queue',
-        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
-        label: t('composer.setting.queue'),
-        icon: <Clock size={14} />,
-        options: queueOptionList,
-        value: queueChoice(codex.queueMessages),
-        onChange: (choice) => onConfigChange({ ...codex, queueMessages: choice === 'queue' }),
-      }),
-    ]
+    const approvalOptions: SettingChoice<ApprovalChoice>[] = granular
+      ? [
+          {
+            value: 'granular',
+            label: t('composer.approval.granular'),
+            hint: t('composer.approval.granular.hint'),
+            disabled: true,
+          },
+          ...codexApprovalOptions(t),
+        ]
+      : codexApprovalOptions(t)
 
-    // Les levées d'approbation et de bac à sable restent visibles simultanément.
-    const approvalOff = approvalValue === 'never'
-    summary = [
-      segment('model', modelOptions, resolvedModel),
-      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
-      ...(codex.account ? [segment('account', accountOptions, codex.account)] : []),
-      ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
-      ...(approvalOff && codex.sandbox !== 'danger-full-access'
-        ? []
-        : [segment('sandbox', sandboxOptionList, codex.sandbox)]),
-    ]
+    /**
+     * Chaque modèle expose ses propres niveaux. Garder l'effort courant quand le
+     * nouveau modèle ne le connaît pas ferait échouer le tour côté CLI : on retombe
+     * alors sur le repli annoncé par le catalogue.
+     */
+    const clampEffort = (model: string, current: string): string => {
+      if (effortsFor(catalog?.models, model).some((effort) => effort.value === current)) {
+        return current
+      }
+      return catalog?.models.find((entry) => entry.value === model)?.defaultEffort ?? ''
+    }
 
-    mcp = (
-      <McpControl
-        servers={mcpServers}
-        inventory={mcpInventory}
-        selected={codex.mcpServers}
-        onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
-        solera={soleraAvailable ? codex.soleraMcp : null}
-        onSoleraChange={(soleraMcp) => onConfigChange({ ...codex, soleraMcp })}
-        strict={null}
-        onStrictChange={() => {}}
-        disabled={disabled}
-      />
-    )
-  } else if (opencode) {
-    const applied = appliedConfig?.agent === 'opencode' ? appliedConfig : null
-    const variant = opencode.variant || CLI_DEFAULT_CHOICE
+    /** Même repli, ramené dans l'enum du protocole que `ClaudeConfig.effort` exige. */
+    const clampClaudeEffort = (model: string, current: string): ClaudeConfig['effort'] => {
+      const parsed = claudeEffortSchema.safeParse(clampEffort(model, current))
+      return parsed.success ? parsed.data : DEFAULT_CLAUDE_CONFIG.effort
+    }
 
-    groups = [
-      setting({
-        key: 'model',
-        label: t('composer.setting.model'),
-        icon: <Sparkles size={14} />,
-        options: modelOptions,
-        value: resolvedModel,
-        // Une variante que le nouveau modèle ne connaît pas retombe sur ses réglages
-        // propres, qui existent toujours.
-        onChange: (model) =>
-          onConfigChange({ ...opencode, model, variant: clampEffort(model, opencode.variant) }),
-      }),
-      setting({
-        key: 'mode',
-        label: t('composer.setting.primaryAgent'),
-        icon: <Compass size={14} />,
-        options: primaryAgentOptions,
-        value: opencode.primaryAgent,
-        onChange: (primaryAgent) => onConfigChange({ ...opencode, primaryAgent }),
-      }),
-      ...(variantOptions.length > 0
-        ? [
-            setting({
-              key: 'effort',
-              label: t('composer.setting.variant'),
-              icon: <Brain size={14} />,
-              options: variantOptions,
-              value: variant,
-              onChange: (choice) =>
-                onConfigChange({ ...opencode, variant: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice }),
-            }),
-          ]
-        : []),
-      // opencode lit ses règles au lancement : comme le mode de permission de Claude,
-      // un changement attend la relance de la session, et la ligne dit ce qui vaut
-      // encore d'ici là.
-      ...OPENCODE_PERMISSIONS.map(({ family, label, icon }) =>
+    /**
+     * Intitulé de la valeur en cours. Le repli sur la valeur brute couvre la sentinelle
+     * `CLI_DEFAULT`, qui n'a pas d'option nommée dans les listes de modèles.
+     */
+    const labelOf = <T extends string>(options: SettingChoice<T>[], value: T): string =>
+      options.find((option) => option.value === value)?.label || value || t('composer.select.default')
+
+    /**
+     * Un créneau du résumé.
+     *
+     * Le ton vient de l'option choisie, et non d'une seconde liste de valeurs
+     * dangereuses tenue en parallèle. Un garde-fou levé reste visible à toute largeur.
+     */
+    const segment = <T extends string>(
+      key: string,
+      options: SettingChoice<T>[],
+      value: T,
+    ): SummarySegment => {
+      const tone = options.find((option) => option.value === value)?.tone
+      return { key, label: labelOf(options, value), tone }
+    }
+
+    const libraryOptionList = skillLibraryOptions(t)
+    const memoryOptionList = agentMemoryOptions(t)
+    const mcpServers = mcpRegistry?.servers ?? []
+    // Faux tant que la requête n'a pas répondu, comme pour une instance qui ne monte pas
+    // le serveur : la ligne apparaît alors au chargement du registre, plutôt que de
+    // s'afficher d'abord puis de disparaître sous le curseur.
+    const soleraAvailable = mcpRegistry?.soleraServer === true
+    // La mémoire ne dépend pas du serveur MCP de Solera, elle : Claude la tient
+    // nativement, dans le dossier que Solera lui désigne. Seule l'instance peut la
+    // retirer de l'interface.
+    const memoryAvailable = mcpRegistry?.agentMemory === true
+    // Les demandes à Solera vivent dans son serveur MCP : leur ligne disparaît quand
+    // l'instance coupe le serveur ou la famille, un réglage inopérant valant moins que pas
+    // de réglage du tout. Les brouillons de cartes n'ont pas de plafond d'instance.
+    const requestAvailability = requestAvailabilityOf(mcpRegistry)
+
+    const accountChoice = (account: string | null) => account ?? CLI_DEFAULT_CHOICE
+
+    const permissionOptionList = permissionOptions(t)
+    const sandboxOptionList = codexSandboxOptions(t)
+    const speedOptionList = speedOptions(t)
+    const ultracodeOptionList = ultracodeOptions(t)
+    const queueOptionList = queueOptions(t)
+    const opencodePermissionList = opencodePermissionOptions(t)
+    const grokPermissionList = grokPermissionOptions(t)
+    const webSearchOptionList = webSearchOptions(t)
+
+    let groups: SettingGroup[] = []
+    let summary: SummarySegment[] = []
+    let mcp: ReactElement<McpControlProps> | null = null
+
+    if (claude) {
+      groups = [
         setting({
-          key: `permission-${family}`,
-          label: t(label),
-          icon,
-          options: opencodePermissionList,
-          value: opencodePermissionChoice(opencode.permissions[family]),
-          onChange: (choice) =>
+          key: 'model',
+          label: t('composer.setting.model'),
+          icon: <Sparkles size={14} />,
+          options: modelOptions,
+          value: resolvedModel,
+          onChange: (model) =>
             onConfigChange({
-              ...opencode,
-              permissions: {
-                ...opencode.permissions,
-                [family]: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
-              },
+              ...claude,
+              model,
+              effort: clampClaudeEffort(model, claude.effort),
+              // Garder le mode rapide sur un modèle qui ne le gère pas ferait basculer
+              // le CLI sur Opus sans prévenir : il retombe avec le modèle.
+              fastMode: claude.fastMode && supportsFastMode(catalog?.models, model),
+              ultracode: claude.ultracode && supportsUltracode(model),
             }),
+        }),
+        // Absente plutôt que grisée quand le modèle n'a pas de niveaux d'effort : un
+        // réglage sans effet n'a pas à occuper le panneau.
+        ...(effortOptions.length > 0
+          ? [
+              setting({
+                key: 'effort',
+                label: t('composer.setting.effort'),
+                icon: <Brain size={14} />,
+                options: effortOptions,
+                value: claude.effort,
+                onChange: (effort) => {
+                  // Les options sont génériques sur des chaînes ; l'enum du protocole
+                  // fait foi, une valeur inconnue ne part pas.
+                  const parsed = claudeEffortSchema.safeParse(effort)
+                  if (parsed.success) onConfigChange({ ...claude, effort: parsed.data })
+                },
+              }),
+            ]
+          : []),
+        ...(speedOffered
+          ? [
+              setting({
+                key: 'speed',
+                toggle: { on: 'fast', label: t('composer.speed.toggle') },
+                label: t('composer.setting.speed'),
+                icon: <Zap size={14} />,
+                options: speedOptionList,
+                value: claude.fastMode ? 'fast' : 'standard',
+                onChange: (speed) => onConfigChange({ ...claude, fastMode: speed === 'fast' }),
+              }),
+            ]
+          : []),
+        ...(ultracodeOffered
+          ? [
+              setting({
+                key: 'ultracode',
+                toggle: { on: 'on' },
+                label: t('composer.setting.ultracode'),
+                icon: <UsersRound size={14} />,
+                options: ultracodeOptionList,
+                value: claude.ultracode ? 'on' : 'off',
+                // Indépendant de l'effort, comme dans le CLI depuis 2.1.284 : l'allumer ou
+                // l'éteindre laisse le niveau où il est.
+                onChange: (choice) => onConfigChange({ ...claude, ultracode: choice === 'on' }),
+              }),
+            ]
+          : []),
+        ...(accountOptions.length > 0
+          ? [
+              setting({
+                key: 'account',
+                label: t('composer.setting.account'),
+                icon: <IdCard size={14} />,
+                options: accountOptions,
+                value: accountChoice(claude.account),
+                onChange: (choice) =>
+                  onConfigChange({ ...claude, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+                // Le jeton arrive par l'environnement du process : changer de compte
+                // attend la relance de la session, comme le mode de permission.
+                notice: notice(
+                  appliedLabel(
+                    appliedConfig?.agent === 'claude' ? accountChoice(appliedConfig.account) : undefined,
+                    accountChoice(claude.account),
+                    accountOptions,
+                  ),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        setting({
+          key: 'permission',
+          label: t('composer.setting.permission'),
+          icon: <ShieldCheck size={14} />,
+          options: permissionOptionList,
+          value: claude.permissionMode,
+          onChange: (permissionMode) => onConfigChange({ ...claude, permissionMode }),
+          // Le seul réglage du panneau que Claude Code refuse de changer en vol : entrer
+          // dans « Tout autoriser » comme en sortir demande de relancer la session. Le
+          // CLI est comparé aussi : un `appliedConfig` reçu à l'instant où l'on bascule
+          // de CLI décrirait encore la session de l'autre.
           notice: notice(
             appliedLabel(
-              applied ? opencodePermissionChoice(applied.permissions[family]) : undefined,
-              opencodePermissionChoice(opencode.permissions[family]),
-              opencodePermissionList,
+              appliedConfig?.agent === 'claude' ? appliedConfig.permissionMode : undefined,
+              claude.permissionMode,
+              permissionOptionList,
             ),
             t,
           ),
         }),
-      ),
-      ...(libraryAvailable
-        ? [
-            setting({
-              key: 'skillLibrary',
-              toggle: { on: 'on' },
-              label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={14} />,
-              options: libraryOptionList,
-              value: libraryChoice(opencode.skillLibrary),
-              onChange: (choice) => onConfigChange({ ...opencode, skillLibrary: choice === 'on' }),
-              notice: notice(
-                appliedLabel(
-                  applied ? libraryChoice(applied.skillLibrary) : undefined,
-                  libraryChoice(opencode.skillLibrary),
-                  libraryOptionList,
+        // Absents quand le catalogue n'en annonce pas, comme l'effort : un CLI sans
+        // styles ou sans modèles n'a pas à montrer un sélecteur vide.
+        ...(outputStyleOptions.length > 0
+          ? [
+              setting({
+                key: 'outputStyle',
+                label: t('composer.setting.outputStyle'),
+                icon: <MessageSquareText size={14} />,
+                options: outputStyleOptions,
+                value: claude.outputStyle || CLI_DEFAULT_CHOICE,
+                onChange: (style) =>
+                  onConfigChange({ ...claude, outputStyle: style === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : style }),
+              }),
+            ]
+          : []),
+        ...(advisorOptions.length > 0
+          ? [
+              setting({
+                key: 'advisor',
+                label: t('composer.setting.advisor'),
+                icon: <UserRoundSearch size={14} />,
+                options: advisorOptions,
+                value: claude.advisorModel || CLI_DEFAULT_CHOICE,
+                onChange: (model) =>
+                  onConfigChange({ ...claude, advisorModel: model === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : model }),
+              }),
+            ]
+          : []),
+        ...(libraryAvailable
+          ? [
+              setting({
+                key: 'skillLibrary',
+                toggle: { on: 'on' },
+                label: t('composer.setting.skillLibrary'),
+                icon: <BookOpen size={14} />,
+                options: libraryOptionList,
+                value: libraryChoice(claude.skillLibrary),
+                onChange: (choice) => onConfigChange({ ...claude, skillLibrary: choice === 'on' }),
+                // Comme le mode de permission : Claude ne reçoit ses plugins qu'au
+                // lancement, le changement attend la relance de la session.
+                notice: notice(
+                  appliedLabel(
+                    appliedConfig?.agent === 'claude' ? libraryChoice(appliedConfig.skillLibrary) : undefined,
+                    libraryChoice(claude.skillLibrary),
+                    libraryOptionList,
+                  ),
+                  t,
                 ),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(memoryAvailable
-        ? [
-            setting({
-              key: 'agentMemory',
-              toggle: { on: 'on' },
-              label: t('composer.setting.agentMemory'),
-              icon: <Brain size={14} />,
-              options: memoryOptionList,
-              value: memoryChoice(opencode.agentMemory),
-              onChange: (choice) => onConfigChange({ ...opencode, agentMemory: choice === 'on' }),
-              // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
-              // dans l'environnement du serveur MCP : le changement attend la relance de
-              // la session, comme la bibliothèque de skills.
-              notice: notice(
-                appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(opencode.agentMemory), memoryOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...requestSettings(opencode, applied, onConfigChange, t, requestAvailability),
-      setting({
-        key: 'queue',
-        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
-        label: t('composer.setting.queue'),
-        icon: <Clock size={14} />,
-        options: queueOptionList,
-        value: queueChoice(opencode.queueMessages),
-        onChange: (choice) => onConfigChange({ ...opencode, queueMessages: choice === 'queue' }),
-      }),
-    ]
+              }),
+            ]
+          : []),
+        ...(memoryAvailable
+          ? [
+              setting({
+                key: 'agentMemory',
+                toggle: { on: 'on' },
+                label: t('composer.setting.agentMemory'),
+                icon: <Brain size={14} />,
+                options: memoryOptionList,
+                value: memoryChoice(claude.agentMemory),
+                onChange: (choice) => onConfigChange({ ...claude, agentMemory: choice === 'on' }),
+                // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+                // dans l'environnement du serveur MCP : le changement attend la relance de
+                // la session, comme la bibliothèque de skills.
+                notice: notice(
+                  appliedLabel(appliedConfig?.agent === 'claude' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(claude.agentMemory), memoryOptionList),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        ...requestSettings(claude, appliedConfig?.agent === 'claude' ? appliedConfig : null, onConfigChange, t, requestAvailability),
+        setting({
+          key: 'queue',
+          toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
+          label: t('composer.setting.queue'),
+          icon: <Clock size={14} />,
+          options: queueOptionList,
+          value: queueChoice(claude.queueMessages),
+          onChange: (choice) => onConfigChange({ ...claude, queueMessages: choice === 'queue' }),
+        }),
+      ]
 
-    // Le résumé nomme la famille : « Autoriser » seul ne dirait pas quoi. Une famille
-    // laissée libre reste visible, comme tout garde-fou levé ; les deux en « demander »
-    // se résument en un mot.
-    const { edit, bash } = opencode.permissions
-    summary = [
-      segment('model', modelOptions, resolvedModel),
-      ...(opencode.variant ? [segment('effort', variantOptions, variant)] : []),
-      ...(opencode.primaryAgent === 'build' ? [] : [segment('mode', primaryAgentOptions, opencode.primaryAgent)]),
-      ...(edit === 'ask' && bash === 'ask'
-        ? [{ key: 'permission', label: t('composer.opencodePermission.summary.ask') }]
-        : []),
-      ...(edit === 'allow'
-        ? [{ key: 'permission-edit', label: t('composer.opencodePermission.summary.editAllow'), tone: 'caution' as const }]
-        : []),
-      ...(bash === 'allow'
-        ? [{ key: 'permission-bash', label: t('composer.opencodePermission.summary.bashAllow'), tone: 'caution' as const }]
-        : []),
-    ]
+      summary = [
+        segment('model', modelOptions, resolvedModel),
+        ...(effortOptions.length > 0 ? [segment('effort', effortOptions, claude.effort)] : []),
+        // Le mode rapide coûte à chaque tour : tant qu'il est allumé, il se lit dans le
+        // résumé, comme un garde-fou levé se lit dans le sien.
+        ...(speedOffered && claude.fastMode ? [segment('speed', speedOptionList, 'fast')] : []),
+        ...(ultracodeOffered && claude.ultracode ? [segment('ultracode', ultracodeOptionList, 'on')] : []),
+        // Un autre abonnement que celui du CLI paie le tour : ça se lit dans le résumé.
+        ...(claude.account ? [segment('account', accountOptions, claude.account)] : []),
+        segment('permission', permissionOptionList, claude.permissionMode),
+      ]
 
-    mcp = (
-      <McpControl
-        servers={mcpServers}
-        inventory={mcpInventory}
-        selected={opencode.mcpServers}
-        onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
-        solera={soleraAvailable ? opencode.soleraMcp : null}
-        onSoleraChange={(soleraMcp) => onConfigChange({ ...opencode, soleraMcp })}
-        strict={null}
-        onStrictChange={() => {}}
-        disabled={disabled}
-      />
-    )
-  } else if (grok) {
-    const applied = appliedConfig?.agent === 'grok' ? appliedConfig : null
-    const webSearch: WebSearchChoice = grok.webSearch ? 'on' : 'off'
-
-    groups = [
-      setting({
-        key: 'model',
-        label: t('composer.setting.model'),
-        icon: <Sparkles size={14} />,
-        options: modelOptions,
-        value: resolvedModel,
-        onChange: (model) =>
-          onConfigChange({ ...grok, model, reasoningEffort: clampEffort(model, grok.reasoningEffort) }),
-      }),
-      ...(effortOptions.length > 0
-        ? [
-            setting({
-              key: 'effort',
-              label: t('composer.setting.effort'),
-              icon: <Brain size={14} />,
-              options: effortOptions,
-              value: resolvedEffort,
-              onChange: (reasoningEffort) => onConfigChange({ ...grok, reasoningEffort }),
+      mcp = (
+        <McpControl
+          servers={mcpServers}
+          inventory={mcpInventory}
+          selected={claude.mcpServers}
+          onSelectedChange={(ids) => onConfigChange({ ...claude, mcpServers: ids })}
+          solera={soleraAvailable ? claude.soleraMcp : null}
+          onSoleraChange={(soleraMcp) => onConfigChange({ ...claude, soleraMcp })}
+          strict={claude.strictMcp}
+          onStrictChange={(strictMcp) => onConfigChange({ ...claude, strictMcp })}
+          disabled={disabled}
+        />
+      )
+    } else if (codex) {
+      groups = [
+        setting({
+          key: 'model',
+          label: t('composer.setting.model'),
+          icon: <Sparkles size={14} />,
+          options: modelOptions,
+          value: resolvedModel,
+          onChange: (model) =>
+            onConfigChange({
+              ...codex,
+              model,
+              reasoningEffort: clampEffort(model, codex.reasoningEffort),
             }),
-          ]
-        : []),
-      setting({
-        key: 'permission',
-        label: t('composer.setting.permission'),
-        icon: <ShieldCheck size={14} />,
-        options: grokPermissionList,
-        value: grok.permissionMode,
-        onChange: (permissionMode) => onConfigChange({ ...grok, permissionMode }),
-      }),
-      ...(accountOptions.length > 0
-        ? [
-            setting({
-              key: 'account',
-              label: t('composer.setting.account'),
-              icon: <IdCard size={14} />,
-              options: accountOptions,
-              value: accountChoice(grok.account),
-              onChange: (choice) =>
-                onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
-              // Le compte est le `GROK_HOME` du process : changer de compte attend la
-              // relance de la session.
-              notice: notice(
-                appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
-                t,
+        }),
+        ...(codexModeOptions.length > 0
+          ? [
+              setting({
+                key: 'mode',
+                label: t('composer.setting.mode'),
+                icon: <Compass size={14} />,
+                options: codexModeOptions,
+                value: codex.collaborationMode,
+                onChange: (collaborationMode) => onConfigChange({ ...codex, collaborationMode }),
+              }),
+            ]
+          : []),
+        ...(effortOptions.length > 0
+          ? [
+              setting({
+                key: 'effort',
+                label: t('composer.setting.effort'),
+                icon: <Brain size={14} />,
+                options: effortOptions,
+                value: resolvedEffort,
+                onChange: (reasoningEffort) => onConfigChange({ ...codex, reasoningEffort }),
+              }),
+            ]
+          : []),
+        ...(accountOptions.length > 0
+          ? [
+              setting({
+                key: 'account',
+                label: t('composer.setting.account'),
+                icon: <IdCard size={14} />,
+                options: accountOptions,
+                value: accountChoice(codex.account),
+                onChange: (choice) =>
+                  onConfigChange({ ...codex, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+                // Le home du compte est l'environnement de l'app-server : changer de
+                // compte attend la relance de la session.
+                notice: notice(
+                  appliedLabel(
+                    appliedConfig?.agent === 'codex' ? accountChoice(appliedConfig.account) : undefined,
+                    accountChoice(codex.account),
+                    accountOptions,
+                  ),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        setting({
+          key: 'approval',
+          label: t('composer.setting.approval'),
+          icon: <ShieldCheck size={14} />,
+          options: approvalOptions,
+          value: approvalValue,
+          onChange: (choice) => {
+            // 'granular' n'est qu'un repère d'affichage, il n'est pas sélectionnable et
+            // ne doit jamais repartir vers le serveur.
+            if (choice === 'granular') return
+            onConfigChange({
+              ...codex,
+              askForApproval: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
+            })
+          },
+        }),
+        setting({
+          key: 'sandbox',
+          label: t('composer.setting.sandbox'),
+          icon: <Box size={14} />,
+          options: sandboxOptionList,
+          value: codex.sandbox,
+          onChange: (sandbox) => onConfigChange({ ...codex, sandbox }),
+        }),
+        // Appliqué à chaud par Codex, d'où l'absence de mention d'attente.
+        ...(libraryAvailable
+          ? [
+              setting({
+                key: 'skillLibrary',
+                toggle: { on: 'on' },
+                label: t('composer.setting.skillLibrary'),
+                icon: <BookOpen size={14} />,
+                options: libraryOptionList,
+                value: libraryChoice(codex.skillLibrary),
+                onChange: (choice) => onConfigChange({ ...codex, skillLibrary: choice === 'on' }),
+              }),
+            ]
+          : []),
+        ...(memoryAvailable
+          ? [
+              setting({
+                key: 'agentMemory',
+                toggle: { on: 'on' },
+                label: t('composer.setting.agentMemory'),
+                icon: <Brain size={14} />,
+                options: memoryOptionList,
+                value: memoryChoice(codex.agentMemory),
+                onChange: (choice) => onConfigChange({ ...codex, agentMemory: choice === 'on' }),
+                // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+                // dans l'environnement du serveur MCP : le changement attend la relance de
+                // la session, comme la bibliothèque de skills.
+                notice: notice(
+                  appliedLabel(appliedConfig?.agent === 'codex' ? memoryChoice(appliedConfig.agentMemory) : undefined, memoryChoice(codex.agentMemory), memoryOptionList),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        ...requestSettings(codex, appliedConfig?.agent === 'codex' ? appliedConfig : null, onConfigChange, t, requestAvailability),
+        setting({
+          key: 'queue',
+          toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
+          label: t('composer.setting.queue'),
+          icon: <Clock size={14} />,
+          options: queueOptionList,
+          value: queueChoice(codex.queueMessages),
+          onChange: (choice) => onConfigChange({ ...codex, queueMessages: choice === 'queue' }),
+        }),
+      ]
+
+      // Les levées d'approbation et de bac à sable restent visibles simultanément.
+      const approvalOff = approvalValue === 'never'
+      summary = [
+        segment('model', modelOptions, resolvedModel),
+        ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+        ...(codex.account ? [segment('account', accountOptions, codex.account)] : []),
+        ...(approvalOff ? [segment('approval', approvalOptions, approvalValue)] : []),
+        ...(approvalOff && codex.sandbox !== 'danger-full-access'
+          ? []
+          : [segment('sandbox', sandboxOptionList, codex.sandbox)]),
+      ]
+
+      mcp = (
+        <McpControl
+          servers={mcpServers}
+          inventory={mcpInventory}
+          selected={codex.mcpServers}
+          onSelectedChange={(ids) => onConfigChange({ ...codex, mcpServers: ids })}
+          solera={soleraAvailable ? codex.soleraMcp : null}
+          onSoleraChange={(soleraMcp) => onConfigChange({ ...codex, soleraMcp })}
+          strict={null}
+          onStrictChange={() => {}}
+          disabled={disabled}
+        />
+      )
+    } else if (opencode) {
+      const applied = appliedConfig?.agent === 'opencode' ? appliedConfig : null
+      const variant = opencode.variant || CLI_DEFAULT_CHOICE
+
+      groups = [
+        setting({
+          key: 'model',
+          label: t('composer.setting.model'),
+          icon: <Sparkles size={14} />,
+          options: modelOptions,
+          value: resolvedModel,
+          // Une variante que le nouveau modèle ne connaît pas retombe sur ses réglages
+          // propres, qui existent toujours.
+          onChange: (model) =>
+            onConfigChange({ ...opencode, model, variant: clampEffort(model, opencode.variant) }),
+        }),
+        setting({
+          key: 'mode',
+          label: t('composer.setting.primaryAgent'),
+          icon: <Compass size={14} />,
+          options: primaryAgentOptions,
+          value: opencode.primaryAgent,
+          onChange: (primaryAgent) => onConfigChange({ ...opencode, primaryAgent }),
+        }),
+        ...(variantOptions.length > 0
+          ? [
+              setting({
+                key: 'effort',
+                label: t('composer.setting.variant'),
+                icon: <Brain size={14} />,
+                options: variantOptions,
+                value: variant,
+                onChange: (choice) =>
+                  onConfigChange({ ...opencode, variant: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice }),
+              }),
+            ]
+          : []),
+        // opencode lit ses règles au lancement : comme le mode de permission de Claude,
+        // un changement attend la relance de la session, et la ligne dit ce qui vaut
+        // encore d'ici là.
+        ...OPENCODE_PERMISSIONS.map(({ family, label, icon }) =>
+          setting({
+            key: `permission-${family}`,
+            label: t(label),
+            icon,
+            options: opencodePermissionList,
+            value: opencodePermissionChoice(opencode.permissions[family]),
+            onChange: (choice) =>
+              onConfigChange({
+                ...opencode,
+                permissions: {
+                  ...opencode.permissions,
+                  [family]: choice === CLI_DEFAULT_CHOICE ? CLI_DEFAULT : choice,
+                },
+              }),
+            notice: notice(
+              appliedLabel(
+                applied ? opencodePermissionChoice(applied.permissions[family]) : undefined,
+                opencodePermissionChoice(opencode.permissions[family]),
+                opencodePermissionList,
               ),
-            }),
-          ]
-        : []),
-      // Grok coupe ses outils web par une option de lancement : le changement attend
-      // la relance de la session, et la ligne dit ce qui vaut d'ici là.
-      setting({
-        key: 'webSearch',
-        toggle: { on: 'on' },
-        label: t('composer.setting.webSearch'),
-        icon: <Globe size={14} />,
-        options: webSearchOptionList,
-        value: webSearch,
-        onChange: (choice) => onConfigChange({ ...grok, webSearch: choice === 'on' }),
-        notice: notice(
-          appliedLabel(applied ? (applied.webSearch ? 'on' : 'off') : undefined, webSearch, webSearchOptionList),
-          t,
+              t,
+            ),
+          }),
         ),
-      }),
-      ...(libraryAvailable
-        ? [
-            setting({
-              key: 'skillLibrary',
-              toggle: { on: 'on' },
-              label: t('composer.setting.skillLibrary'),
-              icon: <BookOpen size={14} />,
-              options: libraryOptionList,
-              value: libraryChoice(grok.skillLibrary),
-              onChange: (choice) => onConfigChange({ ...grok, skillLibrary: choice === 'on' }),
-              // Les skills arrivent en plugin au lancement du process, comme chez Claude.
-              notice: notice(
-                appliedLabel(
-                  applied ? libraryChoice(applied.skillLibrary) : undefined,
-                  libraryChoice(grok.skillLibrary),
-                  libraryOptionList,
+        ...(libraryAvailable
+          ? [
+              setting({
+                key: 'skillLibrary',
+                toggle: { on: 'on' },
+                label: t('composer.setting.skillLibrary'),
+                icon: <BookOpen size={14} />,
+                options: libraryOptionList,
+                value: libraryChoice(opencode.skillLibrary),
+                onChange: (choice) => onConfigChange({ ...opencode, skillLibrary: choice === 'on' }),
+                notice: notice(
+                  appliedLabel(
+                    applied ? libraryChoice(applied.skillLibrary) : undefined,
+                    libraryChoice(opencode.skillLibrary),
+                    libraryOptionList,
+                  ),
+                  t,
                 ),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...(memoryAvailable
-        ? [
-            setting({
-              key: 'agentMemory',
-              toggle: { on: 'on' },
-              label: t('composer.setting.agentMemory'),
-              icon: <Brain size={14} />,
-              options: memoryOptionList,
-              value: memoryChoice(grok.agentMemory),
-              onChange: (choice) => onConfigChange({ ...grok, agentMemory: choice === 'on' }),
-              // L'index de la mémoire part dans les règles données à la création de la
-              // session : le changement attend la relance, comme la bibliothèque.
-              notice: notice(
-                appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(grok.agentMemory), memoryOptionList),
-                t,
-              ),
-            }),
-          ]
-        : []),
-      ...requestSettings(grok, applied, onConfigChange, t, requestAvailability),
-      setting({
-        key: 'queue',
-        toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
-        label: t('composer.setting.queue'),
-        icon: <Clock size={14} />,
-        options: queueOptionList,
-        value: queueChoice(grok.queueMessages),
-        onChange: (choice) => onConfigChange({ ...grok, queueMessages: choice === 'queue' }),
-      }),
-    ]
+              }),
+            ]
+          : []),
+        ...(memoryAvailable
+          ? [
+              setting({
+                key: 'agentMemory',
+                toggle: { on: 'on' },
+                label: t('composer.setting.agentMemory'),
+                icon: <Brain size={14} />,
+                options: memoryOptionList,
+                value: memoryChoice(opencode.agentMemory),
+                onChange: (choice) => onConfigChange({ ...opencode, agentMemory: choice === 'on' }),
+                // Le dossier de mémoire est posé au lancement, dans les réglages du CLI et
+                // dans l'environnement du serveur MCP : le changement attend la relance de
+                // la session, comme la bibliothèque de skills.
+                notice: notice(
+                  appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(opencode.agentMemory), memoryOptionList),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        ...requestSettings(opencode, applied, onConfigChange, t, requestAvailability),
+        setting({
+          key: 'queue',
+          toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
+          label: t('composer.setting.queue'),
+          icon: <Clock size={14} />,
+          options: queueOptionList,
+          value: queueChoice(opencode.queueMessages),
+          onChange: (choice) => onConfigChange({ ...opencode, queueMessages: choice === 'queue' }),
+        }),
+      ]
 
-    summary = [
-      segment('model', modelOptions, resolvedModel),
-      ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
-      ...(grok.account ? [segment('account', accountOptions, grok.account)] : []),
-      segment('permission', grokPermissionList, grok.permissionMode),
-    ]
+      // Le résumé nomme la famille : « Autoriser » seul ne dirait pas quoi. Une famille
+      // laissée libre reste visible, comme tout garde-fou levé ; les deux en « demander »
+      // se résument en un mot.
+      const { edit, bash } = opencode.permissions
+      summary = [
+        segment('model', modelOptions, resolvedModel),
+        ...(opencode.variant ? [segment('effort', variantOptions, variant)] : []),
+        ...(opencode.primaryAgent === 'build' ? [] : [segment('mode', primaryAgentOptions, opencode.primaryAgent)]),
+        ...(edit === 'ask' && bash === 'ask'
+          ? [{ key: 'permission', label: t('composer.opencodePermission.summary.ask') }]
+          : []),
+        ...(edit === 'allow'
+          ? [{ key: 'permission-edit', label: t('composer.opencodePermission.summary.editAllow'), tone: 'caution' as const }]
+          : []),
+        ...(bash === 'allow'
+          ? [{ key: 'permission-bash', label: t('composer.opencodePermission.summary.bashAllow'), tone: 'caution' as const }]
+          : []),
+      ]
 
-    mcp = (
-      <McpControl
-        servers={mcpServers}
-        inventory={mcpInventory}
-        selected={grok.mcpServers}
-        onSelectedChange={(ids) => onConfigChange({ ...grok, mcpServers: ids })}
-        solera={soleraAvailable ? grok.soleraMcp : null}
-        onSoleraChange={(soleraMcp) => onConfigChange({ ...grok, soleraMcp })}
-        strict={null}
-        onStrictChange={() => {}}
-        disabled={disabled}
-      />
-    )
-  }
+      mcp = (
+        <McpControl
+          servers={mcpServers}
+          inventory={mcpInventory}
+          selected={opencode.mcpServers}
+          onSelectedChange={(ids) => onConfigChange({ ...opencode, mcpServers: ids })}
+          solera={soleraAvailable ? opencode.soleraMcp : null}
+          onSoleraChange={(soleraMcp) => onConfigChange({ ...opencode, soleraMcp })}
+          strict={null}
+          onStrictChange={() => {}}
+          disabled={disabled}
+        />
+      )
+    } else if (grok) {
+      const applied = appliedConfig?.agent === 'grok' ? appliedConfig : null
+      const webSearch: WebSearchChoice = grok.webSearch ? 'on' : 'off'
 
-  return {
-    groups,
-    summary,
-    mcp,
-    mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null,
-    mcpItems: mcp ? cloneElement(mcp, { presentation: 'items' }) : null,
-    mcpSummary: mcp ? mcpSummaryOf(mcp.props) : '',
-    catalogError,
-  }
+      groups = [
+        setting({
+          key: 'model',
+          label: t('composer.setting.model'),
+          icon: <Sparkles size={14} />,
+          options: modelOptions,
+          value: resolvedModel,
+          onChange: (model) =>
+            onConfigChange({ ...grok, model, reasoningEffort: clampEffort(model, grok.reasoningEffort) }),
+        }),
+        ...(effortOptions.length > 0
+          ? [
+              setting({
+                key: 'effort',
+                label: t('composer.setting.effort'),
+                icon: <Brain size={14} />,
+                options: effortOptions,
+                value: resolvedEffort,
+                onChange: (reasoningEffort) => onConfigChange({ ...grok, reasoningEffort }),
+              }),
+            ]
+          : []),
+        setting({
+          key: 'permission',
+          label: t('composer.setting.permission'),
+          icon: <ShieldCheck size={14} />,
+          options: grokPermissionList,
+          value: grok.permissionMode,
+          onChange: (permissionMode) => onConfigChange({ ...grok, permissionMode }),
+        }),
+        ...(accountOptions.length > 0
+          ? [
+              setting({
+                key: 'account',
+                label: t('composer.setting.account'),
+                icon: <IdCard size={14} />,
+                options: accountOptions,
+                value: accountChoice(grok.account),
+                onChange: (choice) =>
+                  onConfigChange({ ...grok, account: choice === CLI_DEFAULT_CHOICE ? null : choice }),
+                // Le compte est le `GROK_HOME` du process : changer de compte attend la
+                // relance de la session.
+                notice: notice(
+                  appliedLabel(applied ? accountChoice(applied.account) : undefined, accountChoice(grok.account), accountOptions),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        // Grok coupe ses outils web par une option de lancement : le changement attend
+        // la relance de la session, et la ligne dit ce qui vaut d'ici là.
+        setting({
+          key: 'webSearch',
+          toggle: { on: 'on' },
+          label: t('composer.setting.webSearch'),
+          icon: <Globe size={14} />,
+          options: webSearchOptionList,
+          value: webSearch,
+          onChange: (choice) => onConfigChange({ ...grok, webSearch: choice === 'on' }),
+          notice: notice(
+            appliedLabel(applied ? (applied.webSearch ? 'on' : 'off') : undefined, webSearch, webSearchOptionList),
+            t,
+          ),
+        }),
+        ...(libraryAvailable
+          ? [
+              setting({
+                key: 'skillLibrary',
+                toggle: { on: 'on' },
+                label: t('composer.setting.skillLibrary'),
+                icon: <BookOpen size={14} />,
+                options: libraryOptionList,
+                value: libraryChoice(grok.skillLibrary),
+                onChange: (choice) => onConfigChange({ ...grok, skillLibrary: choice === 'on' }),
+                // Les skills arrivent en plugin au lancement du process, comme chez Claude.
+                notice: notice(
+                  appliedLabel(
+                    applied ? libraryChoice(applied.skillLibrary) : undefined,
+                    libraryChoice(grok.skillLibrary),
+                    libraryOptionList,
+                  ),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        ...(memoryAvailable
+          ? [
+              setting({
+                key: 'agentMemory',
+                toggle: { on: 'on' },
+                label: t('composer.setting.agentMemory'),
+                icon: <Brain size={14} />,
+                options: memoryOptionList,
+                value: memoryChoice(grok.agentMemory),
+                onChange: (choice) => onConfigChange({ ...grok, agentMemory: choice === 'on' }),
+                // L'index de la mémoire part dans les règles données à la création de la
+                // session : le changement attend la relance, comme la bibliothèque.
+                notice: notice(
+                  appliedLabel(applied ? memoryChoice(applied.agentMemory) : undefined, memoryChoice(grok.agentMemory), memoryOptionList),
+                  t,
+                ),
+              }),
+            ]
+          : []),
+        ...requestSettings(grok, applied, onConfigChange, t, requestAvailability),
+        setting({
+          key: 'queue',
+          toggle: { on: 'queue', label: t('composer.queue.toggle'), hint: t('composer.queue.toggle.hint') },
+          label: t('composer.setting.queue'),
+          icon: <Clock size={14} />,
+          options: queueOptionList,
+          value: queueChoice(grok.queueMessages),
+          onChange: (choice) => onConfigChange({ ...grok, queueMessages: choice === 'queue' }),
+        }),
+      ]
+
+      summary = [
+        segment('model', modelOptions, resolvedModel),
+        ...(effortOptions.length > 0 ? [segment('effort', effortOptions, resolvedEffort)] : []),
+        ...(grok.account ? [segment('account', accountOptions, grok.account)] : []),
+        segment('permission', grokPermissionList, grok.permissionMode),
+      ]
+
+      mcp = (
+        <McpControl
+          servers={mcpServers}
+          inventory={mcpInventory}
+          selected={grok.mcpServers}
+          onSelectedChange={(ids) => onConfigChange({ ...grok, mcpServers: ids })}
+          solera={soleraAvailable ? grok.soleraMcp : null}
+          onSoleraChange={(soleraMcp) => onConfigChange({ ...grok, soleraMcp })}
+          strict={null}
+          onStrictChange={() => {}}
+          disabled={disabled}
+        />
+      )
+    }
+
+    return { groups, summary, mcp }
+  }, [
+    t,
+    catalog,
+    config,
+    claude,
+    codex,
+    opencode,
+    grok,
+    resolvedModel,
+    resolvedEffort,
+    modelOptions,
+    effortOptions,
+    outputStyleOptions,
+    advisorOptions,
+    codexModeOptions,
+    primaryAgentOptions,
+    variantOptions,
+    accountOptions,
+    onConfigChange,
+    appliedConfig,
+    mcpInventory,
+    disabled,
+    mcpRegistry,
+    libraryAvailable,
+  ])
+
+  // Les deux présentations du contrôle MCP suivent l'élément d'origine : clonées une
+  // fois par élément, et non à chaque rendu.
+  return useMemo(() => {
+    const { groups, summary, mcp } = built
+    return {
+      groups,
+      summary,
+      mcp,
+      mcpPanel: mcp ? cloneElement(mcp, { presentation: 'panel' }) : null,
+      mcpItems: mcp ? cloneElement(mcp, { presentation: 'items' }) : null,
+      mcpSummary: mcp ? mcpSummaryOf(mcp.props) : '',
+      catalogError,
+    }
+  }, [built, catalogError])
 }

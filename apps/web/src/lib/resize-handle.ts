@@ -39,8 +39,22 @@ export function resizeHandle({
     onPointerDown: (event) => {
       event.preventDefault()
 
-      const move = (moved: PointerEvent) => apply(widthAt(moved.clientX), false)
+      // Un pointeur rapide émet plusieurs `pointermove` par image : chacun réécrivait une
+      // variable CSS et relançait le calcul des styles pour rien. On ne garde que la
+      // dernière abscisse, appliquée une fois par image.
+      let pendingX = 0
+      let frame: number | null = null
+      const flush = () => {
+        frame = null
+        apply(widthAt(pendingX), false)
+      }
+      const move = (moved: PointerEvent) => {
+        pendingX = moved.clientX
+        if (frame === null) frame = requestAnimationFrame(flush)
+      }
       const stop = (released: PointerEvent) => {
+        if (frame !== null) cancelAnimationFrame(frame)
+        frame = null
         apply(widthAt(released.clientX), true)
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', stop)

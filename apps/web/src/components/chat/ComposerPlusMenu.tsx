@@ -12,7 +12,7 @@ import {
   useMediaQuery,
 } from '@solera/ui'
 import { ArrowRightLeft, AtSign, BookOpen, ChevronRight, Info, Paperclip, PlugZap, Plus, RotateCcw, Search, SlidersHorizontal } from 'lucide-react'
-import { useRef, useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
+import { memo, useRef, useState, type ComponentPropsWithRef, type ReactNode, type RefObject } from 'react'
 import type { AgentConfig, AgentSkillDto, SlashCommandDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { SettingsSurface, type SettingGroup, type SettingsStatus } from './ComposerSettings'
@@ -109,10 +109,11 @@ function usePendingInsert(onInsert: (prefix: InsertPrefix) => void) {
 /** Le raccourci de la recherche dans le fil, écrit comme le clavier de la machine. */
 const FIND_HINT = navigator.userAgent.includes('Mac') ? '⌘ F' : 'Ctrl F'
 
-export function ComposerPlusMenu(props: ComposerPlusMenuProps) {
+/** Mémoïsé : le composer se redessine à chaque frappe, le menu n'a pas à le suivre. */
+export const ComposerPlusMenu = memo(function ComposerPlusMenu(props: ComposerPlusMenuProps) {
   const sheet = useMediaQuery('(max-width: 34rem), (pointer: coarse)')
   return sheet ? <PlusSheet {...props} /> : <PlusMenu {...props} />
-}
+})
 
 /** Le déclencheur, commun aux deux présentations : un « + » et sa pastille d'alerte. */
 function PlusTrigger({ status, disabled, ...rest }: {
