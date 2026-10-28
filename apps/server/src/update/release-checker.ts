@@ -1,17 +1,18 @@
 import type { ReleaseNote, VersionInfo } from '@solera/protocol'
+import { INSTANCE_PROFILE } from '../instance/profile.js'
 import { detectChannel } from './channel.js'
 import { CURRENT_VERSION, compareVersions, parseVersion } from './version.js'
 
 /**
- * Dépôt GitHub dont on lit les releases pour proposer une mise à jour.
+ * Dépôt GitHub dont on lit les releases pour proposer une mise à jour : celui de
+ * Solera, public depuis le 2026-10-28, qui publie ses propres releases depuis v0.19.0.
+ * Jamais celui de Sillage, qui ferait installer le parent par-dessus le fork.
  *
- * Vide par défaut, et c'est voulu : Solera descend de Sillage mais ne publie pas
- * encore ses propres releases. Laisser l'ancien dépôt ici ferait proposer
- * l'installation de Sillage par-dessus Solera, c'est-à-dire l'écrasement du fork
- * par son parent. `SOLERA_UPDATE_REPO=Tipaq/solera` rallumera la vérification le
- * jour où ce dépôt publiera.
+ * L'application de bureau se met à jour seule : le serveur qu'elle embarque ne lit
+ * aucune release. `SOLERA_UPDATE_REPO=` (vide) éteint la vérification.
  */
-const GITHUB_REPO = process.env.SOLERA_UPDATE_REPO ?? ''
+const GITHUB_REPO =
+  process.env.SOLERA_UPDATE_REPO ?? (INSTANCE_PROFILE === 'desktop' ? '' : 'Tipaq/solera')
 
 const CACHE_TTL_MS = 60 * 60 * 1000
 
