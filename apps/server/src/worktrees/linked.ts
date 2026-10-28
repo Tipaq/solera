@@ -50,28 +50,29 @@ export function linkedWorktreePaths(
 }
 
 /**
- * Vrai si l'un des dossiers passés à un CLI n'est plus un worktree vivant : retiré par
- * Solera (`removedAt`), ou parti du disque sans que la base le sache, auquel cas il est
- * marqué ici. C'est ce qui décide de relancer un CLI qui les a reçus au lancement.
+ * Les dossiers passés à un CLI qui ne sont plus un worktree vivant : retirés par Solera
+ * (`removedAt`), ou partis du disque sans que la base le sache, auquel cas ils sont
+ * marqués ici. Non vide, c'est ce qui décide de relancer un CLI qui les a reçus au
+ * lancement, et ce que le fil nomme en le disant.
  */
-export function anyWorktreeGone(db: Db, paths: readonly string[], onMarked?: () => void): boolean {
-  if (paths.length === 0) return false
+export function goneWorktrees(db: Db, paths: readonly string[], onMarked?: () => void): string[] {
+  if (paths.length === 0) return []
   const rows = db
     .select({ id: worktrees.id, path: worktrees.path })
     .from(worktrees)
     .where(and(inArray(worktrees.path, [...paths]), isNull(worktrees.removedAt)))
     .all()
 
-  let gone = false
+  const gone: string[] = []
   let marked = false
   for (const path of paths) {
     const live = rows.filter((row) => row.path === path)
     if (live.length === 0) {
-      gone = true
+      gone.push(path)
       continue
     }
     if (!directoryGone(path)) continue
-    gone = true
+    gone.push(path)
     for (const row of live) if (markWorktreeGone(db, row.id)) marked = true
   }
   if (marked) onMarked?.()

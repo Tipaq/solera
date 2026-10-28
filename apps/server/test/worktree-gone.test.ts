@@ -332,6 +332,10 @@ test('le CLI de la racine lancé avec un arbre retiré depuis est relancé au to
   assert.equal(runner.stopped, true)
   assert.deepEqual(runner.sent, [])
   assert.deepEqual(h.launched, ['claude'], 'un CLI neuf est lancé, sans l\'arbre')
+  // La relance se dit dans le fil, avec le nom de l'arbre.
+  const notice = h.log.read('other', 0, 100).map((entry) => entry.event)
+    .find((event) => event.type === 'error' && event.code === 'worktree_released_by_restart')
+  assert.ok(notice?.type === 'error' && notice.recoverable && notice.message.endsWith(`${h.worktreePath.split('/').pop()}.`))
 })
 
 test('un arbre lié emporté par git hors de Solera relance aussi le CLI, et se marque', async (t) => {

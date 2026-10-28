@@ -2814,6 +2814,8 @@ export const en = {
   'error.queued_message_failed': "The queued message could not be sent",
   'error.config_applied_by_restart': "Settings applied by restarting the session",
   'error.config_applied_by_restart.live': "The CLI cannot apply this change live.",
+  'error.worktree_released_by_restart': "Agent restarted without the removed worktree",
+  'error.worktree_released_by_restart.detail': "{names} no longer exists: the agent resumed the same conversation without this folder, its context was reloaded.",
   'error.event_unreadable': "Unreadable event",
   'error.opencode_unsupported_version': "OpenCode {version} is not supported: Solera speaks the OpenCode 1.x server API, which OpenCode 2 removed. Install OpenCode 1.x (opencode-ai) and do not run `opencode upgrade --major`.",
   'error.config_agent_immutable': "The CLI of a conversation cannot change.",

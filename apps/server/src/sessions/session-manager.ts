@@ -74,7 +74,7 @@ import {
   restoreSnapshot,
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
-import { anyWorktreeGone, linkedWorktreePaths } from '../worktrees/linked.js'
+import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -1370,14 +1370,28 @@ export class SessionManager {
    * où tous les retraits sont visibles, y compris ceux que personne n'annonce, et un
    * envoi n'arrive qu'au repos, donc aucun tour n'est coupé. Le runner est arrêté comme
    * par `refuseMissingCwd`, file gardée : `ensureRunner` en lance un neuf, en reprise.
+   *
+   * C'est la même reprise qu'après la mise en veille d'une session inactive
+   * (`sessionIdleTimeoutMin`), pas un chemin à part. Elle est dite dans le fil, comme
+   * un réglage appliqué en relançant : l'agent qui ne voit plus l'arbre ne doit pas
+   * surprendre, et le prochain tour paie le rechargement du contexte.
    */
   private async recycleIfTreesGone(conversationId: string): Promise<void> {
     const managed = this.runners.get(conversationId)
     if (!managed?.linkedTrees || this.isBusy(conversationId)) return
-    const gone = anyWorktreeGone(this.db, managed.linkedTrees, () =>
+    const gone = goneWorktrees(this.db, managed.linkedTrees, () =>
       this.statusBus.emit('lists', { conversationId }),
     )
-    if (gone) await this.stopRunner(conversationId, { keepQueue: true })
+    if (gone.length === 0) return
+    await this.stopRunner(conversationId, { keepQueue: true })
+    this.log.append(conversationId, {
+      type: 'error',
+      code: 'worktree_released_by_restart',
+      // Le nom du dossier, pas son chemin : c'est celui que la colonne des worktrees
+      // montre. La phrase entière, pour les lecteurs du journal sans catalogue.
+      message: `Agent restarted without the removed worktree: ${gone.map((path) => path.split('/').pop() ?? path).join(', ')}.`,
+      recoverable: true,
+    })
   }
 
   /**

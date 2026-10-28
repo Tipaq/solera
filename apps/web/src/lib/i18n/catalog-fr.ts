@@ -2809,6 +2809,8 @@ export const fr: Catalog = {
   'error.queued_message_failed': "Le message en attente n'a pas pu partir",
   'error.config_applied_by_restart': "Réglages appliqués en relançant la session",
   'error.config_applied_by_restart.live': "Le CLI ne sait pas appliquer ce changement à chaud.",
+  'error.worktree_released_by_restart': "Agent relancé sans le worktree retiré",
+  'error.worktree_released_by_restart.detail': "{names} n'existe plus : l'agent a repris la même conversation sans ce dossier, son contexte a été rechargé.",
   'error.event_unreadable': "Événement illisible",
   'error.opencode_unsupported_version': "OpenCode {version} n'est pas pris en charge : Solera parle l'API serveur d'OpenCode 1.x, qu'OpenCode 2 a retirée. Installe OpenCode 1.x (opencode-ai) et ne lance pas `opencode upgrade --major`.",
   'error.config_agent_immutable': "Le CLI d'une conversation ne peut pas changer.",
