@@ -274,26 +274,24 @@ date, c'était le gardien de **Sillage** qui tenait la porte ouverte pour toute 
 — tuer son `flock` aurait emporté Solera avec lui. Ce n'est plus le cas, et son entrée
 `Sillage.lnk` dans *Démarrage* est désormais redondante.
 
-## La mise à jour intégrée est éteinte
+## La mise à jour intégrée
 
-`apps/server/src/update/release-checker.ts` ne vise plus aucun dépôt
-(`SOLERA_UPDATE_REPO` vide par défaut). C'est volontaire : pointer sur les releases
-d'upstream ferait proposer l'installation de Sillage par-dessus Solera.
+`apps/server/src/update/release-checker.ts` lit les releases de `Tipaq/solera`
+(`SOLERA_UPDATE_REPO` pour en viser un autre, vide pour l'éteindre). Jamais celles
+d'upstream : elles feraient installer Sillage par-dessus Solera. Le serveur de l'app de
+bureau ne lit aucune release, l'app se met à jour seule.
+
+Les versions de Solera suivent leur propre suite (v0.18.0, v0.19.0…), sans égard pour
+les numéros de Sillage. Une version construite hors tag (`0.18.0-113-g29f39cc4`) vaut
+sa version de base : la release suivante lui est proposée.
 
 ## Le dépôt
 
-`origin` est [Tipaq/solera](https://github.com/Tipaq/solera), **privé** pour l'instant,
-créé le 2026-10-10. `main` et `stable` y sont, la CI y passe.
-
-Tant qu'il est privé, trois choses ne marchent pas et c'est normal :
-
-- les one-liners d'installation du site tirent `install.sh` depuis
-  `raw.githubusercontent.com`, qui répond 404 sur un dépôt privé ;
-- `pages.yml` ne peut pas déployer — GitHub Pages sur dépôt privé demande un compte Pro.
-  Son déclenchement sur `push` est donc commenté, pour qu'un échec permanent ne masque
-  pas les vrais ; il reste lançable à la main. Le réglage *Settings > Pages > Source =
-  GitHub Actions* n'a volontairement pas été fait ;
-- `release.yml` publierait sur `ghcr.io/tipaq/solera`, jamais déclenché pour l'instant.
+`origin` est [Tipaq/solera](https://github.com/Tipaq/solera), créé le 2026-10-10,
+**public** depuis le 2026-10-28. `main` et `stable` y sont, la CI y passe, gratuitement :
+c'est le passage en public qui a débloqué Actions, refusé jusque-là faute de
+facturation. Les one-liners d'installation et les liens de téléchargement marchent sans
+compte. `pages.yml` a toujours son déclenchement sur `push` commenté.
 
 ## Chromium tourne, sans sudo
 
