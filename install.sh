@@ -222,8 +222,12 @@ elif [ -n "${SOLERA_VERSION:-}" ]; then
   VERSION="${SOLERA_VERSION#v}"
 else
   say "Resolving latest release…"
-  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -m1 '"tag_name"' | sed -E 's/.*"v?([^"]+)".*/\1/')"
+  # Read the whole answer before filtering it: `curl | grep -m1` let grep exit while curl
+  # was still writing, and under pipefail the script died silently (curl error 23) as
+  # soon as the release grew past one pipe buffer.
+  RELEASE_JSON="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest")" \
+    || fail "could not resolve the latest release from GitHub."
+  VERSION="$(printf '%s\n' "$RELEASE_JSON" | sed -nE 's/^ *"tag_name": *"v?([^"]+)".*/\1/p')"
   [ -n "$VERSION" ] || fail "could not resolve the latest release from GitHub."
 fi
 
