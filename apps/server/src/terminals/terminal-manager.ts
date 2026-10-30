@@ -4,6 +4,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
+import { withManagedPath } from '../agents/cli-binary.js'
 import type { Config } from '../config.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
@@ -198,12 +199,15 @@ export class TerminalManager {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd,
-      env: {
-        ...process.env,
-        ...processOrigins(this.config.paths.data).environment(projectId, null),
-        ...run?.env,
-        TERM: 'xterm-256color',
-      },
+      env: withManagedPath(
+        {
+          ...(process.env as Record<string, string>),
+          ...processOrigins(this.config.paths.data).environment(projectId, null),
+          ...run?.env,
+          TERM: 'xterm-256color',
+        },
+        this.config.paths.agents,
+      ),
     })
 
     const managed: ManagedTerminal = {

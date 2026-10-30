@@ -86,13 +86,40 @@ export function resolveBinary(
   // qu'un CLI du PATH peut n'être là que par accident d'environnement. C'est aussi la
   // seule façon d'honorer « installer une version précise pour Solera » quand le
   // système en porte déjà une autre.
-  const dirs = managedDir ? [windows ? managedDir : paths.join(managedDir, 'bin')] : []
+  const dirs = managedDir ? [managedBinDir(managedDir, platform)] : []
   dirs.push(...(pathValue(env) ?? '').split(paths.delimiter).filter((dir) => dir.length > 0))
   for (const dir of dirs) {
     const found = names.map((name) => paths.join(dir, name)).find(exists)
     if (found) return found
   }
   return null
+}
+
+/**
+ * Le dossier où atterrissent les CLI que Solera installe : `bin/` du préfixe npm, ou sa
+ * racine sous Windows, où npm pose ses lanceurs.
+ */
+export function managedBinDir(managedDir: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? managedDir : nodePath.posix.join(managedDir, 'bin')
+}
+
+/**
+ * `env` avec ce dossier en tête du PATH, pour les terminaux : un CLI posé depuis
+ * l'interface y répond à son nom, comme dans les sessions, et la commande de connexion
+ * que l'interface affiche s'y tape telle quelle. En tête, dans l'ordre de
+ * `resolveBinary` : le terminal lance le même CLI que les conversations.
+ */
+export function withManagedPath(
+  env: Record<string, string>,
+  managedDir: string,
+  platform: NodeJS.Platform = process.platform,
+): Record<string, string> {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') ?? 'PATH'
+  const delimiter = platform === 'win32' ? ';' : ':'
+  const dir = managedBinDir(managedDir, platform)
+  const current = env[key] ?? ''
+  if (current.split(delimiter).includes(dir)) return env
+  return { ...env, [key]: current ? `${dir}${delimiter}${current}` : dir }
 }
 
 /**

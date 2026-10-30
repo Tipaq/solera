@@ -16,15 +16,36 @@ import { AgentInstallProgress, installProgress } from '../AgentInstallRow'
  */
 
 /**
- * La commande de connexion de chaque CLI, à lancer sur la machine du serveur. Relevées
- * dans `docs/accounts.md`, `docs/windows.md`, `docs/OPENCODE.md` et `docs/GROK.md` :
- * Grok passe par le code d'appareil, sans quoi il attend un navigateur local.
+ * La commande de connexion de chaque CLI, à lancer sur la machine du serveur, sans le
+ * nom du binaire. Relevées dans `docs/accounts.md`, `docs/windows.md`, `docs/OPENCODE.md`
+ * et `docs/GROK.md` : Grok passe par le code d'appareil, sans quoi il attend un
+ * navigateur local.
  */
-export const LOGIN_COMMANDS: Record<AgentKind, string> = {
-  claude: 'claude auth login',
-  codex: 'codex login',
-  opencode: 'opencode auth login',
-  grok: 'grok login --device-auth',
+const LOGIN_ARGS: Record<AgentKind, string> = {
+  claude: 'auth login',
+  codex: 'login',
+  opencode: 'auth login',
+  grok: 'login --device-auth',
+}
+
+/**
+ * La commande à recopier. Un CLI posé par Solera vit hors du PATH d'un terminal ouvert
+ * à côté de Solera : il est désigné par son chemin, sans quoi la commande répondait
+ * « command not found » à qui l'avait installé depuis l'interface.
+ */
+export function loginCommand(agent: AgentKind, entry?: Pick<AgentAvailabilityDto, 'managed' | 'path'>): string {
+  const binary = entry?.managed && entry.path ? shellQuote(entry.path) : agent
+  return `${binary} ${LOGIN_ARGS[agent]}`
+}
+
+/**
+ * Un chemin tel qu'un terminal le lance : nu quand rien ne gêne, sinon entre guillemets.
+ * Sous Windows le terminal est PowerShell, qui ne lance une chaîne qu'après `&`.
+ */
+function shellQuote(path: string): string {
+  if (/^[\w@%+=:,./\\-]+$/.test(path)) return path
+  if (/^[a-z]:\\/i.test(path)) return `& "${path}"`
+  return `'${path.replaceAll("'", "'\\''")}'`
 }
 
 /** Deux lignes qui pulsent, à la place de ce qui va venir (Gabarits › États). */
@@ -142,12 +163,15 @@ const STATUS: Record<AgentAuthDto['status'], { tone: 'positive' | 'caution' | 'n
  */
 export function AgentAuthCard({
   agent,
+  entry,
   auth,
   error,
   checking,
   onCheck,
 }: {
   agent: AgentKind
+  /** Où vit le CLI, pour désigner par son chemin celui que Solera a posé. */
+  entry?: AgentAvailabilityDto
   /** `undefined` pendant la lecture ; `null` quand le serveur ne dit rien de ce CLI. */
   auth: AgentAuthDto | null | undefined
   error: boolean
@@ -187,7 +211,7 @@ export function AgentAuthCard({
             <p className="text-sm text-ink-faint">
               {t(auth.status === 'logged_out' ? 'settings.agents.auth.howTo' : 'settings.agents.auth.howToUnknown')}
             </p>
-            <CommandLine value={LOGIN_COMMANDS[agent]} />
+            <CommandLine value={loginCommand(agent, entry)} />
           </div>
         ) : null}
       </CardBody>

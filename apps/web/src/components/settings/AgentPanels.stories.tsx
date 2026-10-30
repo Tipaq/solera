@@ -102,6 +102,23 @@ export const Deconnecte: Story = {
   ),
 }
 
+/** Un CLI posé par Solera vit hors du PATH d'un terminal ordinaire : la commande le désigne par son chemin. */
+export const DeconnectePoseParSolera: Story = {
+  name: 'Non connecté, posé par Solera',
+  render: () => (
+    <Frame>
+      <AgentAuthCard
+        agent="codex"
+        entry={installed}
+        auth={{ agent: 'codex', account: null, status: 'logged_out', method: null, plan: null, identity: null }}
+        error={false}
+        checking={false}
+        onCheck={() => {}}
+      />
+    </Frame>
+  ),
+}
+
 export const Lecture: Story = {
   name: 'Lecture en cours',
   render: () => <Frame><AgentAuthCard agent="codex" auth={undefined} error={false} checking onCheck={() => {}} /></Frame>,
