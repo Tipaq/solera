@@ -6,6 +6,7 @@ import { spawn, type IPty } from 'node-pty'
 import { launchOf } from '../agents/launch.js'
 import { existsSync } from 'node:fs'
 import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@solera/protocol'
+import type { AgentAuth } from '../agents/auth.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeAccountStore } from './store.js'
@@ -31,6 +32,12 @@ import type { ClaudeAccountStore } from './store.js'
  * le CLI écrit sa connexion dans le dossier au lieu d'imprimer un jeton. La fin se lit
  * donc à l'apparition de `.credentials.json`, et le dossier jetable est repris par
  * `ClaudeAccountGauges.adopt` avant d'être effacé.
+ *
+ * Et à la connexion propre du CLI, celle des sessions sans compte : `auth login` encore,
+ * mais sans dossier jetable, dans l'environnement même des sessions, pour que le CLI
+ * écrive là où elles liront. Le dossier temporaire ne sert plus que de cwd. Le succès ne
+ * se lit pas dans un fichier — sous macOS la connexion va au trousseau — mais à la sortie
+ * du CLI : code 0 sans « Login failed », confirmé par une relecture de `auth status`.
  */
 
 /** Au-delà, le CLI en attente est fermé : personne n'a collé le code. */
@@ -151,10 +158,16 @@ function diagnostic(output: string): string {
 export class ClaudeLoginService {
   private readonly logins = new Map<string, Login>()
 
+  /**
+   * `cliAuth` relit la connexion propre du CLI sans cache (`claude auth status`) : elle
+   * confirme une connexion `cli`, et la relecture remet à jour ce que sert
+   * `/api/agents/auth`.
+   */
   constructor(
     private readonly store: ClaudeAccountStore,
     private readonly binary: () => Promise<string>,
     private readonly gauges: ClaudeAccountGauges | null = null,
+    private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
   ) {}
 
   /** Connexion qui donne sa jauge à un compte existant, par `claude auth login`. */
@@ -172,6 +185,11 @@ export class ClaudeLoginService {
     return this.launch(ownerId, 'token', label, null)
   }
 
+  /** Connexion propre du CLI, partagée par toute l'instance : à l'administrateur de la mener. */
+  startCli(ownerId: string): Promise<ClaudeLoginStatusDto> {
+    return this.launch(ownerId, 'cli', '', null)
+  }
+
   private async launch(
     ownerId: string,
     purpose: ClaudeLoginPurpose,
@@ -180,7 +198,7 @@ export class ClaudeLoginService {
   ): Promise<ClaudeLoginStatusDto> {
     const loginId = randomUUID()
     const args = purpose === 'token' ? ['setup-token'] : ['auth', 'login', '--claudeai']
-    const { pty, configDir } = await this.spawnCli(args)
+    const { pty, configDir } = await this.spawnCli(args, purpose !== 'cli')
     const login: Login = {
       ownerId,
       purpose,
@@ -260,8 +278,11 @@ export class ClaudeLoginService {
     return login.status
   }
 
-  /** Un CLI neuf, dans son propre dossier jetable. */
-  private async spawnCli(args: string[]): Promise<{ pty: IPty; configDir: string }> {
+  /**
+   * Un CLI neuf, dans son propre dossier jetable. Non `isolated`, le dossier n'est que
+   * son cwd : le CLI garde la configuration des sessions et y écrit sa connexion.
+   */
+  private async spawnCli(args: string[], isolated: boolean): Promise<{ pty: IPty; configDir: string }> {
     const configDir = await mkdtemp(join(tmpdir(), 'solera-claude-login-'))
     const launch = launchOf(await this.binary())
     const pty = spawn(launch.command, [...launch.args, ...args], {
@@ -271,7 +292,7 @@ export class ClaudeLoginService {
       cols: 400,
       rows: 40,
       cwd: configDir,
-      env: agentProcessEnv({ CLAUDE_CONFIG_DIR: configDir, TERM: 'xterm-256color' }) as Record<string, string>,
+      env: agentProcessEnv({ ...(isolated ? { CLAUDE_CONFIG_DIR: configDir } : {}), TERM: 'xterm-256color' }) as Record<string, string>,
     })
     return { pty, configDir }
   }
@@ -304,13 +325,17 @@ export class ClaudeLoginService {
       return
     }
     const refused = LOGIN_FAILED_PATTERN.exec(login.output)?.[1]?.trim()
-    if (login.purpose === 'gauge' && refused && login.relaunches < MAX_RELAUNCHES) {
+    if (login.purpose === 'cli' && exitCode === 0 && !refused) {
+      await this.confirmCli(loginId)
+      return
+    }
+    if (login.purpose !== 'token' && refused && login.relaunches < MAX_RELAUNCHES) {
       if (login.checking) {
         clearTimeout(login.checking.timer)
         login.checking = null
       }
       const previous = login.configDir
-      const { pty, configDir } = await this.spawnCli(login.args)
+      const { pty, configDir } = await this.spawnCli(login.args, login.purpose !== 'cli')
       login.relaunches += 1
       login.pty = pty
       login.configDir = configDir
@@ -431,6 +456,32 @@ export class ClaudeLoginService {
       }
       void this.finish(loginId, null)
     }, delayMs)
+  }
+
+  /**
+   * `auth login` a rendu 0 sans refus : la connexion est écrite, là où le CLI la range.
+   * La relecture de `auth status` le confirme et rafraîchit du même coup l'état servi à
+   * l'écran. Une relecture muette (`unknown`) ne défait pas un succès que le CLI a dit.
+   */
+  private async confirmCli(loginId: string): Promise<void> {
+    const login = this.logins.get(loginId)
+    if (!login) return
+    login.closing = true
+    if (login.checking) {
+      clearTimeout(login.checking.timer)
+      login.checking = null
+    }
+    const auth = await (this.cliAuth?.() ?? Promise.resolve(null)).catch(() => null)
+    if (auth?.status === 'logged_out') {
+      login.status = {
+        ...login.status,
+        state: 'failed',
+        error: `Le CLI a terminé sans erreur, mais claude auth status ne le dit pas connecté. Sa sortie : ${diagnostic(login.output)}`,
+      }
+    } else {
+      login.status = { ...login.status, state: 'done', error: null }
+    }
+    void this.finish(loginId, null)
   }
 
   private async finish(loginId: string, error: string | null): Promise<void> {

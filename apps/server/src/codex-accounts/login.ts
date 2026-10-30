@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import type { CodexLoginStatusDto } from '@solera/protocol'
 import type {
@@ -8,8 +9,9 @@ import type {
 } from '@solera/codex-bindings/v2'
 import { CodexAppServerClient } from '../agents/codex/app-server-client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
+import type { AgentAuth } from '../agents/auth.js'
 import { agentProcessEnv } from '../agents/process-env.js'
-import type { CodexAccountHomes } from './homes.js'
+import { userCodexHome, type CodexAccountHomes } from './homes.js'
 import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
 
 /**
@@ -24,10 +26,18 @@ import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
  * demande d'être activé dans les réglages de sécurité ChatGPT, ce que l'erreur de
  * Codex dira le cas échéant (sondé sur 0.162.1 : `account/login/start` rend l'URL et
  * le code sans que `auth.json` existe, puis `account/login/completed` tombe).
+ *
+ * Le même flux connecte le CLI lui-même, dans le home des sessions sans compte
+ * (`$CODEX_HOME`, à défaut `~/.codex`) : l'app-server y est lancé sans `CODEX_HOME`
+ * imposé, dans l'environnement des sessions, et y écrit `auth.json`. Cette connexion-là
+ * se range sous la clé `CLI`, qu'aucun identifiant de compte ne peut prendre.
  */
 
 /** Au-delà, l'app-server en attente est fermé : personne n'a saisi le code. */
 const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
+
+/** La clé de la connexion propre du CLI : un identifiant de compte est un UUID. */
+const CLI = ':cli'
 
 interface PendingLogin {
   client: CodexAppServerClient
@@ -42,11 +52,26 @@ export class CodexLoginService {
   private readonly pending = new Map<string, PendingLogin>()
   private readonly outcomes = new Map<string, LoginOutcome>()
 
+  /** `cliAuth` relit la connexion propre du CLI sans cache, pour que l'écran la voie aussitôt. */
   constructor(
     private readonly homes: CodexAccountHomes,
     private readonly store: CodexAccountStore,
     private readonly binary: () => Promise<string>,
+    private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
   ) {}
+
+  /** La connexion propre du CLI, partagée par toute l'instance. */
+  cliStatus(): CodexLoginStatusDto {
+    return this.status(CLI)
+  }
+
+  startCliDeviceCode(): Promise<CodexLoginStatusDto> {
+    return this.startDeviceCode(CLI)
+  }
+
+  cancelCli(): Promise<void> {
+    return this.cancel(CLI)
+  }
 
   status(accountId: string): CodexLoginStatusDto {
     const pending = this.pending.get(accountId)
@@ -163,7 +188,14 @@ export class CodexLoginService {
     this.pending.delete(accountId)
     clearTimeout(pending.timer)
     try {
-      if (error === null) {
+      if (error === null && accountId === CLI) {
+        // Codex dit avoir fini : `account/read` le vérifie, dans le home même des sessions.
+        if (!(await this.readIdentity(pending.client)).authMode) {
+          throw new Error('Codex annonce la connexion terminée, mais ne voit aucun compte dans son home.')
+        }
+        await this.cliAuth?.().catch(() => null)
+        this.outcomes.set(accountId, { state: 'done' })
+      } else if (error === null) {
         this.store.setIdentity(accountId, await this.readIdentity(pending.client))
         this.outcomes.set(accountId, { state: 'done' })
       } else {
@@ -180,11 +212,13 @@ export class CodexLoginService {
     accountId: string,
     onNotification: (method: string, params: unknown) => void,
   ): Promise<CodexAppServerClient> {
-    const home = this.homes.ensure(accountId)
+    // Le home des sessions n'existe pas forcément avant la première connexion.
+    const home = accountId === CLI ? userCodexHome() : this.homes.ensure(accountId)
+    if (accountId === CLI) mkdirSync(home, { recursive: true })
     const client = new CodexAppServerClient({
       binary: await this.binary(),
       cwd: home,
-      env: agentProcessEnv({ CODEX_HOME: home }),
+      env: accountId === CLI ? agentProcessEnv() : agentProcessEnv({ CODEX_HOME: home }),
       onNotification,
       onServerRequest: () => Promise.reject(new Error('Aucune requête serveur attendue pendant une connexion.')),
       onExit: () => {

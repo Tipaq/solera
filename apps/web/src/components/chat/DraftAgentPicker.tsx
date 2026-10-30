@@ -13,8 +13,8 @@ import { peekOf, peekSummary, type PeekTone } from '../../lib/usage-peek'
  *
  * Une carte par CLI, quel que soit son état, parce que c'est ici qu'on découvre qu'il
  * en faut un autre : prêt, il se choisit et dit où en est sa consommation ; sans
- * connexion, la carte mène à l'onglet des réglages qui la fait ; absent, elle l'installe
- * sur place. Les trois se lisent d'un coup d'œil, au lieu d'un CLI grisé sans raison et
+ * connexion, la carte ouvre la connexion guidée (ou l'onglet des réglages qui la fait) ;
+ * absent, elle l'installe sur place. Les trois se lisent d'un coup d'œil, au lieu d'un CLI grisé sans raison et
  * d'une ligne d'installation par absent.
  *
  * Un CLI désactivé par la configuration du serveur n'a pas de carte : rien ne se règle
@@ -40,6 +40,8 @@ export function DraftAgentPicker({
   peek,
   hidden,
   onHide,
+  onSignIn = (agent) => openSettings('agents', agent),
+  onInstall,
 }: {
   value: AgentKind
   onChange: (agent: AgentKind) => void
@@ -50,6 +52,10 @@ export function DraftAgentPicker({
   peek: UsagePeekDto[] | undefined
   hidden: AgentKind[]
   onHide: (agent: AgentKind) => void
+  /** La carte d'un CLI sans connexion : le dialogue guidé, à défaut l'onglet des réglages. */
+  onSignIn?: (agent: AgentKind) => void
+  /** Une installation lancée d'ici, pour enchaîner sur la connexion une fois le CLI posé. */
+  onInstall?: (agent: AgentKind) => void
 }) {
   const t = useTranslate()
   const install = useInstallAgent()
@@ -81,7 +87,10 @@ export function DraftAgentPicker({
                 <button
                   type="button"
                   disabled={running || install.isPending}
-                  onClick={() => install.mutate(kind)}
+                  onClick={() => {
+                    install.mutate(kind)
+                    onInstall?.(kind)
+                  }}
                   className={cx(CARD, 'w-full border-dashed border-line hover:border-line-strong hover:bg-surface-high disabled:cursor-progress')}
                 >
                   {name}
@@ -113,7 +122,7 @@ export function DraftAgentPicker({
               <button
                 key={kind}
                 type="button"
-                onClick={() => openSettings('agents', kind)}
+                onClick={() => onSignIn(kind)}
                 className={cx(CARD, 'border-line hover:border-line-strong hover:bg-surface-high')}
               >
                 {name}

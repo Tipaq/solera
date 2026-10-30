@@ -1,4 +1,4 @@
-import { ExternalLink, Gauge, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Gauge, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { ClaudeAccount, ClaudeLoginStatusDto } from '@solera/protocol'
 import {
@@ -13,6 +13,7 @@ import {
   EmptyState,
   Field,
 } from '@solera/ui'
+import { ClaudeCodeSteps } from '../components/settings/LoginSteps'
 import { ListHeading, SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
@@ -25,7 +26,6 @@ import {
   useForgetClaudeGauge,
   useStartClaudeGauge,
   useStartClaudeLogin,
-  useSubmitClaudeLoginCode,
   useUpdateClaudeAccount,
 } from '../lib/claude-accounts'
 
@@ -199,27 +199,17 @@ function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDt
    */
   const [initial, setInitial] = useState(first)
   const { data: polled } = useClaudeLoginStatus(initial.loginId)
-  const submit = useSubmitClaudeLoginCode(initial.loginId)
   const cancel = useCancelClaudeLogin()
   const startGauge = useStartClaudeGauge()
-  const [code, setCode] = useState('')
   // L'envoi d'un code pose sa réponse dans la même relecture : c'est elle qui fait foi.
   const status = polled ?? initial
   const gauge = status.purpose === 'gauge'
 
   const chainGauge = (accountId: string) =>
     startGauge.mutate(accountId, {
-      onSuccess: (next) => {
-        setCode('')
-        submit.reset()
-        setInitial(next)
-      },
+      // Le formulaire du code repart vide : il est lié à l'identifiant de la connexion.
+      onSuccess: setInitial,
     })
-
-  const send = (event: FormEvent) => {
-    event.preventDefault()
-    submit.mutate({ code: code.trim() })
-  }
 
   const close = () => {
     if (status.state !== 'done') cancel.mutate(initial.loginId)
@@ -264,51 +254,7 @@ function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDt
             </div>
           </>
         ) : (
-          <form onSubmit={send} className="flex flex-col gap-4">
-            <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm text-ink-soft">
-              <li>
-                {t('claudeAccounts.guided.step.open')}{' '}
-                {status.authUrl ? (
-                  <a
-                    href={status.authUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-accent underline-offset-2 hover:underline"
-                  >
-                    {t('claudeAccounts.guided.openLink')}
-                    <ExternalLink size={14} />
-                  </a>
-                ) : (
-                  <span className="text-ink-faint">{t('claudeAccounts.guided.starting')}</span>
-                )}
-              </li>
-              <li>{t('claudeAccounts.guided.step.authorize')}</li>
-              <li>{t('claudeAccounts.guided.step.paste')}</li>
-            </ol>
-            <Field
-              label={t('claudeAccounts.guided.code.label')}
-              hint={t('claudeAccounts.guided.code.hint')}
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              autoComplete="off"
-              autoCapitalize="none"
-              autoCorrect="off"
-              disabled={status.state === 'starting' || status.state === 'checking'}
-              required
-            />
-            {status.state === 'failed' && status.error ? <Banner>{status.error}</Banner> : null}
-            {errorOf(submit.error) ? <Banner>{errorOf(submit.error)}</Banner> : null}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" disabled={submit.isPending || status.state === 'checking' || status.state === 'starting'}>
-                {submit.isPending || status.state === 'checking'
-                  ? t('claudeAccounts.guided.checking')
-                  : t('claudeAccounts.guided.submit')}
-              </Button>
-              <Button type="button" variant="ghost" onClick={close}>
-                {t('common.cancel')}
-              </Button>
-            </div>
-          </form>
+          <ClaudeCodeSteps key={initial.loginId} status={status} onCancel={close} />
         )}
       </CardBody>
     </Card>

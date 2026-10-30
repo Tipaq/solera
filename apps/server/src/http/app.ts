@@ -33,6 +33,7 @@ import { registerScheduleRoutes } from './routes/schedules.js'
 import { registerActionRoutes } from './routes/actions.js'
 import type { ActionRunner } from '../actions/actions.js'
 import type { WebhookService } from '../webhooks/service.js'
+import { registerAgentLoginRoutes } from './routes/agent-login.js'
 import { registerAgentRoutes } from './routes/agents.js'
 import { registerMcpRoutes } from './routes/mcp.js'
 import { registerInstructionRoutes } from './routes/instructions.js'
@@ -260,6 +261,7 @@ export async function buildApp(
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
+  registerAgentLoginRoutes(app, { claude: claudeLogin, codex: codexLogin, grok: grokLogin })
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   // Un jeton GitHub enregistré passe devant `gh`, comme pour la revue ; un jeton qui ne
   // se déchiffre plus laisse `gh` répondre avec le sien.

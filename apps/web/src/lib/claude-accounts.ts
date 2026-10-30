@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ClaudeAccount, ClaudeAccountListDto, ClaudeLoginStatusDto } from '@solera/protocol'
+import { AGENT_AUTH_KEY } from './agents'
 import { api } from './api'
 
 /**
@@ -82,6 +83,8 @@ export function useClaudeLoginStatus(loginId: string | null) {
       if (status.state === 'done') {
         void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
         void queryClient.invalidateQueries({ queryKey: ['usage'] })
+        // La connexion du CLI lui-même : le serveur l'a déjà relue, la carte doit suivre.
+        if (status.purpose === 'cli') void queryClient.invalidateQueries({ queryKey: AGENT_AUTH_KEY })
       }
       return status
     },
@@ -102,6 +105,7 @@ export function useSubmitClaudeLoginCode(loginId: string | null) {
     onSuccess: (status) => {
       queryClient.setQueryData(loginKey(loginId ?? ''), status)
       if (status.state === 'done') void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
+      if (status.state === 'done' && status.purpose === 'cli') void queryClient.invalidateQueries({ queryKey: AGENT_AUTH_KEY })
     },
   })
 }

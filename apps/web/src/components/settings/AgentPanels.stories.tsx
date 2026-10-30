@@ -123,3 +123,38 @@ export const Lecture: Story = {
   name: 'Lecture en cours',
   render: () => <Frame><AgentAuthCard agent="codex" auth={undefined} error={false} checking onCheck={() => {}} /></Frame>,
 }
+
+/** Ce que voit l'administrateur : la connexion guidée d'abord, la commande en secours. */
+export const DeconnecteGuide: Story = {
+  name: 'Non connecté, connexion guidée',
+  render: () => (
+    <Frame>
+      <AgentAuthCard
+        agent="claude"
+        entry={{ ...installed, agent: 'claude', binary: 'claude', path: '/home/alex/.local/share/solera/agents/bin/claude' }}
+        auth={{ agent: 'claude', account: null, status: 'logged_out', method: null, plan: null, identity: null }}
+        error={false}
+        checking={false}
+        onCheck={() => {}}
+        onSignIn={() => {}}
+      />
+    </Frame>
+  ),
+}
+
+/** Un utilisateur qui n'administre pas l'instance : la connexion du CLI vaut pour tous. */
+export const DeconnecteReserve: Story = {
+  name: "Non connecté, réservé à l'administrateur",
+  render: () => (
+    <Frame>
+      <AgentAuthCard
+        agent="codex"
+        auth={{ agent: 'codex', account: null, status: 'logged_out', method: null, plan: null, identity: null }}
+        error={false}
+        checking={false}
+        onCheck={() => {}}
+        signInReserved
+      />
+    </Frame>
+  ),
+}

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openDatabase, projects } from '@solera/db'
+import { UNKNOWN_AUTH } from './agents/auth.js'
 import { createAgentRegistry } from './agents/registry.js'
 import { purgeIdempotencyKeys } from './auth/api-tokens.js'
 import { WebhookService } from './webhooks/service.js'
@@ -80,11 +81,14 @@ async function main(): Promise<void> {
   const claudeGauges = new ClaudeAccountGauges(config.paths.claudeAccounts)
   const claudeAccounts = new ClaudeAccountStore(db, encryptionKey, claudeGauges)
   // La connexion guidée pilote le CLI, résolu comme pour les conversations.
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges)
+  // La relecture forcée de la connexion du CLI : elle confirme une connexion menée depuis
+  // l'interface, et rafraîchit le cache que sert `/api/agents/auth`.
+  const cliAuth = (agent: 'claude' | 'codex') => () => registry.adapter(agent).auth?.(true) ?? Promise.resolve(UNKNOWN_AUTH)
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges, cliAuth('claude'))
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
-  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable())
+  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable(), cliAuth('codex'))
   const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
   const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)

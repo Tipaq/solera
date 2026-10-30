@@ -2,11 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { agentKindSchema, type AgentKind } from '@solera/protocol'
 import { Tabs } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
+import { AgentLoginDialog } from '../components/settings/AgentLoginDialog'
 import { AgentAuthCard, AgentInstallCard } from '../components/settings/AgentPanels'
 import { AgentModelCard, SharedModelCard } from '../components/settings/LayeredSettings'
 import { ListHeading, SectionHeader } from '../components/settings/SectionHeader'
+import { GUIDED_LOGIN } from '../lib/agent-login'
 import { useAgentAuth, useAgentAvailability, useRefreshAgentAuth } from '../lib/agents'
 import { useTranslate } from '../lib/i18n'
+import { useCurrentUser } from '../lib/session'
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { ClaudeAccountsSettingsPage } from './ClaudeAccountsSettingsPage'
 import { CodexAccountsSettingsPage } from './CodexAccountsSettingsPage'
@@ -63,6 +66,11 @@ function AgentTab({ agent }: { agent: AgentKind }) {
   // La connexion propre du CLI : celle des comptes supplémentaires se lit sur leur carte.
   const own = auth.data ? (auth.data.entries.find((item) => item.agent === agent && item.account === null) ?? null) : undefined
   const accounts = EXTRA_ACCOUNTS[agent]
+  // La connexion du CLI vaut pour toute l'instance : seul l'administrateur la mène d'ici.
+  const { data: me } = useCurrentUser()
+  const guided = GUIDED_LOGIN.has(agent)
+  const canSignIn = guided && me?.isAdmin === true
+  const [signingIn, setSigningIn] = useState(false)
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +82,12 @@ function AgentTab({ agent }: { agent: AgentKind }) {
         error={auth.isError || refresh.isError}
         checking={refresh.isPending || auth.isFetching}
         onCheck={() => refresh.mutate()}
+        onSignIn={canSignIn ? () => setSigningIn(true) : undefined}
+        signInReserved={guided && !canSignIn}
       />
+      {canSignIn && agent !== 'opencode' ? (
+        <AgentLoginDialog agent={agent} entry={entry} open={signingIn} onClose={() => setSigningIn(false)} />
+      ) : null}
       {accounts ? (
         <section className="flex flex-col gap-2">
           <ListHeading title={t('settings.agents.accounts.title')} />

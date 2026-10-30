@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
 import { launchOf } from '../agents/launch.js'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -7,7 +8,7 @@ import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { readGrokBilling } from '../agents/grok/billing.js'
 import { GROK_ISOLATION_ENV, grokProbe } from '../agents/grok/launch.js'
 import { agentProcessEnv } from '../agents/process-env.js'
-import type { GrokAccountHomes } from './homes.js'
+import { userGrokHome, type GrokAccountHomes } from './homes.js'
 import type { GrokAccountStore } from './store.js'
 
 /**
@@ -23,6 +24,10 @@ import type { GrokAccountStore } from './store.js'
  *
  * Par clé API, la méthode ACP `xai.api_key` : Grok lit `XAI_API_KEY` et l'enregistre dans
  * l'`auth.json` du home (`store_api_key` dans ses sources).
+ *
+ * Le code d'appareil connecte aussi Grok lui-même, dans le home des sessions sans compte
+ * (`$GROK_HOME`, à défaut `~/.grok`) : `grok login` y est lancé sans `GROK_HOME` imposé.
+ * Cette connexion-là se range sous la clé `CLI`, qu'aucun identifiant de compte ne prend.
  */
 
 /** Au-delà, la connexion en attente est abandonnée : personne n'a saisi le code. */
@@ -30,6 +35,9 @@ const LOGIN_TIMEOUT_MS = 15 * 60 * 1000
 
 /** Ce que `grok login` met à écrire l'URL et le code avant qu'on renonce. */
 const START_TIMEOUT_MS = 30_000
+
+/** La clé de la connexion propre du CLI : un identifiant de compte est un UUID. */
+const CLI = ':cli'
 
 interface PendingLogin {
   child: ChildProcess
@@ -71,6 +79,27 @@ export class GrokLoginService {
     return agentProcessEnv({ ...GROK_ISOLATION_ENV, GROK_HOME: home })
   }
 
+  /** La connexion propre du CLI, partagée par toute l'instance. */
+  cliStatus(): GrokLoginStatusDto {
+    return this.status(CLI)
+  }
+
+  startCliDeviceCode(): Promise<GrokLoginStatusDto> {
+    return this.startDeviceCode(CLI)
+  }
+
+  cancelCli(): Promise<void> {
+    return this.cancel(CLI)
+  }
+
+  /** Le home où `grok login` écrit la connexion : celui du compte, ou celui des sessions. */
+  private homeOf(accountId: string): string {
+    if (accountId !== CLI) return this.homes.ensure(accountId)
+    const home = userGrokHome()
+    mkdirSync(home, { recursive: true })
+    return home
+  }
+
   /**
    * Par code d'appareil : rend l'URL et le code dès que Grok les a écrits, et garde le
    * process jusqu'à sa fin. Une connexion déjà en cours sur ce compte est reprise.
@@ -88,11 +117,12 @@ export class GrokLoginService {
 
   private async spawnDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
     this.outcomes.delete(accountId)
-    const home = this.homes.ensure(accountId)
+    const home = this.homeOf(accountId)
     const launch = launchOf(await this.binary())
     const child = spawn(launch.command, [...launch.args, 'login', '--device-auth'], {
       cwd: home,
-      env: this.env(home),
+      // Le CLI lui-même : l'environnement des sessions, où `GROK_HOME` est celui du serveur.
+      env: accountId === CLI ? agentProcessEnv(GROK_ISOLATION_ENV) : this.env(home),
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     })
@@ -129,7 +159,7 @@ export class GrokLoginService {
           reject(new Error(output.trim().split('\n').slice(-2).join(' ') || `grok login a rendu ${code}.`))
           return
         }
-        if (code === 0 && this.homes.connected(accountId)) {
+        if (code === 0 && existsSync(join(home, 'auth.json'))) {
           const email = /Signed in as (\S+)/.exec(output)?.[1] ?? null
           void this.finish(accountId, email)
         } else {
@@ -219,6 +249,11 @@ export class GrokLoginService {
     if (!pending) return
     this.pending.delete(accountId)
     clearTimeout(pending.timer)
+    if (accountId === CLI) {
+      // Rien à retenir : `/api/agents/auth` relit le home à chaque appel.
+      this.outcomes.set(accountId, { state: 'done' })
+      return
+    }
     this.store.setIdentity(accountId, { authMode: 'grok', email, plan: null })
     this.outcomes.set(accountId, { state: 'done' })
     // La formule se lit après coup : son échec ne défait pas une connexion réussie.
