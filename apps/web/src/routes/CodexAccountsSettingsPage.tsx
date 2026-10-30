@@ -1,4 +1,4 @@
-import { ExternalLink, IdCard, KeyRound, LogOut, Pencil, Plus, Smartphone, Trash2 } from 'lucide-react'
+import { IdCard, KeyRound, LogOut, Pencil, Plus, Smartphone, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import type { CodexAccount } from '@solera/protocol'
 import {
@@ -12,6 +12,7 @@ import {
   EmptyState,
   Field,
 } from '@solera/ui'
+import { DeviceCodeSteps } from '../components/settings/LoginSteps'
 import { ListHeading, SectionHeader } from '../components/settings/SectionHeader'
 import { ApiRequestError } from '../lib/api'
 import { locale, useTranslate } from '../lib/i18n'
@@ -248,26 +249,14 @@ function LoginControls({ account }: { account: CodexAccount }) {
 
   if (status?.state === 'pending') {
     return (
-      <div className="flex flex-col gap-3 border-t border-line pt-3">
-        <p className="text-sm text-ink-soft">{t('codexAccounts.device.instructions')}</p>
-        <div className="flex flex-wrap items-center gap-3">
-          <code className="rounded-md bg-sunken px-3 py-2 font-mono text-lg tracking-widest text-ink">{status.userCode}</code>
-          <a
-            href={status.verificationUrl ?? '#'}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-sm text-accent underline-offset-2 hover:underline"
-          >
-            {t('codexAccounts.device.open')}
-            <ExternalLink size={14} />
-          </a>
-        </div>
-        <p className="text-meta text-ink-faint">{t('codexAccounts.device.waiting')}</p>
-        <div>
-          <Button size="sm" variant="ghost" disabled={stop.isPending} onClick={() => stop.mutate()}>
-            {t('common.cancel')}
-          </Button>
-        </div>
+      <div className="border-t border-line pt-3">
+        <DeviceCodeSteps
+          agent="codex"
+          userCode={status.userCode}
+          verificationUrl={status.verificationUrl}
+          cancelling={stop.isPending}
+          onCancel={() => stop.mutate()}
+        />
       </div>
     )
   }

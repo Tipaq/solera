@@ -61,7 +61,7 @@ export function useRefreshAgentAuth() {
   })
 }
 
-const AGENT_AUTH_KEY = ['agents', 'auth'] as const
+export const AGENT_AUTH_KEY = ['agents', 'auth'] as const
 
 /**
  * Installe la version testée d'un CLI. Le serveur répond avant la fin ; c'est la sonde

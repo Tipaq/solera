@@ -1,4 +1,4 @@
-import { Check, Copy, Download, KeyRound, RefreshCw } from 'lucide-react'
+import { Check, Copy, Download, KeyRound, LogIn, RefreshCw } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { AgentAuthDto, AgentAvailabilityDto, AgentKind } from '@solera/protocol'
 import { Badge, Banner, Button, Card, CardBody, CardHeader } from '@solera/ui'
@@ -156,10 +156,11 @@ const STATUS: Record<AgentAuthDto['status'], { tone: 'positive' | 'caution' | 'n
 }
 
 /**
- * Connexion : celle que le CLI tient lui-même, hors des comptes supplémentaires. Solera
- * ne la mène pas — elle se fait au terminal, sur le serveur —, il dit seulement où elle
- * en est et quelle commande la fait. « Vérifier » relit sans attendre la minute du cache,
- * pour qui revient du terminal.
+ * Connexion : celle que le CLI tient lui-même, hors des comptes supplémentaires. Quand
+ * il n'est pas connecté, « Se connecter » ouvre le dialogue guidé (`onSignIn`) ; la
+ * commande au terminal reste dessous, en secours, et seule là où Solera ne sait pas
+ * mener la connexion (OpenCode) ou que l'utilisateur n'en a pas le droit. « Vérifier »
+ * relit sans attendre la minute du cache, pour qui revient du terminal.
  */
 export function AgentAuthCard({
   agent,
@@ -168,6 +169,8 @@ export function AgentAuthCard({
   error,
   checking,
   onCheck,
+  onSignIn,
+  signInReserved = false,
 }: {
   agent: AgentKind
   /** Où vit le CLI, pour désigner par son chemin celui que Solera a posé. */
@@ -177,6 +180,10 @@ export function AgentAuthCard({
   error: boolean
   checking: boolean
   onCheck: () => void
+  /** Ouvre la connexion guidée ; absent quand Solera ne peut pas la mener pour cet utilisateur. */
+  onSignIn?: () => void
+  /** La connexion guidée existe pour ce CLI, mais elle est réservée à l'administrateur. */
+  signInReserved?: boolean
 }) {
   const t = useTranslate()
   const status = STATUS[auth?.status ?? 'unknown']
@@ -206,8 +213,26 @@ export function AgentAuthCard({
             {auth?.identity ? <Fact label={t('settings.agents.auth.identity')}>{auth.identity}</Fact> : null}
           </dl>
         )}
-        {auth && auth.status !== 'ready' ? (
+        {auth && auth.status !== 'ready' && onSignIn ? (
+          <>
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-ink-soft">
+                {t(auth.status === 'logged_out' ? 'settings.agents.auth.signInHint' : 'settings.agents.auth.signInHintUnknown', { label: AGENT_LABELS[agent] })}
+              </p>
+              <Button icon={<LogIn size={14} />} onClick={onSignIn}>
+                {t('settings.agents.auth.signIn')}
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-meta text-ink-faint">{t('settings.agents.auth.terminal')}</p>
+              <CommandLine value={loginCommand(agent, entry)} />
+            </div>
+          </>
+        ) : auth && auth.status !== 'ready' ? (
           <div className="flex flex-col gap-1.5">
+            {signInReserved ? (
+              <p className="text-sm text-ink-faint">{t('settings.agents.auth.adminOnly', { label: AGENT_LABELS[agent] })}</p>
+            ) : null}
             <p className="text-sm text-ink-faint">
               {t(auth.status === 'logged_out' ? 'settings.agents.auth.howTo' : 'settings.agents.auth.howToUnknown')}
             </p>
@@ -220,7 +245,7 @@ export function AgentAuthCard({
 }
 
 /** Une commande à recopier dans un terminal, et son bouton de copie. */
-function CommandLine({ value }: { value: string }) {
+export function CommandLine({ value }: { value: string }) {
   const t = useTranslate()
   const { state, copy } = useCopy()
   return (
