@@ -1,12 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import {
+  GIT_USERNAME,
+  GITHUB_HOST,
   gitHostSchema,
   putGitCredentialBodySchema,
   type GitCredentialListDto,
   type GitRepoListDto,
 } from '@solera/protocol'
-import { GITHUB_HOST, GitHubError, type GitHubRepoCatalog } from '../../git-credentials/github.js'
-import type { GitCredentialStore } from '../../git-credentials/store.js'
+import type { RepoCatalog } from '../../git-credentials/catalog.js'
+import { ForgeError, type ForgeClient } from '../../git-credentials/forges.js'
+import type { GitCredentialInput, GitCredentialStore } from '../../git-credentials/store.js'
 import { HttpError, badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
@@ -23,7 +26,8 @@ import { requireUser } from '../require-user.js'
 export function registerGitCredentialRoutes(
   app: FastifyInstance,
   credentials: GitCredentialStore,
-  catalog: GitHubRepoCatalog,
+  catalog: RepoCatalog,
+  forges: ForgeClient,
 ): void {
   app.get('/api/git-credentials', async (request): Promise<GitCredentialListDto> => {
     const user = requireUser(request)
@@ -33,12 +37,25 @@ export function registerGitCredentialRoutes(
   /**
    * `PUT` et non `POST` : écrire un jeton est idempotent, et le remplacer quand il
    * expire est le geste courant, pas l'exception.
+   *
+   * Pour GitHub et GitLab, le jeton est présenté à la forge avant d'être enregistré :
+   * un jeton refusé ne s'écrit pas, et celui qui l'a collé l'apprend ici plutôt qu'au
+   * premier clone. Le login que la forge rend est gardé pour l'affichage.
    */
   app.put('/api/git-credentials', async (request, reply) => {
     const user = requireUser(request)
     const body = putGitCredentialBodySchema.parse(request.body)
 
-    credentials.put(user.id, body.host, body.username, body.token)
+    let input: GitCredentialInput
+    if (body.forge === 'other') {
+      input = { ...body, login: null }
+    } else {
+      const host = body.forge === 'github' ? GITHUB_HOST : body.host
+      const login = await forgeCall(() => forges.whoami(body.forge, host, body.token))
+      input = { host, username: GIT_USERNAME[body.forge], token: body.token, forge: body.forge, login }
+    }
+
+    credentials.put(user.id, input)
     // Le catalogue en cache a été constitué avec le jeton précédent, qui ne donnait
     // peut-être pas accès aux mêmes dépôts.
     catalog.forget(user.id)
@@ -63,37 +80,45 @@ export function registerGitCredentialRoutes(
   /**
    * Dépôts accessibles avec le jeton, pour la combobox de création de projet.
    *
-   * GitHub seul pour l'instant : chaque forge a sa propre API de listage, et rien dans
+   * GitHub et GitLab seulement : chaque forge a sa propre API de listage, et rien dans
    * l'interface ne dépend de cette route, qui n'est qu'un raccourci. Coller une URL
    * reste la voie universelle.
    */
   app.get('/api/git-credentials/:host/repos', async (request): Promise<GitRepoListDto> => {
     const user = requireUser(request)
-    const { host } = request.params as { host: string }
+    const host = gitHostSchema.parse((request.params as { host: string }).host)
     const { q } = request.query as { q?: string }
 
-    if (gitHostSchema.parse(host) !== GITHUB_HOST) {
-      throw badRequest(
-        'git_repo_listing_unsupported',
-        'Repository listing is only available for {host}.',
-        { host: GITHUB_HOST },
-      )
-    }
-
-    const credential = credentials.resolve(user.id, GITHUB_HOST)
+    const credential = credentials.resolve(user.id, host)
     if (!credential) {
       throw notFound('git_credential_not_found', 'No credential for this host.')
     }
-
-    try {
-      return await catalog.search(user.id, credential.token, q ?? '')
-    } catch (err) {
-      // Un jeton refusé ou un quota épuisé n'est pas une panne de Solera : le code
-      // distingue les cas, pour que l'interface dise quoi corriger.
-      if (err instanceof GitHubError) {
-        throw new HttpError(502, err.code, err.message, err.params)
-      }
-      throw err
+    const { forge } = credential
+    if (forge === 'other') {
+      throw badRequest(
+        'git_repo_listing_unsupported',
+        'Repository listing is only available for GitHub and GitLab.',
+      )
     }
+
+    return forgeCall(() => catalog.search(user.id, forge, host, credential.token, q ?? ''))
   })
+}
+
+/**
+ * Un jeton refusé ou une forge injoignable n'est pas une panne de Solera : le code
+ * distingue les cas, pour que l'interface dise quoi corriger.
+ */
+async function forgeCall<T>(call: () => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (err) {
+    if (!(err instanceof ForgeError)) throw err
+    // 400 pour ce qui se corrige dans le formulaire (le jeton, l'adresse), 502 pour ce
+    // qui tient à la forge ou au réseau entre elle et le serveur.
+    const status = ['git_forge_token_rejected', 'git_forge_forbidden', 'git_forge_api_missing'].includes(err.code)
+      ? 400
+      : 502
+    throw new HttpError(status, err.code, err.message, err.params)
+  }
 }
