@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1591,6 +1591,16 @@ export const gitCredentials = sqliteTable(
     ciphertext: text('ciphertext').notNull(),
     iv: text('iv').notNull(),
     authTag: text('auth_tag').notNull(),
+    /**
+     * `github`, `gitlab` ou `other`. Nul sur les lignes d'avant le choix de la forge :
+     * elle se déduit alors de l'hôte (`effectiveForge`).
+     */
+    forge: text('forge').$type<GitForge>(),
+    /**
+     * Le compte que la forge a reconnu à l'enregistrement, pour l'afficher. Distinct de
+     * `username`, qui est ce que git présente et vaut `x-access-token` ou `oauth2`.
+     */
+    login: text('login'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },

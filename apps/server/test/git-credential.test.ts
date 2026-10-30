@@ -68,7 +68,7 @@ function instance(dir: string) {
   const { db, sqlite } = openDatabase(paths.database)
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
-  new GitCredentialStore(db, loadOrCreateKey(paths.data)).put('owner', 'github.com', 'x-access-token', 'ghp_test')
+  new GitCredentialStore(db, loadOrCreateKey(paths.data)).put('owner', { host: 'github.com', username: 'x-access-token', token: 'ghp_test', forge: 'github', login: 'owner' })
   sqlite.close()
   return paths
 }
