@@ -1,13 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq } from 'drizzle-orm'
 import { gitCredentials, type Db } from '@solera/db'
+import { effectiveForge, type GitCredential, type GitForge } from '@solera/protocol'
 import { decryptValue, encryptValue } from '../secrets/cipher.js'
 
-export interface GitCredential {
+/** Ce qu'on écrit : le jeton, et ce qui a été établi à son sujet avant de l'enregistrer. */
+export interface GitCredentialInput {
   host: string
+  /** Ce que git présentera ; voir `GIT_USERNAME`. */
   username: string
-  createdAt: number
-  updatedAt: number
+  token: string
+  forge: GitForge
+  /** Nul quand la forge n'a pas été interrogée (`other`). */
+  login: string | null
 }
 
 /**
@@ -29,6 +34,8 @@ export class GitCredentialStore {
       .select({
         host: gitCredentials.host,
         username: gitCredentials.username,
+        forge: gitCredentials.forge,
+        login: gitCredentials.login,
         createdAt: gitCredentials.createdAt,
         updatedAt: gitCredentials.updatedAt,
       })
@@ -36,10 +43,11 @@ export class GitCredentialStore {
       .where(eq(gitCredentials.ownerId, ownerId))
       .orderBy(asc(gitCredentials.host))
       .all()
+      .map((row) => ({ ...row, forge: effectiveForge(row.host, row.forge) }))
   }
 
   /** Écrit ou remplace : un jeton ne se modifie pas partiellement, il se réécrit. */
-  put(ownerId: string, host: string, username: string, token: string): void {
+  put(ownerId: string, { host, username, token, forge, login }: GitCredentialInput): void {
     const encrypted = encryptValue(this.key, token)
     const now = Date.now()
 
@@ -52,7 +60,7 @@ export class GitCredentialStore {
     if (existing) {
       this.db
         .update(gitCredentials)
-        .set({ username, ...encrypted, updatedAt: now })
+        .set({ username, forge, login, ...encrypted, updatedAt: now })
         .where(eq(gitCredentials.id, existing.id))
         .run()
       return
@@ -65,6 +73,8 @@ export class GitCredentialStore {
         ownerId,
         host,
         username,
+        forge,
+        login,
         ...encrypted,
         createdAt: now,
         updatedAt: now,
@@ -85,7 +95,10 @@ export class GitCredentialStore {
   }
 
   /** `undefined` si aucun jeton pour cet hôte ; lève si la ligne ne se déchiffre pas. */
-  resolve(ownerId: string, host: string): { username: string; token: string } | undefined {
+  resolve(
+    ownerId: string,
+    host: string,
+  ): { username: string; token: string; forge: GitForge } | undefined {
     const row = this.db
       .select()
       .from(gitCredentials)
@@ -94,7 +107,11 @@ export class GitCredentialStore {
     if (!row) return undefined
 
     try {
-      return { username: row.username, token: decryptValue(this.key, row) }
+      return {
+        username: row.username,
+        token: decryptValue(this.key, row),
+        forge: effectiveForge(row.host, row.forge),
+      }
     } catch (err) {
       throw new Error(
         `La credential git de « ${host} » n'a pas pu être déchiffrée : ` +

@@ -49,7 +49,8 @@ import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
 import { registerCodexAccountRoutes } from './routes/codex-accounts.js'
 import { registerGrokAccountRoutes } from './routes/grok-accounts.js'
 import { CloneJobs } from '../clone-jobs.js'
-import { GitHubRepoCatalog } from '../git-credentials/github.js'
+import { RepoCatalog } from '../git-credentials/catalog.js'
+import { ForgeClient } from '../git-credentials/forges.js'
 import type { GitCredentialStore } from '../git-credentials/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
 import type { ClaudeLoginService } from '../claude-accounts/login.js'
@@ -257,7 +258,7 @@ export async function buildApp(
   registerMemoryRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
-  registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
+  registerGitCredentialRoutes(app, gitCredentials, new RepoCatalog(), new ForgeClient())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)

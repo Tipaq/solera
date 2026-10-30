@@ -19,26 +19,117 @@ export const gitHostSchema = z
   .max(253)
   .regex(/^[a-z0-9.-]+$/, 'Un nom d\'hôte seul, sans schéma ni port.')
 
+/**
+ * La famille de la forge, qui décide de tout ce que Solera sait faire avec un jeton :
+ * le vérifier, lister les dépôts, et proposer la page qui le crée.
+ *
+ * GitLab.com et une GitLab d'entreprise sont la même forge à un hôte près. `other`
+ * couvre Gitea, Forgejo, Bitbucket… : Solera n'en connaît pas l'API, il se contente de
+ * rendre le jeton à git.
+ */
+export const gitForgeSchema = z.enum(['github', 'gitlab', 'other'])
+export type GitForge = z.infer<typeof gitForgeSchema>
+
+export const GITHUB_HOST = 'github.com'
+export const GITLAB_HOST = 'gitlab.com'
+
+/**
+ * Ce que le helper présente à git comme nom d'utilisateur, par forge.
+ *
+ * GitHub n'en tient pas compte pour un jeton personnel, et `x-access-token` reste valable
+ * pour un jeton d'installation. GitLab n'en tient pas compte non plus pour un jeton
+ * personnel (« any non-empty string »), mais `oauth2` est la valeur qu'il exige d'un
+ * jeton OAuth : la prendre dès maintenant laisse la connexion par OAuth réutiliser la
+ * même ligne. Le login réel n'est pas présenté : un login suivi d'un mot de passe faux
+ * est ce que GitLab compte comme tentative échouée.
+ */
+export const GIT_USERNAME: Record<Exclude<GitForge, 'other'>, string> = {
+  github: 'x-access-token',
+  gitlab: 'oauth2',
+}
+
+/**
+ * La forge d'une credential, y compris pour les lignes d'avant le choix de la forge, qui
+ * n'en ont pas : les deux hôtes publics se reconnaissent, le reste reste `other`. Une
+ * GitLab d'entreprise enregistrée à l'ancienne le restera donc, jusqu'à ce qu'on
+ * réenregistre son jeton en la désignant.
+ */
+export function effectiveForge(host: string, forge: GitForge | null | undefined): GitForge {
+  if (forge) return forge
+  if (host === GITHUB_HOST) return 'github'
+  if (host === GITLAB_HOST) return 'gitlab'
+  return 'other'
+}
+
+/**
+ * La page de la forge qui crée un jeton, pré-remplie : nom « Solera » et portées.
+ *
+ * GitHub : un jeton classique et non « fine-grained ». Ce dernier ne vaut que pour un
+ * seul propriétaire de dépôts, et la personne qui travaille aussi sur les dépôts d'une
+ * organisation devrait en comprendre la différence pour en créer deux. `repo` suffit à
+ * cloner, pousser et lister les dépôts, y compris ceux des organisations (`/user/repos`
+ * ne demande pas `read:org`). `description` et `scopes` ne sont pas documentés par
+ * GitHub pour cette page, mais elle les lit ; ignorés, il resterait à cocher `repo`.
+ *
+ * GitLab : `read_api` couvre `/user` et `/projects`, `write_repository` le clone et le
+ * push. `api` aurait aussi marché, mais il ouvre l'écriture sur toute l'API (supprimer
+ * un projet, modifier ses membres), dont Solera n'a pas besoin. Les paramètres de
+ * pré-remplissage sont lus depuis GitLab 15/16 ; une version plus ancienne les ignore et
+ * montre le formulaire vide.
+ *
+ * `null` pour `other` : Solera ne connaît pas l'adresse de la page.
+ */
+export function tokenCreationUrl(forge: GitForge, host: string): string | null {
+  if (forge === 'github') {
+    return 'https://github.com/settings/tokens/new?description=Solera&scopes=repo'
+  }
+  if (forge === 'gitlab') {
+    return `https://${host}/-/user_settings/personal_access_tokens?name=Solera&scopes=read_api,write_repository`
+  }
+  return null
+}
+
 export const gitCredentialSchema = z.object({
   host: z.string(),
   /**
-   * Ce que le helper présentera comme nom d'utilisateur.
-   *
-   * Les forges n'attendent pas la même chose : GitHub ignore la valeur pour un jeton
-   * personnel mais impose `x-access-token` pour un jeton d'installation, GitLab veut
-   * `oauth2`. Le stocker évite de coder en dur une table de correspondance par forge.
+   * Ce que le helper présentera comme nom d'utilisateur (voir `GIT_USERNAME`). Saisi à
+   * la main pour `other`, dont Solera ne connaît pas les attentes.
    */
   username: z.string(),
+  /** Déduite de l'hôte pour les lignes d'avant le choix de la forge. */
+  forge: gitForgeSchema,
+  /** Le compte reconnu par la forge à l'enregistrement ; nul sans vérification. */
+  login: z.string().nullable(),
   createdAt: z.number(),
   updatedAt: z.number(),
 })
 export type GitCredential = z.infer<typeof gitCredentialSchema>
 
-export const putGitCredentialBodySchema = z.object({
-  host: gitHostSchema,
-  username: z.string().min(1).max(120).default('x-access-token'),
-  token: z.string().min(1),
-})
+const tokenSchema = z.string().trim().min(1)
+
+/**
+ * Selon la forge, l'hôte et le nom d'utilisateur sont fixés par Solera ou saisis :
+ * GitHub n'a qu'un hôte, GitLab en a un par instance, et seule une forge inconnue
+ * demande un nom d'utilisateur. Un corps sans `forge` est celui d'avant ce choix, et se
+ * lit comme une forge inconnue.
+ */
+const putGitCredentialBodyUnion = z.discriminatedUnion('forge', [
+  z.object({ forge: z.literal('github'), token: tokenSchema }),
+  z.object({ forge: z.literal('gitlab'), host: gitHostSchema.default(GITLAB_HOST), token: tokenSchema }),
+  z.object({
+    forge: z.literal('other'),
+    host: gitHostSchema,
+    username: z.string().min(1).max(120).default('x-access-token'),
+    token: tokenSchema,
+  }),
+])
+export type PutGitCredentialBody = z.input<typeof putGitCredentialBodyUnion>
+
+export const putGitCredentialBodySchema = z.preprocess(
+  (body) =>
+    body && typeof body === 'object' && !('forge' in body) ? { ...body, forge: 'other' } : body,
+  putGitCredentialBodyUnion,
+)
 
 export interface GitCredentialListDto {
   credentials: GitCredential[]
