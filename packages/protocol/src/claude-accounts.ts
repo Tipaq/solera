@@ -82,9 +82,10 @@ export const startClaudeLoginBodySchema = z.object({ label: claudeAccountLabelSc
 
 /**
  * Ce que mène une connexion guidée : `token` crée le compte avec le jeton de
- * `setup-token`, `gauge` donne une jauge à un compte existant par `auth login`.
+ * `setup-token`, `gauge` donne une jauge à un compte existant par `auth login`, `cli`
+ * connecte le CLI lui-même, là où les sessions lisent sa connexion.
  */
-export type ClaudeLoginPurpose = 'token' | 'gauge'
+export type ClaudeLoginPurpose = 'token' | 'gauge' | 'cli'
 export const submitClaudeLoginCodeBodySchema = z.object({ code: z.string().trim().min(1).max(400) })
 
 export interface ClaudeLoginStatusDto {
