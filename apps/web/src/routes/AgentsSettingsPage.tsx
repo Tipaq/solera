@@ -69,6 +69,7 @@ function AgentTab({ agent }: { agent: AgentKind }) {
       <AgentInstallCard entry={entry} />
       <AgentAuthCard
         agent={agent}
+        entry={entry}
         auth={own}
         error={auth.isError || refresh.isError}
         checking={refresh.isPending || auth.isFetching}
