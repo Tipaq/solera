@@ -4,7 +4,7 @@ import { parseRemoteUrl, type GitRepoDto } from '@solera/protocol'
 import { Link } from 'react-router-dom'
 import { openSettings } from '../lib/settings-dialog'
 import { ApiRequestError } from '../lib/api'
-import { GITHUB_HOST, useGitCredentials } from '../lib/git-credentials'
+import { useGitCredentials } from '../lib/git-credentials'
 import { translateError, useTranslate } from '../lib/i18n'
 import { useCloneJob, useStartClone } from '../lib/projects'
 import {
@@ -32,7 +32,9 @@ export function CloneForm() {
   const t = useTranslate()
   const { data: credentials } = useGitCredentials()
   const savedHosts = credentials?.credentials.map((entry) => entry.host) ?? []
-  const hasGitHub = savedHosts.includes(GITHUB_HOST)
+  // Les forges dont Solera connaît l'API : leurs dépôts se choisissent dans la liste.
+  const listableHosts =
+    credentials?.credentials.filter((entry) => entry.forge !== 'other').map((entry) => entry.host) ?? []
 
   const [url, setUrl] = useState('')
   const [name, setName] = useState('')
@@ -145,8 +147,8 @@ export function CloneForm() {
         value={url}
         onChange={applyUrl}
         onPick={applyRepo}
-        hasCredential={hasGitHub}
-        hint={hasGitHub ? t('clone.repo.hint') : t('clone.repo.hint.noCredential')}
+        hosts={listableHosts}
+        hint={listableHosts.length > 0 ? t('clone.repo.hint') : t('clone.repo.hint.noCredential')}
       />
       <Field
         label={t('projects.create.name')}
