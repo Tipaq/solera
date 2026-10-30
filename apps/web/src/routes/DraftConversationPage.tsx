@@ -1,5 +1,6 @@
 import { History, SquareKanban, X } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
@@ -14,11 +15,14 @@ import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
 import { DraftAccount } from '../components/chat/DraftAccount'
 import { DraftAgentPicker } from '../components/chat/DraftAgentPicker'
+import { AgentLoginDialog } from '../components/settings/AgentLoginDialog'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
 import { useCards } from '../lib/cards'
+import { GUIDED_LOGIN } from '../lib/agent-login'
 import {
+  AGENT_AUTH_KEY,
   useAgentAuth,
   useAgentAvailability,
   useHiddenAgents,
@@ -36,6 +40,8 @@ import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
 import { useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
+import { openSettings } from '../lib/settings-dialog'
+import { useCurrentUser } from '../lib/session'
 import { inheritedConfigFor, useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
@@ -80,6 +86,64 @@ function useExtraAccounts(): Record<AgentKind, number> {
   }
 }
 
+type GuidedAgent = 'claude' | 'codex' | 'grok'
+const isGuided = (kind: AgentKind): kind is GuidedAgent => GUIDED_LOGIN.has(kind)
+
+/**
+ * Se connecter depuis le brouillon, sans passer par les réglages : la carte d'un CLI
+ * sans connexion ouvre le dialogue guidé, et une installation lancée d'ici enchaîne sur
+ * lui quand le CLI arrive sans connexion. Seul l'administrateur mène la connexion du CLI,
+ * qui vaut pour toute l'instance ; les autres, et OpenCode, gardent l'onglet des réglages.
+ */
+function useDraftSignIn(unusable: (kind: AgentKind) => boolean) {
+  const queryClient = useQueryClient()
+  const { data: me } = useCurrentUser()
+  const { data: availability } = useAgentAvailability()
+  const [signingIn, setSigningIn] = useState<GuidedAgent | null>(null)
+  /** Le CLI installé depuis cette page, dont on attend l'arrivée pour lire sa connexion. */
+  const [installed, setInstalled] = useState<AgentKind | null>(null)
+  const authAsked = useRef(false)
+  /** Vrai une fois la connexion relue après l'installation : `unusable` la voit alors. */
+  const [authRead, setAuthRead] = useState(false)
+
+  const guided = (kind: AgentKind): kind is GuidedAgent => isGuided(kind) && me?.isAdmin === true
+  const signIn = (kind: AgentKind) => {
+    if (guided(kind)) setSigningIn(kind)
+    else openSettings('agents', kind)
+  }
+
+  const entry = installed ? availability?.agents.find((item) => item.agent === installed) : undefined
+  const failed = entry?.install.status === 'failed'
+  const arrived = entry?.installed === true
+  // Lu au rendu qui suit la relecture de la connexion, avec ce qu'elle a rapporté.
+  const chain = installed !== null && guided(installed) && unusable(installed)
+  useEffect(() => {
+    if (!installed) return
+    if (failed) return setInstalled(null)
+    if (!arrived) return
+    // Le serveur ne lisait pas la connexion d'un CLI absent : on la redemande une fois.
+    if (!authAsked.current) {
+      authAsked.current = true
+      void queryClient.invalidateQueries({ queryKey: AGENT_AUTH_KEY }).then(() => setAuthRead(true))
+      return
+    }
+    if (!authRead) return
+    setInstalled(null)
+    setAuthRead(false)
+    if (chain && isGuided(installed)) setSigningIn(installed)
+  }, [installed, failed, arrived, authRead, chain, queryClient])
+
+  return {
+    signingIn,
+    signIn,
+    afterInstall: (kind: AgentKind) => {
+      authAsked.current = false
+      setInstalled(kind)
+    },
+    close: () => setSigningIn(null),
+  }
+}
+
 export function DraftConversationPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -113,6 +177,7 @@ export function DraftConversationPage() {
   const loggedOut = (kind: AgentKind) =>
     auth?.entries.find((entry) => entry.agent === kind && entry.account === null)?.status === 'logged_out'
   const unusable = (kind: AgentKind) => loggedOut(kind) && extraAccounts[kind] === 0
+  const draftSignIn = useDraftSignIn(unusable)
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -342,7 +407,19 @@ export function DraftConversationPage() {
             peek={peek}
             hidden={hiddenAgents.hidden}
             onHide={hiddenAgents.hide}
+            onSignIn={draftSignIn.signIn}
+            onInstall={draftSignIn.afterInstall}
           />
+          {draftSignIn.signingIn ? (
+            <AgentLoginDialog
+              agent={draftSignIn.signingIn}
+              entry={availability?.agents.find((a) => a.agent === draftSignIn.signingIn)}
+              open
+              onClose={draftSignIn.close}
+              // Connecté, il devient le CLI de la conversation : on peut écrire aussitôt.
+              onDone={() => setChosenAgent(draftSignIn.signingIn)}
+            />
+          ) : null}
           {selectedVersionNotice ? <p className="-mt-2 text-xs text-caution">{selectedVersionNotice}</p> : null}
           {/* Le cas où aucun CLI n'est prêt, et celui d'un `?agent=` qui en désigne un
               absent ou sans connexion : les cartes seules laisseraient l'écran sans
