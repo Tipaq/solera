@@ -30,7 +30,7 @@ async function harness(t: TestContext) {
   }).run()
 
   const config = {
-    paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees') },
+    paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees'), agents: join(dir, 'agents') },
     limits: { ptyIdleTimeoutMin: 5 },
   } as unknown as Config
   const terminals = new TerminalManager(config)
