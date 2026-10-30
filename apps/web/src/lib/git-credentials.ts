@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { GitCredentialListDto, GitRepoDto, GitRepoListDto } from '@solera/protocol'
+import type { GitCredentialListDto, GitRepoDto, GitRepoListDto, PutGitCredentialBody } from '@solera/protocol'
 import { api } from './api'
 
 /**
@@ -12,7 +12,22 @@ import { api } from './api'
 
 const CREDENTIALS_KEY = ['git-credentials']
 
-export const GITHUB_HOST = 'github.com'
+/**
+ * Un hôte tel que le serveur l'attend, depuis ce qu'on a pu coller : une adresse copiée
+ * du navigateur (`https://gitlab.exemple.fr/groupe/projet`) donne `gitlab.exemple.fr`.
+ * Le port est retiré comme le helper le retire : la credential vaut pour l'hôte seul.
+ */
+export function normalizeHost(input: string): string {
+  return (
+    input
+      .trim()
+      .toLowerCase()
+      .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+      .replace(/^[^@/]*@/, '')
+      .split(/[/?#]/)[0]
+      ?.replace(/:\d+$/, '') ?? ''
+  )
+}
 
 export function useGitCredentials() {
   return useQuery({
@@ -24,8 +39,7 @@ export function useGitCredentials() {
 export function usePutGitCredential() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { host: string; username: string; token: string }) =>
-      api.put<void>('/api/git-credentials', input),
+    mutationFn: (input: PutGitCredentialBody) => api.put<void>('/api/git-credentials', input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: CREDENTIALS_KEY })
       // Le catalogue affiché a été constitué avec le jeton précédent.
