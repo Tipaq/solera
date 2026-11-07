@@ -23,6 +23,13 @@ import { UsageLedger } from '../src/agents/usage-ledger.js'
 import type { AppContext } from '../src/http/context.js'
 
 const TOKEN = 'sk-ant-oat01-' + 'a'.repeat(40)
+const OTHER_TOKEN = 'sk-ant-oat01-' + 'c'.repeat(40)
+const DEAD_TOKEN = 'sk-ant-oat01-' + 'd'.repeat(40)
+
+/** Le `claude auth status` simulé : chaque jeton a son adresse, un jeton mort n'en a pas. */
+const EMAILS: Record<string, string> = { [TOKEN]: 'boulot@exemple.fr', [OTHER_TOKEN]: 'perso@exemple.fr' }
+const identify = async (source: { token: string } | { configDir: string }) =>
+  'token' in source ? (EMAILS[source.token] ?? null) : null
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-claude-accounts-'))
@@ -54,19 +61,21 @@ async function harness(t: TestContext) {
     request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-user'] ?? 'owner'))).get()
   })
   registerErrorHandler(app)
-  registerClaudeAccountRoutes(app, store, {} as never)
+  registerClaudeAccountRoutes(app, store, {} as never, identify)
   registerAgentRoutes(app, { db } as AppContext, registry, {} as CliInstaller, store, { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex')) }, { store: new GrokAccountStore(db), homes: new GrokAccountHomes(join(dir, 'grok')) })
   t.after(() => app.close())
   return { db, store, app, seen }
 }
 
-test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son propriétaire', async (t) => {
+test('comptes Claude : nommés par leur adresse, jeton jamais rendu, résolu avec son propriétaire', async (t) => {
   const { db, store, app, seen } = await harness(t)
 
-  const created = await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: ' Boulot ', token: TOKEN } })
+  const created = await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: TOKEN } })
   assert.equal(created.statusCode, 201, created.body)
   const account = created.json<ClaudeAccount>()
-  assert.equal(account.label, 'Boulot')
+  assert.equal(account.email, 'boulot@exemple.fr', 'L’adresse vient du jeton')
+  assert.equal(account.alias, null)
+  assert.equal(account.label, 'boulot@exemple.fr', 'Sans alias, le compte s’appelle par son adresse')
   assert.equal(account.kind, 'oauth')
   assert.ok(!('token' in account))
 
@@ -76,16 +85,23 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(store.resolveToken('owner', account.id)?.token, TOKEN)
   assert.equal(store.resolveToken('other', account.id), undefined, "Le compte d'un autre ne se résout pas")
 
-  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boulot', token: TOKEN } })).statusCode, 409)
-  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Perso', token: 'sk-ant-api03-nope' } })).statusCode, 400, 'Un secret tronqué est refusé')
-  const keyed = (await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boîte', token: 'sk-ant-api03-' + 'k'.repeat(40) } })).json<ClaudeAccount>()
+  // Une adresse, un compte : le même jeton, ou un autre de la même adresse, est refusé.
+  const again = await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Encore', token: TOKEN } })
+  assert.equal(again.statusCode, 409)
+  assert.equal(again.json<{ error: { code: string } }>().error.code, 'claude_account_email_taken')
+  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: DEAD_TOKEN } })).statusCode, 400, 'Un jeton sans adresse est refusé')
+  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Perso', token: 'sk-ant-api03-nope' } })).statusCode, 400, 'Un secret tronqué est refusé')
+  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: 'sk-ant-api03-' + 'k'.repeat(40) } })).statusCode, 400, 'Une clé API sans adresse exige un nom')
+  const keyed = (await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Boîte', token: 'sk-ant-api03-' + 'k'.repeat(40) } })).json<ClaudeAccount>()
   assert.equal(keyed.kind, 'apiKey', 'Une clé API Console se reconnaît à son préfixe')
+  assert.equal(keyed.email, null)
+  assert.equal(keyed.label, 'Boîte')
   assert.equal(store.resolveToken('owner', keyed.id)?.kind, 'apiKey')
-  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { label: 'Boulot', token: TOKEN }, headers: { 'x-user': 'other' } })).statusCode, 201, 'Le même nom chez un autre utilisateur passe')
+  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: TOKEN }, headers: { 'x-user': 'other' } })).statusCode, 201, 'La même adresse chez un autre utilisateur passe')
 
   const list = (await app.inject('/api/claude-accounts')).json<{ accounts: ClaudeAccount[] }>()
-  assert.deepEqual(list.accounts.map((entry) => entry.label), ['Boulot', 'Boîte'])
-  assert.ok(list.accounts.every((entry) => !('token' in entry)))
+  assert.deepEqual(list.accounts.map((entry) => entry.label), ['boulot@exemple.fr', 'Boîte'])
+  assert.ok(list.accounts.every((entry) => !('token' in entry) && !entry.duplicate))
 
   // La consommation par compte est demandée pour le compte, et seulement au propriétaire.
   const usage = await app.inject(`/api/agents/claude/usage?account=${account.id}`)
@@ -97,13 +113,23 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal((await app.inject({ url: `/api/agents/claude/usage?account=${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject('/api/agents/claude/usage')).json<AgentUsage>().plan, 'cli', 'Sans compte, la connexion du CLI')
 
-  // Renommer, remplacer le jeton, ou rien : chaque cas a sa réponse.
+  // Un alias, un jeton renouvelé de la même adresse, ou rien : chaque cas a sa réponse.
   assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: {} })).statusCode, 400)
-  const replaced = TOKEN.replace(/a+$/, 'b'.repeat(40))
-  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { label: 'Travail', token: replaced } })).statusCode, 204)
-  assert.equal(store.resolveToken('owner', account.id)?.token, replaced)
-  assert.deepEqual(store.list('owner').map((entry) => entry.label), ['Boîte', 'Travail'])
-  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { label: 'X' }, headers: { 'x-user': 'other' } })).statusCode, 404)
+  const renewed = TOKEN.replace(/a+$/, 'b'.repeat(40))
+  EMAILS[renewed] = 'boulot@exemple.fr'
+  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { alias: ' Travail ', token: renewed } })).statusCode, 204)
+  assert.equal(store.resolveToken('owner', account.id)?.token, renewed)
+  assert.equal(store.find('owner', account.id)?.label, 'Travail · boulot@exemple.fr')
+  // Un jeton d'une autre adresse serait un autre compte : refusé, rien de remplacé.
+  const mismatch = await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { token: OTHER_TOKEN } })
+  assert.equal(mismatch.statusCode, 409)
+  assert.equal(mismatch.json<{ error: { code: string } }>().error.code, 'claude_account_email_mismatch')
+  assert.equal(store.resolveToken('owner', account.id)?.token, renewed)
+  // Un alias vide le retire : le compte reprend son adresse pour nom.
+  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { alias: '' } })).statusCode, 204)
+  assert.equal(store.find('owner', account.id)?.label, 'boulot@exemple.fr')
+  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${keyed.id}`, payload: { alias: '' } })).statusCode, 400, 'Une clé API garde son nom')
+  assert.equal((await app.inject({ method: 'PATCH', url: `/api/claude-accounts/${account.id}`, payload: { alias: 'X' }, headers: { 'x-user': 'other' } })).statusCode, 404)
 
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${account.id}`, headers: { 'x-user': 'other' } })).statusCode, 404)
   assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${account.id}` })).statusCode, 204)
@@ -111,7 +137,7 @@ test('comptes Claude : par utilisateur, jeton jamais rendu, résolu avec son pro
   assert.equal(store.list('other').length, 1)
 })
 
-test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, retirée avec le compte', async (t) => {
+test('jauge d’un abonnement : reprise d’un dossier jetable, retirée avec le compte', async (t) => {
   const { ClaudeAccountGauges } = await import('../src/claude-accounts/gauges.js')
   const { mkdirSync, writeFileSync, existsSync, statSync } = await import('node:fs')
   const dir = await mkdtemp(join(tmpdir(), 'solera-gauges-'))
@@ -123,9 +149,9 @@ test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, ret
   const gauges = new ClaudeAccountGauges(join(dir, 'claude-accounts'))
   const store = new ClaudeAccountStore(db, randomBytes(32), gauges)
 
-  const account = store.create('owner', 'Perso', TOKEN)
-  const keyed = store.create('owner', 'Boîte', 'sk-ant-api03-' + 'k'.repeat(40))
-  assert.equal(store.find('owner', account.id)?.gauge, null)
+  const account = store.create('owner', { email: 'perso@exemple.fr', alias: 'Perso' }, TOKEN)
+  const keyed = store.create('owner', { email: null, alias: 'Boîte' }, 'sk-ant-api03-' + 'k'.repeat(40))
+  assert.equal(store.find('owner', account.id)?.gauge, false)
 
   // Une connexion ratée ne laisse rien : pas d'identifiants, pas de reprise.
   const staging = join(dir, 'staging')
@@ -137,15 +163,42 @@ test('jauge d’un abonnement : reprise d’un dossier jetable, courriel lu, ret
   writeFileSync(join(staging, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'perso@example.com' } }))
   writeFileSync(join(staging, 'history.jsonl'), 'pas gardé')
   gauges.adopt(account.id, staging)
-  assert.deepEqual(store.find('owner', account.id)?.gauge, { email: 'perso@example.com' })
+  assert.equal(store.find('owner', account.id)?.gauge, true)
   assert.equal(existsSync(join(gauges.path(account.id), 'history.jsonl')), false, 'Seule la connexion est gardée')
   assert.equal(statSync(join(gauges.path(account.id), '.credentials.json')).mode & 0o777, 0o600)
 
   // Une clé API n'a pas de forfait : même un dossier égaré ne lui donne pas de jauge.
   mkdirSync(gauges.path(keyed.id), { recursive: true })
   writeFileSync(join(gauges.path(keyed.id), '.credentials.json'), '{}')
-  assert.equal(store.find('owner', keyed.id)?.gauge, null)
+  assert.equal(store.find('owner', keyed.id)?.gauge, false)
 
   assert.ok(store.delete('owner', account.id))
   assert.equal(existsSync(gauges.path(account.id)), false, 'La jauge part avec le compte')
+})
+
+test('comptes d’avant les adresses : l’adresse retrouvée sous le jeton, les doublons signalés', async (t) => {
+  const { backfillClaudeEmails } = await import('../src/claude-accounts/identity.js')
+  const { store } = await harness(t)
+  // Tels que la migration les laisse : l'ancien libellé en alias, pas d'adresse.
+  const named = store.create('owner', { email: null, alias: 'Boulot' }, TOKEN)
+  const plain = store.create('owner', { email: null, alias: 'Perso@Exemple.fr' }, OTHER_TOKEN)
+  const twin = store.create('owner', { email: null, alias: 'Boulot bis' }, TOKEN)
+  const dead = store.create('owner', { email: null, alias: 'Vieux' }, DEAD_TOKEN)
+  const keyed = store.create('owner', { email: null, alias: 'Boîte' }, 'sk-ant-api03-' + 'k'.repeat(40))
+  const before = store.find('owner', named.id)!.updatedAt
+
+  assert.equal(await backfillClaudeEmails(store, identify), 3)
+  assert.equal(store.find('owner', named.id)?.label, 'Boulot · boulot@exemple.fr', 'L’ancien nom devient l’alias')
+  assert.equal(store.find('owner', named.id)?.updatedAt, before, 'La date reste celle du jeton')
+  assert.equal(store.find('owner', plain.id)?.alias, null, 'Un alias qui répète l’adresse disparaît')
+  assert.equal(store.find('owner', plain.id)?.label, 'perso@exemple.fr')
+  // Deux comptes qui se révèlent être le même : signalés, aucun n'est supprimé.
+  assert.equal(store.find('owner', named.id)?.duplicate, true)
+  assert.equal(store.find('owner', twin.id)?.duplicate, true)
+  assert.equal(store.find('owner', plain.id)?.duplicate, false)
+  // Un jeton mort reste sans adresse, à reconnecter ; une clé API n'en a jamais.
+  assert.equal(store.find('owner', dead.id)?.email, null)
+  assert.equal(store.find('owner', keyed.id)?.email, null)
+  assert.deepEqual(store.withoutEmail().map((entry) => entry.id), [dead.id])
+  assert.equal(await backfillClaudeEmails(store, identify), 0, 'Rien à refaire au démarrage suivant')
 })

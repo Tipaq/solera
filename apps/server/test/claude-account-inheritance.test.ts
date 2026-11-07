@@ -46,9 +46,9 @@ test('sans compte de Solera, le fil reste sur la connexion du terminal', async (
 test('sans choix, le fil hérite du premier compte de la liste, et de lui seul', async (t) => {
   const db = await database(t)
   const store = new ClaudeAccountStore(db, randomBytes(32))
-  const perso = store.create('tim', 'Perso', TOKEN)
-  store.create('tim', 'Travail', TOKEN)
-  store.create('other', 'Autre', TOKEN)
+  const perso = store.create('tim', { email: 'perso@exemple.fr', alias: null }, TOKEN)
+  store.create('tim', { email: 'travail@exemple.fr', alias: null }, TOKEN)
+  store.create('other', { email: 'autre@exemple.fr', alias: null }, TOKEN)
   assert.equal(accountOf(db, 'tim'), perso.id)
   // Le compte d'un autre utilisateur ne se prête pas.
   assert.equal(accountOf(db, 'other') === perso.id, false)
@@ -59,8 +59,8 @@ test('sans choix, le fil hérite du premier compte de la liste, et de lui seul',
 test('un choix explicite au compte l’emporte, la connexion du terminal comprise', async (t) => {
   const db = await database(t)
   const store = new ClaudeAccountStore(db, randomBytes(32))
-  store.create('tim', 'Perso', TOKEN)
-  const travail = store.create('tim', 'Travail', TOKEN)
+  store.create('tim', { email: 'perso@exemple.fr', alias: null }, TOKEN)
+  const travail = store.create('tim', { email: 'travail@exemple.fr', alias: null }, TOKEN)
   writeUserAgentLayer(db, 'tim', { scope: 'claude', set: { account: travail.id } })
   assert.equal(accountOf(db, 'tim'), travail.id)
   writeUserAgentLayer(db, 'tim', { scope: 'claude', set: { account: null } })
@@ -70,8 +70,8 @@ test('un choix explicite au compte l’emporte, la connexion du terminal compris
 test('un compte désigné puis supprimé retombe sur le premier qui reste', async (t) => {
   const db = await database(t)
   const store = new ClaudeAccountStore(db, randomBytes(32))
-  const perso = store.create('tim', 'Perso', TOKEN)
-  const travail = store.create('tim', 'Travail', TOKEN)
+  const perso = store.create('tim', { email: 'perso@exemple.fr', alias: null }, TOKEN)
+  const travail = store.create('tim', { email: 'travail@exemple.fr', alias: null }, TOKEN)
   writeUserAgentLayer(db, 'tim', { scope: 'claude', set: { account: travail.id } })
   store.delete('tim', travail.id)
   assert.equal(accountOf(db, 'tim'), perso.id)

@@ -84,8 +84,9 @@ try {
   await delay(1500)
   assert.equal(await page.getByRole('radiogroup', { name: 'Compte' }).count(), 0, 'Pas de choix sans compte')
 
-  // Un compte Claude par jeton et un compte Codex connecté par clé.
-  await context.request.post(`${base}/api/claude-accounts`, { data: { label: 'Boulot', token: 'sk-ant-oat01-' + 'x'.repeat(60) } })
+  // Un compte Claude et un compte Codex, connectés par clé.
+  // Une clé API : nommée par son alias, elle se passe du CLI qui lirait l'adresse d'un jeton.
+  await context.request.post(`${base}/api/claude-accounts`, { data: { alias: 'Boulot', token: 'sk-ant-api03-' + 'x'.repeat(60) } })
   const codex = await (await context.request.post(`${base}/api/codex-accounts`, { data: { label: 'Codex Boîte' } })).json()
   const login = await context.request.post(`${base}/api/codex-accounts/${codex.id}/login`, { data: { type: 'apiKey', apiKey: 'sk-test-bogus' } })
   assert.ok(login.ok(), await login.text())

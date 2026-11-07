@@ -137,7 +137,7 @@ test('aperçu : les lectures complètes sont gardées, le coup d’œil ne sonde
   assert.deepEqual(await peek(), [], 'Rien de lu depuis le démarrage : rien à montrer')
   assert.equal(probes, 0, 'Le coup d’œil ne lance aucune sonde')
 
-  const mine = claudeAccounts.create('owner', 'Boulot', 'sk-ant-oat01-' + 'a'.repeat(40))
+  const mine = claudeAccounts.create('owner', { email: 'boulot@exemple.fr', alias: null }, 'sk-ant-oat01-' + 'a'.repeat(40))
   assert.equal((await app.inject('/api/agents/claude/usage')).statusCode, 200)
   assert.equal((await app.inject(`/api/agents/claude/usage?account=${mine.id}`)).statusCode, 200)
   assert.equal(probes, 2)

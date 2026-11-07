@@ -19,22 +19,41 @@ export type ClaudeAccountKind = z.infer<typeof claudeAccountKindSchema>
 
 export const claudeAccountSchema = z.object({
   id: z.string(),
-  /** Nom choisi par l'utilisateur (« Perso », « Boulot ») : le jeton ne dit pas à qui il est. */
+  /** Le nom affiché : l'adresse, précédée de l'alias s'il y en a un (`claudeAccountName`). */
   label: z.string(),
+  /**
+   * L'adresse du compte Claude, lue par `claude auth status` sous le jeton. Nulle pour
+   * une clé API, et pour un compte d'avant les adresses dont le jeton ne répond plus :
+   * il est à reconnecter.
+   */
+  email: z.string().nullable(),
+  /** Nom facultatif (« Perso ») ; c'est le seul nom d'une clé API. */
+  alias: z.string().nullable(),
   kind: claudeAccountKindSchema,
+  /**
+   * Vrai quand un autre compte du même utilisateur a la même adresse : deux comptes
+   * d'avant les adresses peuvent se révéler être le même. À l'utilisateur d'en retirer un.
+   */
+  duplicate: z.boolean(),
   /**
    * Jauge d'usage d'un abonnement : le jeton de setup-token ne porte que la portée
    * `user:inference` et ne lit pas les limites du forfait. Une vraie connexion
    * (`claude auth login`), gardée à part et réservée aux lectures d'usage, les lit.
-   * Null tant qu'elle n'a pas été faite, et pour une clé API, qui n'a pas de forfait.
+   * Faux tant qu'elle n'a pas été faite, et pour une clé API, qui n'a pas de forfait.
    */
-  gauge: z.object({ email: z.string().nullable() }).nullable(),
+  gauge: z.boolean(),
   createdAt: z.number(),
   updatedAt: z.number(),
 })
 export type ClaudeAccount = z.infer<typeof claudeAccountSchema>
 
-export const claudeAccountLabelSchema = z.string().trim().min(1).max(60)
+/** « Perso · moi@exemple.fr », l'adresse seule sans alias, l'alias seul sans adresse. */
+export function claudeAccountName(account: { email: string | null; alias: string | null }): string {
+  if (account.alias && account.email) return `${account.alias} · ${account.email}`
+  return account.email ?? account.alias ?? '?'
+}
+
+export const claudeAccountAliasSchema = z.string().trim().max(60)
 
 /**
  * Ce que `claude setup-token` imprime (`sk-ant-oat01-…`) ou une clé API Console
@@ -54,18 +73,25 @@ export function claudeSecretKind(secret: string): ClaudeAccountKind {
   return secret.startsWith('sk-ant-oat01-') ? 'oauth' : 'apiKey'
 }
 
+/** Un alias vide n'en est pas un : le compte s'appelle alors par son adresse. */
+const aliasField = claudeAccountAliasSchema.transform((alias) => alias || null)
+
+/** Une clé API n'a pas d'adresse : son alias est son seul nom, la route l'exige. */
 export const createClaudeAccountBodySchema = z.object({
-  label: claudeAccountLabelSchema,
+  alias: aliasField.optional(),
   token: claudeSecretSchema,
 })
 
-/** Renommer, remplacer le secret expiré, ou les deux : chaque champ est facultatif. */
+/**
+ * Changer d'alias (`null` le retire), remplacer le secret expiré, ou les deux. Un jeton
+ * qui ne mène pas à la même adresse est refusé : ce serait un autre compte.
+ */
 export const updateClaudeAccountBodySchema = z
   .object({
-    label: claudeAccountLabelSchema.optional(),
+    alias: aliasField.nullable().optional(),
     token: claudeSecretSchema.optional(),
   })
-  .refine((body) => body.label !== undefined || body.token !== undefined, {
+  .refine((body) => body.alias !== undefined || body.token !== undefined, {
     message: 'Rien à modifier.',
   })
 
@@ -76,12 +102,14 @@ export interface ClaudeAccountListDto {
 /**
  * Connexion guidée d'un abonnement : Solera pilote `claude setup-token` dans un
  * pseudo-terminal, montre l'URL d'autorisation, reçoit le code que la page affiche et
- * récupère le jeton imprimé. Le compte n'est créé qu'à la fin, avec ce jeton.
+ * récupère le jeton imprimé. Le compte n'est créé qu'à la fin, avec ce jeton et
+ * l'adresse qu'il donne ; une adresse déjà connue reconnecte son compte au lieu d'en
+ * créer un second.
  */
-export const startClaudeLoginBodySchema = z.object({ label: claudeAccountLabelSchema })
+export const startClaudeLoginBodySchema = z.object({ alias: aliasField.optional() })
 
 /**
- * Ce que mène une connexion guidée : `token` crée le compte avec le jeton de
+ * Ce que mène une connexion guidée : `token` crée ou reconnecte le compte avec le jeton de
  * `setup-token`, `gauge` donne une jauge à un compte existant par `auth login`, `cli`
  * connecte le CLI lui-même, là où les sessions lisent sa connexion.
  */

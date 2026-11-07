@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -49,11 +49,27 @@ async function ready(url, child) {
   throw new Error(`Server did not start: ${child.diagnostics}`)
 }
 
+// Faux claude : seul `auth status` répond, et rend l'adresse sous un jeton. Le terminal
+// n'est pas connecté ; la connexion guidée, elle, n'imprime rien.
+const FAKE_CLI = `#!/bin/bash
+if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    printf '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","email":"boulot@example.com"}\\n'; exit 0
+  fi
+  echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'; exit 1
+fi
+exit 1
+`
+
 try {
   const apiPort = await freePort()
   const webPort = await freePort()
   const config = join(data, 'config.toml')
-  await writeFile(config, '[agents.claude]\nenabled = false\n[agents.codex]\nenabled = false\n')
+  const fake = join(data, 'claude')
+  await writeFile(fake, FAKE_CLI)
+  await chmod(fake, 0o755)
+  await writeFile(config, `[agents.claude]\nbinary = "${fake}"\n[agents.codex]\nenabled = false\n[agents.opencode]\nenabled = false\n`)
   const env = {
     ...process.env,
     SOLERA_PORT: String(apiPort),
@@ -83,8 +99,8 @@ try {
   await page.goto(`${base}/settings/comptes-claude`)
   await page.getByText('Aucun compte Claude').waitFor()
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  await page.getByLabel('Nom').fill('Boulot')
-  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie.
+  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie. Sans alias, le
+  // jeton nomme le compte par son adresse.
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-pas-le-bon')
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
@@ -94,52 +110,61 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
   await page.getByText('Abonnement', { exact: true }).waitFor()
-  // Un abonnement sans jauge le dit, et propose de l'activer ; le flux lancé montre un lien
-  // d'autorisation qui demande la portée du profil, puis s'annule.
-  await page.getByText("Pas de jauge d'usage").waitFor()
-  await page.getByRole('button', { name: 'Activer la jauge' }).click()
-  await page.getByText("Jauge d'usage", { exact: true }).or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
+  await page.getByText('boulot@example.com', { exact: true }).waitFor()
+  // Le même jeton une seconde fois : la même adresse, refusée.
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
+  await page.getByRole('radio', { name: /Coller un jeton/ }).click()
+  await page.getByLabel('Jeton ou clé API').fill(TOKEN)
+  await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
+  await page.getByText(/boulot@example.com est déjà connecté/).waitFor()
+  await page.getByRole('button', { name: 'Annuler' }).click()
+  // Un abonnement sans jauge le dit, et propose de l'afficher ; le CLI n'imprime rien ici,
+  // l'écran le dit, et s'annule.
+  await page.getByText('Consommation non affichée').waitFor()
+  await page.getByRole('button', { name: 'Afficher la consommation' }).click()
+  await page.getByText('Consommation', { exact: true }).or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
   await page.screenshot({ path: '/tmp/solera-claude-gauge.png', fullPage: true })
   await page.getByRole('button', { name: 'Annuler' }).click()
-  await page.getByRole('button', { name: 'Activer la jauge' }).waitFor()
+  await page.getByRole('button', { name: 'Afficher la consommation' }).waitFor()
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
   // Une clé API Console se reconnaît à son préfixe et s'affiche comme telle.
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  await page.getByLabel('Nom').fill('Boîte')
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
+  await page.getByLabel('Alias (facultatif)').fill('Boîte')
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-' + 'k'.repeat(40))
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Clé API', { exact: true }).waitFor()
   const listed = await (await context.request.get(`${base}/api/claude-accounts`)).json()
-  assert.deepEqual(listed.accounts.map((entry) => [entry.label, entry.kind]), [['Boulot', 'oauth'], ['Boîte', 'apiKey']])
+  assert.deepEqual(listed.accounts.map((entry) => [entry.label, entry.kind]), [['boulot@example.com', 'oauth'], ['Boîte', 'apiKey']])
   assert.ok(listed.accounts.every((entry) => !('token' in entry)))
   await page.screenshot({ path: '/tmp/solera-claude-accounts-desktop.png' })
   const keyed = listed.accounts[1].id
   await context.request.delete(`${base}/api/claude-accounts/${keyed}`)
   // Supprimé par l'API, hors de la page : elle ne le sait qu'en relisant.
   await page.goto(`${base}/settings/comptes-claude`)
-  await page.getByText('Boulot', { exact: true }).waitFor()
+  await page.getByText('boulot@example.com', { exact: true }).waitFor()
 
   // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  await page.getByLabel('Nom').fill('Guidé')
+  await page.getByLabel('Alias (facultatif)').fill('Guidé')
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
   await page.getByText("Ouvrir la page d'autorisation").or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
   await page.getByRole('button', { name: 'Annuler' }).click()
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().waitFor()
 
-  // Renommer sans toucher au jeton.
+  // Un alias, sans toucher au jeton : il s'affiche devant l'adresse.
   await page.getByRole('button', { name: 'Modifier' }).click()
-  await page.getByLabel('Nom').fill('Travail')
+  await page.getByLabel('Alias (facultatif)').fill('Travail')
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await page.getByText('Travail', { exact: true }).waitFor()
+  await page.getByText('boulot@example.com', { exact: true }).waitFor()
 
   // Le sélecteur de compte dans les défauts du CLI, et sa persistance.
   await page.goto(`${base}/settings/cli`)
   const account = page.getByRole('combobox', { name: 'Compte' })
   await account.waitFor()
   await account.click()
-  const option = page.getByRole('option', { name: 'Travail' })
+  const option = page.getByRole('option', { name: 'Travail · boulot@example.com' })
   await option.waitFor()
   assert.equal(await page.getByRole('option', { name: /Connexion du terminal/ }).count(), 1)
   await option.click()
@@ -148,7 +173,7 @@ try {
   assert.equal(settings.agentDefaults.claude.account, listed.accounts[0].id)
   await page.goto(`${base}/settings/cli`)
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
-  assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail')
+  assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail · boulot@example.com')
 
   // Un compte supprimé reste désigné : le sélecteur le dit au lieu de se vider.
   const removed = await context.request.delete(`${base}/api/claude-accounts/${listed.accounts[0].id}`)
@@ -168,16 +193,17 @@ try {
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await mobile.addInitScript(() => localStorage.setItem('solera.locale', 'fr'))
   await mobile.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
-  await mobile.request.post(`${base}/api/claude-accounts`, { data: { label: 'Perso', token: TOKEN } })
+  await mobile.request.post(`${base}/api/claude-accounts`, { data: { alias: 'Perso', token: TOKEN } })
   const phone = await mobile.newPage()
   await phone.goto(`${base}/settings/comptes-claude`)
   await phone.getByText('Perso', { exact: true }).waitFor()
+  await phone.getByText('boulot@example.com', { exact: true }).waitFor()
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await phone.screenshot({ path: '/tmp/solera-claude-accounts-mobile.png' })
   await mobile.close()
 
   assert.deepEqual(errors, [])
-  console.log('OK : ajout, renommage, jeton jamais rendu, sélecteur de compte persistant, compte supprimé signalé, mobile.')
+  console.log('OK : ajout nommé par l’adresse, adresse en double refusée, alias, jeton jamais rendu, sélecteur de compte persistant, compte supprimé signalé, mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

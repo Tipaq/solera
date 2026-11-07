@@ -26,7 +26,7 @@ export function useClaudeAccounts(enabled = true) {
 export function useCreateClaudeAccount() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { label: string; token: string }) =>
+    mutationFn: (input: { alias?: string; token: string }) =>
       api.post<ClaudeAccount>('/api/claude-accounts', input),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY }),
   })
@@ -35,7 +35,7 @@ export function useCreateClaudeAccount() {
 export function useUpdateClaudeAccount() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string; label?: string; token?: string }) =>
+    mutationFn: ({ id, ...patch }: { id: string; alias?: string | null; token?: string }) =>
       api.patch<void>(`/api/claude-accounts/${encodeURIComponent(id)}`, patch),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
@@ -54,21 +54,30 @@ export function useDeleteClaudeAccount() {
 }
 
 /**
- * Connexion guidée d'un abonnement : le serveur pilote `claude setup-token`, l'écran
- * montre l'URL, recueille le code que la page affiche et le transmet. Le compte naît
- * quand le CLI a imprimé le jeton.
- */
-/**
  * Hors de `ACCOUNTS_KEY`, et pas en dessous : invalider la liste invaliderait aussi la
  * connexion suivie, dont la relecture invalide la liste à sa fin. La boucle tournait à
  * quarante requêtes par seconde et figeait l'écran sur « Vérification… » (13 octobre 2026).
  */
 const loginKey = (loginId: string) => ['claude-login', loginId]
 
+/**
+ * Connexion guidée d'un abonnement : le serveur pilote `claude setup-token`, l'écran
+ * montre l'URL, recueille le code que la page affiche et le transmet. Le compte naît
+ * quand le CLI a imprimé le jeton, nommé par son adresse ; une adresse déjà connue
+ * reconnecte son compte.
+ */
 export function useStartClaudeLogin() {
   return useMutation({
-    mutationFn: (input: { label: string }) =>
+    mutationFn: (input: { alias?: string }) =>
       api.post<ClaudeLoginStatusDto>('/api/claude-accounts/login', input),
+  })
+}
+
+/** Reconnexion d'un compte : la même connexion, qui doit mener à la même adresse. */
+export function useReconnectClaudeAccount() {
+  return useMutation({
+    mutationFn: (accountId: string) =>
+      api.post<ClaudeLoginStatusDto>(`/api/claude-accounts/${encodeURIComponent(accountId)}/reconnect`),
   })
 }
 
@@ -127,13 +136,3 @@ export function useStartClaudeGauge() {
   })
 }
 
-export function useForgetClaudeGauge() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (accountId: string) => api.delete<void>(`/api/claude-accounts/${encodeURIComponent(accountId)}/gauge`),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY })
-      void queryClient.invalidateQueries({ queryKey: ['usage'] })
-    },
-  })
-}

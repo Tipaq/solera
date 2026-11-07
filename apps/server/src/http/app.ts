@@ -46,6 +46,7 @@ import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
 import { registerGitCredentialRoutes } from './routes/git-credentials.js'
 import { registerClaudeAccountRoutes } from './routes/claude-accounts.js'
+import type { ClaudeIdentify } from '../claude-accounts/identity.js'
 import { registerCodexAccountRoutes } from './routes/codex-accounts.js'
 import { registerGrokAccountRoutes } from './routes/grok-accounts.js'
 import { CloneJobs } from '../clone-jobs.js'
@@ -132,6 +133,7 @@ export async function buildApp(
   gitCredentials: GitCredentialStore,
   claudeAccounts: ClaudeAccountStore,
   claudeLogin: ClaudeLoginService,
+  claudeIdentify: ClaudeIdentify,
   codexAccounts: { store: CodexAccountStore; homes: CodexAccountHomes },
   codexLogin: CodexLoginService,
   grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
@@ -258,7 +260,7 @@ export async function buildApp(
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new GitHubRepoCatalog())
-  registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin)
+  registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin, claudeIdentify)
   registerCodexAccountRoutes(app, codexAccounts.store, codexLogin)
   registerGrokAccountRoutes(app, grokAccounts.store, grokLogin)
   registerAgentLoginRoutes(app, { claude: claudeLogin, codex: codexLogin, grok: grokLogin })
