@@ -34,6 +34,7 @@ const meta = {
     peek: [{ agent: 'claude', account: null, probed: null, live: [{ type: 'five_hour', status: 'allowed', utilization: null, resetsAt: Date.now() + 2 * 3_600_000, at: Date.now() }] }],
     hidden: [],
     onHide: () => {},
+    onReveal: () => {},
   },
   render: (args) => <div className="w-[40rem]"><DraftAgentPicker {...args} /></div>,
 } satisfies Meta<typeof DraftAgentPicker>
@@ -48,4 +49,9 @@ export const Installation: Story = {
   args: {
     availability: [base('claude', true), base('codex', true), { ...base('opencode', false), install: { status: 'running', version: '1.0.0', startedAt: Date.now() - 20_000, fetched: 12, current: null } }, base('grok', false)],
   },
+}
+
+export const Masques: Story = {
+  name: 'Absents masqués',
+  args: { hidden: ['opencode', 'grok'] },
 }

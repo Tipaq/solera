@@ -88,38 +88,43 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  const choices = () => page.locator('input[name="draft-agent"]').count()
-  // Le bouton du rang d'un CLI, visé par son texte : Claude Code peut manquer lui aussi
-  // sur la machine qui joue la suite, et son rang vient en premier.
-  const dismiss = (label) =>
-    page.getByText(`${label} n'est pas installé`).locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).click()
-  const hiddenLine = (labels) => page.getByText(`Masqués tant qu’ils ne sont pas installés : ${labels}.`)
+  // Le choix du CLI du brouillon : une carte par CLI, celle d'un absent est un bouton
+  // « Installer » doublé d'une croix « Ne plus proposer ». Visées par leur nom : Claude
+  // Code peut manquer lui aussi sur la machine qui joue la suite.
+  const picker = page.getByRole('group', { name: 'Agent', exact: true })
+  const installCard = (label) => picker.getByRole('button', { name: new RegExp(`^${label} (Installer|Installation…)$`) })
+  const dismiss = (label) => installCard(label).locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).click()
+  const hiddenLine = (labels) => picker.getByText(`Masqués tant qu’ils ne sont pas installés : ${labels}.`)
 
-  // 1. Deux CLI manquants, deux rangs « Installer », chacun masquable.
+  // 1. Deux CLI manquants, deux cartes « Installer », chacune masquable ; OpenCode,
+  //    coupé par la configuration, n'en a pas.
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-  await page.getByText(/Codex n'est pas installé/).waitFor()
-  await page.getByText(/Grok Build n'est pas installé/).waitFor()
-  assert.equal(await choices(), 4, 'claude, codex, opencode (coupé) et grok proposés')
+  await installCard('Codex').waitFor()
+  await installCard('Grok Build').waitFor()
+  assert.equal(await picker.getByText('OpenCode', { exact: true }).count(), 0, 'opencode coupé sans carte')
   await page.screenshot({ path: join(shots, 'install-rows.png') })
   await dismiss('Codex')
-  await page.getByText(/Codex n'est pas installé/).waitFor({ state: 'detached' })
+  await installCard('Codex').waitFor({ state: 'detached' })
   await hiddenLine('Codex').waitFor()
-  assert.equal(await choices(), 3, 'codex retiré du choix')
   await dismiss('Grok Build')
+  await installCard('Grok Build').waitFor({ state: 'detached' })
   await hiddenLine('Codex, Grok Build').waitFor()
-  assert.equal(await choices(), 2, 'restent claude et opencode coupé')
   // Le masque est au compte : il survit au rechargement.
   await page.reload()
   await hiddenLine('Codex, Grok Build').waitFor()
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
   assert.deepEqual(settings.hiddenAgents, ['codex', 'grok'])
   await page.screenshot({ path: join(shots, 'install-hidden.png') })
-  await page.getByRole('button', { name: 'Afficher', exact: true }).click()
-  await page.getByText(/Codex n'est pas installé/).waitFor()
-  assert.equal(await choices(), 4)
+  // Et se lève d'où on l'a posé.
+  await picker.getByRole('button', { name: 'Afficher', exact: true }).click()
+  await installCard('Codex').waitFor()
+  await installCard('Grok Build').waitFor()
+  await hiddenLine('Codex, Grok Build').waitFor({ state: 'detached' })
 
   // 2. L'avancement d'une installation : l'état « running » est injecté dans la
-  //    réponse de la sonde, l'installation réelle durant plusieurs minutes.
+  //    réponse de la sonde, l'installation réelle durant plusieurs minutes. La carte
+  //    du brouillon dit qu'elle tourne et perd sa croix ; l'avancement détaillé est
+  //    dans l'onglet du CLI des réglages.
   await page.route('**/api/agents', async (route) => {
     const response = await route.fetch()
     const body = await response.json()
@@ -131,12 +136,19 @@ try {
     await route.fulfill({ response, json: body })
   })
   await page.reload()
+  await picker.getByRole('button', { name: 'Codex Installation…', exact: true }).waitFor()
+  assert.ok(await installCard('Codex').isDisabled(), 'carte inactive pendant l’installation')
+  assert.equal(await installCard('Codex').locator('xpath=..').getByRole('button', { name: 'Ne plus proposer' }).count(), 0)
+  await page.screenshot({ path: join(shots, 'install-running.png') })
+  await page.goto(`${base}/settings/comptes-codex`)
+  await page.getByRole('tab', { name: 'Codex', selected: true }).waitFor()
   await page.getByRole('progressbar', { name: /Installation de Codex/ }).waitFor()
   await page.getByText(/Téléchargement de codex-0\.163\.0\.tgz · 14 fichiers reçus/).waitFor()
-  await page.getByText(/^1 min 2[3-6] s$/).waitFor()
-  assert.equal(await page.getByText(/Codex n'est pas installé/).count(), 0, 'le rang laisse la place à l’avancement')
+  await page.getByText(/^1 min 2[3-9] s$/).waitFor()
   await page.screenshot({ path: join(shots, 'install-progress.png') })
+  await page.keyboard.press('Escape')
   await page.unroute('**/api/agents')
+  await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
 
   // 3. Clic droit sur une conversation de la colonne, puis sur l'en-tête d'un projet :
   //    le menu du « ⋯ », entrées comprises.
@@ -173,12 +185,12 @@ try {
   await page.screenshot({ path: join(shots, 'table-selection.png') })
 
   // 5. Au téléphone : le clic droit n'ouvre rien de plus, le « ⋯ » reste la voie ; la
-  //    page de brouillon tient dans la largeur avec ses rangs d'installation.
+  //    page de brouillon tient dans la largeur avec ses cartes d'installation.
   const mobile = await newContext(base, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
   const phone = await mobile.newPage()
   phone.on('pageerror', (error) => errors.push(error.message))
   await phone.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-  await phone.getByText(/Codex n'est pas installé/).waitFor()
+  await phone.getByRole('group', { name: 'Agent', exact: true }).getByRole('button', { name: 'Codex Installer', exact: true }).waitFor()
   await delay(800)
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'pas de débordement horizontal')
   await phone.screenshot({ path: join(shots, 'mobile.png') })

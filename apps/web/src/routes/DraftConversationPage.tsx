@@ -449,6 +449,7 @@ export function DraftConversationPage() {
             peek={peek}
             hidden={hiddenAgents.hidden}
             onHide={hiddenAgents.hide}
+            onReveal={hiddenAgents.reveal}
             onSignIn={draftSignIn.signIn}
             onInstall={draftSignIn.afterInstall}
           />
