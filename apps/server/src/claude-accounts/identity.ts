@@ -7,13 +7,13 @@ import type { ClaudeAccountStore } from './store.js'
 /**
  * L'adresse d'un compte Claude, telle que `claude auth status --json` la rend.
  *
- * Sous le seul jeton de `setup-token`, dans un dossier de configuration vide, le CLI
- * rend bien l'adresse du compte (vérifié par Tim le 7 novembre 2026) : un code suffit
- * donc à nommer un compte. Les fichiers du CLI (`.claude.json`, `.credentials.json`)
- * sont un format interne, on ne les lit pas.
- *
- * La même lecture sert à la jauge, dans son dossier de configuration, pour vérifier
- * qu'`auth login` a autorisé le même compte que le jeton.
+ * Sous le seul jeton de `setup-token`, le CLI ne la rend pas : 2.1.302 se dit alors
+ * connecté en `oauth_token` et ne remplit `email` que pour une connexion `claude.ai`
+ * (lu dans le code de `auth status`, et constaté le 7 novembre 2026 : tous les comptes
+ * de Tim sont restés sans adresse). L'adresse vient donc de la jauge, la connexion
+ * `auth login` d'un compte, lue dans son dossier de configuration. La lecture sous le
+ * jeton reste tentée, pour un CLI qui la donnerait. Les fichiers du CLI (`.claude.json`,
+ * `.credentials.json`) sont un format interne, on ne les lit pas.
  *
  * Null quand le CLI ne dit pas d'adresse : jeton révoqué, réseau absent, sortie
  * illisible. L'appelant n'a pas à distinguer : le compte est à reconnecter.
@@ -51,7 +51,7 @@ export function emailFrom(stdout: string): string | null {
 
 /**
  * Retrouve l'adresse des abonnements d'avant les adresses, au démarrage et en tâche de
- * fond. L'ancien libellé, devenu alias par la migration, disparaît s'il ne fait que
+ * fond, sous leur jeton ou, à défaut, par leur jauge. L'ancien libellé, devenu alias par la migration, disparaît s'il ne fait que
  * répéter l'adresse. Un jeton qui ne répond pas laisse le compte sans adresse : l'écran
  * propose de le reconnecter. Deux comptes qui se révèlent être le même gardent chacun
  * l'adresse, et l'écran les signale : c'est à l'utilisateur de choisir lequel garder.
@@ -63,11 +63,12 @@ export async function backfillClaudeEmails(store: ClaudeAccountStore, identify: 
     try {
       secret = store.resolveToken(ownerId, id)
     } catch {
-      // Indéchiffrable : rien à lire, le compte reste à reconnecter.
-      continue
+      // Indéchiffrable : le jeton ne dit rien, la jauge peut encore parler.
     }
-    if (!secret) continue
-    const email = await identify({ token: secret.token })
+    // Le jeton d'abord, pour un CLI qui la donnerait ; la jauge ensuite, qui la donne.
+    const email =
+      (secret ? await identify({ token: secret.token }) : null) ??
+      (store.gauges?.has(id) ? await identify({ configDir: store.gauges.path(id) }) : null)
     if (!email) continue
     const alias = store.find(ownerId, id)?.alias
     store.update(ownerId, id, { email, ...(alias?.trim().toLowerCase() === email ? { alias: null } : {}) })

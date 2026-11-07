@@ -59,12 +59,14 @@ if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
 # Sous un jeton, l'adresse se lit dans le jeton : des B, c'est un autre compte. Dans le
 # dossier d'une jauge, elle est celle que la connexion y a laissée.
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  # Comme le vrai (2.1.302) : sous un jeton, connecté mais sans adresse ; l'adresse n'est
+  # dite que pour une connexion claude.ai, celle de la jauge.
   if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-    case "$CLAUDE_CODE_OAUTH_TOKEN" in *BBBB*) email=other@example.com ;; *) email=perso@example.com ;; esac
-    printf '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","email":"%s"}\\n' "$email"; exit 0
+    echo '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}'; exit 0
   fi
   if [ -n "$CLAUDE_CONFIG_DIR" ] && [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
-    echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"perso@example.com"}'; exit 0
+    email=$(sed -n 's/.*"emailAddress":"\\([^"]*\\)".*/\\1/p' "$CLAUDE_CONFIG_DIR/.claude.json")
+    printf '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"%s"}\\n' "$email"; exit 0
   fi
   echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'; exit 1
 fi
@@ -89,7 +91,8 @@ if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
   read -r code
   if [ "\${code:0:4}" = "GOOD" ]; then
     echo '{"claudeAiOauth":{}}' > "$CLAUDE_CONFIG_DIR/.credentials.json"
-    echo '{"oauthAccount":{"emailAddress":"perso@example.com"}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+    case "$code" in GOOD-OTHER*) email=other@example.com ;; *) email=perso@example.com ;; esac
+    printf '{"oauthAccount":{"emailAddress":"%s"}}' "$email" > "$CLAUDE_CONFIG_DIR/.claude.json"
     echo "Login successful."; exit 0
   fi
   echo "Login failed: Request failed with status code 400"; exit 1
@@ -156,12 +159,13 @@ try {
   await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'x'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
   // Le compte est nommé par son adresse, et la jauge s'enchaîne d'office.
-  await page.getByText(/Étape 1 sur 2 faite : Perso · perso@example.com est connecté/).waitFor({ timeout: 15000 }).catch(async (err) => {
+  // Le jeton ne dit pas son adresse : le compte n'a encore que son alias, et c'est la
+  // jauge, enchaînée d'office, qui la lui donnera.
+  await page.getByText(/Étape 1 sur 2 faite : Perso est connecté/).waitFor({ timeout: 15000 }).catch(async (err) => {
     await page.screenshot({ path: '/tmp/solera-claude-login-fail.png', fullPage: true })
     throw err
   })
   await page.getByText('Consommation', { exact: true }).waitFor()
-  await page.getByText(/connecté à perso@example.com/).waitFor()
   await page.screenshot({ path: '/tmp/solera-claude-login-step2.png', fullPage: true })
 
   // Un refus fait relancer le CLI, le bon code donne la jauge.
@@ -177,13 +181,17 @@ try {
   await page.getByText(/est connecté, et sa consommation/).locator('xpath=ancestor::div[contains(@class,"flex-col")][1]').getByRole('button', { name: 'Fermer' }).click()
   await page.screenshot({ path: '/tmp/solera-claude-login-success.png', fullPage: true })
 
-  // Reconnecter vers une autre adresse : refusé, rien de remplacé.
+  // Reconnecter vers une autre adresse : le jeton attend, la jauge révèle l'autre adresse,
+  // et rien n'est remplacé.
   await page.getByRole('button', { name: 'Reconnecter' }).click()
   await page.getByText("Ouvrir la page d'autorisation").waitFor()
   await page.getByLabel('Code', { exact: true }).fill('GOOD-OTHER-' + 'z'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
-  await page.getByText(/Ce code connecte other@example.com, pas perso@example.com/).waitFor({ timeout: 15000 })
-  await page.getByText(/Ce code connecte/).locator('xpath=ancestor::div[contains(@class,"border-t")][1]').screenshot({ path: '/tmp/solera-claude-reconnect-mismatch.png' })
+  await page.getByText(/Étape 1 sur 2 faite : Perso · perso@example.com est connecté/).waitFor({ timeout: 15000 })
+  await page.getByLabel('Code', { exact: true }).fill('GOOD-OTHER-' + 'u'.repeat(80))
+  await page.getByRole('button', { name: 'Valider le code' }).click()
+  await page.getByText(/Cette autorisation connecte other@example.com, pas perso@example.com/).waitFor({ timeout: 15000 })
+  await page.getByText(/Cette autorisation connecte/).locator('xpath=ancestor::div[contains(@class,"border-t")][1]').screenshot({ path: '/tmp/solera-claude-reconnect-mismatch.png' })
   await page.getByRole('button', { name: 'Annuler' }).click()
 
   // Reconnecter vers la même adresse : le jeton est remplacé, et la jauge se refait aussi,
