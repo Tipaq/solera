@@ -25,7 +25,7 @@ export function SkillLibrarySettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('skills.section.title')} description={t('skills.section.description')} />
+      <SectionHeader description={t('skills.section.description')} />
 
       <Banner tone="info">{t('skills.banner')}</Banner>
       {data && !data.enabled ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}

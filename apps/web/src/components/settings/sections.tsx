@@ -52,7 +52,7 @@ export interface SettingsSection {
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
-    id: 'compte',
+    id: 'profil',
     group: 'you',
     labelKey: 'settings.section.account',
     descriptionKey: 'settings.section.account.description',
@@ -117,7 +117,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <Plug size={16} />,
   },
   {
-    id: 'comptes',
+    id: 'utilisateurs',
     group: 'instance',
     labelKey: 'settings.section.accounts',
     descriptionKey: 'settings.section.accounts.description',

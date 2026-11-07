@@ -104,7 +104,7 @@ export function DictationSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('stt.section.title')} description={t('stt.section.description')} />
+      <SectionHeader description={t('stt.section.description')} />
 
       <Card>
         <CardHeader title={t('stt.provider.title')} icon={<Mic size={16} />} />

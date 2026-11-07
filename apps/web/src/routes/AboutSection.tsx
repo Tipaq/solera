@@ -84,7 +84,7 @@ export function AboutSection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('about.title')} description={t('about.description')} />
+      <SectionHeader description={t('about.description')} />
 
       {/* La visite se rejoue d'ici : elle rouvre à sa première étape, sans rien défaire. */}
       <Card>

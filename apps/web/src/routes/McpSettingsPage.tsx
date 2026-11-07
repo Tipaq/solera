@@ -14,7 +14,7 @@ export function McpSettingsPage() {
   const t = useTranslate()
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('mcp.section.title')} description={t('mcp.section.description')} />
+      <SectionHeader description={t('mcp.section.description')} />
       {/* Deux sens du même mot : ici, des serveurs que Solera donne aux agents ; sous
           « API et MCP », celui que Solera expose lui-même. Le dire évite de chercher ici
           comment brancher un outil extérieur. Hors du registre, que le « + » du

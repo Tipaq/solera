@@ -134,6 +134,11 @@ try {
   await page.getByRole('tab', { name: 'Codex', selected: true }).waitFor()
   await page.goto(`${base}/settings/abonnements`)
   await page.getByRole('tab', { name: 'Claude', selected: true }).waitFor()
+  // « compte » et « comptes » sont devenus « profil » et « utilisateurs » (#130).
+  await page.goto(`${base}/settings/comptes`)
+  await page.getByRole('heading', { name: 'Utilisateurs', exact: true }).first().waitFor()
+  await page.goto(`${base}/settings/compte`)
+  await page.getByRole('heading', { name: 'Profil', exact: true }).first().waitFor()
 
   // Le projet : hérité du compte, modifié ici, puis rendu à l'héritage (Q33).
   const projects = await (await context.request.get(`${base}/api/projects`)).json()

@@ -10,7 +10,7 @@ export function PermissionsSettingsPage() {
   const t = useTranslate()
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('settings.permissions.title')} description={t('settings.permissions.description')} />
+      <SectionHeader description={t('settings.permissions.description')} />
       <PermissionsSettings level={{ kind: 'account' }} />
     </div>
   )

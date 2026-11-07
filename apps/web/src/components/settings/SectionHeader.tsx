@@ -3,12 +3,12 @@ import type { ReactNode } from 'react'
 /**
  * Le chapeau d'une section de réglages : la phrase qui dit ce qu'on y règle.
  *
- * Le titre ne s'écrit plus ici. La modale le porte dans sa barre, au-dessus du trait,
- * et l'écrire une seconde fois en tête du contenu le répétait à deux lignes d'écart.
- * Le prop reste reçu — chaque section le donne, et il dit au lecteur du code de quelle
- * section il s'agit — mais c'est le catalogue qui le rend, une fois, dans la barre.
+ * Pas de titre ici : la modale porte dans sa barre le libellé de la section, celui de
+ * la liste. Un titre propre à la page finissait par dire autre chose que la liste
+ * (« Comptes » sous « Utilisateurs », « Le vault » sous « Savoir ») sans jamais
+ * s'afficher.
  */
-export function SectionHeader({ description }: { title: string; description?: string }) {
+export function SectionHeader({ description }: { description?: string }) {
   if (!description) return null
   return <p className="mb-4 text-sm text-ink-faint">{description}</p>
 }

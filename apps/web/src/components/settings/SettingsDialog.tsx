@@ -49,7 +49,7 @@ import { VaultSettingsPage } from '../../routes/VaultSettingsPage'
  * qu'il faut.
  */
 const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
-  compte: AccountSection,
+  profil: AccountSection,
   apparence: AppearanceSection,
   affichage: DisplaySection,
   notifications: NotificationsSection,
@@ -65,7 +65,7 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   api: ApiTokensSettingsPage,
   savoir: VaultSettingsPage,
   archivage: ArchivingSettingsPage,
-  comptes: UsersSettingsPage,
+  utilisateurs: UsersSettingsPage,
   'a-propos': AboutSection,
 }
 

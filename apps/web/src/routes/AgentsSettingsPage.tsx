@@ -44,7 +44,7 @@ export function AgentsSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('settings.agents.title')} description={t('settings.agents.description')} />
+      <SectionHeader description={t('settings.agents.description')} />
       <Tabs
         label={t('settings.agents.title')}
         value={agent}
