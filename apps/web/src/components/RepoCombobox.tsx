@@ -9,7 +9,7 @@ import { cx } from '@solera/ui'
  * Choix d'un dépôt à cloner.
  *
  * Le champ reste en saisie libre, et c'est le point : la liste n'est qu'un raccourci
- * pour les dépôts que le jeton GitHub laisse voir. Une URL collée, d'une autre forge ou
+ * pour les dépôts que les jetons GitHub et GitLab laissent voir. Une URL collée, d'une autre forge ou
  * d'un dépôt public quelconque, doit passer sans que rien ne s'y oppose.
  *
  * La liste ne s'ouvre donc pas quand ce qui est saisi ressemble déjà à une URL : celui
@@ -19,13 +19,14 @@ export function RepoCombobox({
   value,
   onChange,
   onPick,
-  hasCredential,
+  hosts,
   hint,
 }: {
   value: string
   onChange: (value: string) => void
   onPick: (repo: GitRepoDto) => void
-  hasCredential: boolean
+  /** Les hôtes enregistrés dont la forge sait lister ses dépôts ; vide, pas de liste. */
+  hosts: string[]
   hint?: string
 }) {
   const t = useTranslate()
@@ -36,13 +37,12 @@ export function RepoCombobox({
   const [active, setActive] = useState(0)
 
   const looksLikeUrl = /:\/\/|^[^\s/]+@[^\s/]+:/.test(value.trim())
-  const listing = hasCredential && !looksLikeUrl
-  const { data, isFetching } = useGitRepos(value.trim(), listing && open)
-  const repos = data?.repos ?? []
+  const listing = hosts.length > 0 && !looksLikeUrl
+  const { repos, truncated, isFetching, dataKey } = useGitRepos(hosts, value.trim(), listing && open)
 
   // Une nouvelle liste rend l'index précédent arbitraire : il ne désigne plus le même
   // dépôt, et le laisser tel quel ferait valider une ligne que personne n'a visée.
-  useEffect(() => setActive(0), [data])
+  useEffect(() => setActive(0), [dataKey])
 
   useEffect(() => {
     list.current?.children[active]?.scrollIntoView({ block: 'nearest' })
@@ -121,7 +121,8 @@ export function RepoCombobox({
             className="surface absolute z-20 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-line p-1 shadow-float"
           >
             {repos.map((repo, index) => (
-              <li key={repo.fullName}>
+              // L'URL et non le nom complet : `moi/site` peut exister sur deux forges.
+              <li key={repo.cloneUrl}>
                 <button
                   type="button"
                   role="option"
@@ -157,7 +158,7 @@ export function RepoCombobox({
               </li>
             ) : null}
 
-            {data?.truncated ? (
+            {truncated ? (
               <li className="border-t border-line px-2 py-1.5 text-xs text-ink-faint">
                 {t('clone.repo.truncated')}
               </li>
