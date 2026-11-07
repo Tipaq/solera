@@ -489,7 +489,7 @@ try {
   console.log('OK : choix de l’agent au clavier, brouillon conservé, quotas visibles et envoi accessible.')
 
   await openSettings(page, 'apparence')
-  for (const group of ['Toi', 'Les agents', "L'instance"]) {
+  for (const group of ['Toi', 'Les agents', 'Le serveur']) {
     await page.getByRole('heading', { name: group, exact: true }).waitFor()
   }
   const size = page.getByRole('slider', { name: 'Taille du texte', exact: true })
@@ -533,21 +533,21 @@ try {
   assert.equal(await page.getByRole('radio', { name: 'Discret', exact: true }).isChecked(), true)
   console.log('OK : ambiances persistantes, teinte et lecture conservées, thème contrasté respecté.')
 
-  // Le réglage Affichage : ce qu'on décroche de la colonne tient d'un chargement à
+  // La colonne, sous Apparence : ce qu'on en décroche tient d'un chargement à
   // l'autre, et les deux lieux figés n'ont pas d'interrupteur à tenter.
-  await openSettings(page, 'affichage')
+  await openSettings(page, 'apparence')
   const settings = page.getByRole('dialog', { name: 'Réglages', exact: true })
-  await settings.getByRole('heading', { name: 'Affichage', exact: true }).waitFor()
+  await settings.getByRole('heading', { name: 'La colonne', exact: true }).waitFor()
   const skillsPlace = settings.getByRole('switch', { name: /^Skills/ })
   assert.equal(await skillsPlace.getAttribute('aria-checked'), 'true')
   await skillsPlace.click()
   assert.equal(await page.evaluate(() => localStorage.getItem('solera.display.skills')), '0')
   assert.equal(await settings.getByRole('switch', { name: /^Fils/ }).count(), 0, 'Fils ne se décroche pas')
-  await openSettings(page, 'affichage')
+  await openSettings(page, 'apparence')
   assert.equal(await settings.getByRole('switch', { name: /^Skills/ }).getAttribute('aria-checked'), 'false')
   await settings.getByRole('button', { name: 'Fermer les réglages', exact: true }).first().click()
   await settings.waitFor({ state: 'hidden' })
-  console.log('OK : réglages en modale, trois groupes, réglage Affichage persistant.')
+  console.log('OK : réglages en modale, trois groupes, colonne persistante.')
 
   // La palette élargie : au repos elle propose ce qu'on rouvre et les gestes, à la
   // frappe elle groupe par famille, et un préfixe va droit à l'une d'elles.

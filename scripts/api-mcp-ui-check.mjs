@@ -84,7 +84,7 @@ try {
 
   for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['phone', { width: 390, height: 844 }]]) {
     await page.setViewportSize(viewport)
-    await page.goto(`${base}/settings/api`)
+    await page.goto(`${base}/settings/acces`)
     // Les deux portes, chacune avec son adresse.
     await page.getByRole('heading', { name: 'API REST', exact: true }).waitFor()
     await page.getByRole('heading', { name: 'Serveur MCP', exact: true }).waitFor()

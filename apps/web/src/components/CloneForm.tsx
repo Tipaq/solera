@@ -135,7 +135,7 @@ export function CloneForm() {
           {targetHost
             ? t('clone.private.notice.host', { host: targetHost })
             : t('clone.private.notice')}{' '}
-          <button type="button" onClick={() => openSettings('git')} className="underline">
+          <button type="button" onClick={() => openSettings('acces')} className="underline">
             {t('clone.private.link')}
           </button>
         </Banner>
@@ -181,7 +181,7 @@ export function CloneForm() {
           {/* L'échec d'authentification est le seul dont la réparation est à un clic
               d'ici : y mener vaut mieux que de laisser chercher dans les réglages. */}
           {job.error.code === 'clone_auth_failed' ? (
-            <button type="button" onClick={() => openSettings('git')} className="underline">
+            <button type="button" onClick={() => openSettings('acces')} className="underline">
               {t('clone.private.link')}
             </button>
           ) : null}

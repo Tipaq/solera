@@ -19,18 +19,17 @@ import { SETTINGS_GROUPS, visibleSections } from './sections'
 import { AboutSection } from '../../routes/AboutSection'
 import { AccountSection } from '../../routes/AccountSection'
 import { AgentsSettingsPage } from '../../routes/AgentsSettingsPage'
-import { ApiTokensSettingsPage } from '../../routes/ApiTokensSettingsPage'
-import { AppearanceSection } from '../../routes/AppearanceSection'
-import { ArchivingSettingsPage } from '../../routes/ArchivingSettingsPage'
+import {
+  AccessSection,
+  AppearanceAndDisplaySection,
+  SessionsAndArchivingSection,
+} from '../../routes/CombinedSettingsSections'
 import { DictationSettingsPage } from '../../routes/DictationSettingsPage'
-import { DisplaySection } from '../../routes/DisplaySection'
-import { GitCredentialsSettingsPage } from '../../routes/GitCredentialsSettingsPage'
 import { InstructionsSettingsPage } from '../../routes/InstructionsSettingsPage'
 import { PermissionsSettingsPage } from '../../routes/PermissionsSettingsPage'
 import { McpSettingsPage } from '../../routes/McpSettingsPage'
 import { NotificationsSection } from '../../routes/NotificationsSection'
 import { SecretsSettingsPage } from '../../routes/SecretsSettingsPage'
-import { SessionsSettingsPage } from '../../routes/SessionsSettingsPage'
 import { SkillLibrarySettingsPage } from '../../routes/SkillLibrarySettingsPage'
 import { UsersSettingsPage } from '../../routes/UsersSettingsPage'
 import { VaultSettingsPage } from '../../routes/VaultSettingsPage'
@@ -50,8 +49,7 @@ import { VaultSettingsPage } from '../../routes/VaultSettingsPage'
  */
 const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   profil: AccountSection,
-  apparence: AppearanceSection,
-  affichage: DisplaySection,
+  apparence: AppearanceAndDisplaySection,
   notifications: NotificationsSection,
   dictee: DictationSettingsPage,
   permissions: PermissionsSettingsPage,
@@ -59,12 +57,10 @@ const CONTENT: Record<SettingsSectionId, () => ReactNode> = {
   mcp: McpSettingsPage,
   consignes: InstructionsSettingsPage,
   skills: SkillLibrarySettingsPage,
-  sessions: SessionsSettingsPage,
-  git: GitCredentialsSettingsPage,
+  sessions: SessionsAndArchivingSection,
+  acces: AccessSection,
   secrets: SecretsSettingsPage,
-  api: ApiTokensSettingsPage,
   savoir: VaultSettingsPage,
-  archivage: ArchivingSettingsPage,
   utilisateurs: UsersSettingsPage,
   'a-propos': AboutSection,
 }

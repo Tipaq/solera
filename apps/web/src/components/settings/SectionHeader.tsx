@@ -40,3 +40,17 @@ export function ListHeading({
     </div>
   )
 }
+
+/**
+ * Une partie d'une section qui en réunit plusieurs (#130) : Apparence et Affichage,
+ * Sessions et Archivage, Git et API. Chaque partie garde son contenu et sa phrase
+ * d'en-tête ; ce titre seul dit où l'une s'arrête et où l'autre commence.
+ */
+export function SettingsPart({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="px-1 text-heading font-semibold tracking-tight text-ink">{title}</h2>
+      {children}
+    </section>
+  )
+}

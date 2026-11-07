@@ -103,12 +103,12 @@ try {
 
   // Les trois groupes (Q31), et l'ordre des agents.
   await page.goto(`${base}/settings/permissions`)
-  for (const group of ['Toi', 'Les agents', "L'instance"]) {
+  for (const group of ['Toi', 'Les agents', 'Le serveur']) {
     await page.getByRole('heading', { name: group, exact: true }).waitFor()
   }
   const dialog = page.getByRole('dialog')
   const nav = await dialog.getByRole('button').allTextContents()
-  const order = ['Permissions', 'Agents', 'Consignes', 'Skills', 'Serveurs MCP']
+  const order = ['Agents', 'Permissions', 'Consignes', 'Skills', 'Serveurs MCP']
   const positions = order.map((label) => nav.findIndex((text) => text.startsWith(label)))
   assert.ok(positions.every((position) => position >= 0), `sections des agents : ${nav.join(' | ')}`)
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'ordre des sections des agents')
@@ -139,6 +139,12 @@ try {
   await page.getByRole('heading', { name: 'Utilisateurs', exact: true }).first().waitFor()
   await page.goto(`${base}/settings/compte`)
   await page.getByRole('heading', { name: 'Profil', exact: true }).first().waitFor()
+  // Les sections fondues dans une voisine (#130) mènent à la partie qui les reprend.
+  for (const [legacy, part] of [['affichage', 'La colonne'], ['archivage', 'Archivage'], ['git', 'Accès git'], ['api', 'API et MCP']]) {
+    await page.goto(`${base}/settings/${legacy}`)
+    await page.getByRole('heading', { name: part, exact: true }).first().waitFor()
+  }
+  await shot(dialog.locator('nav, header + div').first(), '00-liste')
 
   // Le projet : hérité du compte, modifié ici, puis rendu à l'héritage (Q33).
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
