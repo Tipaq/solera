@@ -42,14 +42,15 @@ export function ListHeading({
 }
 
 /**
- * Une partie d'une section qui en réunit plusieurs (#130) : Apparence et Affichage,
+ * Une partie d'une section qui en réunit plusieurs (#130) : la colonne sous Apparence,
  * Sessions et Archivage, Git et API. Chaque partie garde son contenu et sa phrase
- * d'en-tête ; ce titre seul dit où l'une s'arrête et où l'autre commence.
+ * d'en-tête ; ce titre seul dit où l'une s'arrête et où l'autre commence. Un `h3` :
+ * le `h2` est le titre de la section, dans la barre de la modale.
  */
 export function SettingsPart({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="px-1 text-heading font-semibold tracking-tight text-ink">{title}</h2>
+      <h3 className="px-1 text-heading font-semibold text-ink">{title}</h3>
       {children}
     </section>
   )
