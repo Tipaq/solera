@@ -5,10 +5,9 @@ import { join } from 'node:path'
 import { spawn, type IPty } from 'node-pty'
 import { launchOf } from '../agents/launch.js'
 import { existsSync } from 'node:fs'
-import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@solera/protocol'
+import { claudeSecretKind, type ClaudeAccount, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@solera/protocol'
 import type { AgentAuth } from '../agents/auth.js'
 import { agentProcessEnv } from '../agents/process-env.js'
-import type { ClaudeAccount } from '@solera/protocol'
 import type { ClaudeAccountGauges } from './gauges.js'
 import type { ClaudeIdentify } from './identity.js'
 import type { ClaudeAccountStore } from './store.js'
@@ -450,6 +449,8 @@ export class ClaudeLoginService {
     const login = this.logins.get(loginId)
     if (!login) return
     login.closing = true
+    // Le délai de la connexion effacerait le dossier pendant que l'adresse se lit.
+    clearTimeout(login.timer)
     login.status = { ...login.status, state: 'checking' }
     const email = this.identify ? await this.identify({ token }) : null
     const kept = this.keep(login, token, email)
@@ -482,10 +483,11 @@ export class ClaudeLoginService {
       this.store.update(ownerId, account.id, { token, ...(email ? { email } : {}) })
       return this.store.find(ownerId, account.id)!
     }
-    // Une adresse connue : c'est ce compte qu'on reconnecte, jamais un second.
+    // Une adresse connue : c'est ce compte qu'on reconnecte, jamais un second. Son alias
+    // reste le sien : celui tapé pour un nouveau compte ne le renomme pas en douce.
     const existing = email ? this.store.findByEmail(ownerId, email) : undefined
     if (existing) {
-      this.store.update(ownerId, existing.id, { token, ...(login.alias ? { alias: login.alias } : {}) })
+      this.store.update(ownerId, existing.id, { token })
       return this.store.find(ownerId, existing.id)!
     }
     return this.store.create(ownerId, { email, alias: login.alias }, token)
@@ -503,12 +505,18 @@ export class ClaudeLoginService {
     login.checking = null
     // Plus rien ne doit conclure à sa place : ni la fin du CLI, ni un délai.
     login.closing = true
+    clearTimeout(login.timer)
     const accountId = login.accountId
     setTimeout(() => {
       void (async () => {
         try {
           const account = this.store.find(login.ownerId, accountId)
           const email = this.identify ? await this.identify({ configDir: login.configDir }) : null
+          if (this.identify && !email) {
+            throw new Error(
+              "La connexion a abouti, mais claude auth status ne dit pas à quel compte elle appartient. Rien n'a été enregistré : ferme et recommence.",
+            )
+          }
           // La jauge d'une autre adresse montrerait la consommation d'un autre compte.
           if (account?.email && email && email !== account.email) {
             throw new Error(

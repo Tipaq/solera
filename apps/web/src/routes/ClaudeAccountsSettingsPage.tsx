@@ -187,10 +187,20 @@ function AddAccountCard({ onClose }: { onClose: () => void }) {
 
 /**
  * Les étapes du CLI, suivies à l'écran : le compte d'abord (`setup-token`), puis sa
- * consommation (`auth login`), enchaînée d'office quand le compte n'en a pas encore.
+ * consommation (`auth login`), enchaînée d'office quand le compte n'en a pas encore, et
+ * toujours à la reconnexion.
  * Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
  */
-function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
+function GuidedLogin({
+  initial: first,
+  onClose,
+  renewGauge = false,
+}: {
+  initial: ClaudeLoginStatusDto
+  onClose: () => void
+  /** Reconnexion : la jauge se refait aussi, elle peut être morte ou d'une autre adresse. */
+  renewGauge?: boolean
+}) {
   const t = useTranslate()
   /**
    * La connexion suivie : celle du jeton, puis celle de la jauge. Les deux passent par
@@ -205,7 +215,7 @@ function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDt
   const gauge = status.purpose === 'gauge'
   const account = status.account
   /** Le compte est là, il lui manque sa jauge : c'est la seconde étape, sans demander. */
-  const chain = !gauge && status.state === 'done' && account !== null && account.kind === 'oauth' && !account.gauge
+  const chain = !gauge && status.state === 'done' && account !== null && account.kind === 'oauth' && (renewGauge || !account.gauge)
   const chained = useRef(false)
   /** Le compte connecté à la première étape, quand la jauge en est la seconde. */
   const [stepOne, setStepOne] = useState<ClaudeAccount | null>(null)
@@ -288,6 +298,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
   const reconnect = useReconnectClaudeAccount()
   /** La connexion en cours pour ce compte (reconnexion ou jauge), une fois lancée. */
   const [login, setLogin] = useState<ClaudeLoginStatusDto | null>(null)
+  const [renewing, setRenewing] = useState(false)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [alias, setAlias] = useState(account.alias ?? '')
@@ -380,7 +391,19 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
                   {account.gauge ? t('claudeAccounts.gauge.on') : t('claudeAccounts.gauge.off')}
                 </span>
                 {account.gauge ? null : (
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => startGauge.mutate(account.id, { onSuccess: setLogin })}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() =>
+                      startGauge.mutate(account.id, {
+                        onSuccess: (next) => {
+                          setRenewing(false)
+                          setLogin(next)
+                        },
+                      })
+                    }
+                  >
                     {t('claudeAccounts.gauge.enable')}
                   </Button>
                 )}
@@ -399,7 +422,14 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
               variant={lost ? 'primary' : 'ghost'}
               icon={<RefreshCw size={14} />}
               disabled={busy}
-              onClick={() => reconnect.mutate(account.id, { onSuccess: setLogin })}
+              onClick={() =>
+                reconnect.mutate(account.id, {
+                  onSuccess: (next) => {
+                    setRenewing(true)
+                    setLogin(next)
+                  },
+                })
+              }
             >
               {t('claudeAccounts.action.reconnect')}
             </Button>
@@ -420,7 +450,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
 
       {login ? (
         <div className="border-t border-line">
-          <GuidedLogin initial={login} onClose={() => setLogin(null)} />
+          <GuidedLogin initial={login} renewGauge={renewing} onClose={() => setLogin(null)} />
         </div>
       ) : null}
 

@@ -186,6 +186,18 @@ try {
   await page.getByText(/Ce code connecte/).locator('xpath=ancestor::div[contains(@class,"border-t")][1]').screenshot({ path: '/tmp/solera-claude-reconnect-mismatch.png' })
   await page.getByRole('button', { name: 'Annuler' }).click()
 
+  // Reconnecter vers la même adresse : le jeton est remplacé, et la jauge se refait aussi,
+  // même présente, car elle peut être morte ou d'une autre adresse.
+  await page.getByRole('button', { name: 'Reconnecter' }).click()
+  await page.getByText("Ouvrir la page d'autorisation").waitFor()
+  await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'w'.repeat(80))
+  await page.getByRole('button', { name: 'Valider le code' }).click()
+  await page.getByText(/Étape 1 sur 2 faite : Perso · perso@example.com est connecté/).waitFor({ timeout: 15000 })
+  await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'v'.repeat(80))
+  await page.getByRole('button', { name: 'Valider le code' }).click()
+  await page.getByText(/Perso · perso@example.com est connecté, et sa consommation s'affiche/).waitFor({ timeout: 15000 })
+  await page.getByText(/est connecté, et sa consommation/).locator('xpath=ancestor::div[contains(@class,"flex-col")][1]').getByRole('button', { name: 'Fermer' }).click()
+
   const accounts = await (await context.request.get(`${base}/api/claude-accounts`)).json()
   assert.deepEqual(
     accounts.accounts.map((entry) => [entry.label, entry.email, entry.alias, entry.kind, entry.gauge]),
@@ -211,7 +223,7 @@ try {
   assert.equal(submitted?.config?.account, accounts.accounts[0].id, 'La conversation part sur le compte, pas sur le terminal')
   await page.unroute(`**/api/projects/${project.id}/conversations`)
   assert.deepEqual(errors, [])
-  console.log(`OK : brouillon sans compte explicite, compte nommé par son adresse, jauge enchaînée, refus repris, reconnexion vers une autre adresse refusée, ${polls.length} relectures en tout, sans boucle, conversation partie sur le compte.`)
+  console.log(`OK : brouillon sans compte explicite, compte nommé par son adresse, jauge enchaînée, refus repris, reconnexion vers une autre adresse refusée, vers la même avec sa jauge refaite, ${polls.length} relectures en tout, sans boucle, conversation partie sur le compte.`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { claudeAccounts, type Db } from '@solera/db'
 import { claudeAccountName, claudeSecretKind, type ClaudeAccount, type ClaudeAccountKind } from '@solera/protocol'
 import { decryptValue, encryptValue } from '../secrets/cipher.js'
@@ -95,6 +95,16 @@ export class ClaudeAccountStore {
       .where(eq(claudeAccounts.id, id))
       .run()
     return true
+  }
+
+  /** Les abonnements qui ont une adresse et une jauge, tous utilisateurs confondus. */
+  withGauge(): Array<{ id: string; email: string }> {
+    return this.db
+      .select({ id: claudeAccounts.id, email: claudeAccounts.email })
+      .from(claudeAccounts)
+      .where(and(isNotNull(claudeAccounts.email), eq(claudeAccounts.kind, 'oauth')))
+      .all()
+      .filter((row): row is { id: string; email: string } => row.email !== null && (this.gauges?.has(row.id) ?? false))
   }
 
   /**

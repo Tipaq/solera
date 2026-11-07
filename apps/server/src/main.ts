@@ -33,7 +33,7 @@ import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { ClaudeLoginService } from './claude-accounts/login.js'
 import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
-import { backfillClaudeEmails, claudeIdentity } from './claude-accounts/identity.js'
+import { backfillClaudeEmails, checkGauges, claudeIdentity } from './claude-accounts/identity.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
@@ -202,10 +202,13 @@ async function main(): Promise<void> {
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
-  // Les comptes Claude d'avant les adresses retrouvent la leur sans retarder le démarrage.
+  // Les comptes Claude d'avant les adresses retrouvent la leur sans retarder le démarrage,
+  // puis les jauges qui mènent à une autre adresse sont retirées, à refaire.
   void backfillClaudeEmails(claudeAccounts, claudeIdentify)
-    .then((found) => {
+    .then(async (found) => {
       if (found > 0) app.log.info({ found }, 'adresse retrouvee pour des comptes Claude')
+      const removed = await checkGauges(claudeAccounts, claudeIdentify)
+      if (removed.length > 0) app.log.warn({ accounts: removed }, 'jauges Claude d une autre adresse retirees')
     })
     .catch((err: unknown) => app.log.warn({ err }, 'adresses des comptes Claude non retrouvees'))
   if (recovered.length > 0) {

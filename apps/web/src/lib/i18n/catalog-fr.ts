@@ -1094,7 +1094,7 @@ export const fr: Catalog = {
   'error.claude_account_unidentified': "Claude ne dit pas à quel compte appartient ce jeton. Il est peut-être révoqué.",
   'error.claude_account_alias_required': "Une clé API n'a pas d'adresse : donne-lui un nom.",
   'error.claude_account_not_oauth': "Une clé API se remplace, elle ne se reconnecte pas.",
-  'usage.noLimits.token': "Pas encore de jauge pour ce compte : son jeton ne permet que les requêtes de modèle. Active la jauge dans Réglages › Agents › Claude, ou consulte l'usage sur claude.ai.",
+  'usage.noLimits.token': "Pas encore de jauge pour ce compte : son jeton ne permet que les requêtes de modèle. Affiche sa consommation dans Réglages › Agents › Claude, ou consulte l'usage sur claude.ai.",
   'error.claude_login_not_found': 'Cette connexion est terminée ou inconnue.',
   'codexAccounts.section.description': "Mener une conversation sur un autre abonnement ChatGPT ou une autre clé API que la connexion du CLI",
   'codexAccounts.banner': "Codex ne tient qu'une connexion par home. Chaque compte supplémentaire reçoit son propre home où seule la connexion diffère : réglages, skills et threads sont partagés avec ceux du CLI. Connexion par code d'appareil pour un abonnement ChatGPT, ou par clé API. C'est Codex qui garde les identifiants ; Solera ne les voit jamais.",

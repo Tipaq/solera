@@ -26,7 +26,9 @@ const EMAILS: Record<string, string> = { [TOKEN]: 'boulot@exemple.fr', [OTHER_TO
 const identify: ClaudeIdentify = async (source) => {
   if ('token' in source) return EMAILS[source.token] ?? null
   try {
-    return (JSON.parse(readFileSync(join(source.configDir, '.credentials.json'), 'utf8')) as { email: string }).email
+    const { email } = JSON.parse(readFileSync(join(source.configDir, '.credentials.json'), 'utf8')) as { email: string }
+    // Une connexion dont `auth status` ne dit pas l'adresse.
+    return email === 'muette' ? null : email
   } catch {
     return null
   }
@@ -83,8 +85,9 @@ test('connexion guidée : le compte prend l’adresse du jeton, une adresse conn
   assert.equal(first.account?.email, 'boulot@exemple.fr')
   assert.equal(first.account?.label, 'boulot@exemple.fr')
 
-  // La même adresse, connectée une seconde fois : le même compte, avec l'alias donné.
-  const again = await run(login.start('tim', 'Boulot'))
+  // La même adresse, connectée une seconde fois : le même compte, qui garde son nom.
+  store.update('tim', first.account!.id, { alias: 'Boulot' })
+  const again = await run(login.start('tim', 'Autre nom'))
   assert.equal(again.state, 'done', again.error ?? '')
   assert.equal(again.account?.id, first.account?.id)
   assert.equal(again.account?.label, 'Boulot · boulot@exemple.fr')
@@ -119,7 +122,14 @@ test('jauge : adoptée si elle mène à l’adresse du compte, refusée sinon', 
   const { store, login, run } = await harness(t)
   const account = store.create('tim', { email: 'boulot@exemple.fr', alias: null }, TOKEN)
 
-  withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'perso@exemple.fr')
+  // Une connexion dont l'adresse ne se lit pas n'est pas adoptée : rien ne dit qu'elle est la bonne.
+  withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'muette')
+  const mute = await run(login.startGauge('tim', account.id))
+  assert.equal(mute.state, 'failed')
+  assert.match(mute.error ?? '', /ne dit pas à quel compte/)
+  assert.equal(store.find('tim', account.id)?.gauge, false)
+
+  process.env.FIXTURE_CLAUDE_EMAIL = 'perso@exemple.fr'
   const wrong = await run(login.startGauge('tim', account.id))
   assert.equal(wrong.state, 'failed')
   assert.match(wrong.error ?? '', /perso@exemple\.fr, pas boulot@exemple\.fr/)
@@ -129,4 +139,25 @@ test('jauge : adoptée si elle mène à l’adresse du compte, refusée sinon', 
   const right = await run(login.startGauge('tim', account.id))
   assert.equal(right.state, 'done', right.error ?? '')
   assert.equal(store.find('tim', account.id)?.gauge, true)
+})
+
+test('démarrage : une jauge d’une autre adresse est retirée, une jauge muette est laissée', async (t) => {
+  const { checkGauges } = await import('../src/claude-accounts/identity.js')
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const { store } = await harness(t)
+  const gauge = (id: string, email: string) => {
+    mkdirSync(store.gauges!.path(id), { recursive: true })
+    writeFileSync(join(store.gauges!.path(id), '.credentials.json'), JSON.stringify({ email }))
+  }
+  const right = store.create('tim', { email: 'boulot@exemple.fr', alias: null }, TOKEN)
+  const wrong = store.create('tim', { email: 'perso@exemple.fr', alias: null }, OTHER_TOKEN)
+  const mute = store.create('tim', { email: 'muet@exemple.fr', alias: null }, 'sk-ant-oat01-' + 'm'.repeat(80))
+  gauge(right.id, 'boulot@exemple.fr')
+  gauge(wrong.id, 'boulot@exemple.fr')
+  gauge(mute.id, 'muette')
+
+  assert.deepEqual(await checkGauges(store, identify), [wrong.id])
+  assert.equal(store.find('tim', right.id)?.gauge, true)
+  assert.equal(store.find('tim', wrong.id)?.gauge, false, 'À refaire depuis l’écran')
+  assert.equal(store.find('tim', mute.id)?.gauge, true, 'Rien ne dit qu’elle est fausse')
 })

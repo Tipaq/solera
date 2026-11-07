@@ -75,3 +75,23 @@ export async function backfillClaudeEmails(store: ClaudeAccountStore, identify: 
   }
   return found
 }
+
+/**
+ * Les jauges d'avant la vérification d'adresse : une connexion `auth login` faite avec un
+ * autre compte que celui du jeton n'était qu'un avertissement, et la consommation affichée
+ * était celle d'un autre. Une jauge qui mène ailleurs est retirée : l'écran propose alors
+ * de la refaire. Une jauge muette (réseau absent, connexion expirée) est laissée : rien ne
+ * dit qu'elle est fausse.
+ */
+export async function checkGauges(store: ClaudeAccountStore, identify: ClaudeIdentify): Promise<string[]> {
+  const gauges = store.gauges
+  if (!gauges) return []
+  const removed: string[] = []
+  for (const { id, email } of store.withGauge()) {
+    const gaugeEmail = await identify({ configDir: gauges.path(id) })
+    if (!gaugeEmail || gaugeEmail === email) continue
+    gauges.forget(id)
+    removed.push(id)
+  }
+  return removed
+}

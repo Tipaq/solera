@@ -1098,7 +1098,7 @@ export const en = {
   'error.claude_account_unidentified': "Claude could not tell which account this token belongs to. It may be revoked.",
   'error.claude_account_alias_required': "An API key has no address: give it a name.",
   'error.claude_account_not_oauth': "An API key is replaced, not reconnected.",
-  'usage.noLimits.token': "No gauge for this account yet: its token only allows model requests. Enable the gauge in Settings › Agents › Claude, or check usage on claude.ai.",
+  'usage.noLimits.token': "No gauge for this account yet: its token only allows model requests. Show its usage in Settings › Agents › Claude, or check usage on claude.ai.",
   'error.claude_login_not_found': 'This sign-in is over or unknown.',
   'codexAccounts.section.description': 'Run a conversation on another ChatGPT subscription or API key than the one the CLI is signed in to',
   'codexAccounts.banner': "Codex keeps one sign-in per home. Each extra account gets its own home where only the sign-in differs: settings, skills and threads are shared with the CLI's. Sign in with a device code for a ChatGPT subscription, or with an API key. Codex holds the credentials itself; Solera never sees them.",
