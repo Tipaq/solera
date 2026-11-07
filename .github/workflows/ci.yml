@@ -37,6 +37,29 @@ jobs:
       # qu'au prochain `dev` de quelqu'un.
       - run: pnpm build:catalog
 
+  ui:
+    # Quelques suites d'interface de bout en bout : vrai serveur, Vite et Chromium. Hors
+    # CI, elles ont pourri en silence après la refonte du brouillon (#85, carte #132).
+    # Aucune n'a besoin d'un vrai CLI : chacune les coupe par sa configuration, les
+    # déclare sur un binaire introuvable ou pose son faux binaire (claude-login).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # Les suites lancent Chromium avec son bac à sable, que l'AppArmor d'Ubuntu 24.04
+      # refuse aux espaces de noms non privilégiés.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: pnpm test:ui
+      - run: pnpm test:settings-ui
+      - run: node scripts/claude-login-ui-check.mjs
+      - run: pnpm test:windows-feedback-ui
+
   macos:
     # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :
     # l'archive construite comme en release, puis install.sh et l'agent launchd sur un

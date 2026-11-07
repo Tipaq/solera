@@ -18,7 +18,8 @@ import { peekOf, peekSummary, type PeekTone } from '../../lib/usage-peek'
  * d'une ligne d'installation par absent.
  *
  * Un CLI désactivé par la configuration du serveur n'a pas de carte : rien ne se règle
- * d'ici. Un absent que le compte a masqué non plus — les réglages le proposent encore.
+ * d'ici. Un absent que le compte a masqué non plus, mais une ligne sous les cartes le
+ * nomme et le fait réapparaître : là où on l'a masqué, et nulle part ailleurs.
  */
 
 const TONES: Record<PeekTone, string> = {
@@ -40,6 +41,7 @@ export function DraftAgentPicker({
   peek,
   hidden,
   onHide,
+  onReveal,
   onSignIn = (agent) => openSettings('agents', agent),
   onInstall,
 }: {
@@ -52,6 +54,8 @@ export function DraftAgentPicker({
   peek: UsagePeekDto[] | undefined
   hidden: AgentKind[]
   onHide: (agent: AgentKind) => void
+  /** Rend toutes leurs cartes aux CLI masqués. */
+  onReveal: () => void
   /** La carte d'un CLI sans connexion : le dialogue guidé, à défaut l'onglet des réglages. */
   onSignIn?: (agent: AgentKind) => void
   /** Une installation lancée d'ici, pour enchaîner sur la connexion une fois le CLI posé. */
@@ -60,21 +64,20 @@ export function DraftAgentPicker({
   const t = useTranslate()
   const install = useInstallAgent()
 
-  const shown = agentKindSchema.options.filter((kind) => {
-    const entry = availability?.find((candidate) => candidate.agent === kind)
-    return entry?.reason !== 'disabled' && !hiddenAgent(entry, hidden)
-  })
+  const entryOf = (kind: AgentKind) => availability?.find((candidate) => candidate.agent === kind)
+  const masked = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && hiddenAgent(entryOf(kind), hidden))
+  const shown = agentKindSchema.options.filter((kind) => entryOf(kind)?.reason !== 'disabled' && !masked.includes(kind))
 
   return (
     <fieldset>
       <legend className="sr-only">{t('draft.cli.legend')}</legend>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {shown.map((kind) => {
-          const entry = availability?.find((candidate) => candidate.agent === kind)
+          const entry = entryOf(kind)
           const state = stateOf(kind)
           const name = (
             <span className="flex min-w-0 items-center gap-2">
-              <AgentIcon agent={kind} size={14} />
+              <AgentIcon agent={kind} size={14} decorative />
               <span className="truncate text-sm font-medium text-ink">{AGENT_LABELS[kind]}</span>
             </span>
           )
@@ -163,6 +166,14 @@ export function DraftAgentPicker({
           )
         })}
       </div>
+      {masked.length > 0 ? (
+        <p className="mt-2 text-xs text-ink-faint">
+          {t('agent.install.hidden', { labels: masked.map((kind) => AGENT_LABELS[kind]).join(', ') })}{' '}
+          <button type="button" className="underline hover:text-ink" onClick={onReveal}>
+            {t('agent.install.reveal')}
+          </button>
+        </p>
+      ) : null}
     </fieldset>
   )
 }

@@ -442,9 +442,14 @@ try {
   })
   await page.route('**/api/agents/*/models', (route) => route.fulfill({ json: { models: [], modes: [], account: null, fetchedAt: Date.now() } }))
   await page.route('**/api/projects/*/commands?*', (route) => route.fulfill({ json: { commands: [] } }))
-  await page.route('**/api/agents/*/usage', (route) => route.fulfill({ json: {
-    agent: route.request().url().includes('/codex/') ? 'codex' : 'claude', plan: 'Test', limitsAvailable: true, credits: null, fetchedAt: Date.now(),
+  // L'aperçu de consommation des cartes : la dernière sonde que le serveur a gardée,
+  // jamais une sonde lancée par l'ouverture du brouillon.
+  const probed = (agent) => ({
+    agent, plan: 'Test', limitsAvailable: true, credits: null, fetchedAt: Date.now(),
     windows: [{ id: 'session', label: 'Session', utilization: 0.95, resetsAt: Date.now() + 3_600_000 }, { id: 'week', label: 'Semaine', utilization: 0.25, resetsAt: null }],
+  })
+  await page.route('**/api/agents/usage/peek', (route) => route.fulfill({ json: {
+    entries: ['claude', 'codex'].map((agent) => ({ agent, account: null, probed: probed(agent), live: [] })),
   } }))
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   const message = page.getByPlaceholder('Écris ton message...')
@@ -456,12 +461,11 @@ try {
   await page.keyboard.press('ArrowRight')
   assert.equal(await codex.isChecked(), true, 'Agent selection must support arrow keys')
   assert.equal(await message.inputValue(), 'Un brouillon qui doit rester en changeant d’agent.')
-  // Plus de volet à déplier : le brouillon montre les jauges en clair, intitulé et
-  // taux côte à côte, et la remise à zéro sous la barre.
-  const usage = page.locator('section').filter({ hasText: 'Consommation du compte' }).last()
-  await usage.getByText('Session', { exact: true }).waitFor()
-  assert.equal(await usage.getByText('95 %', { exact: true }).isVisible(), true, 'A nearly exhausted quota must be visible')
-  await usage.getByText(/^Remise à zéro/).first().waitFor()
+  // La consommation se lit sur la carte de chaque CLI, sa fenêtre la plus chargée en
+  // tête : un quota presque épuisé se voit avant d'envoyer.
+  const picker = page.getByRole('group', { name: 'Agent', exact: true })
+  await picker.locator('label', { has: codex }).getByText('Session · 95 %', { exact: true }).waitFor()
+  assert.equal(await picker.locator('label', { has: claude }).getByText('Session · 95 %', { exact: true }).isVisible(), true, 'A nearly exhausted quota must be visible')
 
   let submitted
   await page.route(`**/api/projects/${project.id}/conversations`, async (route) => {
