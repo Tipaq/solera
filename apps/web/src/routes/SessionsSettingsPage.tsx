@@ -51,7 +51,6 @@ export function SessionsSettingsPage() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader
-        title={t('sessions.section.title')}
         description={t('sessions.section.description')}
       />
 

@@ -21,6 +21,8 @@ import {
 import type { ReactNode } from 'react'
 import type { InstanceCapabilities } from '@solera/protocol'
 import type { MessageKey } from '../../lib/i18n'
+import { useInstance } from '../../lib/instance'
+import { useCurrentUser } from '../../lib/session'
 import type { SettingsSectionId } from '../../lib/settings-dialog'
 
 /**
@@ -52,7 +54,7 @@ export interface SettingsSection {
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
-    id: 'compte',
+    id: 'profil',
     group: 'you',
     labelKey: 'settings.section.account',
     descriptionKey: 'settings.section.account.description',
@@ -117,7 +119,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <Plug size={16} />,
   },
   {
-    id: 'comptes',
+    id: 'utilisateurs',
     group: 'instance',
     labelKey: 'settings.section.accounts',
     descriptionKey: 'settings.section.accounts.description',
@@ -201,4 +203,15 @@ export function visibleSections(
     (section) =>
       (!section.adminOnly || isAdmin) && (!section.requires || (capabilities?.[section.requires] ?? true)),
   )
+}
+
+/**
+ * Si ce compte peut ouvrir cette section. Pour le lien posé hors des réglages — le
+ * composer vers la dictée, le Savoir vers son vault — qui ne doit pas ouvrir la modale
+ * sur une page qu'elle cache.
+ */
+export function useCanOpenSection(id: SettingsSectionId): boolean {
+  const { data: user } = useCurrentUser()
+  const { data: instance } = useInstance()
+  return visibleSections(user?.isAdmin, instance?.capabilities).some((section) => section.id === id)
 }

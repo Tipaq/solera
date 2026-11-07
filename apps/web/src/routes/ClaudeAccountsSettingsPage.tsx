@@ -66,7 +66,6 @@ export function ClaudeAccountsSettingsPage({ bare = false }: { bare?: boolean } 
     <div className="flex flex-col gap-4">
       {bare ? null : (
         <SectionHeader
-          title={t('claudeAccounts.section.title')}
           description={t('claudeAccounts.section.description')}
         />
       )}

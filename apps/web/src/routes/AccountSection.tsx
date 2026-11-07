@@ -11,7 +11,7 @@ export function AccountSection() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('settings.section.account')} description={t('account.description')} />
+      <SectionHeader description={t('account.description')} />
 
       {user?.isAdmin ? (
         <Badge tone="accent" icon={<ShieldCheck size={11} />}>

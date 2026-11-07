@@ -71,7 +71,6 @@ export function ArchivingSettingsPage() {
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader
-        title={t('archiving.section.title')}
         description={t('archiving.section.description')}
       />
 

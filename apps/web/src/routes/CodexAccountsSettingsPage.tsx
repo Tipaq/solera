@@ -69,7 +69,6 @@ export function CodexAccountsSettingsPage({ bare = false }: { bare?: boolean } =
     <div className="flex flex-col gap-4">
       {bare ? null : (
         <SectionHeader
-          title={t('codexAccounts.section.title')}
           description={t('codexAccounts.section.description')}
         />
       )}

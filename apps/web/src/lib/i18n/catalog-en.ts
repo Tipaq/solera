@@ -530,8 +530,11 @@ export const en = {
   'composer.dictate.failed': 'Transcription failed.',
   'composer.dictate.unconfigured.title': 'Dictation is not set up',
   'composer.dictate.unconfigured.body':
-    'This instance has no transcription provider yet. An administrator can plug one in from the dictation settings.',
+    'This instance has no transcription provider yet. Plug one in from the dictation settings.',
   'composer.dictate.unconfigured.action': 'Open the settings',
+  'composer.dictate.unconfigured.dismiss': 'Got it',
+  'composer.dictate.unconfigured.askAdmin':
+    'This instance has no transcription provider yet. Ask an administrator to plug one in.',
   'composer.dictate.recording': 'Recording in progress',
   'composer.dictate.silent': 'No sound picked up. Check the selected microphone.',
 
@@ -762,6 +765,7 @@ export const en = {
   'vault.page.stale': 'The note changed on disk',
   'vault.page.unconfigured.title': 'No vault configured',
   'vault.page.unconfigured.description': 'The Knowledge place works from a folder of notes, versioned with git. It is set once, for the whole instance.',
+  'vault.page.unconfigured.askAdmin': 'The Knowledge place works from a folder of notes, versioned with git. An administrator sets it, once, for the whole instance.',
   'vault.page.unconfigured.action': 'Configure the vault',
   'vault.page.missing.title': 'This folder is not on disk',
   'vault.page.empty.title': 'The vault is empty',
@@ -784,7 +788,6 @@ export const en = {
   'vault.browse.column.incoming': 'Backlinks',
   'vault.browse.column.words': 'Words',
   'vault.browse.column.touched': 'Touched',
-  'vault.section.title': 'Vault',
   'vault.section.description': 'The folder the Knowledge place works from',
   'vault.adminOnly.title': 'Administrators only',
   'vault.adminOnly.description': 'The vault is shared by the whole instance, like a service.',
@@ -810,7 +813,6 @@ export const en = {
   'vault.index.derived': 'The files are the truth; the index is derived from them and lives outside the vault. Throwing it away loses nothing, which is why reindexing everything is not a dangerous operation.',
   'settings.section.archiving': 'Archiving',
   'settings.section.archiving.description': 'When inactive conversations get filed away',
-  'archiving.section.title': 'Archiving',
   'archiving.section.description': 'Keeps the sidebar to what is still live',
   'archiving.adminOnly.title': 'Administrators only',
   'archiving.adminOnly.description': 'This delay applies to every account on the instance.',
@@ -833,7 +835,6 @@ export const en = {
     'A conversation is only filed once its owner has read it through, and never while it is pinned, running, waiting on an answer or a decision, or still carrying background work. Writing in an archived conversation brings it back.',
   'settings.section.sessions': 'Sessions',
   'settings.section.sessions.description': 'How many CLI sessions may run at once',
-  'sessions.section.title': 'Sessions',
   'sessions.section.description': 'Keeps live CLI runners within the machine\'s memory',
   'sessions.adminOnly.title': 'Admins only',
   'sessions.adminOnly.description': 'This limit covers every account on the instance.',
@@ -858,7 +859,6 @@ export const en = {
   'settings.section.stt.description': 'Voice input through an AI transcription provider',
 
   // Dictée
-  'stt.section.title': 'Dictation',
   'stt.section.description': 'Dictate prompts through an OpenAI-compatible transcription API',
   'stt.adminOnly.title': 'Administrators only',
   'stt.adminOnly.description': 'Dictation settings apply to every account on the instance.',
@@ -888,7 +888,6 @@ export const en = {
   'error.audio_too_large': 'The recording is empty or too large.',
 
   // Jetons d'API
-  'apiTokens.section.title': 'API & MCP server',
   'apiTokens.section.description': 'Solera opens to outside tools in two ways, with the same tokens',
   'apiTokens.surface.endpoint': 'Address',
   'apiTokens.surface.loopback':
@@ -984,7 +983,6 @@ export const en = {
     'It stops working immediately. The tasks it launched keep their marker and their history.',
   'apiTokens.delete.title': 'Delete {label}?',
   'apiTokens.delete.body': 'The line disappears for good. Its tasks keep their marker.',
-  'secrets.section.title': 'Secrets',
   'secrets.section.description': 'Write once, reference with {{secret.NAME}}',
   'secrets.banner': 'Values are encrypted at rest with a key stored next to the database, so a leaked copy or backup of the database alone does not expose them. Anyone who can read the server disk reads the key too: this is encryption at rest, not a vault.',
   'secrets.writeOnly': 'A secret is never sent back. Fixing a typo means writing the whole value again.',
@@ -1008,7 +1006,6 @@ export const en = {
   'secrets.delete.body': 'MCP servers that reference it will refuse to start, and will say which secret is missing.',
   'secrets.delete.confirm': 'Delete',
   'error.secret_not_found': "Unknown secret.",
-  'gitCredentials.section.title': 'Git access',
   'gitCredentials.section.description': 'Clone and push tokens, per forge',
   'gitCredentials.banner': "The token is what clones a private repository, and also what pushes from a conversation: Solera writes a helper into the cloned repository that hands it to git on demand. It is encrypted at rest, like secrets.",
   'gitCredentials.trustModel': "Agents run under the same account as the server, so an agent can reach whatever git can reach. A token scoped to the repositories you need beats one that opens the whole account.",
@@ -1032,7 +1029,6 @@ export const en = {
   'gitCredentials.delete.confirm': 'Delete',
   'error.git_credential_not_found': 'No access saved for this host.',
   'error.git_repo_listing_unsupported': 'Repository listing is only available for {host}. Paste a URL for other forges.',
-  'claudeAccounts.section.title': 'Claude accounts',
   'claudeAccounts.section.description': "The Claude subscriptions, or API keys, your conversations run on",
   'claudeAccounts.banner': "An account is a Claude subscription, connected through the long-lived token of `claude setup-token` that Solera obtains for you, or a Console API key billed per use. New conversations start on the account you used last. Secrets are encrypted at rest, and a token expires after a year.",
   'claudeAccounts.existing.title': "Connected accounts",
@@ -1098,7 +1094,6 @@ export const en = {
   'claudeAccounts.kind.apiKey': 'API key',
   'usage.noLimits.token': "No gauge for this account yet: its token only allows model requests. Enable the gauge in Settings › Agents › Claude, or check usage on claude.ai.",
   'error.claude_login_not_found': 'This sign-in is over or unknown.',
-  'codexAccounts.section.title': 'Codex accounts',
   'codexAccounts.section.description': 'Run a conversation on another ChatGPT subscription or API key than the one the CLI is signed in to',
   'codexAccounts.banner': "Codex keeps one sign-in per home. Each extra account gets its own home where only the sign-in differs: settings, skills and threads are shared with the CLI's. Sign in with a device code for a ChatGPT subscription, or with an API key. Codex holds the credentials itself; Solera never sees them.",
   'codexAccounts.existing.title': 'Saved accounts',
@@ -1135,7 +1130,6 @@ export const en = {
   'codexAccounts.apiKey.hint': 'An OpenAI API key. Handed to Codex, which stores it in this account\'s home; never shown again.',
   'codexAccounts.apiKey.action': 'Sign in',
   'codexAccounts.apiKey.pending': 'Signing in...',
-  "grokAccounts.section.title": "Grok accounts",
   "grokAccounts.section.description": "Run a conversation on another Grok subscription or xAI API key than the one the CLI is signed in with.",
   "grokAccounts.banner": "Grok Build keeps one sign-in per home. Each extra account gets its own home where only the sign-in differs: sessions, settings, skills and memory stay shared with the CLI's own home, so a conversation can resume whichever account opened it.",
   "grokAccounts.existing.title": "Saved accounts",
@@ -1208,7 +1202,6 @@ export const en = {
   'clone.done': '{name} is cloned and the project is created.',
   'clone.done.open': 'Open the project',
   'mcp.registry.title': 'Manage MCP servers',
-  'mcp.section.title': 'MCP servers',
   'mcp.section.description': 'Declare a server once, enable it per conversation',
   'mcp.banner': 'Servers declared here are passed to the CLIs in memory at each launch. Nothing is written to ~/.claude.json, ~/.codex/config.toml or opencode.json, so a conversation resumed in a native CLI will not have them.',
   'mcp.secrets': 'Write {{secret.NAME}} in a header or an environment variable to inject a stored secret. A literal value typed here is stored as plain text, unlike a secret.',
@@ -2095,7 +2088,6 @@ export const en = {
   // Comptes
   'users.adminOnly.title': 'Administrators only',
   'users.adminOnly.description': 'Ask an administrator of the instance.',
-  'users.section.title': 'Accounts',
   'users.section.description': "The instance's accounts, and what they can do.",
   'users.banner': 'An account opens access to this instance, without isolation: all agents run under the same system user and share the same CLI credentials.',
   'users.create.title': 'New account',
@@ -2176,7 +2168,6 @@ export const en = {
   // Sous-agents
 
   // Réglages : apparence et langue
-  'settings.appearance.title': 'Appearance',
   'settings.appearance.description': 'Stored on this device: changing it here changes nothing elsewhere.',
   'settings.language.title': 'Language',
   'settings.language.description': 'Applies to the interface. Messages written by the CLIs stay in their own language.',
@@ -2946,7 +2937,6 @@ export const en = {
   // Bibliothèque de skills
   'settings.section.skills': "Skills",
   'settings.section.skills.description': "Native skills for every CLI",
-  'skills.section.title': "Skill library",
   'skills.section.description': "Write a skill once, use it from Claude, Codex, OpenCode and Grok",
   'skills.banner': "Skills listed here are delivered to every conversation as native skills: /name in Claude and OpenCode, $name in Codex, or triggered by their description. Nothing is written to ~/.claude, ~/.codex or ~/.config/opencode, so a conversation resumed in a native CLI will not have them. Project skills are managed on each project page.",
   'skills.instanceDisabled': "The skill library is turned off for this instance ([skills] library in config.toml): nothing listed here reaches the CLIs.",
@@ -3185,7 +3175,6 @@ export const en = {
   'error.skill_not_from_source': "This skill was not installed from a source.",
   "settings.section.instructions": "Instructions",
   "settings.section.instructions.description": "SOLERA.md, shared by Claude, Codex, OpenCode and Grok",
-  "instructions.section.title": "Instructions (SOLERA.md)",
   "instructions.section.description": "Instructions injected into the prompt of every session, whatever its CLI, across all projects.",
   "instructions.section.banner": "This part applies to every session on the instance. A project's own part is set on the project page. Agents can also read and edit it, like a file; you see here who touched it last.",
   "instructions.empty": "No instructions yet.",
@@ -4023,7 +4012,6 @@ export const en = {
   "settings.section.permissions.description": "What agents may ask, and their CLI’s reflex",
   "settings.section.agents": "Agents",
   "settings.section.agents.description": "Install, sign-in, accounts and model for each CLI",
-  "settings.permissions.title": "Permissions",
   "settings.permissions.description": "What every conversation starts with, unless a project or the thread itself changes it.",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Each CLI: whether it is installed, whether it is signed in, the accounts it can use and what its conversations open with. A conversation that has not changed a value follows yours when its session restarts.",

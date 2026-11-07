@@ -520,8 +520,11 @@ export const fr: Catalog = {
   'composer.dictate.failed': 'La transcription a échoué.',
   'composer.dictate.unconfigured.title': "La dictée n'est pas configurée",
   'composer.dictate.unconfigured.body':
-    "Cette instance n'a pas encore de fournisseur de transcription. Un administrateur peut en brancher un depuis les réglages de dictée.",
+    "Cette instance n'a pas encore de fournisseur de transcription. Branche-en un depuis les réglages de dictée.",
   'composer.dictate.unconfigured.action': 'Ouvrir les réglages',
+  'composer.dictate.unconfigured.dismiss': 'Compris',
+  'composer.dictate.unconfigured.askAdmin':
+    "Cette instance n'a pas encore de fournisseur de transcription. Demande à un administrateur d'en brancher un.",
   'composer.dictate.recording': 'Enregistrement en cours',
   'composer.dictate.silent': 'Aucun son capté. Vérifie le micro sélectionné.',
 
@@ -753,6 +756,7 @@ export const fr: Catalog = {
   'vault.page.stale': 'La note a changé sur le disque',
   'vault.page.unconfigured.title': 'Aucun vault réglé',
   'vault.page.unconfigured.description': 'Le lieu Savoir travaille avec un dossier de notes, versionné par git. Il se règle une fois, pour toute l’instance.',
+  'vault.page.unconfigured.askAdmin': 'Le lieu Savoir travaille avec un dossier de notes, versionné par git. Un administrateur le règle, une fois, pour toute l’instance.',
   'vault.page.unconfigured.action': 'Régler le vault',
   'vault.page.missing.title': 'Ce dossier n’est pas sur le disque',
   'vault.page.empty.title': 'Le vault est vide',
@@ -775,7 +779,6 @@ export const fr: Catalog = {
   'vault.browse.column.incoming': 'Entrants',
   'vault.browse.column.words': 'Mots',
   'vault.browse.column.touched': 'Touchée',
-  'vault.section.title': 'Le vault',
   'vault.section.description': 'Le dossier avec lequel le lieu Savoir travaille',
   'vault.adminOnly.title': 'Administrateurs seulement',
   'vault.adminOnly.description': 'Le vault est partagé par toute l’instance, comme un service.',
@@ -801,7 +804,6 @@ export const fr: Catalog = {
   'vault.index.derived': 'Les fichiers sont la vérité ; l’index en est dérivé et vit hors du vault. Le jeter ne perd rien, et c’est pourquoi tout réindexer n’est pas une opération dangereuse.',
   'settings.section.archiving': 'Archivage',
   'settings.section.archiving.description': 'Quand les conversations inactives sont rangées',
-  'archiving.section.title': 'Archivage',
   'archiving.section.description': "Garde dans la navigation ce qui est encore vivant",
   'archiving.adminOnly.title': 'Administrateurs seulement',
   'archiving.adminOnly.description': "Ce délai vaut pour tous les comptes de l'instance.",
@@ -825,7 +827,6 @@ export const fr: Catalog = {
     "Une conversation n'est rangée qu'une fois lue jusqu'au bout par son propriétaire, et jamais tant qu'elle est épinglée, en cours, en attente de réponse ou de décision, ou porteuse d'un travail de fond. Y écrire la ressort.",
   'settings.section.sessions': 'Sessions',
   'settings.section.sessions.description': 'Combien de sessions CLI tournent en même temps',
-  'sessions.section.title': 'Sessions',
   'sessions.section.description': 'Garde les runners CLI dans la mémoire de la machine',
   'sessions.adminOnly.title': 'Administrateurs seulement',
   'sessions.adminOnly.description': "Ce plafond vaut pour tous les comptes de l'instance.",
@@ -850,7 +851,6 @@ export const fr: Catalog = {
   'settings.section.stt.description': 'Saisie vocale par un fournisseur de transcription IA',
 
   // Dictée
-  'stt.section.title': 'Dictée',
   'stt.section.description': 'Dicter les prompts par une API de transcription au format OpenAI',
   'stt.adminOnly.title': 'Administrateurs uniquement',
   'stt.adminOnly.description': "Les réglages de dictée valent pour tous les comptes de l'instance.",
@@ -881,7 +881,6 @@ export const fr: Catalog = {
   'error.audio_too_large': "L'enregistrement est vide ou trop volumineux.",
 
   // Jetons d'API
-  'apiTokens.section.title': 'API et serveur MCP',
   'apiTokens.section.description': "Solera s'ouvre aux outils extérieurs de deux façons, avec les mêmes jetons",
   'apiTokens.surface.endpoint': 'Adresse',
   'apiTokens.surface.loopback':
@@ -980,7 +979,6 @@ export const fr: Catalog = {
     "Il cesse de fonctionner immédiatement. Les tâches qu'il a lancées gardent leur marqueur et leur historique.",
   'apiTokens.delete.title': 'Supprimer {label} ?',
   'apiTokens.delete.body': 'La ligne disparaît définitivement. Ses tâches gardent leur marqueur.',
-  'secrets.section.title': 'Secrets',
   'secrets.section.description': 'Écrits une fois, référencés par {{secret.NOM}}',
   'secrets.banner': "Les valeurs sont chiffrées au repos avec une clé rangée à côté de la base, donc une copie ou une sauvegarde de la seule base ne les expose pas. Qui peut lire le disque du serveur lit aussi la clé : c'est un chiffrement au repos, pas un coffre-fort.",
   'secrets.writeOnly': "Un secret ne se relit jamais. Corriger une faute de frappe revient à réécrire la valeur entière.",
@@ -1004,7 +1002,6 @@ export const fr: Catalog = {
   'secrets.delete.body': "Les serveurs MCP qui le référencent refuseront de démarrer, en disant quel secret manque.",
   'secrets.delete.confirm': 'Supprimer',
   'error.secret_not_found': "Secret inconnu.",
-  'gitCredentials.section.title': 'Accès git',
   'gitCredentials.section.description': 'Jetons de clonage et de push, par forge',
   'gitCredentials.banner': "Le jeton sert à cloner un dépôt privé, et aussi à pousser depuis une conversation : Solera inscrit dans le dépôt cloné un helper qui le fournit à git quand il le réclame. Il est chiffré au repos, comme les secrets.",
   'gitCredentials.trustModel': "Les agents tournent sous le même compte que le serveur : un agent peut atteindre ce que git peut atteindre. Un jeton limité aux dépôts nécessaires vaut mieux qu'un jeton qui ouvre tout le compte.",
@@ -1028,7 +1025,6 @@ export const fr: Catalog = {
   'gitCredentials.delete.confirm': 'Supprimer',
   'error.git_credential_not_found': "Aucun accès enregistré pour cet hôte.",
   'error.git_repo_listing_unsupported': "La liste des dépôts n'est disponible que pour {host}. Colle une URL pour les autres forges.",
-  'claudeAccounts.section.title': 'Comptes Claude',
   'claudeAccounts.section.description': "Les abonnements Claude, ou les clés API, sur lesquels partent tes conversations",
   'claudeAccounts.banner': "Un compte est un abonnement Claude, connecté par le jeton longue durée de `claude setup-token` que Solera obtient pour toi, ou une clé API Console facturée à l'usage. Les nouvelles conversations partent sur ton dernier compte utilisé. Les secrets sont chiffrés au repos, et un jeton expire au bout d'un an.",
   'claudeAccounts.existing.title': "Comptes connectés",
@@ -1094,7 +1090,6 @@ export const fr: Catalog = {
   'claudeAccounts.kind.apiKey': 'Clé API',
   'usage.noLimits.token': "Pas encore de jauge pour ce compte : son jeton ne permet que les requêtes de modèle. Active la jauge dans Réglages › Agents › Claude, ou consulte l'usage sur claude.ai.",
   'error.claude_login_not_found': 'Cette connexion est terminée ou inconnue.',
-  'codexAccounts.section.title': 'Comptes Codex',
   'codexAccounts.section.description': "Mener une conversation sur un autre abonnement ChatGPT ou une autre clé API que la connexion du CLI",
   'codexAccounts.banner': "Codex ne tient qu'une connexion par home. Chaque compte supplémentaire reçoit son propre home où seule la connexion diffère : réglages, skills et threads sont partagés avec ceux du CLI. Connexion par code d'appareil pour un abonnement ChatGPT, ou par clé API. C'est Codex qui garde les identifiants ; Solera ne les voit jamais.",
   'codexAccounts.existing.title': 'Comptes enregistrés',
@@ -1131,7 +1126,6 @@ export const fr: Catalog = {
   'codexAccounts.apiKey.hint': "Une clé API OpenAI. Remise à Codex, qui la garde dans le home de ce compte ; jamais réaffichée.",
   'codexAccounts.apiKey.action': 'Se connecter',
   'codexAccounts.apiKey.pending': 'Connexion…',
-  "grokAccounts.section.title": "Comptes Grok",
   "grokAccounts.section.description": "Mener une conversation sur un autre abonnement Grok ou une autre clé API xAI que la connexion du CLI.",
   "grokAccounts.banner": "Grok Build ne tient qu'une connexion par home. Chaque compte supplémentaire reçoit son propre home où seule la connexion diffère : sessions, réglages, skills et mémoire restent partagés avec le home du CLI, si bien qu'une conversation se reprend quel que soit le compte qui l'a ouverte.",
   "grokAccounts.existing.title": "Comptes enregistrés",
@@ -1204,7 +1198,6 @@ export const fr: Catalog = {
   'clone.done': '{name} est cloné et le projet est créé.',
   'clone.done.open': 'Ouvrir le projet',
   'mcp.registry.title': 'Gérer les serveurs MCP',
-  'mcp.section.title': 'Serveurs MCP',
   'mcp.section.description': 'Déclarer un serveur une fois, l\'activer par conversation',
   'mcp.banner': "Les serveurs déclarés ici sont transmis aux CLI en mémoire à chaque lancement. Rien n'est écrit dans ~/.claude.json, ~/.codex/config.toml ni opencode.json, donc une conversation reprise dans un CLI natif ne les aura pas.",
   'mcp.secrets': "Écris {{secret.NOM}} dans un en-tête ou une variable d'environnement pour injecter un secret enregistré. Une valeur écrite en clair ici est stockée telle quelle, contrairement à un secret.",
@@ -2091,7 +2084,6 @@ export const fr: Catalog = {
   // Comptes
   'users.adminOnly.title': 'Réservé aux administrateurs',
   'users.adminOnly.description': "Demande à un administrateur de l'instance.",
-  'users.section.title': 'Comptes',
   'users.section.description': "Les comptes de l'instance, et ce qu'ils peuvent faire.",
   'users.banner': "Un compte ouvre l'accès à cette instance, sans isolation : tous les agents tournent sous le même utilisateur système et partagent les mêmes credentials CLI.",
   'users.create.title': 'Nouveau compte',
@@ -2172,7 +2164,6 @@ export const fr: Catalog = {
   // Sous-agents
 
   // Réglages : apparence et langue
-  'settings.appearance.title': 'Apparence',
   'settings.appearance.description': "Mémorisé sur cet appareil : régler ici ne change rien sur les autres.",
   'settings.language.title': 'Langue',
   'settings.language.description': "S'applique à l'interface. Les messages écrits par les CLI restent dans leur langue.",
@@ -2940,7 +2931,6 @@ export const fr: Catalog = {
   // Bibliothèque de skills
   'settings.section.skills': "Skills",
   'settings.section.skills.description': "Des skills natifs pour tous les CLI",
-  'skills.section.title': "Bibliothèque de skills",
   'skills.section.description': "Un skill écrit une fois, utilisé par Claude, Codex, OpenCode et Grok",
   'skills.banner': "Les skills listés ici sont livrés à toutes les conversations comme des skills natifs : /nom chez Claude et OpenCode, $nom chez Codex, ou déclenchés par leur description. Rien n'est écrit dans ~/.claude, ~/.codex ni ~/.config/opencode : une conversation reprise dans un CLI natif ne les aura pas. Les skills d'un projet se gèrent sur la page du projet.",
   'skills.instanceDisabled': "La bibliothèque de skills est coupée pour cette instance ([skills] library dans config.toml) : rien de ce qui est listé ici n'arrive aux CLI.",
@@ -3179,7 +3169,6 @@ export const fr: Catalog = {
   'error.skill_not_from_source': "Ce skill n'a pas été installé depuis une source.",
   "settings.section.instructions": "Consignes",
   "settings.section.instructions.description": "SOLERA.md, commun à Claude, Codex, OpenCode et Grok",
-  "instructions.section.title": "Consignes (SOLERA.md)",
   "instructions.section.description": "Des consignes injectées dans le prompt de chaque session, quel que soit son CLI, sur tous les projets.",
   "instructions.section.banner": "Cette partie vaut pour toutes les sessions de l'instance. Celle d'un projet se règle sur la page du projet. Les agents peuvent aussi la lire et la modifier, comme un fichier ; tu vois ici qui l'a touchée en dernier.",
   "instructions.empty": "Aucune consigne pour l'instant.",
@@ -4020,7 +4009,6 @@ export const fr: Catalog = {
   "settings.section.permissions.description": "Ce que les agents peuvent demander, et le réflexe de leur CLI",
   "settings.section.agents": "Agents",
   "settings.section.agents.description": "Installation, connexion, comptes et modèle de chaque CLI",
-  "settings.permissions.title": "Permissions",
   "settings.permissions.description": "Ce avec quoi chaque conversation démarre, sauf si un projet ou le fil lui-même le change.",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Chaque CLI : s’il est installé, s’il est connecté, les comptes qu’il peut emprunter et ce avec quoi ses conversations s’ouvrent. Une conversation qui n’a pas changé une valeur suit la tienne à la relance de sa session.",

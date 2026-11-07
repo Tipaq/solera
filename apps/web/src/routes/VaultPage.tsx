@@ -9,6 +9,7 @@ import { ApiRequestError } from '../lib/api'
 import { useTranslate } from '../lib/i18n'
 import { setPanelOpen, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { openSettings } from '../lib/settings-dialog'
+import { useCanOpenSection } from '../components/settings/sections'
 import { setVaultPanelTab } from '../lib/vault-panel'
 import {
   useCreateNote,
@@ -55,6 +56,7 @@ export function VaultPage() {
   const requested = params['*'] ?? ''
 
   const { data: state, isPending: statePending } = useVaultState()
+  const canConfigure = useCanOpenSection('savoir')
   const configured = state?.configured === true && state.exists
   const { data: recent } = useVaultNotes({ limit: 1 }, configured)
   const { data: tree } = useVaultTree(configured)
@@ -111,11 +113,13 @@ export function VaultPage() {
         <EmptyState
           icon={<BookOpen size={22} />}
           title={t('vault.page.unconfigured.title')}
-          description={t('vault.page.unconfigured.description')}
+          description={t(canConfigure ? 'vault.page.unconfigured.description' : 'vault.page.unconfigured.askAdmin')}
           action={
-            <Button size="sm" onClick={() => openSettings('savoir')}>
-              {t('vault.page.unconfigured.action')}
-            </Button>
+            canConfigure ? (
+              <Button size="sm" onClick={() => openSettings('savoir')}>
+                {t('vault.page.unconfigured.action')}
+              </Button>
+            ) : undefined
           }
         />
       </Frame>
@@ -130,9 +134,11 @@ export function VaultPage() {
           title={t('vault.page.missing.title')}
           description={state.path}
           action={
-            <Button size="sm" onClick={() => openSettings('savoir')}>
-              {t('vault.page.unconfigured.action')}
-            </Button>
+            canConfigure ? (
+              <Button size="sm" onClick={() => openSettings('savoir')}>
+                {t('vault.page.unconfigured.action')}
+              </Button>
+            ) : undefined
           }
         />
       </Frame>

@@ -75,7 +75,7 @@ export function VaultSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('vault.section.title')} description={t('vault.section.description')} />
+      <SectionHeader description={t('vault.section.description')} />
 
       <Card>
         <CardHeader title={t('vault.path.title')} icon={<FolderTree size={16} />} />

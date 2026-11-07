@@ -1,5 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { openSettings } from '../../lib/settings-dialog'
+import { useCanOpenSection } from '../settings/sections'
 import { ArrowUp, Clock, Loader2, Mic, Square } from 'lucide-react'
 import {
   memo,
@@ -537,8 +538,10 @@ export const Composer = memo(function Composer({
     onError: setError,
   })
   // Le micro reste visible quand rien n'est configuré : un bouton absent ne dit pas
-  // que la fonction existe, la dialog explique et mène aux réglages.
+  // que la fonction existe, la dialog explique et mène aux réglages — quand ce compte
+  // voit la section Dictée, réservée aux administrateurs.
   const [sttNotice, setSttNotice] = useState(false)
+  const canConfigureStt = useCanOpenSection('dictee')
 
   // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
   // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
@@ -1080,10 +1083,14 @@ export const Composer = memo(function Composer({
               open={sttNotice}
               onOpenChange={setSttNotice}
               title={t('composer.dictate.unconfigured.title')}
-              confirmLabel={t('composer.dictate.unconfigured.action')}
-              onConfirm={() => openSettings('dictee')}
+              confirmLabel={t(
+                canConfigureStt ? 'composer.dictate.unconfigured.action' : 'composer.dictate.unconfigured.dismiss',
+              )}
+              onConfirm={() => (canConfigureStt ? openSettings('dictee') : setSttNotice(false))}
             >
-              <p>{t('composer.dictate.unconfigured.body')}</p>
+              <p>
+                {t(canConfigureStt ? 'composer.dictate.unconfigured.body' : 'composer.dictate.unconfigured.askAdmin')}
+              </p>
             </ConfirmDialog>
 
             <span className="ml-auto flex min-w-0 items-center gap-1 @min-[22rem]:gap-1.5">

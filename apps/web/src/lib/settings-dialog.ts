@@ -15,7 +15,7 @@ import type { AgentKind } from '@solera/protocol'
  */
 
 export type SettingsSectionId =
-  | 'compte'
+  | 'profil'
   | 'apparence'
   | 'affichage'
   | 'notifications'
@@ -31,16 +31,19 @@ export type SettingsSectionId =
   | 'api'
   | 'savoir'
   | 'archivage'
-  | 'comptes'
+  | 'utilisateurs'
   | 'a-propos'
 
-export const FIRST_SECTION: SettingsSectionId = 'compte'
+export const FIRST_SECTION: SettingsSectionId = 'profil'
 
 /**
  * Les adresses d'avant : « Défauts des CLI » devenue « Modèles par défaut », les trois
  * pages de comptes réunies en « Abonnements » (#120), puis ces deux sections fondues en
- * une seule, « Agents », un onglet par CLI. Un lien gardé quelque part doit continuer à
- * mener au bon endroit, et au bon onglet quand l'adresse le disait.
+ * une seule, « Agents », un onglet par CLI. « compte » et « comptes » désignaient le
+ * Profil et les Utilisateurs, à une lettre d'écart et alors que « comptes » nomme aussi
+ * les comptes des CLI : ils s'appellent maintenant comme la liste les montre. Un lien
+ * gardé quelque part doit continuer à mener au bon endroit, et au bon onglet quand
+ * l'adresse le disait.
  */
 export const LEGACY_SETTINGS_SECTIONS: Record<string, { section: SettingsSectionId; agent?: AgentKind }> = {
   cli: { section: 'agents' },
@@ -49,6 +52,8 @@ export const LEGACY_SETTINGS_SECTIONS: Record<string, { section: SettingsSection
   'comptes-claude': { section: 'agents', agent: 'claude' },
   'comptes-codex': { section: 'agents', agent: 'codex' },
   'comptes-grok': { section: 'agents', agent: 'grok' },
+  compte: { section: 'profil' },
+  comptes: { section: 'utilisateurs' },
 }
 
 interface State {

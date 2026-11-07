@@ -12,7 +12,7 @@ export function InstructionsSettingsPage() {
   const t = useTranslate()
   return (
     <div className="flex flex-col gap-4">
-      <SectionHeader title={t('instructions.section.title')} description={t('instructions.section.description')} />
+      <SectionHeader description={t('instructions.section.description')} />
       <Banner tone="info">{t('instructions.section.banner')}</Banner>
       <HowItWorks items={INSTRUCTIONS_HELP} />
       <GlobalInstructions />
