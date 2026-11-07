@@ -463,9 +463,9 @@ try {
   // montrer, et ne sont pas sondés.
   const now = Date.now()
   await page.route('**/api/claude-accounts', (route) => route.fulfill({ json: { accounts: [
-    { id: 'perso', label: 'Perso', kind: 'oauth', gauge: { email: 'alex@example.com' }, createdAt: now, updatedAt: now },
-    { id: 'jeton', label: 'Jeton seul', kind: 'oauth', gauge: null, createdAt: now, updatedAt: now },
-    { id: 'cle', label: 'Clé Console', kind: 'apiKey', gauge: null, createdAt: now, updatedAt: now },
+    { id: 'perso', label: 'Perso · alex@example.com', email: 'alex@example.com', alias: 'Perso', kind: 'oauth', duplicate: false, gauge: true, createdAt: now, updatedAt: now },
+    { id: 'jeton', label: 'Jeton seul · jeton@example.com', email: 'jeton@example.com', alias: 'Jeton seul', kind: 'oauth', duplicate: false, gauge: false, createdAt: now, updatedAt: now },
+    { id: 'cle', label: 'Clé Console', email: null, alias: 'Clé Console', kind: 'apiKey', duplicate: false, gauge: false, createdAt: now, updatedAt: now },
   ] } }))
   await page.route('**/api/codex-accounts', (route) => route.fulfill({ json: { accounts: [
     { id: 'boite', label: 'Boîte', status: 'ready', authMode: 'chatgpt', email: null, planType: 'pro', createdAt: now, updatedAt: now },
@@ -482,7 +482,7 @@ try {
   await places.waitFor()
   await column.getByRole('button', { name: 'Alex' }).click()
   await page.getByRole('menuitem', { name: 'Consommation' }).click()
-  await usage.getByRole('heading', { name: 'Claude Code · Perso' }).waitFor()
+  await usage.getByRole('heading', { name: 'Claude Code · Perso · alex@example.com' }).waitFor()
   await usage.getByRole('heading', { name: 'Codex · Boîte' }).waitFor()
   assert.equal(await usage.locator('section h3').count(), 5)
   assert.deepEqual(probedAccounts.sort(), ['boite', 'perso'])

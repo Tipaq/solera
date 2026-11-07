@@ -8,7 +8,9 @@ import { existsSync } from 'node:fs'
 import { claudeSecretKind, type ClaudeLoginPurpose, type ClaudeLoginStatusDto } from '@solera/protocol'
 import type { AgentAuth } from '../agents/auth.js'
 import { agentProcessEnv } from '../agents/process-env.js'
+import type { ClaudeAccount } from '@solera/protocol'
 import type { ClaudeAccountGauges } from './gauges.js'
+import type { ClaudeIdentify } from './identity.js'
 import type { ClaudeAccountStore } from './store.js'
 
 /**
@@ -25,13 +27,15 @@ import type { ClaudeAccountStore } from './store.js'
  *
  * Le CLI tourne dans un dossier de configuration jetable : il ne doit ni lire la
  * connexion du poste ni y écrire quoi que ce soit. Le jeton n'existe qu'en mémoire le
- * temps d'être chiffré dans le compte, qui n'est créé qu'à ce moment.
+ * temps d'être chiffré dans le compte, qui n'est créé qu'à ce moment. Un compte est une
+ * adresse : `claude auth status` la lit sous le jeton, une adresse déjà connue reconnecte
+ * son compte, et la reconnexion d'un compte refuse un jeton qui mène à une autre.
  *
  * Le même dialogue sert à la jauge d'un compte existant, par `claude auth login` :
  * même URL, même invite (sondé sur 2.1.296), mais la portée comprend `user:profile` et
  * le CLI écrit sa connexion dans le dossier au lieu d'imprimer un jeton. La fin se lit
  * donc à l'apparition de `.credentials.json`, et le dossier jetable est repris par
- * `ClaudeAccountGauges.adopt` avant d'être effacé.
+ * `ClaudeAccountGauges.adopt` avant d'être effacé, s'il mène bien à l'adresse du compte.
  *
  * Et à la connexion propre du CLI, celle des sessions sans compte : `auth login` encore,
  * mais sans dossier jetable, dans l'environnement même des sessions, pour que le CLI
@@ -63,8 +67,9 @@ const MAX_RELAUNCHES = 5
 interface Login {
   ownerId: string
   purpose: ClaudeLoginPurpose
-  /** Le libellé du compte à créer (`token`), ou le compte qui reçoit sa jauge (`gauge`). */
-  label: string
+  /** L'alias du compte à créer (`token`), s'il en a un. */
+  alias: string | null
+  /** Le compte reconnecté (`token`) ou qui reçoit sa jauge (`gauge`) ; null pour un nouveau. */
   accountId: string | null
   pty: IPty
   configDir: string
@@ -168,11 +173,13 @@ export class ClaudeLoginService {
     private readonly binary: () => Promise<string>,
     private readonly gauges: ClaudeAccountGauges | null = null,
     private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
+    /** Absente, aucune adresse n'est lue : c'est le cas des tests qui ne mènent que le CLI. */
+    private readonly identify: ClaudeIdentify | null = null,
   ) {}
 
   /** Connexion qui donne sa jauge à un compte existant, par `claude auth login`. */
-  startGauge(ownerId: string, accountId: string, label: string): Promise<ClaudeLoginStatusDto> {
-    return this.launch(ownerId, 'gauge', label, accountId)
+  startGauge(ownerId: string, accountId: string): Promise<ClaudeLoginStatusDto> {
+    return this.launch(ownerId, 'gauge', null, accountId)
   }
 
   status(ownerId: string, loginId: string): ClaudeLoginStatusDto | undefined {
@@ -180,20 +187,23 @@ export class ClaudeLoginService {
     return login && login.ownerId === ownerId ? login.status : undefined
   }
 
-  /** Lance le CLI et attend qu'il imprime l'URL, ou qu'il échoue avant. */
-  start(ownerId: string, label: string): Promise<ClaudeLoginStatusDto> {
-    return this.launch(ownerId, 'token', label, null)
+  /**
+   * Lance le CLI et attend qu'il imprime l'URL, ou qu'il échoue avant. Avec un compte,
+   * c'est sa reconnexion : le jeton obtenu doit mener à la même adresse.
+   */
+  start(ownerId: string, alias: string | null, accountId: string | null = null): Promise<ClaudeLoginStatusDto> {
+    return this.launch(ownerId, 'token', alias, accountId)
   }
 
   /** Connexion propre du CLI, partagée par toute l'instance : à l'administrateur de la mener. */
   startCli(ownerId: string): Promise<ClaudeLoginStatusDto> {
-    return this.launch(ownerId, 'cli', '', null)
+    return this.launch(ownerId, 'cli', null, null)
   }
 
   private async launch(
     ownerId: string,
     purpose: ClaudeLoginPurpose,
-    label: string,
+    alias: string | null,
     accountId: string | null,
   ): Promise<ClaudeLoginStatusDto> {
     const loginId = randomUUID()
@@ -202,13 +212,14 @@ export class ClaudeLoginService {
     const login: Login = {
       ownerId,
       purpose,
-      label,
+      alias,
       accountId,
       pty,
       configDir,
       output: '',
       raw: '',
-      status: { loginId, purpose, state: 'starting', authUrl: null, error: null, account: null },
+      // Le compte visé est connu dès le départ : l'écran dit à quelle adresse se connecter.
+      status: { loginId, purpose, state: 'starting', authUrl: null, error: null, account: accountId ? (this.store.find(ownerId, accountId) ?? null) : null },
       timer: setTimeout(() => this.finish(loginId, 'Personne n’a collé le code à temps : connexion abandonnée.'), LOGIN_TIMEOUT_MS),
       checking: null,
       args,
@@ -235,7 +246,8 @@ export class ClaudeLoginService {
   submitCode(ownerId: string, loginId: string, code: string): ClaudeLoginStatusDto | undefined {
     const login = this.logins.get(loginId)
     if (!login || login.ownerId !== ownerId) return undefined
-    if (login.status.state === 'done' || login.status.state === 'checking' || login.status.state === 'starting') {
+    // Fermé, le CLI ne lit plus rien : un jeton refusé après coup se recommence.
+    if (login.closing || login.status.state === 'done' || login.status.state === 'checking' || login.status.state === 'starting') {
       return login.status
     }
 
@@ -416,11 +428,7 @@ export class ClaudeLoginService {
     clearTimeout(login.checking.timer)
     login.checking = null
     if (token && claudeSecretKind(token) === 'oauth') {
-      // Le libellé a pu être pris entre-temps : un suffixe vaut mieux qu'un jeton perdu.
-      const label = this.store.labelFree(login.ownerId, login.label) ? login.label : `${login.label} ${new Date().toLocaleDateString('fr-FR')}`
-      const account = this.store.create(login.ownerId, label, token)
-      login.status = { ...login.status, state: 'done', error: null, account }
-      void this.finish(loginId, null)
+      void this.conclude(loginId, token)
     } else if (restarted && !refused) {
       login.status = {
         ...login.status,
@@ -435,9 +443,58 @@ export class ClaudeLoginService {
   }
 
   /**
+   * Le jeton est là : on lit son adresse, puis on le range. Le CLI a fini, il ne doit plus
+   * rien conclure à sa place pendant que l'adresse se lit.
+   */
+  private async conclude(loginId: string, token: string): Promise<void> {
+    const login = this.logins.get(loginId)
+    if (!login) return
+    login.closing = true
+    login.status = { ...login.status, state: 'checking' }
+    const email = this.identify ? await this.identify({ token }) : null
+    const kept = this.keep(login, token, email)
+    login.status =
+      typeof kept === 'string'
+        ? { ...login.status, state: 'failed', error: kept }
+        : { ...login.status, state: 'done', error: null, account: kept }
+    void this.finish(loginId, null)
+  }
+
+  /**
+   * Range le jeton : sur le compte reconnecté, sur le compte de la même adresse, ou dans
+   * un compte neuf. Rend le motif du refus quand il n'est pas rangé.
+   */
+  private keep(login: Login, token: string, email: string | null): ClaudeAccount | string {
+    const { ownerId } = login
+    if (this.identify && !email) {
+      return "Le CLI a rendu un jeton, mais claude auth status ne dit pas à quel compte il appartient. Rien n'a été enregistré : ferme et recommence."
+    }
+    if (login.accountId) {
+      const account = this.store.find(ownerId, login.accountId)
+      if (!account) return 'Ce compte a été supprimé pendant la connexion.'
+      if (email && account.email && email !== account.email) {
+        return `Ce code connecte ${email}, pas ${account.email}. Rien n'a été remplacé : ferme et recommence en choisissant ${account.email} sur la page d'autorisation.`
+      }
+      const other = email ? this.store.findByEmail(ownerId, email) : undefined
+      if (other && other.id !== account.id) {
+        return `${email} est déjà le compte « ${other.label} ». Reconnecte plutôt celui-là, ou supprime l'un des deux.`
+      }
+      this.store.update(ownerId, account.id, { token, ...(email ? { email } : {}) })
+      return this.store.find(ownerId, account.id)!
+    }
+    // Une adresse connue : c'est ce compte qu'on reconnecte, jamais un second.
+    const existing = email ? this.store.findByEmail(ownerId, email) : undefined
+    if (existing) {
+      this.store.update(ownerId, existing.id, { token, ...(login.alias ? { alias: login.alias } : {}) })
+      return this.store.find(ownerId, existing.id)!
+    }
+    return this.store.create(ownerId, { email, alias: login.alias }, token)
+  }
+
+  /**
    * Reprend la connexion de jauge. Le CLI écrit `.credentials.json` puis complète
-   * `.claude.json` (le compte, son courriel) : on laisse passer un instant pour que le
-   * second soit là, la jauge sait de toute façon vivre sans courriel.
+   * `.claude.json` (le compte) : on laisse passer un instant pour qu'il soit complet
+   * avant d'en lire l'adresse par `claude auth status`.
    */
   private adoptGauge(loginId: string, delayMs = 1500): void {
     const login = this.logins.get(loginId)
@@ -448,13 +505,27 @@ export class ClaudeLoginService {
     login.closing = true
     const accountId = login.accountId
     setTimeout(() => {
-      try {
-        this.gauges!.adopt(accountId, login.configDir)
-        login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
-      } catch (err) {
-        login.status = { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
-      }
-      void this.finish(loginId, null)
+      void (async () => {
+        try {
+          const account = this.store.find(login.ownerId, accountId)
+          const email = this.identify ? await this.identify({ configDir: login.configDir }) : null
+          // La jauge d'une autre adresse montrerait la consommation d'un autre compte.
+          if (account?.email && email && email !== account.email) {
+            throw new Error(
+              `Cette autorisation connecte ${email}, pas ${account.email} : la consommation affichée serait celle d'un autre compte. Rien n'a été enregistré ; recommence en choisissant ${account.email} sur la page d'autorisation.`,
+            )
+          }
+          this.gauges!.adopt(accountId, login.configDir)
+          // Un compte d'avant les adresses dont le jeton ne répondait plus la retrouve ici.
+          if (account && !account.email && email && !this.store.findByEmail(login.ownerId, email)) {
+            this.store.update(login.ownerId, accountId, { email })
+          }
+          login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }
+        } catch (err) {
+          login.status = { ...login.status, state: 'failed', error: err instanceof Error ? err.message : String(err) }
+        }
+        void this.finish(loginId, null)
+      })()
     }, delayMs)
   }
 

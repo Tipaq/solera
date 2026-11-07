@@ -1605,8 +1605,8 @@ export const gitCredentials = sqliteTable(
  *
  * Par utilisateur et non par instance, pour la même raison que les credentials git :
  * c'est l'abonnement de quelqu'un, et un administrateur n'a pas à emprunter celui d'un
- * autre. Le libellé est ce que le sélecteur de compte affiche : un jeton ne porte ni
- * courriel ni nom d'organisation lisibles sans dépenser un tour.
+ * autre. Un compte est une adresse Claude : c'est elle qui le nomme, lue par
+ * `claude auth status` sous le jeton, et un alias facultatif s'y ajoute.
  */
 export const claudeAccounts = sqliteTable(
   'claude_accounts',
@@ -1615,7 +1615,14 @@ export const claudeAccounts = sqliteTable(
     ownerId: text('owner_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    label: text('label').notNull(),
+    /**
+     * L'adresse du compte Claude, telle que `claude auth status --json` la rend sous le
+     * jeton. Nulle pour une clé API, qui n'en a pas, et pour un compte d'avant les
+     * adresses tant que le démarrage ne l'a pas retrouvée.
+     */
+    email: text('email'),
+    /** Nom facultatif choisi par l'utilisateur (« Perso ») ; seul nom d'une clé API. */
+    alias: text('alias'),
     /**
      * Ce qu'est le secret : un jeton OAuth de `claude setup-token` (abonnement, passé
      * dans `CLAUDE_CODE_OAUTH_TOKEN`) ou une clé API Console (facturée à l'usage, passée
@@ -1629,8 +1636,9 @@ export const claudeAccounts = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  // Deux comptes du même nom seraient indiscernables dans le sélecteur.
-  (t) => [uniqueIndex('idx_claude_accounts_owner_label').on(t.ownerId, t.label)],
+  // Pas d'unicité en base : deux comptes d'avant les adresses peuvent se révéler être le
+  // même, et c'est à l'utilisateur de choisir lequel garder. Le magasin refuse d'en créer.
+  (t) => [index('idx_claude_accounts_owner_email').on(t.ownerId, t.email)],
 )
 
 /**

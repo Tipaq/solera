@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /**
@@ -13,6 +13,9 @@ import { join } from 'node:path'
  * D'où un dossier par compte, `<données>/claude-accounts/<id>`, qui ne sert qu'aux
  * lectures d'usage : le CLI y est lancé avec `CLAUDE_CONFIG_DIR`, y lit sa connexion et
  * la renouvelle lui-même quand elle expire. Les sessions gardent le jeton.
+ *
+ * L'adresse de la jauge ne se lit pas ici, dans les fichiers du CLI : `claude auth status`
+ * la rend (`identity.ts`), et la connexion vérifie qu'elle est celle du compte.
  */
 
 /** Ce qu'une connexion du CLI laisse dans son dossier et qui doit être gardé. */
@@ -28,26 +31,6 @@ export class ClaudeAccountGauges {
   /** Vrai quand le dossier porte une connexion à lire. */
   has(accountId: string): boolean {
     return existsSync(join(this.path(accountId), '.credentials.json'))
-  }
-
-  /**
-   * Le courriel du compte connecté, tel que le CLI l'a écrit : c'est ce qui permet de
-   * voir qu'on a bien autorisé le même compte que celui du jeton.
-   */
-  email(accountId: string): string | null {
-    try {
-      const config = JSON.parse(readFileSync(join(this.path(accountId), '.claude.json'), 'utf8')) as {
-        oauthAccount?: { emailAddress?: unknown }
-      }
-      const email = config.oauthAccount?.emailAddress
-      return typeof email === 'string' ? email : null
-    } catch {
-      return null
-    }
-  }
-
-  describe(accountId: string): { email: string | null } | null {
-    return this.has(accountId) ? { email: this.email(accountId) } : null
   }
 
   /**

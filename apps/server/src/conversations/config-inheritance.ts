@@ -1,5 +1,6 @@
-import { and, asc, eq, isNull, type SQL } from 'drizzle-orm'
+import { and, eq, isNull, type SQL } from 'drizzle-orm'
 import { claudeAccounts, conversations, projects, type ConversationRow, type Db } from '@solera/db'
+import { claudeAccountOrder } from '../claude-accounts/store.js'
 import {
   EMPTY_CONFIG_LAYER,
   diffAgentConfig,
@@ -53,7 +54,7 @@ export function accountLayer(db: Db, userId: string): ConfigLayer {
     .select({ id: claudeAccounts.id })
     .from(claudeAccounts)
     .where(eq(claudeAccounts.ownerId, userId))
-    .orderBy(asc(claudeAccounts.label))
+    .orderBy(claudeAccountOrder)
     .all()
   // Un compte désigné puis supprimé ne vaut pas mieux qu'aucun choix.
   if (chosen !== undefined && accounts.some((account) => account.id === chosen)) return layer

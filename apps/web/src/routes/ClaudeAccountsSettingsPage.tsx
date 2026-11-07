@@ -1,5 +1,5 @@
-import { Gauge, IdCard, KeyRound, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Gauge, IdCard, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { ClaudeAccount, ClaudeLoginStatusDto } from '@solera/protocol'
 import {
   Badge,
@@ -23,7 +23,7 @@ import {
   useClaudeLoginStatus,
   useCreateClaudeAccount,
   useDeleteClaudeAccount,
-  useForgetClaudeGauge,
+  useReconnectClaudeAccount,
   useStartClaudeGauge,
   useStartClaudeLogin,
   useUpdateClaudeAccount,
@@ -32,15 +32,15 @@ import {
 /**
  * Comptes Claude supplémentaires du compte Solera.
  *
- * Le CLI ne tient qu'une connexion : celle de `/login`. Un abonnement de plus passe par
- * un jeton de `claude setup-token`, que Solera sait obtenir lui-même en pilotant la
- * commande : l'écran montre l'URL d'autorisation, recueille le code que la page
- * affiche, et le compte naît avec le jeton. On peut aussi coller un jeton obtenu
- * ailleurs, ou une clé API Console facturée à l'usage.
+ * Un compte est une adresse Claude : la connexion guidée pilote `claude setup-token`, le
+ * jeton obtenu dit son adresse, et c'est elle qui nomme le compte, un alias facultatif
+ * en plus. Puis elle enchaîne `claude auth login` pour la jauge de consommation, qui doit
+ * mener à la même adresse. On peut aussi coller un jeton obtenu ailleurs, ou une clé API
+ * Console facturée à l'usage, que son alias seul nomme.
  *
  * Comme pour les accès git, l'écran n'affiche jamais un secret : l'API n'en rend
- * aucun. Ce qui reste et qui compte, c'est le nom qu'on lui a donné, sa nature, et la
- * date du dernier secret, parce qu'un jeton expire au bout d'un an.
+ * aucun. Ce qui reste et qui compte, c'est l'adresse, sa nature, et la date du dernier
+ * secret, parce qu'un jeton expire au bout d'un an.
  */
 
 const errorOf = (error: unknown): string | null =>
@@ -99,25 +99,26 @@ export function ClaudeAccountsSettingsPage({ bare = false }: { bare?: boolean } 
 }
 
 /**
- * Le formulaire d'ajout : un nom, puis la voie. Guidée, le CLI est piloté par le
- * serveur et l'écran suit ses étapes ; collée, le secret part tel quel.
+ * Le formulaire d'ajout : un alias facultatif, puis la voie. Guidée, le CLI est piloté
+ * par le serveur et l'écran suit ses étapes ; collée, le secret part tel quel.
  */
 function AddAccountCard({ onClose }: { onClose: () => void }) {
   const t = useTranslate()
   const create = useCreateClaudeAccount()
   const start = useStartClaudeLogin()
   const [mode, setMode] = useState<AddMode>('guided')
-  const [label, setLabel] = useState('')
+  const [alias, setAlias] = useState('')
   const [token, setToken] = useState('')
   /** La connexion guidée en cours, une fois lancée. */
   const [login, setLogin] = useState<ClaudeLoginStatusDto | null>(null)
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
+    const named = alias.trim() ? { alias: alias.trim() } : {}
     if (mode === 'paste') {
-      create.mutate({ label: label.trim(), token: token.trim() }, { onSuccess: onClose })
+      create.mutate({ ...named, token: token.trim() }, { onSuccess: onClose })
     } else {
-      start.mutate({ label: label.trim() }, { onSuccess: setLogin })
+      start.mutate(named, { onSuccess: setLogin })
     }
   }
 
@@ -135,16 +136,14 @@ function AddAccountCard({ onClose }: { onClose: () => void }) {
       <CardHeader title={t('claudeAccounts.create.title')} icon={<IdCard size={16} />} />
       <CardBody>
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <Field
-            label={t('claudeAccounts.label.label')}
-            hint={t('claudeAccounts.label.hint')}
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-            maxLength={60}
-            autoFocus
-            required
-          />
           <ChoiceList label={t('claudeAccounts.mode.label')} value={mode} options={modes} onChange={setMode} />
+          <Field
+            label={t('claudeAccounts.alias.label')}
+            hint={t(mode === 'paste' ? 'claudeAccounts.alias.hintPaste' : 'claudeAccounts.alias.hint')}
+            value={alias}
+            onChange={(event) => setAlias(event.target.value)}
+            maxLength={60}
+          />
           {mode === 'paste' ? (
             <div className="flex flex-col gap-2">
               <Field
@@ -187,14 +186,15 @@ function AddAccountCard({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Les étapes du CLI, suivies à l'écran : l'URL à ouvrir, le code à coller, puis le
- * compte créé. Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
+ * Les étapes du CLI, suivies à l'écran : le compte d'abord (`setup-token`), puis sa
+ * consommation (`auth login`), enchaînée d'office quand le compte n'en a pas encore.
+ * Un code refusé se ressaisit sans tout recommencer, tant que le CLI vit.
  */
 function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDto; onClose: () => void }) {
   const t = useTranslate()
   /**
-   * La connexion suivie : celle du jeton, puis, si on l'enchaîne, celle de la jauge.
-   * Les deux passent par les mêmes routes de suivi, seul l'identifiant change.
+   * La connexion suivie : celle du jeton, puis celle de la jauge. Les deux passent par
+   * les mêmes routes de suivi, seul l'identifiant change.
    */
   const [initial, setInitial] = useState(first)
   const { data: polled } = useClaudeLoginStatus(initial.loginId)
@@ -203,12 +203,24 @@ function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDt
   // L'envoi d'un code pose sa réponse dans la même relecture : c'est elle qui fait foi.
   const status = polled ?? initial
   const gauge = status.purpose === 'gauge'
+  const account = status.account
+  /** Le compte est là, il lui manque sa jauge : c'est la seconde étape, sans demander. */
+  const chain = !gauge && status.state === 'done' && account !== null && account.kind === 'oauth' && !account.gauge
+  const chained = useRef(false)
+  /** Le compte connecté à la première étape, quand la jauge en est la seconde. */
+  const [stepOne, setStepOne] = useState<ClaudeAccount | null>(null)
 
-  const chainGauge = (accountId: string) =>
-    startGauge.mutate(accountId, {
-      // Le formulaire du code repart vide : il est lié à l'identifiant de la connexion.
-      onSuccess: setInitial,
+  useEffect(() => {
+    if (!chain || chained.current || !account) return
+    chained.current = true
+    startGauge.mutate(account.id, {
+      onSuccess: (next) => {
+        setStepOne(account)
+        // Le formulaire du code repart vide : il est lié à l'identifiant de la connexion.
+        setInitial(next)
+      },
     })
+  }, [chain, account, startGauge])
 
   const close = () => {
     if (status.state !== 'done') cancel.mutate(initial.loginId)
@@ -222,33 +234,41 @@ function GuidedLogin({ initial: first, onClose }: { initial: ClaudeLoginStatusDt
         icon={gauge ? <Gauge size={16} /> : <IdCard size={16} />}
       />
       <CardBody className="flex flex-col gap-4">
-        {gauge && status.state !== 'done' ? <p className="text-sm text-ink-soft">{t('claudeAccounts.gauge.explain')}</p> : null}
-        {status.state === 'done' ? (
+        {gauge && status.state !== 'done' ? (
+          <>
+            {stepOne ? <Banner tone="positive">{t('claudeAccounts.guided.stepOneDone', { label: stepOne.label })}</Banner> : null}
+            <p className="text-sm text-ink-soft">
+              {account?.email
+                ? t('claudeAccounts.gauge.explainWithEmail', { email: account.email })
+                : t('claudeAccounts.gauge.explain')}
+            </p>
+          </>
+        ) : null}
+        {chain ? (
+          // Entre les deux étapes : la jauge se prépare, ou n'a pas pu.
+          errorOf(startGauge.error) ? (
+            <>
+              <Banner tone="positive">{t('claudeAccounts.guided.done', { label: account?.label ?? '' })}</Banner>
+              <Banner>{errorOf(startGauge.error)}</Banner>
+              <div>
+                <Button type="button" onClick={onClose}>
+                  {t('common.close')}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-ink-faint">{t('claudeAccounts.guided.starting')}</p>
+          )
+        ) : status.state === 'done' ? (
           <>
             <Banner tone="positive">
               {gauge
-                ? status.account?.gauge?.email
-                  ? t('claudeAccounts.gauge.doneWithEmail', { label: status.account.label, email: status.account.gauge.email })
-                  : t('claudeAccounts.gauge.done', { label: status.account?.label ?? '' })
-                : t('claudeAccounts.guided.done', { label: status.account?.label ?? '' })}
+                ? t('claudeAccounts.gauge.done', { label: account?.label ?? '' })
+                : t('claudeAccounts.guided.done', { label: account?.label ?? '' })}
             </Banner>
-            {/* Le jeton fait marcher les sessions, pas la jauge : la proposer dans la
-                foulée, c'est une page et un code de plus, au moment où l'on y est. */}
-            {!gauge && status.account ? <p className="text-sm text-ink-soft">{t('claudeAccounts.gauge.offer')}</p> : null}
-            {errorOf(startGauge.error) ? <Banner>{errorOf(startGauge.error)}</Banner> : null}
-            <div className="flex flex-wrap items-center gap-2">
-              {!gauge && status.account ? (
-                <Button
-                  type="button"
-                  icon={<Gauge size={14} />}
-                  disabled={startGauge.isPending}
-                  onClick={() => chainGauge(status.account!.id)}
-                >
-                  {t('claudeAccounts.gauge.enable')}
-                </Button>
-              ) : null}
-              <Button type="button" variant={!gauge && status.account ? 'ghost' : 'primary'} onClick={onClose}>
-                {gauge ? t('common.close') : t('claudeAccounts.gauge.later')}
+            <div>
+              <Button type="button" onClick={onClose}>
+                {t('common.close')}
               </Button>
             </div>
           </>
@@ -265,16 +285,21 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
   const update = useUpdateClaudeAccount()
   const remove = useDeleteClaudeAccount()
   const startGauge = useStartClaudeGauge()
-  const forgetGauge = useForgetClaudeGauge()
-  /** La connexion de jauge en cours pour ce compte, une fois lancée. */
-  const [gaugeLogin, setGaugeLogin] = useState<ClaudeLoginStatusDto | null>(null)
+  const reconnect = useReconnectClaudeAccount()
+  /** La connexion en cours pour ce compte (reconnexion ou jauge), une fois lancée. */
+  const [login, setLogin] = useState<ClaudeLoginStatusDto | null>(null)
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [label, setLabel] = useState(account.label)
+  const [alias, setAlias] = useState(account.alias ?? '')
   const [token, setToken] = useState('')
 
+  const subscription = account.kind === 'oauth'
+  /** Un abonnement sans adresse : d'avant les adresses, et son jeton ne répond plus. */
+  const lost = subscription && account.email === null
+  const busy = login !== null || startGauge.isPending || reconnect.isPending
+
   const openEdit = () => {
-    setLabel(account.label)
+    setAlias(account.alias ?? '')
     setToken('')
     update.reset()
     setEditing(true)
@@ -282,12 +307,12 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    const trimmedLabel = label.trim()
+    const trimmedAlias = alias.trim()
     const trimmedToken = token.trim()
     update.mutate(
       {
         id: account.id,
-        ...(trimmedLabel !== account.label ? { label: trimmedLabel } : {}),
+        ...(trimmedAlias !== (account.alias ?? '') ? { alias: trimmedAlias || null } : {}),
         ...(trimmedToken ? { token: trimmedToken } : {}),
       },
       { onSuccess: () => setEditing(false) },
@@ -302,11 +327,12 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
           <CardBody>
             <form onSubmit={submit} className="flex flex-col gap-4">
               <Field
-                label={t('claudeAccounts.label.label')}
-                value={label}
-                onChange={(event) => setLabel(event.target.value)}
+                label={t('claudeAccounts.alias.label')}
+                hint={account.email ? t('claudeAccounts.alias.editHint', { email: account.email }) : undefined}
+                value={alias}
+                onChange={(event) => setAlias(event.target.value)}
                 maxLength={60}
-                required
+                required={!subscription}
               />
               <Field
                 label={t('claudeAccounts.token.label')}
@@ -320,7 +346,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
               />
               {errorOf(update.error) ? <Banner>{errorOf(update.error)}</Banner> : null}
               <div className="flex flex-wrap items-center gap-2">
-                <Button type="submit" disabled={update.isPending || (label.trim() === account.label && !token.trim())}>
+                <Button type="submit" disabled={update.isPending || (alias.trim() === (account.alias ?? '') && !token.trim())}>
                   {update.isPending ? t('claudeAccounts.edit.pending') : t('claudeAccounts.edit.action')}
                 </Button>
                 <Button type="button" variant="ghost" onClick={() => setEditing(false)}>
@@ -334,45 +360,50 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
         <CardBody className="flex flex-wrap items-start gap-3">
           <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
             <span className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{account.label}</span>
+              <span className="font-medium">{account.alias ?? account.email}</span>
+              {account.alias && account.email ? <span className="text-sm text-ink-soft">{account.email}</span> : null}
               <Badge icon={<KeyRound size={11} />}>
-                {account.kind === 'apiKey' ? t('claudeAccounts.kind.apiKey') : t('claudeAccounts.kind.oauth')}
+                {subscription ? t('claudeAccounts.kind.oauth') : t('claudeAccounts.kind.apiKey')}
               </Badge>
+              {lost ? <Badge tone="caution">{t('claudeAccounts.email.unknown')}</Badge> : null}
             </span>
             <p className="text-meta text-ink-faint">
               {t('claudeAccounts.updatedAt', {
                 date: new Date(account.updatedAt).toLocaleString(locale()),
               })}
             </p>
-            {/* La jauge d'un abonnement : sans elle, le choix du compte se fait à l'aveugle. */}
-            {account.kind === 'oauth' ? (
+            {/* La consommation d'un abonnement : sans elle, le choix du compte se fait à l'aveugle. */}
+            {subscription && !lost ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-meta">
                 <span className={account.gauge ? 'text-ink-soft' : 'text-ink-faint'}>
                   <Gauge size={12} className="mr-1 inline align-[-2px]" />
-                  {account.gauge
-                    ? account.gauge.email
-                      ? t('claudeAccounts.gauge.onWithEmail', { email: account.gauge.email })
-                      : t('claudeAccounts.gauge.on')
-                    : t('claudeAccounts.gauge.off')}
+                  {account.gauge ? t('claudeAccounts.gauge.on') : t('claudeAccounts.gauge.off')}
                 </span>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  disabled={startGauge.isPending || gaugeLogin !== null}
-                  onClick={() => startGauge.mutate(account.id, { onSuccess: setGaugeLogin })}
-                >
-                  {account.gauge ? t('claudeAccounts.gauge.renew') : t('claudeAccounts.gauge.enable')}
-                </Button>
-                {account.gauge ? (
-                  <Button size="sm" variant="ghost" disabled={forgetGauge.isPending} onClick={() => forgetGauge.mutate(account.id)}>
-                    {t('claudeAccounts.gauge.remove')}
+                {account.gauge ? null : (
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => startGauge.mutate(account.id, { onSuccess: setLogin })}>
+                    {t('claudeAccounts.gauge.enable')}
                   </Button>
-                ) : null}
+                )}
               </div>
             ) : null}
-            {errorOf(startGauge.error) ? <Banner>{errorOf(startGauge.error)}</Banner> : null}
+            {lost ? <p className="text-meta text-ink-soft">{t('claudeAccounts.email.lostHint')}</p> : null}
+            {account.duplicate ? <Banner tone="caution">{t('claudeAccounts.duplicate')}</Banner> : null}
+            {errorOf(startGauge.error) ?? errorOf(reconnect.error) ? (
+              <Banner>{errorOf(startGauge.error) ?? errorOf(reconnect.error)}</Banner>
+            ) : null}
           </div>
 
+          {subscription ? (
+            <Button
+              size="sm"
+              variant={lost ? 'primary' : 'ghost'}
+              icon={<RefreshCw size={14} />}
+              disabled={busy}
+              onClick={() => reconnect.mutate(account.id, { onSuccess: setLogin })}
+            >
+              {t('claudeAccounts.action.reconnect')}
+            </Button>
+          ) : null}
           <Button size="sm" variant="ghost" icon={<Pencil size={14} />} onClick={openEdit}>
             {t('claudeAccounts.action.edit')}
           </Button>
@@ -387,9 +418,9 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
         </CardBody>
       )}
 
-      {gaugeLogin ? (
+      {login ? (
         <div className="border-t border-line">
-          <GuidedLogin initial={gaugeLogin} onClose={() => setGaugeLogin(null)} />
+          <GuidedLogin initial={login} onClose={() => setLogin(null)} />
         </div>
       ) : null}
 

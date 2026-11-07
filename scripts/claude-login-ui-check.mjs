@@ -9,7 +9,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
-// Connexions guidées Claude menées jusqu'au succès : le jeton d'un abonnement, puis sa jauge.
+// Connexions guidées Claude menées jusqu'au succès : le jeton d'un abonnement, qui nomme le
+// compte par son adresse, puis sa jauge, enchaînée d'office ; une reconnexion vers une autre
+// adresse est refusée.
 // Le terminal, lui, n'est pas connecté : sans compte, le brouillon le dit et mène à la
 // connexion d'un compte ; avec un compte, la nouvelle conversation part dessus.
 // Un faux CLI rejoue le dialogue de `setup-token` et d'`auth login` (sondé sur 2.1.296) et
@@ -54,7 +56,16 @@ const FAKE_CLI = `#!/bin/bash
 # Faux claude : setup-token et auth login, le reste répond comme un CLI sans session.
 if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
 # La connexion du terminal est absente : c'est le cas où un compte doit prendre le relais.
+# Sous un jeton, l'adresse se lit dans le jeton : des B, c'est un autre compte. Dans le
+# dossier d'une jauge, elle est celle que la connexion y a laissée.
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    case "$CLAUDE_CODE_OAUTH_TOKEN" in *BBBB*) email=other@example.com ;; *) email=perso@example.com ;; esac
+    printf '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","email":"%s"}\\n' "$email"; exit 0
+  fi
+  if [ -n "$CLAUDE_CONFIG_DIR" ] && [ -f "$CLAUDE_CONFIG_DIR/.credentials.json" ]; then
+    echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"perso@example.com"}'; exit 0
+  fi
   echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'; exit 1
 fi
 url="https://claude.com/cai/oauth/authorize?code=true&client_id=x&response_type=code&scope=user%3Ainference&state=S$RANDOM$RANDOM"
@@ -63,7 +74,8 @@ if [ "$1" = "setup-token" ]; then
   # Comme le vrai : un refus attend Entrée, puis rouvre l'invite.
   while read -r code; do
     if [ "\${code:0:4}" = "GOOD" ]; then
-      printf '\\r\\nYour OAuth token (valid for 365 days):\\r\\n\\033[33msk-ant-oat01-%s\\033[39m\\r\\n' "$(printf 'A%.0s' $(seq 1 90))"
+      letter=A; [ "\${code:0:10}" = "GOOD-OTHER" ] && letter=B
+      printf '\\r\\nYour OAuth token (valid for 365 days):\\r\\n\\033[33msk-ant-oat01-%s\\033[39m\\r\\n' "$(printf "$letter%.0s" $(seq 1 90))"
       sleep 30; exit 0
     fi
     [ -z "$code" ] && { printf 'Paste code here if prompted > '; continue; }
@@ -133,7 +145,7 @@ try {
 
   await page.goto(`${base}/settings/comptes-claude`)
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  await page.getByLabel('Nom').fill('Perso')
+  await page.getByLabel('Alias (facultatif)').fill('Perso')
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
   await page.getByText("Ouvrir la page d'autorisation").waitFor()
 
@@ -143,37 +155,49 @@ try {
   await page.getByText(/Invalid code/).waitFor({ timeout: 15000 })
   await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'x'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
-  await page.getByText(/Perso est enregistré/).waitFor({ timeout: 15000 }).catch(async (err) => {
-    console.log('PAGE:', (await page.locator('main').innerText()).slice(-900))
+  // Le compte est nommé par son adresse, et la jauge s'enchaîne d'office.
+  await page.getByText(/Étape 1 sur 2 faite : Perso · perso@example.com est connecté/).waitFor({ timeout: 15000 }).catch(async (err) => {
+    await page.screenshot({ path: '/tmp/solera-claude-login-fail.png', fullPage: true })
     throw err
   })
-  await delay(2500)
-  assert.ok(recentPolls() <= 2, `Relectures après la fin : ${recentPolls()} en une seconde`)
-  await page.getByText('Pas de jauge d\'usage').waitFor()
+  await page.getByText('Consommation', { exact: true }).waitFor()
+  await page.getByText(/connecté à perso@example.com/).waitFor()
+  await page.screenshot({ path: '/tmp/solera-claude-login-step2.png', fullPage: true })
 
-  // La jauge enchaînée : un refus fait relancer le CLI, le bon code la donne.
-  await page.getByRole('button', { name: 'Activer la jauge' }).first().click()
-  await page.getByText("Jauge d'usage", { exact: true }).waitFor()
+  // Un refus fait relancer le CLI, le bon code donne la jauge.
   await page.getByLabel('Code', { exact: true }).fill('BAD-' + 'y'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
   await page.getByText(/Code refusé/).waitFor({ timeout: 15000 })
   await page.getByLabel('Code', { exact: true }).fill('GOOD-' + 'y'.repeat(80))
   await page.getByRole('button', { name: 'Valider le code' }).click()
-  await page.getByText(/connectée en tant que perso@example.com/).waitFor({ timeout: 15000 })
+  await page.getByText(/Perso · perso@example.com est connecté, et sa consommation s'affiche/).waitFor({ timeout: 15000 })
   await delay(2500)
   assert.ok(recentPolls() <= 2, `Relectures après la jauge : ${recentPolls()} en une seconde`)
-  await page.getByText("Jauge d'usage active · perso@example.com").waitFor()
+  await page.getByText('Consommation affichée').waitFor()
+  await page.getByText(/est connecté, et sa consommation/).locator('xpath=ancestor::div[contains(@class,"flex-col")][1]').getByRole('button', { name: 'Fermer' }).click()
   await page.screenshot({ path: '/tmp/solera-claude-login-success.png', fullPage: true })
 
+  // Reconnecter vers une autre adresse : refusé, rien de remplacé.
+  await page.getByRole('button', { name: 'Reconnecter' }).click()
+  await page.getByText("Ouvrir la page d'autorisation").waitFor()
+  await page.getByLabel('Code', { exact: true }).fill('GOOD-OTHER-' + 'z'.repeat(80))
+  await page.getByRole('button', { name: 'Valider le code' }).click()
+  await page.getByText(/Ce code connecte other@example.com, pas perso@example.com/).waitFor({ timeout: 15000 })
+  await page.getByText(/Ce code connecte/).locator('xpath=ancestor::div[contains(@class,"border-t")][1]').screenshot({ path: '/tmp/solera-claude-reconnect-mismatch.png' })
+  await page.getByRole('button', { name: 'Annuler' }).click()
+
   const accounts = await (await context.request.get(`${base}/api/claude-accounts`)).json()
-  assert.deepEqual(accounts.accounts.map((entry) => [entry.label, entry.kind, entry.gauge?.email ?? null]), [['Perso', 'oauth', 'perso@example.com']])
+  assert.deepEqual(
+    accounts.accounts.map((entry) => [entry.label, entry.email, entry.alias, entry.kind, entry.gauge]),
+    [['Perso · perso@example.com', 'perso@example.com', 'Perso', 'oauth', true]],
+  )
 
   // Terminal déconnecté, un compte prêt : la nouvelle conversation part sur le compte,
   // et la connexion du terminal ne se propose pas à côté.
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
-  await page.getByText('Perso', { exact: true }).waitFor()
+  await page.getByText('Perso · perso@example.com', { exact: true }).waitFor()
   assert.equal(await page.getByText(/Connexion du terminal|Aucun compte Claude/).count(), 0)
-  await page.getByText('Perso', { exact: true }).locator('xpath=ancestor::div[2]').screenshot({ path: '/tmp/solera-draft-on-account.png' })
+  await page.getByText('Perso · perso@example.com', { exact: true }).locator('xpath=ancestor::div[2]').screenshot({ path: '/tmp/solera-draft-on-account.png' })
   let submitted
   await page.route(`**/api/projects/${project.id}/conversations`, async (route) => {
     if (route.request().method() !== 'POST') return route.continue()
@@ -187,7 +211,7 @@ try {
   assert.equal(submitted?.config?.account, accounts.accounts[0].id, 'La conversation part sur le compte, pas sur le terminal')
   await page.unroute(`**/api/projects/${project.id}/conversations`)
   assert.deepEqual(errors, [])
-  console.log(`OK : brouillon sans compte explicite, jeton puis jauge menés au succès, refus repris, ${polls.length} relectures en tout, sans boucle, conversation partie sur le compte.`)
+  console.log(`OK : brouillon sans compte explicite, compte nommé par son adresse, jauge enchaînée, refus repris, reconnexion vers une autre adresse refusée, ${polls.length} relectures en tout, sans boucle, conversation partie sur le compte.`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

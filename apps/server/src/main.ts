@@ -33,6 +33,7 @@ import { upgradeCredentialHelpers } from './git-credential/migrate.js'
 import { ClaudeAccountStore } from './claude-accounts/store.js'
 import { ClaudeLoginService } from './claude-accounts/login.js'
 import { ClaudeAccountGauges } from './claude-accounts/gauges.js'
+import { backfillClaudeEmails, claudeIdentity } from './claude-accounts/identity.js'
 import { CodexAccountHomes } from './codex-accounts/homes.js'
 import { CodexLoginService } from './codex-accounts/login.js'
 import { CodexAccountStore } from './codex-accounts/store.js'
@@ -84,7 +85,9 @@ async function main(): Promise<void> {
   // La relecture forcée de la connexion du CLI : elle confirme une connexion menée depuis
   // l'interface, et rafraîchit le cache que sert `/api/agents/auth`.
   const cliAuth = (agent: 'claude' | 'codex') => () => registry.adapter(agent).auth?.(true) ?? Promise.resolve(UNKNOWN_AUTH)
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges, cliAuth('claude'))
+  const claudeIdentify = claudeIdentity(() => registry.adapter('claude').cli.executable())
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges, cliAuth('claude'), claudeIdentify)
+
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
@@ -176,6 +179,7 @@ async function main(): Promise<void> {
     gitCredentials,
     claudeAccounts,
     claudeLogin,
+    claudeIdentify,
     codexAccounts,
     codexLogin,
     grokAccounts,
@@ -198,6 +202,12 @@ async function main(): Promise<void> {
   )
   push.setLogger(app.log)
   if (orphans > 0) app.log.info({ orphans }, 'pieces jointes orphelines supprimees')
+  // Les comptes Claude d'avant les adresses retrouvent la leur sans retarder le démarrage.
+  void backfillClaudeEmails(claudeAccounts, claudeIdentify)
+    .then((found) => {
+      if (found > 0) app.log.info({ found }, 'adresse retrouvee pour des comptes Claude')
+    })
+    .catch((err: unknown) => app.log.warn({ err }, 'adresses des comptes Claude non retrouvees'))
   if (recovered.length > 0) {
     app.log.info({ recovered: recovered.length }, 'conversations marquees interrompues apres redemarrage')
   }
