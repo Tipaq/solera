@@ -294,7 +294,7 @@ test('les accès d’avant le choix de la forge restent lisibles, leur forge dé
   const key = loadOrCreateKey(dir)
 
   const first = openDatabase(file)
-  runMigrations(first.db, await migrationsBefore(dir, '0066_acces_git_par_forge'))
+  runMigrations(first.db, await migrationsBefore(dir, '0067_acces_git_par_forge'))
   first.sqlite.exec(`INSERT INTO users (id, username, display_name, password_hash, is_admin, created_at) VALUES ('owner', 'owner', 'owner', '', 0, 1)`)
   const insert = first.sqlite.prepare(
     `INSERT INTO git_credentials (id, owner_id, host, username, ciphertext, iv, auth_tag, created_at, updated_at)
