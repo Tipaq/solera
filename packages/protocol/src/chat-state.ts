@@ -243,6 +243,8 @@ export interface ErrorItem {
   code: string
   message: string
   recoverable: boolean
+  /** Le compte refusé, sur un `auth_failed` : voir l'événement `error`. */
+  account?: { id: string | null; label: string | null }
 }
 
 /** Repère discret dans le fil, sans contenu propre (changement de modèle, reprise). */
@@ -1472,6 +1474,7 @@ export function applyEvent(
         code: event.code,
         message: event.message,
         recoverable: event.recoverable,
+        ...(event.account ? { account: event.account } : {}),
       })
       // Une panne sans retour possible a emporté la session, et avec elle les travaux
       // de fond qui vivaient dans le process du CLI : même conclusion que `session.ended`,

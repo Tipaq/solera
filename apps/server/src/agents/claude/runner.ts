@@ -179,6 +179,11 @@ export class ClaudeRunner implements AgentRunner {
   private stopped = false
   /** Vrai entre l'ouverture d'un tour et le `result` qui le referme. */
   private turnOpen = false
+  /**
+   * Vrai quand un message du tour en cours a été refusé faute d'authentification : le
+   * `result` qui suit ne le dit pas, il porte seulement le texte du CLI.
+   */
+  private authRefused = false
   /** Échéance de clôture d'office, armée quand aucun `result` n'est attendu. */
   private turnWatchdog: ReturnType<typeof setTimeout> | null = null
   /** Suit les changements appliqués à chaud, contrairement à `ctx.config` qui est figé. */
@@ -638,6 +643,10 @@ export class ClaudeRunner implements AgentRunner {
       }
 
       case 'assistant': {
+        // « Not logged in », « Failed to authenticate » : le CLI rend le refus comme une
+        // réponse, mais le marque (`SDKAssistantMessageError` du SDK ; pas encore vu sur un
+        // vrai refus).
+        if (message.error === 'authentication_failed') this.authRefused = true
         const blocks: ContentBlock[] = []
 
         for (const block of message.message.content) {
@@ -730,6 +739,8 @@ export class ClaudeRunner implements AgentRunner {
         // dire : un sous-type d'erreur avec sa liste de causes, ou un « succès » marqué
         // `is_error` dont le texte est le message d'erreur lui-même, cas du quota
         // épuisé. Sans ce relais, le fil s'arrêtait sans un mot dans les deux cas.
+        const authRefused = this.authRefused
+        this.authRefused = false
         if (message.subtype !== 'success') {
           this.ctx.emit(
             {
@@ -744,7 +755,8 @@ export class ClaudeRunner implements AgentRunner {
           this.ctx.emit(
             {
               type: 'error',
-              code: 'turn_failed',
+              // Le gestionnaire de sessions y ajoute le compte qui a été refusé.
+              code: authRefused ? 'auth_failed' : 'turn_failed',
               message: message.result || 'The turn failed without an explanation from the CLI.',
               recoverable: true,
             },

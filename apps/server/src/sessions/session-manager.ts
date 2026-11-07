@@ -887,6 +887,20 @@ export class SessionManager {
   }
 
   /**
+   * Le compte qui porte une session Claude : un compte de Solera tel que `accountEnv` le
+   * retiendra, ou la connexion du terminal (`id: null`) quand il n'y en a pas ou qu'il a
+   * disparu. Rien pour les autres agents, qui ne refusent pas de la même façon.
+   */
+  private accountInUse(
+    conversation: ConversationRow,
+    config: AgentConfig,
+  ): { id: string | null; label: string | null } | null {
+    if (config.agent !== 'claude') return null
+    const found = config.account ? this.claudeAccounts.find(conversation.userId, config.account) : undefined
+    return found ? { id: found.id, label: found.label } : { id: null, label: null }
+  }
+
+  /**
    * Le jeton du compte Claude que la conversation désigne, dans la variable que le CLI
    * fait passer devant sa connexion enregistrée (sondé sur 2.1.296). Rien pour la
    * connexion du CLI, ni pour un autre agent.
@@ -949,6 +963,8 @@ export class SessionManager {
     const adapter = this.registry.adapter(conversation.agent)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
+    // Lu au lancement, comme le jeton : changer de compte relance la session.
+    const account = this.accountInUse(conversation, config)
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
     //
@@ -1130,7 +1146,13 @@ export class SessionManager {
       },
       resumeSessionId: conversation.agentSessionId,
 
-      emit: (event: SoleraEvent, raw?: unknown) => {
+      emit: (incoming: SoleraEvent, raw?: unknown) => {
+        // Un refus d'authentification nomme le compte refusé : sans lui, rien ne dit
+        // dans le fil s'il faut reconnecter le terminal ou un compte de Solera.
+        const event: SoleraEvent =
+          incoming.type === 'error' && incoming.code === 'auth_failed' && account
+            ? { ...incoming, account }
+            : incoming
         // Les fragments de flux sont écrits par lots ; tout le reste l'est sur-le-champ.
         this.log.appendStreamed(conversationId, event, raw, adapter.rawFormat)
         void this.notifyIfAway(conversationId, event)

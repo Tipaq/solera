@@ -1067,6 +1067,12 @@ export const soleraEventSchema = z.discriminatedUnion('type', [
     code: z.string(),
     message: z.string(),
     recoverable: z.boolean(),
+    /**
+     * Le compte qui portait la session, sur un refus d'authentification
+     * (`auth_failed`) : l'identifiant d'un compte Claude de Solera et son libellé au
+     * moment du refus, ou `id: null` pour la connexion du terminal. Absent ailleurs.
+     */
+    account: z.object({ id: z.string().nullable(), label: z.string().nullable() }).optional(),
   }),
 ])
 

@@ -4,10 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
+  agentConfigSchema,
   agentKindSchema,
   cardBranchName,
   type AgentConfig,
   type AgentKind,
+  type ClaudeAccount,
+  type ConversationDto,
 } from '@solera/protocol'
 import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
@@ -86,6 +89,36 @@ function useExtraAccounts(): Record<AgentKind, number> {
   }
 }
 
+/** Le compte Claude du fil le plus récemment actif qui en désigne un. */
+function lastUsedClaudeAccount(conversations: ConversationDto[] | undefined): string | null {
+  let latest: { at: number; account: string } | null = null
+  for (const conversation of conversations ?? []) {
+    if (conversation.agent !== 'claude') continue
+    const parsed = agentConfigSchema.safeParse(conversation.config)
+    const account = parsed.success && parsed.data.agent === 'claude' ? parsed.data.account : null
+    if (account && (!latest || conversation.updatedAt > latest.at)) latest = { at: conversation.updatedAt, account }
+  }
+  return latest?.account ?? null
+}
+
+/**
+ * Une conversation Claude part sur un compte de Solera dès qu'il en existe un : le
+ * dernier utilisé s'il existe encore, sinon le premier. La connexion du terminal n'est
+ * plus un choix par défaut — elle tombait sans prévenir, et le premier message échouait
+ * alors qu'un compte qui marche était là. Un compte hérité qui existe encore l'emporte :
+ * il a été choisi dans les réglages.
+ */
+function withClaudeAccount(
+  config: AgentConfig,
+  accounts: ClaudeAccount[] | undefined,
+  lastUsed: string | null,
+): AgentConfig {
+  if (config.agent !== 'claude' || !accounts?.length) return config
+  if (config.account && accounts.some((account) => account.id === config.account)) return config
+  const account = accounts.find((entry) => entry.id === lastUsed) ?? accounts[0]!
+  return { ...config, account: account.id }
+}
+
 type GuidedAgent = 'claude' | 'codex' | 'grok'
 const isGuided = (kind: AgentKind): kind is GuidedAgent => GUIDED_LOGIN.has(kind)
 
@@ -106,7 +139,10 @@ function useDraftSignIn(unusable: (kind: AgentKind) => boolean) {
   /** Vrai une fois la connexion relue après l'installation : `unusable` la voit alors. */
   const [authRead, setAuthRead] = useState(false)
 
-  const guided = (kind: AgentKind): kind is GuidedAgent => isGuided(kind) && me?.isAdmin === true
+  // Claude se connecte par un compte de Solera, dans ses réglages : la connexion du
+  // terminal ne se propose plus d'ici.
+  const guided = (kind: AgentKind): kind is GuidedAgent =>
+    isGuided(kind) && kind !== 'claude' && me?.isAdmin === true
   const signIn = (kind: AgentKind) => {
     if (guided(kind)) setSigningIn(kind)
     else openSettings('agents', kind)
@@ -197,6 +233,7 @@ export function DraftConversationPage() {
   const blocked = unavailableReason(selectedAvailability)
     ?? (unusable(agent) ? t('draft.agent.loggedOut', { label: AGENT_LABELS[agent] }) : null)
   const selectedVersionNotice = versionMismatch(selectedAvailability)
+  const claudeWithoutAccount = agent === 'claude' && selectedAvailability?.installed !== false && unusable('claude')
 
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const { data: projects } = useProjects()
@@ -244,7 +281,12 @@ export function DraftConversationPage() {
   const { data: userSettings } = useUserSettings()
   // Mémoïsé : une configuration neuve à chaque rendu changerait celle du composer, et
   // casserait sa mémoïsation.
-  const defaults = useMemo(() => inheritedConfigFor(agent, userSettings, project), [agent, userSettings, project])
+  const { data: claudeAccounts } = useClaudeAccounts()
+  const lastClaudeAccount = useMemo(() => lastUsedClaudeAccount(conversations), [conversations])
+  const defaults = useMemo(
+    () => withClaudeAccount(inheritedConfigFor(agent, userSettings, project), claudeAccounts?.accounts, lastClaudeAccount),
+    [agent, userSettings, project, claudeAccounts, lastClaudeAccount],
+  )
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -424,10 +466,11 @@ export function DraftConversationPage() {
           {/* Le cas où aucun CLI n'est prêt, et celui d'un `?agent=` qui en désigne un
               absent ou sans connexion : les cartes seules laisseraient l'écran sans
               explication de ce que la barre de saisie refuse. */}
-          {blocked ? <Banner>{blocked}</Banner> : null}
+          {blocked && !claudeWithoutAccount ? <Banner>{blocked}</Banner> : null}
 
-          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. */}
-          {blocked === null ? (
+          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. Claude
+              sans aucun compte la pose aussi : c'est là que se connecte le premier. */}
+          {blocked === null || claudeWithoutAccount ? (
             <DraftAccount
               config={effective}
               onChange={setConfig}

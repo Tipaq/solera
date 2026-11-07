@@ -23,7 +23,8 @@ const probed: UsagePeekDto[] = [
 
 /**
  * Le compte d'une conversation pas encore créée. Hors serveur, le catalogue n'a pas de
- * compte supplémentaire : il montre la ligne seule, celle de la connexion du CLI.
+ * compte de Solera : il montre la ligne seule, celle de la connexion du terminal, ou
+ * l'appel à connecter un compte quand elle manque aussi.
  */
 const meta = {
   title: "Composants d'application/Brouillon · compte",
@@ -41,7 +42,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-export const Connexion: Story = { name: 'Connexion du CLI, sonde récente' }
+export const Connexion: Story = { name: 'Connexion du terminal, sonde récente' }
 
 export const EnTour: Story = {
   name: 'Sans sonde, signal de tour',
@@ -51,6 +52,6 @@ export const EnTour: Story = {
 }
 
 export const NonConnecte: Story = {
-  name: 'Non connecté',
+  name: 'Aucun compte, terminal déconnecté',
   args: { auth: { agent: 'claude', account: null, status: 'logged_out', method: null, plan: null, identity: null }, peek: [] },
 }

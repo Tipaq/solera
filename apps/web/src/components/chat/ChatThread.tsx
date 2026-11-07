@@ -4,6 +4,7 @@ import type { ChatRow } from '../../lib/tool-rows'
 import { translate, translateError, useTranslate } from '../../lib/i18n'
 import { Banner, cx } from '@solera/ui'
 import { ElicitationPrompt } from './ElicitationPrompt'
+import { AuthFailedBanner } from './AuthFailedBanner'
 import { CardDraftPrompt } from './CardDraftPrompt'
 import { CardFilingPrompt } from './CardFilingPrompt'
 import { DiffCard } from './DiffCard'
@@ -250,6 +251,17 @@ export const ChatThread = memo(function ChatThread({
               />
             )
           case 'error': {
+            if (item.code === 'auth_failed' && item.account) {
+              return (
+                <AuthFailedBanner
+                  key={item.id}
+                  conversationId={conversationId}
+                  account={item.account}
+                  message={item.message}
+                  canDecide={canDecide}
+                />
+              )
+            }
             // Le code seul est traduit : le message du CLI porte le détail que le
             // catalogue ne peut pas connaître, comme l'heure de retour d'un quota.
             // Un code sans clé n'a pas de titre, et le message se suffit.

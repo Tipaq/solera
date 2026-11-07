@@ -58,7 +58,7 @@ export function ClaudeAccountsSettingsPage({ bare = false }: { bare?: boolean } 
   const accounts = data?.accounts ?? []
   const addButton = (
     <Button size="sm" icon={<Plus size={14} />} disabled={adding} onClick={() => setAdding(true)}>
-      {t('claudeAccounts.create.open')}
+      {t(accounts.length > 0 ? 'claudeAccounts.create.another' : 'claudeAccounts.create.open')}
     </Button>
   )
 
