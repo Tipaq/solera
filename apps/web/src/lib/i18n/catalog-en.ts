@@ -765,6 +765,7 @@ export const en = {
   'vault.page.stale': 'The note changed on disk',
   'vault.page.unconfigured.title': 'No vault configured',
   'vault.page.unconfigured.description': 'The Knowledge place works from a folder of notes, versioned with git. It is set once, for the whole instance.',
+  'vault.page.unconfigured.askAdmin': 'The Knowledge place works from a folder of notes, versioned with git. An administrator sets it, once, for the whole instance.',
   'vault.page.unconfigured.action': 'Configure the vault',
   'vault.page.missing.title': 'This folder is not on disk',
   'vault.page.empty.title': 'The vault is empty',

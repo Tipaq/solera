@@ -576,9 +576,9 @@ try {
   assert.equal((await other.request.get(`${base}/api/conversations/${hero.id}/file/download?path=package.json`)).status(), 404)
   const otherPage = await other.newPage()
   otherPage.on('pageerror', (error) => errors.push(error.message))
-  await openSettings(otherPage, 'compte')
+  await openSettings(otherPage, 'profil')
   await otherPage.getByRole('heading', { name: 'Toi', exact: true }).waitFor()
-  assert.equal(await otherPage.getByRole('button', { name: 'Comptes', exact: true }).count(), 0,
+  assert.equal(await otherPage.getByRole('button', { name: /^Utilisateurs/ }).count(), 0,
     'Une section réservée aux administrateurs ne figure pas dans la liste')
   await otherPage.getByRole('button', { name: 'Fermer les réglages', exact: true }).first().click()
   await otherPage.evaluate(({ id, path }) => {

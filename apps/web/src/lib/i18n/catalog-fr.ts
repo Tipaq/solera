@@ -756,6 +756,7 @@ export const fr: Catalog = {
   'vault.page.stale': 'La note a changé sur le disque',
   'vault.page.unconfigured.title': 'Aucun vault réglé',
   'vault.page.unconfigured.description': 'Le lieu Savoir travaille avec un dossier de notes, versionné par git. Il se règle une fois, pour toute l’instance.',
+  'vault.page.unconfigured.askAdmin': 'Le lieu Savoir travaille avec un dossier de notes, versionné par git. Un administrateur le règle, une fois, pour toute l’instance.',
   'vault.page.unconfigured.action': 'Régler le vault',
   'vault.page.missing.title': 'Ce dossier n’est pas sur le disque',
   'vault.page.empty.title': 'Le vault est vide',

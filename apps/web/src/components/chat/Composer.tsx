@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { openSettings } from '../../lib/settings-dialog'
-import { useCurrentUser } from '../../lib/session'
+import { useCanOpenSection } from '../settings/sections'
 import { ArrowUp, Clock, Loader2, Mic, Square } from 'lucide-react'
 import {
   memo,
@@ -538,11 +538,10 @@ export const Composer = memo(function Composer({
     onError: setError,
   })
   // Le micro reste visible quand rien n'est configuré : un bouton absent ne dit pas
-  // que la fonction existe, la dialog explique et mène aux réglages. Aux réglages de
-  // l'administrateur seulement : la section Dictée lui est réservée, et l'y envoyer
-  // ouvrirait les réglages sur une page qu'il ne voit pas.
+  // que la fonction existe, la dialog explique et mène aux réglages — quand ce compte
+  // voit la section Dictée, réservée aux administrateurs.
   const [sttNotice, setSttNotice] = useState(false)
-  const canConfigureStt = useCurrentUser().data?.isAdmin === true
+  const canConfigureStt = useCanOpenSection('dictee')
 
   // Le dépôt vise le fil, pas le champ : c'est ici que les fichiers atterrissent, avec
   // les mêmes bornes et les mêmes erreurs qu'un collage ou qu'un choix au sélecteur.
