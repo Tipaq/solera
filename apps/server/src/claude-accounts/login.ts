@@ -159,8 +159,19 @@ function diagnostic(output: string): string {
     .slice(-DIAGNOSTIC_TAIL)
 }
 
+/** Le temps qu'a la jauge, enchaînée après le jeton, pour confirmer son adresse. */
+const PENDING_TOKEN_MS = LOGIN_TIMEOUT_MS
+
 export class ClaudeLoginService {
   private readonly logins = new Map<string, Login>()
+  /**
+   * Les jetons d'une reconnexion qui attendent leur adresse. Le CLI ne la dit pas sous
+   * un jeton : ranger tout de suite celui d'un compte qui en a une remplacerait peut-être
+   * son jeton par celui d'un autre. La jauge, enchaînée juste après, le range si elle mène
+   * à la même adresse, et le jette sinon. Sans jauge menée à terme, le compte garde
+   * l'ancien.
+   */
+  private readonly pendingTokens = new Map<string, { token: string; expires: number }>()
 
   /**
    * `cliAuth` relit la connexion propre du CLI sans cache (`claude auth status`) : elle
@@ -467,9 +478,9 @@ export class ClaudeLoginService {
    */
   private keep(login: Login, token: string, email: string | null): ClaudeAccount | string {
     const { ownerId } = login
-    if (this.identify && !email) {
-      return "Le CLI a rendu un jeton, mais claude auth status ne dit pas à quel compte il appartient. Rien n'a été enregistré : ferme et recommence."
-    }
+    // Sans adresse, le jeton est rangé quand même : `auth status` n'en dit aucune sous un
+    // jeton de `setup-token` (2.1.302 ne la donne qu'à une connexion claude.ai). C'est la
+    // jauge, enchaînée juste après, qui la lit et la pose sur le compte.
     if (login.accountId) {
       const account = this.store.find(ownerId, login.accountId)
       if (!account) return 'Ce compte a été supprimé pendant la connexion.'
@@ -479,6 +490,10 @@ export class ClaudeLoginService {
       const other = email ? this.store.findByEmail(ownerId, email) : undefined
       if (other && other.id !== account.id) {
         return `${email} est déjà le compte « ${other.label} ». Reconnecte plutôt celui-là, ou supprime l'un des deux.`
+      }
+      if (!email && account.email) {
+        this.pendingTokens.set(account.id, { token, expires: Date.now() + PENDING_TOKEN_MS })
+        return account
       }
       this.store.update(ownerId, account.id, { token, ...(email ? { email } : {}) })
       return this.store.find(ownerId, account.id)!
@@ -511,6 +526,8 @@ export class ClaudeLoginService {
       void (async () => {
         try {
           const account = this.store.find(login.ownerId, accountId)
+          const pending = this.pendingTokens.get(accountId)
+          this.pendingTokens.delete(accountId)
           const email = this.identify ? await this.identify({ configDir: login.configDir }) : null
           if (this.identify && !email) {
             throw new Error(
@@ -520,12 +537,16 @@ export class ClaudeLoginService {
           // La jauge d'une autre adresse montrerait la consommation d'un autre compte.
           if (account?.email && email && email !== account.email) {
             throw new Error(
-              `Cette autorisation connecte ${email}, pas ${account.email} : la consommation affichée serait celle d'un autre compte. Rien n'a été enregistré ; recommence en choisissant ${account.email} sur la page d'autorisation.`,
+              `Cette autorisation connecte ${email}, pas ${account.email} : la consommation affichée serait celle d'un autre compte. Rien n'a été enregistré, le jeton du compte non plus ; recommence en choisissant ${account.email} sur la page d'autorisation.`,
             )
           }
           this.gauges!.adopt(accountId, login.configDir)
-          // Un compte d'avant les adresses dont le jeton ne répondait plus la retrouve ici.
-          if (account && !account.email && email && !this.store.findByEmail(login.ownerId, email)) {
+          // La jauge confirme l'adresse : le jeton de la reconnexion peut remplacer l'ancien.
+          if (pending && pending.expires > Date.now()) this.store.update(login.ownerId, accountId, { token: pending.token })
+          // Le jeton ne dit pas son adresse : c'est ici que le compte la reçoit. Une adresse
+          // déjà prise par un autre compte est posée quand même : les deux sont alors
+          // signalés en doublon, et c'est à l'utilisateur de choisir lequel garder.
+          if (account && !account.email && email) {
             this.store.update(login.ownerId, accountId, { email })
           }
           login.status = { ...login.status, state: 'done', error: null, account: this.store.find(login.ownerId, accountId) ?? null }

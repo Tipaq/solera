@@ -25,9 +25,11 @@ import { requireUser } from '../require-user.js'
  * Aucune route ne rend un secret. Il se remplace entier quand il expire, au bout d'un
  * an pour un jeton, ce qui est le geste courant.
  *
- * Un abonnement est nommé par son adresse, que `identify` lit sous le jeton : un jeton
- * collé d'une adresse déjà connue est refusé, et un jeton qui remplace celui d'un compte
- * doit mener à la même adresse. Une clé API n'a pas d'adresse, son alias la nomme.
+ * Un abonnement est nommé par son adresse. Le CLI ne la dit pas sous un jeton (voir
+ * `identity.ts`) : un jeton collé est donc rangé sans elle, et c'est la jauge qui la lui
+ * donnera. Si un CLI la disait, un jeton d'une adresse déjà connue serait refusé, et un
+ * jeton qui remplace celui d'un compte devrait mener à la même. Une clé API n'a pas
+ * d'adresse, son alias la nomme.
  */
 export function registerClaudeAccountRoutes(
   app: FastifyInstance,
@@ -38,14 +40,10 @@ export function registerClaudeAccountRoutes(
   const unknownLogin = () => notFound('claude_login_not_found', 'Unknown sign-in.')
   const unknownAccount = () => notFound('claude_account_not_found', 'Unknown Claude account.')
 
-  /** L'adresse d'un jeton collé ; une clé API n'en a pas. */
+  /** L'adresse d'un jeton collé, quand le CLI la dit ; une clé API n'en a pas. */
   const emailOf = async (token: string): Promise<string | null> => {
     if (claudeSecretKind(token) !== 'oauth' || !identify) return null
-    const email = await identify({ token })
-    if (!email) {
-      throw new HttpError(400, 'claude_account_unidentified', 'Claude could not tell which account this token belongs to. It may be revoked.')
-    }
-    return email
+    return identify({ token })
   }
 
   app.get('/api/claude-accounts', async (request): Promise<ClaudeAccountListDto> => {

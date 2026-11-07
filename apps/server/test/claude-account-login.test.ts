@@ -51,7 +51,13 @@ function withEnv(t: TestContext, name: string, value: string): void {
   })
 }
 
-async function harness(t: TestContext) {
+/**
+ * Le vrai CLI (2.1.302) : sous le jeton de `setup-token`, `auth status` ne dit aucune
+ * adresse ; seule la connexion claude.ai de la jauge la donne.
+ */
+const identifyLikeTheCli: ClaudeIdentify = async (source) => ('token' in source ? null : identify(source))
+
+async function harness(t: TestContext, identifyAs: ClaudeIdentify = identify) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-claude-account-login-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
@@ -63,7 +69,7 @@ async function harness(t: TestContext) {
   chmodSync(binary, 0o700)
   const gauges = new ClaudeAccountGauges(join(dir, 'gauges'))
   const store = new ClaudeAccountStore(db, randomBytes(32), gauges)
-  const login = new ClaudeLoginService(store, async () => binary, gauges, null, identify)
+  const login = new ClaudeLoginService(store, async () => binary, gauges, null, identifyAs)
   t.after(() => login.closeAll())
 
   /** Une connexion menée jusqu'au bout avec le bon code : rend son état final. */
@@ -160,4 +166,73 @@ test('démarrage : une jauge d’une autre adresse est retirée, une jauge muett
   assert.equal(store.find('tim', right.id)?.gauge, true)
   assert.equal(store.find('tim', wrong.id)?.gauge, false, 'À refaire depuis l’écran')
   assert.equal(store.find('tim', mute.id)?.gauge, true, 'Rien ne dit qu’elle est fausse')
+})
+
+test('jeton sans adresse, comme sous le vrai CLI : rangé quand même, la jauge donne l’adresse', async (t) => {
+  const { store, login, run } = await harness(t, identifyLikeTheCli)
+  withEnv(t, 'FIXTURE_CLAUDE_TOKEN', TOKEN)
+
+  // Un compte neuf : le jeton est rangé sans adresse, puis la jauge la lui pose.
+  const fresh = await run(login.start('tim', 'Boulot'))
+  assert.equal(fresh.state, 'done', fresh.error ?? '')
+  assert.equal(fresh.account?.email, null)
+  assert.equal(store.resolveToken('tim', fresh.account!.id)?.token, TOKEN)
+  withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'boulot@exemple.fr')
+  const gauge = await run(login.startGauge('tim', fresh.account!.id))
+  assert.equal(gauge.state, 'done', gauge.error ?? '')
+  assert.equal(store.find('tim', fresh.account!.id)?.label, 'Boulot · boulot@exemple.fr')
+
+  // Un compte d'avant les adresses se reconnecte : le jeton est remplacé, plus de refus.
+  const old = store.create('tim', { email: null, alias: 'Perso' }, 'sk-ant-oat01-' + 'y'.repeat(80))
+  process.env.FIXTURE_CLAUDE_TOKEN = OTHER_TOKEN
+  const revived = await run(login.start('tim', null, old.id))
+  assert.equal(revived.state, 'done', revived.error ?? '')
+  assert.equal(store.resolveToken('tim', old.id)?.token, OTHER_TOKEN)
+  process.env.FIXTURE_CLAUDE_EMAIL = 'perso@exemple.fr'
+  assert.equal((await run(login.startGauge('tim', old.id))).state, 'done')
+  assert.equal(store.find('tim', old.id)?.label, 'Perso · perso@exemple.fr')
+
+  // Une jauge qui révèle une adresse déjà prise : posée quand même, les deux signalés.
+  const twin = store.create('tim', { email: null, alias: 'Boulot bis' }, TOKEN)
+  process.env.FIXTURE_CLAUDE_EMAIL = 'boulot@exemple.fr'
+  assert.equal((await run(login.startGauge('tim', twin.id))).state, 'done')
+  assert.equal(store.find('tim', twin.id)?.duplicate, true)
+  assert.equal(store.find('tim', fresh.account!.id)?.duplicate, true)
+})
+
+test('démarrage : un compte sans adresse la retrouve par sa jauge quand le jeton se tait', async (t) => {
+  const { backfillClaudeEmails } = await import('../src/claude-accounts/identity.js')
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const { store } = await harness(t, identifyLikeTheCli)
+  const withGauge = store.create('tim', { email: null, alias: 'Tim perso' }, TOKEN)
+  const without = store.create('tim', { email: null, alias: 'Sans jauge' }, OTHER_TOKEN)
+  mkdirSync(store.gauges!.path(withGauge.id), { recursive: true })
+  writeFileSync(join(store.gauges!.path(withGauge.id), '.credentials.json'), JSON.stringify({ email: 'perso@exemple.fr' }))
+
+  assert.equal(await backfillClaudeEmails(store, identifyLikeTheCli), 1)
+  assert.equal(store.find('tim', withGauge.id)?.label, 'Tim perso · perso@exemple.fr')
+  assert.equal(store.find('tim', without.id)?.email, null, 'Sans jauge, il reste à reconnecter')
+})
+
+test('reconnexion sous le vrai CLI : le jeton attend que la jauge confirme l’adresse', async (t) => {
+  const { store, login, run } = await harness(t, identifyLikeTheCli)
+  const OLD = 'sk-ant-oat01-' + 'z'.repeat(80)
+  const account = store.create('tim', { email: 'boulot@exemple.fr', alias: null }, OLD)
+
+  // Le code d'un autre compte : le jeton n'est pas rangé, la jauge le refuse et le jette.
+  withEnv(t, 'FIXTURE_CLAUDE_TOKEN', OTHER_TOKEN)
+  assert.equal((await run(login.start('tim', null, account.id))).state, 'done')
+  assert.equal(store.resolveToken('tim', account.id)?.token, OLD, 'Rien de remplacé avant la jauge')
+  withEnv(t, 'FIXTURE_CLAUDE_EMAIL', 'perso@exemple.fr')
+  const wrong = await run(login.startGauge('tim', account.id))
+  assert.equal(wrong.state, 'failed')
+  assert.match(wrong.error ?? '', /perso@exemple\.fr, pas boulot@exemple\.fr/)
+  assert.equal(store.resolveToken('tim', account.id)?.token, OLD)
+
+  // Le bon compte : la jauge confirme, le jeton remplace l'ancien.
+  process.env.FIXTURE_CLAUDE_TOKEN = TOKEN
+  assert.equal((await run(login.start('tim', null, account.id))).state, 'done')
+  process.env.FIXTURE_CLAUDE_EMAIL = 'boulot@exemple.fr'
+  assert.equal((await run(login.startGauge('tim', account.id))).state, 'done')
+  assert.equal(store.resolveToken('tim', account.id)?.token, TOKEN)
 })

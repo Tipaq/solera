@@ -49,13 +49,14 @@ async function ready(url, child) {
   throw new Error(`Server did not start: ${child.diagnostics}`)
 }
 
-// Faux claude : seul `auth status` répond, et rend l'adresse sous un jeton. Le terminal
-// n'est pas connecté ; la connexion guidée, elle, n'imprime rien.
+// Faux claude : seul `auth status` répond. Comme le vrai (2.1.302), il se dit connecté
+// sous un jeton sans en donner l'adresse. Le terminal n'est pas connecté ; la connexion
+// guidée, elle, n'imprime rien.
 const FAKE_CLI = `#!/bin/bash
 if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
 if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
   if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-    printf '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty","email":"boulot@example.com"}\\n'; exit 0
+    printf '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}\\n'; exit 0
   fi
   echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'; exit 1
 fi
@@ -99,9 +100,10 @@ try {
   await page.goto(`${base}/settings/comptes-claude`)
   await page.getByText('Aucun compte Claude').waitFor()
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie. Sans alias, le
-  // jeton nomme le compte par son adresse.
+  // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie. Le jeton ne dit
+  // pas son adresse : l'alias nomme le compte en attendant que la jauge la lui donne.
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
+  await page.getByLabel('Alias (facultatif)').fill('Boulot')
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-pas-le-bon')
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText(/sk-ant-oat01/).first().waitFor()
@@ -110,14 +112,7 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
   await page.getByText('Abonnement', { exact: true }).waitFor()
-  await page.getByText('boulot@example.com', { exact: true }).waitFor()
-  // Le même jeton une seconde fois : la même adresse, refusée.
-  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
-  await page.getByRole('radio', { name: /Coller un jeton/ }).click()
-  await page.getByLabel('Jeton ou clé API').fill(TOKEN)
-  await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
-  await page.getByText(/boulot@example.com est déjà connecté/).waitFor()
-  await page.getByRole('button', { name: 'Annuler' }).click()
+  await page.getByText('Boulot', { exact: true }).waitFor()
   // Un abonnement sans jauge le dit, et propose de l'afficher ; le CLI n'imprime rien ici,
   // l'écran le dit, et s'annule.
   await page.getByText('Consommation non affichée').waitFor()
@@ -135,14 +130,14 @@ try {
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Clé API', { exact: true }).waitFor()
   const listed = await (await context.request.get(`${base}/api/claude-accounts`)).json()
-  assert.deepEqual(listed.accounts.map((entry) => [entry.label, entry.kind]), [['boulot@example.com', 'oauth'], ['Boîte', 'apiKey']])
+  assert.deepEqual(listed.accounts.map((entry) => [entry.label, entry.kind]), [['Boulot', 'oauth'], ['Boîte', 'apiKey']])
   assert.ok(listed.accounts.every((entry) => !('token' in entry)))
   await page.screenshot({ path: '/tmp/solera-claude-accounts-desktop.png' })
   const keyed = listed.accounts[1].id
   await context.request.delete(`${base}/api/claude-accounts/${keyed}`)
   // Supprimé par l'API, hors de la page : elle ne le sait qu'en relisant.
   await page.goto(`${base}/settings/comptes-claude`)
-  await page.getByText('boulot@example.com', { exact: true }).waitFor()
+  await page.getByText('Boulot', { exact: true }).waitFor()
 
   // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
@@ -152,19 +147,18 @@ try {
   await page.getByRole('button', { name: 'Annuler' }).click()
   await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().waitFor()
 
-  // Un alias, sans toucher au jeton : il s'affiche devant l'adresse.
+  // Un autre alias, sans toucher au jeton.
   await page.getByRole('button', { name: 'Modifier' }).click()
   await page.getByLabel('Alias (facultatif)').fill('Travail')
   await page.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await page.getByText('Travail', { exact: true }).waitFor()
-  await page.getByText('boulot@example.com', { exact: true }).waitFor()
 
   // Le sélecteur de compte dans les défauts du CLI, et sa persistance.
   await page.goto(`${base}/settings/cli`)
   const account = page.getByRole('combobox', { name: 'Compte' })
   await account.waitFor()
   await account.click()
-  const option = page.getByRole('option', { name: 'Travail · boulot@example.com' })
+  const option = page.getByRole('option', { name: 'Travail' })
   await option.waitFor()
   assert.equal(await page.getByRole('option', { name: /Connexion du terminal/ }).count(), 1)
   await option.click()
@@ -173,7 +167,7 @@ try {
   assert.equal(settings.agentDefaults.claude.account, listed.accounts[0].id)
   await page.goto(`${base}/settings/cli`)
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
-  assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail · boulot@example.com')
+  assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Travail')
 
   // Un compte supprimé reste désigné : le sélecteur le dit au lieu de se vider.
   const removed = await context.request.delete(`${base}/api/claude-accounts/${listed.accounts[0].id}`)
@@ -197,13 +191,12 @@ try {
   const phone = await mobile.newPage()
   await phone.goto(`${base}/settings/comptes-claude`)
   await phone.getByText('Perso', { exact: true }).waitFor()
-  await phone.getByText('boulot@example.com', { exact: true }).waitFor()
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
   await phone.screenshot({ path: '/tmp/solera-claude-accounts-mobile.png' })
   await mobile.close()
 
   assert.deepEqual(errors, [])
-  console.log('OK : ajout nommé par l’adresse, adresse en double refusée, alias, jeton jamais rendu, sélecteur de compte persistant, compte supprimé signalé, mobile.')
+  console.log('OK : ajout d’un jeton sans adresse, alias, jeton jamais rendu, sélecteur de compte persistant, compte supprimé signalé, mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

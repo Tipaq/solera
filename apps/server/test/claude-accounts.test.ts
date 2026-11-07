@@ -89,7 +89,12 @@ test('comptes Claude : nommés par leur adresse, jeton jamais rendu, résolu ave
   const again = await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Encore', token: TOKEN } })
   assert.equal(again.statusCode, 409)
   assert.equal(again.json<{ error: { code: string } }>().error.code, 'claude_account_email_taken')
-  assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: DEAD_TOKEN } })).statusCode, 400, 'Un jeton sans adresse est refusé')
+  // Un jeton dont le CLI ne dit pas l'adresse (le cas du vrai, sous un jeton) est rangé
+  // sans elle : c'est la jauge qui la donnera.
+  const silent = await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Sans adresse', token: DEAD_TOKEN } })
+  assert.equal(silent.statusCode, 201, 'Un jeton sans adresse est rangé')
+  assert.equal(silent.json<ClaudeAccount>().email, null)
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/claude-accounts/${silent.json<ClaudeAccount>().id}` })).statusCode, 204)
   assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Perso', token: 'sk-ant-api03-nope' } })).statusCode, 400, 'Un secret tronqué est refusé')
   assert.equal((await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { token: 'sk-ant-api03-' + 'k'.repeat(40) } })).statusCode, 400, 'Une clé API sans adresse exige un nom')
   const keyed = (await app.inject({ method: 'POST', url: '/api/claude-accounts', payload: { alias: 'Boîte', token: 'sk-ant-api03-' + 'k'.repeat(40) } })).json<ClaudeAccount>()

@@ -305,7 +305,10 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
   const [token, setToken] = useState('')
 
   const subscription = account.kind === 'oauth'
-  /** Un abonnement sans adresse : d'avant les adresses, et son jeton ne répond plus. */
+  /**
+   * Un abonnement sans adresse. Le CLI ne la dit pas sous un jeton, seulement sous la
+   * connexion de la consommation : c'est en l'affichant que le compte la reçoit.
+   */
   const lost = subscription && account.email === null
   const busy = login !== null || startGauge.isPending || reconnect.isPending
 
@@ -384,7 +387,7 @@ function AccountCard({ account }: { account: ClaudeAccount }) {
               })}
             </p>
             {/* La consommation d'un abonnement : sans elle, le choix du compte se fait à l'aveugle. */}
-            {subscription && !lost ? (
+            {subscription ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-meta">
                 <span className={account.gauge ? 'text-ink-soft' : 'text-ink-faint'}>
                   <Gauge size={12} className="mr-1 inline align-[-2px]" />
