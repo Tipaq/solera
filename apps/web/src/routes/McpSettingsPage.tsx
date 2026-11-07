@@ -21,7 +21,7 @@ export function McpSettingsPage() {
           composer montre aussi et où ce renvoi n'aurait rien à faire. */}
       <p className="text-sm text-ink-faint">
         {t('mcp.ownServer')}{' '}
-        <button type="button" onClick={() => openSettings('api')} className="text-accent hover:underline">
+        <button type="button" onClick={() => openSettings('acces')} className="text-accent hover:underline">
           {t('mcp.ownServer.link')}
         </button>
       </p>

@@ -1,20 +1,17 @@
 import {
-  Archive,
   Bell,
   BookOpen,
   Bot,
   Cpu,
   FileText,
-  GitBranch,
   Info,
   KeyRound,
   Library,
+  LockKeyhole,
   Mic,
   Palette,
-  PanelLeft,
   Plug,
   ShieldCheck,
-  Terminal,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -30,16 +27,18 @@ import type { SettingsSectionId } from '../../lib/settings-dialog'
  *
  * Seize sections à plat formaient une liste qu'on relisait en entier pour en retrouver
  * une. Trois groupes suffisent à savoir où chercher, et ils répondent chacun à une
- * question différente : *Toi* ce qui ne regarde que ce compte, *Les agents* ce avec
- * quoi les CLI travaillent, *L'instance* ce qui vaut pour la machine et tous ses
- * comptes.
+ * question différente : *Toi* ce qui ne vaut que pour ce compte, *Les agents* ce avec
+ * quoi les CLI travaillent, *Le serveur* ce qui vaut pour la machine et tous ses
+ * comptes. Le critère est « pour qui ça vaut », plus « qui a le droit » : l'accès git et
+ * les jetons d'API sont personnels et vont sous Toi, même rangés jadis avec
+ * l'administration (#130).
  *
  * La liste vit ici plutôt que dans la modale : la palette cherche aussi dedans, et
  * deux listes de sections finiraient par ne plus dire la même chose.
  */
-export type SettingsGroup = 'you' | 'agents' | 'instance'
+export type SettingsGroup = 'you' | 'agents' | 'server'
 
-export const SETTINGS_GROUPS = ['you', 'agents', 'instance'] as const
+export const SETTINGS_GROUPS = ['you', 'agents', 'server'] as const
 
 export interface SettingsSection {
   id: SettingsSectionId
@@ -56,8 +55,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   {
     id: 'profil',
     group: 'you',
-    labelKey: 'settings.section.account',
-    descriptionKey: 'settings.section.account.description',
+    labelKey: 'settings.section.profile',
+    descriptionKey: 'settings.section.profile.description',
     icon: <UserRound size={16} />,
     requires: 'passwordAuth',
   },
@@ -69,13 +68,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <Palette size={16} />,
   },
   {
-    id: 'affichage',
-    group: 'you',
-    labelKey: 'settings.section.display',
-    descriptionKey: 'settings.section.display.description',
-    icon: <PanelLeft size={16} />,
-  },
-  {
     id: 'notifications',
     group: 'you',
     labelKey: 'settings.section.notifications',
@@ -84,11 +76,11 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     requires: 'webPush',
   },
   {
-    id: 'permissions',
-    group: 'agents',
-    labelKey: 'settings.section.permissions',
-    descriptionKey: 'settings.section.permissions.description',
-    icon: <ShieldCheck size={16} />,
+    id: 'acces',
+    group: 'you',
+    labelKey: 'settings.section.access',
+    descriptionKey: 'settings.section.access.description',
+    icon: <KeyRound size={16} />,
   },
   {
     id: 'agents',
@@ -96,6 +88,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     labelKey: 'settings.section.agents',
     descriptionKey: 'settings.section.agents.description',
     icon: <Bot size={16} />,
+  },
+  {
+    id: 'permissions',
+    group: 'agents',
+    labelKey: 'settings.section.permissions',
+    descriptionKey: 'settings.section.permissions.description',
+    icon: <ShieldCheck size={16} />,
   },
   {
     id: 'consignes',
@@ -119,25 +118,16 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: <Plug size={16} />,
   },
   {
-    id: 'utilisateurs',
-    group: 'instance',
-    labelKey: 'settings.section.accounts',
-    descriptionKey: 'settings.section.accounts.description',
-    icon: <Users size={16} />,
-    adminOnly: true,
-    requires: 'passwordAuth',
-  },
-  {
     id: 'sessions',
-    group: 'instance',
-    labelKey: 'settings.section.sessions',
-    descriptionKey: 'settings.section.sessions.description',
+    group: 'server',
+    labelKey: 'settings.section.activity',
+    descriptionKey: 'settings.section.activity.description',
     icon: <Cpu size={16} />,
     adminOnly: true,
   },
   {
     id: 'dictee',
-    group: 'instance',
+    group: 'server',
     labelKey: 'settings.section.stt',
     descriptionKey: 'settings.section.stt.description',
     icon: <Mic size={16} />,
@@ -145,45 +135,32 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: 'secrets',
-    group: 'instance',
+    group: 'server',
     labelKey: 'settings.section.secrets',
     descriptionKey: 'settings.section.secrets.description',
-    icon: <KeyRound size={16} />,
+    icon: <LockKeyhole size={16} />,
     adminOnly: true,
   },
   {
-    id: 'git',
-    group: 'instance',
-    labelKey: 'settings.section.git',
-    descriptionKey: 'settings.section.git.description',
-    icon: <GitBranch size={16} />,
-  },
-  {
-    id: 'api',
-    group: 'instance',
-    labelKey: 'settings.section.api',
-    descriptionKey: 'settings.section.api.description',
-    icon: <Terminal size={16} />,
-  },
-  {
     id: 'savoir',
-    group: 'instance',
+    group: 'server',
     labelKey: 'settings.section.vault',
     descriptionKey: 'settings.section.vault.description',
     icon: <Library size={16} />,
     adminOnly: true,
   },
   {
-    id: 'archivage',
-    group: 'instance',
-    labelKey: 'settings.section.archiving',
-    descriptionKey: 'settings.section.archiving.description',
-    icon: <Archive size={16} />,
+    id: 'utilisateurs',
+    group: 'server',
+    labelKey: 'settings.section.users',
+    descriptionKey: 'settings.section.users.description',
+    icon: <Users size={16} />,
     adminOnly: true,
+    requires: 'passwordAuth',
   },
   {
     id: 'a-propos',
-    group: 'instance',
+    group: 'server',
     labelKey: 'settings.section.about',
     descriptionKey: 'settings.section.about.description',
     icon: <Info size={16} />,

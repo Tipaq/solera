@@ -72,7 +72,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['phone', { width: 390, height: 844 }]]) {
     await page.setViewportSize(viewport)
-    await page.goto(`${base}/settings/api`)
+    await page.goto(`${base}/settings/acces`)
     await page.getByRole('button', { name: "Créer un jeton d'API", exact: true }).click()
     const permission = page.getByRole('checkbox', { name: /projects:write/ })
     assert.equal(await permission.isChecked(), false)
