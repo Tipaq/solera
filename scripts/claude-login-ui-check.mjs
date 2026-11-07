@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
 // Connexions guidées Claude menées jusqu'au succès : le jeton d'un abonnement, puis sa jauge.
+// Le terminal, lui, n'est pas connecté : sans compte, le brouillon le dit et mène à la
+// connexion d'un compte ; avec un compte, la nouvelle conversation part dessus.
 // Un faux CLI rejoue le dialogue de `setup-token` et d'`auth login` (sondé sur 2.1.296) et
 // accepte les codes qui commencent par GOOD. On compte les relectures de l'état : une
 // boucle d'invalidation y tournait à quarante requêtes par seconde (13 octobre 2026).
@@ -51,6 +53,10 @@ async function ready(url, child) {
 const FAKE_CLI = `#!/bin/bash
 # Faux claude : setup-token et auth login, le reste répond comme un CLI sans session.
 if [ "$1" = "--version" ]; then echo "2.1.296 (Claude Code)"; exit 0; fi
+# La connexion du terminal est absente : c'est le cas où un compte doit prendre le relais.
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  echo '{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}'; exit 1
+fi
 url="https://claude.com/cai/oauth/authorize?code=true&client_id=x&response_type=code&scope=user%3Ainference&state=S$RANDOM$RANDOM"
 if [ "$1" = "setup-token" ]; then
   printf 'Browser didn'"'"'t open? Use the url below to sign in\\r\\n\\033]8;id=1;%s\\007%s\\033]8;;\\007\\r\\nPaste code here if prompted > ' "$url" "\${url:0:60}"
@@ -116,8 +122,17 @@ try {
   /** Les relectures de la dernière seconde : une poignée, jamais des dizaines. */
   const recentPolls = () => polls.filter((at) => at > Date.now() - 1000).length
 
+  // Terminal déconnecté, aucun compte : le brouillon le dit au lieu d'échouer au premier message.
+  const projects = await (await context.request.get(`${base}/api/projects`)).json()
+  const project = projects.find((entry) => entry.name === 'Nimbus')
+  await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
+  await page.getByText('Aucun compte Claude connecté').waitFor()
+  await page.getByRole('button', { name: 'Connecter un compte Claude' }).waitFor()
+  assert.equal(await page.getByText(/Connexion du terminal/).count(), 0)
+  await page.getByText('Aucun compte Claude connecté').locator('xpath=ancestor::div[2]').screenshot({ path: '/tmp/solera-draft-no-account.png' })
+
   await page.goto(`${base}/settings/comptes-claude`)
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
   await page.getByLabel('Nom').fill('Perso')
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
   await page.getByText("Ouvrir la page d'autorisation").waitFor()
@@ -152,8 +167,27 @@ try {
 
   const accounts = await (await context.request.get(`${base}/api/claude-accounts`)).json()
   assert.deepEqual(accounts.accounts.map((entry) => [entry.label, entry.kind, entry.gauge?.email ?? null]), [['Perso', 'oauth', 'perso@example.com']])
+
+  // Terminal déconnecté, un compte prêt : la nouvelle conversation part sur le compte,
+  // et la connexion du terminal ne se propose pas à côté.
+  await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
+  await page.getByText('Perso', { exact: true }).waitFor()
+  assert.equal(await page.getByText(/Connexion du terminal|Aucun compte Claude/).count(), 0)
+  await page.getByText('Perso', { exact: true }).locator('xpath=ancestor::div[2]').screenshot({ path: '/tmp/solera-draft-on-account.png' })
+  let submitted
+  await page.route(`**/api/projects/${project.id}/conversations`, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue()
+    submitted = route.request().postDataJSON()
+    await route.fulfill({ status: 500, json: { error: { code: 'ui_test_stop', message: 'Stopped by the test' } } })
+  })
+  await page.getByPlaceholder('Écris ton message...').fill('Bonjour')
+  await page.getByRole('button', { name: 'Envoyer le message', exact: true }).click()
+  await page.getByRole('alert').first().waitFor()
+  assert.equal(submitted?.agent, 'claude')
+  assert.equal(submitted?.config?.account, accounts.accounts[0].id, 'La conversation part sur le compte, pas sur le terminal')
+  await page.unroute(`**/api/projects/${project.id}/conversations`)
   assert.deepEqual(errors, [])
-  console.log(`OK : jeton puis jauge menés au succès, refus repris, ${polls.length} relectures en tout, sans boucle.`)
+  console.log(`OK : brouillon sans compte explicite, jeton puis jauge menés au succès, refus repris, ${polls.length} relectures en tout, sans boucle, conversation partie sur le compte.`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

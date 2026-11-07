@@ -67,6 +67,8 @@ function AgentTab({ agent }: { agent: AgentKind }) {
   const own = auth.data ? (auth.data.entries.find((item) => item.agent === agent && item.account === null) ?? null) : undefined
   const accounts = EXTRA_ACCOUNTS[agent]
   // La connexion du CLI vaut pour toute l'instance : seul l'administrateur la mène d'ici.
+  // Claude se connecte par ses comptes de Solera : sa connexion du terminal n'a plus de
+  // carte, une ligne sous les comptes dit seulement qu'elle sert encore aux fils d'avant.
   const { data: me } = useCurrentUser()
   const guided = GUIDED_LOGIN.has(agent)
   const canSignIn = guided && me?.isAdmin === true
@@ -75,23 +77,30 @@ function AgentTab({ agent }: { agent: AgentKind }) {
   return (
     <div className="flex flex-col gap-6">
       <AgentInstallCard entry={entry} />
-      <AgentAuthCard
-        agent={agent}
-        entry={entry}
-        auth={own}
-        error={auth.isError || refresh.isError}
-        checking={refresh.isPending || auth.isFetching}
-        onCheck={() => refresh.mutate()}
-        onSignIn={canSignIn ? () => setSigningIn(true) : undefined}
-        signInReserved={guided && !canSignIn}
-      />
-      {canSignIn && agent !== 'opencode' ? (
+      {agent === 'claude' ? null : (
+        <AgentAuthCard
+          agent={agent}
+          entry={entry}
+          auth={own}
+          error={auth.isError || refresh.isError}
+          checking={refresh.isPending || auth.isFetching}
+          onCheck={() => refresh.mutate()}
+          onSignIn={canSignIn ? () => setSigningIn(true) : undefined}
+          signInReserved={guided && !canSignIn}
+        />
+      )}
+      {canSignIn && agent !== 'opencode' && agent !== 'claude' ? (
         <AgentLoginDialog agent={agent} entry={entry} open={signingIn} onClose={() => setSigningIn(false)} />
       ) : null}
       {accounts ? (
         <section className="flex flex-col gap-2">
-          <ListHeading title={t('settings.agents.accounts.title')} />
+          <ListHeading title={t(agent === 'claude' ? 'settings.agents.accounts.claude' : 'settings.agents.accounts.title')} />
           {accounts()}
+          {agent === 'claude' && own?.status === 'ready' ? (
+            <p className="text-xs text-ink-faint">
+              {t('settings.agents.terminal.note', { identity: own.identity ?? t('composer.account.cli') })}
+            </p>
+          ) : null}
         </section>
       ) : null}
       <AgentModelCard level={{ kind: 'account' }} agent={agent} />

@@ -81,15 +81,15 @@ try {
 
   // L'écran : vide, puis un compte ajouté, jamais de jeton à l'écran.
   await page.goto(`${base}/settings/comptes-claude`)
-  await page.getByText('Aucun compte supplémentaire').waitFor()
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByText('Aucun compte Claude').waitFor()
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
   await page.getByLabel('Nom').fill('Boulot')
   // Le flux guidé est proposé d'abord ; coller un secret est l'autre voie.
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-pas-le-bon')
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText(/sk-ant-oat01/).first().waitFor()
-  assert.equal(await page.getByText('Comptes enregistrés').count(), 1)
+  assert.equal(await page.getByText('Comptes connectés').count(), 1)
   await page.getByLabel('Jeton ou clé API').fill(TOKEN)
   await page.getByRole('button', { name: 'Enregistrer le compte' }).click()
   await page.getByText('Secret mis à jour le').waitFor()
@@ -104,7 +104,7 @@ try {
   await page.getByRole('button', { name: 'Activer la jauge' }).waitFor()
   assert.ok(!(await page.content()).includes(TOKEN), 'Le jeton ne revient jamais au navigateur')
   // Une clé API Console se reconnaît à son préfixe et s'affiche comme telle.
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
   await page.getByLabel('Nom').fill('Boîte')
   await page.getByRole('radio', { name: /Coller un jeton/ }).click()
   await page.getByLabel('Jeton ou clé API').fill('sk-ant-api03-' + 'k'.repeat(40))
@@ -121,12 +121,12 @@ try {
   await page.getByText('Boulot', { exact: true }).waitFor()
 
   // La connexion guidée sans CLI : l'écran dit que le CLI n'a rien imprimé, et on annule.
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().click()
   await page.getByLabel('Nom').fill('Guidé')
   await page.getByRole('button', { name: 'Lancer la connexion' }).click()
   await page.getByText("Ouvrir la page d'autorisation").or(page.getByRole('alert')).first().waitFor({ timeout: 40000 })
   await page.getByRole('button', { name: 'Annuler' }).click()
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().waitFor()
+  await page.getByRole('button', { name: /^Connecter un (autre )?compte$/ }).first().waitFor()
 
   // Renommer sans toucher au jeton.
   await page.getByRole('button', { name: 'Modifier' }).click()
@@ -141,7 +141,7 @@ try {
   await account.click()
   const option = page.getByRole('option', { name: 'Travail' })
   await option.waitFor()
-  assert.equal(await page.getByRole('option', { name: /Connexion du CLI/ }).count(), 1)
+  assert.equal(await page.getByRole('option', { name: /Connexion du terminal/ }).count(), 1)
   await option.click()
   await delay(500)
   const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
@@ -157,7 +157,7 @@ try {
   await page.getByRole('combobox', { name: 'Compte' }).waitFor()
   assert.equal(await page.getByRole('combobox', { name: 'Compte' }).textContent(), 'Compte supprimé')
   await page.getByRole('combobox', { name: 'Compte' }).click()
-  await page.getByRole('option', { name: /Connexion du CLI/ }).click()
+  await page.getByRole('option', { name: /Connexion du terminal/ }).click()
   await delay(500)
   assert.equal((await (await context.request.get(`${base}/api/me/settings`)).json()).agentDefaults.claude.account, null)
   await page.goto(`${base}/settings/cli`)

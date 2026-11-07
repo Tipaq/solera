@@ -1,6 +1,6 @@
 import { IdCard } from 'lucide-react'
 import type { AgentAuthDto, AgentConfig, UsagePeekDto } from '@solera/protocol'
-import { ChoiceList, cx } from '@solera/ui'
+import { Button, ChoiceList, cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import { openSettings } from '../../lib/settings-dialog'
 import { peekOf, peekSummary } from '../../lib/usage-peek'
@@ -18,6 +18,9 @@ import { useAgentSettings } from './agent-settings'
  * lien mène à l'ajout d'un compte. Les options viennent des réglages du composer, qui
  * savent déjà lesquelles sont prêtes ; l'aperçu de consommation est gratuit, aucun CLI
  * n'est lancé pour l'écrire.
+ *
+ * Claude sans aucun compte et sans connexion du terminal n'a rien sur quoi partir : la
+ * ligne le dit, et son bouton mène à la connexion d'un compte.
  */
 
 /** Valeur de l'option « connexion du CLI » dans les réglages du composer. */
@@ -43,15 +46,32 @@ export function DraftAccount({
   if (config.agent === 'opencode') return null
 
   const group = groups.find((entry) => entry.key === 'account')
+  if (config.agent === 'claude' && !group && auth?.status === 'logged_out') {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs font-medium text-ink-soft">{t('draft.account.legend')}</span>
+        <div className="flex items-center gap-2.5 rounded-md border border-line px-3 py-2">
+          <span className="shrink-0 text-ink-faint"><IdCard size={14} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm text-ink">{t('draft.account.none')}</span>
+            <span className="block truncate text-xs text-ink-faint">{t('draft.account.noneHint')}</span>
+          </span>
+          <Button size="sm" onClick={() => openSettings('agents', 'claude')}>
+            {t('draft.account.connect')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
   const hintFor = (value: string, fallback?: string) => {
     const account = value === CLI_CHOICE ? null : value
     const parts = account === null
-      ? [auth?.status === 'logged_out' ? t('usage.loggedOut') : null, auth?.plan ?? null]
+      ? [auth?.status === 'logged_out' ? t('composer.account.cli.loggedOut') : null, auth?.plan ?? null]
       : [fallback ?? null]
     const summary = peekSummary(peekOf(peek, config.agent, account))
     return [...parts, summary?.text ?? null].filter(Boolean).join(' · ') || undefined
   }
-  const cliLabel = auth?.identity ?? t('composer.account.cli')
+  const cliLabel = auth?.identity ? `${t('composer.account.cli')} · ${auth.identity}` : t('composer.account.cli')
   const options = (group?.options ?? [{ value: CLI_CHOICE, label: cliLabel }]).map((option) => ({
     value: option.value,
     label: option.value === CLI_CHOICE ? cliLabel : (option.listed ?? option.label),
@@ -65,7 +85,7 @@ export function DraftAccount({
       className="text-xs text-ink-faint underline hover:text-ink"
       onClick={() => openSettings('agents', config.agent)}
     >
-      {t(options.length > 1 ? 'draft.account.manage' : 'draft.account.add')}
+      {t(options.length > 1 ? 'draft.account.manage' : value === CLI_CHOICE ? 'draft.account.add' : 'draft.account.another')}
     </button>
   )
 

@@ -17,7 +17,7 @@ import {
   type OpencodePermission,
   type OpencodePermissions,
 } from '@solera/protocol'
-import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentModels } from '../../lib/agents'
+import { catalogModel, effortLabel, effortsFor, supportsFastMode, useAgentAuth, useAgentModels } from '../../lib/agents'
 import { useClaudeAccounts } from '../../lib/claude-accounts'
 import { useCodexAccounts } from '../../lib/codex-accounts'
 import { useGrokAccounts } from '../../lib/grok-accounts'
@@ -721,6 +721,9 @@ export function useAgentSettings({
   const { data: codexAccountList } = useCodexAccounts(codex !== null)
   // Grok, sur le même modèle que Codex : un home par compte, connecté ou non.
   const { data: grokAccountList } = useGrokAccounts(grok !== null)
+  const { data: agentAuth } = useAgentAuth()
+  const claudeCliLoggedOut =
+    agentAuth?.entries.find((entry) => entry.agent === 'claude' && entry.account === null)?.status === 'logged_out'
   const accountOptions = useMemo((): SettingChoice<string>[] => {
     const chosen = claude?.account ?? codex?.account ?? grok?.account ?? null
     const accounts = claude
@@ -735,10 +738,21 @@ export function useAgentSettings({
     const loaded = claude ? claudeAccountList : codex ? codexAccountList : grokAccountList
     if (loaded === undefined) return []
     if (accounts.length === 0 && !chosen) return []
-    const known: SettingChoice<string>[] = [
-      { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') },
-      ...accounts.map((account) => ({ value: account.id, label: account.label })),
-    ]
+    const cli: SettingChoice<string> = { value: CLI_DEFAULT_CHOICE, label: t('composer.account.cli'), hint: t('composer.account.cli.hint') }
+    const listed = accounts.map((account) => ({ value: account.id, label: account.label }))
+    // Claude : les comptes de Solera sont la voie, la connexion du terminal ne se
+    // propose plus. Elle reste listée, en dernier, là où elle est déjà la valeur — un
+    // fil d'avant, un réglage jamais changé — ou la seule issue d'un compte supprimé,
+    // et dit quand elle est déconnectée.
+    const cliStays = chosen === null || !accounts.some((account) => account.id === chosen)
+    const known: SettingChoice<string>[] = claude
+      ? [
+          ...listed,
+          ...(cliStays
+            ? [claudeCliLoggedOut ? { ...cli, hint: t('composer.account.cli.loggedOut') } : cli]
+            : []),
+        ]
+      : [cli, ...listed]
     // Un compte supprimé depuis : la conversation le désigne encore, le serveur
     // repartira sur la connexion du CLI, et l'écran le dit plutôt que de montrer un
     // sélecteur vide.
@@ -746,7 +760,7 @@ export function useAgentSettings({
       known.push({ value: chosen, label: t('composer.account.missing'), hint: t('composer.select.saved') })
     }
     return known
-  }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, t])
+  }, [claudeAccountList, codexAccountList, grokAccountList, claude, codex, grok, claudeCliLoggedOut, t])
 
   /**
    * Les catégories, le résumé et le contrôle MCP, construits d'un bloc.
