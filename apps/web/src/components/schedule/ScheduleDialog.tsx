@@ -21,6 +21,7 @@ import {
   type ScheduledTaskDto,
 } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
+import { AutonomousConfinementSelect } from '../Environment'
 import { useAgentSettings } from '../chat/agent-settings'
 import type { SettingGroup } from '../chat/ComposerSettings'
 import { Banner, Button, Field, IconButton, Presets, SegmentedControl, Select } from '@solera/ui'
@@ -29,6 +30,7 @@ import { cronToHuman } from '../../lib/cron'
 import { locale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { formatDateTime, useCreateSchedule, useUpdateSchedule, type ScheduleInput } from '../../lib/schedules'
 import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
+import { useProjectEnvironments } from '../../lib/projects'
 
 /**
  * Création et modification d'une tâche planifiée.
@@ -94,6 +96,10 @@ export function ScheduleDialog({
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)
   const [maxDuration, setMaxDuration] = useState(String(task?.maxDurationMinutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES))
   const [overlap, setOverlap] = useState<ScheduleOverlapPolicy>(task?.overlapPolicy ?? 'skip')
+  const [confined, setConfined] = useState<boolean | null>(task?.confined ?? null)
+  const { data: environments } = useProjectEnvironments(project.id)
+  // Ce que le tir prendra : le choix de la tâche, ou le réglage du projet.
+  const runsConfined = confined ?? environments?.autonomousConfined ?? false
   const [checkScript, setCheckScript] = useState<string | null>(task?.check?.script ?? null)
   // Le script ne repart que si quelqu'un l'a touché : l'enregistrer depuis l'interface
   // vaut le valider, et changer l'heure d'une tâche ne doit pas valider en passant le
@@ -147,6 +153,7 @@ export function ScheduleDialog({
       prompt: prompt.trim(),
       cadence,
       overlapPolicy: overlap,
+      confined,
       maxDurationMinutes: duration,
       ...(!task || checkEdited ? { checkScript: checkScript?.trim() ? checkScript : null } : {}),
       ...(checkScript?.trim() ? { checkTimeoutSeconds: timeoutSeconds } : {}),
@@ -303,7 +310,14 @@ export function ScheduleDialog({
               {groups.map((group) => (
                 <GroupField key={group.key} group={group} />
               ))}
-              <Banner tone="info">{t('schedule.form.unattended')}</Banner>
+              {environments ? (
+                <AutonomousConfinementSelect
+                  value={confined}
+                  inherited={environments.autonomousConfined}
+                  onChange={setConfined}
+                />
+              ) : null}
+              <Banner tone="info">{t(runsConfined ? 'schedule.form.unattended.confined' : 'schedule.form.unattended')}</Banner>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field

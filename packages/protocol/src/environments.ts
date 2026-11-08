@@ -70,6 +70,11 @@ export interface ProjectEnvironmentsDto {
    * projet qui a un `devcontainer.json` et tourne encore sur l'hôte. Null sinon.
    */
   suggested: ExecutionEnvironment | null
+  /**
+   * Les sessions autonomes (tâches planifiées, cartes d'un jalon, sessions lancées par
+   * un agent, relectures) sont-elles confinées quand leur lancement ne le dit pas (#146) ?
+   */
+  autonomousConfined: boolean
 }
 
 /**
@@ -118,4 +123,19 @@ export interface ForwardedPortDto {
    * conteneur. `detail` est le message système, ou la liste des outils cherchés.
    */
   error: { code: 'port_taken' | 'listen_failed' | 'no_relay'; detail: string } | null
+}
+
+/**
+ * L'environnement d'une session autonome (tâche planifiée, carte lancée par un jalon,
+ * session lancée par un agent) : celui du projet, ou sa version confinée (#146).
+ * `confined` est le choix du lancement ; null, c'est le réglage du projet qui tranche.
+ * `false` rend celui du projet tel quel, confiné s'il l'est : on ne déconfine pas. On ne
+ * fait que confiner : « où ça tourne » reste celui du projet.
+ */
+export function autonomousEnvironment(
+  project: ExecutionEnvironment,
+  projectConfined: boolean,
+  confined: boolean | null,
+): ExecutionEnvironment {
+  return (confined ?? projectConfined) ? { where: project.where, confined: true } : project
 }

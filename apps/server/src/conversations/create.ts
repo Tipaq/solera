@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@solera/db'
-import { HOST_ENVIRONMENT, resolveAgentConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment } from '@solera/protocol'
+import { HOST_CONFINED_ENVIRONMENT, HOST_ENVIRONMENT, resolveAgentConfig, unattendedConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment } from '@solera/protocol'
 import { environmentColumns } from '../environments/environments.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { inheritedLayers, overridesFor } from './config-inheritance.js'
@@ -45,6 +46,14 @@ export interface CreateConversationInput {
    */
   environment?: ExecutionEnvironment
   /**
+   * Une session sans personne devant l'écran (#146) : tâche planifiée, carte d'un jalon,
+   * session lancée par un agent, relecture. Sans `environment`, elle prend celui du
+   * projet, confiné si `confined` le dit ou, à null, si le projet le règle. Confinée,
+   * elle tourne sans demandes d'autorisation : personne n'y répondrait, et le
+   * confinement est son garde-fou.
+   */
+  autonomous?: { confined: boolean | null }
+  /**
    * Texte dont tirer le titre provisoire, quand le premier message ne s'y prête pas :
    * une mission confiée par une autre session commence par son enveloppe balisée.
    */
@@ -84,13 +93,24 @@ export async function createConversation(
   input: CreateConversationInput,
 ): Promise<ConversationRow> {
   const now = Date.now()
+  // Un fil libre n'a pas de projet à confiner : il ne tourne pas, plutôt que de tourner
+  // libre sans que personne l'ait voulu.
+  if (input.projectId === null && input.autonomous?.confined) {
+    throw new EnvironmentUnavailableError(HOST_CONFINED_ENVIRONMENT, 'Only a project session can be confined.')
+  }
+  const environment =
+    input.environment ??
+    (input.projectId === null
+      ? HOST_ENVIRONMENT
+      : input.autonomous
+        ? sessions.environments.forAutonomous(input.projectId, input.autonomous.confined)
+        : sessions.environments.ofProject(input.projectId))
+  const wanted = input.autonomous && environment.confined ? unattendedConfig(input.config) : input.config
   const owner = { userId: input.userId, projectId: input.projectId, agent: input.agent }
-  const overrides = await overridesFor(db, (config) => sessions.resolveDefaults(config), owner, input.config)
+  const overrides = await overridesFor(db, (config) => sessions.resolveDefaults(config), owner, wanted)
   const config = await sessions.resolveDefaults(
     resolveAgentConfig(input.agent, inheritedLayers(db, owner).map((named) => named.layer), overrides),
   )
-  const environment =
-    input.environment ?? (input.projectId === null ? HOST_ENVIRONMENT : sessions.environments.ofProject(input.projectId))
   // Refusé à la création plutôt qu'au premier lancement : un fil qui ne pourra jamais
   // démarrer ne doit pas apparaître dans la liste, que l'environnement soit choisi ou
   // hérité du projet.

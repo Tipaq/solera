@@ -1189,6 +1189,10 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
+        // Confinée, elle tourne sans demandes d'autorisation (#146) : Claude Code refuse
+        // `bypassPermissions` à root, l'utilisateur de bien des dev containers, sauf à
+        // se savoir dans un bac à sable.
+        ...(conversation.environmentConfined && conversation.agent === 'claude' ? { IS_SANDBOX: '1' } : {}),
         ...accountEnvInside(accountEnv, launcher.environment),
         // Confinée, la session a son propre conteneur : la portée lui donne l'identité git
         // et ses transcripts, rien de partagé avec les autres.

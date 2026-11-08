@@ -12,6 +12,7 @@ import {
 import { environmentColumns } from '../../environments/environments.js'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { TranslatedEvent } from '../../agents/claude/transcript.js'
+import { claudeTranscripts } from '../../agents/claude/transcript-home.js'
 import {
   importPreparedTranscript,
   prepareTranscript,
@@ -276,6 +277,7 @@ export function registerClaudeSessionRoutes(
           savedTranscript(ctx.db, id, conversation.lastSeq),
           () => (anchors ??= log.importAnchors(id)),
           conversation.lastSeq > 0,
+          claudeTranscripts(ctx.config.paths, conversation),
         )
         if (!prepared) return { imported: 0 }
         const result = await importPreparedTranscript({

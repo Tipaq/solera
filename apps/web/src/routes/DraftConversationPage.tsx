@@ -6,6 +6,8 @@ import {
   agentConfigSchema,
   agentKindSchema,
   cardBranchName,
+  unattendedConfig,
+  withPermissionsOf,
   type AgentConfig,
   type AgentKind,
   type ConversationDto,
@@ -226,10 +228,17 @@ export function DraftConversationPage() {
   // casserait sa mémoïsation.
   const agentAccounts = readyAccounts[agent]
   const lastAccount = useMemo(() => lastUsedAccount(conversations, agent), [conversations, agent])
-  const defaults = useMemo(
-    () => withSoleraAccount(inheritedConfigFor(agent, userSettings, project), agentAccounts, lastAccount),
+  // Confinée, la session part sans demandes d'autorisation (#146) : le confinement est
+  // son garde-fou. C'est proposé, et le composer le montre et le laisse changer.
+  const confinedNow = (chosenEnvironment ?? environments?.default)?.confined ?? false
+  const defaultsFor = useCallback(
+    (confined: boolean) => {
+      const inherited = withSoleraAccount(inheritedConfigFor(agent, userSettings, project), agentAccounts, lastAccount)
+      return confined ? unattendedConfig(inherited) : inherited
+    },
     [agent, userSettings, project, agentAccounts, lastAccount],
   )
+  const defaults = useMemo(() => defaultsFor(confinedNow), [defaultsFor, confinedNow])
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -386,7 +395,14 @@ export function DraftConversationPage() {
                 value={chosenEnvironment ?? environments.default}
                 choices={environments.choices}
                 disabled={createConversation.isPending}
-                onChange={(environment) => setPickedEnvironment({ projectId, environment })}
+                onChange={(environment) => {
+                  // Les garde-fous suivent le confinement : on ne garde pas hors du
+                  // confinement le mode sans autorisation qu'il proposait.
+                  if (config && environment.confined !== confinedNow) {
+                    setConfig(withPermissionsOf(config, defaultsFor(environment.confined)))
+                  }
+                  setPickedEnvironment({ projectId, environment })
+                }}
               />
             ) : null}
           </div>

@@ -2,7 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { HOST_CONFINED_ENVIRONMENT, type AgentKind } from '@solera/protocol'
-import { transcriptPath } from '../../agents/claude/transcript.js'
+import { transcriptFolderName, transcriptPath } from '../../agents/claude/transcript.js'
+import { containerPathOf } from '../devcontainer/paths.js'
 import { EnvironmentUnavailableError } from '../provider.js'
 import { enclosingRepo } from './git.js'
 import type { ConfinementScope } from './plan.js'
@@ -116,7 +117,10 @@ export function sessionScope(input: SessionScopeInput): ConfinementScope {
     const configDir = dirname(dirname(transcripts))
     mkdirSync(transcripts, { recursive: true })
     writable.push(transcripts)
-    homeLinks.push({ path: join('.claude', 'projects', transcripts.split('/').at(-1)!), target: transcripts })
+    // Au nom du cwd que le CLI voit : sous Windows natif, le conteneur dit `/mnt/c/…`
+    // quand le dossier de l'hôte porte `C:\…` (#154). Ailleurs, c'est le même.
+    const seen = transcriptFolderName(containerPathOf(input.cwd) ?? input.cwd)
+    homeLinks.push({ path: join('.claude', 'projects', seen), target: transcripts })
     for (const name of CLAUDE_USER_FILES) {
       const path = join(configDir, name)
       if (!existsSync(path)) continue
