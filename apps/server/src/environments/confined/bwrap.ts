@@ -1,8 +1,7 @@
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
-import { posix } from 'node:path'
 import type { ConfinementPlan } from './plan.js'
-import { isWithin, realPathOf } from './paths.js'
+import { anchorDirs, isWithin, realPathOf } from './paths.js'
 import type { Backend, Launch, PrivateDirs, Unavailable } from './backend.js'
 
 /** Le home privé, vu de l'intérieur. */
@@ -64,10 +63,21 @@ export function probeBwrap(): Unavailable | null {
   }
   if (result.status === 0) return null
   const stderr = (result.stderr ?? '').trim()
-  if (/namespace|uid map|permission denied/iu.test(stderr)) {
+  // Le profil AppArmor ne sert que si c'est AppArmor qui refuse : un noyau où les
+  // espaces de noms sont coupés autrement (`unprivileged_userns_clone`,
+  // `max_user_namespaces`) tombe dans le cas général, avec ce que bwrap a dit.
+  if (/namespace|uid map|permission denied/iu.test(stderr) && apparmorRestrictsUserns()) {
     return { code: 'confinement_userns_blocked', fix: APPARMOR_FIX, detail: stderr }
   }
   return { code: 'confinement_failed', detail: stderr || result.error?.message || `exit ${String(result.status)}` }
+}
+
+function apparmorRestrictsUserns(): boolean {
+  try {
+    return readFileSync('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', 'utf8').trim() === '1'
+  } catch {
+    return false
+  }
 }
 
 /** Monte chaque dossier système en lecture seule, ou le recrée en lien (`/usr` fusionné). */
@@ -87,24 +97,9 @@ function resolvConfArgs(): string[] {
   return !target || BWRAP_SYSTEM_DIRS.some((dir) => isWithin(target, dir)) ? [] : ['--ro-bind', target, target]
 }
 
-/**
- * Chaque dossier entre un fichier protégé et le dossier inscriptible qui le contient,
- * monté sur lui-même : un point de montage ne se renomme pas, donc on ne peut pas
- * écarter le fichier protégé en déplaçant un parent.
- */
+/** Les dossiers qui portent un fichier protégé, montés sur eux-mêmes : un point de montage ne se renomme pas. */
 export function anchorArgs(writable: readonly string[], protectedPaths: readonly string[]): string[] {
-  const anchors = new Set<string>()
-  for (const path of protectedPaths) {
-    const roots = writable.filter((root) => isWithin(path, root))
-    const chain: string[] = []
-    let dir = posix.dirname(path)
-    while (roots.some((root) => dir !== root && isWithin(dir, root))) {
-      chain.unshift(dir)
-      dir = posix.dirname(dir)
-    }
-    for (const anchor of chain) anchors.add(anchor)
-  }
-  return [...anchors].flatMap((anchor) => ['--bind', anchor, anchor])
+  return anchorDirs(writable, protectedPaths).flatMap((anchor) => ['--bind', anchor, anchor])
 }
 
 /**

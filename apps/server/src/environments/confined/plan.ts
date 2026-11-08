@@ -8,13 +8,13 @@ import { hostToolchain, isWithin, outermost, realPathOf, type HostToolchain } fr
  */
 export interface ConfinementScope {
   /**
-   * Les dossiers de travail : le dépôt ou le worktree, que l'agent écrit, et dont git est
-   * monté avec ses fichiers de contrôle en lecture seule.
+   * Les dossiers de travail : le dépôt ou le worktree, que l'agent écrit, et dont git
+   * n'est inscriptible que pour ce qu'un commit écrit (voir `gitMounts`).
    */
   workspaces: string[]
   /** D'autres dossiers de l'hôte où il écrit : la mémoire du projet, le home du compte. */
   writable: string[]
-  /** Lisibles seulement : les pièces jointes, la bibliothèque de skills. */
+  /** Lisibles seulement : la bibliothèque de skills, les consignes de l'utilisateur. */
   readable: string[]
   /**
    * Des liens posés dans le home privé (chemin relatif au home) vers un chemin de l'hôte
@@ -32,7 +32,7 @@ export interface ConfinementPlan {
   readable: string[]
   /** Inscriptibles : dossiers de travail, dossiers communs de git, ceux de l'appelant. */
   writable: string[]
-  /** En lecture seule même dans un dossier inscriptible : les fichiers de contrôle de git. */
+  /** En lecture seule même dans un dossier inscriptible : ce qui redirige git. */
   protected: string[]
   homeLinks: ConfinementScope['homeLinks']
   env: Record<string, string>
@@ -58,7 +58,9 @@ export function confinementPlan({ scope, path, home, coveredRoots, deniedRoots }
   )
   return {
     toolchain: hostToolchain({ path, home, coveredRoots, deniedRoots }),
-    readable: outermost(real(scope.readable)).filter((p) => !writable.some((root) => isWithin(p, root))),
+    readable: outermost([...real(scope.readable), ...git.flatMap((g) => g.readable)]).filter(
+      (p) => !writable.some((root) => isWithin(p, root)),
+    ),
     writable,
     protected: protectedPaths,
     homeLinks: scope.homeLinks,

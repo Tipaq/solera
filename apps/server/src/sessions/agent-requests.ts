@@ -1152,6 +1152,11 @@ export class AgentRequests {
     return { id: card.id, number: card.number, title: card.title }
   }
 
+  /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */
+  private confined(requester: Requester): boolean {
+    return requester.id !== null && this.sessions.environments.ofConversation(requester.id).confined
+  }
+
   // --- schedule_task -------------------------------------------------------------
 
   /**
@@ -1162,11 +1167,6 @@ export class AgentRequests {
    * personne n'étant là pendant les tirs, et la réponse les rappelle pour que l'agent
    * le dise à l'utilisateur.
    */
-  /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */
-  private confined(requester: Requester): boolean {
-    return requester.id !== null && this.sessions.environments.ofConversation(requester.id).confined
-  }
-
   private async scheduleTask(
     requester: Requester,
     project: ProjectRow,

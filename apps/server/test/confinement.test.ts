@@ -34,21 +34,34 @@ async function repoWithWorktree(t: TestContext) {
   return { base, repo, worktree }
 }
 
-test('git : un worktree écrit dans le dépôt commun, mais ni sa config, ni ses hooks, ni son pointeur', async (t) => {
+test('git : un worktree n’écrit que ses objets, ses refs, ses journaux et son propre dossier', async (t) => {
   const { repo, worktree } = await repoWithWorktree(t)
   const mounts = gitMounts(worktree)
   const common = join(repo, '.git')
-  assert.deepEqual(mounts.writable, [common])
-  assert.ok(mounts.protected.includes(join(worktree, '.git')))
-  for (const name of ['config', 'hooks', 'info']) assert.ok(mounts.protected.includes(join(common, name)), name)
-  assert.ok(mounts.protected.some((path) => path.endsWith('/commondir')))
+  const admin = join(common, 'worktrees', 'worktree')
+  assert.deepEqual(mounts.readable, [common])
+  assert.deepEqual(mounts.writable, [join(common, 'objects'), join(common, 'refs'), join(common, 'logs'), admin])
+  assert.deepEqual(mounts.protected, [
+    join(worktree, '.git'),
+    join(admin, 'commondir'),
+    join(admin, 'gitdir'),
+    join(admin, 'config.worktree'),
+  ])
 
-  // Un dépôt simple : son `.git` est déjà dans le dossier de travail.
-  assert.deepEqual(gitMounts(repo), { writable: [], protected: ['config', 'hooks', 'info'].map((name) => join(common, name)) })
-  assert.deepEqual(gitMounts(tmpdir()), { writable: [], protected: [] })
+  // Un dépôt simple : son `.git` en entier, en lecture seule.
+  assert.deepEqual(gitMounts(repo), { readable: [], writable: [], protected: [common] })
+  assert.deepEqual(gitMounts(tmpdir()), { readable: [], writable: [], protected: [] })
 })
 
-test('plan : le dossier de travail et git inscriptibles, les fichiers de contrôle protégés', async (t) => {
+test('git : `config.worktree` est créé vide, pour qu’un agent ne puisse pas l’écrire avant que l’extension s’active', async (t) => {
+  const { repo, worktree } = await repoWithWorktree(t)
+  const configWorktree = join(repo, '.git', 'worktrees', 'worktree', 'config.worktree')
+  assert.equal(existsSync(configWorktree), false)
+  gitMounts(worktree)
+  assert.equal(await readFile(configWorktree, 'utf8'), '')
+})
+
+test('plan : le dossier de travail inscriptible, le dossier commun lisible, ce qui redirige git protégé', async (t) => {
   const { repo, worktree } = await repoWithWorktree(t)
   const plan = confinementPlan({
     scope: { ...terminalScope(worktree), readable: [join(worktree, 'a-l-interieur'), '/absent'] },
@@ -57,9 +70,10 @@ test('plan : le dossier de travail et git inscriptibles, les fichiers de contrô
     coveredRoots: ['/usr'],
     deniedRoots: [],
   })
-  assert.deepEqual(plan.writable, [worktree, join(repo, '.git')])
-  assert.ok(plan.protected.includes(join(repo, '.git', 'hooks')))
-  assert.deepEqual(plan.readable, [], 'un chemin absent, ou déjà inscriptible, ne se remonte pas')
+  const common = join(repo, '.git')
+  assert.deepEqual(plan.writable, [worktree, ...['objects', 'refs', 'logs', 'worktrees/worktree'].map((name) => join(common, name))])
+  assert.deepEqual(plan.readable, [common], 'un chemin absent, ou déjà inscriptible, ne se remonte pas')
+  assert.ok(plan.protected.includes(join(common, 'worktrees', 'worktree', 'commondir')))
   assert.equal(plan.env.GIT_AUTHOR_NAME, 'Tim')
   assert.equal(plan.env.GIT_COMMITTER_EMAIL, 'tim@example.com')
 })
@@ -83,6 +97,17 @@ test("chaîne d'outils : jamais le home ni ses ancêtres, et le paquet entier d'
 
   const denied = hostToolchain({ path: `/mnt/c/Windows:${bin}`, home, coveredRoots: [], deniedRoots: ['/mnt'] })
   assert.deepEqual(denied.pathEntries, [bin])
+
+  // Le `node_modules/.bin` d'un projet n'ouvre pas le projet.
+  const project = join(home, 'projet')
+  await mkdir(join(project, '.git'), { recursive: true })
+  await mkdir(join(project, 'node_modules', '.bin'), { recursive: true })
+  const inRepo = hostToolchain({ path: `${join(project, 'node_modules', '.bin')}:${bin}`, home, coveredRoots: [], deniedRoots: [] })
+  assert.deepEqual(inRepo.pathEntries, [bin])
+
+  // Un home qui est lui-même un dépôt de dotfiles ne condamne pas sa chaîne d'outils.
+  await mkdir(join(home, '.git'))
+  assert.deepEqual(hostToolchain({ path: bin, home, coveredRoots: [], deniedRoots: [] }).pathEntries, [bin])
 })
 
 test("variables : ce que Solera ajoute passe, l'environnement du serveur et ses sockets non", () => {
@@ -128,7 +153,7 @@ test('seatbelt : refus par défaut, aucun chemin dans le texte du profil, les fi
 
 test('portée de session : un compte est exigé, OpenCode refusé, les transcripts de Claude survivent au home privé', async (t) => {
   const { worktree } = await repoWithWorktree(t)
-  const base = { cwd: worktree, workTrees: [], memoryDir: null, attachmentsRoot: '/tmp', skillRoots: [], prototypesDir: null }
+  const base = { cwd: worktree, workTrees: [], memoryDir: null, skillRoots: [], prototypesDir: null }
   const refusal = (code: string) => (err: unknown) =>
     err instanceof EnvironmentUnavailableError && err.code === code && err.params?.environment === 'host.confined'
   assert.throws(() => sessionScope({ ...base, agent: 'opencode', accountEnv: {} }), refusal('confinement_agent_unsupported'))
@@ -170,11 +195,26 @@ test('bwrap, pour de vrai : écrire et commiter dans le worktree, rien d’autre
 
   assert.equal((await sh('echo b > b && git add b && git commit -qm b && git log --format=%an -1')).stdout, 'Tim')
   assert.equal(git(worktree, 'log', '--format=%s', '-1'), 'b\n', 'le commit est sur l’hôte')
-  assert.notEqual((await sh('git config core.fsmonitor "touch /tmp/pwned"')).code, 0, '.git/config en lecture seule')
-  assert.notEqual((await sh(`echo x > ${repo}/.git/hooks/pre-commit`)).code, 0, 'hooks en lecture seule')
-  assert.notEqual((await sh(`mv ${repo}/.git/hooks ${repo}/.git/ailleurs`)).code, 0, 'hooks inamovibles')
-  assert.notEqual((await sh('echo x > .git')).code, 0, 'pointeur du worktree en lecture seule')
-  assert.equal(await readFile(join(repo, '.git', 'config'), 'utf8').then((text) => text.includes('fsmonitor')), false)
+  // Tout ce qui ferait exécuter du code à git sur l'hôte, ou le redirigerait vers une
+  // config que l'agent écrirait.
+  const common = join(repo, '.git')
+  const escapes = [
+    'git config core.fsmonitor "touch /tmp/pwned"',
+    `echo x > ${common}/hooks/pre-commit`,
+    `mv ${common}/hooks ${common}/ailleurs`,
+    `echo ../evil > ${common}/commondir`,
+    `mkdir -p ${common}/modules/m && echo x > ${common}/modules/m/config`,
+    `echo x > ${common}/packed-refs`,
+    `mkdir ${common}/worktrees/autre`,
+    `echo x > ${common}/worktrees/worktree/commondir`,
+    `echo x > ${common}/worktrees/worktree/config.worktree`,
+    `mv ${common}/worktrees/worktree ${common}/worktrees/w2`,
+    'echo x > .git',
+  ]
+  for (const script of escapes) assert.notEqual((await sh(script)).code, 0, script)
+  assert.equal(existsSync(join(common, 'commondir')), false)
+  assert.equal(await readFile(join(common, 'config'), 'utf8').then((text) => text.includes('fsmonitor')), false)
+  assert.equal(git(worktree, 'status', '--porcelain'), '', 'git de l’hôte lit toujours le worktree')
 
   assert.equal((await sh('echo $HOME')).stdout, '/home/agent')
   // Les identifiants de l'hôte et les données de Solera, présents ou non sur cette machine.
@@ -184,6 +224,15 @@ test('bwrap, pour de vrai : écrire et commiter dans le worktree, rien d’autre
   }
   assert.notEqual((await sh(`echo x > ${join(homedir(), '.solera-pwned')}`)).code, 0)
   assert.equal(existsSync(join(homedir(), '.solera-pwned')), false)
+
+  // Une pièce jointe arrive par une copie dans le tmp privé, pas par son dossier.
+  const attachment = join(repo, 'piece.txt')
+  await writeFile(attachment, 'contenu')
+  const [shared] = await environment.shareAttachments([
+    { id: 'a1', filename: '../piece.txt', path: attachment, inlineImage: false },
+  ])
+  assert.equal(shared!.path, '/tmp/solera-attachments/a1/piece.txt')
+  assert.equal((await sh(`cat ${shared!.path}`)).stdout, 'contenu')
 
   environment.spawn({ command: 'sh', args: ['-c', 'sleep 3141 & sleep 3142 & wait'], cwd: worktree })
   await new Promise((resolve) => setTimeout(resolve, 500))

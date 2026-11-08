@@ -19,6 +19,37 @@ export function realPathOf(path: string): string | null {
   }
 }
 
+/**
+ * Les dossiers entre chaque chemin protégé et le dossier inscriptible qui le contient,
+ * du plus haut au plus bas : ceux qu'on ne doit pas pouvoir renommer, sinon on écarte
+ * le chemin protégé en déplaçant un parent.
+ */
+export function anchorDirs(writable: readonly string[], protectedPaths: readonly string[]): string[] {
+  const anchors = new Set<string>()
+  for (const path of protectedPaths) {
+    const roots = writable.filter((root) => isWithin(path, root))
+    const chain: string[] = []
+    let dir = dirname(path)
+    while (roots.some((root) => dir !== root && isWithin(dir, root))) {
+      chain.unshift(dir)
+      dir = dirname(dir)
+    }
+    for (const anchor of chain) anchors.add(anchor)
+  }
+  return [...anchors]
+}
+
+/**
+ * `dir` est-il dans un dépôt git, en remontant jusqu'au home exclu ? Un home qui est
+ * lui-même un dépôt de dotfiles ne condamne pas tout ce qu'il contient.
+ */
+function insideRepo(dir: string, home: string): boolean {
+  for (let current = dir; current !== dirname(current) && current !== home; current = dirname(current)) {
+    if (existsSync(join(current, '.git'))) return true
+  }
+  return false
+}
+
 /** Ne garde que les dossiers qui ne sont pas déjà dans un autre de la liste. */
 export function outermost(dirs: readonly string[]): string[] {
   const unique = [...new Set(dirs)]
@@ -69,12 +100,15 @@ export interface ToolchainInput {
  * La chaîne d'outils de l'hôte, d'après son `PATH` : chaque dossier du `PATH`, et la
  * racine d'installation de chaque exécutable qui y est un lien (un `claude` dans
  * `~/.local/bin`, un `codex` installé par nvm). Le home et ses ancêtres ne sont jamais
- * rendus lisibles, et une racine qui contient un `.git` non plus : la chaîne d'outils
- * n'expose ni le home entier ni un dépôt. Repris de Sandcastle (`hostPathToolchain.ts`).
+ * rendus lisibles, ni rien qui soit dans un dépôt git : la chaîne d'outils n'expose ni
+ * le home entier ni un projet. Repris de Sandcastle (`hostPathToolchain.ts`).
  */
 export function hostToolchain(input: ToolchainInput): HostToolchain {
   const home = normalizeEntry(input.home)
-  const refused = (path: string) => isWithin(home, path) || isWithinAny(path, input.deniedRoots)
+  // Ni le home, ni un de ses ancêtres, ni un dépôt : un `~/bin` versionné ou le
+  // `node_modules/.bin` d'un projet n'ouvrent pas ce projet.
+  const refused = (path: string) =>
+    isWithin(home, path) || isWithinAny(path, input.deniedRoots) || insideRepo(path, home)
   const entries = [...new Set(input.path.split(':').filter((entry) => entry.startsWith('/')).map(normalizeEntry))]
   const accepted = entries.flatMap((entry) => {
     if (refused(entry)) return []
@@ -86,7 +120,7 @@ export function hostToolchain(input: ToolchainInput): HostToolchain {
     symlinkTargetsIn(dir)
       .filter((target) => !isWithin(target, dir) && !isWithinAny(target, input.coveredRoots))
       .map((target) => installRootOf(target, home))
-      .filter((root) => !refused(root) && !existsSync(join(root, '.git'))),
+      .filter((root) => !refused(root)),
   )
   return {
     pathEntries: accepted.map((a) => a.entry),
@@ -128,5 +162,5 @@ export function executableRoot(command: string, home: string): string | null {
   const real = realPathOf(command)
   if (!real) return null
   const root = installRootOf(real, home)
-  return isWithin(home, root) || existsSync(join(root, '.git')) ? null : root
+  return isWithin(home, root) || insideRepo(root, home) ? null : root
 }

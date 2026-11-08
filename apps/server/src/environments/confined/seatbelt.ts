@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir, release } from 'node:os'
 import { posix } from 'node:path'
-import { isWithin, realPathOf } from './paths.js'
+import { anchorDirs, realPathOf } from './paths.js'
 import type { Backend, Unavailable } from './backend.js'
 
 /** Le `sandbox-exec` du système, toujours par son chemin absolu. */
@@ -148,22 +148,6 @@ export interface SeatbeltPolicy {
   params: Array<[string, string]>
 }
 
-/** Les dossiers qui ne doivent être ni renommés ni supprimés : ceux qui portent un fichier protégé. */
-function anchoredDirs(writable: readonly string[], protectedPaths: readonly string[]): string[] {
-  const dirs = new Set(writable)
-  for (const path of protectedPaths) {
-    const roots = writable.filter((root) => isWithin(path, root))
-    let dir = posix.dirname(path)
-    while (roots.some((root) => isWithin(dir, root))) {
-      dirs.add(dir)
-      const parent = posix.dirname(dir)
-      if (parent === dir) break
-      dir = parent
-    }
-  }
-  return [...dirs]
-}
-
 export function seatbeltPolicy(input: {
   readable: readonly string[]
   writable: readonly string[]
@@ -185,7 +169,10 @@ export function seatbeltPolicy(input: {
     ...CONTAINER_ENGINE_HOME_DIRS.map((name) => `  (subpath ${ref('ENGINE', posix.join(input.hostHome, name))})`),
   ]
   const protectedRefs = [...new Set(input.protected)].map((p) => ref('PROTECTED', p))
-  const anchors = anchoredDirs(input.writable, input.protected).map((p) => ref('ANCHOR', p))
+  // Les racines inscriptibles aussi : on ne retire pas un dossier de travail d'un `mv`.
+  const anchors = [...new Set([...input.writable, ...anchorDirs(input.writable, input.protected)])].map((p) =>
+    ref('ANCHOR', p),
+  )
   const profile = [
     BASE,
     '; Lecture seule : la chaîne d’outils et ce qu’on donne à lire.',

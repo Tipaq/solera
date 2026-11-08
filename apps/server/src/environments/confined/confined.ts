@@ -1,8 +1,8 @@
 import { execFile, spawn as spawnProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
-import { cp, rm } from 'node:fs/promises'
+import { copyFile, cp, mkdir, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
-import { dirname, join, posix } from 'node:path'
+import { basename, dirname, join, posix } from 'node:path'
 import { spawn as spawnPty, type IPty } from 'node-pty'
 import { HOST_CONFINED_ENVIRONMENT, type ExecutionEnvironment } from '@solera/protocol'
 import { resolveBinary } from '../../agents/cli-binary.js'
@@ -110,6 +110,32 @@ export class ConfinedEnvironment implements EnvironmentProvider {
   async copyOut(insidePath: string, hostPath: string): Promise<void> {
     const source = this.hostPathOf(insidePath)
     if (source !== hostPath) await cp(source, hostPath, { recursive: true })
+  }
+
+  /**
+   * Les pièces jointes d'un message, rendues lisibles : leur dossier mêle celles de tous
+   * les projets, il n'est donc pas monté. Chacune est copiée dans le tmp privé, et le
+   * chemin que l'agent reçoit est celui de la copie. Une image envoyée en ligne n'a pas
+   * besoin de chemin : le serveur la lit sur l'hôte.
+   */
+  async shareAttachments<T extends { id: string; filename: string; path: string; inlineImage: boolean }>(
+    attachments: T[],
+  ): Promise<T[]> {
+    return Promise.all(
+      attachments.map(async (attachment) => {
+        if (attachment.inlineImage) return attachment
+        const inside = posix.join(
+          this.backend.tmp(this.privateDirs()),
+          'solera-attachments',
+          attachment.id,
+          basename(attachment.filename) || 'file',
+        )
+        const target = this.hostPathOf(inside)
+        await mkdir(dirname(target), { recursive: true })
+        await copyFile(attachment.path, target)
+        return { ...attachment, path: inside }
+      }),
+    )
   }
 
   async close(): Promise<void> {

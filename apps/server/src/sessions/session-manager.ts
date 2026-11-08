@@ -79,7 +79,8 @@ import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
 import type { ConfinementScope } from '../environments/confined/plan.js'
 import type { EnvironmentProvider } from '../environments/provider.js'
-import { sessionScope } from '../environments/confined/scope.js'
+import { ConfinedEnvironment } from '../environments/confined/confined.js'
+import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
@@ -638,18 +639,7 @@ export class SessionManager {
     // voit que son dossier et le home de son compte.
     const cli = this.sessionCli(
       conversation,
-      conversation.environmentConfined
-        ? sessionScope({
-            agent: conversation.agent,
-            cwd,
-            workTrees: [],
-            accountEnv,
-            memoryDir: null,
-            attachmentsRoot: this.config.paths.attachments,
-            skillRoots: [],
-            prototypesDir: null,
-          })
-        : undefined,
+      this.confinedScope(conversation, { cwd, accountEnv, workTrees: [], memoryDir: null, skillRoots: [], prototypesDir: null }),
     )
     try {
       return await adapter.fork(
@@ -884,7 +874,12 @@ export class SessionManager {
 
     let steered = false
     try {
-      steered = await managed.runner.steer(entry.text, entry.attachments, resolved, entry.skills)
+      steered = await managed.runner.steer(
+        entry.text,
+        await this.visibleAttachments(conversationId, entry.attachments),
+        resolved,
+        entry.skills,
+      )
     } finally {
       if (!steered) {
         const restored = this.queues.get(conversationId) ?? []
@@ -1037,6 +1032,25 @@ export class SessionManager {
    * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
    * retomber en silence sur l'hôte.
    */
+  /** La portée d'une session confinée ; rien pour une session qui ne l'est pas. */
+  private confinedScope(
+    conversation: ConversationRow,
+    input: Omit<SessionScopeInput, 'agent'>,
+  ): ConfinementScope | undefined {
+    return conversation.environmentConfined ? sessionScope({ agent: conversation.agent, ...input }) : undefined
+  }
+
+  /**
+   * Les pièces jointes telles que l'agent pourra les lire : confiné, il ne voit pas leur
+   * dossier, et en reçoit une copie dans son tmp privé.
+   */
+  private visibleAttachments(conversationId: string, attachments: OutgoingAttachment[]): Promise<OutgoingAttachment[]> {
+    const environment = this.runners.get(conversationId)?.environment
+    return environment instanceof ConfinedEnvironment && attachments.length > 0
+      ? environment.shareAttachments(attachments)
+      : Promise.resolve(attachments)
+  }
+
   private sessionCli(conversation: ConversationRow, scope?: ConfinementScope): CliLauncher & { binary: string } {
     const adapter = this.registry.adapter(conversation.agent)
     const environment = this.environments.provider(environmentOf(conversation), scope)
@@ -1108,18 +1122,14 @@ export class SessionManager {
     // la vie du runner : un worktree lié ensuite, un skill ajouté, comptent à la relance.
     const launcher = this.sessionCli(
       conversation,
-      conversation.environmentConfined
-        ? sessionScope({
-            agent: conversation.agent,
-            cwd,
-            workTrees: projectId === null ? [] : linkedWorktreePaths(this.db, conversationId, projectId, () => {}),
-            accountEnv,
-            memoryDir: memoryDir(config),
-            attachmentsRoot: this.config.paths.attachments,
-            skillRoots: new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId),
-            prototypesDir,
-          })
-        : undefined,
+      this.confinedScope(conversation, {
+        cwd,
+        accountEnv,
+        workTrees: projectId === null ? [] : linkedWorktreePaths(this.db, conversationId, projectId, () => {}),
+        memoryDir: memoryDir(config),
+        skillRoots: skillRoots(config),
+        prototypesDir,
+      }),
     )
 
     return {
@@ -1754,7 +1764,7 @@ export class SessionManager {
       const conversation = this.loadConversation(conversationId)
       const resolved = this.resolveMentions(this.refuseMissingCwd(conversation), mentions)
 
-      steered = await managed.runner.steer(text, attachments, resolved, skills)
+      steered = await managed.runner.steer(text, await this.visibleAttachments(conversationId, attachments), resolved, skills)
       if (steered) this.touch(conversationId)
       return steered
     } finally {
@@ -1848,7 +1858,7 @@ export class SessionManager {
     // l'envoi : la capture doit être au plus près du premier geste de l'agent.
     await this.openCheckpoint(conversation)
     try {
-      await runner.send(text, attachments, resolved, skills)
+      await runner.send(text, await this.visibleAttachments(conversationId, attachments), resolved, skills)
     } catch (err) {
       this.checkpoints.delete(conversationId)
       throw err

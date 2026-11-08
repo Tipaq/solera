@@ -40,7 +40,6 @@ export interface SessionScopeInput {
   /** Ce que `accountEnv` a posé : le jeton de Claude, le home du compte Codex ou Grok. */
   accountEnv: Record<string, string>
   memoryDir: string | null
-  attachmentsRoot: string
   skillRoots: string[]
   prototypesDir: string | null
 }
@@ -69,7 +68,8 @@ function refuse(code: string, agent: AgentKind, message: string): never {
 export function sessionScope(input: SessionScopeInput): ConfinementScope {
   const { agent, accountEnv } = input
   const writable = [...(input.memoryDir ? [input.memoryDir] : []), ...(input.prototypesDir ? [input.prototypesDir] : [])]
-  const readable = [input.attachmentsRoot, ...input.skillRoots]
+  // Pas les pièces jointes : leur dossier mêle tous les projets (voir `shareAttachments`).
+  const readable = [...input.skillRoots]
   const homeLinks: ConfinementScope['homeLinks'] = []
   if (agent === 'opencode') {
     refuse('confinement_agent_unsupported', agent, 'OpenCode has no isolated account yet: it cannot run confined.')
