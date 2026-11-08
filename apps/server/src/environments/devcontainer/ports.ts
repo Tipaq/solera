@@ -392,23 +392,8 @@ export class PortForwarder {
   private relayConnection(entry: Forward, socket: Socket): void {
     socket.pause()
     void this.relayCommand().then((relay) => {
-      if (!relay || socket.destroyed) {
-        socket.destroy()
-        return
-      }
-      const command = RELAYS[relay]!(entry.address, entry.containerPort)
-      const child = spawn(this.docker, ['exec', '-i', this.containerId, ...command], {
-        stdio: ['pipe', 'pipe', 'ignore'],
-        windowsHide: true,
-      })
-      socket.pipe(child.stdin)
-      child.stdout.pipe(socket)
-      socket.resume()
-      child.stdin.on('error', () => undefined)
-      socket.on('error', () => child.kill())
-      socket.on('close', () => child.kill())
-      child.on('error', () => socket.destroy())
-      child.on('exit', () => socket.end())
+      if (!relay) socket.destroy()
+      else relaySocket(socket, this.docker, this.containerId, relay, entry.address, entry.containerPort)
     })
   }
 
@@ -419,20 +404,47 @@ export class PortForwarder {
    */
   private async relayCommand(): Promise<string | null> {
     if (this.relay !== undefined) return this.relay
-    try {
-      const { stdout } = await run(this.docker, ['exec', this.containerId, 'sh', '-c', PROBE], {
-        timeout: DOCKER_TIMEOUT_MS,
-        windowsHide: true,
-      })
-      const found = stdout.trim()
-      this.relay = found in RELAYS ? found : null
-      return this.relay
-    } catch (err) {
-      // Aucun outil : c'est une réponse, pas un échec.
-      if ((err as { code?: unknown }).code === NONE_FOUND) this.relay = null
-      return null
-    }
+    const found = await findRelay(this.docker, this.containerId)
+    if (found !== undefined) this.relay = found
+    return found ?? null
   }
+}
+
+/**
+ * Le premier outil de relais du conteneur ; null quand il n'en a aucun, ce qui est une
+ * réponse ; undefined quand la sonde n'a pas pu tourner, à refaire plus tard.
+ */
+export async function findRelay(docker: string, containerId: string): Promise<string | null | undefined> {
+  try {
+    const { stdout } = await run(docker, ['exec', containerId, 'sh', '-c', PROBE], {
+      timeout: DOCKER_TIMEOUT_MS,
+      windowsHide: true,
+    })
+    const found = stdout.trim()
+    return found in RELAYS ? found : null
+  } catch (err) {
+    return (err as { code?: unknown }).code === NONE_FOUND ? null : undefined
+  }
+}
+
+/**
+ * Branche une connexion de l'hôte sur `address:port` **dans** le conteneur, par un
+ * `docker exec` de l'outil `relay` (`findRelay`). La connexion doit être en pause.
+ */
+export function relaySocket(socket: Socket, docker: string, containerId: string, relay: string, address: string, port: number): void {
+  if (socket.destroyed) return
+  const child = spawn(docker, ['exec', '-i', containerId, ...RELAYS[relay]!(address, port)], {
+    stdio: ['pipe', 'pipe', 'ignore'],
+    windowsHide: true,
+  })
+  socket.pipe(child.stdin)
+  child.stdout.pipe(socket)
+  socket.resume()
+  child.stdin.on('error', () => undefined)
+  socket.on('error', () => child.kill())
+  socket.on('close', () => child.kill())
+  child.on('error', () => socket.destroy())
+  child.on('exit', () => socket.end())
 }
 
 function closeServers(entry: Forward): void {

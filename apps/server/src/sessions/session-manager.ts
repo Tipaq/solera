@@ -653,7 +653,7 @@ export class SessionManager {
     try {
       await this.openEnvironment(conversation, cli.environment)
       return await adapter.fork(
-        { agentSessionId: conversation.agentSessionId, cwd, accountEnv, cli },
+        { agentSessionId: conversation.agentSessionId, cwd, accountEnv: accountEnvInside(accountEnv, cli.environment), cli },
         adapter.forkCut(this.log, conversationId, throughSeq),
       )
     } finally {
@@ -1189,7 +1189,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...accountEnv,
+        ...accountEnvInside(accountEnv, launcher.environment),
         // Confinée, la session a son propre conteneur : la portée lui donne l'identité git
         // et ses transcripts, rien de partagé avec les autres.
         ...(sameEnvironment(launcher.environment.environment, DEVCONTAINER_ENVIRONMENT)
@@ -2502,6 +2502,19 @@ function accountRequired(agent: 'codex' | 'grok'): HttpError {
     'agent_account_required',
     'No {agent} account is connected: connect one in Settings › Agents to start this conversation.',
     { agent: agent === 'codex' ? 'Codex' : 'Grok' },
+  )
+}
+
+/**
+ * L'environnement du compte tel que le CLI le reçoit : `CODEX_HOME` et `GROK_HOME` sont
+ * des dossiers de l'hôte, qu'il lit où il tourne (`/mnt/c/…` dans un dev container sous
+ * Windows natif, #152).
+ */
+function accountEnvInside(accountEnv: Record<string, string>, environment: EnvironmentProvider): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(accountEnv).map(([name, value]) =>
+      name === 'CODEX_HOME' || name === 'GROK_HOME' ? [name, environment.pathInside(value)] : [name, value],
+    ),
   )
 }
 

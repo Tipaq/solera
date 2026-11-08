@@ -66,6 +66,8 @@ export class OpencodeServer {
     private readonly baseUrl: string,
     private readonly authorization: string,
     private readonly options: OpencodeServerOptions,
+    /** Le relais qui rend le serveur joignable de l'hôte, à fermer avec lui. */
+    private readonly reach: { close(): void },
   ) {}
 
   /**
@@ -96,8 +98,14 @@ export class OpencodeServer {
     })
 
     let baseUrl: string
+    let reach: { close(): void }
     try {
-      baseUrl = await listeningUrl(child)
+      // Dans un conteneur, la boucle locale où opencode écoute n'est pas celle de
+      // l'hôte : l'environnement l'y relaie (#152).
+      const announced = await listeningUrl(child)
+      const reachable = (await options.environment.urlFromHost?.(announced)) ?? { url: announced, close: () => undefined }
+      baseUrl = reachable.url
+      reach = reachable
     } catch (err) {
       child.kill()
       throw err
@@ -109,7 +117,7 @@ export class OpencodeServer {
     child.stderr.on('data', relay)
 
     const authorization = `Basic ${Buffer.from(`opencode:${password}`).toString('base64')}`
-    const server = new OpencodeServer(child, baseUrl, authorization, options)
+    const server = new OpencodeServer(child, baseUrl, authorization, options, reach)
     child.on('exit', (code) => server.fail(code))
     child.on('error', () => server.fail(null))
 
@@ -129,6 +137,7 @@ export class OpencodeServer {
     this.closed = true
     this.connection.abort()
     this.child.kill()
+    this.reach.close()
     this.options.onExit?.(code)
   }
 
@@ -292,6 +301,7 @@ export class OpencodeServer {
     // Un rechargement en attente ne doit pas rester suspendu à un flux qui ne viendra plus.
     this.restart?.()
     this.child.kill()
+    this.reach.close()
   }
 }
 

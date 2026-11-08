@@ -8,6 +8,14 @@ import { DevcontainerEnvironment, shellArgs, type RunningContainer } from '../sr
 import { ephemeralMounts } from '../src/environments/devcontainer/ephemeral.js'
 import { containerPathOf, hostPathOf } from '../src/environments/devcontainer/paths.js'
 import { hasAbsoluteGitLink, relativizeWorktreeLinks } from '../src/environments/devcontainer/worktree-links.js'
+import type { EnvironmentProvider } from '../src/environments/provider.js'
+import { completedItem } from '../src/agents/codex/item-events.js'
+import { describeEdit as describeCodexEdit } from '../src/agents/codex/file-edits.js'
+import { toOpencodeConfig } from '../src/agents/opencode/config.js'
+import { describePermission, fileEdits } from '../src/agents/opencode/tools.js'
+import { fileUrlInside, loggedPath } from '../src/agents/paths.js'
+import type { ThreadItem } from '@solera/codex-bindings/v2'
+import type { ToolPart } from '@solera/opencode-bindings'
 
 async function tempDir(t: TestContext): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'solera-paths-'))
@@ -98,4 +106,57 @@ test("le conteneur d'une session confinée monte ses dossiers à leur chemin du 
   assert.equal(mounts.workspaceMount, 'type=bind,source=C:\\data\\worktrees\\feat,target=/mnt/c/data/worktrees/feat')
   assert.ok(mounts.mounts.includes('type=bind,source=C:\\data\\memory,target=/mnt/c/data/memory,readonly'))
   assert.ok(mounts.sources.includes('C:\\data\\memory'), "la liste blanche reste en chemins de l'hôte")
+})
+
+/** Un environnement qui voit l'hôte Linux du test sous `/mnt/c`, comme un dev container sous Windows natif. */
+const mounted = {
+  pathInside: (path: string) => `/mnt/c${path}`,
+  pathOutside: (path: string) => (path.startsWith('/mnt/c/') ? path.slice('/mnt/c'.length) : path),
+} as EnvironmentProvider
+
+test('un fichier mentionné part au CLI en URL file:// de son environnement', () => {
+  assert.equal(fileUrlInside(mounted, '/data/a b.md'), 'file:///mnt/c/data/a%20b.md')
+  assert.equal(loggedPath('/mnt/c/Users/me/project/a.ts', 'win32'), 'C:\\Users\\me\\project\\a.ts')
+  assert.equal(loggedPath('src/a.ts', 'win32'), 'src/a.ts')
+})
+
+test("Codex : un fichier édité ou une image vue dans le conteneur sont ramenés sur l'hôte", () => {
+  const item = {
+    type: 'fileChange',
+    id: 'patch',
+    status: 'completed',
+    changes: [{ path: '/mnt/c/projet/src/a.ts', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-a\n+b\n' }],
+  } as unknown as ThreadItem
+  const events = completedItem(item, '/projet', 10, null, mounted.pathOutside)
+  const edited = events.find((event) => event.type === 'file.edited')
+  assert.deepEqual(edited && 'path' in edited ? edited.path : null, 'src/a.ts')
+  // Relu dans le journal, sans environnement : sous Linux rien ne se traduit, le chemin reste celui du CLI.
+  assert.equal(describeCodexEdit({ item }, '/mnt/c/projet', 'src/a.ts').kind, 'patch')
+})
+
+test("OpenCode : configuration en chemins du conteneur, permissions et éditions en chemins de l'hôte", () => {
+  const config = toOpencodeConfig({
+    config: { agent: 'opencode', permissions: {}, additionalDirectories: ['/extra'] } as never,
+    mcpServers: [],
+    skillRoots: ['/skills/global'],
+    readableDirs: ['/attachments'],
+    inside: mounted.pathInside,
+  })
+  assert.deepEqual(Object.keys(config.permission && typeof config.permission === 'object' ? (config.permission as { external_directory: object }).external_directory : {}), [
+    '/mnt/c/extra/**',
+    '/mnt/c/skills/global/**',
+    '/mnt/c/attachments/**',
+  ])
+  assert.deepEqual((config as { skills?: { paths: string[] } }).skills?.paths, ['/mnt/c/skills/global/skills'])
+
+  const permission = describePermission('edit', [], { filepath: '/mnt/c/projet/src/a.ts' }, '/projet', mounted.pathOutside)
+  assert.equal((permission.input as { file_path: string }).file_path, 'src/a.ts')
+
+  const part = {
+    type: 'tool',
+    tool: 'write',
+    callID: 'w',
+    state: { status: 'completed', input: { filePath: '/mnt/c/projet/b.ts', content: 'x' }, metadata: { exists: false } },
+  } as unknown as ToolPart
+  assert.deepEqual(fileEdits(part, '/projet', mounted.pathOutside).map((event) => 'path' in event && event.path), ['b.ts'])
 })

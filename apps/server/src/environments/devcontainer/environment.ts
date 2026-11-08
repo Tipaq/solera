@@ -1,10 +1,12 @@
 import { execFile, spawn as spawnProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { createServer, type AddressInfo } from 'node:net'
 import { posix, win32 } from 'node:path'
 import { spawn as spawnPty, type IPty } from 'node-pty'
 import type { ExecutionEnvironment } from '@solera/protocol'
 import type { EnvironmentProvider, ExecRequest, ExecResult, PtyRequest, SpawnRequest } from '../provider.js'
 import { containerPathOf, hostPathOf } from './paths.js'
+import { findRelay, relaySocket } from './ports.js'
 
 /** Le dev container d'un projet, une fois démarré : ce qu'il faut pour y lancer un processus. */
 
@@ -175,6 +177,39 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
     if (!LOOPBACK_HOSTS.includes(parsed.hostname) || LOOPBACK_HOSTS.includes(address)) return url
     parsed.hostname = address.includes(':') ? `[${address}]` : address
     return parsed.toString().replace(/\/$/, '')
+  }
+
+  /**
+   * Un serveur de la boucle locale du conteneur, relayé sur celle de l'hôte : sous
+   * Docker Desktop, l'adresse du conteneur n'est pas joignable de l'hôte, et le CLI
+   * n'écoute de toute façon que sur sa boucle locale (#152). Chaque connexion passe par
+   * un `docker exec`, comme les ports du projet (`PortForwarder`).
+   */
+  async urlFromHost(url: string): Promise<{ url: string; close(): void }> {
+    const parsed = new URL(url)
+    const identity = { url, close: () => undefined }
+    // Sur le réseau de l'hôte, sa boucle locale est aussi celle du conteneur.
+    if (!LOOPBACK_HOSTS.includes(parsed.hostname) || LOOPBACK_HOSTS.includes(this.container.hostAddress)) return identity
+    const relay = await findRelay(this.docker, this.container.id)
+    if (!relay) {
+      throw new Error(`The dev container has no tool to relay ${url} to the host: install one of socat, python3, node, bash or nc in its image.`)
+    }
+    const address = parsed.hostname.replace(/^\[|\]$/g, '')
+    const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80))
+    const server = createServer((socket) => {
+      socket.pause()
+      relaySocket(socket, this.docker, this.container.id, relay, address === 'localhost' ? '127.0.0.1' : address, port)
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => {
+        server.off('error', reject)
+        resolve()
+      })
+    })
+    parsed.hostname = '127.0.0.1'
+    parsed.port = String((server.address() as AddressInfo).port)
+    return { url: parsed.toString().replace(/\/$/, ''), close: () => server.close() }
   }
 
   async copyIn(hostPath: string, insidePath: string): Promise<void> {

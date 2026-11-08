@@ -5,6 +5,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
+import { DevcontainerEnvironment } from '../src/environments/devcontainer/environment.js'
 import { attributesFor, parseListening, PortForwarder, portsConfigOf } from '../src/environments/devcontainer/ports.js'
 
 /** Une ligne de `/proc/net/tcp` : l'adresse locale en hexadécimal, et l'état. */
@@ -206,4 +207,30 @@ test("un docker inspect qui échoue en passant ne relâche pas les ports ; un co
   await forwarder.poll()
   assert.deepEqual(forwarder.list(), [])
   assert.equal(gone, true)
+})
+
+test("un serveur de la boucle locale du conteneur se joint de l'hôte par un relais, jusqu'à sa fermeture", async (t) => {
+  const fake = await fakeContainer(t)
+  const port = await httpServer(t, 'opencode serve')
+  const environment = new DevcontainerEnvironment(
+    { id: 'c0ffee', user: 'node', loginShell: '/bin/sh', workspace: '/p', remoteWorkspaceFolder: '/p', solerasMounts: true, env: {}, agents: new Map(), hostAddress: 'host.docker.internal' },
+    fake.docker,
+  )
+  const reach = await environment.urlFromHost(`http://127.0.0.1:${port}`)
+  const relayed = new URL(reach.url)
+  assert.equal(relayed.hostname, '127.0.0.1')
+  assert.notEqual(Number(relayed.port), port)
+  assert.equal(await (await fetch(`${reach.url}/session`)).text(), 'opencode serve')
+
+  reach.close()
+  await assert.rejects(
+    new Promise((resolve, reject) => connect(Number(relayed.port), '127.0.0.1').once('connect', resolve).once('error', reject)),
+  )
+
+  // Sur le réseau de l'hôte, rien à relayer.
+  const shared = new DevcontainerEnvironment(
+    { id: 'c0ffee', user: 'node', loginShell: '/bin/sh', workspace: '/p', remoteWorkspaceFolder: '/p', solerasMounts: true, env: {}, agents: new Map(), hostAddress: '127.0.0.1' },
+    fake.docker,
+  )
+  assert.equal((await shared.urlFromHost(`http://127.0.0.1:${port}`)).url, `http://127.0.0.1:${port}`)
 })
