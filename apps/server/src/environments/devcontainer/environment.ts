@@ -50,6 +50,9 @@ const HOST_ONLY = new Set([
   '_',
 ])
 
+/** Le délai laissé à un processus du conteneur pour finir avant d'être tué. */
+const KILL_AFTER_S = 3
+
 /** Les shells de l'hôte qu'un terminal ou une action demande : remplacés par celui du conteneur. */
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'pwsh', 'powershell'])
 
@@ -222,17 +225,24 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
   }
 
   /**
-   * Tue le processus d'un lancement s'il vit encore, et efface son fichier de pid. Vérifie
-   * d'abord que ce pid porte toujours la commande lancée : un pid peut avoir été repris.
+   * Tue le processus d'un lancement s'il vit encore, avec tout son groupe : un shell
+   * interactif ignore SIGTERM, et une action `pnpm dev` a des enfants qui tiennent un
+   * port. HUP et TERM d'abord, KILL si le groupe vit encore après `KILL_AFTER_S`.
+   * Vérifie d'abord que ce pid porte toujours la commande lancée : un pid peut avoir
+   * été repris. `docker exec` fait de son processus le chef de sa session et de son
+   * groupe, avec ou sans terminal : le groupe porte donc son pid.
    */
   private reap(pidFile: string, command: string): void {
     const script =
       'f="$0"; c="$1"; [ -f "$f" ] || exit 0; p=$(cat "$f"); rm -f "$f"; ' +
-      '[ -r "/proc/$p/cmdline" ] && tr "\\000" " " <"/proc/$p/cmdline" | grep -qF -- "$c" && kill -TERM "$p" 2>/dev/null; exit 0'
+      '[ -r "/proc/$p/cmdline" ] && tr "\\000" " " <"/proc/$p/cmdline" | grep -qF -- "$c" || exit 0; ' +
+      'kill -HUP "-$p" 2>/dev/null; kill -TERM "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null; ' +
+      `i=0; while [ $i -lt ${KILL_AFTER_S * 10} ] && kill -0 "-$p" 2>/dev/null; do sleep 0.1; i=$((i+1)); done; ` +
+      'kill -KILL "-$p" 2>/dev/null; exit 0'
     execFile(
       this.docker,
       ['exec', '-u', 'root', this.container.id, '/bin/sh', '-c', script, pidFile, command],
-      { timeout: 15_000, windowsHide: true },
+      { timeout: (KILL_AFTER_S + 15) * 1000, windowsHide: true },
       () => undefined,
     )
   }

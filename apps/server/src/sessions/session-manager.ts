@@ -261,7 +261,7 @@ export class SessionManager {
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
-    this.environments = new Environments(db, new Devcontainers(config.paths))
+    this.environments = new Environments(db, new Devcontainers(config.paths, config.server))
   }
 
   /**
@@ -1500,11 +1500,12 @@ export class SessionManager {
       (status.found && status.version) || PREFERRED_CLI_RELEASES[conversation.agent].version
     const log: string[] = []
     let shown = 0
-    const notice = (message: string) =>
+    // Le message est la dernière ligne du journal, que l'interface place dans sa phrase.
+    const notice = (code: 'devcontainer_starting' | 'devcontainer_ready', message: string) =>
       this.log.append(conversation.id, {
         type: 'agent.notice',
         id: 'devcontainer.up',
-        code: 'devcontainer_starting',
+        code,
         message,
         level: 'info',
         details: log.join('\n'),
@@ -1518,10 +1519,10 @@ export class SessionManager {
           if (log.length > 60) log.shift()
           if (Date.now() - shown < 1_000) return
           shown = Date.now()
-          notice(`Démarrage du dev container du projet… ${line.slice(0, 200)}`)
+          notice('devcontainer_starting', line.slice(0, 200))
         },
       })
-      if (shown > 0) notice('Dev container démarré.')
+      if (shown > 0) notice('devcontainer_ready', '')
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       this.log.append(conversation.id, {

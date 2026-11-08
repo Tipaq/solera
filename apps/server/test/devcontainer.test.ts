@@ -10,7 +10,7 @@ import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import { DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT } from '@solera/protocol'
 import type { Paths } from '../src/config.js'
 import { AGENTS_MOUNT, ContainerAgents, linuxPackage } from '../src/environments/devcontainer/agents.js'
-import { Devcontainers, parseEnv } from '../src/environments/devcontainer/containers.js'
+import { Devcontainers, parseEnv, targetArch } from '../src/environments/devcontainer/containers.js'
 import { DevcontainerEnvironment, type RunningContainer } from '../src/environments/devcontainer/environment.js'
 import { parseUpResult } from '../src/environments/devcontainer/tools.js'
 import { Environments } from '../src/environments/environments.js'
@@ -103,6 +103,11 @@ test("un CLI se lance dans le conteneur par docker exec, sous l'utilisateur du d
   assert.ok(reap)
   assert.deepEqual(reap.slice(0, 4), ['exec', '-u', 'root', 'c0ffee'])
   assert.deepEqual(reap.slice(-2), [pidFile, binary])
+  // Le groupe entier, et KILL pour ce qui ignore TERM ; sans `--`, que dash refuse.
+  const script = reap.at(-3) ?? ''
+  assert.match(script, /kill -TERM "-\$p"/)
+  assert.match(script, /kill -KILL "-\$p"/)
+  assert.doesNotMatch(script, /kill -\w+ --/)
 })
 
 test("un terminal ouvre le shell de connexion du conteneur, pas celui de l'hôte", async (t) => {
@@ -153,6 +158,13 @@ test("l'environnement de l'utilisateur du conteneur garde ses variables, pas cel
     PATH: '/a:/b',
     NVM_DIR: '/n',
   })
+})
+
+test("seuls x86_64 et aarch64 ont des CLI : une autre architecture est refusée, pas prise pour x64", () => {
+  assert.equal(targetArch('x86_64'), 'x64')
+  assert.equal(targetArch('aarch64'), 'arm64')
+  assert.equal(targetArch('armv7l'), null)
+  assert.equal(targetArch(''), null)
 })
 
 test('chaque CLI a son paquet Linux, et la libc du conteneur choisit la variante', () => {

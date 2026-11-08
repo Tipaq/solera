@@ -25,7 +25,9 @@ export class ContainerRefusal extends Error {
       | 'devcontainer_docker_missing'
       | 'devcontainer_cli_missing'
       | 'devcontainer_failed'
-      | 'devcontainer_foreign',
+      | 'devcontainer_foreign'
+      | 'devcontainer_host_unreachable'
+      | 'devcontainer_arch',
     message: string,
   ) {
     super(message)
@@ -56,7 +58,14 @@ export class Devcontainers {
   private readonly starting = new Map<string, Promise<RunningContainer>>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
 
-  constructor(private readonly paths: Paths) {}
+  constructor(
+    private readonly paths: Paths,
+    /**
+     * Où le serveur écoute : un conteneur ne joint la boucle locale de l'hôte que par
+     * Docker Desktop, qui la relaie derrière `host.docker.internal`.
+     */
+    private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
+  ) {}
 
   /** Construits au premier usage : un serveur sans dev container n'en touche aucun chemin. */
   private get tools(): DevcontainerTools {
@@ -102,8 +111,15 @@ export class Devcontainers {
     }
     if (need.agent) {
       const target = await this.target(container)
-      const inside = await this.agents.ensure(need.agent.kind, need.agent.version, target)
-      container.agents.set(binaryName(need.agent.binary), inside)
+      try {
+        const inside = await this.agents.ensure(need.agent.kind, need.agent.version, target)
+        container.agents.set(binaryName(need.agent.binary), inside)
+      } catch (err) {
+        throw new ContainerRefusal(
+          'devcontainer_failed',
+          `The Linux ${need.agent.kind} CLI ${need.agent.version} could not be fetched for the dev container: ${(err as Error).message}`,
+        )
+      }
     }
     return this.provider(project.id)
   }
@@ -155,6 +171,7 @@ export class Devcontainers {
         agents: new Map(),
         hostAddress: await this.tools.hostAddress(up.containerId),
       }
+      this.assertServerReachable(container.hostAddress)
       await this.probe(container)
       this.running.set(project.id, container)
       return container
@@ -162,6 +179,20 @@ export class Devcontainers {
       if (err instanceof ContainerRefusal) throw err
       throw new ContainerRefusal('devcontainer_failed', (err as Error).message)
     }
+  }
+
+  /**
+   * Le MCP de Solera doit se joindre depuis le conteneur, sans quoi une session y
+   * partirait sans lui. Sous Linux natif, l'hôte vu du conteneur est la passerelle du
+   * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas.
+   */
+  private assertServerReachable(hostAddress: string): void {
+    if (hostAddress === 'host.docker.internal' || this.server.agentUrl) return
+    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(this.server.host)) return
+    throw new ContainerRefusal(
+      'devcontainer_host_unreachable',
+      `The Solera server listens on ${this.server.host} only, which a container cannot reach on native Linux (it sees the host at ${hostAddress}). Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
+    )
   }
 
   /**
@@ -198,14 +229,33 @@ export class Devcontainers {
   }
 
   private async target(container: RunningContainer): Promise<LinuxTarget> {
-    const out = await this.tools.execIn(
-      container.id,
-      ['/bin/sh', '-c', 'uname -m; ls /lib/ld-musl-* 2>/dev/null | head -n 1'],
-      'root',
-    )
+    let out: string
+    try {
+      out = await this.tools.execIn(
+        container.id,
+        ['/bin/sh', '-c', 'uname -m; ls /lib/ld-musl-* 2>/dev/null | head -n 1'],
+        'root',
+      )
+    } catch (err) {
+      throw new ContainerRefusal('devcontainer_failed', `The dev container does not answer: ${(err as Error).message}`)
+    }
     const [machine = '', musl = ''] = out.split('\n').map((line) => line.trim())
-    return { arch: /aarch64|arm64/.test(machine) ? 'arm64' : 'x64', musl: musl.length > 0 }
+    const arch = targetArch(machine)
+    if (!arch) {
+      throw new ContainerRefusal(
+        'devcontainer_arch',
+        `The dev container runs on ${machine || 'an unknown architecture'}: the agent CLIs only exist for x86_64 and aarch64.`,
+      )
+    }
+    return { arch, musl: musl.length > 0 }
   }
+}
+
+/** L'architecture d'un CLI pour ce que `uname -m` dit du conteneur ; null sans CLI pour elle. */
+export function targetArch(machine: string): LinuxTarget['arch'] | null {
+  if (machine === 'x86_64' || machine === 'amd64') return 'x64'
+  if (machine === 'aarch64' || machine === 'arm64') return 'arm64'
+  return null
 }
 
 /** Les configurations des CLI lancés dans un conteneur (`CLAUDE_CONFIG_DIR`), par utilisateur. */
