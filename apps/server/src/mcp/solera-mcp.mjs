@@ -861,6 +861,11 @@ const ALL_TOOLS = [
           type: 'integer',
           description: 'Numéro de la carte que la session traite. Elle y est rattachée et passe « en cours » si elle était « à faire ».',
         },
+        confined: {
+          type: 'boolean',
+          description:
+            "La confiner : elle n'écrit que dans son arbre, ne voit ni les identifiants de l'hôte ni les autres dépôts, et tourne sans demandes d'autorisation. Elle ne pourra donc ni pousser ni ouvrir de PR. `false` pour l'environnement du projet, non confiné. Omettre pour le réglage du projet. Une session confinée ne lance que des sessions confinées.",
+        },
       },
       required: ['prompt'],
     },

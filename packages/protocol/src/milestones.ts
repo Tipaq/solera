@@ -157,6 +157,8 @@ export interface MilestoneRunDto {
   cardTitle: string
   state: MilestoneRunState
   concurrency: number
+  /** Ses sessions confinées ou non (#146) ; null : le réglage du projet. */
+  confined: boolean | null
   agent: AgentKind
   model: string
   branch: string
@@ -176,6 +178,8 @@ export const startMilestoneBodySchema = z.object({
   config: agentConfigSchema.optional(),
   /** Les configurations propres à certaines cartes, par identifiant. */
   cards: z.record(z.string().uuid(), agentConfigSchema).default({}),
+  /** Ses sessions confinées ou non (#146) ; null : le réglage du projet. */
+  confined: z.boolean().nullable().default(null),
 })
 export type StartMilestoneBody = z.infer<typeof startMilestoneBodySchema>
 

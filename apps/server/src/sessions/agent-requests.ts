@@ -316,6 +316,7 @@ interface StartSessionPayload {
   effort?: unknown
   worktree?: unknown
   card?: unknown
+  confined?: unknown
 }
 
 export class AgentRequests {
@@ -794,6 +795,7 @@ export class AgentRequests {
     }
 
     this.assertLaunchAllowed(requester, request.id)
+    const confined = this.launchConfinement(requester, payload.confined)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
@@ -810,6 +812,7 @@ export class AgentRequests {
       // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
       // mission d'un agent libre de tout l'hôte.
       ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
+      autonomous: { confined },
       worktreeId,
       cardId: card?.id ?? null,
       title,
@@ -845,7 +848,9 @@ export class AgentRequests {
       `CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}.`,
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
-      describePermissions(config),
+      row.environmentConfined ? 'Elle est confinée : elle tourne sans demandes d\'autorisation.' : null,
+      // Celle qu'elle a reçue : confinée, elle a quitté les demandes d'autorisation.
+      describePermissions(parseAgentConfig(row.config)),
       requester.id
         ? "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire."
         : 'Elle apparaît dans Solera comme les autres. Pour lire sa réponse : read_conversation avec ce même id et `wait_seconds`.',
@@ -1150,6 +1155,21 @@ export class AgentRequests {
       )
     }
     return { id: card.id, number: card.number, title: card.title }
+  }
+
+  /**
+   * Le confinement demandé par `start_session` (#146) : oui, non, ou rien pour le
+   * réglage du projet. Une session confinée ne peut pas en lancer une libre.
+   */
+  private launchConfinement(requester: Requester, value: unknown): boolean | null {
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      throw new Refusal('Le paramètre `confined` est un booléen.')
+    }
+    const confined = value ?? null
+    if (confined === false && this.confined(requester)) {
+      throw new Refusal('Une session confinée ne lance que des sessions confinées : omets `confined`.')
+    }
+    return confined
   }
 
   /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */

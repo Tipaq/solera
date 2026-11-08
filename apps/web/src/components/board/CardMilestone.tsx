@@ -19,9 +19,10 @@ import {
 import { Badge, Banner, Button, IconButton, Menu, MenuRadioGroup, MenuRadioItem, Select } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { useAgentSettings } from '../chat/agent-settings'
+import { AutonomousConfinementSelect } from '../Environment'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useLaunchMilestone, useMilestonePlan, useMilestoneRun, useUpdateMilestone } from '../../lib/milestones'
-import { useProjects } from '../../lib/projects'
+import { useProjectEnvironments, useProjects } from '../../lib/projects'
 import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 
 type Tone = 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'
@@ -190,6 +191,8 @@ function LaunchDialog({ card, projectId, onClose }: { card: CardDto; projectId: 
   const config = edited?.agent === agent ? edited : defaultsFor(agent)
   const { groups, catalogError } = useAgentSettings({ config, onConfigChange: setEdited })
   const [overrides, setOverrides] = useState<Record<string, AgentKind>>({})
+  const [confined, setConfined] = useState<boolean | null>(null)
+  const { data: environments } = useProjectEnvironments(projectId)
 
   const sections: { key: MessageKey; cards: MilestonePlanCardDto[] }[] = plan
     ? [
@@ -205,7 +208,7 @@ function LaunchDialog({ card, projectId, onClose }: { card: CardDto; projectId: 
   const submit = () => {
     if (blocked || launch.isPending) return
     const cards = Object.fromEntries(Object.entries(overrides).map(([id, kind]) => [id, defaultsFor(kind)]))
-    launch.mutate({ concurrency: Number(concurrency), config, cards }, { onSuccess: onClose })
+    launch.mutate({ concurrency: Number(concurrency), config, cards, confined }, { onSuccess: onClose })
   }
 
   return (
@@ -291,6 +294,9 @@ function LaunchDialog({ card, projectId, onClose }: { card: CardDto; projectId: 
             {groups.map((group) => (
               <Select key={group.key} label={group.label} value={group.value} options={group.options} onChange={group.onChange} />
             ))}
+            {environments ? (
+              <AutonomousConfinementSelect value={confined} inherited={environments.autonomousConfined} onChange={setConfined} />
+            ) : null}
             {launch.isError ? <Banner tone="critical">{launch.error.message}</Banner> : null}
           </div>
 

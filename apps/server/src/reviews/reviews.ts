@@ -470,6 +470,8 @@ export class Reviews {
       cardId: card.id,
       title: `Revue de la PR #${review.prNumber} (#${card.number})`,
       origin: null,
+      // Elle lit l'arbre de l'auteur comme il le voit : confinée s'il l'est, libre sinon.
+      autonomous: { confined: author.environmentConfined },
     })
     this.ctx.db.update(cardReviews).set({ reviewerConversationId: row.id }).where(eq(cardReviews.id, reviewId)).run()
     try {

@@ -102,6 +102,12 @@ export const projects = sqliteTable(
      * confinée (#145) : ceux du projet, partagés, ou une copie par session.
      */
     confinedServices: text('confined_services').$type<ConfinedServices>().notNull().default('shared'),
+    /**
+     * Les sessions autonomes (tâches planifiées, cartes d'un jalon, sessions lancées par
+     * un agent, relectures) sont-elles confinées quand leur lancement ne le dit pas
+     * (#146) ? Faux : elles prennent l'environnement du projet, comme les autres.
+     */
+    autonomousConfined: integer('autonomous_confined', { mode: 'boolean' }).notNull().default(false),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -605,6 +611,8 @@ export const milestoneRuns = sqliteTable(
       .references(() => cards.id, { onDelete: 'cascade' }),
     state: text('state', { enum: ['running', 'paused', 'stopped', 'finished'] }).notNull(),
     concurrency: integer('concurrency').notNull().default(3),
+    /** Ses sessions sont-elles confinées (#146) ; null : le réglage du projet. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** La configuration du jalon (JSON `AgentConfig`, CLI compris), celle des cartes sans réglage propre. */
     config: text('config').notNull(),
     /** Le compte qui a lancé : ses sessions sont les siennes, et c'est lui qu'on prévient. */
@@ -1175,6 +1183,8 @@ export const scheduledTasks = sqliteTable(
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
     /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */
     overlapPolicy: text('overlap_policy').$type<'skip' | 'wait'>().notNull().default('skip'),
+    /** Ses tirs sont-ils confinés (#146) ; null : le réglage du projet, relu à chaque tir. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** Au-delà, le tir est interrompu : rien d'autre n'arrêterait un agent qui s'égare. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
