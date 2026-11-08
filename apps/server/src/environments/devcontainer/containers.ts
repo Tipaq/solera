@@ -58,8 +58,7 @@ export class Devcontainers {
   private readonly running = new Map<string, RunningContainer>()
   private readonly starting = new Map<string, Promise<RunningContainer>>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
-  /** Les `devcontainer.json` que Solera garde pour les projets qui n'en ont pas (#143). */
-  readonly managed: ManagedDevcontainers
+  private managedStore: ManagedDevcontainers | null = null
 
   constructor(
     private readonly paths: Paths,
@@ -68,8 +67,12 @@ export class Devcontainers {
      * Docker Desktop, qui la relaie derrière `host.docker.internal`.
      */
     private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
-  ) {
-    this.managed = managedDevcontainers(paths)
+  ) {}
+
+  /** Les `devcontainer.json` que Solera garde pour les projets qui n'en ont pas (#143). */
+  get managed(): ManagedDevcontainers {
+    this.managedStore ??= managedDevcontainers(this.paths)
+    return this.managedStore
   }
 
   /** Construits au premier usage : un serveur sans dev container n'en touche aucun chemin. */

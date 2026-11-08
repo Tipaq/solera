@@ -8,6 +8,7 @@ import {
   EMPTY_CONFIG_LAYER,
   layerWithFullConfig,
   DEVCONTAINER_ENVIRONMENT,
+  HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
   patchConfigLayer,
   sameEnvironment,
@@ -50,6 +51,7 @@ import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
 import { Environments, environmentColumns, environmentOf } from '../../environments/environments.js'
+import { hasNativeConfinement } from '../../environments/confined/native.js'
 import { managedDevcontainers } from '../../environments/devcontainer/containers.js'
 import { defaultDevcontainerJson, InvalidDevcontainerError } from '../../environments/devcontainer/managed.js'
 import { devcontainerConfigOf } from '../../environments/devcontainer/tools.js'
@@ -367,7 +369,8 @@ export function registerProjectRoutes(
   /**
    * Retire celui de Solera. Un projet qui y faisait tourner ses sessions par défaut, sans
    * `devcontainer.json` à lui, revient à l'hôte : un défaut qu'on ne sait plus lancer
-   * ferait échouer chaque session ouverte ensuite.
+   * ferait échouer chaque session ouverte ensuite. Confiné, il le reste là où la
+   * plateforme sait confiner : le retrait ne relâche pas le confinement en silence.
    */
   app.delete('/api/projects/:id/devcontainer', async (request) => {
     const user = requireUser(request)
@@ -378,7 +381,8 @@ export function registerProjectRoutes(
     }
     await managed.remove(id)
     if (project.environmentWhere === 'devcontainer' && !devcontainerConfigOf(project.workspacePath)) {
-      await ctx.db.update(projects).set(environmentColumns(HOST_ENVIRONMENT)).where(eq(projects.id, id))
+      const host = project.environmentConfined && hasNativeConfinement() ? HOST_CONFINED_ENVIRONMENT : HOST_ENVIRONMENT
+      await ctx.db.update(projects).set(environmentColumns(host)).where(eq(projects.id, id))
     }
     return { ok: true }
   })

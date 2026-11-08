@@ -307,6 +307,7 @@ test('un devcontainer.json se lit en JSONC, et ce qui ne se lancerait pas est re
     image: 'a//b',
     x: ['/*', '"//'],
   })
+  assert.deepEqual(JSON.parse(stripJsonc('{ "a": ",}", "b": [1, /* x */ ], }')), { a: ',}', b: [1] })
   assert.throws(() => assertDevcontainerJson('{ "image": '), InvalidDevcontainerError)
   assert.throws(() => assertDevcontainerJson('[]'), InvalidDevcontainerError)
   assert.throws(() => assertDevcontainerJson('{ "name": "sans image" }'), /image/)

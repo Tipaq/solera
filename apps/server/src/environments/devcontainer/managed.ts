@@ -87,12 +87,14 @@ export function stripJsonc(text: string): string {
     } else if (char === '/' && text[i + 1] === '*') {
       const end = text.indexOf('*/', i + 2)
       i = end === -1 ? text.length : end + 2
+    } else if (char === ',' && /^\s*(?:\/\/[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*[}\]]/.test(text.slice(i + 1))) {
+      i++
     } else {
       out += char
       i++
     }
   }
-  return out.replace(/,(\s*[}\]])/g, '$1')
+  return out
 }
 
 /** Les features officielles d'une stack, reconnue à un fichier à la racine du projet. */
