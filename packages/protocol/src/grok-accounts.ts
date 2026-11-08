@@ -4,10 +4,10 @@ import { z } from 'zod'
  * Comptes Grok Build supplémentaires, par utilisateur.
  *
  * Grok ne tient qu'une connexion par `GROK_HOME`, dans son `auth.json`. Comme pour Codex,
- * Solera donne à chaque compte supplémentaire son propre home, où seuls la connexion et
- * ce qui dépend du compte (catalogue de modèles, réglages distants) sont réels : le reste
- * (sessions, config.toml, mémoire, skills) est un lien vers le home de l'utilisateur, pour
- * que le compte ne change que l'abonnement qui paie, pas les réglages ni les sessions.
+ * Solera donne à chaque compte son propre home, sans aucun lien vers celui de
+ * l'utilisateur : sa connexion et ce qui en dépend, et une copie de la configuration
+ * (sans secrets), des règles et des skills de l'utilisateur. Une session passe d'un home
+ * à l'autre par copie de son dossier (`grok-accounts/homes.ts` côté serveur).
  *
  * Solera ne stocke aucun secret lui-même : la connexion se fait par Grok lancé dans ce
  * home, par code d'appareil (`grok login --device-auth`) ou par clé API, et c'est Grok qui

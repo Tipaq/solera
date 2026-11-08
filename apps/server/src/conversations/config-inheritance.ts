@@ -1,5 +1,5 @@
-import { and, eq, isNull, type SQL } from 'drizzle-orm'
-import { claudeAccounts, conversations, projects, type ConversationRow, type Db } from '@solera/db'
+import { and, asc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm'
+import { claudeAccounts, codexAccounts, conversations, grokAccounts, projects, type ConversationRow, type Db } from '@solera/db'
 import { claudeAccountOrder } from '../claude-accounts/store.js'
 import {
   EMPTY_CONFIG_LAYER,
@@ -35,31 +35,53 @@ export interface ConfigOwner {
 }
 
 /**
- * Le niveau du compte, tel que l'utilisateur l'a réglé — plus, pour Claude, un compte de
- * Solera quand il n'en a désigné aucun.
+ * Le niveau du compte, tel que l'utilisateur l'a réglé — plus, pour Claude, Codex et
+ * Grok, un compte de Solera quand il n'en a désigné aucun.
  *
- * Sans ce repli, un fil Claude qui n'a rien choisi partait sur la connexion du terminal,
- * qui tombe sans prévenir : les sessions lancées par un agent, les tâches planifiées et
- * les fils d'avant échouaient au premier tour alors qu'un compte qui marche était là. Le
- * repli est le premier compte dans l'ordre de la liste, et non le dernier utilisé : choisir
- * un compte dans un fil ne doit pas faire changer tous les autres à leur relance. Un choix
- * explicite au compte, la connexion du terminal comprise (`null`), l'emporte ; un compte
- * désigné puis supprimé ne compte pas comme un choix.
+ * Sans ce repli, un fil qui n'a rien choisi partait sur la connexion du terminal, qui
+ * tombe sans prévenir : les sessions lancées par un agent, les tâches planifiées et les
+ * fils d'avant échouaient au premier tour alors qu'un compte qui marche était là. Pour
+ * Codex et Grok, c'est aussi ce qui garde le home de l'utilisateur hors des sessions : un
+ * compte de Solera tourne dans un dossier à lui (ADR 0001). Le repli est le premier compte
+ * dans l'ordre de la liste, et non le dernier utilisé : choisir un compte dans un fil ne
+ * doit pas faire changer tous les autres à leur relance. Un compte Codex ou Grok jamais
+ * connecté n'est pas proposé, sa session refuserait le tour. Un choix explicite au compte,
+ * la connexion du terminal comprise (`null`), l'emporte ; un compte désigné puis supprimé
+ * ne compte pas comme un choix.
  */
 export function accountLayer(db: Db, userId: string): ConfigLayer {
-  const layer = readUserSettings(db, userId).agentLayer
-  const chosen = layer.claude.account
-  if (chosen === null) return layer
-  const accounts = db
-    .select({ id: claudeAccounts.id })
-    .from(claudeAccounts)
-    .where(eq(claudeAccounts.ownerId, userId))
-    .orderBy(claudeAccountOrder)
+  let layer = readUserSettings(db, userId).agentLayer
+  for (const agent of ['claude', 'codex', 'grok'] as const) {
+    const chosen = layer[agent].account
+    if (chosen === null) continue
+    const accounts = soleraAccounts(db, userId, agent)
+    // Un compte désigné puis supprimé ne vaut pas mieux qu'aucun choix.
+    if (chosen !== undefined && accounts.includes(chosen)) continue
+    const first = accounts[0]
+    if (first) layer = { ...layer, [agent]: { ...layer[agent], account: first } }
+  }
+  return layer
+}
+
+/** Les comptes de Solera de l'utilisateur pour ce CLI, dans l'ordre de leur liste. */
+function soleraAccounts(db: Db, userId: string, agent: 'claude' | 'codex' | 'grok'): string[] {
+  if (agent === 'claude') {
+    return db
+      .select({ id: claudeAccounts.id })
+      .from(claudeAccounts)
+      .where(eq(claudeAccounts.ownerId, userId))
+      .orderBy(claudeAccountOrder)
+      .all()
+      .map((account) => account.id)
+  }
+  const table = agent === 'codex' ? codexAccounts : grokAccounts
+  return db
+    .select({ id: table.id })
+    .from(table)
+    .where(and(eq(table.ownerId, userId), isNotNull(table.authMode)))
+    .orderBy(asc(table.label))
     .all()
-  // Un compte désigné puis supprimé ne vaut pas mieux qu'aucun choix.
-  if (chosen !== undefined && accounts.some((account) => account.id === chosen)) return layer
-  const first = accounts[0]
-  return first ? { ...layer, claude: { ...layer.claude, account: first.id } } : layer
+    .map((account) => account.id)
 }
 
 export function projectLayer(db: Db, projectId: string | null): ConfigLayer {
