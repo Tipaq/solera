@@ -6,6 +6,10 @@ import type { ExecutionEnvironment } from '@solera/protocol'
 import type { EnvironmentProvider, ExecRequest, ExecResult, PtyRequest, SpawnRequest } from '../provider.js'
 
 /** Le dev container d'un projet, une fois démarré : ce qu'il faut pour y lancer un processus. */
+
+/** Les noms de la boucle locale, tels qu'une adresse d'écoute ou une URL les écrivent. */
+export const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '::1', '[::1]']
+
 export interface RunningContainer {
   id: string
   /** L'utilisateur sous lequel le `devcontainer.json` fait travailler (`remoteUser`). */
@@ -150,7 +154,7 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
   /** La boucle locale de l'hôte devient l'hôte vu du conteneur. */
   urlOfHost(url: string): string {
     const parsed = new URL(url)
-    if (!['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)) return url
+    if (!LOOPBACK_HOSTS.includes(parsed.hostname)) return url
     parsed.hostname = this.container.hostAddress
     return parsed.toString().replace(/\/$/, '')
   }

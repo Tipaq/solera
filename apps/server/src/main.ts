@@ -254,6 +254,9 @@ async function main(): Promise<void> {
     })
 
   await app.listen({ host: config.server.host, port: config.server.port })
+  // Sous Linux natif, un dev container joint ce serveur par la passerelle de son réseau
+  // Docker : il y écoutera aussi, au même port, quand un conteneur en aura besoin.
+  sessions.environments.devcontainers?.serve(app.server)
 
   // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
   // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
