@@ -92,7 +92,7 @@ export function registerTerminalRoutes(
     }
 
     const conversationId = body.conversationId ?? null
-    const environment = sessions.environments.forTerminal(id, conversationId)
+    const environment = sessions.environments.forTerminal(id, conversationId, cwd)
     const terminal = wrap(() => terminals.open(id, cwd, { environment, conversationId }))
     return reply.status(201).send(terminal)
   })

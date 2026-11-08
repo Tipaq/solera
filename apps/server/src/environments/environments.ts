@@ -2,11 +2,17 @@ import { eq } from 'drizzle-orm'
 import { conversations, projects, type Db } from '@solera/db'
 import {
   environmentKey,
+  HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
   sameEnvironment,
   type EnvironmentWhere,
   type ExecutionEnvironment,
 } from '@solera/protocol'
+import type { Unavailable } from './confined/backend.js'
+import { ConfinedEnvironment } from './confined/confined.js'
+import { hasNativeConfinement, nativeConfinement } from './confined/native.js'
+import type { ConfinementScope } from './confined/plan.js'
+import { terminalScope } from './confined/scope.js'
 import { hostEnvironment } from './host.js'
 import { EnvironmentUnavailableError, type EnvironmentProvider } from './provider.js'
 
@@ -28,16 +34,20 @@ export function environmentColumns(environment: ExecutionEnvironment): Environme
  * Qui lance quoi, et où : l'environnement d'un projet ou d'une session, et le
  * fournisseur qui sait y lancer un processus.
  *
- * Seul l'hôte non confiné existe pour l'instant. Le dev container (#140) et le
- * confinement (#144, #145) y ajouteront leur fournisseur ; les appelants, eux, ne
- * changeront pas.
+ * L'hôte, et l'hôte confiné là où la plateforme a un confinement natif (#144). Le dev
+ * container (#140) et le conteneur confiné (#145) y ajouteront leur fournisseur ; les
+ * appelants, eux, ne changeront pas.
  */
 export class Environments {
   constructor(private readonly db: Db) {}
 
-  /** Ce qu'on peut choisir, pour ce projet, sur ce serveur. */
+  /**
+   * Ce qu'on peut choisir, pour ce projet, sur ce serveur. L'hôte confiné est proposé
+   * sur toute plateforme qui en a un, même si l'essai échoue : c'est au choix que le
+   * refus dit pourquoi et quoi lancer, plutôt qu'une option qui disparaît sans raison.
+   */
   choices(_projectId: string | null): ExecutionEnvironment[] {
-    return [HOST_ENVIRONMENT]
+    return hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT]
   }
 
   /**
@@ -45,16 +55,33 @@ export class Environments {
    * une session ne retombe jamais en silence sur un autre.
    */
   assertAvailable(projectId: string | null, environment: ExecutionEnvironment): void {
-    if (this.choices(projectId).some((choice) => sameEnvironment(choice, environment))) return
-    throw new EnvironmentUnavailableError(
-      environment,
-      `The ${environmentKey(environment)} environment is not available on this server yet.`,
-    )
+    if (!this.choices(projectId).some((choice) => sameEnvironment(choice, environment))) {
+      if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT)) refuseConfinement({ code: 'confinement_platform' })
+      throw new EnvironmentUnavailableError(
+        environment,
+        `The ${environmentKey(environment)} environment is not available on this server yet.`,
+      )
+    }
+    if (environment.confined) {
+      const native = nativeConfinement()
+      if ('unavailable' in native) refuseConfinement(native.unavailable)
+    }
   }
 
-  /** Le fournisseur d'un environnement. Lève si ce serveur ne sait pas y lancer. */
-  provider(environment: ExecutionEnvironment): EnvironmentProvider {
+  /**
+   * Le fournisseur d'un environnement. Lève si ce serveur ne sait pas y lancer.
+   *
+   * Un environnement confiné demande sa portée (`scope`) : ce que la session ou le
+   * terminal doit voir de l'hôte. Son fournisseur est à lui seul, et le propriétaire le
+   * ferme à sa fin : c'est ce qui tue ses processus et efface son home privé.
+   */
+  provider(environment: ExecutionEnvironment, scope?: ConfinementScope): EnvironmentProvider {
     if (sameEnvironment(environment, HOST_ENVIRONMENT)) return hostEnvironment
+    if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT) && scope) {
+      const native = nativeConfinement()
+      if ('unavailable' in native) refuseConfinement(native.unavailable)
+      return new ConfinedEnvironment(native.backend, scope)
+    }
     throw new EnvironmentUnavailableError(
       environment,
       `This session runs in the ${environmentKey(environment)} environment, which this server cannot start yet.`,
@@ -86,9 +113,20 @@ export class Environments {
 
   /**
    * Où ouvrir un terminal : dans l'environnement de la session qui l'ouvre, et hors
-   * session dans celui du projet.
+   * session dans celui du projet. Confiné, il n'écrit que dans son dossier, et le
+   * gestionnaire de terminaux ferme son fournisseur quand il se termine.
    */
-  forTerminal(projectId: string, conversationId: string | null): EnvironmentProvider {
-    return this.provider(conversationId ? this.ofConversation(conversationId) : this.ofProject(projectId))
+  forTerminal(projectId: string, conversationId: string | null, cwd: string): EnvironmentProvider {
+    const environment = conversationId ? this.ofConversation(conversationId) : this.ofProject(projectId)
+    return this.provider(environment, environment.confined ? terminalScope(cwd) : undefined)
   }
+}
+
+/** Le refus d'une session confinée : pourquoi, et la commande qui y remédie. */
+function refuseConfinement(unavailable: Unavailable): never {
+  throw new EnvironmentUnavailableError(
+    HOST_CONFINED_ENVIRONMENT,
+    `This server cannot confine a session: ${unavailable.code}${unavailable.detail ? ` (${unavailable.detail})` : ''}.`,
+    { code: unavailable.code, params: { fix: unavailable.fix ?? '', detail: unavailable.detail ?? '' } },
+  )
 }

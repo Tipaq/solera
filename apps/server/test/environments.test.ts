@@ -9,6 +9,7 @@ import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
 import {
   DEFAULT_CLAUDE_CONFIG,
+  HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
   type AgentConfig,
   type ProjectEnvironmentsDto,
@@ -24,6 +25,7 @@ import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
 import { createConversation } from '../src/conversations/create.js'
+import { hasNativeConfinement } from '../src/environments/confined/native.js'
 import { Environments } from '../src/environments/environments.js'
 import { hostEnvironment } from '../src/environments/host.js'
 import { EnvironmentUnavailableError } from '../src/environments/provider.js'
@@ -116,14 +118,14 @@ test('hôte : exec rend le code de sortie, spawn et pty lancent, les chemins ne 
   assert.deepEqual(hostEnvironment.environment, HOST_ENVIRONMENT)
 })
 
-test("environnements : seul l'hôte se choisit, un autre est refusé avec son code", async (t) => {
+test("environnements : l'hôte, et l'hôte confiné là où la plateforme en a un ; un autre est refusé avec son code", async (t) => {
   const { db } = await database(t)
   const environments = new Environments(db)
-  assert.deepEqual(environments.choices('project'), [HOST_ENVIRONMENT])
+  assert.deepEqual(environments.choices('project'), hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT])
   assert.equal(environments.provider(HOST_ENVIRONMENT), hostEnvironment)
   assert.throws(() => environments.provider(DEVCONTAINER), (err: EnvironmentUnavailableError) =>
     err.code === 'environment_unavailable' && err.statusCode === 409 && err.params?.environment === 'devcontainer')
-  assert.throws(() => environments.assertAvailable('project', { where: 'host', confined: true }), EnvironmentUnavailableError)
+  assert.throws(() => environments.assertAvailable('project', { where: 'devcontainer', confined: true }), EnvironmentUnavailableError)
   assert.deepEqual(environments.ofProject('project'), HOST_ENVIRONMENT)
   assert.deepEqual(environments.ofProject('disparu'), HOST_ENVIRONMENT)
 })
@@ -135,10 +137,10 @@ test('un terminal suit la session qui l’ouvre, et hors session le projet', asy
     environmentWhere: 'devcontainer', environmentConfined: false, createdAt: 1, updatedAt: 1,
   }).run()
   const environments = new Environments(db)
-  assert.equal(environments.forTerminal('project', null), hostEnvironment)
+  assert.equal(environments.forTerminal('project', null, '/tmp'), hostEnvironment)
   // La session est dans un environnement que ce serveur ne sait pas lancer : son
   // terminal refuse, il ne s'ouvre pas sur l'hôte à sa place.
-  assert.throws(() => environments.forTerminal('project', 'session'), EnvironmentUnavailableError)
+  assert.throws(() => environments.forTerminal('project', 'session', '/tmp'), EnvironmentUnavailableError)
 })
 
 test("créer une session fige l'environnement du projet, et refuse celui qu'on ne sait pas lancer", async (t) => {
@@ -170,7 +172,7 @@ test('projet : lire ses environnements, régler le sien, refuser ce qui ne se la
 
   const read = await app.inject({ method: 'GET', url: '/api/projects/project/environments' })
   assert.equal(read.statusCode, 200, read.body)
-  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), { default: HOST_ENVIRONMENT, choices: [HOST_ENVIRONMENT] })
+  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), { default: HOST_ENVIRONMENT, choices: new Environments(db).choices('project') })
 
   const host = await app.inject({ method: 'PATCH', url: '/api/projects/project', payload: { environment: HOST_ENVIRONMENT } })
   assert.equal(host.statusCode, 200, host.body)
