@@ -61,6 +61,11 @@ export function registerScheduleRoutes(
     return task
   }
 
+  /** Une tâche confinée que ce serveur ne saurait pas lancer est refusée dès sa création (#146). */
+  const assertConfinable = (projectId: string, confined: boolean | null) => {
+    sessions.environments.assertAvailable(projectId, sessions.environments.forAutonomous(projectId, confined))
+  }
+
   const one = (row: ScheduledTaskRow): ScheduledTaskDto => tasksToDto(ctx.db, [row])[0]!
 
   /** Toutes les tâches visibles, tous projets confondus : la sidebar les range par projet. */
@@ -95,6 +100,7 @@ export function registerScheduleRoutes(
 
     // Comme à la création d'une conversation : la tâche garde une configuration
     // explicite, pas un « défaut du CLI » qui changerait de sens d'un tir à l'autre.
+    assertConfinable(id, body.confined)
     const config = await registry.adapter(body.agent).resolveDefaults(body.config)
     const row = createScheduledTask(ctx.db, { projectId: id, userId: user.id }, { ...body, config })
     return reply.status(201).send(one(row))
@@ -105,6 +111,7 @@ export function registerScheduleRoutes(
     const { id } = request.params as { id: string }
     const body = updateScheduledTaskBodySchema.parse(request.body)
     const task = loadWritable(id, user.id)
+    if (body.confined !== undefined && task.projectId !== null) assertConfinable(task.projectId, body.confined)
 
     const config = body.config
       ? await registry.adapter(body.agent ?? task.agent).resolveDefaults(body.config)

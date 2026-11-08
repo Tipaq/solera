@@ -47,7 +47,7 @@ import {
   useProjectPrototypes,
   useUpdateProject,
 } from '../lib/projects'
-import { EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
+import { AutonomousConfinementSelect, EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
 import { useCapability } from '../lib/instance'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
 import { VisibilitySelect } from '../components/VisibilitySelect'
@@ -495,6 +495,14 @@ function ProjectEnvironment({ projectId }: { projectId: string }) {
           </div>
         ) : null}
         {error ? <Banner>{error}</Banner> : null}
+        <div className="flex flex-col gap-1 border-t border-line pt-4">
+          <AutonomousConfinementSelect
+            value={data.autonomousConfined}
+            disabled={updateProject.isPending}
+            onChange={(confined) => updateProject.mutate({ id: projectId, autonomousConfined: Boolean(confined) })}
+          />
+          <p className="text-meta text-ink-faint">{t('project.environment.autonomous')}</p>
+        </div>
         <ProjectDevcontainer projectId={projectId} />
         <ConfinedServicesSetting projectId={projectId} />
       </CardBody>

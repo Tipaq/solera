@@ -64,7 +64,7 @@ export function useMilestonePlan(cardId: string, enabled: boolean) {
 export function useLaunchMilestone(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { concurrency: number; config: AgentConfig; cards: Record<string, AgentConfig> }) =>
+    mutationFn: (body: { concurrency: number; config: AgentConfig; cards: Record<string, AgentConfig>; confined: boolean | null }) =>
       api.post<MilestoneRunDto>(`/api/cards/${cardId}/milestone`, body),
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)

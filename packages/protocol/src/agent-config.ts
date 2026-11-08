@@ -698,3 +698,36 @@ export function defaultConfigFor(agent: AgentConfig['agent']): AgentConfig {
   return DEFAULT_CONFIGS[agent]
 }
 
+
+/**
+ * La configuration d'une session confinée qui tourne sans demandes d'autorisation (#146) :
+ * le confinement est son garde-fou, et une demande y attendrait quelqu'un pour rien. Le
+ * reste de la configuration ne bouge pas. Codex lâche aussi son propre bac à sable, que
+ * le confinement remplace. opencode n'a pas de session confinée : il reste tel quel.
+ */
+export function unattendedConfig(config: AgentConfig): AgentConfig {
+  switch (config.agent) {
+    case 'claude':
+      return { ...config, permissionMode: 'bypassPermissions' }
+    case 'codex':
+      return { ...config, askForApproval: 'never', sandbox: 'danger-full-access' }
+    case 'grok':
+      return { ...config, permissionMode: 'bypassPermissions' }
+    case 'opencode':
+      return config
+  }
+}
+
+/**
+ * Les garde-fous de `from` (mode, approbation, bac à sable) posés sur `config` : ce que
+ * reprend un brouillon qui quitte un environnement confiné, pour ne pas garder le mode
+ * sans autorisation hors du confinement.
+ */
+export function withPermissionsOf(config: AgentConfig, from: AgentConfig): AgentConfig {
+  if (config.agent === 'claude' && from.agent === 'claude') return { ...config, permissionMode: from.permissionMode }
+  if (config.agent === 'grok' && from.agent === 'grok') return { ...config, permissionMode: from.permissionMode }
+  if (config.agent === 'codex' && from.agent === 'codex') {
+    return { ...config, askForApproval: from.askForApproval, sandbox: from.sandbox }
+  }
+  return config
+}

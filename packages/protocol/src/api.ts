@@ -172,6 +172,8 @@ export const updateProjectBodySchema = z
     environment: executionEnvironmentSchema,
     /** Les services docker-compose des sessions confinées : partagés ou copiés (#145). */
     confinedServices: confinedServicesSchema,
+    /** Les sessions autonomes confinées quand leur lancement ne dit rien (#146). */
+    autonomousConfined: z.boolean(),
   })
   .partial()
 

@@ -38,6 +38,8 @@ export interface ScheduleInput {
   prompt: string
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
+  /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
+  confined: boolean | null
   maxDurationMinutes: number
   /** Null retire la vérification. */
   checkScript?: string | null

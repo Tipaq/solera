@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { HOST_ENVIRONMENT, type ExecutionEnvironment } from '@solera/protocol'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { EnvironmentPill, EnvironmentSelect } from './Environment'
+import { AutonomousConfinementSelect, EnvironmentPill, EnvironmentSelect } from './Environment'
 
 const ALL: ExecutionEnvironment[] = [
   HOST_ENVIRONMENT,
@@ -68,4 +68,25 @@ export const VersServices: Story = {
     environment: { where: 'devcontainer', confined: false },
     to: '/services?environment=devcontainer%3Aprojet&session=conversation',
   },
+}
+
+function Autonomous({ inherited }: { inherited?: boolean }) {
+  const [value, setValue] = useState<boolean | null>(inherited === undefined ? false : null)
+  return (
+    <div className="w-80">
+      <AutonomousConfinementSelect value={value} inherited={inherited} onChange={setValue} />
+    </div>
+  )
+}
+
+/** Dans les réglages du projet : l'environnement du projet, ou confinées (#146). */
+export const SessionsAutonomesProjet: Story = {
+  name: 'Sessions autonomes, réglage du projet',
+  render: () => <Autonomous />,
+}
+
+/** Au lancement d'une tâche ou d'un jalon : le réglage du projet en plus, choisi d'office. */
+export const SessionsAutonomesLancement: Story = {
+  name: 'Sessions autonomes, au lancement',
+  render: () => <Autonomous inherited />,
 }

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { conversations, projects, type Db } from '@solera/db'
 import {
+  autonomousEnvironment,
   DEVCONTAINER_CONFINED_ENVIRONMENT,
   DEVCONTAINER_ENVIRONMENT,
   environmentKey,
@@ -142,6 +143,19 @@ export class Environments {
       .where(eq(projects.id, projectId))
       .get()
     return row ? environmentOf(row) : HOST_ENVIRONMENT
+  }
+
+  /**
+   * L'environnement d'une session autonome du projet (#146) : celui du projet, confiné
+   * si son lancement le demande (`confined`), ou à défaut si le projet le règle.
+   */
+  forAutonomous(projectId: string, confined: boolean | null): ExecutionEnvironment {
+    const row = this.db
+      .select({ autonomousConfined: projects.autonomousConfined })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .get()
+    return autonomousEnvironment(this.ofProject(projectId), row?.autonomousConfined ?? false, confined)
   }
 
   /** L'environnement figé d'une session ; l'hôte pour une session disparue. */

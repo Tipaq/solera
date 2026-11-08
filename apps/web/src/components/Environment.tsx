@@ -117,3 +117,52 @@ export function EnvironmentPill({
     </span>
   )
 }
+
+/** Le confinement d'une session autonome : `free`, `confined`, ou `project` pour null. */
+type AutonomousChoice = 'project' | 'confined' | 'free'
+
+function autonomousChoice(confined: boolean | null): AutonomousChoice {
+  return confined === null ? 'project' : confined ? 'confined' : 'free'
+}
+
+/**
+ * Le confinement des sessions autonomes (#146) : tâches planifiées, cartes d'un jalon,
+ * sessions lancées par un agent. Dans les réglages du projet, deux choix ; au lancement
+ * (`inherited` donné), un troisième, le réglage du projet, qui reste celui par défaut.
+ */
+export function AutonomousConfinementSelect({
+  value,
+  onChange,
+  inherited,
+  disabled,
+  className,
+}: {
+  value: boolean | null
+  onChange: (confined: boolean | null) => void
+  /** Le réglage du projet, quand on choisit pour un lancement ; absent dans le projet. */
+  inherited?: boolean
+  disabled?: boolean
+  className?: string
+}) {
+  const t = useTranslate()
+  const choices: AutonomousChoice[] = inherited === undefined ? ['free', 'confined'] : ['project', 'free', 'confined']
+  return (
+    <Select
+      label={t('environment.autonomous.label')}
+      value={autonomousChoice(inherited === undefined ? Boolean(value) : value)}
+      onChange={(choice) => onChange(choice === 'project' ? null : choice === 'confined')}
+      disabled={disabled}
+      className={className}
+      options={choices.map((choice) => ({
+        value: choice,
+        label: t(`environment.autonomous.${choice}`),
+        icon:
+          (choice === 'project' ? inherited : choice === 'confined') ? <ShieldCheck size={16} /> : <Monitor size={16} />,
+        hint:
+          choice === 'project'
+            ? t(inherited ? 'environment.autonomous.project.confined' : 'environment.autonomous.project.free')
+            : t(`environment.autonomous.${choice}.hint`),
+      }))}
+    />
+  )
+}
