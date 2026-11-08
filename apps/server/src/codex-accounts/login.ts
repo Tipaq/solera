@@ -169,11 +169,12 @@ export class CodexLoginService {
     pending.client.close()
   }
 
-  async forget(accountId: string): Promise<void> {
+  async forget(accountId: string, ownerId: string): Promise<void> {
     await this.cancel(accountId)
     this.outcomes.delete(accountId)
-    // Sans suivre les liens : le home n'a de réel que `auth.json` et ce que Codex y a
-    // écrit, et `rm` n'entre pas dans une cible de lien symbolique.
+    // Les conversations nées sur ce compte n'existent que dans son home : elles sont mises
+    // de côté avant qu'il disparaisse, pour qu'un fil se reprenne encore sur un autre.
+    this.homes.keepConversations(accountId, ownerId)
     await rm(this.homes.path(accountId), { recursive: true, force: true })
   }
 

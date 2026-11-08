@@ -197,8 +197,8 @@ export class GrokLoginService {
   }
 
   /**
-   * Déconnecte le home : `grok logout` révoque la session, puis l'`auth.json` du compte,
-   * le seul fichier qui lui soit propre avec ses caches, est retiré quoi que dise Grok.
+   * Déconnecte le home : `grok logout` révoque la session, puis l'`auth.json` du compte
+   * est retiré quoi que dise Grok. Le reste du home, sessions comprises, demeure.
    */
   async logout(accountId: string): Promise<void> {
     await this.cancel(accountId)
@@ -224,10 +224,12 @@ export class GrokLoginService {
     pending.child.kill()
   }
 
-  async forget(accountId: string): Promise<void> {
+  async forget(accountId: string, ownerId: string): Promise<void> {
     await this.cancel(accountId)
     this.outcomes.delete(accountId)
-    // Sans suivre les liens : `rm` n'entre pas dans la cible d'un lien symbolique.
+    // Les conversations nées sur ce compte n'existent que dans son home : elles sont mises
+    // de côté avant qu'il disparaisse, pour qu'un fil se reprenne encore sur un autre.
+    this.homes.keepConversations(accountId, ownerId)
     await rm(this.homes.path(accountId), { recursive: true, force: true })
   }
 
