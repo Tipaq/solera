@@ -113,15 +113,17 @@ export class DevcontainerTools {
    * Démarre le dev container du dossier, ou réutilise celui qui tourne déjà pour lui,
    * y compris celui de VS Code : le CLI le retrouve par son label
    * `devcontainer.local_folder`. Les montages ne s'appliquent qu'à un conteneur créé ici.
-   * Chaque ligne du journal passe par `onLog` pendant le démarrage.
+   * Chaque ligne du journal passe par `onLog` pendant le démarrage. `config` : un
+   * `devcontainer.json` hors du dossier, celui que Solera garde pour un projet (#143).
    */
-  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void): Promise<UpResult> {
+  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, config?: string): Promise<UpResult> {
     const launch = await this.cli()
     const args = [
       ...launch.args,
       'up',
       '--workspace-folder',
       workspace,
+      ...configArgs(config),
       '--docker-path',
       this.docker(),
       ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
@@ -162,12 +164,20 @@ export class DevcontainerTools {
    * Où le `devcontainer.json` monte le dossier du projet : un montage de Solera au même
    * chemin ferait doublon, ce que Docker refuse.
    */
-  async workspaceFolder(workspace: string): Promise<string | null> {
+  async workspaceFolder(workspace: string, config?: string): Promise<string | null> {
     const launch = await this.cli()
     try {
       const { stdout } = await run(
         launch.command,
-        [...launch.args, 'read-configuration', '--workspace-folder', workspace, '--docker-path', this.docker()],
+        [
+          ...launch.args,
+          'read-configuration',
+          '--workspace-folder',
+          workspace,
+          ...configArgs(config),
+          '--docker-path',
+          this.docker(),
+        ],
         { timeout: DOCKER_TIMEOUT_MS * 2, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       )
       const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { workspace?: { workspaceFolder?: unknown } }
@@ -269,6 +279,10 @@ export class DevcontainerTools {
     if (!installed) throw new ToolMissingError('devcontainer', `${DEVCONTAINER_CLI.package} was installed but cannot be found.`)
     return installed
   }
+}
+
+function configArgs(config: string | undefined): string[] {
+  return config ? ['--config', config] : []
 }
 
 /** La dernière ligne JSON de `devcontainer up` : son verdict. */

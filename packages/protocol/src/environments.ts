@@ -57,3 +57,22 @@ export interface ProjectEnvironmentsDto {
    */
   suggested: ExecutionEnvironment | null
 }
+
+/**
+ * Le `devcontainer.json` d'un projet, tel que ses réglages le montrent (#143) : celui du
+ * dépôt, qui prévaut et qu'on ne fait que lire, ou celui que Solera garde hors du dépôt
+ * pour un projet qui n'en a pas.
+ */
+export interface ProjectDevcontainerDto {
+  /** Le chemin du `devcontainer.json` du dépôt, relatif au projet ; null s'il n'en a pas. */
+  repository: string | null
+  /** Le texte de celui que Solera garde ; null s'il n'en garde pas. */
+  managed: string | null
+  /** Le modèle de départ : l'image de base avec git, et les features de la stack détectée. */
+  template: string
+}
+
+/** Écrire le `devcontainer.json` que Solera garde : du JSON avec commentaires (JSONC). */
+export const putProjectDevcontainerBodySchema = z.object({
+  content: z.string().min(2).max(256 * 1024),
+})

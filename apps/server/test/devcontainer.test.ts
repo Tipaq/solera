@@ -1,17 +1,32 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { brotliCompressSync } from 'node:zlib'
 import { fileURLToPath } from 'node:url'
 import { openDatabase, projects, runMigrations, users } from '@solera/db'
-import { DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT } from '@solera/protocol'
+import { eq } from 'drizzle-orm'
+import Fastify from 'fastify'
+import { DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT, type ProjectDevcontainerDto } from '@solera/protocol'
+import type { AttachmentStore } from '../src/attachments/store.js'
+import type { CloneJobs } from '../src/clone-jobs.js'
+import type { Config } from '../src/config.js'
+import { registerErrorHandler } from '../src/http/errors.js'
+import { registerProjectRoutes } from '../src/http/routes/projects.js'
+import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import type { Paths } from '../src/config.js'
 import { AGENTS_MOUNT, ContainerAgents, linuxPackage } from '../src/environments/devcontainer/agents.js'
 import { Devcontainers, parseEnv, targetArch } from '../src/environments/devcontainer/containers.js'
 import { DevcontainerEnvironment, type RunningContainer } from '../src/environments/devcontainer/environment.js'
+import {
+  assertDevcontainerJson,
+  defaultDevcontainerJson,
+  detectFeatures,
+  InvalidDevcontainerError,
+  stripJsonc,
+} from '../src/environments/devcontainer/managed.js'
 import { parseUpResult } from '../src/environments/devcontainer/tools.js'
 import { Environments } from '../src/environments/environments.js'
 
@@ -237,4 +252,99 @@ test("le dev container n'est proposé qu'à un projet qui a un devcontainer.json
   await environments.prepare(HOST_ENVIRONMENT, 'p', { cwd: workspace })
   // Un fil libre n'a pas de dev container.
   await assert.rejects(environments.prepare(DEVCONTAINER_ENVIRONMENT, null, { cwd: dir }), { code: 'environment_unavailable' })
+})
+
+async function projectDatabase(t: TestContext) {
+  const dir = await tempDir(t, 'solera-devcontainer-managed-')
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  const workspace = join(dir, 'workspace')
+  await mkdir(workspace)
+  db.insert(projects).values({ id: 'p', name: 'Mon projet', workspacePath: workspace, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  return { dir, db, workspace }
+}
+
+test('un projet sans .devcontainer a le dev container que Solera lui garde, et celui du dépôt prévaut', async (t) => {
+  const { dir, db, workspace } = await projectDatabase(t)
+  const devcontainers = new Devcontainers({ data: dir, agents: join(dir, 'agents') } as Paths)
+  const environments = new Environments(db, devcontainers)
+  const project = { id: 'p', workspacePath: workspace }
+
+  assert.equal(environments.hasDevcontainer('p'), false)
+  await devcontainers.managed.write('p', defaultDevcontainerJson('Mon projet', workspace))
+  assert.equal(environments.hasDevcontainer('p'), true)
+  assert.deepEqual(environments.choices('p').at(-1), DEVCONTAINER_ENVIRONMENT)
+  const managed = devcontainers.configOf(project)
+  assert.equal(managed?.managed, true)
+  assert.ok(managed.path.startsWith(join(dir, 'devcontainers', 'p')), 'hors du dépôt, dans les données de Solera')
+  assert.deepEqual(await readdir(workspace), [], 'rien dans le projet')
+
+  await mkdir(join(workspace, '.devcontainer'))
+  await writeFile(join(workspace, '.devcontainer', 'devcontainer.json'), '{ "image": "debian" }')
+  assert.deepEqual(devcontainers.configOf(project), { path: join(workspace, '.devcontainer', 'devcontainer.json'), managed: false })
+
+  await devcontainers.managed.remove('p')
+  assert.equal(devcontainers.managed.configOf('p'), null)
+})
+
+test('le modèle part de l’image de base avec git et ajoute les features de la stack reconnue', async (t) => {
+  const workspace = await tempDir(t, 'solera-devcontainer-template-')
+  assert.deepEqual(detectFeatures(workspace), [])
+  await writeFile(join(workspace, 'package.json'), '{}')
+  await writeFile(join(workspace, 'pyproject.toml'), '')
+  const template = defaultDevcontainerJson('Démo "x"', workspace)
+  assertDevcontainerJson(template)
+  const parsed = JSON.parse(stripJsonc(template)) as { name: string; image: string; features: Record<string, unknown> }
+  assert.equal(parsed.name, 'Démo "x"')
+  assert.match(parsed.image, /devcontainers\/base/)
+  assert.deepEqual(Object.keys(parsed.features), ['ghcr.io/devcontainers/features/node:1', 'ghcr.io/devcontainers/features/python:1'])
+})
+
+test('un devcontainer.json se lit en JSONC, et ce qui ne se lancerait pas est refusé', () => {
+  assert.deepEqual(JSON.parse(stripJsonc('{\n  // un commentaire\n  "image": "a//b", /* bloc */\n  "x": ["/*", "\\"//"],\n}')), {
+    image: 'a//b',
+    x: ['/*', '"//'],
+  })
+  assert.throws(() => assertDevcontainerJson('{ "image": '), InvalidDevcontainerError)
+  assert.throws(() => assertDevcontainerJson('[]'), InvalidDevcontainerError)
+  assert.throws(() => assertDevcontainerJson('{ "name": "sans image" }'), /image/)
+  assertDevcontainerJson('{ "build": { "dockerfile": "Dockerfile" } }')
+})
+
+test('les réglages du projet créent, lisent et retirent le devcontainer.json géré ; le retirer ramène le défaut à l’hôte', async (t) => {
+  const { dir, db, workspace } = await projectDatabase(t)
+  const app = Fastify()
+  app.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
+  })
+  registerErrorHandler(app)
+  registerProjectRoutes(app, { db, config: { paths: { data: dir } } as Config }, {} as AttachmentStore, {} as CloneJobs, {} as TerminalManager)
+  t.after(() => app.close())
+  await writeFile(join(workspace, 'go.mod'), 'module x\n')
+
+  const empty = (await app.inject({ url: '/api/projects/p/devcontainer' })).json<ProjectDevcontainerDto>()
+  assert.equal(empty.repository, null)
+  assert.equal(empty.managed, null)
+  assert.match(empty.template, /features\/go:1/)
+
+  const invalid = await app.inject({ method: 'PUT', url: '/api/projects/p/devcontainer', payload: { content: '{ "name": "x" }' } })
+  assert.equal(invalid.statusCode, 400)
+  assert.equal(invalid.json<{ error: { code: string } }>().error.code, 'devcontainer_invalid')
+
+  const saved = await app.inject({ method: 'PUT', url: '/api/projects/p/devcontainer', payload: { content: empty.template } })
+  assert.equal(saved.statusCode, 200, saved.body)
+  assert.equal((await app.inject({ url: '/api/projects/p/devcontainer' })).json<ProjectDevcontainerDto>().managed, empty.template)
+  assert.deepEqual(await readdir(workspace), ['go.mod'], 'rien dans le projet')
+
+  db.update(projects).set({ environmentWhere: 'devcontainer' }).run()
+  const removed = await app.inject({ method: 'DELETE', url: '/api/projects/p/devcontainer' })
+  assert.equal(removed.statusCode, 200, removed.body)
+  assert.equal((await app.inject({ url: '/api/projects/p/devcontainer' })).json<ProjectDevcontainerDto>().managed, null)
+  assert.equal(db.select().from(projects).get()?.environmentWhere, 'host')
+
+  await mkdir(join(workspace, '.devcontainer'))
+  await writeFile(join(workspace, '.devcontainer', 'devcontainer.json'), '{ "image": "debian" }')
+  assert.equal((await app.inject({ url: '/api/projects/p/devcontainer' })).json<ProjectDevcontainerDto>().repository, join('.devcontainer', 'devcontainer.json'))
 })

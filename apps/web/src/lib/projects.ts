@@ -3,6 +3,7 @@ import {
   MAX_PROJECT_IMAGE_BYTES,
   type CloneJobDto,
   type ProjectInstructionsMode,
+  type ProjectDevcontainerDto,
   type ProjectDto,
   type ProjectEnvironmentsDto,
   type ProjectPrototypesDto,
@@ -32,6 +33,29 @@ export function useProjectEnvironments(projectId: string | undefined) {
     queryFn: () => api.get<ProjectEnvironmentsDto>(`/api/projects/${projectId}/environments`),
     staleTime: 30_000,
     enabled: projectId !== undefined,
+  })
+}
+
+/**
+ * Le `devcontainer.json` d'un projet (#143) : celui du dépôt, ou celui que Solera garde
+ * pour lui. Sous la clé des projets, comme ses environnements, qu'il change.
+ */
+export function useProjectDevcontainer(projectId: string) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'devcontainer'],
+    queryFn: () => api.get<ProjectDevcontainerDto>(`/api/projects/${projectId}/devcontainer`),
+  })
+}
+
+/** Écrit (`content`) ou retire (`null`) le `devcontainer.json` que Solera garde. */
+export function useSetProjectDevcontainer(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (content: string | null) =>
+      content === null
+        ? api.delete<{ ok: true }>(`/api/projects/${projectId}/devcontainer`)
+        : api.put<{ ok: true }>(`/api/projects/${projectId}/devcontainer`, { content }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: PROJECTS_KEY }),
   })
 }
 
