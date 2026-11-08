@@ -88,7 +88,7 @@ import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, posix, resolve, sep, win32 } from 'node:path'
 import Database from 'better-sqlite3'
 
 const DB_PATH = process.env.SOLERA_MCP_DB
@@ -169,6 +169,30 @@ const PROPOSE_CARDS = process.env.SOLERA_MCP_PROPOSE_CARDS === '1'
  * toutes les sessions qui le lient, ne peut être tenu que par le daemon.
  */
 const DESIGN_SYSTEM_STATE = process.env.SOLERA_MCP_DESIGN_SYSTEM ?? ''
+
+/**
+ * La session voit les lecteurs de l'hôte sous `/mnt/<lecteur>` : elle tourne dans un
+ * conteneur, sous Windows natif, et ce process sur l'hôte (#153). Les chemins qu'il lui
+ * rend, et ceux qu'il en reçoit, se traduisent alors comme le daemon les monte
+ * (`containerPathOf` et `hostPathOf`, `environments/devcontainer/paths.ts`).
+ */
+const MOUNTED_DRIVES = process.env.SOLERA_MCP_MOUNTED_DRIVES === '1'
+
+/** Un chemin de l'hôte tel que la session le voit : `C:\…` devient `/mnt/c/…`. */
+function seenPath(onHost) {
+  if (!MOUNTED_DRIVES || typeof onHost !== 'string') return onHost
+  const drive = /^([A-Za-z]):(?:[\\/](.*))?$/.exec(onHost)
+  if (!drive) return onHost
+  return posix.join('/mnt', drive[1].toLowerCase(), ...(drive[2] ?? '').split(/[\\/]/).filter(Boolean))
+}
+
+/** L'inverse : un chemin que la session donne, tel que l'hôte le lit ; tel quel hors de `/mnt/<lecteur>`. */
+function hostPath(seen) {
+  if (!MOUNTED_DRIVES || typeof seen !== 'string') return seen
+  const mounted = /^\/mnt\/([a-z])(?:\/(.*))?$/.exec(posix.normalize(seen))
+  if (!mounted) return seen
+  return win32.join(`${mounted[1].toUpperCase()}:\\`, ...(mounted[2] ?? '').split('/').filter(Boolean))
+}
 
 /** Un Storybook froid démarre en quelques secondes ; un gros DS, en une minute. */
 const DESIGN_SYSTEM_WAIT_MS = 90_000
@@ -2131,7 +2155,7 @@ const ACTION_LABELS = { created: 'créé', modified: 'modifié', deleted: 'suppr
  */
 function renderFileEdits(rows, { path, withinMinutes, older }) {
   if (rows.length === 0) {
-    const scope = path ? `n'a touché à « ${path} »` : `n'a modifié de fichier`
+    const scope = path ? `n'a touché à « ${seenPath(path)} »` : `n'a modifié de fichier`
     const head = `Aucune autre session de cet arbre de travail ${scope} dans les ${withinMinutes} dernières minutes.`
     return older === null
       ? `${head} Rien de plus ancien non plus.`
@@ -2160,7 +2184,7 @@ function renderByFile(rows) {
   return rows.map((row) => {
     const where = row.worktree ? `worktree ${row.worktree}` : 'racine du projet'
     const times = row.edits > 1 ? ` (${row.edits} fois)` : ''
-    return `- ${row.path} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
+    return `- ${seenPath(row.path)} | ${ACTION_LABELS[row.action] ?? row.action}${times} | ${ago(row.ts)}\n  par ${row.id} (${row.agent}, ${describeActivity(row)}, ${where})\n  ${row.title}`
   })
 }
 
@@ -2182,7 +2206,7 @@ function renderBySession(rows) {
     const sorted = [...files].sort((a, b) => b.edits - a.edits)
     const shown = sorted
       .slice(0, FILES_PER_SESSION)
-      .map((file) => `${file.path}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
+      .map((file) => `${seenPath(file.path)}${file.edits > 1 ? ` (${file.edits}×)` : ''}`)
     const rest = sorted.length - shown.length
     const tail = rest > 0 ? `, et ${rest} autre(s)` : ''
 
@@ -2353,7 +2377,7 @@ function readCard(number) {
 
   card.attachments = db.prepare(
     'SELECT filename, mime_type AS mimeType, size_bytes AS sizeBytes, storage_path AS path FROM attachments WHERE card_id = ? ORDER BY created_at'
-  ).all(card.id)
+  ).all(card.id).map((file) => ({ ...file, path: seenPath(file.path) }))
   return card
 }
 
@@ -3022,7 +3046,7 @@ async function designSystemManifest(kind) {
   }
   if (response.status === 404) {
     return {
-      error: `Le Storybook du design system (${state.path}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
+      error: `Le Storybook du design system (${seenPath(state.path)}) ne publie pas de manifeste de ${kind === 'docs' ? 'pages' : 'composants'}. Il faut Storybook 10.3 ou plus et \`features: { componentsManifest: true }\` dans son \`.storybook/main.ts\`.`,
     }
   }
   if (!response.ok) return { error: `Le Storybook du design system a répondu ${response.status}.` }
@@ -3048,10 +3072,10 @@ async function designSystemReady() {
     return { error: "Le Storybook du design system n'est pas lancé : Solera le démarre au début de chaque tour. Réessaie au prochain message." }
   }
   if (state.status === 'starting') {
-    return { error: `Le Storybook du design system (${state.path}) démarre encore. Réessaie dans un moment.` }
+    return { error: `Le Storybook du design system (${seenPath(state.path)}) démarre encore. Réessaie dans un moment.` }
   }
   if (state.status === 'failed') {
-    return { error: `Le Storybook du design system (${state.path}) n'a pas pu démarrer. Son journal est ${state.log}.\n\n${state.error ?? ''}` }
+    return { error: `Le Storybook du design system (${seenPath(state.path)}) n'a pas pu démarrer. Son journal est ${seenPath(state.log)}.\n\n${state.error ?? ''}` }
   }
   return { state }
 }
@@ -3083,7 +3107,7 @@ function prototypeScope(state) {
   const own = root && PROJECT_ID ? join(root, PROJECT_ID) : null
   const within = (path, directory) => {
     const absolute = resolve(state.path, path ?? '')
-    return absolute === directory || absolute.startsWith(directory + '/')
+    return absolute === directory || absolute.startsWith(directory + sep)
   }
   return {
     own,
@@ -3427,21 +3451,21 @@ async function showPrototype(args) {
   if (state.hooked === false) {
     return {
       ...text(
-        `Le Storybook du design system (${state.path}) ne charge pas les prototypes : son \`.storybook/main.ts\` doit finir par cette ligne, à la place de son \`export default config\` :\n\n\`\`\`ts\n${DESIGN_SYSTEM_LINE}\n\`\`\`\n\nC'est une modification du DS, pas du projet : demande-la à l'utilisateur plutôt que de la faire.`,
+        `Le Storybook du design system (${seenPath(state.path)}) ne charge pas les prototypes : son \`.storybook/main.ts\` doit finir par cette ligne, à la place de son \`export default config\` :\n\n\`\`\`ts\n${DESIGN_SYSTEM_LINE}\n\`\`\`\n\nC'est une modification du DS, pas du projet : demande-la à l'utilisateur plutôt que de la faire.`,
       ),
       isError: true,
     }
   }
   const requested = typeof args.file === 'string' ? args.file.trim() : ''
   if (!requested) return { ...text('Le paramètre `file` est requis.'), isError: true }
-  const file = resolve(scope.own, requested)
+  const file = resolve(scope.own, hostPath(requested))
   if (!scope.isOwn(file)) {
-    return { ...text(`Un prototype de ce projet vit dans \`${scope.own}\`, et \`${file}\` n'y est pas.`), isError: true }
+    return { ...text(`Un prototype de ce projet vit dans \`${seenPath(scope.own)}\`, et \`${seenPath(file)}\` n'y est pas.`), isError: true }
   }
   try {
     statSync(file)
   } catch {
-    return { ...text(`Aucun fichier \`${file}\`.`), isError: true }
+    return { ...text(`Aucun fichier \`${seenPath(file)}\`.`), isError: true }
   }
 
   const deadline = Date.now() + PROTOTYPE_INDEX_WAIT_MS
@@ -3464,7 +3488,7 @@ async function showPrototype(args) {
     const reason = broken
       ? `Storybook n'a pas su le lire :\n\n${broken.error?.message ?? broken.error?.name ?? ''}`
       : "Storybook ne l'a pas indexé : son nom doit finir par `.stories.tsx` (ou `.ts`, `.jsx`, `.js`), et il doit exporter par défaut un `meta` et au moins une story."
-    return { ...text(`Aucune story dans \`${file}\`. ${reason}\n\nLe journal du Storybook est ${state.log}.`), isError: true }
+    return { ...text(`Aucune story dans \`${seenPath(file)}\`. ${reason}\n\nLe journal du Storybook est ${seenPath(state.log)}.`), isError: true }
   }
 
   const wanted = typeof args.story === 'string' ? args.story.trim() : ''
@@ -3533,7 +3557,7 @@ function renderProjects(rows) {
     `${rows.length} projet(s) :`,
     ...rows.map(
       (row) =>
-        `- ${row.name} (id ${row.id}) — ${row.path}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
+        `- ${row.name} (id ${row.id}) — ${seenPath(row.path)}${row.working ? ` — ${row.working} session(s) en train de travailler` : ''}${row.lastActivity ? ` — dernière activité ${ago(row.lastActivity)}` : ' — aucune conversation'}`,
     ),
   ].join('\n')
 }
@@ -3786,7 +3810,8 @@ async function callTool(name, args) {
   }
 
   if (name === 'find_file_edits') {
-    const path = typeof args?.path === 'string' && args.path.trim() ? args.path.trim() : null
+    // Le journal garde les chemins tels que l'hôte les lit.
+    const path = typeof args?.path === 'string' && args.path.trim() ? hostPath(args.path.trim()) : null
     const asked = Number.isInteger(args?.within_minutes) ? args.within_minutes : EDIT_MINUTES
     const withinMinutes = Math.min(Math.max(asked, 1), 60 * 24 * 7)
     const rows = findFileEdits({ path, withinMinutes })
@@ -3859,13 +3884,13 @@ async function callTool(name, args) {
     if (!path) return { ...text('Le paramètre `path` est requis.'), isError: true }
     const provisional = args?.provisional === true
 
-    const file = resolve(path)
+    const file = resolve(hostPath(path))
     let data
     try {
       // La taille avant la lecture : un chemin qui désigne par erreur une vidéo ou une
       // archive ne doit pas passer par la mémoire pour être refusé.
       const info = statSync(file)
-      if (!info.isFile()) return { ...text(`${file} n'est pas un fichier.`), isError: true }
+      if (!info.isFile()) return { ...text(`${seenPath(file)} n'est pas un fichier.`), isError: true }
       if (info.size > MAX_PROJECT_IMAGE_BYTES) {
         return {
           ...text(
@@ -3876,13 +3901,13 @@ async function callTool(name, args) {
       }
       data = readFileSync(file)
     } catch (error) {
-      return { ...text(`Lecture de ${file} impossible : ${error.message}`), isError: true }
+      return { ...text(`Lecture de ${seenPath(file)} impossible : ${error.message}`), isError: true }
     }
 
     const mimeType = sniffProjectImage(data)
     if (!mimeType) {
       return {
-        ...text(`${file} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
+        ...text(`${seenPath(file)} n'est pas une image reconnue. Formats acceptés : PNG, JPEG, GIF, WebP, SVG.`),
         isError: true,
       }
     }
@@ -4277,11 +4302,11 @@ async function callTool(name, args) {
     if (name === 'read_memory') {
       if (!file) {
         const files = memoryFiles()
-        if (files.length === 0) return text(`Mémoire vide (${MEMORY_DIR}).`)
+        if (files.length === 0) return text(`Mémoire vide (${seenPath(MEMORY_DIR)}).`)
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire ${memoryLabel()}, dans ${MEMORY_DIR} :`,
+            `Mémoire ${memoryLabel()}, dans ${seenPath(MEMORY_DIR)} :`,
             index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
             `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
           ].join('\n\n'),

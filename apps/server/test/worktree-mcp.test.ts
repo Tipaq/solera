@@ -1,19 +1,23 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { EventEmitter } from 'node:events'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { eq } from 'drizzle-orm'
 import { conversationPaths, conversations, openDatabase, projects, runMigrations, users, worktrees } from '@solera/db'
+import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import { projectOverview } from '../src/agents/overview.js'
+import type { EnvironmentProvider } from '../src/environments/provider.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { linkedWorktreePaths } from '../src/worktrees/linked.js'
+import { writeProjectsDir } from '../src/settings/user-settings.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
@@ -24,7 +28,7 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
-function harness(t: TestContext) {
+function harness(t: TestContext, environment?: Pick<EnvironmentProvider, 'pathInside' | 'pathOutside'>) {
   const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-mcp-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -51,15 +55,15 @@ function harness(t: TestContext) {
     createdAt: 1, updatedAt: Date.now(),
   }).run()
 
-  const config = { paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees') } } as unknown as Config
+  const config = { mcp: { projectFiling: true }, paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees') } } as unknown as Config
   const status = new WorktreeStatusService(db, new EventLog(db))
   const requests = new AgentRequests(
-    { db, config }, {} as SessionManager, {} as AgentRegistry, new EventLog(db), undefined, status,
+    { db, config }, { runnerEnvironment: () => environment, statusBus: new EventEmitter() } as unknown as SessionManager, {} as AgentRegistry, new EventLog(db), undefined, status,
   )
 
   const rpc = async (message: object) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'agent' },
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'agent', SOLERA_MCP_FILING: '1' },
     })
     let stdout = ''
     child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
@@ -75,7 +79,7 @@ function harness(t: TestContext) {
   const call = async (name: string, args: object) =>
     (await rpc({ method: 'tools/call', params: { name, arguments: args } })) as { content: { text: string }[]; isError?: boolean }
 
-  return { db, repo, config, rpc, call }
+  return { db, dir, repo, config, rpc, call }
 }
 
 test('les deux outils sont proposés aux sessions', async (t) => {
@@ -153,4 +157,38 @@ test('le prompt dynamique cite les deux outils quand d’autres sessions travail
   }).run()
   const overview = projectOverview(db, { projectId: 'project', conversationId: 'agent', soleraMcp: true }) ?? ''
   assert.match(overview, /`list_worktrees` et `create_worktree` pour travailler dans un arbre à l'écart des autres plutôt que par `git worktree add`/)
+})
+
+test("create_worktree et list_worktrees rendent l'arbre tel que la session le voit (#153)", async (t) => {
+  // Le conteneur d'un hôte Windows voit `C:\…` en `/mnt/c/…` : ici, tout l'hôte sous /seen.
+  const { config, call } = harness(t, {
+    pathInside: (path) => `/seen${path}`,
+    pathOutside: (path) => path.replace(/^\/seen/, ''),
+  })
+  const path = join(config.paths.worktrees, 'project', 'feat__seen')
+
+  const created = (await call('create_worktree', { branch: 'feat/seen' })).content[0]!.text
+  assert.ok(created.includes(`prêt dans /seen${path}.`), created)
+  assert.ok(created.includes(`\`cd /seen${path} && …\``), created)
+  assert.ok(!created.includes(` ${path}`), "aucun chemin de l'hôte")
+
+  const listed = (await call('list_worktrees', {})).content[0]!.text
+  assert.ok(listed.includes(`  /seen${path}`), listed)
+})
+
+test("create_project lit le dossier que la session nomme sur l'hôte, et le lui rend tel qu'elle le voit (#153)", async (t) => {
+  const { db, dir, call } = harness(t, {
+    pathInside: (path) => `/seen${path}`,
+    pathOutside: (path) => path.replace(/^\/seen/, ''),
+  })
+  const root = join(dir, 'projects')
+  const folder = join(root, 'neo')
+  mkdirSync(folder, { recursive: true })
+  writeProjectsDir(db, 'owner', root)
+  db.update(conversations).set({ config: JSON.stringify(DEFAULT_CLAUDE_CONFIG) }).where(eq(conversations.id, 'agent')).run()
+
+  const created = await call('create_project', { path: `/seen${folder}` })
+  assert.equal(created.isError, undefined, created.content[0]?.text)
+  assert.ok(created.content[0]!.text.includes(`sur /seen${folder}.`), created.content[0]!.text)
+  assert.ok(db.select().from(projects).all().some((row) => row.workspacePath === folder), "le projet garde le chemin de l'hôte")
 })

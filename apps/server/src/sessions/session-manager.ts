@@ -90,6 +90,7 @@ import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
 import { Devcontainers } from '../environments/devcontainer/containers.js'
+import { mountsDrives } from '../environments/devcontainer/paths.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -794,6 +795,14 @@ export class SessionManager {
     return [...this.runners].map(([conversationId, managed]) => ({ conversationId, environment: managed.environment }))
   }
 
+  /**
+   * L'environnement du CLI d'une session qui tourne : c'est lui qui dit comment elle voit
+   * un chemin de l'hôte, et le daemon en a besoin pour lui répondre (#153).
+   */
+  runnerEnvironment(conversationId: string): EnvironmentProvider | undefined {
+    return this.runners.get(conversationId)?.environment
+  }
+
   /** Vrai si un message envoyé maintenant n'atteindrait pas le CLI immédiatement. */
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status
@@ -1231,6 +1240,9 @@ export class SessionManager {
           proposeCards: conversation.purpose === 'split' || allowsRequest(current.proposeCards),
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
+          // Le serveur MCP tourne sur l'hôte : il traduit les chemins qu'il échange avec
+          // une session qui voit `C:\…` en `/mnt/c/…` (#153).
+          mountedDrives: mountsDrives(launcher.environment),
         })
         // Vu de l'environnement : d'un conteneur, le serveur est sur l'hôte.
         const baseUrl = launcher.environment.urlOfHost(soleraUrlForAgents(this.config.server))

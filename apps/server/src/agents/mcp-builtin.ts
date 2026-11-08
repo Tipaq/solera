@@ -107,6 +107,12 @@ export interface McpSessionScope {
    * retire alors les outils du design system de son catalogue.
    */
   designSystemState: string
+  /**
+   * La session voit les lecteurs de l'hôte sous `/mnt/<lecteur>` (`mountsDrives`) : dans
+   * un conteneur, sous Windows natif. Le `.mjs` traduit alors les chemins qu'il rend à
+   * l'agent, et ceux qu'il en reçoit, comme `containerPathOf` et `hostPathOf` (#153).
+   */
+  mountedDrives: boolean
 }
 
 /**
@@ -139,6 +145,7 @@ export function sessionScopeEnv(scope: McpSessionScope, databasePath: string): R
     ...(scope.decisions ? { SOLERA_MCP_DECISIONS: '1' } : {}),
     ...(scope.proposeCards ? { SOLERA_MCP_PROPOSE_CARDS: '1' } : {}),
     SOLERA_MCP_DESIGN_SYSTEM: scope.designSystemState,
+    ...(scope.mountedDrives ? { SOLERA_MCP_MOUNTED_DRIVES: '1' } : {}),
   }
 }
 
