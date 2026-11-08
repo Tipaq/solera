@@ -112,9 +112,10 @@ Les permissions à chaud passent par la notification `_x.ai/yolo_mode_changed`
 
 La connexion du CLI : `grok login --device-auth` sur la machine qui fait tourner Solera
 (abonnement SuperGrok ou X Premium), ou `XAI_API_KEY`. Les identifiants vont dans
-`~/.grok/auth.json`.
+`~/.grok/auth.json`. Elle ne porte plus de session (#147) : une conversation Grok part
+toujours sur un compte de Solera, et sans compte connecté le lancement est refusé.
 
-Des comptes supplémentaires se déclarent dans **Réglages › Comptes Grok**, sur le modèle
+Les comptes se déclarent dans **Réglages › Comptes Grok**, sur le modèle
 des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, sans
 aucun lien vers le home de l'utilisateur (ADR 0001). Solera y recopie à chaque lancement
 `config.toml` sans ce qui peut porter un secret, `rules/` et `skills/` ; la connexion, ses

@@ -104,8 +104,11 @@ first moves its threads to `codex-accounts/_conserve/<user>`, which is searched 
 
 A conversation that names no account starts on the first signed-in account of the
 list, as for Claude; one whose account was deleted or signed out falls back the same
-way, and the thread says so. The CLI's own sign-in is only used when chosen
-explicitly, or when the user has no signed-in account.
+way, and the thread says so. A session never runs on the CLI's own sign-in (#147): a
+conversation that still names it (`account: null`, an older choice) starts on the first
+signed-in account without a notice, and with no signed-in account at all the launch is
+refused (`agent_account_required`) and the draft asks to connect one. A thread born on
+the CLI's sign-in before that is copied into the account's home on its next resume.
 
 The session gets `CODEX_HOME` pointing at the account's home. Solera stores no
 secret: Codex writes and refreshes `auth.json` itself. The account's card only keeps
@@ -151,7 +154,8 @@ Same design as Codex: Grok Build keeps one sign-in per `GROK_HOME`, in its `auth
   session moves between accounts by copy of its folder
   (`sessions/<encoded folder>/<id>/`), not yet probed with a signed-in account, and is
   kept aside under `grok-accounts/_conserve/<user>` when its account is deleted. The
-  fallback to the first signed-in account is the same as Codex's.
+  fallback to the first signed-in account, and the refusal without one, are the same
+  as Codex's.
 - Sign-in is run by Grok in that home: `grok login --device-auth` for a SuperGrok or
   X Premium subscription (Solera reads the URL and code it prints), or the ACP
   `xai.api_key` method with `XAI_API_KEY` for an xAI API key, which Grok stores in the

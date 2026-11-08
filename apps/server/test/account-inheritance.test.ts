@@ -90,7 +90,7 @@ test('Codex et Grok : un fil sans choix part sur le premier compte connecté, ja
   codex.setIdentity(vide.id, { authMode: 'apiKey', email: null, planType: null })
   assert.equal(accountOf(db, 'tim', 'codex'), vide.id, 'le premier de la liste')
   writeUserAgentLayer(db, 'tim', { scope: 'codex', set: { account: null } })
-  assert.equal(accountOf(db, 'tim', 'codex'), null, 'la connexion du terminal choisie l’emporte')
+  assert.equal(accountOf(db, 'tim', 'codex'), vide.id, 'la connexion du terminal ne porte plus de session Codex (#147)')
 
   const grok = new GrokAccountStore(db)
   const perso = grok.create('tim', 'Perso')
