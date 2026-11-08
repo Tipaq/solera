@@ -94,6 +94,7 @@ export function sessionScope(overrides: Partial<McpSessionScope> & { conversatio
     decisions: false,
     proposeCards: false,
     designSystemState: '',
+    mountedDrives: false,
     ...overrides,
   }
 }

@@ -1076,10 +1076,11 @@ export class AgentRequests {
       .run()
     this.worktreeStatus?.forget(project.id)
 
+    const path = this.seenBy(requester, row.path)
     return [
-      `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
+      `Worktree « ${branch} » prêt dans ${path}. ${origin}`,
       "Ta session y est rattachée : l'utilisateur retrouve l'arbre et ta session dans la vue Chantiers du projet, d'où il le nettoiera une fois fusionné.",
-      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`,
+      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${path}, et lance tes commandes avec \`cd ${path} && …\` ou \`git -C ${path} …\`.`,
       `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
     ].join('\n')
   }
@@ -1126,7 +1127,7 @@ export class AgentRequests {
       })
       return [
         `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
-        `  ${tree.path}${tree.external ? ' · créé hors de Solera' : ''}`,
+        `  ${this.seenBy(requester, tree.path)}${tree.external ? ' · créé hors de Solera' : ''}`,
         sessions.length ? `  Sessions : ${sessions.join(' ; ')}` : '  Aucune session rattachée.',
       ].join('\n')
     })
@@ -1288,8 +1289,8 @@ export class AgentRequests {
     // retire l'outil.
     this.assertFilingAllowed(requester)
 
-    const given = typeof payload.path === 'string' ? payload.path.trim() : ''
-    if (!given) {
+    const asked = typeof payload.path === 'string' ? payload.path.trim() : ''
+    if (!asked) {
       throw new Refusal(
         'Le paramètre `path` est requis : le chemin absolu du dossier du projet, que tu dois avoir créé avant.',
       )
@@ -1323,9 +1324,10 @@ export class AgentRequests {
       )
     }
 
-    const workspacePath = await assertUsableWorkspace(given).catch(() => {
+    // L'agent nomme le dossier tel qu'il le voit ; le projet le garde tel que l'hôte le lit.
+    const workspacePath = await assertUsableWorkspace(this.hostPathFrom(requester, asked)).catch(() => {
       throw new Refusal(
-        `Refusé : « ${given} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
+        `Refusé : « ${asked} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
       )
     })
 
@@ -1335,7 +1337,7 @@ export class AgentRequests {
     const root = resolved.endsWith(sep) ? resolved.slice(0, -sep.length) : resolved
     if (workspacePath !== root && !workspacePath.startsWith(root + sep)) {
       throw new Refusal(
-        `Refusé : « ${workspacePath} » est hors de ${root}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
+        `Refusé : « ${this.seenBy(requester, workspacePath)} » est hors de ${this.seenBy(requester, root)}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
       )
     }
 
@@ -1365,7 +1367,7 @@ export class AgentRequests {
     })
 
     return [
-      `Projet « ${row.name} » créé, id ${row.id}, sur ${row.workspacePath}.`,
+      `Projet « ${row.name} » créé, id ${row.id}, sur ${this.seenBy(requester, row.workspacePath)}.`,
       `Consignes en mode ${row.instructionsMode}.`,
       `Il est privé et vide : aucune conversation n'y est rangée. Pour y ranger celle-ci ou une autre : move_conversation avec project="${row.id}", que l'utilisateur accorde d'un clic.`,
     ].join('\n')
@@ -1747,6 +1749,19 @@ export class AgentRequests {
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
    * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
    */
+  /**
+   * Un chemin de l'hôte tel que la session qui demande le voit : `/mnt/c/…` dans un
+   * conteneur sous Windows natif (#153). Tel quel quand son CLI ne tourne plus.
+   */
+  private seenBy(requester: { id: string }, hostPath: string): string {
+    return this.sessions.environmentOf(requester.id)?.pathInside(hostPath) ?? hostPath
+  }
+
+  /** L'inverse : un chemin que la session donne, tel que l'hôte le lit. */
+  private hostPathFrom(requester: { id: string }, path: string): string {
+    return this.sessions.environmentOf(requester.id)?.pathOutside(path) ?? path
+  }
+
   private assertFilingAllowed(requester: ConversationRow): AgentRequestPolicy {
     if (!this.ctx.config.mcp.projectFiling) {
       throw new Refusal(

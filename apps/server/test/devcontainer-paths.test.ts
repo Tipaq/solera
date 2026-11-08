@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { DevcontainerEnvironment, shellArgs, type RunningContainer } from '../src/environments/devcontainer/environment.js'
 import { ephemeralMounts } from '../src/environments/devcontainer/ephemeral.js'
-import { containerPathOf, hostPathOf } from '../src/environments/devcontainer/paths.js'
+import { containerPathOf, hostPathOf, mountsDrives } from '../src/environments/devcontainer/paths.js'
+import { HostEnvironment } from '../src/environments/host.js'
 import { hasAbsoluteGitLink, relativizeWorktreeLinks } from '../src/environments/devcontainer/worktree-links.js'
 
 async function tempDir(t: TestContext): Promise<string> {
@@ -98,4 +99,15 @@ test("le conteneur d'une session confinée monte ses dossiers à leur chemin du 
   assert.equal(mounts.workspaceMount, 'type=bind,source=C:\\data\\worktrees\\feat,target=/mnt/c/data/worktrees/feat')
   assert.ok(mounts.mounts.includes('type=bind,source=C:\\data\\memory,target=/mnt/c/data/memory,readonly'))
   assert.ok(mounts.sources.includes('C:\\data\\memory'), "la liste blanche reste en chemins de l'hôte")
+})
+
+test('le jeton MCP apprend que la session voit les lecteurs sous /mnt (#153)', () => {
+  assert.equal(mountsDrives(new DevcontainerEnvironment(container(), 'docker', {}, 'win32')), true)
+  assert.equal(mountsDrives(new DevcontainerEnvironment(container(), 'docker', {}, 'linux')), false, "mêmes chemins que l'hôte")
+  assert.equal(
+    mountsDrives(new DevcontainerEnvironment(container({ solerasMounts: false }), 'docker', {}, 'win32')),
+    false,
+    'sans les montages de Solera, seul le projet est monté',
+  )
+  assert.equal(mountsDrives(new HostEnvironment()), false)
 })

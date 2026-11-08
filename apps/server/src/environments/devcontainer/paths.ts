@@ -26,3 +26,16 @@ export function hostPathOf(insidePath: string, platform: NodeJS.Platform = proce
   if (!mounted) return null
   return win32.join(`${mounted[1]!.toUpperCase()}:\\`, ...(mounted[2] ?? '').split('/').filter(Boolean))
 }
+
+/**
+ * Vrai quand l'environnement voit les lecteurs de l'hôte sous `/mnt/<lecteur>` : une
+ * session dans un conteneur sous Windows natif, avec les montages de Solera.
+ *
+ * Le serveur MCP de Solera tourne, lui, sur l'hôte : c'est ce que le jeton d'une session
+ * doit lui dire pour qu'il traduise les chemins qu'il échange avec elle (#153). Lu sur
+ * le fournisseur lui-même plutôt que déduit de la plateforme : un dev container que
+ * VS Code a démarré ne monte que le projet, et ne voit pas les lecteurs.
+ */
+export function mountsDrives(environment: { pathInside(hostPath: string): string }): boolean {
+  return environment.pathInside('C:\\') === '/mnt/c'
+}

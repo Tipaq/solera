@@ -11,6 +11,7 @@ import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import { projectOverview } from '../src/agents/overview.js'
+import type { EnvironmentProvider } from '../src/environments/provider.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { linkedWorktreePaths } from '../src/worktrees/linked.js'
@@ -24,7 +25,7 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
-function harness(t: TestContext) {
+function harness(t: TestContext, environment?: Pick<EnvironmentProvider, 'pathInside' | 'pathOutside'>) {
   const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-mcp-'))
   t.after(() => rmSync(dir, { recursive: true, force: true }))
 
@@ -54,7 +55,7 @@ function harness(t: TestContext) {
   const config = { paths: { data: join(dir, 'data'), worktrees: join(dir, 'worktrees') } } as unknown as Config
   const status = new WorktreeStatusService(db, new EventLog(db))
   const requests = new AgentRequests(
-    { db, config }, {} as SessionManager, {} as AgentRegistry, new EventLog(db), undefined, status,
+    { db, config }, { environmentOf: () => environment } as unknown as SessionManager, {} as AgentRegistry, new EventLog(db), undefined, status,
   )
 
   const rpc = async (message: object) => {
@@ -153,4 +154,21 @@ test('le prompt dynamique cite les deux outils quand d’autres sessions travail
   }).run()
   const overview = projectOverview(db, { projectId: 'project', conversationId: 'agent', soleraMcp: true }) ?? ''
   assert.match(overview, /`list_worktrees` et `create_worktree` pour travailler dans un arbre à l'écart des autres plutôt que par `git worktree add`/)
+})
+
+test("create_worktree et list_worktrees rendent l'arbre tel que la session le voit (#153)", async (t) => {
+  // Le conteneur d'un hôte Windows voit `C:\…` en `/mnt/c/…` : ici, tout l'hôte sous /seen.
+  const { config, call } = harness(t, {
+    pathInside: (path) => `/seen${path}`,
+    pathOutside: (path) => path.replace(/^\/seen/, ''),
+  })
+  const path = join(config.paths.worktrees, 'project', 'feat__seen')
+
+  const created = (await call('create_worktree', { branch: 'feat/seen' })).content[0]!.text
+  assert.ok(created.includes(`prêt dans /seen${path}.`), created)
+  assert.ok(created.includes(`\`cd /seen${path} && …\``), created)
+  assert.ok(!created.includes(` ${path}`), "aucun chemin de l'hôte")
+
+  const listed = (await call('list_worktrees', {})).content[0]!.text
+  assert.ok(listed.includes(`  /seen${path}`), listed)
 })
