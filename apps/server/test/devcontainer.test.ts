@@ -11,7 +11,7 @@ import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import { DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT } from '@solera/protocol'
 import type { Paths } from '../src/config.js'
 import { AGENTS_MOUNT, ContainerAgents, linuxPackage } from '../src/environments/devcontainer/agents.js'
-import { Devcontainers, parseEnv, targetArch } from '../src/environments/devcontainer/containers.js'
+import { Devcontainers, parseEnv, targetArch, unreachableAdvice } from '../src/environments/devcontainer/containers.js'
 import { DevcontainerEnvironment, type RunningContainer } from '../src/environments/devcontainer/environment.js'
 import { DevcontainerTools, hostAddressOf, parseUpResult } from '../src/environments/devcontainer/tools.js'
 import { Environments } from '../src/environments/environments.js'
@@ -183,6 +183,20 @@ test('la sonde dit si le conteneur joint le serveur, ici joué sur la machine m�
   const tools = new DevcontainerTools(join(dir, 'managed'))
   assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${(open.address() as AddressInfo).port}`), true)
   assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${closed}`), false)
+  // Une erreur du CLI docker (conteneur arrêté) ne dit rien du réseau.
+  await writeFile(join(bin, 'docker'), '#!/bin/sh\necho "Error response from daemon" >&2\nexit 1\n')
+  assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${closed}`), null)
+})
+
+test("un pare-feu n'est mis en cause que si l'URL vise la passerelle Docker", () => {
+  const firewall = unreachableAdvice('http://172.17.0.1:7517', '172.17.0.1')
+  assert.match(firewall, /ufw allow in to 172\.17\.0\.1 port 7517 proto tcp/)
+  assert.match(firewall, /family="ipv4" destination address="172\.17\.0\.1" port port="7517"/)
+  assert.match(unreachableAdvice('http://[fd00::1]:7517', 'fd00::1'), /family="ipv6" destination address="fd00::1"/)
+  // server.agentUrl, Docker Desktop, réseau de l'hôte : rien à ouvrir sur la passerelle.
+  assert.doesNotMatch(unreachableAdvice('https://solera.example.ts.net', '172.17.0.1'), /ufw/)
+  assert.doesNotMatch(unreachableAdvice('http://host.docker.internal:7517', 'host.docker.internal'), /ufw/)
+  assert.doesNotMatch(unreachableAdvice('http://127.0.0.1:7517', '127.0.0.1'), /ufw/)
 })
 
 test('le verdict de devcontainer up se lit sur sa dernière ligne', () => {

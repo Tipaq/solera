@@ -202,7 +202,7 @@ export class Devcontainers {
     if (address) return address
     throw new ContainerRefusal(
       'devcontainer_host_unreachable',
-      'The container has no network to reach this machine (network mode "none", or the network of another container), so the agents would run without the Solera MCP server. Give it a bridge network, or `"runArgs": ["--network=host"]`, in its devcontainer.json.',
+      'The container has no network to reach this machine (network mode "none", or the network of another container), so the agents would run without the Solera MCP server. Give it a bridge network, or the network of this machine: `"runArgs": ["--network=host"]` in its devcontainer.json, or `network_mode: host` in its docker-compose file.',
     )
   }
 
@@ -256,12 +256,10 @@ export class Devcontainers {
   private async assertMcpReachable(container: RunningContainer): Promise<void> {
     const url = new DevcontainerEnvironment(container, this.tools.docker()).urlOfHost(soleraUrlForAgents(this.server))
     if ((await this.tools.reaches(container.id, url)) !== false) return
-    const { hostname, port } = new URL(url)
-    const advice =
-      container.hostAddress === 'host.docker.internal' || LOOPBACK_HOSTS.includes(container.hostAddress)
-        ? 'Check that the server answers there, or set server.agentUrl to an address of this machine the container can reach.'
-        : `A firewall on this machine (ufw, firewalld) probably drops what comes in from the Docker networks: allow TCP to ${hostname} on port ${port}, for instance \`sudo ufw allow in to ${container.hostAddress} port ${port} proto tcp\`, or \`sudo firewall-cmd --permanent --zone=docker --add-port=${port}/tcp && sudo firewall-cmd --reload\`.`
-    throw new ContainerRefusal('devcontainer_host_unreachable', `The container cannot connect to ${url}, where the agents would find the Solera MCP server. ${advice}`)
+    throw new ContainerRefusal(
+      'devcontainer_host_unreachable',
+      `The container cannot connect to ${url}, where the agents would find the Solera MCP server. ${unreachableAdvice(url, container.hostAddress)}`,
+    )
   }
 
   /**
@@ -318,6 +316,22 @@ export class Devcontainers {
     }
     return { arch, musl: musl.length > 0 }
   }
+}
+
+/**
+ * Quoi faire quand le conteneur ne joint pas `url`. Un pare-feu n'est en cause que si
+ * l'URL vise la passerelle Docker : ailleurs (`server.agentUrl`, Docker Desktop, réseau
+ * de l'hôte), c'est l'adresse elle-même qu'il faut revoir.
+ */
+export function unreachableAdvice(url: string, hostAddress: string): string {
+  const { hostname, port, protocol } = new URL(url)
+  const throughGateway = hostAddress !== 'host.docker.internal' && !LOOPBACK_HOSTS.includes(hostAddress)
+  if (!throughGateway || hostname.replace(/^\[|\]$/g, '') !== hostAddress) {
+    return 'Check that the Solera server answers there, or set server.agentUrl to an address of this machine the container can reach.'
+  }
+  const target = port || (protocol === 'https:' ? '443' : '80')
+  const family = hostAddress.includes(':') ? 'ipv6' : 'ipv4'
+  return `A firewall on this machine (ufw, firewalld) probably drops what comes in from the Docker networks: allow TCP to ${hostAddress} on port ${target}, for instance \`sudo ufw allow in to ${hostAddress} port ${target} proto tcp\`, or \`sudo firewall-cmd --permanent --add-rich-rule='rule family="${family}" destination address="${hostAddress}" port port="${target}" protocol="tcp" accept' && sudo firewall-cmd --reload\`.`
 }
 
 /** L'architecture d'un CLI pour ce que `uname -m` dit du conteneur ; null sans CLI pour elle. */
