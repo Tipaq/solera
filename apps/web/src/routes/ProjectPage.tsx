@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { type ProjectDto, type ProjectVisibility } from '@solera/protocol'
+import { type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { ModelDefaultsSettings, PermissionsSettings } from '../components/settings/LayeredSettings'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ProjectInstructions } from '../components/instructions/Instructions'
@@ -30,6 +30,7 @@ import {
   CardHeader,
   EmptyState,
   Field,
+  Select,
   Switch,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
@@ -495,6 +496,7 @@ function ProjectEnvironment({ projectId }: { projectId: string }) {
         ) : null}
         {error ? <Banner>{error}</Banner> : null}
         <ProjectDevcontainer projectId={projectId} />
+        <ConfinedServicesSetting projectId={projectId} />
       </CardBody>
     </Card>
   )
@@ -587,6 +589,33 @@ function ProjectDevcontainer({ projectId }: { projectId: string }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * Les services docker-compose que voit le conteneur d'une session confinée (#145) :
+ * ceux du projet, partagés, ou une copie à chaque session. Seulement pour un dev
+ * container qui passe par docker-compose.
+ */
+function ConfinedServicesSetting({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectDevcontainer(projectId)
+  const updateProject = useUpdateProject()
+  if (!data?.compose) return null
+  return (
+    <div className="border-t border-line pt-4">
+      <Select
+        label={t('project.devcontainer.services')}
+        value={data.confinedServices}
+        disabled={updateProject.isPending}
+        onChange={(value) => updateProject.mutate({ id: projectId, confinedServices: value as ConfinedServices })}
+        options={(['shared', 'copy'] as const).map((value) => ({
+          value,
+          label: t(`project.devcontainer.services.${value}`),
+          hint: t(`project.devcontainer.services.${value}.hint`),
+        }))}
+      />
     </div>
   )
 }

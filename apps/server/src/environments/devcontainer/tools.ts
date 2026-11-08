@@ -45,6 +45,41 @@ export interface ContainerInfo {
   mountTargets: string[]
 }
 
+/** Ce que `describe` lit d'un conteneur. */
+export interface ContainerDescription {
+  image: string
+  env: Record<string, string>
+  networkMode: string
+  networks: string[]
+  privileged: boolean
+  mounts: Array<{ Type?: string; Source?: string; Destination?: string }>
+  labels: Record<string, string>
+}
+
+interface InspectedContainer {
+  Config?: { Image?: string; Env?: string[] | null; Labels?: Record<string, string> | null }
+  HostConfig?: { NetworkMode?: string; Privileged?: boolean }
+  NetworkSettings?: { Networks?: Record<string, unknown> | null }
+  Mounts?: Array<{ Type?: string; Source?: string; Destination?: string }> | null
+}
+
+export function containerDescriptionOf(inspected: InspectedContainer): ContainerDescription {
+  const env: Record<string, string> = {}
+  for (const entry of inspected.Config?.Env ?? []) {
+    const at = entry.indexOf('=')
+    if (at > 0) env[entry.slice(0, at)] = entry.slice(at + 1)
+  }
+  return {
+    image: inspected.Config?.Image ?? '',
+    env,
+    networkMode: inspected.HostConfig?.NetworkMode ?? '',
+    networks: Object.keys(inspected.NetworkSettings?.Networks ?? {}),
+    privileged: inspected.HostConfig?.Privileged ?? false,
+    mounts: inspected.Mounts ?? [],
+    labels: inspected.Config?.Labels ?? {},
+  }
+}
+
 /** Docker ou le CLI `devcontainer` manque : on dit quoi installer. */
 export class ToolMissingError extends Error {
   constructor(
@@ -118,18 +153,42 @@ export class DevcontainerTools {
    * `config` : un `devcontainer.json` hors du dossier, celui que Solera garde pour un projet (#143).
    */
   async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, rebuild = false, config?: string): Promise<UpResult> {
+    return this.runUp(
+      [
+        '--workspace-folder',
+        workspace,
+        ...configArgs(config),
+        ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
+        ...(rebuild ? ['--remove-existing-container'] : []),
+      ],
+      onLog,
+    )
+  }
+
+  /**
+   * Crée le conteneur d'une session confinée (#145) d'après `overrideConfig`, un
+   * `devcontainer.json` écrit par Solera qui remplace celui du projet. `idLabel` le
+   * distingue de tout autre conteneur du même dossier ; la racine git n'est pas montée,
+   * les montages de la configuration disent tout ce qu'il voit.
+   */
+  upEphemeral(workspace: string, overrideConfig: string, idLabel: string, onLog: (line: string) => void): Promise<UpResult> {
+    return this.runUp(
+      [
+        '--workspace-folder',
+        workspace,
+        '--override-config',
+        overrideConfig,
+        '--id-label',
+        idLabel,
+        '--mount-workspace-git-root=false',
+      ],
+      onLog,
+    )
+  }
+
+  private async runUp(upArgs: string[], onLog: (line: string) => void): Promise<UpResult> {
     const launch = await this.cli()
-    const args = [
-      ...launch.args,
-      'up',
-      '--workspace-folder',
-      workspace,
-      ...configArgs(config),
-      '--docker-path',
-      this.docker(),
-      ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
-      ...(rebuild ? ['--remove-existing-container'] : []),
-    ]
+    const args = [...launch.args, 'up', ...upArgs, '--docker-path', this.docker()]
     return new Promise((resolve, reject) => {
       const child = spawn(launch.command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: UP_TIMEOUT_MS })
       let stdout = ''
@@ -253,6 +312,79 @@ export class DevcontainerTools {
     } catch {
       return null
     }
+  }
+
+  /**
+   * Ce que le conteneur d'une session confinée reprend de celui du projet : son image,
+   * son environnement, son réseau et, sous docker-compose, son projet. Null s'il a
+   * disparu.
+   */
+  async describe(containerId: string): Promise<ContainerDescription | null> {
+    try {
+      const { stdout } = await run(this.docker(), ['inspect', '--format', '{{json .}}', containerId], {
+        timeout: DOCKER_TIMEOUT_MS,
+        windowsHide: true,
+        maxBuffer: 8 * 1024 * 1024,
+      })
+      return containerDescriptionOf(JSON.parse(stdout) as InspectedContainer)
+    } catch {
+      return null
+    }
+  }
+
+  /** Lance `docker compose` sur un projet, et rend sa sortie. */
+  async compose(args: string[], timeoutMs = UP_TIMEOUT_MS): Promise<string> {
+    try {
+      const { stdout } = await run(this.docker(), ['compose', ...args], {
+        timeout: timeoutMs,
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+      })
+      return stdout
+    } catch (err) {
+      const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message
+      throw new Error(`docker compose ${args.find((arg) => !arg.startsWith('-') && !arg.includes('/')) ?? ''} failed: ${detail}`)
+    }
+  }
+
+  /**
+   * Supprime tout ce qui porte ces labels : conteneurs, puis réseaux et volumes. Ce qu'un
+   * autre tient encore reste ; ne lève pas.
+   */
+  async removeLabelled(...labels: string[]): Promise<void> {
+    const filters = labels.flatMap((label) => ['--filter', `label=${label}`])
+    const docker = this.docker()
+    const list = async (args: string[]) =>
+      (await run(docker, args, { timeout: DOCKER_TIMEOUT_MS, windowsHide: true }).catch(() => ({ stdout: '' }))).stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+    const containers = await list(['ps', '-aq', ...filters])
+    if (containers.length > 0) {
+      await run(docker, ['rm', '-f', '-v', ...containers], { timeout: DOCKER_TIMEOUT_MS * 2, windowsHide: true }).catch(() => undefined)
+    }
+    const networks = await list(['network', 'ls', '-q', ...filters])
+    if (networks.length > 0) {
+      await run(docker, ['network', 'rm', ...networks], { timeout: DOCKER_TIMEOUT_MS, windowsHide: true }).catch(() => undefined)
+    }
+    const volumes = await list(['volume', 'ls', '-q', ...filters])
+    if (volumes.length > 0) {
+      await run(docker, ['volume', 'rm', ...volumes], { timeout: DOCKER_TIMEOUT_MS, windowsHide: true }).catch(() => undefined)
+    }
+  }
+
+  /** Les valeurs d'un label sur les conteneurs qui le portent, avec leur id. */
+  async labelled(label: string, valueOf: string): Promise<Array<{ id: string; value: string }>> {
+    const { stdout } = await run(
+      this.docker(),
+      ['ps', '-a', '--filter', `label=${label}`, '--format', `{{.ID}}\t{{.Label "${valueOf}"}}`],
+      { timeout: DOCKER_TIMEOUT_MS, windowsHide: true },
+    ).catch(() => ({ stdout: '' }))
+    return stdout
+      .split('\n')
+      .map((line) => line.split('\t'))
+      .filter(([id]) => id?.trim())
+      .map(([id = '', value = '']) => ({ id: id.trim(), value: value.trim() }))
   }
 
   /** Joue une commande dans le conteneur, en root ou sous un utilisateur, et rend sa sortie. */

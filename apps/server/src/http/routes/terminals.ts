@@ -94,8 +94,15 @@ export function registerTerminalRoutes(
     const conversationId = body.conversationId ?? null
     // Un dev container démarre au premier terminal qui en a besoin.
     await sessions.environments.prepare(sessions.environments.terminalEnvironment(id, conversationId), id, { cwd })
-    const environment = sessions.environments.forTerminal(id, conversationId, cwd)
-    const terminal = wrap(() => terminals.open(id, cwd, { environment, conversationId }))
+    const environment = await sessions.environments.forTerminal(id, conversationId, cwd)
+    let terminal: ReturnType<typeof terminals.open>
+    try {
+      terminal = wrap(() => terminals.open(id, cwd, { environment, conversationId }))
+    } catch (err) {
+      // Un conteneur éphémère démarré pour rien ne doit pas rester.
+      await environment.close().catch(() => undefined)
+      throw err
+    }
     return reply.status(201).send(terminal)
   })
 

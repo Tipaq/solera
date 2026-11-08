@@ -139,10 +139,10 @@ test('un terminal suit la session qui l’ouvre, et hors session le projet', asy
     environmentWhere: 'devcontainer', environmentConfined: false, createdAt: 1, updatedAt: 1,
   }).run()
   const environments = new Environments(db)
-  assert.equal(environments.forTerminal('project', null, '/tmp'), hostEnvironment)
+  assert.equal(await environments.forTerminal('project', null, '/tmp'), hostEnvironment)
   // La session est dans un environnement que ce serveur ne sait pas lancer : son
   // terminal refuse, il ne s'ouvre pas sur l'hôte à sa place.
-  assert.throws(() => environments.forTerminal('project', 'session', '/tmp'), EnvironmentUnavailableError)
+  await assert.rejects(environments.forTerminal('project', 'session', '/tmp'), EnvironmentUnavailableError)
 })
 
 test("créer une session fige l'environnement du projet, et refuse celui qu'on ne sait pas lancer", async (t) => {

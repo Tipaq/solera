@@ -140,14 +140,25 @@ export function useWebPage(url: string | null, mode: WebMode) {
 }
 
 /**
- * Les ports du dev container du projet, et où l'hôte sert chacun (#141). Relevés tant
- * que la vue est ouverte : un `npm run dev` lancé dans le conteneur doit y apparaître.
+ * Le conteneur dont une session cite les ports : le dev container du projet, ou pour
+ * une session confinée celui qu'elle a à elle (#145). Null hors conteneur.
  */
-export function useForwardedPorts(projectId: string | null, enabled: boolean) {
+export type PortsSource = { projectId: string } | { conversationId: string }
+
+/**
+ * Les ports d'un conteneur, et où l'hôte sert chacun (#141). Relevés tant que la vue est
+ * ouverte : un `npm run dev` lancé dans le conteneur doit y apparaître.
+ */
+export function useForwardedPorts(source: PortsSource | null, enabled: boolean) {
+  const path = !source
+    ? null
+    : 'projectId' in source
+      ? `/api/projects/${source.projectId}/ports`
+      : `/api/conversations/${source.conversationId}/ports`
   return useQuery({
-    queryKey: ['projects', projectId, 'ports'],
-    queryFn: () => api.get<ForwardedPortDto[]>(`/api/projects/${projectId}/ports`),
-    enabled: enabled && projectId !== null,
+    queryKey: source && 'projectId' in source ? ['projects', source.projectId, 'ports'] : ['conversations', source?.conversationId, 'ports'],
+    queryFn: () => api.get<ForwardedPortDto[]>(path!),
+    enabled: enabled && path !== null,
     refetchInterval: 3000,
   })
 }

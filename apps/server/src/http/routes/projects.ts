@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -54,7 +55,7 @@ import { assertDesignSystemDir } from '../../design-system/path.js'
 import { Environments, environmentColumns, environmentOf } from '../../environments/environments.js'
 import { hasNativeConfinement } from '../../environments/confined/native.js'
 import { managedDevcontainers } from '../../environments/devcontainer/containers.js'
-import { defaultDevcontainerJson, InvalidDevcontainerError } from '../../environments/devcontainer/managed.js'
+import { defaultDevcontainerJson, InvalidDevcontainerError, usesCompose } from '../../environments/devcontainer/managed.js'
 import { devcontainerConfigOf } from '../../environments/devcontainer/tools.js'
 import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
 
@@ -308,6 +309,8 @@ export function registerProjectRoutes(
       Object.assign(patch, environmentColumns(body.environment))
     }
 
+    if (body.confinedServices !== undefined) patch.confinedServices = body.confinedServices
+
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
     }
@@ -343,10 +346,13 @@ export function registerProjectRoutes(
     const { id } = request.params as { id: string }
     const project = await loadVisibleProject(id, user.id)
     const own = devcontainerConfigOf(project.workspacePath)
+    const kept = managed.read(id)
     return {
       repository: own ? relative(project.workspacePath, own) : null,
-      managed: managed.read(id),
+      managed: kept,
       template: defaultDevcontainerJson(project.name, project.workspacePath),
+      compose: usesCompose(own ? readFileSync(own, 'utf8') : kept),
+      confinedServices: project.confinedServices,
     }
   })
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import { eq } from 'drizzle-orm'
 import Fastify from 'fastify'
-import { DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT, type ProjectDevcontainerDto } from '@solera/protocol'
+import { DEVCONTAINER_CONFINED_ENVIRONMENT, DEVCONTAINER_ENVIRONMENT, HOST_ENVIRONMENT, type ProjectDevcontainerDto } from '@solera/protocol'
 import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
@@ -304,8 +304,10 @@ test("le dev container n'est proposé qu'à un projet qui a un devcontainer.json
   await mkdir(join(workspace, '.devcontainer'))
   await writeFile(join(workspace, '.devcontainer', 'devcontainer.json'), '{ "image": "debian" }')
   assert.equal(environments.hasDevcontainer('p'), true)
-  assert.deepEqual(environments.choices('p').at(-1), DEVCONTAINER_ENVIRONMENT)
+  // Le dev container, et sa version confinée : un conteneur à la session (#145).
+  assert.deepEqual(environments.choices('p').slice(-2), [DEVCONTAINER_ENVIRONMENT, DEVCONTAINER_CONFINED_ENVIRONMENT])
   environments.assertAvailable('p', DEVCONTAINER_ENVIRONMENT)
+  environments.assertAvailable('p', DEVCONTAINER_CONFINED_ENVIRONMENT)
   // L'hôte ne se prépare pas, il n'a rien à démarrer.
   await environments.prepare(HOST_ENVIRONMENT, 'p', { cwd: workspace })
   // Un fil libre n'a pas de dev container.
@@ -333,7 +335,7 @@ test('un projet sans .devcontainer a le dev container que Solera lui garde, et c
   assert.equal(environments.hasDevcontainer('p'), false)
   await devcontainers.managed.write('p', defaultDevcontainerJson('Mon projet', workspace))
   assert.equal(environments.hasDevcontainer('p'), true)
-  assert.deepEqual(environments.choices('p').at(-1), DEVCONTAINER_ENVIRONMENT)
+  assert.deepEqual(environments.choices('p').slice(-2), [DEVCONTAINER_ENVIRONMENT, DEVCONTAINER_CONFINED_ENVIRONMENT])
   const managed = devcontainers.configOf(project)
   assert.equal(managed?.managed, true)
   assert.ok(managed.path.startsWith(join(dir, 'devcontainers', 'p')), 'hors du dépôt, dans les données de Solera')

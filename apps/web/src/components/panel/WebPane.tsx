@@ -12,6 +12,7 @@ import {
   setWebMode,
   stepWeb,
   useForwardedPorts,
+  type PortsSource,
   useWebPage,
   useWebPane,
 } from '../../lib/web-pane'
@@ -25,19 +26,21 @@ import { ImageLightbox } from './ImageView'
  * site l'accepte ; sinon la vue le dit et propose la lecture ou le navigateur, plutôt
  * qu'un cadre vide dont on ne saurait pas pourquoi il l'est.
  */
-export const WebPane = memo(function WebPane({ scope, projectId = null, inContainer = false }: {
+export const WebPane = memo(function WebPane({ scope, ports: portsFrom = null }: {
   scope: string
-  projectId?: string | null
-  /** La session tourne dans le dev container : un port qu'elle cite est le sien (#141). */
-  inContainer?: boolean
+  /**
+   * La session tourne dans un conteneur : un port qu'elle cite est le sien (#141). Celui
+   * du projet, ou le sien pour une session confinée (#145).
+   */
+  ports?: PortsSource | null
 }) {
   const t = useTranslate()
   const client = useQueryClient()
   const pane = useWebPane(scope)
   const cited = pane ? (pane.history[pane.index] ?? null) : null
-  const ports = useForwardedPorts(projectId, inContainer && cited !== null)
+  const ports = useForwardedPorts(portsFrom, cited !== null)
   // L'adresse que l'agent cite reste dans la barre ; le cadre va où l'hôte la sert.
-  const forwarded = cited && inContainer ? containerPortOf(cited, ports.data) : null
+  const forwarded = cited && portsFrom ? containerPortOf(cited, ports.data) : null
   const served = forwarded?.served ?? null
   const url = served ?? cited
   const page = useWebPage(url, pane?.mode ?? 'reader')

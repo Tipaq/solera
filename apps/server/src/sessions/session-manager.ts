@@ -16,10 +16,12 @@ import {
 } from '@solera/db'
 import {
   allowsRequest,
+  DEVCONTAINER_ENVIRONMENT,
   diffAgentConfig,
   parseAgentConfig,
   PREFERRED_CLI_RELEASES,
   RESUMES_FROM_OTHER_DIRECTORY,
+  sameEnvironment,
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
@@ -82,6 +84,7 @@ import {
 import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
 import type { ConfinementScope } from '../environments/confined/plan.js'
+import { EphemeralContainer } from '../environments/devcontainer/ephemeral.js'
 import type { EnvironmentProvider } from '../environments/provider.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
@@ -648,6 +651,7 @@ export class SessionManager {
       this.confinedScope(conversation, { cwd, accountEnv, workTrees: [], memoryDir: null, skillRoots: [], prototypesDir: null }),
     )
     try {
+      await this.openEnvironment(conversation, cli.environment)
       return await adapter.fork(
         { agentSessionId: conversation.agentSessionId, cwd, accountEnv, cli },
         adapter.forkCut(this.log, conversationId, throughSeq),
@@ -1064,7 +1068,7 @@ export class SessionManager {
    */
   private visibleAttachments(conversationId: string, attachments: OutgoingAttachment[]): Promise<OutgoingAttachment[]> {
     const environment = this.runners.get(conversationId)?.environment
-    return environment instanceof ConfinedEnvironment && attachments.length > 0
+    return (environment instanceof ConfinedEnvironment || environment instanceof EphemeralContainer) && attachments.length > 0
       ? environment.shareAttachments(attachments)
       : Promise.resolve(attachments)
   }
@@ -1180,7 +1184,11 @@ export class SessionManager {
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
         ...accountEnv,
-        ...(launcher.environment.environment.where === 'devcontainer' ? this.containerEnv(conversation, cwd) : {}),
+        // Confinée, la session a son propre conteneur : la portée lui donne l'identité git
+        // et ses transcripts, rien de partagé avec les autres.
+        ...(sameEnvironment(launcher.environment.environment, DEVCONTAINER_ENVIRONMENT)
+          ? this.containerEnv(conversation, cwd)
+          : {}),
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
@@ -1506,11 +1514,48 @@ export class SessionManager {
     const status = await adapter.cli.status()
     const version =
       (status.found && status.version) || PREFERRED_CLI_RELEASES[conversation.agent].version
+    const notices = this.startupNotices(conversation.id, 'devcontainer_starting')
+    try {
+      await this.environments.prepare(environment, conversation.projectId, {
+        agent: { kind: conversation.agent, binary: adapter.binary, version },
+        cwd: this.resolveCwd(conversation),
+        onLog: notices.onLog,
+      })
+      notices.ready()
+    } catch (err) {
+      notices.failed(err)
+      throw err
+    }
+  }
+
+  /**
+   * Démarre ce que l'environnement de la session doit avoir avant le CLI : le conteneur
+   * à elle d'une session confinée dans un dev container (#145). Son journal passe dans
+   * le fil comme celui du conteneur du projet.
+   */
+  private async openEnvironment(conversation: ConversationRow, environment: EnvironmentProvider): Promise<void> {
+    if (!environment.open) return
+    const notices = this.startupNotices(conversation.id, 'devcontainer_confined_starting')
+    try {
+      await this.environments.open(environment, notices.onLog)
+      notices.ready()
+    } catch (err) {
+      notices.failed(err)
+      throw err
+    }
+  }
+
+  /**
+   * Le journal d'un démarrage de conteneur, dans le fil : une ligne par seconde au plus
+   * pendant qu'il démarre, une fois prêt s'il a pris du temps, et la raison d'un échec.
+   */
+  private startupNotices(conversationId: string, starting: 'devcontainer_starting' | 'devcontainer_confined_starting') {
     const log: string[] = []
     let shown = 0
+    const ready = starting === 'devcontainer_starting' ? 'devcontainer_ready' : 'devcontainer_confined_ready'
     // Le message est la dernière ligne du journal, que l'interface place dans sa phrase.
-    const notice = (code: 'devcontainer_starting' | 'devcontainer_ready', message: string) =>
-      this.log.append(conversation.id, {
+    const notice = (code: typeof starting | typeof ready, message: string) =>
+      this.log.append(conversationId, {
         type: 'agent.notice',
         id: 'devcontainer.up',
         code,
@@ -1518,28 +1563,25 @@ export class SessionManager {
         level: 'info',
         details: log.join('\n'),
       })
-    try {
-      await this.environments.prepare(environment, conversation.projectId, {
-        agent: { kind: conversation.agent, binary: adapter.binary, version },
-        cwd: this.resolveCwd(conversation),
-        onLog: (line) => {
-          log.push(line)
-          if (log.length > 60) log.shift()
-          if (Date.now() - shown < 1_000) return
-          shown = Date.now()
-          notice('devcontainer_starting', line.slice(0, 200))
-        },
-      })
-      if (shown > 0) notice('devcontainer_ready', '')
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      this.log.append(conversation.id, {
-        type: 'error',
-        code: err instanceof HttpError ? err.code : 'devcontainer_failed',
-        message,
-        recoverable: true,
-      })
-      throw err
+    return {
+      onLog: (line: string) => {
+        log.push(line)
+        if (log.length > 60) log.shift()
+        if (Date.now() - shown < 1_000) return
+        shown = Date.now()
+        notice(starting, line.slice(0, 200))
+      },
+      ready: () => {
+        if (shown > 0) notice(ready, '')
+      },
+      failed: (err: unknown) => {
+        this.log.append(conversationId, {
+          type: 'error',
+          code: err instanceof HttpError ? err.code : 'devcontainer_failed',
+          message: err instanceof Error ? err.message : String(err),
+          recoverable: true,
+        })
+      },
     }
   }
 
@@ -1575,6 +1617,12 @@ export class SessionManager {
     await this.makeRoom()
 
     const context = this.buildContext(fresh)
+    try {
+      await this.openEnvironment(fresh, context.environment)
+    } catch (err) {
+      await context.environment.close().catch(() => undefined)
+      throw err
+    }
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
     this.runners.set(conversationId, {
