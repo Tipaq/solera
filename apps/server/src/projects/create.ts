@@ -113,6 +113,7 @@ export async function insertProject(
     defaultConfig: null,
     designSystemPath: null,
     turnCheckpoints: true,
+    confinedServices: 'shared',
     // L'hôte non confiné, comme avant la notion : changer d'environnement est un choix.
     ...environmentColumns(HOST_ENVIRONMENT),
     position: (highest?.max ?? 0) + 1,

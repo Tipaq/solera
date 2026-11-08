@@ -29,6 +29,20 @@ export const HOST_CONFINED_ENVIRONMENT: ExecutionEnvironment = Object.freeze({ w
 /** Le dev container du projet, partagé par ses sessions non confinées : #140. */
 export const DEVCONTAINER_ENVIRONMENT: ExecutionEnvironment = Object.freeze({ where: 'devcontainer', confined: false })
 
+/**
+ * Un conteneur à la session, éphémère, sur l'image du dev container du projet, son seul
+ * worktree monté : #145. Le seul confinement de Windows natif.
+ */
+export const DEVCONTAINER_CONFINED_ENVIRONMENT: ExecutionEnvironment = Object.freeze({ where: 'devcontainer', confined: true })
+
+/**
+ * Les services docker-compose du dev container (une base de données…), pour le
+ * conteneur d'une session confinée : ceux du projet, partagés, ou une copie à elle,
+ * supprimée avec elle (#145). Un réglage du projet.
+ */
+export const confinedServicesSchema = z.enum(['shared', 'copy'])
+export type ConfinedServices = z.infer<typeof confinedServicesSchema>
+
 export function sameEnvironment(a: ExecutionEnvironment, b: ExecutionEnvironment): boolean {
   return a.where === b.where && a.confined === b.confined
 }
@@ -70,6 +84,10 @@ export interface ProjectDevcontainerDto {
   managed: string | null
   /** Le modèle de départ : l'image de base avec git, et les features de la stack détectée. */
   template: string
+  /** Le dev container passe par docker-compose : le réglage des services a un objet. */
+  compose: boolean
+  /** Les services docker-compose que voit le conteneur d'une session confinée (#145). */
+  confinedServices: ConfinedServices
 }
 
 /** Écrire le `devcontainer.json` que Solera garde : du JSON avec commentaires (JSONC). */

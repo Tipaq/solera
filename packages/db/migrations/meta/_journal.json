@@ -477,6 +477,13 @@
       "when": 1794141811173,
       "tag": "0068_environnement_d_execution",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "6",
+      "when": 1794168617692,
+      "tag": "0069_services_confines",
+      "breakpoints": true
     }
   ]
 }

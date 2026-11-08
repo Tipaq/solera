@@ -14,6 +14,7 @@ import { resolveBinary } from '../agents/cli-binary.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import type { Devcontainers } from '../environments/devcontainer/containers.js'
 import { DevcontainerEnvironment } from '../environments/devcontainer/environment.js'
+import { EphemeralContainer } from '../environments/devcontainer/ephemeral.js'
 import type { EnvironmentProvider } from '../environments/provider.js'
 import { listeningSockets } from './processes.js'
 
@@ -78,6 +79,8 @@ export interface DockerContainer {
   imageBytes: number | null
   localFolder: string
   composeProject: string
+  /** Le label du conteneur d'une session confinée (#145) ; vide pour un autre. */
+  ephemeral: string
 }
 
 const PS_FORMAT = [
@@ -88,15 +91,17 @@ const PS_FORMAT = [
   '{{.Size}}',
   '{{.Label "devcontainer.local_folder"}}',
   '{{.Label "com.docker.compose.project"}}',
+  '{{.Label "solera.ephemeral"}}',
 ].join('\t')
 
 /** `docker ps --format PS_FORMAT`, ligne par ligne. */
 export function parseDockerPs(output: string): DockerContainer[] {
   return output.split('\n').flatMap((line) => {
-    const [id, name = '', state = '', status = '', size = '', localFolder = '', composeProject = ''] = line.split('\t')
+    const [id, name = '', state = '', status = '', size = '', localFolder = '', composeProject = '', ephemeral = ''] =
+      line.split('\t')
     if (!id?.trim()) return []
     const sizes = parseContainerSize(size)
-    return [{ id: id.trim(), name, state, status, ...sizes, localFolder, composeProject }]
+    return [{ id: id.trim(), name, state, status, ...sizes, localFolder, composeProject, ephemeral: ephemeral.trim() }]
   })
 }
 
@@ -292,7 +297,8 @@ export class EnvironmentInventory {
 
     for (const project of projects) {
       const solera = devcontainers.status(project.id)
-      const own = listed.filter((container) => container.localFolder === project.workspacePath)
+      // Le conteneur d'une session confinée sur le dossier du projet n'est pas celui du projet.
+      const own = listed.filter((container) => container.localFolder === project.workspacePath && !container.ephemeral)
       // Celui que Solera a démarré, sinon celui qui tourne, sinon le plus récent.
       const main =
         own.find((container) => solera.containerId?.startsWith(container.id)) ??
@@ -335,8 +341,67 @@ export class EnvironmentInventory {
       entries.push(entry)
       if (main?.state === 'running' && docker) running.push({ entry, id: main.id })
     }
+    entries.push(...this.ephemeralContainers(listed, sessions, terminals, running))
     if (docker && running.length > 0) await this.measure(docker, running, listed)
     return entries
+  }
+
+  /**
+   * Le conteneur à elle de chaque session ou terminal confiné dans un dev container
+   * (#145), avec la copie de ses services docker-compose : un bac à sable que Docker
+   * fait tourner, mesuré comme un dev container.
+   */
+  private ephemeralContainers(
+    listed: DockerContainer[],
+    sessions: ReturnType<EnvironmentSources['sessions']['liveEnvironments']>,
+    terminals: ReturnType<EnvironmentSources['terminals']['live']>,
+    running: { entry: ScannedEnvironment; id: string }[],
+  ): ScannedEnvironment[] {
+    const owners = [
+      ...sessions.map((session) => ({
+        environment: session.environment,
+        id: environmentServiceId({ kind: 'sandbox', conversationId: session.conversationId }),
+        conversationIds: [session.conversationId],
+        terminals: [] as ServiceEnvironmentTerminal[],
+        owner: { conversationId: session.conversationId } as ScannedEnvironment['owner'],
+      })),
+      ...terminals.map((terminal) => ({
+        environment: terminal.environment,
+        id: environmentServiceId({ kind: 'sandbox', terminalId: terminal.id }),
+        conversationIds: [] as string[],
+        terminals: [{ id: terminal.id, title: terminal.title, pid: terminal.pid }],
+        owner: { terminalId: terminal.id } as ScannedEnvironment['owner'],
+      })),
+    ]
+    return owners.flatMap(({ environment, ...owner }) => {
+      if (!(environment instanceof EphemeralContainer)) return []
+      const main = listed.find((container) => environment.containerId?.startsWith(container.id)) ?? null
+      const companions = environment.composeCopy
+        ? listed.filter((other) => other.composeProject === environment.composeCopy)
+        : []
+      const entry: ScannedEnvironment = {
+        ...owner,
+        kind: 'sandbox',
+        engine: 'docker',
+        name: main?.name ?? null,
+        state: !environment.containerId ? 'starting' : main?.state === 'running' ? 'running' : main ? 'stopped' : 'starting',
+        error: null,
+        projectId: environment.projectId,
+        vscodeAttached: false,
+        cpu: null,
+        memoryBytes: null,
+        diskBytes: main ? sum([main, ...companions].map((container) => container.writableBytes)) : null,
+        imageBytes: main?.imageBytes ?? null,
+        ports: [],
+        forwardedPorts: environment.forwardedPorts(),
+        startedAt: null,
+        companions: companions.map((container) => container.name),
+        containerIds: main ? [main.id, ...companions.map((container) => container.id)] : [],
+        pids: [],
+      }
+      if (main?.state === 'running') running.push({ entry, id: main.id })
+      return [entry]
+    })
   }
 
   /** CPU et mémoire de tout le docker-compose, ports, VS Code, heure de démarrage. */

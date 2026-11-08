@@ -11,7 +11,7 @@ import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.j
 import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
-import { executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
+import { confinedServicesSchema, executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -170,6 +170,8 @@ export const updateProjectBodySchema = z
     turnCheckpoints: z.boolean(),
     /** L'environnement des sessions qu'on y ouvrira ; celles qui existent gardent le leur. */
     environment: executionEnvironmentSchema,
+    /** Les services docker-compose des sessions confinées : partagés ou copiés (#145). */
+    confinedServices: confinedServicesSchema,
   })
   .partial()
 

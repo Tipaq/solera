@@ -305,7 +305,7 @@ function alive(pid: number): boolean {
 }
 
 /** Retire un `.git` posé par le confinement, s'il est resté le fichier vide qu'on a posé. */
-async function removeEmptyFile(path: string): Promise<void> {
+export async function removeEmptyFile(path: string): Promise<void> {
   try {
     const stats = await lstat(path)
     if (stats.isFile() && stats.size === 0) await rm(path)

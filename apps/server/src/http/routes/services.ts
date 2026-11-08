@@ -168,7 +168,8 @@ export function registerServiceRoutes(
       const seen = attribute({ projectId: entry.projectId, conversationId: owner })
       if (!seen) return []
       const manageable = !!seen.project || seen.conversation?.userId === userId
-      const usage = entry.kind === 'sandbox' ? sandboxUsage(entry.pids, processes, (id) => cpuNow.get(id) ?? null) : null
+      // Un conteneur de session confinée se mesure par Docker, pas par ses processus.
+      const usage = entry.kind === 'sandbox' && entry.engine !== 'docker' ? sandboxUsage(entry.pids, processes, (id) => cpuNow.get(id) ?? null) : null
       const devcontainer = entry.kind === 'devcontainer'
       return [{
         id: entry.id, kind: entry.kind, engine: entry.engine, name: entry.name, state: entry.state, error: entry.error,
