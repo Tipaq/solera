@@ -71,6 +71,17 @@ export function assertDevcontainerJson(content: string): void {
   }
 }
 
+/** Le `devcontainer.json` passe-t-il par docker-compose ? Faux s'il manque ou ne se lit pas. */
+export function usesCompose(content: string | null): boolean {
+  if (content === null) return false
+  try {
+    const parsed = JSON.parse(stripJsonc(content)) as { dockerComposeFile?: unknown } | null
+    return parsed?.dockerComposeFile !== undefined
+  } catch {
+    return false
+  }
+}
+
 /** Retire les commentaires et les virgules finales d'un JSONC, sans toucher aux chaînes. */
 export function stripJsonc(text: string): string {
   let out = ''

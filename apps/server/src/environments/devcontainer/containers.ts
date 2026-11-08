@@ -1,12 +1,27 @@
-import { mkdir } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import type { Server as HttpServer } from 'node:http'
-import { join } from 'node:path'
-import type { AgentKind, ForwardedPortDto } from '@solera/protocol'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
+import type { AgentKind, ConfinedServices, ForwardedPortDto } from '@solera/protocol'
 import type { Config, Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
 import { soleraUrlForAgents } from '../../instance/agent-url.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
+import { alive } from '../confined/confined.js'
+import type { ConfinementScope } from '../confined/plan.js'
 import { BridgeListeners } from './bridge.js'
+import {
+  copiedCompose,
+  copiedNetwork,
+  ephemeralConfig,
+  EphemeralContainer,
+  ephemeralMounts,
+  ephemeralPlan,
+  unconfinedParts,
+  type EphemeralLauncher,
+  type EphemeralSpec,
+  type StartedEphemeral,
+} from './ephemeral.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
 import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { ManagedDevcontainers } from './managed.js'
@@ -35,6 +50,7 @@ export class ContainerRefusal extends Error {
       | 'devcontainer_foreign'
       | 'devcontainer_host_unreachable'
       | 'devcontainer_arch'
+      | 'devcontainer_unconfined'
       | 'devcontainer_paths',
     message: string,
   ) {
@@ -71,6 +87,9 @@ export class Devcontainers {
   /** Pourquoi le dernier démarrage d'un projet a échoué ; effacé au suivant qui réussit. */
   private readonly failures = new Map<string, string>()
   private readonly ports = new Map<string, PortForwarder>()
+  /** La configuration lue au dernier démarrage de chaque projet : le conteneur d'une session confinée la reprend. */
+  private readonly configurations = new Map<string, { configuration: unknown; path: string | null }>()
+  private swept: Promise<void> | null = null
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
   private managedStore: ManagedDevcontainers | null = null
 
@@ -134,7 +153,7 @@ export class Devcontainers {
    * Démarre le conteneur du projet s'il ne tourne pas, et y apporte le CLI de l'agent.
    * Rend le fournisseur où lancer. Un conteneur arrêté entre-temps est redémarré.
    */
-  async prepare(project: Project, need: ContainerNeed): Promise<DevcontainerEnvironment> {
+  async prepare(project: Project, need: ContainerNeed, confined = false): Promise<void> {
     if (!this.available(project)) {
       throw new ContainerRefusal(
         'devcontainer_missing',
@@ -142,7 +161,8 @@ export class Devcontainers {
       )
     }
     const container = await this.ensureRunning(project, need.onLog ?? (() => undefined))
-    if (need.agent || need.cwd !== project.workspacePath) {
+    // Une session confinée ne prend que l'image du conteneur du projet : peu importe qui l'a démarré.
+    if (!confined && (need.agent || need.cwd !== project.workspacePath)) {
       if (!container.solerasMounts) {
         throw new ContainerRefusal(
           'devcontainer_foreign',
@@ -150,7 +170,7 @@ export class Devcontainers {
         )
       }
     }
-    if (process.platform === 'win32' && container.solerasMounts) await this.relativeLinks(project, need.cwd)
+    if (process.platform === 'win32' && (confined || container.solerasMounts)) await this.relativeLinks(project, need.cwd)
     if (need.agent) {
       const target = await this.target(container)
       try {
@@ -163,7 +183,6 @@ export class Devcontainers {
         )
       }
     }
-    return this.provider(project.id)
   }
 
   /**
@@ -223,6 +242,25 @@ export class Devcontainers {
     this.failures.delete(projectId)
   }
 
+  /**
+   * Le conteneur d'une session ou d'un terminal confiné (#145), à démarrer par son
+   * `open` : sur l'image du conteneur du projet, que `prepare(…, true)` a démarré.
+   */
+  ephemeral(projectId: string, scope: ConfinementScope, services: ConfinedServices): EphemeralContainer {
+    return new EphemeralContainer(this.ephemeralLauncher, {
+      projectId,
+      plan: ephemeralPlan(scope),
+      cwd: scope.workspaces[0]!,
+      services,
+    })
+  }
+
+  private readonly ephemeralLauncher: EphemeralLauncher = {
+    docker: () => this.tools.docker(),
+    start: (spec, onLog) => this.startEphemeral(spec, onLog),
+    remove: (started) => this.removeEphemeral(started),
+  }
+
   /** Le fournisseur d'un projet dont le conteneur a été préparé. */
   provider(projectId: string): DevcontainerEnvironment {
     const container = this.running.get(projectId)
@@ -278,6 +316,7 @@ export class Devcontainers {
       // VS Code lui donne, et son conteneur reste partagé.
       const configPath = config?.managed ? config.path : undefined
       const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath, configPath)
+      this.configurations.set(project.id, { configuration, path: config?.path ?? null })
       const mounts = await this.mounts(project, workspaceFolder)
       const up = await this.tools.up(project.workspacePath, mounts, onLog, rebuild, configPath)
       const info = await this.tools.inspect(up.containerId)
@@ -412,6 +451,195 @@ export class Devcontainers {
     container.env = parseEnv(env)
   }
 
+  /** Ce qui distingue cette instance de Solera d'une autre sur le même Docker. */
+  private get instance(): string {
+    return createHash('sha256').update(this.paths.data).digest('hex').slice(0, 8)
+  }
+
+  /**
+   * Démarre le conteneur d'une session confinée : l'image du conteneur du projet, sa
+   * configuration sans ce qui construit ni ce qui ouvre l'hôte, les seuls montages de la
+   * session, le réseau des services docker-compose (partagés ou copiés). Refusé s'il
+   * montre quand même un dossier de l'hôte (une feature qui monte le socket de Docker)
+   * ou tourne en mode privilégié.
+   */
+  private async startEphemeral(spec: EphemeralSpec, onLog: (line: string) => void): Promise<StartedEphemeral> {
+    const base = this.running.get(spec.projectId)
+    const config = this.configurations.get(spec.projectId)
+    if (!base || !config) {
+      throw new ContainerRefusal('devcontainer_failed', `The dev container of project ${spec.projectId} has not been started.`)
+    }
+    await this.sweep()
+    const project = await this.tools.describe(base.id)
+    if (!project) throw new ContainerRefusal('devcontainer_failed', 'The dev container of the project is gone.')
+    const id = randomUUID()
+    const copyName = `solera-${this.instance}-${process.pid}-${id.slice(0, 8)}`
+    const composeProject = project.labels['com.docker.compose.project'] ?? null
+    let composeCopy: string | null = null
+    let ports: PortForwarder | null = null
+    const dir = join(this.paths.data, 'ephemeral', id)
+    try {
+      const runArgs = ['--label', `${INSTANCE_LABEL}=${this.instance}`, '--label', `${PID_LABEL}=${process.pid}`]
+      const network = project.networks[0]
+      if (project.networkMode === 'host') {
+        runArgs.push('--network=host')
+      } else if (composeProject && network && spec.services === 'copy' && config.path) {
+        composeCopy = await this.copyServices(config.configuration, config.path, copyName, dir, onLog)
+        runArgs.push(`--network=${composeCopy ? copiedNetwork(network, composeProject, copyName) : network}`)
+      } else if (network && network !== 'bridge') {
+        runArgs.push(`--network=${network}`)
+      }
+      const mounts = ephemeralMounts(spec.plan, spec.cwd, { source: this.agents.root, target: AGENTS_MOUNT })
+      // Le dossier de travail tel que le conteneur le voit : `/mnt/c/…` sous Windows natif (#151).
+      const inside = containerPathOf(spec.cwd) ?? spec.cwd
+      const override = ephemeralConfig({
+        configuration: config.configuration,
+        image: project.image,
+        cwd: inside,
+        workspaceMount: mounts.workspaceMount,
+        mounts: mounts.mounts,
+        runArgs,
+        containerEnv: project.env,
+      })
+      await mkdir(dir, { recursive: true })
+      const overridePath = join(dir, 'devcontainer.json')
+      await writeFile(overridePath, JSON.stringify(override, null, 2))
+      const up = await this.tools.upEphemeral(spec.cwd, overridePath, `${EPHEMERAL_LABEL}=${id}`, onLog)
+      const started = await this.tools.describe(up.containerId)
+      const issues = started ? unconfinedParts(started, mounts.sources) : ['the container is gone']
+      if (issues.length > 0) {
+        throw new ContainerRefusal(
+          'devcontainer_unconfined',
+          `The image of this dev container opens the host to a confined session (${issues.join('; ')}): a feature of its devcontainer.json asks for it, docker-in-docker or docker-outside-of-docker for instance. Run this session unconfined, or confined on the host.`,
+        )
+      }
+      const container: RunningContainer = {
+        id: up.containerId,
+        user: up.remoteUser,
+        workspace: spec.cwd,
+        remoteWorkspaceFolder: inside,
+        solerasMounts: true,
+        loginShell: '/bin/sh',
+        env: {},
+        agents: new Map(base.agents),
+        hostAddress: await this.hostAddress(up.containerId),
+      }
+      await this.reachServer(container.hostAddress)
+      await this.assertMcpReachable(container)
+      await this.probe(container)
+      container.env = { ...container.env, ...spec.plan.env }
+      await this.linkHome(container, spec.plan.homeLinks)
+      ports = new PortForwarder(container.id, this.tools.docker(), portsConfigOf(config.configuration))
+      await ports.start()
+      return { label: id, container, composeCopy, ports }
+    } catch (err) {
+      await this.removeEphemeral({ label: id, ports, composeCopy: composeCopy ?? (spec.services === 'copy' ? copyName : null) })
+      if (err instanceof ContainerRefusal) throw err
+      throw new ContainerRefusal('devcontainer_failed', (err as Error).message)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  /**
+   * Une copie des services docker-compose du projet, sauf celui du dev container, sous
+   * un projet docker-compose à la session : ses conteneurs, son réseau et ses volumes
+   * lui appartiennent. Lancée depuis la configuration résolue et réécrite
+   * (`copiedCompose`) : ni ports publiés ni nom fixe, qui heurteraient les services du
+   * projet, ni dossier de l'hôte partagé avec eux. Null quand il n'y a rien à copier.
+   */
+  private async copyServices(
+    configuration: unknown,
+    configPath: string,
+    copyName: string,
+    dir: string,
+    onLog: (line: string) => void,
+  ): Promise<string | null> {
+    const files = composeFilesOf(configuration, configPath)
+    if (files.length === 0) return null
+    const resolved = JSON.parse(
+      await this.tools.compose(
+        ['-p', copyName, '--project-directory', dirname(files[0]!), ...files.flatMap((file) => ['-f', file]), 'config', '--format', 'json'],
+        60_000,
+      ),
+    ) as unknown
+    const { service, runServices } = (configuration ?? {}) as { service?: unknown; runServices?: unknown }
+    const copy = copiedCompose(resolved, {
+      exclude: typeof service === 'string' ? service : null,
+      only: Array.isArray(runServices) ? runServices.filter((name): name is string => typeof name === 'string') : null,
+    })
+    if (copy.services.length === 0) return null
+    onLog(`Starting a copy of the docker-compose services for this session: ${copy.services.join(', ')}`)
+    const file = join(dir, 'compose.json')
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, JSON.stringify(copy.config, null, 2))
+    await this.tools.compose(['-p', copyName, '--project-directory', dirname(files[0]!), '-f', file, 'up', '-d', ...copy.services])
+    for (const { id } of await this.tools.labelled(`com.docker.compose.project=${copyName}`, 'com.docker.compose.service')) {
+      const started = await this.tools.describe(id)
+      const issues = started ? unconfinedParts(started, []) : []
+      if (issues.length > 0) {
+        throw new ContainerRefusal(
+          'devcontainer_unconfined',
+          `A copied docker-compose service would open the host (${issues.join('; ')}). Share the project's services instead, in the project settings.`,
+        )
+      }
+    }
+    return copyName
+  }
+
+  /** Les liens du home de la session vers ce qui est monté de l'hôte : les transcripts de Claude, ses consignes. */
+  private async linkHome(container: RunningContainer, links: ConfinementScope['homeLinks']): Promise<void> {
+    if (links.length === 0) return
+    await this.tools.execIn(
+      container.id,
+      [
+        '/bin/sh',
+        '-c',
+        'while [ $# -gt 1 ]; do mkdir -p "$HOME/$(dirname "$1")" && ln -sfn "$2" "$HOME/$1"; shift 2; done',
+        'link',
+        ...links.flatMap((link) => [link.path, containerPathOf(link.target) ?? link.target]),
+      ],
+      container.user,
+    )
+  }
+
+  /**
+   * Le ménage de ce qu'un serveur mort a laissé, une fois par serveur : au démarrage, et
+   * au plus tard avant le premier conteneur éphémère. Sans Docker, rien à faire.
+   */
+  sweep(): Promise<void> {
+    this.swept ??= this.sweepEphemeral().catch(() => undefined)
+    return this.swept
+  }
+
+  /** Supprime un conteneur éphémère, ses ports et la copie de ses services. */
+  private async removeEphemeral(started: Pick<StartedEphemeral, 'label' | 'composeCopy'> & Partial<StartedEphemeral>): Promise<void> {
+    await started.ports?.close()
+    await this.tools.removeLabelled(`${EPHEMERAL_LABEL}=${started.label}`)
+    if (started.composeCopy) await this.tools.removeLabelled(`com.docker.compose.project=${started.composeCopy}`)
+  }
+
+  /**
+   * Les conteneurs éphémères et les copies de services qu'un serveur mort a laissés : le
+   * pid dans leurs labels les attribue, ceux d'un serveur vivant ne sont pas touchés.
+   */
+  private async sweepEphemeral(): Promise<void> {
+    const instance = this.instance
+    const dead = (pid: number) => pid > 0 && pid !== process.pid && !alive(pid)
+    const pids = new Set((await this.tools.labelled(`${INSTANCE_LABEL}=${instance}`, PID_LABEL)).map((entry) => Number(entry.value)))
+    for (const pid of pids) {
+      if (dead(pid)) await this.tools.removeLabelled(`${INSTANCE_LABEL}=${instance}`, `${PID_LABEL}=${pid}`)
+    }
+    const copies = new Set(
+      (await this.tools.labelled('com.docker.compose.project', 'com.docker.compose.project')).map((entry) => entry.value),
+    )
+    for (const name of copies) {
+      if (dead(Number(new RegExp(`^solera-${instance}-(\\d+)-`).exec(name)?.[1]))) {
+        await this.tools.removeLabelled(`com.docker.compose.project=${name}`)
+      }
+    }
+  }
+
   private async target(container: RunningContainer): Promise<LinuxTarget> {
     let out: string
     try {
@@ -433,6 +661,19 @@ export class Devcontainers {
     }
     return { arch, musl: musl.length > 0 }
   }
+}
+
+/** Les labels des conteneurs éphémères : le leur, l'instance de Solera, et le serveur qui les a créés. */
+const EPHEMERAL_LABEL = 'solera.ephemeral'
+const INSTANCE_LABEL = 'solera.instance'
+const PID_LABEL = 'solera.pid'
+
+
+/** Les fichiers docker-compose d'une configuration, en chemins absolus. */
+export function composeFilesOf(configuration: unknown, configPath: string): string[] {
+  const value = (configuration as { dockerComposeFile?: unknown } | null)?.dockerComposeFile
+  const files = typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((file) => typeof file === 'string') : []
+  return files.map((file) => (isAbsolute(file) ? file : resolve(dirname(configPath), file)))
 }
 
 /** Ce qu'on garde du journal d'un démarrage : la construction d'une image en écrit beaucoup. */

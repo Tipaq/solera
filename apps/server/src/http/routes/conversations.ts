@@ -38,6 +38,7 @@ import {
   type JournalPageDto,
   type PendingRequestsDto,
   type ToolOutputDto,
+  type ForwardedPortDto,
 } from '@solera/protocol'
 import { ForkError, type AgentRegistry } from '../../agents/registry.js'
 import type { OutgoingAttachment } from '../../agents/types.js'
@@ -75,6 +76,7 @@ import {
   pendingRequests,
   tellOutcome,
 } from '../../sessions/request-lifecycle.js'
+import { EphemeralContainer } from '../../environments/devcontainer/ephemeral.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from '../../sessions/request-accept.js'
 import type { AppContext } from '../context.js'
@@ -756,6 +758,19 @@ export function registerConversationRoutes(
       .run()
 
     return { lastReadSeq: readCursor(id, user.id) }
+  })
+
+  /**
+   * Les ports du conteneur à elle d'une session confinée dans un dev container (#145),
+   * et où l'hôte sert chacun : l'aperçu web de cette session, et d'elle seule, les
+   * traduit. Vide tant que son conteneur ne tourne pas.
+   */
+  app.get('/api/conversations/:id/ports', async (request): Promise<ForwardedPortDto[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadReadable(id, user.id)
+    const environment = sessions.liveEnvironments().find((live) => live.conversationId === id)?.environment
+    return environment instanceof EphemeralContainer ? environment.forwardedPorts() : []
   })
 
   /**

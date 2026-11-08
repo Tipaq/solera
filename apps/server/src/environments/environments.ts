@@ -1,11 +1,13 @@
 import { eq } from 'drizzle-orm'
 import { conversations, projects, type Db } from '@solera/db'
 import {
+  DEVCONTAINER_CONFINED_ENVIRONMENT,
   DEVCONTAINER_ENVIRONMENT,
   environmentKey,
   HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
   sameEnvironment,
+  type ConfinedServices,
   type EnvironmentWhere,
   type ExecutionEnvironment,
 } from '@solera/protocol'
@@ -36,9 +38,9 @@ export function environmentColumns(environment: ExecutionEnvironment): Environme
  * Qui lance quoi, et où : l'environnement d'un projet ou d'une session, et le
  * fournisseur qui sait y lancer un processus.
  *
- * L'hôte, et l'hôte confiné là où la plateforme a un confinement natif (#144). Le dev
- * container (#140) et le conteneur confiné (#145) y ajouteront leur fournisseur ; les
- * appelants, eux, ne changeront pas.
+ * L'hôte, et l'hôte confiné là où la plateforme a un confinement natif (#144) ; le dev
+ * container du projet (#140), et pour une session confinée un conteneur à elle sur son
+ * image (#145).
  */
 export class Environments {
   constructor(
@@ -51,12 +53,13 @@ export class Environments {
    * Ce qu'on peut choisir, pour ce projet, sur ce serveur. L'hôte confiné est proposé
    * sur toute plateforme qui en a un, même si l'essai échoue : c'est au choix que le
    * refus dit pourquoi et quoi lancer, plutôt qu'une option qui disparaît sans raison.
-   * Le dev container l'est pour un projet qui a un `devcontainer.json`, le sien ou celui
-   * que Solera garde pour lui, même si Docker manque : son démarrage dira quoi installer.
+   * Le dev container, confiné ou non, l'est pour un projet qui a un `devcontainer.json`,
+   * le sien ou celui que Solera garde pour lui, même si Docker manque : son démarrage
+   * dira quoi installer.
    */
   choices(projectId: string | null): ExecutionEnvironment[] {
     const host = hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT]
-    return this.hasDevcontainer(projectId) ? [...host, DEVCONTAINER_ENVIRONMENT] : host
+    return this.hasDevcontainer(projectId) ? [...host, DEVCONTAINER_ENVIRONMENT, DEVCONTAINER_CONFINED_ENVIRONMENT] : host
   }
 
   /** Le projet a-t-il un `devcontainer.json` que ce serveur saurait démarrer ? */
@@ -69,22 +72,20 @@ export class Environments {
   /**
    * Ce qu'un environnement doit avoir fait avant qu'on y lance quoi que ce soit : le
    * dev container démarre (journal de `up` par `need.onLog`) et reçoit le CLI de
-   * l'agent. Sans effet pour l'hôte. Lève, avec la raison, quand il ne peut pas servir.
+   * l'agent. Confiné, c'est son image qu'on prend : le conteneur de la session démarre
+   * ensuite, à l'`open` de son fournisseur. Sans effet pour l'hôte. Lève, avec la
+   * raison, quand il ne peut pas servir.
    */
   async prepare(environment: ExecutionEnvironment, projectId: string | null, need: ContainerNeed): Promise<void> {
     if (environment.where !== 'devcontainer') return
-    if (environment.confined) {
-      throw new EnvironmentUnavailableError(environment, 'A confined dev container is not available on this server yet.')
-    }
     const workspacePath = projectId === null ? null : this.workspaceOf(projectId)
     if (!this.devcontainers || projectId === null || workspacePath === null) {
       throw new EnvironmentUnavailableError(environment, 'Only a project session can run in a dev container.')
     }
     try {
-      await this.devcontainers.prepare({ id: projectId, workspacePath }, need)
+      await this.devcontainers.prepare({ id: projectId, workspacePath }, need, environment.confined)
     } catch (err) {
-      if (!(err instanceof ContainerRefusal)) throw err
-      throw new EnvironmentUnavailableError(environment, err.message, { code: err.code, params: { detail: err.message } })
+      throw unavailable(environment, err)
     }
   }
 
@@ -100,7 +101,7 @@ export class Environments {
         `The ${environmentKey(environment)} environment is not available on this server yet.`,
       )
     }
-    if (environment.confined) {
+    if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT)) {
       const native = nativeConfinement()
       if ('unavailable' in native) refuseConfinement(native.unavailable)
     }
@@ -118,6 +119,9 @@ export class Environments {
     // Préparé d'abord par `prepare`, qui l'a démarré : ici, on ne fait que le désigner.
     if (sameEnvironment(environment, DEVCONTAINER_ENVIRONMENT) && this.devcontainers && projectId) {
       return this.devcontainers.provider(projectId)
+    }
+    if (sameEnvironment(environment, DEVCONTAINER_CONFINED_ENVIRONMENT) && this.devcontainers && projectId && scope) {
+      return this.devcontainers.ephemeral(projectId, scope, this.confinedServicesOf(projectId))
     }
     if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT) && scope) {
       const native = nativeConfinement()
@@ -156,11 +160,39 @@ export class Environments {
   /**
    * Où ouvrir un terminal : dans l'environnement de la session qui l'ouvre, et hors
    * session dans celui du projet. Confiné, il n'écrit que dans son dossier, et le
-   * gestionnaire de terminaux ferme son fournisseur quand il se termine.
+   * gestionnaire de terminaux ferme son fournisseur quand il se termine. Dans un dev
+   * container confiné, il a son propre conteneur, démarré ici.
    */
-  forTerminal(projectId: string, conversationId: string | null, cwd: string): EnvironmentProvider {
+  async forTerminal(projectId: string, conversationId: string | null, cwd: string): Promise<EnvironmentProvider> {
     const environment = this.terminalEnvironment(projectId, conversationId)
-    return this.provider(environment, environment.confined ? terminalScope(cwd) : undefined, projectId)
+    const provider = this.provider(environment, environment.confined ? terminalScope(cwd) : undefined, projectId)
+    try {
+      await provider.open?.()
+    } catch (err) {
+      await provider.close().catch(() => undefined)
+      throw unavailable(environment, err)
+    }
+    return provider
+  }
+
+  /**
+   * Démarre le fournisseur d'une session, s'il a quelque chose à démarrer : un refus de
+   * son conteneur remonte avec son code, comme celui de `prepare`.
+   */
+  async open(provider: EnvironmentProvider, onLog?: (line: string) => void): Promise<void> {
+    try {
+      await provider.open?.(onLog)
+    } catch (err) {
+      throw unavailable(provider.environment, err)
+    }
+  }
+
+  /** Les services docker-compose que voit le conteneur d'une session confinée du projet. */
+  private confinedServicesOf(projectId: string): ConfinedServices {
+    return (
+      this.db.select({ confinedServices: projects.confinedServices }).from(projects).where(eq(projects.id, projectId)).get()
+        ?.confinedServices ?? 'shared'
+    )
   }
 
   /** L'environnement d'un terminal, à préparer avant `forTerminal`. */
@@ -174,6 +206,12 @@ export class Environments {
         ?.workspacePath ?? null
     )
   }
+}
+
+/** Le refus d'un conteneur, dit avec son code ; une autre erreur passe telle quelle. */
+function unavailable(environment: ExecutionEnvironment, err: unknown): unknown {
+  if (!(err instanceof ContainerRefusal)) return err
+  return new EnvironmentUnavailableError(environment, err.message, { code: err.code, params: { detail: err.message } })
 }
 
 /** Le refus d'une session confinée : pourquoi, et la commande qui y remédie. */

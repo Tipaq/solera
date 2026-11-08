@@ -299,7 +299,8 @@ function sweepStalePrivateDirs(): void {
   }
 }
 
-function alive(pid: number): boolean {
+/** Le processus vit-il ? Un processus d'un autre utilisateur compte. */
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
@@ -309,7 +310,7 @@ function alive(pid: number): boolean {
 }
 
 /** Retire un `.git` posé par le confinement, s'il est resté le fichier vide qu'on a posé. */
-async function removeEmptyFile(path: string): Promise<void> {
+export async function removeEmptyFile(path: string): Promise<void> {
   try {
     const stats = await lstat(path)
     if (stats.isFile() && stats.size === 0) await rm(path)

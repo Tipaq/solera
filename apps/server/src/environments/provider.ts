@@ -50,6 +50,12 @@ export interface EnvironmentProvider {
   copyIn(hostPath: string, insidePath: string): Promise<void>
   /** Copie un fichier ou un dossier de l'environnement vers l'hôte. */
   copyOut(insidePath: string, hostPath: string): Promise<void>
+  /**
+   * Démarre ce que le fournisseur doit avoir avant un premier lancement : le conteneur
+   * éphémère d'une session confinée (#145), dont chaque ligne de démarrage passe par
+   * `onLog`. Absent : il n'y a rien à démarrer.
+   */
+  open?(onLog?: (line: string) => void): Promise<void>
   /** Libère ce que l'environnement tient pour Solera. Sans effet sur l'hôte. */
   close(): Promise<void>
 }

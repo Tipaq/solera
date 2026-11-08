@@ -258,8 +258,8 @@ export interface NoticeItem {
     | { key: 'checkpoint.restored.notice'; written: number; deleted: number }
     | { key: 'activity.configRestartDeferred' }
     | { key: 'compaction'; pre: number | null; post: number | null }
-    | { key: 'devcontainer.starting'; line: string }
-    | { key: 'devcontainer.ready' }
+    | { key: 'devcontainer.starting' | 'devcontainer.confined.starting'; line: string }
+    | { key: 'devcontainer.ready' | 'devcontainer.confined.ready' }
   level?: 'info' | 'warning'
   details?: unknown
 }
@@ -1441,13 +1441,18 @@ export function applyEvent(
     case 'agent.notice': {
       const id = event.id ?? `notice-${seq}`
       const index = findLastIndex(state.items, (item) => item.kind === 'notice' && item.id === id)
-      // Le démarrage d'un dev container (#140) : la phrase est traduite, la ligne du
-      // journal de `devcontainer up` reste telle que le CLI l'a écrite.
+      // Le démarrage d'un dev container (#140), ou du conteneur d'une session confinée
+      // (#145) : la phrase est traduite, la ligne du journal de `devcontainer up` reste
+      // telle que le CLI l'a écrite.
       const translation: NoticeItem['translation'] =
         event.code === 'devcontainer_starting'
           ? { key: 'devcontainer.starting', line: event.message }
+          : event.code === 'devcontainer_confined_starting'
+            ? { key: 'devcontainer.confined.starting', line: event.message }
           : event.code === 'devcontainer_ready'
             ? { key: 'devcontainer.ready' }
+          : event.code === 'devcontainer_confined_ready'
+            ? { key: 'devcontainer.confined.ready' }
             : undefined
       const item: NoticeItem = {
         kind: 'notice', id, text: translation ? '' : event.message,

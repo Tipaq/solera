@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X, Zap } from 'lucide-react'
-import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { AgentKind, ExecutionEnvironment } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
@@ -38,7 +38,7 @@ import { SearchPane } from './SearchPane'
 import { TerminalsPane } from './TerminalsPane'
 import { ProjectPane, type ProjectPaneSession } from './ProjectPane'
 import { WebPane } from './WebPane'
-import { useWebPane } from '../../lib/web-pane'
+import { useWebPane, type PortsSource } from '../../lib/web-pane'
 import { QuickOpen } from './QuickOpen'
 import { HeaderBand } from '../HeaderBand'
 
@@ -130,9 +130,16 @@ export const SidePanel = memo(function SidePanel({
   // dossier : un fil libre qui cherche sur le web en a autant besoin qu'un autre.
   const hasWeb = useWebPane(scope) !== null
   const projectEnvironment = useProjectEnvironments(hasWeb && !environment ? (projectId ?? undefined) : undefined).data?.default
-  // Une session confinée aura son propre conteneur (#145), dont les ports ne sont pas ceux-là.
+  // Une session confinée a son propre conteneur (#145), dont les ports ne sont pas ceux du projet.
   const sessionEnvironment = environment ?? projectEnvironment
-  const inContainer = sessionEnvironment?.where === 'devcontainer' && !sessionEnvironment.confined
+  const inContainer = sessionEnvironment?.where === 'devcontainer'
+  const confined = sessionEnvironment?.confined ?? false
+  // Mémorisé : la vue *Web* est mémoïsée, un objet neuf à chaque rendu la referait.
+  const containerPorts = useMemo<PortsSource | null>(() => {
+    if (!inContainer) return null
+    if (confined) return conversationId ? { conversationId } : null
+    return projectId ? { projectId } : null
+  }, [inContainer, confined, conversationId, projectId])
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
@@ -458,7 +465,7 @@ export const SidePanel = memo(function SidePanel({
           perdrait où l'on en était dedans. */}
       {hasWeb ? (
         <div className={cx('min-h-0 min-w-0 flex-1 overflow-hidden', tab === 'web' ? 'flex' : 'hidden')}>
-          <WebPane scope={scope} projectId={projectId} inContainer={inContainer} />
+          <WebPane scope={scope} ports={containerPorts} />
         </div>
       ) : null}
 

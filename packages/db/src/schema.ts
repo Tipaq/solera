@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, EnvironmentWhere, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -97,6 +97,11 @@ export const projects = sqliteTable(
      */
     environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
     environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Les services docker-compose du dev container pour le conteneur d'une session
+     * confinée (#145) : ceux du projet, partagés, ou une copie par session.
+     */
+    confinedServices: text('confined_services').$type<ConfinedServices>().notNull().default('shared'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },

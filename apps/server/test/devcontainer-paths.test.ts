@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { DevcontainerEnvironment, shellArgs, type RunningContainer } from '../src/environments/devcontainer/environment.js'
+import { ephemeralMounts } from '../src/environments/devcontainer/ephemeral.js'
 import { containerPathOf, hostPathOf } from '../src/environments/devcontainer/paths.js'
 import { hasAbsoluteGitLink, relativizeWorktreeLinks } from '../src/environments/devcontainer/worktree-links.js'
 
@@ -70,7 +71,7 @@ test("les liens d'un worktree deviennent relatifs, et git s'y retrouve toujours"
   git(repo, 'worktree', 'add', '-q', '-b', 'feat', tree)
   assert.equal(await hasAbsoluteGitLink(tree), true)
 
-  assert.deepEqual(await relativizeWorktreeLinks(repo), [])
+  await relativizeWorktreeLinks(repo)
 
   assert.equal(await hasAbsoluteGitLink(tree), false)
   assert.equal((await readFile(join(tree, '.git'), 'utf8')).trim(), 'gitdir: ../../repo/.git/worktrees/feat')
@@ -80,7 +81,7 @@ test("les liens d'un worktree deviennent relatifs, et git s'y retrouve toujours"
   assert.doesNotMatch(git(repo, 'config', '--list', '--local'), /relativeworktrees/i, "sans l'extension que git < 2.48 refuse")
 
   // Une deuxième passe ne change rien.
-  assert.deepEqual(await relativizeWorktreeLinks(repo), [])
+  await relativizeWorktreeLinks(repo)
   assert.equal(git(tree, 'branch', '--show-current'), 'feat')
 })
 
@@ -89,4 +90,12 @@ test('le PowerShell d’un terminal Windows devient le shell du conteneur, avec 
   assert.deepEqual(shellArgs(pwsh, ['-NoLogo']), [])
   assert.deepEqual(shellArgs(pwsh, ['-NoLogo', '-Command', 'pnpm dev']), ['-lc', 'pnpm dev'])
   assert.deepEqual(shellArgs('C:\\Program Files\\Git\\bin\\bash.exe', ['-lc', 'pnpm dev']), ['-lc', 'pnpm dev'])
+})
+
+test("le conteneur d'une session confinée monte ses dossiers à leur chemin du conteneur", () => {
+  const plan = { writable: ['C:\\data\\worktrees\\feat'], readable: ['C:\\data\\memory'], protected: [], homeLinks: [], env: {}, placeholders: [] }
+  const mounts = ephemeralMounts(plan, 'C:\\data\\worktrees\\feat', { source: 'C:\\data\\agents', target: '/opt/solera/agents' }, 'win32')
+  assert.equal(mounts.workspaceMount, 'type=bind,source=C:\\data\\worktrees\\feat,target=/mnt/c/data/worktrees/feat')
+  assert.ok(mounts.mounts.includes('type=bind,source=C:\\data\\memory,target=/mnt/c/data/memory,readonly'))
+  assert.ok(mounts.sources.includes('C:\\data\\memory'), "la liste blanche reste en chemins de l'hôte")
 })

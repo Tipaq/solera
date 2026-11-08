@@ -257,6 +257,8 @@ async function main(): Promise<void> {
   // Sous Linux natif, un dev container joint ce serveur par la passerelle de son réseau
   // Docker : il y écoutera aussi, au même port, quand un conteneur en aura besoin.
   sessions.environments.devcontainers?.serve(app.server)
+  // Les conteneurs de sessions confinées qu'un arrêt brutal aurait laissés (#145).
+  void sessions.environments.devcontainers?.sweep()
 
   // L'application de bureau attend cette annonce pour ouvrir sa fenêtre : le serveur
   // répond déjà, et la session de l'utilisateur est prête à poser en cookie.
@@ -299,7 +301,7 @@ async function main(): Promise<void> {
     agentRequests.stop()
     tasks.stop()
     await sessions.stopAll()
-    terminals.shutdown()
+    await terminals.shutdown()
     storybooks.shutdown()
     await app.close()
     // Les derniers fragments de flux encore en tampon, avant que la base se ferme.

@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { hostPathOf } from './paths.js'
 
 const run = promisify(execFile)
 
@@ -23,26 +24,25 @@ const run = promisify(execFile)
  * en deçà, on le laisse absolu.
  */
 
-/** Rend relatifs les liens de chaque worktree du dépôt ; rend ceux qui ne peuvent pas l'être (autre lecteur). */
-export async function relativizeWorktreeLinks(repo: string): Promise<string[]> {
+/**
+ * Rend relatifs les liens de chaque worktree du dépôt. Ceux d'un worktree sur un autre
+ * lecteur que le dépôt restent absolus : `hasAbsoluteGitLink` le dit ensuite.
+ */
+export async function relativizeWorktreeLinks(repo: string): Promise<void> {
   const common = await commonDir(repo)
-  if (!common) return []
+  if (!common) return
   const admin = join(common, 'worktrees')
   const entries = await readdir(admin, { withFileTypes: true }).catch(() => [])
   const backLinks = await readsRelativeBackLinks()
-  const stranded: string[] = []
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
     const adminDir = join(admin, entry.name)
-    const backLink = (await readFile(join(adminDir, 'gitdir'), 'utf8').catch(() => '')).trim()
+    const backLink = onHost((await readFile(join(adminDir, 'gitdir'), 'utf8').catch(() => '')).trim())
     if (!backLink) continue
     const gitFile = resolve(adminDir, backLink)
     const worktree = parse(gitFile).dir
     if (!(await isFile(gitFile))) continue
-    if (!sameRoot(adminDir, gitFile)) {
-      stranded.push(worktree)
-      continue
-    }
+    if (!sameRoot(adminDir, gitFile)) continue
     const link = await readGitFile(gitFile)
     const toAdmin = slashes(relative(worktree, adminDir))
     if (link !== toAdmin && link !== null && samePath(resolve(worktree, link), adminDir)) {
@@ -52,7 +52,6 @@ export async function relativizeWorktreeLinks(repo: string): Promise<string[]> {
       await overwrite(join(adminDir, 'gitdir'), `${slashes(relative(adminDir, gitFile))}\n`)
     }
   }
-  return stranded
 }
 
 /** Le `.git` du dossier est-il un lien absolu vers un dépôt ? Faux pour un dépôt ordinaire ou un lien relatif. */
@@ -79,7 +78,15 @@ async function overwrite(path: string, content: string): Promise<void> {
 async function readGitFile(path: string): Promise<string | null> {
   const content = await readFile(path, 'utf8').catch(() => null)
   const match = content ? /^gitdir:\s*(.+?)\s*$/m.exec(content) : null
-  return match ? match[1]! : null
+  return match ? onHost(match[1]!) : null
+}
+
+/**
+ * Un lien tel que l'hôte le lit. Un worktree créé par le git du conteneur a des liens en
+ * `/mnt/c/…`, que ni l'hôte ni ce module ne sauraient suivre autrement.
+ */
+function onHost(link: string): string {
+  return link.startsWith('/mnt/') ? (hostPathOf(link) ?? link) : link
 }
 
 async function commonDir(repo: string): Promise<string | null> {
