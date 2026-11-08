@@ -107,8 +107,9 @@ export class GrokAdapter implements AgentAdapter {
       await client.initialize(CLIENT_INFO)
       const forked = await client.request<{ newSessionId?: unknown }>('_x.ai/session/fork', {
         sourceSessionId: target.agentSessionId,
-        sourceCwd: target.cwd,
-        newCwd: target.cwd,
+        // Le dossier tel que le CLI le voit, comme à l'ouverture de la session (#152).
+        sourceCwd: target.cli.environment.pathInside(target.cwd),
+        newCwd: target.cli.environment.pathInside(target.cwd),
         ...(targetPromptIndex === null ? {} : { targetPromptIndex }),
       })
       if (typeof forked.newSessionId !== 'string') throw new Error('no session id in the response')

@@ -103,6 +103,10 @@ export class EphemeralContainer implements EnvironmentProvider {
     return this.ready().urlOfHost(url)
   }
 
+  urlFromHost(url: string): Promise<{ url: string; close(): void }> {
+    return this.ready().urlFromHost(url)
+  }
+
   copyIn(hostPath: string, insidePath: string): Promise<void> {
     return this.ready().copyIn(hostPath, insidePath)
   }
