@@ -1,7 +1,7 @@
 import { TooltipButton } from '@solera/ui'
 import { Bot, ChevronLeft, FileCode, GitCompare, Globe, Search, SquareKanban, SquareTerminal, X, Zap } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { AgentKind } from '@solera/protocol'
+import type { AgentKind, ExecutionEnvironment } from '@solera/protocol'
 import type { BackgroundWork } from '../../lib/background'
 import type { EditTurn, TurnCheckpoint } from '../../lib/chat-fold'
 import { openTab, useEditorTabs } from '../../lib/editor-tabs'
@@ -25,7 +25,7 @@ import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
-import { useProjects } from '../../lib/projects'
+import { useProjectEnvironments, useProjects } from '../../lib/projects'
 import { useActions } from '../../lib/actions'
 import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
@@ -83,6 +83,7 @@ export const SidePanel = memo(function SidePanel({
   canDock = false,
   workspaceName,
   session,
+  environment,
 }: {
   /** Null sur un fil libre : il n'y a alors pas de répertoire de travail du tout. */
   projectId: string | null
@@ -110,6 +111,8 @@ export const SidePanel = memo(function SidePanel({
   workspaceName?: string
   /** Ce que la vue *Projet* lit de la session : sa carte, son fil, son activité. */
   session?: ProjectPaneSession
+  /** Où tourne la session ; en vue projet, l'environnement par défaut du projet. */
+  environment?: ExecutionEnvironment
 }) {
   // L'onglet vit hors du panneau : le fil le pilote, en ouvrant un fichier depuis un
   // diff comme en désignant un sous-agent depuis le bandeau.
@@ -126,6 +129,8 @@ export const SidePanel = memo(function SidePanel({
   // La vue *Web* n'existe que tant qu'une page y est ouverte. Elle ne dépend d'aucun
   // dossier : un fil libre qui cherche sur le web en a autant besoin qu'un autre.
   const hasWeb = useWebPane(scope) !== null
+  const projectEnvironment = useProjectEnvironments(hasWeb && !environment ? (projectId ?? undefined) : undefined).data?.default
+  const inContainer = (environment ?? projectEnvironment)?.where === 'devcontainer'
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
@@ -451,7 +456,7 @@ export const SidePanel = memo(function SidePanel({
           perdrait où l'on en était dedans. */}
       {hasWeb ? (
         <div className={cx('min-h-0 min-w-0 flex-1 overflow-hidden', tab === 'web' ? 'flex' : 'hidden')}>
-          <WebPane scope={scope} />
+          <WebPane scope={scope} projectId={projectId} inContainer={inContainer} />
         </div>
       ) : null}
 

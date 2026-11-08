@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Globe, Loader, MonitorPlay, RotateCw, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, Container, ExternalLink, Globe, Loader, MonitorPlay, RotateCw, X } from 'lucide-react'
 import { memo, Component, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { sanitizeReaderTree, type ReaderElement } from '@solera/protocol'
@@ -6,10 +6,12 @@ import { Banner, Button, IconButton, SegmentedControl } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import {
   closeWeb,
+  containerPortOf,
   navigateWeb,
   normalizeAddress,
   setWebMode,
   stepWeb,
+  useForwardedPorts,
   useWebPage,
   useWebPane,
 } from '../../lib/web-pane'
@@ -23,11 +25,20 @@ import { ImageLightbox } from './ImageView'
  * site l'accepte ; sinon la vue le dit et propose la lecture ou le navigateur, plutôt
  * qu'un cadre vide dont on ne saurait pas pourquoi il l'est.
  */
-export const WebPane = memo(function WebPane({ scope }: { scope: string }) {
+export const WebPane = memo(function WebPane({ scope, projectId = null, inContainer = false }: {
+  scope: string
+  projectId?: string | null
+  /** La session tourne dans le dev container : un port qu'elle cite est le sien (#141). */
+  inContainer?: boolean
+}) {
   const t = useTranslate()
   const client = useQueryClient()
   const pane = useWebPane(scope)
-  const url = pane ? (pane.history[pane.index] ?? null) : null
+  const cited = pane ? (pane.history[pane.index] ?? null) : null
+  const ports = useForwardedPorts(projectId, inContainer && cited !== null)
+  // L'adresse que l'agent cite reste dans la barre ; le cadre va où l'hôte la sert.
+  const forwarded = cited && inContainer ? containerPortOf(cited, ports.data) : null
+  const url = forwarded?.served ?? cited
   const page = useWebPage(url, pane?.mode ?? 'reader')
   const [address, setAddress] = useState(url ?? '')
   const [viewing, setViewing] = useState<{ src: string; name: string } | null>(null)
@@ -35,8 +46,8 @@ export const WebPane = memo(function WebPane({ scope }: { scope: string }) {
 
   // La barre suit la page ouverte, et l'adresse finale une fois les redirections suivies.
   useEffect(() => {
-    setAddress(page.data?.url ?? url ?? '')
-  }, [url, page.data?.url])
+    setAddress(forwarded ? (cited ?? '') : (page.data?.url ?? url ?? ''))
+  }, [url, cited, forwarded, page.data?.url])
 
   if (!pane || !url) return null
 
@@ -129,6 +140,18 @@ export const WebPane = memo(function WebPane({ scope }: { scope: string }) {
           <X size={15} />
         </IconButton>
       </div>
+
+      {forwarded ? (
+        <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1 text-xs text-ink-faint">
+          <Container size={12} />
+          {forwarded.served
+            ? t(forwarded.port.remapped ? 'web.port.remapped' : 'web.port.served', {
+                port: forwarded.port.containerPort,
+                address: `localhost:${forwarded.port.hostPort}`,
+              })
+            : t('web.port.failed', { port: forwarded.port.containerPort, error: forwarded.port.error ?? '' })}
+        </p>
+      ) : null}
 
       {pane.mode === 'live' ? (
         <div className="flex min-h-0 flex-1 flex-col">
