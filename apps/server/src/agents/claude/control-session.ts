@@ -49,6 +49,11 @@ export async function withControlSession<T>(
   const input = new AsyncQueue<SDKUserMessage>()
   const abort = new AbortController()
   let timedOut = false
+  // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la jeter ne
+  // laisse au serveur qu'un 502 sans motif.
+  const spawner = claudeSpawner(cli.environment, (data) => {
+    process.stderr.write(`[claude ${tag}] ${data}`)
+  })
 
   try {
     const session = query({
@@ -58,11 +63,7 @@ export async function withControlSession<T>(
         cwd,
         abortController: abort,
         pathToClaudeCodeExecutable: sdkExecutable(await cli.executable()),
-        // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la
-        // jeter ne laisse au serveur qu'un 502 sans motif.
-        spawnClaudeCodeProcess: claudeSpawner(cli.environment, (data) => {
-          process.stderr.write(`[claude ${tag}] ${data}`)
-        }),
+        spawnClaudeCodeProcess: spawner.spawn,
       },
     })
 
@@ -78,7 +79,7 @@ export async function withControlSession<T>(
       if (timedOut) {
         throw new Error(`Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s`)
       }
-      throw err
+      throw spawner.explain(err)
     } finally {
       clearTimeout(timer)
       input.close()

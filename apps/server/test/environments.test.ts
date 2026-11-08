@@ -80,11 +80,18 @@ test("aucun CLI d'agent ni terminal ne se lance hors d'un fournisseur d'environn
     if (/\blaunchOf\b/.test(source) && !['agents/launch.ts', 'environments/host.ts', 'agents/cli-install.ts'].includes(path)) {
       offenders.push(`${path} : launchOf`)
     }
-    if (!AGENT_LAUNCHERS.some((prefix) => path.startsWith(prefix)) || ALLOWED[path]) continue
-    if (/import\s+\{[^}]*\b(spawn|spawnSync|exec|execFile|execFileSync|execSync|fork)\b[^}]*\}\s+from\s+'node:child_process'/.test(source)) {
-      offenders.push(`${path} : node:child_process`)
+    // Une session Claude lancée par le SDK sans `spawnClaudeCodeProcess` partirait sur l'hôte.
+    if (/\bquery\(\{/.test(source) && /from '@anthropic-ai\/claude-agent-sdk'/.test(source) && !source.includes('spawnClaudeCodeProcess')) {
+      offenders.push(`${path} : query() sans spawnClaudeCodeProcess`)
     }
-    if (/import\s+\{[^}]*\bspawn\b[^}]*\}\s+from\s+'node-pty'/.test(source)) offenders.push(`${path} : node-pty`)
+    if (!AGENT_LAUNCHERS.some((prefix) => path.startsWith(prefix)) || ALLOWED[path]) continue
+    // Toute importation qui n'est pas seulement de types, sous toutes ses formes.
+    for (const module of ['child_process', 'node-pty']) {
+      const name = module === 'child_process' ? "(node:)?child_process" : 'node-pty'
+      const imported = new RegExp(`^import (?!type )[^']*?from '${name}'`, 'm').test(source)
+      const required = new RegExp(`(require|import)\\(\\s*'${name}'`).test(source)
+      if (imported || required) offenders.push(`${path} : ${module}`)
+    }
   }
   assert.deepEqual(offenders, [])
 })
@@ -225,6 +232,34 @@ test("Claude : la session et la sonde passent par le fournisseur, par spawnClaud
   assert.equal(probe.launched.length, 1)
 })
 
+test("Claude mort au démarrage : la fin de son stderr dit pourquoi, dans le fil comme à la sonde", async (t) => {
+  const { cwd } = await claudeBinary(t)
+  const binary = join(cwd, 'dying.mjs')
+  await writeFile(binary, "process.stderr.write('config illisible : ~/.claude.json\\n'); process.exit(1)\n")
+  const errors: string[] = []
+  const ctx: RunnerContext = {
+    conversationId: 'test', cwd, binary, environment: hostEnvironment, config: DEFAULT_CLAUDE_CONFIG, resumeSessionId: null,
+    attachmentsRoot: cwd, prototypesDir: null,
+    projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
+    resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
+    emit: (event) => { if (event.type === 'error') errors.push(event.message) },
+    setStatus: () => {}, setAgentSessionId: () => {},
+    updateConfig: () => {}, openPermissionRequest: () => 'permission', closePermissionRequest: () => {},
+  }
+  const runner = new ClaudeRunner(ctx)
+  t.after(() => runner.stop())
+  await runner.start()
+  await runner.send('bonjour', [], [], []).catch(() => undefined)
+  const deadline = Date.now() + 5000
+  while (errors.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.match(errors.join('\n'), /config illisible/)
+
+  await assert.rejects(
+    withControlSession({ cli: { environment: hostEnvironment, executable: async () => binary }, cwd, tag: 'test' }, (session) => session.supportedCommands()),
+    /config illisible/,
+  )
+})
+
 test('Codex, ACP et OpenCode lancent leur CLI par le fournisseur', async (t) => {
   const codex = await codexFixture(t)
   const codexEnvironment = recordingEnvironment()
@@ -266,9 +301,11 @@ test('un terminal se lance par le pty du fournisseur', async (t) => {
   } as unknown as Config)
   t.after(() => terminals.shutdown())
   const environment = recordingEnvironment()
-  const terminal = terminals.open('project', dir, environment, { command: 'true', title: 'true', actionId: null })
+  const terminal = terminals.open('project', dir, { environment, conversationId: 'session' }, { command: 'true', title: 'true', actionId: null })
   assert.equal(environment.launched.length, 1)
   assert.equal(environment.launched[0]!.via, 'pty')
   assert.equal(environment.launched[0]!.args.at(-1), 'true')
+  // Retenue pour la relance : le shell repartira dans l'environnement de cette session.
+  assert.equal(terminal.conversationId, 'session')
   terminals.close(terminal.id)
 })

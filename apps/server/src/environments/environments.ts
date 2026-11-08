@@ -36,7 +36,7 @@ export class Environments {
   constructor(private readonly db: Db) {}
 
   /** Ce qu'on peut choisir, pour ce projet, sur ce serveur. */
-  choices(_projectId: string): ExecutionEnvironment[] {
+  choices(_projectId: string | null): ExecutionEnvironment[] {
     return [HOST_ENVIRONMENT]
   }
 
@@ -44,7 +44,7 @@ export class Environments {
    * Refuse un environnement que ce serveur ne sait pas lancer, avant qu'on l'enregistre :
    * une session ne retombe jamais en silence sur un autre.
    */
-  assertAvailable(projectId: string, environment: ExecutionEnvironment): void {
+  assertAvailable(projectId: string | null, environment: ExecutionEnvironment): void {
     if (this.choices(projectId).some((choice) => sameEnvironment(choice, environment))) return
     throw new EnvironmentUnavailableError(
       environment,

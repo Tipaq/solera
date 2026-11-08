@@ -31,7 +31,7 @@ export function sameEnvironment(a: ExecutionEnvironment, b: ExecutionEnvironment
  * Une clé stable pour un sélecteur ou une clé de traduction : `host`,
  * `devcontainer.confined`…
  */
-export function environmentKey(environment: ExecutionEnvironment): string {
+export function environmentKey(environment: ExecutionEnvironment): `${EnvironmentWhere}${'' | '.confined'}` {
   return environment.confined ? `${environment.where}.confined` : environment.where
 }
 

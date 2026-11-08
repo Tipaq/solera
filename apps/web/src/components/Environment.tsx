@@ -10,8 +10,7 @@ import { useTranslate } from '../lib/i18n'
 
 /** La clé de son libellé ; `.hint` ajouté, celle de sa ligne d'aide. */
 function labelKey(environment: ExecutionEnvironment) {
-  const suffix = environment.confined ? ('.confined' as const) : ('' as const)
-  return `environment.${environment.where}${suffix}` as const
+  return `environment.${environmentKey(environment)}` as const
 }
 
 export function EnvironmentIcon({ environment, size }: { environment: ExecutionEnvironment; size: number }) {
@@ -81,7 +80,7 @@ export function EnvironmentPill({
       )}
       title={t('environment.pill.title', { environment: label })}
     >
-      <EnvironmentIcon environment={environment} size={10} />
+      <EnvironmentIcon environment={environment} size={11} />
       <span className="max-w-40 truncate">{label}</span>
     </span>
   )

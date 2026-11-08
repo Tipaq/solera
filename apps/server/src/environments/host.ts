@@ -36,7 +36,12 @@ export class HostEnvironment implements EnvironmentProvider {
       cwd: request.cwd,
       env: request.env as Record<string, string> | undefined,
     })
-    request.signal?.addEventListener('abort', () => pty.kill(), { once: true })
+    const signal = request.signal
+    if (signal) {
+      const kill = () => pty.kill()
+      signal.addEventListener('abort', kill, { once: true })
+      pty.onExit(() => signal.removeEventListener('abort', kill))
+    }
     return pty
   }
 

@@ -92,8 +92,9 @@ export async function createConversation(
   const environment =
     input.environment ?? (input.projectId === null ? HOST_ENVIRONMENT : sessions.environments.ofProject(input.projectId))
   // Refusé à la création plutôt qu'au premier lancement : un fil qui ne pourra jamais
-  // démarrer ne doit pas apparaître dans la liste.
-  if (input.environment) sessions.environments.assertAvailable(input.projectId ?? '', input.environment)
+  // démarrer ne doit pas apparaître dans la liste, que l'environnement soit choisi ou
+  // hérité du projet.
+  sessions.environments.assertAvailable(input.projectId, environment)
   const row: ConversationRow = {
     id: randomUUID(),
     projectId: input.projectId,

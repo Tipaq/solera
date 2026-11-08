@@ -267,7 +267,7 @@ export class ActionRunner {
     // Dans l'environnement de la session qui la lance, et hors session dans celui du
     // projet : comme un terminal.
     const environment = this.environments.forTerminal(row.projectId, conversationId)
-    const terminal = this.openTerminal(row.projectId, cwd, environment, {
+    const terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
       command: row.command,
       title: row.label,
       actionId: row.id,
@@ -314,7 +314,7 @@ export class ActionRunner {
     const previous = this.terminals.latestForAction(row.projectId, key)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
     // Le journal d'une unité de l'hôte se lit sur l'hôte, quel que soit l'environnement.
-    const terminal = this.openTerminal(row.projectId, base, hostEnvironment, {
+    const terminal = this.openTerminal(row.projectId, base, { environment: hostEnvironment, conversationId: null }, {
       command: `journalctl --user -u ${actionUnit(row.id)} -f -n 200 -o cat`,
       title: `${row.label} · logs`,
       actionId: key,
