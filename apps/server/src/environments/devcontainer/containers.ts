@@ -1,10 +1,12 @@
 import { mkdir } from 'node:fs/promises'
+import type { Server as HttpServer } from 'node:http'
 import { join } from 'node:path'
 import type { AgentKind, ForwardedPortDto } from '@solera/protocol'
 import type { Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
-import { binaryName, DevcontainerEnvironment, type RunningContainer } from './environment.js'
+import { BridgeListeners } from './bridge.js'
+import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
 import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
@@ -68,6 +70,14 @@ export class Devcontainers {
      */
     private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
   ) {}
+
+  /** Sous Linux natif, les écoutes du serveur sur les passerelles Docker. */
+  private readonly bridges = new BridgeListeners()
+
+  /** Le serveur HTTP que les conteneurs joignent, une fois qu'il écoute. */
+  serve(server: HttpServer): void {
+    this.bridges.serve(server)
+  }
 
   /** Construits au premier usage : un serveur sans dev container n'en touche aucun chemin. */
   private get tools(): DevcontainerTools {
@@ -173,7 +183,7 @@ export class Devcontainers {
         agents: new Map(),
         hostAddress: await this.tools.hostAddress(up.containerId),
       }
-      this.assertServerReachable(container.hostAddress)
+      await this.reachServer(container.hostAddress)
       await this.probe(container)
       this.running.set(project.id, container)
       await this.forward(project.id, container.id, portsConfigOf(configuration))
@@ -209,15 +219,20 @@ export class Devcontainers {
   /**
    * Le MCP de Solera doit se joindre depuis le conteneur, sans quoi une session y
    * partirait sans lui. Sous Linux natif, l'hôte vu du conteneur est la passerelle du
-   * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas.
+   * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas :
+   * il y écoute alors en plus, à son port (#149).
    */
-  private assertServerReachable(hostAddress: string): void {
+  private async reachServer(hostAddress: string): Promise<void> {
     if (hostAddress === 'host.docker.internal' || this.server.agentUrl) return
-    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(this.server.host)) return
-    throw new ContainerRefusal(
-      'devcontainer_host_unreachable',
-      `The Solera server listens on ${this.server.host} only, which a container cannot reach on native Linux (it sees the host at ${hostAddress}). Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
-    )
+    if (!LOOPBACK_HOSTS.includes(this.server.host)) return
+    try {
+      await this.bridges.ensure(hostAddress)
+    } catch (err) {
+      throw new ContainerRefusal(
+        'devcontainer_host_unreachable',
+        `The Solera server listens on ${this.server.host} only, and could not also listen on ${hostAddress}, where the container sees this machine: ${(err as Error).message}. Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
+      )
+    }
   }
 
   /**
