@@ -97,6 +97,14 @@ export class DevcontainerTools {
       await run(docker, ['version', '--format', '{{.Server.Version}}'], { timeout: DOCKER_TIMEOUT_MS, windowsHide: true })
     } catch (err) {
       const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message
+      // Le groupe `docker` ne vaut que pour les processus lancés après l'ajout : sous WSL,
+      // il faut `wsl --shutdown` pour que le service de Solera le reçoive.
+      if (/permission denied/i.test(detail)) {
+        throw new ToolMissingError(
+          'docker',
+          `The Solera server may not use Docker: add its user to the docker group, then restart the server (under WSL, run \`wsl --shutdown\` from Windows first). (${detail})`,
+        )
+      }
       throw new ToolMissingError('docker', `Docker is installed but its engine does not answer: start Docker, then retry. (${detail})`)
     }
   }
