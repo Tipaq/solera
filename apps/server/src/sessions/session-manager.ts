@@ -37,9 +37,9 @@ import { ensureProjectMemory, freeThreadMemoryDir, memoryAppendixForCodex } from
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
-import type { CodexAccountHomes } from '../codex-accounts/homes.js'
+import { userCodexHome, type CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
-import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import { userGrokHome, type GrokAccountHomes } from '../grok-accounts/homes.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
 import type {
   AgentRunner,
@@ -927,7 +927,12 @@ export class SessionManager {
    * abonnement qui va payer le tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent === 'opencode' || !config.account) return {}
+    if (config.agent === 'opencode') return {}
+    if (!config.account) {
+      if (config.agent === 'codex') this.bringConversation(conversation, userCodexHome())
+      if (config.agent === 'grok') this.bringConversation(conversation, userGrokHome())
+      return {}
+    }
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
@@ -946,8 +951,8 @@ export class SessionManager {
         ? { ANTHROPIC_API_KEY: resolved.token }
         : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
     }
-    // Grok : même parti que Codex, un `GROK_HOME` par compte, dont seule la connexion lui
-    // est propre. Un compte jamais connecté vaut un compte absent.
+    // Grok : même parti que Codex, un `GROK_HOME` par compte, sans lien vers celui de
+    // l'utilisateur. Un compte jamais connecté vaut un compte absent.
     if (config.agent === 'grok') {
       const account = this.grokAccounts.store.find(conversation.userId, config.account)
       if (!account || account.status !== 'ready') {
@@ -958,9 +963,11 @@ export class SessionManager {
             : "Le compte Grok choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
         )
       }
-      return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
+      const home = this.grokAccounts.homes.ensure(account.id)
+      this.bringConversation(conversation, home)
+      return { GROK_HOME: home }
     }
-    // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
+    // Codex : le home du compte, sans lien vers celui de l'utilisateur. Un compte jamais
     // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
     const account = this.codexAccounts.store.find(conversation.userId, config.account)
     if (!account || account.status !== 'ready') {
@@ -971,7 +978,34 @@ export class SessionManager {
           : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
       )
     }
-    return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
+    const home = this.codexAccounts.homes.ensure(account.id)
+    this.bringConversation(conversation, home)
+    return { CODEX_HOME: home }
+  }
+
+  /**
+   * Amène dans `home` la session native de la conversation, depuis le home qui en a la
+   * dernière version : un autre compte de l'utilisateur, ou la connexion du CLI. Sans
+   * dossier partagé, c'est ce qui permet de changer de compte en cours de conversation,
+   * ou de forker sur un autre compte. Les comptes d'un autre utilisateur ne sont jamais
+   * lus. Un échec n'empêche pas le lancement : la reprise le dira.
+   */
+  private bringConversation(conversation: ConversationRow, home: string): void {
+    const sessionId = conversation.agentSessionId
+    if (!sessionId) return
+    try {
+      if (conversation.agent === 'codex') {
+        const { homes, store } = this.codexAccounts
+        const sources = [userCodexHome(), ...store.list(conversation.userId).map((account) => homes.path(account.id))]
+        homes.bringThread(home, sessionId, sources)
+      } else if (conversation.agent === 'grok') {
+        const { homes, store } = this.grokAccounts
+        const sources = [userGrokHome(), ...store.list(conversation.userId).map((account) => homes.path(account.id))]
+        homes.bringSession(home, sessionId, sources)
+      }
+    } catch (err) {
+      console.warn(`[sessions] copie de la session ${sessionId} vers ${home} impossible :`, err)
+    }
   }
 
   /**
