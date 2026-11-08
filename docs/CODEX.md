@@ -104,7 +104,9 @@ aucun lien vers `~/.codex` (ADR 0001). Solera y recopie à chaque lancement `con
 sans ce qui peut porter un secret (un serveur MCP qui en portait est retiré en entier),
 `AGENTS.md`, `AGENTS.override.md`, `rules/` et `skills/` hors `.system`. La connexion
 (`auth.json`) et les mémoires restent celles du compte. Un fil qui ne choisit aucun
-compte part sur le premier compte connecté, comme chez Claude.
+compte part sur le premier compte connecté, comme chez Claude. Aucune session ne tourne
+sur la connexion du CLI (#147) : un fil qui la désigne encore part sur le premier compte
+connecté, et sans compte connecté le lancement est refusé.
 
 Un thread change de compte par copie de son fichier, au même chemin relatif
 (`sessions/AAAA/MM/JJ/rollout-<date>-<id>.jsonl`), depuis le home qui en a la version la

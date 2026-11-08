@@ -45,18 +45,19 @@ export interface ConfigOwner {
  * compte de Solera tourne dans un dossier à lui (ADR 0001). Le repli est le premier compte
  * dans l'ordre de la liste, et non le dernier utilisé : choisir un compte dans un fil ne
  * doit pas faire changer tous les autres à leur relance. Un compte Codex ou Grok jamais
- * connecté n'est pas proposé, sa session refuserait le tour. Un choix explicite au compte,
- * la connexion du terminal comprise (`null`), l'emporte ; un compte désigné puis supprimé
- * ne compte pas comme un choix.
+ * connecté n'est pas proposé, sa session refuserait le tour. Un choix explicite au compte
+ * l'emporte ; un compte désigné puis supprimé ne compte pas comme un choix. La connexion
+ * du terminal (`null`) n'en est un que pour Claude : Codex et Grok ne tournent plus que
+ * sur un compte de Solera (#147), et un `null` enregistré avant se lit comme aucun choix.
  */
 export function accountLayer(db: Db, userId: string): ConfigLayer {
   let layer = readUserSettings(db, userId).agentLayer
   for (const agent of ['claude', 'codex', 'grok'] as const) {
     const chosen = layer[agent].account
-    if (chosen === null) continue
+    if (chosen === null && agent === 'claude') continue
     const accounts = soleraAccounts(db, userId, agent)
     // Un compte désigné puis supprimé ne vaut pas mieux qu'aucun choix.
-    if (chosen !== undefined && accounts.includes(chosen)) continue
+    if (chosen && accounts.includes(chosen)) continue
     const first = accounts[0]
     if (first) layer = { ...layer, [agent]: { ...layer[agent], account: first } }
   }
