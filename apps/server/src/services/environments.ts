@@ -2,11 +2,12 @@ import { execFile } from 'node:child_process'
 import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import type {
-  ServiceEnvironmentEngine,
-  ServiceEnvironmentKind,
-  ServiceEnvironmentState,
-  ServiceEnvironmentTerminal,
+import {
+  environmentServiceId,
+  type ServiceEnvironmentEngine,
+  type ServiceEnvironmentKind,
+  type ServiceEnvironmentState,
+  type ServiceEnvironmentTerminal,
 } from '@solera/protocol'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
@@ -177,9 +178,13 @@ export function listeningPorts(tables: string): number[] {
   return [...new Set(listeningSockets(tables).values())].sort((a, b) => a - b)
 }
 
-/** Un serveur de VS Code tourne-t-il parmi ces lignes de commande ? */
+/**
+ * Un serveur de VS Code tourne-t-il parmi ces lignes de commande ? Dans le home
+ * (`~/.vscode-server`) ou dans le volume de l'extension Dev Containers
+ * (`/vscode/vscode-server`), sans point.
+ */
 export function vscodeIn(commandLines: string): boolean {
-  return /\.vscode-server|\.vscode-remote|vscode-server-insiders|\.cursor-server/.test(commandLines)
+  return /vscode-server|\.vscode-remote|cursor-server/.test(commandLines)
 }
 
 /**
@@ -232,6 +237,11 @@ export class EnvironmentInventory {
 
   invalidate(): void {
     this.cached = null
+  }
+
+  /** Docker est-il là pour agir ? Vérifié avant d'arrêter les sessions qui s'en servent. */
+  dockerAvailable(): boolean {
+    return resolveBinary('docker') !== null
   }
 
   /** Arrête ou redémarre les conteneurs d'un dev container, docker-compose compris. */
@@ -296,7 +306,7 @@ export class EnvironmentInventory {
         (main ? environment.containerId.startsWith(main.id) : environment.containerId === solera.containerId)
       const { state, error } = containerState(main, solera)
       const entry: ScannedEnvironment = {
-        id: `devcontainer:${project.id}`,
+        id: environmentServiceId({ kind: 'devcontainer', projectId: project.id }),
         kind: 'devcontainer',
         engine: 'docker',
         name: main?.name ?? null,
@@ -392,7 +402,7 @@ export class EnvironmentInventory {
   private async sandboxes(): Promise<ScannedEnvironment[]> {
     const owners = [
       ...this.sources.sessions.liveEnvironments().map((session) => ({
-        id: `sandbox:session:${session.conversationId}`,
+        id: environmentServiceId({ kind: 'sandbox', conversationId: session.conversationId }),
         environment: session.environment,
         projectId: this.sources.projectOf(session.conversationId),
         conversationIds: [session.conversationId],
@@ -400,7 +410,7 @@ export class EnvironmentInventory {
         owner: { conversationId: session.conversationId },
       })),
       ...this.sources.terminals.live().map((terminal) => ({
-        id: `sandbox:terminal:${terminal.id}`,
+        id: environmentServiceId({ kind: 'sandbox', terminalId: terminal.id }),
         environment: terminal.environment,
         projectId: terminal.projectId,
         conversationIds: [] as string[],

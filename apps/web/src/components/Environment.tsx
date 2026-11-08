@@ -1,5 +1,5 @@
 import { Container, Monitor, ShieldCheck } from 'lucide-react'
-import { environmentKey, type ExecutionEnvironment } from '@solera/protocol'
+import { environmentKey, environmentServiceId, type ExecutionEnvironment } from '@solera/protocol'
 import { Link } from 'react-router-dom'
 import { Select, cx } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
@@ -72,9 +72,9 @@ export function environmentServicesPath(
 ): string | null {
   const id =
     environment.where === 'devcontainer' && !environment.confined && session.projectId
-      ? `devcontainer:${session.projectId}`
+      ? environmentServiceId({ kind: 'devcontainer', projectId: session.projectId })
       : environment.confined
-        ? `sandbox:session:${session.id}`
+        ? environmentServiceId({ kind: 'sandbox', conversationId: session.id })
         : null
   if (!id) return null
   return `/services?${new URLSearchParams({ environment: id, session: session.id }).toString()}`

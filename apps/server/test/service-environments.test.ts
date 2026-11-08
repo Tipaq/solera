@@ -72,6 +72,8 @@ test('les ports en écoute du conteneur, et VS Code attaché', () => {
     '   0: 00000000000000000000000000000000:0BB8 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 43 1\n'
   assert.deepEqual(listeningPorts(tables), [3000, 5173])
   assert.equal(vscodeIn('COMMAND\nsleep infinity\n/home/node/.vscode-server/bin/abc/node server-main.js'), true)
+  // Le volume de l'extension Dev Containers : sans point.
+  assert.equal(vscodeIn('COMMAND\nsh /vscode/vscode-server/bin/linux-x64/abc/bin/code-server --port 0'), true)
   assert.equal(vscodeIn('COMMAND\nsleep infinity'), false)
 })
 

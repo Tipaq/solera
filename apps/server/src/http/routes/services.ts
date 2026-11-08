@@ -210,10 +210,14 @@ export function registerServiceRoutes(
     }
   })
 
-  const findEnvironment = async (request: Parameters<typeof requireUser>[0], id: string) => {
+  /**
+   * `fresh` pour une action, qui doit viser l'état du moment. Le journal, relu toutes les
+   * deux secondes pendant un démarrage, se contente du dernier scan.
+   */
+  const findEnvironment = async (request: Parameters<typeof requireUser>[0], id: string, fresh: boolean) => {
     const user = requireUser(request)
     if (process.platform !== 'linux') throw new HttpError(409, 'services_unsupported', 'Service discovery requires Linux.')
-    const [entries, processes] = await Promise.all([inventory.scan(true), scan()])
+    const [entries, processes] = await Promise.all([inventory.scan(fresh), scan()])
     const visible = visibleEnvironments(entries, processes, user.id, user.isAdmin).find((entry) => entry.id === id)
     const scanned = entries.find((entry) => entry.id === id)
     if (!visible || !scanned) throw new HttpError(404, 'service_gone', 'This environment is no longer running. Refresh the list.')
@@ -233,9 +237,17 @@ export function registerServiceRoutes(
   app.post('/api/services/environments/:id/:action', async (request, reply) => {
     const { id, action } = request.params as { id: string; action: string }
     if (!['stop', 'restart', 'rebuild'].includes(action)) throw new HttpError(404, 'not_found', 'Unknown action.')
-    const { visible, scanned } = await findEnvironment(request, id)
+    const { visible, scanned } = await findEnvironment(request, id, true)
     const allowed = action === 'stop' ? visible.canStop : action === 'restart' ? visible.canRestart : visible.canRebuild
     if (!allowed) throw new HttpError(409, 'service_environment_refused', 'This action is not available for this environment.')
+    // Ce qui ferait échouer l'action se vérifie avant d'arrêter les sessions : elles ne
+    // doivent pas tomber pour un environnement qu'on ne peut finalement pas toucher.
+    if (scanned.kind === 'devcontainer') {
+      const refusal = action === 'rebuild'
+        ? devcontainers?.status(scanned.projectId!).starting ? 'This dev container is already starting.' : null
+        : inventory.dockerAvailable() ? null : 'Docker is not on the PATH of the Solera server.'
+      if (refusal) throw new HttpError(409, 'service_environment_failed', refusal, { message: refusal })
+    }
     await stopUsers(scanned)
     try {
       await controlEnvironment(scanned, action as ServiceEnvironmentAction)
@@ -267,7 +279,7 @@ export function registerServiceRoutes(
 
   app.get('/api/services/environments/:id/log', async (request): Promise<ServiceEnvironmentLogDto> => {
     const { id } = request.params as { id: string }
-    const { visible, scanned } = await findEnvironment(request, id)
+    const { visible, scanned } = await findEnvironment(request, id, false)
     if (!visible.hasLog || !scanned.projectId) throw new HttpError(404, 'not_found', 'This environment has no log.')
     return {
       startup: devcontainers?.startupLog(scanned.projectId) ?? [],

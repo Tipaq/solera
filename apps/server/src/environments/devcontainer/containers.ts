@@ -166,6 +166,8 @@ export class Devcontainers {
    */
   forget(projectId: string): void {
     this.running.delete(projectId)
+    // Arrêté ou relancé à la main : l'échec d'un démarrage d'avant ne le décrit plus.
+    this.failures.delete(projectId)
   }
 
   /** Le fournisseur d'un projet dont le conteneur a été préparé. */

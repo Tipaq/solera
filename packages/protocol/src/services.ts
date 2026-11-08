@@ -177,6 +177,17 @@ export interface ServiceEnvironmentDto {
   hasLog: boolean
 }
 
+/**
+ * L'id d'un environnement dans Services : le dev container d'un projet, le bac à sable
+ * d'une session ou d'un terminal. La pastille d'une session s'en sert pour désigner sa ligne.
+ */
+export function environmentServiceId(
+  target: { kind: 'devcontainer'; projectId: string } | { kind: 'sandbox'; conversationId: string } | { kind: 'sandbox'; terminalId: string },
+): string {
+  if (target.kind === 'devcontainer') return `devcontainer:${target.projectId}`
+  return 'conversationId' in target ? `sandbox:session:${target.conversationId}` : `sandbox:terminal:${target.terminalId}`
+}
+
 /** Le journal d'un environnement : son dernier démarrage, puis la sortie du conteneur. */
 export interface ServiceEnvironmentLogDto {
   startup: string[]

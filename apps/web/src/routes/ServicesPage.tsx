@@ -250,7 +250,6 @@ export function ServicesPage() {
       <EnvironmentConfirm
         environment={confirming.environment}
         action={confirming.action}
-        busy={operate.isPending}
         onCancel={() => setConfirming(null)}
         onConfirm={() => {
           operate.mutate({ id: confirming.environment.id, action: confirming.action })
@@ -728,10 +727,9 @@ function EnvironmentLog({ id, live }: { id: string; live: boolean }) {
  * Avant d'arrêter, de redémarrer ou de reconstruire un environnement dont quelqu'un se
  * sert : qui, et ce qui leur arrivera.
  */
-function EnvironmentConfirm({ environment, action, busy, onCancel, onConfirm }: {
+function EnvironmentConfirm({ environment, action, onCancel, onConfirm }: {
   environment: ServiceEnvironmentDto
   action: ServiceEnvironmentAction
-  busy: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -753,7 +751,6 @@ function EnvironmentConfirm({ environment, action, busy, onCancel, onConfirm }: 
       title={t(title)}
       confirmLabel={t(label)}
       tone="critical"
-      busy={busy}
       onConfirm={onConfirm}
     >
       {action === 'rebuild' ? <p>{t('services.environment.confirm.rebuildLoss')}</p> : null}
