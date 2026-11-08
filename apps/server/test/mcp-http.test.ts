@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import Fastify from 'fastify'
 import { openDatabase, projects, runMigrations, users } from '@solera/db'
 import type { ApiScope } from '@solera/protocol'
+import { McpSessionTokens } from '../src/agents/mcp-session-tokens.js'
 import { bearerSecret, createApiToken, resolveApiToken } from '../src/auth/api-tokens.js'
 import type { Config } from '../src/config.js'
 import { registerErrorHandler } from '../src/http/errors.js'
@@ -41,7 +42,7 @@ async function harness(t: TestContext, scopes: ApiScope[] = ['mcp'], projectIds:
   })
   registerErrorHandler(app)
   const config = { paths: { database: dbPath, memory: join(dir, 'memory') }, mcp: { agentMemory: true } } as unknown as Config
-  registerMcpRoutes(app, { db, config })
+  registerMcpRoutes(app, { db, config }, new McpSessionTokens())
   t.after(() => app.close())
 
   let counter = 0

@@ -20,6 +20,15 @@ const configSchema = z.object({
        * ensuite suivre à un humain.
        */
       publicUrl: z.string().default(''),
+      /**
+       * L'adresse de Solera que les CLI des sessions joignent sur l'hôte, pour son
+       * serveur MCP (`instance/agent-url.ts`).
+       *
+       * Vide, elle se déduit de l'adresse d'écoute : la boucle locale quand le serveur
+       * écoute partout, l'adresse elle-même sinon. La renseigner sert le cas où cette
+       * déduction se trompe : un proxy devant, un nom à préférer.
+       */
+      agentUrl: z.string().default(''),
     })
     .default({}),
   limits: z
@@ -290,6 +299,7 @@ export function loadConfig(): Config {
     }
     config.server.port = port
   }
+  if (process.env.SOLERA_AGENT_URL) config.server.agentUrl = process.env.SOLERA_AGENT_URL
 
   const paths = resolvePaths()
   return {

@@ -29,11 +29,11 @@ type ConfigValue = NonNullable<ThreadConfig[string]>
 export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
   const entries = servers.map((server): [string, ConfigValue] => {
     const { transport } = server
+    // Nommer sa session passe sans accord, comme chez Claude : le daemon protège le
+    // titre de l'utilisateur. Seul cet outil, et seulement du serveur intégré.
+    const naming =
+      server.id === BUILTIN_MCP_SERVER_ID ? { tools: { rename_session: { approval_mode: 'approve' } } } : {}
     if (transport.type === 'stdio') {
-      // Nommer sa session passe sans accord, comme chez Claude : le daemon protège le
-      // titre de l'utilisateur. Seul cet outil, et seulement du serveur intégré.
-      const naming =
-        server.id === BUILTIN_MCP_SERVER_ID ? { tools: { rename_session: { approval_mode: 'approve' } } } : {}
       return [
         server.name,
         { command: transport.command, args: transport.args, env: transport.env, ...naming },
@@ -41,7 +41,7 @@ export function toCodexThreadConfig(servers: McpServer[]): ThreadConfig {
     }
     // Codex ne distingue pas `http` de `sse` en configuration : il déduit le transport
     // de la présence d'une URL.
-    return [server.name, { url: transport.url, http_headers: transport.headers }]
+    return [server.name, { url: transport.url, http_headers: transport.headers, ...naming }]
   })
 
   return { mcp_servers: Object.fromEntries(entries) }

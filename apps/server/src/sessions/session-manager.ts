@@ -27,6 +27,8 @@ import type { AgentRegistry } from '../agents/registry.js'
 import { resolveBinary } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
+import { soleraUrlForAgents } from '../instance/agent-url.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -227,6 +229,11 @@ export class SessionManager {
   private notifier: ConversationNotifier | null = null
   private storybooks: StorybookSupervisor | null = null
   readonly statusBus = new EventEmitter()
+  /**
+   * Les jetons qui ouvrent le serveur MCP de Solera aux runners vivants : émis au
+   * lancement, révoqués à l'arrêt. Le pont HTTP les lit pour savoir qui lui parle.
+   */
+  readonly mcpTokens = new McpSessionTokens()
 
   constructor(
     private readonly db: Db,
@@ -1039,10 +1046,8 @@ export class SessionManager {
         // effet à la session suivante, pas dans un CLI déjà parti.
         const designSystem = this.designSystemOf(projectId)
         if (designSystem) this.storybooks?.ensure(designSystem)
-        const builtin = builtinMcpServer({
-          enabled: this.config.mcp.soleraServer,
-          config: current,
-          databasePath: this.config.paths.database,
+        if (!builtinMcpEnabled(this.config.mcp.soleraServer, current)) return resolved
+        const token = this.mcpTokens.issue(conversationId, {
           projectId,
           conversationId,
           // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
@@ -1057,7 +1062,8 @@ export class SessionManager {
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
-        return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
+        const builtin = builtinMcpServer({ baseUrl: soleraUrlForAgents(this.config.server), token })
+        return { ...resolved, servers: [...resolved.servers, builtin] }
       },
 
       // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
@@ -1368,6 +1374,7 @@ export class SessionManager {
       this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
+      this.mcpTokens.revoke(conversationId)
       throw err
     }
     return runner
@@ -2172,7 +2179,11 @@ export class SessionManager {
     this.runners.delete(conversationId)
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
+    // Détachés avant l'arrêt, révoqués après : le CLI garde ses outils le temps de
+    // s'arrêter, et un runner relancé entre-temps en reçoit d'autres.
+    const revokeMcpTokens = this.mcpTokens.detach(conversationId)
     await managed.runner.stop()
+    revokeMcpTokens()
     // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
     // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
     // derrière.

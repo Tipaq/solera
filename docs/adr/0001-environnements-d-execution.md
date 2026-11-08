@@ -31,7 +31,7 @@ On n'a pas fait de « mode dev container » et de « mode sandbox » séparés, 
 
   Une session confinée peut tourner sans demandes d'autorisation, puisque le confinement est le garde-fou.
 - **Les identifiants ne traversent pas en fichiers personnels.** Le jeton du compte choisi passe par une variable d'environnement, comme le fait déjà Claude. Pour un CLI qui exige un dossier (Codex, Grok), Solera monte un dossier propre au compte, qui ne contient que ses identifiants. Il n'y a aucun lien vers `~/.codex` ni vers un autre dossier personnel.
-- **Le MCP de Solera passe par HTTP avec un jeton de session**, et ce pour tous les environnements, hôte compris. Le script stdio qui lit directement la base SQLite disparaît : il ne fonctionnerait pas dans un conteneur, et confiné il ouvrirait toute la base à l'agent. Le jeton est limité au projet, à la conversation et aux droits de la session, et meurt avec elle.
+- **Le MCP de Solera passe par HTTP avec un jeton de session**, et ce pour tous les environnements, hôte compris. Le script stdio qui lit directement la base SQLite disparaît : il ne fonctionnerait pas dans un conteneur, et confiné il ouvrirait toute la base à l'agent. Le jeton est limité au projet, à la conversation et aux droits de la session, et meurt avec elle. Précisé à la livraison (#138) : c'est le CLI qui ne lance plus le script. Le `.mjs` reste l'implémentation des outils, et c'est le serveur de Solera qui le lance sur l'hôte, derrière le pont HTTP. La base reste ainsi hors de portée de l'agent.
 - **Plateformes** :
   - Linux et WSL : dev container, et confinement natif par bwrap ;
   - macOS : dev container, et confinement natif par seatbelt ;
