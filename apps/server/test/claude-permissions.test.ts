@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
 import { ClaudeRunner } from '../src/agents/claude/runner.js'
 import type { RunnerContext } from '../src/agents/types.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 // Le vrai SDK construit la ligne de commande ; seul le CLI est remplacé, pour vérifier
 // le contrat de lancement sans compte Claude ni quota consommé.
@@ -33,7 +34,7 @@ for (const mode of ['manual', 'bypassPermissions'] as const) {
       await writeFile(binary, cli)
       const config = { ...DEFAULT_CLAUDE_CONFIG, permissionMode: mode }
       const ctx: RunnerContext = {
-        conversationId: 'test', cwd, binary, config, resumeSessionId: resume,
+        conversationId: 'test', cwd, binary, environment: hostEnvironment, config, resumeSessionId: resume,
         attachmentsRoot: cwd, prototypesDir: null,
         projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
         resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],

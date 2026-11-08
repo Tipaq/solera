@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawn, type IPty } from 'node-pty'
+import type { IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { withManagedPath } from '../agents/cli-binary.js'
 import type { Config } from '../config.js'
+import type { EnvironmentProvider } from '../environments/provider.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
@@ -172,8 +173,11 @@ export class TerminalManager {
    * Une commande passe par `shell -lc` plutôt que par une frappe dans un shell
    * interactif : le terminal se termine avec elle, ce qui donne son code de sortie, et
    * le shell de connexion charge le même PATH que celui qu'on ouvrirait à la main.
+   *
+   * Le shell tourne dans `environment` : celui de la session qui l'ouvre, et hors
+   * session celui du projet (ADR 0001).
    */
-  open(projectId: string, cwd: string, run?: TerminalCommand): TerminalDto {
+  open(projectId: string, cwd: string, environment: EnvironmentProvider, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
     if (run?.actionId) {
       // Une exécution terminée de la même action cède sa place : relancer un bouton ne
@@ -194,7 +198,9 @@ export class TerminalManager {
     // Une commande se lance dans le shell qui comprend sa syntaxe POSIX, un terminal vide
     // dans celui de l'utilisateur (voir `platform/shells.ts`).
     const shell = run ? commandShell() : interactiveShell()
-    const pty = spawn(shell.command, run ? [...shell.args, run.command] : shell.args, {
+    const pty = environment.spawnPty({
+      command: shell.command,
+      args: run ? [...shell.args, run.command] : shell.args,
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,

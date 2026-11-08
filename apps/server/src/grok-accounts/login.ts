@@ -1,9 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
-import { launchOf } from '../agents/launch.js'
 import { rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { GrokLoginStatusDto } from '@solera/protocol'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import { readGrokBilling } from '../agents/grok/billing.js'
 import { GROK_ISOLATION_ENV, grokProbe } from '../agents/grok/launch.js'
@@ -61,7 +61,7 @@ export class GrokLoginService {
   constructor(
     private readonly homes: GrokAccountHomes,
     private readonly store: GrokAccountStore,
-    private readonly binary: () => Promise<string>,
+    private readonly cli: CliLauncher,
   ) {}
 
   status(accountId: string): GrokLoginStatusDto {
@@ -118,14 +118,14 @@ export class GrokLoginService {
   private async spawnDeviceCode(accountId: string): Promise<GrokLoginStatusDto> {
     this.outcomes.delete(accountId)
     const home = this.homeOf(accountId)
-    const launch = launchOf(await this.binary())
-    const child = spawn(launch.command, [...launch.args, 'login', '--device-auth'], {
+    const child = this.cli.environment.spawn({
+      command: await this.cli.executable(),
+      args: ['login', '--device-auth'],
       cwd: home,
       // Le CLI lui-même : l'environnement des sessions, où `GROK_HOME` est celui du serveur.
       env: accountId === CLI ? agentProcessEnv(GROK_ISOLATION_ENV) : this.env(home),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
     })
+    child.stdin.end()
 
     let output = ''
     await new Promise<void>((resolve, reject) => {
@@ -174,7 +174,7 @@ export class GrokLoginService {
   async loginWithApiKey(accountId: string, apiKey: string): Promise<void> {
     await this.cancel(accountId)
     const home = this.homes.ensure(accountId)
-    const client = grokProbe({ binary: await this.binary(), home, env: { XAI_API_KEY: apiKey } })
+    const client = grokProbe({ binary: await this.cli.executable(), environment: this.cli.environment, home, env: { XAI_API_KEY: apiKey } })
     try {
       await client.initialize(CLIENT_INFO)
       await client.request('authenticate', { methodId: 'xai.api_key' })
@@ -192,7 +192,7 @@ export class GrokLoginService {
   async refresh(accountId: string): Promise<void> {
     const account = this.store.findById(accountId)
     if (!account?.authMode) return
-    const usage = await readGrokBilling(await this.binary(), this.homes.ensure(accountId))
+    const usage = await readGrokBilling(this.cli, this.homes.ensure(accountId))
     this.store.setIdentity(accountId, { authMode: account.authMode, email: account.email, plan: usage.plan })
   }
 
@@ -203,10 +203,13 @@ export class GrokLoginService {
   async logout(accountId: string): Promise<void> {
     await this.cancel(accountId)
     const home = this.homes.ensure(accountId)
-    const binary = await this.binary()
+    const binary = await this.cli.executable()
     await new Promise<void>((resolve) => {
-      const launch = launchOf(binary)
-      const child = spawn(launch.command, [...launch.args, 'logout'], { cwd: home, env: this.env(home), stdio: 'ignore', windowsHide: true })
+      const child = this.cli.environment.spawn({ command: binary, args: ['logout'], cwd: home, env: this.env(home) })
+      // Rien à lire : vidés, les flux ne retiennent pas le CLI sur un tampon plein.
+      child.stdin.end()
+      child.stdout.resume()
+      child.stderr.resume()
       const timer = setTimeout(() => child.kill(), 20_000)
       child.on('exit', () => { clearTimeout(timer); resolve() })
       child.on('error', () => { clearTimeout(timer); resolve() })

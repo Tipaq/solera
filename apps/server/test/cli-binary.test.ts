@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { CliBinary, withManagedPath } from '../src/agents/cli-binary.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 /**
  * Un CLI posé pendant que la sonde est en cache doit être vu dès qu'on l'invalide.
@@ -12,7 +13,7 @@ import { CliBinary, withManagedPath } from '../src/agents/cli-binary.js'
  */
 test("un CLI installé après la sonde apparaît dès que la sonde est invalidée", async () => {
   const managed = mkdtempSync(join(tmpdir(), 'solera-cli-'))
-  const cli = new CliBinary('codex', 'solera-test-absent-cli', true, managed)
+  const cli = new CliBinary('codex', 'solera-test-absent-cli', true, managed, hostEnvironment)
 
   assert.equal((await cli.status()).found, false)
 

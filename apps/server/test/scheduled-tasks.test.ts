@@ -35,6 +35,7 @@ import { runCheck } from '../src/scheduler/check.js'
 import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, updateScheduledTask } from '../src/scheduler/tasks.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import { Environments } from '../src/environments/environments.js'
 
 const MINUTE = 60_000
 
@@ -67,6 +68,8 @@ async function harness(t: TestContext) {
     statusBus: new EventEmitter(),
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
+    // La session prend l'environnement du projet, l'hôte ici.
+    environments: new Environments(db),
   } as unknown as SessionManager
   const registry = {
     adapter: () => ({

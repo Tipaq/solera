@@ -28,6 +28,7 @@ import { HttpError } from '../src/http/errors.js'
 import { deriveStatus, layerCards, LAUNCH_GRACE_MS, type CardFacts } from '../src/milestones/graph.js'
 import { MilestoneRuns, type MilestoneNotifier } from '../src/milestones/milestone-runs.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import { Environments } from '../src/environments/environments.js'
 
 /**
  * Lancer un jalon (#72) : le serveur fait partir les enfants d'une carte parente dans
@@ -100,6 +101,8 @@ async function harness(t: TestContext) {
     },
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
+    // La session prend l'environnement du projet, l'hôte ici.
+    environments: new Environments(db),
   } as unknown as SessionManager
   const registry = { adapter: () => ({ resolveDefaults: async (config: unknown) => config }) } as unknown as AgentRegistry
   const ctx = { db, config: { paths: { worktrees: join(dir, 'worktrees') } } as unknown as Config }

@@ -87,7 +87,9 @@ export function registerTerminalRoutes(
       cwd = body.cwd
     }
 
-    const terminal = wrap(() => terminals.open(id, cwd))
+    // Le shell suit l'environnement de la session qui l'ouvre ; hors session, celui du projet.
+    const environment = sessions.environments.forTerminal(id, body.conversationId ?? null)
+    const terminal = wrap(() => terminals.open(id, cwd, environment))
     return reply.status(201).send(terminal)
   })
 

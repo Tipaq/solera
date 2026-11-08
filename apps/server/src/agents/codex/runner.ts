@@ -292,6 +292,7 @@ export class CodexRunner implements AgentRunner {
   async start(): Promise<void> {
     this.client = new CodexAppServerClient({
       binary: this.ctx.binary,
+      environment: this.ctx.environment,
       cwd: this.ctx.cwd,
       env: agentProcessEnv(this.ctx.processEnv),
       onNotification: (method, params) => {

@@ -7,7 +7,9 @@ import { conversations, projects, type ConversationRow } from '@solera/db'
 import {
   type ClaudeSessionsDto,
   type ClaudeSyncDto,
+  HOST_ENVIRONMENT,
 } from '@solera/protocol'
+import { environmentColumns } from '../../environments/environments.js'
 import type { AgentRegistry } from '../../agents/registry.js'
 import type { TranslatedEvent } from '../../agents/claude/transcript.js'
 import {
@@ -167,6 +169,8 @@ export function registerClaudeSessionRoutes(
       titleSetByUser: false,
       titleSetByAgent: false,
       agent: 'claude',
+      // Une session du CLI natif est née sur l'hôte, et son historique y est resté.
+      ...environmentColumns(HOST_ENVIRONMENT),
       agentSessionId: sessionId,
       forkedFromId: null,
       handoffFromId: null,

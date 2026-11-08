@@ -6,6 +6,7 @@ import type { TestContext } from 'node:test'
 import { DEFAULT_CODEX_CONFIG, type SoleraEvent, type ConversationStatus } from '@solera/protocol'
 import type { RunnerContext } from '../src/agents/types.js'
 import { CodexRunner } from '../src/agents/codex/runner.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 export async function fixture(t: TestContext) {
   const cwd = await mkdtemp(join(tmpdir(), 'solera-codex-test-'))
@@ -17,7 +18,7 @@ export async function fixture(t: TestContext) {
     for (const close of finalizers) await close()
     await rm(cwd, { recursive: true, force: true })
   })
-  return { cwd, binary, onClose: (close: () => void | Promise<void>) => finalizers.push(close),
+  return { cwd, binary, environment: hostEnvironment, onClose: (close: () => void | Promise<void>) => finalizers.push(close),
     records: async () => (await readFile(join(cwd, 'rpc.jsonl'), 'utf8'))
     .trim().split('\n').map((line) => JSON.parse(line)) }
 }
@@ -27,7 +28,7 @@ export function context(overrides: Partial<RunnerContext> = {}) {
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {
-    conversationId: 'test', cwd: tmpdir(), binary: 'unused', attachmentsRoot: tmpdir(), prototypesDir: null,
+    conversationId: 'test', cwd: tmpdir(), binary: 'unused', environment: hostEnvironment, attachmentsRoot: tmpdir(), prototypesDir: null,
     config: DEFAULT_CODEX_CONFIG, resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null, resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],
     emit: (event, native) => { events.push(event); raw.push(native) },

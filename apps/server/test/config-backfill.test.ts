@@ -24,6 +24,8 @@ import {
 import { createConversation } from '../src/conversations/create.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { readUserSettings, writeUserAgentDefault, writeUserAgentLayer } from '../src/settings/user-settings.js'
+import { Environments } from '../src/environments/environments.js'
+import { Environments } from '../src/environments/environments.js'
 
 /**
  * La migration de l'héritage vivant (#120) et l'héritage lui-même, sur une vraie base.
@@ -175,6 +177,7 @@ test('créer un fil ne retient que ce qu’il change, même résolu avant d’ar
   const sessions = {
     resolveDefaults: async (config: AgentConfig) =>
       config.agent === 'claude' && config.model === '' ? { ...config, model: 'default' } : config,
+    environments: new Environments(db),
   } as unknown as SessionManager
 
   const created = await createConversation(db, sessions, {

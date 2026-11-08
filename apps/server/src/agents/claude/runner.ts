@@ -28,6 +28,7 @@ import {
 } from '@solera/protocol'
 import { failedStatuses } from '../mcp-registry.js'
 import { sdkExecutable } from '../launch.js'
+import { claudeSpawner } from './spawn.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
 import { PendingInteractions } from '../interactions.js'
@@ -302,6 +303,12 @@ export class ClaudeRunner implements AgentRunner {
         // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
         // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
         pathToClaudeCodeExecutable: sdkExecutable(this.ctx.binary),
+        // Le SDK compose la commande, l'environnement de la session la lance.
+        spawnClaudeCodeProcess: claudeSpawner(this.ctx.environment, (data) => {
+          // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
+          // perdre rend tout diagnostic impossible.
+          process.stderr.write(`[claude ${this.conversationId}] ${data}`)
+        }),
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni
@@ -309,11 +316,6 @@ export class ClaudeRunner implements AgentRunner {
         // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
         // que `background_tasks_changed` joue pour le travail de fond.
         hooks: { Stop: [{ hooks: [this.handleStop] }] },
-        stderr: (data) => {
-          // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
-          // perdre rend tout diagnostic impossible.
-          process.stderr.write(`[claude ${this.conversationId}] ${data}`)
-        },
       },
     })
 

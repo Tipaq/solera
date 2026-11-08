@@ -189,6 +189,7 @@ export class OpencodeRunner implements AgentRunner {
     const masked = this.ctx.maskedInstructionRoots().length > 0
     this.server = await OpencodeServer.start({
       binary: this.ctx.binary,
+      environment: this.ctx.environment,
       cwd: this.ctx.cwd,
       env: agentProcessEnv({
         ...this.ctx.processEnv,

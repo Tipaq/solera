@@ -40,9 +40,11 @@ import {
   useProjects,
   useRemoveProjectImage,
   useSetProjectImage,
+  useProjectEnvironments,
   useProjectPrototypes,
   useUpdateProject,
 } from '../lib/projects'
+import { EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
 import { useCapability } from '../lib/instance'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
 import { VisibilitySelect } from '../components/VisibilitySelect'
@@ -143,6 +145,7 @@ export function ProjectPage() {
           <ProjectImage project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectIssueSource projectId={project.id} />
+          <ProjectEnvironment projectId={project.id} />
           <ProjectAgentSettings project={project} />
           <ProjectSettings
             projectId={project.id}
@@ -447,6 +450,37 @@ function ProjectAgentSettings({ project }: { project: ProjectDto }) {
       <PermissionsSettings level={level} />
       <ModelDefaultsSettings level={level} />
     </section>
+  )
+}
+
+/**
+ * L'environnement d'exécution par défaut du projet (ADR 0001) : où tournent le CLI et les
+ * terminaux des sessions ouvertes ensuite. Appliqué au choix, comme un interrupteur ; les
+ * sessions déjà ouvertes gardent le leur.
+ */
+function ProjectEnvironment({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectEnvironments(projectId)
+  const updateProject = useUpdateProject()
+  const error = updateProject.error instanceof ApiRequestError ? updateProject.error.message : null
+  if (!data) return null
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.environment.title')}
+        description={t('project.environment.description')}
+        icon={<EnvironmentIcon environment={data.default} size={16} />}
+      />
+      <CardBody className="flex flex-col gap-2">
+        <EnvironmentSelect
+          value={data.default}
+          choices={data.choices}
+          disabled={updateProject.isPending}
+          onChange={(environment) => updateProject.mutate({ id: projectId, environment })}
+        />
+        {error ? <Banner>{error}</Banner> : null}
+      </CardBody>
+    </Card>
   )
 }
 

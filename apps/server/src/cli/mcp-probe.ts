@@ -11,6 +11,7 @@ import {
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import { CodexRunner } from '../agents/codex/runner.js'
 import type { AgentRunner, RunnerContext } from '../agents/types.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Sonde de bout en bout du chemin MCP, sur le vrai code des runners.
@@ -56,6 +57,7 @@ function buildProbe(config: AgentConfig, binary: string, resumeSessionId: string
     cwd: tmpdir(),
     config,
     binary,
+    environment: hostEnvironment,
     attachmentsRoot: tmpdir(),
     prototypesDir: null,
     resumeSessionId,

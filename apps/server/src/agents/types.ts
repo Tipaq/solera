@@ -5,6 +5,7 @@ import type {
   ElicitationValue,
   SoleraEvent,
 } from '@solera/protocol'
+import type { EnvironmentProvider } from '../environments/provider.js'
 import type { ResolvedMcpServers } from './mcp-registry.js'
 
 /**
@@ -60,6 +61,11 @@ export interface RunnerContext {
    * quand rien n'a été trouvé, pour que l'échec porte le nom demandé.
    */
   binary: string
+  /**
+   * L'environnement où tourne la session, figé à sa création : le runner y lance son
+   * CLI, et jamais directement. `binary` y a été résolu.
+   */
+  environment: EnvironmentProvider
   /** Racine de stockage des pièces jointes, à autoriser en lecture pour l'agent. */
   attachmentsRoot: string
   /**
