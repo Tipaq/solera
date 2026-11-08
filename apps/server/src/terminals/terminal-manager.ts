@@ -261,6 +261,9 @@ export class TerminalManager {
     })
 
     pty.onExit(({ exitCode }) => {
+      // Un terminal confiné a son propre bac à sable : ce qu'il a lancé meurt avec lui,
+      // et son home privé s'efface. Sans effet sur l'hôte.
+      void place.environment.close()
       // L'entrée survit à son process, avec son dernier écran : un `exit` accidentel ou
       // une commande qui plante ne doivent pas faire disparaître ce qu'on voulait lire.
       managed.exited = true

@@ -82,8 +82,13 @@ export class EnvironmentUnavailableError extends HttpError {
   constructor(
     readonly environment: ExecutionEnvironment,
     message: string,
+    /** Un refus plus précis que « pas encore lancé » : la raison, et quoi lancer (#144). */
+    refusal?: { code: string; params?: Record<string, string> },
   ) {
-    super(409, 'environment_unavailable', message, { environment: environmentKey(environment) })
+    super(409, refusal?.code ?? 'environment_unavailable', message, {
+      environment: environmentKey(environment),
+      ...refusal?.params,
+    })
     this.name = 'EnvironmentUnavailableError'
   }
 }

@@ -807,6 +807,9 @@ export class AgentRequests {
       userId: requester.userId,
       agent,
       config,
+      // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
+      // mission d'un agent libre de tout l'hôte.
+      ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
       worktreeId,
       cardId: card?.id ?? null,
       title,
@@ -1159,11 +1162,21 @@ export class AgentRequests {
    * personne n'étant là pendant les tirs, et la réponse les rappelle pour que l'agent
    * le dise à l'utilisateur.
    */
+  /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */
+  private confined(requester: Requester): boolean {
+    return requester.id !== null && this.sessions.environments.ofConversation(requester.id).confined
+  }
+
   private async scheduleTask(
     requester: Requester,
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
+    if (this.confined(requester)) {
+      throw new Refusal(
+        'Refusé : cette session est confinée, et une tâche planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.',
+      )
+    }
     if (requester.scheduleId) {
       throw new Refusal(
         "Refusé : cette session est elle-même un tir planifié. Une tâche qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",

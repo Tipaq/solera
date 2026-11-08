@@ -246,7 +246,10 @@ export class ActionRunner {
     const cwd = await this.cwdFor(row, base)
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
 
-    if (row.kind === 'service' && (await serviceAppsAvailable())) {
+    // Un service tourne sous systemd, sur l'hôte : lancé depuis un environnement confiné,
+    // il en sortirait. Il passe alors par un terminal, que l'environnement confine.
+    const confined = (conversationId ? this.environments.ofConversation(conversationId) : this.environments.ofProject(row.projectId)).confined
+    if (row.kind === 'service' && !confined && (await serviceAppsAvailable())) {
       const current = (await this.serviceStates([row])).get(row.id)!
       if (['active', 'activating', 'reloading'].includes(current.state)) {
         return { terminal: null, service: current, alreadyRunning: true }
@@ -266,7 +269,7 @@ export class ActionRunner {
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
     // Dans l'environnement de la session qui la lance, et hors session dans celui du
     // projet : comme un terminal.
-    const environment = this.environments.forTerminal(row.projectId, conversationId)
+    const environment = this.environments.forTerminal(row.projectId, conversationId, cwd)
     const terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
       command: row.command,
       title: row.label,

@@ -77,6 +77,9 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
+import type { ConfinementScope } from '../environments/confined/plan.js'
+import type { EnvironmentProvider } from '../environments/provider.js'
+import { sessionScope } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
@@ -92,6 +95,11 @@ interface QueuedMessage {
 
 interface ManagedRunner {
   runner: AgentRunner
+  /**
+   * L'environnement où tourne son CLI. Confiné, il est à ce runner seul, et son arrêt le
+   * ferme : ce que l'agent a lancé meurt, son home privé s'efface.
+   */
+  environment: EnvironmentProvider
   lastActivity: number
   status: ConversationStatus
   /**
@@ -622,17 +630,35 @@ export class SessionManager {
     // Le point de coupe est propre à chaque CLI (entrée de transcript, tours à
     // retirer...) : l'adaptateur le calcule depuis le journal et le consomme lui-même.
     const adapter = this.registry.adapter(conversation.agent)
-    return adapter.fork(
-      {
-        agentSessionId: conversation.agentSessionId,
-        // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu,
-        // la route l'a déjà refusé.
-        cwd: this.refuseMissingCwd(conversation),
-        accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
-        cli: this.sessionCli(conversation),
-      },
-      adapter.forkCut(this.log, conversationId, throughSeq),
+    // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu, la route
+    // l'a déjà refusé.
+    const cwd = this.refuseMissingCwd(conversation)
+    const accountEnv = this.accountEnv(conversation, parseAgentConfig(conversation.config))
+    // Confinée, la session forke dans un bac à sable à elle, le temps du fork : le CLI ne
+    // voit que son dossier et le home de son compte.
+    const cli = this.sessionCli(
+      conversation,
+      conversation.environmentConfined
+        ? sessionScope({
+            agent: conversation.agent,
+            cwd,
+            workTrees: [],
+            accountEnv,
+            memoryDir: null,
+            attachmentsRoot: this.config.paths.attachments,
+            skillRoots: [],
+            prototypesDir: null,
+          })
+        : undefined,
     )
+    try {
+      return await adapter.fork(
+        { agentSessionId: conversation.agentSessionId, cwd, accountEnv, cli },
+        adapter.forkCut(this.log, conversationId, throughSeq),
+      )
+    } finally {
+      await cli.environment.close()
+    }
   }
 
   setNotifier(notifier: ConversationNotifier): void {
@@ -1011,9 +1037,9 @@ export class SessionManager {
    * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
    * retomber en silence sur l'hôte.
    */
-  private sessionCli(conversation: ConversationRow): CliLauncher & { binary: string } {
+  private sessionCli(conversation: ConversationRow, scope?: ConfinementScope): CliLauncher & { binary: string } {
     const adapter = this.registry.adapter(conversation.agent)
-    const environment = this.environments.provider(environmentOf(conversation))
+    const environment = this.environments.provider(environmentOf(conversation), scope)
     // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
     // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
     // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
@@ -1025,11 +1051,11 @@ export class SessionManager {
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
-    const launcher = this.sessionCli(conversation)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
     // Lu au lancement, comme le jeton : changer de compte relance la session.
     const account = this.accountInUse(conversation, config)
+    const accountEnv = this.accountEnv(conversation, config)
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
     //
@@ -1074,6 +1100,27 @@ export class SessionManager {
       linkedDesignSystem && projectId !== null && this.storybooks
         ? this.storybooks.projectPrototypes(linkedDesignSystem, projectId)
         : null
+    const skillRoots = (current: AgentConfig) =>
+      this.config.skills.library && current.skillLibrary
+        ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
+        : []
+    // Confinée, la session ne voit de l'hôte que ce que sa portée nomme, figée ici pour
+    // la vie du runner : un worktree lié ensuite, un skill ajouté, comptent à la relance.
+    const launcher = this.sessionCli(
+      conversation,
+      conversation.environmentConfined
+        ? sessionScope({
+            agent: conversation.agent,
+            cwd,
+            workTrees: projectId === null ? [] : linkedWorktreePaths(this.db, conversationId, projectId, () => {}),
+            accountEnv,
+            memoryDir: memoryDir(config),
+            attachmentsRoot: this.config.paths.attachments,
+            skillRoots: new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId),
+            prototypesDir,
+          })
+        : undefined,
+    )
 
     return {
       conversationId,
@@ -1090,7 +1137,7 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...this.accountEnv(conversation, config),
+        ...accountEnv,
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
@@ -1190,10 +1237,7 @@ export class SessionManager {
         const current = instructions()
         return current?.mode === 'solera' ? [current.workspacePath, cwd] : []
       },
-      skillRoots: (current) =>
-        this.config.skills.library && current.skillLibrary
-          ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
-          : [],
+      skillRoots,
       // Un fil libre n'a pas de projet, donc pas de worktree. Ce qui est rendu est
       // retenu sur le runner : c'est ce qui dira, au tour suivant, s'il faut le relancer.
       workTrees: () => {
@@ -1413,6 +1457,7 @@ export class SessionManager {
 
     this.runners.set(conversationId, {
       runner,
+      environment: context.environment,
       lastActivity: Date.now(),
       status: 'idle',
       idleTimer: null,
@@ -1429,6 +1474,7 @@ export class SessionManager {
       this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
+      await context.environment.close().catch(() => undefined)
       this.mcpTokens.revoke(conversationId)
       throw err
     }
@@ -2238,6 +2284,9 @@ export class SessionManager {
     // s'arrêter, et un runner relancé entre-temps en reçoit d'autres.
     const revokeMcpTokens = this.mcpTokens.detach(conversationId)
     await managed.runner.stop()
+    await managed.environment.close().catch((err) => {
+      console.warn(`[sessions] fermeture de l'environnement de ${conversationId} impossible :`, err)
+    })
     revokeMcpTokens()
     // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
     // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
