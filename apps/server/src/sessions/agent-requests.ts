@@ -69,6 +69,7 @@ import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
@@ -316,6 +317,7 @@ interface StartSessionPayload {
   effort?: unknown
   worktree?: unknown
   card?: unknown
+  confined?: unknown
 }
 
 export class AgentRequests {
@@ -794,6 +796,7 @@ export class AgentRequests {
     }
 
     this.assertLaunchAllowed(requester, request.id)
+    const confined = this.launchConfinement(requester, payload.confined)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
@@ -802,38 +805,51 @@ export class AgentRequests {
     const title =
       typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 200) : undefined
 
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: project.id,
-      userId: requester.userId,
-      agent,
-      config,
-      // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
-      // mission d'un agent libre de tout l'hôte.
-      ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
-      worktreeId,
-      cardId: card?.id ?? null,
-      title,
-      titleSource: prompt,
-      origin: null,
-      firstMessage: {
-        clientMessageId: randomUUID(),
-        // Lancée par un compte et non par une session : la mission arrive nue, comme si
-        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
-        text: requester.id
-          ? formatSessionMessage({
-              kind: 'launch',
-              from: requester.id,
-              title: requester.title,
-              agent: requester.agent,
-              messageId: request.id,
-              body: prompt,
-            })
-          : prompt,
-        attachments: [],
-        mentions: [],
-        skills: [],
-      },
-    })
+    let row: ConversationRow
+    try {
+      row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: project.id,
+        userId: requester.userId,
+        agent,
+        config,
+        // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
+        // mission d'un agent libre de tout l'hôte.
+        ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
+        autonomous: { confined },
+        worktreeId,
+        cardId: card?.id ?? null,
+        title,
+        titleSource: prompt,
+        origin: null,
+        firstMessage: {
+          clientMessageId: randomUUID(),
+          // Lancée par un compte et non par une session : la mission arrive nue, comme si
+          // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+          text: requester.id
+            ? formatSessionMessage({
+                kind: 'launch',
+                from: requester.id,
+                title: requester.title,
+                agent: requester.agent,
+                messageId: request.id,
+                body: prompt,
+              })
+            : prompt,
+          attachments: [],
+          mentions: [],
+          skills: [],
+        },
+      })
+    } catch (err) {
+      // Le refus se lit aussi sur la carte, pas seulement dans la réponse à l'agent.
+      if (card && err instanceof EnvironmentUnavailableError) {
+        this.ctx.db
+          .insert(cardNotes)
+          .values({ id: randomUUID(), cardId: card.id, conversationId: requester.id, userId: null, body: `Session non lancée : ${err.message}`, createdAt: Date.now() })
+          .run()
+      }
+      throw err
+    }
     if (card) advanceCardOnLaunch(this.ctx, card.id, requester.userId)
 
     const tree = worktreeId
@@ -845,7 +861,9 @@ export class AgentRequests {
       `CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}.`,
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
-      describePermissions(config),
+      row.environmentConfined ? 'Elle est confinée : elle tourne sans demandes d\'autorisation.' : null,
+      // Celle qu'elle a reçue : confinée, elle a quitté les demandes d'autorisation.
+      describePermissions(parseAgentConfig(row.config)),
       requester.id
         ? "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire."
         : 'Elle apparaît dans Solera comme les autres. Pour lire sa réponse : read_conversation avec ce même id et `wait_seconds`.',
@@ -1151,6 +1169,21 @@ export class AgentRequests {
       )
     }
     return { id: card.id, number: card.number, title: card.title }
+  }
+
+  /**
+   * Le confinement demandé par `start_session` (#146) : oui, non, ou rien pour le
+   * réglage du projet. Une session confinée ne peut pas en lancer une libre.
+   */
+  private launchConfinement(requester: Requester, value: unknown): boolean | null {
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      throw new Refusal('Le paramètre `confined` est un booléen.')
+    }
+    const confined = value ?? null
+    if (confined === false && this.confined(requester)) {
+      throw new Refusal('Une session confinée ne lance que des sessions confinées : omets `confined`.')
+    }
+    return confined
   }
 
   /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */

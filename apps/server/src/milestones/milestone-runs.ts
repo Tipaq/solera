@@ -183,6 +183,10 @@ export class MilestoneRuns {
     const taken = plan.cards.filter((card) => card.status !== 'excluded')
     if (taken.length === 0) throw badRequest('milestone_empty', 'This milestone has no card left to launch.')
 
+    // Un confinement que ce serveur ne sait pas donner refuse le jalon d'emblée, plutôt
+    // que chacune de ses cartes à son tour.
+    const environment = this.sessions.environments.forAutonomous(project.id, body.confined)
+    this.sessions.environments.assertAvailable(project.id, environment)
     const config = body.config ?? this.defaultConfig(project, userId)
     const running = this.currentSessions(taken.map((card) => card.cardId))
     const now = Date.now()
@@ -195,6 +199,7 @@ export class MilestoneRuns {
           cardId: parent.id,
           state: 'running',
           concurrency: body.concurrency,
+          confined: body.confined,
           config: JSON.stringify(config),
           startedBy: userId,
           createdAt: now,
@@ -222,7 +227,7 @@ export class MilestoneRuns {
     this.note(
       parent.id,
       userId,
-      `Jalon lancé : ${taken.length} carte(s), ${body.concurrency} session(s) en parallèle au plus. Les cartes se fusionnent dans \`${plan.branch}\`.`,
+      `Jalon lancé : ${taken.length} carte(s), ${body.concurrency} session(s) en parallèle au plus${environment.confined ? ', confinées et sans demandes d\'autorisation' : ''}. Les cartes se fusionnent dans \`${plan.branch}\`.`,
     )
     // Le premier tour sans attendre : l'aperçu promettait des départs immédiats.
     void this.sweep()
@@ -302,6 +307,7 @@ export class MilestoneRuns {
       cardTitle: facts?.parent.title ?? '',
       state: run.state,
       concurrency: run.concurrency,
+      confined: run.confined,
       agent: config.agent,
       model: config.model,
       branch: facts ? parentBranchOf(facts.parent) : '',
@@ -418,6 +424,7 @@ export class MilestoneRuns {
         cardId: card.id,
         title: card.title,
         origin: null,
+        autonomous: { confined: run.confined },
         firstMessage: {
           clientMessageId: randomUUID(),
           text: mission(card, facts.parent, base),
@@ -438,6 +445,7 @@ export class MilestoneRuns {
       const reason = err instanceof Error ? err.message : String(err)
       this.ctx.db.update(milestoneRunCards).set({ launch: 'failed', error: reason, updatedAt: Date.now() }).where(where).run()
       this.note(run.cardId, null, `La carte #${card.number} n'a pas pu être lancée : ${reason}`)
+      this.note(card.id, null, `Session non lancée par le jalon : ${reason}`)
       await this.notify(facts, card, `n'a pas pu être lancée : ${reason}`)
       this.logger?.warn({ err, card: card.id }, 'carte de jalon non lancee')
     }

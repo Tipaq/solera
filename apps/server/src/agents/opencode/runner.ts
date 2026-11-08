@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
 import {
   parseSlashCommand,
   toolPresentation,
@@ -38,6 +37,7 @@ import type {
 import { PendingInteractions } from '../interactions.js'
 import { failedStatuses } from '../mcp-registry.js'
 import { describeOutgoingMessage } from '../outgoing.js'
+import { fileUrlInside } from '../paths.js'
 import { agentProcessEnv } from '../process-env.js'
 import { journalDeath } from '../session-close.js'
 import { fromOpencodeMcpStatus, sameLaunchConfig, toOpencodeConfig } from './config.js'
@@ -170,6 +170,7 @@ export class OpencodeRunner implements AgentRunner {
           ...(memoryDir ? [memoryDir] : []),
           ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
         ],
+        inside: (path) => this.ctx.environment.pathInside(path),
       }),
       servers: resolved.servers,
       failures: failedStatuses(resolved.failures),
@@ -222,7 +223,7 @@ export class OpencodeRunner implements AgentRunner {
         agent: 'opencode',
         agentSessionId: session.id,
         model: this.config.model || this.defaultModel || '',
-        cwd: session.directory,
+        cwd: this.ctx.environment.pathOutside(session.directory),
         // La liste des outils dépend de l'agent et du modèle du tour : mieux vaut vide
         // que devinée.
         tools: [],
@@ -681,7 +682,7 @@ export class OpencodeRunner implements AgentRunner {
       },
       raw,
     )
-    for (const edit of fileEdits(part, this.ctx.cwd)) this.ctx.emit(edit)
+    for (const edit of fileEdits(part, this.ctx.cwd, (path) => this.ctx.environment.pathOutside(path))) this.ctx.emit(edit)
   }
 
   /** `fournisseur/modèle` du message d'une part, pour retrouver sa fenêtre de contexte. */
@@ -724,7 +725,9 @@ export class OpencodeRunner implements AgentRunner {
     const request = event.properties
     if (!this.inTree(request.sessionID) || this.nativeRequests.has(request.id)) return
 
-    const details = describePermission(request.permission, request.patterns, request.metadata, this.ctx.cwd)
+    const details = describePermission(request.permission, request.patterns, request.metadata, this.ctx.cwd, (path) =>
+      this.ctx.environment.pathOutside(path),
+    )
     const requestId = this.interactions.requestPermission(details, (decision) => {
       this.nativeRequests.delete(request.id)
       if (this.settledNatively.delete(request.id)) return
@@ -816,7 +819,7 @@ export class OpencodeRunner implements AgentRunner {
         type: 'file',
         mime: isDirectory(mention.path) ? 'application/x-directory' : 'text/plain',
         filename: mention.relativePath,
-        url: pathToFileURL(mention.path).href,
+        url: fileUrlInside(this.ctx.environment, mention.path),
       })
     }
     for (const attachment of attachments) {
@@ -825,7 +828,7 @@ export class OpencodeRunner implements AgentRunner {
         type: 'file',
         mime: attachment.mimeType,
         filename: attachment.filename,
-        url: pathToFileURL(attachment.path).href,
+        url: fileUrlInside(this.ctx.environment, attachment.path),
       })
     }
 

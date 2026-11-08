@@ -8,6 +8,7 @@ import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
 import {
+  autonomousEnvironment,
   DEFAULT_CLAUDE_CONFIG,
   HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
@@ -25,7 +26,7 @@ import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
 import { createConversation } from '../src/conversations/create.js'
-import { hasNativeConfinement } from '../src/environments/confined/native.js'
+import { hasNativeConfinement, nativeConfinement } from '../src/environments/confined/native.js'
 import { Environments } from '../src/environments/environments.js'
 import { hostEnvironment } from '../src/environments/host.js'
 import { EnvironmentUnavailableError } from '../src/environments/provider.js'
@@ -38,6 +39,7 @@ import { recordingEnvironment } from './environment-support.js'
 import { fixture as opencodeFixture } from './opencode-support.js'
 
 const DEVCONTAINER = { where: 'devcontainer', confined: false } as const
+const DEVCONTAINER_CONFINED = { where: 'devcontainer', confined: true } as const
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 
 async function database(t: TestContext) {
@@ -162,6 +164,52 @@ test("créer une session fige l'environnement du projet, et refuse celui qu'on n
   assert.equal(db.select().from(conversations).all().length, 1, 'aucun fil condamné ne reste')
 })
 
+test("une session autonome prend l'environnement du projet, confiné si son lancement ou le projet le demandent", async (t) => {
+  const { db } = await database(t)
+  const sessions = {
+    resolveDefaults: async (config: AgentConfig) => config,
+    environments: new Environments(db),
+  } as unknown as SessionManager
+  const input = {
+    projectId: 'project', userId: 'owner', agent: 'claude' as const, config: DEFAULT_CLAUDE_CONFIG,
+    worktreeId: null, cardId: null, origin: null,
+  }
+  const permissionOf = (row: { config: string }) => (JSON.parse(row.config) as { permissionMode: string }).permissionMode
+
+  // Un projet qui n'a rien réglé ne change pas : l'hôte, non confiné, ses autorisations.
+  const plain = await createConversation(db, sessions, { ...input, autonomous: { confined: null } })
+  assert.deepEqual([plain.environmentWhere, plain.environmentConfined, permissionOf(plain)], ['host', false, 'manual'])
+
+  db.update(projects).set({ autonomousConfined: true }).run()
+  // Le lancement passe outre le réglage du projet, dans un sens comme dans l'autre.
+  const free = await createConversation(db, sessions, { ...input, autonomous: { confined: false } })
+  assert.deepEqual([free.environmentWhere, free.environmentConfined, permissionOf(free)], ['host', false, 'manual'])
+  // Une session que l'utilisateur ouvre lui-même garde l'environnement du projet.
+  const opened = await createConversation(db, sessions, input)
+  assert.equal(opened.environmentConfined, false)
+
+  const before = db.select().from(conversations).all().length
+  if ('backend' in nativeConfinement()) {
+    const confined = await createConversation(db, sessions, { ...input, autonomous: { confined: null } })
+    assert.deepEqual([confined.environmentWhere, confined.environmentConfined, permissionOf(confined)], ['host', true, 'bypassPermissions'])
+  } else {
+    // Sans confinement sur cette plateforme, elle refuse de démarrer, et ne tourne pas libre.
+    await assert.rejects(createConversation(db, sessions, { ...input, autonomous: { confined: null } }), EnvironmentUnavailableError)
+    assert.equal(db.select().from(conversations).all().length, before)
+  }
+
+  // `false` rend l'environnement du projet tel quel : on confine, on ne déconfine pas.
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER_CONFINED, false, false), DEVCONTAINER_CONFINED)
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER, true, null), DEVCONTAINER_CONFINED)
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER, true, false), DEVCONTAINER)
+
+  // Un fil libre n'a rien à confiner : refusé plutôt que lancé libre.
+  await assert.rejects(
+    createConversation(db, sessions, { ...input, projectId: null, autonomous: { confined: true } }),
+    EnvironmentUnavailableError,
+  )
+})
+
 test('projet : lire ses environnements, régler le sien, refuser ce qui ne se lance pas', async (t) => {
   const { db, dir } = await database(t)
   const app = Fastify()
@@ -174,7 +222,12 @@ test('projet : lire ses environnements, régler le sien, refuser ce qui ne se la
 
   const read = await app.inject({ method: 'GET', url: '/api/projects/project/environments' })
   assert.equal(read.statusCode, 200, read.body)
-  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), { default: HOST_ENVIRONMENT, choices: new Environments(db).choices('project'), suggested: null })
+  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), {
+    default: HOST_ENVIRONMENT,
+    choices: new Environments(db).choices('project'),
+    suggested: null,
+    autonomousConfined: false,
+  })
 
   const host = await app.inject({ method: 'PATCH', url: '/api/projects/project', payload: { environment: HOST_ENVIRONMENT } })
   assert.equal(host.statusCode, 200, host.body)

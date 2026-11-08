@@ -19,6 +19,11 @@ export interface LaunchInputs {
   skillRoots: string[]
   /** Dossiers hors du répertoire de travail que l'agent lit sans demander. */
   readableDirs: string[]
+  /**
+   * Un chemin de l'hôte tel que le CLI le voit : `/mnt/c/…` dans un dev container sous
+   * Windows natif (#152). Les dossiers ci-dessus sont des chemins de l'hôte.
+   */
+  inside: (path: string) => string
 }
 
 type McpEntry = NonNullable<Config['mcp']>[string]
@@ -47,7 +52,7 @@ function toMcpEntry(server: McpServer): McpEntry {
  * générale d'opencode (demander hors du répertoire de travail) reste celle du poste,
  * Solera n'ouvre que ce qu'il fournit lui-même.
  */
-function toPermission({ config, skillRoots, readableDirs }: LaunchInputs): PermissionConfig {
+function toPermission({ config, skillRoots, readableDirs, inside }: LaunchInputs): PermissionConfig {
   const { edit, bash, webfetch } = config.permissions
   const external = [...config.additionalDirectories, ...skillRoots, ...readableDirs]
 
@@ -56,7 +61,7 @@ function toPermission({ config, skillRoots, readableDirs }: LaunchInputs): Permi
     ...(bash ? { bash } : {}),
     ...(webfetch ? { webfetch } : {}),
     ...(external.length > 0
-      ? { external_directory: Object.fromEntries(external.map((dir) => [join(dir, '**'), 'allow' as const])) }
+      ? { external_directory: Object.fromEntries(external.map((dir) => [inside(join(dir, '**')), 'allow' as const])) }
       : {}),
   }
 }
@@ -69,7 +74,7 @@ export function toOpencodeConfig(inputs: LaunchInputs): Config {
     permission: toPermission(inputs),
     mcp: Object.fromEntries(inputs.mcpServers.map((server) => [server.name, toMcpEntry(server)])),
     ...(inputs.skillRoots.length > 0
-      ? { skills: { paths: inputs.skillRoots.map((root) => join(root, 'skills')) } }
+      ? { skills: { paths: inputs.skillRoots.map((root) => inputs.inside(join(root, 'skills'))) } }
       : {}),
   }
 }

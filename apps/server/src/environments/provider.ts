@@ -46,6 +46,12 @@ export interface EnvironmentProvider {
    * Solera, vu d'un conteneur, est sur l'hôte et non sur sa propre boucle locale.
    */
   urlOfHost(url: string): string
+  /**
+   * L'inverse : un serveur que le CLI ouvre sur la boucle locale de l'environnement
+   * (`opencode serve`), tel que l'hôte le joint, jusqu'à `close`. Absent : l'hôte le
+   * joint à la même adresse.
+   */
+  urlFromHost?(url: string): Promise<{ url: string; close(): void }>
   /** Copie un fichier ou un dossier de l'hôte dans l'environnement. */
   copyIn(hostPath: string, insidePath: string): Promise<void>
   /** Copie un fichier ou un dossier de l'environnement vers l'hôte. */

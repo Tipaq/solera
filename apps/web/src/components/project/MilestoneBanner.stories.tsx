@@ -13,7 +13,7 @@ const after = (...numbers: number[]) => numbers.map((number) => ({ number, title
 /** Le jalon #75 de la planche C1 : dix cartes, deux sessions au travail sur trois. */
 const RUN: MilestoneRunDto = {
   id: 'run', cardId: 'card-75', cardNumber: 75, cardTitle: 'Orchestrer le travail par cartes',
-  state: 'running', concurrency: 3, agent: 'claude', model: 'claude-opus-5-5', branch: 'jalon/orchestrer', busy: 2,
+  state: 'running', concurrency: 3, confined: null, agent: 'claude', model: 'claude-opus-5-5', branch: 'jalon/orchestrer', busy: 2,
   createdAt: Date.now() - 50 * 60_000, endedAt: null,
   cards: [
     row(65, 'Trier et porter Sillage', 0, { status: 'blocked', blockReason: 'awaiting_input', conversationId: 'c65' }),

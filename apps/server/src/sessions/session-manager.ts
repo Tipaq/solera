@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
@@ -32,6 +31,7 @@ import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import type { CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
+import { claudeTranscripts, containerClaudeHome } from '../agents/claude/transcript-home.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
 import { soleraUrlForAgents } from '../instance/agent-url.js'
@@ -89,7 +89,7 @@ import type { EnvironmentProvider } from '../environments/provider.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
-import { containerHomes, Devcontainers } from '../environments/devcontainer/containers.js'
+import { Devcontainers } from '../environments/devcontainer/containers.js'
 import { mountsDrives } from '../environments/devcontainer/paths.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
@@ -654,7 +654,13 @@ export class SessionManager {
     try {
       await this.openEnvironment(conversation, cli.environment)
       return await adapter.fork(
-        { agentSessionId: conversation.agentSessionId, cwd, accountEnv, cli },
+        {
+          agentSessionId: conversation.agentSessionId,
+          cwd,
+          accountEnv: accountEnvInside(accountEnv, cli.environment),
+          cli,
+          transcripts: claudeTranscripts(this.config.paths, conversation),
+        },
         adapter.forkCut(this.log, conversationId, throughSeq),
       )
     } finally {
@@ -1191,6 +1197,7 @@ export class SessionManager {
       environment: launcher.environment,
       attachmentsRoot: this.config.paths.attachments,
       prototypesDir,
+      transcripts: claudeTranscripts(this.config.paths, conversation),
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(projectId, conversationId),
         // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
@@ -1198,7 +1205,11 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...accountEnv,
+        // Confinée, elle tourne sans demandes d'autorisation (#146) : Claude Code refuse
+        // `bypassPermissions` à root, l'utilisateur de bien des dev containers, sauf à
+        // se savoir dans un bac à sable.
+        ...(conversation.environmentConfined && conversation.agent === 'claude' ? { IS_SANDBOX: '1' } : {}),
+        ...accountEnvInside(accountEnv, launcher.environment),
         // Confinée, la session a son propre conteneur : la portée lui donne l'identité git
         // et ses transcripts, rien de partagé avec les autres.
         ...(sameEnvironment(launcher.environment.environment, DEVCONTAINER_ENVIRONMENT)
@@ -1614,7 +1625,7 @@ export class SessionManager {
   private containerEnv(conversation: ConversationRow, cwd: string, environment: EnvironmentProvider): Record<string, string> {
     const env: Record<string, string> = {}
     if (conversation.agent === 'claude') {
-      const home = join(containerHomes(this.config.paths), conversation.userId, 'claude')
+      const home = containerClaudeHome(this.config.paths, conversation.userId)
       mkdirSync(home, { recursive: true })
       env.CLAUDE_CONFIG_DIR = environment.pathInside(home)
     }
@@ -1811,7 +1822,9 @@ export class SessionManager {
       : undefined
     if (conversation.agent === 'claude' && conversation.agentSessionId && tree) {
       const root = this.resolveCwd({ ...conversation, worktreeId: null })
-      await copyTranscript(tree.path, root, conversation.agentSessionId).catch(() => false)
+      await copyTranscript(tree.path, root, conversation.agentSessionId, claudeTranscripts(this.config.paths, conversation)).catch(
+        () => false,
+      )
     }
 
     const patch: Partial<ConversationRow> = {
@@ -2514,6 +2527,19 @@ function accountRequired(agent: 'codex' | 'grok'): HttpError {
     'agent_account_required',
     'No {agent} account is connected: connect one in Settings › Agents to start this conversation.',
     { agent: agent === 'codex' ? 'Codex' : 'Grok' },
+  )
+}
+
+/**
+ * L'environnement du compte tel que le CLI le reçoit : `CODEX_HOME` et `GROK_HOME` sont
+ * des dossiers de l'hôte, qu'il lit où il tourne (`/mnt/c/…` dans un dev container sous
+ * Windows natif, #152).
+ */
+function accountEnvInside(accountEnv: Record<string, string>, environment: EnvironmentProvider): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(accountEnv).map(([name, value]) =>
+      name === 'CODEX_HOME' || name === 'GROK_HOME' ? [name, environment.pathInside(value)] : [name, value],
+    ),
   )
 }
 

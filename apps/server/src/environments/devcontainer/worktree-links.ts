@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { lockWorktreeForSolera } from '../../git.js'
 import { hostPathOf } from './paths.js'
 
 const run = promisify(execFile)
@@ -22,6 +23,12 @@ const run = promisify(execFile)
  * se trompe que sur le lien retour, qu'il croit périmé (`worktree list` le dit
  * « prunable »). Ce lien retour relatif, git ne le lit côté hôte qu'à partir de 2.48 :
  * en deçà, on le laisse absolu.
+ *
+ * Dans le conteneur, le lien retour est donc toujours suspect : relatif pour un git
+ * ancien, en `C:/…` (où il ne mène nulle part) pour tout git. Le worktree y paraît périmé,
+ * et un `git worktree prune` ou un `gc` y détacherait son dossier d'administration.
+ * Chaque worktree traité est donc verrouillé (`lockWorktreeForSolera`) : tout git
+ * respecte le verrou, et `removeWorktree` le lève avant de retirer le worktree.
  */
 
 /**
@@ -51,6 +58,7 @@ export async function relativizeWorktreeLinks(repo: string): Promise<void> {
     if (backLinks && isAbsolute(backLink)) {
       await overwrite(join(adminDir, 'gitdir'), `${slashes(relative(adminDir, gitFile))}\n`)
     }
+    await lockWorktreeForSolera(adminDir)
   }
 }
 

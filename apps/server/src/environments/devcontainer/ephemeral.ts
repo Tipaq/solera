@@ -6,6 +6,7 @@ import { removeEmptyFile } from '../confined/confined.js'
 import { isWithin } from '../confined/paths.js'
 import { confinementPlan, type ConfinementPlan, type ConfinementScope } from '../confined/plan.js'
 import type { EnvironmentProvider, ExecRequest, ExecResult, PtyRequest, SpawnRequest } from '../provider.js'
+import { ContainerRefusal } from './refusal.js'
 import { DevcontainerEnvironment, type RunningContainer } from './environment.js'
 import { containerPathOf, hostPathOf } from './paths.js'
 
@@ -102,6 +103,10 @@ export class EphemeralContainer implements EnvironmentProvider {
     return this.ready().urlOfHost(url)
   }
 
+  urlFromHost(url: string): Promise<{ url: string; close(): void }> {
+    return this.ready().urlFromHost(url)
+  }
+
   copyIn(hostPath: string, insidePath: string): Promise<void> {
     return this.ready().copyIn(hostPath, insidePath)
   }
@@ -189,7 +194,9 @@ export function ephemeralMounts(
   const workspace = plan.writable.find((root) => isWithin(cwd, root)) ?? cwd
   const at = (path: string) => {
     const target = containerPathOf(path, platform)
-    if (target === null) throw new Error(`${path} is on a network share, which Solera cannot mount in a Linux container.`)
+    if (target === null) {
+      throw new ContainerRefusal('devcontainer_paths', `${path} is on a network share, which Solera cannot mount in a Linux container: move it to a local drive.`)
+    }
     return target
   }
   const mounts = [

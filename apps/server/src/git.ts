@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
-import { posix, resolve } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join, posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
 
@@ -213,12 +213,60 @@ export async function addWorktree(
   return { reusedBranch }
 }
 
+/**
+ * La raison du verrou que Solera pose sur un worktree dont il a réécrit les liens pour un
+ * dev container (#155) : elle le distingue de celui d'une personne.
+ */
+export const SOLERA_WORKTREE_LOCK = 'Solera: git links rewritten for a dev container, where git may take this worktree for stale'
+
+/**
+ * Verrouille un worktree pour Solera, s'il ne l'est pas déjà : le fichier `locked` de son
+ * dossier d'administration, qu'écrirait `git worktree lock`. Un verrou existant reste.
+ */
+export async function lockWorktreeForSolera(adminDir: string): Promise<void> {
+  try {
+    await writeFile(join(adminDir, 'locked'), `${SOLERA_WORKTREE_LOCK}\n`, { flag: 'wx' })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  }
+}
+
+/**
+ * Retire un worktree. Le verrou que Solera y a posé (`SOLERA_WORKTREE_LOCK`) est levé
+ * d'abord, et reposé si le retrait échoue ; celui qu'une personne a posé reste, et git
+ * refuse alors de le retirer.
+ */
 export async function removeWorktree(repo: string, path: string, force: boolean): Promise<void> {
   try {
-    await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    const ours = (await worktreeLock(repo, path)) === SOLERA_WORKTREE_LOCK
+    if (ours) await git(repo, ['worktree', 'unlock', path])
+    try {
+      await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
+    } catch (err) {
+      if (ours) await git(repo, ['worktree', 'lock', '--reason', SOLERA_WORKTREE_LOCK, path]).catch(() => undefined)
+      throw err
+    }
   } catch (err) {
     throw new GitError(gitMessage(err))
   }
+}
+
+/**
+ * La raison du verrou d'un worktree, lue depuis le dépôt : elle se lit encore quand le
+ * dossier du worktree a disparu. Null s'il n'est pas verrouillé.
+ */
+async function worktreeLock(repo: string, path: string): Promise<string | null> {
+  const raw = await git(repo, ['worktree', 'list', '--porcelain', '-z']).catch(() => '')
+  const same = (a: string, b: string) =>
+    process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b)
+  for (const block of raw.split('\0\0')) {
+    const fields = block.split('\0')
+    const tree = fields.find((field) => field.startsWith('worktree '))?.slice('worktree '.length)
+    if (!tree || !same(tree, path)) continue
+    const locked = fields.find((field) => field === 'locked' || field.startsWith('locked '))
+    return locked === undefined ? null : locked.slice('locked '.length)
+  }
+  return null
 }
 
 /**
