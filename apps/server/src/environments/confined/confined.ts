@@ -103,6 +103,10 @@ export class ConfinedEnvironment implements EnvironmentProvider {
     return hostPath
   }
 
+  pathOutside(insidePath: string): string {
+    return insidePath
+  }
+
   urlOfHost(url: string): string {
     return url
   }

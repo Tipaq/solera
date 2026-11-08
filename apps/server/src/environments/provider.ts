@@ -37,6 +37,11 @@ export interface EnvironmentProvider {
   /** Un dossier de l'hôte (le workspace, un worktree) tel que l'environnement le voit. */
   pathInside(hostPath: string): string
   /**
+   * L'inverse : un chemin que le CLI rend (un fichier édité, son dossier de travail),
+   * tel que l'hôte le lit. Rendu tel quel quand il n'a pas d'équivalent sur l'hôte.
+   */
+  pathOutside(insidePath: string): string
+  /**
    * Une adresse du serveur de Solera, telle que l'environnement la joint : le MCP de
    * Solera, vu d'un conteneur, est sur l'hôte et non sur sa propre boucle locale.
    */

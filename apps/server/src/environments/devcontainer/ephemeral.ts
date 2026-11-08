@@ -7,6 +7,7 @@ import { isWithin } from '../confined/paths.js'
 import { confinementPlan, type ConfinementPlan, type ConfinementScope } from '../confined/plan.js'
 import type { EnvironmentProvider, ExecRequest, ExecResult, PtyRequest, SpawnRequest } from '../provider.js'
 import { DevcontainerEnvironment, type RunningContainer } from './environment.js'
+import { containerPathOf, hostPathOf } from './paths.js'
 
 /** Ce qu'il faut pour créer le conteneur d'une session confinée. */
 export interface EphemeralSpec {
@@ -88,9 +89,13 @@ export class EphemeralContainer implements EnvironmentProvider {
     return this.inner?.resolveBinary(binary) ?? null
   }
 
-  /** Ses dossiers sont montés à leur chemin de l'hôte. */
+  /** Ses dossiers sont montés au chemin que `containerPathOf` leur donne (#151). */
   pathInside(hostPath: string): string {
-    return hostPath
+    return containerPathOf(hostPath) ?? hostPath
+  }
+
+  pathOutside(insidePath: string): string {
+    return hostPathOf(insidePath) ?? insidePath
   }
 
   urlOfHost(url: string): string {
@@ -171,25 +176,32 @@ export function bindMount(source: string, target: string, readonly = false): str
 }
 
 /**
- * Les montages du conteneur, chacun au même chemin que sur l'hôte. Le dossier de travail
- * devient le `workspaceMount` : la racine inscriptible qui le contient.
+ * Les montages du conteneur, chacun au chemin que `containerPathOf` lui donne : le même
+ * que sur l'hôte, `/mnt/c/…` sous Windows natif (#151). Le dossier de travail devient le
+ * `workspaceMount` : la racine inscriptible qui le contient.
  */
 export function ephemeralMounts(
   plan: ConfinementPlan,
   cwd: string,
   agents: { source: string; target: string },
+  platform: NodeJS.Platform = process.platform,
 ): { workspaceMount: string; mounts: string[]; sources: string[] } {
   const workspace = plan.writable.find((root) => isWithin(cwd, root)) ?? cwd
+  const at = (path: string) => {
+    const target = containerPathOf(path, platform)
+    if (target === null) throw new Error(`${path} is on a network share, which Solera cannot mount in a Linux container.`)
+    return target
+  }
   const mounts = [
-    ...plan.writable.filter((root) => root !== workspace).map((root) => bindMount(root, root)),
-    ...plan.readable.map((path) => bindMount(path, path, true)),
+    ...plan.writable.filter((root) => root !== workspace).map((root) => bindMount(root, at(root))),
+    ...plan.readable.map((path) => bindMount(path, at(path), true)),
     // Docker monte les plus profonds après leurs parents : ceux-ci passent en lecture
     // seule dans un dossier inscriptible.
-    ...plan.protected.map((path) => bindMount(path, path, true)),
+    ...plan.protected.map((path) => bindMount(path, at(path), true)),
     bindMount(agents.source, agents.target, true),
   ]
   return {
-    workspaceMount: bindMount(workspace, workspace),
+    workspaceMount: bindMount(workspace, at(workspace)),
     mounts,
     sources: [workspace, ...plan.writable, ...plan.readable, ...plan.protected, agents.source],
   }

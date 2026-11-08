@@ -3763,6 +3763,7 @@ export const en = {
   'devcontainer.ready': "Dev container started.",
   'error.devcontainer_host_unreachable': "The container cannot reach the Solera server. {detail}",
   'error.devcontainer_arch': "Unsupported dev container architecture. {detail}",
+  'error.devcontainer_paths': "These folders cannot be opened in the dev container. {detail}",
   'error.devcontainer_invalid': "This devcontainer.json cannot be read: {detail}",
   'project.devcontainer.title': "Dev container",
   'project.devcontainer.repository': "This project has its own dev container ({path}): Solera reads it and keeps no other.",
