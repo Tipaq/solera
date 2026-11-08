@@ -23,6 +23,7 @@ import {
   type StartedEphemeral,
 } from './ephemeral.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
+import { ContainerRefusal } from './refusal.js'
 import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { ManagedDevcontainers } from './managed.js'
 import { containerPathOf } from './paths.js'
@@ -37,26 +38,6 @@ export interface ContainerNeed {
   cwd: string
   /** Chaque ligne du journal de `devcontainer up`, pendant qu'il démarre. */
   onLog?: (line: string) => void
-}
-
-/** Pourquoi un conteneur ne peut pas servir : l'interface le traduit par son code. */
-export class ContainerRefusal extends Error {
-  constructor(
-    readonly code:
-      | 'devcontainer_missing'
-      | 'devcontainer_docker_missing'
-      | 'devcontainer_cli_missing'
-      | 'devcontainer_failed'
-      | 'devcontainer_foreign'
-      | 'devcontainer_host_unreachable'
-      | 'devcontainer_arch'
-      | 'devcontainer_unconfined'
-      | 'devcontainer_paths',
-    message: string,
-  ) {
-    super(message)
-    this.name = 'ContainerRefusal'
-  }
 }
 
 interface Project {

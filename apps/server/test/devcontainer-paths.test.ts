@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { DevcontainerEnvironment, shellArgs, type RunningContainer } from '../src/environments/devcontainer/environment.js'
 import { ephemeralMounts } from '../src/environments/devcontainer/ephemeral.js'
+import { ContainerRefusal } from '../src/environments/devcontainer/refusal.js'
 import { containerPathOf, hostPathOf } from '../src/environments/devcontainer/paths.js'
 import { hasAbsoluteGitLink, relativizeWorktreeLinks } from '../src/environments/devcontainer/worktree-links.js'
+import { removeWorktree, SOLERA_WORKTREE_LOCK } from '../src/git.js'
 
 async function tempDir(t: TestContext): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'solera-paths-'))
@@ -85,6 +88,58 @@ test("les liens d'un worktree deviennent relatifs, et git s'y retrouve toujours"
   assert.equal(git(tree, 'branch', '--show-current'), 'feat')
 })
 
+test("un worktree aux liens relatifs est verrouillé contre le prune d'un git ancien, et se retire quand même", async (t) => {
+  const root = await tempDir(t)
+  const repo = join(root, 'repo')
+  git(root, 'init', '-q', repo)
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(root, 'worktrees', 'feat')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat', tree)
+
+  await relativizeWorktreeLinks(repo)
+  const admin = join(repo, '.git', 'worktrees', 'feat')
+  assert.equal((await readFile(join(admin, 'locked'), 'utf8')).trim(), SOLERA_WORKTREE_LOCK)
+
+  // Ce que verrait un git < 2.48 : un lien retour qui ne mène nulle part. Le verrou le garde.
+  const backLink = await readFile(join(admin, 'gitdir'), 'utf8')
+  await writeFile(join(admin, 'gitdir'), '/nowhere/.git\n')
+  git(repo, 'worktree', 'prune')
+  assert.ok(existsSync(admin), 'le prune ne détache pas un worktree verrouillé')
+  await writeFile(join(admin, 'gitdir'), backLink)
+
+  await removeWorktree(repo, tree, false)
+  assert.ok(!existsSync(tree) && !existsSync(admin))
+})
+
+test('un worktree verrouillé par Solera dont le dossier a disparu se retire encore', async (t) => {
+  const root = await tempDir(t)
+  const repo = join(root, 'repo')
+  git(root, 'init', '-q', repo)
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(root, 'worktrees', 'feat')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat', tree)
+  await relativizeWorktreeLinks(repo)
+  await rm(tree, { recursive: true, force: true })
+
+  await removeWorktree(repo, tree, true)
+  assert.ok(!existsSync(join(repo, '.git', 'worktrees', 'feat')))
+  assert.doesNotMatch(git(repo, 'worktree', 'list'), /feat/)
+})
+
+test('le verrou posé par une personne reste', async (t) => {
+  const root = await tempDir(t)
+  const repo = join(root, 'repo')
+  git(root, 'init', '-q', repo)
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(root, 'worktrees', 'feat')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat', tree)
+  git(repo, 'worktree', 'lock', '--reason', 'sur une clé USB', tree)
+
+  await relativizeWorktreeLinks(repo)
+  assert.equal((await readFile(join(repo, '.git', 'worktrees', 'feat', 'locked'), 'utf8')).trim(), 'sur une clé USB')
+  await assert.rejects(removeWorktree(repo, tree, true), /locked/)
+})
+
 test('le PowerShell d’un terminal Windows devient le shell du conteneur, avec des arguments POSIX', () => {
   const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe'
   assert.deepEqual(shellArgs(pwsh, ['-NoLogo']), [])
@@ -98,4 +153,12 @@ test("le conteneur d'une session confinée monte ses dossiers à leur chemin du 
   assert.equal(mounts.workspaceMount, 'type=bind,source=C:\\data\\worktrees\\feat,target=/mnt/c/data/worktrees/feat')
   assert.ok(mounts.mounts.includes('type=bind,source=C:\\data\\memory,target=/mnt/c/data/memory,readonly'))
   assert.ok(mounts.sources.includes('C:\\data\\memory'), "la liste blanche reste en chemins de l'hôte")
+})
+
+test("un dossier sur un partage réseau est refusé par un code que l'interface traduit", () => {
+  const plan = { writable: ['C:\\data\\worktrees\\feat'], readable: ['\\\\server\\share\\memory'], protected: [], homeLinks: [], env: {}, placeholders: [] }
+  assert.throws(
+    () => ephemeralMounts(plan, 'C:\\data\\worktrees\\feat', { source: 'C:\\data\\agents', target: '/opt/solera/agents' }, 'win32'),
+    (err: unknown) => err instanceof ContainerRefusal && err.code === 'devcontainer_paths',
+  )
 })
