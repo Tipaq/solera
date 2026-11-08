@@ -1060,13 +1060,19 @@ export class SessionManager {
 
   /**
    * Les pièces jointes telles que l'agent pourra les lire : confiné, il ne voit pas leur
-   * dossier, et en reçoit une copie dans son tmp privé.
+   * dossier, et en reçoit une copie dans son tmp privé. Dans un dev container, le chemin
+   * d'un fichier nommé dans le message est celui du conteneur (#151) ; une image en
+   * ligne garde le sien, le runner la lit sur l'hôte.
    */
   private visibleAttachments(conversationId: string, attachments: OutgoingAttachment[]): Promise<OutgoingAttachment[]> {
     const environment = this.runners.get(conversationId)?.environment
-    return environment instanceof ConfinedEnvironment && attachments.length > 0
-      ? environment.shareAttachments(attachments)
-      : Promise.resolve(attachments)
+    if (!environment || attachments.length === 0) return Promise.resolve(attachments)
+    if (environment instanceof ConfinedEnvironment) return environment.shareAttachments(attachments)
+    return Promise.resolve(
+      attachments.map((attachment) =>
+        attachment.inlineImage ? attachment : { ...attachment, path: environment.pathInside(attachment.path) },
+      ),
+    )
   }
 
   /**
@@ -1180,7 +1186,9 @@ export class SessionManager {
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
         ...accountEnv,
-        ...(launcher.environment.environment.where === 'devcontainer' ? this.containerEnv(conversation, cwd) : {}),
+        ...(launcher.environment.environment.where === 'devcontainer'
+          ? this.containerEnv(conversation, cwd, launcher.environment)
+          : {}),
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
@@ -1253,7 +1261,7 @@ export class SessionManager {
           // `memory !== null`, une mémoire refusée rentrerait quand même par la fenêtre
           // chez les deux CLI qui n'en ont pas de native, en lecture et d'un coup.
           conversation.agent !== 'claude' && memory !== null
-            ? memoryAppendixForCodex(memory, soleraMcp, projectId === null ? 'account' : 'project')
+            ? memoryAppendixForCodex(launcher.environment.pathInside(memory), soleraMcp, projectId === null ? 'account' : 'project')
             : null,
           // Avant l'aperçu du projet, et pour un fil libre aussi : il se nomme pareil.
           sessionTitleReminder(this.db, conversationId, soleraMcp),
@@ -1263,7 +1271,8 @@ export class SessionManager {
                 conversationId,
                 soleraMcp,
                 cardFiling: soleraMcp && this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
-                prototypesDir,
+                // Où l'agent écrit ses stories, tel qu'il le voit (#151).
+                prototypesDir: prototypesDir && launcher.environment.pathInside(prototypesDir),
               })
             : null,
         ].filter((part) => part !== null)
@@ -1550,11 +1559,12 @@ export class SessionManager {
    * vient du `~/.gitconfig` de l'hôte. Lue dans le dépôt, pas imposée à l'hôte : elle y
    * écraserait l'identité locale d'un autre dépôt.
    */
-  private containerEnv(conversation: ConversationRow, cwd: string): Record<string, string> {
+  private containerEnv(conversation: ConversationRow, cwd: string, environment: EnvironmentProvider): Record<string, string> {
     const env: Record<string, string> = {}
     if (conversation.agent === 'claude') {
-      env.CLAUDE_CONFIG_DIR = join(containerHomes(this.config.paths), conversation.userId, 'claude')
-      mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true })
+      const home = join(containerHomes(this.config.paths), conversation.userId, 'claude')
+      mkdirSync(home, { recursive: true })
+      env.CLAUDE_CONFIG_DIR = environment.pathInside(home)
     }
     const name = gitConfigValue(cwd, 'user.name')
     const email = gitConfigValue(cwd, 'user.email')

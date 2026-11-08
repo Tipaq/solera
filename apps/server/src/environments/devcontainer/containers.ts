@@ -10,6 +10,8 @@ import { BridgeListeners } from './bridge.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
 import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { ManagedDevcontainers } from './managed.js'
+import { containerPathOf } from './paths.js'
+import { hasAbsoluteGitLink, relativizeWorktreeLinks } from './worktree-links.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
 /** Ce qu'un lancement attend du conteneur. */
@@ -32,7 +34,8 @@ export class ContainerRefusal extends Error {
       | 'devcontainer_failed'
       | 'devcontainer_foreign'
       | 'devcontainer_host_unreachable'
-      | 'devcontainer_arch',
+      | 'devcontainer_arch'
+      | 'devcontainer_paths',
     message: string,
   ) {
     super(message)
@@ -56,7 +59,9 @@ interface Project {
  * Les dossiers que l'agent doit voir sont montés **au même chemin** que sur l'hôte : un
  * worktree garde ses liens git (`.git`, `gitdir` dans le dépôt principal), et rien
  * n'est à traduire dans ce que Solera passe au CLI (homes de compte, mémoire, pièces
- * jointes). Ce n'est pas tenable sous Windows natif, où les chemins diffèrent.
+ * jointes). Sauf sous Windows natif, où `C:\…` devient `/mnt/c/…` (`containerPathOf`) :
+ * ce que Solera passe au CLI y passe par `pathInside`, et les liens des worktrees y sont
+ * relatifs (#151).
  */
 export class Devcontainers {
   private readonly running = new Map<string, RunningContainer>()
@@ -145,6 +150,7 @@ export class Devcontainers {
         )
       }
     }
+    if (process.platform === 'win32' && container.solerasMounts) await this.relativeLinks(project, need.cwd)
     if (need.agent) {
       const target = await this.target(container)
       try {
@@ -158,6 +164,21 @@ export class Devcontainers {
       }
     }
     return this.provider(project.id)
+  }
+
+  /**
+   * Sous Windows natif, les liens git des worktrees du projet, rendus relatifs : écrits
+   * en `C:/…`, ils ne mènent nulle part dans le conteneur (#151). Un worktree sur un
+   * autre lecteur que le dépôt garde son lien absolu, et ne s'ouvre pas dans le conteneur.
+   */
+  private async relativeLinks(project: Project, cwd: string): Promise<void> {
+    await relativizeWorktreeLinks(project.workspacePath)
+    if (await hasAbsoluteGitLink(cwd)) {
+      throw new ContainerRefusal(
+        'devcontainer_paths',
+        `${cwd} is a git worktree on another drive than its repository ${project.workspacePath}: its link to the repository cannot be made relative, and the container would not see it as a repository. Keep the repository and Solera's data folder on the same drive.`,
+      )
+    }
   }
 
   /**
@@ -350,8 +371,9 @@ export class Devcontainers {
   }
 
   /**
-   * Ce que Solera monte dans un conteneur qu'il crée, chacun au même chemin que sur
-   * l'hôte. Non confiné : l'agent n'y voit rien qu'une session sur l'hôte ne lise déjà.
+   * Ce que Solera monte dans un conteneur qu'il crée, chacun au chemin que
+   * `containerPathOf` lui donne : le même que sur l'hôte, `/mnt/c/…` sous Windows natif.
+   * Non confiné : l'agent n'y voit rien qu'une session sur l'hôte ne lise déjà.
    */
   private async mounts(project: Project, workspaceFolder: string | null): Promise<Mount[]> {
     const same = [
@@ -366,10 +388,18 @@ export class Devcontainers {
       containerHomes(this.paths),
     ]
     for (const dir of [...same, this.agents.root]) await mkdir(dir, { recursive: true })
-    return [
-      { source: this.agents.root, target: AGENTS_MOUNT },
-      ...same.filter((dir) => dir !== workspaceFolder).map((dir) => ({ source: dir, target: dir })),
-    ]
+    const mounts: Mount[] = [{ source: this.agents.root, target: AGENTS_MOUNT }]
+    for (const dir of same) {
+      const target = containerPathOf(dir)
+      if (target === null) {
+        throw new ContainerRefusal(
+          'devcontainer_paths',
+          `${dir} is on a network share, which Solera cannot mount in a Linux container: move it to a local drive.`,
+        )
+      }
+      if (target !== workspaceFolder) mounts.push({ source: dir, target })
+    }
+    return mounts
   }
 
   /** Le shell de l'utilisateur et l'environnement que `devcontainer exec` lui donnerait. */

@@ -1,9 +1,10 @@
 import { execFile, spawn as spawnProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { posix } from 'node:path'
+import { posix, win32 } from 'node:path'
 import { spawn as spawnPty, type IPty } from 'node-pty'
 import type { ExecutionEnvironment } from '@solera/protocol'
 import type { EnvironmentProvider, ExecRequest, ExecResult, PtyRequest, SpawnRequest } from '../provider.js'
+import { containerPathOf, hostPathOf } from './paths.js'
 
 /** Le dev container d'un projet, une fois démarré : ce qu'il faut pour y lancer un processus. */
 
@@ -42,6 +43,8 @@ export interface RunningContainer {
  */
 const HOST_ONLY = new Set([
   'PATH',
+  // Le PATH de Windows, que Solera complète pour un terminal : Linux distingue la casse.
+  'Path',
   'HOME',
   'USER',
   'LOGNAME',
@@ -80,6 +83,8 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
     private readonly container: RunningContainer,
     private readonly docker: string,
     private readonly host: NodeJS.ProcessEnv = process.env,
+    /** Le système de l'hôte : sous Windows, ses chemins se traduisent (#151). */
+    private readonly platform: NodeJS.Platform = process.platform,
   ) {}
 
   get containerId(): string {
@@ -140,15 +145,26 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
   }
 
   /**
-   * Avec les montages de Solera, les dossiers de travail sont au même chemin que sur
-   * l'hôte : les liens d'un worktree (`.git`, `gitdir`) restent valides. Sans eux, seul
-   * le dossier du projet existe, là où le `devcontainer.json` le monte.
+   * Avec les montages de Solera, les dossiers de travail sont au chemin que
+   * `containerPathOf` leur donne : le même que sur l'hôte, sauf sous Windows natif
+   * (`/mnt/c/…`). Sans eux, seul le dossier du projet existe, là où le
+   * `devcontainer.json` le monte.
    */
   pathInside(hostPath: string): string {
-    if (this.container.solerasMounts) return hostPath
-    const relative = posix.relative(this.container.workspace, hostPath)
-    if (relative.startsWith('..') || posix.isAbsolute(relative)) return hostPath
-    return posix.join(this.container.remoteWorkspaceFolder, relative)
+    if (this.container.solerasMounts) return containerPathOf(hostPath, this.platform) ?? hostPath
+    const path = this.platform === 'win32' ? win32 : posix
+    const relative = path.relative(this.container.workspace, hostPath)
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return hostPath
+    return posix.join(this.container.remoteWorkspaceFolder, ...relative.split(path.sep))
+  }
+
+  pathOutside(insidePath: string): string {
+    if (!posix.isAbsolute(insidePath)) return insidePath
+    if (this.container.solerasMounts) return hostPathOf(insidePath, this.platform) ?? insidePath
+    const relative = posix.relative(this.container.remoteWorkspaceFolder, insidePath)
+    if (relative.startsWith('..') || posix.isAbsolute(relative)) return insidePath
+    const path = this.platform === 'win32' ? win32 : posix
+    return path.join(this.container.workspace, ...relative.split('/'))
   }
 
   /** La boucle locale de l'hôte devient l'hôte vu du conteneur. */
@@ -207,9 +223,10 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
   /** Une commande de l'hôte, dite dans les termes du conteneur. */
   private commandLine(request: SpawnRequest, tty: boolean): string[] {
     const command = this.command(request.command)
+    const args = command === request.command ? request.args : shellArgs(request.command, request.args)
     // Un terminal vide : le shell de connexion, qui charge le profil du conteneur.
-    if (command === this.container.loginShell && request.args.length === 0 && tty) return [command, '-l']
-    return [command, ...request.args]
+    if (command === this.container.loginShell && args.length === 0 && tty) return [command, '-l']
+    return [command, ...args]
   }
 
   private command(command: string): string {
@@ -260,6 +277,17 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
       )
     })
   }
+}
+
+/**
+ * Les arguments d'un shell de l'hôte, pour le shell POSIX du conteneur qui le remplace.
+ * Seuls ceux de PowerShell, le shell d'un terminal sous Windows natif, sont à traduire :
+ * `-NoLogo` n'a pas d'équivalent, `-Command` devient `-lc` (#151).
+ */
+export function shellArgs(hostShell: string, args: string[]): string[] {
+  const name = binaryName(hostShell).toLowerCase()
+  if (name !== 'pwsh' && name !== 'powershell') return args
+  return args.filter((arg) => arg.toLowerCase() !== '-nologo').map((arg) => (arg.toLowerCase() === '-command' ? '-lc' : arg))
 }
 
 /** `claude`, `/usr/bin/zsh`, `C:\…\codex.cmd` → `claude`, `zsh`, `codex`. */

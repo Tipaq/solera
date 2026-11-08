@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
+import { relativizeWorktreeLinks } from './environments/devcontainer/worktree-links.js'
 
 const run = promisify(execFile)
 
@@ -210,6 +211,9 @@ export async function addWorktree(
     }
     throw new GitError(message)
   }
+  // Sous Windows natif, un lien absolu `C:/…` ne mène nulle part dans un dev container :
+  // relatif, le worktree s'y ouvre dès sa création, sans attendre le prochain lancement (#151).
+  if (process.platform === 'win32') await relativizeWorktreeLinks(repo).catch(() => undefined)
   return { reusedBranch }
 }
 

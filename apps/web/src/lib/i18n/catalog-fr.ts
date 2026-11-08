@@ -3752,6 +3752,7 @@ export const fr: Catalog = {
   'devcontainer.ready': "Dev container démarré.",
   'error.devcontainer_host_unreachable': "Le conteneur ne peut pas joindre le serveur de Solera. {detail}",
   'error.devcontainer_arch': "Architecture du dev container non prise en charge. {detail}",
+  'error.devcontainer_paths': "Ces dossiers ne se montent pas dans le dev container. {detail}",
   'error.devcontainer_invalid': "Ce devcontainer.json ne se lit pas : {detail}",
   'project.devcontainer.title': "Dev container",
   'project.devcontainer.repository': "Ce projet a son propre dev container ({path}) : Solera le lit et n'en garde pas d'autre.",

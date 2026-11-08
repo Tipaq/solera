@@ -236,7 +236,12 @@ export class ClaudeRunner implements AgentRunner {
     // défaut de Claude Code et n'y ajoute que cet appendice.
     const overview = this.ctx.projectOverview(config)
     this.skillRoots = this.ctx.skillRoots(config)
-    const library = skillLibraryLaunchOptions(this.skillRoots)
+    // Tout chemin passé au CLI l'est tel que son environnement le voit : dans un dev
+    // container sous Windows natif, `C:\…` y est `/mnt/c/…` (#151). Le `cwd` est traduit
+    // par l'environnement lui-même.
+    const inside = (path: string) => this.ctx.environment.pathInside(path)
+    const library = skillLibraryLaunchOptions(this.skillRoots.map(inside))
+    const memoryDir = this.ctx.memoryDir(config)
     // Le SDK compose la commande, l'environnement de la session la lance.
     const spawner = claudeSpawner(this.ctx.environment, (data) => {
       // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
@@ -265,11 +270,11 @@ export class ClaudeRunner implements AgentRunner {
         // Les worktrees créés par la session hors de son cwd : lus au lancement, un arbre
         // créé en cours de route ne compte qu'à la relance du CLI.
         additionalDirectories: [
-          ...config.additionalDirectories,
-          this.ctx.attachmentsRoot,
-          ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
+          ...config.additionalDirectories.map(inside),
+          inside(this.ctx.attachmentsRoot),
+          ...(this.ctx.prototypesDir ? [inside(this.ctx.prototypesDir)] : []),
           ...library.additionalDirectories,
-          ...(this.ctx.workTrees?.() ?? []),
+          ...(this.ctx.workTrees?.() ?? []).map(inside),
         ],
         plugins: library.plugins,
         // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
@@ -287,8 +292,8 @@ export class ClaudeRunner implements AgentRunner {
         settings: flagSettings(
           config,
           library.deny,
-          claudeMdExcludes(this.ctx.maskedInstructionRoots()),
-          this.ctx.memoryDir(config),
+          claudeMdExcludes(this.ctx.maskedInstructionRoots().map(inside)),
+          memoryDir === null ? null : inside(memoryDir),
         ),
         // Plafonds pour une session que personne ne regarde. Options de lancement
         // seulement : les changer relance le runner, voir `applyConfig`.
@@ -378,8 +383,10 @@ export class ClaudeRunner implements AgentRunner {
    * résoudre après que l'outil a écrit, donc répondre sur un disque déjà modifié.
    */
   private trackEdit(toolCallId: string, name: string, input: unknown): void {
-    const path = editedPath(name, input)
-    if (path === null) return
+    const edited = editedPath(name, input)
+    if (edited === null) return
+    // Le CLI nomme le fichier tel qu'il le voit ; Solera le lit sur l'hôte.
+    const path = this.ctx.environment.pathOutside(edited)
 
     this.pendingEdits.set(toolCallId, { path, existed: fileExists(path) })
   }
