@@ -9,7 +9,7 @@ import Fastify from 'fastify'
 import { authSessions, openDatabase, runMigrations, users } from '@solera/db'
 import { BridgeListeners } from '../src/environments/devcontainer/bridge.js'
 import { registerErrorHandler } from '../src/http/errors.js'
-import { registerLocalOriginGuard } from '../src/http/local-origin.js'
+import { localHosts, registerLocalOriginGuard } from '../src/http/local-origin.js'
 import { openDesktopSession } from '../src/instance/desktop.js'
 import { instanceCapabilities } from '../src/instance/profile.js'
 
@@ -68,6 +68,12 @@ test('un dev container joint le MCP par la passerelle Docker ou par host.docker.
   // Docker Desktop relaie host.docker.internal sur la boucle locale.
   assert.equal(await raw(port, '/api/health', { host: `host.docker.internal:${port}` }), 200)
   assert.equal(await raw(port, '/api/health', { host: `host.docker.internal:${port}` }, '127.0.0.2'), 403)
+})
+
+test("une passerelle IPv6 s'accepte entre crochets, la boucle locale IPv6 non", () => {
+  assert.ok(localHosts('fd00::1', 7517).includes('[fd00::1]:7517'))
+  assert.ok(localHosts('::ffff:172.17.0.1', 7517).includes('172.17.0.1:7517'))
+  assert.deepEqual(localHosts('::1', 7517), ['127.0.0.1:7517', 'localhost:7517'])
 })
 
 test('le relais des Storybook accepte ses pages opaques, pas un autre Host', async (t) => {

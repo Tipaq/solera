@@ -212,7 +212,7 @@ export class DevcontainerTools {
       return true
     } catch (err) {
       const { code, killed } = err as { code?: unknown; killed?: boolean }
-      if (killed || code === 1) return false
+      if (killed || code === 4) return false
       return null
     }
   }
@@ -307,20 +307,28 @@ export function hostAddressOf(inspected: string): string | null {
 }
 
 /**
- * La sonde de `reaches`, en sh : 0 joint, 1 pas joint, 3 aucun outil pour le dire.
- * Toute réponse HTTP compte, même une erreur : c'est la connexion qu'on éprouve.
+ * La sonde de `reaches`, en sh : 0 joint, 4 pas joint, 3 aucun outil pour le dire (le
+ * CLI docker garde 1 et 125-127 pour ses propres erreurs). Chaque outil présent a sa
+ * chance, un bash sans `/dev/tcp` ne suffisant pas à conclure. Toute réponse HTTP
+ * compte, même une erreur : c'est la connexion qu'on éprouve.
  */
 const REACH_PROBE = `
-host=$1 port=$2 url=$3
+host=$1 port=$2 url=$3 tried=
 limit() { if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi; }
 if command -v bash >/dev/null 2>&1; then
-  limit bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$host" "$port" 2>/dev/null && exit 0 || exit 1
-elif command -v curl >/dev/null 2>&1; then
-  curl -sk -o /dev/null --max-time 5 "$url"
-  case $? in 6|7|28) exit 1;; *) exit 0;; esac
-elif command -v wget >/dev/null 2>&1; then
-  limit wget -S -O /dev/null -T 5 "$url" 2>&1 | grep -q 'HTTP/' && exit 0 || exit 1
+  tried=1
+  limit bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$host" "$port" 2>/dev/null && exit 0
 fi
+if command -v curl >/dev/null 2>&1; then
+  tried=1
+  curl -sk -o /dev/null --max-time 5 "$url"
+  case $? in 6|7|28) ;; *) exit 0;; esac
+fi
+if command -v wget >/dev/null 2>&1; then
+  tried=1
+  limit wget -S -O /dev/null -T 5 "$url" 2>&1 | grep -q 'HTTP/' && exit 0
+fi
+[ -n "$tried" ] && exit 4
 exit 3
 `
 
