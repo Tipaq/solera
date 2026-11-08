@@ -132,9 +132,9 @@ export const SidePanel = memo(function SidePanel({
   const projectEnvironment = useProjectEnvironments(hasWeb && !environment ? (projectId ?? undefined) : undefined).data?.default
   // Une session confinée a son propre conteneur (#145), dont les ports ne sont pas ceux du projet.
   const sessionEnvironment = environment ?? projectEnvironment
-  // Mémorisé : la vue *Web* est mémoïsée, un objet neuf à chaque rendu la referait.
   const inContainer = sessionEnvironment?.where === 'devcontainer'
   const confined = sessionEnvironment?.confined ?? false
+  // Mémorisé : la vue *Web* est mémoïsée, un objet neuf à chaque rendu la referait.
   const containerPorts = useMemo<PortsSource | null>(() => {
     if (!inContainer) return null
     if (confined) return conversationId ? { conversationId } : null

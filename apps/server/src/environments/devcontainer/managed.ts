@@ -71,7 +71,6 @@ export function assertDevcontainerJson(content: string): void {
   }
 }
 
-/** Retire les commentaires et les virgules finales d'un JSONC, sans toucher aux chaînes. */
 /** Le `devcontainer.json` passe-t-il par docker-compose ? Faux s'il manque ou ne se lit pas. */
 export function usesCompose(content: string | null): boolean {
   if (content === null) return false
@@ -83,6 +82,7 @@ export function usesCompose(content: string | null): boolean {
   }
 }
 
+/** Retire les commentaires et les virgules finales d'un JSONC, sans toucher aux chaînes. */
 export function stripJsonc(text: string): string {
   let out = ''
   let i = 0

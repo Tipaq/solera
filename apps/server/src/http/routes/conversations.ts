@@ -761,11 +761,6 @@ export function registerConversationRoutes(
   })
 
   /**
-   * Une page du fil projeté (`thread-projection.ts`) : les tours récents, ou ceux
-   * d'avant `before`. `building` tant que la projection rattrape le journal ; le
-   * client réessaie.
-   */
-  /**
    * Les ports du conteneur à elle d'une session confinée dans un dev container (#145),
    * et où l'hôte sert chacun : l'aperçu web de cette session, et d'elle seule, les
    * traduit. Vide tant que son conteneur ne tourne pas.
@@ -778,6 +773,11 @@ export function registerConversationRoutes(
     return environment instanceof EphemeralContainer ? environment.forwardedPorts() : []
   })
 
+  /**
+   * Une page du fil projeté (`thread-projection.ts`) : les tours récents, ou ceux
+   * d'avant `before`. `building` tant que la projection rattrape le journal ; le
+   * client réessaie.
+   */
   app.get('/api/conversations/:id/thread', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

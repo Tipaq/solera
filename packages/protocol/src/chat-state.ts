@@ -259,7 +259,7 @@ export interface NoticeItem {
     | { key: 'activity.configRestartDeferred' }
     | { key: 'compaction'; pre: number | null; post: number | null }
     | { key: 'devcontainer.starting' | 'devcontainer.confined.starting'; line: string }
-    | { key: 'devcontainer.ready' }
+    | { key: 'devcontainer.ready' | 'devcontainer.confined.ready' }
   level?: 'info' | 'warning'
   details?: unknown
 }
@@ -1451,6 +1451,8 @@ export function applyEvent(
             ? { key: 'devcontainer.confined.starting', line: event.message }
           : event.code === 'devcontainer_ready'
             ? { key: 'devcontainer.ready' }
+          : event.code === 'devcontainer_confined_ready'
+            ? { key: 'devcontainer.confined.ready' }
             : undefined
       const item: NoticeItem = {
         kind: 'notice', id, text: translation ? '' : event.message,

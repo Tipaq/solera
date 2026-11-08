@@ -3759,6 +3759,7 @@ export const en = {
   'project.devcontainer.services.shared.hint': "Each confined session's container joins the project's services (its database…): nothing to start, but the sessions see the same data.",
   'project.devcontainer.services.copy': "A copy per session",
   'project.devcontainer.services.copy.hint': "Each confined session starts its own copy of the services, with empty volumes, removed with it: a few seconds and a little more memory.",
+  'devcontainer.confined.ready': "Session container started.",
   'devcontainer.ready': "Dev container started.",
   'error.devcontainer_host_unreachable': "The container cannot reach the Solera server. {detail}",
   'error.devcontainer_arch': "Unsupported dev container architecture. {detail}",

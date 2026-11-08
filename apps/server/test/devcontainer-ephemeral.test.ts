@@ -12,6 +12,7 @@ import type { Paths } from '../src/config.js'
 import { terminalScope } from '../src/environments/confined/scope.js'
 import { composeFilesOf, Devcontainers } from '../src/environments/devcontainer/containers.js'
 import {
+  copiedCompose,
   copiedNetwork,
   ephemeralConfig,
   EphemeralContainer,
@@ -213,4 +214,38 @@ test('une session confinée dans le dev container reçoit un conteneur à elle, 
   assert.ok(provider instanceof EphemeralContainer)
   assert.equal(provider.projectId, 'p')
   await provider.close()
+})
+
+test('la copie des services : ni port publié, ni nom fixe, ni dossier de l’hôte partagé avec le projet', () => {
+  const { config, services } = copiedCompose(
+    {
+      name: 'solera-x',
+      services: {
+        app: { image: 'node', volumes: [{ type: 'bind', source: '/p', target: '/workspaces/p' }] },
+        db: {
+          image: 'postgres',
+          container_name: 'fixed-db',
+          ports: [{ target: 5432, published: '5432' }],
+          volumes: [
+            { type: 'bind', source: '/p/data', target: '/var/lib/postgresql/data' },
+            { type: 'volume', source: 'cache', target: '/cache' },
+          ],
+          depends_on: { app: { condition: 'service_started' }, redis: { condition: 'service_started' } },
+          privileged: true,
+        },
+        redis: { image: 'redis', network_mode: 'host' },
+        docs: { image: 'nginx' },
+      },
+      volumes: { cache: { name: 'solera-x_cache' } },
+    },
+    { exclude: 'app', only: ['app', 'db', 'redis'] },
+  )
+  assert.deepEqual(services, ['db', 'redis'])
+  const db = (config.services as Record<string, Record<string, unknown>>).db!
+  assert.equal('ports' in db || 'container_name' in db || 'privileged' in db, false)
+  assert.deepEqual(db.volumes, [{ type: 'volume', target: '/var/lib/postgresql/data' }, { type: 'volume', source: 'cache', target: '/cache' }])
+  assert.deepEqual(db.depends_on, { redis: { condition: 'service_started' } })
+  assert.equal('network_mode' in (config.services as Record<string, Record<string, unknown>>).redis!, false)
+  assert.deepEqual(config.volumes, { cache: { name: 'solera-x_cache' } })
+  assert.equal('name' in config, false)
 })

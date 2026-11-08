@@ -3756,6 +3756,7 @@ export const fr: Catalog = {
   'project.devcontainer.services.shared.hint': "Le conteneur de chaque session confinée rejoint les services du projet (sa base de données…) : rien à démarrer, mais les sessions voient les mêmes données.",
   'project.devcontainer.services.copy': "Une copie par session",
   'project.devcontainer.services.copy.hint': "Chaque session confinée démarre sa propre copie des services, à volumes vides, supprimée avec elle : quelques secondes et un peu de mémoire de plus.",
+  'devcontainer.confined.ready': "Conteneur de la session démarré.",
   'devcontainer.ready': "Dev container démarré.",
   'error.devcontainer_host_unreachable': "Le conteneur ne peut pas joindre le serveur de Solera. {detail}",
   'error.devcontainer_arch': "Architecture du dev container non prise en charge. {detail}",

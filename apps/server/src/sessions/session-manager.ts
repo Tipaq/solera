@@ -1552,8 +1552,9 @@ export class SessionManager {
   private startupNotices(conversationId: string, starting: 'devcontainer_starting' | 'devcontainer_confined_starting') {
     const log: string[] = []
     let shown = 0
+    const ready = starting === 'devcontainer_starting' ? 'devcontainer_ready' : 'devcontainer_confined_ready'
     // Le message est la dernière ligne du journal, que l'interface place dans sa phrase.
-    const notice = (code: typeof starting | 'devcontainer_ready', message: string) =>
+    const notice = (code: typeof starting | typeof ready, message: string) =>
       this.log.append(conversationId, {
         type: 'agent.notice',
         id: 'devcontainer.up',
@@ -1571,7 +1572,7 @@ export class SessionManager {
         notice(starting, line.slice(0, 200))
       },
       ready: () => {
-        if (shown > 0) notice('devcontainer_ready', '')
+        if (shown > 0) notice(ready, '')
       },
       failed: (err: unknown) => {
         this.log.append(conversationId, {

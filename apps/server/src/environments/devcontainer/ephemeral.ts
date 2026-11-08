@@ -300,3 +300,47 @@ export function unconfinedParts(inspected: { mounts: InspectedMount[]; privilege
 export function copiedNetwork(network: string, project: string, copy: string): string {
   return network.startsWith(`${project}_`) ? `${copy}_${network.slice(project.length + 1)}` : network
 }
+
+/**
+ * La configuration docker-compose d'une copie des services, depuis celle que
+ * `docker compose config --format json` a résolue sous le nom de la copie (ses volumes
+ * nommés y portent donc déjà ce nom) :
+ *
+ * - seulement les services copiés : ni celui du dev container, ni ceux que `runServices`
+ *   écarte, et leurs `depends_on` vers ceux-là tombent ;
+ * - ni `ports` ni `container_name` : le service du projet tient déjà les mêmes ;
+ * - un dossier de l'hôte monté (`./data:/var/lib/postgresql/data`) devient un volume
+ *   anonyme, vide : deux bases sur le même dossier se corrompraient ;
+ * - ni `network_mode` (l'hôte, ou le conteneur d'un service absent), ni privilèges.
+ */
+export function copiedCompose(
+  resolved: unknown,
+  options: { exclude: string | null; only: string[] | null },
+): { config: Record<string, unknown>; services: string[] } {
+  const source = (resolved && typeof resolved === 'object' ? resolved : {}) as Record<string, unknown>
+  const all = (source.services && typeof source.services === 'object' ? source.services : {}) as Record<
+    string,
+    Record<string, unknown>
+  >
+  const names = Object.keys(all).filter(
+    (name) => name !== options.exclude && (options.only === null || options.only.includes(name)),
+  )
+  const services: Record<string, unknown> = {}
+  for (const name of names) {
+    const { ports: _ports, container_name: _name, network_mode: _mode, privileged: _privileged, ...service } = all[name]!
+    if (Array.isArray(service.volumes)) {
+      service.volumes = service.volumes.map((volume: unknown) => {
+        const entry = volume as { type?: string; target?: string }
+        return entry.type === 'bind' ? { type: 'volume', target: entry.target } : volume
+      })
+    }
+    if (service.depends_on && typeof service.depends_on === 'object' && !Array.isArray(service.depends_on)) {
+      service.depends_on = Object.fromEntries(
+        Object.entries(service.depends_on as Record<string, unknown>).filter(([dependency]) => names.includes(dependency)),
+      )
+    }
+    services[name] = service
+  }
+  const { services: _all, name: _project, ...rest } = source
+  return { config: { ...rest, services }, services: names }
+}

@@ -7,9 +7,11 @@ import type { Config, Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
 import { soleraUrlForAgents } from '../../instance/agent-url.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
+import { alive } from '../confined/confined.js'
 import type { ConfinementScope } from '../confined/plan.js'
 import { BridgeListeners } from './bridge.js'
 import {
+  copiedCompose,
   copiedNetwork,
   ephemeralConfig,
   EphemeralContainer,
@@ -437,7 +439,7 @@ export class Devcontainers {
     if (!base || !config) {
       throw new ContainerRefusal('devcontainer_failed', `The dev container of project ${spec.projectId} has not been started.`)
     }
-    await (this.swept ??= this.sweepEphemeral())
+    await this.sweep()
     const project = await this.tools.describe(base.id)
     if (!project) throw new ContainerRefusal('devcontainer_failed', 'The dev container of the project is gone.')
     const id = randomUUID()
@@ -452,7 +454,7 @@ export class Devcontainers {
       if (project.networkMode === 'host') {
         runArgs.push('--network=host')
       } else if (composeProject && network && spec.services === 'copy' && config.path) {
-        composeCopy = await this.copyServices(config.configuration, config.path, copyName, onLog)
+        composeCopy = await this.copyServices(config.configuration, config.path, copyName, dir, onLog)
         runArgs.push(`--network=${composeCopy ? copiedNetwork(network, composeProject, copyName) : network}`)
       } else if (network && network !== 'bridge') {
         runArgs.push(`--network=${network}`)
@@ -510,25 +512,46 @@ export class Devcontainers {
   /**
    * Une copie des services docker-compose du projet, sauf celui du dev container, sous
    * un projet docker-compose à la session : ses conteneurs, son réseau et ses volumes
-   * lui appartiennent. Null quand il n'y a rien d'autre à copier.
+   * lui appartiennent. Lancée depuis la configuration résolue et réécrite
+   * (`copiedCompose`) : ni ports publiés ni nom fixe, qui heurteraient les services du
+   * projet, ni dossier de l'hôte partagé avec eux. Null quand il n'y a rien à copier.
    */
   private async copyServices(
     configuration: unknown,
     configPath: string,
     copyName: string,
+    dir: string,
     onLog: (line: string) => void,
   ): Promise<string | null> {
     const files = composeFilesOf(configuration, configPath)
     if (files.length === 0) return null
-    const base = ['-p', copyName, '--project-directory', dirname(files[0]!), ...files.flatMap((file) => ['-f', file])]
-    const all = (await this.tools.compose([...base, 'config', '--services'], 60_000)).split('\n').map((line) => line.trim()).filter(Boolean)
+    const resolved = JSON.parse(
+      await this.tools.compose(
+        ['-p', copyName, '--project-directory', dirname(files[0]!), ...files.flatMap((file) => ['-f', file]), 'config', '--format', 'json'],
+        60_000,
+      ),
+    ) as unknown
     const { service, runServices } = (configuration ?? {}) as { service?: unknown; runServices?: unknown }
-    const wanted = (Array.isArray(runServices) ? all.filter((name) => runServices.includes(name)) : all).filter(
-      (name) => name !== service,
-    )
-    if (wanted.length === 0) return null
-    onLog(`Starting a copy of the docker-compose services for this session: ${wanted.join(', ')}`)
-    await this.tools.compose([...base, 'up', '-d', '--no-deps', ...wanted])
+    const copy = copiedCompose(resolved, {
+      exclude: typeof service === 'string' ? service : null,
+      only: Array.isArray(runServices) ? runServices.filter((name): name is string => typeof name === 'string') : null,
+    })
+    if (copy.services.length === 0) return null
+    onLog(`Starting a copy of the docker-compose services for this session: ${copy.services.join(', ')}`)
+    const file = join(dir, 'compose.json')
+    await mkdir(dir, { recursive: true })
+    await writeFile(file, JSON.stringify(copy.config, null, 2))
+    await this.tools.compose(['-p', copyName, '--project-directory', dirname(files[0]!), '-f', file, 'up', '-d', ...copy.services])
+    for (const { id } of await this.tools.labelled(`com.docker.compose.project=${copyName}`, 'com.docker.compose.service')) {
+      const started = await this.tools.describe(id)
+      const issues = started ? unconfinedParts(started, []) : []
+      if (issues.length > 0) {
+        throw new ContainerRefusal(
+          'devcontainer_unconfined',
+          `A copied docker-compose service would open the host (${issues.join('; ')}). Share the project's services instead, in the project settings.`,
+        )
+      }
+    }
     return copyName
   }
 
@@ -546,6 +569,15 @@ export class Devcontainers {
       ],
       container.user,
     )
+  }
+
+  /**
+   * Le ménage de ce qu'un serveur mort a laissé, une fois par serveur : au démarrage, et
+   * au plus tard avant le premier conteneur éphémère. Sans Docker, rien à faire.
+   */
+  sweep(): Promise<void> {
+    this.swept ??= this.sweepEphemeral().catch(() => undefined)
+    return this.swept
   }
 
   /** Supprime un conteneur éphémère, ses ports et la copie de ses services. */
@@ -604,14 +636,6 @@ const EPHEMERAL_LABEL = 'solera.ephemeral'
 const INSTANCE_LABEL = 'solera.instance'
 const PID_LABEL = 'solera.pid'
 
-function alive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'EPERM'
-  }
-}
 
 /** Les fichiers docker-compose d'une configuration, en chemins absolus. */
 export function composeFilesOf(configuration: unknown, configPath: string): string[] {

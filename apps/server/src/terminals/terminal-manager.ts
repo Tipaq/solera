@@ -415,16 +415,21 @@ export class TerminalManager {
   /**
    * Arrêt du daemon : on écrit les écrans puis on tue les process, mais on garde les
    * fichiers. C'est eux qui feront réapparaître les entrées, marquées interrompues.
+   * Leurs environnements sont fermés avant de rendre la main : le conteneur d'un
+   * terminal confiné (#145) ne doit pas survivre au serveur.
    */
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     clearInterval(this.flushTimer)
+    const environments: EnvironmentProvider[] = []
     for (const managed of this.terminals.values()) {
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       this.persistMeta(managed)
       this.flushReplay(managed)
       if (!managed.exited) managed.pty?.kill()
+      if (managed.environment) environments.push(managed.environment)
     }
     this.terminals.clear()
+    await Promise.all(environments.map((environment) => environment.close().catch(() => undefined)))
   }
 
   private restore(): void {

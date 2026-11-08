@@ -295,7 +295,8 @@ function sweepStalePrivateDirs(): void {
   }
 }
 
-function alive(pid: number): boolean {
+/** Le processus vit-il ? Un processus d'un autre utilisateur compte. */
+export function alive(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
