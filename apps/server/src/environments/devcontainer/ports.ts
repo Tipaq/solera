@@ -173,8 +173,13 @@ while True:
 
 const NODE_RELAY = `const s=require('net').connect(+process.argv[2],process.argv[1]);process.stdin.pipe(s);s.pipe(process.stdout);s.on('error',()=>process.exit(1))`
 
+/** Le code de sortie de la sonde quand le conteneur n'a aucun outil de relais. */
+const NONE_FOUND = 3
+
+const NO_RELAY = { code: 'no_relay', detail: Object.keys(RELAYS).join(', ') } as const
+
 /** Le premier outil de relais présent dans le conteneur, ou null. */
-const PROBE = `for t in ${Object.keys(RELAYS).join(' ')}; do command -v "$t" >/dev/null 2>&1 && { echo "$t"; exit 0; }; done`
+const PROBE = `for t in ${Object.keys(RELAYS).join(' ')}; do command -v "$t" >/dev/null 2>&1 && { echo "$t"; exit 0; }; done; exit ${NONE_FOUND}`
 
 interface Forward {
   containerPort: number
@@ -183,7 +188,7 @@ interface Forward {
   source: 'config' | 'detected'
   attributes: PortAttributes
   hostPort: number | null
-  error: string | null
+  error: ForwardedPortDto['error']
   servers: Server[]
 }
 
@@ -204,7 +209,10 @@ interface Forward {
  */
 export class PortForwarder {
   private readonly forwards = new Map<number, Forward>()
+  /** L'outil de relais ; null quand le conteneur n'en a aucun, absent tant qu'on ne sait pas. */
   private relay: string | null | undefined
+  /** Le conteneur partage le réseau de l'hôte (`--network=host`) : ses ports y sont déjà. */
+  private hostNetwork = false
   private timer: NodeJS.Timeout | null = null
   private polling: Promise<void> | null = null
   private closed = false
@@ -218,6 +226,25 @@ export class PortForwarder {
 
   /** Ouvre les ports déclarés, puis relève les autres jusqu'à `close`. */
   async start(): Promise<void> {
+    this.hostNetwork = await this.inspect('{{.HostConfig.NetworkMode}}') === 'host'
+    if (this.hostNetwork) {
+      // Rien à relayer, et rien à détecter : `/proc/net/tcp` y montrerait l'hôte entier,
+      // Solera compris. Les ports déclarés y sont servis sous leur propre numéro.
+      for (const entry of this.config.forward) {
+        if (entry.host !== 'localhost') continue
+        this.forwards.set(entry.port, {
+          containerPort: entry.port,
+          address: '127.0.0.1',
+          source: 'config',
+          attributes: attributesFor(this.config, entry.port),
+          hostPort: entry.port,
+          error: null,
+          servers: [],
+        })
+      }
+      return
+    }
+    await this.relayCommand()
     for (const entry of this.config.forward) {
       await this.open(entry.port, entry.host, 'config')
     }
@@ -237,7 +264,7 @@ export class PortForwarder {
         protocol: entry.attributes.protocol ?? 'http',
         source: entry.source,
         remapped: entry.hostPort !== null && entry.hostPort !== entry.containerPort,
-        error: entry.error,
+        error: entry.error ?? (this.relay === null && entry.hostPort !== null ? NO_RELAY : null),
       }))
   }
 
@@ -278,7 +305,7 @@ export class PortForwarder {
       listening = parseListening(stdout)
     } catch (err) {
       // `cat` sort en erreur sans `tcp6` (IPv6 coupé), mais sa sortie reste bonne.
-      if (await this.gone()) {
+      if ((await this.inspect('{{.State.Running}}')) === 'false') {
         this.release()
         this.options.onGone?.()
         return
@@ -288,8 +315,11 @@ export class PortForwarder {
       listening = parseListening(stdout)
     }
     if (this.closed) return
+    // Garde-fou : un port que Solera sert lui-même n'est pas un serveur du conteneur.
+    const served = new Set([...this.forwards.values()].map((entry) => entry.hostPort))
     for (const { port, address } of listening) {
       const known = this.forwards.get(port)
+      if (!known && served.has(port)) continue
       if (known) {
         if (known.source === 'detected') known.address = address
         // Un port déclaré pour la boucle locale suit l'adresse réelle de l'écoute.
@@ -307,15 +337,19 @@ export class PortForwarder {
     }
   }
 
-  private async gone(): Promise<boolean> {
+  /**
+   * Un champ de `docker inspect`, ou null s'il n'a pas pu être lu : sous Docker Desktop,
+   * un échec passager ne dit pas que le conteneur s'est arrêté.
+   */
+  private async inspect(format: string): Promise<string | null> {
     try {
-      const { stdout } = await run(this.docker, ['inspect', '--format', '{{.State.Running}}', this.containerId], {
+      const { stdout } = await run(this.docker, ['inspect', '--format', format, this.containerId], {
         timeout: DOCKER_TIMEOUT_MS,
         windowsHide: true,
       })
-      return stdout.trim() !== 'true'
+      return stdout.trim()
     } catch {
-      return true
+      return null
     }
   }
 
@@ -349,7 +383,10 @@ export class PortForwarder {
         lastError = err as Error
       }
     }
-    entry.error = lastError?.message ?? 'no free port'
+    entry.error = {
+      code: attributes.requireLocalPort ? 'port_taken' : 'listen_failed',
+      detail: lastError?.message ?? '',
+    }
   }
 
   private relayConnection(entry: Forward, socket: Socket): void {
@@ -375,7 +412,11 @@ export class PortForwarder {
     })
   }
 
-  /** Cherché une fois : l'image ne change pas tant que le conteneur tourne. */
+  /**
+   * Cherché une fois : l'image ne change pas tant que le conteneur tourne. Une sonde qui
+   * n'a pas pu tourner se refait à la connexion suivante ; un conteneur sans aucun outil
+   * le reste, et chaque port le dit.
+   */
   private async relayCommand(): Promise<string | null> {
     if (this.relay !== undefined) return this.relay
     try {
@@ -385,15 +426,12 @@ export class PortForwarder {
       })
       const found = stdout.trim()
       this.relay = found in RELAYS ? found : null
-    } catch {
-      this.relay = null
+      return this.relay
+    } catch (err) {
+      // Aucun outil : c'est une réponse, pas un échec.
+      if ((err as { code?: unknown }).code === NONE_FOUND) this.relay = null
+      return null
     }
-    if (this.relay === null) {
-      for (const entry of this.forwards.values()) {
-        entry.error ??= `The dev container has none of ${Object.keys(RELAYS).join(', ')} to relay connections.`
-      }
-    }
-    return this.relay
   }
 }
 

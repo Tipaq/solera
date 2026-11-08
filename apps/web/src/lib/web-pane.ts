@@ -177,6 +177,7 @@ export function containerPortOf(
   if (port.hostPort === null) return { port, served: null }
   const served = new URL(parsed.href)
   if (served.hostname === '0.0.0.0') served.hostname = 'localhost'
+  if (port.protocol === 'https') served.protocol = 'https:'
   served.port = String(port.hostPort)
   return { port, served: served.href }
 }

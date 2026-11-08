@@ -63,26 +63,36 @@ test('forwardPorts et portsAttributes se lisent comme VS Code les écrit', () =>
  * préparé par le test, et toute autre commande `exec` tourne ici même. Le relais joint
  * donc un serveur du test, comme il joindrait celui du conteneur.
  */
-async function fakeContainer(t: TestContext): Promise<{ docker: string; listen: (lines: string[]) => Promise<void> }> {
+async function fakeContainer(
+  t: TestContext,
+  network = 'bridge',
+): Promise<{ docker: string; listen: (lines: string[]) => Promise<void>; inspect: (answer: 'true' | 'false' | 'fail') => Promise<void> }> {
   const dir = await mkdtemp(join(tmpdir(), 'solera-fake-ports-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const proc = join(dir, 'proc')
+  const running = join(dir, 'running')
+  await writeFile(running, 'true')
   const docker = join(dir, 'docker')
   await writeFile(proc, HEADER)
   await writeFile(
     docker,
     `#!/bin/sh
 case "$1" in
-  inspect) echo true; exit 0 ;;
+  inspect) case "$3" in *NetworkMode*) echo ${network}; exit 0 ;; esac
+    r=$(cat "${running}"); [ "$r" = fail ] && exit 1; echo "$r"; exit 0 ;;
   exec) shift; [ "$1" = -i ] && shift; shift
-    if [ "$1" = cat ]; then cat "${proc}"; exit 0; fi
+    if [ "$1" = cat ]; then [ "$(cat "${running}")" = true ] || exit 1; cat "${proc}"; exit 0; fi
     exec "$@" ;;
 esac
 exit 1
 `,
   )
   await chmod(docker, 0o755)
-  return { docker, listen: (lines) => writeFile(proc, [HEADER, ...lines].join('\n')) }
+  return {
+    docker,
+    listen: (lines) => writeFile(proc, [HEADER, ...lines].join('\n')),
+    inspect: (answer) => writeFile(running, answer),
+  }
 }
 
 async function httpServer(t: TestContext, body: string): Promise<number> {
@@ -143,7 +153,7 @@ test('un port déclaré est servi avant d’écouter ; requireLocalPort le laiss
   const db = forwarder.list().find((entry) => entry.containerPort === 5432)
   assert.equal(web?.label, 'Web')
   assert.equal(web?.hostPort, null)
-  assert.ok(web?.error)
+  assert.equal(web?.error?.code, 'port_taken')
   assert.equal(db?.source, 'config')
   assert.equal(db?.host, 'db')
   assert.ok(db?.hostPort)
@@ -161,4 +171,39 @@ test('un port ignoré par portsAttributes ne se redirige pas', async (t) => {
   t.after(() => forwarder.close())
   await forwarder.start()
   assert.deepEqual(forwarder.list(), [])
+})
+
+test("un conteneur sur le réseau de l'hôte n'est ni relayé ni sondé : Solera ne se redirige pas lui-même", async (t) => {
+  const fake = await fakeContainer(t, 'host')
+  const port = await httpServer(t, 'hôte')
+  await fake.listen([procLine(`0100007F:${hex(port)}`, '0A')])
+  const forwarder = new PortForwarder('c0ffee', fake.docker, portsConfigOf({ forwardPorts: [3000] }), { pollMs: 10 })
+  t.after(() => forwarder.close())
+  await forwarder.start()
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.deepEqual(
+    forwarder.list().map((entry) => [entry.containerPort, entry.hostPort, entry.remapped]),
+    [[3000, 3000, false]],
+  )
+})
+
+test("un docker inspect qui échoue en passant ne relâche pas les ports ; un conteneur arrêté, si", async (t) => {
+  const fake = await fakeContainer(t)
+  let gone = false
+  const forwarder = new PortForwarder('c0ffee', fake.docker, portsConfigOf({ forwardPorts: [3000] }), {
+    pollMs: 60_000,
+    onGone: () => {
+      gone = true
+    },
+  })
+  t.after(() => forwarder.close())
+  await forwarder.start()
+  await fake.inspect('fail')
+  await forwarder.poll()
+  assert.equal(forwarder.list().length, 1)
+  assert.equal(gone, false)
+  await fake.inspect('false')
+  await forwarder.poll()
+  assert.deepEqual(forwarder.list(), [])
+  assert.equal(gone, true)
 })

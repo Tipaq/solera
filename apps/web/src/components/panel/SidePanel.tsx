@@ -130,7 +130,9 @@ export const SidePanel = memo(function SidePanel({
   // dossier : un fil libre qui cherche sur le web en a autant besoin qu'un autre.
   const hasWeb = useWebPane(scope) !== null
   const projectEnvironment = useProjectEnvironments(hasWeb && !environment ? (projectId ?? undefined) : undefined).data?.default
-  const inContainer = (environment ?? projectEnvironment)?.where === 'devcontainer'
+  // Une session confinée aura son propre conteneur (#145), dont les ports ne sont pas ceux-là.
+  const sessionEnvironment = environment ?? projectEnvironment
+  const inContainer = sessionEnvironment?.where === 'devcontainer' && !sessionEnvironment.confined
   // L'onglet choisi survit d'une vue à l'autre ; en vue projet, un onglet de session
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
