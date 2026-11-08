@@ -38,10 +38,10 @@ export function registerLocalOriginGuard(app: FastifyInstance): void {
 }
 
 /** Les `Host` qu'accepte une connexion arrivée sur `address`, au port `port`. */
-function localHosts(address: string | undefined, port: number | undefined): string[] {
+export function localHosts(address: string | undefined, port: number | undefined): string[] {
   const local = (address ?? '').replace(/^::ffff:/, '')
   const hosts = [`127.0.0.1:${port}`, `localhost:${port}`]
   if (local === '127.0.0.1') hosts.push(`host.docker.internal:${port}`)
-  else if (local && !local.includes(':')) hosts.push(`${local}:${port}`)
+  else if (local && local !== '::1') hosts.push(local.includes(':') ? `[${local}]:${port}` : `${local}:${port}`)
   return hosts
 }
