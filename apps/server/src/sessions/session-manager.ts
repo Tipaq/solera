@@ -924,8 +924,8 @@ export class SessionManager {
    * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
    * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
    * la session part sur la connexion du CLI (Claude) ou sur le premier compte connecté
-   * (Codex, Grok, qui refusent sans compte connecté), et le fil le dit, parce que c'est un autre abonnement qui va payer le
-   * tour.
+   * (Codex, Grok, qui refusent sans compte connecté), et le fil le dit, parce que c'est
+   * un autre abonnement qui va payer le tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
     if (config.agent === 'opencode') return {}
@@ -1465,17 +1465,6 @@ export class SessionManager {
    * Sauf au milieu d'un tour, où passent `steer` et un fork : le couper laisserait le
    * fil en `running` sans fin de tour. Il s'arrêtera au prochain envoi, au repos.
    */
-  /**
-   * Une session Codex ou Grok sans aucun compte connecté n'a rien sur quoi partir : la
-   * connexion du CLI n'en porte plus (#147). Refusée comme un dossier disparu, avant
-   * `makeRoom`, pour ne pas évincer un runner vivant.
-   */
-  private refuseWithoutAccount(conversation: ConversationRow): void {
-    const agent = conversation.agent
-    if (agent !== 'codex' && agent !== 'grok') return
-    if (!this.soleraAccount(conversation.userId, agent, null).account) throw accountRequired(agent)
-  }
-
   private refuseMissingCwd(conversation: ConversationRow): string {
     try {
       const cwd = this.resolveCwd(conversation)
@@ -1488,6 +1477,17 @@ export class SessionManager {
       }
       throw err
     }
+  }
+
+  /**
+   * Une session Codex ou Grok sans aucun compte connecté n'a rien sur quoi partir : la
+   * connexion du CLI n'en porte plus (#147). Refusée comme un dossier disparu, avant
+   * `makeRoom`, pour ne pas évincer un runner vivant.
+   */
+  private refuseWithoutAccount(conversation: ConversationRow): void {
+    const agent = conversation.agent
+    if (agent !== 'codex' && agent !== 'grok') return
+    if (!this.soleraAccount(conversation.userId, agent, null).account) throw accountRequired(agent)
   }
 
   /**

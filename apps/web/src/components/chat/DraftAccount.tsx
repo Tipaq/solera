@@ -49,16 +49,21 @@ export function DraftAccount({
 }) {
   const t = useTranslate()
   const { groups } = useAgentSettings({ config, onConfigChange: onChange, disabled })
-  // Déjà en cache pour les réglages du composer : seulement pour ne pas dire « aucun
-  // compte » pendant que la liste arrive.
-  const codexPending = useCodexAccounts(config.agent === 'codex').isPending
-  const grokPending = useGrokAccounts(config.agent === 'grok').isPending
+  // Déjà en cache pour les réglages du composer : pour ne pas dire « aucun compte »
+  // pendant que la liste arrive, et pour savoir s'il en reste un de prêt.
+  const codexAccounts = useCodexAccounts(config.agent === 'codex')
+  const grokAccounts = useGrokAccounts(config.agent === 'grok')
   // OpenCode n'emprunte aucun compte : ses fournisseurs se règlent dans son propre CLI.
   if (config.agent === 'opencode') return null
 
   const group = groups.find((entry) => entry.key === 'account')
-  if (config.agent === 'codex' ? codexPending : config.agent === 'grok' && grokPending) return null
-  const withoutAccount = !group && (config.agent === 'claude' ? auth?.status === 'logged_out' : true)
+  const soleraAccounts = config.agent === 'codex' ? codexAccounts : config.agent === 'grok' ? grokAccounts : null
+  if (soleraAccounts?.isPending) return null
+  // Codex et Grok : sur les comptes prêts, pas sur le groupe. Un compte hérité supprimé
+  // garde le groupe en vie avec sa seule option « compte supprimé », qui ne mène nulle part.
+  const withoutAccount = soleraAccounts
+    ? !soleraAccounts.data?.accounts.some((account) => account.status === 'ready')
+    : !group && auth?.status === 'logged_out'
   if (withoutAccount) {
     const label = ACCOUNT_NAMES[config.agent]
     return (

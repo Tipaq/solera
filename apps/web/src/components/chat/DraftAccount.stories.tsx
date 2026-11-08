@@ -65,3 +65,12 @@ export const CodexSansCompte: Story = {
     peek: [],
   },
 }
+
+export const CodexCompteSupprime: Story = {
+  name: 'Codex, compte hérité supprimé et aucun compte prêt',
+  args: {
+    config: { ...DEFAULT_CODEX_CONFIG, account: 'compte-supprime' },
+    auth: { agent: 'codex', account: null, status: 'ready', method: 'chatgpt', plan: 'plus', identity: 'alex@example.com' },
+    peek: [],
+  },
+}
