@@ -58,9 +58,9 @@ export function registerTerminalRoutes(
     const project = guard(id, user.id)
     const body = openTerminalBodySchema.parse(request.body ?? {})
 
-    // Depuis une session, le shell s'ouvre là où l'agent travaille, worktree compris ;
-    // depuis la vue projet, dans le workspace.
-    let cwd = project.workspacePath
+    // Depuis une session, le shell s'ouvre là où l'agent travaille, worktree compris,
+    // et dans son environnement ; depuis la vue projet, dans le workspace et
+    // l'environnement du projet.
     if (body.conversationId) {
       const row = ctx.db
         .select({ projectId: conversations.projectId })
@@ -70,24 +70,30 @@ export function registerTerminalRoutes(
       if (!row || row.projectId !== id) {
         throw new HttpError(404, 'conversation_not_found', 'Conversation not found.')
       }
-      cwd = sessions.workingDirectory(body.conversationId)
-    } else if (body.cwd && body.cwd !== project.workspacePath) {
+    }
+
+    let cwd = body.conversationId ? sessions.workingDirectory(body.conversationId) : project.workspacePath
+    if (body.cwd) {
       // Relance d'un shell interrompu : le répertoire demandé doit encore exister dans
       // le projet, un chemin libre ouvrirait un shell n'importe où au nom du projet.
-      const worktree = ctx.db
-        .select({ id: worktrees.id })
-        .from(worktrees)
-        .where(
-          and(eq(worktrees.projectId, id), eq(worktrees.path, body.cwd), isNull(worktrees.removedAt)),
-        )
-        .get()
+      const worktree =
+        body.cwd === project.workspacePath ||
+        ctx.db
+          .select({ id: worktrees.id })
+          .from(worktrees)
+          .where(
+            and(eq(worktrees.projectId, id), eq(worktrees.path, body.cwd), isNull(worktrees.removedAt)),
+          )
+          .get()
       if (!worktree) {
         throw new HttpError(404, 'terminal_cwd_gone', 'This directory is no longer part of the project.')
       }
       cwd = body.cwd
     }
 
-    const terminal = wrap(() => terminals.open(id, cwd))
+    const conversationId = body.conversationId ?? null
+    const environment = sessions.environments.forTerminal(id, conversationId)
+    const terminal = wrap(() => terminals.open(id, cwd, { environment, conversationId }))
     return reply.status(201).send(terminal)
   })
 

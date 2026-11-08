@@ -20,6 +20,7 @@ import { GrokLoginService } from '../src/grok-accounts/login.js'
 import { GrokAccountStore } from '../src/grok-accounts/store.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerAgentLoginRoutes } from '../src/http/routes/agent-login.js'
+import { hostCli } from './environment-support.js'
 
 /**
  * La connexion propre d'un CLI, menée depuis l'interface : elle doit écrire là où les
@@ -62,7 +63,7 @@ async function claudeHarness(t: TestContext, auth: AgentAuth) {
   const sessionsConfig = join(dir, 'claude-config')
   withEnv(t, 'CLAUDE_CONFIG_DIR', sessionsConfig)
   let reads = 0
-  const login = new ClaudeLoginService({} as ClaudeAccountStore, async () => binary, null, async () => {
+  const login = new ClaudeLoginService({} as ClaudeAccountStore, hostCli(binary), null, async () => {
     reads += 1
     return auth
   })
@@ -135,7 +136,7 @@ test('connexion Codex du CLI : le code d’appareil écrit auth.json dans le hom
   withEnv(t, 'CODEX_HOME', userHome)
   const db = await serviceDb(t, dir)
   let reads = 0
-  const login = new CodexLoginService(new CodexAccountHomes(join(dir, 'codex-accounts')), new CodexAccountStore(db), async () => binary, async () => {
+  const login = new CodexLoginService(new CodexAccountHomes(join(dir, 'codex-accounts')), new CodexAccountStore(db), hostCli(binary), async () => {
     reads += 1
     return UNKNOWN_AUTH
   })
@@ -160,7 +161,7 @@ test('connexion Grok du CLI : grok login sans GROK_HOME imposé, auth.json dans 
   mkdirSync(userHome)
   withEnv(t, 'GROK_HOME', userHome)
   const db = await serviceDb(t, dir)
-  const login = new GrokLoginService(new GrokAccountHomes(join(dir, 'grok-accounts')), new GrokAccountStore(db), async () => binary)
+  const login = new GrokLoginService(new GrokAccountHomes(join(dir, 'grok-accounts')), new GrokAccountStore(db), hostCli(binary))
   t.after(() => login.closeAll())
 
   const started = await login.startCliDeviceCode()

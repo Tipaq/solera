@@ -4,6 +4,7 @@ import {
   type CloneJobDto,
   type ProjectInstructionsMode,
   type ProjectDto,
+  type ProjectEnvironmentsDto,
   type ProjectPrototypesDto,
 } from '@solera/protocol'
 import { ApiRequestError, api } from './api'
@@ -18,6 +19,19 @@ export function useProjects(enabled = true) {
     queryFn: () => api.get<ProjectDto[]>('/api/projects'),
     staleTime: 30_000,
     enabled,
+  })
+}
+
+/**
+ * L'environnement par défaut d'un projet, et ceux qu'on peut y choisir. Sous la clé des
+ * projets : régler le projet l'invalide avec eux.
+ */
+export function useProjectEnvironments(projectId: string | undefined) {
+  return useQuery({
+    queryKey: [...PROJECTS_KEY, projectId, 'environments'],
+    queryFn: () => api.get<ProjectEnvironmentsDto>(`/api/projects/${projectId}/environments`),
+    staleTime: 30_000,
+    enabled: projectId !== undefined,
   })
 }
 

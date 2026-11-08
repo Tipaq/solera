@@ -24,6 +24,7 @@ import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests, LAUNCHES_PER_HOUR, matchEffort, matchModel } from '../src/sessions/agent-requests.js'
 import { adoptSessionTitle, sessionTitleReminder } from '../src/conversations/title.js'
+import { Environments } from '../src/environments/environments.js'
 
 const model = (value: string, displayName: string, efforts: string[], isDefault = false): AgentModelDto => ({
   value,
@@ -75,6 +76,8 @@ async function harness(t: TestContext) {
     statusBus,
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
+    // La session prend l'environnement du projet, l'hôte ici.
+    environments: new Environments(db),
   } as unknown as SessionManager
   const registry = {
     adapter: (agent: string) => ({

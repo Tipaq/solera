@@ -85,15 +85,15 @@ async function main(): Promise<void> {
   // La relecture forcée de la connexion du CLI : elle confirme une connexion menée depuis
   // l'interface, et rafraîchit le cache que sert `/api/agents/auth`.
   const cliAuth = (agent: 'claude' | 'codex') => () => registry.adapter(agent).auth?.(true) ?? Promise.resolve(UNKNOWN_AUTH)
-  const claudeIdentify = claudeIdentity(() => registry.adapter('claude').cli.executable())
-  const claudeLogin = new ClaudeLoginService(claudeAccounts, () => registry.adapter('claude').cli.executable(), claudeGauges, cliAuth('claude'), claudeIdentify)
+  const claudeIdentify = claudeIdentity(registry.adapter('claude').cli)
+  const claudeLogin = new ClaudeLoginService(claudeAccounts, registry.adapter('claude').cli, claudeGauges, cliAuth('claude'), claudeIdentify)
 
   const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(config.paths.codexAccounts) }
   // La connexion d'un compte Codex lance l'app-server du CLI, résolu comme pour les
   // conversations : le binaire que Solera gère passe avant celui du PATH.
-  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, () => registry.adapter('codex').cli.executable(), cliAuth('codex'))
+  const codexLogin = new CodexLoginService(codexAccounts.homes, codexAccounts.store, registry.adapter('codex').cli, cliAuth('codex'))
   const grokAccounts = { store: new GrokAccountStore(db), homes: new GrokAccountHomes(config.paths.grokAccounts) }
-  const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, () => registry.adapter('grok').cli.executable())
+  const grokLogin = new GrokLoginService(grokAccounts.homes, grokAccounts.store, registry.adapter('grok').cli)
   const sessions = new SessionManager(db, log, config, registry, secrets, claudeAccounts, codexAccounts, grokAccounts)
   const storybooks = new StorybookSupervisor({
     directory: join(config.paths.data, 'design-systems'),
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   const attachments = new AttachmentStore(db, config.paths.attachments)
   const terminals = new TerminalManager(config)
   // Boutons des projets : commandes jouées dans un terminal ou une unité systemd.
-  const actions = new ActionRunner(db, config, terminals)
+  const actions = new ActionRunner(db, config, terminals, sessions.environments)
   const recovered = sessions.recoverInterrupted()
   const webhooks = new WebhookService(db, log, sessions, config.server.publicUrl)
   // Construit avant l'application, dont les routes remettent ou écartent un message

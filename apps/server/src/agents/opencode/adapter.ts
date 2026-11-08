@@ -14,7 +14,6 @@ import {
 import type { Message, Session } from '@solera/opencode-bindings'
 import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
-import { CliBinary, resolveBinary } from '../cli-binary.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { OpencodeCatalog } from './model-catalog.js'
@@ -23,6 +22,8 @@ import { readOpencodeAuth } from './auth.js'
 import type { AgentAuth } from '../auth.js'
 import { OpencodeRunner } from './runner.js'
 import { describeEdit } from './tools.js'
+import { hostEnvironment } from '../../environments/host.js'
+import { CliBinary, resolveBinary } from '../cli-binary.js'
 
 /**
  * Point de coupe d'un fork : le dernier message d'opencode à garder dans la branche.
@@ -73,8 +74,8 @@ export class OpencodeAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = configuredBinary(config.agents.opencode.binary, config.paths.agents)
-    this.cli = new CliBinary('opencode', this.binary, config.agents.opencode.enabled, config.paths.agents)
-    this.catalog = new OpencodeCatalog(() => this.cli.executable())
+    this.cli = new CliBinary('opencode', this.binary, config.agents.opencode.enabled, config.paths.agents, hostEnvironment)
+    this.catalog = new OpencodeCatalog(this.cli)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -108,7 +109,7 @@ export class OpencodeAdapter implements AgentAdapter {
     }
 
     try {
-      return await withProbeServer(await this.cli.executable(), target.cwd, async (server) => {
+      return await withProbeServer(target.cli, target.cwd, async (server) => {
         const messages = await server.get<{ info: Message }[]>(`/session/${target.agentSessionId}/message`)
         const next = messages.map((message) => message.info.id).sort().find((id) => id > lastMessageId)
         const forked = await server.post<Session>(

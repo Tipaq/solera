@@ -10,6 +10,7 @@ import type {
 import { CodexAppServerClient } from '../agents/codex/app-server-client.js'
 import { CLIENT_INFO } from '../agents/codex/client-info.js'
 import type { AgentAuth } from '../agents/auth.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { agentProcessEnv } from '../agents/process-env.js'
 import { userCodexHome, type CodexAccountHomes } from './homes.js'
 import type { CodexAccountIdentity, CodexAccountStore } from './store.js'
@@ -56,7 +57,7 @@ export class CodexLoginService {
   constructor(
     private readonly homes: CodexAccountHomes,
     private readonly store: CodexAccountStore,
-    private readonly binary: () => Promise<string>,
+    private readonly cli: CliLauncher,
     private readonly cliAuth: (() => Promise<AgentAuth>) | null = null,
   ) {}
 
@@ -217,7 +218,8 @@ export class CodexLoginService {
     const home = accountId === CLI ? userCodexHome() : this.homes.ensure(accountId)
     if (accountId === CLI) mkdirSync(home, { recursive: true })
     const client = new CodexAppServerClient({
-      binary: await this.binary(),
+      binary: await this.cli.executable(),
+      environment: this.cli.environment,
       cwd: home,
       env: accountId === CLI ? agentProcessEnv() : agentProcessEnv({ CODEX_HOME: home }),
       onNotification,

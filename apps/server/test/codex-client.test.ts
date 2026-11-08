@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { setTimeout } from 'node:timers/promises'
 import { CodexAppServerClient, CodexRpcError } from '../src/agents/codex/app-server-client.js'
 import { fixture } from './codex-support.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 test('handshake complet et erreurs RPC structurées', async (t) => {
   const files = await fixture(t)
@@ -46,7 +47,7 @@ test('stdout non JSON ou null ne casse pas le transport', async (t) => {
 
 test('binaire absent : rejet immédiat et une seule notification de mort', async () => {
   let exits = 0
-  const client = new CodexAppServerClient({ binary: '/nonexistent/solera-codex-fixture', onExit: () => { exits++ } })
+  const client = new CodexAppServerClient({ binary: '/nonexistent/solera-codex-fixture', environment: hostEnvironment, onExit: () => { exits++ } })
   await assert.rejects(client.initialize({ name: 'test', version: '1', title: null }), /ENOENT/)
   await setTimeout(0)
   assert.equal(exits, 1)

@@ -7,6 +7,7 @@ import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { agentProcessEnv } from '../process-env.js'
 import { describeWindow } from './quota.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Consommation du compte Codex, lue par `account/rateLimits/read`.
@@ -86,7 +87,7 @@ export class CodexUsageReader {
   )
   private readonly homes = new Map<string, string>()
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   read(force = false): Promise<AgentUsage> {
     return this.cached.read(force)
@@ -104,7 +105,8 @@ export class CodexUsageReader {
 
   private async probe(home?: string): Promise<Omit<AgentUsage, 'fetchedAt'>> {
     const client = new CodexAppServerClient({
-      binary: await this.executable(),
+      binary: await this.cli.executable(),
+      environment: this.cli.environment,
       cwd: home ?? homedir(),
       ...(home ? { env: agentProcessEnv({ CODEX_HOME: home }) } : {}),
       onNotification: () => {},

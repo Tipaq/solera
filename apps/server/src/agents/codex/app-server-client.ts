@@ -1,5 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { launchOf } from '../launch.js'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
 import type {
   ClientRequest,
@@ -7,6 +6,7 @@ import type {
   InitializeResponse,
   RequestId,
 } from '@solera/codex-bindings'
+import type { EnvironmentProvider } from '../../environments/provider.js'
 
 /**
  * Méthodes et paramètres tirés de l'union générée : un nom de méthode inexistant ou
@@ -46,6 +46,8 @@ interface PendingCall {
 
 export interface CodexClientOptions {
   binary: string
+  /** Où lancer `codex app-server` : l'environnement de la session, ou celui du CLI pour une sonde. */
+  environment: EnvironmentProvider
   cwd?: string
   env?: NodeJS.ProcessEnv
   /** Notifications serveur (`item/started`, `turn/completed`...). */
@@ -69,12 +71,11 @@ export class CodexAppServerClient {
   private readonly serverRequests = new Set<RequestId>()
 
   constructor(private readonly options: CodexClientOptions) {
-    const launch = launchOf(options.binary)
-    this.child = spawn(launch.command, [...launch.args, 'app-server'], {
+    this.child = options.environment.spawn({
+      command: options.binary,
+      args: ['app-server'],
       cwd: options.cwd,
       env: options.env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
     })
 
     // Le sandbox Linux de Codex se plaint bruyamment sur les hôtes sans espaces de

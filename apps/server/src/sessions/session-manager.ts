@@ -24,9 +24,11 @@ import {
 } from '@solera/protocol'
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
-import { resolveBinary } from '../agents/cli-binary.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
+import { soleraUrlForAgents } from '../instance/agent-url.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -75,6 +77,7 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
+import { Environments, environmentOf } from '../environments/environments.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -227,6 +230,11 @@ export class SessionManager {
   private notifier: ConversationNotifier | null = null
   private storybooks: StorybookSupervisor | null = null
   readonly statusBus = new EventEmitter()
+  /**
+   * Les jetons qui ouvrent le serveur MCP de Solera aux runners vivants : émis au
+   * lancement, révoqués à l'arrêt. Le pont HTTP les lit pour savoir qui lui parle.
+   */
+  readonly mcpTokens = new McpSessionTokens()
 
   constructor(
     private readonly db: Db,
@@ -239,7 +247,14 @@ export class SessionManager {
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
+    this.environments = new Environments(db)
   }
+
+  /**
+   * Où tournent les sessions, et leurs terminaux : la seule porte vers un fournisseur
+   * d'environnement, partagée avec les routes et les actions.
+   */
+  readonly environments: Environments
 
   /**
    * Au démarrage, aucune conversation ne peut légitimement être en cours : les
@@ -614,6 +629,7 @@ export class SessionManager {
         // la route l'a déjà refusé.
         cwd: this.refuseMissingCwd(conversation),
         accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
+        cli: this.sessionCli(conversation),
       },
       adapter.forkCut(this.log, conversationId, throughSeq),
     )
@@ -989,9 +1005,27 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Le CLI d'une session, cherché dans son environnement : celui où la session tourne,
+   * qui n'est pas forcément celui où l'adaptateur a trouvé le sien. Lève si ce serveur ne
+   * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
+   * retomber en silence sur l'hôte.
+   */
+  private sessionCli(conversation: ConversationRow): CliLauncher & { binary: string } {
+    const adapter = this.registry.adapter(conversation.agent)
+    const environment = this.environments.provider(environmentOf(conversation))
+    // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
+    // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
+    // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
+    // installations faites depuis l'interface.
+    const binary = environment.resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary
+    return { environment, binary, executable: async () => binary }
+  }
+
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
+    const launcher = this.sessionCli(conversation)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
     // Lu au lancement, comme le jeton : changer de compte relance la session.
@@ -1045,11 +1079,8 @@ export class SessionManager {
       conversationId,
       cwd,
       config,
-      // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
-      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera
-      // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
-      // les installations faites depuis l'interface.
-      binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
+      binary: launcher.binary,
+      environment: launcher.environment,
       attachmentsRoot: this.config.paths.attachments,
       prototypesDir,
       processEnv: {
@@ -1070,10 +1101,8 @@ export class SessionManager {
         // effet à la session suivante, pas dans un CLI déjà parti.
         const designSystem = this.designSystemOf(projectId)
         if (designSystem) this.storybooks?.ensure(designSystem)
-        const builtin = builtinMcpServer({
-          enabled: this.config.mcp.soleraServer,
-          config: current,
-          databasePath: this.config.paths.database,
+        if (!builtinMcpEnabled(this.config.mcp.soleraServer, current)) return resolved
+        const token = this.mcpTokens.issue(conversationId, {
           projectId,
           conversationId,
           // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
@@ -1088,7 +1117,8 @@ export class SessionManager {
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
-        return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
+        const builtin = builtinMcpServer({ baseUrl: soleraUrlForAgents(this.config.server), token })
+        return { ...resolved, servers: [...resolved.servers, builtin] }
       },
 
       // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
@@ -1399,6 +1429,7 @@ export class SessionManager {
       this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
+      this.mcpTokens.revoke(conversationId)
       throw err
     }
     return runner
@@ -2203,7 +2234,11 @@ export class SessionManager {
     this.runners.delete(conversationId)
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
+    // Détachés avant l'arrêt, révoqués après : le CLI garde ses outils le temps de
+    // s'arrêter, et un runner relancé entre-temps en reçoit d'autres.
+    const revokeMcpTokens = this.mcpTokens.detach(conversationId)
     await managed.runner.stop()
+    revokeMcpTokens()
     // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
     // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
     // derrière.

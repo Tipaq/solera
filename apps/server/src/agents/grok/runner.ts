@@ -266,6 +266,7 @@ export class GrokRunner implements AgentRunner {
     this.client = new AcpClient({
       label: 'grok',
       binary: this.ctx.binary,
+      environment: this.ctx.environment,
       args: launch.args,
       cwd: this.ctx.cwd,
       env: agentProcessEnv({ ...this.ctx.processEnv, ...launch.env }),

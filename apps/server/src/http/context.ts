@@ -1,4 +1,5 @@
 import type { ApiTokenRow, Db, UserRow } from '@solera/db'
+import type { McpSessionGrant } from '../agents/mcp-session-tokens.js'
 import type { Config } from '../config.js'
 
 export interface AppContext {
@@ -15,5 +16,10 @@ declare module 'fastify' {
      * alors son propriétaire : un jeton emprunte une identité, il n'en crée pas.
      */
     apiToken?: ApiTokenRow
+    /**
+     * Jeton de session présenté en Bearer par le CLI d'une conversation : il n'ouvre
+     * que le serveur MCP, avec la portée de cette session, et aucun compte.
+     */
+    mcpGrant?: McpSessionGrant
   }
 }

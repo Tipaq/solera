@@ -65,7 +65,7 @@ function conversation(db: Db, id: string, agent: 'claude' | 'codex', account: st
   const config = { ...(agent === 'claude' ? DEFAULT_CLAUDE_CONFIG : DEFAULT_CODEX_CONFIG), account }
   const row = {
     id, projectId: 'project', worktreeId: null, cardId: null, userId: 'owner', title: id,
-    titleSetByUser: false, agent, agentSessionId: null, forkedFromId: null,
+    titleSetByUser: false, agent, environmentWhere: 'host', environmentConfined: false, agentSessionId: null, forkedFromId: null,
     handoffFromId: null, createdByTokenId: null, originLabel: null, scheduleId: null,
     config: JSON.stringify(config), status: 'idle',
     backgroundCount: 0, loopCount: 0, lastSeq: 0, lastNotableSeq: 0, turnCount: 0,

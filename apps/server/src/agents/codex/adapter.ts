@@ -15,7 +15,6 @@ import type { Config } from '../../config.js'
 import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
-import { CliBinary } from '../cli-binary.js'
 import { agentProcessEnv } from '../process-env.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
@@ -25,6 +24,8 @@ import { CodexRunner } from './runner.js'
 import { CodexUsageReader } from './usage.js'
 import { CodexAuthReader } from './auth.js'
 import type { AgentAuth } from '../auth.js'
+import { hostEnvironment } from '../../environments/host.js'
+import { CliBinary } from '../cli-binary.js'
 
 /**
  * Point de coupe d'un fork : identifiant natif du dernier tour conservé.
@@ -56,13 +57,13 @@ export class CodexAdapter implements AgentAdapter {
 
   constructor(config: Config) {
     this.binary = config.agents.codex.binary
-    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents)
+    this.cli = new CliBinary('codex', this.binary, config.agents.codex.enabled, config.paths.agents, hostEnvironment)
     // Le nom configuré ne suffit pas : `spawn` ne connaît que le PATH, alors que le
     // préfixe des CLI installés par Solera l'emporte. Sonder le nom nu ferait lister
     // les modèles d'une version que les conversations, elles, n'utilisent pas.
-    this.catalog = new CodexModelCatalog(() => this.cli.executable())
-    this.usageReader = new CodexUsageReader(() => this.cli.executable())
-    this.authReader = new CodexAuthReader(() => this.cli.executable())
+    this.catalog = new CodexModelCatalog(this.cli)
+    this.usageReader = new CodexUsageReader(this.cli)
+    this.authReader = new CodexAuthReader(this.cli)
   }
 
   createRunner(ctx: RunnerContext): AgentRunner {
@@ -96,7 +97,8 @@ export class CodexAdapter implements AgentAdapter {
     // Dans le home du compte de la conversation : c'est là que Solera a amené le thread,
     // et là que la branche doit naître pour que la conversation forkée la reprenne.
     const client = new CodexAppServerClient({
-      binary: await this.cli.executable(),
+      binary: await target.cli.executable(),
+      environment: target.cli.environment,
       cwd: target.cwd,
       env: agentProcessEnv(target.accountEnv),
       onNotification: () => {},

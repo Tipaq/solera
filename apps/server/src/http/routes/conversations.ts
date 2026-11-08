@@ -80,6 +80,7 @@ import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from '..
 import type { AppContext } from '../context.js'
 import { badRequest, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
+import { environmentOf } from '../../environments/environments.js'
 
 /**
  * Bornes d'une page de relecture (`EventLog.readForReplay`).
@@ -119,6 +120,7 @@ export function conversationToDto(
     title: row.title,
     titleSetByUser: row.titleSetByUser,
     agent: row.agent,
+    environment: environmentOf(row),
     forkedFromId: row.forkedFromId,
     handoffFromId: row.handoffFromId,
     config: parseAgentConfig(row.config),
@@ -448,6 +450,7 @@ export function registerConversationRoutes(
       purpose: body.purpose,
       splitCardId: body.splitCardId,
       title: body.title,
+      environment: body.environment,
       origin: null,
       firstMessage: firstMessage && {
         clientMessageId: firstMessage.clientMessageId,
@@ -660,6 +663,8 @@ export function registerConversationRoutes(
       purpose: source.purpose,
       splitCardId: source.splitCardId,
       title: body.title ?? source.title,
+      // Le même monde que l'original : la suite poursuit le même travail.
+      environment: environmentOf(source),
       origin: null,
       handoff: {
         fromConversationId: source.id,

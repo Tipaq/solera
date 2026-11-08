@@ -11,6 +11,7 @@ import { ClaudeAccountGauges } from '../src/claude-accounts/gauges.js'
 import type { ClaudeIdentify } from '../src/claude-accounts/identity.js'
 import { ClaudeLoginService } from '../src/claude-accounts/login.js'
 import { ClaudeAccountStore } from '../src/claude-accounts/store.js'
+import { hostCli } from './environment-support.js'
 
 /**
  * La connexion guidée d'un abonnement nomme le compte par l'adresse du jeton obtenu :
@@ -69,7 +70,7 @@ async function harness(t: TestContext, identifyAs: ClaudeIdentify = identify) {
   chmodSync(binary, 0o700)
   const gauges = new ClaudeAccountGauges(join(dir, 'gauges'))
   const store = new ClaudeAccountStore(db, randomBytes(32), gauges)
-  const login = new ClaudeLoginService(store, async () => binary, gauges, null, identifyAs)
+  const login = new ClaudeLoginService(store, hostCli(binary), gauges, null, identifyAs)
   t.after(() => login.closeAll())
 
   /** Une connexion menée jusqu'au bout avec le bon code : rend son état final. */

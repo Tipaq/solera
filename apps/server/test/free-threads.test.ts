@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { existsSync } from 'node:fs'
@@ -19,6 +18,7 @@ import {
   type ConversationRow,
 } from '@solera/db'
 import { DEFAULT_CLAUDE_CONFIG } from '@solera/protocol'
+import type { McpSessionScope } from '../src/agents/mcp-builtin.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { conversationVisibleTo, inProject } from '../src/conversations/scope.js'
@@ -27,6 +27,7 @@ import { HttpError } from '../src/http/errors.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { agentCwd, conversationWorkspace, resolveConversationCwd } from '../src/workspace.js'
+import { sessionMcp, sessionScope } from './session-mcp-support.js'
 
 /**
  * Le fil libre : une conversation qui n'appartient à aucun projet.
@@ -151,21 +152,15 @@ test('« les fils de ce projet » comprend le groupe des fils libres', async (t)
 })
 
 test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en parle pas', async (t) => {
-  const { dir } = await harness(t)
+  const { db, dir } = await harness(t)
 
-  const list = (projectId: string, memory = join(dir, 'memory'), env: Record<string, string> = {}) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SOLERA_MCP_DB: join(dir, 'test.sqlite'), SOLERA_MCP_PROJECT: projectId, SOLERA_MCP_CONVERSATION: 'free', SOLERA_MCP_MEMORY: memory, ...env },
-      encoding: 'utf8', timeout: 10000,
-      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
-    })
-    assert.equal(run.status, 0, run.stderr)
-    return (JSON.parse(run.stdout).result as { tools: { name: string; inputSchema: { properties: object } }[] }).tools
-  }
+  // Par le chemin d'une session : un jeton qui porte la portée, et le pont HTTP.
+  const list = async (projectId: string | null, memory = join(dir, 'memory'), scope: Partial<McpSessionScope> = {}) =>
+    (await sessionMcp(t, db, join(dir, 'test.sqlite'), sessionScope({ projectId, conversationId: 'free', memoryDir: memory, ...scope }))).tools()
 
   // `create_project` et `move_conversation` complètent les huit quand ils existeront :
   // le filtre les nomme déjà, un nom de trop ne retirant rien de la liste.
-  const free = list('')
+  const free = await list(null)
   assert.deepEqual(
     free.map((tool) => tool.name).sort(),
     ['delete_memory', 'edit_instructions', 'read_instructions', 'read_memory', 'rename_session', 'write_instructions', 'write_memory'],
@@ -173,7 +168,7 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
 
   // Et le serveur du projet, lui, les porte tous : ce qui tombe n'est que ce qui parle
   // d'un projet, pas la moitié du serveur par accident.
-  const scoped = list('private').map((tool) => tool.name)
+  const scoped = (await list('private')).map((tool) => tool.name)
   assert.equal(scoped.length, 37)
   for (const tool of free) assert.ok(scoped.includes(tool.name), tool.name)
 
@@ -186,10 +181,10 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   // outils du catalogue au lieu de les laisser refuser à l'appel. Dans un fil libre il
   // n'en reste alors que SOLERA.md et son titre : c'est le cas où les deux filtres se cumulent.
   assert.deepEqual(
-    list('', '').map((tool) => tool.name).sort(),
+    (await list(null, '')).map((tool) => tool.name).sort(),
     ['edit_instructions', 'read_instructions', 'rename_session', 'write_instructions'],
   )
-  const scopedWithoutMemory = list('private', '').map((tool) => tool.name)
+  const scopedWithoutMemory = (await list('private', '')).map((tool) => tool.name)
   assert.equal(scopedWithoutMemory.length, 34)
   for (const tool of ['read_memory', 'write_memory', 'delete_memory']) {
     assert.ok(!scopedWithoutMemory.includes(tool), tool)
@@ -198,14 +193,14 @@ test('le serveur MCP démarre sans projet, et n’expose alors que ce qui n’en
   // `request_card_change` est la troisième famille, et le seul outil qu'un fil libre ne
   // voit **jamais**, accordé ou non : une carte appartient à un projet, il n'y aurait
   // rien à désigner. C'est pourquoi il n'entre pas dans `FREE_THREAD_TOOLS`.
-  const granted = { SOLERA_MCP_CARD_FILING: '1' }
-  assert.ok(list('private', undefined, granted).some((tool) => tool.name === 'request_card_change'))
+  const granted = { cardFiling: true }
+  assert.ok((await list('private', undefined, granted)).some((tool) => tool.name === 'request_card_change'))
   assert.ok(!scoped.includes('request_card_change'))
-  assert.ok(!list('', undefined, granted).some((tool) => tool.name === 'request_card_change'))
+  assert.ok(!(await list(null, undefined, granted)).some((tool) => tool.name === 'request_card_change'))
 
   // `propose_cards` a son réglage depuis #120 : sans lui, l'outil n'est pas listé.
   assert.ok(!scoped.includes('propose_cards'))
-  assert.ok(list('private', undefined, { SOLERA_MCP_PROPOSE_CARDS: '1' }).some((tool) => tool.name === 'propose_cards'))
+  assert.ok((await list('private', undefined, { proposeCards: true })).some((tool) => tool.name === 'propose_cards'))
 })
 
 test('une demande venue d’un fil libre est reconnue, `project_id` nul des deux côtés', async (t) => {

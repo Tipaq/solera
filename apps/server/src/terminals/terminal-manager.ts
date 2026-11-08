@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawn, type IPty } from 'node-pty'
+import type { IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { withManagedPath } from '../agents/cli-binary.js'
 import type { Config } from '../config.js'
+import type { EnvironmentProvider } from '../environments/provider.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
@@ -64,6 +65,8 @@ interface ManagedTerminal {
   interrupted: boolean
   /** Action de projet dont ce terminal joue la commande ; null pour un shell. */
   actionId: string | null
+  /** Session qui l'a ouvert, et dont il suit l'environnement ; null hors session. */
+  conversationId: string | null
   exitCode: number | null
 }
 
@@ -74,6 +77,16 @@ interface PersistedTerminal {
   cwd: string
   createdAt: number
   actionId?: string | null
+  conversationId?: string | null
+}
+
+/**
+ * Où le shell tourne : l'environnement qui le lance, et la session dont il le tient
+ * (null hors session), retenue pour le relancer au même endroit.
+ */
+export interface TerminalPlace {
+  environment: EnvironmentProvider
+  conversationId: string | null
 }
 
 /** Une commande à jouer à la place du shell interactif. */
@@ -172,8 +185,11 @@ export class TerminalManager {
    * Une commande passe par `shell -lc` plutôt que par une frappe dans un shell
    * interactif : le terminal se termine avec elle, ce qui donne son code de sortie, et
    * le shell de connexion charge le même PATH que celui qu'on ouvrirait à la main.
+   *
+   * Le shell tourne dans l'environnement de `place` : celui de la session qui l'ouvre,
+   * et hors session celui du projet (ADR 0001).
    */
-  open(projectId: string, cwd: string, run?: TerminalCommand): TerminalDto {
+  open(projectId: string, cwd: string, place: TerminalPlace, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
     if (run?.actionId) {
       // Une exécution terminée de la même action cède sa place : relancer un bouton ne
@@ -194,7 +210,9 @@ export class TerminalManager {
     // Une commande se lance dans le shell qui comprend sa syntaxe POSIX, un terminal vide
     // dans celui de l'utilisateur (voir `platform/shells.ts`).
     const shell = run ? commandShell() : interactiveShell()
-    const pty = spawn(shell.command, run ? [...shell.args, run.command] : shell.args, {
+    const pty = place.environment.spawnPty({
+      command: shell.command,
+      args: run ? [...shell.args, run.command] : shell.args,
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
@@ -230,6 +248,7 @@ export class TerminalManager {
       exited: false,
       interrupted: false,
       actionId: run?.actionId ?? null,
+      conversationId: place.conversationId,
       exitCode: null,
     }
     this.terminals.set(id, managed)
@@ -417,6 +436,7 @@ export class TerminalManager {
         exited: true,
         interrupted: true,
         actionId: meta.actionId ?? null,
+        conversationId: meta.conversationId ?? null,
         exitCode: null,
       })
     }
@@ -430,6 +450,7 @@ export class TerminalManager {
       cwd: managed.cwd,
       createdAt: managed.createdAt,
       actionId: managed.actionId,
+      conversationId: managed.conversationId,
     }
     try {
       writeFileSync(join(this.storeDir, `${managed.id}.json`), JSON.stringify(meta))
@@ -487,6 +508,7 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     cwd: managed.cwd,
     createdAt: managed.createdAt,
     actionId: managed.actionId,
+    conversationId: managed.conversationId,
     exitCode: managed.exitCode,
   }
 }
