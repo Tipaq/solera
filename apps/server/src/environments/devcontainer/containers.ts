@@ -1,11 +1,12 @@
 import { mkdir } from 'node:fs/promises'
+import type { Server as HttpServer } from 'node:http'
 import { join } from 'node:path'
 import type { AgentKind } from '@solera/protocol'
 import type { Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
 import { BridgeListeners } from './bridge.js'
-import { binaryName, DevcontainerEnvironment, type RunningContainer } from './environment.js'
+import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
 /** Ce qu'un lancement attend du conteneur. */
@@ -66,9 +67,15 @@ export class Devcontainers {
      * Docker Desktop, qui la relaie derrière `host.docker.internal`.
      */
     private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
-    /** Sous Linux natif, les écoutes du serveur sur les passerelles Docker. */
-    readonly bridges: BridgeListeners = new BridgeListeners(),
   ) {}
+
+  /** Sous Linux natif, les écoutes du serveur sur les passerelles Docker. */
+  private readonly bridges = new BridgeListeners()
+
+  /** Le serveur HTTP que les conteneurs joignent, une fois qu'il écoute. */
+  serve(server: HttpServer): void {
+    this.bridges.serve(server)
+  }
 
   /** Construits au premier usage : un serveur sans dev container n'en touche aucun chemin. */
   private get tools(): DevcontainerTools {
@@ -192,7 +199,7 @@ export class Devcontainers {
    */
   private async reachServer(hostAddress: string): Promise<void> {
     if (hostAddress === 'host.docker.internal' || this.server.agentUrl) return
-    if (!LOOPBACK.includes(this.server.host)) return
+    if (!LOOPBACK_HOSTS.includes(this.server.host)) return
     try {
       await this.bridges.ensure(hostAddress)
     } catch (err) {
@@ -270,8 +277,6 @@ export function targetArch(machine: string): LinuxTarget['arch'] | null {
 export function containerHomes(paths: Paths): string {
   return join(paths.data, 'container-homes')
 }
-
-const LOOPBACK = ['127.0.0.1', 'localhost', '::1', '[::1]']
 
 /** Ce qui ne décrit que le shell de la sonde, pas l'utilisateur. */
 const PROBE_ONLY = new Set(['PWD', 'OLDPWD', 'SHLVL', '_', 'HOSTNAME', 'TERM'])

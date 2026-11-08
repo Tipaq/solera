@@ -7,12 +7,15 @@ import type { Server as HttpServer } from 'node:http'
  * Sans Docker Desktop, un conteneur voit l'hôte à la passerelle de son réseau Docker
  * (172.17.0.1, ou celle du réseau d'un compose), où un serveur qui n'écoute que sur
  * la boucle locale ne répond pas. On écoute donc en plus sur cette adresse-là, et
- * seulement elle : elle n'existe que sur le pont Docker, pas sur le réseau de la
- * machine. Chaque réseau a sa passerelle : une écoute par adresse, ouverte au premier
- * conteneur qui en a besoin et gardée jusqu'à l'arrêt du serveur.
+ * seulement elle, plutôt que partout. Elle n'est pas privée pour autant : tous les
+ * conteneurs de la machine la joignent, et un voisin du réseau qui route vers elle
+ * aussi (Linux accepte un paquet pour une adresse locale sur n'importe quelle
+ * interface). Ce qui garde le serveur reste son authentification. Chaque réseau a sa
+ * passerelle : une écoute par adresse, ouverte au premier conteneur qui en a besoin
+ * et gardée jusqu'à l'arrêt du serveur.
  *
  * Les connexions sont confiées telles quelles au serveur HTTP principal : mêmes
- * routes, même authentification, et `request.ip` dit la vraie adresse du conteneur.
+ * routes, même authentification, même garde d'origine en profil desktop.
  */
 export class BridgeListeners {
   private server: HttpServer | null = null
