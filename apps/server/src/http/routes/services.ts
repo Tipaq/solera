@@ -177,7 +177,7 @@ export function registerServiceRoutes(
         terminals: entry.terminals, vscodeAttached: entry.vscodeAttached,
         cpu: usage?.cpu ?? entry.cpu, memoryBytes: usage?.memoryBytes ?? entry.memoryBytes,
         diskBytes: entry.diskBytes, imageBytes: entry.imageBytes,
-        ports: usage?.ports ?? entry.ports, startedAt: usage?.startedAt ?? entry.startedAt,
+        ports: usage?.ports ?? entry.ports, forwardedPorts: entry.forwardedPorts, startedAt: usage?.startedAt ?? entry.startedAt,
         companions: entry.companions,
         canStop: manageable && (entry.state === 'running' || (entry.state === 'starting' && entry.containerIds.length > 0)),
         canRestart: manageable && devcontainer && entry.containerIds.length > 0 && entry.state !== 'starting',

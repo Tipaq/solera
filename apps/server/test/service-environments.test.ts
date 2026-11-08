@@ -118,6 +118,7 @@ test("l'inventaire : un bac à sable par session ou terminal confinés, un dev c
   const sandbox = new ConfinedEnvironment(fakeBackend, { readable: [], writable: [], homeLinks: [] } as never)
   const devcontainers = {
     status: (projectId: string) => ({ starting: false, containerId: null, failure: projectId === 'p1' ? 'docker absent' : null }),
+    forwardedPorts: () => [],
   } as unknown as Devcontainers
   const inventory = new EnvironmentInventory({
     sessions: {

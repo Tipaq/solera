@@ -12,7 +12,7 @@ import type { Config } from '../config.js'
  * autre appareil : le CLI, lui, est sur la machine, et passer par le nom public le
  * ferait dépendre du réseau pour parler à son voisin.
  */
-export function soleraUrlForAgents(server: Config['server']): string {
+export function soleraUrlForAgents(server: Pick<Config['server'], 'host' | 'port' | 'agentUrl'>): string {
   if (server.agentUrl) return server.agentUrl.replace(/\/+$/, '')
   return `http://${reachableHost(server.host)}:${server.port}`
 }

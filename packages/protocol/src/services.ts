@@ -1,3 +1,5 @@
+import type { ForwardedPortDto } from './environments.js'
+
 /**
  * Ce qu'une entrée représente : un agent ou un terminal (`launcher`), ce qu'il a lancé
  * avec toute sa descendance (`command`), un outil d'agent tel qu'un serveur MCP
@@ -168,6 +170,8 @@ export interface ServiceEnvironmentDto {
   imageBytes: number | null
   /** Ports en écoute dans l'environnement. */
   ports: number[]
+  /** Ceux qu'un dev container sert sur l'hôte pour l'aperçu web (#141), et à quelle adresse. */
+  forwardedPorts: ForwardedPortDto[]
   startedAt: number | null
   /** Les autres conteneurs de son docker-compose, comptés dans la consommation. */
   companions: string[]

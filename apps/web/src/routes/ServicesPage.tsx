@@ -10,6 +10,7 @@ import type {
   ServiceEnvironmentDto,
   ServiceEnvironmentLogDto,
   ServicesDto,
+  ForwardedPortDto,
 } from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
 import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
@@ -329,12 +330,14 @@ function Attribution({ entry }: { entry: Attributed }) {
  * actions à droite, et tout ce qui est technique — PID, dossier, ligne de commande
  * entière, journal — replié sous « Détails ».
  */
-function Row({ dot, icon, name, fullName, ports, meta, actions, details, indent = false }: {
+function Row({ dot, icon, name, fullName, ports, badges, meta, actions, details, indent = false }: {
   dot?: string
   icon?: ReactNode
   name: ReactNode
   fullName: string
   ports: number[]
+  /** D'autres pastilles de port : celles qu'un dev container sert sur l'hôte. */
+  badges?: ReactNode
   meta: ReactNode[]
   actions: ReactNode
   details: [MessageKey, ReactNode][]
@@ -349,8 +352,9 @@ function Row({ dot, icon, name, fullName, ports, meta, actions, details, indent 
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <code className="min-w-0 truncate font-mono text-sm text-ink" title={fullName}>{name}</code>
-            {ports.length ? (
+            {ports.length || badges ? (
               <span className="flex shrink-0 gap-1" aria-label={t('services.ports')}>
+                {badges}
                 {ports.map((port) => <Badge key={port} tone="accent">:{port}</Badge>)}
               </span>
             ) : null}
@@ -620,7 +624,9 @@ function EnvironmentGroup({ environment, launchers, byLauncher, highlighted, sca
             icon={<span className="relative flex shrink-0 text-ink-faint"><Icon size={14} aria-hidden /><span aria-hidden className={cx('absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full', state.dot)} /></span>}
             name={<span className="font-sans font-medium">{kind}{environment.name ? <span className="font-mono font-normal text-ink-soft"> · {environment.name}</span> : null}</span>}
             fullName={environment.name ?? kind}
-            ports={environment.ports}
+            ports={environment.ports.filter((port) =>
+              !environment.forwardedPorts.some((forwarded) => forwarded.host === null && forwarded.containerPort === port))}
+            badges={environment.forwardedPorts.map((forwarded) => <ForwardedPort key={`${forwarded.host ?? ''}:${forwarded.containerPort}`} port={forwarded} />)}
             meta={[
               <span className={cx(environment.state === 'failed' && 'text-critical')} title={environment.error ?? undefined}>{t(state.key)}</span>,
               environment.projectId
@@ -690,6 +696,28 @@ function EnvironmentGroup({ environment, launchers, byLauncher, highlighted, sca
         )}
       </section>
     </li>
+  )
+}
+
+/**
+ * Un port du dev container servi sur l'hôte (#141) : son numéro, et l'adresse de l'hôte
+ * quand elle diffère ; en rouge, avec la raison, s'il n'a pas pu l'être.
+ */
+function ForwardedPort({ port }: { port: ForwardedPortDto }) {
+  const t = useTranslate()
+  const name = `${port.host ?? ''}:${port.containerPort}`
+  if (port.error) {
+    return (
+      <Badge tone="critical">
+        <span title={t(`web.port.error.${port.error.code}`, { port: port.containerPort, detail: port.error.detail })}>{name}</span>
+      </Badge>
+    )
+  }
+  if (port.hostPort === null) return <Badge>{name}</Badge>
+  return (
+    <Badge tone="accent">
+      <span title={port.label ?? undefined}>{port.remapped || port.host ? `${name} → localhost:${port.hostPort}` : name}</span>
+    </Badge>
   )
 }
 

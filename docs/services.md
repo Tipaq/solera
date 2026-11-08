@@ -40,7 +40,9 @@ Where the numbers come from (`services/environments.ts`):
   in its usage. `docker stats --no-stream` gives CPU and memory, `docker ps -s` the
   written layer and the image (re-read once a minute, it walks the layer), the
   container's own `/proc/net/tcp*` its listening ports, and `docker top` whether a
-  VS Code server is attached. The state merges Docker's with what Solera knows:
+  VS Code server is attached. The ports Solera serves on the host for the web
+  preview (#141) show next to them, as `5173 → localhost:5174` when the host port
+  differs, in red with the cause when the port could not be served. The state merges Docker's with what Solera knows:
   a `devcontainer up` in progress is *starting*, a failed one is *failed* with its
   message even when no container exists. A container that exited on `docker stop`
   (137, 143) is *stopped*, not failed.

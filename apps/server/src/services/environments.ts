@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import {
   environmentServiceId,
+  type ForwardedPortDto,
   type ServiceEnvironmentEngine,
   type ServiceEnvironmentKind,
   type ServiceEnvironmentState,
@@ -45,6 +46,7 @@ export interface ScannedEnvironment {
   diskBytes: number | null
   imageBytes: number | null
   ports: number[]
+  forwardedPorts: ForwardedPortDto[]
   startedAt: number | null
   companions: string[]
   /** Le conteneur principal, puis ceux de son docker-compose. */
@@ -323,6 +325,7 @@ export class EnvironmentInventory {
         diskBytes: main ? sum([main, ...companions].map((container) => container.writableBytes)) : null,
         imageBytes: main?.imageBytes ?? null,
         ports: [],
+        forwardedPorts: devcontainers.forwardedPorts(project.id),
         startedAt: null,
         companions: companions.map((container) => container.name),
         containerIds: main ? [main.id, ...companions.map((container) => container.id)] : [],
@@ -435,6 +438,7 @@ export class EnvironmentInventory {
                 diskBytes: environment.privateRoot ? await this.directorySize(environment.privateRoot) : null,
                 imageBytes: null,
                 ports: [],
+                forwardedPorts: [],
                 startedAt: null,
                 companions: [],
                 containerIds: [],

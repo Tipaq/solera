@@ -1561,6 +1561,7 @@ export function ConversationPage() {
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}
             session={session}
+            environment={conversation.environment}
           />
         </Suspense>
       ) : null}
