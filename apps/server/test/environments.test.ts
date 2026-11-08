@@ -8,6 +8,7 @@ import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projects, runMigrations, users } from '@solera/db'
 import {
+  autonomousEnvironment,
   DEFAULT_CLAUDE_CONFIG,
   HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
@@ -38,6 +39,7 @@ import { recordingEnvironment } from './environment-support.js'
 import { fixture as opencodeFixture } from './opencode-support.js'
 
 const DEVCONTAINER = { where: 'devcontainer', confined: false } as const
+const DEVCONTAINER_CONFINED = { where: 'devcontainer', confined: true } as const
 const SRC = fileURLToPath(new URL('../src/', import.meta.url))
 
 async function database(t: TestContext) {
@@ -195,6 +197,11 @@ test("une session autonome prend l'environnement du projet, confiné si son lanc
     await assert.rejects(createConversation(db, sessions, { ...input, autonomous: { confined: null } }), EnvironmentUnavailableError)
     assert.equal(db.select().from(conversations).all().length, before)
   }
+
+  // `false` rend l'environnement du projet tel quel : on confine, on ne déconfine pas.
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER_CONFINED, false, false), DEVCONTAINER_CONFINED)
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER, true, null), DEVCONTAINER_CONFINED)
+  assert.deepEqual(autonomousEnvironment(DEVCONTAINER, true, false), DEVCONTAINER)
 
   // Un fil libre n'a rien à confiner : refusé plutôt que lancé libre.
   await assert.rejects(

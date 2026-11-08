@@ -21,6 +21,8 @@ import { formatSessionMessage, type AgentConfig, type AgentKind } from '@solera/
 import { recordCardMove } from '../cards/moves.js'
 import { parentBranchFor } from '../cards/parent-branch.js'
 import { createConversation } from '../conversations/create.js'
+import { environmentOf } from '../environments/environments.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import type { Decisions } from '../decisions/decisions.js'
 import type { AppContext } from '../http/context.js'
 import { Refusal } from '../sessions/refusal.js'
@@ -461,18 +463,28 @@ export class Reviews {
   ): Promise<ConversationRow> {
     const review = this.ctx.db.select().from(cardReviews).where(eq(cardReviews.id, reviewId)).get()!
     const config = await this.reviewerConfig(author.agent, project, author.userId)
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: project.id,
-      userId: author.userId,
-      agent: author.agent,
-      config,
-      worktreeId: author.worktreeId,
-      cardId: card.id,
-      title: `Revue de la PR #${review.prNumber} (#${card.number})`,
-      origin: null,
-      // Elle lit l'arbre de l'auteur comme il le voit : confinée s'il l'est, libre sinon.
-      autonomous: { confined: author.environmentConfined },
-    })
+    let row: ConversationRow
+    try {
+      row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: project.id,
+        userId: author.userId,
+        agent: author.agent,
+        config,
+        worktreeId: author.worktreeId,
+        cardId: card.id,
+        title: `Revue de la PR #${review.prNumber} (#${card.number})`,
+        origin: null,
+        // Elle lit l'arbre de l'auteur comme il le voit, dans son environnement ; confinée,
+        // elle tourne sans demandes d'autorisation.
+        environment: environmentOf(author),
+        autonomous: { confined: null },
+      })
+    } catch (err) {
+      if (err instanceof EnvironmentUnavailableError) {
+        this.note(card.id, author.id, `Relecture de la PR #${review.prNumber} non lancée : ${err.message}`)
+      }
+      throw err
+    }
     this.ctx.db.update(cardReviews).set({ reviewerConversationId: row.id }).where(eq(cardReviews.id, reviewId)).run()
     try {
       await this.sessions.sendMessage(

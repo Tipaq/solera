@@ -127,14 +127,15 @@ export interface ForwardedPortDto {
 
 /**
  * L'environnement d'une session autonome (tâche planifiée, carte lancée par un jalon,
- * session lancée par un agent, relecture) : celui du projet, confiné ou non (#146).
+ * session lancée par un agent) : celui du projet, ou sa version confinée (#146).
  * `confined` est le choix du lancement ; null, c'est le réglage du projet qui tranche.
- * On ne confine que : « où ça tourne » reste celui du projet.
+ * `false` rend celui du projet tel quel, confiné s'il l'est : on ne déconfine pas. On ne
+ * fait que confiner : « où ça tourne » reste celui du projet.
  */
 export function autonomousEnvironment(
   project: ExecutionEnvironment,
   projectConfined: boolean,
   confined: boolean | null,
 ): ExecutionEnvironment {
-  return { where: project.where, confined: confined ?? (projectConfined || project.confined) }
+  return (confined ?? projectConfined) ? { where: project.where, confined: true } : project
 }

@@ -864,7 +864,7 @@ const ALL_TOOLS = [
         confined: {
           type: 'boolean',
           description:
-            "La confiner : elle n'écrit que dans son arbre, ne voit ni les identifiants de l'hôte ni les autres dépôts, et tourne sans demandes d'autorisation. Elle ne pourra donc ni pousser ni ouvrir de PR. `false` pour l'environnement du projet, non confiné. Omettre pour le réglage du projet. Une session confinée ne lance que des sessions confinées.",
+            "La confiner : elle n'écrit que dans son arbre, ne voit ni les identifiants de l'hôte ni les autres dépôts, et tourne sans demandes d'autorisation. Elle ne pourra donc ni pousser ni ouvrir de PR. `false` pour l'environnement du projet tel qu'il est réglé. Omettre pour le réglage du projet. Une session confinée ne lance que des sessions confinées.",
         },
       },
       required: ['prompt'],

@@ -69,6 +69,7 @@ import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
@@ -804,39 +805,51 @@ export class AgentRequests {
     const title =
       typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 200) : undefined
 
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: project.id,
-      userId: requester.userId,
-      agent,
-      config,
-      // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
-      // mission d'un agent libre de tout l'hôte.
-      ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
-      autonomous: { confined },
-      worktreeId,
-      cardId: card?.id ?? null,
-      title,
-      titleSource: prompt,
-      origin: null,
-      firstMessage: {
-        clientMessageId: randomUUID(),
-        // Lancée par un compte et non par une session : la mission arrive nue, comme si
-        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
-        text: requester.id
-          ? formatSessionMessage({
-              kind: 'launch',
-              from: requester.id,
-              title: requester.title,
-              agent: requester.agent,
-              messageId: request.id,
-              body: prompt,
-            })
-          : prompt,
-        attachments: [],
-        mentions: [],
-        skills: [],
-      },
-    })
+    let row: ConversationRow
+    try {
+      row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: project.id,
+        userId: requester.userId,
+        agent,
+        config,
+        // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
+        // mission d'un agent libre de tout l'hôte.
+        ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
+        autonomous: { confined },
+        worktreeId,
+        cardId: card?.id ?? null,
+        title,
+        titleSource: prompt,
+        origin: null,
+        firstMessage: {
+          clientMessageId: randomUUID(),
+          // Lancée par un compte et non par une session : la mission arrive nue, comme si
+          // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+          text: requester.id
+            ? formatSessionMessage({
+                kind: 'launch',
+                from: requester.id,
+                title: requester.title,
+                agent: requester.agent,
+                messageId: request.id,
+                body: prompt,
+              })
+            : prompt,
+          attachments: [],
+          mentions: [],
+          skills: [],
+        },
+      })
+    } catch (err) {
+      // Le refus se lit aussi sur la carte, pas seulement dans la réponse à l'agent.
+      if (card && err instanceof EnvironmentUnavailableError) {
+        this.ctx.db
+          .insert(cardNotes)
+          .values({ id: randomUUID(), cardId: card.id, conversationId: requester.id, userId: null, body: `Session non lancée : ${err.message}`, createdAt: Date.now() })
+          .run()
+      }
+      throw err
+    }
     if (card) advanceCardOnLaunch(this.ctx, card.id, requester.userId)
 
     const tree = worktreeId

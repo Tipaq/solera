@@ -231,10 +231,14 @@ export function DraftConversationPage() {
   // Confinée, la session part sans demandes d'autorisation (#146) : le confinement est
   // son garde-fou. C'est proposé, et le composer le montre et le laisse changer.
   const confinedNow = (chosenEnvironment ?? environments?.default)?.confined ?? false
-  const defaults = useMemo(() => {
-    const inherited = withSoleraAccount(inheritedConfigFor(agent, userSettings, project), agentAccounts, lastAccount)
-    return confinedNow ? unattendedConfig(inherited) : inherited
-  }, [agent, userSettings, project, agentAccounts, lastAccount, confinedNow])
+  const defaultsFor = useCallback(
+    (confined: boolean) => {
+      const inherited = withSoleraAccount(inheritedConfigFor(agent, userSettings, project), agentAccounts, lastAccount)
+      return confined ? unattendedConfig(inherited) : inherited
+    },
+    [agent, userSettings, project, agentAccounts, lastAccount],
+  )
+  const defaults = useMemo(() => defaultsFor(confinedNow), [defaultsFor, confinedNow])
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -395,8 +399,7 @@ export function DraftConversationPage() {
                   // Les garde-fous suivent le confinement : on ne garde pas hors du
                   // confinement le mode sans autorisation qu'il proposait.
                   if (config && environment.confined !== confinedNow) {
-                    const inherited = withSoleraAccount(inheritedConfigFor(config.agent, userSettings, project), agentAccounts, lastAccount)
-                    setConfig(withPermissionsOf(config, environment.confined ? unattendedConfig(inherited) : inherited))
+                    setConfig(withPermissionsOf(config, defaultsFor(environment.confined)))
                   }
                   setPickedEnvironment({ projectId, environment })
                 }}
