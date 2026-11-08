@@ -1,6 +1,6 @@
 import { execFile, spawn as spawnProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
-import { copyFile, cp, mkdir, rm } from 'node:fs/promises'
+import { copyFile, cp, lstat, mkdir, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, posix } from 'node:path'
 import { spawn as spawnPty, type IPty } from 'node-pty'
@@ -144,6 +144,9 @@ export class ConfinedEnvironment implements EnvironmentProvider {
     this.live.clear()
     if (this.dirs) await rm(this.dirs.root, { recursive: true, force: true })
     this.dirs = null
+    for (const plan of this.plans.values()) {
+      for (const placeholder of plan.placeholders) await removeEmptyFile(placeholder)
+    }
   }
 
   /** Ce que le bac à sable voit : utile aux tests et au diagnostic. */
@@ -274,5 +277,15 @@ function alive(pid: number): boolean {
     return true
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/** Retire un `.git` posé par le confinement, s'il est resté le fichier vide qu'on a posé. */
+async function removeEmptyFile(path: string): Promise<void> {
+  try {
+    const stats = await lstat(path)
+    if (stats.isFile() && stats.size === 0) await rm(path)
+  } catch {
+    // Déjà parti.
   }
 }

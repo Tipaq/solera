@@ -3702,6 +3702,7 @@ export const en = {
   'error.confinement_userns_blocked': "The kernel denies bwrap the namespaces it needs (AppArmor, Ubuntu 24.04 and later). To allow them: {fix}",
   'error.confinement_macos_too_old': "Confinement needs macOS 14 or later.",
   'error.confinement_seatbelt_nested': "Solera already runs inside a macOS sandbox, and macOS refuses to nest them. Restart Solera outside any sandbox.",
+  'error.confinement_subfolder': "A confined session cannot run in a subfolder of a git repository: open the project at the repository root, or in a worktree.",
   'error.confinement_failed': "Confinement could not start: {detail}",
   'error.confinement_agent_unsupported': "{agent} cannot run confined yet: it has no account isolated from your home.",
   'error.confinement_account_required': "A confined session needs one of your Solera accounts: the host's CLI login stays hidden from it. Pick an account for this session.",

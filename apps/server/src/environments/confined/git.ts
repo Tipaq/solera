@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { realPathOf } from './paths.js'
 
 /** Ce que git demande au confinement pour un dépôt ou un worktree. */
@@ -10,6 +10,8 @@ export interface GitMounts {
   writable: string[]
   /** En lecture seule à l'intérieur d'un dossier inscriptible. */
   protected: string[]
+  /** Un `.git` vide posé par le confinement, à retirer à sa fermeture. */
+  placeholder?: string
 }
 
 const NONE: GitMounts = { readable: [], writable: [], protected: [] }
@@ -34,6 +36,11 @@ const GITDIR_LINE = /^gitdir: (?<path>.+)$/u
  *   verrou à la racine du `.git`, qu'aucune liste blanche n'ouvre sans ouvrir le reste :
  *   une session confinée qui doit commiter travaille dans un worktree.
  *
+ * - **Hors dépôt** : un `.git` vide, en lecture seule. Sans lui, l'agent ferait
+ *   `git init` et poserait sa config, et le serveur, qui lance git sur ce dossier entre
+ *   deux tours (les points de reprise), exécuterait son `core.fsmonitor`. Vide, il fait
+ *   refuser le dossier à git, dedans comme sur l'hôte ; la fermeture le retire.
+ *
  * Des métadonnées absentes ou illisibles sont ignorées, git ne les lirait pas non plus.
  */
 export function gitMounts(dir: string): GitMounts {
@@ -42,7 +49,16 @@ export function gitMounts(dir: string): GitMounts {
   try {
     isDirectory = lstatSync(dotGit).isDirectory()
   } catch {
-    return NONE
+    // Dans un dépôt, un `.git` vide ferait aussi refuser ce dossier à git sur l'hôte :
+    // la portée refuse ce cas avant (`assertConfinable`).
+    if (enclosingRepo(dir)) return NONE
+    try {
+      writeFileSync(dotGit, '', { flag: 'wx' })
+    } catch {
+      return NONE
+    }
+    const placeholder = realPathOf(dotGit)
+    return placeholder ? { ...NONE, protected: [placeholder], placeholder } : NONE
   }
   if (isDirectory) {
     const real = realPathOf(dotGit)
@@ -55,8 +71,10 @@ export function gitMounts(dir: string): GitMounts {
     return NONE
   }
   const pointer = realPathOf(dotGit)
+  if (!pointer) return NONE
   const adminDir = gitdir ? realPathOf(resolve(dir, gitdir)) : null
-  if (!pointer || !adminDir) return NONE
+  // Un `.git` qui ne mène nulle part (le vide d'un autre bac à sable) reste protégé.
+  if (!adminDir) return { ...NONE, protected: [pointer] }
   let commonDir: string | null = null
   try {
     commonDir = realPathOf(resolve(adminDir, readFileSync(join(adminDir, 'commondir'), 'utf8').trim()))
@@ -75,4 +93,12 @@ export function gitMounts(dir: string): GitMounts {
     writable: [...writable, adminDir],
     protected: [pointer, ...['commondir', 'gitdir', 'config.worktree'].map((name) => join(adminDir, name))],
   }
+}
+
+/** Le dépôt qui contient `dir` sans que `dir` en soit la racine, ou null. */
+export function enclosingRepo(dir: string): string | null {
+  for (let current = dirname(dir); current !== dirname(current); current = dirname(current)) {
+    if (existsSync(join(current, '.git'))) return current
+  }
+  return null
 }

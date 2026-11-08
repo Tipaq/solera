@@ -1026,12 +1026,6 @@ export class SessionManager {
     }
   }
 
-  /**
-   * Le CLI d'une session, cherché dans son environnement : celui où la session tourne,
-   * qui n'est pas forcément celui où l'adaptateur a trouvé le sien. Lève si ce serveur ne
-   * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
-   * retomber en silence sur l'hôte.
-   */
   /** La portée d'une session confinée ; rien pour une session qui ne l'est pas. */
   private confinedScope(
     conversation: ConversationRow,
@@ -1051,6 +1045,12 @@ export class SessionManager {
       : Promise.resolve(attachments)
   }
 
+  /**
+   * Le CLI d'une session, cherché dans son environnement : celui où la session tourne,
+   * qui n'est pas forcément celui où l'adaptateur a trouvé le sien. Lève si ce serveur ne
+   * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
+   * retomber en silence sur l'hôte.
+   */
   private sessionCli(conversation: ConversationRow, scope?: ConfinementScope): CliLauncher & { binary: string } {
     const adapter = this.registry.adapter(conversation.agent)
     const environment = this.environments.provider(environmentOf(conversation), scope)

@@ -50,7 +50,16 @@ test('git : un worktree n’écrit que ses objets, ses refs, ses journaux et son
 
   // Un dépôt simple : son `.git` en entier, en lecture seule.
   assert.deepEqual(gitMounts(repo), { readable: [], writable: [], protected: [common] })
-  assert.deepEqual(gitMounts(tmpdir()), { readable: [], writable: [], protected: [] })
+
+  // Hors dépôt : un `.git` vide, protégé, que la fermeture retirera.
+  const loose = await realpath(await mkdtemp(join(tmpdir(), 'solera-loose-')))
+  t.after(() => rm(loose, { recursive: true, force: true }))
+  assert.deepEqual(gitMounts(loose), { readable: [], writable: [], protected: [join(loose, '.git')], placeholder: join(loose, '.git') })
+  // Un sous-dossier de dépôt n'en reçoit pas : la portée le refuse.
+  await mkdir(join(repo, 'sous'))
+  assert.deepEqual(gitMounts(join(repo, 'sous')), { readable: [], writable: [], protected: [] })
+  assert.throws(() => terminalScope(join(repo, 'sous')), (err: unknown) =>
+    err instanceof EnvironmentUnavailableError && err.code === 'confinement_subfolder')
 })
 
 test('git : `config.worktree` est créé vide, pour qu’un agent ne puisse pas l’écrire avant que l’extension s’active', async (t) => {
@@ -105,9 +114,14 @@ test("chaîne d'outils : jamais le home ni ses ancêtres, et le paquet entier d'
   const inRepo = hostToolchain({ path: `${join(project, 'node_modules', '.bin')}:${bin}`, home, coveredRoots: [], deniedRoots: [] })
   assert.deepEqual(inRepo.pathEntries, [bin])
 
-  // Un home qui est lui-même un dépôt de dotfiles ne condamne pas sa chaîne d'outils.
-  await mkdir(join(home, '.git'))
-  assert.deepEqual(hostToolchain({ path: bin, home, coveredRoots: [], deniedRoots: [] }).pathEntries, [bin])
+  // nvm, pyenv, asdf s'installent par `git clone` : leurs versions restent lisibles.
+  const nvmBin = join(home, '.nvm', 'versions', 'node', 'v22', 'bin')
+  await mkdir(nvmBin, { recursive: true })
+  await mkdir(join(home, '.nvm', '.git'))
+  assert.deepEqual(hostToolchain({ path: nvmBin, home, coveredRoots: [], deniedRoots: [] }).pathEntries, [nvmBin])
+  // Mais un `~/bin` qui est un dépôt de dotfiles, non.
+  await mkdir(join(bin, '.git'))
+  assert.deepEqual(hostToolchain({ path: bin, home, coveredRoots: [], deniedRoots: [] }).pathEntries, [])
 })
 
 test("variables : ce que Solera ajoute passe, l'environnement du serveur et ses sockets non", () => {
@@ -244,4 +258,23 @@ test('bwrap, pour de vrai : écrire et commiter dans le worktree, rien d’autre
   await new Promise((resolve) => setTimeout(resolve, 300))
   assert.equal(sleeping(), '0', 'tout ce que la session a lancé est mort')
   assert.equal(existsSync(privateRoot), false, 'le home et le tmp privés sont effacés')
+})
+
+test('bwrap, hors dépôt : pas de `git init` pour l’agent, et le `.git` posé repart à la fermeture', { skip: !bwrapUsable && 'bwrap indisponible ici' }, async (t) => {
+  const loose = await realpath(await mkdtemp(join(homedir(), '.solera-confinement-test-')))
+  t.after(() => rm(loose, { recursive: true, force: true }))
+  const environment = new ConfinedEnvironment(bwrapBackend, terminalScope(loose))
+  t.after(() => environment.close())
+  const result = await environment.exec({
+    command: 'sh',
+    args: ['-c', 'git init -q && git config core.fsmonitor "touch pwned"'],
+    cwd: loose,
+    timeoutMs: 20_000,
+  })
+  assert.notEqual(result.code, 0)
+  assert.equal(existsSync(join(loose, '.git', 'config')), false)
+  assert.equal((await environment.exec({ command: 'sh', args: ['-c', 'echo ok > fichier'], cwd: loose, timeoutMs: 20_000 })).code, 0)
+  await environment.close()
+  assert.equal(existsSync(join(loose, '.git')), false, 'le `.git` vide est retiré')
+  assert.equal(existsSync(join(loose, 'fichier')), true)
 })

@@ -36,6 +36,8 @@ export interface ConfinementPlan {
   protected: string[]
   homeLinks: ConfinementScope['homeLinks']
   env: Record<string, string>
+  /** Les `.git` vides posés pour ce confinement, à retirer à sa fermeture. */
+  placeholders: string[]
 }
 
 export interface PlanInput {
@@ -65,6 +67,7 @@ export function confinementPlan({ scope, path, home, coveredRoots, deniedRoots }
     protected: protectedPaths,
     homeLinks: scope.homeLinks,
     env: scope.env,
+    placeholders: git.flatMap((g) => (g.placeholder ? [g.placeholder] : [])),
   }
 }
 

@@ -3699,6 +3699,7 @@ export const fr: Catalog = {
   'error.confinement_userns_blocked': "Le noyau refuse à bwrap les espaces de noms dont il a besoin (AppArmor, Ubuntu 24.04 et suivantes). Pour les lui rendre : {fix}",
   'error.confinement_macos_too_old': "Le confinement demande macOS 14 ou plus récent.",
   'error.confinement_seatbelt_nested': "Solera tourne déjà dans un bac à sable macOS, et macOS refuse de les imbriquer. Relance Solera hors de tout bac à sable.",
+  'error.confinement_subfolder': "Une session confinée ne peut pas tourner dans un sous-dossier d'un dépôt git : ouvre le projet à la racine du dépôt, ou dans un worktree.",
   'error.confinement_failed': "Le confinement n'a pas pu démarrer : {detail}",
   'error.confinement_agent_unsupported': "{agent} ne sait pas encore tourner confiné : il n'a pas de compte isolé de ton home.",
   'error.confinement_account_required': "Une session confinée a besoin d'un de tes comptes Solera : la connexion du CLI de l'hôte lui reste cachée. Choisis un compte pour cette session.",

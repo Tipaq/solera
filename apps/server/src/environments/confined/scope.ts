@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { HOST_CONFINED_ENVIRONMENT, type AgentKind } from '@solera/protocol'
 import { transcriptPath } from '../../agents/claude/transcript.js'
 import { EnvironmentUnavailableError } from '../provider.js'
+import { enclosingRepo } from './git.js'
 import type { ConfinementScope } from './plan.js'
 
 /**
@@ -27,9 +28,41 @@ export function gitIdentityEnv(cwd: string): Record<string, string> {
   }
 }
 
+/**
+ * Ce que git reçoit dans le bac à sable : l'identité de l'utilisateur, et pas
+ * d'entretien automatique, qui réécrirait `packed-refs` dans un dossier commun en
+ * lecture seule et se plaindrait à chaque commit.
+ */
+function gitEnv(cwd: string): Record<string, string> {
+  return {
+    ...gitIdentityEnv(cwd),
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: 'gc.auto',
+    GIT_CONFIG_VALUE_0: '0',
+    GIT_CONFIG_KEY_1: 'maintenance.auto',
+    GIT_CONFIG_VALUE_1: 'false',
+  }
+}
+
+/**
+ * Refuse un dossier de travail situé dans un dépôt sans en être la racine (un projet
+ * en sous-dossier) : l'agent pourrait y faire `git init` et poser une config que git
+ * exécuterait sur l'hôte, et le `.git` vide qui l'en empêche ailleurs ferait aussi
+ * refuser le dossier au git de l'hôte.
+ */
+function assertConfinable(cwd: string): void {
+  if (existsSync(join(cwd, '.git')) || !enclosingRepo(cwd)) return
+  throw new EnvironmentUnavailableError(
+    HOST_CONFINED_ENVIRONMENT,
+    'A confined session cannot run in a subfolder of a git repository.',
+    { code: 'confinement_subfolder' },
+  )
+}
+
 /** Un terminal confiné : son dossier, rien d'autre. */
 export function terminalScope(cwd: string): ConfinementScope {
-  return { workspaces: [cwd], writable: [], readable: [], homeLinks: [], env: gitIdentityEnv(cwd) }
+  assertConfinable(cwd)
+  return { workspaces: [cwd], writable: [], readable: [], homeLinks: [], env: gitEnv(cwd) }
 }
 
 export interface SessionScopeInput {
@@ -67,6 +100,7 @@ function refuse(code: string, agent: AgentKind, message: string): never {
  */
 export function sessionScope(input: SessionScopeInput): ConfinementScope {
   const { agent, accountEnv } = input
+  assertConfinable(input.cwd)
   const writable = [...(input.memoryDir ? [input.memoryDir] : []), ...(input.prototypesDir ? [input.prototypesDir] : [])]
   // Pas les pièces jointes : leur dossier mêle tous les projets (voir `shareAttachments`).
   const readable = [...input.skillRoots]
@@ -102,6 +136,6 @@ export function sessionScope(input: SessionScopeInput): ConfinementScope {
     writable,
     readable,
     homeLinks,
-    env: gitIdentityEnv(input.cwd),
+    env: gitEnv(input.cwd),
   }
 }
