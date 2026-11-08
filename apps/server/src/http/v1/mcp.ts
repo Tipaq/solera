@@ -3,22 +3,30 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { ApiTokenRow, UserRow } from '@solera/db'
-import { resolveEntry } from '../../agents/mcp-builtin.js'
+import { resolveEntry, sessionScopeEnv } from '../../agents/mcp-builtin.js'
+import type { McpSessionGrant, McpSessionTokens } from '../../agents/mcp-session-tokens.js'
 import type { AppContext } from '../context.js'
 import { HttpError, badRequest, notFound } from '../errors.js'
 import { requireScope } from '../require-user.js'
 import { allowedProjectIds } from './access.js'
 
 /**
- * Le serveur MCP de Solera par HTTP, pour un client qui n'est pas sur la machine : un
- * Claude Code sur un portable, une app de bureau, un assistant sur le téléphone.
+ * Le serveur MCP de Solera par HTTP, pour deux sortes de clients : le CLI de chaque
+ * session, et un client qui n'est pas sur la machine (un Claude Code sur un portable,
+ * une app de bureau, un assistant sur le téléphone).
  *
  * Le serveur lui-même (`mcp/solera-mcp.mjs`) parle en stdio et lit la base : il ne sait
  * rien du réseau. Ce pont l'expose selon le transport « streamable HTTP » de MCP, sous
- * `/api/v1/mcp`, donc derrière un jeton d'API et sa portée `mcp`. Il ne réimplémente
- * aucun outil : chaque session HTTP est un process du serveur en mode global, lancé au
- * nom du compte du jeton et borné à ses projets, et chaque requête JSON-RPC lui est
- * transmise telle quelle.
+ * `/api/v1/mcp`, derrière l'un de deux jetons. Il ne réimplémente aucun outil : chaque
+ * session HTTP est un process du serveur, et chaque requête JSON-RPC lui est transmise
+ * telle quelle.
+ *
+ * - **Le jeton d'une session** (`McpSessionTokens`) : le process sert cette
+ *   conversation, avec la portée calculée au lancement de son runner, exactement comme
+ *   quand le CLI le lançait lui-même. Le jeton meurt avec le runner, et ses process
+ *   avec lui.
+ * - **Un jeton d'API** avec la portée `mcp` : le process est en mode global, au nom du
+ *   compte du jeton et borné à ses projets.
  *
  * Toujours une réponse JSON, jamais un flux : le serveur ne pousse rien au client, et
  * le transport permet l'un comme l'autre. Le client enchaîne `initialize`, reçoit un
@@ -61,7 +69,8 @@ class McpSession {
   private closed = false
 
   constructor(
-    readonly tokenId: string,
+    /** Le jeton d'API ou le jeton de session qui l'a ouverte, seul à pouvoir la présenter. */
+    readonly owner: string,
     private readonly child: ChildProcess,
     onExit: (session: McpSession) => void,
     log: FastifyInstance['log'],
@@ -135,7 +144,13 @@ export class McpBridge {
   constructor(
     private readonly ctx: AppContext,
     private readonly log: FastifyInstance['log'],
-  ) {}
+    tokens?: McpSessionTokens,
+  ) {
+    tokens?.onRevoke((grantIds) => {
+      const revoked = new Set(grantIds.map(grantOwner))
+      for (const session of this.sessions.values()) if (revoked.has(session.owner)) this.close(session)
+    })
+  }
 
   start(): void {
     this.reaper = setInterval(() => {
@@ -159,31 +174,38 @@ export class McpBridge {
    * extérieur est un agent comme un autre, et une mémoire coupée l'est pour lui aussi.
    */
   open(token: ApiTokenRow, user: UserRow): McpSession {
-    const owned = [...this.sessions.values()].filter((session) => session.tokenId === token.id)
+    return this.spawn(token.id, {
+      SOLERA_MCP_GLOBAL: '1',
+      SOLERA_MCP_DB: this.ctx.config.paths.database,
+      SOLERA_MCP_USER: user.username,
+      SOLERA_MCP_MEMORY: this.ctx.config.mcp.agentMemory ? this.ctx.config.paths.memory : '',
+      SOLERA_MCP_PROJECTS: allowedProjectIds(token).join(','),
+    })
+  }
+
+  /** Un process du serveur pour une conversation, avec la portée de son jeton. */
+  openForSession(grant: McpSessionGrant): McpSession {
+    return this.spawn(grantOwner(grant.id), sessionScopeEnv(grant.scope, this.ctx.config.paths.database))
+  }
+
+  private spawn(owner: string, scope: Record<string, string>): McpSession {
+    const owned = [...this.sessions.values()].filter((session) => session.owner === owner)
     while (owned.length >= MAX_SESSIONS_PER_TOKEN) this.close(owned.shift()!)
 
     const child = spawn(process.execPath, [resolveEntry()], {
-      env: {
-        PATH: process.env.PATH ?? '',
-        HOME: process.env.HOME ?? '',
-        SOLERA_MCP_GLOBAL: '1',
-        SOLERA_MCP_DB: this.ctx.config.paths.database,
-        SOLERA_MCP_USER: user.username,
-        SOLERA_MCP_MEMORY: this.ctx.config.mcp.agentMemory ? this.ctx.config.paths.memory : '',
-        SOLERA_MCP_PROJECTS: allowedProjectIds(token).join(','),
-      },
+      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...scope },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    const session = new McpSession(token.id, child, (ended) => this.sessions.delete(ended.id), this.log)
+    const session = new McpSession(owner, child, (ended) => this.sessions.delete(ended.id), this.log)
     this.sessions.set(session.id, session)
     return session
   }
 
   /** La session de l'en-tête, si elle appartient au jeton qui la présente. */
-  lookup(id: string | undefined, token: ApiTokenRow): McpSession | null {
+  lookup(id: string | undefined, owner: string): McpSession | null {
     if (!id) return null
     const session = this.sessions.get(id)
-    return session && session.alive && session.tokenId === token.id ? session : null
+    return session && session.alive && session.owner === owner ? session : null
   }
 
   close(session: McpSession): void {
@@ -192,29 +214,45 @@ export class McpBridge {
   }
 }
 
+/** Préfixé : l'identifiant d'un jeton d'API et celui d'un jeton de session ne se croisent pas. */
+function grantOwner(grantId: string): string {
+  return `session:${grantId}`
+}
+
+/**
+ * Qui parle, et de quoi lui ouvrir une session : le jeton de session passe avant, le
+ * hook d'authentification n'ayant pas cherché de jeton d'API derrière lui.
+ */
+function caller(request: FastifyRequest, bridge: McpBridge): { owner: string; open: () => McpSession } {
+  const grant = request.mcpGrant
+  if (grant) return { owner: grantOwner(grant.id), open: () => bridge.openForSession(grant) }
+  const { token, user } = requireScope(request, 'mcp')
+  return { owner: token.id, open: () => bridge.open(token, user) }
+}
+
 function sessionHeader(request: FastifyRequest): string | undefined {
   const value = request.headers['mcp-session-id']
   return Array.isArray(value) ? value[0] : value
 }
 
-export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): McpBridge {
-  const bridge = new McpBridge(ctx, app.log)
+export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext, tokens?: McpSessionTokens): McpBridge {
+  const bridge = new McpBridge(ctx, app.log, tokens)
   bridge.start()
   app.addHook('onClose', async () => bridge.stop())
 
   app.post('/api/v1/mcp', async (request, reply) => {
-    const { token, user } = requireScope(request, 'mcp')
+    const { owner, open } = caller(request, bridge)
     const body = request.body as JsonRpcMessage | JsonRpcMessage[] | undefined
     if (!body || typeof body !== 'object') throw badRequest('mcp_invalid_body', 'A JSON-RPC message is required.')
     if (Array.isArray(body)) throw badRequest('mcp_batch_unsupported', 'JSON-RPC batches are not supported.')
 
     if (body.method === 'initialize') {
-      const session = bridge.open(token, user)
+      const session = open()
       const response = await session.send(body)
       return reply.header('Mcp-Session-Id', session.id).send(response)
     }
 
-    const session = bridge.lookup(sessionHeader(request), token)
+    const session = bridge.lookup(sessionHeader(request), owner)
     if (!session) throw notFound('mcp_session_not_found', 'MCP session not found: send initialize first.')
     const response = await session.send(body)
     if (response === null) return reply.status(202).send()
@@ -222,8 +260,8 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): McpBri
   })
 
   app.delete('/api/v1/mcp', async (request, reply) => {
-    const { token } = requireScope(request, 'mcp')
-    const session = bridge.lookup(sessionHeader(request), token)
+    const { owner } = caller(request, bridge)
+    const session = bridge.lookup(sessionHeader(request), owner)
     if (!session) throw notFound('mcp_session_not_found', 'MCP session not found.')
     bridge.close(session)
     return reply.status(204).send()
@@ -231,7 +269,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext): McpBri
 
   // Le transport prévoit un flux descendant sur GET ; ce serveur ne pousse rien.
   app.get('/api/v1/mcp', async (request: FastifyRequest) => {
-    requireScope(request, 'mcp')
+    caller(request, bridge)
     throw new HttpError(405, 'mcp_no_stream', 'This server does not open server-to-client streams.')
   })
 

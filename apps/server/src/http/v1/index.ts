@@ -28,5 +28,5 @@ export function registerV1Routes(
   registerDiscoveryRoutes(app, ctx, registry)
   registerProjectCreationRoutes(app, ctx)
   registerTaskRoutes(app, ctx, log, sessions, registry, webhooks)
-  registerMcpRoutes(app, ctx)
+  registerMcpRoutes(app, ctx, sessions.mcpTokens)
 }
