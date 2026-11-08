@@ -793,7 +793,7 @@ export class SessionManager {
    * L'environnement du CLI d'une session qui tourne : c'est lui qui dit comment elle voit
    * un chemin de l'hôte, et le daemon en a besoin pour lui répondre (#153).
    */
-  environmentOf(conversationId: string): EnvironmentProvider | undefined {
+  runnerEnvironment(conversationId: string): EnvironmentProvider | undefined {
     return this.runners.get(conversationId)?.environment
   }
 

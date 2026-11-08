@@ -179,10 +179,10 @@ const DESIGN_SYSTEM_STATE = process.env.SOLERA_MCP_DESIGN_SYSTEM ?? ''
 const MOUNTED_DRIVES = process.env.SOLERA_MCP_MOUNTED_DRIVES === '1'
 
 /** Un chemin de l'hôte tel que la session le voit : `C:\…` devient `/mnt/c/…`. */
-function seenPath(hostPath) {
-  if (!MOUNTED_DRIVES || typeof hostPath !== 'string') return hostPath
-  const drive = /^([A-Za-z]):(?:[\\/](.*))?$/.exec(hostPath)
-  if (!drive) return hostPath
+function seenPath(onHost) {
+  if (!MOUNTED_DRIVES || typeof onHost !== 'string') return onHost
+  const drive = /^([A-Za-z]):(?:[\\/](.*))?$/.exec(onHost)
+  if (!drive) return onHost
   return posix.join('/mnt', drive[1].toLowerCase(), ...(drive[2] ?? '').split(/[\\/]/).filter(Boolean))
 }
 
@@ -4297,11 +4297,11 @@ async function callTool(name, args) {
     if (name === 'read_memory') {
       if (!file) {
         const files = memoryFiles()
-        if (files.length === 0) return text(`Mémoire vide (${MEMORY_DIR}).`)
+        if (files.length === 0) return text(`Mémoire vide (${seenPath(MEMORY_DIR)}).`)
         const index = readMemoryFile(MEMORY_INDEX)
         return text(
           [
-            `Mémoire ${memoryLabel()}, dans ${MEMORY_DIR} :`,
+            `Mémoire ${memoryLabel()}, dans ${seenPath(MEMORY_DIR)} :`,
             index ? `${MEMORY_INDEX} :\n\n${index.trim()}` : `Pas de ${MEMORY_INDEX}.`,
             `Notes : ${files.filter((candidate) => candidate !== MEMORY_INDEX).join(', ') || 'aucune'}.`,
           ].join('\n\n'),

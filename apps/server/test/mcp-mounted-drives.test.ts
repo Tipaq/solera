@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { attachments, cards, conversations, events, openDatabase, projects, runMigrations, users } from '@solera/db'
+import { eq } from 'drizzle-orm'
+import { attachments, cards, conversations, events, openDatabase, projectImages, projects, runMigrations, users } from '@solera/db'
 
 /**
  * Le serveur MCP tourne sur l'hôte, la session dans un conteneur : sous Windows natif,
@@ -40,7 +41,7 @@ function harness(t: TestContext) {
     payload: JSON.stringify({ type: 'file.edited', path: 'C:\\Users\\me\\project\\src\\a.ts', action: 'modified' }),
   }).run()
 
-  return (name: string, args: object, mountedDrives = true) => {
+  const call = (name: string, args: object, mountedDrives = true) => {
     const child = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
       env: {
         ...process.env,
@@ -49,6 +50,8 @@ function harness(t: TestContext) {
         SOLERA_MCP_CONVERSATION: 'me',
         ...(mountedDrives ? { SOLERA_MCP_MOUNTED_DRIVES: '1' } : {}),
       },
+      // Les chemins d'un hôte Windows se résolvent ici depuis ce dossier : `C:\\…` y est un nom de fichier.
+      cwd: dir,
       encoding: 'utf8',
       input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) + '\n',
       timeout: 10000,
@@ -56,10 +59,11 @@ function harness(t: TestContext) {
     assert.equal(child.status, 0, child.stderr)
     return (JSON.parse(child.stdout).result as { content: { text: string }[] }).content[0]!.text
   }
+  return { db, dir, call }
 }
 
 test("read_card rend les pièces jointes au chemin que le conteneur voit", (t) => {
-  const call = harness(t)
+  const { call } = harness(t)
   const text = call('read_card', { number: 1 })
   assert.ok(text.includes('/mnt/c/Users/me/.solera/attachments/file'), text)
   assert.ok(!text.includes('C:\\\\'), "aucun chemin de l'hôte")
@@ -69,11 +73,24 @@ test("read_card rend les pièces jointes au chemin que le conteneur voit", (t) =
 })
 
 test("find_file_edits lit un chemin du conteneur, et le rend tel", (t) => {
-  const call = harness(t)
+  const { call } = harness(t)
   const text = call('find_file_edits', { path: '/mnt/c/Users/me/project/src/a.ts' })
   assert.match(text, /- \/mnt\/c\/Users\/me\/project\/src\/a\.ts \| modifié/)
   assert.match(text, /par other/)
 
   const all = call('find_file_edits', {})
   assert.ok(all.includes('/mnt/c/Users/me/project/src/a.ts'), all)
+})
+
+test("set_project_image lit sur l'hôte le fichier que la session nomme", (t) => {
+  const { db, dir, call } = harness(t)
+  // Sous Linux, `C:\Users\me\logo.png` résolu depuis `dir` est ce nom de fichier-là :
+  // le lire, c'est avoir lu le chemin de l'hôte et non celui du conteneur.
+  writeFileSync(join(dir, 'C:\\Users\\me\\logo.png'), Buffer.from('\x89PNG\r\n\x1a\n', 'latin1'))
+
+  assert.match(call('set_project_image', { path: '/mnt/c/Users/me/logo.png' }), /Image du projet mise à jour/)
+  assert.equal(db.select().from(projectImages).where(eq(projectImages.projectId, 'project')).get()?.mimeType, 'image/png')
+
+  // Sans le drapeau, `/mnt/c/…` est lu tel quel, et n'existe pas.
+  assert.match(call('set_project_image', { path: '/mnt/c/Users/me/logo.png' }, false), /Lecture de \/mnt\/c\/Users\/me\/logo\.png impossible/)
 })

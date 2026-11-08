@@ -1744,24 +1744,24 @@ export class AgentRequests {
   }
 
   /**
+   * Un chemin de l'hôte tel que la session qui demande le voit : `/mnt/c/…` dans un
+   * conteneur sous Windows natif (#153). Tel quel quand son CLI ne tourne plus.
+   */
+  private seenBy(requester: { id: string }, hostPath: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathInside(hostPath) ?? hostPath
+  }
+
+  /** L'inverse : un chemin que la session donne, tel que l'hôte le lit. */
+  private hostPathFrom(requester: { id: string }, path: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathOutside(path) ?? path
+  }
+
+  /**
    * Les deux outils de rangement sont une portée accordée, pas une capacité par défaut.
    *
    * Vérifié ici et pas seulement à la liste des outils du serveur MCP : c'est la base qui
    * tranche, et le serveur, lui, n'est qu'un process lancé par le CLI.
    */
-  /**
-   * Un chemin de l'hôte tel que la session qui demande le voit : `/mnt/c/…` dans un
-   * conteneur sous Windows natif (#153). Tel quel quand son CLI ne tourne plus.
-   */
-  private seenBy(requester: { id: string }, hostPath: string): string {
-    return this.sessions.environmentOf(requester.id)?.pathInside(hostPath) ?? hostPath
-  }
-
-  /** L'inverse : un chemin que la session donne, tel que l'hôte le lit. */
-  private hostPathFrom(requester: { id: string }, path: string): string {
-    return this.sessions.environmentOf(requester.id)?.pathOutside(path) ?? path
-  }
-
   private assertFilingAllowed(requester: ConversationRow): AgentRequestPolicy {
     if (!this.ctx.config.mcp.projectFiling) {
       throw new Refusal(
