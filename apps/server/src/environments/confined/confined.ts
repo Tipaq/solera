@@ -15,6 +15,7 @@ const PRIVATE_PREFIX = 'solera-confined-'
 
 /** Un processus lancé dans le bac à sable, et de quoi le tuer avec tout ce qu'il a lancé. */
 interface Tracked {
+  pid: number
   kill(): void
 }
 
@@ -153,6 +154,24 @@ export class ConfinedEnvironment implements EnvironmentProvider {
     }
   }
 
+  /** Le moteur du bac à sable, pour Services. */
+  get engine(): Backend['name'] {
+    return this.backend.name
+  }
+
+  /**
+   * Les processus que ses lancements ont démarrés sur l'hôte, encore vivants : Services
+   * y somme la consommation de tout ce qui en descend.
+   */
+  pids(): number[] {
+    return [...this.live].map((tracked) => tracked.pid)
+  }
+
+  /** Le home et le tmp privés sur l'hôte, ce qu'il écrit hors de ses dossiers de travail. */
+  get privateRoot(): string | null {
+    return this.dirs?.root ?? null
+  }
+
   /** Ce que le bac à sable voit : utile aux tests et au diagnostic. */
   planFor(path: string): ConfinementPlan {
     let plan = this.plans.get(path)
@@ -200,6 +219,7 @@ export class ConfinedEnvironment implements EnvironmentProvider {
   ): void {
     if (pid === undefined) return
     const tracked: Tracked = {
+      pid,
       kill: () => {
         if (group) {
           try {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
@@ -18,7 +19,7 @@ import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import type { Paths } from '../src/config.js'
 import { AGENTS_MOUNT, ContainerAgents, linuxPackage } from '../src/environments/devcontainer/agents.js'
-import { Devcontainers, parseEnv, targetArch } from '../src/environments/devcontainer/containers.js'
+import { Devcontainers, parseEnv, targetArch, unreachableAdvice } from '../src/environments/devcontainer/containers.js'
 import { DevcontainerEnvironment, type RunningContainer } from '../src/environments/devcontainer/environment.js'
 import {
   assertDevcontainerJson,
@@ -27,7 +28,7 @@ import {
   InvalidDevcontainerError,
   stripJsonc,
 } from '../src/environments/devcontainer/managed.js'
-import { parseUpResult } from '../src/environments/devcontainer/tools.js'
+import { DevcontainerTools, hostAddressOf, parseUpResult } from '../src/environments/devcontainer/tools.js'
 import { Environments } from '../src/environments/environments.js'
 
 async function tempDir(t: TestContext, prefix: string): Promise<string> {
@@ -154,6 +155,63 @@ test("le MCP de Solera, sur la boucle locale de l'hôte, se joint depuis le cont
   const environment = new DevcontainerEnvironment(container(), '/usr/bin/docker')
   assert.equal(environment.urlOfHost('http://127.0.0.1:7517'), 'http://host.docker.internal:7517')
   assert.equal(environment.urlOfHost('http://100.64.0.2:7517'), 'http://100.64.0.2:7517')
+})
+
+test("sous Linux natif, l'hôte vu du conteneur est sa passerelle, la boucle locale sur le réseau de l'hôte, et rien sans réseau", () => {
+  assert.equal(hostAddressOf('bridge|172.17.0.1, \n'), '172.17.0.1')
+  assert.equal(hostAddressOf('proj_default|,fd00::1 172.18.0.1,fd01::1 \n'), '172.18.0.1')
+  assert.equal(hostAddressOf('proj_default|,fd00::1 \n'), 'fd00::1')
+  assert.equal(hostAddressOf('host|\n'), '127.0.0.1')
+  assert.equal(hostAddressOf('none|\n'), null)
+  assert.equal(hostAddressOf('container:abc|\n'), null)
+})
+
+test("l'URL du MCP met une passerelle IPv6 entre crochets, et garde la boucle locale sur le réseau de l'hôte", () => {
+  const v6 = new DevcontainerEnvironment(container({ hostAddress: 'fd00::1' }), 'docker')
+  assert.equal(v6.urlOfHost('http://127.0.0.1:7517'), 'http://[fd00::1]:7517')
+  const host = new DevcontainerEnvironment(container({ hostAddress: '127.0.0.1' }), 'docker')
+  assert.equal(host.urlOfHost('http://127.0.0.1:7517'), 'http://127.0.0.1:7517')
+  assert.equal(host.urlOfHost('http://[::1]:7517'), 'http://[::1]:7517')
+})
+
+test('la sonde dit si le conteneur joint le serveur, ici joué sur la machine même', async (t) => {
+  const dir = await tempDir(t, 'solera-reach-')
+  const bin = join(dir, 'bin')
+  await mkdir(bin)
+  // Un faux docker qui joue sur place ce que `docker exec -u root <id>` jouerait dedans.
+  await writeFile(join(bin, 'docker'), '#!/bin/sh\nshift 4\nexec "$@"\n')
+  await chmod(join(bin, 'docker'), 0o755)
+  const previous = process.env.PATH
+  process.env.PATH = `${bin}:${previous}`
+  t.after(() => {
+    process.env.PATH = previous
+  })
+  const server = createServer((socket) => socket.end())
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
+  await new Promise<void>((resolve) => server.close(() => resolve()))
+  const closed = port
+  const open = createServer((socket) => socket.end())
+  await new Promise<void>((resolve) => open.listen(0, '127.0.0.1', resolve))
+  t.after(() => open.close())
+
+  const tools = new DevcontainerTools(join(dir, 'managed'))
+  assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${(open.address() as AddressInfo).port}`), true)
+  assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${closed}`), false)
+  // Une erreur du CLI docker (conteneur arrêté) ne dit rien du réseau.
+  await writeFile(join(bin, 'docker'), '#!/bin/sh\necho "Error response from daemon" >&2\nexit 1\n')
+  assert.equal(await tools.reaches('c0ffee', `http://127.0.0.1:${closed}`), null)
+})
+
+test("un pare-feu n'est mis en cause que si l'URL vise la passerelle Docker", () => {
+  const firewall = unreachableAdvice('http://172.17.0.1:7517', '172.17.0.1')
+  assert.match(firewall, /ufw allow in to 172\.17\.0\.1 port 7517 proto tcp/)
+  assert.match(firewall, /family="ipv4" destination address="172\.17\.0\.1" port port="7517"/)
+  assert.match(unreachableAdvice('http://[fd00::1]:7517', 'fd00::1'), /family="ipv6" destination address="fd00::1"/)
+  // server.agentUrl, Docker Desktop, réseau de l'hôte : rien à ouvrir sur la passerelle.
+  assert.doesNotMatch(unreachableAdvice('https://solera.example.ts.net', '172.17.0.1'), /ufw/)
+  assert.doesNotMatch(unreachableAdvice('http://host.docker.internal:7517', 'host.docker.internal'), /ufw/)
+  assert.doesNotMatch(unreachableAdvice('http://127.0.0.1:7517', '127.0.0.1'), /ufw/)
 })
 
 test('le verdict de devcontainer up se lit sur sa dernière ligne', () => {

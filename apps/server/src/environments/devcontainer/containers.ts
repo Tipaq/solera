@@ -1,10 +1,14 @@
 import { mkdir } from 'node:fs/promises'
+import type { Server as HttpServer } from 'node:http'
 import { join } from 'node:path'
-import type { AgentKind } from '@solera/protocol'
-import type { Paths } from '../../config.js'
+import type { AgentKind, ForwardedPortDto } from '@solera/protocol'
+import type { Config, Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
+import { soleraUrlForAgents } from '../../instance/agent-url.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
-import { binaryName, DevcontainerEnvironment, type RunningContainer } from './environment.js'
+import { BridgeListeners } from './bridge.js'
+import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
+import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { ManagedDevcontainers } from './managed.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
@@ -57,6 +61,11 @@ interface Project {
 export class Devcontainers {
   private readonly running = new Map<string, RunningContainer>()
   private readonly starting = new Map<string, Promise<RunningContainer>>()
+  /** Le journal du dernier `devcontainer up` de chaque projet, pour Services. */
+  private readonly journals = new Map<string, string[]>()
+  /** Pourquoi le dernier démarrage d'un projet a échoué ; effacé au suivant qui réussit. */
+  private readonly failures = new Map<string, string>()
+  private readonly ports = new Map<string, PortForwarder>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
   private managedStore: ManagedDevcontainers | null = null
 
@@ -66,8 +75,16 @@ export class Devcontainers {
      * Où le serveur écoute : un conteneur ne joint la boucle locale de l'hôte que par
      * Docker Desktop, qui la relaie derrière `host.docker.internal`.
      */
-    private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
+    private readonly server: Pick<Config['server'], 'host' | 'port' | 'agentUrl'> = { host: '127.0.0.1', port: 0, agentUrl: '' },
   ) {}
+
+  /** Sous Linux natif, les écoutes du serveur sur les passerelles Docker. */
+  private readonly bridges = new BridgeListeners()
+
+  /** Le serveur HTTP que les conteneurs joignent, une fois qu'il écoute. */
+  serve(server: HttpServer): void {
+    this.bridges.serve(server)
+  }
 
   /** Les `devcontainer.json` que Solera garde pour les projets qui n'en ont pas (#143). */
   get managed(): ManagedDevcontainers {
@@ -143,6 +160,48 @@ export class Devcontainers {
     return this.provider(project.id)
   }
 
+  /**
+   * Où en est le conteneur d'un projet, vu de Solera : en démarrage, l'id de celui qu'il
+   * a démarré, l'échec de son dernier démarrage. Docker dit le reste.
+   */
+  status(projectId: string): { starting: boolean; containerId: string | null; failure: string | null } {
+    return {
+      starting: this.starting.has(projectId),
+      containerId: this.running.get(projectId)?.id ?? null,
+      failure: this.failures.get(projectId) ?? null,
+    }
+  }
+
+  /** Le journal du dernier `devcontainer up` du projet, vide si Solera n'en a pas lancé. */
+  startupLog(projectId: string): string[] {
+    return this.journals.get(projectId) ?? []
+  }
+
+  /**
+   * Reconstruit le conteneur du projet : `devcontainer up --remove-existing-container`,
+   * qui supprime l'ancien (celui de VS Code compris) et en crée un neuf, avec les
+   * montages de Solera. Ce qui tournait dedans meurt avec lui : l'appelant arrête
+   * d'abord les sessions et les terminaux qui s'en servent.
+   */
+  rebuild(project: Project): Promise<RunningContainer> {
+    if (this.starting.has(project.id)) {
+      throw new ContainerRefusal('devcontainer_failed', 'This dev container is already starting.')
+    }
+    const pending = this.start(project, () => undefined, true).finally(() => this.starting.delete(project.id))
+    this.starting.set(project.id, pending)
+    return pending
+  }
+
+  /**
+   * Oublie le conteneur démarré d'un projet, arrêté ou redémarré depuis Services : la
+   * prochaine session repasse par `up`, qui le relance et relit son environnement.
+   */
+  forget(projectId: string): void {
+    this.running.delete(projectId)
+    // Arrêté ou relancé à la main : l'échec d'un démarrage d'avant ne le décrit plus.
+    this.failures.delete(projectId)
+  }
+
   /** Le fournisseur d'un projet dont le conteneur a été préparé. */
   provider(projectId: string): DevcontainerEnvironment {
     const container = this.running.get(projectId)
@@ -161,8 +220,26 @@ export class Devcontainers {
     return pending
   }
 
-  private async start(project: Project, onLog: (line: string) => void): Promise<RunningContainer> {
+  private async start(project: Project, onLog: (line: string) => void, rebuild = false): Promise<RunningContainer> {
     this.running.delete(project.id)
+    const journal: string[] = []
+    this.journals.set(project.id, journal)
+    const log = (line: string) => {
+      journal.push(line)
+      if (journal.length > JOURNAL_LINES) journal.shift()
+      onLog(line)
+    }
+    try {
+      const container = await this.startContainer(project, log, rebuild)
+      this.failures.delete(project.id)
+      return container
+    } catch (err) {
+      this.failures.set(project.id, (err as Error).message)
+      throw err
+    }
+  }
+
+  private async startContainer(project: Project, onLog: (line: string) => void, rebuild: boolean): Promise<RunningContainer> {
     try {
       this.tools.docker()
       await this.tools.assertDockerRunning()
@@ -179,9 +256,9 @@ export class Devcontainers {
       // Seul celui de Solera passe par `--config` : celui du dépôt garde l'identité que
       // VS Code lui donne, et son conteneur reste partagé.
       const configPath = config?.managed ? config.path : undefined
-      const workspaceFolder = await this.tools.workspaceFolder(project.workspacePath, configPath)
+      const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath, configPath)
       const mounts = await this.mounts(project, workspaceFolder)
-      const up = await this.tools.up(project.workspacePath, mounts, onLog, configPath)
+      const up = await this.tools.up(project.workspacePath, mounts, onLog, rebuild, configPath)
       const info = await this.tools.inspect(up.containerId)
       const container: RunningContainer = {
         id: up.containerId,
@@ -192,11 +269,13 @@ export class Devcontainers {
         loginShell: '/bin/sh',
         env: {},
         agents: new Map(),
-        hostAddress: await this.tools.hostAddress(up.containerId),
+        hostAddress: await this.hostAddress(up.containerId),
       }
-      this.assertServerReachable(container.hostAddress)
+      await this.reachServer(container.hostAddress)
+      await this.assertMcpReachable(container)
       await this.probe(container)
       this.running.set(project.id, container)
+      await this.forward(project.id, container.id, portsConfigOf(configuration))
       return container
     } catch (err) {
       if (err instanceof ContainerRefusal) throw err
@@ -204,17 +283,69 @@ export class Devcontainers {
     }
   }
 
+  /** L'hôte vu du conteneur ; un conteneur qui ne le voit pas du tout est refusé. */
+  private async hostAddress(containerId: string): Promise<string> {
+    const address = await this.tools.hostAddress(containerId)
+    if (address) return address
+    throw new ContainerRefusal(
+      'devcontainer_host_unreachable',
+      'The container has no network to reach this machine (network mode "none", or the network of another container), so the agents would run without the Solera MCP server. Give it a bridge network, or the network of this machine: `"runArgs": ["--network=host"]` in its devcontainer.json, or `network_mode: host` in its docker-compose file.',
+    )
+  }
+
+  /**
+   * Sert les ports du conteneur sur l'hôte, pour l'aperçu web (#141). Un conteneur
+   * recréé remplace les redirections du précédent ; un conteneur arrêté les relâche.
+   */
+  private async forward(projectId: string, containerId: string, config: PortsConfig): Promise<void> {
+    const previous = this.ports.get(projectId)
+    if (previous?.containerId === containerId) return
+    await previous?.close()
+    const forwarder = new PortForwarder(containerId, this.tools.docker(), config, {
+      onGone: () => {
+        if (this.ports.get(projectId) === forwarder) this.ports.delete(projectId)
+      },
+    })
+    this.ports.set(projectId, forwarder)
+    await forwarder.start()
+  }
+
+  /** Les ports du dev container d'un projet et leur adresse sur l'hôte ; vide s'il ne tourne pas. */
+  forwardedPorts(projectId: string): ForwardedPortDto[] {
+    return this.ports.get(projectId)?.list() ?? []
+  }
+
   /**
    * Le MCP de Solera doit se joindre depuis le conteneur, sans quoi une session y
    * partirait sans lui. Sous Linux natif, l'hôte vu du conteneur est la passerelle du
-   * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas.
+   * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas :
+   * il y écoute alors en plus, à son port (#149). Sur le réseau de l'hôte, la boucle
+   * locale suffit.
    */
-  private assertServerReachable(hostAddress: string): void {
-    if (hostAddress === 'host.docker.internal' || this.server.agentUrl) return
-    if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(this.server.host)) return
+  private async reachServer(hostAddress: string): Promise<void> {
+    if (hostAddress === 'host.docker.internal' || LOOPBACK_HOSTS.includes(hostAddress) || this.server.agentUrl) return
+    if (!LOOPBACK_HOSTS.includes(this.server.host)) return
+    try {
+      await this.bridges.ensure(hostAddress)
+    } catch (err) {
+      throw new ContainerRefusal(
+        'devcontainer_host_unreachable',
+        `The Solera server listens on ${this.server.host} only, and could not also listen on ${hostAddress}, where the container sees this machine: ${(err as Error).message}. Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
+      )
+    }
+  }
+
+  /**
+   * Écouter ne suffit pas : un pare-feu de l'hôte (ufw, firewalld) peut filtrer ce qui
+   * entre par le pont Docker. On le vérifie depuis le conteneur, à l'adresse même que
+   * ses sessions recevront. Sans outil pour sonder, on laisse passer.
+   */
+  private async assertMcpReachable(container: RunningContainer): Promise<void> {
+    const url = new DevcontainerEnvironment(container, this.tools.docker()).urlOfHost(soleraUrlForAgents(this.server))
+    if ((await this.tools.reaches(container.id, url)) !== false) return
     throw new ContainerRefusal(
       'devcontainer_host_unreachable',
-      `The Solera server listens on ${this.server.host} only, which a container cannot reach on native Linux (it sees the host at ${hostAddress}). Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
+      `The container cannot connect to ${url}, where the agents would find the Solera MCP server. ${unreachableAdvice(url, container.hostAddress)}`,
     )
   }
 
@@ -272,6 +403,24 @@ export class Devcontainers {
     }
     return { arch, musl: musl.length > 0 }
   }
+}
+
+/** Ce qu'on garde du journal d'un démarrage : la construction d'une image en écrit beaucoup. */
+const JOURNAL_LINES = 400
+/**
+ * Quoi faire quand le conteneur ne joint pas `url`. Un pare-feu n'est en cause que si
+ * l'URL vise la passerelle Docker : ailleurs (`server.agentUrl`, Docker Desktop, réseau
+ * de l'hôte), c'est l'adresse elle-même qu'il faut revoir.
+ */
+export function unreachableAdvice(url: string, hostAddress: string): string {
+  const { hostname, port, protocol } = new URL(url)
+  const throughGateway = hostAddress !== 'host.docker.internal' && !LOOPBACK_HOSTS.includes(hostAddress)
+  if (!throughGateway || hostname.replace(/^\[|\]$/g, '') !== hostAddress) {
+    return 'Check that the Solera server answers there, or set server.agentUrl to an address of this machine the container can reach.'
+  }
+  const target = port || (protocol === 'https:' ? '443' : '80')
+  const family = hostAddress.includes(':') ? 'ipv6' : 'ipv4'
+  return `A firewall on this machine (ufw, firewalld) probably drops what comes in from the Docker networks: allow TCP to ${hostAddress} on port ${target}, for instance \`sudo ufw allow in to ${hostAddress} port ${target} proto tcp\`, or \`sudo firewall-cmd --permanent --add-rich-rule='rule family="${family}" destination address="${hostAddress}" port port="${target}" protocol="tcp" accept' && sudo firewall-cmd --reload\`.`
 }
 
 /** L'architecture d'un CLI pour ce que `uname -m` dit du conteneur ; null sans CLI pour elle. */

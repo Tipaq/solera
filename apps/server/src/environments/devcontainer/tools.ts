@@ -113,10 +113,11 @@ export class DevcontainerTools {
    * Démarre le dev container du dossier, ou réutilise celui qui tourne déjà pour lui,
    * y compris celui de VS Code : le CLI le retrouve par son label
    * `devcontainer.local_folder`. Les montages ne s'appliquent qu'à un conteneur créé ici.
-   * Chaque ligne du journal passe par `onLog` pendant le démarrage. `config` : un
-   * `devcontainer.json` hors du dossier, celui que Solera garde pour un projet (#143).
+   * Chaque ligne du journal passe par `onLog` pendant le démarrage. `rebuild` supprime
+   * le conteneur existant et en crée un neuf, son image reconstruite d'après le `devcontainer.json`.
+   * `config` : un `devcontainer.json` hors du dossier, celui que Solera garde pour un projet (#143).
    */
-  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, config?: string): Promise<UpResult> {
+  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, rebuild = false, config?: string): Promise<UpResult> {
     const launch = await this.cli()
     const args = [
       ...launch.args,
@@ -127,6 +128,7 @@ export class DevcontainerTools {
       '--docker-path',
       this.docker(),
       ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
+      ...(rebuild ? ['--remove-existing-container'] : []),
     ]
     return new Promise((resolve, reject) => {
       const child = spawn(launch.command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: UP_TIMEOUT_MS })
@@ -161,10 +163,11 @@ export class DevcontainerTools {
   }
 
   /**
-   * Où le `devcontainer.json` monte le dossier du projet : un montage de Solera au même
-   * chemin ferait doublon, ce que Docker refuse.
+   * Ce que Solera lit du `devcontainer.json` : où il monte le dossier du projet (un
+   * montage de Solera au même chemin ferait doublon, ce que Docker refuse), et sa
+   * configuration, pour ses ports.
    */
-  async workspaceFolder(workspace: string, config?: string): Promise<string | null> {
+  async readConfiguration(workspace: string, config?: string): Promise<{ workspaceFolder: string | null; configuration: unknown }> {
     const launch = await this.cli()
     try {
       const { stdout } = await run(
@@ -180,8 +183,14 @@ export class DevcontainerTools {
         ],
         { timeout: DOCKER_TIMEOUT_MS * 2, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       )
-      const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { workspace?: { workspaceFolder?: unknown } }
-      return typeof parsed.workspace?.workspaceFolder === 'string' ? parsed.workspace.workspaceFolder : null
+      const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as {
+        workspace?: { workspaceFolder?: unknown }
+        configuration?: unknown
+      }
+      return {
+        workspaceFolder: typeof parsed.workspace?.workspaceFolder === 'string' ? parsed.workspace.workspaceFolder : null,
+        configuration: parsed.configuration ?? null,
+      }
     } catch (err) {
       const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message
       throw new Error(`The devcontainer.json of ${workspace} cannot be read: ${detail}`)
@@ -190,18 +199,41 @@ export class DevcontainerTools {
 
   /**
    * L'adresse de l'hôte vue du conteneur : `host.docker.internal` sous Docker Desktop
-   * (macOS, Windows, WSL), la passerelle du réseau du conteneur sous Linux.
+   * (macOS, Windows, WSL), sous Linux natif la passerelle du réseau du conteneur, ou la
+   * boucle locale s'il partage le réseau de l'hôte. Null quand il n'en voit aucune.
    */
-  async hostAddress(containerId: string): Promise<string> {
+  async hostAddress(containerId: string): Promise<string | null> {
     const docker = this.docker()
     const info = await run(docker, ['info', '--format', '{{.OperatingSystem}}'], { timeout: DOCKER_TIMEOUT_MS, windowsHide: true })
     if (/docker desktop/i.test(info.stdout)) return 'host.docker.internal'
-    const gateway = await run(
+    const network = await run(
       docker,
-      ['inspect', '--format', '{{range .NetworkSettings.Networks}}{{.Gateway}} {{end}}', containerId],
+      ['inspect', '--format', '{{.HostConfig.NetworkMode}}|{{range .NetworkSettings.Networks}}{{.Gateway}},{{.IPv6Gateway}} {{end}}', containerId],
       { timeout: DOCKER_TIMEOUT_MS, windowsHide: true },
     )
-    return gateway.stdout.trim().split(/\s+/)[0] || 'host.docker.internal'
+    return hostAddressOf(network.stdout)
+  }
+
+  /**
+   * Si le conteneur joint `url`, depuis l'intérieur : par `/dev/tcp` de bash, curl ou
+   * wget, le premier qu'il a. Null quand il n'a aucun des trois, ou que la sonde n'a pas
+   * pu se jouer : on ne sait pas.
+   */
+  async reaches(containerId: string, url: string): Promise<boolean | null> {
+    const { hostname, port, protocol } = new URL(url)
+    const host = hostname.replace(/^\[|\]$/g, '')
+    const target = port || (protocol === 'https:' ? '443' : '80')
+    try {
+      await run(this.docker(), ['exec', '-u', 'root', containerId, '/bin/sh', '-c', REACH_PROBE, 'probe', host, target, url], {
+        timeout: DOCKER_TIMEOUT_MS,
+        windowsHide: true,
+      })
+      return true
+    } catch (err) {
+      const { code, killed } = err as { code?: unknown; killed?: boolean }
+      if (killed || code === 4) return false
+      return null
+    }
   }
 
   async inspect(containerId: string): Promise<ContainerInfo | null> {
@@ -284,6 +316,44 @@ export class DevcontainerTools {
 function configArgs(config: string | undefined): string[] {
   return config ? ['--config', config] : []
 }
+
+/**
+ * L'hôte vu du conteneur, d'après `docker inspect` (`mode|passerelle4,passerelle6 …`) :
+ * la boucle locale sur le réseau de l'hôte, sinon la première passerelle IPv4, sinon la
+ * première IPv6. Null sans réseau (`none`) ou sur celui d'un autre conteneur.
+ */
+export function hostAddressOf(inspected: string): string | null {
+  const [mode = '', networks = ''] = inspected.trim().split('|')
+  if (mode === 'host') return '127.0.0.1'
+  const pairs = networks.split(/\s+/).filter(Boolean).map((pair) => pair.split(','))
+  return pairs.map(([v4]) => v4).find(Boolean) ?? pairs.map(([, v6]) => v6).find(Boolean) ?? null
+}
+
+/**
+ * La sonde de `reaches`, en sh : 0 joint, 4 pas joint, 3 aucun outil pour le dire (le
+ * CLI docker garde 1 et 125-127 pour ses propres erreurs). Chaque outil présent a sa
+ * chance, un bash sans `/dev/tcp` ne suffisant pas à conclure. Toute réponse HTTP
+ * compte, même une erreur : c'est la connexion qu'on éprouve.
+ */
+const REACH_PROBE = `
+host=$1 port=$2 url=$3 tried=
+limit() { if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi; }
+if command -v bash >/dev/null 2>&1; then
+  tried=1
+  limit bash -c 'exec 3<>"/dev/tcp/$0/$1"' "$host" "$port" 2>/dev/null && exit 0
+fi
+if command -v curl >/dev/null 2>&1; then
+  tried=1
+  curl -sk -o /dev/null --max-time 5 "$url"
+  case $? in 6|7|28) ;; *) exit 0;; esac
+fi
+if command -v wget >/dev/null 2>&1; then
+  tried=1
+  limit wget -S -O /dev/null -T 5 "$url" 2>&1 | grep -q 'HTTP/' && exit 0
+fi
+[ -n "$tried" ] && exit 4
+exit 3
+`
 
 /** La dernière ligne JSON de `devcontainer up` : son verdict. */
 export function parseUpResult(

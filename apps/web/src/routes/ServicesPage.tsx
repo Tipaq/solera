@@ -1,10 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowUpRight, Bot, ChevronDown, CircleHelp, Play, RotateCw, Server, Square, SquareTerminal, Unplug, X } from 'lucide-react'
-import { createContext, useContext, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import type { ServiceAppAction, ServiceAppDto, ServiceDto, ServicesDto } from '@solera/protocol'
+import { ArrowUpRight, Bot, ChevronDown, CircleHelp, Container, FileText, Hammer, Play, RotateCw, Server, ShieldCheck, Square, SquareTerminal, Unplug, X } from 'lucide-react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import type {
+  ServiceAppAction,
+  ServiceAppDto,
+  ServiceDto,
+  ServiceEnvironmentAction,
+  ServiceEnvironmentDto,
+  ServiceEnvironmentLogDto,
+  ServicesDto,
+  ForwardedPortDto,
+} from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
-import { Badge, Banner, Button, EmptyState, IconButton, cx } from '@solera/ui'
+import { Badge, Banner, Button, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { api } from '../lib/api'
 import { formatBytes } from '../lib/attachments'
 import { conversationPath } from '../lib/conversation-route'
@@ -31,16 +40,38 @@ export function ServicesPage() {
       api.post(`/api/services/apps/${encodeURIComponent(id)}/${action}`),
     onSuccess: () => { void client.invalidateQueries({ queryKey: ['services'] }) },
   })
+  const operate = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: ServiceEnvironmentAction }) =>
+      api.post(`/api/services/environments/${encodeURIComponent(id)}/${action}`),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: ['services'] }) },
+  })
+  const [confirming, setConfirming] = useState<{ environment: ServiceEnvironmentDto; action: ServiceEnvironmentAction } | null>(null)
   const scannedAt = query.data?.scannedAt ?? Date.now()
   const services = query.data?.services ?? []
   const apps = query.data?.apps ?? []
+  const environments = query.data?.environments ?? []
+  /**
+   * La pastille d'environnement d'une session mène ici : `?environment=` désigne sa
+   * ligne, `?session=` la retrouve parmi celles qui font tourner la session.
+   */
+  const [params] = useSearchParams()
+  const target = environments.find((environment) => environment.id === params.get('environment'))
+    ?? environments.find((environment) => environment.sessions.some((session) => session.conversationId === params.get('session')))
+  const targetId = target?.id ?? null
+  useEffect(() => {
+    if (targetId) document.getElementById(environmentAnchor(targetId))?.scrollIntoView({ block: 'center' })
+  }, [targetId])
   /**
    * Le filtre vaut pour toutes les listes : ses pastilles se construisent sur leur
    * réunion, avec le nombre de lignes de chacune. Hors projet, deux cas qui ne se
    * confondent pas : une conversation sans projet, dont on connaît l'auteur, et une
    * origine que Solera n'a pas pu retrouver (l'admin seul la voit).
    */
-  const owners = [...apps, ...services.filter((entry) => entry.kind !== 'helper')]
+  const owners: Attributed[] = [
+    ...apps,
+    ...services.filter((entry) => entry.kind !== 'helper'),
+    ...environments.map(environmentAttribution),
+  ]
   const bucketOf = (entry: Attributed) => entry.projectId ?? (entry.conversationId ? 'none' : 'unknown')
   const buckets = new Map<string, { label: string; count: number }>()
   for (const entry of owners) {
@@ -56,8 +87,18 @@ export function ServicesPage() {
   const inProject = (entry: Attributed) => project === 'all' || bucketOf(entry) === project
 
   const filteredApps = apps.filter(inProject)
+  const filteredEnvironments = environments.filter((environment) => inProject(environmentAttribution(environment)))
+  /**
+   * Une session ou un terminal qui tourne dans un environnement se range sous lui, pas
+   * dans « Agents et terminaux » : son lanceur sur l'hôte n'est que le client de
+   * `docker exec` ou de bwrap.
+   */
+  const launcherEnvironment = (launcher: ServiceDto) => environments.find((environment) =>
+    (launcher.origin === 'agent' && environment.sessions.some((session) => session.conversationId === launcher.conversationId))
+    || environment.terminals.some((terminal) => terminal.pid === launcher.pid))
   // Une commande suit son lanceur dans le filtre : c'est lui qui porte le projet à l'écran.
-  const launchers = services.filter((entry) => entry.kind === 'launcher' && inProject(entry))
+  const allLaunchers = services.filter((entry) => entry.kind === 'launcher')
+  const launchers = allLaunchers.filter((entry) => inProject(entry) && !launcherEnvironment(entry))
   const byLauncher = new Map<number, ServiceDto[]>()
   for (const entry of services) {
     if (entry.launcherPid === null) continue
@@ -68,9 +109,15 @@ export function ServicesPage() {
     && !services.some((launcher) => launcher.pid === entry.launcherPid) && inProject(entry))
   const detached = services.filter((entry) => entry.kind === 'detached' && inProject(entry))
   const commands = launchers.flatMap((launcher) => (byLauncher.get(launcher.pid) ?? []).filter((entry) => entry.kind === 'command'))
-  const total = filteredApps.length + commands.length + stray.length + detached.length
+  const total = filteredEnvironments.length + filteredApps.length + commands.length + stray.length + detached.length
   const nothing = total === 0 && launchers.length === 0
-  const busy = stop.isPending || control.isPending
+  const busy = stop.isPending || control.isPending || operate.isPending
+  const act = (environment: ServiceEnvironmentDto, action: ServiceEnvironmentAction) => {
+    // Rien à prévenir : personne ne s'en sert, et l'action ne détruit rien.
+    const used = environment.sessions.length + environment.terminals.length > 0 || environment.vscodeAttached
+    if (used || action === 'rebuild') setConfirming({ environment, action })
+    else operate.mutate({ id: environment.id, action })
+  }
 
   /**
    * Ce que Solera fait tourner, pour la barre de la machine, tous projets confondus : la
@@ -78,6 +125,13 @@ export function ServicesPage() {
    * sa ligne ; ses commandes comptent à part, chacune sous son nom.
    */
   const consumers: LoadConsumer[] = [
+    // Un bac à sable compte déjà dans ses processus, un conteneur non : Docker le tient.
+    ...environments.filter((environment) => environment.kind === 'devcontainer').map((environment) => ({
+      id: environment.id,
+      label: environment.name ?? t('services.environment.kind.devcontainer'),
+      memoryBytes: environment.memoryBytes ?? 0,
+      cpu: environment.cpu,
+    })),
     ...apps.map((app) => ({ id: app.id, label: appName(app.unit), memoryBytes: app.memoryBytes ?? 0, cpu: app.cpu })),
     ...services.filter((entry) => entry.kind === 'launcher').map((launcher) => {
       const helpers = services.filter((entry) => entry.kind === 'helper' && entry.launcherPid === launcher.pid)
@@ -130,11 +184,24 @@ export function ServicesPage() {
           {query.error ? <Banner>{t('services.loadError')} {query.error.message}</Banner> : null}
           {stop.error ? <Banner>{stop.error.message}</Banner> : null}
           {control.error ? <Banner>{control.error.message}</Banner> : null}
+          {operate.error ? <Banner>{operate.error.message}</Banner> : null}
           {query.isPending ? <p role="status" className="text-sm text-ink-faint">{t('services.loading')}</p>
             : query.data && !query.data.supported ? <EmptyState icon={<Server size={22} />} title={t('services.unsupported')} />
               : query.data && nothing ? <EmptyState icon={<Server size={22} />} title={t('services.empty')} description={t('services.emptyHint')} />
                 : query.data ? (
                   <>
+                    {filteredEnvironments.length ? (
+                      <Section id="services-environments" title={t('services.environments.title')} count={filteredEnvironments.length} help={t('services.environments.description')}>
+                        <List>
+                          {filteredEnvironments.map((environment) => (
+                            <EnvironmentGroup key={environment.id} environment={environment} highlighted={environment.id === targetId}
+                              launchers={allLaunchers.filter((launcher) => launcherEnvironment(launcher)?.id === environment.id)}
+                              byLauncher={byLauncher} scannedAt={scannedAt} busy={busy}
+                              onAction={(action) => act(environment, action)} onStop={(id) => stop.mutate(id)} />
+                          ))}
+                        </List>
+                      </Section>
+                    ) : null}
                     <Section id="services-apps" title={t('services.apps.title')} count={filteredApps.length} help={t('services.apps.description')}>
                       {filteredApps.length ? (
                         <List>
@@ -180,6 +247,17 @@ export function ServicesPage() {
         </div>
       </div>
     </div>
+    {confirming ? (
+      <EnvironmentConfirm
+        environment={confirming.environment}
+        action={confirming.action}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          operate.mutate({ id: confirming.environment.id, action: confirming.action })
+          setConfirming(null)
+        }}
+      />
+    ) : null}
     </Cores.Provider>
   )
 }
@@ -252,12 +330,14 @@ function Attribution({ entry }: { entry: Attributed }) {
  * actions à droite, et tout ce qui est technique — PID, dossier, ligne de commande
  * entière, journal — replié sous « Détails ».
  */
-function Row({ dot, icon, name, fullName, ports, meta, actions, details, indent = false }: {
+function Row({ dot, icon, name, fullName, ports, badges, meta, actions, details, indent = false }: {
   dot?: string
   icon?: ReactNode
   name: ReactNode
   fullName: string
   ports: number[]
+  /** D'autres pastilles de port : celles qu'un dev container sert sur l'hôte. */
+  badges?: ReactNode
   meta: ReactNode[]
   actions: ReactNode
   details: [MessageKey, ReactNode][]
@@ -272,8 +352,9 @@ function Row({ dot, icon, name, fullName, ports, meta, actions, details, indent 
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <div className="flex min-w-0 items-center gap-2">
             <code className="min-w-0 truncate font-mono text-sm text-ink" title={fullName}>{name}</code>
-            {ports.length ? (
+            {ports.length || badges ? (
               <span className="flex shrink-0 gap-1" aria-label={t('services.ports')}>
+                {badges}
                 {ports.map((port) => <Badge key={port} tone="accent">:{port}</Badge>)}
               </span>
             ) : null}
@@ -475,5 +556,241 @@ function AppRow({ app, scannedAt, busy, onAction }: {
         ['services.detail.logs', `journalctl --user -u ${app.unit}`],
       ]}
     />
+  )
+}
+
+/** Un environnement range son projet comme une app : sans projet, sous sa session. */
+function environmentAttribution(environment: ServiceEnvironmentDto): Attributed {
+  const session = environment.projectId ? null : environment.sessions[0] ?? null
+  return {
+    projectId: environment.projectId,
+    projectName: environment.projectName,
+    conversationId: session?.conversationId ?? null,
+    conversationTitle: session?.title ?? null,
+    origin: session ? 'agent' : 'unknown',
+  }
+}
+
+function environmentAnchor(id: string): string {
+  return `environment-${id.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+const ENVIRONMENT_STATES: Record<ServiceEnvironmentDto['state'], { key: MessageKey; dot: string }> = {
+  starting: { key: 'services.environment.state.starting', dot: 'bg-caution' },
+  running: { key: 'services.environment.state.running', dot: 'bg-positive' },
+  stopped: { key: 'services.environment.state.stopped', dot: 'bg-ink-faint' },
+  failed: { key: 'services.environment.state.failed', dot: 'bg-critical' },
+}
+
+/**
+ * Un environnement d'exécution, en tête de ce qui y tourne : son état, sa consommation,
+ * ses actions ; puis ses sessions et ses terminaux, chacun avec ce qu'il a lancé.
+ */
+function EnvironmentGroup({ environment, launchers, byLauncher, highlighted, scannedAt, busy, onAction, onStop }: {
+  environment: ServiceEnvironmentDto
+  /** Les lanceurs de ses sessions et terminaux, sortis de « Agents et terminaux ». */
+  launchers: ServiceDto[]
+  byLauncher: Map<number, ServiceDto[]>
+  highlighted: boolean
+  scannedAt: number
+  busy: boolean
+  onAction: (action: ServiceEnvironmentAction) => void
+  onStop: (id: string) => void
+}) {
+  const t = useTranslate()
+  const cores = useContext(Cores)
+  const duration = useDuration(scannedAt)
+  const [log, setLog] = useState(false)
+  const state = ENVIRONMENT_STATES[environment.state]
+  const devcontainer = environment.kind === 'devcontainer'
+  const Icon = devcontainer ? Container : ShieldCheck
+  const kind = t(devcontainer ? 'services.environment.kind.devcontainer' : 'services.environment.kind.sandbox')
+  const shown = new Set(launchers.map((launcher) => launcher.pid))
+  // Une session sans lanceur visible (le CLI d'un autre utilisateur) garde sa ligne, sans détail.
+  const sessionsAlone = environment.sessions.filter((session) =>
+    !launchers.some((launcher) => launcher.origin === 'agent' && launcher.conversationId === session.conversationId))
+  const terminalsAlone = environment.terminals.filter((terminal) => terminal.pid === null || !shown.has(terminal.pid))
+  const action = (key: ServiceEnvironmentAction, icon: ReactNode, label: MessageKey, title?: string) => (
+    <Button variant="ghost" size="sm" icon={icon} title={title} aria-label={t(label)} disabled={busy} onClick={() => onAction(key)}>
+      <Label>{t(label)}</Label>
+    </Button>
+  )
+  return (
+    <li id={environmentAnchor(environment.id)} className={cx(highlighted && 'ring-2 ring-accent ring-inset')}>
+      <section aria-label={`${kind} ${environment.name ?? environment.projectName ?? ''}`}>
+        <ul>
+          <Row
+            dot={state.dot}
+            icon={<span className="relative flex shrink-0 text-ink-faint"><Icon size={14} aria-hidden /><span aria-hidden className={cx('absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full', state.dot)} /></span>}
+            name={<span className="font-sans font-medium">{kind}{environment.name ? <span className="font-mono font-normal text-ink-soft"> · {environment.name}</span> : null}</span>}
+            fullName={environment.name ?? kind}
+            ports={environment.ports.filter((port) =>
+              !environment.forwardedPorts.some((forwarded) => forwarded.host === null && forwarded.containerPort === port))}
+            badges={environment.forwardedPorts.map((forwarded) => <ForwardedPort key={`${forwarded.host ?? ''}:${forwarded.containerPort}`} port={forwarded} />)}
+            meta={[
+              <span className={cx(environment.state === 'failed' && 'text-critical')} title={environment.error ?? undefined}>{t(state.key)}</span>,
+              environment.projectId
+                ? <Link to={`/p/${environment.projectId}`} className="font-medium text-ink-soft hover:text-accent">{environment.projectName}</Link>
+                : null,
+              environment.startedAt !== null && environment.state === 'running'
+                ? <span title={new Date(environment.startedAt).toLocaleString()}>{duration(environment.startedAt)}</span> : null,
+              cpuText(environment.cpu, cores),
+              environment.memoryBytes !== null ? formatBytes(environment.memoryBytes) : null,
+              environment.diskBytes !== null ? t('services.environment.disk', { size: formatBytes(environment.diskBytes) }) : null,
+              environment.vscodeAttached ? t('services.environment.vscode') : null,
+            ]}
+            actions={
+              <>
+                {environment.hasLog ? (
+                  <Button variant="ghost" size="sm" icon={<FileText size={13} />} aria-label={t('services.environment.log')} aria-expanded={log} onClick={() => setLog(!log)}>
+                    <Label>{t('services.environment.log')}</Label>
+                  </Button>
+                ) : null}
+                {environment.canRebuild ? action('rebuild', <Hammer size={13} />, 'services.environment.rebuild', t('services.environment.rebuildHint')) : null}
+                {environment.canRestart
+                  ? action('restart', environment.state === 'running' ? <RotateCw size={13} /> : <Play size={13} />, 'services.environment.restart')
+                  : null}
+                {environment.canStop
+                  ? action('stop', <Square size={13} />, 'services.environment.stop', devcontainer ? undefined : t('services.environment.sandboxStopHint'))
+                  : null}
+              </>
+            }
+            details={[
+              ['services.environment.detail.error', environment.error],
+              ['services.environment.detail.engine', environment.engine],
+              ['services.environment.detail.container', environment.name],
+              ['services.environment.detail.companions', environment.companions.join(', ')],
+              ['services.environment.detail.disk', environment.diskBytes !== null ? formatBytes(environment.diskBytes) : null],
+              ['services.environment.detail.image', environment.imageBytes !== null ? formatBytes(environment.imageBytes) : null],
+            ]}
+          />
+        </ul>
+        {log ? <EnvironmentLog id={environment.id} live={environment.state === 'starting'} /> : null}
+        {launchers.length || sessionsAlone.length || terminalsAlone.length ? (
+          <ul className="divide-y divide-line border-t border-line pl-3 sm:pl-6">
+            {launchers.map((launcher) => (
+              <LauncherGroup key={launcher.id} launcher={launcher} entries={byLauncher.get(launcher.pid) ?? []}
+                scannedAt={scannedAt} busy={busy} onStop={onStop} />
+            ))}
+            {sessionsAlone.map((session) => (
+              <li key={session.conversationId} className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs text-ink-faint">
+                <Bot size={14} className="shrink-0" />
+                <span className="shrink-0 font-medium text-ink-soft">{t('services.environment.session')}</span>
+                <span aria-hidden>·</span>
+                <Link to={conversationPath({ id: session.conversationId, projectId: environment.projectId })} className="flex min-w-0 items-center gap-1 text-accent hover:underline">
+                  <span className="truncate">{session.title || t('services.conversation')}</span><ArrowUpRight size={12} className="shrink-0" />
+                </Link>
+              </li>
+            ))}
+            {terminalsAlone.map((terminal) => (
+              <li key={terminal.id} className="flex min-w-0 items-center gap-2 px-3 py-2 text-xs text-ink-faint">
+                <SquareTerminal size={14} className="shrink-0" />
+                <span className="shrink-0 font-medium text-ink-soft">{t('services.launcher.terminal')}</span>
+                <span aria-hidden>·</span>
+                <span className="truncate">{terminal.title}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="border-t border-line px-3 py-2.5 pl-9 text-xs text-ink-faint">{t('services.environment.unused')}</p>
+        )}
+      </section>
+    </li>
+  )
+}
+
+/**
+ * Un port du dev container servi sur l'hôte (#141) : son numéro, et l'adresse de l'hôte
+ * quand elle diffère ; en rouge, avec la raison, s'il n'a pas pu l'être.
+ */
+function ForwardedPort({ port }: { port: ForwardedPortDto }) {
+  const t = useTranslate()
+  const name = `${port.host ?? ''}:${port.containerPort}`
+  if (port.error) {
+    return (
+      <Badge tone="critical">
+        <span title={t(`web.port.error.${port.error.code}`, { port: port.containerPort, detail: port.error.detail })}>{name}</span>
+      </Badge>
+    )
+  }
+  if (port.hostPort === null) return <Badge>{name}</Badge>
+  return (
+    <Badge tone="accent">
+      <span title={port.label ?? undefined}>{port.remapped || port.host ? `${name} → localhost:${port.hostPort}` : name}</span>
+    </Badge>
+  )
+}
+
+/** Le journal d'un dev container : son dernier démarrage par Solera, puis sa sortie. Suivi en direct pendant un démarrage. */
+function EnvironmentLog({ id, live }: { id: string; live: boolean }) {
+  const t = useTranslate()
+  const query = useQuery({
+    queryKey: ['services', 'environment-log', id],
+    queryFn: () => api.get<ServiceEnvironmentLogDto>(`/api/services/environments/${encodeURIComponent(id)}/log`),
+    refetchInterval: live ? 2000 : false,
+  })
+  const parts: [MessageKey, string][] = query.data
+    ? [
+        ['services.environment.log.startup', query.data.startup.join('\n')],
+        ['services.environment.log.output', query.data.output],
+      ]
+    : []
+  const filled = parts.filter(([, text]) => text.trim())
+  return (
+    <div className="flex flex-col gap-2 border-t border-line bg-sunken px-3 py-2.5 text-xs">
+      {query.error ? <span className="text-critical">{query.error.message}</span>
+        : query.isPending ? <span role="status" className="text-ink-faint">{t('services.environment.log.loading')}</span>
+          : filled.length === 0 ? <span className="text-ink-faint">{t('services.environment.log.empty')}</span>
+            : filled.map(([label, text]) => (
+              <div key={label} className="flex min-w-0 flex-col gap-1">
+                <span className="text-ink-faint">{t(label)}</span>
+                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all font-mono text-ink-soft">{text}</pre>
+              </div>
+            ))}
+    </div>
+  )
+}
+
+/**
+ * Avant d'arrêter, de redémarrer ou de reconstruire un environnement dont quelqu'un se
+ * sert : qui, et ce qui leur arrivera.
+ */
+function EnvironmentConfirm({ environment, action, onCancel, onConfirm }: {
+  environment: ServiceEnvironmentDto
+  action: ServiceEnvironmentAction
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const t = useTranslate()
+  const title: MessageKey = environment.kind === 'sandbox' ? 'services.environment.confirm.sandbox'
+    : action === 'stop' ? 'services.environment.confirm.stop'
+      : action === 'restart' ? 'services.environment.confirm.restart' : 'services.environment.confirm.rebuild'
+  const label: MessageKey = action === 'stop' ? 'services.environment.stop'
+    : action === 'restart' ? 'services.environment.restart' : 'services.environment.rebuild'
+  const users = [
+    ...environment.sessions.map((session) => t('services.environment.confirm.sessionUser', { title: session.title || t('services.environment.session') })),
+    ...environment.terminals.map((terminal) => t('services.environment.confirm.terminalUser', { title: terminal.title })),
+    ...(environment.vscodeAttached ? [t('services.environment.confirm.vscodeUser')] : []),
+  ]
+  return (
+    <ConfirmDialog
+      open
+      onOpenChange={(open) => { if (!open) onCancel() }}
+      title={t(title)}
+      confirmLabel={t(label)}
+      tone="critical"
+      onConfirm={onConfirm}
+    >
+      {action === 'rebuild' ? <p>{t('services.environment.confirm.rebuildLoss')}</p> : null}
+      {users.length ? (
+        <>
+          <p>{t('services.environment.confirm.users')}</p>
+          <ul className="list-disc pl-5">
+            {users.map((user, index) => <li key={index}>{user}</li>)}
+          </ul>
+          <p>{t('services.environment.confirm.resume')}</p>
+        </>
+      ) : null}
+    </ConfirmDialog>
   )
 }

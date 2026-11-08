@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSyncExternalStore } from 'react'
-import type { WebPageDto } from '@solera/protocol'
+import type { ForwardedPortDto, WebPageDto } from '@solera/protocol'
 import { api } from './api'
 import { setPanelOpen, setPanelTab } from './panel'
 
@@ -137,4 +137,47 @@ export function useWebPage(url: string | null, mode: WebMode) {
     staleTime: 5 * 60_000,
     retry: false,
   })
+}
+
+/**
+ * Les ports du dev container du projet, et où l'hôte sert chacun (#141). Relevés tant
+ * que la vue est ouverte : un `npm run dev` lancé dans le conteneur doit y apparaître.
+ */
+export function useForwardedPorts(projectId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'ports'],
+    queryFn: () => api.get<ForwardedPortDto[]>(`/api/projects/${projectId}/ports`),
+    enabled: enabled && projectId !== null,
+    refetchInterval: 3000,
+  })
+}
+
+/** Les adresses de la boucle locale : celles qu'un agent du conteneur cite pour son serveur. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0'])
+
+/**
+ * Le port du conteneur qu'une adresse désigne, et l'adresse de l'hôte où il est servi.
+ * L'agent cite le port qu'il écoute : pris sur l'hôte, ce port y est servi sous un autre
+ * numéro, et le cadre doit aller à celui-là.
+ */
+export function containerPortOf(
+  url: string,
+  ports: ForwardedPortDto[] | undefined,
+): { port: ForwardedPortDto; served: string | null } | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (!LOOPBACK.has(parsed.hostname)) return null
+  const number = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80))
+  const port = ports?.find((entry) => entry.host === null && entry.containerPort === number)
+  if (!port) return null
+  if (port.hostPort === null) return { port, served: null }
+  const served = new URL(parsed.href)
+  if (served.hostname === '0.0.0.0') served.hostname = 'localhost'
+  if (port.protocol === 'https') served.protocol = 'https:'
+  served.port = String(port.hostPort)
+  return { port, served: served.href }
 }

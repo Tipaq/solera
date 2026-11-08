@@ -23,6 +23,7 @@ import {
   type CloneJobDto,
   type ProjectDevcontainerDto,
   type ProjectDto,
+  type ForwardedPortDto,
   type ProjectEnvironmentsDto,
   type ProjectPrototypesDto,
 } from '@solera/protocol'
@@ -385,6 +386,17 @@ export function registerProjectRoutes(
       await ctx.db.update(projects).set(environmentColumns(host)).where(eq(projects.id, id))
     }
     return { ok: true }
+  })
+
+  /**
+   * Les ports du dev container du projet et l'adresse de l'hôte où chacun est servi
+   * (#141) : l'aperçu web traduit le port qu'un agent cite, Services les montre.
+   */
+  app.get('/api/projects/:id/ports', async (request): Promise<ForwardedPortDto[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadVisibleProject(id, user.id)
+    return environments.devcontainers?.forwardedPorts(id) ?? []
   })
 
   app.delete('/api/projects/:id', async (request, reply) => {
