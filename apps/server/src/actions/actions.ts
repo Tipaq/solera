@@ -269,6 +269,7 @@ export class ActionRunner {
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
     // Dans l'environnement de la session qui la lance, et hors session dans celui du
     // projet : comme un terminal.
+    await this.environments.prepare(this.environments.terminalEnvironment(row.projectId, conversationId), row.projectId, { cwd })
     const environment = this.environments.forTerminal(row.projectId, conversationId, cwd)
     const terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
       command: row.command,

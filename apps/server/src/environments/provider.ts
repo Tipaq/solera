@@ -36,6 +36,11 @@ export interface EnvironmentProvider {
   resolveBinary(binary: string, managedDir: string): string | null
   /** Un dossier de l'hôte (le workspace, un worktree) tel que l'environnement le voit. */
   pathInside(hostPath: string): string
+  /**
+   * Une adresse du serveur de Solera, telle que l'environnement la joint : le MCP de
+   * Solera, vu d'un conteneur, est sur l'hôte et non sur sa propre boucle locale.
+   */
+  urlOfHost(url: string): string
   /** Copie un fichier ou un dossier de l'hôte dans l'environnement. */
   copyIn(hostPath: string, insidePath: string): Promise<void>
   /** Copie un fichier ou un dossier de l'environnement vers l'hôte. */

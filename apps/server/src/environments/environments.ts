@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { conversations, projects, type Db } from '@solera/db'
 import {
+  DEVCONTAINER_ENVIRONMENT,
   environmentKey,
   HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
@@ -13,6 +14,7 @@ import { ConfinedEnvironment } from './confined/confined.js'
 import { hasNativeConfinement, nativeConfinement } from './confined/native.js'
 import type { ConfinementScope } from './confined/plan.js'
 import { terminalScope } from './confined/scope.js'
+import { ContainerRefusal, type ContainerNeed, type Devcontainers } from './devcontainer/containers.js'
 import { hostEnvironment } from './host.js'
 import { EnvironmentUnavailableError, type EnvironmentProvider } from './provider.js'
 
@@ -39,15 +41,50 @@ export function environmentColumns(environment: ExecutionEnvironment): Environme
  * appelants, eux, ne changeront pas.
  */
 export class Environments {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** Absent (tests, serveur sans dossier de données) : pas de dev container. */
+    readonly devcontainers: Devcontainers | null = null,
+  ) {}
 
   /**
    * Ce qu'on peut choisir, pour ce projet, sur ce serveur. L'hôte confiné est proposé
    * sur toute plateforme qui en a un, même si l'essai échoue : c'est au choix que le
    * refus dit pourquoi et quoi lancer, plutôt qu'une option qui disparaît sans raison.
+   * Le dev container l'est pour un projet qui a un `devcontainer.json`, même si Docker
+   * manque : son démarrage dira quoi installer.
    */
-  choices(_projectId: string | null): ExecutionEnvironment[] {
-    return hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT]
+  choices(projectId: string | null): ExecutionEnvironment[] {
+    const host = hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT]
+    return this.hasDevcontainer(projectId) ? [...host, DEVCONTAINER_ENVIRONMENT] : host
+  }
+
+  /** Le projet a-t-il un `devcontainer.json` que ce serveur saurait démarrer ? */
+  hasDevcontainer(projectId: string | null): boolean {
+    const workspacePath = projectId === null ? null : this.workspaceOf(projectId)
+    return workspacePath !== null && (this.devcontainers?.available(workspacePath) ?? false)
+  }
+
+  /**
+   * Ce qu'un environnement doit avoir fait avant qu'on y lance quoi que ce soit : le
+   * dev container démarre (journal de `up` par `need.onLog`) et reçoit le CLI de
+   * l'agent. Sans effet pour l'hôte. Lève, avec la raison, quand il ne peut pas servir.
+   */
+  async prepare(environment: ExecutionEnvironment, projectId: string | null, need: ContainerNeed): Promise<void> {
+    if (environment.where !== 'devcontainer') return
+    if (environment.confined) {
+      throw new EnvironmentUnavailableError(environment, 'A confined dev container is not available on this server yet.')
+    }
+    const workspacePath = projectId === null ? null : this.workspaceOf(projectId)
+    if (!this.devcontainers || projectId === null || workspacePath === null) {
+      throw new EnvironmentUnavailableError(environment, 'Only a project session can run in a dev container.')
+    }
+    try {
+      await this.devcontainers.prepare({ id: projectId, workspacePath }, need)
+    } catch (err) {
+      if (!(err instanceof ContainerRefusal)) throw err
+      throw new EnvironmentUnavailableError(environment, err.message, { code: err.code, params: { detail: err.message } })
+    }
   }
 
   /**
@@ -75,8 +112,12 @@ export class Environments {
    * terminal doit voir de l'hôte. Son fournisseur est à lui seul, et le propriétaire le
    * ferme à sa fin : c'est ce qui tue ses processus et efface son home privé.
    */
-  provider(environment: ExecutionEnvironment, scope?: ConfinementScope): EnvironmentProvider {
+  provider(environment: ExecutionEnvironment, scope?: ConfinementScope, projectId?: string | null): EnvironmentProvider {
     if (sameEnvironment(environment, HOST_ENVIRONMENT)) return hostEnvironment
+    // Préparé d'abord par `prepare`, qui l'a démarré : ici, on ne fait que le désigner.
+    if (sameEnvironment(environment, DEVCONTAINER_ENVIRONMENT) && this.devcontainers && projectId) {
+      return this.devcontainers.provider(projectId)
+    }
     if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT) && scope) {
       const native = nativeConfinement()
       if ('unavailable' in native) refuseConfinement(native.unavailable)
@@ -117,8 +158,20 @@ export class Environments {
    * gestionnaire de terminaux ferme son fournisseur quand il se termine.
    */
   forTerminal(projectId: string, conversationId: string | null, cwd: string): EnvironmentProvider {
-    const environment = conversationId ? this.ofConversation(conversationId) : this.ofProject(projectId)
-    return this.provider(environment, environment.confined ? terminalScope(cwd) : undefined)
+    const environment = this.terminalEnvironment(projectId, conversationId)
+    return this.provider(environment, environment.confined ? terminalScope(cwd) : undefined, projectId)
+  }
+
+  /** L'environnement d'un terminal, à préparer avant `forTerminal`. */
+  terminalEnvironment(projectId: string, conversationId: string | null): ExecutionEnvironment {
+    return conversationId ? this.ofConversation(conversationId) : this.ofProject(projectId)
+  }
+
+  private workspaceOf(projectId: string): string | null {
+    return (
+      this.db.select({ workspacePath: projects.workspacePath }).from(projects).where(eq(projects.id, projectId)).get()
+        ?.workspacePath ?? null
+    )
   }
 }
 

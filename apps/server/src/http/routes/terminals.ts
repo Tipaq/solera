@@ -92,6 +92,8 @@ export function registerTerminalRoutes(
     }
 
     const conversationId = body.conversationId ?? null
+    // Un dev container démarre au premier terminal qui en a besoin.
+    await sessions.environments.prepare(sessions.environments.terminalEnvironment(id, conversationId), id, { cwd })
     const environment = sessions.environments.forTerminal(id, conversationId, cwd)
     const terminal = wrap(() => terminals.open(id, cwd, { environment, conversationId }))
     return reply.status(201).send(terminal)

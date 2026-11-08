@@ -478,6 +478,19 @@ function ProjectEnvironment({ projectId }: { projectId: string }) {
           disabled={updateProject.isPending}
           onChange={(environment) => updateProject.mutate({ id: projectId, environment })}
         />
+        {data.suggested ? (
+          <div className="flex flex-wrap items-center gap-2 text-meta text-ink-soft">
+            <span>{t('project.environment.suggested')}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={updateProject.isPending}
+              onClick={() => updateProject.mutate({ id: projectId, environment: data.suggested! })}
+            >
+              {t('project.environment.suggested.accept')}
+            </Button>
+          </div>
+        ) : null}
         {error ? <Banner>{error}</Banner> : null}
       </CardBody>
     </Card>

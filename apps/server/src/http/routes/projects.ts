@@ -7,7 +7,10 @@ import {
   MAX_PROJECT_IMAGE_BYTES,
   EMPTY_CONFIG_LAYER,
   layerWithFullConfig,
+  DEVCONTAINER_ENVIRONMENT,
+  HOST_ENVIRONMENT,
   patchConfigLayer,
+  sameEnvironment,
   resolveAgentConfig,
   parseRemoteUrl,
   readProjectLayer,
@@ -314,7 +317,10 @@ export function registerProjectRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const project = await loadVisibleProject(id, user.id)
-    return { default: environmentOf(project), choices: environments.choices(id) }
+    const current = environmentOf(project)
+    const suggested =
+      sameEnvironment(current, HOST_ENVIRONMENT) && environments.hasDevcontainer(id) ? DEVCONTAINER_ENVIRONMENT : null
+    return { default: current, choices: environments.choices(id), suggested }
   })
 
   app.delete('/api/projects/:id', async (request, reply) => {
