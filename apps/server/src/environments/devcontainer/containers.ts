@@ -1,12 +1,13 @@
 import { mkdir } from 'node:fs/promises'
 import type { Server as HttpServer } from 'node:http'
 import { join } from 'node:path'
-import type { AgentKind } from '@solera/protocol'
+import type { AgentKind, ForwardedPortDto } from '@solera/protocol'
 import type { Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
 import { BridgeListeners } from './bridge.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
+import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
 /** Ce qu'un lancement attend du conteneur. */
@@ -58,6 +59,7 @@ interface Project {
 export class Devcontainers {
   private readonly running = new Map<string, RunningContainer>()
   private readonly starting = new Map<string, Promise<RunningContainer>>()
+  private readonly ports = new Map<string, PortForwarder>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
 
   constructor(
@@ -166,7 +168,7 @@ export class Devcontainers {
       )
     }
     try {
-      const workspaceFolder = await this.tools.workspaceFolder(project.workspacePath)
+      const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath)
       const mounts = await this.mounts(project, workspaceFolder)
       const up = await this.tools.up(project.workspacePath, mounts, onLog)
       const info = await this.tools.inspect(up.containerId)
@@ -184,11 +186,34 @@ export class Devcontainers {
       await this.reachServer(container.hostAddress)
       await this.probe(container)
       this.running.set(project.id, container)
+      await this.forward(project.id, container.id, portsConfigOf(configuration))
       return container
     } catch (err) {
       if (err instanceof ContainerRefusal) throw err
       throw new ContainerRefusal('devcontainer_failed', (err as Error).message)
     }
+  }
+
+  /**
+   * Sert les ports du conteneur sur l'hôte, pour l'aperçu web (#141). Un conteneur
+   * recréé remplace les redirections du précédent ; un conteneur arrêté les relâche.
+   */
+  private async forward(projectId: string, containerId: string, config: PortsConfig): Promise<void> {
+    const previous = this.ports.get(projectId)
+    if (previous?.containerId === containerId) return
+    await previous?.close()
+    const forwarder = new PortForwarder(containerId, this.tools.docker(), config, {
+      onGone: () => {
+        if (this.ports.get(projectId) === forwarder) this.ports.delete(projectId)
+      },
+    })
+    this.ports.set(projectId, forwarder)
+    await forwarder.start()
+  }
+
+  /** Les ports du dev container d'un projet et leur adresse sur l'hôte ; vide s'il ne tourne pas. */
+  forwardedPorts(projectId: string): ForwardedPortDto[] {
+    return this.ports.get(projectId)?.list() ?? []
   }
 
   /**

@@ -57,3 +57,28 @@ export interface ProjectEnvironmentsDto {
    */
   suggested: ExecutionEnvironment | null
 }
+
+/**
+ * Un port du dev container, servi sur la boucle locale de l'hôte (#141) : déclaré dans
+ * `forwardPorts`, ou détecté parce qu'un processus du conteneur s'est mis à l'écouter.
+ */
+export interface ForwardedPortDto {
+  /** Le port tel que le conteneur l'écoute, et tel que l'agent le cite. */
+  containerPort: number
+  /** Le service qui l'écoute quand ce n'est pas le conteneur lui-même (`db` de `db:5432`). */
+  host: string | null
+  /** Où l'hôte le sert, sur `localhost` ; null quand il n'a pas pu l'être (voir `error`). */
+  hostPort: number | null
+  /** Le `label` de `portsAttributes`. */
+  label: string | null
+  protocol: 'http' | 'https'
+  source: 'config' | 'detected'
+  /** Le port était pris sur l'hôte : il y est servi sous un autre numéro. */
+  remapped: boolean
+  /**
+   * Pourquoi il n'est pas joignable : pris sur l'hôte alors que `requireLocalPort` le
+   * veut à son numéro, aucune écoute possible, ou aucun outil de relais dans le
+   * conteneur. `detail` est le message système, ou la liste des outils cherchés.
+   */
+  error: { code: 'port_taken' | 'listen_failed' | 'no_relay'; detail: string } | null
+}

@@ -159,10 +159,11 @@ export class DevcontainerTools {
   }
 
   /**
-   * Où le `devcontainer.json` monte le dossier du projet : un montage de Solera au même
-   * chemin ferait doublon, ce que Docker refuse.
+   * Ce que Solera lit du `devcontainer.json` : où il monte le dossier du projet (un
+   * montage de Solera au même chemin ferait doublon, ce que Docker refuse), et sa
+   * configuration, pour ses ports.
    */
-  async workspaceFolder(workspace: string): Promise<string | null> {
+  async readConfiguration(workspace: string): Promise<{ workspaceFolder: string | null; configuration: unknown }> {
     const launch = await this.cli()
     try {
       const { stdout } = await run(
@@ -170,8 +171,14 @@ export class DevcontainerTools {
         [...launch.args, 'read-configuration', '--workspace-folder', workspace, '--docker-path', this.docker()],
         { timeout: DOCKER_TIMEOUT_MS * 2, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       )
-      const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as { workspace?: { workspaceFolder?: unknown } }
-      return typeof parsed.workspace?.workspaceFolder === 'string' ? parsed.workspace.workspaceFolder : null
+      const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as {
+        workspace?: { workspaceFolder?: unknown }
+        configuration?: unknown
+      }
+      return {
+        workspaceFolder: typeof parsed.workspace?.workspaceFolder === 'string' ? parsed.workspace.workspaceFolder : null,
+        configuration: parsed.configuration ?? null,
+      }
     } catch (err) {
       const detail = (err as { stderr?: string }).stderr?.trim() || (err as Error).message
       throw new Error(`The devcontainer.json of ${workspace} cannot be read: ${detail}`)
