@@ -84,12 +84,24 @@ try {
   await delay(1500)
   assert.equal(await page.getByRole('radiogroup', { name: 'Compte' }).count(), 0, 'Pas de choix sans compte')
 
+  // Codex sans compte connecté : la connexion du terminal ne porte plus de session (#147),
+  // la ligne du compte le dit et mène à la connexion d'un compte.
+  await page.goto(`${base}/p/${project.id}/c/new?agent=codex`)
+  await page.getByText('Aucun compte Codex connecté').waitFor()
+  await page.getByRole('button', { name: 'Connecter un compte Codex' }).waitFor()
+  assert.equal(await page.getByText(/Connexion du terminal/).count(), 0, 'Pas de connexion du terminal pour Codex')
+  await page.mouse.move(10, 990)
+  await delay(400)
+  await page.screenshot({ path: '/tmp/solera-draft-account-codex-none.png', fullPage: true })
+
   // Un compte Claude et un compte Codex, connectés par clé.
   // Une clé API : nommée par son alias, elle se passe du CLI qui lirait l'adresse d'un jeton.
   await context.request.post(`${base}/api/claude-accounts`, { data: { alias: 'Boulot', token: 'sk-ant-api03-' + 'x'.repeat(60) } })
-  const codex = await (await context.request.post(`${base}/api/codex-accounts`, { data: { label: 'Codex Boîte' } })).json()
-  const login = await context.request.post(`${base}/api/codex-accounts/${codex.id}/login`, { data: { type: 'apiKey', apiKey: 'sk-test-bogus' } })
-  assert.ok(login.ok(), await login.text())
+  for (const label of ['Codex Boîte', 'Codex Perso']) {
+    const codex = await (await context.request.post(`${base}/api/codex-accounts`, { data: { label } })).json()
+    const login = await context.request.post(`${base}/api/codex-accounts/${codex.id}/login`, { data: { type: 'apiKey', apiKey: 'sk-test-bogus' } })
+    assert.ok(login.ok(), await login.text())
+  }
 
   // Claude part sur son seul compte : la connexion du terminal ne se propose plus, il
   // n'y a rien à choisir, la ligne dit seulement qui.
@@ -103,14 +115,15 @@ try {
   await page.screenshot({ path: '/tmp/solera-draft-account-claude.png', fullPage: true })
 
   // Le choix est celui du composer : son réglage « Compte » le reflète.
-  // Codex : le compte connecté se propose avec son usage, la connexion du CLI aussi.
+  // Codex : les comptes connectés se proposent avec leur usage, la connexion du terminal
+  // plus du tout (#147), et le premier est déjà choisi.
   await page.locator('input[name="draft-agent"][value="codex"]').check()
   await page.getByRole('radio', { name: /Codex Boîte/ }).waitFor()
   await page.getByRole('radio', { name: /Codex Boîte/ }).getByText(/Clé API · facturée/).waitFor()
-  await page.getByRole('radio', { name: /Connexion du terminal/ }).getByText(/%|Pas de limite|pas pu être lu/).waitFor({ timeout: 40000 })
+  assert.equal(await page.getByRole('radio', { name: /Connexion du terminal/ }).count(), 0, 'Pas de connexion du terminal pour Codex')
+  assert.equal(await page.getByRole('radio', { name: /Codex Boîte/ }).isChecked(), true, 'Le premier compte est choisi')
   console.log('codex account hint:', await page.getByRole('radio', { name: /Codex Boîte/ }).textContent())
-  console.log('codex CLI hint:', await page.getByRole('radio', { name: /Connexion du terminal/ }).textContent())
-  await page.getByRole('radio', { name: /Codex Boîte/ }).click()
+  await page.getByRole('radio', { name: /Codex Perso/ }).click()
   await page.mouse.move(10, 990)
   await delay(400)
   await page.screenshot({ path: '/tmp/solera-draft-account-codex.png', fullPage: true })
@@ -127,7 +140,7 @@ try {
   await mobile.close()
 
   assert.deepEqual(errors, [])
-  console.log('OK : choix du compte au brouillon, usage par option, Claude et Codex, mobile.')
+  console.log('OK : choix du compte au brouillon, usage par option, Claude et Codex (sans compte, puis sans connexion du terminal), mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

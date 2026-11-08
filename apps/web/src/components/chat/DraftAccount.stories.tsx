@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { DEFAULT_CLAUDE_CONFIG, type UsagePeekDto } from '@solera/protocol'
+import { DEFAULT_CLAUDE_CONFIG, DEFAULT_CODEX_CONFIG, type UsagePeekDto } from '@solera/protocol'
 import { DraftAccount } from './DraftAccount'
 
 const HOUR = 3_600_000
@@ -24,7 +24,8 @@ const probed: UsagePeekDto[] = [
 /**
  * Le compte d'une conversation pas encore créée. Hors serveur, le catalogue n'a pas de
  * compte de Solera : il montre la ligne seule, celle de la connexion du terminal, ou
- * l'appel à connecter un compte quand elle manque aussi.
+ * l'appel à connecter un compte quand elle manque aussi, ou toujours pour Codex et Grok,
+ * qui ne partent que sur un compte de Solera (#147).
  */
 const meta = {
   title: "Composants d'application/Brouillon · compte",
@@ -54,4 +55,13 @@ export const EnTour: Story = {
 export const NonConnecte: Story = {
   name: 'Aucun compte, terminal déconnecté',
   args: { auth: { agent: 'claude', account: null, status: 'logged_out', method: null, plan: null, identity: null }, peek: [] },
+}
+
+export const CodexSansCompte: Story = {
+  name: 'Codex sans compte, terminal connecté ou pas',
+  args: {
+    config: DEFAULT_CODEX_CONFIG,
+    auth: { agent: 'codex', account: null, status: 'ready', method: 'chatgpt', plan: 'plus', identity: 'alex@example.com' },
+    peek: [],
+  },
 }

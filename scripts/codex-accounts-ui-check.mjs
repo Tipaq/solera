@@ -79,8 +79,8 @@ try {
 
   // Créer un compte : il naît non connecté, avec les deux voies de connexion.
   await page.goto(`${base}/settings/comptes-codex`)
-  await page.getByText('Aucun compte supplémentaire').waitFor()
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByText('Aucun compte Codex').waitFor()
+  await page.getByRole('button', { name: 'Connecter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Boulot')
   await page.getByRole('button', { name: 'Créer le compte' }).click()
   await page.getByText('Non connecté').waitFor()
