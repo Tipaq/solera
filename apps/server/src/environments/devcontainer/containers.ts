@@ -30,8 +30,6 @@ import { containerPathOf } from './paths.js'
 import { hasAbsoluteGitLink, relativizeWorktreeLinks } from './worktree-links.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
-export { ContainerRefusal }
-
 /** Ce qu'un lancement attend du conteneur. */
 export interface ContainerNeed {
   /** L'agent d'une session : son CLI Linux, à la version de l'hôte. Absent pour un terminal. */

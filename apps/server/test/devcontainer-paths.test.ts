@@ -9,8 +9,8 @@ import { DevcontainerEnvironment, shellArgs, type RunningContainer } from '../sr
 import { ephemeralMounts } from '../src/environments/devcontainer/ephemeral.js'
 import { ContainerRefusal } from '../src/environments/devcontainer/refusal.js'
 import { containerPathOf, hostPathOf } from '../src/environments/devcontainer/paths.js'
-import { hasAbsoluteGitLink, relativizeWorktreeLinks, RELATIVE_LINKS_LOCK } from '../src/environments/devcontainer/worktree-links.js'
-import { removeWorktree } from '../src/git.js'
+import { hasAbsoluteGitLink, relativizeWorktreeLinks } from '../src/environments/devcontainer/worktree-links.js'
+import { removeWorktree, SOLERA_WORKTREE_LOCK } from '../src/git.js'
 
 async function tempDir(t: TestContext): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'solera-paths-'))
@@ -98,7 +98,7 @@ test("un worktree aux liens relatifs est verrouillé contre le prune d'un git an
 
   await relativizeWorktreeLinks(repo)
   const admin = join(repo, '.git', 'worktrees', 'feat')
-  assert.equal((await readFile(join(admin, 'locked'), 'utf8')).trim(), RELATIVE_LINKS_LOCK)
+  assert.equal((await readFile(join(admin, 'locked'), 'utf8')).trim(), SOLERA_WORKTREE_LOCK)
 
   // Ce que verrait un git < 2.48 : un lien retour qui ne mène nulle part. Le verrou le garde.
   const backLink = await readFile(join(admin, 'gitdir'), 'utf8')
@@ -109,6 +109,21 @@ test("un worktree aux liens relatifs est verrouillé contre le prune d'un git an
 
   await removeWorktree(repo, tree, false)
   assert.ok(!existsSync(tree) && !existsSync(admin))
+})
+
+test('un worktree verrouillé par Solera dont le dossier a disparu se retire encore', async (t) => {
+  const root = await tempDir(t)
+  const repo = join(root, 'repo')
+  git(root, 'init', '-q', repo)
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(root, 'worktrees', 'feat')
+  git(repo, 'worktree', 'add', '-q', '-b', 'feat', tree)
+  await relativizeWorktreeLinks(repo)
+  await rm(tree, { recursive: true, force: true })
+
+  await removeWorktree(repo, tree, true)
+  assert.ok(!existsSync(join(repo, '.git', 'worktrees', 'feat')))
+  assert.doesNotMatch(git(repo, 'worktree', 'list'), /feat/)
 })
 
 test('le verrou posé par une personne reste', async (t) => {
