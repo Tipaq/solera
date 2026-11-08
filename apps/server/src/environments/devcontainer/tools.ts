@@ -115,14 +115,16 @@ export class DevcontainerTools {
    * `devcontainer.local_folder`. Les montages ne s'appliquent qu'à un conteneur créé ici.
    * Chaque ligne du journal passe par `onLog` pendant le démarrage. `rebuild` supprime
    * le conteneur existant et en crée un neuf, son image reconstruite d'après le `devcontainer.json`.
+   * `config` : un `devcontainer.json` hors du dossier, celui que Solera garde pour un projet (#143).
    */
-  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, rebuild = false): Promise<UpResult> {
+  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, rebuild = false, config?: string): Promise<UpResult> {
     const launch = await this.cli()
     const args = [
       ...launch.args,
       'up',
       '--workspace-folder',
       workspace,
+      ...configArgs(config),
       '--docker-path',
       this.docker(),
       ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
@@ -165,12 +167,20 @@ export class DevcontainerTools {
    * montage de Solera au même chemin ferait doublon, ce que Docker refuse), et sa
    * configuration, pour ses ports.
    */
-  async readConfiguration(workspace: string): Promise<{ workspaceFolder: string | null; configuration: unknown }> {
+  async readConfiguration(workspace: string, config?: string): Promise<{ workspaceFolder: string | null; configuration: unknown }> {
     const launch = await this.cli()
     try {
       const { stdout } = await run(
         launch.command,
-        [...launch.args, 'read-configuration', '--workspace-folder', workspace, '--docker-path', this.docker()],
+        [
+          ...launch.args,
+          'read-configuration',
+          '--workspace-folder',
+          workspace,
+          ...configArgs(config),
+          '--docker-path',
+          this.docker(),
+        ],
         { timeout: DOCKER_TIMEOUT_MS * 2, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
       )
       const parsed = JSON.parse(stdout.trim().split('\n').pop() ?? '{}') as {
@@ -301,6 +311,10 @@ export class DevcontainerTools {
     if (!installed) throw new ToolMissingError('devcontainer', `${DEVCONTAINER_CLI.package} was installed but cannot be found.`)
     return installed
   }
+}
+
+function configArgs(config: string | undefined): string[] {
+  return config ? ['--config', config] : []
 }
 
 /**

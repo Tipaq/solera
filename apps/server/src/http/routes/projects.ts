@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
@@ -8,17 +8,20 @@ import {
   EMPTY_CONFIG_LAYER,
   layerWithFullConfig,
   DEVCONTAINER_ENVIRONMENT,
+  HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
   patchConfigLayer,
   sameEnvironment,
   resolveAgentConfig,
   parseRemoteUrl,
+  putProjectDevcontainerBodySchema,
   readProjectLayer,
   reorderProjectsBodySchema,
   serializeProjectLayer,
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
+  type ProjectDevcontainerDto,
   type ProjectDto,
   type ForwardedPortDto,
   type ProjectEnvironmentsDto,
@@ -49,6 +52,10 @@ import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
 import { Environments, environmentColumns, environmentOf } from '../../environments/environments.js'
+import { hasNativeConfinement } from '../../environments/confined/native.js'
+import { managedDevcontainers } from '../../environments/devcontainer/containers.js'
+import { defaultDevcontainerJson, InvalidDevcontainerError } from '../../environments/devcontainer/managed.js'
+import { devcontainerConfigOf } from '../../environments/devcontainer/tools.js'
 import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
 
 export function registerProjectRoutes(
@@ -325,6 +332,63 @@ export function registerProjectRoutes(
   })
 
   /**
+   * Le `devcontainer.json` du projet (#143) : celui du dépôt, qu'on ne fait que nommer,
+   * ou celui que Solera garde hors du dépôt pour un projet qui n'en a pas, et que ses
+   * réglages éditent. Rien n'est jamais écrit dans le projet.
+   */
+  const managed = managedDevcontainers(ctx.config.paths)
+
+  app.get('/api/projects/:id/devcontainer', async (request): Promise<ProjectDevcontainerDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    const own = devcontainerConfigOf(project.workspacePath)
+    return {
+      repository: own ? relative(project.workspacePath, own) : null,
+      managed: managed.read(id),
+      template: defaultDevcontainerJson(project.name, project.workspacePath),
+    }
+  })
+
+  app.put('/api/projects/:id/devcontainer', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = putProjectDevcontainerBodySchema.parse(request.body)
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+    try {
+      await managed.write(id, body.content)
+    } catch (err) {
+      if (err instanceof InvalidDevcontainerError) throw badRequest('devcontainer_invalid', err.message, { detail: err.message })
+      throw err
+    }
+    return { ok: true }
+  })
+
+  /**
+   * Retire celui de Solera. Un projet qui y faisait tourner ses sessions par défaut, sans
+   * `devcontainer.json` à lui, revient à l'hôte : un défaut qu'on ne sait plus lancer
+   * ferait échouer chaque session ouverte ensuite. Confiné, il le reste là où la
+   * plateforme sait confiner : le retrait ne relâche pas le confinement en silence.
+   */
+  app.delete('/api/projects/:id/devcontainer', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+    await managed.remove(id)
+    if (project.environmentWhere === 'devcontainer' && !devcontainerConfigOf(project.workspacePath)) {
+      const host = project.environmentConfined && hasNativeConfinement() ? HOST_CONFINED_ENVIRONMENT : HOST_ENVIRONMENT
+      await ctx.db.update(projects).set(environmentColumns(host)).where(eq(projects.id, id))
+    }
+    return { ok: true }
+  })
+
+  /**
    * Les ports du dev container du projet et l'adresse de l'hôte où chacun est servi
    * (#141) : l'aperçu web traduit le port qu'un agent cite, Services les montre.
    */
@@ -363,6 +427,7 @@ export function registerProjectRoutes(
     // Les skills du projet, eux, appartiennent à Solera. Avant la cascade, qui efface
     // les lignes dont on a besoin pour retrouver les skills désactivés.
     new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
+    await managed.remove(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
     return reply.status(204).send()
   })

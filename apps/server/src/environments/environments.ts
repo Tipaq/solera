@@ -51,8 +51,8 @@ export class Environments {
    * Ce qu'on peut choisir, pour ce projet, sur ce serveur. L'hôte confiné est proposé
    * sur toute plateforme qui en a un, même si l'essai échoue : c'est au choix que le
    * refus dit pourquoi et quoi lancer, plutôt qu'une option qui disparaît sans raison.
-   * Le dev container l'est pour un projet qui a un `devcontainer.json`, même si Docker
-   * manque : son démarrage dira quoi installer.
+   * Le dev container l'est pour un projet qui a un `devcontainer.json`, le sien ou celui
+   * que Solera garde pour lui, même si Docker manque : son démarrage dira quoi installer.
    */
   choices(projectId: string | null): ExecutionEnvironment[] {
     const host = hasNativeConfinement() ? [HOST_ENVIRONMENT, HOST_CONFINED_ENVIRONMENT] : [HOST_ENVIRONMENT]
@@ -62,7 +62,8 @@ export class Environments {
   /** Le projet a-t-il un `devcontainer.json` que ce serveur saurait démarrer ? */
   hasDevcontainer(projectId: string | null): boolean {
     const workspacePath = projectId === null ? null : this.workspaceOf(projectId)
-    return workspacePath !== null && (this.devcontainers?.available(workspacePath) ?? false)
+    if (projectId === null || workspacePath === null) return false
+    return this.devcontainers?.available({ id: projectId, workspacePath }) ?? false
   }
 
   /**

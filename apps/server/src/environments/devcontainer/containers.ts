@@ -9,6 +9,7 @@ import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
 import { BridgeListeners } from './bridge.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
 import { PortForwarder, portsConfigOf, type PortsConfig } from './ports.js'
+import { ManagedDevcontainers } from './managed.js'
 import { devcontainerConfigOf, DevcontainerTools, type Mount } from './tools.js'
 
 /** Ce qu'un lancement attend du conteneur. */
@@ -66,6 +67,7 @@ export class Devcontainers {
   private readonly failures = new Map<string, string>()
   private readonly ports = new Map<string, PortForwarder>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
+  private managedStore: ManagedDevcontainers | null = null
 
   constructor(
     private readonly paths: Paths,
@@ -82,6 +84,12 @@ export class Devcontainers {
   /** Le serveur HTTP que les conteneurs joignent, une fois qu'il écoute. */
   serve(server: HttpServer): void {
     this.bridges.serve(server)
+  }
+
+  /** Les `devcontainer.json` que Solera garde pour les projets qui n'en ont pas (#143). */
+  get managed(): ManagedDevcontainers {
+    this.managedStore ??= managedDevcontainers(this.paths)
+    return this.managedStore
   }
 
   /** Construits au premier usage : un serveur sans dev container n'en touche aucun chemin. */
@@ -101,9 +109,20 @@ export class Devcontainers {
     return this.lazy
   }
 
-  /** Le projet a-t-il un `devcontainer.json` ? Seul cas où on le propose. */
-  available(workspacePath: string): boolean {
-    return devcontainerConfigOf(workspacePath) !== null
+  /** Le projet a-t-il un `devcontainer.json`, le sien ou celui de Solera ? Seul cas où on le propose. */
+  available(project: Project): boolean {
+    return this.configOf(project) !== null
+  }
+
+  /**
+   * Le `devcontainer.json` d'un projet : celui du dépôt d'abord, qui reste la source de
+   * vérité, puis celui que Solera garde pour lui (`managed`), passé au CLI par `--config`.
+   */
+  configOf(project: Project): { path: string; managed: boolean } | null {
+    const own = devcontainerConfigOf(project.workspacePath)
+    if (own) return { path: own, managed: false }
+    const managed = this.managed.configOf(project.id)
+    return managed ? { path: managed, managed: true } : null
   }
 
   /**
@@ -111,10 +130,10 @@ export class Devcontainers {
    * Rend le fournisseur où lancer. Un conteneur arrêté entre-temps est redémarré.
    */
   async prepare(project: Project, need: ContainerNeed): Promise<DevcontainerEnvironment> {
-    if (!this.available(project.workspacePath)) {
+    if (!this.available(project)) {
       throw new ContainerRefusal(
         'devcontainer_missing',
-        `${project.workspacePath} has no .devcontainer/devcontainer.json: this project cannot run in a dev container.`,
+        `${project.workspacePath} has no .devcontainer/devcontainer.json, and Solera keeps none for it: create one from the project settings to run it in a dev container.`,
       )
     }
     const container = await this.ensureRunning(project, need.onLog ?? (() => undefined))
@@ -233,9 +252,13 @@ export class Devcontainers {
       )
     }
     try {
-      const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath)
+      const config = this.configOf(project)
+      // Seul celui de Solera passe par `--config` : celui du dépôt garde l'identité que
+      // VS Code lui donne, et son conteneur reste partagé.
+      const configPath = config?.managed ? config.path : undefined
+      const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath, configPath)
       const mounts = await this.mounts(project, workspaceFolder)
-      const up = await this.tools.up(project.workspacePath, mounts, onLog, rebuild)
+      const up = await this.tools.up(project.workspacePath, mounts, onLog, rebuild, configPath)
       const info = await this.tools.inspect(up.containerId)
       const container: RunningContainer = {
         id: up.containerId,
@@ -405,6 +428,11 @@ export function targetArch(machine: string): LinuxTarget['arch'] | null {
   if (machine === 'x86_64' || machine === 'amd64') return 'x64'
   if (machine === 'aarch64' || machine === 'arm64') return 'arm64'
   return null
+}
+
+/** Les `devcontainer.json` gardés par Solera, un dossier par projet. */
+export function managedDevcontainers(paths: Pick<Paths, 'data'>): ManagedDevcontainers {
+  return new ManagedDevcontainers(join(paths.data, 'devcontainers'))
 }
 
 /** Les configurations des CLI lancés dans un conteneur (`CLAUDE_CONFIG_DIR`), par utilisateur. */
