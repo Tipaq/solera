@@ -924,21 +924,17 @@ export class SessionManager {
    * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
    * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
    * la session part sur la connexion du CLI (Claude) ou sur le premier compte connecté
-   * (Codex, Grok), et le fil le dit, parce que c'est un autre abonnement qui va payer le
+   * (Codex, Grok, qui refusent sans compte connecté), et le fil le dit, parce que c'est un autre abonnement qui va payer le
    * tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
     if (config.agent === 'opencode') return {}
-    if (!config.account) {
-      if (config.agent === 'codex') this.bringConversation(conversation, userCodexHome())
-      if (config.agent === 'grok') this.bringConversation(conversation, userGrokHome())
-      return {}
-    }
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
     }
     if (config.agent === 'claude') {
+      if (!config.account) return {}
       const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
       if (!resolved) {
         return missing(
@@ -956,32 +952,46 @@ export class SessionManager {
     // jamais connecté vaut un compte absent : sans `auth.json`, le CLI refuserait le tour.
     // L'un comme l'autre se replie sur le premier compte connecté, comme `accountLayer`,
     // plutôt que sur la connexion du CLI, qui n'a pas le fil.
+    //
+    // Jamais sur la connexion du CLI (#147) : une session Codex ou Grok ne tourne que
+    // dans un home de Solera, et c'est ce qui permet de ne jamais monter celui de
+    // l'utilisateur dans un environnement confiné. La connexion du CLI encore désignée
+    // (`null`, un choix d'avant) part donc sans avis sur le premier compte connecté ; sans
+    // aucun compte connecté, `refuseWithoutAccount` a refusé le lancement plus tôt.
     const side =
       config.agent === 'codex'
-        ? { ...this.codexAccounts, variable: 'CODEX_HOME', name: 'Codex', code: 'codex_account_missing', cliHome: userCodexHome() }
-        : { ...this.grokAccounts, variable: 'GROK_HOME', name: 'Grok', code: 'grok_account_missing', cliHome: userGrokHome() }
-    const chosen = side.store.find(conversation.userId, config.account)
-    const account =
-      chosen?.status === 'ready' ? chosen : side.store.list(conversation.userId).find((other) => other.status === 'ready')
-    const reason = chosen
-      ? `Le compte ${side.name} choisi pour cette conversation n'est pas connecté`
-      : `Le compte ${side.name} choisi pour cette conversation n'existe plus`
-    if (!account) {
-      missing(side.code, `${reason} : la session repart sur la connexion du CLI.`)
-      this.bringConversation(conversation, side.cliHome)
-      return {}
+        ? { ...this.codexAccounts, variable: 'CODEX_HOME', name: 'Codex', code: 'codex_account_missing' }
+        : { ...this.grokAccounts, variable: 'GROK_HOME', name: 'Grok', code: 'grok_account_missing' }
+    const { chosen, account } = this.soleraAccount(conversation.userId, config.agent, config.account)
+    if (!account) throw accountRequired(config.agent)
+    if (config.account && account !== chosen) {
+      const reason = chosen
+        ? `Le compte ${side.name} choisi pour cette conversation n'est pas connecté`
+        : `Le compte ${side.name} choisi pour cette conversation n'existe plus`
+      missing(side.code, `${reason} : la session part sur le compte « ${account.label} ».`)
     }
-    if (account !== chosen) missing(side.code, `${reason} : la session part sur le compte « ${account.label} ».`)
     const home = side.homes.ensure(account.id)
     this.bringConversation(conversation, home)
     return { [side.variable]: home }
   }
 
   /**
+   * Le compte Codex ou Grok sur lequel une session part : celui que la conversation
+   * désigne s'il est connecté, sinon le premier compte connecté de l'utilisateur.
+   */
+  private soleraAccount(userId: string, agent: 'codex' | 'grok', designated: string | null) {
+    const { store } = agent === 'codex' ? this.codexAccounts : this.grokAccounts
+    const chosen = designated ? store.find(userId, designated) : undefined
+    const account =
+      chosen?.status === 'ready' ? chosen : store.list(userId).find((other) => other.status === 'ready')
+    return { chosen, account }
+  }
+
+  /**
    * Amène dans `home` la session native de la conversation, depuis le home qui en a la
    * dernière version : un autre compte de l'utilisateur, ceux qu'il a supprimés, ou la
-   * connexion du CLI. Sans
-   * dossier partagé, c'est ce qui permet de changer de compte en cours de conversation,
+   * connexion du CLI pour un fil né dessus avant #147. Sans dossier partagé, c'est ce qui
+   * permet de changer de compte en cours de conversation,
    * ou de forker sur un autre compte. Les comptes d'un autre utilisateur ne sont jamais
    * lus. Un échec n'empêche pas le lancement : la reprise le dira.
    */
@@ -1030,6 +1040,14 @@ export class SessionManager {
     const cwd = this.resolveCwd(conversation)
     // Lu au lancement, comme le jeton : changer de compte relance la session.
     const account = this.accountInUse(conversation, config)
+    // Le compte qui paie les tours, pour ranger leurs signaux de limite : pour Codex et
+    // Grok, celui du repli quand la conversation n'en désigne pas un de connecté.
+    const ledgerAccount =
+      config.agent === 'codex' || config.agent === 'grok'
+        ? (this.soleraAccount(conversation.userId, config.agent, config.account).account?.id ?? null)
+        : 'account' in config
+          ? config.account
+          : null
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
     //
@@ -1250,11 +1268,7 @@ export class SessionManager {
         // Le signal de limite d'un vrai tour nourrit l'aperçu gratuit de la consommation,
         // rangé sous le compte de la conversation : celui avec lequel le runner a été lancé.
         if (event.type === 'usage.updated' && event.rateLimit) {
-          this.registry.usageLedger.recordLive(
-            conversation.agent,
-            'account' in config ? config.account : null,
-            event.rateLimit,
-          )
+          this.registry.usageLedger.recordLive(conversation.agent, ledgerAccount, event.rateLimit)
         }
         if (event.type === 'file.edited') {
           this.checkpoints.get(conversationId)?.edited.add(event.path)
@@ -1406,6 +1420,7 @@ export class SessionManager {
     const fresh = await refreshConversationConfig(this.db, this.registry, this.loadConversation(conversationId))
     // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
     this.refuseMissingCwd(fresh)
+    this.refuseWithoutAccount(fresh)
     await this.makeRoom()
 
     const context = this.buildContext(fresh)
@@ -1450,6 +1465,17 @@ export class SessionManager {
    * Sauf au milieu d'un tour, où passent `steer` et un fork : le couper laisserait le
    * fil en `running` sans fin de tour. Il s'arrêtera au prochain envoi, au repos.
    */
+  /**
+   * Une session Codex ou Grok sans aucun compte connecté n'a rien sur quoi partir : la
+   * connexion du CLI n'en porte plus (#147). Refusée comme un dossier disparu, avant
+   * `makeRoom`, pour ne pas évincer un runner vivant.
+   */
+  private refuseWithoutAccount(conversation: ConversationRow): void {
+    const agent = conversation.agent
+    if (agent !== 'codex' && agent !== 'grok') return
+    if (!this.soleraAccount(conversation.userId, agent, null).account) throw accountRequired(agent)
+  }
+
   private refuseMissingCwd(conversation: ConversationRow): string {
     try {
       const cwd = this.resolveCwd(conversation)
@@ -2256,4 +2282,13 @@ export class SessionManager {
   activeCount(): number {
     return this.runners.size
   }
+}
+
+/** Une session Codex ou Grok sans compte de Solera connecté : rien sur quoi partir. */
+function accountRequired(agent: 'codex' | 'grok'): HttpError {
+  return conflict(
+    'agent_account_required',
+    'No {agent} account is connected: connect one in Settings › Agents to start this conversation.',
+    { agent: agent === 'codex' ? 'Codex' : 'Grok' },
+  )
 }

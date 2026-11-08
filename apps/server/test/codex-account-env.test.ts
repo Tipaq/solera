@@ -110,3 +110,19 @@ test('supprimer un compte garde ses threads hors du home de l’utilisateur', as
   assert.equal(thread(homes.kept('tim')), 'né sur parti')
   assert.equal(thread(process.env.CODEX_HOME!), null)
 })
+
+test('la connexion du CLI encore désignée : la session part sur le premier compte, sans avis, avec le thread (#147)', async (t) => {
+  const { homes, accountEnv, account, writeThread, thread, errors } = await harness(t)
+  writeThread(process.env.CODEX_HOME!, 'né sur la connexion du CLI')
+  const perso = account('Perso')
+  const env = accountEnv(null)
+  assert.equal(env.CODEX_HOME, homes.path(perso))
+  assert.equal(thread(homes.path(perso)), 'né sur la connexion du CLI')
+  assert.deepEqual(errors(), [])
+})
+
+test('aucun compte connecté : la session est refusée, jamais lancée sur la connexion du CLI (#147)', async (t) => {
+  const { store, accountEnv } = await harness(t)
+  store.create('tim', 'Jamais connecté')
+  assert.throws(() => accountEnv(null), (err: { code?: string }) => err.code === 'agent_account_required')
+})
