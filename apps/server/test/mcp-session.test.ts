@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { conversations, openDatabase, projects, runMigrations, users, type ConversationRow } from '@solera/db'
+import { apiTokens, conversations, openDatabase, projects, runMigrations, users, type ConversationRow } from '@solera/db'
 import { BUILTIN_MCP_SERVER_NAME, DEFAULT_CLAUDE_CONFIG, type AgentConfig } from '@solera/protocol'
 import { BUILTIN_MCP_SERVER_ID } from '../src/agents/mcp-builtin.js'
 import { MCP_SESSION_TOKEN_PREFIX, McpSessionTokens } from '../src/agents/mcp-session-tokens.js'
@@ -169,6 +169,27 @@ test('session : révoqué, le jeton ne vaut plus rien et son process s arrête',
   assert.ok(tokens.resolve(relaunched), 'le jeton du runner relancé survit')
   const refused = await post({ id: 3, method: 'ping' }, session)
   assert.equal(refused.statusCode, 401)
+})
+
+test('session : le délai d inactivité du pont ne vaut que pour les jetons d API', async (t) => {
+  const { db, dbPath } = await database(t)
+  const { app, bridge, tokens, token, initialize, rpc } = await sessionMcp(t, db, dbPath, sessionScope({ projectId: 'project', conversationId: 'conv' }))
+  const session = await initialize()
+  const owner = `session:${tokens.resolve(token)!.id}`
+
+  const { secret } = createApiToken(db, {
+    userId: 'owner', label: 'mcp', scopes: ['mcp'], projectIds: [], agent: 'claude', config: {}, expiresAt: null, webhookUrl: null,
+  })
+  const external = mcpClient(app, secret)
+  const externalSession = await external.initialize()
+  const apiToken = db.select().from(apiTokens).all()[0]!
+
+  // Un long tour sans appel à `solera`, ou un runner au repos plus d'une demi-heure :
+  // le process de la session doit être encore là au prochain appel.
+  bridge.reap(Date.now() + 31 * 60 * 1000)
+  assert.ok(bridge.lookup(session, owner), 'la session du runner survit')
+  assert.equal(bridge.lookup(externalSession, apiToken.id), null, 'le client extérieur rouvrira')
+  await rpc('ping')
 })
 
 test('session : la portée suit le jeton, pas la requête', async (t) => {

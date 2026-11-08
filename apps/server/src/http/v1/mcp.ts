@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { ApiTokenRow, UserRow } from '@solera/db'
-import { resolveEntry, sessionScopeEnv } from '../../agents/mcp-builtin.js'
+import { MCP_ENDPOINT_PATH, resolveEntry, sessionScopeEnv } from '../../agents/mcp-builtin.js'
 import type { McpSessionGrant, McpSessionTokens } from '../../agents/mcp-session-tokens.js'
 import type { AppContext } from '../context.js'
 import { HttpError, badRequest, notFound } from '../errors.js'
@@ -37,7 +37,12 @@ import { allowedProjectIds } from './access.js'
  * d'ordinaire (`docs/remote-access.md`) : le pont n'ouvre aucun port de plus.
  */
 
-/** Sans requête depuis ce délai, le process est arrêté : le client rouvrira une session. */
+/**
+ * Sans requête depuis ce délai, le process d'un jeton d'API est arrêté : le client
+ * rouvrira une session. Jamais celui d'un jeton de session, que la révocation borne
+ * déjà : un long tour sans appel à `solera`, ou un runner au repos plus longtemps que
+ * ce délai, ne doivent pas trouver leur serveur parti, comme du temps du stdio.
+ */
 const IDLE_MS = 30 * 60 * 1000
 const REAP_EVERY_MS = 60 * 1000
 /**
@@ -144,20 +149,26 @@ export class McpBridge {
   constructor(
     private readonly ctx: AppContext,
     private readonly log: FastifyInstance['log'],
-    tokens?: McpSessionTokens,
+    tokens: McpSessionTokens,
   ) {
-    tokens?.onRevoke((grantIds) => {
+    tokens.onRevoke((grantIds) => {
       const revoked = new Set(grantIds.map(grantOwner))
       for (const session of this.sessions.values()) if (revoked.has(session.owner)) this.close(session)
     })
   }
 
   start(): void {
-    this.reaper = setInterval(() => {
-      const cutoff = Date.now() - IDLE_MS
-      for (const session of this.sessions.values()) if (session.lastUsed < cutoff) this.close(session)
-    }, REAP_EVERY_MS)
+    this.reaper = setInterval(() => this.reap(), REAP_EVERY_MS)
     this.reaper.unref()
+  }
+
+  /** Ferme les sessions de jetons d'API restées sans requête au-delà du délai. */
+  reap(now = Date.now()): void {
+    const cutoff = now - IDLE_MS
+    for (const session of this.sessions.values()) {
+      if (session.owner.startsWith(GRANT_OWNER_PREFIX)) continue
+      if (session.lastUsed < cutoff) this.close(session)
+    }
   }
 
   stop(): void {
@@ -214,9 +225,11 @@ export class McpBridge {
   }
 }
 
+const GRANT_OWNER_PREFIX = 'session:'
+
 /** Préfixé : l'identifiant d'un jeton d'API et celui d'un jeton de session ne se croisent pas. */
 function grantOwner(grantId: string): string {
-  return `session:${grantId}`
+  return `${GRANT_OWNER_PREFIX}${grantId}`
 }
 
 /**
@@ -235,12 +248,12 @@ function sessionHeader(request: FastifyRequest): string | undefined {
   return Array.isArray(value) ? value[0] : value
 }
 
-export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext, tokens?: McpSessionTokens): McpBridge {
+export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext, tokens: McpSessionTokens): McpBridge {
   const bridge = new McpBridge(ctx, app.log, tokens)
   bridge.start()
   app.addHook('onClose', async () => bridge.stop())
 
-  app.post('/api/v1/mcp', async (request, reply) => {
+  app.post(MCP_ENDPOINT_PATH, async (request, reply) => {
     const { owner, open } = caller(request, bridge)
     const body = request.body as JsonRpcMessage | JsonRpcMessage[] | undefined
     if (!body || typeof body !== 'object') throw badRequest('mcp_invalid_body', 'A JSON-RPC message is required.')
@@ -259,7 +272,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext, tokens?
     return reply.header('Mcp-Session-Id', session.id).send(response)
   })
 
-  app.delete('/api/v1/mcp', async (request, reply) => {
+  app.delete(MCP_ENDPOINT_PATH, async (request, reply) => {
     const { owner } = caller(request, bridge)
     const session = bridge.lookup(sessionHeader(request), owner)
     if (!session) throw notFound('mcp_session_not_found', 'MCP session not found.')
@@ -268,7 +281,7 @@ export function registerMcpRoutes(app: FastifyInstance, ctx: AppContext, tokens?
   })
 
   // Le transport prévoit un flux descendant sur GET ; ce serveur ne pousse rien.
-  app.get('/api/v1/mcp', async (request: FastifyRequest) => {
+  app.get(MCP_ENDPOINT_PATH, async (request: FastifyRequest) => {
     caller(request, bridge)
     throw new HttpError(405, 'mcp_no_stream', 'This server does not open server-to-client streams.')
   })
