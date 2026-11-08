@@ -12,7 +12,7 @@ import {
   type ClaudeAccount,
   type ConversationDto,
 } from '@solera/protocol'
-import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
+import type { AgentSkillDto, ExecutionEnvironment, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
@@ -22,6 +22,7 @@ import { AgentLoginDialog } from '../components/settings/AgentLoginDialog'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
+import { EnvironmentSelect } from '../components/Environment'
 import { useCards } from '../lib/cards'
 import { GUIDED_LOGIN } from '../lib/agent-login'
 import {
@@ -41,7 +42,7 @@ import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-session
 import { useProjectCommands } from '../lib/commands'
 import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
-import { useProjects } from '../lib/projects'
+import { useProjectEnvironments, useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
 import { openSettings } from '../lib/settings-dialog'
 import { useCurrentUser } from '../lib/session'
@@ -268,6 +269,10 @@ export function DraftConversationPage() {
   // session, depuis l'Activité groupée par worktree (#111).
   const [worktreeId, setWorktreeId] = useState<string | null>(() => params.get('worktree'))
   const [worktreeTouched, setWorktreeTouched] = useState(false)
+  // L'environnement choisi pour ce projet ; sans choix, le serveur prend celui du projet.
+  const { data: environments } = useProjectEnvironments(projectId)
+  const [pickedEnvironment, setPickedEnvironment] = useState<{ projectId: string; environment: ExecutionEnvironment } | null>(null)
+  const chosenEnvironment = pickedEnvironment && pickedEnvironment.projectId === projectId ? pickedEnvironment.environment : undefined
   const effectiveWorktreeId = splitting
     ? null
     : worktreeTouched || params.has('worktree')
@@ -343,6 +348,7 @@ export function DraftConversationPage() {
       worktreeId: effectiveWorktreeId,
       cardId: card?.id ?? null,
       ...(splitting ? { purpose: 'split' as const, splitCardId: splitCard?.id ?? null } : {}),
+      ...(chosenEnvironment ? { environment: chosenEnvironment } : {}),
       // Le titre de la carte plutôt que l'extrait du message : la conversation traite
       // un travail nommé, et le CLI n'a plus à en proposer un.
       title: card?.title ?? (splitCard ? t('split.sessionTitle', { title: splitCard.title }) : undefined),
@@ -354,7 +360,7 @@ export function DraftConversationPage() {
     navigate(projectId ? `/p/${projectId}/c/${created.id}` : `/c/${created.id}`, {
       replace: true,
     })
-  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, t, navigate, projectId])
+  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, chosenEnvironment, t, navigate, projectId])
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
@@ -433,6 +439,16 @@ export function DraftConversationPage() {
                 isRepository={project?.git !== null && project !== undefined}
                 suggestedName={card ? cardBranchName(card.number, card.title) : undefined}
                 cardId={card?.id}
+              />
+            ) : null}
+            {/* Où la session tournera, figé à sa création : le défaut du projet, ou un
+                autre choisi ici. Un fil libre reste sur l'hôte. */}
+            {projectId && environments ? (
+              <EnvironmentSelect
+                value={chosenEnvironment ?? environments.default}
+                choices={environments.choices}
+                disabled={createConversation.isPending}
+                onChange={(environment) => setPickedEnvironment({ projectId, environment })}
               />
             ) : null}
           </div>

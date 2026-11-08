@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runAuthCommand } from '../agents/auth.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import type { ClaudeAccountStore } from './store.js'
 
 /**
@@ -20,7 +21,7 @@ import type { ClaudeAccountStore } from './store.js'
  */
 export type ClaudeIdentify = (source: { token: string } | { configDir: string }) => Promise<string | null>
 
-export function claudeIdentity(binary: () => Promise<string>): ClaudeIdentify {
+export function claudeIdentity(cli: CliLauncher): ClaudeIdentify {
   return async (source) => {
     // Un dossier vide pour le jeton : le CLI ne doit lire ni la connexion du poste, ni
     // celle d'une jauge, qui passerait devant ou à côté.
@@ -29,7 +30,7 @@ export function claudeIdentity(binary: () => Promise<string>): ClaudeIdentify {
       // Vidés, les secrets que le serveur aurait hérités : ils passeraient devant celui lu.
       const env: Record<string, string> = { CLAUDE_CONFIG_DIR: configDir, CLAUDE_CODE_OAUTH_TOKEN: '', ANTHROPIC_API_KEY: '' }
       if ('token' in source) env.CLAUDE_CODE_OAUTH_TOKEN = source.token
-      const { stdout } = await runAuthCommand(await binary(), ['auth', 'status', '--json'], env)
+      const { stdout } = await runAuthCommand(cli, ['auth', 'status', '--json'], env)
       return emailFrom(stdout)
     } catch {
       return null

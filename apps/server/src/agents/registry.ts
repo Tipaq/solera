@@ -11,7 +11,7 @@ import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import type { AgentAuth } from './auth.js'
 import { ClaudeAdapter } from './claude/adapter.js'
-import type { CliBinary } from './cli-binary.js'
+import type { CliBinary, CliLauncher } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
 import { GrokAdapter } from './grok/adapter.js'
 import { OpencodeAdapter } from './opencode/adapter.js'
@@ -24,6 +24,11 @@ export class ForkError extends Error {}
 export interface ForkTarget {
   agentSessionId: string
   cwd: string
+  /**
+   * Le CLI de la session et son environnement : un fork relit l'historique là où la
+   * session l'a écrit, et pas forcément là où le CLI de l'adaptateur a été trouvé.
+   */
+  cli: CliLauncher
   /**
    * L'environnement du compte choisi pour la conversation (`GROK_HOME`…), tel que la
    * session le reçoit : un CLI qui range ses sessions dans le home du compte les y

@@ -1,3 +1,4 @@
+import type { CliLauncher } from '../cli-binary.js'
 import { CachedProbe } from '../cached-probe.js'
 import { AUTH_CACHE_TTL_MS, runAuthCommand, UNKNOWN_AUTH, type AgentAuth } from '../auth.js'
 
@@ -35,9 +36,9 @@ export function parseCodexAuth(output: string): AgentAuth {
 export class CodexAuthReader {
   private readonly cached: CachedProbe<AgentAuth>
 
-  constructor(executable: () => Promise<string>) {
+  constructor(cli: CliLauncher) {
     this.cached = new CachedProbe(AUTH_CACHE_TTL_MS, async () => {
-      const { stdout, stderr } = await runAuthCommand(await executable(), ['login', 'status'])
+      const { stdout, stderr } = await runAuthCommand(cli, ['login', 'status'])
       return parseCodexAuth(`${stdout}\n${stderr}`)
     })
   }

@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { AgentKind, CardColumn, EnvironmentWhere, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -89,6 +89,14 @@ export const projects = sqliteTable(
      * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
      */
     turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * L'environnement d'exécution par défaut des sessions du projet (ADR 0001) : où
+     * tourne leur CLI, et confiné ou non. Une session le recopie à sa création et le
+     * garde ensuite ; un terminal ouvert hors session le prend. L'hôte non confiné pour
+     * un projet qui n'a rien réglé, comme avant la notion.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -961,6 +969,14 @@ export const conversations = sqliteTable(
     // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
     // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
     agent: text('agent').$type<AgentKind>().notNull(),
+    /**
+     * L'environnement d'exécution de la session, figé à sa création : celui du projet
+     * par défaut, ou celui choisi en l'ouvrant. Ne change plus ensuite, parce qu'un
+     * historique natif et des processus vivants n'ont pas de sens hors du monde où ils
+     * sont nés. Ses terminaux le suivent.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
     /** Identifiant natif du CLI, pour `--resume` ou `thread/resume`. */
     agentSessionId: text('agent_session_id'),
     /**

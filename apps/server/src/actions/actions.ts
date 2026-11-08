@@ -23,6 +23,8 @@ import {
 } from '../services/apps.js'
 import { processOrigins } from '../services/origins.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
+import type { Environments } from '../environments/environments.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Actions de projet : stockage, et exécution dans un terminal ou une unité systemd.
@@ -171,6 +173,7 @@ export class ActionRunner {
     private readonly db: Db,
     private readonly config: Config,
     private readonly terminals: TerminalManager,
+    private readonly environments: Environments,
   ) {}
 
   private shell(): string {
@@ -261,7 +264,10 @@ export class ActionRunner {
 
     const previous = this.terminals.latestForAction(row.projectId, row.id)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
-    const terminal = this.openTerminal(row.projectId, cwd, {
+    // Dans l'environnement de la session qui la lance, et hors session dans celui du
+    // projet : comme un terminal.
+    const environment = this.environments.forTerminal(row.projectId, conversationId)
+    const terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
       command: row.command,
       title: row.label,
       actionId: row.id,
@@ -307,7 +313,8 @@ export class ActionRunner {
     const key = logsKey(row.id)
     const previous = this.terminals.latestForAction(row.projectId, key)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
-    const terminal = this.openTerminal(row.projectId, base, {
+    // Le journal d'une unité de l'hôte se lit sur l'hôte, quel que soit l'environnement.
+    const terminal = this.openTerminal(row.projectId, base, { environment: hostEnvironment, conversationId: null }, {
       command: `journalctl --user -u ${actionUnit(row.id)} -f -n 200 -o cat`,
       title: `${row.label} · logs`,
       actionId: key,

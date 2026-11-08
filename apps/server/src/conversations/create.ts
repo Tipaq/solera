@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@solera/db'
-import { resolveAgentConfig, type AgentConfig, type AgentKind } from '@solera/protocol'
+import { HOST_ENVIRONMENT, resolveAgentConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment } from '@solera/protocol'
+import { environmentColumns } from '../environments/environments.js'
 import type { OutgoingAttachment } from '../agents/types.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { inheritedLayers, overridesFor } from './config-inheritance.js'
@@ -38,6 +39,11 @@ export interface CreateConversationInput {
   purpose?: 'split' | null
   splitCardId?: string | null
   title?: string
+  /**
+   * L'environnement d'exécution, figé à la création. Absent : celui du projet par
+   * défaut, et l'hôte pour un fil libre, qui n'a pas de projet.
+   */
+  environment?: ExecutionEnvironment
   /**
    * Texte dont tirer le titre provisoire, quand le premier message ne s'y prête pas :
    * une mission confiée par une autre session commence par son enveloppe balisée.
@@ -83,6 +89,12 @@ export async function createConversation(
   const config = await sessions.resolveDefaults(
     resolveAgentConfig(input.agent, inheritedLayers(db, owner).map((named) => named.layer), overrides),
   )
+  const environment =
+    input.environment ?? (input.projectId === null ? HOST_ENVIRONMENT : sessions.environments.ofProject(input.projectId))
+  // Refusé à la création plutôt qu'au premier lancement : un fil qui ne pourra jamais
+  // démarrer ne doit pas apparaître dans la liste, que l'environnement soit choisi ou
+  // hérité du projet.
+  sessions.environments.assertAvailable(input.projectId, environment)
   const row: ConversationRow = {
     id: randomUUID(),
     projectId: input.projectId,
@@ -95,6 +107,7 @@ export async function createConversation(
     titleSetByUser: input.title !== undefined,
     titleSetByAgent: false,
     agent: input.agent,
+    ...environmentColumns(environment),
     agentSessionId: null,
     forkedFromId: null,
     handoffFromId: input.handoff?.fromConversationId ?? null,

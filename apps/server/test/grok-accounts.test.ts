@@ -15,6 +15,7 @@ import { GrokLoginService } from '../src/grok-accounts/login.js'
 import { GrokAccountStore } from '../src/grok-accounts/store.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerGrokAccountRoutes } from '../src/http/routes/grok-accounts.js'
+import { hostCli } from './environment-support.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-grok-accounts-'))
@@ -40,7 +41,7 @@ async function harness(t: TestContext) {
   chmodSync(binary, 0o700)
   const store = new GrokAccountStore(db)
   const homes = new GrokAccountHomes(join(dir, 'grok-accounts'))
-  const login = new GrokLoginService(homes, store, async () => binary)
+  const login = new GrokLoginService(homes, store, hostCli(binary))
   t.after(() => login.closeAll())
   return { dir, db, userHome, binary, store, homes, login }
 }
@@ -136,7 +137,7 @@ test('connexion par clé API : Grok l’écrit dans le home du compte, Solera n�
 
 test('consommation : enveloppe de crédits de la période, dépassement à la demande, formule', async (t) => {
   const { binary, homes } = await harness(t)
-  const usage = await readGrokBilling(binary, homes.ensure('acct'))
+  const usage = await readGrokBilling(hostCli(binary), homes.ensure('acct'))
   assert.deepEqual(usage, {
     agent: 'grok',
     plan: 'X Premium',

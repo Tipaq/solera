@@ -24,7 +24,7 @@ import {
 } from '@solera/protocol'
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
-import { resolveBinary } from '../agents/cli-binary.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
@@ -77,6 +77,7 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
+import { Environments, environmentOf } from '../environments/environments.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -246,7 +247,14 @@ export class SessionManager {
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
+    this.environments = new Environments(db)
   }
+
+  /**
+   * Où tournent les sessions, et leurs terminaux : la seule porte vers un fournisseur
+   * d'environnement, partagée avec les routes et les actions.
+   */
+  readonly environments: Environments
 
   /**
    * Au démarrage, aucune conversation ne peut légitimement être en cours : les
@@ -621,6 +629,7 @@ export class SessionManager {
         // la route l'a déjà refusé.
         cwd: this.refuseMissingCwd(conversation),
         accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
+        cli: this.sessionCli(conversation),
       },
       adapter.forkCut(this.log, conversationId, throughSeq),
     )
@@ -965,9 +974,27 @@ export class SessionManager {
     return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
   }
 
+  /**
+   * Le CLI d'une session, cherché dans son environnement : celui où la session tourne,
+   * qui n'est pas forcément celui où l'adaptateur a trouvé le sien. Lève si ce serveur ne
+   * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
+   * retomber en silence sur l'hôte.
+   */
+  private sessionCli(conversation: ConversationRow): CliLauncher & { binary: string } {
+    const adapter = this.registry.adapter(conversation.agent)
+    const environment = this.environments.provider(environmentOf(conversation))
+    // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
+    // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
+    // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
+    // installations faites depuis l'interface.
+    const binary = environment.resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary
+    return { environment, binary, executable: async () => binary }
+  }
+
   private buildContext(conversation: ConversationRow): RunnerContext {
     const conversationId = conversation.id
     const adapter = this.registry.adapter(conversation.agent)
+    const launcher = this.sessionCli(conversation)
     const config = parseAgentConfig(conversation.config)
     const cwd = this.resolveCwd(conversation)
     // Lu au lancement, comme le jeton : changer de compte relance la session.
@@ -1021,11 +1048,8 @@ export class SessionManager {
       conversationId,
       cwd,
       config,
-      // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
-      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera
-      // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
-      // les installations faites depuis l'interface.
-      binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
+      binary: launcher.binary,
+      environment: launcher.environment,
       attachmentsRoot: this.config.paths.attachments,
       prototypesDir,
       processEnv: {

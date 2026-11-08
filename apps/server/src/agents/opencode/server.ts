@@ -1,8 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { launchOf } from '../launch.js'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { Config, Event } from '@solera/opencode-bindings'
+import type { EnvironmentProvider } from '../../environments/provider.js'
 import { assertSupportedOpencode } from './version-guard.js'
 
 /**
@@ -33,6 +33,8 @@ export class OpencodeHttpError extends Error {
 
 export interface OpencodeServerOptions {
   binary: string
+  /** Où lancer `opencode serve` : l'environnement de la session, ou celui du CLI pour une sonde. */
+  environment: EnvironmentProvider
   cwd: string
   env?: NodeJS.ProcessEnv
   /**
@@ -79,19 +81,18 @@ export class OpencodeServer {
   static async start(options: OpencodeServerOptions): Promise<OpencodeServer> {
     // Ici, seul point de lancement : session, catalogue, commandes et fork passent tous
     // par là, et un opencode 2 doit être refusé partout plutôt que de tourner à vide.
-    await assertSupportedOpencode(options.binary)
+    await assertSupportedOpencode(options.environment, options.binary)
     const password = randomBytes(24).toString('hex')
     const port = await freePort()
-    const launch = launchOf(options.binary)
-    const child = spawn(launch.command, [...launch.args, 'serve', '--port', String(port), '--hostname', '127.0.0.1'], {
-      windowsHide: true,
+    const child = options.environment.spawn({
+      command: options.binary,
+      args: ['serve', '--port', String(port), '--hostname', '127.0.0.1'],
       cwd: options.cwd,
       env: {
         ...(options.env ?? process.env),
         OPENCODE_CONFIG_CONTENT: JSON.stringify(options.config),
         OPENCODE_SERVER_PASSWORD: password,
       },
-      stdio: ['pipe', 'pipe', 'pipe'],
     })
 
     let baseUrl: string

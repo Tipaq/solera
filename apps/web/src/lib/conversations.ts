@@ -5,6 +5,7 @@ import type {
   ElicitationAction,
   ElicitationValue,
   ConversationDto,
+  ExecutionEnvironment,
   HandoffDto,
   JournalPageDto,
   SoleraEvent,
@@ -149,6 +150,8 @@ export function useCreateConversation(projectId: string | null) {
       /** Découper en cartes (#70), et la carte d'où le découpage part. */
       purpose?: 'split' | null
       splitCardId?: string | null
+      /** Absent : l'environnement par défaut du projet. Figé à la création. */
+      environment?: ExecutionEnvironment
       /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */
       firstMessage?: {
         clientMessageId: string

@@ -1,12 +1,8 @@
-import { execFile } from 'node:child_process'
 import { accessSync, constants } from 'node:fs'
 import nodePath from 'node:path'
-import { promisify } from 'node:util'
 import type { AgentAvailabilityDto, AgentKind } from '@solera/protocol'
+import type { EnvironmentProvider } from '../environments/provider.js'
 import { CachedProbe } from './cached-probe.js'
-import { launchOf } from './launch.js'
-
-const run = promisify(execFile)
 
 /**
  * Résolution et sonde des CLI agents installés sur la machine.
@@ -153,13 +149,14 @@ function pathExt(env: NodeJS.ProcessEnv): string | undefined {
  * Null quand le binaire n'a rien répondu d'exploitable : présent vaut mieux
  * qu'introuvable, même sans numéro.
  */
-async function probeVersion(binary: string): Promise<string | null> {
+async function probeVersion(environment: EnvironmentProvider, binary: string): Promise<string | null> {
   try {
-    const launch = launchOf(binary)
-    const { stdout } = await run(launch.command, [...launch.args, '--version'], {
-      timeout: VERSION_TIMEOUT_MS,
-      windowsHide: true,
+    const { stdout, code } = await environment.exec({
+      command: binary,
+      args: ['--version'],
+      timeoutMs: VERSION_TIMEOUT_MS,
     })
+    if (code !== 0) return null
     const line = stdout.trim().split('\n')[0]?.trim()
     if (!line) return null
     return /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(line)?.[0] ?? line
@@ -168,14 +165,23 @@ async function probeVersion(binary: string): Promise<string | null> {
   }
 }
 
-async function probe(binary: string, managedDir: string): Promise<CliStatus> {
-  const path = resolveBinary(binary, managedDir)
+async function probe(environment: EnvironmentProvider, binary: string, managedDir: string): Promise<CliStatus> {
+  const path = environment.resolveBinary(binary, managedDir)
   if (!path) {
     // Distinguer les deux cas vaut la peine : un binaire présent mais sans bit
     // d'exécution se répare d'un `chmod`, une absence demande une installation.
     return { found: false, reason: nodePath.isAbsolute(binary) ? 'not_executable' : 'not_on_path' }
   }
-  return { found: true, path, version: await probeVersion(path) }
+  return { found: true, path, version: await probeVersion(environment, path) }
+}
+
+/**
+ * Ce qu'il faut pour lancer un CLI hors d'une session (catalogues, jauges, connexions) :
+ * son chemin, et l'environnement où il a été trouvé, qui est aussi celui où le lancer.
+ */
+export interface CliLauncher {
+  readonly environment: EnvironmentProvider
+  executable(): Promise<string>
 }
 
 /**
@@ -185,7 +191,7 @@ async function probe(binary: string, managedDir: string): Promise<CliStatus> {
  * appartiennent au CLI et non à l'appelant. Elle porte aussi la mise en forme pour
  * l'API : les deux adaptateurs la recomposeraient à l'identique.
  */
-export class CliBinary {
+export class CliBinary implements CliLauncher {
   private readonly cache: CachedProbe<{ status: CliStatus }>
 
   constructor(
@@ -194,9 +200,11 @@ export class CliBinary {
     private readonly enabled: boolean,
     /** Préfixe npm des CLI que Solera installe lui-même. */
     readonly managedDir: string,
+    /** Où le CLI est cherché et sondé, et où le lancer ensuite. */
+    readonly environment: EnvironmentProvider,
   ) {
     this.cache = new CachedProbe(TTL_MS, async () => ({
-      status: await probe(configured, managedDir),
+      status: await probe(environment, configured, managedDir),
     }))
   }
 

@@ -13,6 +13,7 @@ import {
 } from '@solera/protocol'
 import { GrokRunner } from '../src/agents/grok/runner.js'
 import type { RunnerContext } from '../src/agents/types.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 async function runnerFixture(t: TestContext, overrides: Partial<RunnerContext> = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'solera-grok-test-'))
@@ -24,7 +25,7 @@ async function runnerFixture(t: TestContext, overrides: Partial<RunnerContext> =
   const raw: unknown[] = []
   const statuses: ConversationStatus[] = []
   const ctx: RunnerContext = {
-    conversationId: 'test', cwd, binary, attachmentsRoot: '/attachments',
+    conversationId: 'test', cwd, binary, environment: hostEnvironment, attachmentsRoot: '/attachments',
     config: DEFAULT_GROK_CONFIG, resumeSessionId: null,
     projectOverview: () => null, maskedInstructionRoots: () => [], memoryDir: () => null,
     resolveMcpServers: () => ({ servers: [], failures: [] }), skillRoots: () => [],

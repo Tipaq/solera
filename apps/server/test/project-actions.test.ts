@@ -13,6 +13,7 @@ import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { Environments } from '../src/environments/environments.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-actions-'))
@@ -35,7 +36,7 @@ async function harness(t: TestContext) {
   } as unknown as Config
   const terminals = new TerminalManager(config)
   t.after(() => terminals.shutdown())
-  const runner = new ActionRunner(db, config, terminals)
+  const runner = new ActionRunner(db, config, terminals, new Environments(db))
   const requests = new AgentRequests({ db, config }, {} as SessionManager, {} as AgentRegistry, runner)
 
   const mcp = async (name: string, args: object) => {

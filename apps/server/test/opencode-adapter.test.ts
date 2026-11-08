@@ -45,7 +45,7 @@ test('catalogue : modèles des fournisseurs connectés, variantes, agents primai
 
 test('fork : coupe au message qui suit le dernier gardé, ou garde tout', async (t) => {
   const { adapter, cwd, records } = await adapterFixture(t)
-  const target = { agentSessionId: 'ses_root', cwd }
+  const target = { agentSessionId: 'ses_root', cwd, accountEnv: {}, cli: adapter.cli }
 
   // Le plus récent des deux repères du journal l'emporte.
   const cut = adapter.forkCut(logWith({ 'turn.completed': { messageID: 'msg_2' }, 'message.completed': { part: { messageID: 'msg_1' } } }), 'c', 10)

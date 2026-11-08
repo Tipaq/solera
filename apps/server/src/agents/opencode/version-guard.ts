@@ -1,10 +1,7 @@
-import { execFile } from 'node:child_process'
-import { launchOf } from '../launch.js'
 import { statSync } from 'node:fs'
-import { promisify } from 'node:util'
+import { environmentKey } from '@solera/protocol'
+import type { EnvironmentProvider } from '../../environments/provider.js'
 import { HttpError } from '../../http/errors.js'
-
-const run = promisify(execFile)
 
 /**
  * Dernière majeure d'opencode dont l'adaptateur parle l'API.
@@ -55,10 +52,10 @@ function fileKey(binary: string): string {
   }
 }
 
-async function readVersion(binary: string): Promise<string | null> {
+async function readVersion(environment: EnvironmentProvider, binary: string): Promise<string | null> {
   try {
-    const launch = launchOf(binary)
-    const { stdout } = await run(launch.command, [...launch.args, '--version'], { timeout: VERSION_TIMEOUT_MS, windowsHide: true })
+    const { stdout, code } = await environment.exec({ command: binary, args: ['--version'], timeoutMs: VERSION_TIMEOUT_MS })
+    if (code !== 0) return null
     // La 1.x répond « 1.19.3 », la 2.x « opencode v2.0.32 » : on ne garde que le numéro.
     return /\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(stdout)?.[0] ?? null
   } catch {
@@ -66,12 +63,14 @@ async function readVersion(binary: string): Promise<string | null> {
   }
 }
 
-export function opencodeVersion(binary: string): Promise<string | null> {
+export function opencodeVersion(environment: EnvironmentProvider, binary: string): Promise<string | null> {
   const key = fileKey(binary)
-  const cached = versions.get(binary)
+  // Le même chemin peut désigner deux binaires dans deux environnements.
+  const slot = `${environmentKey(environment.environment)}:${binary}`
+  const cached = versions.get(slot)
   if (cached && cached.key === key) return cached.version
-  const version = readVersion(binary)
-  versions.set(binary, { key, version })
+  const version = readVersion(environment, binary)
+  versions.set(slot, { key, version })
   return version
 }
 
@@ -81,8 +80,8 @@ export function opencodeVersion(binary: string): Promise<string | null> {
  * Une version illisible laisse passer : mieux vaut un lancement qui échouera peut-être
  * qu'un refus inventé sur un binaire qui répond mal à `--version`.
  */
-export async function assertSupportedOpencode(binary: string): Promise<void> {
-  const version = await opencodeVersion(binary)
+export async function assertSupportedOpencode(environment: EnvironmentProvider, binary: string): Promise<void> {
+  const version = await opencodeVersion(environment, binary)
   const major = version ? Number(version.split('.')[0]) : NaN
   if (major > SUPPORTED_OPENCODE_MAJOR) throw new OpencodeUnsupportedVersionError(version!)
 }

@@ -1,6 +1,8 @@
 import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { AsyncQueue } from '../async-queue.js'
+import type { CliLauncher } from '../cli-binary.js'
 import { sdkExecutable } from '../launch.js'
+import { claudeSpawner } from './spawn.js'
 
 /**
  * Une session Claude ouverte le temps d'une requête de contrôle, puis refermée.
@@ -27,24 +29,31 @@ interface ControlSessionOptions {
    * la release ne transporte plus. Sans ce chemin la sonde échoue en quelques
    * millisecondes sur « Native CLI binary not found », et l'agent paraît absent
    * alors que son CLI est installé.
+   *
+   * Lancé dans l'environnement où il a été trouvé, comme le CLI d'une session.
    */
-  executable: () => Promise<string>
+  cli: CliLauncher
   cwd: string
   /** Préfixe de la sortie d'erreur relayée : `[claude <tag>]`. */
   tag: string
   timeoutMs?: number
   /** Options de lancement propres à la sonde, en plus du socle commun. */
-  options?: Omit<Options, 'cwd' | 'abortController' | 'pathToClaudeCodeExecutable' | 'stderr'>
+  options?: Omit<Options, 'cwd' | 'abortController' | 'pathToClaudeCodeExecutable' | 'spawnClaudeCodeProcess' | 'stderr'>
 }
 
 export async function withControlSession<T>(
-  { executable, cwd, tag, timeoutMs = DEFAULT_TIMEOUT_MS, options }: ControlSessionOptions,
+  { cli, cwd, tag, timeoutMs = DEFAULT_TIMEOUT_MS, options }: ControlSessionOptions,
   fn: (session: Query) => Promise<T>,
 ): Promise<T> {
   const release = await acquire()
   const input = new AsyncQueue<SDKUserMessage>()
   const abort = new AbortController()
   let timedOut = false
+  // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la jeter ne
+  // laisse au serveur qu'un 502 sans motif.
+  const spawner = claudeSpawner(cli.environment, (data) => {
+    process.stderr.write(`[claude ${tag}] ${data}`)
+  })
 
   try {
     const session = query({
@@ -53,10 +62,8 @@ export async function withControlSession<T>(
         ...options,
         cwd,
         abortController: abort,
-        pathToClaudeCodeExecutable: sdkExecutable(await executable()),
-        // La sortie d'erreur du CLI est la seule explication d'une sonde ratée : la
-        // jeter ne laisse au serveur qu'un 502 sans motif.
-        stderr: (data) => process.stderr.write(`[claude ${tag}] ${data}`),
+        pathToClaudeCodeExecutable: sdkExecutable(await cli.executable()),
+        spawnClaudeCodeProcess: spawner.spawn,
       },
     })
 
@@ -72,7 +79,7 @@ export async function withControlSession<T>(
       if (timedOut) {
         throw new Error(`Claude CLI did not answer within ${Math.round(timeoutMs / 1000)}s`)
       }
-      throw err
+      throw spawner.explain(err)
     } finally {
       clearTimeout(timer)
       input.close()

@@ -28,6 +28,7 @@ import {
 } from '@solera/protocol'
 import { failedStatuses } from '../mcp-registry.js'
 import { sdkExecutable } from '../launch.js'
+import { claudeSpawner, type ClaudeSpawner } from './spawn.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
 import { PendingInteractions } from '../interactions.js'
@@ -164,6 +165,8 @@ export class ClaudeRunner implements AgentRunner {
   private readonly pendingEdits = new Map<string, { path: string; existed: boolean }>()
   private readonly abort = new AbortController()
   private session: Query | null = null
+  /** Le lanceur du CLI courant, et la fin de son stderr pour expliquer sa mort. */
+  private spawner: ClaudeSpawner | null = null
   /** Message en cours de réception, par auteur : l'agent principal (null) et chaque sous-agent. */
   private readonly streamingMessageIds = new Map<string | null, string>()
   /** Dernier compteur de réflexion relayé, pour n'en relayer qu'un par `THINKING_TOKENS_STEP`. */
@@ -234,6 +237,13 @@ export class ClaudeRunner implements AgentRunner {
     const overview = this.ctx.projectOverview(config)
     this.skillRoots = this.ctx.skillRoots(config)
     const library = skillLibraryLaunchOptions(this.skillRoots)
+    // Le SDK compose la commande, l'environnement de la session la lance.
+    const spawner = claudeSpawner(this.ctx.environment, (data) => {
+      // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
+      // perdre rend tout diagnostic impossible.
+      process.stderr.write(`[claude ${this.conversationId}] ${data}`)
+    })
+    this.spawner = spawner
 
     this.session = query({
       prompt: this.input,
@@ -302,6 +312,7 @@ export class ClaudeRunner implements AgentRunner {
         // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
         // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
         pathToClaudeCodeExecutable: sdkExecutable(this.ctx.binary),
+        spawnClaudeCodeProcess: spawner.spawn,
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni
@@ -309,11 +320,6 @@ export class ClaudeRunner implements AgentRunner {
         // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
         // que `background_tasks_changed` joue pour le travail de fond.
         hooks: { Stop: [{ hooks: [this.handleStop] }] },
-        stderr: (data) => {
-          // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
-          // perdre rend tout diagnostic impossible.
-          process.stderr.write(`[claude ${this.conversationId}] ${data}`)
-        },
       },
     })
 
@@ -352,7 +358,8 @@ export class ClaudeRunner implements AgentRunner {
           : {
               type: 'error',
               code: 'runner_failed',
-              message: err instanceof Error ? err.message : String(err),
+              // La fin du stderr avec : c'est elle qui dit pourquoi le CLI est mort.
+              message: this.spawner ? this.spawner.explain(err).message : err instanceof Error ? err.message : String(err),
               recoverable: false,
             },
       )

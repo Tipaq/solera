@@ -25,6 +25,7 @@ import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
+import { Environments } from '../src/environments/environments.js'
 
 /**
  * Le serveur MCP en mode global : branché de l'extérieur sur toute l'instance, au nom
@@ -112,6 +113,8 @@ async function harness(t: TestContext) {
     statusBus: new EventEmitter(),
     // La création d'un fil résout les défauts du CLI (#120) : rien à résoudre ici.
     resolveDefaults: async (config: AgentConfig) => config,
+    // La session prend l'environnement du projet, l'hôte ici.
+    environments: new Environments(db),
   } as unknown as SessionManager
   const registry = {
     adapter: () => ({

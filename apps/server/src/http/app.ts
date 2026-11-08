@@ -171,7 +171,7 @@ export async function buildApp(
 
   registerHealthRoutes(app)
   registerAuthRoutes(app, ctx)
-  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, registry)
+  registerProjectRoutes(app, ctx, attachments, new CloneJobs(), terminals, registry, sessions.environments)
   registerConversationRoutes(app, ctx, log, sessions, registry, attachments, webhooks, cardClosure)
   registerCheckpointRoutes(app, ctx, sessions)
   registerSessionMessageRoutes(app, ctx, relay)

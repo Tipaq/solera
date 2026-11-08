@@ -17,6 +17,7 @@ import {
   updateProjectBodySchema,
   type CloneJobDto,
   type ProjectDto,
+  type ProjectEnvironmentsDto,
   type ProjectPrototypesDto,
 } from '@solera/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
@@ -43,6 +44,7 @@ import {
 import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
+import { Environments, environmentColumns, environmentOf } from '../../environments/environments.js'
 import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
 
 export function registerProjectRoutes(
@@ -53,6 +55,8 @@ export function registerProjectRoutes(
   terminals: TerminalManager,
   /** Comme pour les réglages du compte : absent, les fils recalculent à leur lancement. */
   registry?: Pick<AgentRegistry, 'adapter'>,
+  /** Celui des sessions ; un neuf suffit aux tests, l'hôte n'ayant pas d'état. */
+  environments: Environments = new Environments(ctx.db),
 ): void {
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
@@ -286,6 +290,12 @@ export function registerProjectRoutes(
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
+    if (body.environment !== undefined) {
+      // Refusé avant d'être enregistré : un défaut que ce serveur ne sait pas lancer
+      // ferait échouer chaque session ouverte ensuite.
+      environments.assertAvailable(id, body.environment)
+      Object.assign(patch, environmentColumns(body.environment))
+    }
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
@@ -294,6 +304,17 @@ export function registerProjectRoutes(
       await refreshConversationConfigs(ctx.db, registry, { projectId: id })
     }
     return { ok: true }
+  })
+
+  /**
+   * L'environnement par défaut du projet, et ceux qu'on peut y choisir : ce que proposent
+   * ses réglages et le brouillon d'une session.
+   */
+  app.get('/api/projects/:id/environments', async (request): Promise<ProjectEnvironmentsDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    return { default: environmentOf(project), choices: environments.choices(id) }
   })
 
   app.delete('/api/projects/:id', async (request, reply) => {
