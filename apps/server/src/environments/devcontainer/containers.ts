@@ -2,8 +2,9 @@ import { mkdir } from 'node:fs/promises'
 import type { Server as HttpServer } from 'node:http'
 import { join } from 'node:path'
 import type { AgentKind } from '@solera/protocol'
-import type { Paths } from '../../config.js'
+import type { Config, Paths } from '../../config.js'
 import { prototypesRoot } from '../../design-system/storybooks.js'
+import { soleraUrlForAgents } from '../../instance/agent-url.js'
 import { AGENTS_MOUNT, ContainerAgents, type LinuxTarget } from './agents.js'
 import { BridgeListeners } from './bridge.js'
 import { binaryName, DevcontainerEnvironment, LOOPBACK_HOSTS, type RunningContainer } from './environment.js'
@@ -66,7 +67,7 @@ export class Devcontainers {
      * Où le serveur écoute : un conteneur ne joint la boucle locale de l'hôte que par
      * Docker Desktop, qui la relaie derrière `host.docker.internal`.
      */
-    private readonly server: { host: string; agentUrl?: string } = { host: '127.0.0.1' },
+    private readonly server: Pick<Config['server'], 'host' | 'port' | 'agentUrl'> = { host: '127.0.0.1', port: 0, agentUrl: '' },
   ) {}
 
   /** Sous Linux natif, les écoutes du serveur sur les passerelles Docker. */
@@ -179,9 +180,10 @@ export class Devcontainers {
         loginShell: '/bin/sh',
         env: {},
         agents: new Map(),
-        hostAddress: await this.tools.hostAddress(up.containerId),
+        hostAddress: await this.hostAddress(up.containerId),
       }
       await this.reachServer(container.hostAddress)
+      await this.assertMcpReachable(container)
       await this.probe(container)
       this.running.set(project.id, container)
       return container
@@ -191,14 +193,25 @@ export class Devcontainers {
     }
   }
 
+  /** L'hôte vu du conteneur ; un conteneur qui ne le voit pas du tout est refusé. */
+  private async hostAddress(containerId: string): Promise<string> {
+    const address = await this.tools.hostAddress(containerId)
+    if (address) return address
+    throw new ContainerRefusal(
+      'devcontainer_host_unreachable',
+      'The container has no network to reach this machine (network mode "none", or the network of another container), so the agents would run without the Solera MCP server. Give it a bridge network, or `"runArgs": ["--network=host"]`, in its devcontainer.json.',
+    )
+  }
+
   /**
    * Le MCP de Solera doit se joindre depuis le conteneur, sans quoi une session y
    * partirait sans lui. Sous Linux natif, l'hôte vu du conteneur est la passerelle du
    * réseau Docker, où un serveur qui n'écoute que sur sa boucle locale ne répond pas :
-   * il y écoute alors en plus, à son port (#149).
+   * il y écoute alors en plus, à son port (#149). Sur le réseau de l'hôte, la boucle
+   * locale suffit.
    */
   private async reachServer(hostAddress: string): Promise<void> {
-    if (hostAddress === 'host.docker.internal' || this.server.agentUrl) return
+    if (hostAddress === 'host.docker.internal' || LOOPBACK_HOSTS.includes(hostAddress) || this.server.agentUrl) return
     if (!LOOPBACK_HOSTS.includes(this.server.host)) return
     try {
       await this.bridges.ensure(hostAddress)
@@ -208,6 +221,22 @@ export class Devcontainers {
         `The Solera server listens on ${this.server.host} only, and could not also listen on ${hostAddress}, where the container sees this machine: ${(err as Error).message}. Set server.agentUrl to an address of this machine reachable from Docker, and make the server listen on it.`,
       )
     }
+  }
+
+  /**
+   * Écouter ne suffit pas : un pare-feu de l'hôte (ufw, firewalld) peut filtrer ce qui
+   * entre par le pont Docker. On le vérifie depuis le conteneur, à l'adresse même que
+   * ses sessions recevront. Sans outil pour sonder, on laisse passer.
+   */
+  private async assertMcpReachable(container: RunningContainer): Promise<void> {
+    const url = new DevcontainerEnvironment(container, this.tools.docker()).urlOfHost(soleraUrlForAgents(this.server))
+    if ((await this.tools.reaches(container.id, url)) !== false) return
+    const { hostname, port } = new URL(url)
+    const advice =
+      container.hostAddress === 'host.docker.internal' || LOOPBACK_HOSTS.includes(container.hostAddress)
+        ? 'Check that the server answers there, or set server.agentUrl to an address of this machine the container can reach.'
+        : `A firewall on this machine (ufw, firewalld) probably drops what comes in from the Docker networks: allow TCP to ${hostname} on port ${port}, for instance \`sudo ufw allow in to ${container.hostAddress} port ${port} proto tcp\`, or \`sudo firewall-cmd --permanent --zone=docker --add-port=${port}/tcp && sudo firewall-cmd --reload\`.`
+    throw new ContainerRefusal('devcontainer_host_unreachable', `The container cannot connect to ${url}, where the agents would find the Solera MCP server. ${advice}`)
   }
 
   /**

@@ -31,7 +31,7 @@ export interface RunningContainer {
   env: Record<string, string>
   /** Le CLI de chaque agent dans le conteneur, par nom de binaire. */
   agents: Map<string, string>
-  /** L'hôte vu du conteneur : `host.docker.internal`, ou la passerelle sous Linux. */
+  /** L'hôte vu du conteneur : `host.docker.internal`, la passerelle sous Linux, ou `127.0.0.1` sur le réseau de l'hôte. */
   hostAddress: string
 }
 
@@ -154,8 +154,10 @@ export class DevcontainerEnvironment implements EnvironmentProvider {
   /** La boucle locale de l'hôte devient l'hôte vu du conteneur. */
   urlOfHost(url: string): string {
     const parsed = new URL(url)
-    if (!LOOPBACK_HOSTS.includes(parsed.hostname)) return url
-    parsed.hostname = this.container.hostAddress
+    const address = this.container.hostAddress
+    // Sur le réseau de l'hôte, sa boucle locale est aussi celle du conteneur.
+    if (!LOOPBACK_HOSTS.includes(parsed.hostname) || LOOPBACK_HOSTS.includes(address)) return url
+    parsed.hostname = address.includes(':') ? `[${address}]` : address
     return parsed.toString().replace(/\/$/, '')
   }
 
