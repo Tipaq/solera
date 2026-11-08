@@ -77,6 +77,10 @@ export class HostEnvironment implements EnvironmentProvider {
     return hostPath
   }
 
+  urlOfHost(url: string): string {
+    return url
+  }
+
   async copyIn(hostPath: string, insidePath: string): Promise<void> {
     if (hostPath !== insidePath) await cp(hostPath, insidePath, { recursive: true })
   }

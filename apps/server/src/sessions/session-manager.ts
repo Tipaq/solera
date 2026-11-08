@@ -1,4 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
@@ -15,6 +18,7 @@ import {
   allowsRequest,
   diffAgentConfig,
   parseAgentConfig,
+  PREFERRED_CLI_RELEASES,
   RESUMES_FROM_OTHER_DIRECTORY,
   type AgentConfig,
   type ConversationMetrics,
@@ -82,6 +86,7 @@ import type { EnvironmentProvider } from '../environments/provider.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
+import { containerHomes, Devcontainers } from '../environments/devcontainer/containers.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -256,7 +261,7 @@ export class SessionManager {
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
-    this.environments = new Environments(db)
+    this.environments = new Environments(db, new Devcontainers(config.paths, config.server))
   }
 
   /**
@@ -635,6 +640,7 @@ export class SessionManager {
     // l'a déjà refusé.
     const cwd = this.refuseMissingCwd(conversation)
     const accountEnv = this.accountEnv(conversation, parseAgentConfig(conversation.config))
+    await this.prepareEnvironment(conversation)
     // Confinée, la session forke dans un bac à sable à elle, le temps du fork : le CLI ne
     // voit que son dossier et le home de son compte.
     const cli = this.sessionCli(
@@ -1063,7 +1069,7 @@ export class SessionManager {
    */
   private sessionCli(conversation: ConversationRow, scope?: ConfinementScope): CliLauncher & { binary: string } {
     const adapter = this.registry.adapter(conversation.agent)
-    const environment = this.environments.provider(environmentOf(conversation), scope)
+    const environment = this.environments.provider(environmentOf(conversation), scope, conversation.projectId)
     // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
     // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
     // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
@@ -1166,6 +1172,7 @@ export class SessionManager {
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
         ...accountEnv,
+        ...(launcher.environment.environment.where === 'devcontainer' ? this.containerEnv(conversation, cwd) : {}),
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
@@ -1192,7 +1199,9 @@ export class SessionManager {
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
         })
-        const builtin = builtinMcpServer({ baseUrl: soleraUrlForAgents(this.config.server), token })
+        // Vu de l'environnement : d'un conteneur, le serveur est sur l'hôte.
+        const baseUrl = launcher.environment.urlOfHost(soleraUrlForAgents(this.config.server))
+        const builtin = builtinMcpServer({ baseUrl, token })
         return { ...resolved, servers: [...resolved.servers, builtin] }
       },
 
@@ -1467,6 +1476,85 @@ export class SessionManager {
     return starting
   }
 
+  /**
+   * Démarre le dev container d'une session qui y tourne, et y apporte son CLI, à la
+   * version de celui de l'hôte. Le journal de `devcontainer up` s'affiche dans le fil
+   * pendant le démarrage, et un échec y laisse sa raison avant de refuser l'envoi.
+   */
+  private async prepareEnvironment(conversation: ConversationRow): Promise<void> {
+    const environment = environmentOf(conversation)
+    if (environment.where !== 'devcontainer') return
+    const config = parseAgentConfig(conversation.config)
+    // Le conteneur n'a pas la connexion du terminal de l'hôte : seul le jeton d'un
+    // compte de Solera y traverse.
+    if (config.agent === 'claude' && !config.account) {
+      throw new HttpError(
+        409,
+        'devcontainer_claude_account',
+        'A Claude session in a dev container needs a Claude account added to Solera: the CLI login of the host does not reach the container.',
+      )
+    }
+    const adapter = this.registry.adapter(conversation.agent)
+    const status = await adapter.cli.status()
+    const version =
+      (status.found && status.version) || PREFERRED_CLI_RELEASES[conversation.agent].version
+    const log: string[] = []
+    let shown = 0
+    // Le message est la dernière ligne du journal, que l'interface place dans sa phrase.
+    const notice = (code: 'devcontainer_starting' | 'devcontainer_ready', message: string) =>
+      this.log.append(conversation.id, {
+        type: 'agent.notice',
+        id: 'devcontainer.up',
+        code,
+        message,
+        level: 'info',
+        details: log.join('\n'),
+      })
+    try {
+      await this.environments.prepare(environment, conversation.projectId, {
+        agent: { kind: conversation.agent, binary: adapter.binary, version },
+        cwd: this.resolveCwd(conversation),
+        onLog: (line) => {
+          log.push(line)
+          if (log.length > 60) log.shift()
+          if (Date.now() - shown < 1_000) return
+          shown = Date.now()
+          notice('devcontainer_starting', line.slice(0, 200))
+        },
+      })
+      if (shown > 0) notice('devcontainer_ready', '')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      this.log.append(conversation.id, {
+        type: 'error',
+        code: err instanceof HttpError ? err.code : 'devcontainer_failed',
+        message,
+        recoverable: true,
+      })
+      throw err
+    }
+  }
+
+  /**
+   * Ce qu'une session dans un dev container reçoit en plus : la configuration de Claude
+   * dans un dossier de Solera monté au même chemin (ses transcripts y restent d'un
+   * lancement à l'autre), et l'identité git du dépôt, que le conteneur n'a pas quand elle
+   * vient du `~/.gitconfig` de l'hôte. Lue dans le dépôt, pas imposée à l'hôte : elle y
+   * écraserait l'identité locale d'un autre dépôt.
+   */
+  private containerEnv(conversation: ConversationRow, cwd: string): Record<string, string> {
+    const env: Record<string, string> = {}
+    if (conversation.agent === 'claude') {
+      env.CLAUDE_CONFIG_DIR = join(containerHomes(this.config.paths), conversation.userId, 'claude')
+      mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true })
+    }
+    const name = gitConfigValue(cwd, 'user.name')
+    const email = gitConfigValue(cwd, 'user.email')
+    if (name) Object.assign(env, { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name })
+    if (email) Object.assign(env, { GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email })
+    return env
+  }
+
   private async startRunner(conversationId: string): Promise<AgentRunner> {
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
     // La configuration est recalculée de ses niveaux à chaque lancement : c'est là qu'un
@@ -1475,6 +1563,7 @@ export class SessionManager {
     // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
     this.refuseMissingCwd(fresh)
     this.refuseWithoutAccount(fresh)
+    await this.prepareEnvironment(fresh)
     await this.makeRoom()
 
     const context = this.buildContext(fresh)
@@ -2350,4 +2439,13 @@ function accountRequired(agent: 'codex' | 'grok'): HttpError {
     'No {agent} account is connected: connect one in Settings › Agents to start this conversation.',
     { agent: agent === 'codex' ? 'Codex' : 'Grok' },
   )
+}
+
+/** Une valeur de `git config` lue dans un dépôt de l'hôte (local, global, includeIf), ou null. */
+function gitConfigValue(cwd: string, key: string): string | null {
+  try {
+    return execFileSync('git', ['config', '--get', key], { cwd, encoding: 'utf8', timeout: 5_000 }).trim() || null
+  } catch {
+    return null
+  }
 }

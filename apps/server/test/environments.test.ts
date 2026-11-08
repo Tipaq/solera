@@ -79,7 +79,9 @@ test("aucun CLI d'agent ni terminal ne se lance hors d'un fournisseur d'environn
     const path = relative(SRC, file)
     const source = await readFile(file, 'utf8')
     // `launchOf` déplie les lanceurs Windows de l'hôte : seul l'hôte s'en sert.
-    if (/\blaunchOf\b/.test(source) && !['agents/launch.ts', 'environments/host.ts', 'agents/cli-install.ts'].includes(path)) {
+    // npm et le CLI `devcontainer` du dev container tournent sur l'hôte, pour le serveur.
+    const hostTools = ['agents/launch.ts', 'environments/host.ts', 'agents/cli-install.ts', 'environments/devcontainer/agents.ts', 'environments/devcontainer/tools.ts']
+    if (/\blaunchOf\b/.test(source) && !hostTools.includes(path)) {
       offenders.push(`${path} : launchOf`)
     }
     // Une session Claude lancée par le SDK sans `spawnClaudeCodeProcess` partirait sur l'hôte.
@@ -172,7 +174,7 @@ test('projet : lire ses environnements, régler le sien, refuser ce qui ne se la
 
   const read = await app.inject({ method: 'GET', url: '/api/projects/project/environments' })
   assert.equal(read.statusCode, 200, read.body)
-  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), { default: HOST_ENVIRONMENT, choices: new Environments(db).choices('project') })
+  assert.deepEqual(read.json<ProjectEnvironmentsDto>(), { default: HOST_ENVIRONMENT, choices: new Environments(db).choices('project'), suggested: null })
 
   const host = await app.inject({ method: 'PATCH', url: '/api/projects/project', payload: { environment: HOST_ENVIRONMENT } })
   assert.equal(host.statusCode, 200, host.body)

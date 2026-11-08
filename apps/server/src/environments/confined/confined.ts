@@ -102,6 +102,10 @@ export class ConfinedEnvironment implements EnvironmentProvider {
     return hostPath
   }
 
+  urlOfHost(url: string): string {
+    return url
+  }
+
   async copyIn(hostPath: string, insidePath: string): Promise<void> {
     const target = this.hostPathOf(insidePath)
     if (hostPath !== target) await cp(hostPath, target, { recursive: true })
