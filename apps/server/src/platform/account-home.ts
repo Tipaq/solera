@@ -110,7 +110,7 @@ function withoutSecrets(value: unknown): unknown {
  * propre registre. Null pour un fichier illisible : mieux vaut aucune configuration
  * qu'une recopie qu'on n'a pas su lire.
  */
-export function configWithoutSecrets(text: string): string | null {
+function configWithoutSecrets(text: string): string | null {
   let parsed: Record<string, unknown>
   try {
     parsed = parseToml(text) as Record<string, unknown>
@@ -125,7 +125,7 @@ export function configWithoutSecrets(text: string): string | null {
 }
 
 /** Date de la dernière écriture sous `path`, fichier ou dossier. */
-export function newestWrite(path: string): number {
+function newestWrite(path: string): number {
   const entry = statSync(path)
   if (!entry.isDirectory()) return entry.mtimeMs
   let newest = entry.mtimeMs
@@ -153,4 +153,29 @@ export function bringNewest(home: string, sources: string[], locate: (root: stri
   if (own) rmSync(own, { recursive: true, force: true })
   mkdirSync(dirname(target), { recursive: true })
   cpSync(best.path, target, { recursive: true, preserveTimestamps: true, dereference: true })
+}
+
+/**
+ * Avant qu'un home disparaisse avec son compte : ses conversations rejoignent `keep`, au
+ * même chemin relatif, là où une version plus récente n'y est pas déjà. Sans dossier
+ * partagé, une conversation née sur ce compte n'existe que là, et le fil ne se
+ * reprendrait plus.
+ */
+export function keepConversations(home: string, keep: string): void {
+  const merge = (from: string, to: string) => {
+    if (!existsSync(from)) return
+    for (const entry of readdirSync(from, { withFileTypes: true })) {
+      const source = join(from, entry.name)
+      const target = join(to, entry.name)
+      if (entry.isDirectory()) {
+        merge(source, target)
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (existsSync(target) && statSync(target).mtimeMs >= statSync(source).mtimeMs) continue
+      mkdirSync(to, { recursive: true })
+      cpSync(source, target, { preserveTimestamps: true })
+    }
+  }
+  merge(join(home, 'sessions'), join(keep, 'sessions'))
 }

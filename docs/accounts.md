@@ -89,12 +89,23 @@ sign-in and shows its new link. An API key has no plan, so no gauge.
 ## Codex
 
 Settings › **Codex accounts**. Codex keeps its sign-in in `$CODEX_HOME/auth.json`, so
-each extra account gets its own home under Solera's data directory
-(`codex-accounts/<id>`), where only `auth.json` is real: every other entry is a
-symbolic link to the user's `~/.codex` (or `$CODEX_HOME`). Settings, skills, memories
-and threads are therefore shared, and a thread resumes or forks from any home
-(probed on codex-cli 0.162.1). Links are refreshed at every launch, so an entry Codex
-adds later to the user's home is seen by the accounts too.
+each account gets its own home under Solera's data directory (`codex-accounts/<id>`),
+with no link to the user's `~/.codex` (or `$CODEX_HOME`), so that an isolated
+environment only ever sees that account (ADR 0001). At every launch Solera copies in
+the user's `config.toml` stripped of anything that may hold a secret (an MCP server
+that held one is dropped whole), `AGENTS.md`, `AGENTS.override.md`, `rules/` and
+`skills/` (except `.system`). Sign-in and memories belong to the account.
+
+A thread follows the conversation from one account to another by copy: before a
+resume or a fork, Solera copies its file to the same relative path
+(`sessions/YYYY/MM/DD/rollout-…-<id>.jsonl`) from whichever of the user's homes has the
+newest version (probed on codex-cli 0.167.0, see `docs/CODEX.md`). Deleting an account
+first moves its threads to `codex-accounts/_conserve/<user>`, which is searched too.
+
+A conversation that names no account starts on the first signed-in account of the
+list, as for Claude; one whose account was deleted or signed out falls back the same
+way, and the thread says so. The CLI's own sign-in is only used when chosen
+explicitly, or when the user has no signed-in account.
 
 The session gets `CODEX_HOME` pointing at the account's home. Solera stores no
 secret: Codex writes and refreshes `auth.json` itself. The account's card only keeps
@@ -116,13 +127,13 @@ The classic browser flow is deliberately absent: its callback lands on
 `localhost:1455` *of the server*, which the user's browser cannot reach.
 
 **Sign out of this account** removes the home's `auth.json`; deleting the account
-removes the home. Only signed-in accounts appear in the composer's selector: a home
+keeps its threads aside, then removes the home. Only signed-in accounts appear in the composer's selector: a home
 without `auth.json` would refuse the turn.
 
 ### Limits
 
-- The symbolic-link home is a bet on Codex's layout. Links are refreshed on each
-  launch, but a future version that refused a home made of links would break it.
+- Moving a thread by copy is a bet on Codex's layout: it relies on the rollout's
+  file name and path, which Codex checks.
 - Usage is read per account through the same `account/rateLimits/read`, in the
   account's home.
 
@@ -134,10 +145,13 @@ Not covered: OpenCode has no account notion in Solera.
 
 Same design as Codex: Grok Build keeps one sign-in per `GROK_HOME`, in its `auth.json`.
 
-- Each extra account gets its own home under `<data>/grok-accounts/<id>`. Every entry
-  of the user's `~/.grok` is linked into it except `auth.json`, `models_cache.json` and
-  `settings_cache.json`, which depend on the subscription. Sessions are shared, so a
-  conversation resumes whichever account opened it.
+- Each account gets its own home under `<data>/grok-accounts/<id>`, with no link to
+  the user's `~/.grok`. Solera copies in `config.toml` without secrets, `rules/` and
+  `skills/`; sign-in, its caches and memory (`memory-v2/`) belong to the account. A
+  session moves between accounts by copy of its folder
+  (`sessions/<encoded folder>/<id>/`), not yet probed with a signed-in account, and is
+  kept aside under `grok-accounts/_conserve/<user>` when its account is deleted. The
+  fallback to the first signed-in account is the same as Codex's.
 - Sign-in is run by Grok in that home: `grok login --device-auth` for a SuperGrok or
   X Premium subscription (Solera reads the URL and code it prints), or the ACP
   `xai.api_key` method with `XAI_API_KEY` for an xAI API key, which Grok stores in the

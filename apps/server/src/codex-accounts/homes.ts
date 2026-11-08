@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { bringNewest, dropLinks, mirrorPersonal, type Mirrored } from '../platform/account-home.js'
+import { bringNewest, dropLinks, keepConversations, mirrorPersonal, type Mirrored } from '../platform/account-home.js'
 
 /**
  * Le `CODEX_HOME` d'un compte de Solera, voir `platform/account-home.ts`.
@@ -60,6 +60,25 @@ export class CodexAccountHomes {
 
   path(accountId: string): string {
     return join(this.root, accountId)
+  }
+
+  /**
+   * Où vont les conversations des comptes supprimés de l'utilisateur, pour qu'un fil né
+   * sur l'un d'eux se reprenne encore sur un autre. Un identifiant de compte est un UUID :
+   * le nom ne peut pas en croiser un.
+   */
+  kept(ownerId: string): string {
+    return join(this.root, '_conserve', ownerId)
+  }
+
+  /** Les homes où chercher une conversation de l'utilisateur, hors celui du CLI. */
+  sources(ownerId: string, accountIds: string[]): string[] {
+    return [this.kept(ownerId), ...accountIds.map((id) => this.path(id))]
+  }
+
+  /** Met de côté les conversations du compte avant que son home disparaisse. */
+  keepConversations(accountId: string, ownerId: string): void {
+    keepConversations(this.path(accountId), this.kept(ownerId))
   }
 
   /** Crée le home s'il manque, et y recopie ce qui vient de l'utilisateur. Rend son chemin. */

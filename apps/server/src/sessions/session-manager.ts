@@ -923,8 +923,9 @@ export class SessionManager {
    *
    * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
    * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
-   * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
-   * abonnement qui va payer le tour.
+   * la session part sur la connexion du CLI (Claude) ou sur le premier compte connecté
+   * (Codex, Grok), et le fil le dit, parce que c'est un autre abonnement qui va payer le
+   * tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
     if (config.agent === 'opencode') return {}
@@ -951,41 +952,35 @@ export class SessionManager {
         ? { ANTHROPIC_API_KEY: resolved.token }
         : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
     }
-    // Grok : même parti que Codex, un `GROK_HOME` par compte, sans lien vers celui de
-    // l'utilisateur. Un compte jamais connecté vaut un compte absent.
-    if (config.agent === 'grok') {
-      const account = this.grokAccounts.store.find(conversation.userId, config.account)
-      if (!account || account.status !== 'ready') {
-        return missing(
-          'grok_account_missing',
-          account
-            ? "Le compte Grok choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-            : "Le compte Grok choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-        )
-      }
-      const home = this.grokAccounts.homes.ensure(account.id)
-      this.bringConversation(conversation, home)
-      return { GROK_HOME: home }
+    // Codex et Grok : le home du compte, sans lien vers celui de l'utilisateur. Un compte
+    // jamais connecté vaut un compte absent : sans `auth.json`, le CLI refuserait le tour.
+    // L'un comme l'autre se replie sur le premier compte connecté, comme `accountLayer`,
+    // plutôt que sur la connexion du CLI, qui n'a pas le fil.
+    const side =
+      config.agent === 'codex'
+        ? { ...this.codexAccounts, variable: 'CODEX_HOME', name: 'Codex', code: 'codex_account_missing', cliHome: userCodexHome() }
+        : { ...this.grokAccounts, variable: 'GROK_HOME', name: 'Grok', code: 'grok_account_missing', cliHome: userGrokHome() }
+    const chosen = side.store.find(conversation.userId, config.account)
+    const account =
+      chosen?.status === 'ready' ? chosen : side.store.list(conversation.userId).find((other) => other.status === 'ready')
+    const reason = chosen
+      ? `Le compte ${side.name} choisi pour cette conversation n'est pas connecté`
+      : `Le compte ${side.name} choisi pour cette conversation n'existe plus`
+    if (!account) {
+      missing(side.code, `${reason} : la session repart sur la connexion du CLI.`)
+      this.bringConversation(conversation, side.cliHome)
+      return {}
     }
-    // Codex : le home du compte, sans lien vers celui de l'utilisateur. Un compte jamais
-    // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
-    const account = this.codexAccounts.store.find(conversation.userId, config.account)
-    if (!account || account.status !== 'ready') {
-      return missing(
-        'codex_account_missing',
-        account
-          ? "Le compte Codex choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-          : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-      )
-    }
-    const home = this.codexAccounts.homes.ensure(account.id)
+    if (account !== chosen) missing(side.code, `${reason} : la session part sur le compte « ${account.label} ».`)
+    const home = side.homes.ensure(account.id)
     this.bringConversation(conversation, home)
-    return { CODEX_HOME: home }
+    return { [side.variable]: home }
   }
 
   /**
    * Amène dans `home` la session native de la conversation, depuis le home qui en a la
-   * dernière version : un autre compte de l'utilisateur, ou la connexion du CLI. Sans
+   * dernière version : un autre compte de l'utilisateur, ceux qu'il a supprimés, ou la
+   * connexion du CLI. Sans
    * dossier partagé, c'est ce qui permet de changer de compte en cours de conversation,
    * ou de forker sur un autre compte. Les comptes d'un autre utilisateur ne sont jamais
    * lus. Un échec n'empêche pas le lancement : la reprise le dira.
@@ -996,11 +991,13 @@ export class SessionManager {
     try {
       if (conversation.agent === 'codex') {
         const { homes, store } = this.codexAccounts
-        const sources = [userCodexHome(), ...store.list(conversation.userId).map((account) => homes.path(account.id))]
+        const ids = store.list(conversation.userId).map((account) => account.id)
+        const sources = [userCodexHome(), ...homes.sources(conversation.userId, ids)]
         homes.bringThread(home, sessionId, sources)
       } else if (conversation.agent === 'grok') {
         const { homes, store } = this.grokAccounts
-        const sources = [userGrokHome(), ...store.list(conversation.userId).map((account) => homes.path(account.id))]
+        const ids = store.list(conversation.userId).map((account) => account.id)
+        const sources = [userGrokHome(), ...homes.sources(conversation.userId, ids)]
         homes.bringSession(home, sessionId, sources)
       }
     } catch (err) {
