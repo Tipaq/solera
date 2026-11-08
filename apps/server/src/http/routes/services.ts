@@ -1,7 +1,19 @@
 import { conversations, projects } from '@solera/db'
-import type { ServiceAppAction, ServiceAppDto, ServiceDto, ServicesDto } from '@solera/protocol'
+import type {
+  ServiceAppAction,
+  ServiceAppDto,
+  ServiceDto,
+  ServiceEnvironmentAction,
+  ServiceEnvironmentDto,
+  ServiceEnvironmentLogDto,
+  ServicesDto,
+} from '@solera/protocol'
+import { eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import type { SessionManager } from '../../sessions/session-manager.js'
+import type { TerminalManager } from '../../terminals/terminal-manager.js'
 import { controlServiceApp, scanServiceApps, type ServiceApp } from '../../services/apps.js'
+import { EnvironmentInventory, sandboxUsage, type ScannedEnvironment } from '../../services/environments.js'
 import { readProcessHost } from '../../services/ownership.js'
 import { processOrigins } from '../../services/origins.js'
 import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '../../services/processes.js'
@@ -10,8 +22,23 @@ import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
-export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function registerServiceRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  sessions: SessionManager,
+  terminals: TerminalManager,
+): void {
   const origins = processOrigins(ctx.config.paths.data)
+  const devcontainers = sessions.environments.devcontainers
+  const inventory = new EnvironmentInventory({
+    sessions,
+    terminals,
+    devcontainers,
+    projects: () => ctx.db.select({ id: projects.id, workspacePath: projects.workspacePath }).from(projects).all(),
+    projectOf: (conversationId) =>
+      ctx.db.select({ projectId: conversations.projectId }).from(conversations).where(eq(conversations.id, conversationId)).get()
+        ?.projectId ?? null,
+  })
   let pending: Promise<ServiceProcess[]> | undefined
   let cached: { processes: ServiceProcess[]; at: number } | undefined
   /**
@@ -117,10 +144,58 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
     })
   }
 
+  /**
+   * Les environnements suivent la visibilité de leur projet, ou, sans projet, de la
+   * session qu'ils font tourner. Un bac à sable se mesure dans le scan des processus :
+   * ses processus sont des enfants de Solera.
+   */
+  const visibleEnvironments = (
+    entries: ScannedEnvironment[],
+    processes: ServiceProcess[],
+    userId: string,
+    isAdmin: boolean,
+  ): ServiceEnvironmentDto[] => {
+    const attribute = attribution(userId, isAdmin)
+    const ids = [...new Set(entries.flatMap((entry) => entry.conversationIds))]
+    const titles = new Map(
+      ids.length
+        ? ctx.db.select({ id: conversations.id, title: conversations.title }).from(conversations)
+          .where(inArray(conversations.id, ids)).all().map((row) => [row.id, row.title])
+        : [],
+    )
+    return entries.flatMap((entry): ServiceEnvironmentDto[] => {
+      const owner = entry.owner && 'conversationId' in entry.owner ? entry.owner.conversationId : null
+      const seen = attribute({ projectId: entry.projectId, conversationId: owner })
+      if (!seen) return []
+      const manageable = !!seen.project || seen.conversation?.userId === userId
+      const usage = entry.kind === 'sandbox' ? sandboxUsage(entry.pids, processes, (id) => cpuNow.get(id) ?? null) : null
+      const devcontainer = entry.kind === 'devcontainer'
+      return [{
+        id: entry.id, kind: entry.kind, engine: entry.engine, name: entry.name, state: entry.state, error: entry.error,
+        projectId: seen.project?.id ?? null, projectName: seen.project?.name ?? null,
+        sessions: entry.conversationIds.map((conversationId) => ({ conversationId, title: titles.get(conversationId) ?? null })),
+        terminals: entry.terminals, vscodeAttached: entry.vscodeAttached,
+        cpu: usage?.cpu ?? entry.cpu, memoryBytes: usage?.memoryBytes ?? entry.memoryBytes,
+        diskBytes: entry.diskBytes, imageBytes: entry.imageBytes,
+        ports: usage?.ports ?? entry.ports, startedAt: usage?.startedAt ?? entry.startedAt,
+        companions: entry.companions,
+        canStop: manageable && (entry.state === 'running' || (entry.state === 'starting' && entry.containerIds.length > 0)),
+        canRestart: manageable && devcontainer && entry.containerIds.length > 0 && entry.state !== 'starting',
+        canRebuild: manageable && devcontainer && entry.state !== 'starting' && !!entry.projectId
+          && sessions.environments.hasDevcontainer(entry.projectId),
+        hasLog: devcontainer,
+      }]
+    })
+  }
+
   app.get('/api/services', async (request): Promise<ServicesDto> => {
     const user = requireUser(request)
-    if (process.platform !== 'linux') return { supported: false, scannedAt: Date.now(), services: [], apps: [], system: null }
-    const [processes, apps, system] = await Promise.all([scan(), scanServiceApps(origins), readSystemLoad().catch(() => null)])
+    if (process.platform !== 'linux') {
+      return { supported: false, scannedAt: Date.now(), services: [], apps: [], environments: [], system: null }
+    }
+    const [processes, apps, system, environments] = await Promise.all([
+      scan(), scanServiceApps(origins), readSystemLoad().catch(() => null), inventory.scan(),
+    ])
     // Une mesure par scan et non par requête : deux onglets ouverts ne doivent pas
     // ramener l'intervalle à quelques millisecondes.
     if (measured !== cached!.at) {
@@ -131,6 +206,72 @@ export function registerServiceRoutes(app: FastifyInstance, ctx: AppContext): vo
       supported: true, scannedAt: cached!.at, system,
       services: visible(processes, user.id, user.isAdmin),
       apps: visibleApps(apps, user.id, user.isAdmin),
+      environments: visibleEnvironments(environments, processes, user.id, user.isAdmin),
+    }
+  })
+
+  const findEnvironment = async (request: Parameters<typeof requireUser>[0], id: string) => {
+    const user = requireUser(request)
+    if (process.platform !== 'linux') throw new HttpError(409, 'services_unsupported', 'Service discovery requires Linux.')
+    const [entries, processes] = await Promise.all([inventory.scan(true), scan()])
+    const visible = visibleEnvironments(entries, processes, user.id, user.isAdmin).find((entry) => entry.id === id)
+    const scanned = entries.find((entry) => entry.id === id)
+    if (!visible || !scanned) throw new HttpError(404, 'service_gone', 'This environment is no longer running. Refresh the list.')
+    return { visible, scanned }
+  }
+
+  /**
+   * Arrête ce qui tourne dans l'environnement avant d'y toucher : une session dont le
+   * conteneur disparaît sous elle finirait en erreur, alors qu'arrêtée elle repart à son
+   * prochain message. L'onglet d'un terminal reste, avec son dernier écran.
+   */
+  const stopUsers = async (entry: ScannedEnvironment) => {
+    await Promise.all(entry.conversationIds.map((conversationId) => sessions.terminate(conversationId)))
+    for (const terminal of entry.terminals) terminals.kill(terminal.id)
+  }
+
+  app.post('/api/services/environments/:id/:action', async (request, reply) => {
+    const { id, action } = request.params as { id: string; action: string }
+    if (!['stop', 'restart', 'rebuild'].includes(action)) throw new HttpError(404, 'not_found', 'Unknown action.')
+    const { visible, scanned } = await findEnvironment(request, id)
+    const allowed = action === 'stop' ? visible.canStop : action === 'restart' ? visible.canRestart : visible.canRebuild
+    if (!allowed) throw new HttpError(409, 'service_environment_refused', 'This action is not available for this environment.')
+    await stopUsers(scanned)
+    try {
+      await controlEnvironment(scanned, action as ServiceEnvironmentAction)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new HttpError(409, 'service_environment_failed', message, { message })
+    }
+    inventory.invalidate()
+    cached = undefined
+    return reply.status(202).send({ accepted: true })
+  })
+
+  const controlEnvironment = async (entry: ScannedEnvironment, action: ServiceEnvironmentAction) => {
+    // Un bac à sable est celui de sa session ou de son terminal : les arrêter l'a arrêté.
+    if (entry.kind === 'sandbox') return
+    const projectId = entry.projectId!
+    if (action === 'rebuild') {
+      const workspacePath = ctx.db.select({ workspacePath: projects.workspacePath }).from(projects)
+        .where(eq(projects.id, projectId)).get()?.workspacePath
+      if (!devcontainers || !workspacePath) throw new Error('This project has no dev container to rebuild.')
+      // Long : la reconstruction se suit dans la liste (« démarrage ») et dans son journal.
+      void devcontainers.rebuild({ id: projectId, workspacePath }).catch(() => undefined)
+      return
+    }
+    await inventory.control(entry.containerIds, action)
+    // La prochaine session repasse par `devcontainer up`, qui le relance et relit son environnement.
+    devcontainers?.forget(projectId)
+  }
+
+  app.get('/api/services/environments/:id/log', async (request): Promise<ServiceEnvironmentLogDto> => {
+    const { id } = request.params as { id: string }
+    const { visible, scanned } = await findEnvironment(request, id)
+    if (!visible.hasLog || !scanned.projectId) throw new HttpError(404, 'not_found', 'This environment has no log.')
+    return {
+      startup: devcontainers?.startupLog(scanned.projectId) ?? [],
+      output: scanned.containerIds[0] ? await inventory.output(scanned.containerIds[0]) : '',
     }
   })
 

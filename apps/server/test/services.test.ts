@@ -20,7 +20,17 @@ import { ProcessOrigins, processOrigins } from '../src/services/origins.js'
 import { foldProcesses, processIdentity, scanServiceProcesses, stopServiceProcess, type FoldableProcess } from '../src/services/processes.js'
 import { isShellCommand, redactSecrets, summarizeCommand } from '../src/services/command-line.js'
 import { executionLink, readProcessHost, type ProcessNode, type ProcessHost } from '../src/services/ownership.js'
+import type { SessionManager } from '../src/sessions/session-manager.js'
+import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { authoredDescription, execStartArgv, executableName, originToken, parseShow, scanServiceApps } from '../src/services/apps.js'
+
+/** Ni session ni terminal vivants, ni dev container : la liste Environnements reste vide. */
+const noSessions = {
+  environments: { devcontainers: null, hasDevcontainer: () => false },
+  liveEnvironments: () => [],
+  terminate: async () => undefined,
+} as unknown as SessionManager
+const noTerminals = { live: () => [], kill: () => undefined } as unknown as TerminalManager
 
 async function directory(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-services-'))
@@ -239,7 +249,7 @@ test('API : aucune attribution par dossier, visibilité privée, arrêt autoris�
     request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-test-user']))).get()
   })
   registerErrorHandler(app)
-  registerServiceRoutes(app, { db, config: { paths: { data: dir } } as Config })
+  registerServiceRoutes(app, { db, config: { paths: { data: dir } } as Config }, noSessions, noTerminals)
   t.after(() => app.close())
   const list = async (user: string): Promise<ServiceDto[]> => {
     const response = await app.inject({ url: '/api/services', headers: { 'x-test-user': user } })
@@ -289,7 +299,7 @@ test('API : une conversation sans projet est à son auteur, pas une origine inco
     request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-test-user']))).get()
   })
   registerErrorHandler(app)
-  registerServiceRoutes(app, { db, config: { paths: { data: dir } } as Config })
+  registerServiceRoutes(app, { db, config: { paths: { data: dir } } as Config }, noSessions, noTerminals)
   t.after(() => app.close())
   const list = async (user: string): Promise<ServiceDto[]> =>
     (await app.inject({ url: '/api/services', headers: { 'x-test-user': user } })).json<ServicesDto>().services
@@ -377,7 +387,7 @@ test('apps : unité réelle, ports, origine, visibilité et arrêt par l’API',
     request.user = db.select().from(users).where(eq(users.id, String(request.headers['x-test-user']))).get()
   })
   registerErrorHandler(server)
-  registerServiceRoutes(server, { db, config: { paths: { data: dir } } as Config })
+  registerServiceRoutes(server, { db, config: { paths: { data: dir } } as Config }, noSessions, noTerminals)
   t.after(() => server.close())
   const apps = async (user: string) => {
     const response = await server.inject({ url: '/api/services', headers: { 'x-test-user': user } })

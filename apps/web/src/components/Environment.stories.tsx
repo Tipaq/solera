@@ -60,3 +60,12 @@ export const SelecteurComplet: Story = {
   name: 'Sélecteur, tous les choix',
   render: () => <Choice choices={ALL} />,
 }
+
+/** Hors de l'hôte non confiné, la pastille mène à la ligne de son environnement dans Services. */
+export const VersServices: Story = {
+  name: 'Pastille, vers Services',
+  args: {
+    environment: { where: 'devcontainer', confined: false },
+    to: '/services?environment=devcontainer%3Aprojet&session=conversation',
+  },
+}

@@ -239,7 +239,7 @@ export async function buildApp(
   registerSttRoutes(app, ctx, secrets)
   registerUserSettingsRoutes(app, ctx, registry)
   registerSystemRoutes(app, ctx)
-  registerServiceRoutes(app, ctx)
+  registerServiceRoutes(app, ctx, sessions, terminals)
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault, log)
   registerWebRoutes(app)

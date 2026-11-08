@@ -108,5 +108,77 @@ export interface ServicesDto {
   scannedAt: number
   services: ServiceDto[]
   apps: ServiceAppDto[]
+  environments: ServiceEnvironmentDto[]
   system: SystemLoadDto | null
+}
+
+/**
+ * Ce qu'est un environnement de la liste « Environnements » : le dev container d'un
+ * projet, partagé par ses sessions (#140), ou le bac à sable d'une session ou d'un
+ * terminal confinés sur l'hôte (#144). Le conteneur confiné (#145) s'y ajoutera.
+ */
+export type ServiceEnvironmentKind = 'devcontainer' | 'sandbox'
+
+/** Ce qui le fait tourner : Docker pour un conteneur, bwrap ou seatbelt pour un bac à sable. */
+export type ServiceEnvironmentEngine = 'docker' | 'bwrap' | 'seatbelt'
+
+export type ServiceEnvironmentState = 'starting' | 'running' | 'stopped' | 'failed'
+
+export type ServiceEnvironmentAction = 'stop' | 'restart' | 'rebuild'
+
+/** Une session de Solera qui tourne dans l'environnement. */
+export interface ServiceEnvironmentSession {
+  conversationId: string
+  title: string | null
+}
+
+/** Un terminal ouvert dans l'environnement, et le pid de son lanceur sur l'hôte. */
+export interface ServiceEnvironmentTerminal {
+  id: string
+  title: string
+  pid: number | null
+}
+
+/**
+ * Un environnement d'exécution, dans Services : son type, qui s'en sert, son état et sa
+ * consommation. On l'affiche sans le plafonner.
+ */
+export interface ServiceEnvironmentDto {
+  /** `devcontainer:<projet>`, `sandbox:session:<conversation>`, `sandbox:terminal:<terminal>`. */
+  id: string
+  kind: ServiceEnvironmentKind
+  engine: ServiceEnvironmentEngine
+  /** Le nom du conteneur, ou rien pour un bac à sable : sa session le nomme. */
+  name: string | null
+  state: ServiceEnvironmentState
+  /** Pourquoi il est en échec : la fin du journal de démarrage, ou le code de sortie. */
+  error: string | null
+  projectId: string | null
+  projectName: string | null
+  sessions: ServiceEnvironmentSession[]
+  terminals: ServiceEnvironmentTerminal[]
+  /** VS Code y est attaché : son serveur tourne dans le conteneur. */
+  vscodeAttached: boolean
+  /** Comme pour un processus : part d'un cœur. Null tant qu'on ne l'a pas mesurée. */
+  cpu: number | null
+  memoryBytes: number | null
+  /** Ce qu'il a écrit : la couche du conteneur, ou le home et le tmp privés du bac à sable. */
+  diskBytes: number | null
+  /** L'image sur laquelle le conteneur est construit, partagée avec d'autres. */
+  imageBytes: number | null
+  /** Ports en écoute dans l'environnement. */
+  ports: number[]
+  startedAt: number | null
+  /** Les autres conteneurs de son docker-compose, comptés dans la consommation. */
+  companions: string[]
+  canStop: boolean
+  canRestart: boolean
+  canRebuild: boolean
+  hasLog: boolean
+}
+
+/** Le journal d'un environnement : son dernier démarrage, puis la sortie du conteneur. */
+export interface ServiceEnvironmentLogDto {
+  startup: string[]
+  output: string
 }

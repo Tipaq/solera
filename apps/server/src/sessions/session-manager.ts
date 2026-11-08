@@ -776,6 +776,14 @@ export class SessionManager {
     return [...this.runners.keys()]
   }
 
+  /**
+   * Les sessions dont le CLI tourne, avec l'environnement qui le fait tourner : Services
+   * les range sous leur dev container ou leur bac à sable.
+   */
+  liveEnvironments(): { conversationId: string; environment: EnvironmentProvider }[] {
+    return [...this.runners].map(([conversationId, managed]) => ({ conversationId, environment: managed.environment }))
+  }
+
   /** Vrai si un message envoyé maintenant n'atteindrait pas le CLI immédiatement. */
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status
