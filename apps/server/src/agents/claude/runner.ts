@@ -51,6 +51,7 @@ import { contextBreakdown, contextWindow } from './context-usage.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
+import { sessionLookup } from './transcript.js'
 import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { claudeMdExcludes } from '../../instructions/store.js'
 import { flagSettings, liveFlagSettings } from './flag-settings.js'
@@ -1371,7 +1372,7 @@ export class ClaudeRunner implements AgentRunner {
     if (!sessionId) return null
 
     try {
-      const info = await getSessionInfo(sessionId, { dir: this.ctx.cwd })
+      const info = await getSessionInfo(sessionId, await sessionLookup(this.ctx.cwd, sessionId, this.ctx.transcripts))
       const title = info?.customTitle ?? info?.summary ?? null
       return title && title.trim().length > 0 ? title.trim() : null
     } catch {

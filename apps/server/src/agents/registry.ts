@@ -11,6 +11,7 @@ import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
 import type { AgentAuth } from './auth.js'
 import { ClaudeAdapter } from './claude/adapter.js'
+import type { TranscriptHome } from './claude/transcript.js'
 import type { CliBinary, CliLauncher } from './cli-binary.js'
 import { CodexAdapter } from './codex/adapter.js'
 import { GrokAdapter } from './grok/adapter.js'
@@ -35,6 +36,8 @@ export interface ForkTarget {
    * cherche aussi pour forker.
    */
   accountEnv: Record<string, string>
+  /** Où le CLI de Claude a rangé ses transcripts : le fork les relit et écrit à côté. Absent : ceux de l'hôte. */
+  transcripts?: TranscriptHome
 }
 
 /** Ce qu'il faut à un adaptateur pour reconstituer l'effet d'un appel d'outil. */
