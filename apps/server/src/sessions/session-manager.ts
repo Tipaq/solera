@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
@@ -32,6 +31,7 @@ import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
 import type { CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
+import { claudeTranscripts, containerClaudeHome } from '../agents/claude/transcript-home.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
 import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
 import { soleraUrlForAgents } from '../instance/agent-url.js'
@@ -89,7 +89,7 @@ import type { EnvironmentProvider } from '../environments/provider.js'
 import { ConfinedEnvironment } from '../environments/confined/confined.js'
 import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
 import { Environments, environmentOf } from '../environments/environments.js'
-import { containerHomes, Devcontainers } from '../environments/devcontainer/containers.js'
+import { Devcontainers } from '../environments/devcontainer/containers.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -653,7 +653,13 @@ export class SessionManager {
     try {
       await this.openEnvironment(conversation, cli.environment)
       return await adapter.fork(
-        { agentSessionId: conversation.agentSessionId, cwd, accountEnv, cli },
+        {
+          agentSessionId: conversation.agentSessionId,
+          cwd,
+          accountEnv,
+          cli,
+          transcripts: claudeTranscripts(this.config.paths, conversation),
+        },
         adapter.forkCut(this.log, conversationId, throughSeq),
       )
     } finally {
@@ -1182,6 +1188,7 @@ export class SessionManager {
       environment: launcher.environment,
       attachmentsRoot: this.config.paths.attachments,
       prototypesDir,
+      transcripts: claudeTranscripts(this.config.paths, conversation),
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(projectId, conversationId),
         // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
@@ -1602,7 +1609,7 @@ export class SessionManager {
   private containerEnv(conversation: ConversationRow, cwd: string, environment: EnvironmentProvider): Record<string, string> {
     const env: Record<string, string> = {}
     if (conversation.agent === 'claude') {
-      const home = join(containerHomes(this.config.paths), conversation.userId, 'claude')
+      const home = containerClaudeHome(this.config.paths, conversation.userId)
       mkdirSync(home, { recursive: true })
       env.CLAUDE_CONFIG_DIR = environment.pathInside(home)
     }
@@ -1799,7 +1806,9 @@ export class SessionManager {
       : undefined
     if (conversation.agent === 'claude' && conversation.agentSessionId && tree) {
       const root = this.resolveCwd({ ...conversation, worktreeId: null })
-      await copyTranscript(tree.path, root, conversation.agentSessionId).catch(() => false)
+      await copyTranscript(tree.path, root, conversation.agentSessionId, claudeTranscripts(this.config.paths, conversation)).catch(
+        () => false,
+      )
     }
 
     const patch: Partial<ConversationRow> = {

@@ -17,6 +17,7 @@ import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } 
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { ClaudeCommandCatalog } from './command-catalog.js'
 import { describeEdit } from './file-edits.js'
+import { sessionLookup } from './transcript.js'
 import { ClaudeModelCatalog } from './model-catalog.js'
 import { ClaudeRunner } from './runner.js'
 import { ClaudeUsageReader, claudeAccountUsage } from './usage.js'
@@ -105,7 +106,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
     try {
       const forked = await forkSession(target.agentSessionId, {
-        dir: target.cwd,
+        ...(await sessionLookup(target.cwd, target.agentSessionId, target.transcripts)),
         upToMessageId,
       })
       return forked.sessionId

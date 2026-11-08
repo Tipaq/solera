@@ -5,11 +5,13 @@ import { claudeTranscriptCursors, conversations, type Db } from '@solera/db'
 import type { EventLog } from '../../events/event-log.js'
 import {
   entryTs,
+  hostTranscripts,
+  locateTranscript,
   spawnedAgents,
-  transcriptPath,
   transcriptTranslator,
   TRANSCRIPT_RAW_FORMAT,
   type TranslatedEvent,
+  type TranscriptHome,
   type TranscriptTranslationState,
 } from './transcript.js'
 import {
@@ -106,8 +108,9 @@ export async function prepareTranscript(
   saved?: Saved,
   getAnchors: () => Anchors = emptyAnchors,
   hasHistory = false,
+  home: TranscriptHome = hostTranscripts(),
 ): Promise<PreparedTranscript | null> {
-  const path = transcriptPath(cwd, sessionId)
+  const path = await locateTranscript(cwd, sessionId, home)
   if (saved?.path !== path) saved = undefined
   const result: PreparedTranscript = {
     path,
