@@ -1,8 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { posix, resolve } from 'node:path'
+import { join, posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
+import { RELATIVE_LINKS_LOCK } from './environments/devcontainer/worktree-links.js'
 
 const run = promisify(execFile)
 
@@ -213,8 +214,16 @@ export async function addWorktree(
   return { reusedBranch }
 }
 
+/**
+ * Retire un worktree. Le verrou que Solera pose sur un worktree aux liens relatifs
+ * (`RELATIVE_LINKS_LOCK`) est levé d'abord ; celui qu'une personne a posé reste, et git
+ * refuse alors de le retirer.
+ */
 export async function removeWorktree(repo: string, path: string, force: boolean): Promise<void> {
   try {
+    const admin = await git(path, ['rev-parse', '--absolute-git-dir']).then((raw) => raw.trim()).catch(() => null)
+    const reason = admin ? await readFile(join(admin, 'locked'), 'utf8').catch(() => null) : null
+    if (reason?.trim() === RELATIVE_LINKS_LOCK) await git(repo, ['worktree', 'unlock', path])
     await git(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), path])
   } catch (err) {
     throw new GitError(gitMessage(err))

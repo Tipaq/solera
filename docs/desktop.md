@@ -47,6 +47,21 @@ for its bash, which runs the check scripts of scheduled tasks, written in `sh` s
 Claude Code needs it on Windows too. Terminals open in PowerShell (PowerShell 7 when
 it is installed).
 
+A project can run its sessions in a dev container through Docker Desktop. The
+container sees your folders under `/mnt/<drive>/…` (`C:\Users\me\project` becomes
+`/mnt/c/Users/me/project`), and Solera translates paths both ways. Keep the
+repository and Solera's data folder on the same drive, and off network shares: a
+worktree on another drive than its repository, or a folder on a share, is refused.
+
+To work there, Solera rewrites the git links of the project's worktrees as relative
+paths. Git before 2.48 reads them, but takes the worktree for a stale one
+(`git worktree list` says *prunable*), and a `git worktree prune` or a `git gc` would
+detach it from the repository. Solera therefore locks these worktrees
+(`git worktree lock`, with a reason that starts with `Solera:`), and lifts its lock
+when it removes one. Prefer git 2.48 or later, on Windows and in the image: before
+that, Solera leaves the host's side of the link absolute. To remove such a worktree
+by hand, run `git worktree unlock <path>` first.
+
 To keep Solera running when your computer is off, or to reach it from your phone, use
 the server edition under WSL2 instead ([Windows](windows.md)).
 

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { open, readdir, readFile, stat } from 'node:fs/promises'
+import { open, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { hostPathOf } from './paths.js'
@@ -22,7 +22,15 @@ const run = promisify(execFile)
  * se trompe que sur le lien retour, qu'il croit périmé (`worktree list` le dit
  * « prunable »). Ce lien retour relatif, git ne le lit côté hôte qu'à partir de 2.48 :
  * en deçà, on le laisse absolu.
+ *
+ * Un git ancien dans le conteneur croirait donc le worktree périmé, et un `git worktree
+ * prune` ou un `gc` y détacherait son dossier d'administration. Un worktree dont Solera
+ * a rendu le lien retour relatif est verrouillé (`git worktree lock`) : tout git respecte
+ * le verrou, et `removeWorktree` le lève avant de retirer le worktree.
  */
+
+/** La raison du verrou que Solera pose, qui le distingue de celui d'une personne. */
+export const RELATIVE_LINKS_LOCK = 'Solera: relative worktree links, which git before 2.48 takes for stale'
 
 /**
  * Rend relatifs les liens de chaque worktree du dépôt. Ceux d'un worktree sur un autre
@@ -51,7 +59,18 @@ export async function relativizeWorktreeLinks(repo: string): Promise<void> {
     if (backLinks && isAbsolute(backLink)) {
       await overwrite(join(adminDir, 'gitdir'), `${slashes(relative(adminDir, gitFile))}\n`)
     }
+    if (backLinks) await lockRelative(adminDir)
   }
+}
+
+/**
+ * Verrouille un worktree dont le lien retour est relatif, s'il ne l'est pas déjà : le
+ * fichier `locked` de son dossier d'administration, qu'écrirait `git worktree lock`.
+ */
+async function lockRelative(adminDir: string): Promise<void> {
+  const backLink = (await readFile(join(adminDir, 'gitdir'), 'utf8').catch(() => '')).trim()
+  if (!backLink || isAbsolute(backLink)) return
+  await writeFile(join(adminDir, 'locked'), `${RELATIVE_LINKS_LOCK}\n`, { flag: 'wx' }).catch(() => undefined)
 }
 
 /** Le `.git` du dossier est-il un lien absolu vers un dépôt ? Faux pour un dépôt ordinaire ou un lien relatif. */
