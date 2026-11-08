@@ -113,9 +113,10 @@ export class DevcontainerTools {
    * Démarre le dev container du dossier, ou réutilise celui qui tourne déjà pour lui,
    * y compris celui de VS Code : le CLI le retrouve par son label
    * `devcontainer.local_folder`. Les montages ne s'appliquent qu'à un conteneur créé ici.
-   * Chaque ligne du journal passe par `onLog` pendant le démarrage.
+   * Chaque ligne du journal passe par `onLog` pendant le démarrage. `rebuild` supprime
+   * le conteneur existant et en crée un neuf, son image reconstruite d'après le `devcontainer.json`.
    */
-  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void): Promise<UpResult> {
+  async up(workspace: string, mounts: Mount[], onLog: (line: string) => void, rebuild = false): Promise<UpResult> {
     const launch = await this.cli()
     const args = [
       ...launch.args,
@@ -125,6 +126,7 @@ export class DevcontainerTools {
       '--docker-path',
       this.docker(),
       ...mounts.flatMap((mount) => ['--mount', `type=bind,source=${mount.source},target=${mount.target}`]),
+      ...(rebuild ? ['--remove-existing-container'] : []),
     ]
     return new Promise((resolve, reject) => {
       const child = spawn(launch.command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: UP_TIMEOUT_MS })

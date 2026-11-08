@@ -23,7 +23,7 @@ import { ChatThread } from '../components/chat/ChatThread'
 import { ArrangeFreeThreadButton } from '../components/ArrangeConversation'
 import { HeaderBand } from '../components/HeaderBand'
 import { appliedPermissionLabel } from '../components/chat/agent-settings'
-import { EnvironmentPill } from '../components/Environment'
+import { EnvironmentPill, environmentServicesPath } from '../components/Environment'
 import { Composer } from '../components/chat/Composer'
 import { ComposerStatus } from '../components/chat/ComposerStatus'
 import { WorktreeGoneNotice } from '../components/chat/WorktreeGoneNotice'
@@ -1088,7 +1088,11 @@ export function ConversationPage() {
 
           {/* Où tournent son CLI et ses terminaux, figé à la création (ADR 0001). À côté
               du dossier : les deux disent où le travail se fait. */}
-          <EnvironmentPill environment={conversation.environment} className="hidden @min-[44rem]/thread:flex" />
+          <EnvironmentPill
+            environment={conversation.environment}
+            to={environmentServicesPath(conversation.environment, conversation)}
+            className="hidden @min-[44rem]/thread:flex"
+          />
 
           {/*
             L'en-tête ne garde que ce qui invalide la lecture en cours : une erreur, un

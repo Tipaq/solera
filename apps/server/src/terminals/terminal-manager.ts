@@ -49,6 +49,8 @@ interface ManagedTerminal {
   title: string
   /** Null pour une entrée restaurée après un redémarrage : le process est perdu. */
   pty: IPty | null
+  /** Où son shell tourne ; null pour une entrée restaurée. */
+  environment: EnvironmentProvider | null
   cwd: string
   /** Sortie récente, pour repeindre l'écran à la reconnexion. */
   replay: string
@@ -235,6 +237,7 @@ export class TerminalManager {
       // en rouvrir un ne doit pas donner deux « shell 2 ».
       title: run?.title ?? nextTitle(remaining),
       pty,
+      environment: place.environment,
       cwd,
       // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois
       // la sortie défilée hors de vue.
@@ -281,6 +284,18 @@ export class TerminalManager {
 
     this.touch(id)
     return toDto(managed)
+  }
+
+  /**
+   * Les terminaux dont le shell tourne encore, avec leur environnement : Services les
+   * range sous le dev container ou le bac à sable qui les fait tourner.
+   */
+  live(): { id: string; projectId: string; title: string; pid: number; environment: EnvironmentProvider }[] {
+    return [...this.terminals.values()].flatMap((managed) =>
+      managed.pty && managed.environment && !managed.exited
+        ? [{ id: managed.id, projectId: managed.projectId, title: managed.title, pid: managed.pty.pid, environment: managed.environment }]
+        : [],
+    )
   }
 
   rename(projectId: string, terminalId: string, title: string): TerminalDto {
@@ -351,6 +366,15 @@ export class TerminalManager {
       throw new TerminalError('terminal_not_found', 'Terminal not found.')
     }
     return managed
+  }
+
+  /**
+   * Tue le shell d'un terminal sans fermer son onglet : son environnement s'arrête, et
+   * son dernier écran reste à lire, comme après un `exit`.
+   */
+  kill(terminalId: string): void {
+    const managed = this.terminals.get(terminalId)
+    if (managed && !managed.exited) managed.pty?.kill()
   }
 
   close(terminalId: string): void {
@@ -428,6 +452,7 @@ export class TerminalManager {
         projectId: meta.projectId,
         title: meta.title,
         pty: null,
+        environment: null,
         cwd: meta.cwd,
         replay,
         replayDirty: false,

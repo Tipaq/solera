@@ -60,6 +60,10 @@ interface Project {
 export class Devcontainers {
   private readonly running = new Map<string, RunningContainer>()
   private readonly starting = new Map<string, Promise<RunningContainer>>()
+  /** Le journal du dernier `devcontainer up` de chaque projet, pour Services. */
+  private readonly journals = new Map<string, string[]>()
+  /** Pourquoi le dernier démarrage d'un projet a échoué ; effacé au suivant qui réussit. */
+  private readonly failures = new Map<string, string>()
   private readonly ports = new Map<string, PortForwarder>()
   private lazy: { tools: DevcontainerTools; agents: ContainerAgents } | null = null
 
@@ -137,6 +141,48 @@ export class Devcontainers {
     return this.provider(project.id)
   }
 
+  /**
+   * Où en est le conteneur d'un projet, vu de Solera : en démarrage, l'id de celui qu'il
+   * a démarré, l'échec de son dernier démarrage. Docker dit le reste.
+   */
+  status(projectId: string): { starting: boolean; containerId: string | null; failure: string | null } {
+    return {
+      starting: this.starting.has(projectId),
+      containerId: this.running.get(projectId)?.id ?? null,
+      failure: this.failures.get(projectId) ?? null,
+    }
+  }
+
+  /** Le journal du dernier `devcontainer up` du projet, vide si Solera n'en a pas lancé. */
+  startupLog(projectId: string): string[] {
+    return this.journals.get(projectId) ?? []
+  }
+
+  /**
+   * Reconstruit le conteneur du projet : `devcontainer up --remove-existing-container`,
+   * qui supprime l'ancien (celui de VS Code compris) et en crée un neuf, avec les
+   * montages de Solera. Ce qui tournait dedans meurt avec lui : l'appelant arrête
+   * d'abord les sessions et les terminaux qui s'en servent.
+   */
+  rebuild(project: Project): Promise<RunningContainer> {
+    if (this.starting.has(project.id)) {
+      throw new ContainerRefusal('devcontainer_failed', 'This dev container is already starting.')
+    }
+    const pending = this.start(project, () => undefined, true).finally(() => this.starting.delete(project.id))
+    this.starting.set(project.id, pending)
+    return pending
+  }
+
+  /**
+   * Oublie le conteneur démarré d'un projet, arrêté ou redémarré depuis Services : la
+   * prochaine session repasse par `up`, qui le relance et relit son environnement.
+   */
+  forget(projectId: string): void {
+    this.running.delete(projectId)
+    // Arrêté ou relancé à la main : l'échec d'un démarrage d'avant ne le décrit plus.
+    this.failures.delete(projectId)
+  }
+
   /** Le fournisseur d'un projet dont le conteneur a été préparé. */
   provider(projectId: string): DevcontainerEnvironment {
     const container = this.running.get(projectId)
@@ -155,8 +201,26 @@ export class Devcontainers {
     return pending
   }
 
-  private async start(project: Project, onLog: (line: string) => void): Promise<RunningContainer> {
+  private async start(project: Project, onLog: (line: string) => void, rebuild = false): Promise<RunningContainer> {
     this.running.delete(project.id)
+    const journal: string[] = []
+    this.journals.set(project.id, journal)
+    const log = (line: string) => {
+      journal.push(line)
+      if (journal.length > JOURNAL_LINES) journal.shift()
+      onLog(line)
+    }
+    try {
+      const container = await this.startContainer(project, log, rebuild)
+      this.failures.delete(project.id)
+      return container
+    } catch (err) {
+      this.failures.set(project.id, (err as Error).message)
+      throw err
+    }
+  }
+
+  private async startContainer(project: Project, onLog: (line: string) => void, rebuild: boolean): Promise<RunningContainer> {
     try {
       this.tools.docker()
       await this.tools.assertDockerRunning()
@@ -171,7 +235,7 @@ export class Devcontainers {
     try {
       const { workspaceFolder, configuration } = await this.tools.readConfiguration(project.workspacePath)
       const mounts = await this.mounts(project, workspaceFolder)
-      const up = await this.tools.up(project.workspacePath, mounts, onLog)
+      const up = await this.tools.up(project.workspacePath, mounts, onLog, rebuild)
       const info = await this.tools.inspect(up.containerId)
       const container: RunningContainer = {
         id: up.containerId,
@@ -318,6 +382,8 @@ export class Devcontainers {
   }
 }
 
+/** Ce qu'on garde du journal d'un démarrage : la construction d'une image en écrit beaucoup. */
+const JOURNAL_LINES = 400
 /**
  * Quoi faire quand le conteneur ne joint pas `url`. Un pare-feu n'est en cause que si
  * l'URL vise la passerelle Docker : ailleurs (`server.agentUrl`, Docker Desktop, réseau

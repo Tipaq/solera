@@ -1,5 +1,6 @@
 import { Container, Monitor, ShieldCheck } from 'lucide-react'
-import { environmentKey, type ExecutionEnvironment } from '@solera/protocol'
+import { environmentKey, environmentServiceId, type ExecutionEnvironment } from '@solera/protocol'
+import { Link } from 'react-router-dom'
 import { Select, cx } from '@solera/ui'
 import { useTranslate } from '../lib/i18n'
 
@@ -61,27 +62,58 @@ export function EnvironmentSelect({
   )
 }
 
-/** La pastille de l'en-tête d'une session : où elle tourne, figé à sa création. */
+/**
+ * La ligne de Services qui montre l'environnement d'une session : le dev container du
+ * projet, ou son propre bac à sable. Null sur l'hôte non confiné, qui n'y a pas de ligne.
+ */
+export function environmentServicesPath(
+  environment: ExecutionEnvironment,
+  session: { id: string; projectId: string | null },
+): string | null {
+  const id =
+    environment.where === 'devcontainer' && !environment.confined && session.projectId
+      ? environmentServiceId({ kind: 'devcontainer', projectId: session.projectId })
+      : environment.confined
+        ? environmentServiceId({ kind: 'sandbox', conversationId: session.id })
+        : null
+  if (!id) return null
+  return `/services?${new URLSearchParams({ environment: id, session: session.id }).toString()}`
+}
+
+/**
+ * La pastille de l'en-tête d'une session : où elle tourne, figé à sa création. Avec
+ * `to`, elle mène à sa ligne dans Services.
+ */
 export function EnvironmentPill({
   environment,
+  to,
   className = 'flex',
 }: {
   environment: ExecutionEnvironment
+  to?: string | null
   /** Porte l'affichage : `flex`, ou masquée sous une largeur. */
   className?: string
 }) {
   const t = useTranslate()
   const label = t(labelKey(environment))
-  return (
-    <span
-      className={cx(
-        'shrink-0 items-center gap-1 rounded-md bg-surface-high px-1.5 py-0.5 text-micro text-ink-soft',
-        className,
-      )}
-      title={t('environment.pill.title', { environment: label })}
-    >
+  const classes = cx(
+    'shrink-0 items-center gap-1 rounded-md bg-surface-high px-1.5 py-0.5 text-micro text-ink-soft',
+    to && 'hover:text-accent',
+    className,
+  )
+  const content = (
+    <>
       <EnvironmentIcon environment={environment} size={11} />
       <span className="max-w-40 truncate">{label}</span>
+    </>
+  )
+  return to ? (
+    <Link to={to} className={classes} title={t('environment.pill.services', { environment: label })}>
+      {content}
+    </Link>
+  ) : (
+    <span className={classes} title={t('environment.pill.title', { environment: label })}>
+      {content}
     </span>
   )
 }
