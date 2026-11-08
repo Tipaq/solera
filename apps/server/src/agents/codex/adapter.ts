@@ -16,6 +16,7 @@ import type { EventLog } from '../../events/event-log.js'
 import { ForkError, type AgentAdapter, type DescribeEditArgs, type ForkTarget } from '../registry.js'
 import type { AgentRunner, RunnerContext } from '../types.js'
 import { CliBinary } from '../cli-binary.js'
+import { agentProcessEnv } from '../process-env.js'
 import { CodexAppServerClient } from './app-server-client.js'
 import { CLIENT_INFO } from './client-info.js'
 import { describeEdit } from './file-edits.js'
@@ -92,9 +93,12 @@ export class CodexAdapter implements AgentAdapter {
 
   async fork(target: ForkTarget, cut: unknown): Promise<string> {
     const { lastTurnId } = cut as CodexForkCut
+    // Dans le home du compte de la conversation : c'est là que Solera a amené le thread,
+    // et là que la branche doit naître pour que la conversation forkée la reprenne.
     const client = new CodexAppServerClient({
       binary: await this.cli.executable(),
       cwd: target.cwd,
+      env: agentProcessEnv(target.accountEnv),
       onNotification: () => {},
       onServerRequest: () =>
         Promise.reject(new Error('Aucune requête serveur attendue pendant un fork.')),

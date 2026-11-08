@@ -1,18 +1,20 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { linksTo, linkTo } from '../platform/links.js'
+import { bringNewest, dropLinks, mirrorPersonal, type Mirrored } from '../platform/account-home.js'
 
 /**
- * Le `GROK_HOME` d'un compte supplémentaire, sur le modèle de `CodexAccountHomes`.
+ * Le `GROK_HOME` d'un compte de Solera, sur le modèle de `CodexAccountHomes` et voir
+ * `platform/account-home.ts`.
  *
- * Un dossier par compte, où seul ce qui tient au compte est réel : chaque autre entrée
- * du home de l'utilisateur y est liée par un lien symbolique. Grok y lit donc la même
- * configuration, les mêmes skills, la même mémoire, et surtout les mêmes sessions
- * (`sessions/`), ce qui permet de reprendre une conversation quel que soit le compte qui
- * l'a ouverte. Les liens sont repris à chaque lancement : une entrée apparue dans le home
- * de l'utilisateur après la création du compte doit être vue par le compte aussi. Une
- * entrée que Grok crée lui-même dans le home du compte (journaux) y reste.
+ * Un dossier par compte, sans aucun lien : la connexion et les caches que Grok remplit
+ * d'après elle (catalogue, réglages distants), la configuration de l'utilisateur recopiée
+ * sans ses secrets, ses règles globales et ses skills. Sa mémoire (`memory-v2/`) reste
+ * celle du compte.
+ *
+ * Une session se reprend d'un compte à l'autre parce que Solera recopie son dossier
+ * (`sessions/<dossier encodé>/<id>/`) au même chemin dans le home qui la reprend. Pas
+ * sondé avec un compte connecté : Grok refuse d'ouvrir une session sans connexion.
  */
 
 /** `$GROK_HOME` du serveur, à défaut `~/.grok` : là où vit la connexion du CLI. */
@@ -20,14 +22,24 @@ export function userGrokHome(): string {
   return process.env.GROK_HOME || join(homedir(), '.grok')
 }
 
-/**
- * Ce qui reste propre au compte : la connexion, et les caches que Grok remplit d'après
- * elle (catalogue de modèles, réglages distants), qui changent d'un abonnement à l'autre.
- */
-const PRIVATE = new Set(['auth.json', 'models_cache.json', 'settings_cache.json'])
+const MIRRORED: Mirrored[] = [
+  { name: 'config.toml', kind: 'config' },
+  { name: 'rules', kind: 'dir' },
+  { name: 'skills', kind: 'dir' },
+]
 
-/** Le dossier des sessions, qui doit être un lien vers celui de l'utilisateur. */
-const SHARED_SESSIONS = 'sessions'
+/** Le dossier d'une session sous `root`, ou null. */
+export function grokSessionDir(root: string, sessionId: string): string | null {
+  // L'identifiant devient un nom de dossier : rien qui sorte de `sessions/`.
+  if (!/^[\w-]+$/.test(sessionId)) return null
+  const sessions = join(root, 'sessions')
+  if (!existsSync(sessions)) return null
+  for (const cwd of readdirSync(sessions)) {
+    const candidate = join(sessions, cwd, sessionId)
+    if (existsSync(candidate) && statSync(candidate).isDirectory()) return candidate
+  }
+  return null
+}
 
 export class GrokAccountHomes {
   constructor(private readonly root: string) {}
@@ -36,37 +48,21 @@ export class GrokAccountHomes {
     return join(this.root, accountId)
   }
 
-  /** Crée le home s'il manque, puis reprend les liens. Rend son chemin. */
+  /** Crée le home s'il manque, et y recopie ce qui vient de l'utilisateur. Rend son chemin. */
   ensure(accountId: string): string {
     const home = this.path(accountId)
-    mkdirSync(home, { recursive: true })
-    const source = userGrokHome()
-    // Les sessions doivent être partagées dès le premier lancement : sans dossier côté
-    // utilisateur, Grok créerait un vrai `sessions/` dans le home du compte, jamais lié
-    // ensuite. Changer de compte ou forker ne retrouverait plus la session, et supprimer
-    // le compte en effacerait l'historique.
-    mkdirSync(join(source, SHARED_SESSIONS), { recursive: true })
-
-    for (const name of readdirSync(source)) {
-      if (PRIVATE.has(name)) continue
-      const target = join(source, name)
-      const link = join(home, name)
-      let current: ReturnType<typeof lstatSync> | null = null
-      try {
-        current = lstatSync(link)
-      } catch {
-        current = null
-      }
-      if (current) {
-        // Un lien juste : rien à faire. Un lien vers ailleurs : repris. Un vrai fichier
-        // ou dossier : propre au compte, laissé.
-        if (!current.isSymbolicLink()) continue
-        if (linksTo(link, target)) continue
-        unlinkSync(link)
-      }
-      linkTo(target, link)
-    }
+    mkdirSync(home, { recursive: true, mode: 0o700 })
+    dropLinks(home)
+    mirrorPersonal(userGrokHome(), home, MIRRORED)
     return home
+  }
+
+  /**
+   * Amène dans `home` la dernière version de la session, prise dans `sources` : les homes
+   * des autres comptes de l'utilisateur, et celui de la connexion du CLI.
+   */
+  bringSession(home: string, sessionId: string, sources: string[]): void {
+    bringNewest(home, sources, (root) => grokSessionDir(root, sessionId))
   }
 
   /** Vrai quand le home porte une connexion, c'est-à-dire un `auth.json`. */

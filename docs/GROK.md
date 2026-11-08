@@ -115,10 +115,14 @@ La connexion du CLI : `grok login --device-auth` sur la machine qui fait tourner
 `~/.grok/auth.json`.
 
 Des comptes supplémentaires se déclarent dans **Réglages › Comptes Grok**, sur le modèle
-des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, lié au
-home de l'utilisateur sauf `auth.json`, `models_cache.json` et `settings_cache.json`. Le
-dossier `sessions/` est créé côté utilisateur avant d'être lié, pour que changer de
-compte ou forker retrouve la session, et le fork tourne dans le home du compte. La
+des comptes Codex : un `GROK_HOME` par compte sous `<données>/grok-accounts/<id>`, sans
+aucun lien vers le home de l'utilisateur (ADR 0001). Solera y recopie à chaque lancement
+`config.toml` sans ce qui peut porter un secret, `rules/` et `skills/` ; la connexion, ses
+caches et la mémoire (`memory-v2/`) restent ceux du compte. Pour changer de compte ou
+forker, Solera recopie le dossier de la session (`sessions/<dossier encodé>/<id>/`) depuis
+le home qui en a la dernière version, et le fork tourne dans le home du compte. Cette
+reprise par copie n'a pas été sondée avec un compte connecté. Un fil qui ne choisit
+aucun compte part sur le premier compte connecté, comme chez Claude. La
 connexion passe par `grok login --device-auth` lancé dans ce home (Solera lit l'URL et le
 code sur sa sortie), ou par la méthode ACP `xai.api_key`, que Grok enregistre dans
 l'`auth.json` du home. La déconnexion joue `grok logout` puis retire cet `auth.json`.
