@@ -94,6 +94,7 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[]): ScheduledTaskDto[]
       cadence: readCadence(row.cadence),
       executionMode: row.executionMode,
       overlapPolicy: row.overlapPolicy,
+      confined: row.confined,
       maxDurationMinutes: row.maxDurationMinutes,
       enabled: row.enabled,
       lastRunAt: row.lastRunAt,
@@ -124,6 +125,8 @@ export interface ScheduledTaskInput {
   prompt: string
   cadence: ScheduleCadence
   overlapPolicy: ScheduleOverlapPolicy
+  /** Tirs confinés ou non (#146) ; null ou absent : le réglage du projet. */
+  confined?: boolean | null
   maxDurationMinutes: number
   enabled: boolean
   /** Null : pas de vérification avant le tour. */
@@ -170,6 +173,7 @@ export function createScheduledTask(
     cadence: JSON.stringify(input.cadence),
     executionMode: 'fresh',
     overlapPolicy: input.overlapPolicy,
+    confined: input.confined ?? null,
     maxDurationMinutes: input.maxDurationMinutes,
     enabled: input.enabled,
     createdByConversationId: owner.conversationId ?? null,
@@ -216,6 +220,7 @@ export function updateScheduledTask(
     prompt: patch.prompt ?? current.prompt,
     cadence: JSON.stringify(cadence),
     overlapPolicy: patch.overlapPolicy ?? current.overlapPolicy,
+    confined: patch.confined !== undefined ? patch.confined : current.confined,
     maxDurationMinutes: patch.maxDurationMinutes ?? current.maxDurationMinutes,
     enabled,
     nextRunAt: rearm ? armedAt(cadence, enabled, current.lastRunAt) : current.nextRunAt,

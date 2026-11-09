@@ -28,6 +28,7 @@ import {
 } from '@solera/protocol'
 import { failedStatuses } from '../mcp-registry.js'
 import { sdkExecutable } from '../launch.js'
+import { claudeSpawner, type ClaudeSpawner } from './spawn.js'
 import { AsyncQueue } from '../async-queue.js'
 import { agentProcessEnv } from '../process-env.js'
 import { PendingInteractions } from '../interactions.js'
@@ -50,6 +51,7 @@ import { contextBreakdown, contextWindow } from './context-usage.js'
 import { editedPath, fileExists } from './file-edits.js'
 import { fromSdkMcpStatus, toSdkMcpServers } from './mcp.js'
 import { skillLibraryLaunchOptions } from './skill-library.js'
+import { sessionLookup } from './transcript.js'
 import { BUILTIN_MCP_SERVER_ID } from '../mcp-builtin.js'
 import { claudeMdExcludes } from '../../instructions/store.js'
 import { flagSettings, liveFlagSettings } from './flag-settings.js'
@@ -164,6 +166,8 @@ export class ClaudeRunner implements AgentRunner {
   private readonly pendingEdits = new Map<string, { path: string; existed: boolean }>()
   private readonly abort = new AbortController()
   private session: Query | null = null
+  /** Le lanceur du CLI courant, et la fin de son stderr pour expliquer sa mort. */
+  private spawner: ClaudeSpawner | null = null
   /** Message en cours de réception, par auteur : l'agent principal (null) et chaque sous-agent. */
   private readonly streamingMessageIds = new Map<string | null, string>()
   /** Dernier compteur de réflexion relayé, pour n'en relayer qu'un par `THINKING_TOKENS_STEP`. */
@@ -233,7 +237,19 @@ export class ClaudeRunner implements AgentRunner {
     // défaut de Claude Code et n'y ajoute que cet appendice.
     const overview = this.ctx.projectOverview(config)
     this.skillRoots = this.ctx.skillRoots(config)
-    const library = skillLibraryLaunchOptions(this.skillRoots)
+    // Tout chemin passé au CLI l'est tel que son environnement le voit : dans un dev
+    // container sous Windows natif, `C:\…` y est `/mnt/c/…` (#151). Le `cwd` est traduit
+    // par l'environnement lui-même.
+    const inside = (path: string) => this.ctx.environment.pathInside(path)
+    const library = skillLibraryLaunchOptions(this.skillRoots.map(inside))
+    const memoryDir = this.ctx.memoryDir(config)
+    // Le SDK compose la commande, l'environnement de la session la lance.
+    const spawner = claudeSpawner(this.ctx.environment, (data) => {
+      // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
+      // perdre rend tout diagnostic impossible.
+      process.stderr.write(`[claude ${this.conversationId}] ${data}`)
+    })
+    this.spawner = spawner
 
     this.session = query({
       prompt: this.input,
@@ -255,11 +271,11 @@ export class ClaudeRunner implements AgentRunner {
         // Les worktrees créés par la session hors de son cwd : lus au lancement, un arbre
         // créé en cours de route ne compte qu'à la relance du CLI.
         additionalDirectories: [
-          ...config.additionalDirectories,
-          this.ctx.attachmentsRoot,
-          ...(this.ctx.prototypesDir ? [this.ctx.prototypesDir] : []),
+          ...config.additionalDirectories.map(inside),
+          inside(this.ctx.attachmentsRoot),
+          ...(this.ctx.prototypesDir ? [inside(this.ctx.prototypesDir)] : []),
           ...library.additionalDirectories,
-          ...(this.ctx.workTrees?.() ?? []),
+          ...(this.ctx.workTrees?.() ?? []).map(inside),
         ],
         plugins: library.plugins,
         // Transmis en mémoire, à chaque lancement. Rien n'en est écrit dans
@@ -277,8 +293,8 @@ export class ClaudeRunner implements AgentRunner {
         settings: flagSettings(
           config,
           library.deny,
-          claudeMdExcludes(this.ctx.maskedInstructionRoots()),
-          this.ctx.memoryDir(config),
+          claudeMdExcludes(this.ctx.maskedInstructionRoots().map(inside)),
+          memoryDir === null ? null : inside(memoryDir),
         ),
         // Plafonds pour une session que personne ne regarde. Options de lancement
         // seulement : les changer relance le runner, voir `applyConfig`.
@@ -302,6 +318,7 @@ export class ClaudeRunner implements AgentRunner {
         // que la release ne transporte plus : sans ce chemin, le SDK échouerait sur
         // « Native CLI binary not found » au lieu d'utiliser le CLI du système.
         pathToClaudeCodeExecutable: sdkExecutable(this.ctx.binary),
+        spawnClaudeCodeProcess: spawner.spawn,
         canUseTool: this.handleToolRequest,
         onElicitation: this.handleElicitation,
         // Seul canal par lequel le CLI livre les tâches planifiées de la session. Ni
@@ -309,11 +326,6 @@ export class ClaudeRunner implements AgentRunner {
         // que comme outil du modèle, et aucun message ne joue pour les boucles le rôle
         // que `background_tasks_changed` joue pour le travail de fond.
         hooks: { Stop: [{ hooks: [this.handleStop] }] },
-        stderr: (data) => {
-          // La sortie d'erreur du CLI n'est pas un événement de conversation, mais la
-          // perdre rend tout diagnostic impossible.
-          process.stderr.write(`[claude ${this.conversationId}] ${data}`)
-        },
       },
     })
 
@@ -352,7 +364,8 @@ export class ClaudeRunner implements AgentRunner {
           : {
               type: 'error',
               code: 'runner_failed',
-              message: err instanceof Error ? err.message : String(err),
+              // La fin du stderr avec : c'est elle qui dit pourquoi le CLI est mort.
+              message: this.spawner ? this.spawner.explain(err).message : err instanceof Error ? err.message : String(err),
               recoverable: false,
             },
       )
@@ -371,8 +384,10 @@ export class ClaudeRunner implements AgentRunner {
    * résoudre après que l'outil a écrit, donc répondre sur un disque déjà modifié.
    */
   private trackEdit(toolCallId: string, name: string, input: unknown): void {
-    const path = editedPath(name, input)
-    if (path === null) return
+    const edited = editedPath(name, input)
+    if (edited === null) return
+    // Le CLI nomme le fichier tel qu'il le voit ; Solera le lit sur l'hôte.
+    const path = this.ctx.environment.pathOutside(edited)
 
     this.pendingEdits.set(toolCallId, { path, existed: fileExists(path) })
   }
@@ -1357,7 +1372,7 @@ export class ClaudeRunner implements AgentRunner {
     if (!sessionId) return null
 
     try {
-      const info = await getSessionInfo(sessionId, { dir: this.ctx.cwd })
+      const info = await getSessionInfo(sessionId, await sessionLookup(this.ctx.cwd, sessionId, this.ctx.transcripts))
       const title = info?.customTitle ?? info?.summary ?? null
       return title && title.trim().length > 0 ? title.trim() : null
     } catch {

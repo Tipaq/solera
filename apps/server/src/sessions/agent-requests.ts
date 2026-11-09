@@ -69,6 +69,7 @@ import { parentBranchFor } from '../cards/parent-branch.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
+import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
 import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
@@ -316,6 +317,7 @@ interface StartSessionPayload {
   effort?: unknown
   worktree?: unknown
   card?: unknown
+  confined?: unknown
 }
 
 export class AgentRequests {
@@ -794,6 +796,7 @@ export class AgentRequests {
     }
 
     this.assertLaunchAllowed(requester, request.id)
+    const confined = this.launchConfinement(requester, payload.confined)
 
     const agent = this.parseAgent(payload.agent, requester.agent)
     const config = await this.launchConfig(agent, project, requester.userId, payload)
@@ -802,35 +805,51 @@ export class AgentRequests {
     const title =
       typeof payload.title === 'string' && payload.title.trim() ? payload.title.trim().slice(0, 200) : undefined
 
-    const row = await createConversation(this.ctx.db, this.sessions, {
-      projectId: project.id,
-      userId: requester.userId,
-      agent,
-      config,
-      worktreeId,
-      cardId: card?.id ?? null,
-      title,
-      titleSource: prompt,
-      origin: null,
-      firstMessage: {
-        clientMessageId: randomUUID(),
-        // Lancée par un compte et non par une session : la mission arrive nue, comme si
-        // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
-        text: requester.id
-          ? formatSessionMessage({
-              kind: 'launch',
-              from: requester.id,
-              title: requester.title,
-              agent: requester.agent,
-              messageId: request.id,
-              body: prompt,
-            })
-          : prompt,
-        attachments: [],
-        mentions: [],
-        skills: [],
-      },
-    })
+    let row: ConversationRow
+    try {
+      row = await createConversation(this.ctx.db, this.sessions, {
+        projectId: project.id,
+        userId: requester.userId,
+        agent,
+        config,
+        // Une session confinée ne lance que des sessions confinées : sinon elle écrirait la
+        // mission d'un agent libre de tout l'hôte.
+        ...(this.confined(requester) ? { environment: this.sessions.environments.ofConversation(requester.id!) } : {}),
+        autonomous: { confined },
+        worktreeId,
+        cardId: card?.id ?? null,
+        title,
+        titleSource: prompt,
+        origin: null,
+        firstMessage: {
+          clientMessageId: randomUUID(),
+          // Lancée par un compte et non par une session : la mission arrive nue, comme si
+          // l'utilisateur l'avait tapée, sans note qui renverrait à une session inexistante.
+          text: requester.id
+            ? formatSessionMessage({
+                kind: 'launch',
+                from: requester.id,
+                title: requester.title,
+                agent: requester.agent,
+                messageId: request.id,
+                body: prompt,
+              })
+            : prompt,
+          attachments: [],
+          mentions: [],
+          skills: [],
+        },
+      })
+    } catch (err) {
+      // Le refus se lit aussi sur la carte, pas seulement dans la réponse à l'agent.
+      if (card && err instanceof EnvironmentUnavailableError) {
+        this.ctx.db
+          .insert(cardNotes)
+          .values({ id: randomUUID(), cardId: card.id, conversationId: requester.id, userId: null, body: `Session non lancée : ${err.message}`, createdAt: Date.now() })
+          .run()
+      }
+      throw err
+    }
     if (card) advanceCardOnLaunch(this.ctx, card.id, requester.userId)
 
     const tree = worktreeId
@@ -842,7 +861,9 @@ export class AgentRequests {
       `CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}.`,
       tree ? `Elle travaille dans le worktree « ${tree} ».` : 'Elle travaille à la racine du projet.',
       card ? `Rattachée à la carte #${card.number} « ${card.title} ».` : null,
-      describePermissions(config),
+      row.environmentConfined ? 'Elle est confinée : elle tourne sans demandes d\'autorisation.' : null,
+      // Celle qu'elle a reçue : confinée, elle a quitté les demandes d'autorisation.
+      describePermissions(parseAgentConfig(row.config)),
       requester.id
         ? "L'utilisateur la voit dans Solera. Pour être prévenu de sa fin : notify_when_done avec ce même id, puis termine ton tour si tu n'as rien d'autre à faire."
         : 'Elle apparaît dans Solera comme les autres. Pour lire sa réponse : read_conversation avec ce même id et `wait_seconds`.',
@@ -1073,10 +1094,11 @@ export class AgentRequests {
       .run()
     this.worktreeStatus?.forget(project.id)
 
+    const path = this.seenBy(requester, row.path)
     return [
-      `Worktree « ${branch} » prêt dans ${row.path}. ${origin}`,
+      `Worktree « ${branch} » prêt dans ${path}. ${origin}`,
       "Ta session y est rattachée : l'utilisateur retrouve l'arbre et ta session dans la vue Chantiers du projet, d'où il le nettoiera une fois fusionné.",
-      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${row.path}, et lance tes commandes avec \`cd ${row.path} && …\` ou \`git -C ${row.path} …\`.`,
+      `Ton répertoire de travail ne change pas. Travaille dans l'arbre par chemins absolus : édite les fichiers sous ${path}, et lance tes commandes avec \`cd ${path} && …\` ou \`git -C ${path} …\`.`,
       `Pour qu'une autre session y travaille directement, start_session avec \`worktree: "${branch}"\`.`,
     ].join('\n')
   }
@@ -1123,7 +1145,7 @@ export class AgentRequests {
       })
       return [
         `- \`${tree.name}\` : ${WORKTREE_STATE_WORDS[tree.state]}${facts.length ? ` (${facts.join(', ')})` : ''}`,
-        `  ${tree.path}${tree.external ? ' · créé hors de Solera' : ''}`,
+        `  ${this.seenBy(requester, tree.path)}${tree.external ? ' · créé hors de Solera' : ''}`,
         sessions.length ? `  Sessions : ${sessions.join(' ; ')}` : '  Aucune session rattachée.',
       ].join('\n')
     })
@@ -1149,6 +1171,26 @@ export class AgentRequests {
     return { id: card.id, number: card.number, title: card.title }
   }
 
+  /**
+   * Le confinement demandé par `start_session` (#146) : oui, non, ou rien pour le
+   * réglage du projet. Une session confinée ne peut pas en lancer une libre.
+   */
+  private launchConfinement(requester: Requester, value: unknown): boolean | null {
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      throw new Refusal('Le paramètre `confined` est un booléen.')
+    }
+    const confined = value ?? null
+    if (confined === false && this.confined(requester)) {
+      throw new Refusal('Une session confinée ne lance que des sessions confinées : omets `confined`.')
+    }
+    return confined
+  }
+
+  /** La session qui demande est-elle confinée ? Un compte sans session ne l'est pas. */
+  private confined(requester: Requester): boolean {
+    return requester.id !== null && this.sessions.environments.ofConversation(requester.id).confined
+  }
+
   // --- schedule_task -------------------------------------------------------------
 
   /**
@@ -1164,6 +1206,11 @@ export class AgentRequests {
     project: ProjectRow,
     payload: Record<string, unknown>,
   ): Promise<string> {
+    if (this.confined(requester)) {
+      throw new Refusal(
+        'Refusé : cette session est confinée, et une tâche planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.',
+      )
+    }
     if (requester.scheduleId) {
       throw new Refusal(
         "Refusé : cette session est elle-même un tir planifié. Une tâche qui en crée d'autres se multiplierait sans personne pour l'arrêter ; ouvre une carte avec create_card.",
@@ -1275,8 +1322,8 @@ export class AgentRequests {
     // retire l'outil.
     this.assertFilingAllowed(requester)
 
-    const given = typeof payload.path === 'string' ? payload.path.trim() : ''
-    if (!given) {
+    const asked = typeof payload.path === 'string' ? payload.path.trim() : ''
+    if (!asked) {
       throw new Refusal(
         'Le paramètre `path` est requis : le chemin absolu du dossier du projet, que tu dois avoir créé avant.',
       )
@@ -1310,9 +1357,10 @@ export class AgentRequests {
       )
     }
 
-    const workspacePath = await assertUsableWorkspace(given).catch(() => {
+    // L'agent nomme le dossier tel qu'il le voit ; le projet le garde tel que l'hôte le lit.
+    const workspacePath = await assertUsableWorkspace(this.hostPathFrom(requester, asked)).catch(() => {
       throw new Refusal(
-        `Refusé : « ${given} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
+        `Refusé : « ${asked} » n'existe pas, ou n'est pas un dossier. Crée-le d'abord avec tes propres outils : Solera ne crée pas de dossier.`,
       )
     })
 
@@ -1322,7 +1370,7 @@ export class AgentRequests {
     const root = resolved.endsWith(sep) ? resolved.slice(0, -sep.length) : resolved
     if (workspacePath !== root && !workspacePath.startsWith(root + sep)) {
       throw new Refusal(
-        `Refusé : « ${workspacePath} » est hors de ${root}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
+        `Refusé : « ${this.seenBy(requester, workspacePath)} » est hors de ${this.seenBy(requester, root)}, où cette instance range ses projets. Crée le dossier là-bas, puis rappelle create_project.`,
       )
     }
 
@@ -1352,7 +1400,7 @@ export class AgentRequests {
     })
 
     return [
-      `Projet « ${row.name} » créé, id ${row.id}, sur ${row.workspacePath}.`,
+      `Projet « ${row.name} » créé, id ${row.id}, sur ${this.seenBy(requester, row.workspacePath)}.`,
       `Consignes en mode ${row.instructionsMode}.`,
       `Il est privé et vide : aucune conversation n'y est rangée. Pour y ranger celle-ci ou une autre : move_conversation avec project="${row.id}", que l'utilisateur accorde d'un clic.`,
     ].join('\n')
@@ -1726,6 +1774,19 @@ export class AgentRequests {
       .set({ resolvedAt: Date.now() })
       .where(eq(agentRequests.id, id))
       .run()
+  }
+
+  /**
+   * Un chemin de l'hôte tel que la session qui demande le voit : `/mnt/c/…` dans un
+   * conteneur sous Windows natif (#153). Tel quel quand son CLI ne tourne plus.
+   */
+  private seenBy(requester: { id: string }, hostPath: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathInside(hostPath) ?? hostPath
+  }
+
+  /** L'inverse : un chemin que la session donne, tel que l'hôte le lit. */
+  private hostPathFrom(requester: { id: string }, path: string): string {
+    return this.sessions.runnerEnvironment(requester.id)?.pathOutside(path) ?? path
   }
 
   /**

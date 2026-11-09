@@ -59,8 +59,10 @@ export const TerminalsPane = memo(function TerminalsPane({
   }, [focused, terminals])
 
   const full = (terminals?.length ?? 0) >= MAX_TERMINALS_PER_PROJECT
-  const openNew = (input?: { cwd?: string }) =>
-    open.mutate(input?.cwd ? input : { conversationId }, {
+  // Une relance repart là où le shell tournait, et dans l'environnement de la session
+  // qui l'avait ouvert : c'est elle qui le porte, pas la session affichée.
+  const openNew = (relaunched?: TerminalDto) =>
+    open.mutate(relaunched ? { cwd: relaunched.cwd, ...(relaunched.conversationId ? { conversationId: relaunched.conversationId } : {}) } : { conversationId }, {
       onSuccess: (created) => setActive(created.id),
     })
 
@@ -170,7 +172,7 @@ export const TerminalsPane = memo(function TerminalsPane({
           <Button
             size="sm"
             disabled={full || open.isPending}
-            onClick={() => openNew({ cwd: activeTerminal.cwd })}
+            onClick={() => openNew(activeTerminal)}
           >
             {t('terminal.relaunch')}
           </Button>

@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -89,6 +89,25 @@ export const projects = sqliteTable(
      * sur un dépôt si lourd que la capture retarde visiblement l'envoi d'un message.
      */
     turnCheckpoints: integer('turn_checkpoints', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * L'environnement d'exécution par défaut des sessions du projet (ADR 0001) : où
+     * tourne leur CLI, et confiné ou non. Une session le recopie à sa création et le
+     * garde ensuite ; un terminal ouvert hors session le prend. L'hôte non confiné pour
+     * un projet qui n'a rien réglé, comme avant la notion.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Les services docker-compose du dev container pour le conteneur d'une session
+     * confinée (#145) : ceux du projet, partagés, ou une copie par session.
+     */
+    confinedServices: text('confined_services').$type<ConfinedServices>().notNull().default('shared'),
+    /**
+     * Les sessions autonomes (tâches planifiées, cartes d'un jalon, sessions lancées par
+     * un agent, relectures) sont-elles confinées quand leur lancement ne le dit pas
+     * (#146) ? Faux : elles prennent l'environnement du projet, comme les autres.
+     */
+    autonomousConfined: integer('autonomous_confined', { mode: 'boolean' }).notNull().default(false),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -592,6 +611,8 @@ export const milestoneRuns = sqliteTable(
       .references(() => cards.id, { onDelete: 'cascade' }),
     state: text('state', { enum: ['running', 'paused', 'stopped', 'finished'] }).notNull(),
     concurrency: integer('concurrency').notNull().default(3),
+    /** Ses sessions sont-elles confinées (#146) ; null : le réglage du projet. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** La configuration du jalon (JSON `AgentConfig`, CLI compris), celle des cartes sans réglage propre. */
     config: text('config').notNull(),
     /** Le compte qui a lancé : ses sessions sont les siennes, et c'est lui qu'on prévient. */
@@ -961,6 +982,14 @@ export const conversations = sqliteTable(
     // Dérivé de l'enum du protocole : ajouter un CLI ne demande pas de retoucher
     // la colonne, et une divergence entre les deux listes ne peut plus s'installer.
     agent: text('agent').$type<AgentKind>().notNull(),
+    /**
+     * L'environnement d'exécution de la session, figé à sa création : celui du projet
+     * par défaut, ou celui choisi en l'ouvrant. Ne change plus ensuite, parce qu'un
+     * historique natif et des processus vivants n'ont pas de sens hors du monde où ils
+     * sont nés. Ses terminaux le suivent.
+     */
+    environmentWhere: text('environment_where').$type<EnvironmentWhere>().notNull().default('host'),
+    environmentConfined: integer('environment_confined', { mode: 'boolean' }).notNull().default(false),
     /** Identifiant natif du CLI, pour `--resume` ou `thread/resume`. */
     agentSessionId: text('agent_session_id'),
     /**
@@ -1154,6 +1183,8 @@ export const scheduledTasks = sqliteTable(
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
     /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */
     overlapPolicy: text('overlap_policy').$type<'skip' | 'wait'>().notNull().default('skip'),
+    /** Ses tirs sont-ils confinés (#146) ; null : le réglage du projet, relu à chaque tir. */
+    confined: integer('confined', { mode: 'boolean' }),
     /** Au-delà, le tir est interrompu : rien d'autre n'arrêterait un agent qui s'égare. */
     maxDurationMinutes: integer('max_duration_minutes').notNull(),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),

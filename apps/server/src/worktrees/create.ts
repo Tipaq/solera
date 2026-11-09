@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { and, eq } from 'drizzle-orm'
 import { worktrees, type ProjectRow, type WorktreeRow } from '@solera/db'
+import { relativizeWorktreeLinks } from '../environments/devcontainer/worktree-links.js'
 import { GitError, addWorktree, readGitStatus } from '../git.js'
 import type { AppContext } from '../http/context.js'
 import { badRequest, conflict } from '../http/errors.js'
@@ -43,6 +44,9 @@ export async function createWorktree(
       throw err
     },
   )
+  // Sous Windows natif, un lien absolu `C:/…` ne mène nulle part dans un dev container :
+  // relatif, le worktree s'y ouvre dès sa création, sans attendre le prochain lancement (#151).
+  if (process.platform === 'win32') await relativizeWorktreeLinks(project.workspacePath).catch(() => undefined)
 
   const row: WorktreeRow = {
     id: randomUUID(),

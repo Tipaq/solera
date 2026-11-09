@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { DEFAULT_CLAUDE_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Sonde du repli d'un message dans le tour en cours, côté Claude.
@@ -74,7 +75,7 @@ async function main(): Promise<void> {
     // `bypassPermissions` : la sonde ne peut répondre à aucune demande d'approbation,
     // et trois `sleep` dans un répertoire temporaire ne demandent pas d'arbitrage.
     config: { ...DEFAULT_CLAUDE_CONFIG, permissionMode: 'bypassPermissions' },
-    binary: process.env.CLAUDE_BIN ?? 'claude',
+    binary: process.env.CLAUDE_BIN ?? 'claude', environment: hostEnvironment,
     attachmentsRoot: tmpdir(),
     prototypesDir: null,
     resumeSessionId: null,

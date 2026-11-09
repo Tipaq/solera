@@ -94,8 +94,8 @@ try {
   await page.getByRole('dialog').getByText('Comptes Grok').first().waitFor()
 
   // Créer un compte : il naît non connecté, avec les deux voies de connexion.
-  await page.getByText('Aucun compte supplémentaire').waitFor()
-  await page.getByRole('button', { name: 'Ajouter un compte' }).first().click()
+  await page.getByText('Aucun compte Grok').waitFor()
+  await page.getByRole('button', { name: 'Connecter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Perso')
   await page.getByRole('button', { name: 'Créer le compte' }).click()
   await page.getByText('Non connecté').waitFor()

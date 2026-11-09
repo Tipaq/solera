@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import type { GrokConfig, McpServer } from '@solera/protocol'
 import type { McpServer as AcpMcpServer } from '@agentclientprotocol/sdk'
 import { AcpClient } from '../acp/client.js'
+import type { EnvironmentProvider } from '../../environments/provider.js'
 import { agentProcessEnv } from '../process-env.js'
 
 /**
@@ -73,6 +74,7 @@ export function grokLaunch(config: GrokConfig, pluginDirs: string[]): GrokLaunch
  */
 export function grokProbe(options: {
   binary: string
+  environment: EnvironmentProvider
   cwd?: string
   home?: string | null
   env?: Record<string, string>
@@ -81,6 +83,7 @@ export function grokProbe(options: {
   return new AcpClient({
     label: 'grok',
     binary,
+    environment: options.environment,
     args: ['agent', '--no-leader', 'stdio'],
     cwd: options.cwd ?? home ?? homedir(),
     env: agentProcessEnv({ ...GROK_ISOLATION_ENV, ...(home ? { GROK_HOME: home } : {}), ...env }),

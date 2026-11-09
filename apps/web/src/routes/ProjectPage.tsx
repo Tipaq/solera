@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { type ProjectDto, type ProjectVisibility } from '@solera/protocol'
+import { type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { ModelDefaultsSettings, PermissionsSettings } from '../components/settings/LayeredSettings'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ProjectInstructions } from '../components/instructions/Instructions'
@@ -30,6 +30,7 @@ import {
   CardHeader,
   EmptyState,
   Field,
+  Select,
   Switch,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
@@ -39,10 +40,14 @@ import {
   useDeleteProject,
   useProjects,
   useRemoveProjectImage,
+  useSetProjectDevcontainer,
   useSetProjectImage,
+  useProjectDevcontainer,
+  useProjectEnvironments,
   useProjectPrototypes,
   useUpdateProject,
 } from '../lib/projects'
+import { AutonomousConfinementSelect, EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
 import { useCapability } from '../lib/instance'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
 import { VisibilitySelect } from '../components/VisibilitySelect'
@@ -143,6 +148,7 @@ export function ProjectPage() {
           <ProjectImage project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectIssueSource projectId={project.id} />
+          <ProjectEnvironment projectId={project.id} />
           <ProjectAgentSettings project={project} />
           <ProjectSettings
             projectId={project.id}
@@ -447,6 +453,178 @@ function ProjectAgentSettings({ project }: { project: ProjectDto }) {
       <PermissionsSettings level={level} />
       <ModelDefaultsSettings level={level} />
     </section>
+  )
+}
+
+/**
+ * L'environnement d'exécution par défaut du projet (ADR 0001) : où tournent le CLI et les
+ * terminaux des sessions ouvertes ensuite. Appliqué au choix, comme un interrupteur ; les
+ * sessions déjà ouvertes gardent le leur.
+ */
+function ProjectEnvironment({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectEnvironments(projectId)
+  const updateProject = useUpdateProject()
+  const error = updateProject.error instanceof ApiRequestError ? updateProject.error.message : null
+  if (!data) return null
+  return (
+    <Card>
+      <CardHeader
+        title={t('project.environment.title')}
+        description={t('project.environment.description')}
+        icon={<EnvironmentIcon environment={data.default} size={16} />}
+      />
+      <CardBody className="flex flex-col gap-2">
+        <EnvironmentSelect
+          value={data.default}
+          choices={data.choices}
+          disabled={updateProject.isPending}
+          onChange={(environment) => updateProject.mutate({ id: projectId, environment })}
+        />
+        {data.suggested ? (
+          <div className="flex flex-wrap items-center gap-2 text-meta text-ink-soft">
+            <span>{t('project.environment.suggested')}</span>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={updateProject.isPending}
+              onClick={() => updateProject.mutate({ id: projectId, environment: data.suggested! })}
+            >
+              {t('project.environment.suggested.accept')}
+            </Button>
+          </div>
+        ) : null}
+        {error ? <Banner>{error}</Banner> : null}
+        <div className="flex flex-col gap-1 border-t border-line pt-4">
+          <AutonomousConfinementSelect
+            value={data.autonomousConfined}
+            disabled={updateProject.isPending}
+            onChange={(confined) => updateProject.mutate({ id: projectId, autonomousConfined: Boolean(confined) })}
+          />
+          <p className="text-meta text-ink-faint">{t('project.environment.autonomous')}</p>
+        </div>
+        <ProjectDevcontainer projectId={projectId} />
+        <ConfinedServicesSetting projectId={projectId} />
+      </CardBody>
+    </Card>
+  )
+}
+
+/**
+ * Le dev container du projet (#143) : celui du dépôt, qu'on nomme sans y toucher, ou le
+ * `devcontainer.json` que Solera garde hors du dépôt pour un projet qui n'en a pas.
+ * Créé depuis un modèle, édité ici, et rien n'est écrit dans le projet.
+ */
+function ProjectDevcontainer({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectDevcontainer(projectId)
+  const save = useSetProjectDevcontainer(projectId)
+  const [draft, setDraft] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDraft(null)
+  }, [projectId, data?.managed])
+
+  if (!data) return null
+  const error = save.error instanceof ApiRequestError ? save.error.message : null
+  const remove = (
+    <Button variant="ghost" icon={<Trash2 size={16} />} disabled={save.isPending} onClick={() => save.mutate(null)}>
+      {t('project.devcontainer.remove')}
+    </Button>
+  )
+
+  if (data.repository) {
+    return (
+      <div className="flex flex-col gap-2 border-t border-line pt-4 text-sm">
+        <p className="font-medium">{t('project.devcontainer.title')}</p>
+        <p className="text-ink-soft">{t('project.devcontainer.repository', { path: data.repository })}</p>
+        {data.managed !== null ? (
+          <div className="flex flex-wrap items-center gap-2 text-ink-faint">
+            <span>{t('project.devcontainer.repository.shadowed')}</span>
+            {remove}
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  const text = draft ?? data.managed
+  return (
+    <div className="flex flex-col gap-2 border-t border-line pt-4 text-sm">
+      <p className="font-medium">{t('project.devcontainer.title')}</p>
+      {text === null ? (
+        <>
+          <p className="text-ink-soft">{t('project.devcontainer.none')}</p>
+          <div>
+            <Button variant="secondary" icon={<FileText size={16} />} onClick={() => setDraft(data.template)}>
+              {t('project.devcontainer.create')}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-ink-faint">{t('project.devcontainer.hint')}</p>
+          <textarea
+            value={text}
+            rows={12}
+            spellCheck={false}
+            aria-label={t('project.devcontainer.title')}
+            onChange={(event) => setDraft(event.target.value)}
+            className="min-h-48 w-full resize-y rounded-md border border-line bg-sunken px-3 py-2 font-mono text-code leading-relaxed text-ink outline-none hover:border-line-strong focus:border-accent"
+          />
+          {error ? <Banner>{error}</Banner> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              icon={<Save size={16} />}
+              disabled={draft === null || draft === data.managed || save.isPending}
+              onClick={() => save.mutate(text)}
+            >
+              {t('project.devcontainer.save')}
+            </Button>
+            {draft !== null ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  save.reset()
+                  setDraft(null)
+                }}
+              >
+                {t('project.settings.cancel')}
+              </Button>
+            ) : (
+              remove
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Les services docker-compose que voit le conteneur d'une session confinée (#145) :
+ * ceux du projet, partagés, ou une copie à chaque session. Seulement pour un dev
+ * container qui passe par docker-compose.
+ */
+function ConfinedServicesSetting({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  const { data } = useProjectDevcontainer(projectId)
+  const updateProject = useUpdateProject()
+  if (!data?.compose) return null
+  return (
+    <div className="border-t border-line pt-4">
+      <Select
+        label={t('project.devcontainer.services')}
+        value={data.confinedServices}
+        disabled={updateProject.isPending}
+        onChange={(value) => updateProject.mutate({ id: projectId, confinedServices: value as ConfinedServices })}
+        options={(['shared', 'copy'] as const).map((value) => ({
+          value,
+          label: t(`project.devcontainer.services.${value}`),
+          hint: t(`project.devcontainer.services.${value}.hint`),
+        }))}
+      />
+    </div>
   )
 }
 

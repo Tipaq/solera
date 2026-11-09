@@ -3,7 +3,8 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import { max } from 'drizzle-orm'
 import { projects, type ProjectRow } from '@solera/db'
-import type { CreateProjectBody, ProjectInstructionsMode } from '@solera/protocol'
+import { HOST_ENVIRONMENT, type CreateProjectBody, type ProjectInstructionsMode } from '@solera/protocol'
+import { environmentColumns } from '../environments/environments.js'
 import { badRequest, conflict } from '../http/errors.js'
 import type { AppContext } from '../http/context.js'
 import { repoInstructionFiles } from '../instructions/store.js'
@@ -112,6 +113,10 @@ export async function insertProject(
     defaultConfig: null,
     designSystemPath: null,
     turnCheckpoints: true,
+    confinedServices: 'shared',
+    autonomousConfined: false,
+    // L'hôte non confiné, comme avant la notion : changer d'environnement est un choix.
+    ...environmentColumns(HOST_ENVIRONMENT),
     position: (highest?.max ?? 0) + 1,
     archivedAt: null,
     createdAt: Date.now(),

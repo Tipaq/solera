@@ -23,6 +23,8 @@ import {
 } from '../services/apps.js'
 import { processOrigins } from '../services/origins.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
+import type { Environments } from '../environments/environments.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Actions de projet : stockage, et exécution dans un terminal ou une unité systemd.
@@ -171,6 +173,7 @@ export class ActionRunner {
     private readonly db: Db,
     private readonly config: Config,
     private readonly terminals: TerminalManager,
+    private readonly environments: Environments,
   ) {}
 
   private shell(): string {
@@ -243,7 +246,10 @@ export class ActionRunner {
     const cwd = await this.cwdFor(row, base)
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
 
-    if (row.kind === 'service' && (await serviceAppsAvailable())) {
+    // Un service tourne sous systemd, sur l'hôte : lancé depuis un environnement confiné,
+    // il en sortirait. Il passe alors par un terminal, que l'environnement confine.
+    const confined = (conversationId ? this.environments.ofConversation(conversationId) : this.environments.ofProject(row.projectId)).confined
+    if (row.kind === 'service' && !confined && (await serviceAppsAvailable())) {
       const current = (await this.serviceStates([row])).get(row.id)!
       if (['active', 'activating', 'reloading'].includes(current.state)) {
         return { terminal: null, service: current, alreadyRunning: true }
@@ -261,12 +267,23 @@ export class ActionRunner {
 
     const previous = this.terminals.latestForAction(row.projectId, row.id)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
-    const terminal = this.openTerminal(row.projectId, cwd, {
-      command: row.command,
-      title: row.label,
-      actionId: row.id,
-      env: origin,
-    })
+    // Dans l'environnement de la session qui la lance, et hors session dans celui du
+    // projet : comme un terminal.
+    await this.environments.prepare(this.environments.terminalEnvironment(row.projectId, conversationId), row.projectId, { cwd })
+    const environment = await this.environments.forTerminal(row.projectId, conversationId, cwd)
+    let terminal: ReturnType<TerminalManager['open']>
+    try {
+      terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
+        command: row.command,
+        title: row.label,
+        actionId: row.id,
+        env: origin,
+      })
+    } catch (err) {
+      // Un conteneur éphémère démarré pour rien ne doit pas rester.
+      await environment.close().catch(() => undefined)
+      throw err
+    }
     return { terminal, service: null, alreadyRunning: false }
   }
 
@@ -307,7 +324,8 @@ export class ActionRunner {
     const key = logsKey(row.id)
     const previous = this.terminals.latestForAction(row.projectId, key)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
-    const terminal = this.openTerminal(row.projectId, base, {
+    // Le journal d'une unité de l'hôte se lit sur l'hôte, quel que soit l'environnement.
+    const terminal = this.openTerminal(row.projectId, base, { environment: hostEnvironment, conversationId: null }, {
       command: `journalctl --user -u ${actionUnit(row.id)} -f -n 200 -o cat`,
       title: `${row.label} · logs`,
       actionId: key,

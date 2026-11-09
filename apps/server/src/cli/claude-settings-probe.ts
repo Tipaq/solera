@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { DEFAULT_CLAUDE_CONFIG, type SoleraEvent } from '@solera/protocol'
 import { ClaudeRunner } from '../agents/claude/runner.js'
 import type { RunnerContext } from '../agents/types.js'
+import { hostEnvironment } from '../environments/host.js'
 
 /**
  * Sonde des réglages de session portés par la couche « flag » du CLI : style de
@@ -69,7 +70,7 @@ async function main(): Promise<void> {
     conversationId: 'probe-settings',
     cwd: tmpdir(),
     config,
-    binary: process.env.CLAUDE_BIN ?? 'claude',
+    binary: process.env.CLAUDE_BIN ?? 'claude', environment: hostEnvironment,
     attachmentsRoot: tmpdir(),
     prototypesDir: null,
     resumeSessionId: null,

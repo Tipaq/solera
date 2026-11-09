@@ -1,31 +1,29 @@
 import { History, SquareKanban, X } from 'lucide-react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   AGENT_CAPABILITIES,
   agentConfigSchema,
   agentKindSchema,
   cardBranchName,
+  unattendedConfig,
+  withPermissionsOf,
   type AgentConfig,
   type AgentKind,
-  type ClaudeAccount,
   type ConversationDto,
 } from '@solera/protocol'
-import type { AgentSkillDto, McpServerStatus, SlashCommandDto } from '@solera/protocol'
+import type { AgentSkillDto, ExecutionEnvironment, McpServerStatus, SlashCommandDto } from '@solera/protocol'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { Composer } from '../components/chat/Composer'
 import { HeaderBand } from '../components/HeaderBand'
 import { DraftAccount } from '../components/chat/DraftAccount'
 import { DraftAgentPicker } from '../components/chat/DraftAgentPicker'
-import { AgentLoginDialog } from '../components/settings/AgentLoginDialog'
 import { Banner, Button, IconButton, cx } from '@solera/ui'
 import { DestinationSelect } from '../components/DestinationSelect'
 import { WorktreeSelect } from '../components/WorktreeSelect'
+import { EnvironmentSelect } from '../components/Environment'
 import { useCards } from '../lib/cards'
-import { GUIDED_LOGIN } from '../lib/agent-login'
 import {
-  AGENT_AUTH_KEY,
   useAgentAuth,
   useAgentAvailability,
   useHiddenAgents,
@@ -41,10 +39,8 @@ import { useClaudeSessions, useImportClaudeSession } from '../lib/claude-session
 import { useProjectCommands } from '../lib/commands'
 import { useFileDrop } from '../lib/file-drop'
 import { useAllConversations, useCreateConversation } from '../lib/conversations'
-import { useProjects } from '../lib/projects'
+import { useProjectEnvironments, useProjects } from '../lib/projects'
 import { locale, useTranslate } from '../lib/i18n'
-import { openSettings } from '../lib/settings-dialog'
-import { useCurrentUser } from '../lib/session'
 import { inheritedConfigFor, useUserSettings } from '../lib/user-settings'
 import { uuidv4 } from '../lib/uuid'
 
@@ -74,110 +70,52 @@ const NO_SKILLS: AgentSkillDto[] = []
 const NO_INTERRUPT = () => {}
 
 /**
- * Le nombre de comptes supplémentaires prêts, par CLI : un seul suffit pour qu'un CLI
- * sans connexion propre reste utilisable. Listes déjà en cache pour le composer.
+ * Les comptes de Solera prêts, par CLI, dans l'ordre de leur liste ; `undefined` tant
+ * que la liste n'est pas là. Listes déjà en cache pour le composer.
  */
-function useExtraAccounts(): Record<AgentKind, number> {
+function useReadyAccounts(): Record<AgentKind, string[] | undefined> {
   const { data: claude } = useClaudeAccounts()
   const { data: codex } = useCodexAccounts()
   const { data: grok } = useGrokAccounts()
-  return {
-    claude: claude?.accounts.length ?? 0,
-    codex: codex?.accounts.filter((account) => account.status === 'ready').length ?? 0,
-    grok: grok?.accounts.filter((account) => account.status === 'ready').length ?? 0,
-    opencode: 0,
-  }
+  // Mémoïsé : les défauts du brouillon en dépendent, et une liste neuve à chaque rendu
+  // changerait la configuration du composer.
+  return useMemo(() => ({
+    claude: claude?.accounts.map((account) => account.id),
+    codex: codex?.accounts.filter((account) => account.status === 'ready').map((account) => account.id),
+    grok: grok?.accounts.filter((account) => account.status === 'ready').map((account) => account.id),
+    opencode: [],
+  }), [claude, codex, grok])
 }
 
-/** Le compte Claude du fil le plus récemment actif qui en désigne un. */
-function lastUsedClaudeAccount(conversations: ConversationDto[] | undefined): string | null {
+/** Le compte du fil le plus récemment actif de ce CLI qui en désigne un. */
+function lastUsedAccount(conversations: ConversationDto[] | undefined, agent: AgentKind): string | null {
   let latest: { at: number; account: string } | null = null
   for (const conversation of conversations ?? []) {
-    if (conversation.agent !== 'claude') continue
+    if (conversation.agent !== agent) continue
     const parsed = agentConfigSchema.safeParse(conversation.config)
-    const account = parsed.success && parsed.data.agent === 'claude' ? parsed.data.account : null
+    const account = parsed.success && parsed.data.agent !== 'opencode' ? parsed.data.account : null
     if (account && (!latest || conversation.updatedAt > latest.at)) latest = { at: conversation.updatedAt, account }
   }
   return latest?.account ?? null
 }
 
 /**
- * Une conversation Claude part sur un compte de Solera dès qu'il en existe un : le
- * dernier utilisé s'il existe encore, sinon le premier. La connexion du terminal n'est
- * plus un choix par défaut — elle tombait sans prévenir, et le premier message échouait
- * alors qu'un compte qui marche était là. Un compte hérité qui existe encore l'emporte :
- * il a été choisi dans les réglages.
+ * Une conversation part sur un compte de Solera dès qu'il en existe un : le dernier
+ * utilisé s'il existe encore, sinon le premier. La connexion du terminal n'est plus un
+ * choix par défaut — elle tombait sans prévenir, et le premier message échouait alors
+ * qu'un compte qui marche était là ; pour Codex et Grok, elle ne porte plus de session
+ * du tout (#147). Un compte hérité qui existe encore l'emporte : il a été choisi dans
+ * les réglages.
  */
-function withClaudeAccount(
+function withSoleraAccount(
   config: AgentConfig,
-  accounts: ClaudeAccount[] | undefined,
+  accounts: string[] | undefined,
   lastUsed: string | null,
 ): AgentConfig {
-  if (config.agent !== 'claude' || !accounts?.length) return config
-  if (config.account && accounts.some((account) => account.id === config.account)) return config
-  const account = accounts.find((entry) => entry.id === lastUsed) ?? accounts[0]!
-  return { ...config, account: account.id }
-}
-
-type GuidedAgent = 'claude' | 'codex' | 'grok'
-const isGuided = (kind: AgentKind): kind is GuidedAgent => GUIDED_LOGIN.has(kind)
-
-/**
- * Se connecter depuis le brouillon, sans passer par les réglages : la carte d'un CLI
- * sans connexion ouvre le dialogue guidé, et une installation lancée d'ici enchaîne sur
- * lui quand le CLI arrive sans connexion. Seul l'administrateur mène la connexion du CLI,
- * qui vaut pour toute l'instance ; les autres, et OpenCode, gardent l'onglet des réglages.
- */
-function useDraftSignIn(unusable: (kind: AgentKind) => boolean) {
-  const queryClient = useQueryClient()
-  const { data: me } = useCurrentUser()
-  const { data: availability } = useAgentAvailability()
-  const [signingIn, setSigningIn] = useState<GuidedAgent | null>(null)
-  /** Le CLI installé depuis cette page, dont on attend l'arrivée pour lire sa connexion. */
-  const [installed, setInstalled] = useState<AgentKind | null>(null)
-  const authAsked = useRef(false)
-  /** Vrai une fois la connexion relue après l'installation : `unusable` la voit alors. */
-  const [authRead, setAuthRead] = useState(false)
-
-  // Claude se connecte par un compte de Solera, dans ses réglages : la connexion du
-  // terminal ne se propose plus d'ici.
-  const guided = (kind: AgentKind): kind is GuidedAgent =>
-    isGuided(kind) && kind !== 'claude' && me?.isAdmin === true
-  const signIn = (kind: AgentKind) => {
-    if (guided(kind)) setSigningIn(kind)
-    else openSettings('agents', kind)
-  }
-
-  const entry = installed ? availability?.agents.find((item) => item.agent === installed) : undefined
-  const failed = entry?.install.status === 'failed'
-  const arrived = entry?.installed === true
-  // Lu au rendu qui suit la relecture de la connexion, avec ce qu'elle a rapporté.
-  const chain = installed !== null && guided(installed) && unusable(installed)
-  useEffect(() => {
-    if (!installed) return
-    if (failed) return setInstalled(null)
-    if (!arrived) return
-    // Le serveur ne lisait pas la connexion d'un CLI absent : on la redemande une fois.
-    if (!authAsked.current) {
-      authAsked.current = true
-      void queryClient.invalidateQueries({ queryKey: AGENT_AUTH_KEY }).then(() => setAuthRead(true))
-      return
-    }
-    if (!authRead) return
-    setInstalled(null)
-    setAuthRead(false)
-    if (chain && isGuided(installed)) setSigningIn(installed)
-  }, [installed, failed, arrived, authRead, chain, queryClient])
-
-  return {
-    signingIn,
-    signIn,
-    afterInstall: (kind: AgentKind) => {
-      authAsked.current = false
-      setInstalled(kind)
-    },
-    close: () => setSigningIn(null),
-  }
+  if (config.agent === 'opencode' || !accounts?.length) return config
+  if (config.account && accounts.includes(config.account)) return config
+  const account = accounts.find((id) => id === lastUsed) ?? accounts[0]!
+  return { ...config, account }
 }
 
 export function DraftConversationPage() {
@@ -202,18 +140,20 @@ export function DraftConversationPage() {
   const hiddenAgents = useHiddenAgents()
   const { data: auth } = useAgentAuth()
   const { data: peek } = useUsagePeek()
-  const extraAccounts = useExtraAccounts()
+  const readyAccounts = useReadyAccounts()
 
   /**
-   * Installé mais sans connexion : la pastille se grise, sauf si un compte
-   * supplémentaire prêt peut porter la session à la place de la connexion du CLI.
-   * Une connexion `unknown` ne grise rien — mieux vaut un échec au premier tour qu'un
-   * agent utilisable refusé sur une sonde muette.
+   * Sans compte pour porter la session, la pastille se grise. Claude part encore sur la
+   * connexion du terminal quand elle tient : il n'est grisé que si elle est tombée, et
+   * une connexion `unknown` ne grise rien — mieux vaut un échec au premier tour qu'un
+   * agent utilisable refusé sur une sonde muette. Codex et Grok ne tournent que sur un
+   * compte de Solera (#147) : sans compte connecté, rien ne les porte. Une liste encore
+   * en chargement ne grise rien.
    */
   const loggedOut = (kind: AgentKind) =>
     auth?.entries.find((entry) => entry.agent === kind && entry.account === null)?.status === 'logged_out'
-  const unusable = (kind: AgentKind) => loggedOut(kind) && extraAccounts[kind] === 0
-  const draftSignIn = useDraftSignIn(unusable)
+  const unusable = (kind: AgentKind) =>
+    readyAccounts[kind]?.length === 0 && (kind === 'codex' || kind === 'grok' || loggedOut(kind))
 
   // La suggestion se replie sur un CLI installé. Sans ça le formulaire s'ouvrirait sur
   // une carte grisée, et l'envoi resterait possible puisque le grisage ne bloque que le
@@ -233,7 +173,8 @@ export function DraftConversationPage() {
   const blocked = unavailableReason(selectedAvailability)
     ?? (unusable(agent) ? t('draft.agent.loggedOut', { label: AGENT_LABELS[agent] }) : null)
   const selectedVersionNotice = versionMismatch(selectedAvailability)
-  const claudeWithoutAccount = agent === 'claude' && selectedAvailability?.installed !== false && unusable('claude')
+  // Sans compte, la ligne du compte dit quoi faire à la place de la bannière.
+  const withoutAccount = agent !== 'opencode' && selectedAvailability?.installed !== false && unusable(agent)
 
   const [config, setConfig] = useState<AgentConfig | null>(null)
   const { data: projects } = useProjects()
@@ -268,6 +209,10 @@ export function DraftConversationPage() {
   // session, depuis l'Activité groupée par worktree (#111).
   const [worktreeId, setWorktreeId] = useState<string | null>(() => params.get('worktree'))
   const [worktreeTouched, setWorktreeTouched] = useState(false)
+  // L'environnement choisi pour ce projet ; sans choix, le serveur prend celui du projet.
+  const { data: environments } = useProjectEnvironments(projectId)
+  const [pickedEnvironment, setPickedEnvironment] = useState<{ projectId: string; environment: ExecutionEnvironment } | null>(null)
+  const chosenEnvironment = pickedEnvironment && pickedEnvironment.projectId === projectId ? pickedEnvironment.environment : undefined
   const effectiveWorktreeId = splitting
     ? null
     : worktreeTouched || params.has('worktree')
@@ -281,12 +226,19 @@ export function DraftConversationPage() {
   const { data: userSettings } = useUserSettings()
   // Mémoïsé : une configuration neuve à chaque rendu changerait celle du composer, et
   // casserait sa mémoïsation.
-  const { data: claudeAccounts } = useClaudeAccounts()
-  const lastClaudeAccount = useMemo(() => lastUsedClaudeAccount(conversations), [conversations])
-  const defaults = useMemo(
-    () => withClaudeAccount(inheritedConfigFor(agent, userSettings, project), claudeAccounts?.accounts, lastClaudeAccount),
-    [agent, userSettings, project, claudeAccounts, lastClaudeAccount],
+  const agentAccounts = readyAccounts[agent]
+  const lastAccount = useMemo(() => lastUsedAccount(conversations, agent), [conversations, agent])
+  // Confinée, la session part sans demandes d'autorisation (#146) : le confinement est
+  // son garde-fou. C'est proposé, et le composer le montre et le laisse changer.
+  const confinedNow = (chosenEnvironment ?? environments?.default)?.confined ?? false
+  const defaultsFor = useCallback(
+    (confined: boolean) => {
+      const inherited = withSoleraAccount(inheritedConfigFor(agent, userSettings, project), agentAccounts, lastAccount)
+      return confined ? unattendedConfig(inherited) : inherited
+    },
+    [agent, userSettings, project, agentAccounts, lastAccount],
   )
+  const defaults = useMemo(() => defaultsFor(confinedNow), [defaultsFor, confinedNow])
   // Une configuration Claude n'a aucun sens pour Codex : elle est abandonnée dès que
   // le CLI change, plutôt que conservée et rejetée par le serveur.
   const effective = useMemo(
@@ -343,6 +295,7 @@ export function DraftConversationPage() {
       worktreeId: effectiveWorktreeId,
       cardId: card?.id ?? null,
       ...(splitting ? { purpose: 'split' as const, splitCardId: splitCard?.id ?? null } : {}),
+      ...(chosenEnvironment ? { environment: chosenEnvironment } : {}),
       // Le titre de la carte plutôt que l'extrait du message : la conversation traite
       // un travail nommé, et le CLI n'a plus à en proposer un.
       title: card?.title ?? (splitCard ? t('split.sessionTitle', { title: splitCard.title }) : undefined),
@@ -354,7 +307,7 @@ export function DraftConversationPage() {
     navigate(projectId ? `/p/${projectId}/c/${created.id}` : `/c/${created.id}`, {
       replace: true,
     })
-  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, t, navigate, projectId])
+  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, chosenEnvironment, t, navigate, projectId])
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
@@ -435,6 +388,23 @@ export function DraftConversationPage() {
                 cardId={card?.id}
               />
             ) : null}
+            {/* Où la session tournera, figé à sa création : le défaut du projet, ou un
+                autre choisi ici. Un fil libre reste sur l'hôte. */}
+            {projectId && environments ? (
+              <EnvironmentSelect
+                value={chosenEnvironment ?? environments.default}
+                choices={environments.choices}
+                disabled={createConversation.isPending}
+                onChange={(environment) => {
+                  // Les garde-fous suivent le confinement : on ne garde pas hors du
+                  // confinement le mode sans autorisation qu'il proposait.
+                  if (config && environment.confined !== confinedNow) {
+                    setConfig(withPermissionsOf(config, defaultsFor(environment.confined)))
+                  }
+                  setPickedEnvironment({ projectId, environment })
+                }}
+              />
+            ) : null}
           </div>
 
           <DraftAgentPicker
@@ -450,28 +420,16 @@ export function DraftConversationPage() {
             hidden={hiddenAgents.hidden}
             onHide={hiddenAgents.hide}
             onReveal={hiddenAgents.reveal}
-            onSignIn={draftSignIn.signIn}
-            onInstall={draftSignIn.afterInstall}
           />
-          {draftSignIn.signingIn ? (
-            <AgentLoginDialog
-              agent={draftSignIn.signingIn}
-              entry={availability?.agents.find((a) => a.agent === draftSignIn.signingIn)}
-              open
-              onClose={draftSignIn.close}
-              // Connecté, il devient le CLI de la conversation : on peut écrire aussitôt.
-              onDone={() => setChosenAgent(draftSignIn.signingIn)}
-            />
-          ) : null}
           {selectedVersionNotice ? <p className="-mt-2 text-xs text-caution">{selectedVersionNotice}</p> : null}
           {/* Le cas où aucun CLI n'est prêt, et celui d'un `?agent=` qui en désigne un
               absent ou sans connexion : les cartes seules laisseraient l'écran sans
               explication de ce que la barre de saisie refuse. */}
-          {blocked && !claudeWithoutAccount ? <Banner>{blocked}</Banner> : null}
+          {blocked && !withoutAccount ? <Banner>{blocked}</Banner> : null}
 
-          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. Claude
+          {/* Juste sous le CLI : c'est la même question, avec quoi la session part. Un CLI
               sans aucun compte la pose aussi : c'est là que se connecte le premier. */}
-          {blocked === null || claudeWithoutAccount ? (
+          {blocked === null || withoutAccount ? (
             <DraftAccount
               config={effective}
               onChange={setConfig}

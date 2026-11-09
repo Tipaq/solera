@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -23,6 +22,7 @@ import {
   users,
 } from '@solera/db'
 import { DEFAULT_CLAUDE_CONFIG, parseSessionMessage } from '@solera/protocol'
+import type { McpSessionScope } from '../src/agents/mcp-builtin.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { archiveStaleConversations } from '../src/conversations/auto-archive.js'
@@ -34,6 +34,7 @@ import { Notifications, type OutgoingNotification, type PushSender } from '../sr
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { SessionRelay } from '../src/sessions/session-relay.js'
+import { sessionMcp, sessionScope } from './session-mcp-support.js'
 
 /**
  * Les décisions, du dépôt par le serveur MCP à la réponse remise en message.
@@ -133,15 +134,9 @@ async function harness(t: TestContext, { push }: { push?: PushSender } = {}) {
   registerDecisionRoutes(app, decisions)
   t.after(() => app.close())
 
-  const tools = (conversationId: string, env: Record<string, string>) => {
-    const run = spawnSync(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
-      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: conversationId, SOLERA_MCP_MEMORY: '', ...env },
-      encoding: 'utf8', timeout: 10000,
-      input: `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' })}\n`,
-    })
-    assert.equal(run.status, 0, run.stderr)
-    return (JSON.parse(run.stdout).result as { tools: { name: string }[] }).tools.map((tool) => tool.name)
-  }
+  // Par le chemin d'une session : un jeton qui porte la portée, et le pont HTTP.
+  const tools = async (conversationId: string, scope: Partial<McpSessionScope>) =>
+    (await sessionMcp(t, db, dbPath, sessionScope({ projectId: 'project', conversationId, ...scope }))).toolNames()
 
   return { db, ctx, bus, app, decisions, requests, ask, row, messages, journal, dispatched, awaited, tools }
 }
@@ -299,8 +294,8 @@ test('décisions : refusées par l’instance, sans le drapeau, en fil libre, et
   assert.match(second.result ?? '', /une seule à la fois/i)
 
   // L'outil n'est listé que si la portée est accordée.
-  assert.ok(!tools(ALLOWED, {}).includes('request_decision'))
-  assert.ok(tools(ALLOWED, { SOLERA_MCP_DECISIONS: '1' }).includes('request_decision'))
+  assert.ok(!(await tools(ALLOWED, {})).includes('request_decision'))
+  assert.ok((await tools(ALLOWED, { decisions: true })).includes('request_decision'))
 })
 
 test('décisions : à l’échéance, le défaut s’applique ou la session apprend que personne n’a répondu', async (t) => {

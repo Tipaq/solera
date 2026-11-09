@@ -363,6 +363,7 @@ export class TaskScheduler {
       title: `${task.name} · ${stamp(startedAt)}`,
       origin: null,
       scheduleId: task.id,
+      autonomous: { confined: task.confined },
       firstMessage: {
         clientMessageId: randomUUID(),
         text: buildRunPrompt({

@@ -11,6 +11,7 @@ import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.j
 import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
+import { confinedServicesSchema, executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -167,6 +168,12 @@ export const updateProjectBodySchema = z
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),
     turnCheckpoints: z.boolean(),
+    /** L'environnement des sessions qu'on y ouvrira ; celles qui existent gardent le leur. */
+    environment: executionEnvironmentSchema,
+    /** Les services docker-compose des sessions confinées : partagés ou copiés (#145). */
+    confinedServices: confinedServicesSchema,
+    /** Les sessions autonomes confinées quand leur lancement ne dit rien (#146). */
+    autonomousConfined: z.boolean(),
   })
   .partial()
 
@@ -324,6 +331,11 @@ export const createConversationBodySchema = z.object({
   splitCardId: z.string().uuid().nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
+   * L'environnement d'exécution de la session, figé à sa création. Absent : celui du
+   * projet par défaut.
+   */
+  environment: executionEnvironmentSchema.optional(),
+  /**
    * Premier message, envoyé dans la foulée de la création.
    *
    * L'UI ne crée pas de conversation tant que rien n'a été écrit : sans ça, chaque
@@ -347,6 +359,7 @@ export const createFreeConversationBodySchema = createConversationBodySchema.omi
   cardId: true,
   purpose: true,
   splitCardId: true,
+  environment: true,
 })
 
 /** Ordre manuel des conversations d'un projet, du haut vers le bas. */
@@ -562,6 +575,8 @@ export interface ConversationDto {
   /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */
   titleSetByUser: boolean
   agent: AgentKind
+  /** Où tournent son CLI et ses terminaux, figé à la création (ADR 0001). */
+  environment: ExecutionEnvironment
   /** Conversation d'origine si celle-ci est une branche. Null sinon. */
   forkedFromId: string | null
   /** Conversation que celle-ci continue dans un autre CLI. Null sinon. */

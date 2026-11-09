@@ -179,8 +179,32 @@ try {
   await workerRow.waitFor({ state: 'detached', timeout: 12000 })
   await terminalGroup.getByText('Aucune commande en cours', { exact: true }).waitFor()
   assert.equal(old.exitCode, null, 'Stopping one service must not stop another')
+  // Un terminal confiné a son bac à sable, rangé dans Environnements avec le terminal
+  // dessous ; l'arrêter demande confirmation en nommant le terminal. Sans confinement
+  // natif sur la machine, le réglage est refusé et l'étape est sautée.
+  const confining = await context.request.patch(`${base}/api/projects/${project.id}`, { data: { environment: { where: 'host', confined: true } } })
+  let sandboxChecked = false
+  if (confining.ok()) {
+    const confinedResponse = await context.request.post(`${base}/api/projects/${project.id}/terminals`, { data: {} })
+    assert.equal(confinedResponse.status(), 201)
+    const confined = await confinedResponse.json()
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const sandbox = page.locator(`li[id="environment-sandbox-terminal-${confined.id}"]`)
+    await sandbox.getByText('Bac à sable', { exact: true }).waitFor({ timeout: 15000 })
+    await sandbox.getByText('En marche', { exact: true }).waitFor()
+    await sandbox.getByText('Terminal', { exact: true }).waitFor()
+    await page.screenshot({ path: '/tmp/solera-services-environments.png', fullPage: true })
+    await sandbox.getByRole('button', { name: 'Arrêter', exact: true }).first().click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByText(`Le terminal « ${confined.title} »`, { exact: true }).waitFor()
+    await dialog.getByRole('button', { name: 'Arrêter', exact: true }).click()
+    await sandbox.waitFor({ state: 'detached', timeout: 12000 })
+    sandboxChecked = true
+  } else {
+    console.log(`Bac à sable non vérifié : confinement indisponible (${confining.status()} ${await confining.text()})`)
+  }
   assert.deepEqual(errors, [])
-  console.log('OK : commandes rangées sous leur terminal, lignes de commande, processus sans port, exclusion des services indépendants, app permanente, mobile et arrêt ciblé.')
+  console.log(`OK : commandes rangées sous leur terminal, lignes de commande, processus sans port, exclusion des services indépendants, app permanente, mobile et arrêt ciblé${sandboxChecked ? ', bac à sable d’un terminal confiné et son arrêt confirmé' : ''}.`)
 } finally {
   await browser?.close()
   for (const unit of units) {

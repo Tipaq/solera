@@ -448,8 +448,19 @@ try {
     agent, plan: 'Test', limitsAvailable: true, credits: null, fetchedAt: Date.now(),
     windows: [{ id: 'session', label: 'Session', utilization: 0.95, resetsAt: Date.now() + 3_600_000 }, { id: 'week', label: 'Semaine', utilization: 0.25, resetsAt: null }],
   })
+  // Codex ne se choisit qu'avec un compte de Solera connecté (#147) : sans lui, sa carte
+  // mène à la connexion au lieu d'être un choix.
+  const codexAccount = {
+    id: 'codex-ui', label: 'Codex', status: 'ready', authMode: 'chatgpt', email: null, planType: null,
+    createdAt: Date.now(), updatedAt: Date.now(),
+  }
+  await page.route('**/api/codex-accounts', (route) => route.fulfill({ json: { accounts: [codexAccount] } }))
+  // La carte du CLI choisi lit l'aperçu de son compte : Codex, une fois choisi, le sien.
   await page.route('**/api/agents/usage/peek', (route) => route.fulfill({ json: {
-    entries: ['claude', 'codex'].map((agent) => ({ agent, account: null, probed: probed(agent), live: [] })),
+    entries: [
+      ...['claude', 'codex'].map((agent) => ({ agent, account: null, probed: probed(agent), live: [] })),
+      { agent: 'codex', account: codexAccount.id, probed: probed('codex'), live: [] },
+    ],
   } }))
   await page.goto(`${base}/p/${project.id}/c/new?agent=claude`)
   const message = page.getByPlaceholder('Écris ton message...')

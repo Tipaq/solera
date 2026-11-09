@@ -2,10 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { spawn, type IPty } from 'node-pty'
+import type { IPty } from 'node-pty'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { withManagedPath } from '../agents/cli-binary.js'
 import type { Config } from '../config.js'
+import type { EnvironmentProvider } from '../environments/provider.js'
 import { commandShell, interactiveShell } from '../platform/shells.js'
 import { processOrigins } from '../services/origins.js'
 
@@ -48,6 +49,8 @@ interface ManagedTerminal {
   title: string
   /** Null pour une entrée restaurée après un redémarrage : le process est perdu. */
   pty: IPty | null
+  /** Où son shell tourne ; null pour une entrée restaurée. */
+  environment: EnvironmentProvider | null
   cwd: string
   /** Sortie récente, pour repeindre l'écran à la reconnexion. */
   replay: string
@@ -64,6 +67,8 @@ interface ManagedTerminal {
   interrupted: boolean
   /** Action de projet dont ce terminal joue la commande ; null pour un shell. */
   actionId: string | null
+  /** Session qui l'a ouvert, et dont il suit l'environnement ; null hors session. */
+  conversationId: string | null
   exitCode: number | null
 }
 
@@ -74,6 +79,16 @@ interface PersistedTerminal {
   cwd: string
   createdAt: number
   actionId?: string | null
+  conversationId?: string | null
+}
+
+/**
+ * Où le shell tourne : l'environnement qui le lance, et la session dont il le tient
+ * (null hors session), retenue pour le relancer au même endroit.
+ */
+export interface TerminalPlace {
+  environment: EnvironmentProvider
+  conversationId: string | null
 }
 
 /** Une commande à jouer à la place du shell interactif. */
@@ -172,8 +187,11 @@ export class TerminalManager {
    * Une commande passe par `shell -lc` plutôt que par une frappe dans un shell
    * interactif : le terminal se termine avec elle, ce qui donne son code de sortie, et
    * le shell de connexion charge le même PATH que celui qu'on ouvrirait à la main.
+   *
+   * Le shell tourne dans l'environnement de `place` : celui de la session qui l'ouvre,
+   * et hors session celui du projet (ADR 0001).
    */
-  open(projectId: string, cwd: string, run?: TerminalCommand): TerminalDto {
+  open(projectId: string, cwd: string, place: TerminalPlace, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
     if (run?.actionId) {
       // Une exécution terminée de la même action cède sa place : relancer un bouton ne
@@ -194,7 +212,9 @@ export class TerminalManager {
     // Une commande se lance dans le shell qui comprend sa syntaxe POSIX, un terminal vide
     // dans celui de l'utilisateur (voir `platform/shells.ts`).
     const shell = run ? commandShell() : interactiveShell()
-    const pty = spawn(shell.command, run ? [...shell.args, run.command] : shell.args, {
+    const pty = place.environment.spawnPty({
+      command: shell.command,
+      args: run ? [...shell.args, run.command] : shell.args,
       name: 'xterm-256color',
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
@@ -217,6 +237,7 @@ export class TerminalManager {
       // en rouvrir un ne doit pas donner deux « shell 2 ».
       title: run?.title ?? nextTitle(remaining),
       pty,
+      environment: place.environment,
       cwd,
       // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois
       // la sortie défilée hors de vue.
@@ -230,6 +251,7 @@ export class TerminalManager {
       exited: false,
       interrupted: false,
       actionId: run?.actionId ?? null,
+      conversationId: place.conversationId,
       exitCode: null,
     }
     this.terminals.set(id, managed)
@@ -242,6 +264,9 @@ export class TerminalManager {
     })
 
     pty.onExit(({ exitCode }) => {
+      // Un terminal confiné a son propre bac à sable : ce qu'il a lancé meurt avec lui,
+      // et son home privé s'efface. Sans effet sur l'hôte.
+      void place.environment.close()
       // L'entrée survit à son process, avec son dernier écran : un `exit` accidentel ou
       // une commande qui plante ne doivent pas faire disparaître ce qu'on voulait lire.
       managed.exited = true
@@ -259,6 +284,18 @@ export class TerminalManager {
 
     this.touch(id)
     return toDto(managed)
+  }
+
+  /**
+   * Les terminaux dont le shell tourne encore, avec leur environnement : Services les
+   * range sous le dev container ou le bac à sable qui les fait tourner.
+   */
+  live(): { id: string; projectId: string; title: string; pid: number; environment: EnvironmentProvider }[] {
+    return [...this.terminals.values()].flatMap((managed) =>
+      managed.pty && managed.environment && !managed.exited
+        ? [{ id: managed.id, projectId: managed.projectId, title: managed.title, pid: managed.pty.pid, environment: managed.environment }]
+        : [],
+    )
   }
 
   rename(projectId: string, terminalId: string, title: string): TerminalDto {
@@ -331,6 +368,15 @@ export class TerminalManager {
     return managed
   }
 
+  /**
+   * Tue le shell d'un terminal sans fermer son onglet : son environnement s'arrête, et
+   * son dernier écran reste à lire, comme après un `exit`.
+   */
+  kill(terminalId: string): void {
+    const managed = this.terminals.get(terminalId)
+    if (managed && !managed.exited) managed.pty?.kill()
+  }
+
   close(terminalId: string): void {
     const managed = this.terminals.get(terminalId)
     if (!managed) return
@@ -369,16 +415,21 @@ export class TerminalManager {
   /**
    * Arrêt du daemon : on écrit les écrans puis on tue les process, mais on garde les
    * fichiers. C'est eux qui feront réapparaître les entrées, marquées interrompues.
+   * Leurs environnements sont fermés avant de rendre la main : le conteneur d'un
+   * terminal confiné (#145) ne doit pas survivre au serveur.
    */
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     clearInterval(this.flushTimer)
+    const environments: EnvironmentProvider[] = []
     for (const managed of this.terminals.values()) {
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       this.persistMeta(managed)
       this.flushReplay(managed)
       if (!managed.exited) managed.pty?.kill()
+      if (managed.environment) environments.push(managed.environment)
     }
     this.terminals.clear()
+    await Promise.all(environments.map((environment) => environment.close().catch(() => undefined)))
   }
 
   private restore(): void {
@@ -406,6 +457,7 @@ export class TerminalManager {
         projectId: meta.projectId,
         title: meta.title,
         pty: null,
+        environment: null,
         cwd: meta.cwd,
         replay,
         replayDirty: false,
@@ -417,6 +469,7 @@ export class TerminalManager {
         exited: true,
         interrupted: true,
         actionId: meta.actionId ?? null,
+        conversationId: meta.conversationId ?? null,
         exitCode: null,
       })
     }
@@ -430,6 +483,7 @@ export class TerminalManager {
       cwd: managed.cwd,
       createdAt: managed.createdAt,
       actionId: managed.actionId,
+      conversationId: managed.conversationId,
     }
     try {
       writeFileSync(join(this.storeDir, `${managed.id}.json`), JSON.stringify(meta))
@@ -487,6 +541,7 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     cwd: managed.cwd,
     createdAt: managed.createdAt,
     actionId: managed.actionId,
+    conversationId: managed.conversationId,
     exitCode: managed.exitCode,
   }
 }

@@ -3,6 +3,7 @@ import { CachedProbe } from '../cached-probe.js'
 import { CLIENT_INFO } from '../codex/client-info.js'
 import { grokProbe } from './launch.js'
 import { fields } from './tools.js'
+import type { CliLauncher } from '../cli-binary.js'
 
 /**
  * Catalogue de Grok Build : ses modèles, leurs efforts et ses commandes en `/`.
@@ -34,14 +35,14 @@ const PROBE_TIMEOUT_MS = 30_000
 export class GrokCatalog {
   private readonly probe = new CachedProbe<GrokListing>(TTL_MS, () => this.read())
 
-  constructor(private readonly executable: () => Promise<string>) {}
+  constructor(private readonly cli: CliLauncher) {}
 
   list(force = false): Promise<GrokListing & { fetchedAt: number }> {
     return this.probe.read(force)
   }
 
   private async read(): Promise<GrokListing> {
-    const client = grokProbe({ binary: await this.executable() })
+    const client = grokProbe({ binary: await this.cli.executable(), environment: this.cli.environment })
     const timeout = setTimeout(() => client.close(), PROBE_TIMEOUT_MS)
     try {
       const meta = fields((await client.initialize(CLIENT_INFO))._meta)

@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { processOrigins } from '../services/origins.js'
 import { and, eq, gt, or, sql } from 'drizzle-orm'
@@ -13,9 +15,12 @@ import {
 } from '@solera/db'
 import {
   allowsRequest,
+  DEVCONTAINER_ENVIRONMENT,
   diffAgentConfig,
   parseAgentConfig,
+  PREFERRED_CLI_RELEASES,
   RESUMES_FROM_OTHER_DIRECTORY,
+  sameEnvironment,
   type AgentConfig,
   type ConversationMetrics,
   type ConversationStatus,
@@ -24,9 +29,12 @@ import {
 } from '@solera/protocol'
 import type { OutgoingNotification } from '../notifications/dispatcher.js'
 import type { AgentRegistry } from '../agents/registry.js'
-import { resolveBinary } from '../agents/cli-binary.js'
+import type { CliLauncher } from '../agents/cli-binary.js'
 import { copyTranscript } from '../agents/claude/transcript.js'
+import { claudeTranscripts, containerClaudeHome } from '../agents/claude/transcript-home.js'
 import { builtinMcpEnabled, builtinMcpServer } from '../agents/mcp-builtin.js'
+import { McpSessionTokens } from '../agents/mcp-session-tokens.js'
+import { soleraUrlForAgents } from '../instance/agent-url.js'
 import { sessionReferenceContext } from '../conversations/references.js'
 import { projectOverview } from '../agents/overview.js'
 import { instructionsAppendix, resolveInstructionsMode } from '../instructions/store.js'
@@ -35,9 +43,9 @@ import { ensureProjectMemory, freeThreadMemoryDir, memoryAppendixForCodex } from
 import { resolveMcpServers } from '../agents/mcp-registry.js'
 import type { SecretStore } from '../secrets/store.js'
 import type { ClaudeAccountStore } from '../claude-accounts/store.js'
-import type { CodexAccountHomes } from '../codex-accounts/homes.js'
+import { userCodexHome, type CodexAccountHomes } from '../codex-accounts/homes.js'
 import type { CodexAccountStore } from '../codex-accounts/store.js'
-import type { GrokAccountHomes } from '../grok-accounts/homes.js'
+import { userGrokHome, type GrokAccountHomes } from '../grok-accounts/homes.js'
 import type { GrokAccountStore } from '../grok-accounts/store.js'
 import type {
   AgentRunner,
@@ -75,6 +83,14 @@ import {
 } from '../checkpoints.js'
 import { serialized } from '../git-write.js'
 import { goneWorktrees, linkedWorktreePaths } from '../worktrees/linked.js'
+import type { ConfinementScope } from '../environments/confined/plan.js'
+import { EphemeralContainer } from '../environments/devcontainer/ephemeral.js'
+import type { EnvironmentProvider } from '../environments/provider.js'
+import { ConfinedEnvironment } from '../environments/confined/confined.js'
+import { sessionScope, type SessionScopeInput } from '../environments/confined/scope.js'
+import { Environments, environmentOf } from '../environments/environments.js'
+import { Devcontainers } from '../environments/devcontainer/containers.js'
+import { mountsDrives } from '../environments/devcontainer/paths.js'
 import { patchOverrides, refreshConversationConfig } from '../conversations/config-inheritance.js'
 
 /** Un message ecrit pendant un tour, en attente de la fin de celui-ci. */
@@ -89,6 +105,11 @@ interface QueuedMessage {
 
 interface ManagedRunner {
   runner: AgentRunner
+  /**
+   * L'environnement où tourne son CLI. Confiné, il est à ce runner seul, et son arrêt le
+   * ferme : ce que l'agent a lancé meurt, son home privé s'efface.
+   */
+  environment: EnvironmentProvider
   lastActivity: number
   status: ConversationStatus
   /**
@@ -227,6 +248,11 @@ export class SessionManager {
   private notifier: ConversationNotifier | null = null
   private storybooks: StorybookSupervisor | null = null
   readonly statusBus = new EventEmitter()
+  /**
+   * Les jetons qui ouvrent le serveur MCP de Solera aux runners vivants : émis au
+   * lancement, révoqués à l'arrêt. Le pont HTTP les lit pour savoir qui lui parle.
+   */
+  readonly mcpTokens = new McpSessionTokens()
 
   constructor(
     private readonly db: Db,
@@ -239,7 +265,14 @@ export class SessionManager {
     private readonly grokAccounts: { store: GrokAccountStore; homes: GrokAccountHomes },
   ) {
     this.statusBus.setMaxListeners(200)
+    this.environments = new Environments(db, new Devcontainers(config.paths, config.server))
   }
+
+  /**
+   * Où tournent les sessions, et leurs terminaux : la seule porte vers un fournisseur
+   * d'environnement, partagée avec les routes et les actions.
+   */
+  readonly environments: Environments
 
   /**
    * Au démarrage, aucune conversation ne peut légitimement être en cours : les
@@ -607,16 +640,32 @@ export class SessionManager {
     // Le point de coupe est propre à chaque CLI (entrée de transcript, tours à
     // retirer...) : l'adaptateur le calcule depuis le journal et le consomme lui-même.
     const adapter = this.registry.adapter(conversation.agent)
-    return adapter.fork(
-      {
-        agentSessionId: conversation.agentSessionId,
-        // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu,
-        // la route l'a déjà refusé.
-        cwd: this.refuseMissingCwd(conversation),
-        accountEnv: this.accountEnv(conversation, parseAgentConfig(conversation.config)),
-      },
-      adapter.forkCut(this.log, conversationId, throughSeq),
+    // Un dossier de projet disparu refuse comme à l'envoi ; le worktree disparu, la route
+    // l'a déjà refusé.
+    const cwd = this.refuseMissingCwd(conversation)
+    const accountEnv = this.accountEnv(conversation, parseAgentConfig(conversation.config))
+    await this.prepareEnvironment(conversation)
+    // Confinée, la session forke dans un bac à sable à elle, le temps du fork : le CLI ne
+    // voit que son dossier et le home de son compte.
+    const cli = this.sessionCli(
+      conversation,
+      this.confinedScope(conversation, { cwd, accountEnv, workTrees: [], memoryDir: null, skillRoots: [], prototypesDir: null }),
     )
+    try {
+      await this.openEnvironment(conversation, cli.environment)
+      return await adapter.fork(
+        {
+          agentSessionId: conversation.agentSessionId,
+          cwd,
+          accountEnv: accountEnvInside(accountEnv, cli.environment),
+          cli,
+          transcripts: claudeTranscripts(this.config.paths, conversation),
+        },
+        adapter.forkCut(this.log, conversationId, throughSeq),
+      )
+    } finally {
+      await cli.environment.close()
+    }
   }
 
   setNotifier(notifier: ConversationNotifier): void {
@@ -738,6 +787,22 @@ export class SessionManager {
     return [...this.runners.keys()]
   }
 
+  /**
+   * Les sessions dont le CLI tourne, avec l'environnement qui le fait tourner : Services
+   * les range sous leur dev container ou leur bac à sable.
+   */
+  liveEnvironments(): { conversationId: string; environment: EnvironmentProvider }[] {
+    return [...this.runners].map(([conversationId, managed]) => ({ conversationId, environment: managed.environment }))
+  }
+
+  /**
+   * L'environnement du CLI d'une session qui tourne : c'est lui qui dit comment elle voit
+   * un chemin de l'hôte, et le daemon en a besoin pour lui répondre (#153).
+   */
+  runnerEnvironment(conversationId: string): EnvironmentProvider | undefined {
+    return this.runners.get(conversationId)?.environment
+  }
+
   /** Vrai si un message envoyé maintenant n'atteindrait pas le CLI immédiatement. */
   private isBusy(conversationId: string): boolean {
     const status = this.runners.get(conversationId)?.status
@@ -842,7 +907,12 @@ export class SessionManager {
 
     let steered = false
     try {
-      steered = await managed.runner.steer(entry.text, entry.attachments, resolved, entry.skills)
+      steered = await managed.runner.steer(
+        entry.text,
+        await this.visibleAttachments(conversationId, entry.attachments),
+        resolved,
+        entry.skills,
+      )
     } finally {
       if (!steered) {
         const restored = this.queues.get(conversationId) ?? []
@@ -907,16 +977,18 @@ export class SessionManager {
    *
    * Un compte introuvable, supprimé depuis ou désigné par le préréglage d'un projet
    * partagé alors qu'il appartient à un autre utilisateur, ne bloque pas le lancement :
-   * la session part sur la connexion du CLI, et le fil le dit, parce que c'est un autre
-   * abonnement qui va payer le tour.
+   * la session part sur la connexion du CLI (Claude) ou sur le premier compte connecté
+   * (Codex, Grok, qui refusent sans compte connecté), et le fil le dit, parce que c'est
+   * un autre abonnement qui va payer le tour.
    */
   private accountEnv(conversation: ConversationRow, config: AgentConfig): Record<string, string> {
-    if (config.agent === 'opencode' || !config.account) return {}
+    if (config.agent === 'opencode') return {}
     const missing = (code: string, message: string) => {
       this.log.append(conversation.id, { type: 'error', code, message, recoverable: true })
       return {}
     }
     if (config.agent === 'claude') {
+      if (!config.account) return {}
       const resolved = this.claudeAccounts.resolveToken(conversation.userId, config.account)
       if (!resolved) {
         return missing(
@@ -930,32 +1002,113 @@ export class SessionManager {
         ? { ANTHROPIC_API_KEY: resolved.token }
         : { CLAUDE_CODE_OAUTH_TOKEN: resolved.token }
     }
-    // Grok : même parti que Codex, un `GROK_HOME` par compte, dont seule la connexion lui
-    // est propre. Un compte jamais connecté vaut un compte absent.
-    if (config.agent === 'grok') {
-      const account = this.grokAccounts.store.find(conversation.userId, config.account)
-      if (!account || account.status !== 'ready') {
-        return missing(
-          'grok_account_missing',
-          account
-            ? "Le compte Grok choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-            : "Le compte Grok choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-        )
+    // Codex et Grok : le home du compte, sans lien vers celui de l'utilisateur. Un compte
+    // jamais connecté vaut un compte absent : sans `auth.json`, le CLI refuserait le tour.
+    // L'un comme l'autre se replie sur le premier compte connecté, comme `accountLayer`,
+    // plutôt que sur la connexion du CLI, qui n'a pas le fil.
+    //
+    // Jamais sur la connexion du CLI (#147) : une session Codex ou Grok ne tourne que
+    // dans un home de Solera, et c'est ce qui permet de ne jamais monter celui de
+    // l'utilisateur dans un environnement confiné. La connexion du CLI encore désignée
+    // (`null`, un choix d'avant) part donc sans avis sur le premier compte connecté ; sans
+    // aucun compte connecté, `refuseWithoutAccount` a refusé le lancement plus tôt.
+    const side =
+      config.agent === 'codex'
+        ? { ...this.codexAccounts, variable: 'CODEX_HOME', name: 'Codex', code: 'codex_account_missing' }
+        : { ...this.grokAccounts, variable: 'GROK_HOME', name: 'Grok', code: 'grok_account_missing' }
+    const { chosen, account } = this.soleraAccount(conversation.userId, config.agent, config.account)
+    if (!account) throw accountRequired(config.agent)
+    if (config.account && account !== chosen) {
+      const reason = chosen
+        ? `Le compte ${side.name} choisi pour cette conversation n'est pas connecté`
+        : `Le compte ${side.name} choisi pour cette conversation n'existe plus`
+      missing(side.code, `${reason} : la session part sur le compte « ${account.label} ».`)
+    }
+    const home = side.homes.ensure(account.id)
+    this.bringConversation(conversation, home)
+    return { [side.variable]: home }
+  }
+
+  /**
+   * Le compte Codex ou Grok sur lequel une session part : celui que la conversation
+   * désigne s'il est connecté, sinon le premier compte connecté de l'utilisateur.
+   */
+  private soleraAccount(userId: string, agent: 'codex' | 'grok', designated: string | null) {
+    const { store } = agent === 'codex' ? this.codexAccounts : this.grokAccounts
+    const chosen = designated ? store.find(userId, designated) : undefined
+    const account =
+      chosen?.status === 'ready' ? chosen : store.list(userId).find((other) => other.status === 'ready')
+    return { chosen, account }
+  }
+
+  /**
+   * Amène dans `home` la session native de la conversation, depuis le home qui en a la
+   * dernière version : un autre compte de l'utilisateur, ceux qu'il a supprimés, ou la
+   * connexion du CLI pour un fil né dessus avant #147. Sans dossier partagé, c'est ce qui
+   * permet de changer de compte en cours de conversation,
+   * ou de forker sur un autre compte. Les comptes d'un autre utilisateur ne sont jamais
+   * lus. Un échec n'empêche pas le lancement : la reprise le dira.
+   */
+  private bringConversation(conversation: ConversationRow, home: string): void {
+    const sessionId = conversation.agentSessionId
+    if (!sessionId) return
+    try {
+      if (conversation.agent === 'codex') {
+        const { homes, store } = this.codexAccounts
+        const ids = store.list(conversation.userId).map((account) => account.id)
+        const sources = [userCodexHome(), ...homes.sources(conversation.userId, ids)]
+        homes.bringThread(home, sessionId, sources)
+      } else if (conversation.agent === 'grok') {
+        const { homes, store } = this.grokAccounts
+        const ids = store.list(conversation.userId).map((account) => account.id)
+        const sources = [userGrokHome(), ...homes.sources(conversation.userId, ids)]
+        homes.bringSession(home, sessionId, sources)
       }
-      return { GROK_HOME: this.grokAccounts.homes.ensure(account.id) }
+    } catch (err) {
+      console.warn(`[sessions] copie de la session ${sessionId} vers ${home} impossible :`, err)
     }
-    // Codex : le home du compte, dont seul `auth.json` lui est propre. Un compte jamais
-    // connecté vaut un compte absent : sans `auth.json`, l'app-server refuserait le tour.
-    const account = this.codexAccounts.store.find(conversation.userId, config.account)
-    if (!account || account.status !== 'ready') {
-      return missing(
-        'codex_account_missing',
-        account
-          ? "Le compte Codex choisi pour cette conversation n'est pas connecté : la session repart sur la connexion du CLI."
-          : "Le compte Codex choisi pour cette conversation n'existe plus : la session repart sur la connexion du CLI.",
-      )
-    }
-    return { CODEX_HOME: this.codexAccounts.homes.ensure(account.id) }
+  }
+
+  /** La portée d'une session confinée ; rien pour une session qui ne l'est pas. */
+  private confinedScope(
+    conversation: ConversationRow,
+    input: Omit<SessionScopeInput, 'agent'>,
+  ): ConfinementScope | undefined {
+    return conversation.environmentConfined ? sessionScope({ agent: conversation.agent, ...input }) : undefined
+  }
+
+  /**
+   * Les pièces jointes telles que l'agent pourra les lire : confiné, il ne voit pas leur
+   * dossier, et en reçoit une copie dans son tmp privé. Dans un dev container, le chemin
+   * d'un fichier nommé dans le message est celui du conteneur (#151) ; une image en
+   * ligne garde le sien, le runner la lit sur l'hôte.
+   */
+  private visibleAttachments(conversationId: string, attachments: OutgoingAttachment[]): Promise<OutgoingAttachment[]> {
+    const environment = this.runners.get(conversationId)?.environment
+    if (!environment || attachments.length === 0) return Promise.resolve(attachments)
+    if (environment instanceof ConfinedEnvironment || environment instanceof EphemeralContainer) return environment.shareAttachments(attachments)
+    return Promise.resolve(
+      attachments.map((attachment) =>
+        attachment.inlineImage ? attachment : { ...attachment, path: environment.pathInside(attachment.path) },
+      ),
+    )
+  }
+
+  /**
+   * Le CLI d'une session, cherché dans son environnement : celui où la session tourne,
+   * qui n'est pas forcément celui où l'adaptateur a trouvé le sien. Lève si ce serveur ne
+   * sait pas lancer cet environnement : la session refuse de démarrer plutôt que de
+   * retomber en silence sur l'hôte.
+   */
+  private sessionCli(conversation: ConversationRow, scope?: ConfinementScope): CliLauncher & { binary: string } {
+    const adapter = this.registry.adapter(conversation.agent)
+    const environment = this.environments.provider(environmentOf(conversation), scope, conversation.projectId)
+    // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
+    // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera installe
+    // les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc les
+    // installations faites depuis l'interface.
+    const binary = environment.resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary
+    return { environment, binary, executable: async () => binary }
   }
 
   private buildContext(conversation: ConversationRow): RunnerContext {
@@ -965,6 +1118,15 @@ export class SessionManager {
     const cwd = this.resolveCwd(conversation)
     // Lu au lancement, comme le jeton : changer de compte relance la session.
     const account = this.accountInUse(conversation, config)
+    const accountEnv = this.accountEnv(conversation, config)
+    // Le compte qui paie les tours, pour ranger leurs signaux de limite : pour Codex et
+    // Grok, celui du repli quand la conversation n'en désigne pas un de connecté.
+    const ledgerAccount =
+      config.agent === 'codex' || config.agent === 'grok'
+        ? (this.soleraAccount(conversation.userId, config.agent, config.account).account?.id ?? null)
+        : 'account' in config
+          ? config.account
+          : null
     // Relu à chaque appel et non figé ici : le mode peut changer entre deux lancements
     // d'un même runner, et pour un projet d'avant le réglage il dépend du dossier.
     //
@@ -1009,18 +1171,33 @@ export class SessionManager {
       linkedDesignSystem && projectId !== null && this.storybooks
         ? this.storybooks.projectPrototypes(linkedDesignSystem, projectId)
         : null
+    const skillRoots = (current: AgentConfig) =>
+      this.config.skills.library && current.skillLibrary
+        ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
+        : []
+    // Confinée, la session ne voit de l'hôte que ce que sa portée nomme, figée ici pour
+    // la vie du runner : un worktree lié ensuite, un skill ajouté, comptent à la relance.
+    const launcher = this.sessionCli(
+      conversation,
+      this.confinedScope(conversation, {
+        cwd,
+        accountEnv,
+        workTrees: projectId === null ? [] : linkedWorktreePaths(this.db, conversationId, projectId, () => {}),
+        memoryDir: memoryDir(config),
+        skillRoots: skillRoots(config),
+        prototypesDir,
+      }),
+    )
 
     return {
       conversationId,
       cwd,
       config,
-      // Résolu ici, une seule fois, plutôt que dans chaque runner : Codex passe cette
-      // valeur à `spawn`, qui consulte le PATH mais ignore le préfixe où Solera
-      // installe les CLI qu'il gère. Un runner qui recevrait le nom nu manquerait donc
-      // les installations faites depuis l'interface.
-      binary: resolveBinary(adapter.binary, adapter.cli.managedDir) ?? adapter.binary,
+      binary: launcher.binary,
+      environment: launcher.environment,
       attachmentsRoot: this.config.paths.attachments,
       prototypesDir,
+      transcripts: claudeTranscripts(this.config.paths, conversation),
       processEnv: {
         ...processOrigins(this.config.paths.data).environment(projectId, conversationId),
         // Dit à Claude Code que c'est un hôte local qui l'a planifié, et non une
@@ -1028,7 +1205,16 @@ export class SessionManager {
         ...(conversation.scheduleId && conversation.agent === 'claude'
           ? { CLAUDE_CODE_HOST_SCHEDULED_RUN: '1' }
           : {}),
-        ...this.accountEnv(conversation, config),
+        // Confinée, elle tourne sans demandes d'autorisation (#146) : Claude Code refuse
+        // `bypassPermissions` à root, l'utilisateur de bien des dev containers, sauf à
+        // se savoir dans un bac à sable.
+        ...(conversation.environmentConfined && conversation.agent === 'claude' ? { IS_SANDBOX: '1' } : {}),
+        ...accountEnvInside(accountEnv, launcher.environment),
+        // Confinée, la session a son propre conteneur : la portée lui donne l'identité git
+        // et ses transcripts, rien de partagé avec les autres.
+        ...(sameEnvironment(launcher.environment.environment, DEVCONTAINER_ENVIRONMENT)
+          ? this.containerEnv(conversation, cwd, launcher.environment)
+          : {}),
       },
       // Le serveur de Solera passe en dernier : l'ordre départage deux serveurs qui
       // exposeraient un outil de même nom, et celui que l'utilisateur a déclaré doit
@@ -1039,10 +1225,8 @@ export class SessionManager {
         // effet à la session suivante, pas dans un CLI déjà parti.
         const designSystem = this.designSystemOf(projectId)
         if (designSystem) this.storybooks?.ensure(designSystem)
-        const builtin = builtinMcpServer({
-          enabled: this.config.mcp.soleraServer,
-          config: current,
-          databasePath: this.config.paths.database,
+        if (!builtinMcpEnabled(this.config.mcp.soleraServer, current)) return resolved
+        const token = this.mcpTokens.issue(conversationId, {
           projectId,
           conversationId,
           // Vide et non absent : c'est la portée que le `.mjs` lit pour retirer les
@@ -1056,8 +1240,14 @@ export class SessionManager {
           proposeCards: conversation.purpose === 'split' || allowsRequest(current.proposeCards),
           designSystemState:
             designSystem && this.storybooks ? this.storybooks.statePath(designSystem) : '',
+          // Le serveur MCP tourne sur l'hôte : il traduit les chemins qu'il échange avec
+          // une session qui voit `C:\…` en `/mnt/c/…` (#153).
+          mountedDrives: mountsDrives(launcher.environment),
         })
-        return builtin ? { ...resolved, servers: [...resolved.servers, builtin] } : resolved
+        // Vu de l'environnement : d'un conteneur, le serveur est sur l'hôte.
+        const baseUrl = launcher.environment.urlOfHost(soleraUrlForAgents(this.config.server))
+        const builtin = builtinMcpServer({ baseUrl, token })
+        return { ...resolved, servers: [...resolved.servers, builtin] }
       },
 
       // Suit les mêmes interrupteurs que le serveur MCP, sauf `strictMcp` : celui-ci
@@ -1100,7 +1290,7 @@ export class SessionManager {
           // `memory !== null`, une mémoire refusée rentrerait quand même par la fenêtre
           // chez les deux CLI qui n'en ont pas de native, en lecture et d'un coup.
           conversation.agent !== 'claude' && memory !== null
-            ? memoryAppendixForCodex(memory, soleraMcp, projectId === null ? 'account' : 'project')
+            ? memoryAppendixForCodex(launcher.environment.pathInside(memory), soleraMcp, projectId === null ? 'account' : 'project')
             : null,
           // Avant l'aperçu du projet, et pour un fil libre aussi : il se nomme pareil.
           sessionTitleReminder(this.db, conversationId, soleraMcp),
@@ -1110,7 +1300,8 @@ export class SessionManager {
                 conversationId,
                 soleraMcp,
                 cardFiling: soleraMcp && this.config.mcp.cardFiling && allowsRequest(current.cardFiling),
-                prototypesDir,
+                // Où l'agent écrit ses stories, tel qu'il le voit (#151).
+                prototypesDir: prototypesDir && launcher.environment.pathInside(prototypesDir),
               })
             : null,
         ].filter((part) => part !== null)
@@ -1129,10 +1320,7 @@ export class SessionManager {
         const current = instructions()
         return current?.mode === 'solera' ? [current.workspacePath, cwd] : []
       },
-      skillRoots: (current) =>
-        this.config.skills.library && current.skillLibrary
-          ? new SkillLibraryLayout(this.config.paths.skillLibrary).rootsFor(projectId)
-          : [],
+      skillRoots,
       // Un fil libre n'a pas de projet, donc pas de worktree. Ce qui est rendu est
       // retenu sur le runner : c'est ce qui dira, au tour suivant, s'il faut le relancer.
       workTrees: () => {
@@ -1189,11 +1377,7 @@ export class SessionManager {
         // Le signal de limite d'un vrai tour nourrit l'aperçu gratuit de la consommation,
         // rangé sous le compte de la conversation : celui avec lequel le runner a été lancé.
         if (event.type === 'usage.updated' && event.rateLimit) {
-          this.registry.usageLedger.recordLive(
-            conversation.agent,
-            'account' in config ? config.account : null,
-            event.rateLimit,
-          )
+          this.registry.usageLedger.recordLive(conversation.agent, ledgerAccount, event.rateLimit)
         }
         if (event.type === 'file.edited') {
           this.checkpoints.get(conversationId)?.edited.add(event.path)
@@ -1338,6 +1522,120 @@ export class SessionManager {
     return starting
   }
 
+  /**
+   * Démarre le dev container d'une session qui y tourne, et y apporte son CLI, à la
+   * version de celui de l'hôte. Le journal de `devcontainer up` s'affiche dans le fil
+   * pendant le démarrage, et un échec y laisse sa raison avant de refuser l'envoi.
+   */
+  private async prepareEnvironment(conversation: ConversationRow): Promise<void> {
+    const environment = environmentOf(conversation)
+    if (environment.where !== 'devcontainer') return
+    const config = parseAgentConfig(conversation.config)
+    // Le conteneur n'a pas la connexion du terminal de l'hôte : seul le jeton d'un
+    // compte de Solera y traverse.
+    if (config.agent === 'claude' && !config.account) {
+      throw new HttpError(
+        409,
+        'devcontainer_claude_account',
+        'A Claude session in a dev container needs a Claude account added to Solera: the CLI login of the host does not reach the container.',
+      )
+    }
+    const adapter = this.registry.adapter(conversation.agent)
+    const status = await adapter.cli.status()
+    const version =
+      (status.found && status.version) || PREFERRED_CLI_RELEASES[conversation.agent].version
+    const notices = this.startupNotices(conversation.id, 'devcontainer_starting')
+    try {
+      await this.environments.prepare(environment, conversation.projectId, {
+        agent: { kind: conversation.agent, binary: adapter.binary, version },
+        cwd: this.resolveCwd(conversation),
+        onLog: notices.onLog,
+      })
+      notices.ready()
+    } catch (err) {
+      notices.failed(err)
+      throw err
+    }
+  }
+
+  /**
+   * Démarre ce que l'environnement de la session doit avoir avant le CLI : le conteneur
+   * à elle d'une session confinée dans un dev container (#145). Son journal passe dans
+   * le fil comme celui du conteneur du projet.
+   */
+  private async openEnvironment(conversation: ConversationRow, environment: EnvironmentProvider): Promise<void> {
+    if (!environment.open) return
+    const notices = this.startupNotices(conversation.id, 'devcontainer_confined_starting')
+    try {
+      await this.environments.open(environment, notices.onLog)
+      notices.ready()
+    } catch (err) {
+      notices.failed(err)
+      throw err
+    }
+  }
+
+  /**
+   * Le journal d'un démarrage de conteneur, dans le fil : une ligne par seconde au plus
+   * pendant qu'il démarre, une fois prêt s'il a pris du temps, et la raison d'un échec.
+   */
+  private startupNotices(conversationId: string, starting: 'devcontainer_starting' | 'devcontainer_confined_starting') {
+    const log: string[] = []
+    let shown = 0
+    const ready = starting === 'devcontainer_starting' ? 'devcontainer_ready' : 'devcontainer_confined_ready'
+    // Le message est la dernière ligne du journal, que l'interface place dans sa phrase.
+    const notice = (code: typeof starting | typeof ready, message: string) =>
+      this.log.append(conversationId, {
+        type: 'agent.notice',
+        id: 'devcontainer.up',
+        code,
+        message,
+        level: 'info',
+        details: log.join('\n'),
+      })
+    return {
+      onLog: (line: string) => {
+        log.push(line)
+        if (log.length > 60) log.shift()
+        if (Date.now() - shown < 1_000) return
+        shown = Date.now()
+        notice(starting, line.slice(0, 200))
+      },
+      ready: () => {
+        if (shown > 0) notice(ready, '')
+      },
+      failed: (err: unknown) => {
+        this.log.append(conversationId, {
+          type: 'error',
+          code: err instanceof HttpError ? err.code : 'devcontainer_failed',
+          message: err instanceof Error ? err.message : String(err),
+          recoverable: true,
+        })
+      },
+    }
+  }
+
+  /**
+   * Ce qu'une session dans un dev container reçoit en plus : la configuration de Claude
+   * dans un dossier de Solera monté au même chemin (ses transcripts y restent d'un
+   * lancement à l'autre), et l'identité git du dépôt, que le conteneur n'a pas quand elle
+   * vient du `~/.gitconfig` de l'hôte. Lue dans le dépôt, pas imposée à l'hôte : elle y
+   * écraserait l'identité locale d'un autre dépôt.
+   */
+  private containerEnv(conversation: ConversationRow, cwd: string, environment: EnvironmentProvider): Record<string, string> {
+    const env: Record<string, string> = {}
+    if (conversation.agent === 'claude') {
+      const home = containerClaudeHome(this.config.paths, conversation.userId)
+      mkdirSync(home, { recursive: true })
+      env.CLAUDE_CONFIG_DIR = environment.pathInside(home)
+    }
+    const name = gitConfigValue(cwd, 'user.name')
+    const email = gitConfigValue(cwd, 'user.email')
+    if (name) Object.assign(env, { GIT_AUTHOR_NAME: name, GIT_COMMITTER_NAME: name })
+    if (email) Object.assign(env, { GIT_AUTHOR_EMAIL: email, GIT_COMMITTER_EMAIL: email })
+    return env
+  }
+
   private async startRunner(conversationId: string): Promise<AgentRunner> {
     // Relu depuis la base : agentSessionId a pu être renseigné par un runner précédent.
     // La configuration est recalculée de ses niveaux à chaque lancement : c'est là qu'un
@@ -1345,13 +1643,22 @@ export class SessionManager {
     const fresh = await refreshConversationConfig(this.db, this.registry, this.loadConversation(conversationId))
     // Avant `makeRoom` : un lancement voué à l'échec ne doit pas évincer un runner vivant.
     this.refuseMissingCwd(fresh)
+    this.refuseWithoutAccount(fresh)
+    await this.prepareEnvironment(fresh)
     await this.makeRoom()
 
     const context = this.buildContext(fresh)
+    try {
+      await this.openEnvironment(fresh, context.environment)
+    } catch (err) {
+      await context.environment.close().catch(() => undefined)
+      throw err
+    }
     const runner = this.registry.adapter(fresh.agent).createRunner(context)
 
     this.runners.set(conversationId, {
       runner,
+      environment: context.environment,
       lastActivity: Date.now(),
       status: 'idle',
       idleTimer: null,
@@ -1368,6 +1675,8 @@ export class SessionManager {
       this.runners.delete(conversationId)
       this.clearActivity(conversationId)
       await runner.stop().catch(() => undefined)
+      await context.environment.close().catch(() => undefined)
+      this.mcpTokens.revoke(conversationId)
       throw err
     }
     return runner
@@ -1400,6 +1709,17 @@ export class SessionManager {
       }
       throw err
     }
+  }
+
+  /**
+   * Une session Codex ou Grok sans aucun compte connecté n'a rien sur quoi partir : la
+   * connexion du CLI n'en porte plus (#147). Refusée comme un dossier disparu, avant
+   * `makeRoom`, pour ne pas évincer un runner vivant.
+   */
+  private refuseWithoutAccount(conversation: ConversationRow): void {
+    const agent = conversation.agent
+    if (agent !== 'codex' && agent !== 'grok') return
+    if (!this.soleraAccount(conversation.userId, agent, null).account) throw accountRequired(agent)
   }
 
   /**
@@ -1502,7 +1822,9 @@ export class SessionManager {
       : undefined
     if (conversation.agent === 'claude' && conversation.agentSessionId && tree) {
       const root = this.resolveCwd({ ...conversation, worktreeId: null })
-      await copyTranscript(tree.path, root, conversation.agentSessionId).catch(() => false)
+      await copyTranscript(tree.path, root, conversation.agentSessionId, claudeTranscripts(this.config.paths, conversation)).catch(
+        () => false,
+      )
     }
 
     const patch: Partial<ConversationRow> = {
@@ -1646,7 +1968,7 @@ export class SessionManager {
       const conversation = this.loadConversation(conversationId)
       const resolved = this.resolveMentions(this.refuseMissingCwd(conversation), mentions)
 
-      steered = await managed.runner.steer(text, attachments, resolved, skills)
+      steered = await managed.runner.steer(text, await this.visibleAttachments(conversationId, attachments), resolved, skills)
       if (steered) this.touch(conversationId)
       return steered
     } finally {
@@ -1740,7 +2062,7 @@ export class SessionManager {
     // l'envoi : la capture doit être au plus près du premier geste de l'agent.
     await this.openCheckpoint(conversation)
     try {
-      await runner.send(text, attachments, resolved, skills)
+      await runner.send(text, await this.visibleAttachments(conversationId, attachments), resolved, skills)
     } catch (err) {
       this.checkpoints.delete(conversationId)
       throw err
@@ -2172,7 +2494,14 @@ export class SessionManager {
     this.runners.delete(conversationId)
     this.clearActivity(conversationId)
     if (managed.idleTimer) clearTimeout(managed.idleTimer)
+    // Détachés avant l'arrêt, révoqués après : le CLI garde ses outils le temps de
+    // s'arrêter, et un runner relancé entre-temps en reçoit d'autres.
+    const revokeMcpTokens = this.mcpTokens.detach(conversationId)
     await managed.runner.stop()
+    await managed.environment.close().catch((err) => {
+      console.warn(`[sessions] fermeture de l'environnement de ${conversationId} impossible :`, err)
+    })
+    revokeMcpTokens()
     // Après l'arrêt : le CLI ne publiera plus de liste par-dessus celle qu'on écrit, et
     // l'écriture est synchrone, donc elle tient même quand le daemon s'arrête juste
     // derrière.
@@ -2189,5 +2518,36 @@ export class SessionManager {
 
   activeCount(): number {
     return this.runners.size
+  }
+}
+
+/** Une session Codex ou Grok sans compte de Solera connecté : rien sur quoi partir. */
+function accountRequired(agent: 'codex' | 'grok'): HttpError {
+  return conflict(
+    'agent_account_required',
+    'No {agent} account is connected: connect one in Settings › Agents to start this conversation.',
+    { agent: agent === 'codex' ? 'Codex' : 'Grok' },
+  )
+}
+
+/**
+ * L'environnement du compte tel que le CLI le reçoit : `CODEX_HOME` et `GROK_HOME` sont
+ * des dossiers de l'hôte, qu'il lit où il tourne (`/mnt/c/…` dans un dev container sous
+ * Windows natif, #152).
+ */
+function accountEnvInside(accountEnv: Record<string, string>, environment: EnvironmentProvider): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(accountEnv).map(([name, value]) =>
+      name === 'CODEX_HOME' || name === 'GROK_HOME' ? [name, environment.pathInside(value)] : [name, value],
+    ),
+  )
+}
+
+/** Une valeur de `git config` lue dans un dépôt de l'hôte (local, global, includeIf), ou null. */
+function gitConfigValue(cwd: string, key: string): string | null {
+  try {
+    return execFileSync('git', ['config', '--get', key], { cwd, encoding: 'utf8', timeout: 5_000 }).trim() || null
+  } catch {
+    return null
   }
 }

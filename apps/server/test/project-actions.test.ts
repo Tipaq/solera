@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { eq } from 'drizzle-orm'
 import { conversations, openDatabase, projectActions, projects, runMigrations, users } from '@solera/db'
 import { actionUrlSchema, resolveActionUrl } from '@solera/protocol'
 import { ActionRunner, createAction, loadAction, updateAction } from '../src/actions/actions.js'
@@ -13,6 +14,8 @@ import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { probeBwrap } from '../src/environments/confined/bwrap.js'
+import { Environments } from '../src/environments/environments.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-actions-'))
@@ -35,7 +38,7 @@ async function harness(t: TestContext) {
   } as unknown as Config
   const terminals = new TerminalManager(config)
   t.after(() => terminals.shutdown())
-  const runner = new ActionRunner(db, config, terminals)
+  const runner = new ActionRunner(db, config, terminals, new Environments(db))
   const requests = new AgentRequests({ db, config }, {} as SessionManager, {} as AgentRegistry, runner)
 
   const mcp = async (name: string, args: object) => {
@@ -120,6 +123,24 @@ test('a task runs in its own terminal, keeps its exit code, and is not doubled w
   const third = await runner.run(row, dir, null)
   assert.notEqual(third.terminal?.id, first.terminal?.id)
   assert.equal(terminals.list('project').length, 1)
+})
+
+test('a service launched from a confined session runs in its confined terminal, never under systemd on the host', { skip: !(process.platform === 'linux' && probeBwrap() === null) && 'bwrap unavailable here' }, async (t) => {
+  const { db, dir, terminals, runner } = await harness(t)
+  db.update(conversations).set({ environmentConfined: true }).where(eq(conversations.id, 'agent')).run()
+  const previousShell = process.env.SHELL
+  process.env.SHELL = '/bin/sh'
+  t.after(() => { process.env.SHELL = previousShell })
+
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'echo $HOME' }, 'agent')
+  const result = await runner.run(row, dir, 'agent')
+  assert.equal(result.service, null)
+  assert.ok(result.terminal)
+  const deadline = Date.now() + 10000
+  while (terminals.latestForAction('project', row.id)?.alive && Date.now() < deadline) {
+    await new Promise((done) => setTimeout(done, 50))
+  }
+  assert.equal(terminals.latestForAction('project', row.id)?.exitCode, 0)
 })
 
 test('an action whose directory is gone says so instead of running elsewhere', async (t) => {

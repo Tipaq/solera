@@ -1,4 +1,5 @@
-import { join, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
@@ -7,16 +8,24 @@ import {
   MAX_PROJECT_IMAGE_BYTES,
   EMPTY_CONFIG_LAYER,
   layerWithFullConfig,
+  DEVCONTAINER_ENVIRONMENT,
+  HOST_CONFINED_ENVIRONMENT,
+  HOST_ENVIRONMENT,
   patchConfigLayer,
+  sameEnvironment,
   resolveAgentConfig,
   parseRemoteUrl,
+  putProjectDevcontainerBodySchema,
   readProjectLayer,
   reorderProjectsBodySchema,
   serializeProjectLayer,
   startCloneBodySchema,
   updateProjectBodySchema,
   type CloneJobDto,
+  type ProjectDevcontainerDto,
   type ProjectDto,
+  type ForwardedPortDto,
+  type ProjectEnvironmentsDto,
   type ProjectPrototypesDto,
 } from '@solera/protocol'
 import type { AttachmentStore } from '../../attachments/store.js'
@@ -43,6 +52,11 @@ import {
 import { SkillLibrary } from '../../skill-library/store.js'
 import { assertFreeDestination, assertUsableWorkspace, createProject, insertProject } from '../../projects/create.js'
 import { assertDesignSystemDir } from '../../design-system/path.js'
+import { Environments, environmentColumns, environmentOf } from '../../environments/environments.js'
+import { hasNativeConfinement } from '../../environments/confined/native.js'
+import { managedDevcontainers } from '../../environments/devcontainer/containers.js'
+import { defaultDevcontainerJson, InvalidDevcontainerError, usesCompose } from '../../environments/devcontainer/managed.js'
+import { devcontainerConfigOf } from '../../environments/devcontainer/tools.js'
 import { listCandidates, prototypesOfDesignSystem, prototypesRoot } from '../../design-system/storybooks.js'
 
 export function registerProjectRoutes(
@@ -53,6 +67,8 @@ export function registerProjectRoutes(
   terminals: TerminalManager,
   /** Comme pour les réglages du compte : absent, les fils recalculent à leur lancement. */
   registry?: Pick<AgentRegistry, 'adapter'>,
+  /** Celui des sessions ; un neuf suffit aux tests, l'hôte n'ayant pas d'état. */
+  environments: Environments = new Environments(ctx.db),
 ): void {
   const loadVisibleProject = async (projectId: string, userId: string) => {
     const row = (
@@ -286,6 +302,20 @@ export function registerProjectRoutes(
     }
     if (body.archived !== undefined) patch.archivedAt = body.archived ? Date.now() : null
     if (body.turnCheckpoints !== undefined) patch.turnCheckpoints = body.turnCheckpoints
+    if (body.environment !== undefined) {
+      // Refusé avant d'être enregistré : un défaut que ce serveur ne sait pas lancer
+      // ferait échouer chaque session ouverte ensuite.
+      environments.assertAvailable(id, body.environment)
+      Object.assign(patch, environmentColumns(body.environment))
+    }
+
+    if (body.confinedServices !== undefined) patch.confinedServices = body.confinedServices
+    if (body.autonomousConfined !== undefined) {
+      // Comme l'environnement du projet : un réglage que ce serveur ne sait pas tenir
+      // ferait refuser chaque tâche et chaque jalon lancés ensuite.
+      if (body.autonomousConfined) environments.assertAvailable(id, environments.forAutonomous(id, true))
+      patch.autonomousConfined = body.autonomousConfined
+    }
 
     if (Object.keys(patch).length > 0) {
       await ctx.db.update(projects).set(patch).where(eq(projects.id, id))
@@ -294,6 +324,91 @@ export function registerProjectRoutes(
       await refreshConversationConfigs(ctx.db, registry, { projectId: id })
     }
     return { ok: true }
+  })
+
+  /**
+   * L'environnement par défaut du projet, et ceux qu'on peut y choisir : ce que proposent
+   * ses réglages et le brouillon d'une session.
+   */
+  app.get('/api/projects/:id/environments', async (request): Promise<ProjectEnvironmentsDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    const current = environmentOf(project)
+    const suggested =
+      sameEnvironment(current, HOST_ENVIRONMENT) && environments.hasDevcontainer(id) ? DEVCONTAINER_ENVIRONMENT : null
+    return { default: current, choices: environments.choices(id), suggested, autonomousConfined: project.autonomousConfined }
+  })
+
+  /**
+   * Le `devcontainer.json` du projet (#143) : celui du dépôt, qu'on ne fait que nommer,
+   * ou celui que Solera garde hors du dépôt pour un projet qui n'en a pas, et que ses
+   * réglages éditent. Rien n'est jamais écrit dans le projet.
+   */
+  const managed = managedDevcontainers(ctx.config.paths)
+
+  app.get('/api/projects/:id/devcontainer', async (request): Promise<ProjectDevcontainerDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    const own = devcontainerConfigOf(project.workspacePath)
+    const kept = managed.read(id)
+    return {
+      repository: own ? relative(project.workspacePath, own) : null,
+      managed: kept,
+      template: defaultDevcontainerJson(project.name, project.workspacePath),
+      compose: usesCompose(own ? readFileSync(own, 'utf8') : kept),
+      confinedServices: project.confinedServices,
+    }
+  })
+
+  app.put('/api/projects/:id/devcontainer', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const body = putProjectDevcontainerBodySchema.parse(request.body)
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+    try {
+      await managed.write(id, body.content)
+    } catch (err) {
+      if (err instanceof InvalidDevcontainerError) throw badRequest('devcontainer_invalid', err.message, { detail: err.message })
+      throw err
+    }
+    return { ok: true }
+  })
+
+  /**
+   * Retire celui de Solera. Un projet qui y faisait tourner ses sessions par défaut, sans
+   * `devcontainer.json` à lui, revient à l'hôte : un défaut qu'on ne sait plus lancer
+   * ferait échouer chaque session ouverte ensuite. Confiné, il le reste là où la
+   * plateforme sait confiner : le retrait ne relâche pas le confinement en silence.
+   */
+  app.delete('/api/projects/:id/devcontainer', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = await loadVisibleProject(id, user.id)
+    if (project.ownerId !== user.id) {
+      throw forbidden('project_edit_forbidden', 'Only the owner can modify this project.')
+    }
+    await managed.remove(id)
+    if (project.environmentWhere === 'devcontainer' && !devcontainerConfigOf(project.workspacePath)) {
+      const host = project.environmentConfined && hasNativeConfinement() ? HOST_CONFINED_ENVIRONMENT : HOST_ENVIRONMENT
+      await ctx.db.update(projects).set(environmentColumns(host)).where(eq(projects.id, id))
+    }
+    return { ok: true }
+  })
+
+  /**
+   * Les ports du dev container du projet et l'adresse de l'hôte où chacun est servi
+   * (#141) : l'aperçu web traduit le port qu'un agent cite, Services les montre.
+   */
+  app.get('/api/projects/:id/ports', async (request): Promise<ForwardedPortDto[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await loadVisibleProject(id, user.id)
+    return environments.devcontainers?.forwardedPorts(id) ?? []
   })
 
   app.delete('/api/projects/:id', async (request, reply) => {
@@ -324,6 +439,7 @@ export function registerProjectRoutes(
     // Les skills du projet, eux, appartiennent à Solera. Avant la cascade, qui efface
     // les lignes dont on a besoin pour retrouver les skills désactivés.
     new SkillLibrary(ctx.db, ctx.config.paths.skillLibrary).removeProject(id)
+    await managed.remove(id)
     await ctx.db.delete(projects).where(eq(projects.id, id))
     return reply.status(204).send()
   })

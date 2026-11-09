@@ -5,6 +5,7 @@ import { test } from 'node:test'
 import { OpencodeRunner } from '../src/agents/opencode/runner.js'
 import { OpencodeUnsupportedVersionError, assertSupportedOpencode } from '../src/agents/opencode/version-guard.js'
 import { context, fixture } from './opencode-support.js'
+import { hostEnvironment } from '../src/environments/host.js'
 
 /** Fait annoncer au faux binaire la version voulue, sous la forme qu'emploie chaque ligne. */
 async function announce(binary: string, line: string): Promise<void> {
@@ -37,16 +38,16 @@ test('garde-fou : un opencode 2 est refusé avant le lancement, avec un code tra
 test('garde-fou : la 1.x passe, et un binaire remplacé est relu', async (t) => {
   const { binary } = await fixture(t)
   await announce(binary, '1.19.3')
-  await assertSupportedOpencode(binary)
+  await assertSupportedOpencode(hostEnvironment, binary)
 
   // Une mise à jour remplace le binaire en place : le cache ne doit pas laisser passer
   // la nouvelle majeure sur la foi de l'ancienne sonde.
   await announce(binary, 'opencode v2.0.32')
-  await assert.rejects(assertSupportedOpencode(binary), OpencodeUnsupportedVersionError)
+  await assert.rejects(assertSupportedOpencode(hostEnvironment, binary), OpencodeUnsupportedVersionError)
 })
 
 test('garde-fou : une version illisible laisse passer', async (t) => {
   const { binary } = await fixture(t)
   await announce(binary, 'nightly')
-  await assertSupportedOpencode(binary)
+  await assertSupportedOpencode(hostEnvironment, binary)
 })

@@ -7,6 +7,8 @@ import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import { openDatabase, projects, runMigrations, users, type Db } from '@solera/db'
 import { ClaudeAccountStore } from '../src/claude-accounts/store.js'
+import { CodexAccountStore } from '../src/codex-accounts/store.js'
+import { GrokAccountStore } from '../src/grok-accounts/store.js'
 import { inheritedConfig } from '../src/conversations/config-inheritance.js'
 import { writeUserAgentLayer } from '../src/settings/user-settings.js'
 
@@ -33,7 +35,7 @@ async function database(t: TestContext): Promise<Db> {
   return db
 }
 
-const accountOf = (db: Db, userId: string, agent: 'claude' | 'codex' = 'claude') => {
+const accountOf = (db: Db, userId: string, agent: 'claude' | 'codex' | 'grok' = 'claude') => {
   const config = inheritedConfig(db, { userId, projectId: 'solera', agent })
   return 'account' in config ? config.account : undefined
 }
@@ -52,7 +54,7 @@ test('sans choix, le fil hérite du premier compte de la liste, et de lui seul',
   assert.equal(accountOf(db, 'tim'), perso.id)
   // Le compte d'un autre utilisateur ne se prête pas.
   assert.equal(accountOf(db, 'other') === perso.id, false)
-  // Codex garde son propre choix : la règle ne vaut que pour Claude.
+  // Sans compte Codex, un fil Codex reste sur la connexion du terminal.
   assert.equal(accountOf(db, 'tim', 'codex'), null)
 })
 
@@ -75,4 +77,24 @@ test('un compte désigné puis supprimé retombe sur le premier qui reste', asyn
   writeUserAgentLayer(db, 'tim', { scope: 'claude', set: { account: travail.id } })
   store.delete('tim', travail.id)
   assert.equal(accountOf(db, 'tim'), perso.id)
+})
+
+test('Codex et Grok : un fil sans choix part sur le premier compte connecté, jamais sur un compte vide', async (t) => {
+  const db = await database(t)
+  const codex = new CodexAccountStore(db)
+  const vide = codex.create('tim', 'A vide')
+  const travail = codex.create('tim', 'Travail')
+  assert.equal(accountOf(db, 'tim', 'codex'), null, 'un compte jamais connecté refuserait le tour')
+  codex.setIdentity(travail.id, { authMode: 'chatgpt', email: null, planType: null })
+  assert.equal(accountOf(db, 'tim', 'codex'), travail.id)
+  codex.setIdentity(vide.id, { authMode: 'apiKey', email: null, planType: null })
+  assert.equal(accountOf(db, 'tim', 'codex'), vide.id, 'le premier de la liste')
+  writeUserAgentLayer(db, 'tim', { scope: 'codex', set: { account: null } })
+  assert.equal(accountOf(db, 'tim', 'codex'), vide.id, 'la connexion du terminal ne porte plus de session Codex (#147)')
+
+  const grok = new GrokAccountStore(db)
+  const perso = grok.create('tim', 'Perso')
+  grok.setIdentity(perso.id, { authMode: 'grok', email: null, plan: null })
+  assert.equal(accountOf(db, 'tim', 'grok'), perso.id)
+  assert.equal(accountOf(db, 'other', 'grok'), null, 'le compte d’un autre utilisateur ne se prête pas')
 })

@@ -1,6 +1,8 @@
 import { IdCard } from 'lucide-react'
 import type { AgentAuthDto, AgentConfig, UsagePeekDto } from '@solera/protocol'
 import { Button, ChoiceList, cx } from '@solera/ui'
+import { useCodexAccounts } from '../../lib/codex-accounts'
+import { useGrokAccounts } from '../../lib/grok-accounts'
 import { useTranslate } from '../../lib/i18n'
 import { openSettings } from '../../lib/settings-dialog'
 import { peekOf, peekSummary } from '../../lib/usage-peek'
@@ -20,8 +22,13 @@ import { useAgentSettings } from './agent-settings'
  * n'est lancé pour l'écrire.
  *
  * Claude sans aucun compte et sans connexion du terminal n'a rien sur quoi partir : la
- * ligne le dit, et son bouton mène à la connexion d'un compte.
+ * ligne le dit, et son bouton mène à la connexion d'un compte. Codex et Grok sans aucun
+ * compte connecté non plus, connexion du terminal ou pas : leurs sessions ne tournent
+ * que sur un compte de Solera (#147).
  */
+
+/** Le nom du compte à connecter, tel que l'abonnement le porte. */
+const ACCOUNT_NAMES = { claude: 'Claude', codex: 'Codex', grok: 'Grok' } as const
 
 /** Valeur de l'option « connexion du CLI » dans les réglages du composer. */
 const CLI_CHOICE = 'cli-default'
@@ -42,22 +49,34 @@ export function DraftAccount({
 }) {
   const t = useTranslate()
   const { groups } = useAgentSettings({ config, onConfigChange: onChange, disabled })
+  // Déjà en cache pour les réglages du composer : pour ne pas dire « aucun compte »
+  // pendant que la liste arrive, et pour savoir s'il en reste un de prêt.
+  const codexAccounts = useCodexAccounts(config.agent === 'codex')
+  const grokAccounts = useGrokAccounts(config.agent === 'grok')
   // OpenCode n'emprunte aucun compte : ses fournisseurs se règlent dans son propre CLI.
   if (config.agent === 'opencode') return null
 
   const group = groups.find((entry) => entry.key === 'account')
-  if (config.agent === 'claude' && !group && auth?.status === 'logged_out') {
+  const soleraAccounts = config.agent === 'codex' ? codexAccounts : config.agent === 'grok' ? grokAccounts : null
+  if (soleraAccounts?.isPending) return null
+  // Codex et Grok : sur les comptes prêts, pas sur le groupe. Un compte hérité supprimé
+  // garde le groupe en vie avec sa seule option « compte supprimé », qui ne mène nulle part.
+  const withoutAccount = soleraAccounts
+    ? !soleraAccounts.data?.accounts.some((account) => account.status === 'ready')
+    : !group && auth?.status === 'logged_out'
+  if (withoutAccount) {
+    const label = ACCOUNT_NAMES[config.agent]
     return (
       <div className="flex flex-col gap-1.5">
         <span className="text-xs font-medium text-ink-soft">{t('draft.account.legend')}</span>
         <div className="flex items-center gap-2.5 rounded-md border border-line px-3 py-2">
           <span className="shrink-0 text-ink-faint"><IdCard size={14} /></span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-ink">{t('draft.account.none')}</span>
+            <span className="block truncate text-sm text-ink">{t('draft.account.none', { label })}</span>
             <span className="block truncate text-xs text-ink-faint">{t('draft.account.noneHint')}</span>
           </span>
-          <Button size="sm" onClick={() => openSettings('agents', 'claude')}>
-            {t('draft.account.connect')}
+          <Button size="sm" onClick={() => openSettings('agents', config.agent)}>
+            {t('draft.account.connect', { label })}
           </Button>
         </div>
       </div>

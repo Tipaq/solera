@@ -105,6 +105,8 @@ export const createScheduledTaskBodySchema = z.object({
   prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
   cadence: scheduleCadenceSchema,
   overlapPolicy: scheduleOverlapPolicySchema.default('skip'),
+  /** Tirs confinés ou non (#146) ; null : le réglage du projet, relu à chaque tir. */
+  confined: z.boolean().nullable().default(null),
   maxDurationMinutes: z
     .number()
     .int()
@@ -125,6 +127,7 @@ export const updateScheduledTaskBodySchema = z
     prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
     cadence: scheduleCadenceSchema,
     overlapPolicy: scheduleOverlapPolicySchema,
+    confined: z.boolean().nullable(),
     maxDurationMinutes: z
       .number()
       .int()
@@ -217,6 +220,8 @@ export interface ScheduledTaskDto {
   cadence: ScheduleCadence
   executionMode: ScheduleExecutionMode
   overlapPolicy: ScheduleOverlapPolicy
+  /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
+  confined: boolean | null
   maxDurationMinutes: number
   enabled: boolean
   lastRunAt: number | null

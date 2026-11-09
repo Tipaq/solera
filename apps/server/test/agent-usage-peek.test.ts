@@ -65,7 +65,7 @@ function conversation(db: Db, id: string, agent: 'claude' | 'codex', account: st
   const config = { ...(agent === 'claude' ? DEFAULT_CLAUDE_CONFIG : DEFAULT_CODEX_CONFIG), account }
   const row = {
     id, projectId: 'project', worktreeId: null, cardId: null, userId: 'owner', title: id,
-    titleSetByUser: false, agent, agentSessionId: null, forkedFromId: null,
+    titleSetByUser: false, agent, environmentWhere: 'host', environmentConfined: false, agentSessionId: null, forkedFromId: null,
     handoffFromId: null, createdByTokenId: null, originLabel: null, scheduleId: null,
     config: JSON.stringify(config), status: 'idle',
     backgroundCount: 0, loopCount: 0, lastSeq: 0, lastNotableSeq: 0, turnCount: 0,
@@ -214,8 +214,16 @@ test('signaux des tours : relus du journal au démarrage, par CLI, compte et fen
   assert.deepEqual(ledger.peek(() => true, now + 3 * HOUR), [], 'Passée la remise à zéro, le signal ne dit plus rien')
 })
 
-test('signaux des tours : le gestionnaire de sessions les range sous le compte de la conversation', async (t) => {
+test('signaux des tours : le gestionnaire de sessions les range sous le compte qui porte la session', async (t) => {
   const { dir, db } = await database(t)
+  const previous = process.env.CODEX_HOME
+  process.env.CODEX_HOME = join(dir, 'user-codex')
+  t.after(() => { if (previous === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previous })
+  // Une conversation qui désigne encore la connexion du CLI part sur le premier compte
+  // connecté (#147) : c'est lui qui paie, ses signaux sont rangés sous lui.
+  const codexAccounts = { store: new CodexAccountStore(db), homes: new CodexAccountHomes(join(dir, 'codex-accounts')) }
+  const perso = codexAccounts.store.create('owner', 'Perso')
+  codexAccounts.store.setIdentity(perso.id, { authMode: 'chatgpt', email: null, planType: null })
   const ledger = new UsageLedger()
   const registry = {
     usageLedger: ledger,
@@ -226,7 +234,7 @@ test('signaux des tours : le gestionnaire de sessions les range sous le compte d
     limits: { maxConcurrentSessions: 1, sessionIdleTimeoutMin: 30 },
     mcp: {}, skills: {},
   } as unknown as Config
-  const sessions = new SessionManager(db, new EventLog(db), config, registry, {} as SecretStore, {} as never, {} as never, {} as never)
+  const sessions = new SessionManager(db, new EventLog(db), config, registry, {} as SecretStore, {} as never, codexAccounts, {} as never)
   const row = conversation(db, 'conv', 'codex', null)
   const context = (sessions as unknown as { buildContext(row: ConversationRow): RunnerContext }).buildContext(row)
 
@@ -235,7 +243,7 @@ test('signaux des tours : le gestionnaire de sessions les range sous le compte d
   context.emit({ type: 'usage.updated', costUsd: 0, inputTokens: 1, outputTokens: 1 })
   const [entry] = ledger.peek(() => true)
   assert.equal(entry?.agent, 'codex')
-  assert.equal(entry?.account, null)
+  assert.equal(entry?.account, perso.id)
   assert.deepEqual(entry?.live.map((window) => [window.type, window.utilization, window.resetsAt]), [['codex · 5h', 0.3, resetsAt]])
 })
 
