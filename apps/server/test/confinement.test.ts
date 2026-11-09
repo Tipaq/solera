@@ -100,8 +100,13 @@ test("chaîne d'outils : jamais le home ni ses ancêtres, et le paquet entier d'
   await symlink(join(pkg, 'bin', 'codex.js'), join(bin, 'codex'))
   assert.equal(installRootOf(join(pkg, 'bin', 'codex.js'), home), pkg)
 
-  const toolchain = hostToolchain({ path: [home, base, '/', bin, '/usr/bin'].join(':'), home, coveredRoots: ['/usr'], deniedRoots: [] })
-  assert.deepEqual(toolchain.pathEntries, [bin, '/usr/bin'])
+  // Un faux `/usr/bin` : le vrai porte des liens vers `/opt` ou `/mnt` qui changent
+  // d'une machine à l'autre (Chrome, Docker Desktop), et ouvriraient leurs dossiers.
+  const usr = join(base, 'usr')
+  const usrBin = join(usr, 'bin')
+  await mkdir(usrBin, { recursive: true })
+  const toolchain = hostToolchain({ path: [home, base, '/', bin, usrBin].join(':'), home, coveredRoots: [usr], deniedRoots: [] })
+  assert.deepEqual(toolchain.pathEntries, [bin, usrBin])
   assert.deepEqual(toolchain.readableDirs.sort(), [bin, pkg].sort())
 
   const denied = hostToolchain({ path: `/mnt/c/Windows:${bin}`, home, coveredRoots: [], deniedRoots: ['/mnt'] })
