@@ -187,7 +187,7 @@ test('start_session links a card and moves it to in progress', async (t) => {
   assert.equal(db.select().from(conversations).where(eq(conversations.id, request.launchedConversationId!)).get()?.cardId, 'card')
 })
 
-test('start_session refuses deep launch chains and launch storms', async (t) => {
+test('start_session refuses deep launch chains, but not a session that launches many', async (t) => {
   const { db, conversation, mcp } = await harness(t)
   for (const id of ['root', 'child', 'grandchild']) conversation(id)
   const launched = (from: string, to: string | null, at = Date.now()) =>
@@ -202,10 +202,11 @@ test('start_session refuses deep launch chains and launch storms', async (t) => 
   assert.equal(deep.isError, true)
   assert.match(deep.content[0]!.text, /lancement en chaîne/)
 
-  for (let i = 0; i < LAUNCHES_PER_HOUR - 1; i++) launched('root', null)
-  const storm = await mcp('root', 'start_session', { prompt: 'une de trop' })
-  assert.equal(storm.isError, true)
-  assert.match(storm.content[0]!.text, /dans l'heure/)
+  // Une session qui orchestre un jalon lance autant de cartes qu'il en faut : la cadence
+  // ne garde que ce qui vient hors session.
+  for (let i = 0; i < LAUNCHES_PER_HOUR; i++) launched('root', null)
+  const many = await mcp('root', 'start_session', { prompt: 'une de plus' })
+  assert.equal(many.isError, undefined, many.content[0]!.text)
 })
 
 test('create_card opens a todo card and says which session opened it', async (t) => {
