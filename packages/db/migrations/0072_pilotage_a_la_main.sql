@@ -1,0 +1,1 @@
+ALTER TABLE `milestone_runs` ADD `mode` text DEFAULT 'auto' NOT NULL;

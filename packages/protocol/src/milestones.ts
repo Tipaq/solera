@@ -29,6 +29,15 @@ export const MILESTONE_QUOTA_WARNING = 3
 export const milestoneRunStateSchema = z.enum(['running', 'paused', 'stopped', 'finished'])
 export type MilestoneRunState = z.infer<typeof milestoneRunStateSchema>
 
+/**
+ * `auto` : le serveur lance les cartes prêtes dans la limite de la concurrence ;
+ * `manual` : il ne lance rien, une personne lance les cartes une à une. Dans les deux,
+ * il adopte les sessions ouvertes ailleurs, suit les blocages et termine le pilotage,
+ * et les cartes livrent dans la branche du jalon.
+ */
+export const milestoneRunModeSchema = z.enum(['manual', 'auto'])
+export type MilestoneRunMode = z.infer<typeof milestoneRunModeSchema>
+
 /** Un pilotage qui tourne encore, en marche ou en pause : un seul par parente. */
 export const MILESTONE_RUN_ACTIVE_STATES: readonly MilestoneRunState[] = ['running', 'paused']
 
@@ -156,6 +165,7 @@ export interface MilestoneRunDto {
   cardNumber: number
   cardTitle: string
   state: MilestoneRunState
+  mode: MilestoneRunMode
   concurrency: number
   /** Ses sessions confinées ou non (#146) ; null : le réglage du projet. */
   confined: boolean | null
@@ -170,6 +180,7 @@ export interface MilestoneRunDto {
 }
 
 export const startMilestoneBodySchema = z.object({
+  mode: milestoneRunModeSchema.default('auto'),
   concurrency: z.number().int().min(1).max(MAX_MILESTONE_CONCURRENCY).default(DEFAULT_MILESTONE_CONCURRENCY),
   /**
    * La configuration du jalon, CLI compris (`config.agent`) ; absente, celle qu'une
@@ -186,5 +197,19 @@ export type StartMilestoneBody = z.infer<typeof startMilestoneBodySchema>
 export const updateMilestoneRunBodySchema = z.object({
   state: z.enum(['running', 'paused', 'stopped']).optional(),
   concurrency: z.number().int().min(1).max(MAX_MILESTONE_CONCURRENCY).optional(),
+  /** À la main, plus de lancements, les sessions continuent ; en autonome, ils reprennent. */
+  mode: milestoneRunModeSchema.optional(),
+  /** Pour les prochains lancements ; null : le réglage du projet ; omis : inchangé. */
+  confined: z.boolean().nullable().optional(),
 })
 export type UpdateMilestoneRunBody = z.infer<typeof updateMilestoneRunBodySchema>
+
+/**
+ * Lancer une carte d'un jalon à la main. Sans pilotage vivant, un pilotage à la main
+ * s'ouvre, confiné selon `confined` (null : le réglage du projet) ; un pilotage déjà
+ * vivant garde le sien.
+ */
+export const launchMilestoneCardBodySchema = z.object({
+  confined: z.boolean().nullable().default(null),
+})
+export type LaunchMilestoneCardBody = z.infer<typeof launchMilestoneCardBodySchema>

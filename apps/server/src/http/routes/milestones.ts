@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, projects, type CardRow, type ProjectRow } from '@solera/db'
-import { startMilestoneBodySchema, updateMilestoneRunBodySchema } from '@solera/protocol'
+import { launchMilestoneCardBodySchema, startMilestoneBodySchema, updateMilestoneRunBodySchema } from '@solera/protocol'
 import type { MilestoneRuns } from '../../milestones/milestone-runs.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
@@ -9,7 +9,8 @@ import { badRequest, notFound } from '../errors.js'
 
 /**
  * Lancer un jalon (#72) : l'aperçu, le lancement, et la conduite du pilotage (pause,
- * reprise, arrêt, concurrence). Le jalon est une carte parente ; ses enfants partent.
+ * reprise, arrêt, concurrence, mode et confinement). Le jalon est une carte parente ;
+ * ses enfants partent, ensemble ou une à une, à la main (#186).
  */
 export function registerMilestoneRoutes(app: FastifyInstance, ctx: AppContext, milestones: MilestoneRuns): void {
   const loadParent = (cardId: string, userId: string): { card: CardRow; project: ProjectRow } => {
@@ -61,6 +62,15 @@ export function registerMilestoneRoutes(app: FastifyInstance, ctx: AppContext, m
     const body = startMilestoneBodySchema.parse(request.body ?? {})
     const { card, project } = loadParent(id, user.id)
     return reply.status(201).send(await milestones.launch(card, project, user.id, body))
+  })
+
+  /** Lance une enfant à la main ; ouvre un pilotage à la main s'il n'y en a pas de vivant. */
+  app.post('/api/cards/:id/milestone/cards/:cardId/launch', async (request) => {
+    const user = requireUser(request)
+    const { id, cardId } = request.params as { id: string; cardId: string }
+    const body = launchMilestoneCardBodySchema.parse(request.body ?? {})
+    const { card, project } = loadParent(id, user.id)
+    return milestones.launchByHand(card, project, user.id, cardId, body)
   })
 
   app.patch('/api/cards/:id/milestone', async (request) => {

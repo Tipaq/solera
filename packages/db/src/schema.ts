@@ -627,6 +627,8 @@ export const milestoneRuns = sqliteTable(
       .notNull()
       .references(() => cards.id, { onDelete: 'cascade' }),
     state: text('state', { enum: ['running', 'paused', 'stopped', 'finished'] }).notNull(),
+    /** `auto` : le serveur lance les cartes prêtes ; `manual` : une personne les lance (#186). */
+    mode: text('mode', { enum: ['manual', 'auto'] }).notNull().default('auto'),
     concurrency: integer('concurrency').notNull().default(3),
     /** Ses sessions sont-elles confinées (#146) ; null : le réglage du projet. */
     confined: integer('confined', { mode: 'boolean' }),
