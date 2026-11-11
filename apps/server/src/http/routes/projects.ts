@@ -4,6 +4,7 @@ import { and, asc, count, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, conversations, projectImages, projects, users, writeTransaction } from '@solera/db'
 import {
+  autonomousEnvironment,
   createProjectBodySchema,
   MAX_PROJECT_IMAGE_BYTES,
   EMPTY_CONFIG_LAYER,
@@ -315,7 +316,12 @@ export function registerProjectRoutes(
     if (body.autonomousConfined !== undefined) {
       // Comme l'environnement du projet : un réglage que ce serveur ne sait pas tenir
       // ferait refuser chaque tâche et chaque jalon lancés ensuite.
-      if (body.autonomousConfined) environments.assertAvailable(id, environments.forAutonomous(id, true))
+      // Jugé sur l'environnement que porte la même requête, s'il y en a un : les réglages
+      // du projet envoient les deux ensemble.
+      if (body.autonomousConfined) {
+        const project = body.environment ?? environments.ofProject(id)
+        environments.assertAvailable(id, autonomousEnvironment(project, true, null))
+      }
       patch.autonomousConfined = body.autonomousConfined
     }
 

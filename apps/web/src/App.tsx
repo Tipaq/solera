@@ -110,7 +110,7 @@ const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ d
 const ProjectTimelinePage = lazy(() =>
   import('./routes/ProjectTimelinePage').then((m) => ({ default: m.ProjectTimelinePage })),
 )
-const ProjectPage = lazy(() => import('./routes/ProjectPage').then((m) => ({ default: m.ProjectPage })))
+const ProjectSettingsPage = lazy(() => import('./routes/ProjectSettingsPage').then((m) => ({ default: m.ProjectSettingsPage })))
 
 /** Une vue chargée à part, sans voile d'attente : elle arrive quand son code est là. */
 function Deferred({ children }: { children: ReactNode }) {
@@ -290,7 +290,7 @@ export function App() {
             <Route path="actions" element={<Deferred><SchedulePage /></Deferred>} />
             <Route path="timeline" element={<Deferred><ProjectTimelinePage /></Deferred>} />
             <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
-            <Route path="settings" element={<Deferred><ProjectPage /></Deferred>} />
+            <Route path="settings" element={<Deferred><ProjectSettingsPage /></Deferred>} />
             {/* Les anciennes adresses : elles ont circulé, elles mènent à la vue qui les a
                 absorbées, requête comprise. */}
             <Route path="activity" element={<LegacyTravailRedirect from="activity" />} />

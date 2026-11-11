@@ -19,7 +19,7 @@ import { useBlame, useFileHistory } from './queries'
  * seule chose vraie qu'on puisse dire : « Tim, à la main ».
  *
  * Deux onglets plutôt que deux destinations : ce sont deux façons de lire le même
- * fichier, et le rail répondrait deux fois à la même question.
+ * fichier, et « Affichage » répondrait deux fois à la même question.
  */
 export function HistoryView({
   scope,

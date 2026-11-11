@@ -1,4 +1,11 @@
 import { z } from 'zod'
+import {
+  DEFAULT_SCHEDULE_DURATION_MINUTES,
+  MAX_SCHEDULE_DURATION_MINUTES,
+  MIN_SCHEDULE_DURATION_MINUTES,
+  scheduleCadenceSchema,
+  type ScheduleCadence,
+} from './schedules.js'
 import type { TerminalDto } from './terminal.js'
 
 /**
@@ -72,17 +79,89 @@ export function resolveActionUrl(template: string | null, ports: readonly number
   return port === undefined ? null : template.replaceAll('{port}', String(port))
 }
 
-export const createProjectActionBodySchema = z.object({
+/**
+ * Où tourne un service (« Où tourne-t-il », AC-05) :
+ * - `follow` : là où on le lance, une seule instance qu'on bascule d'un arbre à l'autre ;
+ * - `root` : toujours à la racine du projet, d'où qu'on le lance ;
+ * - `branch` : toujours sur `pinnedBranch`, à la racine quand elle y est ; sinon refusé
+ *   tant que Solera ne tient pas un worktree dédié à la branche ;
+ * - `per-worktree` : une instance par arbre. Pas encore là (AC-06) : refusée (400).
+ *
+ * Une tâche tourne toujours là où on la lance, chaque arbre a ses tests : elle est
+ * enregistrée en `follow`, quoi qu'on demande.
+ */
+export const actionPlacementSchema = z.enum(['follow', 'root', 'branch', 'per-worktree'])
+export type ActionPlacement = z.infer<typeof actionPlacementSchema>
+
+export const MAX_ACTION_BRANCH_CHARS = 250
+
+/**
+ * Le Quand d'une commande planifiée : sa cadence, sa pause et sa durée maximale. Elle
+ * tourne sans terminal ni personne pour l'arrêter : passé ce délai, elle est coupée et
+ * son passage compte comme un échec. Absents, `enabled` vaut vrai et la durée celle
+ * d'une tâche planifiée.
+ */
+export const DEFAULT_ACTION_SCHEDULE_DURATION_MINUTES = DEFAULT_SCHEDULE_DURATION_MINUTES
+
+const actionScheduleShape = {
+  cadence: scheduleCadenceSchema,
+  enabled: z.boolean(),
+  maxDurationMinutes: z.number().int().min(MIN_SCHEDULE_DURATION_MINUTES).max(MAX_SCHEDULE_DURATION_MINUTES),
+}
+
+export const actionScheduleSchema = z.object(actionScheduleShape).partial({ enabled: true, maxDurationMinutes: true })
+export type ActionScheduleInput = z.infer<typeof actionScheduleSchema>
+
+/** Une modification : la pause n'envoie que `enabled`. Null retire la planification. */
+export const actionSchedulePatchSchema = z.object(actionScheduleShape).partial()
+export type ActionSchedulePatch = z.infer<typeof actionSchedulePatchSchema>
+
+const projectActionShape = {
   label: z.string().trim().min(1).max(MAX_ACTION_LABEL_CHARS),
   description: z.string().trim().max(MAX_ACTION_DESCRIPTION_CHARS).optional(),
   kind: projectActionKindSchema,
   command: z.string().trim().min(1).max(MAX_ACTION_COMMAND_CHARS),
   subdir: actionSubdirSchema.optional(),
   url: actionUrlSchema.optional(),
-})
+  placement: actionPlacementSchema.optional(),
+  /** La branche d'un placement `branch` ; ignorée et effacée pour les autres. */
+  pinnedBranch: z.string().trim().max(MAX_ACTION_BRANCH_CHARS).nullable().optional(),
+}
+
+/**
+ * Une commande se lance à la demande (un clic, un agent), à sa cadence, ou les deux ;
+ * jamais ni l'un ni l'autre, elle ne partirait plus. `onDemand` absent vaut vrai.
+ *
+ * Seule une `task` se planifie : un service planifié (démarrer, arrêter à heure fixe)
+ * demande une fenêtre que ce schéma n'a pas encore.
+ */
+export const createProjectActionBodySchema = z
+  .object({
+    ...projectActionShape,
+    schedule: actionScheduleSchema.nullable().optional(),
+    onDemand: z.boolean().optional(),
+  })
+  .refine((body) => body.onDemand !== false || Boolean(body.schedule), {
+    message: 'On demand, scheduled, or both.',
+    path: ['onDemand'],
+  })
+  .refine((body) => body.kind === 'task' || !body.schedule, {
+    message: 'Only a task can be scheduled.',
+    path: ['schedule'],
+  })
 export type CreateProjectActionBody = z.infer<typeof createProjectActionBodySchema>
 
-export const updateProjectActionBodySchema = createProjectActionBodySchema.partial()
+/**
+ * Tout est facultatif. La cohérence (à la demande ou planifiée, seule une tâche se
+ * planifie) se juge sur l'action une fois modifiée : c'est le serveur qui la tient.
+ */
+export const updateProjectActionBodySchema = z
+  .object({
+    ...projectActionShape,
+    schedule: actionSchedulePatchSchema.nullable(),
+    onDemand: z.boolean(),
+  })
+  .partial()
 export type UpdateProjectActionBody = z.infer<typeof updateProjectActionBodySchema>
 
 /** Au-delà, ce ne sont plus des arguments mais une autre commande, à relire comme telle. */
@@ -113,12 +192,28 @@ export const runProjectActionBodySchema = z
   .object({
     ...actionPlaceShape,
     args: z.array(z.string().min(1).max(MAX_ACTION_RUN_ARG_CHARS)).max(MAX_ACTION_RUN_ARGS).optional(),
+    /**
+     * Un service qui tourne depuis un autre arbre est refusé (409
+     * `service_running_elsewhere`) : `switch` l'arrête et le redémarre ici.
+     */
+    switch: z.boolean().optional(),
   })
   .refine(onePlace, onePlaceMessage)
 export type RunProjectActionBody = z.infer<typeof runProjectActionBodySchema>
 
 export const serviceActionControlSchema = z.enum(['stop', 'restart'])
 export type ServiceActionControl = z.infer<typeof serviceActionControlSchema>
+
+/** Le Quand d'une commande planifiée, tel que l'interface le montre. */
+export interface ProjectActionSchedule {
+  cadence: ScheduleCadence
+  enabled: boolean
+  /** Null quand plus rien n'est prévu : en pause, ou ponctuelle déjà tirée. */
+  nextRunAt: number | null
+  /** Le dernier tir de la cadence ; null avant le premier. */
+  lastRunAt: number | null
+  maxDurationMinutes: number
+}
 
 /** État d'une action `service` portée par systemd. */
 export interface ProjectActionServiceState {
@@ -128,6 +223,30 @@ export interface ProjectActionServiceState {
   cwd: string | null
   ports: number[]
   startedAt: number | null
+  /** Ce qu'il sert, lu dans son `cwd` ; null quand il ne tourne pas. */
+  served: ActionServedVersion | null
+}
+
+/**
+ * La version qu'un service en marche sert : l'arbre qui contient son dossier, et l'état
+ * git de ce dossier. Un serveur de dev sert l'arbre de travail tel quel, fichiers non
+ * commités compris : la branche seule ne dit pas ce qu'on voit.
+ */
+export interface ActionServedVersion {
+  /** L'arbre du projet le plus profond qui contient le dossier ; null hors du projet. */
+  path: string | null
+  /** Le worktree Solera ; null pour la racine ou un arbre que Solera n'a pas créé. */
+  worktreeId: string | null
+  root: boolean
+  /** Null en HEAD détachée ou hors d'un dépôt. */
+  branch: string | null
+  /** Le commit court ; null hors d'un dépôt. */
+  head: string | null
+  /** Commits en avance sur la base et en retard sur elle ; null sans base lisible. */
+  ahead: number | null
+  behind: number | null
+  /** Fichiers modifiés ou non suivis ; null hors d'un dépôt. */
+  dirtyFiles: number | null
 }
 
 export interface ProjectActionDto {
@@ -140,6 +259,9 @@ export interface ProjectActionDto {
   subdir: string | null
   /** Gabarit d'URL d'un service, `{port}` compris ; null sans lien. */
   url: string | null
+  placement: ActionPlacement
+  /** La branche d'un placement `branch` ; null pour les autres. */
+  pinnedBranch: string | null
   /**
    * `proposed` : écrite ou modifiée par un agent et pas encore relue. Un clic lance la
    * commande hors de toute session : on la montre avant la première exécution, pour
@@ -158,6 +280,10 @@ export interface ProjectActionDto {
    * l'action n'a jamais été validée.
    */
   approved: ProjectActionReviewed | null
+  /** Un clic ou un agent peut la lancer. Faux : elle ne part qu'à sa cadence. */
+  onDemand: boolean
+  /** Null : elle ne part jamais seule. */
+  schedule: ProjectActionSchedule | null
   /** Null pour une `task`, ou quand systemd n'est pas disponible. */
   service: ProjectActionServiceState | null
   /** Dernière exécution dans un terminal, tant que son onglet est ouvert. */
@@ -171,6 +297,8 @@ export interface ProjectActionReviewed {
   command: string
   subdir: string | null
   url: string | null
+  /** La cadence relue : une commande planifiée part sans clic, sa cadence se relit aussi. */
+  cadence: ScheduleCadence | null
 }
 
 /** Combien de passages une action montre, et combien le serveur en garde. */
@@ -186,18 +314,18 @@ export type ActionRunTrigger = z.infer<typeof actionRunTriggerSchema>
 /** `stopped` : arrêtée, par Ctrl-C, la fermeture de son terminal ou l'arrêt du daemon. */
 export type ActionRunStatus = 'running' | 'succeeded' | 'failed' | 'stopped'
 
-/** Un lancement d'une action dans un terminal. */
+/** Un lancement d'une action, dans un terminal ou détaché (commande planifiée). */
 export interface ActionRunDto {
   id: string
   actionId: string
   trigger: ActionRunTrigger
   /** La session d'où elle est partie ; null hors session. */
   conversationId: string | null
-  /** Le terminal qui l'a jouée ; il peut avoir été fermé depuis. */
+  /** Le terminal qui l'a jouée ; il peut avoir été fermé depuis. Null pour un tir planifié, sans terminal. */
   terminalId: string | null
   cwd: string
   status: ActionRunStatus
-  /** Null tant qu'elle tourne, ou quand l'arrêt du daemon l'a emportée. */
+  /** Null tant qu'elle tourne, quand l'arrêt du daemon l'a emportée, ou coupée par sa durée maximale. */
   exitCode: number | null
   startedAt: number
   finishedAt: number | null

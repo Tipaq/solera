@@ -380,7 +380,8 @@ export function CommandPalette({
           run: () => runProjectAction(action, op),
         }))
       })
-    const visibleActions = (projectActions ?? []).filter((action) => projectNames.has(action.projectId))
+    // Une commande qui ne part qu'à sa cadence n'a pas de bouton, ici non plus.
+    const visibleActions = (projectActions ?? []).filter((action) => action.onDemand && projectNames.has(action.projectId))
 
     const projectItems = (source = projects ?? []): Item[] =>
       source.map((project) => ({

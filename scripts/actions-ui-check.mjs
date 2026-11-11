@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { viteDependency } from './checks/vite-deps.mjs'
 
 // Actions de projet, de bout en bout : vraie API, vrai serveur MCP, vrais terminaux, et
 // sous Linux une vraie unité systemd utilisateur (`solera-app-action-*`), arrêtée et
@@ -67,6 +68,110 @@ async function mcp(env, conversationId, projectId, name, args) {
   return JSON.parse(stdout).result
 }
 
+/**
+ * Les pièces d'une action (`components/automations/`), montées seules sur les fixtures de
+ * leurs stories : les gestes d'une tuile et d'une ligne, l'en-tête du tiroir et du panneau.
+ * Au doigt, chaque geste fait 44 px ; à la souris, 36 en tuile et 32 en ligne.
+ */
+async function checkPieces(base) {
+  const modules = {
+    query: await viteDependency(base, '@tanstack/react-query', '/src/lib/conversation-config.ts'),
+    router: await viteDependency(base, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(base, '@solera/ui', '/src/components/ImageThumbnail.tsx'),
+  }
+  for (const width of [1280, 390]) {
+    const touch = width < 700
+    const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, locale: 'fr-FR', serviceWorkers: 'block' })
+    const page = await context.newPage()
+    page.setDefaultTimeout(10000)
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.route(`${base}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body class="bg-canvas"><div id="check" style="padding:16px"></div></body></html>' }))
+    await page.route(`${base}/api/**`, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }))
+    await page.goto(base)
+    await page.evaluate(async (modules) => {
+      const refresh = (await import('/@react-refresh')).default
+      refresh.injectIntoGlobalHook(window)
+      window.$RefreshReg$ = () => {}
+      window.$RefreshSig$ = () => (type) => type
+      window.__vite_plugin_react_preamble_installed__ = true
+      localStorage.setItem('solera.locale', 'fr')
+      await (await import('/src/lib/i18n/index.ts')).initLocale()
+      document.documentElement.dataset.theme = 'dark'
+      await import('/src/styles/index.css')
+      const React = (await import('/node_modules/.vite/deps/react.js')).default
+      const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+      const { QueryClient, QueryClientProvider } = await import(modules.query)
+      const { MemoryRouter } = await import(modules.router)
+      const { TooltipProvider } = await import(modules.ui)
+      const { ActionGesture } = await import('/src/components/automations/ActionGestures.tsx')
+      const { ActionChromeProvider, ActionHeader } = await import('/src/components/automations/ActionSheet.tsx')
+      const { natureOf } = await import('/src/lib/automations.ts')
+      const fixtures = await import('/src/components/automations/automation-fixtures.tsx')
+      const h = React.createElement
+      const ignore = () => {}
+      function Switchable({ item, size }) {
+        // L'interrupteur suit son état, comme le ferait la vraie mutation.
+        const [on, setOn] = React.useState(false)
+        const live = on ? { kind: 'service', ports: [], since: null, href: null } : null
+        return h(ActionGesture, { item: { ...item, live }, size, onReview: ignore, onToggleService: setOn, onTerminal: ignore, onLaunch: ignore })
+      }
+      const row = (size) => h('div', { 'data-size': size, style: { display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px' } },
+        h(ActionGesture, { item: fixtures.NEVER, size, onReview: ignore, onToggleService: ignore, onTerminal: ignore, onLaunch: ignore }),
+        h(ActionGesture, { item: fixtures.PROPOSED, size, onReview: ignore, onToggleService: ignore, onTerminal: ignore, onLaunch: ignore }),
+        h(ActionGesture, { item: fixtures.AGENT, size, onReview: ignore, onToggleService: ignore, onTerminal: ignore, onLaunch: ignore }),
+        h(Switchable, { item: fixtures.SERVICE_OFF, size }),
+      )
+      const header = (inline) => h(ActionChromeProvider, { value: inline ? { inline: true, backLabel: 'Actions', onBack: ignore } : { inline: false } },
+        h('div', { 'data-header': inline ? 'inline' : 'drawer', style: { maxWidth: inline ? '22rem' : '34rem', marginBottom: '16px', border: '1px solid var(--color-line)' } },
+          h(ActionHeader, { nature: natureOf(fixtures.SERVICE_ON), title: fixtures.SERVICE_ON.label, when: ['À la demande'], onClose: ignore })))
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      createRoot(document.getElementById('check')).render(
+        h(QueryClientProvider, { client }, h(MemoryRouter, null, h(TooltipProvider, null,
+          h(fixtures.SeededWorktrees, null, row('tile'), row('row'), header(false), header(true))))),
+      )
+    }, modules)
+
+    const heightOf = async (locator) => Math.round((await locator.boundingBox()).height)
+    const tile = page.locator('[data-size="tile"]')
+    const line = page.locator('[data-size="row"]')
+    await tile.getByRole('button', { name: 'Lancer « Remplir la base »', exact: true }).waitFor()
+    for (const [scope, expected] of [[tile, touch ? 44 : 36], [line, touch ? 44 : 32]]) {
+      for (const gesture of [
+        scope.getByRole('button', { name: 'Lancer « Remplir la base »', exact: true }),
+        scope.getByRole('button', { name: 'Lancer « Remplir la base » dans…', exact: true }),
+        scope.getByRole('button', { name: 'Relire « Migrer la base »', exact: true }),
+        scope.getByRole('button', { name: 'Lancer « Revue des dépendances »', exact: true }),
+        scope.getByRole('switch', { name: 'Démarrer « Storybook »', exact: true }),
+      ]) assert.equal(await heightOf(gesture), expected, `${width} px : ${await gesture.getAttribute('aria-label')}`)
+    }
+    // Une tâche d'agent part dans une nouvelle session, sans chevron (Q6).
+    assert.equal(await tile.getByRole('button', { name: 'Lancer « Revue des dépendances » dans…', exact: true }).count(), 0)
+    assert.equal(await tile.getByRole('button', { name: 'Lancer « Revue des dépendances »', exact: true }).getAttribute('title'), 'Lancer dans une nouvelle session')
+    // L'interrupteur dit ce qu'un clic fera, et son mot ce qui est.
+    const toggle = tile.getByRole('switch', { name: 'Démarrer « Storybook »', exact: true })
+    assert.equal(await toggle.getAttribute('aria-checked'), 'false')
+    assert.match(await toggle.textContent(), /Arrêté/)
+    await toggle.click()
+    const stop = tile.getByRole('switch', { name: 'Arrêter « Storybook »', exact: true })
+    assert.equal(await stop.getAttribute('aria-checked'), 'true')
+    assert.match(await stop.textContent(), /En marche/)
+    assert.equal(await line.getByRole('switch', { name: 'Démarrer « Storybook »', exact: true }).textContent(), '')
+    // L'en-tête : ✕ en tiroir, « ‹ Actions » dans le panneau.
+    await page.locator('[data-header="drawer"]').getByRole('button', { name: 'Fermer', exact: true }).waitFor()
+    await page.locator('[data-header="inline"]').getByRole('button', { name: 'Actions', exact: true }).waitFor()
+    assert.equal(await page.locator('[data-header="inline"]').getByRole('button', { name: 'Fermer', exact: true }).count(), 0)
+    await page.screenshot({ path: join(shots, `actions-pieces-${width}.png`) })
+    // « Lancer dans » : la racine, puis les arbres du projet.
+    await tile.getByRole('button', { name: 'Lancer « Remplir la base » dans…', exact: true }).click()
+    const items = await page.getByRole('menuitem').allTextContents()
+    assert.deepEqual(items, ['La racine du projet', 'feat/factures', 'fix/connexion-lente', 'feat/export-csv'])
+    await page.screenshot({ path: join(shots, `actions-pieces-launch-${width}.png`) })
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+}
+
 const linuxServices = process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
@@ -88,11 +193,14 @@ try {
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
   const base = `http://127.0.0.1:${webPort}`
   await Promise.all([ready(`http://127.0.0.1:${apiPort}/api/health`, server), ready(base, vite)])
+  browser = await launchBrowser()
+  console.log('actions-ui-check : pièces')
+  await checkPieces(base)
+
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')

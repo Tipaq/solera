@@ -3,6 +3,8 @@ import type { MilestoneRunCardDto, MilestoneRunDto } from '@solera/protocol'
 import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Badge, EmptyState, cx } from '@solera/ui'
+import { CardInfoButton } from '../components/cards/CardInfoButton'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { MilestoneSegments } from '../components/project/MilestoneBanner'
 import { Timeline, type TimelineBar, type TimelineRow } from '../components/project/Timeline'
 import { useCards } from '../lib/cards'
@@ -87,6 +89,7 @@ export function ProjectTimelinePage() {
           title={t('timeline.empty')}
           description={t('timeline.emptyHint')}
         />
+        {projectId ? <CardSheetHost projectId={projectId} /> : null}
       </div>
     )
   }
@@ -107,6 +110,7 @@ export function ProjectTimelinePage() {
           <span className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
             <Flag size={13} className="shrink-0 text-ink-faint" />
             <span className="min-w-0 truncate">{milestone.card.title}</span>
+            <CardInfoButton card={milestone.card} />
           </span>
           <span className="pl-5 text-xs text-ink-faint">
             {dueLine(milestone)}
@@ -161,6 +165,7 @@ export function ProjectTimelinePage() {
             <span className="min-w-0 truncate">
               <span className="tabular-nums">#{milestone.card.number}</span> {milestone.card.title}
             </span>
+            <CardInfoButton card={milestone.card} />
           </span>
           <span className="pl-5 text-xs text-ink-faint">{dueLine(milestone)}</span>
           <span className="flex min-w-0 items-center gap-1.5 pl-5 text-xs text-ink-faint">
@@ -256,6 +261,7 @@ export function ProjectTimelinePage() {
           </span>
         </p>
       ) : null}
+      {projectId ? <CardSheetHost projectId={projectId} /> : null}
     </div>
   )
 }

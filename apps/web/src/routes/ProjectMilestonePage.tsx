@@ -3,6 +3,8 @@ import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { MilestoneRunCardDto, MilestoneRunDto } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
+import { CardInfoButton } from '../components/cards/CardInfoButton'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { MILESTONE_SEGMENT_TONES, MilestoneSegments } from '../components/project/MilestoneBanner'
 import type { SessionSummary } from '../components/project/SessionRow'
 import { useActivityRows } from '../lib/activity-rows'
@@ -57,16 +59,19 @@ export function ProjectMilestonePage() {
   if (!projectId || !card) return <EmptyState icon={<Flag size={22} />} title={t('milestoneRun.notFound')} />
   if (!parent) {
     return (
-      <EmptyState
-        icon={<Flag size={22} />}
-        title={t('milestoneRun.notParent', { number: card.number })}
-        description={t('milestoneRun.notParentHint')}
-        action={
-          <Link to={`/p/${projectId}/board?carte=${card.number}`} className="text-sm text-accent hover:underline">
-            {t('milestoneRun.openCard')}
-          </Link>
-        }
-      />
+      <>
+        <EmptyState
+          icon={<Flag size={22} />}
+          title={t('milestoneRun.notParent', { number: card.number })}
+          description={t('milestoneRun.notParentHint')}
+          action={
+            <Link to={`/p/${projectId}/board?carte=${card.number}`} className="text-sm text-accent hover:underline">
+              {t('milestoneRun.openCard')}
+            </Link>
+          }
+        />
+        <CardSheetHost projectId={projectId} />
+      </>
     )
   }
 
@@ -97,6 +102,7 @@ export function ProjectMilestonePage() {
           }
         />
       )}
+      <CardSheetHost projectId={projectId} />
     </div>
   )
 }
@@ -126,6 +132,7 @@ function MilestoneView({ projectId, run, dueAt }: { projectId: string; run: Mile
           <h2 className="min-w-0 truncate text-lg font-semibold text-ink">
             <span className="tabular-nums">#{run.cardNumber}</span> {run.cardTitle}
           </h2>
+          <CardInfoButton card={{ number: run.cardNumber }} />
           <Badge tone={run.state === 'running' ? 'accent' : run.state === 'paused' ? 'caution' : 'neutral'}>
             {run.state === 'running'
               ? t('milestoneRun.launchedAgo', { age: relativeDate(run.createdAt) })
@@ -281,6 +288,7 @@ function WaveCard({
           />
           <span className="shrink-0 text-xs text-ink-faint tabular-nums">#{entry.number}</span>
           <span className="min-w-0 truncate text-ink">{entry.title}</span>
+          <CardInfoButton card={entry} className="ml-auto" />
         </span>
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm text-ink-soft">
           {t(`milestoneRun.status.${entry.status}`)}

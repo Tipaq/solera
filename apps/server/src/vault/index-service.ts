@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import type { Db } from '@solera/db'
 import type { VaultStateDto } from '@solera/protocol'
 import type { Config } from '../config.js'
-import { readAppSettings } from '../settings/app-settings.js'
+import { vaultRoot } from '../settings/app-settings.js'
 import { changesSince, headCommit } from './git.js'
 import { listNotePaths, readNote, readNotes } from './scan.js'
 import { applyBatch, clearIndex, readCounts, readIndexState } from './store.js'
@@ -43,8 +43,7 @@ export class VaultIndex {
    * — c'est l'état d'une instance qui ne prend pas de notes.
    */
   root(): string | null {
-    const path = readAppSettings(this.db, this.config).vaultPath.trim()
-    return path.length > 0 ? path : null
+    return vaultRoot(this.db, this.config)
   }
 
   async state(): Promise<VaultStateDto> {
