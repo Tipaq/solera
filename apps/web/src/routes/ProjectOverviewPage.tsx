@@ -298,7 +298,7 @@ function NowBlock({ projectId, rows }: { projectId: string; rows: ActivityRow[] 
     <section aria-label={t('project.overview.now')} className="flex min-w-0 flex-col gap-2">
       <SectionHeading icon={<CircleDot size={14} />} title={t('project.overview.now')}>
         <Link
-          to={`/p/${projectId}/activity`}
+          to={`/p/${projectId}/travail`}
           className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
         >
           {t('project.overview.allActivity')}
@@ -456,7 +456,7 @@ function JournalTile({ projectId }: { projectId: string }) {
     <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
       <SectionHeading icon={<History size={14} />} title={t('project.view.journal')}>
         <Link
-          to={`/p/${projectId}/journal`}
+          to={`/p/${projectId}/travail?vue=moment`}
           className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
         >
           {t('place.seeAll')}
@@ -513,7 +513,7 @@ function TaskLine({ task }: { task: ScheduledTaskDto }) {
   return (
     <li>
       <Link
-        to={`/p/${task.projectId}/schedules`}
+        to={`/p/${task.projectId}/actions`}
         className={cx(
           'flex min-h-11 min-w-0 items-center gap-2.5 rounded-xl border border-line px-3 py-2',
           'transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-accent',

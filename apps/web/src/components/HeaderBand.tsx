@@ -25,6 +25,7 @@ import { SidebarRestoreButton } from './SidebarRestoreButton'
  */
 export function HeaderBand({
   zone = 'view',
+  gutter = 'tight',
   className,
   children,
 }: {
@@ -34,6 +35,12 @@ export function HeaderBand({
    * panneau droit, et tous deux ont leur propre contenu.
    */
   zone?: 'nav' | 'view' | 'panel'
+  /**
+   * `place` : la gouttière d'un lieu, 16 px puis 24 px dès `md`, celle de la rangée,
+   * de la barre d'outils et du contenu qui suivent (`PlaceBand`). `tight` : celle des
+   * bandes qui n'ont rien à aligner dessous — une conversation, un panneau.
+   */
+  gutter?: 'tight' | 'place'
   className?: string
   children: ReactNode
 }) {
@@ -44,7 +51,7 @@ export function HeaderBand({
         // `header-bar` et non `h-[var(--header-height)]` : la barre doit *ajouter*
         // l'encoche à sa hauteur, ce qu'une classe utilitaire ne sait pas faire.
         'header-bar flex shrink-0 items-center gap-2 border-b border-line',
-        zone === 'panel' ? 'px-2' : 'px-3',
+        zone === 'panel' ? 'px-2' : gutter === 'place' ? 'px-4 md:px-6' : 'px-3',
         className,
       )}
     >

@@ -238,7 +238,7 @@ export function CommandPalette({
         key: 'cmd-schedule',
         icon: <CalendarPlus size={14} />,
         label: t('palette.action.schedule'),
-        run: () => go(`/p/${projectId}/schedules`),
+        run: () => go(`/p/${projectId}/actions`),
       })
       entries.push({
         key: 'cmd-board',
@@ -526,7 +526,7 @@ export function CommandPalette({
       label: task.name,
       // Une tâche sans projet ne se lit que sur la page Planifiées, qui les porte toutes.
       meta: task.projectId ? projectNames.get(task.projectId) : t('destination.none'),
-      run: () => go(task.projectId ? `/p/${task.projectId}/schedules` : '/schedules'),
+      run: () => go(task.projectId ? `/p/${task.projectId}/actions` : '/schedules'),
     }))
 
     // Un skill global n'a pas de projet ; celui d'un projet qu'on ne voit plus (archivé

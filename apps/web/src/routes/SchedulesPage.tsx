@@ -25,7 +25,7 @@ import {
  * Une page de lieu et non une vue de projet : une tâche n'a pas besoin d'un projet
  * pour exister — « relire le journal de la veille » travaille le vault — et il faut
  * donc un endroit d'où on les voit toutes. Celles qui ont un projet restent listées
- * dedans, sur `/p/:projectId/schedules` : les deux lisent la même requête.
+ * dedans, sur `/p/:projectId/actions` : les deux lisent la même requête.
  *
  * La cible est une colonne à part entière, et c'est elle qui fait la différence avec
  * la page d'un projet : sans elle, deux tâches homonymes de deux dépôts seraient
@@ -106,7 +106,7 @@ export function SchedulesPage() {
                     task={task}
                     project={projects?.find((entry) => entry.id === task.projectId)}
                     onOpen={
-                      task.projectId ? () => navigate(`/p/${task.projectId}/schedules`) : null
+                      task.projectId ? () => navigate(`/p/${task.projectId}/actions`) : null
                     }
                   />
                 ))}

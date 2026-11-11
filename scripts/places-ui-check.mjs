@@ -17,10 +17,12 @@ import { launchBrowser } from './checks/browser.mjs'
  * celui de l'application — mêmes colonnes, mêmes tuiles — et que l'ancienne page de
  * réglages est toujours joignable depuis le `⋯` qui l'a reprise.
  *
- * Depuis le 2026-10-15, la vue d'un projet est logée dans une coque : la bande porte le
- * nom du projet et le `⋯`, la rangée porte les vues. La suite vérifie donc aussi que la
- * page n'a **plus** d'en-tête à elle — deux titres de projet l'un sous l'autre étaient
- * précisément ce que la coque est venue supprimer.
+ * La vue d'un projet est logée dans une coque (`PlaceShell`, page projet v2) : la bande
+ * porte l'avatar, le nom et « + Conversation », la rangée porte les cinq vues puis
+ * Réglages au bout. La suite vérifie que la page n'a **plus** d'en-tête à elle, que la
+ * bande n'a plus ni `⋯` ni pastille de branche, que la rangée ne porte plus d'action de
+ * vue, que ses comptes suivent la règle des tons, que la gouttière est la même pour la
+ * bande, la rangée et le contenu, et que les anciennes adresses mènent aux nouvelles.
  */
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -96,22 +98,139 @@ try {
   const shots = join(root, 'docs/audits/2026-10-12-pages-de-lieu')
   await mkdir(shots, { recursive: true })
 
-  // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
+  /** Les abscisses que la gouttière aligne : le premier élément de la bande (l'avatar,
+      ou au doigt le bouton de navigation qui le précède), l'icône du premier onglet et le
+      premier texte de la vue (le bord de sa boîte, padding compris). */
+  const gutter = () => page.evaluate(() => {
+    const visible = (element) => element && element.getBoundingClientRect().width > 0
+    const band = document.querySelector('[data-place-icon]').closest('header')
+    const first = [...band.children].find(visible)
+    const tab = document.querySelector('nav[aria-label="Vues du projet"] a > span')
+    const view = document.querySelector('[data-place-content]').firstElementChild
+    const content = view.getBoundingClientRect().left + parseFloat(getComputedStyle(view).paddingLeft)
+    return { band: first.getBoundingClientRect().left, tab: tab.getBoundingClientRect().left, content }
+  })
+  const assertGutter = async (where) => {
+    const { band, tab, content } = await gutter()
+    assert.ok(Math.abs(band - tab) <= 1 && Math.abs(band - content) <= 1, `Une seule gouttière ${where} : bande ${band}, onglet ${tab}, contenu ${content}`)
+  }
+
+  // ─── La coque d'un projet ─────────────────────────────────────────────────
+  await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByRole('navigation', { name: 'Vues du projet', exact: true }).waitFor()
+  const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
+  await row.waitFor()
   // Le nom du projet est dans la bande, et **une seule fois** : la page n'en remet pas.
   assert.equal(
     await page.getByRole('heading', { name: 'Nimbus', exact: true }).count(),
     1,
     'Le nom du projet est dans la bande, et la page ne le redit pas',
   )
-  // La rangée porte les vues, et l'Aperçu est la seule sans action propre.
-  const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
-  // L'ordre de l'audit, et les six depuis #110 : la rangée est la même sur toutes les vues.
-  for (const view of ['Aperçu', 'Activité', 'Board', 'Planifiées', 'Jalons', 'Journal']) {
+  // La rangée v2, dans cet ordre, puis Réglages au bout, et rien d'autre.
+  const paths = await row.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname))
+  assert.deepEqual(
+    paths,
+    ['', '/travail', '/board', '/timeline', '/actions', '/settings'].map((tail) => `/p/${nimbus.id}${tail}`),
+    'Aperçu · Travail · Tableau · Jalons · Actions … Réglages',
+  )
+  for (const view of ['Aperçu', 'Travail', 'Tableau', 'Jalons', 'Actions']) {
     await row.getByRole('link', { name: new RegExp(`^${view}`) }).waitFor()
   }
-  assert.equal(await row.getByRole('button').count(), 0, "L'Aperçu n'a pas d'action propre")
+  assert.equal(await row.getByRole('button').count(), 0, 'La rangée ne porte plus aucune action de vue')
+  const settingsTab = row.getByRole('link', { name: 'Réglages du projet', exact: true })
+  assert.equal((await settingsTab.innerText()).trim(), 'Réglages')
+  // Réglages poussé au bout : son bord droit est celui de la rangée, gouttière ôtée.
+  const [rowBox, settingsBox, actionsBox] = await Promise.all([
+    row.boundingBox(), settingsTab.boundingBox(), row.getByRole('link', { name: /^Actions/ }).boundingBox(),
+  ])
+  assert.ok(rowBox.x + rowBox.width - (settingsBox.x + settingsBox.width) <= 24, 'Réglages est au bout de la rangée')
+  assert.ok(settingsBox.x - (actionsBox.x + actionsBox.width) > 40, 'Réglages est séparé des vues')
+
+  // La bande : avatar, nom, « + Conversation », et plus de `⋯` ni de branche.
+  const band = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Nimbus', exact: true }) })
+  await band.getByRole('button', { name: 'Conversation', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Actions du projet', exact: true }).count(), 0, 'Plus de ⋯ dans la bande')
+  if (nimbus.git) {
+    assert.equal(await band.getByText(nimbus.git.branch, { exact: true }).count(), 0, 'Plus de pastille de branche')
+  }
+
+  // Les comptes : ambre pour ce qui t'attend, gris pour l'inventaire, et ce qu'ils
+  // comptent en infobulle.
+  const projectCards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
+  const openLeaves = projectCards.filter((entry) => entry.children.length === 0 && !['done', 'abandoned'].includes(entry.column)).length
+  const boardCount = row.getByRole('link', { name: /^Tableau/ }).locator('span[title]')
+  assert.equal(await boardCount.getAttribute('title'), `${openLeaves} cartes ouvertes`)
+  assert.equal((await boardCount.locator('[aria-hidden]').innerText()).trim(), String(openLeaves))
+  assert.doesNotMatch(await boardCount.getAttribute('class'), /text-(caution|positive)/, 'Le Tableau est un inventaire, gris')
+  const workCount = row.getByRole('link', { name: /^Travail/ }).locator('span[title]')
+  await workCount.waitFor()
+  assert.match(await workCount.getAttribute('title'), /t’attend/)
+  assert.match(await workCount.getAttribute('class'), /text-caution/, 'Travail compte ce qui t’attend, en ambre')
+  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).locator('span[title]').count(), 0, 'Jalons n’a pas de compte')
+
+  await assertGutter('en 1280 px, sur l’Aperçu')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'coque-projet.png'), clip: { x: 0, y: 0, width: 1280, height: 140 } })
+
+  // Réglages est une vue de la coque : la rangée reste, son onglet s'allume.
+  await settingsTab.click()
+  await page.waitForURL(`**/p/${nimbus.id}/settings`)
+  await page.getByRole('heading', { name: 'Réglages du projet', exact: true }).waitFor()
+  await row.waitFor()
+  await settingsTab.and(page.locator('[aria-current="page"]')).waitFor()
+  assert.equal(await page.getByRole('heading', { name: 'Nimbus', exact: true }).count(), 1, 'Les réglages ne redisent pas le nom du projet')
+  // La couleur a quitté le `⋯` pour les réglages.
+  await page.getByRole('radiogroup', { name: 'Couleur', exact: true }).waitFor()
+  await assertGutter('sur les réglages')
+
+  // Le Tableau porte son « + Carte » dans sa barre, plus dans la rangée.
+  await row.getByRole('link', { name: /^Tableau/ }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/board`)
+  await page.getByRole('button', { name: 'Carte', exact: true }).click()
+  await page.waitForURL(/[?&]nouvelle=1/)
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  // Les anciennes adresses mènent à la vue qui les a absorbées, requête comprise.
+  await page.goto(`${base}/p/${nimbus.id}/activity?groupe=worktree`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?groupe=worktree`)
+  await row.getByRole('link', { name: /^Travail/ }).and(page.locator('[aria-current="page"]')).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/schedules`)
+  await page.waitForURL(`**/p/${nimbus.id}/actions`)
+  // Tant que la vue Actions n'est pas livrée, l'onglet rend les Planifiées du projet,
+  // et leur « + Tâche » est en tête de la page.
+  await page.getByRole('button', { name: 'Tâche', exact: true }).click()
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=moment`)
+  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+
+  // Au doigt : même gouttière, Réglages en icône seule, la rangée défile.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await row.waitFor()
+  await assertGutter('en 390 px')
+  assert.equal((await settingsTab.innerText()).trim(), '', 'Au téléphone, Réglages est une icône')
+  // Arriver sur Réglages, au bout d'une rangée qui déborde, la fait défiler jusqu'à lui.
+  // Par l'adresse et non par un clic : Playwright ferait lui-même défiler la rangée.
+  await page.goto(`${base}/p/${nimbus.id}/settings`)
+  // Après l'arrivée des comptes, qui élargissent les onglets et repoussent le bout.
+  await row.getByRole('link', { name: /^Travail/ }).locator('span[title]').waitFor({ state: 'attached' })
+  await row.getByRole('link', { name: /^Tableau/ }).locator('span[title]').waitFor({ state: 'attached' })
+  await page.waitForTimeout(300)
+  await page.waitForFunction(() => {
+    const tab = document.querySelector('nav[aria-label="Vues du projet"] [aria-current="page"]')
+    return tab && tab.getBoundingClientRect().right <= window.innerWidth + 1
+  })
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await row.waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'coque-projet-mobile.png'), clip: { x: 0, y: 0, width: 390, height: 140 } })
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await row.waitFor()
 
   /*
     Le résumé du board a **quitté** l'Aperçu le 2026-10-16 : il redisait le board au
@@ -165,11 +284,11 @@ try {
     )
   }
 
-  // Le bandeau dit ce qui réclame, et rien d'autre.
-  const awaiting = page.getByRole('link', { name: /attend ta réponse/ })
-  await awaiting.waitFor()
-  assert.match(await awaiting.innerText(), /depuis/, 'La tuile d’attente dit depuis quand')
-  await page.getByRole('link', { name: /^à relire/ }).waitFor()
+  // Ce qui réclame est dans « Ce qui t'attend » depuis #163 (les tuiles d'attente et de
+  // relecture en sont sorties), et le bandeau ne porte rien d'autre.
+  const inbox = page.getByRole('region', { name: 'Ce qui t’attend', exact: true })
+  await inbox.waitFor()
+  await inbox.getByText(/à relire/).first().waitFor()
   assert.equal(
     await page.getByText(/cartes$/).count(),
     0,
@@ -203,22 +322,9 @@ try {
   const task = schedules.find((entry) => entry.projectId === nimbus.id)
   if (task) await page.getByRole('link', { name: new RegExp(task.name) }).first().waitFor()
 
-  // Les réglages ont quitté la page et sont dans le `⋯`, qui ne navigue plus vers une vue.
-  await page.getByRole('button', { name: 'Actions du projet', exact: true }).click()
-  for (const view of ['Board', 'Planifiées']) {
-    assert.equal(
-      await page.getByRole('menuitem', { name: view, exact: true }).count(),
-      0,
-      `Le \u22ef ne redit pas la vue « ${view} », la rangée est juste en dessous`,
-    )
-  }
-  await page.getByRole('menuitem', { name: 'Réglages du projet', exact: true }).click()
-  await page.getByRole('heading', { name: 'Réglages du projet', exact: true }).waitFor()
-  assert.equal(new URL(page.url()).pathname, `/p/${nimbus.id}/settings`)
-
   // Un projet calme ne montre pas un bandeau vide, il le dit.
   await page.goto(`${base}/p/${docs.id}`)
-  await page.getByText('Rien ne réclame ici.', { exact: true }).waitFor()
+  await page.getByText('Rien ne t’attend.', { exact: true }).waitFor()
 
   // ─── Le portefeuille : Projets, Board global, Activité ─────────────────────
   await page.goto(`${base}/projects`)
@@ -239,7 +345,9 @@ try {
     relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
     projets atterrissent bien dans la même colonne.
   */
-  await portfolio.getByRole('link', { name: /^Board/ }).click()
+  // La même coque qu'un projet : Réglages au bout, qui ouvre ceux de l'instance.
+  await portfolio.getByRole('button', { name: 'Réglages de l’instance', exact: true }).waitFor()
+  await portfolio.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL('**/projects/board')
   const todo = page.getByRole('region', { name: 'À faire', exact: true })
   await todo.waitFor()
@@ -317,7 +425,7 @@ try {
     dans git, un audit versé sur le disque — et rien dans le code ne garantit qu'elles
     arrivent bien jusqu'à la page.
   */
-  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
   const filters = page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true })
   await filters.waitFor()
   // Les filtres sont des pilules, **pas** une seconde rangée d'onglets : il n'y a
@@ -386,7 +494,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
   // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
-  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
   await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-mobile.png') })
@@ -398,13 +506,13 @@ try {
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
-  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
   await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque et rangée, bandeau sans inventaire, board réel, réglages dans le ⋯, lignes de projets, board global, Activité, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, lignes de projets, board global, Activité, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

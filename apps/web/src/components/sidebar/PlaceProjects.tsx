@@ -651,7 +651,7 @@ function ProjectMenuEntries({ project, onNavigate, onRename }: {
       <MenuItem icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
         {t('shell.project.board')}
       </MenuItem>
-      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/schedules`)}>
+      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/actions`)}>
         {t('place.schedules.title')}
       </MenuItem>
       <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
