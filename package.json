@@ -40,6 +40,7 @@
     "test:skills-ui": "node scripts/skills-ui-check.mjs",
     "test:tooltips-ui": "node scripts/tooltips-ui-check.mjs",
     "test:schedule-check-ui": "node scripts/schedule-check-ui-check.mjs",
+    "test:schedule-builder-ui": "node scripts/schedule-builder-ui-check.mjs",
     "test:palette-ui": "node scripts/palette-ui-check.mjs",
     "test:checkpoints-ui": "node scripts/checkpoints-ui-check.mjs",
     "test:worktrees-ui": "node scripts/worktree-status-ui-check.mjs",
