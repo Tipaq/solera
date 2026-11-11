@@ -20,7 +20,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowDownUp, ChevronDown, ChevronRight, ListTree, PanelRight, Plus, Search, X } from 'lucide-react'
+import { PanelRight, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
@@ -29,7 +29,9 @@ import { CardPanel } from '../components/board/CardPanel'
 import { PanelHost } from '../components/shell/PanelHost'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, Menu, MenuRadioGroup, MenuRadioItem, cx } from '@solera/ui'
+import { Button, EmptyState, IconButton, cx } from '@solera/ui'
+import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
+import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment } from '../components/toolbar/ToolbarMenus'
 import { CardRefContext } from '../lib/card-refs'
 import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { NEW_PARAM } from '../lib/place'
@@ -145,6 +147,14 @@ export function BoardPage() {
     setParams(next, { replace: true })
   }
   const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
+  /** Au téléphone, une seule colonne se voit : la recherche y mène si la sienne n'a rien. */
+  const onSearch = (value: string) => {
+    setQuery(value)
+    if (!wide && value.trim()) {
+      const matching = (cards ?? []).filter((card) => matchesCard(card, value.trim().toLocaleLowerCase()))
+      if (!matching.some((card) => card.column === visibleColumn) && matching[0]) setVisibleColumn(matching[0].column)
+    }
+  }
   /**
    * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
    * en cache la moitié. Le repli reste offert pour retrouver de la place quand le
@@ -299,91 +309,82 @@ export function BoardPage() {
        sa ligne de filtres. */
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 md:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
-            <Search size={16} className="shrink-0 text-ink-faint" />
-            <input type="search" value={query} onChange={(event) => {
-              const value = event.target.value
-              setQuery(value)
-              if (!wide && value.trim()) {
-                const matching = (cards ?? []).filter((card) => matchesCard(card, value.trim().toLocaleLowerCase()))
-                if (!matching.some((card) => card.column === visibleColumn) && matching[0]) setVisibleColumn(matching[0].column)
-              }
-            }} aria-label={t('board.search')}
-              placeholder={t('board.search')} className="min-h-10 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-ink-faint" />
-          </div>
-          <p className="hidden text-xs text-ink-faint 2xl:block">{t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}</p>
-          {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
-          {/* Les deux réglages du board, descendus de la bande auprès de ce qu'ils
-              règlent : le repli du cimetière filtre les colonnes qui suivent, et le
-              panneau ouvre le workspace du projet — un terminal, les fichiers ou le
-              diff, sans avoir à entrer dans une session. Les actions du projet se
-              lancent de là aussi, à la racine du projet. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {parents.length > 0 ? (
-              <Menu
-                trigger={
-                  <Button variant="ghost" size="sm" icon={<ListTree size={14} />} aria-label={t('board.parent.label')}
-                    className={cx(parentCard && 'text-accent')}>
-                    <span className="hidden max-w-40 truncate sm:inline">
-                      {parentCard ? `#${parentCard.number} ${parentCard.title}` : t('board.parent.all')}
+        {/* La barre sur une ligne : chercher et filtrer à gauche, l'affichage et
+            « + Carte » à droite. Le ⚡ et le panneau restent jusqu'à la refonte du
+            Tableau ; le ⚡ se tait au téléphone, où l'onglet Actions le remplace. */}
+        <OneLineToolbar
+          search={<ToolbarSearch value={query} onChange={onSearch} placeholder={t('board.search.short')} label={t('board.search')} />}
+          filter={parents.length > 0 ? (
+            <FilterMenu active={parentCard ? 1 : 0} onClearAll={() => setParentFilter(null)}>
+              <MenuHeading>{t('board.filter.parent')}</MenuHeading>
+              <div role="radiogroup" aria-label={t('board.filter.parent')}>
+                {parents.map((parent) => (
+                  <MenuCheck
+                    key={parent.id}
+                    exclusive
+                    checked={parent.id === parentCard?.id}
+                    onChange={() => setParentFilter(parent.number)}
+                    aside={parent.children.length}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5" title={parent.title}>
+                      <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{parent.number}</span>
+                      <span className="min-w-0 truncate">{parent.title}</span>
                     </span>
-                  </Button>
-                }
-              >
-                <MenuRadioGroup value={String(parentCard?.number ?? '')} onValueChange={(value) => setParentFilter(value ? Number(value) : null)}>
-                  <MenuRadioItem value="">{t('board.parent.all')}</MenuRadioItem>
-                  {parents.map((parent) => (
-                    <MenuRadioItem key={parent.id} value={String(parent.number)}>
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{parent.number}</span>
-                        <span className="min-w-0 truncate">{parent.title}</span>
-                      </span>
-                    </MenuRadioItem>
-                  ))}
-                </MenuRadioGroup>
-              </Menu>
-            ) : null}
-            <Menu
-              trigger={
-                <Button variant="ghost" size="sm" icon={<ArrowDownUp size={14} />} aria-label={t('board.order.label')}>
-                  <span className="hidden sm:inline">{t(`board.order.${order}`)}</span>
-                </Button>
-              }
-            >
-              <MenuRadioGroup value={order} onValueChange={(value) => setOrder(boardOrderSchema.parse(value))}>
-                {boardOrderSchema.options.map((value) => (
-                  <MenuRadioItem key={value} value={value}>
-                    {t(`board.order.${value}`)}
-                  </MenuRadioItem>
+                  </MenuCheck>
                 ))}
-              </MenuRadioGroup>
-            </Menu>
-            {wide && hasClosed ? (
-              <Button
-                variant="ghost"
+              </div>
+            </FilterMenu>
+          ) : null}
+          chips={parentCard ? (
+            <FilterChip title={parentCard.title} onClear={() => setParentFilter(null)}>
+              #{parentCard.number} {parentCard.title}
+            </FilterChip>
+          ) : null}
+          extra={
+            <>
+              {reorder.isError ? <p role="alert" className="truncate text-xs text-critical">{t('board.moveError')}</p> : null}
+              <span className="hidden md:contents">
+                <ActionsLauncher projectId={projectId} size="sm" />
+              </span>
+              <IconButton
+                label={panelOpen ? t('conversation.panel.close') : t('conversation.panel.open')}
                 size="sm"
-                icon={showClosed ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                onClick={() => setShowClosed((value) => !value)}
+                onClick={() => setPanelOpen(!panelOpen)}
               >
-                {t('board.closed')}
-              </Button>
-            ) : null}
-            <ActionsLauncher projectId={projectId} size="sm" />
-            <IconButton
-              label={panelOpen ? t('conversation.panel.close') : t('conversation.panel.open')}
-              size="sm"
-              onClick={() => setPanelOpen(!panelOpen)}
-            >
-              <PanelRight size={16} className={cx(panelOpen && 'text-accent')} />
-            </IconButton>
-            {/* L'action de la vue, sortie de la rangée d'onglets : elle crée dans ce
-                board, elle se pose donc dans sa barre. */}
-            <Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
-              {t('project.action.newCard')}
+                <PanelRight size={16} className={cx(panelOpen && 'text-accent')} />
+              </IconButton>
+            </>
+          }
+          display={
+            <DisplayMenu>
+              <MenuHeading>{t('toolbar.sort')}</MenuHeading>
+              <MenuSegment
+                label={t('board.order.label')}
+                segments={boardOrderSchema.options.map((value) => ({ value, label: t(`board.order.short.${value}`) }))}
+                value={order}
+                onChange={setOrder}
+              />
+              <p className="px-3 pt-1.5 text-xs text-ink-faint">
+                {t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}
+              </p>
+              {wide && hasClosed ? (
+                <>
+                  <MenuHeading>{t('toolbar.show')}</MenuHeading>
+                  <MenuCheck checked={showClosed} onChange={setShowClosed}>{t('board.display.closed')}</MenuCheck>
+                </>
+              ) : null}
+            </DisplayMenu>
+          }
+          action={
+            /* L'action de la vue, sortie de la rangée d'onglets : elle crée dans ce
+               board, elle se pose donc au bout de sa barre. Au téléphone, son icône
+               seule : le bouton du panneau prend la place, et la recherche doit garder
+               de quoi s'écrire. */
+            <Button size="sm" icon={<Plus size={15} />} aria-label={t('project.action.newCard')} onClick={() => setCreating(true)}>
+              <span className="hidden sm:inline">{t('project.action.newCard')}</span>
             </Button>
-          </div>
-        </div>
+          }
+        />
         {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-4 pt-4 text-sm text-ink-faint md:px-6">{t('board.noResults')}</p> : null}
         {!wide ? (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
