@@ -81,6 +81,14 @@ export const scheduleCadenceSchema = z.discriminatedUnion('kind', [
 export type ScheduleCadence = z.infer<typeof scheduleCadenceSchema>
 
 /**
+ * Où s'ouvre la session d'un tir : `root`, à la racine du projet ; `new`, dans un
+ * worktree neuf, sur une branche à lui. Le confinement est un réglage à part (`confined`) :
+ * on peut tourner confiné à la racine comme dans un worktree.
+ */
+export const scheduleWorktreeModeSchema = z.enum(['root', 'new'])
+export type ScheduleWorktreeMode = z.infer<typeof scheduleWorktreeModeSchema>
+
+/**
  * Sort d'un tir qui arrive pendant que le précédent tourne encore : `skip` le laisse
  * passer, `wait` le fait partir dès que la place est libre. Jamais deux en parallèle :
  * ils travailleraient le même arbre.
@@ -103,7 +111,11 @@ export const createScheduledTaskBodySchema = z.object({
   agent: agentKindSchema,
   config: agentConfigSchema,
   prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
-  cadence: scheduleCadenceSchema,
+  /** Null : la tâche ne part qu'à la demande, et `onDemand` doit alors être vrai. */
+  cadence: scheduleCadenceSchema.nullable(),
+  /** Un bouton la lance d'un clic. Au moins l'un des deux : à la demande, ou une cadence. */
+  onDemand: z.boolean().default(true),
+  worktreeMode: scheduleWorktreeModeSchema.default('root'),
   overlapPolicy: scheduleOverlapPolicySchema.default('skip'),
   /** Tirs confinés ou non (#146) ; null : le réglage du projet, relu à chaque tir. */
   confined: z.boolean().nullable().default(null),
@@ -125,7 +137,9 @@ export const updateScheduledTaskBodySchema = z
     agent: agentKindSchema,
     config: agentConfigSchema,
     prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
-    cadence: scheduleCadenceSchema,
+    cadence: scheduleCadenceSchema.nullable(),
+    onDemand: z.boolean(),
+    worktreeMode: scheduleWorktreeModeSchema,
     overlapPolicy: scheduleOverlapPolicySchema,
     confined: z.boolean().nullable(),
     maxDurationMinutes: z
@@ -217,7 +231,14 @@ export interface ScheduledTaskDto {
   agent: AgentKind
   config: AgentConfig
   prompt: string
-  cadence: ScheduleCadence
+  /** Null : la tâche ne part qu'à la demande. */
+  cadence: ScheduleCadence | null
+  /**
+   * Un bouton la lance d'un clic ; vrai pour toute tâche sans cadence. Faux, la tâche
+   * n'a pas de bouton, mais « Lancer maintenant » reste permis : c'est un essai.
+   */
+  onDemand: boolean
+  worktreeMode: ScheduleWorktreeMode
   executionMode: ScheduleExecutionMode
   overlapPolicy: ScheduleOverlapPolicy
   /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
@@ -225,7 +246,7 @@ export interface ScheduledTaskDto {
   maxDurationMinutes: number
   enabled: boolean
   lastRunAt: number | null
-  /** Null quand plus rien n'est prévu : en pause, ou ponctuelle déjà tirée. */
+  /** Null quand plus rien n'est prévu : en pause, sans cadence, ou ponctuelle déjà tirée. */
   nextRunAt: number | null
   createdAt: number
   updatedAt: number
@@ -244,11 +265,16 @@ export interface ScheduledTaskDto {
  * `lastRunAt` ne sert qu'à l'intervalle, qui se compte depuis le tir précédent. Sans
  * lui, le premier tir attend un intervalle entier : une tâche « toutes les 6 heures »
  * qui partirait à la création surprendrait, et « lancer maintenant » existe pour ça.
+ *
+ * `timeZone` ne sert qu'au motif cron. Le daemon l'omet : il lit le motif à son heure.
+ * L'interface passe celle du serveur (`InstanceInfo.timeZone`) : à l'heure du
+ * navigateur, l'aperçu annoncerait un 9 h qui n'est pas celui où la tâche partira.
  */
 export function nextScheduleRun(
   cadence: ScheduleCadence,
   after: number,
   lastRunAt: number | null = null,
+  timeZone?: string,
 ): number | null {
   if (cadence.kind === 'once') return cadence.at > after ? cadence.at : null
   if (cadence.kind === 'interval') {
@@ -258,8 +284,29 @@ export function nextScheduleRun(
     return next > after ? next : after + step
   }
   try {
-    return new Cron(cadence.expression, { paused: true }).nextRun(new Date(after))?.getTime() ?? null
+    return new Cron(cadence.expression, { paused: true, timezone: timeZone }).nextRun(new Date(after))?.getTime() ?? null
   } catch {
     return null
   }
+}
+
+/**
+ * Les `count` prochains tirs d'une cadence après `after`, du plus proche au plus loin :
+ * de quoi remplir l'aperçu « Prochains passages » et son mois, avec la même règle que
+ * le daemon.
+ */
+export function upcomingScheduleRuns(
+  cadence: ScheduleCadence,
+  after: number,
+  count: number,
+  options: { lastRunAt?: number | null; timeZone?: string } = {},
+): number[] {
+  const runs: number[] = []
+  let next = nextScheduleRun(cadence, after, options.lastRunAt ?? null, options.timeZone)
+  while (next !== null && runs.length < count) {
+    runs.push(next)
+    // Chaque tir compte comme le précédent du suivant : c'est ainsi que l'intervalle avance.
+    next = nextScheduleRun(cadence, next, next, options.timeZone)
+  }
+  return runs
 }

@@ -1,4 +1,4 @@
-import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, ScheduleWorktreeMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1207,8 +1207,18 @@ export const scheduledTasks = sqliteTable(
      */
     config: text('config').notNull(),
     prompt: text('prompt').notNull(),
-    /** JSON `ScheduleCadence` : intervalle, motif cron ou date unique. */
-    cadence: text('cadence').notNull(),
+    /**
+     * JSON `ScheduleCadence` : intervalle, motif cron ou date unique. NULL : la tâche ne
+     * part qu'à la demande, et `on_demand` est alors vrai.
+     */
+    cadence: text('cadence'),
+    /** Un bouton la lance d'un clic. Vrai par défaut : une tâche existante se lançait déjà ainsi. */
+    onDemand: integer('on_demand', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Où s'ouvre la session d'un tir : `root`, la racine du projet ; `new`, un worktree
+     * neuf par tir, sur une branche nommée d'après la tâche et l'heure.
+     */
+    worktreeMode: text('worktree_mode').$type<ScheduleWorktreeMode>().notNull().default('root'),
     /** `fresh` : une session neuve par tir. Seul mode pour l'instant. */
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
     /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */

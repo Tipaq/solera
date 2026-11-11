@@ -2,8 +2,10 @@ import { Settings } from 'lucide-react'
 import { useEffect, useRef, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { TabCount, cx, tabItemClass } from '@solera/ui'
+import { DetailSurfaceContext } from '../../lib/detail-surface'
 import { useTranslate } from '../../lib/i18n'
 import { HeaderBand } from '../HeaderBand'
+import { DrawerLayer } from '../shell/Drawer'
 
 /** Une vue atteignable depuis la rangée. */
 export interface PlaceTab {
@@ -140,6 +142,9 @@ export function PlaceTabs({ label, tabs, settings }: {
  * prend de `HeaderBand`, la rangée la retranche du `px-1` de ses onglets, la barre
  * d'outils et le contenu de chaque vue la posent en `px-4 md:px-6` / `p-4 md:p-6`.
  * Pleine largeur partout : aucune vue ne plafonne sa colonne ni ne centre un couloir.
+ *
+ * Une vue de lieu n'a pas de panneau à elle : un détail s'y ouvre dans le tiroir commun,
+ * posé dans le calque sous la rangée (`DetailSurfaceContext`, TIR-8).
  */
 export function PlaceShell({ icon, title, actions, tabs, label, settings, children }: {
   icon: ReactNode
@@ -155,10 +160,12 @@ export function PlaceShell({ icon, title, actions, tabs, label, settings, childr
     <div className="flex h-full min-h-0 flex-col">
       <PlaceBand icon={icon} title={title} actions={actions} />
       <PlaceTabs label={label} tabs={tabs} settings={settings} />
-      {/* `relative` : le tiroir de carte et le panneau du board s'y posent en absolu,
-          sous la rangée, et la bande reste lisible pendant qu'on lit un diff. */}
+      {/* `relative` : les tiroirs et le panneau s'y posent en absolu, sous la rangée, et
+          la bande reste lisible pendant qu'on lit un diff. Le calque des tiroirs vient
+          après le contenu : un tiroir recouvre le panneau, il ne s'ouvre pas à côté. */}
       <div data-place-content className="relative min-h-0 min-w-0 flex-1 overflow-clip">
-        {children ?? <Outlet />}
+        <DetailSurfaceContext.Provider value="drawer">{children ?? <Outlet />}</DetailSurfaceContext.Provider>
+        <DrawerLayer />
       </div>
     </div>
   )

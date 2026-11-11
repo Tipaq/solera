@@ -6,16 +6,21 @@ import {
   projects,
   scheduledRuns,
   scheduledTasks,
+  worktrees,
   type ScheduledRunRow,
   type ScheduledTaskRow,
+  type WorktreeRow,
 } from '@solera/db'
-import { nextScheduleRun, parseAgentConfig, type ScheduleRunTrigger } from '@solera/protocol'
+import { nextScheduleRun, parseAgentConfig, slugifyProjectName, type ScheduleRunTrigger } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
+import { listBranches } from '../git.js'
 import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError, conflict } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { defaultBase } from '../worktrees/assess.js'
+import { createWorktree } from '../worktrees/create.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 
@@ -128,7 +133,7 @@ export class TaskScheduler {
       if (this.openRun(task.id)) {
         // `wait` : la tâche reste due, et partira au balayage qui trouvera la place
         // libre. Une ponctuelle attend toujours, la sauter reviendrait à la perdre.
-        if (task.overlapPolicy === 'wait' || readCadence(task.cadence).kind === 'once') continue
+        if (task.overlapPolicy === 'wait' || readCadence(task.cadence)?.kind === 'once') continue
         this.ctx.db
           .insert(scheduledRuns)
           .values({
@@ -286,6 +291,11 @@ export class TaskScheduler {
   /** Arme le tir suivant ; une ponctuelle a fait son office et se met en pause. */
   private advance(task: ScheduledTaskRow, now: number): void {
     const cadence = readCadence(task.cadence)
+    // Sa cadence retirée entre le balayage et le tir : plus rien à armer, et rien à mettre en pause.
+    if (cadence === null) {
+      this.ctx.db.update(scheduledTasks).set({ nextRunAt: null }).where(eq(scheduledTasks.id, task.id)).run()
+      return
+    }
     const nextRunAt = cadence.kind === 'once' ? null : nextScheduleRun(cadence, now, now)
     this.ctx.db
       .update(scheduledTasks)
@@ -351,12 +361,13 @@ export class TaskScheduler {
     checkOutput?: string,
   ): Promise<string> {
     const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
+    const tree = task.worktreeMode === 'new' ? await this.openWorktree(task, startedAt) : null
     const row = await createConversation(this.ctx.db, this.sessions, {
       projectId: task.projectId,
       userId: task.userId,
       agent: task.agent,
       config,
-      worktreeId: null,
+      worktreeId: tree?.id ?? null,
       cardId: null,
       // Le nom de la tâche et l'heure : sous sa tâche, c'est la date qui distingue
       // un tir du précédent, et ailleurs (recherche, favoris) c'est le nom.
@@ -373,6 +384,7 @@ export class TaskScheduler {
           previous: this.previousRun(task.id),
           publicUrl: this.ctx.config.server.publicUrl,
           checkOutput,
+          worktree: tree && { branch: tree.name, base: tree.baseRef },
         }),
         attachments: [],
         mentions: [],
@@ -380,6 +392,39 @@ export class TaskScheduler {
       },
     })
     return row.id
+  }
+
+  /**
+   * Le worktree neuf d'un tir, sur une branche nommée d'après la tâche et l'heure,
+   * partie de la branche par défaut du projet.
+   *
+   * Jamais celle d'un tir précédent : `createWorktree` reprend une branche qui existe
+   * déjà, et le tir hériterait du travail de l'autre. D'où le suffixe quand deux tirs
+   * tombent dans la même minute, ou qu'une branche de ce nom traîne encore.
+   */
+  private async openWorktree(task: ScheduledTaskRow, startedAt: number): Promise<WorktreeRow> {
+    const project = task.projectId
+      ? this.ctx.db.select().from(projects).where(eq(projects.id, task.projectId)).get()
+      : undefined
+    if (!project) throw new Error("La tâche n'a pas de projet où ouvrir un worktree.")
+
+    const stem = `planifiee/${slugifyProjectName(task.name).slice(0, 40).replace(/-+$/, '') || 'tache'}-${branchStamp(startedAt)}`
+    // Hors dépôt, la liste est vide et `createWorktree` dira pourquoi il refuse.
+    const branches = new Set(await listBranches(project.workspacePath).catch(() => []))
+    const trees = new Set(
+      this.ctx.db
+        .select({ name: worktrees.name })
+        .from(worktrees)
+        .where(eq(worktrees.projectId, project.id))
+        .all()
+        .map((tree) => tree.name),
+    )
+    let name = stem
+    for (let suffix = 2; branches.has(name) || trees.has(name); suffix++) name = `${stem}-${suffix}`
+
+    // Un tir ne travaille pour aucune carte : son arbre n'est rattaché à aucune.
+    const base = (await defaultBase(project.workspacePath)) ?? 'HEAD'
+    return createWorktree(this.ctx, project, task.userId, name, base, null)
   }
 
   /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */
@@ -504,6 +549,13 @@ function stamp(ts: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+/** La même heure, réduite à ce qu'un nom de branche accepte : `20261111-0930`. */
+function branchStamp(ts: number): string {
+  const date = new Date(ts)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`
+}
+
 const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
   checking: 'en vérification',
   running: 'encore en cours',
@@ -534,6 +586,8 @@ export function buildRunPrompt(input: {
   publicUrl: string
   /** Ce que la vérification a écrit, quand elle a laissé partir ce tour. */
   checkOutput?: string | null
+  /** Le worktree neuf où le tir s'ouvre ; absent à la racine du projet. */
+  worktree?: { branch: string; base: string } | null
 }): string {
   const { task, trigger, firedAt, previous, publicUrl } = input
   const checkOutput = input.checkOutput?.trim() ?? ''
@@ -550,6 +604,13 @@ export function buildRunPrompt(input: {
     `Tu tournes seul, dans une session neuve ouverte par le planificateur de Solera : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de ${task.maxDurationMinutes} min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.`,
     '',
   ]
+
+  if (input.worktree) {
+    header.push(
+      `Tu travailles dans un worktree neuf, sur la branche \`${input.worktree.branch}\`, partie de \`${input.worktree.base}\` : rien de ce que tu y fais ne touche la racine du projet. Ce que tu veux garder, commite-le sur cette branche.`,
+      '',
+    )
+  }
 
   if (previous) {
     header.push(

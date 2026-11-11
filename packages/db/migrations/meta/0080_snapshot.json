@@ -2,7 +2,7 @@
   "version": "6",
   "dialect": "sqlite",
   "id": "d42e9ee3-55ca-4a69-8765-894259d9f10d",
-  "prevId": "d2c030c2-7efa-4829-93a3-2b6246e3bb19",
+  "prevId": "7e98965b-7a79-46b6-bedc-d0024c5e1e8b",
   "tables": {
     "action_runs": {
       "name": "action_runs",
@@ -4291,8 +4291,24 @@
           "name": "cadence",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
+        },
+        "on_demand": {
+          "name": "on_demand",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "worktree_mode": {
+          "name": "worktree_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'root'"
         },
         "execution_mode": {
           "name": "execution_mode",

@@ -61,6 +61,7 @@ import { useConversationConfig } from '../lib/conversation-config'
 import { CardRefContext } from '../lib/card-refs'
 import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
+import { DetailSurfaceContext } from '../lib/detail-surface'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
@@ -983,6 +984,9 @@ export function ConversationPage() {
     // fil : c'est lui, et pas le projet, qui décide de ce qu'un chemin relatif désigne
     // quand la conversation tourne dans un worktree.
     <FileLinkContext.Provider value={conversationId}>
+    {/* La conversation a son panneau : un détail s'y ouvre en pile, jamais dans un
+        tiroir à côté (TIR-8). */}
+    <DetailSurfaceContext.Provider value="panel">
     {/* Les `#12` du fil désignent les cartes du board de ce projet. */}
     <CardRefContext.Provider value={conversation.projectId}>
     {/* `overflow-clip` et non `hidden` : un conteneur `hidden` reste défilable par programme, et l éditeur qui révèle une ligne pendant que le panneau glisse hors écran le décalait, laissant le panneau coupé à gauche. */}
@@ -1567,6 +1571,7 @@ export function ConversationPage() {
       ) : null}
     </div>
     </CardRefContext.Provider>
+    </DetailSurfaceContext.Provider>
     </FileLinkContext.Provider>
   )
 }

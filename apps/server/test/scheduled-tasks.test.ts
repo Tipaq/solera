@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -15,6 +15,7 @@ import {
   scheduledRuns,
   scheduledTasks,
   users,
+  worktrees,
 } from '@solera/db'
 import {
   CHECK_SKIP_EXIT_CODE,
@@ -23,6 +24,7 @@ import {
   createScheduledTaskBodySchema,
   updateScheduledTaskBodySchema,
   nextScheduleRun,
+  upcomingScheduleRuns,
   type AgentConfig,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
@@ -32,7 +34,9 @@ import type { Config } from '../src/config.js'
 import { EventLog } from '../src/events/event-log.js'
 import { TaskScheduler, buildRunPrompt } from '../src/scheduler/task-scheduler.js'
 import { runCheck } from '../src/scheduler/check.js'
-import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, updateScheduledTask } from '../src/scheduler/tasks.js'
+import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, tasksToDto, updateScheduledTask } from '../src/scheduler/tasks.js'
+import { instanceInfo } from '../src/instance/profile.js'
+import { HttpError } from '../src/http/errors.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { Environments } from '../src/environments/environments.js'
@@ -352,7 +356,7 @@ test('schedule_task creates a task from a session, within the agent guard rails'
   assert.match(tightCron.content[0]!.text, /trop serré/)
 
   const ambiguous = await mcp('parent', { name: 'x', prompt: 'x', every_minutes: 60, cron: '0 9 * * 1' })
-  assert.match(ambiguous.content[0]!.text, /exactement une cadence/)
+  assert.match(ambiguous.content[0]!.text, /au plus une cadence/)
 
   const selfReplicating = await mcp('scheduled', { name: 'x', prompt: 'x', every_minutes: 60 })
   assert.equal(selfReplicating.isError, true)
@@ -589,4 +593,229 @@ test('schedule_task can propose a check, which waits for the user', async (t) =>
   assert.equal(row.checkScript, 'set -e\nnpm view @openai/codex version')
   assert.equal(row.checkApprovedAt, null)
   assert.equal(row.checkProposedBy, 'parent')
+})
+
+// --- À la demande, où il tourne, fuseau (AC-04) ------------------------------------
+
+/** L'heure et le jour d'un instant, lus dans un fuseau donné. */
+function wallClock(ts: number, timeZone: string): { hour: number; weekday: string } {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23', weekday: 'short' }).formatToParts(ts)
+  return {
+    hour: Number(parts.find((part) => part.type === 'hour')!.value),
+    weekday: parts.find((part) => part.type === 'weekday')!.value,
+  }
+}
+
+test('nextScheduleRun reads a cron in the time zone it is given', () => {
+  const after = Date.UTC(2026, 10, 11, 12, 0)
+  const nineEveryMonday: ScheduleCadence = { kind: 'cron', expression: '0 9 * * 1' }
+  for (const timeZone of ['Asia/Tokyo', 'America/New_York', 'Europe/Paris']) {
+    const next = nextScheduleRun(nineEveryMonday, after, null, timeZone)!
+    assert.deepEqual(wallClock(next, timeZone), { hour: 9, weekday: 'Mon' }, timeZone)
+  }
+  // Tokyo et New York n'ont pas le même 9 h.
+  assert.notEqual(
+    nextScheduleRun(nineEveryMonday, after, null, 'Asia/Tokyo'),
+    nextScheduleRun(nineEveryMonday, after, null, 'America/New_York'),
+  )
+})
+
+test('upcomingScheduleRuns lists the next runs of a cadence, in order', () => {
+  const after = Date.UTC(2026, 10, 11, 12, 0)
+  const daily = upcomingScheduleRuns({ kind: 'cron', expression: '30 3 * * *' }, after, 5, { timeZone: 'Asia/Tokyo' })
+  assert.equal(daily.length, 5)
+  for (const [index, ts] of daily.entries()) {
+    assert.equal(wallClock(ts, 'Asia/Tokyo').hour, 3)
+    if (index > 0) assert.equal(ts - daily[index - 1]!, 24 * 60 * MINUTE)
+  }
+
+  const every90 = upcomingScheduleRuns({ kind: 'interval', minutes: 90 }, after, 3, { lastRunAt: after - 30 * MINUTE })
+  assert.deepEqual(every90, [after + 60 * MINUTE, after + 150 * MINUTE, after + 240 * MINUTE])
+
+  assert.deepEqual(upcomingScheduleRuns({ kind: 'once', at: after + MINUTE }, after, 5), [after + MINUTE])
+  assert.deepEqual(upcomingScheduleRuns({ kind: 'once', at: after - MINUTE }, after, 5), [])
+})
+
+test('the instance tells its time zone, the one a cron is read in', () => {
+  assert.equal(instanceInfo().timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone)
+})
+
+test('a task without fields of its own stays scheduled, on demand too, at the project root', async (t) => {
+  const { db, task } = await harness(t)
+  const created = task({ kind: 'interval', minutes: 10 })
+  assert.equal(created.onDemand, true)
+  assert.equal(created.worktreeMode, 'root')
+  const [dto] = tasksToDto(db, [created])
+  assert.deepEqual(dto!.cadence, { kind: 'interval', minutes: 10 })
+  assert.equal(dto!.onDemand, true)
+  assert.equal(dto!.worktreeMode, 'root')
+})
+
+test('the API body takes a null cadence, and defaults to on demand at the root', () => {
+  const body = createScheduledTaskBodySchema.parse({ name: 'Revue', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, prompt: 'Relis.', cadence: null })
+  assert.equal(body.cadence, null)
+  assert.equal(body.onDemand, true)
+  assert.equal(body.worktreeMode, 'root')
+  assert.equal(createScheduledTaskBodySchema.safeParse({ ...body, worktreeMode: 'elsewhere' }).success, false)
+  assert.deepEqual(updateScheduledTaskBodySchema.parse({ cadence: null, onDemand: true, worktreeMode: 'new' }), { cadence: null, onDemand: true, worktreeMode: 'new' })
+})
+
+const onDemandInput = (overrides: Partial<Parameters<typeof createScheduledTask>[2]> = {}) => ({
+  name: 'Revue',
+  agent: 'claude' as const,
+  config: DEFAULT_CLAUDE_CONFIG,
+  prompt: 'Relis la dernière PR.',
+  cadence: null,
+  overlapPolicy: 'skip' as const,
+  maxDurationMinutes: 30,
+  enabled: true,
+  onDemand: true,
+  ...overrides,
+})
+
+test('an on-demand agent task has no cadence: it never fires alone, but runs when asked', async (t) => {
+  const { db, scheduler, runs, reload } = await harness(t)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput())
+  assert.equal(created.cadence, null)
+  assert.equal(created.nextRunAt, null)
+  assert.equal(tasksToDto(db, [created])[0]!.cadence, null)
+
+  await scheduler.tick(Date.now() + 400 * 24 * 60 * MINUTE)
+  assert.equal(runs().length, 0)
+
+  const run = await scheduler.runNow(created.id)
+  assert.equal(run.status, 'running')
+  assert.ok(run.conversationId)
+  // Un tir à la main n'arme rien : il n'y a pas de cadence à suivre.
+  assert.equal(reload(created.id).nextRunAt, null)
+})
+
+test('a task neither on demand nor scheduled is refused, at creation as at update', async (t) => {
+  const { db, task } = await harness(t)
+  const neither = () => createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ onDemand: false }))
+  assert.throws(neither, (err: unknown) => err instanceof HttpError && err.code === 'schedule_needs_trigger')
+
+  const scheduledOnly = createScheduledTask(
+    db,
+    { projectId: 'project', userId: 'owner' },
+    onDemandInput({ cadence: { kind: 'interval', minutes: 60 }, onDemand: false }),
+  )
+  assert.equal(scheduledOnly.onDemand, false)
+  assert.throws(
+    () => updateScheduledTask(db, scheduledOnly, { cadence: null }),
+    (err: unknown) => err instanceof HttpError && err.code === 'schedule_needs_trigger',
+  )
+
+  // Retirer la cadence d'une tâche à la demande la désarme, sans la mettre en pause.
+  const both = task({ kind: 'interval', minutes: 10 })
+  const unscheduled = updateScheduledTask(db, both, { cadence: null })
+  assert.equal(unscheduled.cadence, null)
+  assert.equal(unscheduled.nextRunAt, null)
+  assert.equal(unscheduled.enabled, true)
+  // Et la lui rendre la réarme.
+  const rescheduled = updateScheduledTask(db, unscheduled, { cadence: { kind: 'interval', minutes: 10 } })
+  assert.ok(rescheduled.nextRunAt)
+})
+
+/** Fait du dossier du projet un dépôt git sur `main`, avec un commit. */
+function initRepository(dir: string): void {
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: dir, stdio: 'ignore' })
+  git('init', '-q', '-b', 'main')
+  git('commit', '-q', '--allow-empty', '-m', 'init')
+}
+
+test('a run in « new worktree » mode opens its session in a fresh worktree named after the task', async (t) => {
+  const { db, dir, scheduler, sent } = await harness(t)
+  initRepository(dir)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ name: 'Revue nocturne', worktreeMode: 'new' }))
+  assert.equal(tasksToDto(db, [created])[0]!.worktreeMode, 'new')
+
+  const first = await scheduler.runNow(created.id)
+  assert.equal(first.status, 'running', first.error ?? undefined)
+  const thread = db.select().from(conversations).where(eq(conversations.id, first.conversationId!)).get()!
+  assert.ok(thread.worktreeId)
+  const tree = db.select().from(worktrees).where(eq(worktrees.id, thread.worktreeId)).get()!
+  assert.match(tree.name, /^planifiee\/revue-nocturne-\d{8}-\d{4}$/)
+  assert.equal(tree.baseRef, 'main')
+  assert.equal(tree.createdBy, 'owner')
+  assert.ok((await stat(tree.path)).isDirectory())
+  // L'agent sait où il est : il ne doit pas chercher son travail à la racine.
+  assert.ok(sent[0]!.text.includes(tree.name))
+
+  // Le tir suivant, dans la même minute, ne reprend pas la branche du précédent.
+  db.update(scheduledRuns).set({ status: 'succeeded', finishedAt: Date.now() }).where(eq(scheduledRuns.id, first.id)).run()
+  const second = await scheduler.runNow(created.id)
+  const secondThread = db.select().from(conversations).where(eq(conversations.id, second.conversationId!)).get()!
+  assert.notEqual(secondThread.worktreeId, thread.worktreeId)
+  const secondTree = db.select().from(worktrees).where(eq(worktrees.id, secondThread.worktreeId!)).get()!
+  assert.notEqual(secondTree.name, tree.name)
+  assert.ok(secondTree.name.startsWith(tree.name))
+})
+
+test('a run at the root keeps opening its session without a worktree', async (t) => {
+  const { db, scheduler } = await harness(t)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput())
+  const run = await scheduler.runNow(created.id)
+  const thread = db.select().from(conversations).where(eq(conversations.id, run.conversationId!)).get()!
+  assert.equal(thread.worktreeId, null)
+  assert.equal(db.select().from(worktrees).all().length, 0)
+})
+
+test('a « new worktree » run in a project that is not a repository fails and says why', async (t) => {
+  const { db, scheduler, sent } = await harness(t)
+  const created = createScheduledTask(db, { projectId: 'project', userId: 'owner' }, onDemandInput({ worktreeMode: 'new' }))
+  const run = await scheduler.runNow(created.id)
+  assert.equal(run.status, 'failed')
+  assert.match(run.error ?? '', /git/i)
+  assert.equal(sent.length, 0)
+})
+
+test('schedule_task creates an on-demand task, or one that runs in a new worktree', async (t) => {
+  const { db, dbPath, sessions, registry, config } = await harness(t)
+  db.insert(conversations).values({
+    id: 'parent', projectId: 'project', userId: 'owner', title: 'Session', agent: 'claude', config: '{}', status: 'running',
+    createdAt: 1, updatedAt: Date.now(),
+  }).run()
+  const requests = new AgentRequests({ db, config }, sessions, registry, new EventLog(db))
+  const mcp = async (args: object) => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
+      env: { ...process.env, SOLERA_MCP_DB: dbPath, SOLERA_MCP_PROJECT: 'project', SOLERA_MCP_CONVERSATION: 'parent' },
+    })
+    let stdout = ''
+    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString() })
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'schedule_task', arguments: args } }) + '\n')
+    const deadline = Date.now() + 10000
+    while (!stdout.includes('\n') && Date.now() < deadline) {
+      await requests.sweep()
+      await new Promise((done) => setTimeout(done, 50))
+    }
+    child.kill()
+    return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
+  }
+
+  const onDemand = await mcp({ name: 'Revue', prompt: 'Relis la dernière PR.' })
+  assert.equal(onDemand.isError, undefined, onDemand.content[0]?.text)
+  assert.match(onDemand.content[0]!.text, /à la demande/)
+  const row = db.select().from(scheduledTasks).get()!
+  assert.equal(row.cadence, null)
+  assert.equal(row.onDemand, true)
+  assert.equal(row.nextRunAt, null)
+  assert.equal(row.worktreeMode, 'root')
+
+  const nowhere = await mcp({ name: 'x', prompt: 'x', on_demand: false })
+  assert.equal(nowhere.isError, true)
+  assert.match(nowhere.content[0]!.text, /jamais/)
+
+  const inTree = await mcp({ name: 'Audit', prompt: 'Audite.', cron: '0 9 * * 1', on_demand: false, worktree_mode: 'new' })
+  assert.equal(inTree.isError, undefined, inTree.content[0]?.text)
+  assert.match(inTree.content[0]!.text, /worktree neuf/)
+  const audit = db.select().from(scheduledTasks).where(eq(scheduledTasks.name, 'Audit')).get()!
+  assert.equal(audit.worktreeMode, 'new')
+  assert.equal(audit.onDemand, false)
+
+  const badMode = await mcp({ name: 'x', prompt: 'x', worktree_mode: 'elsewhere' })
+  assert.equal(badMode.isError, true)
+
+  assert.equal(db.select().from(scheduledTasks).all().length, 2)
 })

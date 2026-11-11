@@ -6,12 +6,14 @@ import type {
   ScheduleOverlapPolicy,
   ScheduleCheckResultDto,
   ScheduleRunStatus,
+  ScheduleWorktreeMode,
   ScheduledRunDto,
   ScheduledTaskDto,
 } from '@solera/protocol'
 import { api } from './api'
 import { cadenceWords, formatDateTime as dateTimeIn, RUN_VERDICTS, VERDICT_FILL } from './automations'
 import { locale, translate, type MessageKey } from './i18n'
+import { useInstance } from './instance'
 
 export const SCHEDULES_KEY = ['schedules']
 
@@ -37,7 +39,12 @@ export interface ScheduleInput {
   agent: AgentKind
   config: AgentConfig
   prompt: string
-  cadence: ScheduleCadence
+  /** Null : la tâche ne part qu'à la demande, et `onDemand` doit être vrai. */
+  cadence: ScheduleCadence | null
+  /** Absent : vrai à la création, inchangé à la modification. */
+  onDemand?: boolean
+  /** Absent : à la racine du projet à la création, inchangé à la modification. */
+  worktreeMode?: ScheduleWorktreeMode
   overlapPolicy: ScheduleOverlapPolicy
   /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
   confined: boolean | null
@@ -45,6 +52,18 @@ export interface ScheduleInput {
   /** Null retire la vérification. */
   checkScript?: string | null
   checkTimeoutSeconds?: number
+}
+
+/**
+ * Le fuseau où le serveur lit un motif cron : celui où l'aperçu d'une planification
+ * calcule et affiche ses passages (`nextScheduleRun`, `formatDateTime`).
+ *
+ * Celui du navigateur tant que l'instance n'est pas chargée, ou qu'un serveur plus
+ * ancien que l'interface ne le donne pas : c'était l'aperçu d'avant.
+ */
+export function useServerTimeZone(): string {
+  const { data } = useInstance()
+  return data?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
 function useInvalidate() {
@@ -158,17 +177,27 @@ export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   // Avant la pause : une tâche qui attend une validation ne fait rien tant qu'on ne l'a
   // pas donnée, et c'est la seule chose qu'on attende de qui la regarde.
   if (task.check && !task.check.approved) return 'approval'
-  if (!task.enabled) return task.cadence.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
+  if (!task.enabled) return task.cadence?.kind === 'once' && task.lastRunAt ? 'done' : 'paused'
   if (last?.status === 'failed' || last?.status === 'timed_out') return 'failed'
   return 'waiting'
 }
 
-export function formatDateTime(ts: number): string {
-  return dateTimeIn(ts, locale())
+/** Date et heure d'un tir ; `timeZone` les lit à l'heure du serveur plutôt qu'à celle du poste. */
+export function formatDateTime(ts: number, timeZone?: string): string {
+  return dateTimeIn(ts, locale(), timeZone)
 }
 
-/** La cadence en clair ; le motif cron est traduit par l'appelant, qui a `cronToHuman`. */
-export function describeCadence(cadence: ScheduleCadence, cronHuman: (expression: string) => string | null): string {
+/**
+ * La cadence en clair, « À la demande » sans cadence ; le motif cron est traduit par
+ * l'appelant, qui a `cronToHuman`.
+ */
+export function describeCadence(
+  cadence: ScheduleCadence | null,
+  cronHuman: (expression: string) => string | null,
+  timeZone?: string,
+): string {
+  if (cadence === null) return translate('automation.when.demand')
   if (cadence.kind === 'cron') return cronHuman(cadence.expression) ?? cadence.expression
+  if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at, timeZone) })
   return cadenceWords(cadence, translate, locale())
 }
