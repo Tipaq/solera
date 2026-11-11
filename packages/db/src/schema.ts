@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, ScheduleWorktreeMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1207,7 +1207,7 @@ export const scheduledTasks = sqliteTable(
      * Où s'ouvre la session d'un tir : `root`, la racine du projet ; `new`, un worktree
      * neuf par tir, sur une branche nommée d'après la tâche et l'heure.
      */
-    worktreeMode: text('worktree_mode').$type<'root' | 'new'>().notNull().default('root'),
+    worktreeMode: text('worktree_mode').$type<ScheduleWorktreeMode>().notNull().default('root'),
     /** `fresh` : une session neuve par tir. Seul mode pour l'instant. */
     executionMode: text('execution_mode').$type<'fresh'>().notNull().default('fresh'),
     /** Que faire d'un tir qui arrive pendant que le précédent tourne encore. */

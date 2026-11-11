@@ -550,7 +550,9 @@ function stamp(ts: number): string {
 
 /** La même heure, réduite à ce qu'un nom de branche accepte : `20261111-0930`. */
 function branchStamp(ts: number): string {
-  return stamp(ts).replace(/-/g, '').replace(' ', '-').replace(':', '')
+  const date = new Date(ts)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`
 }
 
 const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {

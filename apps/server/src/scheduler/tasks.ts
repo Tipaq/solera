@@ -36,6 +36,10 @@ export function readCadence(raw: string | null): ScheduleCadence | null {
   return raw === null ? null : scheduleCadenceSchema.parse(JSON.parse(raw))
 }
 
+function writeCadence(cadence: ScheduleCadence | null): string | null {
+  return cadence === null ? null : JSON.stringify(cadence)
+}
+
 export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
   return {
     id: row.id,
@@ -188,7 +192,7 @@ export function createScheduledTask(
     agent: input.agent,
     config: JSON.stringify(input.config),
     prompt: input.prompt,
-    cadence: input.cadence === null ? null : JSON.stringify(input.cadence),
+    cadence: writeCadence(input.cadence),
     onDemand,
     worktreeMode: input.worktreeMode ?? 'root',
     executionMode: 'fresh',
@@ -240,7 +244,7 @@ export function updateScheduledTask(
     agent,
     config: JSON.stringify(config),
     prompt: patch.prompt ?? current.prompt,
-    cadence: cadence === null ? null : JSON.stringify(cadence),
+    cadence: writeCadence(cadence),
     onDemand,
     worktreeMode: patch.worktreeMode ?? current.worktreeMode,
     overlapPolicy: patch.overlapPolicy ?? current.overlapPolicy,

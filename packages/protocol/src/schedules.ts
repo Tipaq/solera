@@ -233,7 +233,10 @@ export interface ScheduledTaskDto {
   prompt: string
   /** Null : la tâche ne part qu'à la demande. */
   cadence: ScheduleCadence | null
-  /** Un bouton la lance d'un clic ; vrai pour toute tâche sans cadence. */
+  /**
+   * Un bouton la lance d'un clic ; vrai pour toute tâche sans cadence. Faux, la tâche
+   * n'a pas de bouton, mais « Lancer maintenant » reste permis : c'est un essai.
+   */
   onDemand: boolean
   worktreeMode: ScheduleWorktreeMode
   executionMode: ScheduleExecutionMode

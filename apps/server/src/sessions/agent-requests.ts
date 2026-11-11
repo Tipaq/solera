@@ -2438,12 +2438,12 @@ export class AgentRequests {
 }
 
 /**
- * La cadence telle qu'un agent la donne : exactement un de `every_minutes`, `cron`, `at`.
+ * La cadence telle qu'un agent la donne : au plus un de `every_minutes`, `cron`, `at`.
+ * Null sans aucun des trois : la tâche ne part qu'à la demande.
  *
  * Trois paramètres à plat plutôt qu'un objet discriminé : c'est la forme qu'un modèle
  * remplit sans se tromper, et celle de `CronCreate` qu'il connaît déjà.
  */
-/** La cadence donnée à `schedule_task`, ou null sans cadence : la tâche ne part qu'à la demande. */
 function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence | null {
   const given = ['every_minutes', 'cron', 'at'].filter(
     (key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '',
