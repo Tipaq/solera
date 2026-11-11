@@ -8,6 +8,7 @@ import type {
   ExecutionEnvironment,
   HandoffDto,
   JournalPageDto,
+  ProjectBackgroundDto,
   SoleraEvent,
 } from '@solera/protocol'
 import { api } from './api'
@@ -118,6 +119,25 @@ export function useConversations(projectId: string | undefined) {
     enabled: Boolean(projectId),
     staleTime: 15_000,
   })
+}
+
+/**
+ * Ce que les sessions du projet ont laissé tourner, session par session (#206). Le flux
+ * des statuts n'en pousse que le nombre : `useStatusFeed` relit cette liste quand le
+ * nombre d'une session bouge.
+ */
+export function useProjectBackground(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectBackgroundKey(projectId ?? ''),
+    queryFn: () => api.get<ProjectBackgroundDto[]>(`/api/projects/${projectId}/background`),
+    enabled: Boolean(projectId),
+    staleTime: 15_000,
+  })
+}
+
+/** Sans projet, la clé de tous : un fil dont on ignore le projet les fait tous relire. */
+export function projectBackgroundKey(projectId?: string | null) {
+  return projectId ? ['project-background', projectId] : ['project-background']
 }
 
 export function useConversation(conversationId: string | undefined) {
