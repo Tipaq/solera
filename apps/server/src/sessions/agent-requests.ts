@@ -163,7 +163,11 @@ const AWAITS_CLICK = new Set<AgentRequestRow['kind']>(AWAITING_KINDS)
  */
 export const MAX_LAUNCH_DEPTH = 2
 
-/** Lancements réussis par session et par heure. */
+/**
+ * Lancements réussis par heure et par compte, pour ce qui vient hors session. Une session
+ * de Solera n'a pas de cadence : celle qui orchestre un jalon lance autant de cartes qu'il
+ * en faut, et la profondeur des chaînes reste gardée par MAX_LAUNCH_DEPTH.
+ */
 export const LAUNCHES_PER_HOUR = 6
 
 /** Une mission plus longue tient dans un fichier que la mission cite. */
@@ -897,6 +901,7 @@ export class AgentRequests {
       )
     }
 
+    if (requester.id) return
     const [recent] = this.ctx.db
       .select({ total: count() })
       .from(agentRequests)
@@ -905,7 +910,7 @@ export class AgentRequests {
           eq(agentRequests.conversationId, requester.id),
           // Hors session, la cadence se compte par compte : tous ses clients extérieurs
           // ensemble, et pas ceux d'un autre compte de l'instance.
-          requester.id ? undefined : eq(agentRequests.userId, requester.userId),
+          eq(agentRequests.userId, requester.userId),
           eq(agentRequests.kind, 'start_session'),
           eq(agentRequests.isError, false),
           ne(agentRequests.id, requestId),
@@ -915,9 +920,7 @@ export class AgentRequests {
       .all()
     if ((recent?.total ?? 0) >= LAUNCHES_PER_HOUR) {
       throw new Refusal(
-        requester.id
-          ? `Refusé : cette session a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure. Crée des cartes avec create_card pour le reste, l'utilisateur les lancera.`
-          : `Refusé : ce compte a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure depuis un client MCP. Crée des cartes avec create_card pour le reste, ou lance-les depuis Solera.`,
+        `Refusé : ce compte a déjà lancé ${LAUNCHES_PER_HOUR} sessions dans l'heure depuis un client MCP. Crée des cartes avec create_card pour le reste, ou lance-les depuis Solera.`,
       )
     }
   }
