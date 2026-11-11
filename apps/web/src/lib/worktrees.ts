@@ -11,7 +11,7 @@ import type {
 import { api } from './api'
 import { projectScope } from './workspace-scope'
 
-const worktreesKey = (projectId: string) => ['worktrees', projectId]
+export const worktreesKey = (projectId: string) => ['worktrees', projectId]
 
 const statusKey = (projectId: string) => ['worktree-status', projectId]
 

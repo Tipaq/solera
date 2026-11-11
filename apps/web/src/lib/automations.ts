@@ -9,6 +9,7 @@ import {
   type ScheduleCadence,
   type ScheduleRunStatus,
   type ScheduledTaskDto,
+  type WorktreeDto,
 } from '@solera/protocol'
 import { cronToHuman } from './cron'
 import type { MessageKey, MessageParams } from './i18n'
@@ -552,6 +553,34 @@ export const LAUNCHER_GROUPS: readonly LauncherGroup[] = ['services', 'commands'
 export function launcherGroupOf(item: Automation): LauncherGroup {
   if (item.what === 'agent') return 'agents'
   return item.commandKind === 'service' ? 'services' : 'commands'
+}
+
+/* ------------------------------------------------------------------ gestes */
+
+export type PrimaryGesture = 'review' | 'switch' | 'terminal' | 'session' | 'launch'
+
+/**
+ * Le seul geste principal d'une tuile ou d'une ligne (LAN-7) : relire ce qu'un agent a
+ * écrit avant tout, l'interrupteur d'un service, rejoindre ce qui tourne, sinon lancer.
+ */
+export function primaryGestureOf(item: Automation): PrimaryGesture {
+  if (item.review) return 'review'
+  if (isService(item)) return 'switch'
+  if (item.live?.kind === 'terminal') return 'terminal'
+  if (item.live?.kind === 'run' && item.live.conversationId) return 'session'
+  return 'launch'
+}
+
+/**
+ * Si « Lancer ▾ » propose de choisir l'arbre (LAN-9). Une tâche d'agent dit elle-même où
+ * elle tourne, racine ou nouveau worktree : son chevron proposerait des arbres qu'un
+ * passage ne sait pas viser (Q6).
+ */
+export const picksTree = (item: Automation): boolean => item.what === 'command'
+
+/** Les arbres que « Lancer dans » propose après la racine : ceux qui sont sur le disque, six au plus. */
+export function launchTrees(trees: readonly WorktreeDto[] | undefined): WorktreeDto[] {
+  return (trees ?? []).filter((tree) => tree.git !== null).slice(0, 6)
 }
 
 /* ------------------------------------------------------------------ échéance et santé */
