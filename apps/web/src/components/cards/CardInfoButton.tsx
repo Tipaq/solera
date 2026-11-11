@@ -34,6 +34,8 @@ export function CardInfoButton({ card, className }: { card: Pick<CardDto, 'numbe
         onPointerDown={(event) => event.stopPropagation()}
         className={cx(
           'inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
+          // 20 px à la souris ; au doigt, une zone de 44 px autour, sans déplacer la ligne.
+          "relative pointer-coarse:before:absolute pointer-coarse:before:-inset-3 pointer-coarse:before:content-['']",
           'focus-visible:outline-2 focus-visible:outline-accent',
           className,
         )}

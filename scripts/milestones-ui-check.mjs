@@ -49,7 +49,8 @@ function board() {
     conversations: [
       cardSession('s-old', 'Première piste', 'idle', 3 * DAY),
       cardSession('s-wait', 'Fiche : composants', 'awaiting_input', DAY, { worktreeName: 'feat/199-fiche-de-carte' }),
-      cardSession('s-gone', 'Session rangée', 'idle', 4 * DAY, { archivedAt: now - DAY }),
+      // Rangée mais encore en attente : ni dans la liste, ni dans la réponse sur place.
+      cardSession('s-gone', 'Session rangée', 'awaiting_input', 4 * DAY, { archivedAt: now - DAY }),
     ],
   })
   const tableau = card(180, 'Tableau : Kanban réel', 'todo', { parent: link(milestone) })
@@ -223,6 +224,7 @@ try {
     console.log(width, 'la demande et la réponse sur place')
     const inbox = fiche.getByRole('region', { name: 'Ce qui t’attend' })
     await inbox.getByText('Fiche : composants').waitFor()
+    assert.equal(await inbox.getByText('Session rangée').count(), 0, 'Une session rangée ne répond pas ici')
     await inbox.getByRole('button', { name: 'Répondre' }).first().click()
     await inbox.getByRole('paragraph').filter({ hasText: 'Je garde l’ancien composant derrière un réglage ?' }).waitFor()
     assert.equal(await inbox.getByText('Le garder').first().isVisible(), true, 'Les options de la question, pour répondre ici')
@@ -259,6 +261,7 @@ try {
     const flag = (locator) => locator.getByRole('checkbox', { name: 'C’est un jalon' })
     assert.equal(await flag(fiche).isDisabled(), true)
     assert.equal(await flag(fiche).isChecked(), false)
+    assert.equal(await fiche.getByText('Une carte rangée dans un jalon ne peut pas en être un').isVisible(), phone, 'Au doigt, la raison s’écrit sous la case')
 
     console.log(width, 'liens : « Bloquée par » passe à la fiche de la carte liée')
     const links = fiche.getByRole('region', { name: 'Liens' })

@@ -63,14 +63,16 @@ export interface CardSheetProps {
  */
 export function CardSheet({ open, projectId, card, back, onClose, onSelect }: CardSheetProps) {
   const t = useTranslate()
-  const sessions = sheetSessions(card)
+  const sessions = useMemo(() => sheetSessions(card), [card])
 
   /* L'état vivant des sessions : celui du socket, pas celui du chargement des cartes ;
      et la demande de celle qui attend, pour y répondre ici. */
   const { data: all } = useAllConversations()
+  /* Les sessions de la liste, et elles seules : une session rangée qui attend encore ne
+     répond pas ici, puisque la fiche ne la montre pas. */
   const mine = useMemo(
-    () => (all ?? []).filter((entry) => card.conversations.some((session) => session.id === entry.id)),
-    [all, card.conversations],
+    () => (all ?? []).filter((entry) => sessions.some((session) => session.id === entry.id)),
+    [all, sessions],
   )
   const live = useLiveConversations(mine)
   const requests = useSessionRequests(projectId, live)
@@ -365,6 +367,8 @@ function MilestoneFlag({ projectId, card }: { projectId: string; card: CardDto }
           {t('cardSheet.milestone')}
         </label>
       </Tooltip>
+      {/* Au doigt, pas d'infobulle : la raison d'une case grisée s'écrit dessous. */}
+      {flag.disabled ? <p className="hidden max-w-[16rem] text-right text-meta text-ink-faint pointer-coarse:block">{tip}</p> : null}
       {update.isError ? (
         <p role="alert" className="text-xs text-critical">
           {t('cardSheet.milestone.error')}
