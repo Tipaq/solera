@@ -17,7 +17,8 @@ import {
   type ScheduleCadence,
 } from '@solera/protocol'
 import { ActionRunner, approveAction, createAction, loadAction, rejectAction, updateAction } from '../src/actions/actions.js'
-import { CommandScheduler, runDetached, type DetachedCommand, type DetachedResult } from '../src/actions/scheduled.js'
+import { CommandScheduler } from '../src/actions/scheduled.js'
+import { runDetached, type DetachedCommand, type DetachedResult } from '../src/scheduler/detached.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import { Environments } from '../src/environments/environments.js'
