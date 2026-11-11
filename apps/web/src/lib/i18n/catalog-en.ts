@@ -1705,6 +1705,7 @@ export const en = {
   'git.toolbar.stash': 'Stash',
   'git.toolbar.pop': 'Pop',
   'git.toolbar.refresh': 'Reread the repository',
+  'git.toolbar.more': 'More repository actions',
   'git.column.graph': 'Graph',
   'git.column.message': 'Message',
   'git.column.thread': 'Thread',

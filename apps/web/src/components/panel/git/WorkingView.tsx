@@ -18,6 +18,7 @@ import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import { Banner, Menu, MenuItem, MenuSeparator, PanelGroup, PanelNotice, PanelStatusIcon, cx, panelGestureClass, panelRowClass } from '@solera/ui'
 import { useGitActions } from './actions'
+import { Notice } from './banners'
 import { LineStage } from './LineStage'
 import { useGitState } from './queries'
 
@@ -483,25 +484,25 @@ function Review({
 
   return (
     <PanelNotice tone="caution">
-      <span className="flex items-center gap-2">
-        <Bot size={14} aria-hidden className="shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="font-medium text-ink">{t('git.review.title')}</span>
-          <span className="truncate text-ink-faint">
-            {committed
-              ? t('git.review.committed', {
-                  subject: committed.subject,
-                  gone,
-                  total: held.staged.length,
-                })
-              : t('git.review.changed')}
-          </span>
-        </span>
-        <button type="button" onClick={onReread} className={cx(panelGestureClass, 'shrink-0')}>
-          <RefreshCw size={13} aria-hidden />
-          {t('git.review.reread')}
-        </button>
-      </span>
+      <Notice
+        icon={<Bot size={14} />}
+        title={t('git.review.title')}
+        hint={
+          committed
+            ? t('git.review.committed', {
+                subject: committed.subject,
+                gone,
+                total: held.staged.length,
+              })
+            : t('git.review.changed')
+        }
+        action={
+          <button type="button" onClick={onReread} className={cx(panelGestureClass, 'shrink-0')}>
+            <RefreshCw size={13} aria-hidden />
+            {t('git.review.reread')}
+          </button>
+        }
+      />
     </PanelNotice>
   )
 }

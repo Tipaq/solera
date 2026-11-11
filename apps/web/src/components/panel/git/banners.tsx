@@ -112,7 +112,7 @@ export function ErrorBanner({ message, onClose }: { message: string; onClose: ()
 }
 
 /** Une bande à deux lignes — ce qui se passe, ce que ça veut dire — et son geste. */
-function Notice({ icon, title, hint, action }: { icon: ReactNode; title: ReactNode; hint: ReactNode; action: ReactNode }) {
+export function Notice({ icon, title, hint, action }: { icon: ReactNode; title: ReactNode; hint: ReactNode; action: ReactNode }) {
   return (
     <span className="flex items-center gap-2">
       <span aria-hidden className="shrink-0 text-ink-faint">{icon}</span>

@@ -1,14 +1,16 @@
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import {
   AlertTriangle,
   Archive,
   ArchiveRestore,
   ArrowDown,
   ArrowUp,
+  CloudDownload,
   FilePen,
   GitBranch,
   GitMerge,
   History,
+  MoreHorizontal,
   Redo2,
   RefreshCw,
   Search,
@@ -16,7 +18,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { GitStateDto } from '@solera/protocol'
-import { PanelToolbar, Popover, cx, panelToolClass } from '@solera/ui'
+import { Menu, MenuItem, MenuSeparator, PanelToolbar, Popover, cx, panelToolClass } from '@solera/ui'
 import { useTranslate, type MessageKey } from '../../../lib/i18n'
 import { useGitActions } from './actions'
 import { NameDialog } from './menus'
@@ -48,13 +50,17 @@ import { NameDialog } from './menus'
  *
  * | à partir de | entre |
  * | --- | --- |
- * | — | l'icône d'Affichage, tirer, pousser, relire, le repère de conflits en chiffre |
- * | 20 rem | le nom de la destination, 6 rem au plus (26 rem pendant un conflit) |
+ * | — | l'icône d'Affichage, tirer, pousser, le repère de conflits en chiffre, « ⋯ » |
+ * | 20 rem | le nom de la destination (26 rem pendant un conflit) |
  * | 22 rem | annuler, refaire |
  * | 26 rem | « Git » et la branche, récupérer |
- * | 38 rem | brancher, remiser, dépiler — sauf pendant un conflit, où git refuse de remiser et de dépiler : le repère prend leur place |
- * | 38 rem | « N conflits » en toutes lettres |
- * | 46 rem | les libellés de Tirer et Pousser |
+ * | 38 rem | brancher, remiser, dépiler et relire, qui remplacent « ⋯ » ; « N conflits » en toutes lettres |
+ * | 46 rem | les libellés de Tirer et Pousser, le nom de la destination en entier |
+ *
+ * **Rien ne se perd en se repliant** : « ⋯ » porte tous les gestes qui peuvent manquer
+ * à la ligne, tant qu'il en manque un. Pendant un conflit, il reste aussi au large, à
+ * la place de brancher, remiser et dépiler — git refuse de remiser et de dépiler, et
+ * le repère ambre a besoin de la place.
  */
 export type Destination =
   | 'graph'
@@ -94,6 +100,7 @@ export function GitLine({
   const { run, undo, redo, lock, pending } = useGitActions()
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState(false)
+  const hints = useId()
 
   const frozen = !!lock || pending
   const ahead = state?.ahead ?? 0
@@ -105,12 +112,29 @@ export function GitLine({
       ? { icon: AlertTriangle, label: 'git.view.conflicts' as const }
       : (DESTINATIONS.find((entry) => entry.id === destination) ?? DESTINATIONS[0]!)
   const CurrentIcon = current.icon
+  const viewLabel = t('git.view.current', { view: t(current.label) })
+  const conflictsLabel = t(conflicted === 1 ? 'git.view.conflicts.one' : 'git.view.conflicts.many', { count: conflicted })
+
+  /** Les gestes que la ligne peut replier : chacun sur la ligne, et dans « ⋯ ». */
+  const fetching = { label: t('git.toolbar.fetch'), disabled: frozen, onClick: () => run({ kind: 'fetch' }) }
+  const undoing = { label: t('git.toolbar.undo'), disabled: frozen || !state?.undo, onClick: undo }
+  const redoing = { label: t('git.toolbar.redo'), disabled: frozen || !state?.redo, onClick: redo }
+  const branching = { label: t('git.toolbar.branch'), disabled: frozen, onClick: () => setNaming(true) }
+  const stashing = { label: t('git.toolbar.stash'), disabled: frozen, onClick: () => run({ kind: 'stash-push', message: '' }) }
+  const popping = {
+    label: t('git.toolbar.pop'),
+    disabled: frozen || stashes === 0,
+    // Sans sha : « celle du dessus, quelle qu'elle soit ». La liste des remises, elle,
+    // désigne la sienne et la vérifie.
+    onClick: () => run({ kind: 'stash-pop', index: 0, hash: null }),
+  }
+  const rereading = { label: t('git.toolbar.refresh'), disabled: false, onClick: onRefresh }
 
   return (
     // Le repère sert aux suites : la ligne doit tenir sur 48 px sans déborder.
     <div data-git-line className="shrink-0">
       <PanelToolbar
-        title="Git"
+        title={t('panel.tab.git')}
         meta={state?.branch ? <span className="font-mono">{state.branch}</span> : null}
         foldTitle
         lead={
@@ -123,16 +147,11 @@ export function GitLine({
               align="start"
               className="w-72"
               trigger={
-                <button
-                  type="button"
-                  aria-label={t('git.view.current', { view: t(current.label) })}
-                  title={t('git.view.current', { view: t(current.label) })}
-                  className={panelToolClass()}
-                >
+                <button type="button" aria-label={viewLabel} title={viewLabel} className={panelToolClass()}>
                   <CurrentIcon size={15} aria-hidden />
                   <span
                     className={cx(
-                      'hidden max-w-[6rem] truncate',
+                      'hidden max-w-[6rem] truncate @min-[46rem]:max-w-[9rem]',
                       conflicted > 0 ? '@min-[26rem]:inline' : '@min-[20rem]:inline',
                     )}
                   >
@@ -152,20 +171,21 @@ export function GitLine({
                         type="button"
                         aria-pressed={active}
                         aria-label={t(label)}
-                        aria-describedby={`git-view-${id}-hint`}
+                        aria-describedby={`${hints}-${id}`}
                         onClick={() => {
                           onDestination(id)
                           setOpen(false)
                         }}
                         className={cx(
                           'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent',
                           active ? 'bg-accent-wash/50 text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
                         )}
                       >
                         <Icon size={15} aria-hidden className={cx('shrink-0', active ? 'text-accent' : 'text-ink-faint')} />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className={cx('text-sm', active && 'font-medium')}>{t(label)}</span>
-                          <span id={`git-view-${id}-hint`} className="truncate text-xs text-ink-faint">{t(hint)}</span>
+                          <span id={`${hints}-${id}`} className="truncate text-xs text-ink-faint">{t(hint)}</span>
                         </span>
                         {count ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{count}</span> : null}
                       </button>
@@ -179,10 +199,13 @@ export function GitLine({
               <button
                 type="button"
                 aria-pressed={destination === 'conflicts'}
-                aria-label={t(conflicted === 1 ? 'git.view.conflicts.one' : 'git.view.conflicts.many', { count: conflicted })}
+                aria-label={conflictsLabel}
+                title={conflictsLabel}
                 onClick={() => onDestination('conflicts')}
                 className={cx(
+                  // La forme de `panelToolClass`, à la couleur de « il y a quelque chose à faire ici ».
                   'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs md:h-9 pointer-coarse:h-11',
+                  'focus-visible:outline-2 focus-visible:outline-accent',
                   destination === 'conflicts'
                     ? 'border-caution bg-caution/15 text-caution'
                     : 'border-caution/50 text-caution hover:bg-caution/10',
@@ -190,27 +213,18 @@ export function GitLine({
               >
                 <AlertTriangle size={14} aria-hidden />
                 <span aria-hidden className="tabular-nums @min-[38rem]:hidden">{conflicted}</span>
-                <span aria-hidden className="hidden @min-[38rem]:inline">
-                  {t(conflicted === 1 ? 'git.view.conflicts.one' : 'git.view.conflicts.many', { count: conflicted })}
-                </span>
+                <span aria-hidden className="hidden @min-[38rem]:inline">{conflictsLabel}</span>
               </button>
             ) : null}
           </>
         }
       >
         <span className="hidden items-center gap-1.5 @min-[22rem]:flex">
-          <Gesture icon={<Undo2 size={14} />} label={t('git.toolbar.undo')} disabled={frozen || !state?.undo} onClick={undo} />
-          <Gesture icon={<Redo2 size={14} />} label={t('git.toolbar.redo')} disabled={frozen || !state?.redo} onClick={redo} />
+          <Gesture icon={<Undo2 size={14} />} {...undoing} />
+          <Gesture icon={<Redo2 size={14} />} {...redoing} />
           <Separator />
         </span>
-        <Gesture
-          icon={<ArrowDown size={14} />}
-          label={t('git.toolbar.pull')}
-          labelled
-          badge={behind}
-          disabled={frozen}
-          onClick={() => run({ kind: 'pull' })}
-        />
+        <Gesture icon={<ArrowDown size={14} />} label={t('git.toolbar.pull')} labelled badge={behind} disabled={frozen} onClick={() => run({ kind: 'pull' })} />
         <Gesture
           icon={<ArrowUp size={14} />}
           label={t('git.toolbar.push')}
@@ -222,32 +236,40 @@ export function GitLine({
           onClick={() => run({ kind: 'push', force: false, branch: null })}
         />
         <span className="hidden @min-[26rem]:flex">
-          <Gesture icon={<RefreshCw size={14} />} label={t('git.toolbar.fetch')} disabled={frozen} onClick={() => run({ kind: 'fetch' })} />
+          <Gesture icon={<CloudDownload size={14} />} {...fetching} />
         </span>
         <span className={cx('hidden items-center gap-1.5', conflicted === 0 && '@min-[38rem]:flex')}>
           <Separator />
-          <Gesture icon={<GitBranch size={14} />} label={t('git.toolbar.branch')} disabled={frozen} onClick={() => setNaming(true)} />
-          <Gesture
-            icon={<Archive size={14} />}
-            label={t('git.toolbar.stash')}
-            disabled={frozen}
-            onClick={() => run({ kind: 'stash-push', message: '' })}
-          />
-          <Gesture
-            icon={<ArchiveRestore size={14} />}
-            label={t('git.toolbar.pop')}
-            disabled={frozen || stashes === 0}
-            // Sans sha : « celle du dessus, quelle qu'elle soit ». La liste des remises,
-            // elle, désigne la sienne et la vérifie.
-            onClick={() => run({ kind: 'stash-pop', index: 0, hash: null })}
-          />
+          <Gesture icon={<GitBranch size={14} />} {...branching} />
+          <Gesture icon={<Archive size={14} />} {...stashing} />
+          <Gesture icon={<ArchiveRestore size={14} />} {...popping} />
+          <Gesture icon={<RefreshCw size={14} className={cx(refreshing && 'animate-spin')} />} {...rereading} />
         </span>
-        <Gesture
-          icon={<RefreshCw size={14} className={cx(refreshing && 'animate-spin')} />}
-          label={t('git.toolbar.refresh')}
-          disabled={false}
-          onClick={onRefresh}
-        />
+        <span className={cx('flex', conflicted === 0 && '@min-[38rem]:hidden')}>
+          <Menu
+            align="end"
+            trigger={
+              <button
+                type="button"
+                aria-label={t('git.toolbar.more')}
+                title={t('git.toolbar.more')}
+                className={gestureClass(false, false)}
+              >
+                <MoreHorizontal size={14} aria-hidden />
+              </button>
+            }
+          >
+            <MenuItem icon={<CloudDownload size={14} />} {...menuItem(fetching)} />
+            <MenuItem icon={<Undo2 size={14} />} {...menuItem(undoing)} />
+            <MenuItem icon={<Redo2 size={14} />} {...menuItem(redoing)} />
+            <MenuSeparator />
+            <MenuItem icon={<GitBranch size={14} />} {...menuItem(branching)} />
+            <MenuItem icon={<Archive size={14} />} {...menuItem(stashing)} />
+            <MenuItem icon={<ArchiveRestore size={14} />} {...menuItem(popping)} />
+            <MenuSeparator />
+            <MenuItem icon={<RefreshCw size={14} />} {...menuItem(rereading)} />
+          </Menu>
+        </span>
 
         {naming ? (
           <NameDialog
@@ -264,6 +286,13 @@ export function GitLine({
     </div>
   )
 }
+
+/** Un geste de la ligne, rendu en entrée du menu « ⋯ ». */
+const menuItem = ({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) => ({
+  disabled,
+  onSelect: onClick,
+  children: label,
+})
 
 const Separator = () => <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-line" />
 
@@ -293,11 +322,7 @@ function Gesture({
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={cx(
-        'inline-flex h-11 min-w-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium md:h-9 pointer-coarse:h-11',
-        'focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-45',
-        primary && !disabled ? 'bg-accent text-on-accent' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
-      )}
+      className={gestureClass(primary, disabled)}
     >
       {icon}
       {labelled ? <span className="hidden @min-[46rem]:inline">{label}</span> : null}
@@ -314,3 +339,10 @@ function Gesture({
     </button>
   )
 }
+
+const gestureClass = (primary: boolean, disabled: boolean) =>
+  cx(
+    'inline-flex h-11 min-w-9 shrink-0 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium md:h-9 pointer-coarse:h-11',
+    'focus-visible:outline-2 focus-visible:outline-accent disabled:pointer-events-none disabled:opacity-45',
+    primary && !disabled ? 'bg-accent text-on-accent' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
+  )

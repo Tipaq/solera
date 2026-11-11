@@ -1701,6 +1701,7 @@ export const fr: Catalog = {
   'git.toolbar.stash': 'Remiser',
   'git.toolbar.pop': 'Dépiler',
   'git.toolbar.refresh': 'Relire le dépôt',
+  'git.toolbar.more': 'Autres gestes du dépôt',
   'git.column.graph': 'Graphe',
   'git.column.message': 'Message',
   'git.column.thread': 'Fil',

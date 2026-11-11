@@ -318,6 +318,13 @@ try {
   for (const name of ['Récupérer', 'Annuler', 'Remiser']) {
     assert.equal(await gitLine().getByRole('button', { name, exact: true }).isVisible(), false, `22 rem : ${name} attend`)
   }
+  // Ce que la ligne replie reste joignable : « ⋯ » porte tous les gestes qui peuvent
+  // lui manquer.
+  await gitLine().getByRole('button', { name: 'Autres gestes du dépôt', exact: true }).click()
+  for (const name of ['Récupérer', 'Annuler', 'Refaire', 'Branche', 'Remiser', 'Dépiler', 'Relire le dépôt']) {
+    await page.getByRole('menuitem', { name, exact: true }).waitFor()
+  }
+  await page.keyboard.press('Escape')
   await gitLine().getByRole('button', { name: 'Affichage : Graphe', exact: true }).getByText('Graphe').waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'ligne-22rem.png'), clip: await gitLine().boundingBox() })
   // Au plus étroit qu'un panneau ancré puisse être, la ligne tient encore.
@@ -665,9 +672,17 @@ try {
   conflictGit('commit', '-m', 'Keep the bundle ceiling where it was')
   conflictGit('merge', 'audit/bundle-web')
 
+  // Étroit d'abord : pendant un conflit, le repère tient sur la ligne en chiffre, et
+  // « ⋯ » garde les gestes qu'il remplace.
+  await openGit(352, radarThread)
+  await gitLine().getByRole('button', { name: '1 conflit', exact: true }).waitFor()
+  await oneLine('22 rem, en conflit')
   await openGit(640, radarThread)
   const conflicts = gitLine().getByRole('button', { name: '1 conflit', exact: true })
   await conflicts.waitFor()
+  await oneLine('40 rem, en conflit')
+  assert.equal(await gitLine().getByRole('button', { name: 'Remiser', exact: true }).isVisible(), false, 'en conflit : Remiser passe dans « ⋯ »')
+  await gitLine().getByRole('button', { name: 'Autres gestes du dépôt', exact: true }).waitFor()
   await conflicts.click()
   await panel.getByText(/fichier — fusion de audit\/bundle-web/).waitFor()
   // Les trois versions empilées, chacune avec son « prendre ».

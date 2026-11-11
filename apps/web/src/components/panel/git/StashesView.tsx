@@ -6,6 +6,7 @@ import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
 import {
   Banner,
+  IconButton,
   Menu,
   MenuItem,
   MenuSeparator,
@@ -89,13 +90,13 @@ function Stash({ stash }: { stash: StashDto }) {
         <Menu
           align="end"
           trigger={
-            <button
-              type="button"
-              aria-label={t('git.stashes.menu', { message: stash.message })}
-              className="flex size-5 shrink-0 items-center justify-center rounded text-ink-faint opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+            <IconButton
+              size="sm"
+              label={t('git.stashes.menu', { message: stash.message })}
+              className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
             >
-              <MoreHorizontal size={13} />
-            </button>
+              <MoreHorizontal size={14} />
+            </IconButton>
           }
         >
           <MenuItem icon={<ArchiveRestore size={13} />} disabled={frozen} onSelect={() => run({ kind: 'stash-apply', ...target })}>
