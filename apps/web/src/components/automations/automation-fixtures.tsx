@@ -17,7 +17,7 @@ const HOUR = 60 * MIN
 function action(id: string, extra: Partial<ProjectActionDto>): Automation {
   const shown = {
     id, projectId: PROJECT_ID, label: id, description: null, kind: 'task' as const, command: 'pnpm test', subdir: null,
-    url: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: NOW,
+    url: null, placement: 'follow' as const, pinnedBranch: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: NOW,
     updatedAt: NOW, service: null, lastRun: null, runs: [], ...extra,
   }
   const { kind, command, subdir, url } = shown
@@ -47,11 +47,13 @@ const agentRun = (status: ScheduledRunDto['status'], ago: number): ScheduledRunD
 
 export const SERVICE_ON = action('a-dev', {
   label: 'Serveur de dev', kind: 'service', command: 'pnpm dev --host 127.0.0.1', url: 'http://127.0.0.1:{port}',
-  service: { unit: 'solera-app-action-a-dev.service', state: 'active', cwd: '/srv/nimbus', ports: [5173], startedAt: NOW - 2 * HOUR },
+  service: { unit: 'solera-app-action-a-dev.service', state: 'active', cwd: '/srv/nimbus', ports: [5173], startedAt: NOW - 2 * HOUR,
+    served: { path: '/srv/nimbus', worktreeId: null, root: true, branch: 'main', head: 'a1b2c3d', ahead: 0, behind: 0, dirtyFiles: 0 },
+  },
 })
 export const SERVICE_OFF = action('a-storybook', {
   label: 'Storybook', kind: 'service', command: 'pnpm storybook',
-  service: { unit: 'solera-app-action-a-storybook.service', state: 'inactive', cwd: null, ports: [], startedAt: null },
+  service: { unit: 'solera-app-action-a-storybook.service', state: 'inactive', cwd: null, ports: [], startedAt: null, served: null },
 })
 export const SUCCEEDED = action('a-lint', { label: 'Lint', command: 'pnpm lint', runs: [cmdRun('l1', 3 * MIN, 0)] })
 export const FAILED = action('a-tests', { label: 'Tests', command: 'pnpm test', runs: [cmdRun('t1', 12 * MIN, 1)] })

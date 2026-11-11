@@ -63,6 +63,8 @@ const action = (over: Partial<ActionInput> = {}): ActionInput => ({
   command: 'pnpm test',
   subdir: null,
   url: null,
+  placement: 'follow',
+  pinnedBranch: null,
   status: 'approved',
   agentConversationId: null,
   agentConversationTitle: null,
@@ -86,6 +88,7 @@ const service = (state: string, over: Partial<NonNullable<ProjectActionDto['serv
   cwd: '/w/p1',
   ports: [],
   startedAt: null,
+  served: null,
   ...over,
 })
 
@@ -243,6 +246,15 @@ test('fromAction : cadence et à la demande, quand le serveur les donne', () => 
   )
   assert.equal(item.onDemand, false)
   assert.deepEqual(item.schedule, { cadence: { kind: 'interval', minutes: 60 }, enabled: false, nextRunAt: null })
+})
+
+test('fromAction : la fenêtre d’un service planifié, quand le serveur la donne', () => {
+  const window = { stopCadence: { kind: 'cron' as const, expression: '0 19 * * 1-5' } }
+  const item = fromAction(action({
+    kind: 'service',
+    schedule: { cadence: { kind: 'cron', expression: '0 8 * * 1-5' }, enabled: true, nextRunAt: null, serviceWindow: window },
+  }))
+  assert.deepEqual(item.schedule?.serviceWindow, window)
 })
 
 test('fromAction : proposée → à relire, avec la session ou sa disparition', () => {
