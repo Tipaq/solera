@@ -415,6 +415,8 @@ export class AgentRequests {
       await this.reviews?.mergeReady()
       // Et la PR d'une parente vers la branche par défaut, quand ses enfants sont closes.
       await this.parentPullRequests?.sweep()
+      // Et la fusion de ces PR sur la forge, sans retenir le balayage : voir `checkMerged`.
+      void this.parentPullRequests?.checkMerged().catch((err: unknown) => this.logger?.warn({ err }, 'PR de parente non relues'))
     } finally {
       this.busy = false
     }

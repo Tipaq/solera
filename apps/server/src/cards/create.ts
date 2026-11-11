@@ -119,6 +119,7 @@ function insertCard(
       branch: null,
       branchPrNumber: null,
       branchPrUrl: null,
+      branchPrMergedAt: null,
       createdBy: userId,
       createdAt: now,
       updatedAt: now,

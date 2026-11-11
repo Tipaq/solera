@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  CardBranchPrDto,
   PortfolioPullRequestsDto,
   ProjectPullRequestDto,
   ProjectPullRequestListDto,
@@ -48,6 +49,27 @@ export function useMergePullRequest(projectId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['pull-requests'] })
       void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+    },
+  })
+}
+
+/**
+ * Fusionne la PR finale d'un jalon, de sa branche vers la branche par défaut (#187).
+ * Les mêmes refus que `useMergePullRequest`, plus `branch_pr_missing` ; la carte n'est
+ * pas close. Ses cartes sont relues : `branchPr.mergedAt` fait passer le jalon « Livré ».
+ */
+export function useMergeBranchPullRequest(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<CardBranchPrDto>(`/api/cards/${cardId}/branch-pr/merge`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pull-requests'] })
+      void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+    },
+    // Même refusée : une PR déjà fusionnée sur GitHub vient d'y recevoir sa date et sa note.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
+      void queryClient.invalidateQueries({ queryKey: ['card-notes', cardId] })
     },
   })
 }

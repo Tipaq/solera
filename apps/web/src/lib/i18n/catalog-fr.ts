@@ -3060,6 +3060,7 @@ export const fr: Catalog = {
   'error.pull_request_checks_pending': "Des checks de la PR #{number} tournent encore.",
   'error.pull_request_merge_forbidden': "Seul le propriétaire du projet peut fusionner une PR.",
   'error.bad_pull_request_number': "Ce n’est pas un numéro de PR.",
+  'error.branch_pr_missing': "La carte #{number} n’a pas encore de PR vers la branche par défaut.",
   'error.forge_failed': "La forge a refusé : {error}",
   'error.branch_delete_forbidden': "Seul le propriétaire du projet peut supprimer des branches.",
   'error.bad_branch_cleanup': "Liste de branches invalide.",

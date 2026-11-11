@@ -3065,6 +3065,7 @@ export const en = {
   'error.pull_request_checks_pending': "Some checks of pull request #{number} are still running.",
   'error.pull_request_merge_forbidden': "Only the project owner can merge a pull request.",
   'error.bad_pull_request_number': "This is not a pull request number.",
+  'error.branch_pr_missing': "Card #{number} has no pull request to the default branch yet.",
   'error.forge_failed': "The forge refused: {error}",
   'error.branch_delete_forbidden': "Only the project owner can delete branches.",
   'error.bad_branch_cleanup': "Invalid branch list.",

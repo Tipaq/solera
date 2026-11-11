@@ -296,6 +296,11 @@ export const cards = sqliteTable(
      */
     branchPrNumber: integer('branch_pr_number'),
     branchPrUrl: text('branch_pr_url'),
+    /**
+     * Quand cette PR a été fusionnée (#187) : depuis Solera, ou vue fusionnée sur la forge
+     * par le balayage. Un jalon reste « Lancé » jusque-là, « Livré » ensuite.
+     */
+    branchPrMergedAt: timestamp('branch_pr_merged_at'),
     createdBy: text('created_by')
       .notNull()
       .references(() => users.id),

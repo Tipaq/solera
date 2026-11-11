@@ -1,11 +1,17 @@
-import { and, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects } from '@solera/db'
-import type { PortfolioPullRequestsDto, ProjectPullRequestListDto, PullRequestMergeResultDto } from '@solera/protocol'
+import { cards, projects } from '@solera/db'
+import type {
+  CardBranchPrDto,
+  PortfolioPullRequestsDto,
+  ProjectPullRequestListDto,
+  PullRequestMergeResultDto,
+} from '@solera/protocol'
 import { readGitStatus } from '../../git.js'
 import { visibilityFilter, visibleProject } from '../../projects/scope.js'
 import { ForgeError, type Forge } from '../../reviews/forge.js'
 import { PullRequestNotReady, mergeReadyPullRequest } from '../../reviews/merge.js'
+import { BranchPrMissing, mergeBranchPullRequest } from '../../reviews/parent-pr.js'
 import type { ProjectPullRequests } from '../../reviews/pull-requests.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
 import type { AppContext } from '../context.js'
@@ -91,6 +97,37 @@ export function registerPullRequestRoutes(
     pullRequests.invalidate(project.id)
     merging.worktreeStatus.invalidate(project.id)
     return { number: pr.number, url: pr.url, branch: pr.head, base: pr.base }
+  })
+
+  /**
+   * Fusionne la PR finale d'un jalon (#187) : celle de la branche d'une parente vers la
+   * branche par défaut, que Solera a ouverte. Les mêmes refus et les mêmes droits que la
+   * fusion d'un arbre ; 409 `branch_pr_missing` si la carte n'en a pas. Le jalon passe
+   * « Livré » ; la carte, elle, ne se clôt pas.
+   */
+  app.post('/api/cards/:id/branch-pr/merge', async (request): Promise<CardBranchPrDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const card = ctx.db.select().from(cards).where(eq(cards.id, id)).get()
+    const project = card ? visibleProject(ctx, card.projectId, user.id) : null
+    if (!card || !project) throw notFound('card_not_found', 'Card not found.')
+    if (project.ownerId !== user.id) {
+      throw forbidden('pull_request_merge_forbidden', 'Only the project owner can merge a pull request.')
+    }
+
+    let merged
+    try {
+      merged = await mergeBranchPullRequest(ctx, merging.forge, card, project, merging.token(user.id))
+    } catch (err) {
+      if (err instanceof BranchPrMissing) {
+        throw conflict('branch_pr_missing', 'Card #{number} has no pull request to the default branch yet.', { number: card.number })
+      }
+      if (err instanceof PullRequestNotReady || err instanceof ForgeError) throw mergeFailure(err)
+      throw err
+    }
+    pullRequests.invalidate(project.id)
+    merging.worktreeStatus.invalidate(project.id)
+    return merged
   })
 }
 
