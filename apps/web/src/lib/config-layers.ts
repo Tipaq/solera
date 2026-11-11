@@ -2,8 +2,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   EMPTY_CONFIG_LAYER,
+  changedLayerFields,
   configSources,
   diffAgentConfig,
+  diffConfigLayers,
   isSharedField,
   patchConfigLayer,
   resolveAgentConfig,
@@ -124,3 +126,63 @@ export function useLevelConfig(level: SettingsLevel, agent: AgentKind): LevelCon
     ready: level.kind === 'project' || !isPending,
   }
 }
+
+/** La configuration d'un CLI dans le brouillon du niveau d'un projet. */
+export interface DraftLevelConfig {
+  config: AgentConfig
+  sources: Record<string, ConfigSource>
+  /** Range dans le brouillon ce qui distingue `next` de `config`. */
+  write: (next: AgentConfig) => void
+  /** Rend des champs à l'héritage, dans le brouillon. */
+  reset: (fields: string[]) => void
+  /** Les champs que le brouillon change pour ce CLI, partagés compris. */
+  changed: (fields: string[]) => boolean
+}
+
+/**
+ * Le niveau d'un projet, réglé dans le brouillon de la page des réglages (page projet
+ * v2, PP-22) : les changements s'empilent sans rien écrire, se comptent dans la barre, et
+ * partent avec le reste des réglages dans un seul `PATCH`.
+ *
+ * Le brouillon garde les **changements**, rejoués par-dessus l'enregistré : un
+ * rafraîchissement du projet ne les écrase pas, et revenir à la valeur enregistrée
+ * efface la modification d'elle-même.
+ */
+export function useConfigLayerDraft(project: ProjectDto) {
+  const { data: settings } = useUserSettings()
+  const [patches, setPatches] = useState<ConfigLayerPatch[]>([])
+  const stored = project.configLayer
+  const draft = patches.reduce(patchConfigLayer, stored)
+  const changed = changedLayerFields(stored, draft)
+  const account = settings?.agentLayer ?? EMPTY_CONFIG_LAYER
+  const push = (next: ConfigLayerPatch[]) => {
+    if (next.length > 0) setPatches((current) => [...current, ...next])
+  }
+
+  return {
+    /** Le niveau vu d'un CLI : le compte, puis le brouillon. */
+    level: (agent: AgentKind): DraftLevelConfig => {
+      const layers: NamedLayer[] = [
+        { source: 'account', layer: account },
+        { source: 'project', layer: draft },
+      ]
+      const config = resolveAgentConfig(agent, [account, draft])
+      return {
+        config,
+        sources: configSources(agent, layers),
+        write: (next) => push(patchesFor(agent, diffAgentConfig(next, config) as Record<string, unknown>)),
+        reset: (fields) => push(unsetPatches(agent, fields)),
+        changed: (fields) => fields.some((field) => changed.includes(field) || changed.includes(`${agent}.${field}`)),
+      }
+    },
+    /** Les réglages changés, un par un, pour la barre. */
+    changed,
+    /** Le corps du `PATCH` : les changements qui mènent de l'enregistré au brouillon. */
+    body: () => diffConfigLayers(stored, draft),
+    clear: () => setPatches([]),
+    /** Le compte relu : avant, les rangées diraient les défauts du protocole. */
+    ready: settings !== undefined,
+  }
+}
+
+export type ConfigLayerDraft = ReturnType<typeof useConfigLayerDraft>
