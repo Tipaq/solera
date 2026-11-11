@@ -22,7 +22,7 @@ import { PlacePlanned } from './PlacePlanned'
 import { PlaceProjects, useFocusFollowsConversation } from './PlaceProjects'
 import { PlaceThreads } from './PlaceThreads'
 import { PLACE_ICONS, PLACE_LABELS, SidebarPlaces, type PlaceSpec } from './SidebarPlaces'
-import { cx, IconButton } from '@solera/ui'
+import { IconButton } from '@solera/ui'
 
 const EMPTY: ConversationDto[] = []
 
@@ -137,19 +137,23 @@ export function Sidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <HeaderBand zone="nav" className="px-4">
+      {/* La bande réserve la même gouttière de barre que le bloc qui défile, quelle que
+          soit la largeur de la barre sur la plateforme : son bord droit utile est celui
+          des lignes. Le bouton de repli en `sm` (28 px), avec les 12 px de la bande, se
+          centre à 26 px de ce bord, comme le ⋯ d'un projet (conteneur 8 + ligne 4 + 14). */}
+      <HeaderBand zone="nav" className="overflow-y-hidden pl-4 [scrollbar-gutter:stable]">
         <Logo size={20} className="text-accent" />
         <span className="text-heading font-semibold tracking-tight">Solera</span>
         {/* Enveloppes plutôt que `hidden` sur le bouton : `IconButton` pose déjà un
             `inline-flex`, et entre deux utilitaires de display c'est l'ordre du CSS
             généré qui tranche, pas celui de la chaîne de classes. */}
         <span className="ml-auto md:hidden">
-          <IconButton label={t('shell.nav.close')} onClick={onClose}>
+          <IconButton label={t('shell.nav.close')} size="sm" onClick={onClose}>
             <X size={16} />
           </IconButton>
         </span>
         <span className="ml-auto hidden md:block">
-          <IconButton label={t('shell.nav.collapse')} onClick={onCollapse}>
+          <IconButton label={t('shell.nav.collapse')} size="sm" onClick={onCollapse}>
             <PanelLeftClose size={16} />
           </IconButton>
         </span>
@@ -158,7 +162,7 @@ export function Sidebar({
       {/* Un filet sépare les deux gestes des lieux. Seul ajout du 2026-10-15 au haut de
           la colonne : *Rechercher* et *Nouvelle conversation* restent les deux boutons
           sobres d'avant, mais rien ne disait qu'ils ne sont pas eux-mêmes des lieux. */}
-      <div className="shrink-0 border-b border-line px-2 py-1.5">
+      <div className="shrink-0 overflow-y-hidden border-b border-line px-2 py-1.5 [scrollbar-gutter:stable]">
         {/* Le raccourci n'existe pas au doigt : sans cette entrée, la recherche serait
             inatteignable depuis un téléphone. */}
         <button
@@ -191,22 +195,31 @@ export function Sidebar({
         </button>
       </div>
 
-      <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
-
-      {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas. */}
-      <SidebarActivity
-        conversations={attended}
-        projects={projects}
-        onNavigate={stableNavigate}
-        coarse={!wide}
-        // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
-        focus={place === 'projects' ? focus : undefined}
-      />
-
-      {/* La seule partie qui défile. Ce qui déborde passe sous le pli : le haut de la
-          colonne est fixe par construction, pas par accident. */}
-      <div ref={scroller} className={cx('relative min-h-0 flex-1 overflow-y-auto')}>
+      {/* Un seul bloc qui défile, comme la colonne de Claude : lieux, Activité, puis le
+          contenu du lieu. Seuls la bande, le bloc du haut et le compte restent fixes —
+          des lieux et une Activité fixes au-dessus laissaient aux sessions ce qui restait
+          de la hauteur, et rien sur un petit écran. La gouttière de la barre est
+          réservée : rien ne se décale quand elle paraît, les compteurs de droite restent
+          sur la verticale du `Ctrl K`. `SidebarActivity` mesure ce bloc par
+          `data-sidebar-scroll` pour fixer sa part de la hauteur. */}
+      <div
+        ref={scroller}
+        data-sidebar-scroll
+        className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]"
+      >
         <PullToRefresh target={scroller} refreshing={refreshing} onRefresh={refresh} />
+        <SidebarPlaces places={places} current={place} onNavigate={stableNavigate} />
+
+        {/* Toujours là, même l'Activité éteinte : ce qui t'attend ne se retire pas. */}
+        <SidebarActivity
+          conversations={attended}
+          projects={projects}
+          onNavigate={stableNavigate}
+          coarse={!wide}
+          // En mode projet (#51), ses demandes passent devant dans chaque rang (Q15).
+          focus={place === 'projects' ? focus : undefined}
+        />
+
         {place === 'projects' ? (
           <PlaceProjects
             projects={projects ?? []}
