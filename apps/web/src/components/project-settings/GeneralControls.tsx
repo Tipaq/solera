@@ -2,7 +2,7 @@ import { ImagePlus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PROJECT_CAP_MAX, type ProjectDto } from '@solera/protocol'
-import { Banner, Button, ConfirmDialog, cx } from '@solera/ui'
+import { Banner, Button, ConfirmDialog, Field, cx } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { PROJECT_COLORS } from '../../lib/project-colors'
@@ -19,17 +19,13 @@ export function SettingInput({
   value: string
   onChange: (value: string) => void
 }) {
-  return (
-    <input
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="tap-target h-9 w-full min-w-0 rounded-md border border-line bg-sunken px-3 text-sm text-ink outline-none transition-colors hover:border-line-strong focus:border-accent disabled:opacity-60"
-    />
-  )
+  return <Field hideLabel label={label} value={value} onChange={(event) => onChange(event.target.value)} />
 }
 
-/** Le cap du projet : une phrase, sur deux lignes, bornée comme le serveur la borne. */
+/**
+ * Le cap du projet : une phrase, sur deux lignes, bornée comme le serveur la borne. Une
+ * zone de texte nue, faute de primitive : l'habillage est celui de `Field`.
+ */
 export function CapField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const t = useTranslate()
   return (

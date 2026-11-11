@@ -49,18 +49,6 @@ export function SettingsSearch({
         <Dialog.Content
           aria-describedby={undefined}
           className="surface fixed top-[12vh] left-1/2 z-50 flex w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-xl border border-line shadow-pop"
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              setCursor((value) => Math.min(value + 1, results.length - 1))
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault()
-              setCursor((value) => Math.max(value - 1, 0))
-            } else if (event.key === 'Enter' && results[cursor]) {
-              event.preventDefault()
-              pick(results[cursor]!)
-            }
-          }}
         >
           <Dialog.Title className="sr-only">{t('settingsPage.search.title')}</Dialog.Title>
           <div className="flex h-12 items-center gap-2.5 border-b border-line pr-2 pl-4">
@@ -74,6 +62,19 @@ export function SettingsSearch({
                 setCursor(0)
               }}
               aria-label={t('settingsPage.search.title')}
+              onKeyDown={(event) => {
+                // Sur le champ seulement : Entrée sur ✕ ferme, elle n'ouvre pas un résultat.
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setCursor((value) => Math.min(value + 1, results.length - 1))
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setCursor((value) => Math.max(value - 1, 0))
+                } else if (event.key === 'Enter' && results[cursor]) {
+                  event.preventDefault()
+                  pick(results[cursor]!)
+                }
+              }}
               placeholder={t('settingsPage.search.placeholder')}
               className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint [&::-webkit-search-cancel-button]:hidden"
             />

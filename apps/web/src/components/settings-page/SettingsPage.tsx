@@ -1,9 +1,9 @@
 import { Search } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { IconButton, cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import { groupsOf } from './search'
-import { SettingGroup, itemAnchor, type SettingItem } from './SettingRow'
+import { ChangedDot, SettingGroup, itemAnchor, type SettingItem } from './SettingRow'
 import { SettingsSearch } from './SettingsSearch'
 import { useReadingAnchor } from './useReadingAnchor'
 
@@ -51,27 +51,24 @@ export function SettingsPage({
 }) {
   const t = useTranslate()
 
-  const nav: NavCategory[] = useMemo(
-    () =>
-      categories
-        .map((category) => ({
-          ...category,
-          groups: groupsOf(items, category.key).map((group, index) => ({
-            anchor: groupAnchor(category.key, index),
-            name: group.name,
-            items: group.items,
-          })),
-        }))
-        .filter((category) => category.groups.length > 0),
-    [categories, items],
-  )
+  const nav: NavCategory[] = categories
+    .map((category) => ({
+      ...category,
+      groups: groupsOf(items, category.key).map((group, index) => ({
+        anchor: groupAnchor(category.key, index),
+        name: group.name,
+        items: group.items,
+      })),
+    }))
+    .filter((category) => category.groups.length > 0)
   const work = nav.filter((category) => !category.danger)
   const danger = nav.filter((category) => category.danger)
   const categoryLabel = (key: string) => categories.find((category) => category.key === key)?.label ?? key
 
   /* ------------------------------------------------ suivre la lecture */
   const scroller = useRef<HTMLDivElement>(null)
-  const anchors = useMemo(() => nav.flatMap((category) => category.groups.map((group) => group.anchor)), [nav])
+  // Le hook compare la liste par sa jointure : une nouvelle liste à chaque rendu ne le relance pas.
+  const anchors = nav.flatMap((category) => category.groups.map((group) => group.anchor))
   const { active, pin } = useReadingAnchor(scroller, anchors)
   const activeCategory = nav.find((category) => category.groups.some((group) => group.anchor === active))?.key
 
@@ -178,14 +175,13 @@ export function SettingsPage({
             </optgroup>
           ))}
         </select>
-        <button
-          type="button"
-          aria-label={t('settingsPage.search.open')}
+        <IconButton
+          label={t('settingsPage.search.open')}
           onClick={() => setSearching(true)}
-          className="grid size-10 shrink-0 place-items-center rounded-lg border border-line text-ink-faint transition-colors hover:text-ink"
+          className="size-10 rounded-lg border border-line"
         >
           <Search size={16} />
-        </button>
+        </IconButton>
       </div>
 
       {/* ---------------------------------------------- contenu
@@ -207,7 +203,7 @@ export function SettingsPage({
                 <header className={cx('flex items-center', position === 0 && 'min-h-16')}>
                   <h2
                     id={`${categoryAnchor(category.key)}-titre`}
-                    className={cx('text-xl font-semibold tracking-tight', category.danger ? 'text-critical' : 'text-ink')}
+                    className={cx('text-lg font-semibold tracking-tight', category.danger ? 'text-critical' : 'text-ink')}
                   >
                     {category.label}
                   </h2>
@@ -263,14 +259,12 @@ function MenuCategory({
               ? 'bg-critical/10 font-semibold text-critical'
               : 'bg-accent-wash/60 font-semibold text-ink'
             : danger
-              ? 'text-critical/80 hover:bg-critical/5 hover:text-critical'
+              ? 'text-critical hover:bg-critical/5'
               : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >
         <span className="min-w-0 flex-1 truncate">{category.label}</span>
-        {changed ? (
-          <span role="img" aria-label={t('settingsPage.pending')} title={t('settingsPage.pending')} className="size-1.5 shrink-0 rounded-full bg-accent" />
-        ) : null}
+        {changed ? <ChangedDot label={t('settingsPage.pending')} /> : null}
       </button>
       {/* La Zone de danger n'a qu'un groupe : le redire en dessous n'apprendrait rien. */}
       {danger ? null : (

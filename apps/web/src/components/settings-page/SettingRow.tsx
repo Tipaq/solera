@@ -7,7 +7,7 @@ import type { SearchableSetting } from './search'
 export interface SettingItem extends SearchableSetting {
   /**
    * `row` : libellé et aide à gauche, contrôle à droite ; `block` : le contrôle prend
-   * toute la largeur sous son titre (consignes, mémoire, cap) ; `bare` : un composant
+   * toute la largeur sous son titre (consignes, dev container) ; `bare` : un composant
    * qui porte déjà son titre et sa surface, posé tel quel, hors de la surface du groupe.
    */
   kind: 'row' | 'block' | 'bare'
@@ -20,13 +20,15 @@ export interface SettingItem extends SearchableSetting {
 
 export const itemAnchor = (id: string) => `reglage-${id}`
 
-export function ChangedDot() {
+/** Le point « modifié », sur une rangée ou, avec `label`, sur sa catégorie dans le menu. */
+export function ChangedDot({ label }: { label?: string }) {
   const t = useTranslate()
+  const text = label ?? t('settingsPage.changed')
   return (
     <span
       role="img"
-      aria-label={t('settingsPage.changed')}
-      title={t('settingsPage.changed')}
+      aria-label={text}
+      title={text}
       className="inline-block size-1.5 shrink-0 rounded-full bg-accent"
     />
   )

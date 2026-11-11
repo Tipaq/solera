@@ -12,6 +12,7 @@ import {
   DEFAULT_CLAUDE_CONFIG,
   HOST_CONFINED_ENVIRONMENT,
   HOST_ENVIRONMENT,
+  sameEnvironment,
   type AgentConfig,
   type ProjectEnvironmentsDto,
 } from '@solera/protocol'
@@ -236,6 +237,23 @@ test('projet : lire ses environnements, régler le sien, refuser ce qui ne se la
   assert.equal(refused.statusCode, 409)
   assert.equal(refused.json<{ error: { code: string } }>().error.code, 'environment_unavailable')
   assert.equal(db.select().from(projects).get()?.environmentWhere, 'host')
+
+  // Le brouillon des réglages envoie l'environnement et le confinement des autonomes dans
+  // le même PATCH : le confinement se juge sur l'environnement que porte la requête, pas
+  // sur celui qu'elle remplace (ici un dev container, que ce serveur ne lance pas).
+  db.update(projects).set({ environmentWhere: 'devcontainer' }).run()
+  const both = await app.inject({
+    method: 'PATCH',
+    url: '/api/projects/project',
+    payload: { environment: HOST_ENVIRONMENT, autonomousConfined: true },
+  })
+  if (new Environments(db).choices('project').some((choice) => sameEnvironment(choice, HOST_CONFINED_ENVIRONMENT))) {
+    assert.equal(both.statusCode, 200, both.body)
+    assert.equal(db.select().from(projects).get()?.autonomousConfined, true)
+  } else {
+    assert.equal(both.statusCode, 409, both.body)
+    assert.notEqual(both.json<{ error: { code: string } }>().error.code, 'environment_unavailable', 'jugé sur l’hôte, pas sur le dev container')
+  }
 })
 
 // Un faux `claude` : répond aux requêtes de contrôle, assez pour le SDK.

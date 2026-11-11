@@ -14,7 +14,7 @@ const input = 'h-9 w-full rounded-md border border-line bg-sunken px-3 text-sm t
 
 /** Une page de démonstration : trois réglages dans un brouillon, le reste pour défiler. */
 function Demo({ readOnly = false }: { readOnly?: boolean }) {
-  const saved = { name: 'Nimbus', visibility: 'private', checkpoints: true }
+  const [saved, setSaved] = useState({ name: 'Nimbus', visibility: 'private', checkpoints: true })
   const [draft, setDraft] = useState(saved)
   const changed = (Object.keys(saved) as (keyof typeof saved)[]).filter((key) => draft[key] !== saved[key])
   const items: SettingItem[] = [
@@ -67,7 +67,7 @@ function Demo({ readOnly = false }: { readOnly?: boolean }) {
             count={changed.length}
             labels={{ pending: `${changed.length} modification${changed.length > 1 ? 's' : ''} non enregistrée${changed.length > 1 ? 's' : ''}`, cancel: 'Annuler', save: 'Enregistrer' }}
             onCancel={() => setDraft(saved)}
-            onSave={() => setDraft(draft)}
+            onSave={() => setSaved(draft)}
           />
         }
       />

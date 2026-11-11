@@ -4426,5 +4426,5 @@ export const fr: Catalog = {
   "projectSettings.save.done.other": "{count} réglages enregistrés.",
   "projectSettings.problem.nameEmpty": "Le projet a besoin d’un nom.",
   "projectSettings.problem.pathEmpty": "Le projet a besoin d’un dossier.",
-  "projectSettings.problem.capTooLong": "Le cap tient en 280 caractères.",
+  "projectSettings.problem.capTooLong": "Le cap tient en {max} caractères.",
 }

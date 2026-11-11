@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
+import { PROJECT_CAP_MAX, type ConfinedServices, type ProjectDto, type ProjectVisibility } from '@solera/protocol'
 import { Banner, Button, EmptyState, SaveBar, SegmentedControl, Select, Switch } from '@solera/ui'
 import { AutonomousConfinementSelect, EnvironmentSelect } from '../components/Environment'
 import { ProjectInstructions } from '../components/instructions/Instructions'
@@ -104,7 +104,7 @@ function useSettingsDraft(project: ProjectDto) {
     },
     busy: update.isPending,
     error: update.error instanceof ApiRequestError ? update.error.message : null,
-    problem: problem ? t(`projectSettings.problem.${problem}` as MessageKey) : null,
+    problem: problem ? t(`projectSettings.problem.${problem}` as MessageKey, { max: String(PROJECT_CAP_MAX) }) : null,
     notice,
     environments,
     devcontainer,
@@ -142,7 +142,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
       render: () => (
         <div className="flex flex-col gap-2">
           <PathField hideLabel label={t('project.settings.workspacePath')} value={draft.workspacePath ?? ''} onChange={(value) => set('workspacePath', value)} />
-          {isChanged('workspacePath') && project.conversationCount > 0 ? (
+          {isChanged('workspacePath') ? (
             <Banner tone="caution">{t('project.settings.pathChanged.warning')}</Banner>
           ) : null}
         </div>
@@ -313,9 +313,12 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
         <SaveBar
           count={count}
           labels={{
-            pending: message
-              ? <span className="text-critical">{message}</span>
-              : t(count > 1 ? 'projectSettings.save.pending.other' : 'projectSettings.save.pending.one', { count: String(count) }),
+            pending: (
+              <>
+                {t(count > 1 ? 'projectSettings.save.pending.other' : 'projectSettings.save.pending.one', { count: String(count) })}
+                {message ? <span className="block text-critical">{message}</span> : null}
+              </>
+            ),
             cancel: t('project.settings.cancel'),
             save: t('project.settings.save'),
           }}

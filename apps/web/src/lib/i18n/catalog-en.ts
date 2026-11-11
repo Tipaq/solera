@@ -4429,7 +4429,7 @@ export const en = {
   "projectSettings.save.done.other": "{count} settings saved.",
   "projectSettings.problem.nameEmpty": "The project needs a name.",
   "projectSettings.problem.pathEmpty": "The project needs a folder.",
-  "projectSettings.problem.capTooLong": "The heading fits in 280 characters.",
+  "projectSettings.problem.capTooLong": "The heading fits in {max} characters.",
 } as const
 
 /**
