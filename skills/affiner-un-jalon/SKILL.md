@@ -21,8 +21,6 @@ liens).
 4. Le code et les docs du projet là où le sujet les touche (`AGENTS.md`, les fichiers
    concernés), assez pour savoir ce qui est faisable et dans quel ordre.
 
-Si la session n'est pas rattachée au jalon, rattache-la (`link_card`).
-
 **Fini quand** tu sais ce que le jalon vise, ce qui existe déjà, et ce que tu ne sais pas.
 
 ## 2. Décider : questions ou découpage
@@ -31,14 +29,17 @@ Tu découpes **sans demander** si tu sais écrire chaque carte sans deviner : la
 le périmètre (et ce qui est hors champ), l'ordre. C'est le cas d'un brief détaillé, ou
 quand `--decouper` est passé et que rien d'essentiel ne manque.
 
-Sinon, pose **au plus 4 questions**, une par sujet, dans un seul message, chacune avec
-ta proposition par défaut (« Je partirais sur X — ça te va ? ») :
+Sinon, pose **au plus 4 questions**, une par sujet, avec **l'outil de question de ton CLI**
+(`AskUserQuestion`, `request_user_input`…), toutes dans un seul appel, puis attends les
+réponses : la page du jalon les montre et on y répond sur place. Chacune porte ta
+proposition par défaut (« Je partirais sur X — ça te va ? ») :
 - la **cible** : à quoi on reconnaîtra que c'est fini ;
 - le **hors champ** : ce qu'on ne fait pas ;
 - l'**ordre** ou les dépendances quand il y a un vrai choix ;
 - l'**échéance**, seulement si le sujet en appelle une.
 
-Ne pose pas une question dont la réponse est dans le code, les cartes ou le brief.
+Ne pose pas une question dont la réponse est dans le code, les cartes ou le brief. Sans
+outil de question, écris-les dans ta réponse et termine ton tour.
 Après les réponses, complète la description du jalon (`append_card_description`) avec
 ce qui a été décidé — c'est elle que les sessions des cartes liront.
 

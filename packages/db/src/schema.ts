@@ -994,6 +994,13 @@ export const conversations = sqliteTable(
      * `cardId`.
      */
     splitCardId: text('split_card_id'),
+    /**
+     * Comment la session d'affinage d'un jalon s'y prend (#184) : `questions`, poser ce
+     * qui manque avant de découper, ou `direct`, découper sur le brief. Stocké pour la
+     * même raison que `purpose` : le briefing le redit à chaque démarrage, et la page du
+     * jalon le montre. NULL hors découpage.
+     */
+    splitMode: text('split_mode', { enum: ['questions', 'direct'] }),
     userId: text('user_id')
       .notNull()
       .references(() => users.id),
@@ -1154,6 +1161,8 @@ export const conversations = sqliteTable(
     index('idx_conversations_project').on(t.projectId, t.position),
     index('idx_conversations_user').on(t.userId),
     index('idx_conversations_schedule').on(t.scheduleId),
+    // La session d'affinage d'une carte, lue pour chaque carte du board (#184).
+    index('idx_conversations_split_card').on(t.splitCardId, t.createdAt),
   ],
 )
 
