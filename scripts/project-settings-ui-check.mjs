@@ -262,7 +262,15 @@ try {
   await cli.getByRole('radio', { name: 'Codex' }).click()
   await row('agent-permissions-sandbox').waitFor()
   await shot(page.locator('#reglages-agents-3'), '1280-agents-permissions-codex')
+  const sandbox = row('agent-permissions-sandbox').getByRole('combobox', { name: 'Bac à sable' })
+  const sandboxValue = (await sandbox.textContent()).trim()
+  await sandbox.click()
+  await page.getByRole('option').filter({ hasNotText: sandboxValue }).first().click()
+  await bar.filter({ hasText: '2 modifications non enregistrées' }).waitFor()
   await cli.getByRole('radio', { name: 'Claude' }).click()
+  // Ce qui change pour un CLI non affiché se marque sur la rangée du CLI.
+  await row('agent-permissions-cli').getByRole('img', { name: 'Modifié, pas encore enregistré' }).waitFor()
+  assert.equal(await row('agent-model-cli').getByRole('img', { name: 'Modifié, pas encore enregistré' }).count(), 0)
   // Annuler efface aussi les réglages d'agent.
   await barButton('Annuler').click()
   await bar.waitFor({ state: 'detached' })

@@ -5,6 +5,7 @@ import { SegmentedControl, Select } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { requestAvailabilityOf, requestSettings, useAgentSettings } from '../chat/agent-settings'
 import { SETTING_FIELDS, type SettingGroup } from '../chat/ComposerSettings'
+import { ADVANCED_KEYS, LENT_KEYS, MCP_FIELDS, MODEL_KEYS, REFLEX_KEYS, pick } from '../settings/LayeredSettings'
 import type { SettingItem } from '../settings-page/SettingRow'
 import type { ConfigLayerDraft, DraftLevelConfig } from '../../lib/config-layers'
 import { useTranslate } from '../../lib/i18n'
@@ -17,12 +18,6 @@ import { useMcpServers } from '../../lib/mcp'
  * dans le brouillon de la page et enregistrées avec le reste.
  */
 
-/** Le réflexe natif du CLI : ce qui reste réglé par CLI. */
-const REFLEX_KEYS = ['permission', 'approval', 'sandbox', 'permission-edit', 'permission-bash', 'permission-webfetch']
-/** Ce que Solera prête à l'agent, commun à tous les CLI. */
-const LENT_KEYS = ['skillLibrary', 'agentMemory']
-const MODEL_KEYS = ['model', 'effort', 'account']
-const MCP_FIELDS = ['mcpServers', 'soleraMcp', 'strictMcp']
 /**
  * Ce que les libellés d'un segment tiennent, ensemble, dans la colonne du contrôle
  * (18 rem au large, la largeur du téléphone sinon). Au-delà, il en déborde — « Interdit ·
@@ -31,16 +26,13 @@ const MCP_FIELDS = ['mcpServers', 'soleraMcp', 'strictMcp']
  */
 const SEGMENT_LABELS_MAX = 26
 
-const pick = (groups: SettingGroup[], keys: string[]) =>
-  keys.flatMap((key) => groups.filter((group) => group.key === key))
-
 const isLocal = (sources: Record<string, ConfigSource>, fields: string[]) =>
   fields.some((field) => sources[field] === 'project')
 
 /**
  * Le contrôle d'une rangée : un segment pour trois choix courts au plus, s'il tient dans
- * sa colonne, une liste sinon. Un choix à risque dit son indice dessous, en ambre ; les autres le donnent comme
- * aide de la rangée.
+ * sa colonne, une liste sinon. Un choix à risque dit son indice dessous, en ambre ; les
+ * autres le donnent comme aide de la rangée.
  */
 export function GroupControl({ group }: { group: SettingGroup }) {
   const selected = group.options.find((option) => option.value === group.value)
@@ -71,7 +63,8 @@ export function GroupControl({ group }: { group: SettingGroup }) {
 
 /**
  * « hérité du compte », ou « modifié ici » avec le retour à l'héritage d'un clic. Une
- * ligne de texte sous le contrôle, pas un badge de plus.
+ * mention en toutes lettres sous le contrôle, lue comme un lien : ni badge ni bouton de
+ * plus dans une rangée qui a déjà le sien.
  */
 export function Inheritance({ local, onReset }: { local: boolean; onReset: () => void }) {
   const t = useTranslate()
@@ -154,14 +147,29 @@ export function useAgentSettingItems(project: ProjectDto, draft: ConfigLayerDraf
     }
   }
 
-  const cliRow = (section: Section): SettingItem => ({
-    id: `agent-${section}-cli`,
-    category: 'agents',
-    group: groups[section],
-    kind: 'row',
-    label: t('projectSettings.item.cli.label'),
-    help: t('projectSettings.item.cli.help'),
-    render: () => <AgentPick agent={agent} onChange={setAgent} />,
+  /* Le CLI choisi ne montre que ses rangées : ce que le brouillon change pour un autre se
+     marque sur la rangée du CLI, et par elle sur la catégorie. */
+  const cliRow = (section: Section, keys: string[]): SettingItem => {
+    const fields = new Set(keys.flatMap((key) => SETTING_FIELDS[key] ?? []))
+    return {
+      id: `agent-${section}-cli`,
+      category: 'agents',
+      group: groups[section],
+      kind: 'row',
+      label: t('projectSettings.item.cli.label'),
+      help: t('projectSettings.item.cli.help'),
+      changed: draft.changed.some((key) => {
+        const [scope, field] = key.split('.')
+        return field !== undefined && scope !== agent && fields.has(field)
+      }),
+      render: () => <AgentPick agent={agent} onChange={setAgent} />,
+    }
+  }
+  /* Les réglages avancés ne se règlent plus au projet (R-5.4) ; un projet qui en change un
+     le montre encore, pour qu'on le voie et qu'on le rende à l'héritage. */
+  const advanced = pick(ownSettings.groups, ADVANCED_KEYS).filter((group) => {
+    const fields = SETTING_FIELDS[group.key] ?? []
+    return isLocal(own.sources, fields) || own.changed(fields)
   })
 
   return [
@@ -186,10 +194,11 @@ export function useAgentSettingItems(project: ProjectDto, draft: ConfigLayerDraf
         </div>
       ),
     },
-    cliRow('permissions'),
+    cliRow('permissions', REFLEX_KEYS),
     ...pick(ownSettings.groups, REFLEX_KEYS).map((group) => row('permissions', group, own)),
-    cliRow('model'),
+    cliRow('model', [...MODEL_KEYS, ...ADVANCED_KEYS]),
     ...pick(ownSettings.groups, MODEL_KEYS).map((group) => row('model', group, own)),
+    ...advanced.map((group) => row('model', group, own)),
     ...pick(sharedSettings.groups, ['queue']).map((group) => row('model', group, shared)),
   ]
 }

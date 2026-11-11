@@ -69,7 +69,7 @@ function useSettingsDraft(project: ProjectDto) {
   const { data: environments } = useProjectEnvironments(project.id)
   const { data: devcontainer } = useProjectDevcontainer(project.id)
   const update = useUpdateProject()
-  const agents = useConfigLayerDraft(project)
+  const agentLayer = useConfigLayerDraft(project)
   const [edits, setEdits] = useState<SettingsEdits>({})
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -83,6 +83,7 @@ function useSettingsDraft(project: ProjectDto) {
   const draft = draftOf(base, edits)
   const changed = changedFields(base, edits)
   const problem = draftProblem(draft)
+  const count = changed.length + agentLayer.changed.length
 
   return {
     base,
@@ -93,20 +94,19 @@ function useSettingsDraft(project: ProjectDto) {
       update.reset()
       setEdits((current) => ({ ...current, [field]: value }))
     },
-    count: changed.length + agents.changed.length,
+    count,
     reset: () => {
       update.reset()
       setEdits({})
-      agents.clear()
+      agentLayer.clear()
     },
     save: async () => {
-      const count = changed.length + agents.changed.length
-      const configLayer = agents.body()
+      const configLayer = agentLayer.body()
       // L'enregistré relu (la mutation attend l'invalidation) avant d'effacer le brouillon :
       // sinon les champs repasseraient un instant par les anciennes valeurs.
       await update.mutateAsync({ id: project.id, ...settingsPatchOf(base, edits), ...(configLayer.length > 0 ? { configLayer } : {}) })
       setEdits({})
-      agents.clear()
+      agentLayer.clear()
       setNotice(t(count > 1 ? 'projectSettings.save.done.other' : 'projectSettings.save.done.one', { count: String(count) }))
     },
     busy: update.isPending,
@@ -115,7 +115,7 @@ function useSettingsDraft(project: ProjectDto) {
     notice,
     environments,
     devcontainer,
-    agents,
+    agentLayer,
   }
 }
 
@@ -125,7 +125,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
   const model = useSettingsDraft(project)
   const { draft, set, isChanged, environments, devcontainer } = model
   const owner = project.isOwner
-  const agentRows = useAgentSettingItems(project, model.agents)
+  const agentRows = useAgentSettingItems(project, model.agentLayer)
 
   const categories: SettingsCategory[] = [
     { key: 'general', label: t('projectSettings.category.general') },
