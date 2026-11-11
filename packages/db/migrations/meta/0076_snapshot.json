@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "562aab14-3055-41cf-8283-804f77fd5dd0",
+  "id": "7e98965b-7a79-46b6-bedc-d0024c5e1e8b",
   "prevId": "d2c030c2-7efa-4829-93a3-2b6246e3bb19",
   "tables": {
     "action_runs": {
@@ -3741,58 +3741,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "approved_cadence": {
-          "name": "approved_cadence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "on_demand": {
-          "name": "on_demand",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "cadence": {
-          "name": "cadence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "schedule_enabled": {
-          "name": "schedule_enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "schedule_max_minutes": {
-          "name": "schedule_max_minutes",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 30
-        },
-        "last_scheduled_at": {
-          "name": "last_scheduled_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "next_run_at": {
-          "name": "next_run_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "agent_conversation_id": {
           "name": "agent_conversation_id",
           "type": "text",
@@ -3821,13 +3769,6 @@
           "columns": [
             "project_id",
             "created_at"
-          ],
-          "isUnique": false
-        },
-        "idx_project_actions_next_run": {
-          "name": "idx_project_actions_next_run",
-          "columns": [
-            "next_run_at"
           ],
           "isUnique": false
         }
@@ -4350,8 +4291,24 @@
           "name": "cadence",
           "type": "text",
           "primaryKey": false,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
+        },
+        "on_demand": {
+          "name": "on_demand",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "worktree_mode": {
+          "name": "worktree_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'root'"
         },
         "execution_mode": {
           "name": "execution_mode",

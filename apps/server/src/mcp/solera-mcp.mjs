@@ -938,7 +938,7 @@ const ALL_TOOLS = [
   {
     name: 'schedule_task',
     description:
-      "Crée une tâche planifiée dans ce projet : Solera rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet, avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne exactement une cadence parmi `every_minutes`, `cron` et `at`.",
+      "Crée une tâche planifiée dans ce projet : Solera rejouera `prompt` à la cadence donnée, chaque fois dans une session neuve, même quand aucune session n'est ouverte et après un redémarrage. C'est le planificateur durable, commun à tous les CLI ; les boucles propres à une session (`/loop`, `CronCreate`) meurent avec elle. Sert quand l'utilisateur demande un travail récurrent ou différé (« vérifie ça tous les lundis », « relance l'audit demain à 9 h »). Pas de ta propre initiative : une tâche consomme du quota à chaque tir. Les tirs tournent sans personne au clavier, à la racine du projet ou dans un worktree neuf (`worktree_mode`), avec les permissions par défaut du projet pour ce CLI ; ils n'encombrent pas la liste des sessions, l'utilisateur les retrouve sous la tâche et la gère dans la vue Planification. Donne au plus une cadence parmi `every_minutes`, `cron` et `at` ; sans cadence, la tâche ne part qu'à la demande, d'un clic dans l'interface.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -962,6 +962,16 @@ const ALL_TOOLS = [
         at: {
           type: 'string',
           description: 'Date et heure d\'un tir unique, ISO 8601 avec fuseau : `2026-10-12T09:00:00+02:00`.',
+        },
+        on_demand: {
+          type: 'boolean',
+          description: "La tâche se lance aussi d'un clic, en plus de sa cadence. Vrai par défaut ; `false` exige une cadence.",
+        },
+        worktree_mode: {
+          type: 'string',
+          enum: ['root', 'new'],
+          description:
+            "Où s'ouvre chaque tir : `root` à la racine du projet (défaut), `new` dans un worktree neuf, sur une branche nommée d'après la tâche et l'heure, partie de la branche par défaut. `new` pour un tir qui modifie du code : il ne touche pas l'arbre où l'on travaille.",
         },
         agent: {
           type: 'string',
