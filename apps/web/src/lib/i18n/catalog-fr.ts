@@ -2367,6 +2367,7 @@ export const fr: Catalog = {
   'place.count.asking.many': '{count} t’attendent',
   'place.count.openCards.one': '{count} carte ouverte',
   'place.count.openCards.many': '{count} cartes ouvertes',
+  'drawer.close': 'Fermer',
   'project.color.title': 'Couleur',
   'project.color.description': 'Celle de l’avatar du projet quand il n’a pas d’image.',
   'project.view.activity': "Activité",
