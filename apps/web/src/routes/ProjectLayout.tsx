@@ -1,43 +1,17 @@
-import {
-  CalendarClock,
-  Flag,
-  GitBranch,
-  History,
-  Layers,
-  MoreHorizontal,
-  Palette,
-  Plus,
-  SlidersHorizontal,
-  Split,
-  SquareKanban,
-  Target,
-} from 'lucide-react'
+import { Flag, Layers, Plus, SquareKanban, Target, Zap } from 'lucide-react'
 import { useMemo } from 'react'
-import { Outlet, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
-import {
-  Badge,
-  Button,
-  EmptyState,
-  IconButton,
-  Menu,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  MenuSwatch,
-  MenuSwatchRow,
-} from '@solera/ui'
-import { HeaderBand } from '../components/HeaderBand'
+import { Button, EmptyState } from '@solera/ui'
 import { ProjectAvatar } from '../components/ProjectAvatar'
-import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
+import { actionsTabCount, useActionsCount } from '../components/prototype/actionsCount'
+import { PlaceShell, type PlaceTab } from '../components/prototype/PlaceShell'
 import { askingCount, useLiveConversations } from '../lib/activity'
 import { useSessionRequests } from '../lib/session-requests'
 import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
-import { PROJECT_COLORS } from '../lib/project-colors'
-import { useProjects, useUpdateProject } from '../lib/projects'
-import { useSchedules } from '../lib/schedules'
+import { useProjects } from '../lib/projects'
 
 /**
  * Le paramètre par lequel une vue ouvre son propre dialogue de création.
@@ -70,23 +44,19 @@ export function ProjectLayout() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const t = useTranslate()
-  const [, setParams] = useSearchParams()
 
   const { data: projects, isPending } = useProjects()
   const { data: cards } = useCards(projectId)
-  const { data: schedules } = useSchedules()
   const { data: conversations } = useAllConversations()
-  const updateProject = useUpdateProject()
   const mine = useMemo(
     () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
     [conversations, projectId],
   )
   const live = useLiveConversations(mine)
   const requests = useSessionRequests(projectId, live)
+  const actionsCount = actionsTabCount(useActionsCount(projectId))
 
   const project = projects?.find((entry) => entry.id === projectId)
-  const onBoard = useMatch('/p/:projectId/board') !== null
-  const onSchedules = useMatch('/p/:projectId/schedules') !== null
 
   if (isPending) return null
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
@@ -96,143 +66,44 @@ export function ProjectLayout() {
      seulement, comme le kanban : une parente compterait deux fois le travail de ses
      enfants. */
   const openCards = (cards ?? []).filter((card) => card.children.length === 0 && !CARD_CLOSED_COLUMNS.includes(card.column))
-  const tasks = (schedules ?? []).filter((task) => task.projectId === projectId)
 
-  const tabs: ViewTab[] = [
-    {
-      to: `/p/${projectId}`,
-      end: true,
-      label: t('project.view.overview'),
-      icon: <Target size={15} />,
-    },
-    {
-      to: `/p/${projectId}/activity`,
-      label: t('project.view.activity'),
-      icon: <Layers size={15} />,
-      /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de
-         sessions : le compte d'un onglet est une demande, d'où l'ambre. */
-      count: askingCount(live, requests),
-      tone: 'caution',
-    },
-    {
-      to: `/p/${projectId}/board`,
-      label: t('project.board.title'),
-      icon: <SquareKanban size={15} />,
-      count: openCards.length,
-    },
-    {
-      to: `/p/${projectId}/schedules`,
-      label: t('place.schedules.title'),
-      icon: <CalendarClock size={15} />,
-      count: tasks.length,
-    },
-    {
-      to: `/p/${projectId}/timeline`,
-      label: t('project.view.timeline'),
-      icon: <Flag size={15} />,
-    },
-    {
-      to: `/p/${projectId}/journal`,
-      label: t('project.view.journal'),
-      icon: <History size={15} />,
-      /* Sans compteur, et c'est voulu : un journal n'a pas de reste à faire. Le nombre
-         de lignes des quinze derniers jours dirait l'inventaire que le gabarit interdit
-         au bandeau, et coûterait de surcroît un `git log` par projet rien que pour
-         dessiner la rangée. */
-    },
+  /* PROTOTYPE : la rangée retenue (2026-11-11), la même que celle du portefeuille —
+     Aperçu · Travail · Tableau · Jalons · Actions, puis Réglages au bout. Règle des
+     comptes, trois tons : ambre pour ce qui t'attend, vert pour ce qui tourne, gris pour
+     un inventaire. */
+  const tabs: PlaceTab[] = [
+    { to: `/p/${projectId}`, end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
+    { to: `/p/${projectId}/travail`, label: 'Travail', icon: <Layers size={15} />, count: askingCount(live, requests), tone: 'caution' },
+    { to: `/p/${projectId}/board`, label: 'Tableau', icon: <SquareKanban size={15} />, count: openCards.length },
+    { to: `/p/${projectId}/timeline`, label: 'Jalons', icon: <Flag size={15} /> },
+    // Le ⚡ de la bande est retiré : l'onglet porte ce qu'il disait — ambre « N à relire »,
+    // sinon vert « N en marche ».
+    { to: `/p/${projectId}/actions`, label: 'Actions', icon: <Zap size={15} />, count: actionsCount?.count, tone: actionsCount?.tone, countTitle: actionsCount?.title },
   ]
 
-  /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */
-  const create =
-    onBoard || onSchedules ? (
-      <Button
-        size="sm"
-        icon={<Plus size={15} />}
-        onClick={() => setParams((current) => {
-          current.set(NEW_PARAM, '1')
-          return current
-        })}
-      >
-        {t(onBoard ? 'project.action.newCard' : 'project.action.newTask')}
-      </Button>
-    ) : null
-  // Le découpage d'un chantier en cartes (#70), à côté de la carte seule : les deux
-  // répondent à « j'ai du travail à poser sur le board ».
-  const action = onBoard ? (
-    <>
-      <Button size="sm" variant="secondary" icon={<Split size={15} />} onClick={() => navigate(`/p/${projectId}/c/new?split=new`)}>
-        {t('split.action')}
-      </Button>
-      {create}
-    </>
-  ) : create
-
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <ProjectAvatar project={project} className="size-5 shrink-0" />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{project.name}</h1>
-        {project.git ? (
-          <span className="hidden sm:block">
-            <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
-          </span>
-        ) : null}
-        {/* Au doigt l'intitulé ferait passer la bande à deux lignes : l'icône suffit,
-            et le nom reste porté par le bouton pour qui ne voit pas. */}
-        <Button
-          size="sm"
-          aria-label={t('board.newConversation.short')}
-          icon={<Plus size={16} />}
-          onClick={() => navigate(`/p/${projectId}/c/new`)}
-        >
-          <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
-        </Button>
-        {/* Le `⋯` ne navigue plus vers une vue : la rangée est juste en dessous, et
-            redire les cinq vues ici est exactement la redondance que l'audit est
-            venu défaire. Il ne porte donc que les gestes du projet. */}
-        <Menu
-          trigger={
-            <IconButton label={t('place.project.menu')} size="sm">
-              <MoreHorizontal size={16} />
-            </IconButton>
-          }
-        >
-          <MenuItem
-            icon={<SlidersHorizontal size={16} />}
-            onSelect={() => navigate(`/p/${projectId}/settings`)}
+    <PlaceShell
+      icon={<ProjectAvatar project={project} className="size-5 shrink-0" />}
+      title={project.name}
+      label={t('project.views')}
+      tabs={tabs}
+      settings={{ to: `/p/${projectId}/settings`, title: t('project.settings.title') }}
+      actions={
+        <>
+          {/* PROTOTYPE : le ⚡ est retiré de la bande (2026-11-11) : l'onglet Actions est
+              à un clic, et son compte vert dit ce qui tourne. */}
+          {/* Au doigt l'intitulé ferait passer la bande à deux lignes : l'icône suffit,
+              et le nom reste porté par le bouton pour qui ne voit pas. */}
+          <Button
+            size="sm"
+            aria-label={t('board.newConversation.short')}
+            icon={<Plus size={16} />}
+            onClick={() => navigate(`/p/${projectId}/c/new`)}
           >
-            {t('project.settings.title')}
-          </MenuItem>
-          {project.isOwner ? (
-            <>
-              <MenuSeparator />
-              <MenuLabel>
-                <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
-              </MenuLabel>
-              <MenuSwatchRow>
-                {PROJECT_COLORS.map((entry) => (
-                  <MenuSwatch
-                    key={entry.value ?? 'default'}
-                    color={entry.value}
-                    label={t(entry.label)}
-                    selected={project.color === entry.value}
-                    onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-                  />
-                ))}
-              </MenuSwatchRow>
-            </>
-          ) : null}
-        </Menu>
-      </HeaderBand>
-
-      <ProjectTabs label={t('project.views')} tabs={tabs} action={action} />
-
-      {/* `relative` : le tiroir de carte et le panneau du board s'y posent en absolu.
-          Ils ne recouvrent donc plus la bande ni la rangée, ce qui est le but — la
-          bande d'un projet reste lisible pendant qu'on lit un diff. */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip">
-        <Outlet />
-      </div>
-    </div>
+            <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
+          </Button>
+        </>
+      }
+    />
   )
 }

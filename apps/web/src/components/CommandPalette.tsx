@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Loader,
   MessageSquare,
+  MessagesSquare,
   Play,
   Plug,
   Plus,
@@ -231,6 +232,22 @@ export function CommandPalette({
       },
     ]
 
+    // PROTOTYPE : la page Sessions — toutes, et celles du projet sous les yeux.
+    entries.push({
+      key: 'cmd-all-sessions',
+      icon: <MessagesSquare size={14} />,
+      label: 'Toutes les sessions',
+      run: () => go('/sessions'),
+    })
+    if (projectId) {
+      entries.push({
+        key: 'cmd-project-sessions',
+        icon: <MessagesSquare size={14} />,
+        label: `Sessions de ${projectNames.get(projectId) ?? 'ce projet'}`,
+        run: () => go(`/sessions?projet=${projectId}`),
+      })
+    }
+
     // Une tâche se planifie dans un projet : sans projet sous les yeux, le geste n'a
     // pas de destination et proposer une page vide serait un cul-de-sac.
     if (projectId) {
@@ -266,7 +283,7 @@ export function CommandPalette({
     })
 
     return entries
-  }, [close, go, projectId, t])
+  }, [close, go, projectId, projectNames, t])
 
   /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
@@ -330,6 +347,22 @@ export function CommandPalette({
       items: items.slice(0, expanded === id ? EXPANDED : PER_FAMILY),
       total: items.length,
     })
+
+    const withSessionsPage = (group: Group): Group =>
+      group.total > group.items.length
+        ? {
+            ...group,
+            items: [
+              ...group.items,
+              {
+                key: 'c-all-results',
+                icon: <MessagesSquare size={14} />,
+                label: `Voir les ${group.total} résultats dans Sessions`,
+                run: () => go(`/sessions?q=${encodeURIComponent(term)}`),
+              },
+            ],
+          }
+        : group
 
     /** Une phrase se cherche par morceaux et initiales, pas en lettres éparses. */
     const sentence = (text: string): FuzzyField => ({ text, weight: 1, mode: 'words' })
@@ -578,13 +611,17 @@ export function CommandPalette({
 
     return [
       limit('notes', []),
-      limit(
-        'conversations',
-        conversationItems(
-          rankByFields(conversations ?? [], term, (conversation) => [
-            sentence(conversation.title),
-            ...context(groupName(conversation)),
-          ]),
+      // PROTOTYPE : quand la recherche trouve plus de sessions que la palette n'en
+      // montre, une dernière ligne mène à la page Sessions, la recherche déjà posée.
+      withSessionsPage(
+        limit(
+          'conversations',
+          conversationItems(
+            rankByFields(conversations ?? [], term, (conversation) => [
+              sentence(conversation.title),
+              ...context(groupName(conversation)),
+            ]),
+          ),
         ),
       ),
       limit('messages', messageItems),

@@ -1,4 +1,4 @@
-import { Code, Contrast, Languages, Loader, Moon, Palette, Sun, TextQuote, Wrench } from 'lucide-react'
+import { Code, Contrast, Languages, Loader, Moon, Palette, PanelLeft, Sun, TextQuote, Wrench } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AppearanceControls } from '../components/AppearanceControls'
 import { AppearancePresets } from '../components/AppearancePresets'
@@ -6,6 +6,7 @@ import { ReadingPreview } from '../components/ReadingPreview'
 import { SyntaxThemeControls } from '../components/SyntaxThemeControls'
 import { ToolStyleControls } from '../components/ToolStyleControls'
 import { useAppearance } from '../lib/appearance'
+import { SIDEBAR_SESSION_LIMITS, setSidebarSessionLimit, useSidebarSessionLimit } from '../lib/prototype-sidebar'
 import { LOCALES, LOCALE_LABELS, setLocale, useLocale, usePendingLocale, useTranslate } from '../lib/i18n'
 import { THEMES, THEME_LABELS, useTheme, type Theme } from '../lib/theme'
 import { Card, CardBody, CardHeader, cx } from '@solera/ui'
@@ -25,12 +26,42 @@ export function AppearanceSection() {
   // qu'il est là, et le bouton montre l'attente plutôt que de sembler ignorer le clic.
   const pending = usePendingLocale()
   const t = useTranslate()
+  const sessionLimit = useSidebarSessionLimit()
 
   return (
     <div className="flex flex-col gap-4">
       <SectionHeader
         description={t('settings.appearance.description')}
       />
+
+      {/* PROTOTYPE : combien de sessions la sidebar montre (Tim, 2026-11-11). */}
+      <Card>
+        <CardHeader
+          title="Sessions dans la sidebar"
+          description="Ajuster à la hauteur : pas de défilement, le reste est dans « Toutes les sessions »."
+          icon={<PanelLeft size={16} />}
+        />
+        <CardBody>
+          <div className="grid grid-cols-4 gap-2">
+            {SIDEBAR_SESSION_LIMITS.map((option) => (
+              <button
+                key={String(option)}
+                type="button"
+                onClick={() => setSidebarSessionLimit(option)}
+                aria-pressed={sessionLimit === option}
+                className={cx(
+                  'flex items-center justify-center rounded-md border px-3 py-2.5 text-sm font-medium transition-colors',
+                  sessionLimit === option
+                    ? 'border-accent bg-accent-wash text-ink'
+                    : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
+                )}
+              >
+                {option === 'fit' ? 'Ajuster à la hauteur' : option}
+              </button>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
 
       {/* La langue avant le thème : c'est le réglage qui décide de la lisibilité du
           reste de l'écran, y compris des libellés de cette page. */}

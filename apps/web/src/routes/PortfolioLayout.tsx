@@ -9,6 +9,7 @@ import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
 import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
+import { PortfolioV2Layout, usePortfolioVariant } from './prototype-portfolio/Layout'
 
 /**
  * La coque du portefeuille : la même grammaire qu'un projet, **un cran au-dessus**.
@@ -24,7 +25,13 @@ import { useProjects } from '../lib/projects'
  * Pas de `⋯` dans la bande, à la différence d'un projet : un portefeuille n'a pas de
  * gestes à soi. Un menu n'aurait porté que les vues, que la rangée dit déjà.
  */
+/* PROTOTYPE : la coque v2 (`prototype-portfolio/Layout.tsx`) par défaut ; celle-ci reste
+   derrière `?variant=actuel`. */
 export function PortfolioLayout() {
+  return usePortfolioVariant() === 'actuel' ? <CurrentPortfolioLayout /> : <PortfolioV2Layout />
+}
+
+function CurrentPortfolioLayout() {
   const navigate = useNavigate()
   const t = useTranslate()
 

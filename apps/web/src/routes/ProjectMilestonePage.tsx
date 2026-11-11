@@ -12,6 +12,36 @@ import { useTranslate } from '../lib/i18n'
 import { milestoneCounts, milestoneQueue, milestoneToneOf, milestoneWaves, type MilestoneTone } from '../lib/milestone-view'
 import { useMilestoneRun, useUpdateMilestone } from '../lib/milestones'
 import { useProjects } from '../lib/projects'
+import { MilestoneV2 } from './prototype-milestones/MilestoneV2'
+import { PrototypeSwitcher, usePrototypeVariant, type PrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { CardDrawerHost } from './prototype-milestones/CardDrawer'
+import { MilestoneByState, MilestoneLayers } from './prototype-milestones/MilestoneVariants'
+
+/* PROTOTYPE — les variantes de la vue d'un jalon (branche proto/page-projet). */
+const VARIANTS: PrototypeVariant[] = [
+  { key: 'jalon-v3', name: 'Flux v2 : affinage en fil, « Ajouter au jalon »' },
+  { key: 'jalon-v2', name: 'Jalon v2 (flux actuel)' },
+  { key: 'couches', name: 'Graphe en couches' },
+  { key: 'etats', name: 'Graphe par état' },
+  { key: 'actuel', name: 'Actuel (jalon lancé)' },
+]
+
+export function ProjectMilestonePage() {
+  const variant = usePrototypeVariant(VARIANTS)
+  return (
+    <>
+      {variant === 'jalon-v3' ? <MilestoneV2 flux="v3" /> : null}
+      {variant === 'jalon-v2' ? <MilestoneV2 /> : null}
+      {variant === 'couches' ? <MilestoneLayers /> : null}
+      {variant === 'etats' ? <MilestoneByState /> : null}
+      {variant === 'actuel' ? <CurrentMilestonePage /> : null}
+      <CardDrawerHost />
+      <PrototypeVerdict scope="jalon" variant={variant} />
+      <PrototypeSwitcher variants={VARIANTS} />
+    </>
+  )
+}
 
 /** Le cadre d'une carte selon son exécution : l'accent qui tourne, le pointillé qui attend. */
 const TILE_TONES: Record<MilestoneTone, string> = {
@@ -43,7 +73,7 @@ const SUMMARY_TONES: Record<SessionSummary['tone'], string> = {
  *
  * Chargée à la demande : on n'y vient que par le bandeau ou la frise.
  */
-export function ProjectMilestonePage() {
+function CurrentMilestonePage() {
   const { projectId, number } = useParams()
   const t = useTranslate()
   const { data: cards, isPending } = useCards(projectId)

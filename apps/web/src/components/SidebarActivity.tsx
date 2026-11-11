@@ -121,16 +121,18 @@ export function SidebarActivity({
 
   return (
     <>
-      <div ref={setBlock} className="shrink-0 border-b border-line px-2 py-1.5" role="group" aria-label={t('shell.activity.label')}>
+      {/* PROTOTYPE : `data-sidebar-activity` — la colonne mesure le bloc pour décider de
+          le replier en une ligne quand les sessions manquent de place. */}
+      <div ref={setBlock} data-sidebar-activity className="shrink-0 border-b border-line px-2 py-1.5" role="group" aria-label={t('shell.activity.label')}>
         {/* L'en-tête porte les compteurs et le « ↗ » vers la modale. Un seul bouton :
             trois cibles voisines pour une seule destination ne font qu'un piège au doigt. */}
         <button
           type="button"
           onClick={() => show()}
           aria-haspopup="dialog"
-          className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11"
+          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11"
         >
-          <Activity size={14} className="shrink-0 text-ink-faint" />
+          <span className="flex w-4 shrink-0 justify-center"><Activity size={14} className="text-ink-faint" /></span>
           <span className="flex-1 text-meta font-semibold uppercase tracking-wider text-ink-faint">
             {t('shell.overview.heading')}
           </span>
@@ -154,7 +156,7 @@ export function SidebarActivity({
         </button>
 
         {coarse ? null : forYou.length === 0 && sessions.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>
+          <p className="py-1.5 pr-2.5 pl-9 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>
         ) : (
           <>
             {shownRequests.length > 0 ? (
@@ -185,9 +187,9 @@ export function SidebarActivity({
               <button
                 type="button"
                 onClick={() => show()}
-                className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
+                className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
               >
-                <Activity size={14} className="shrink-0" />
+                <span className="flex w-4 shrink-0 justify-center"><Activity size={14} /></span>
                 <span className="min-w-0 flex-1 truncate">{t('forYou.more', { rest: more })}</span>
                 {restRequests > 0 ? <StateDot state="awaiting" labelled={false} /> : null}
               </button>
@@ -222,7 +224,10 @@ export function SidebarActivity({
 function useColumnHeight(block: HTMLElement | null): number {
   const [height, setHeight] = useState(0)
   useLayoutEffect(() => {
-    const column = block?.parentElement
+    // PROTOTYPE : le bloc vit désormais dans le conteneur qui défile ; sa hauteur
+    // visible, et non celle de son contenu, fixe le budget (sinon il se nourrit de
+    // lui-même).
+    const column = (block?.closest('[data-sidebar-scroll]') as HTMLElement | null) ?? block?.parentElement
     if (!column) return
     setHeight(column.getBoundingClientRect().height)
     const observer = new ResizeObserver(([entry]) => {
@@ -239,9 +244,12 @@ function useColumnHeight(block: HTMLElement | null): number {
  * cherche *où* ça se passe.
  */
 function EntryMark({ project, free }: { project?: ProjectDto; free: boolean }) {
-  return free
-    ? <MessagesSquare size={14} className="shrink-0 text-ink-faint" />
-    : <ProjectAvatar project={project} className="size-3.5" />
+  // PROTOTYPE : un créneau de 16 px, centré sur la colonne d'icônes de la sidebar.
+  return (
+    <span className="flex w-4 shrink-0 justify-center">
+      {free ? <MessagesSquare size={14} className="text-ink-faint" /> : <ProjectAvatar project={project} className="size-3.5" />}
+    </span>
+  )
 }
 
 /**
@@ -271,7 +279,7 @@ function ForYouLine({ entry, project, onOpen }: {
         onClick={onOpen}
         aria-haspopup="dialog"
         title={forYouTitle(entry, t)}
-        className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 pl-2.5 text-left text-sm text-ink transition-colors hover:bg-surface-high"
+        className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink transition-colors hover:bg-surface-high"
       >
         <EntryMark project={project} free={entry.projectId === null} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -300,7 +308,7 @@ function ActivityLine({ entry, project, onNavigate }: {
         onClick={onNavigate}
         title={entry.conversation.title}
         className={({ isActive }) => cx(
-          'flex h-8 items-center gap-2 rounded-md px-1.5 pl-2.5 text-sm transition-colors',
+          'flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
           isActive ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >

@@ -92,6 +92,8 @@ export function placeOfPath(pathname: string): Place | null {
   if (pathname.startsWith('/schedules')) return 'planned'
   if (pathname.startsWith('/p/') || pathname.startsWith('/projects')) return 'projects'
   if (pathname.startsWith('/c/')) return 'threads'
+  // PROTOTYPE : `/sessions` est la page du lieu *Fils*, comme `/projects` celle de *Projets*.
+  if (pathname.startsWith('/sessions')) return 'threads'
   return null
 }
 

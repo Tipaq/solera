@@ -1,4 +1,4 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, ShieldAlert, Trash2, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, ShieldAlert, Plus, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
@@ -12,6 +12,12 @@ import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { NEW_PARAM } from './ProjectLayout'
+import { PrototypeSwitcher, usePrototypeVariant, type PrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { useScheduleProto } from './prototype-schedules/data'
+import { ListVariant } from './prototype-schedules/ListVariant'
+import { AgendaVariant } from './prototype-schedules/AgendaVariant'
+import { HealthVariant } from './prototype-schedules/HealthVariant'
 import {
   RUN_DOTS,
   RUN_LABELS,
@@ -42,7 +48,66 @@ const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'cri
  * Une page par projet et non un réglage d'instance : une tâche travaille dans un dépôt,
  * avec les consignes et la mémoire de ce projet, et c'est là qu'on vient la chercher.
  */
+/* PROTOTYPE — le switcher des variantes de l'onglet Planifiées. `actuel` est la page
+   d'avant, intacte. */
+const SCHEDULE_VARIANTS: PrototypeVariant[] = [
+  { key: 'liste', name: 'Liste' },
+  { key: 'agenda', name: 'Agenda' },
+  { key: 'sante', name: 'Santé' },
+  { key: 'actuel', name: 'Actuel' },
+]
+
 export function SchedulePage() {
+  const variant = usePrototypeVariant(SCHEDULE_VARIANTS)
+  return (
+    <>
+      {variant === 'actuel' ? <CurrentSchedulePage /> : <PrototypeSchedules variant={variant} />}
+      <PrototypeSwitcher variants={SCHEDULE_VARIANTS} />
+      <PrototypeVerdict scope="planifiees" variant={variant} />
+    </>
+  )
+}
+
+function PrototypeSchedules({ variant }: { variant: string }) {
+  const { projectId } = useParams()
+  const proto = useScheduleProto(projectId)
+  const [params, setParams] = useSearchParams()
+  // « + Tâche » de la rangée : dans le proto, la création n'écrit rien.
+  const creating = params.get(NEW_PARAM) === '1'
+  return (
+    <div className="h-full overflow-y-auto p-4 md:p-6">
+      {/* PROTOTYPE : « + Tâche » dans l'en-tête de la vue, plus dans la rangée d'onglets. */}
+      <div className="mb-4 flex justify-end">
+        <Button size="sm" icon={<Plus size={15} />} onClick={() => setParams((current) => { current.set(NEW_PARAM, '1'); return current }, { replace: true })}>
+          Tâche
+        </Button>
+      </div>
+      {creating ? (
+        <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed border-fuchsia-500/60 px-3 py-2 text-xs text-fuchsia-600 dark:text-fuchsia-300">
+          Simulé : la création passe par le formulaire existant (variante « Actuel »).
+          <button
+            type="button"
+            className="ml-auto underline"
+            onClick={() => setParams((current) => { current.delete(NEW_PARAM); return current }, { replace: true })}
+          >
+            Fermer
+          </button>
+        </div>
+      ) : null}
+      {proto.isPending ? (
+        <p role="status" className="text-sm text-ink-faint">Chargement…</p>
+      ) : variant === 'agenda' ? (
+        <AgendaVariant proto={proto} />
+      ) : variant === 'sante' ? (
+        <HealthVariant proto={proto} />
+      ) : (
+        <ListVariant proto={proto} />
+      )}
+    </div>
+  )
+}
+
+function CurrentSchedulePage() {
   const { projectId } = useParams()
   const t = useTranslate()
   const { data: projects } = useProjects()
@@ -75,7 +140,13 @@ export function SchedulePage() {
        coque, le compte des tâches dans son onglet, et *+ Tâche* dans sa rangée. */
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="flex max-w-3xl flex-col gap-4">
-        <p className="text-sm text-ink-soft">{t('schedule.description')}</p>
+        {/* PROTOTYPE : « + Tâche » quitte la rangée d'onglets pour l'en-tête de la vue. */}
+        <div className="flex items-start gap-3">
+          <p className="min-w-0 flex-1 text-sm text-ink-soft">{t('schedule.description')}</p>
+          <Button size="sm" icon={<Plus size={15} />} onClick={() => setEditing('new')}>
+            {t('project.action.newTask')}
+          </Button>
+        </div>
         {isError ? <Banner>{t('schedule.loadError')}</Banner> : null}
         {isPending ? (
           <p role="status" className="text-sm text-ink-faint">{t('schedule.loading')}</p>

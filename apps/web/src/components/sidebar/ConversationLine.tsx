@@ -116,9 +116,10 @@ export const ConversationLine = memo(function ConversationLine({
            même taille ne disent pas laquelle porte l'autre. `text-xs` et non les 13 px
            de la maquette — l'échelle de texte est fermée à six pas dans `tokens.ts`, et
            13 px n'en est pas un. */
-        className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-xs"
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5 text-xs"
       >
-        <span className="shrink-0 text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
+        {/* PROTOTYPE : créneau de 16 px sur la colonne d'icônes commune. */}
+        <span className="flex w-4 shrink-0 justify-center text-ink-faint"><AgentIcon agent={conversation.agent} size={14} /></span>
         <span className={cx('min-w-0 flex-1 truncate', unread && 'font-medium')}>{conversation.title}</span>
         {/* Une propriété durable du fil, pas un moment : avec le titre plutôt que parmi
             les points d'état, qui s'effacent au survol. */}

@@ -200,6 +200,9 @@ export function DraftConversationPage() {
    * effacerait ce qui aurait été tapé entre-temps.
    */
   const cardPending = Boolean(requestedCard) && !detached && cards === undefined
+  /* PROTOTYPE : `?prompt=` pré-remplit le premier message (« Affiner avec un agent » d'un
+     jalon y pose `/affiner-un-jalon #N` et le brief). Lu une fois, comme `initialText`. */
+  const prefill = params.get('prompt')
 
   // Le worktree déjà rattaché à la carte, s'il y en a un : reprendre un chantier doit
   // retomber dans le bon arbre sans y penser. Le plus récent l'emporte, une carte ayant
@@ -466,6 +469,15 @@ export function DraftConversationPage() {
             </div>
           ) : null}
 
+          {/* PROTOTYPE : un jalon de démo n'a pas de vraie carte à rattacher. */}
+          {params.get('proto-carte') ? (
+            <p className="rounded-md border border-dashed border-fuchsia-500/50 px-3 py-2 text-xs text-fuchsia-700 dark:text-fuchsia-300">
+              {params.get('proto-carte') === 'nouvelle'
+                ? 'Prototype : la carte-jalon serait créée d’abord, et la session partirait rattachée à elle.'
+                : `Démo : la carte #${params.get('proto-carte')} n'existe pas — la session partirait rattachée à elle.`}
+            </p>
+          ) : null}
+
           {cardPending ? null : (
             <Composer
               variant="draft"
@@ -473,7 +485,9 @@ export function DraftConversationPage() {
               // c'est le seul fil qu'on puisse en désigner avant qu'il existe. Un brouillon
               // par carte, sinon celui de la création libre écraserait la mention posée ici.
               draftKey={
-                card
+                prefill
+                  ? `new:${projectId ?? ''}:prompt:${card?.id ?? 'none'}:${prefill.length}`
+                  : card
                   ? `new:${projectId ?? ''}:card:${card.id}`
                   : splitting
                     ? `new:${projectId ?? ''}:split:${splitCard?.id ?? 'new'}`
@@ -481,7 +495,7 @@ export function DraftConversationPage() {
               }
               // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
               // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
-              initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
+              initialText={prefill ?? (card ? `${t('draft.card.prompt', { number: card.number })} ` : '')}
               config={effective}
               // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
               // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se

@@ -16,6 +16,12 @@ import { PortfolioLayout } from './routes/PortfolioLayout'
 import { ProjectLayout } from './routes/ProjectLayout'
 import { ProjectOverviewPage } from './routes/ProjectOverviewPage'
 import { ProjectsPage } from './routes/ProjectsPage'
+import { PortfolioSwitch } from './routes/prototype-portfolio/Layout'
+import { PortfolioOverview } from './routes/prototype-portfolio/Overview'
+import { PortfolioWork } from './routes/prototype-portfolio/Work'
+import { PortfolioActions } from './routes/prototype-portfolio/Actions'
+import { PortfolioBoard } from './routes/prototype-portfolio/Board'
+import { PortfolioMilestones } from './routes/prototype-portfolio/Milestones'
 
 /**
  * L'éditeur de skill, chargé à part.
@@ -105,6 +111,22 @@ const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({
 const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
 const BoardPage = lazy(() => import('./routes/BoardPage').then((m) => ({ default: m.BoardPage })))
 const SchedulePage = lazy(() => import('./routes/SchedulePage').then((m) => ({ default: m.SchedulePage })))
+/* PROTOTYPE : l'onglet Code (worktrees et branches). */
+const ProjectCodePage = lazy(() =>
+  import('./routes/prototype-code/ProjectCodePage').then((m) => ({ default: m.ProjectCodePage })),
+)
+/* PROTOTYPE : l'onglet Actions, actions et tâches planifiées fondues. */
+const ActionsPage = lazy(() =>
+  import('./routes/prototype-automations/ActionsPage').then((m) => ({ default: m.ActionsPage })),
+)
+/* PROTOTYPE : l'onglet Travail, Activité et Code combinés. */
+/* PROTOTYPE : toutes les sessions, de tous les projets. */
+const SessionsPage = lazy(() =>
+  import('./routes/prototype-sessions/SessionsPage').then((m) => ({ default: m.SessionsPage })),
+)
+const ProjectTravailPage = lazy(() =>
+  import('./routes/prototype-travail/ProjectTravailPage').then((m) => ({ default: m.ProjectTravailPage })),
+)
 const ProjectTimelinePage = lazy(() =>
   import('./routes/ProjectTimelinePage').then((m) => ({ default: m.ProjectTimelinePage })),
 )
@@ -243,14 +265,18 @@ export function App() {
           {/* Le portefeuille a la même grammaire qu'un projet, un cran au-dessus. La
               création d'un projet reste dehors : c'est un formulaire, pas une vue du
               portefeuille, et il doit s'ouvrir plein écran. */}
+          <Route path="/sessions" element={<Deferred><SessionsPage /></Deferred>} />
           <Route path="/projects/new" element={<Deferred><NewProjectPage /></Deferred>} />
           <Route path="/projects" element={<PortfolioLayout />}>
-            <Route index element={<ProjectsPage />} />
-            <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
+            {/* PROTOTYPE : le portefeuille v2 par défaut, l'actuel derrière `?variant=actuel`. */}
+            <Route index element={<PortfolioSwitch v2={<PortfolioOverview />}><ProjectsPage /></PortfolioSwitch>} />
+            <Route path="travail" element={<PortfolioWork />} />
+            <Route path="actions" element={<PortfolioActions />} />
+            <Route path="board" element={<PortfolioSwitch v2={<PortfolioBoard />}><Deferred><PortfolioBoardPage /></Deferred></PortfolioSwitch>} />
             <Route path="activity" element={<Suspense fallback={null}><PortfolioActivityPage /></Suspense>} />
             {/* Travail s'est fondu dans l'Activité (#117) : l'ancienne adresse y mène. */}
             <Route path="work" element={<Navigate to="/projects/activity" replace />} />
-            <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
+            <Route path="timeline" element={<PortfolioSwitch v2={<PortfolioMilestones />}><Deferred><PortfolioTimelinePage /></Deferred></PortfolioSwitch>} />
             <Route path="journal" element={<Deferred><PortfolioJournalPage /></Deferred>} />
           </Route>
           <Route path="/schedules" element={<Deferred><SchedulesPage /></Deferred>} />
@@ -272,9 +298,13 @@ export function App() {
             <Route path="schedules" element={<Deferred><SchedulePage /></Deferred>} />
             <Route path="timeline" element={<Deferred><ProjectTimelinePage /></Deferred>} />
             <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
+            <Route path="code" element={<Suspense fallback={null}><ProjectCodePage /></Suspense>} />
+            <Route path="travail" element={<Suspense fallback={null}><ProjectTravailPage /></Suspense>} />
+            <Route path="actions" element={<Suspense fallback={null}><ActionsPage /></Suspense>} />
             <Route path="journal" element={<Deferred><ProjectJournalPage /></Deferred>} />
+            {/* PROTOTYPE : les réglages entrent dans la coque, onglet au bout de la rangée. */}
+            <Route path="settings" element={<Deferred><ProjectPage /></Deferred>} />
           </Route>
-          <Route path="/p/:projectId/settings" element={<Deferred><ProjectPage /></Deferred>} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />

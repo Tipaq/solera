@@ -3,6 +3,9 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { ProjectDto, ScheduledTaskDto } from '@solera/protocol'
 import { HeaderBand } from '../components/HeaderBand'
+import { PrototypeSwitcher, usePrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { PlannedPage } from './prototype-planned/PlannedPage'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
 import { Banner, Button, EmptyState, Menu, MenuItem, Switch, cx } from '@solera/ui'
@@ -31,7 +34,7 @@ import {
  * la page d'un projet : sans elle, deux tâches homonymes de deux dépôts seraient
  * indiscernables.
  */
-export function SchedulesPage() {
+function CurrentSchedulesPage() {
   const t = useTranslate()
   const navigate = useNavigate()
   const { data: projects } = useProjects()
@@ -189,5 +192,22 @@ function TaskRow({
         </span>
       </td>
     </tr>
+  )
+}
+
+/* PROTOTYPE : la page dans la DA des pages de lieu (`v2`), l'actuelle derrière. */
+const PLANNED_VARIANTS = [
+  { key: 'v2', name: 'Planifiées v2 : tout, en Agenda · Liste · Santé' },
+  { key: 'actuel', name: 'Actuel' },
+]
+
+export function SchedulesPage() {
+  const variant = usePrototypeVariant(PLANNED_VARIANTS)
+  return (
+    <>
+      {variant === 'v2' ? <PlannedPage /> : <CurrentSchedulesPage />}
+      <PrototypeSwitcher variants={PLANNED_VARIANTS} />
+      <PrototypeVerdict scope="planifiees-globales" variant={variant} />
+    </>
   )
 }

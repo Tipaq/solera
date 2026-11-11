@@ -16,7 +16,7 @@ import { useAutoOpenPrototypes } from '../lib/prototypes'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
 import { useQueryClient } from '@tanstack/react-query'
-import { AGENT_CAPABILITIES, RESUMES_FROM_OTHER_DIRECTORY, type AgentKind } from '@solera/protocol'
+import { AGENT_CAPABILITIES, RESUMES_FROM_OTHER_DIRECTORY, type AgentKind, HOST_ENVIRONMENT } from '@solera/protocol'
 import { useGuardedArchive } from '../components/ArchiveRequestsDialog'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { ChatThread } from '../components/chat/ChatThread'
@@ -82,7 +82,8 @@ import {
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useGitHead, useWorktrees } from '../lib/worktrees'
-import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { useActionsCount } from '../components/prototype/actionsCount'
+import { DemoConversationNotice, DemoConversationRedirect, isDemoConversation } from '../components/prototype/panel/DemoConversation'
 
 /** Le passage de relais, chargé à son ouverture (#128) : hors du paquet d'entrée. */
 const HandoffDialog = lazy(() =>
@@ -94,9 +95,18 @@ const HandoffDialog = lazy(() =>
  * initial ferait payer à chaque ouverture de conversation un panneau qu'on n'ouvre pas
  * toujours.
  */
-const SidePanel = lazy(() =>
+const OriginalSidePanel = lazy(() =>
   import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
 )
+/* PROTOTYPE : le panneau aligné sur l'UI du proto, monté par défaut ; `?panel=actuel`
+   remonte l'original. Même contrat de props : la page n'en sait rien d'autre. */
+const ProtoSidePanel = lazy(() =>
+  import('../components/prototype/panel/ProtoSidePanel').then((m) => ({ default: m.ProtoSidePanel })),
+)
+const SidePanel = (props: React.ComponentProps<typeof OriginalSidePanel>) =>
+  new URLSearchParams(window.location.search).get('panel') === 'actuel'
+    ? <OriginalSidePanel {...props} />
+    : <ProtoSidePanel {...props} />
 
 /** Instance unique : une liste vide recréée à chaque rendu ferait rendre le panneau. */
 const NO_BACKGROUND: BackgroundWork[] = []
@@ -152,7 +162,20 @@ function scrollToBottom(node: HTMLElement): void {
   })
 }
 
+/* PROTOTYPE : une session de démo (`demo-…`) n'existe pas ; on ouvre à la place la
+   conversation réelle la plus récente du projet, et un repère le dit. */
 export function ConversationPage() {
+  const { conversationId } = useParams()
+  if (isDemoConversation(conversationId)) return <DemoConversationRedirect />
+  return (
+    <>
+      <RealConversationPage />
+      <DemoConversationNotice />
+    </>
+  )
+}
+
+function RealConversationPage() {
   const t = useTranslate()
   const { conversationId } = useParams()
   const navigate = useNavigate()
@@ -1089,8 +1112,8 @@ export function ConversationPage() {
           {/* Où tournent son CLI et ses terminaux, figé à la création (ADR 0001). À côté
               du dossier : les deux disent où le travail se fait. */}
           <EnvironmentPill
-            environment={conversation.environment}
-            to={environmentServicesPath(conversation.environment, conversation)}
+            environment={conversation.environment ?? HOST_ENVIRONMENT}
+            to={environmentServicesPath(conversation.environment ?? HOST_ENVIRONMENT, conversation)}
             className="hidden @min-[44rem]/thread:flex"
           />
 
@@ -1106,21 +1129,13 @@ export function ConversationPage() {
             labelClassName="@max-[44rem]/thread:hidden"
           />
 
-          {/* Les boutons du projet, joués dans le worktree de ce fil. Un fil libre n'a
-              pas de dossier où les lancer. */}
-          {conversation.projectId ? (
-            <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
-          ) : null}
+          {/* PROTOTYPE : le ⚡ est retiré (2026-11-11). L'onglet Actions du panneau tient
+              les actions ; ce qui tourne se lit au point vert du bouton du panneau. */}
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
               conversation, il lit le répertoire de travail de ce fil, worktree
               compris, pas celui du projet. */}
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
+          <ProtoPanelToggle projectId={conversation.projectId ?? undefined} open={panel.open} />
         </HeaderBand>
 
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>
@@ -1481,7 +1496,9 @@ export function ConversationPage() {
                 {activity ? <TurnActivity label={activity} /> : <span />}
                 <SignalRow
                   signals={signals}
-                  onSelect={() => setPanelOpen(true)}
+                  // PROTOTYPE : chaque signal ouvre l'onglet qui le tient — les sous-agents dans
+                  // Agent, les travaux de fond dans Actions (« Lancés par les sessions »).
+                  onSelect={(kind) => { setPanelTab(kind === 'background' ? 'actions' : 'agents'); setPanelOpen(true) }}
                   className="justify-end"
                 />
               </div>
@@ -1561,7 +1578,7 @@ export function ConversationPage() {
             docked={panelLayout.docked}
             canDock={panelLayout.canDock}
             session={session}
-            environment={conversation.environment}
+            environment={conversation.environment ?? HOST_ENVIRONMENT}
           />
         </Suspense>
       ) : null}
@@ -1674,6 +1691,27 @@ function Meta({
     >
       {icon}
       <span className="max-w-40 truncate font-mono">{children}</span>
+    </span>
+  )
+}
+
+/**
+ * PROTOTYPE : le bouton du panneau, avec un point vert quand quelque chose tourne dans le
+ * projet (services en marche, processus des sessions) et un point ambre quand une action
+ * attend sa relecture : ce que le ⚡ retiré disait.
+ */
+function ProtoPanelToggle({ projectId, open }: { projectId: string | undefined; open: boolean }) {
+  const t = useTranslate()
+  const count = useActionsCount(projectId)
+  const dot = count.toReview > 0 ? 'bg-caution' : count.running > 0 ? 'bg-positive' : null
+  const said = [count.running > 0 ? `${count.running} en marche` : null, count.toReview > 0 ? `${count.toReview} à relire` : null].filter(Boolean).join(' · ')
+  const label = open ? t('conversation.panel.close') : t('conversation.panel.open')
+  return (
+    <span className="relative inline-flex">
+      <IconButton label={said ? `${label} — ${said}` : label} onClick={() => setPanelOpen(!open)}>
+        <PanelRight size={16} className={cx(open && 'text-accent')} />
+      </IconButton>
+      {dot ? <span aria-hidden className={cx('pointer-events-none absolute top-1.5 right-1.5 size-2 rounded-full ring-2 ring-canvas', dot)} /> : null}
     </span>
   )
 }

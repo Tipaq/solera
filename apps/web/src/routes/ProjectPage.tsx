@@ -51,8 +51,12 @@ import { AutonomousConfinementSelect, EnvironmentIcon, EnvironmentSelect } from 
 import { useCapability } from '../lib/instance'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
 import { VisibilitySelect } from '../components/VisibilitySelect'
+import { usePrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { PageLeftFlatVariant } from './prototype-settings/PageLeftFlat'
+import { WithProject } from './prototype-settings/parts'
 
-export function ProjectPage() {
+function CurrentProjectPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const { data: projects, isPending } = useProjects()
@@ -177,7 +181,7 @@ export function ProjectPage() {
  * Les agents en posent une d'eux-mêmes quand elle manque ; cette carte est là pour
  * choisir la sienne, ou corriger la leur.
  */
-function ProjectImage({ project }: { project: ProjectDto }) {
+export function ProjectImage({ project }: { project: ProjectDto }) {
   const t = useTranslate()
   const input = useRef<HTMLInputElement>(null)
   const setImage = useSetProjectImage()
@@ -247,7 +251,7 @@ function ProjectImage({ project }: { project: ProjectDto }) {
  * Une carte à part et non une ligne des réglages : se lier ou se délier n'a rien à voir
  * avec renommer le projet, et ne doit pas attendre le même bouton.
  */
-function ProjectDesignSystem({
+export function ProjectDesignSystem({
   projectId,
   initialPath,
 }: {
@@ -326,7 +330,7 @@ function ProjectDesignSystem({
  * ses issues : terminée ferme l'issue, abandonnée la ferme comme non prévue, refusée la
  * ferme avec un mot.
  */
-function ProjectIssueSource({ projectId }: { projectId: string }) {
+export function ProjectIssueSource({ projectId }: { projectId: string }) {
   const t = useTranslate()
   const { data: source } = useIssueSource(projectId)
   const setSource = useSetIssueSource(projectId)
@@ -437,7 +441,7 @@ function PrototypeCandidates({ projectId }: { projectId: string }) {
  * propriétaire, comme le reste des réglages du projet. Les conversations qui n'ont pas
  * changé une valeur la suivent à la relance de leur session.
  */
-function ProjectAgentSettings({ project }: { project: ProjectDto }) {
+export function ProjectAgentSettings({ project }: { project: ProjectDto }) {
   const t = useTranslate()
   const level = { kind: 'project', project } as const
   return (
@@ -461,7 +465,7 @@ function ProjectAgentSettings({ project }: { project: ProjectDto }) {
  * terminaux des sessions ouvertes ensuite. Appliqué au choix, comme un interrupteur ; les
  * sessions déjà ouvertes gardent le leur.
  */
-function ProjectEnvironment({ projectId }: { projectId: string }) {
+export function ProjectEnvironment({ projectId }: { projectId: string }) {
   const t = useTranslate()
   const { data } = useProjectEnvironments(projectId)
   const updateProject = useUpdateProject()
@@ -628,7 +632,7 @@ function ConfinedServicesSetting({ projectId }: { projectId: string }) {
   )
 }
 
-function ProjectSettings({
+export function ProjectSettings({
   projectId,
   initialName,
   initialPath,
@@ -636,6 +640,7 @@ function ProjectSettings({
   turnCheckpoints,
   hasConversations,
   onDeleted,
+  hideDanger = false,
 }: {
   projectId: string
   initialName: string
@@ -644,6 +649,8 @@ function ProjectSettings({
   initialVisibility: ProjectVisibility
   hasConversations: boolean
   onDeleted: () => void
+  /** PROTOTYPE : la zone de danger a sa propre section dans la variante `sections`. */
+  hideDanger?: boolean
 }) {
   const updateProject = useUpdateProject()
   const deleteProject = useDeleteProject()
@@ -730,7 +737,7 @@ function ProjectSettings({
         </div>
       </CardBody>
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
+      {hideDanger ? null : <div className="flex flex-wrap items-center gap-3 border-t border-line px-5 py-4">
         <TriangleAlert size={16} className="shrink-0 text-caution" />
         <p className="min-w-0 flex-1 text-sm text-ink-faint">{t('project.settings.remove.notice')}</p>
         <Button
@@ -744,7 +751,29 @@ function ProjectSettings({
         >
           {t('project.settings.remove')}
         </Button>
-      </div>
+      </div>}
     </Card>
+  )
+}
+
+/* PROTOTYPE — jetable : Tim a retenu `page-gauche` (une page, menu à gauche, à plat, avec
+   la recherche). Les autres variantes sont retirées ; `?variant=actuel` reste joignable par
+   l'adresse, pour l'édition réelle des blocs que le proto montre en lecture. */
+const SETTINGS_VARIANTS = [
+  { key: 'page-gauche', name: 'Une page, menu à gauche, à plat' },
+  { key: 'actuel', name: 'Actuel' },
+]
+
+export function ProjectPage() {
+  const variant = usePrototypeVariant(SETTINGS_VARIANTS)
+  return (
+    <>
+      {variant === 'actuel' ? (
+        <CurrentProjectPage />
+      ) : (
+        <WithProject>{(project) => <PageLeftFlatVariant project={project} />}</WithProject>
+      )}
+      <PrototypeVerdict scope="reglages" variant={variant} />
+    </>
   )
 }

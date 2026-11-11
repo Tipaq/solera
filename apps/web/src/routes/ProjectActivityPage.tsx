@@ -18,6 +18,9 @@ import { useTranslate, type MessageKey } from '../lib/i18n'
 import { milestoneCardIndex } from '../lib/milestone-view'
 import { useActiveMilestones } from '../lib/milestones'
 import { useProjects } from '../lib/projects'
+import { PrototypeSwitcher, usePrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { FilActivity } from './prototype-activity/FilActivity'
 import { useWorktreeStatuses } from '../lib/worktrees'
 
 /** Lignes montrées des terminées avant « … N de plus » : la planche B1 en plie au-delà. */
@@ -63,7 +66,7 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * `WorktreeGroups`). Elle n'a de sens que dans un dépôt git : ailleurs, elle n'est pas
  * montrée.
  */
-export function ProjectActivityPage() {
+function CurrentActivityPage() {
   const { projectId } = useParams()
   const t = useTranslate()
   const [query, setQuery] = useState('')
@@ -314,5 +317,27 @@ export function ProjectActivityPage() {
         )}
       </div>
     </div>
+  )
+}
+
+/* PROTOTYPE — jetable : la fusion Activité + Journal derrière `?variant=`. */
+const ACTIVITY_VARIANTS = [
+  // `colonnes`, `compact` et `fusion` sont écartées (2026-11-11) ; leurs fichiers restent.
+  { key: 'fil', name: 'Fil chronologique' },
+  { key: 'actuel', name: 'Actuel' },
+]
+
+export function ProjectActivityPage() {
+  const variant = usePrototypeVariant(ACTIVITY_VARIANTS)
+  return (
+    <>
+      {variant === 'fil' ? (
+        <FilActivity />
+      ) : (
+        <CurrentActivityPage />
+      )}
+      <PrototypeVerdict scope="activite" variant={variant} />
+      <PrototypeSwitcher variants={ACTIVITY_VARIANTS} />
+    </>
   )
 }

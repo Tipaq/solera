@@ -37,6 +37,11 @@ import { locale, useTranslate } from '../lib/i18n'
 import { openPanelOnArrival } from '../lib/panel'
 import { JOURNAL_KIND_LABELS, useJournal } from '../lib/journal'
 import { useProjects } from '../lib/projects'
+import { PrototypeSwitcher, usePrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { CardDrawerHost } from './prototype-milestones/CardDrawer'
+import { V2Overview, V2_VARIANTS } from './prototype-overview/v2/V2Overview'
+import type { ProjectDto } from '@solera/protocol'
 import {
   RUN_LABELS,
   RUN_TONES,
@@ -51,6 +56,34 @@ import {
  * calcul des prochains passages cron et la section de vérification, qui n'ont rien à
  * faire dans le paquet d'entrée pour un bouton qu'on presse rarement.
  */
+/* PROTOTYPE — jetable (branche proto/page-projet) : les variantes de l'Aperçu, par `?variant=`. */
+// A, B et C (Éditoriale, Poste de travail, Carte du code) sont écartées : leurs fichiers
+// restent dans `prototype-overview/`, hors du switcher.
+const OVERVIEW_VARIANTS = [...V2_VARIANTS, { key: 'actuel', name: 'Page actuelle' }]
+
+export function ProjectOverviewPage() {
+  const { projectId } = useParams()
+  const { data: projects } = useProjects()
+  const variant = usePrototypeVariant(OVERVIEW_VARIANTS)
+  const project = projects?.find((entry) => entry.id === projectId)
+  return (
+    <>
+      {variant === 'actuel' || !projectId || !project ? (
+        <CurrentOverview />
+      ) : (
+        <PrototypeOverview projectId={projectId} project={project} variant={variant} />
+      )}
+      <PrototypeSwitcher variants={OVERVIEW_VARIANTS} />
+      <PrototypeVerdict scope="apercu" variant={variant} />
+      <CardDrawerHost />
+    </>
+  )
+}
+
+function PrototypeOverview({ projectId, project, variant }: { projectId: string; project: ProjectDto; variant: string }) {
+  return <V2Overview projectId={projectId} project={project} variant={variant} />
+}
+
 const ScheduleDialog = lazy(() =>
   import('../components/schedule/ScheduleDialog').then((m) => ({ default: m.ScheduleDialog })),
 )
@@ -86,7 +119,7 @@ const NOW_SHOWN = 8
  * à son contenu, et c'est ce qui fait que passer d'un onglet à l'autre ne redessine que
  * le contenu.
  */
-export function ProjectOverviewPage() {
+export function CurrentOverview() {
   const { projectId } = useParams()
   const t = useTranslate()
 

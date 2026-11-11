@@ -20,8 +20,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ArrowDownUp, ChevronDown, ChevronRight, ListTree, PanelRight, Plus, Search, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { ArrowDownUp, ChevronDown, ChevronRight, ListTree, Plus, Search, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
@@ -33,11 +33,19 @@ import { CardRefContext } from '../lib/card-refs'
 import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { NEW_PARAM } from './ProjectLayout'
 import { useTranslate } from '../lib/i18n'
-import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
+import { PANEL_TRANSITION_MS } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useBoardOrder } from '../lib/user-settings'
 import { useMediaQuery } from '../lib/viewport'
 import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { usePrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { CardDrawerHost } from './prototype-milestones/CardDrawer'
+import { GestureVariant } from './prototype-board/GestureVariant'
+import { KanbanVariant } from './prototype-board/KanbanVariant'
+import { TAB_MENU_FLAG, ViewsBoard } from './prototype-board/ViewsBoard'
+import { OneLineBoard } from './prototype-board/OneLineBoard'
+import { ListVariant } from './prototype-board/ListVariant'
 
 /** Le filtre par parente, en clair dans l'adresse comme `carte`. */
 const PARENT_PARAM = 'parente'
@@ -45,9 +53,6 @@ const PARENT_PARAM = 'parente'
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
 
-const SidePanel = lazy(() =>
-  import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
-)
 
 /** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
 type Layout = Map<CardColumn, string[]>
@@ -116,12 +121,45 @@ function matchesCard(card: CardDto, query: string): boolean {
   return `${card.number} ${card.title} ${card.description}`.toLocaleLowerCase().includes(query)
 }
 
+/* PROTOTYPE — le board actuel devient la variante `actuel` ; les variantes du proto
+   sont dans `prototype-board/` (branche proto/page-projet, jetable). */
+const BOARD_VARIANTS = [
+  { key: 'une-ligne', name: 'Barre sur une ligne : Filtrer ▾ · Affichage ▾' },
+  { key: 'actuel', name: 'Board actuel' },
+]
+
+/** Hors de `vues-onglet`, la rangée d'onglets reprend son onglet « Tableau » simple. */
+function TabMenuOff() {
+  useEffect(() => {
+    localStorage.setItem(TAB_MENU_FLAG, '0')
+    window.dispatchEvent(new Event(TAB_MENU_FLAG))
+  }, [])
+  return null
+}
+
 export function BoardPage() {
+  const variant = usePrototypeVariant(BOARD_VARIANTS)
+  return (
+    <>
+      {variant === 'une-ligne' ? (
+        <OneLineBoard />
+      ) : variant === 'vues' || variant === 'vues-onglet' ? (
+        <ViewsBoard inTab={variant === 'vues-onglet'} />
+      ) : variant === 'kanban' ? <KanbanVariant /> : variant === 'liste' ? <ListVariant /> : variant === 'geste' ? <GestureVariant /> : <CurrentBoard />}
+      {/* PROTOTYPE : `une-ligne` retenue (2026-11-11), les autres variantes retirées du
+          switcher ; `?variant=actuel` reste joignable. Le menu ▾ de l'onglet est éteint. */}
+      <TabMenuOff />
+      {variant === 'actuel' ? null : <CardDrawerHost />}
+      <PrototypeVerdict scope="board" variant={variant} />
+    </>
+  )
+}
+
+function CurrentBoard() {
   const { projectId } = useParams()
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
-  const panel = usePanelPresence()
 
   const { data: projects } = useProjects()
   const { data: cards, isPending, isError, refetch } = useCards(projectId)
@@ -373,13 +411,11 @@ export function BoardPage() {
               </Button>
             ) : null}
             <ActionsLauncher projectId={projectId} size="sm" />
-            <IconButton
-              label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-              size="sm"
-              onClick={() => setPanelOpen(!panel.open)}
-            >
-              <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-            </IconButton>
+            {/* PROTOTYPE : « + Carte » dans la barre du tableau, plus dans la rangée d'onglets. */}
+            <Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
+              {t('project.action.newCard')}
+            </Button>
+            {/* PROTOTYPE : plus de bouton du panneau de droite sur le board. */}
           </div>
         </div>
         {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
@@ -478,11 +514,6 @@ export function BoardPage() {
         </CardRefContext.Provider>
       ) : null}
 
-      {panel.mounted ? (
-        <Suspense fallback={null}>
-          <SidePanel projectId={projectId} open={panel.open} />
-        </Suspense>
-      ) : null}
     </div>
   )
 }

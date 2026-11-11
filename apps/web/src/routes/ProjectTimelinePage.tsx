@@ -11,6 +11,37 @@ import { useTranslate } from '../lib/i18n'
 import { milestoneCounts, milestoneToneOf } from '../lib/milestone-view'
 import { useActiveMilestones } from '../lib/milestones'
 import { cardSpan, milestoneIdsOf, milestonesOf, unplacedOf, windowOf } from '../lib/timeline'
+import { PrototypeSwitcher, usePrototypeVariant, type PrototypeVariant } from '../components/PrototypeSwitcher'
+import { PrototypeVerdict } from '../components/PrototypeVerdict'
+import { CardDrawerHost } from './prototype-milestones/CardDrawer'
+import { GanttClassic, GanttRoadmap, GanttWithGraph } from './prototype-milestones/TimelineVariants'
+import { HorizonVariant } from './prototype-milestones/HorizonVariant'
+
+/* PROTOTYPE — les variantes des Jalons (branche proto/page-projet). */
+const VARIANTS: PrototypeVariant[] = [
+  { key: 'flux-v2', name: 'Flux v2 : « + Jalon » en champ d’écriture' },
+  { key: 'vues', name: 'Flux actuel : « + Jalon » par titre' },
+  { key: 'actuel', name: 'Actuel' },
+]
+
+export function ProjectTimelinePage() {
+  const variant = usePrototypeVariant(VARIANTS)
+  return (
+    <>
+      {variant === 'flux-v2' ? <HorizonVariant mode="vues" flux="v2" /> : null}
+      {variant === 'vues' ? <HorizonVariant mode="vues" /> : null}
+      {variant === 'horizon' ? <HorizonVariant /> : null}
+      {variant === 'gantt' ? <GanttClassic /> : null}
+      {variant === 'gantt-graphe' ? <GanttWithGraph /> : null}
+      {variant === 'roadmap' ? <GanttRoadmap /> : null}
+      {variant === 'actuel' ? <CurrentTimelinePage /> : null}
+      <CardDrawerHost />
+      <PrototypeVerdict scope="jalons" variant={variant} />
+      {/* PROTOTYPE : sélecteur réactivé pour comparer le flux actuel et le flux v2. */}
+      <PrototypeSwitcher variants={VARIANTS.filter((entry) => entry.key !== 'actuel')} />
+    </>
+  )
+}
 
 /**
  * Les **Jalons** d'un projet (l'onglet s'appelait « Chronologie » jusqu'à #110) : ses
@@ -39,7 +70,7 @@ import { cardSpan, milestoneIdsOf, milestonesOf, unplacedOf, windowOf } from '..
  * qui en créerait une n'aurait rien produit de visible ici. La désignation se fait depuis
  * le panneau d'une carte, qui est le seul endroit où elle existe.
  */
-export function ProjectTimelinePage() {
+function CurrentTimelinePage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const t = useTranslate()
