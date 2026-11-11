@@ -25,7 +25,7 @@ import type { TerminalManager } from '../terminals/terminal-manager.js'
 import type { Environments } from '../environments/environments.js'
 import { hostEnvironment } from '../environments/host.js'
 import { closeOrphanRuns, finishRun, latestRuns, startRun } from './runs.js'
-import { listWorktrees } from '../worktrees/assess.js'
+import { readGitHead } from '../git.js'
 import { ServedReader, treeOf, type ProjectTree } from './served.js'
 
 /**
@@ -72,10 +72,12 @@ function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'u
 }
 
 /**
- * Le placement et sa branche, tels qu'ils s'écrivent : une branche fixée ne vaut que
- * pour `branch`, qui ne va pas sans elle ; une instance par arbre n'existe pas encore.
+ * Le placement et sa branche, tels qu'ils s'écrivent : une tâche suit toujours, une
+ * branche fixée ne vaut que pour `branch`, qui ne va pas sans elle ; une instance par
+ * arbre n'existe pas encore.
  */
-function placed(placement: ActionPlacement, pinnedBranch: string | null | undefined) {
+function placed(kind: ProjectActionRow['kind'], placement: ActionPlacement, pinnedBranch: string | null | undefined) {
+  if (kind === 'task') return { placement: 'follow' as const, pinnedBranch: null }
   if (placement === 'per-worktree') {
     throw badRequest('action_placement_unsupported', 'One instance per worktree is not available yet.')
   }
@@ -122,7 +124,7 @@ export function createAction(
     label: body.label,
     description: body.description || null,
     ...fields,
-    ...placed(body.placement ?? 'follow', body.pinnedBranch),
+    ...placed(body.kind, body.placement ?? 'follow', body.pinnedBranch),
     ...(agentConversationId ? neverReviewed : reviewed(fields, now)),
     agentConversationId,
     createdAt: now,
@@ -153,6 +155,7 @@ export function updateAction(
     subdir: patch.subdir === undefined ? row.subdir : patch.subdir || null,
     url: patch.url === undefined ? row.url : patch.url || null,
     ...placed(
+      patch.kind ?? row.kind,
       patch.placement ?? row.placement,
       patch.pinnedBranch === undefined ? row.pinnedBranch : patch.pinnedBranch,
     ),
@@ -375,9 +378,9 @@ export class ActionRunner {
 
   /**
    * L'arbre où un service tourne d'après son placement ; pour une tâche, et un service
-   * qui suit, celui d'où on le lance. Une branche fixée tourne dans l'arbre où git l'a
-   * sortie, la racine comprise : il n'y en a qu'un. Aucun ne l'a sortie : refus, tant
-   * que Solera ne tient pas lui-même un worktree dédié.
+   * qui suit, celui d'où on le lance. Une branche fixée tourne à la racine quand elle y
+   * est. Ailleurs, refus : le worktree d'une session qui l'aurait sortie disparaît à sa
+   * fusion, et le service avec ; il faudra un worktree dédié, tenu par Solera.
    */
   private async placedBase(row: ProjectActionRow, requested: string): Promise<string> {
     if (row.kind !== 'service' || row.placement === 'follow') return requested
@@ -389,11 +392,10 @@ export class ActionRunner {
     if (!project) throw notFound('project_not_found', 'Project not found.')
     if (row.placement === 'root') return project.path
     const branch = row.pinnedBranch ?? ''
-    const tree = (await listWorktrees(project.path)).find((entry) => !entry.prunable && entry.branch === branch)
-    if (!tree) {
-      throw conflict('action_branch_needs_worktree', 'No tree has {branch} checked out: create a worktree on it first.', { branch })
+    if ((await readGitHead(project.path))?.branch !== branch) {
+      throw conflict('action_branch_needs_worktree', 'The project root is not on {branch}, and no worktree is kept for it yet.', { branch })
     }
-    return tree.path
+    return project.path
   }
 
   /**
@@ -533,10 +535,15 @@ export class ActionRunner {
  */
 function runningElsewhere(row: ProjectActionRow, current: ProjectActionServiceState): HttpError {
   const served = current.served
+  // Des chaînes, comme tout `params` : vide quand on ne sait pas.
   return conflict('service_running_elsewhere', '{label} already runs from {cwd}: switch it to run it here.', {
     label: row.label,
     cwd: current.cwd ?? '',
-    branch: served?.branch ?? served?.head ?? '',
+    worktreeId: served?.worktreeId ?? '',
+    root: served?.root ? 'true' : '',
+    branch: served?.branch ?? '',
+    head: served?.head ?? '',
+    dirtyFiles: served?.dirtyFiles ?? 0,
     ports: current.ports.map((port) => `:${port}`).join(' '),
     href: resolveActionUrl(row.url, current.ports) ?? '',
   })

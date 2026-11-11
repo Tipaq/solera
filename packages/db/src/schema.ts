@@ -1,4 +1,4 @@
-import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { ActionPlacement, ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1366,10 +1366,10 @@ export const projectActions = sqliteTable(
     approvedUrl: text('approved_url'),
     /**
      * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
-     * dans l'arbre où `pinned_branch` est sortie. Hors relecture : il ne change pas ce
+     * à la racine quand elle est sur `pinned_branch`. Hors relecture : il ne change pas ce
      * qui s'exécute, seulement lequel des arbres du projet le porte.
      */
-    placement: text('placement').$type<'follow' | 'root' | 'branch' | 'per-worktree'>().notNull().default('follow'),
+    placement: text('placement').$type<ActionPlacement>().notNull().default('follow'),
     pinnedBranch: text('pinned_branch'),
     /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
     agentConversationId: text('agent_conversation_id'),

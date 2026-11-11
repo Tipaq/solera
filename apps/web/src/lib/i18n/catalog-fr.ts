@@ -3603,7 +3603,7 @@ export const fr: Catalog = {
   "error.action_changed": "Cette action a changé pendant ta relecture : relis-la.",
   "error.action_args_task_only": "Des arguments ne s’ajoutent qu’à une commande qui se termine, pas à un service.",
   "error.service_running_elsewhere": "« {label} » tourne déjà depuis {cwd} : bascule-le pour le servir d’ici.",
-  "error.action_branch_needs_worktree": "Aucun arbre n’a {branch} sortie : crée d’abord un worktree sur cette branche.",
+  "error.action_branch_needs_worktree": "La racine du projet n’est pas sur {branch}, et Solera ne tient pas encore de worktree pour cette branche.",
   "error.action_branch_required": "Choisis la branche sur laquelle ce service tourne toujours.",
   "error.action_placement_unsupported": "Une instance par worktree n’est pas encore disponible.",
   "error.schedule_write_forbidden": "Seul le créateur de la tâche ou le propriétaire du projet peut la modifier.",

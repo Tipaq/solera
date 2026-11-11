@@ -19,17 +19,27 @@ export interface ProjectTree {
   root: boolean
 }
 
-/** L'arbre le plus profond qui contient `cwd`, un sous-dossier compris ; null hors du projet. */
+const trimSep = (path: string) => (path.length > 1 && path.endsWith(sep) ? path.slice(0, -1) : path)
+
+/**
+ * L'arbre le plus profond qui contient `cwd`, un sous-dossier compris ; null hors du
+ * projet. Absolu : systemd ne garde pas de `~` dans le dossier d'une unité.
+ */
 export function treeOf(cwd: string, trees: readonly ProjectTree[]): ProjectTree | null {
+  const dir = trimSep(cwd)
   let found: ProjectTree | null = null
   for (const tree of trees) {
-    const inside = cwd === tree.path || cwd.startsWith(tree.path.endsWith(sep) ? tree.path : tree.path + sep)
+    const path = trimSep(tree.path)
+    const inside = dir === path || dir.startsWith(path + sep)
     if (inside && (!found || tree.path.length > found.path.length)) found = tree
   }
   return found
 }
 
-/** La liste est relue toutes les dix secondes par chaque onglet : git ne l'est pas à chaque fois. */
+/**
+ * Chaque onglet relit la liste toutes les dix secondes, et chaque lancement relit
+ * l'état : les lectures de quelques secondes d'écart partagent le même git.
+ */
 const SERVED_TTL_MS = 5_000
 const GIT_TIMEOUT_MS = 5_000
 
@@ -42,8 +52,11 @@ async function git(cwd: string, args: string[]): Promise<string | null> {
   }
 }
 
+/** Ce que git dit d'un dossier, sans l'arbre qui le contient. */
+type ServedGit = Omit<ActionServedVersion, 'path' | 'worktreeId' | 'root'>
+
 /** L'état git d'un dossier : branche, commit court, écart à la base, fichiers non commités. */
-async function readGit(cwd: string): Promise<Omit<ActionServedVersion, 'path' | 'worktreeId' | 'root'>> {
+async function readGit(cwd: string): Promise<ServedGit> {
   const [branch, head, status, base] = await Promise.all([
     git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD']),
     git(cwd, ['rev-parse', '--short', 'HEAD']),
@@ -64,7 +77,7 @@ async function readGit(cwd: string): Promise<Omit<ActionServedVersion, 'path' | 
 
 /** Lectures gardées quelques secondes par dossier, et partagées tant qu'elles courent. */
 export class ServedReader {
-  private readonly cache = new Map<string, { at: number; value: Promise<Omit<ActionServedVersion, 'path' | 'worktreeId' | 'root'>> }>()
+  private readonly cache = new Map<string, { at: number; value: Promise<ServedGit> }>()
 
   async read(cwd: string, tree: ProjectTree | null): Promise<ActionServedVersion> {
     const now = Date.now()

@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm'
 import { openDatabase, projects, runMigrations, users, worktrees } from '@solera/db'
 import type { ProjectActionDto, ProjectActionRunResult } from '@solera/protocol'
 import { ActionRunner, createAction } from '../src/actions/actions.js'
+import { treeOf } from '../src/actions/served.js'
 import type { ServiceUnits, ServiceUnitState } from '../src/services/apps.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
@@ -124,7 +125,7 @@ async function harness(t: TestContext) {
 
 // --- ce qu'il sert --------------------------------------------------------------
 
-test('a service started at the root serves its branch and commit, level with the base', async (t) => {
+test('un service lancé à la racine sert sa branche et son commit, à jour sur la base', async (t) => {
   const { db, root, run, listed } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
   assert.equal((await run(row.id)).statusCode, 201)
@@ -142,7 +143,7 @@ test('a service started at the root serves its branch and commit, level with the
   })
 })
 
-test('a service in a sub-folder of a worktree is served by that worktree, with its lead, lag and uncommitted files', async (t) => {
+test('un service dans un sous-dossier d’un worktree sert ce worktree, avec son avance, son retard et ses fichiers non commités', async (t) => {
   const { db, tree, run, listed } = await harness(t)
   writeFileSync(join(tree, 'web', 'draft.ts'), 'draft\n')
   const row = createAction(db, 'project', { label: 'Web', kind: 'service', command: 'pnpm dev', subdir: 'web' }, null)
@@ -162,7 +163,7 @@ test('a service in a sub-folder of a worktree is served by that worktree, with i
   })
 })
 
-test('a stopped service serves nothing', async (t) => {
+test('un service arrêté ne sert rien', async (t) => {
   const { db, listed } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
   const service = (await listed(row.id)).service!
@@ -172,7 +173,7 @@ test('a stopped service serves nothing', async (t) => {
 
 // --- le « déjà en marche » ------------------------------------------------------
 
-test('launching a service running from another tree is refused with what it serves, not handed back silently', async (t) => {
+test('lancer un service qui tourne depuis un autre arbre est refusé avec ce qu’il sert, au lieu de le rendre en silence', async (t) => {
   const { db, root, systemd, run } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', url: 'http://host:{port}/' }, null)
   await run(row.id)
@@ -182,13 +183,16 @@ test('launching a service running from another tree is refused with what it serv
   const { error } = refused.json<{ error: { code: string; params: Record<string, string> } }>()
   assert.equal(error.code, 'service_running_elsewhere')
   assert.equal(error.params.cwd, root)
+  assert.equal(error.params.worktreeId, '')
+  assert.equal(error.params.root, 'true')
   assert.equal(error.params.branch, 'main')
+  assert.equal(error.params.head, git(root, 'rev-parse', '--short', 'HEAD'))
   assert.equal(error.params.ports, ':5173')
   assert.equal(error.params.href, 'http://host:5173/')
   assert.deepEqual(systemd.calls, [`start ${root}`])
 })
 
-test('launching it again from the same tree hands back the one running', async (t) => {
+test('le relancer depuis le même arbre rend celui qui tourne', async (t) => {
   const { db, root, systemd, run } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
   await run(row.id)
@@ -199,7 +203,7 @@ test('launching it again from the same tree hands back the one running', async (
   assert.deepEqual(systemd.calls, [`start ${root}`])
 })
 
-test('switch stops the service, then starts it in the new tree', async (t) => {
+test('switch arrête le service, puis le démarre dans le nouvel arbre', async (t) => {
   const { db, root, tree, systemd, run, listed } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
   await run(row.id)
@@ -213,7 +217,7 @@ test('switch stops the service, then starts it in the new tree', async (t) => {
 
 // --- où il tourne ---------------------------------------------------------------
 
-test('a new action follows the tree it is launched from', async (t) => {
+test('une nouvelle action suit l’arbre d’où on la lance', async (t) => {
   const { db, listed } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
   const action = await listed(row.id)
@@ -221,34 +225,53 @@ test('a new action follows the tree it is launched from', async (t) => {
   assert.equal(action.pinnedBranch, null)
 })
 
-test('placement root runs at the project root, whatever tree it is launched from', async (t) => {
+test('placement root : à la racine du projet, d’où qu’on le lance', async (t) => {
   const { db, root, systemd, run } = await harness(t)
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', placement: 'root' }, null)
   assert.equal((await run(row.id, { worktreeId: 'wt' })).statusCode, 201)
   assert.deepEqual(systemd.calls, [`start ${root}`])
 })
 
-test('placement branch runs in the tree that has the branch checked out', async (t) => {
-  const { db, root, tree, systemd, run } = await harness(t)
-  const onTree = createAction(db, 'project', { label: 'Vue', kind: 'service', command: 'pnpm dev', subdir: 'web', placement: 'branch', pinnedBranch: 'feat/vue' }, null)
-  assert.equal((await run(onTree.id)).statusCode, 201)
-  const onRoot = createAction(db, 'project', { label: 'Main', kind: 'service', command: 'pnpm dev', placement: 'branch', pinnedBranch: 'main' }, null)
-  assert.equal((await run(onRoot.id, { worktreeId: 'wt' })).statusCode, 201)
-  assert.deepEqual(systemd.calls, [`start ${join(tree, 'web')}`, `start ${root}`])
+test('placement branch : à la racine quand elle est sur la branche, d’où qu’on le lance', async (t) => {
+  const { db, root, systemd, run } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Main', kind: 'service', command: 'pnpm dev', subdir: 'web', placement: 'branch', pinnedBranch: 'main' }, null)
+  assert.equal((await run(row.id, { worktreeId: 'wt' })).statusCode, 201)
+  assert.deepEqual(systemd.calls, [`start ${join(root, 'web')}`])
 })
 
-test('placement branch refuses explicitly when no tree has the branch checked out', async (t) => {
+test('placement branch refuse explicitement quand la racine n’est pas sur la branche, même sortie dans un worktree de session', async (t) => {
   const { db, systemd, run } = await harness(t)
-  const row = createAction(db, 'project', { label: 'Libre', kind: 'service', command: 'pnpm dev', placement: 'branch', pinnedBranch: 'feat/libre' }, null)
-  const refused = await run(row.id)
-  assert.equal(refused.statusCode, 409)
-  const { error } = refused.json<{ error: { code: string; params: Record<string, string> } }>()
-  assert.equal(error.code, 'action_branch_needs_worktree')
-  assert.equal(error.params.branch, 'feat/libre')
+  for (const branch of ['feat/libre', 'feat/vue']) {
+    const row = createAction(db, 'project', { label: branch, kind: 'service', command: 'pnpm dev', placement: 'branch', pinnedBranch: branch }, null)
+    const refused = await run(row.id, { worktreeId: 'wt' })
+    assert.equal(refused.statusCode, 409)
+    const { error } = refused.json<{ error: { code: string; params: Record<string, string> } }>()
+    assert.equal(error.code, 'action_branch_needs_worktree')
+    assert.equal(error.params.branch, branch)
+  }
   assert.deepEqual(systemd.calls, [])
 })
 
-test('placement is saved and read back, and a pinned branch goes with placement branch only', async (t) => {
+test('une tâche tourne toujours là où on la lance : son placement est follow', async (t) => {
+  const { db } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Tests', kind: 'task', command: 'pnpm test', placement: 'root' }, null)
+  assert.equal(row.placement, 'follow')
+  assert.equal(row.pinnedBranch, null)
+})
+
+test('treeOf : l’arbre le plus profond, sous-dossier compris, sans confondre un voisin de même préfixe', () => {
+  const trees = [
+    { path: '/w/repo', worktreeId: null, root: true },
+    { path: '/w/repo/.trees/vue/', worktreeId: 'wt', root: false },
+  ]
+  assert.equal(treeOf('/w/repo', trees)?.root, true)
+  assert.equal(treeOf('/w/repo/apps/web/', trees)?.root, true)
+  assert.equal(treeOf('/w/repo/.trees/vue/web', trees)?.worktreeId, 'wt')
+  assert.equal(treeOf('/w/repo/.trees/vue', trees)?.worktreeId, 'wt')
+  assert.equal(treeOf('/w/repo-old', trees), null)
+})
+
+test('le placement s’enregistre et se relit, et une branche fixée ne va qu’avec branch', async (t) => {
   const { app, listed } = await harness(t)
   const created = await app.inject({
     method: 'POST',
@@ -270,7 +293,7 @@ test('placement is saved and read back, and a pinned branch goes with placement 
   assert.equal(noBranch.json<{ error: { code: string } }>().error.code, 'action_branch_required')
 })
 
-test('one instance per worktree is refused until it exists', async (t) => {
+test('une instance par worktree est refusée tant qu’elle n’existe pas', async (t) => {
   const { db, app } = await harness(t)
   const created = await app.inject({
     method: 'POST',

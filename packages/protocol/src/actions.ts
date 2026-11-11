@@ -76,10 +76,12 @@ export function resolveActionUrl(template: string | null, ports: readonly number
  * Où tourne un service (« Où tourne-t-il », AC-05) :
  * - `follow` : là où on le lance, une seule instance qu'on bascule d'un arbre à l'autre ;
  * - `root` : toujours à la racine du projet, d'où qu'on le lance ;
- * - `branch` : toujours dans l'arbre où `pinnedBranch` est sortie, la racine comprise ;
+ * - `branch` : toujours sur `pinnedBranch`, à la racine quand elle y est ; sinon refusé
+ *   tant que Solera ne tient pas un worktree dédié à la branche ;
  * - `per-worktree` : une instance par arbre. Pas encore là (AC-06) : refusée (400).
  *
- * Une tâche tourne toujours là où on la lance : chaque arbre a ses tests.
+ * Une tâche tourne toujours là où on la lance, chaque arbre a ses tests : elle est
+ * enregistrée en `follow`, quoi qu'on demande.
  */
 export const actionPlacementSchema = z.enum(['follow', 'root', 'branch', 'per-worktree'])
 export type ActionPlacement = z.infer<typeof actionPlacementSchema>

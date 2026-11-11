@@ -3609,7 +3609,7 @@ export const en = {
   'error.action_changed': "This action changed while you were reviewing it: review it again.",
   'error.action_args_task_only': "Extra arguments only apply to a command that ends, not to a service.",
   'error.service_running_elsewhere': "“{label}” already runs from {cwd}: switch it to serve it from here.",
-  'error.action_branch_needs_worktree': "No tree has {branch} checked out: create a worktree on that branch first.",
+  'error.action_branch_needs_worktree': "The project root is not on {branch}, and Solera does not keep a worktree for that branch yet.",
   'error.action_branch_required': "Choose the branch this service always runs on.",
   'error.action_placement_unsupported': "One instance per worktree is not available yet.",
   'error.schedule_write_forbidden': "Only the task creator or the project owner can change it.",
