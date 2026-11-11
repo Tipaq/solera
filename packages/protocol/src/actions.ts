@@ -72,6 +72,20 @@ export function resolveActionUrl(template: string | null, ports: readonly number
   return port === undefined ? null : template.replaceAll('{port}', String(port))
 }
 
+/**
+ * Où tourne un service (« Où tourne-t-il », AC-05) :
+ * - `follow` : là où on le lance, une seule instance qu'on bascule d'un arbre à l'autre ;
+ * - `root` : toujours à la racine du projet, d'où qu'on le lance ;
+ * - `branch` : toujours dans l'arbre où `pinnedBranch` est sortie, la racine comprise ;
+ * - `per-worktree` : une instance par arbre. Pas encore là (AC-06) : refusée (400).
+ *
+ * Une tâche tourne toujours là où on la lance : chaque arbre a ses tests.
+ */
+export const actionPlacementSchema = z.enum(['follow', 'root', 'branch', 'per-worktree'])
+export type ActionPlacement = z.infer<typeof actionPlacementSchema>
+
+export const MAX_ACTION_BRANCH_CHARS = 250
+
 export const createProjectActionBodySchema = z.object({
   label: z.string().trim().min(1).max(MAX_ACTION_LABEL_CHARS),
   description: z.string().trim().max(MAX_ACTION_DESCRIPTION_CHARS).optional(),
@@ -79,6 +93,9 @@ export const createProjectActionBodySchema = z.object({
   command: z.string().trim().min(1).max(MAX_ACTION_COMMAND_CHARS),
   subdir: actionSubdirSchema.optional(),
   url: actionUrlSchema.optional(),
+  placement: actionPlacementSchema.optional(),
+  /** La branche d'un placement `branch` ; ignorée et effacée pour les autres. */
+  pinnedBranch: z.string().trim().max(MAX_ACTION_BRANCH_CHARS).nullable().optional(),
 })
 export type CreateProjectActionBody = z.infer<typeof createProjectActionBodySchema>
 
@@ -113,6 +130,11 @@ export const runProjectActionBodySchema = z
   .object({
     ...actionPlaceShape,
     args: z.array(z.string().min(1).max(MAX_ACTION_RUN_ARG_CHARS)).max(MAX_ACTION_RUN_ARGS).optional(),
+    /**
+     * Un service qui tourne depuis un autre arbre est refusé (409
+     * `service_running_elsewhere`) : `switch` l'arrête et le redémarre ici.
+     */
+    switch: z.boolean().optional(),
   })
   .refine(onePlace, onePlaceMessage)
 export type RunProjectActionBody = z.infer<typeof runProjectActionBodySchema>
@@ -128,6 +150,30 @@ export interface ProjectActionServiceState {
   cwd: string | null
   ports: number[]
   startedAt: number | null
+  /** Ce qu'il sert, lu dans son `cwd` ; null quand il ne tourne pas. */
+  served: ActionServedVersion | null
+}
+
+/**
+ * La version qu'un service en marche sert : l'arbre qui contient son dossier, et l'état
+ * git de ce dossier. Un serveur de dev sert l'arbre de travail tel quel, fichiers non
+ * commités compris : la branche seule ne dit pas ce qu'on voit.
+ */
+export interface ActionServedVersion {
+  /** L'arbre du projet le plus profond qui contient le dossier ; null hors du projet. */
+  path: string | null
+  /** Le worktree Solera ; null pour la racine ou un arbre que Solera n'a pas créé. */
+  worktreeId: string | null
+  root: boolean
+  /** Null en HEAD détachée ou hors d'un dépôt. */
+  branch: string | null
+  /** Le commit court ; null hors d'un dépôt. */
+  head: string | null
+  /** Commits en avance sur la base et en retard sur elle ; null sans base lisible. */
+  ahead: number | null
+  behind: number | null
+  /** Fichiers modifiés ou non suivis ; null hors d'un dépôt. */
+  dirtyFiles: number | null
 }
 
 export interface ProjectActionDto {
@@ -140,6 +186,9 @@ export interface ProjectActionDto {
   subdir: string | null
   /** Gabarit d'URL d'un service, `{port}` compris ; null sans lien. */
   url: string | null
+  placement: ActionPlacement
+  /** La branche d'un placement `branch` ; null pour les autres. */
+  pinnedBranch: string | null
   /**
    * `proposed` : écrite ou modifiée par un agent et pas encore relue. Un clic lance la
    * commande hors de toute session : on la montre avant la première exécution, pour

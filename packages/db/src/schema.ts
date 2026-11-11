@@ -1364,6 +1364,13 @@ export const projectActions = sqliteTable(
     approvedCommand: text('approved_command'),
     approvedSubdir: text('approved_subdir'),
     approvedUrl: text('approved_url'),
+    /**
+     * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
+     * dans l'arbre où `pinned_branch` est sortie. Hors relecture : il ne change pas ce
+     * qui s'exécute, seulement lequel des arbres du projet le porte.
+     */
+    placement: text('placement').$type<'follow' | 'root' | 'branch' | 'per-worktree'>().notNull().default('follow'),
+    pinnedBranch: text('pinned_branch'),
     /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
     agentConversationId: text('agent_conversation_id'),
     createdAt: timestamp('created_at').notNull(),
