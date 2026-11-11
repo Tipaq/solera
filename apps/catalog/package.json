@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@solera/ui": "github:Tipaq/solera-ds#9fa9de95f06afe9aab7a87003f4875cac1eef033",
+    "@solera/ui": "github:Tipaq/solera-ds#deb1b35ec4b1732747e0532bf7eb9dee6a3e9942",
     "@solera/web": "workspace:*",
     "@tanstack/react-query": "^5.64.2",
     "lucide-react": "^1.26.0",
