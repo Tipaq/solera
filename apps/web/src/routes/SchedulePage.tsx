@@ -1,4 +1,4 @@
-import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, ShieldAlert, Trash2, Zap } from 'lucide-react'
+import { ArrowUpRight, CalendarClock, ChevronRight, FlaskConical, Pause, Pencil, Play, Plus, ShieldAlert, Trash2, Zap } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { conversationPath } from '../lib/conversation-route'
@@ -11,7 +11,7 @@ import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
-import { NEW_PARAM } from './ProjectLayout'
+import { NEW_PARAM } from '../lib/place'
 import {
   RUN_DOTS,
   RUN_LABELS,
@@ -56,8 +56,8 @@ export function SchedulePage() {
   /**
    * `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
    *
-   * La création est en plus commandée par l'adresse : c'est la rangée d'onglets de
-   * `ProjectLayout` qui porte *+ Tâche*, et elle ne connaît pas ce formulaire.
+   * La création est en plus commandée par l'adresse (`?nouvelle=1`), pour qu'un lien
+   * d'ailleurs puisse l'ouvrir.
    */
   const [editing, setEditing] = useState<ScheduledTaskDto | 'new' | null>(null)
   const [params, setParams] = useSearchParams()
@@ -71,11 +71,17 @@ export function SchedulePage() {
   const open = creating ? 'new' : editing
 
   return (
-    /* Plus de bande ni d'en-tête propre : le nom du projet est dans la bande de la
-       coque, le compte des tâches dans son onglet, et *+ Tâche* dans sa rangée. */
+    /* Plus de bande propre : le nom du projet est dans la bande de la coque. *+ Tâche*
+       a quitté la rangée d'onglets, qui ne porte plus que des vues, pour l'en-tête de
+       la page. */
     <div className="h-full overflow-y-auto p-4 md:p-6">
-      <div className="flex max-w-3xl flex-col gap-4">
-        <p className="text-sm text-ink-soft">{t('schedule.description')}</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-3">
+          <p className="max-w-prose flex-1 text-sm text-ink-soft">{t('schedule.description')}</p>
+          <Button size="sm" icon={<Plus size={15} />} onClick={() => setEditing('new')}>
+            {t('project.action.newTask')}
+          </Button>
+        </div>
         {isError ? <Banner>{t('schedule.loadError')}</Banner> : null}
         {isPending ? (
           <p role="status" className="text-sm text-ink-faint">{t('schedule.loading')}</p>

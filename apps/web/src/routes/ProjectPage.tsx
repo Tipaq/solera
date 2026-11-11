@@ -3,8 +3,8 @@ import {
   FileText,
   FolderGit2,
   FolderOpen,
-  GitBranch,
   ImagePlus,
+  Palette,
   RefreshCw,
   Save,
   Shapes,
@@ -32,10 +32,12 @@ import {
   Field,
   Select,
   Switch,
+  cx,
 } from '@solera/ui'
 import { ApiRequestError } from '../lib/api'
 import { useAllConversations } from '../lib/conversations'
 import { locale, translate, useTranslate } from '../lib/i18n'
+import { PROJECT_COLORS } from '../lib/project-colors'
 import {
   useDeleteProject,
   useProjects,
@@ -48,8 +50,8 @@ import {
   useUpdateProject,
 } from '../lib/projects'
 import { AutonomousConfinementSelect, EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
-import { useCapability } from '../lib/instance'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
+import { useCapability } from '../lib/instance'
 import { VisibilitySelect } from '../components/VisibilitySelect'
 
 export function ProjectPage() {
@@ -68,35 +70,29 @@ export function ProjectPage() {
   const projectConversations = (conversations ?? []).filter((c) => c.projectId === project.id)
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 p-4 md:p-8">
-      <header className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
-          <ProjectAvatar project={project} className="size-7" />
-          {project.name}
-        </h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {sharedProjects ? (
-            <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
-              {project.visibility === 'shared'
-                ? t('project.visibility.shared')
-                : t('project.visibility.private')}
-            </Badge>
-          ) : null}
-          {project.git ? (
-            <>
-              <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
-              {project.git.isDirty ? (
-                <Badge tone="caution">{t('project.git.dirty')}</Badge>
-              ) : (
-                <Badge tone="positive">{t('project.git.clean')}</Badge>
-              )}
-            </>
+    /* Dans la coque, sous la rangée : le nom et l'avatar du projet sont dans sa bande, la
+       page commence donc à son contenu, sur la gouttière commune et sans couloir centré. */
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4 md:p-6">
+      {/* L'état du projet reste ; sa branche non : elle disait celle extraite à la racine,
+          pas celle sur laquelle on travaille. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {sharedProjects ? (
+          <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
+            {project.visibility === 'shared'
+              ? t('project.visibility.shared')
+              : t('project.visibility.private')}
+          </Badge>
+        ) : null}
+        {project.git ? (
+          project.git.isDirty ? (
+            <Badge tone="caution">{t('project.git.dirty')}</Badge>
           ) : (
-            <Badge>{t('project.git.none')}</Badge>
-          )}
-        </div>
-      </header>
-
+            <Badge tone="positive">{t('project.git.clean')}</Badge>
+          )
+        ) : (
+          <Badge>{t('project.git.none')}</Badge>
+        )}
+      </div>
       <Card>
         <CardHeader
           title={t('project.board.title')}
@@ -121,7 +117,7 @@ export function ProjectPage() {
             icon={<FolderGit2 size={16} />}
           />
           <CardBody>
-            <Button variant="ghost" onClick={() => navigate(`/p/${project.id}/activity?groupe=worktree`)}>
+            <Button variant="ghost" onClick={() => navigate(`/p/${project.id}/travail?groupe=worktree`)}>
               {t('project.worktrees.open')}
             </Button>
           </CardBody>
@@ -146,6 +142,7 @@ export function ProjectPage() {
       {project.isOwner ? (
         <>
           <ProjectImage project={project} />
+          <ProjectColor project={project} />
           <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />
           <ProjectIssueSource projectId={project.id} />
           <ProjectEnvironment projectId={project.id} />
@@ -168,6 +165,50 @@ export function ProjectPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+/**
+ * La couleur du projet, celle de son avatar quand il n'a pas d'image.
+ *
+ * Elle était dans le `⋯` de la bande, qui a disparu : un réglage du projet se règle
+ * dans ses réglages. Appliquée au clic, comme dans le menu qu'elle quitte.
+ */
+function ProjectColor({ project }: { project: ProjectDto }) {
+  const t = useTranslate()
+  const update = useUpdateProject()
+  return (
+    <Card>
+      <CardHeader title={t('project.color.title')} description={t('project.color.description')} icon={<Palette size={16} />} />
+      <CardBody>
+        <div role="radiogroup" aria-label={t('project.color.title')} className="flex flex-wrap items-center gap-2.5">
+          {PROJECT_COLORS.map((entry) => {
+            const selected = project.color === entry.value
+            return (
+              <button
+                key={entry.value ?? 'default'}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={t(entry.label)}
+                title={t(entry.label)}
+                onClick={() => update.mutate({ id: project.id, color: entry.value })}
+                className={cx(
+                  'size-6 shrink-0 rounded-full transition-transform hover:scale-110 focus-visible:scale-110 focus-visible:outline-2 focus-visible:outline-accent',
+                  selected && 'ring-2 ring-ink ring-offset-2 ring-offset-[var(--sg-surface)]',
+                  entry.value === null && 'border border-line bg-surface-high',
+                )}
+                /* « Aucune » n'est pas une teinte de plus : barrée et creuse, comme dans
+                   le menu du projet de la barre latérale. */
+                style={entry.value === null
+                  ? { backgroundImage: 'linear-gradient(to top left, transparent calc(50% - 0.5px), var(--sg-ink-faint) calc(50% - 0.5px), var(--sg-ink-faint) calc(50% + 0.5px), transparent calc(50% + 0.5px))' }
+                  : { background: entry.value }}
+              />
+            )
+          })}
+        </div>
+      </CardBody>
+    </Card>
   )
 }
 

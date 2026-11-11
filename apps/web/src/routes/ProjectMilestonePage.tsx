@@ -72,7 +72,7 @@ export function ProjectMilestonePage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="shrink-0 px-4 pt-3">
+      <div className="shrink-0 px-4 pt-3 md:px-6">
         <Link
           to={`/p/${projectId}/timeline`}
           className="inline-flex items-center gap-1 rounded text-xs text-ink-faint hover:text-ink"
@@ -120,7 +120,7 @@ function MilestoneView({ projectId, run, dueAt }: { projectId: string; run: Mile
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 flex-col gap-3 px-4 pt-2 pb-4">
+      <div className="flex shrink-0 flex-col gap-3 px-4 pt-2 pb-4 md:px-6">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <Flag size={18} aria-hidden className="shrink-0 text-accent" />
           <h2 className="min-w-0 truncate text-lg font-semibold text-ink">
@@ -178,7 +178,7 @@ function MilestoneView({ projectId, run, dueAt }: { projectId: string; run: Mile
         <MilestoneSegments cards={run.cards} className="[&>span]:h-2" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-auto px-4 pb-4 md:px-6">
         <div
           className="grid gap-4"
           style={{ gridTemplateColumns: `repeat(${Math.max(waves.length, 1)}, minmax(14rem, 1fr))` }}

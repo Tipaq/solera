@@ -90,10 +90,10 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // L'entrée du board ouvre le brouillon en mode « découper » : à la racine, sans arbre.
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Découper en cartes', exact: true }).click()
-  await page.getByRole('heading', { name: 'Découper en cartes', exact: true }).waitFor()
+  // Le brouillon en mode « découper » : à la racine, sans arbre. Son entrée a quitté la
+  // rangée du board (#160) ; la palette et la fiche d'une carte y mènent encore.
+  await page.goto(`${base}/p/${project.id}/c/new?split=new`)
+  await page.getByText('Découper en cartes', { exact: true }).first().waitFor()
   assert.equal(new URL(page.url()).searchParams.get('split'), 'new')
   await page.getByText(/Dicte en vrac/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'split-draft-page.png') })
