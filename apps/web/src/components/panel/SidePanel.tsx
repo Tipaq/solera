@@ -289,9 +289,10 @@ export const SidePanel = memo(function SidePanel({
         'surface flex flex-col border-l border-line',
         // La règle des deux familles (gabarit « Panneau et tiroir ») : ancré, le panneau
         // pousse le fil et n'a pas d'ombre. Posé par-dessus — en feuille, au téléphone,
-        // en plein écran — l'ombre porte le décollement : sans elle, il se lirait comme
-        // une colonne de plus, et on chercherait pourquoi le fil est coupé.
-        docked && !fullscreen ? null : 'shadow-pop',
+        // en plein écran — il prend celle du tiroir, légère et portée vers la gauche :
+        // sans elle, il se lirait comme une colonne de plus, et on chercherait pourquoi
+        // le fil est coupé.
+        docked && !fullscreen ? null : 'shadow-drawer',
         // Plein écran au doigt, largeur réglable au-delà. `absolute` et non `fixed` :
         // le repère est le calque de la coque, donc le panneau suit le viewport visuel.
         // La largeur est bornée en CSS et pas seulement à l'enregistrement : une
