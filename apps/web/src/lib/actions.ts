@@ -1,16 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   actionRunStatusOf,
+  MAX_ACTION_LABEL_CHARS,
+  MAX_TRY_TITLE_CHARS,
   resolveActionUrl,
   type ActionRunDetailDto,
+  type ActionSuggestion,
   type CreateProjectActionBody,
   type ProjectActionDto,
   type ProjectActionRunResult,
   type ServiceActionControl,
+  type TerminalDto,
 } from '@solera/protocol'
 import { api } from './api'
 import { relativeDate } from './dates'
-import type { MessageKey, MessageParams } from './i18n'
+import { useTranslate, type MessageKey, type MessageParams } from './i18n'
 import { showTerminal } from './panel'
 
 export const ACTIONS_KEY = ['actions']
@@ -136,6 +140,98 @@ export function useRunAction() {
       if (result.terminal) showTerminal(result.terminal.id)
     },
   })
+}
+
+/**
+ * « Trouvé dans le dépôt » : ce que la racine du projet sait lancer, moins ce qui est
+ * déjà un bouton. Sous la clé des actions, pour être relue quand on en enregistre une.
+ */
+export function useActionSuggestions(projectId: string | null) {
+  return useQuery({
+    queryKey: [...ACTIONS_KEY, 'suggestions', projectId],
+    queryFn: () => api.get<ActionSuggestion[]>(`/api/projects/${projectId}/actions/suggestions`),
+    enabled: projectId !== null,
+    staleTime: 30_000,
+  })
+}
+
+/**
+ * « Essayer » une commande de l'éditeur sans l'enregistrer. Rend le terminal d'essai,
+ * dont la sortie se lit par sa socket ; il n'est pas mis devant, l'éditeur la montre.
+ * Un essai remplace le précédent.
+ */
+export function useTryAction(projectId: string) {
+  const t = useTranslate()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      command,
+      subdir,
+      label,
+      conversationId,
+    }: {
+      command: string
+      subdir?: string
+      /** Le libellé saisi, pour titrer le terminal ; sinon la première ligne de la commande. */
+      label?: string
+      conversationId?: string
+    }) => {
+      const name = label?.trim() || command.trim().split('\n')[0]!.trim()
+      return api.post<TerminalDto>(`/api/projects/${projectId}/actions/try`, {
+        command,
+        subdir: subdir || undefined,
+        title: t('actions.try.title', { name }).slice(0, MAX_TRY_TITLE_CHARS),
+        conversationId,
+      })
+    },
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['terminals', projectId] }),
+  })
+}
+
+const SUGGESTION_LABELS: Record<string, MessageKey> = {
+  dev: 'actionSuggestion.label.dev',
+  start: 'actionSuggestion.label.start',
+  serve: 'actionSuggestion.label.serve',
+  test: 'actionSuggestion.label.test',
+  lint: 'actionSuggestion.label.lint',
+  build: 'actionSuggestion.label.build',
+  typecheck: 'actionSuggestion.label.typecheck',
+  format: 'actionSuggestion.label.format',
+  check: 'actionSuggestion.label.check',
+  storybook: 'actionSuggestion.label.storybook',
+  preview: 'actionSuggestion.label.preview',
+  compose: 'actionSuggestion.label.compose',
+}
+
+/**
+ * Ce qu'un clic sur une suggestion met dans l'éditeur. Le libellé traduit les noms
+ * courants et garde les autres tels quels ; celui d'un espace de travail dit lequel.
+ */
+export function suggestionDraft(
+  suggestion: ActionSuggestion,
+  t: (key: MessageKey, params?: MessageParams) => string,
+): CreateProjectActionBody & { subdir: string; url: string } {
+  const known = SUGGESTION_LABELS[suggestion.name]
+  const base = known ? t(known) : suggestion.name
+  const label = suggestion.subdir
+    ? t('actionSuggestion.inPackage', { label: base, package: suggestion.subdir.split('/').at(-1)! })
+    : base
+  return {
+    label: label.slice(0, MAX_ACTION_LABEL_CHARS),
+    kind: suggestion.kind,
+    command: suggestion.command,
+    subdir: suggestion.subdir,
+    url: suggestion.url ?? '',
+  }
+}
+
+/** L'infobulle d'une suggestion : d'où elle vient, et pourquoi cette nature. */
+export function suggestionWhy(
+  suggestion: ActionSuggestion,
+  t: (key: MessageKey, params?: MessageParams) => string,
+): string {
+  const why = t(`actionSuggestion.why.${suggestion.reason}`, { name: suggestion.name })
+  return t('actionSuggestion.from', { source: suggestion.source, why })
 }
 
 const RUNNING_STATES = ['active', 'activating', 'reloading']
