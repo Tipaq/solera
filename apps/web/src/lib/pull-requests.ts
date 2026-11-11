@@ -66,8 +66,11 @@ export function useMergeBranchPullRequest(projectId: string, cardId: string) {
       void queryClient.invalidateQueries({ queryKey: ['pull-requests'] })
       void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
     },
-    // Même refusée : une PR déjà fusionnée sur GitHub vient d'y recevoir sa date.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['cards', projectId] }),
+    // Même refusée : une PR déjà fusionnée sur GitHub vient d'y recevoir sa date et sa note.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
+      void queryClient.invalidateQueries({ queryKey: ['card-notes', cardId] })
+    },
   })
 }
 

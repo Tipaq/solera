@@ -148,46 +148,60 @@ test('une carte dit sa branche et sa PR finale, fusionnée ou non ; une carte sa
 
 test('balayage : une PR de jalon fusionnée sur la forge pose sa date, une fois, avec une note', async (t) => {
   const h = await harness(t)
-  await h.sweeper.sweep(10_000)
+  await h.sweeper.checkMerged(10_000)
   assert.deepEqual(h.reads, ['101'], 'la PR ouverte est relue par son numéro')
   assert.equal(h.row().branchPrMergedAt, null, 'encore ouverte : rien ne change')
   assert.deepEqual(h.notes(), [])
 
   h.setPr({ state: 'MERGED' })
-  await h.sweeper.sweep(10_000 + 60_000)
+  await h.sweeper.checkMerged(10_000 + 60_000)
   assert.equal(h.row().branchPrMergedAt, 70_000)
   assert.equal(h.notes().length, 1)
   assert.match(h.notes()[0]!, /PR #101/)
   assert.match(h.notes()[0]!, /fusionnée/)
 
-  await h.sweeper.sweep(10_000 + 10 * 60_000)
+  await h.sweeper.checkMerged(10_000 + 10 * 60_000)
   assert.equal(h.reads.length, 2, 'une PR fusionnée ne se relit plus')
   assert.equal(h.notes().length, 1)
 })
 
+test('balayage : la date de fusion est celle de la forge quand elle la donne', async (t) => {
+  const h = await harness(t)
+  h.setPr({ state: 'MERGED', mergedAt: 4242 })
+  await h.sweeper.checkMerged(10_000)
+  assert.equal(h.row().branchPrMergedAt, 4242, 'fusionnée pendant une panne : livrée ce jour-là, pas au balayage')
+})
+
+test('balayage : la PR d’un projet archivé ne se relit pas', async (t) => {
+  const h = await harness(t)
+  h.db.update(projects).set({ archivedAt: 1 }).run()
+  await h.sweeper.checkMerged(0)
+  assert.deepEqual(h.reads, [])
+})
+
 test('balayage : une PR ouverte se relit une fois par minute, pas à chaque passage', async (t) => {
   const h = await harness(t)
-  await h.sweeper.sweep(0)
-  await h.sweeper.sweep(500)
-  await h.sweeper.sweep(59_000)
+  await h.sweeper.checkMerged(0)
+  await h.sweeper.checkMerged(500)
+  await h.sweeper.checkMerged(59_000)
   assert.equal(h.reads.length, 1)
-  await h.sweeper.sweep(60_000)
+  await h.sweeper.checkMerged(60_000)
   assert.equal(h.reads.length, 2)
 })
 
 test('balayage : une forge muette ou une PR fermée attendent la demi-heure', async (t) => {
   const h = await harness(t)
   h.failRead('HTTP 502')
-  await h.sweeper.sweep(0)
-  await h.sweeper.sweep(5 * 60_000)
+  await h.sweeper.checkMerged(0)
+  await h.sweeper.checkMerged(5 * 60_000)
   assert.equal(h.reads.length, 1, 'la forge en panne n’est pas relancée tout de suite')
   assert.equal(h.row().branchPrMergedAt, null)
 
   h.failRead(null)
   h.setPr({ state: 'CLOSED' })
-  await h.sweeper.sweep(30 * 60_000)
+  await h.sweeper.checkMerged(30 * 60_000)
   assert.equal(h.reads.length, 2)
-  await h.sweeper.sweep(45 * 60_000)
+  await h.sweeper.checkMerged(45 * 60_000)
   assert.equal(h.reads.length, 2, 'une PR fermée peut être rouverte, mais pas chaque minute')
   assert.equal(h.row().branchPrMergedAt, null, 'fermée n’est pas fusionnée')
 })

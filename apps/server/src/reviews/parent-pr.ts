@@ -2,13 +2,17 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import { cardNotes, cardReviews, cards, projects, type CardRow, type ProjectRow } from '@solera/db'
+import type { CardBranchPrDto } from '@solera/protocol'
 import type { AppContext } from '../http/context.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import { defaultBase } from '../worktrees/assess.js'
 import type { Forge, PullRequest } from './forge.js'
 import { PullRequestNotReady, mergeReadyPullRequest } from './merge.js'
 
-/** Après un échec, la forge n'est relancée pour cette parente qu'une demi-heure plus tard. */
+/**
+ * Après un échec, la forge n'est relancée pour cette parente qu'une demi-heure plus tard.
+ * Une PR fermée sans fusion se relit au même rythme : elle peut être rouverte.
+ */
 const RETRY_MS = 30 * 60_000
 
 /**
@@ -40,6 +44,7 @@ export class ParentPullRequests {
   private readonly retryAt = new Map<string, number>()
   /** Quand relire chaque PR ouverte, par parente : la fusion faite sur la forge (#187). */
   private readonly checkAt = new Map<string, number>()
+  private checking = false
   private logger: FastifyBaseLogger | null = null
 
   constructor(
@@ -67,24 +72,35 @@ export class ParentPullRequests {
       if (!project) continue
       await this.open(parent, project, merged)
     }
-    await this.checkOpen(now)
   }
 
   /**
    * Relit les PR de parente ouvertes, et pose leur date de fusion quand la forge les dit
    * fusionnées : une fusion faite sur GitHub livre le jalon comme celle faite depuis
    * Solera. Une PR fermée sans fusion peut être rouverte : elle se relit à la demi-heure.
+   *
+   * À part de `sweep`, et lancée sans être attendue : un `gh` par jalon ouvert, jusqu'à
+   * vingt secondes chacun quand la forge traîne, retarderait les demandes d'agent.
    */
+  async checkMerged(now = Date.now()): Promise<void> {
+    if (this.checking) return
+    this.checking = true
+    try {
+      await this.checkOpen(now)
+    } finally {
+      this.checking = false
+    }
+  }
+
   private async checkOpen(now: number): Promise<void> {
     const open = this.ctx.db
-      .select()
+      .select({ card: cards, project: projects })
       .from(cards)
-      .where(and(isNotNull(cards.branchPrNumber), isNull(cards.branchPrMergedAt)))
+      .innerJoin(projects, eq(projects.id, cards.projectId))
+      .where(and(isNotNull(cards.branchPrNumber), isNull(cards.branchPrMergedAt), isNull(projects.archivedAt)))
       .all()
-    for (const parent of open) {
+    for (const { card: parent, project } of open) {
       if ((this.checkAt.get(parent.id) ?? 0) > now) continue
-      const project = this.ctx.db.select().from(projects).where(eq(projects.id, parent.projectId)).get()
-      if (!project) continue
       let pr: PullRequest
       try {
         pr = await this.forge.readPullRequest(project.workspacePath, String(parent.branchPrNumber), this.token?.(project.ownerId))
@@ -95,7 +111,7 @@ export class ParentPullRequests {
       }
       if (pr.state === 'MERGED') {
         this.checkAt.delete(parent.id)
-        recordBranchPrMerged(this.ctx, parent, pr, now)
+        recordBranchPrMerged(this.ctx, parent, pr, pr.mergedAt ?? now)
       } else {
         this.checkAt.set(parent.id, now + (pr.state === 'CLOSED' ? RETRY_MS : CHECK_MS))
       }
@@ -220,14 +236,14 @@ export async function mergeBranchPullRequest(
   card: CardRow,
   project: ProjectRow,
   token?: string,
-): Promise<{ number: number; url: string; mergedAt: number }> {
+): Promise<CardBranchPrDto & { mergedAt: number }> {
   if (card.branchPrNumber === null) throw new BranchPrMissing(`#${card.number} n'a pas de PR vers la branche par défaut.`)
   let pr: PullRequest
   try {
     pr = await mergeReadyPullRequest(forge, project.workspacePath, String(card.branchPrNumber), token)
   } catch (err) {
     if (err instanceof PullRequestNotReady && err.reason === 'merged') {
-      recordBranchPrMerged(ctx, card, err.pullRequest, Date.now())
+      recordBranchPrMerged(ctx, card, err.pullRequest, err.pullRequest.mergedAt ?? Date.now())
     }
     throw err
   }
