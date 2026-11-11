@@ -547,13 +547,6 @@
       "when": 1794434842605,
       "tag": "0081_portee_des_taches",
       "breakpoints": true
-    },
-    {
-      "idx": 84,
-      "version": "6",
-      "when": 1794437744677,
-      "tag": "0084_affinage_d_un_jalon",
-      "breakpoints": true
     }
   ]
 }
