@@ -78,6 +78,7 @@ import { registerFsRoutes } from './routes/fs.js'
 import { registerHealthRoutes } from './routes/health.js'
 import { registerPaletteRoutes } from './routes/palette.js'
 import { registerProjectRoutes } from './routes/projects.js'
+import { registerProjectBackgroundRoutes } from './routes/project-background.js'
 import { registerPushRoutes } from './routes/push.js'
 import { registerDecisionRoutes } from './routes/decisions.js'
 import { registerSearchRoutes } from './routes/search.js'
@@ -242,6 +243,7 @@ export async function buildApp(
   registerUserSettingsRoutes(app, ctx, registry)
   registerSystemRoutes(app, ctx)
   registerServiceRoutes(app, ctx, sessions, terminals)
+  registerProjectBackgroundRoutes(app, ctx, log)
   registerTreeRoutes(app, ctx)
   registerVaultRoutes(app, ctx, vault, log)
   registerWebRoutes(app)
