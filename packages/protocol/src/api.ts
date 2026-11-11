@@ -653,7 +653,7 @@ export interface ConversationPromptDto extends TaskPendingDto {
 }
 
 /**
- * Un travail de fond d'une session, vu depuis la liste d'un projet (AC-07) : ce que le
+ * Un travail de fond d'une session, vu depuis la liste d'un projet (#206) : ce que le
  * flux des statuts ne donne que par son nombre, avec ce que le journal en sait de plus.
  */
 export interface ProjectBackgroundTaskDto extends BackgroundTask {

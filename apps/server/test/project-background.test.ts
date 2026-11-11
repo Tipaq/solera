@@ -11,9 +11,10 @@ import { DEFAULT_CLAUDE_CONFIG, type ProjectBackgroundDto } from '@solera/protoc
 import { EventLog } from '../src/events/event-log.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectBackgroundRoutes, type BackgroundProcess } from '../src/http/routes/project-background.js'
+import { summarizeCommand } from '../src/services/command-line.js'
 
 /**
- * Les travaux de fond d'un projet (AC-07) : ce que chaque session vivante a laissé
+ * Les travaux de fond d'un projet (#206) : ce que chaque session vivante a laissé
  * tourner, avec son départ et sa commande exacte, rapproché du processus que la page
  * Services montre pour la même chose.
  */
@@ -57,7 +58,7 @@ async function harness(t: TestContext, as: 'owner' | 'stranger' = 'owner') {
     return { status: response.statusCode, body: response.json() as ProjectBackgroundDto[] }
   }
   const scanned = (list: BackgroundProcess[] | null) => { processes = list }
-  return { conversation, log, background, scanned }
+  return { conversation, log, background, scanned, db }
 }
 
 /** Ce que l'adaptateur Claude journalise pour un `Bash` lancé avec `run_in_background`. */
@@ -183,4 +184,31 @@ test('sans scan des processus, les travaux restent, sans rapprochement', async (
 test('un projet privé reste fermé à qui ne le possède pas', async (t) => {
   const { background } = await harness(t, 'stranger')
   assert.equal((await background()).status, 404)
+})
+
+test("le processus réel d'un Bash de fond, enrobé par Claude, se reconnaît à la commande du journal", async (t) => {
+  const { conversation, log, background, scanned } = await harness(t)
+  conversation('serving', 1)
+  const command = "npm run dev -- --port 5173 && echo 'ok'"
+  const { startedAt } = launchBash(log, 'serving', 'b1', command)
+  log.append('serving', { type: 'background.updated', tasks: [{ id: 'b1', kind: 'local_bash', description: 'dev' }] })
+  // L'argv du shell tel que le scan le lit : snapshot, `eval '…'` aux apostrophes doublées,
+  // entrée redirigée d'une tâche de fond, sauvegarde du dossier courant.
+  const argv = ['/usr/bin/zsh', '-c', `source ~/.claude/shell-snapshots/snapshot-zsh-1.sh 2>/dev/null || true && eval 'npm run dev -- --port 5173 && echo '"'"'ok'"'"'' < /dev/null && pwd -P >| /tmp/claude-1-cwd`]
+  scanned([entry('p-dev', 'serving', summarizeCommand(argv)!, startedAt + 30)])
+
+  const [group] = (await background()).body
+  assert.equal(group!.tasks[0]!.serviceId, 'p-dev')
+})
+
+test("un projet partagé s'ouvre à qui ne le possède pas", async (t) => {
+  const { conversation, log, background, db } = await harness(t, 'stranger')
+  db.update(projects).set({ visibility: 'shared' }).where(eq(projects.id, 'project')).run()
+  conversation('serving', 1)
+  launchBash(log, 'serving', 'b1', 'pnpm dev')
+  log.append('serving', { type: 'background.updated', tasks: [{ id: 'b1', kind: 'local_bash', description: 'dev' }] })
+
+  const { status, body } = await background()
+  assert.equal(status, 200)
+  assert.deepEqual(body.map((group) => group.conversationId), ['serving'])
 })

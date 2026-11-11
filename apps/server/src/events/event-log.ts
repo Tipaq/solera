@@ -178,6 +178,12 @@ export interface OpenBackgroundWork extends BackgroundTask {
   toolCallId: string | null
 }
 
+/** Un appel d'outil réduit à son nom et ses arguments (`EventLog.toolInputs`). */
+export interface ToolCallInput {
+  name: string
+  input: unknown
+}
+
 export class EventLog {
   /** Le fil projeté de chaque conversation, tenu à jour après chaque écriture. */
   readonly thread: ThreadProjection
@@ -920,7 +926,7 @@ export class EventLog {
       .orderBy(asc(events.seq))
       .all()
 
-    const started = new Map<string, { ts: number; toolCallId: string | null }>()
+    const started = new Map<string, Pick<OpenBackgroundWork, 'startedAt' | 'toolCallId'>>()
     let live = new Map<string, { task: BackgroundTask; announcedAt: number }>()
     for (const row of rows) {
       if (row.type === 'session.ended') {
@@ -939,7 +945,7 @@ export class EventLog {
       } else if (typeof payload.taskId !== 'string') {
         continue
       } else if (row.type === 'task.started') {
-        started.set(payload.taskId, { ts: row.ts, toolCallId: payload.toolCallId ?? null })
+        started.set(payload.taskId, { startedAt: row.ts, toolCallId: payload.toolCallId ?? null })
       } else {
         live.delete(payload.taskId)
       }
@@ -947,7 +953,7 @@ export class EventLog {
 
     return [...live.values()].map(({ task, announcedAt }) => {
       const origin = started.get(task.id)
-      return { ...task, startedAt: origin?.ts ?? announcedAt, toolCallId: origin?.toolCallId ?? null }
+      return { ...task, startedAt: origin?.startedAt ?? announcedAt, toolCallId: origin?.toolCallId ?? null }
     })
   }
 
@@ -956,8 +962,8 @@ export class EventLog {
    * l'emporte sur le `tool.started`, comme dans le fil. Filtré par SQLite, comme
    * `toolOutput` : un fil porte des milliers d'appels.
    */
-  toolInputs(conversationId: string, toolCallIds: string[]): Map<string, { name: string; input: unknown }> {
-    const found = new Map<string, { name: string; input: unknown }>()
+  toolInputs(conversationId: string, toolCallIds: string[]): Map<string, ToolCallInput> {
+    const found = new Map<string, ToolCallInput>()
     if (toolCallIds.length === 0) return found
     this.flush(conversationId)
     const rows = this.db

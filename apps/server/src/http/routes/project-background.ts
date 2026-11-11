@@ -2,8 +2,9 @@ import { conversations, projects } from '@solera/db'
 import type { ProjectBackgroundDto, ProjectBackgroundTaskDto, ServiceKind } from '@solera/protocol'
 import { and, asc, eq, gt } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { bashCommand } from '../../events/bash-command.js'
 import type { EventLog } from '../../events/event-log.js'
-import { summarizeScript } from '../../services/command-line.js'
+import { summarizeCommandText } from '../../services/command-line.js'
 import { processOrigins } from '../../services/origins.js'
 import { serviceProcessScanner } from '../../services/processes.js'
 import type { AppContext } from '../context.js'
@@ -23,12 +24,16 @@ export interface BackgroundProcess {
 export type ScanBackgroundProcesses = () => Promise<BackgroundProcess[] | null>
 
 /**
- * Les travaux de fond d'un projet (AC-07) : pour chaque session qui en a laissé tourner,
+ * Les travaux de fond d'un projet (#206) : pour chaque session qui en a laissé tourner,
  * ce que le journal en sait — départ, appel d'outil, commande exacte d'un `Bash` lancé
  * en fond —, et le processus de la page Services qui porte la même chose.
  *
  * Le flux des statuts n'en donne que le nombre (`background_count`) ; c'est lui qui
  * choisit les sessions à relire, et le journal qui dit lesquels sont encore ouverts.
+ * Une session archivée en fait partie : ce qu'elle a laissé tourner tourne encore.
+ *
+ * Le rapprochement s'arrête à `serviceId` : écarter l'entrée de `/api/services` déjà
+ * montrée par son travail revient à qui fusionne les deux listes (#215).
  */
 export function registerProjectBackgroundRoutes(
   app: FastifyInstance,
@@ -81,12 +86,6 @@ function defaultScan(ctx: AppContext): ScanBackgroundProcesses {
   }
 }
 
-/** `Bash` est le nom canonique d'une exécution de commande, quel que soit le CLI. */
-function bashCommand(call: { name: string; input: unknown }): string | null {
-  const command = (call.input as { command?: unknown } | null)?.command
-  return call.name === 'Bash' && typeof command === 'string' ? command : null
-}
-
 /**
  * Pose sur chaque travail l'entrée du scan qui le porte : lancée par la même session,
  * avec la même commande, sous la forme abrégée qu'en donne le scan. Deux travaux à la
@@ -102,7 +101,7 @@ function matchProcesses(group: ProjectBackgroundDto, processes: BackgroundProces
   const byStart = [...group.tasks].sort((a, b) => a.startedAt - b.startedAt)
   for (const task of byStart) {
     if (task.command === null) continue
-    const command = summarizeScript(task.command)
+    const command = summarizeCommandText(task.command)
     const found = candidates.find((entry) => !taken.has(entry.id) && entry.command === command)
     if (!found) continue
     taken.add(found.id)

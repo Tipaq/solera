@@ -46,7 +46,7 @@ export function summarizeCommand(argv: readonly string[], home = process.env.HOM
   // Un programme qui réécrit son titre (Chrome, `npm exec`) laisse une seule chaîne, espaces compris.
   if (argv.length === 1 && /\s/.test(argv[0]!)) argv = argv[0]!.split(/\s+/)
   if (!argv.length) return null
-  return summarizeScript(
+  return summarizeCommandText(
     isShellCommand(argv) ? unwrapAgentShell(argv[2]!) : [basename(argv[0]!), ...argv.slice(1).map(shortenArgument)].join(' '),
     home,
   )
@@ -56,8 +56,8 @@ export function summarizeCommand(argv: readonly string[], home = process.env.HOM
  * Une commande déjà sans enrobage, telle qu'un agent l'a demandée : la forme que le scan
  * en donne, pour reconnaître dans `GET /api/services` le processus qu'elle a lancé.
  */
-export function summarizeScript(script: string, home = process.env.HOME ?? ''): string {
-  let text = script
+export function summarizeCommandText(command: string, home = process.env.HOME ?? ''): string {
+  let text = command
   if (home) text = text.replaceAll(`${home}/`, '~/').replaceAll(home, '~')
   text = redactSecrets(text.replace(/\s+/g, ' ').trim())
   return text.length > COMMAND_LIMIT ? `${text.slice(0, COMMAND_LIMIT - 1)}…` : text
