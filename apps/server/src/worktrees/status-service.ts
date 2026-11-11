@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
-import type { LooseBranchDto, WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
+import type { LooseBranchDto, TreeCardFields, WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
 import {
   UNREADABLE,
@@ -16,6 +16,7 @@ import {
 import { DiskUsage } from './disk-usage.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
+import { treeCards } from './tree-card.js'
 
 /**
  * Au-delà, une liste rendue est recalculée ; en deçà, elle est resservie telle quelle.
@@ -331,6 +332,7 @@ export class WorktreeStatusService {
       }
     })
     const paths = this.touchedPaths(project.id)
+    const cardOf = treeCards(this.db, project.id)
 
     const result: WorktreeStatusDto[] = list.map((tree, index) => ({
       id: tree.id,
@@ -341,6 +343,7 @@ export class WorktreeStatusService {
       head: tree.head,
       conversations: this.linkedConversations(tree.id, tree.path, paths),
       sizeBytes: null,
+      ...cardOf.ofTree(tree),
       ...assessed[index]!,
     }))
 
@@ -366,12 +369,14 @@ export class WorktreeStatusService {
     const known = this.knownFacts.get(project.id)
     const reusable = known && base && known.base === base && known.baseHead === baseHead ? known.byHead : new Map<string, BranchFacts>()
     const missing = base && baseHead ? loose.filter((branch) => !reusable.has(branch.head)) : []
+    // Résolue une fois, pour la liste rendue tout de suite comme pour celle que les faits complètent.
+    const cards = new Map(loose.map((branch) => [branch.name, cardOf.ofBranch(branch.name)]))
     const value: WorktreeStatusListDto = {
       base,
       computedAt: Date.now(),
       fresh: true,
       worktrees: result,
-      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head))),
+      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head), cards.get(branch.name)!)),
       branchesPending: missing.length > 0,
       // Les tailles ne sont pas de ce calcul : `sized` les ajoute, depuis leur propre cache.
       rootSizeBytes: null,
@@ -390,7 +395,7 @@ export class WorktreeStatusService {
         if (facts) byHead.set(branch.head, facts)
       }
       this.knownFacts.set(project.id, { base, baseHead, byHead })
-      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head))), branchesPending: false }
+      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head), cards.get(branch.name)!)), branchesPending: false }
     }
     return { value, details }
   }
@@ -438,8 +443,9 @@ export class WorktreeStatusService {
   }
 }
 
-function branchDto(branch: LooseBranch, facts: BranchFacts | undefined): LooseBranchDto {
+function branchDto(branch: LooseBranch, facts: BranchFacts | undefined, card: TreeCardFields): LooseBranchDto {
   return {
+    ...card,
     name: branch.name,
     merged: branch.merged,
     remoteOnly: branch.remoteOnly,

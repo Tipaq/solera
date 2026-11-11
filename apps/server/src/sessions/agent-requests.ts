@@ -1034,7 +1034,7 @@ export class AgentRequests {
 
     assertWorktreeName(name)
     const base = (await parentBranchFor(this.ctx.db, project, cardId)) ?? 'HEAD'
-    const row = await createWorktree(this.ctx, project, requester.userId, name, base)
+    const row = await createWorktree(this.ctx, project, requester.userId, name, base, cardId)
     this.worktreeStatus?.forget(project.id)
     return row.id
   }
@@ -1082,7 +1082,7 @@ export class AgentRequests {
         (await parentBranchFor(this.ctx.db, project, requester.cardId)) ||
         (await defaultBase(project.workspacePath)) ||
         'HEAD'
-      row = await createWorktree(this.ctx, project, requester.userId, branch, base)
+      row = await createWorktree(this.ctx, project, requester.userId, branch, base, requester.cardId)
       origin = row.baseRef === branch
         ? `La branche « ${branch} » existait : elle est reprise telle quelle.`
         : `Branche neuve, partie de ${base}.`

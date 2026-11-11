@@ -720,7 +720,21 @@ export type WorktreeState = 'missing' | 'unreadable' | 'dirty' | 'unmerged' | 'e
 /** Comment une conversation tient à un arbre : son cwd, ou des fichiers qu'elle y a écrits. */
 export type WorktreeLink = 'worktree' | 'edited'
 
-export interface WorktreeStatusDto {
+/**
+ * D'où vient la carte d'un arbre ou d'une branche, de la plus sûre à la moins sûre : la
+ * session la plus récente de l'arbre qui traite une carte, la carte pour laquelle l'arbre
+ * a été créé, le numéro du nom de la branche (`feat/153-titre` → #153), déduit et
+ * marqué comme tel.
+ */
+export type TreeCardSource = 'session' | 'created' | 'name'
+
+/** La carte d'un arbre ou d'une branche, et sa provenance ; toutes deux nulles sans carte. */
+export interface TreeCardFields {
+  card: { id: string; number: number } | null
+  cardSource: TreeCardSource | null
+}
+
+export interface WorktreeStatusDto extends TreeCardFields {
   /** Null pour un arbre que git connaît mais que Solera n'a pas créé. */
   id: string | null
   /** Branche, ou nom de l'entrée en base quand la branche est perdue. */
@@ -799,7 +813,7 @@ export interface BranchCommitDto {
 }
 
 /** Une branche qu'aucun arbre n'a extraite. */
-export interface LooseBranchDto {
+export interface LooseBranchDto extends TreeCardFields {
   /** Nom court, sans `origin/` pour une distante. */
   name: string
   merged: boolean

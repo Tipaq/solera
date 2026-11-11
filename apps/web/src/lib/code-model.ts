@@ -4,6 +4,8 @@ import type {
   GitSummaryDto,
   ProjectPullRequestListDto,
   PullRequestBadgeState,
+  TreeCardFields,
+  TreeCardSource,
   WorktreeState,
   WorktreeStatusListDto,
 } from '@solera/protocol'
@@ -70,15 +72,15 @@ export interface TreeSession {
 }
 
 /**
- * La carte d'un arbre ou d'une branche. `name` : devinée du nom de la branche
- * (`feat/153-titre` → #153), en attendant que le serveur la rende (#168).
+ * La carte d'un arbre ou d'une branche, telle que le serveur la rend (#168). `source` dit
+ * d'où elle vient : `name`, déduite du nom de la branche, s'affiche comme telle.
  */
 export interface CodeCard {
   id: string
   number: number
   title: string
   milestone: { id: string; number: number; title: string } | null
-  source: 'session' | 'name'
+  source: TreeCardSource
 }
 
 /** La PR d'une branche. `url` nul : une PR fusionnée que seul le statut de l'arbre connaît. */
@@ -376,12 +378,6 @@ export function shortBranch(name: string): string {
   return name.replace(/^(feat|fix|spike|chore|jalon)\//, '')
 }
 
-/** `feat/153-titre` → 153 : le numéro de carte que Solera met dans ses branches. */
-export function cardNumberOf(name: string): number | null {
-  const match = name.match(/\/(\d+)-/)
-  return match ? Number(match[1]) : null
-}
-
 /** Une taille sur disque, dans la langue de l'interface : « 740 Mo », « 1,4 Go ». */
 export function formatBytes(bytes: number, locale: string): string {
   const format = (value: number, unit: 'kilobyte' | 'megabyte' | 'gigabyte', digits: number) =>
@@ -414,7 +410,6 @@ export interface CodeSession {
   title: string
   agent: AgentKind
   worktreeId: string | null
-  cardId: string | null
   /** Null : au repos. */
   tone: SessionTone | null
   /** Sa dernière écriture. */
@@ -438,26 +433,23 @@ export interface CodeSources {
   now: number
 }
 
+/**
+ * La carte que le serveur a rendue, complétée de son titre et de son jalon. Une carte que
+ * la liste ne connaît pas encore n'est pas montrée, plutôt que montrée sans titre.
+ */
 function cardIndex(cards: CardDto[]) {
   const byId = new Map(cards.map((card) => [card.id, card]))
-  const byNumber = new Map(cards.map((card) => [card.number, card]))
-  const link = (card: CardDto | undefined, source: CodeCard['source']): CodeCard | null => {
-    if (!card) return null
+  return ({ card: ref, cardSource }: TreeCardFields): CodeCard | null => {
+    const card = ref ? byId.get(ref.id) : undefined
+    if (!card || !cardSource) return null
     const parent = card.parent ? byId.get(card.parent.id) : undefined
     return {
       id: card.id,
       number: card.number,
       title: card.title,
       milestone: parent ? { id: parent.id, number: parent.number, title: parent.title } : null,
-      source,
+      source: cardSource,
     }
-  }
-  return {
-    ofSession: (id: string | null) => (id ? link(byId.get(id), 'session') : null),
-    ofName: (branch: string | null) => {
-      const number = branch ? cardNumberOf(branch) : null
-      return number === null ? null : link(byNumber.get(number), 'name')
-    },
   }
 }
 
@@ -473,7 +465,7 @@ const latest = (values: (number | null)[]) =>
 
 /** Les arbres d'un projet, jugés et triés, à partir de ce que les requêtes rendent. */
 export function codeDataOf({ project, statuses, pullRequests, cards, sessions, now }: CodeSources): CodeData {
-  const index = cardIndex(cards)
+  const cardOf = cardIndex(cards)
 
   const sessionsOf = (worktreeId: string | null) => {
     const mine = sessions.filter((entry) => entry.worktreeId === worktreeId).sort((a, b) => b.at - a.at)
@@ -481,7 +473,6 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
       live: mine.flatMap((entry) => (entry.tone ? [{ id: entry.id, title: entry.title, agent: entry.agent, tone: entry.tone }] : [])),
       latestId: mine[0]?.id ?? null,
       lastAt: mine[0]?.at ?? null,
-      card: index.ofSession(mine.find((entry) => entry.cardId !== null)?.cardId ?? null),
     }
   }
 
@@ -514,7 +505,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
   }
 
   for (const tree of statuses?.worktrees ?? []) {
-    const mine = tree.id ? sessionsOf(tree.id) : { live: [], latestId: null, lastAt: null, card: null }
+    const mine = tree.id ? sessionsOf(tree.id) : { live: [], latestId: null, lastAt: null }
     const pr = pullRequestOf(pullRequests, tree.branch)
     addTree({
       key: tree.path,
@@ -527,7 +518,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
       state: tree.state,
       sessions: mine.live,
       anySessionId: mine.latestId,
-      card: mine.card ?? index.ofName(tree.branch),
+      card: cardOf(tree),
       pr: pr
         ? { number: pr.number, url: pr.url, state: pr.state }
         : tree.mergedPullRequest !== null
@@ -551,7 +542,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
   }
 }
 
-/** Les branches sans arbre, avec leur PR et leur carte devinée, triées (T-10.3). */
+/** Les branches sans arbre, avec leur PR et leur carte, triées (T-10.3). */
 export function branchInfosOf({
   branches,
   pullRequests,
@@ -561,7 +552,7 @@ export function branchInfosOf({
   pullRequests: ProjectPullRequestListDto | undefined
   cards: CardDto[]
 }): BranchInfo[] {
-  const index = cardIndex(cards)
+  const cardOf = cardIndex(cards)
   return sortBranches(
     branches.map((branch) => {
       const found = pullRequestOf(pullRequests, branch.name)
@@ -577,7 +568,7 @@ export function branchInfosOf({
         behind: branch.behind,
         commits: branch.recentCommits.map((commit) => ({ hash: commit.hash, shortHash: commit.shortHash, title: commit.subject, at: commit.ts })),
         pr,
-        card: index.ofName(branch.name),
+        card: cardOf(branch),
       }
     }),
   )

@@ -177,6 +177,12 @@ export const worktrees = sqliteTable(
       .references(() => users.id),
     createdAt: timestamp('created_at').notNull(),
     removedAt: timestamp('removed_at'),
+    /**
+     * La carte pour laquelle l'arbre a été créé, quand il l'a été pour une : la carte de
+     * l'arbre quand aucune de ses sessions n'en traite (#168). Sans cascade, comme
+     * `conversations.card_id` : une carte effacée ne compte plus, l'arbre reste.
+     */
+    cardId: text('card_id'),
   },
   (t) => [uniqueIndex('idx_worktrees_project_name').on(t.projectId, t.name)],
 )

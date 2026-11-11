@@ -14,6 +14,7 @@ import { assessWorktree, branchFacts, defaultBase, listWorktrees, looseBranches,
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { DiskUsage, measureDisk, walkSize } from '../src/worktrees/disk-usage.js'
+import { createWorktree } from '../src/worktrees/create.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
@@ -817,4 +818,91 @@ test('le service rend la liste sans attendre les tailles, puis la complète ; le
   await cleanup.run(projectRow, { path: heavy, deleteBranch: false, stopServices: false })
   assert.deepEqual(disk.read(heavy), { bytes: null, pending: true }, 'un arbre nettoyé se remesure s\'il revient au même chemin')
   await disk.idle()
+})
+
+/** Une base migrée avec le propriétaire et le projet sur `repo`. */
+function database(t: TestContext, repo: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-card-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values([
+    { id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 },
+    { id: 'other', name: 'other', workspacePath: join(dir, 'other'), ownerId: 'owner', visibility: 'private', createdAt: 1 },
+  ]).run()
+  const card = (id: string, number: number, projectId = 'project') =>
+    ({ id, projectId, number, title: `Carte ${number}`, description: '', column: 'in_progress', position: number, createdBy: 'owner', createdAt: 1, updatedAt: 1 }) as never
+  db.insert(cards).values([card('k153', 153), card('k154', 154), card('k155', 155), card('k157', 157, 'other')]).run()
+  return { db, dir, projectRow: db.select().from(projects).where(sqlEq(projects.id, 'project')).get()! }
+}
+
+test("la carte d'un arbre et d'une branche : session, création, nom", async (t) => {
+  const { repo, trees } = repository(t)
+  const { db, projectRow } = database(t, repo)
+
+  const row = (id: string, name: string, path: string, cardId: string | null, removedAt: number | null = null) =>
+    db.insert(worktrees).values({ id, projectId: 'project', name, path, baseRef: 'main', createdBy: 'owner', createdAt: 1, removedAt, cardId }).run()
+  const session = (id: string, worktreeId: string, cardId: string | null, updatedAt: number) =>
+    db.insert(conversations).values({ id, projectId: 'project', userId: 'owner', title: id, agent: 'claude', config: '{}', status: 'idle', worktreeId, cardId, createdAt: 1, updatedAt }).run()
+
+  // La session la plus récente qui traite une carte l'emporte sur la carte de création
+  // et sur le nom ; une session plus récente sans carte ne l'efface pas.
+  row('wt-a', 'feat/153-a', addTree(repo, trees, 'feat/153-a'), 'k154')
+  session('s-old', 'wt-a', 'k154', 1)
+  session('s-new', 'wt-a', 'k155', 2)
+  session('s-none', 'wt-a', null, 3)
+  // Sans session : la carte donnée à la création, plutôt que le nom.
+  row('wt-b', 'feat/153-b', addTree(repo, trees, 'feat/153-b'), 'k154')
+  // Ni session ni carte de création : le numéro du nom, s'il désigne une carte du projet.
+  addTree(repo, trees, 'feat/153-c')
+  addTree(repo, trees, 'feat/999-d')
+  addTree(repo, trees, 'fix/sans-numero')
+  // Une carte de création effacée ne compte plus : on retombe sur le nom.
+  row('wt-e', 'feat/155-e', addTree(repo, trees, 'feat/155-e'), 'k-effacee')
+
+  // Les branches sans arbre suivent la même règle, par l'arbre retiré qui les portait.
+  git(repo, 'branch', 'feat/155-loose', 'main')
+  git(repo, 'branch', 'feat/old', 'main')
+  row('wt-old', 'feat/old', join(trees, 'old'), 'k154', 5)
+  git(repo, 'branch', 'feat/153-done', 'main')
+  row('wt-done', 'feat/153-done', join(trees, 'done'), 'k154', 5)
+  session('s-done', 'wt-done', 'k155', 4)
+  // Le numéro d'une carte d'un autre projet ne désigne rien ici.
+  git(repo, 'branch', 'feat/157-ailleurs', 'main')
+
+  const list = await new WorktreeStatusService(db, new EventLog(db)).get(projectRow)
+  const ofTree = Object.fromEntries(list.worktrees.map((w) => [w.name, [w.card?.number ?? null, w.cardSource]]))
+  assert.deepEqual(ofTree, {
+    'feat/153-a': [155, 'session'],
+    'feat/153-b': [154, 'created'],
+    'feat/153-c': [153, 'name'],
+    'feat/999-d': [null, null],
+    'fix/sans-numero': [null, null],
+    'feat/155-e': [155, 'name'],
+  })
+  assert.deepEqual(list.worktrees.find((w) => w.name === 'feat/153-a')?.card, { id: 'k155', number: 155 })
+
+  const ofBranch = Object.fromEntries(list.branches.map((b) => [b.name, [b.card?.number ?? null, b.cardSource]]))
+  assert.deepEqual(ofBranch, {
+    'feat/155-loose': [155, 'name'],
+    'feat/old': [154, 'created'],
+    'feat/153-done': [155, 'session'],
+    'feat/157-ailleurs': [null, null],
+  })
+})
+
+test("un arbre créé pour une carte la garde, si elle est du projet", async (t) => {
+  const { repo } = repository(t)
+  const { db, dir, projectRow } = database(t, repo)
+  const ctx = { db, config: { paths: { worktrees: join(dir, 'worktrees') } } } as never
+
+  const mine = await createWorktree(ctx, projectRow, 'owner', 'feat/153-mine', 'main', 'k153')
+  assert.equal(mine.cardId, 'k153')
+  const foreign = await createWorktree(ctx, projectRow, 'owner', 'feat/x', 'main', 'k157')
+  assert.equal(foreign.cardId, null, "la carte d'un autre projet n'est pas retenue")
+  const none = await createWorktree(ctx, projectRow, 'owner', 'feat/y', 'main', null)
+  assert.equal(none.cardId, null)
+  assert.equal(db.select().from(worktrees).where(sqlEq(worktrees.id, mine.id)).get()?.cardId, 'k153')
 })
