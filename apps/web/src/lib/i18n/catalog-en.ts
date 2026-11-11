@@ -2387,6 +2387,7 @@ export const en = {
   'board.order.short.recent': 'Latest',
   'board.order.short.oldest': 'Oldest',
   'board.display.closed': 'Closed columns',
+  'drawer.close': 'Close',
   'project.color.title': 'Color',
   'project.color.description': 'The project avatar’s color when it has no image.',
   'project.view.activity': "Activity",

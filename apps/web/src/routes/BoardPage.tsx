@@ -21,11 +21,12 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { PanelRight, Plus, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { CardPanel } from '../components/board/CardPanel'
+import { PanelHost } from '../components/shell/PanelHost'
 import { CardTile } from '../components/board/CardTile'
 import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, cx } from '@solera/ui'
@@ -35,7 +36,7 @@ import { CardRefContext } from '../lib/card-refs'
 import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
 import { NEW_PARAM } from '../lib/place'
 import { useTranslate } from '../lib/i18n'
-import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
+import { PANEL_TRANSITION_MS, setPanelOpen, usePanelOpen } from '../lib/panel'
 import { useProjects } from '../lib/projects'
 import { useBoardOrder } from '../lib/user-settings'
 import { useMediaQuery } from '../lib/viewport'
@@ -46,10 +47,6 @@ const PARENT_PARAM = 'parente'
 
 /** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
 const WIDE = '(min-width: 768px)'
-
-const SidePanel = lazy(() =>
-  import('../components/panel/SidePanel').then((m) => ({ default: m.SidePanel })),
-)
 
 /** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
 type Layout = Map<CardColumn, string[]>
@@ -123,7 +120,7 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
   const wide = useMediaQuery(WIDE)
-  const panel = usePanelPresence()
+  const panelOpen = usePanelOpen()
 
   const { data: projects } = useProjects()
   const { data: cards, isPending, isError, refetch } = useCards(projectId)
@@ -350,11 +347,11 @@ export function BoardPage() {
                 <ActionsLauncher projectId={projectId} size="sm" />
               </span>
               <IconButton
-                label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
+                label={panelOpen ? t('conversation.panel.close') : t('conversation.panel.open')}
                 size="sm"
-                onClick={() => setPanelOpen(!panel.open)}
+                onClick={() => setPanelOpen(!panelOpen)}
               >
-                <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
+                <PanelRight size={16} className={cx(panelOpen && 'text-accent')} />
               </IconButton>
             </>
           }
@@ -484,11 +481,7 @@ export function BoardPage() {
         </CardRefContext.Provider>
       ) : null}
 
-      {panel.mounted ? (
-        <Suspense fallback={null}>
-          <SidePanel projectId={projectId} open={panel.open} />
-        </Suspense>
-      ) : null}
+      <PanelHost projectId={projectId} />
     </div>
   )
 }

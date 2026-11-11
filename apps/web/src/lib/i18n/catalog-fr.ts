@@ -2383,6 +2383,7 @@ export const fr: Catalog = {
   'board.order.short.recent': 'Récentes',
   'board.order.short.oldest': 'Anciennes',
   'board.display.closed': 'Les colonnes terminées',
+  'drawer.close': 'Fermer',
   'project.color.title': 'Couleur',
   'project.color.description': 'Celle de l’avatar du projet quand il n’a pas d’image.',
   'project.view.activity': "Activité",
