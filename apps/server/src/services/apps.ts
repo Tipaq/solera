@@ -233,3 +233,35 @@ export async function startServiceApp(launch: ServiceAppLaunch): Promise<void> {
     launch.shell, '-lc', launch.command,
   ], { timeout: 10000 })
 }
+
+/**
+ * Arrête une app et attend qu'elle le soit : pour la redémarrer aussitôt sous le même
+ * nom ailleurs, ce que `systemd-run` refuse tant que l'ancienne unité est chargée.
+ * Le délai couvre un serveur de dev lent à rendre la main, pas le `TimeoutStopSec` entier.
+ */
+export async function stopServiceApp(unit: string): Promise<void> {
+  if (!APP_UNIT.test(unit)) throw new Error(`Not a Solera app unit: ${unit}`)
+  await promisify(execFile)('systemctl', ['--user', '--no-pager', 'stop', unit], { timeout: 30_000 })
+}
+
+/** Ce qu'une action `service` lit de son unité. */
+export type ServiceUnitState = Pick<ServiceApp, 'unit' | 'state' | 'cwd' | 'ports' | 'startedAt'>
+
+/** Les unités des actions `service`, derrière une couture : les tests simulent systemd. */
+export interface ServiceUnits {
+  available(): Promise<boolean>
+  scan(origins: ProcessOrigins): Promise<ServiceUnitState[]>
+  start(launch: ServiceAppLaunch): Promise<void>
+  /** Arrête et attend l'arrêt. */
+  stop(unit: string): Promise<void>
+  /** Sans attendre : la liste dira où elle en est. */
+  control(unit: string, op: ServiceAppAction): Promise<void>
+}
+
+export const systemdUnits: ServiceUnits = {
+  available: serviceAppsAvailable,
+  scan: scanServiceApps,
+  start: startServiceApp,
+  stop: stopServiceApp,
+  control: controlServiceApp,
+}
