@@ -150,7 +150,7 @@ export function registerWorktreeRoutes(
     const project = loadProject(id, user.id)
     // Une carte enfant part de la branche de sa parente, où elle sera fusionnée (#68).
     const base = (await parentBranchFor(ctx.db, project, body.cardId ?? null)) ?? body.baseRef
-    const row = await createWorktree(ctx, project, user.id, body.name, base)
+    const row = await createWorktree(ctx, project, user.id, body.name, base, body.cardId ?? null)
     worktreeStatus.forget(project.id)
 
     return reply.status(201).send(await toDto(row))

@@ -17,14 +17,14 @@ function tree(name: string, state: WorktreeStatusDto['state'], extra: Partial<Wo
   return {
     id: `wt-${name}`, name, path: `${ROOT}/${name.replace(/\//g, '__')}`, branch: name, external: false, state,
     ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, unmergedCommits: false, mergedPullRequest: null, head: null,
-    lastCommitAt: null, lastEditAt: null, conversations: [], sizeBytes: null, ...extra,
+    lastCommitAt: null, lastEditAt: null, conversations: [], sizeBytes: null, card: null, cardSource: null, ...extra,
   }
 }
 
 function loose(name: string, merged: boolean): LooseBranchDto {
   return {
     name, merged, remoteOnly: false, head: '0'.repeat(40), subject: null, lastCommitAt: null, ahead: null, behind: null,
-    recentCommits: [],
+    recentCommits: [], card: null, cardSource: null,
   }
 }
 

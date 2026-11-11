@@ -549,7 +549,7 @@ export class MilestoneRuns {
       .where(and(eq(worktrees.projectId, project.id), eq(worktrees.name, name), isNull(worktrees.removedAt)))
       .get()
     if (existing) return existing.id
-    return (await createWorktree(this.ctx, project, userId, name, base)).id
+    return (await createWorktree(this.ctx, project, userId, name, base, card.id)).id
   }
 
   /** Prévient une fois par raison quand une carte se bloque ; oublie la raison quand elle repart. */

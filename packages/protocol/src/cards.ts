@@ -638,6 +638,16 @@ export function parentBranchName(number: number, title: string): string {
   return branchName('jalon', number, title)
 }
 
+/**
+ * Le numéro de carte que porte un nom de branche fait par `cardBranchName` ou
+ * `parentBranchName` : `feat/153-titre` → 153. Une déduction, que le serveur ne retient
+ * que si le projet a une carte de ce numéro (#168).
+ */
+export function cardNumberOfBranch(name: string): number | null {
+  const match = /\/(\d+)(?:-|$)/.exec(name)
+  return match ? Number(match[1]) : null
+}
+
 function branchName(prefix: string, number: number, title: string): string {
   const slug = title
     .normalize('NFD')
