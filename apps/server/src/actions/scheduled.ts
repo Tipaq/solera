@@ -140,14 +140,15 @@ export class CommandScheduler {
 
   /** La fin du tir, ou la raison pour laquelle il n'est pas parti. */
   private async play(action: ProjectActionRow, cwd: string): Promise<DetachedResult> {
-    // Un projet qui fait tourner ses commandes confinées ou dans un conteneur : les jouer
-    // sur l'hôte sortirait de ce qu'il a choisi. Refusé et dit, plutôt que fait ailleurs.
-    const environment = this.environments.ofProject(action.projectId)
+    // Une commande planifiée tourne seule, comme une session autonome (#146) : dans
+    // l'environnement que le projet donne à celles-ci. Confiné ou dans un conteneur, la
+    // jouer sur l'hôte sortirait de ce qu'il a choisi : refusé et dit, plutôt que fait ailleurs.
+    const environment = this.environments.forAutonomous(action.projectId, null)
     if (environment.where !== 'host' || environment.confined) {
       return {
         exitCode: null,
         timedOut: false,
-        output: "Commande planifiée non lancée : ce projet fait tourner ses commandes confinées ou dans un dev container, où une commande planifiée ne sait pas encore aller.",
+        output: "Commande planifiée non lancée : ce projet fait tourner ses exécutions autonomes confinées ou dans un dev container, où une commande planifiée ne sait pas encore aller.",
       }
     }
     const isDir = await stat(cwd).then((s) => s.isDirectory(), () => false)

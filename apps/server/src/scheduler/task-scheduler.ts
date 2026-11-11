@@ -90,9 +90,14 @@ export class TaskScheduler {
       // celui qui attendait derrière lui, dans le même balayage.
       await this.settleRuns(now)
       await this.fireDue(now)
-      await this.commands?.tick(now)
     } catch (err) {
       this.logger?.error({ err }, 'balayage des tâches planifiées en échec')
+    }
+    // À part : une tâche qui fait échouer le balayage ne doit pas retenir les commandes.
+    try {
+      await this.commands?.tick(now)
+    } catch (err) {
+      this.logger?.error({ err }, 'balayage des commandes planifiées en échec')
     } finally {
       this.busy = false
     }

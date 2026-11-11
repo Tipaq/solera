@@ -168,8 +168,8 @@ export function createAction(
  * montrer l'écart et y revenir au refus.
  *
  * La cadence compte avec ce qui s'exécute : une commande planifiée part sans clic, et
- * un agent qui en planifie une la ferait tourner sans que personne l'ait vue. La pause,
- * elle, ne lance rien.
+ * un agent qui en planifie une, ou en reprend une en pause, la ferait tourner sans que
+ * personne l'ait vue. La pause, elle, ne lance rien.
  */
 export function updateAction(
   db: Db,
@@ -214,15 +214,30 @@ export function updateAction(
     next.command !== row.command ||
     next.subdir !== row.subdir ||
     next.url !== row.url ||
-    (next.cadence !== null && next.cadence !== row.cadence)
+    (next.cadence !== null && next.cadence !== row.cadence) ||
+    (next.scheduleEnabled && !row.scheduleEnabled)
   if (agentConversationId) {
     next.agentConversationId = agentConversationId
     if (executionChanged) next.approvedAt = null
-  } else {
+  } else if (!isPauseOnly(patch)) {
     Object.assign(next, reviewed(next, next.updatedAt))
   }
   db.update(projectActions).set(next).where(eq(projectActions.id, row.id)).run()
   return next
+}
+
+/**
+ * Mettre en pause ou reprendre n'écrit rien de ce qui s'exécute : ce n'est pas une
+ * relecture, et une commande proposée doit le rester jusqu'à ce qu'on la valide.
+ */
+function isPauseOnly(patch: UpdateProjectActionBody): boolean {
+  const keys = Object.keys(patch).filter((key) => patch[key as keyof UpdateProjectActionBody] !== undefined)
+  return (
+    keys.length === 1 &&
+    keys[0] === 'schedule' &&
+    patch.schedule !== null &&
+    Object.keys(patch.schedule ?? {}).every((key) => key === 'enabled')
+  )
 }
 
 /** Valider sans lancer : la relecture et le lancement sont deux gestes. */
@@ -264,7 +279,10 @@ export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | 
     next.onDemand = true
   }
   if (next.cadence !== row.cadence) {
-    next.nextRunAt = next.cadence === null ? null : nextScheduleRun(readActionCadence(next.cadence)!, now, row.lastScheduledAt)
+    next.nextRunAt =
+      next.cadence === null || !next.scheduleEnabled
+        ? null
+        : nextScheduleRun(readActionCadence(next.cadence)!, now, row.lastScheduledAt)
   }
   const written = db.update(projectActions)
     .set(next)

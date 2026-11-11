@@ -2364,6 +2364,16 @@ export class AgentRequests {
         .filter((key) => payload[key] !== undefined && payload[key] !== null)
         .map((key) => [key, payload[key]]),
     )
+    if (payload.schedule !== undefined && payload.schedule !== null) {
+      // Les mêmes refus que schedule_task : une commande planifiée tourne hors de la
+      // session, et un tir qui en planifie d'autres se multiplierait.
+      if (this.confined(requester)) {
+        throw new Refusal('Refusé : cette session est confinée, et une commande planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.')
+      }
+      if (requester.scheduleId) {
+        throw new Refusal("Refusé : cette session est elle-même un tir planifié. Ouvre plutôt une carte avec create_card.")
+      }
+    }
     if (payload.schedule !== undefined) fields.schedule = parseActionSchedule(payload.schedule, !updating)
     if (payload.on_demand !== undefined && payload.on_demand !== null) fields.onDemand = payload.on_demand
     const when = (row: { cadence: string | null; onDemand: boolean; scheduleEnabled: boolean; nextRunAt: number | null }) =>

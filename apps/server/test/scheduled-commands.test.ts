@@ -64,7 +64,7 @@ async function harness(t: TestContext) {
   t.after(() => terminals.shutdown())
   const environments = new Environments(db)
   const runner = new ActionRunner(db, config, terminals, environments)
-  const sessions = { workingDirectory: () => dir } as unknown as SessionManager
+  const sessions = { workingDirectory: () => dir, environments } as unknown as SessionManager
   const requests = new AgentRequests({ db, config }, sessions, {} as AgentRegistry, {} as EventLog, undefined, undefined, runner)
 
   // La doublure de l'exécution détachée : elle note ce qu'on lui demande et répond ce
@@ -120,6 +120,11 @@ async function harness(t: TestContext) {
     db, dir, config, app, mcp, commands, executed, notified, scheduled, sweep, runsOf, environments,
     answer: (next: typeof answer) => { answer = next },
   }
+}
+
+/** Une commande planifiée relue, hors harnais. */
+function scheduled_(db: Awaited<ReturnType<typeof harness>>['db']) {
+  return createAction(db, 'project', { label: 'Purge', kind: 'task', command: 'scripts/purge.sh', schedule: { cadence: HOURLY } }, null)
 }
 
 // --- le protocole ---------------------------------------------------------------
@@ -361,6 +366,16 @@ test('a command in a project that runs confined fails without leaving the host t
   assert.match(run!.excerpt!, /confin/)
 })
 
+test('a project whose autonomous sessions run confined keeps its scheduled commands off the host too', async (t) => {
+  const { db, executed, scheduled, sweep, runsOf } = await harness(t)
+  const row = scheduled()
+  db.update(projects).set({ autonomousConfined: true }).where(eq(projects.id, 'project')).run()
+
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.deepEqual(executed, [])
+  assert.equal(runsOf(row.id)[0]!.status, 'failed')
+})
+
 test('a vanished directory is a failed passage, not a run elsewhere', async (t) => {
   const { db, executed, scheduled, sweep, runsOf } = await harness(t)
   const row = scheduled({ subdir: 'gone' })
@@ -437,6 +452,53 @@ test('an agent scheduling a reviewed command asks for review again; pausing does
   const viaMcp = await mcp('register_action', { id: row.id, schedule: { every_minutes: 30 } })
   assert.equal(viaMcp.isError, undefined, viaMcp.content[0]?.text)
   assert.equal(loadAction(db, row.id).approvedAt, null)
+})
+
+test('pausing from the interface is not a review: a proposed command stays proposed', async (t) => {
+  const { db, app, scheduled } = await harness(t)
+  const row = scheduled({}, 'agent')
+  const paused = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { schedule: { enabled: false } } })
+  assert.equal(paused.json<ProjectActionDto>().status, 'proposed')
+  const resumed = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { schedule: { enabled: true } } })
+  assert.equal(resumed.json<ProjectActionDto>().status, 'proposed')
+  // Ce qu'une personne écrit elle-même, elle l'a relu.
+  const written = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { command: 'scripts/purge.sh --dry-run' } })
+  assert.equal(written.json<ProjectActionDto>().status, 'approved')
+})
+
+test('an agent resuming a paused command asks for review again', async (t) => {
+  const { db } = await harness(t)
+  const row = scheduled_(db)
+  const paused = updateAction(db, row, { schedule: { enabled: false } }, null)
+  const resumed = updateAction(db, paused, { schedule: { enabled: true } }, 'agent')
+  assert.equal(resumed.approvedAt, null)
+})
+
+test('a confined session, or a scheduled run, cannot schedule a command', async (t) => {
+  const { db, mcp } = await harness(t)
+  db.update(conversations).set({ environmentConfined: true }).where(eq(conversations.id, 'agent')).run()
+  const confined = await mcp('register_action', { label: 'Out', kind: 'task', command: 'true', schedule: { every_minutes: 60 } })
+  assert.equal(confined.isError, true)
+  assert.match(confined.content[0]!.text, /confin/)
+
+  db.update(conversations).set({ environmentConfined: false, scheduleId: 'some-task' }).where(eq(conversations.id, 'agent')).run()
+  const fromRun = await mcp('register_action', { label: 'Out', kind: 'task', command: 'true', schedule: { every_minutes: 60 } })
+  assert.equal(fromRun.isError, true)
+  assert.equal(db.select().from(projectActions).all().length, 0)
+  // Sans cadence, rien ne part sans clic : le bouton reste permis.
+  const plain = await mcp('register_action', { label: 'Ok', kind: 'task', command: 'true' })
+  assert.equal(plain.isError, undefined, plain.content[0]?.text)
+})
+
+test('rejecting a paused command arms nothing', async (t) => {
+  const { db } = await harness(t)
+  const row = scheduled_(db)
+  const paused = updateAction(db, row, { schedule: { enabled: false } }, null)
+  const proposed = updateAction(db, paused, { schedule: { cadence: { kind: 'interval', minutes: 30 } } }, 'agent')
+  const restored = rejectAction(db, proposed)!
+  assert.deepEqual(JSON.parse(restored.cadence!), HOURLY)
+  assert.equal(restored.scheduleEnabled, false)
+  assert.equal(restored.nextRunAt, null)
 })
 
 test('rejecting a schedule an agent added brings back the reviewed cadence', async (t) => {
