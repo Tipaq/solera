@@ -89,6 +89,31 @@ export const scheduleWorktreeModeSchema = z.enum(['root', 'new'])
 export type ScheduleWorktreeMode = z.infer<typeof scheduleWorktreeModeSchema>
 
 /**
+ * Ce que vise une tâche, et donc où ses tirs s'ouvrent : `project`, à la racine de son
+ * projet (ou dans un worktree neuf) ; `vault`, dans le vault du Savoir ; `instance`,
+ * dans le dossier de données de Solera ; `none`, dans un dossier vide à chaque fil,
+ * comme un fil libre.
+ *
+ * `project` si et seulement si la tâche a un projet. Hors projet, ni worktree neuf ni
+ * confinement : il n'y a pas de dépôt où ouvrir l'un, ni d'environnement de projet
+ * pour l'autre.
+ */
+export const scheduleScopeSchema = z.enum(['project', 'vault', 'instance', 'none'])
+export type ScheduleScope = z.infer<typeof scheduleScopeSchema>
+
+/** Où créer une tâche, ou essayer un script, depuis la page Planifiées : la portée, et son projet pour `project`. */
+const scheduleTargetShape = {
+  scope: scheduleScopeSchema,
+  projectId: z.string().min(1).optional(),
+}
+
+function refineTarget(target: { scope: ScheduleScope; projectId?: string }, ctx: z.RefinementCtx): void {
+  if ((target.scope === 'project') !== (target.projectId !== undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['projectId'], message: 'A project is given for the project scope, and only for it.' })
+  }
+}
+
+/**
  * Sort d'un tir qui arrive pendant que le précédent tourne encore : `skip` le laisse
  * passer, `wait` le fait partir dès que la place est libre. Jamais deux en parallèle :
  * ils travailleraient le même arbre.
@@ -130,6 +155,16 @@ export const createScheduledTaskBodySchema = z.object({
   checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
 })
 
+export type CreateScheduledTaskBody = z.infer<typeof createScheduledTaskBodySchema>
+
+/**
+ * Création depuis la page Planifiées (`POST /api/schedules`) : le même corps, plus la
+ * portée. La portée ne se modifie pas ensuite, comme la nature d'une action.
+ */
+export const createScopedScheduledTaskBodySchema = createScheduledTaskBodySchema
+  .extend(scheduleTargetShape)
+  .superRefine(refineTarget)
+
 /** Tout est facultatif : la pause n'envoie que `enabled`. */
 export const updateScheduledTaskBodySchema = z
   .object({
@@ -163,6 +198,11 @@ export const testScheduleCheckBodySchema = z.object({
   timeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
   taskId: z.string().optional(),
 })
+
+/** L'essai depuis la page Planifiées (`POST /api/schedules/check-test`), joué où la portée tourne. */
+export const testScopedScheduleCheckBodySchema = testScheduleCheckBodySchema
+  .extend(scheduleTargetShape)
+  .superRefine(refineTarget)
 
 /**
  * Validation du script proposé par un agent. Le texte relu est renvoyé : s'il a changé
@@ -224,8 +264,10 @@ export interface ScheduledTaskCheckDto {
 
 export interface ScheduledTaskDto {
   id: string
-  /** Null quand la tâche ne vise aucun projet, comme un fil libre. */
+  /** Null quand la tâche ne vise aucun projet : portée `vault`, `instance` ou `none`. */
   projectId: string | null
+  /** Où ses tirs s'ouvrent ; `project` si et seulement si `projectId` est donné. */
+  scope: ScheduleScope
   userId: string
   name: string
   agent: AgentKind

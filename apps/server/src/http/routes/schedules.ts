@@ -1,14 +1,18 @@
 import { rm } from 'node:fs/promises'
 import { and, asc, desc, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, scheduledRuns, scheduledTasks, type ScheduledTaskRow } from '@solera/db'
+import { projects, scheduledRuns, scheduledTasks, type ProjectRow, type ScheduledTaskRow, type UserRow } from '@solera/db'
 import {
   approveScheduleCheckBodySchema,
   createScheduledTaskBodySchema,
+  createScopedScheduledTaskBodySchema,
   runScheduleBodySchema,
   testScheduleCheckBodySchema,
+  testScopedScheduleCheckBodySchema,
   updateScheduledTaskBodySchema,
+  type CreateScheduledTaskBody,
   type ScheduleCheckResultDto,
+  type ScheduleScope,
   type ScheduledTaskDto,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../../agents/registry.js'
@@ -23,16 +27,18 @@ import {
   updateScheduledTask,
 } from '../../scheduler/tasks.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
+import { placeDirectory } from '../../workspace.js'
 import type { AppContext } from '../context.js'
 import { forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 
 /**
- * Tâches planifiées d'un projet.
+ * Tâches planifiées, d'un projet ou hors projet (Savoir, Instance, sans projet).
  *
  * Lisibles par qui voit le projet, comme ses conversations. Modifiables par qui a créé
  * la tâche ou possède le projet : un tir s'ouvre au nom de son créateur, avec les
  * permissions qu'il a choisies, et un autre compte n'a pas à les élargir à sa place.
+ * Hors projet, lisibles et modifiables par leur seul créateur.
  */
 export function registerScheduleRoutes(
   app: FastifyInstance,
@@ -68,6 +74,45 @@ export function registerScheduleRoutes(
 
   const one = (row: ScheduledTaskRow): ScheduledTaskDto => tasksToDto(ctx.db, [row])[0]!
 
+  /** Le dernier tir qui a ouvert une session : ce que l'essai d'un script reçoit comme précédent. */
+  const previousRun = (taskId: string) =>
+    ctx.db
+      .select({ startedAt: scheduledRuns.startedAt, status: scheduledRuns.status })
+      .from(scheduledRuns)
+      .where(and(eq(scheduledRuns.taskId, taskId), isNotNull(scheduledRuns.conversationId)))
+      .orderBy(desc(scheduledRuns.startedAt))
+      .get() ?? null
+
+  /**
+   * Le projet visé, ou le dossier où tourne une portée hors projet, une fois les droits
+   * vérifiés. Le vault doit être configuré ; l'instance est réservée aux
+   * administrateurs : son dossier de données tient la base et les secrets de tous les
+   * comptes. `none` n'a pas de dossier à lui.
+   */
+  const resolveTarget = (
+    user: UserRow,
+    target: { scope: ScheduleScope; projectId?: string },
+  ): { project: ProjectRow | null; directory: string | null } => {
+    if (target.scope === 'project') return { project: loadProject(target.projectId!, user.id), directory: null }
+    if (target.scope === 'instance' && !user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+    if (target.scope === 'none') return { project: null, directory: null }
+    return { project: null, directory: placeDirectory(ctx.db, ctx.config, target.scope) }
+  }
+
+  const create = async (
+    user: UserRow,
+    project: ProjectRow | null,
+    scope: ScheduleScope,
+    body: CreateScheduledTaskBody,
+  ): Promise<ScheduledTaskDto> => {
+    // Comme à la création d'une conversation : la tâche garde une configuration
+    // explicite, pas un « défaut du CLI » qui changerait de sens d'un tir à l'autre.
+    if (project) assertConfinable(project.id, body.confined)
+    const config = await registry.adapter(body.agent).resolveDefaults(body.config)
+    const owner = { projectId: project?.id ?? null, scope: scope === 'project' ? undefined : scope, userId: user.id }
+    return one(createScheduledTask(ctx.db, owner, { ...body, config }))
+  }
+
   /** Toutes les tâches visibles, tous projets confondus : la sidebar les range par projet. */
   app.get('/api/schedules', async (request): Promise<ScheduledTaskDto[]> => {
     const user = requireUser(request)
@@ -96,14 +141,15 @@ export function registerScheduleRoutes(
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const body = createScheduledTaskBodySchema.parse(request.body)
-    loadProject(id, user.id)
+    return reply.status(201).send(await create(user, loadProject(id, user.id), 'project', body))
+  })
 
-    // Comme à la création d'une conversation : la tâche garde une configuration
-    // explicite, pas un « défaut du CLI » qui changerait de sens d'un tir à l'autre.
-    assertConfinable(id, body.confined)
-    const config = await registry.adapter(body.agent).resolveDefaults(body.config)
-    const row = createScheduledTask(ctx.db, { projectId: id, userId: user.id }, { ...body, config })
-    return reply.status(201).send(one(row))
+  /** Création depuis la page Planifiées : dans un projet, le vault, l'instance ou nulle part. */
+  app.post('/api/schedules', async (request, reply) => {
+    const user = requireUser(request)
+    const { scope, projectId, ...body } = createScopedScheduledTaskBodySchema.parse(request.body)
+    const { project } = resolveTarget(user, { scope, projectId })
+    return reply.status(201).send(await create(user, project, scope, body))
   })
 
   app.patch('/api/schedules/:id', async (request): Promise<ScheduledTaskDto> => {
@@ -153,14 +199,6 @@ export function registerScheduleRoutes(
     const project = loadProject(id, user.id)
     const task = body.taskId ? loadWritable(body.taskId, user.id) : null
     if (task && task.projectId !== project.id) throw notFound('schedule_not_found', 'Scheduled task not found.')
-    const previous = task
-      ? ctx.db
-          .select({ startedAt: scheduledRuns.startedAt, status: scheduledRuns.status })
-          .from(scheduledRuns)
-          .where(and(eq(scheduledRuns.taskId, task.id), isNotNull(scheduledRuns.conversationId)))
-          .orderBy(desc(scheduledRuns.startedAt))
-          .get()
-      : undefined
     return runCheck(body.script, {
       taskId: task?.id ?? '',
       taskName: task?.name ?? '',
@@ -170,7 +208,33 @@ export function registerScheduleRoutes(
       stateDir: checkStateDir(ctx.config.paths.data, task?.id ?? '_draft'),
       firedAt: Date.now(),
       trigger: 'test',
-      previous: previous ?? null,
+      previous: task ? previousRun(task.id) : null,
+      timeoutMs: body.timeoutSeconds * 1000,
+    })
+  })
+
+  /**
+   * L'essai depuis la page Planifiées : joué où la portée tourne, avec les droits de sa
+   * création. Une tâche existante doit avoir cette portée, et ce projet.
+   */
+  app.post('/api/schedules/check-test', async (request): Promise<ScheduleCheckResultDto> => {
+    const user = requireUser(request)
+    const body = testScopedScheduleCheckBodySchema.parse(request.body)
+    const { project, directory } = resolveTarget(user, body)
+    const task = body.taskId ? loadWritable(body.taskId, user.id) : null
+    if (task && (task.scope !== body.scope || task.projectId !== (project?.id ?? null))) {
+      throw notFound('schedule_not_found', 'Scheduled task not found.')
+    }
+    const stateDir = checkStateDir(ctx.config.paths.data, task?.id ?? '_draft')
+    return runCheck(body.script, {
+      taskId: task?.id ?? '',
+      taskName: task?.name ?? '',
+      projectId: project?.id ?? '',
+      cwd: project?.workspacePath ?? directory ?? stateDir,
+      stateDir,
+      firedAt: Date.now(),
+      trigger: 'test',
+      previous: task ? previousRun(task.id) : null,
       timeoutMs: body.timeoutSeconds * 1000,
     })
   })

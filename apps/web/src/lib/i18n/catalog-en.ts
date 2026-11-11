@@ -3631,6 +3631,9 @@ export const en = {
   'error.schedule_already_running': "A run of this task is still in progress.",
   'error.schedule_never_fires': "This schedule has no upcoming run.",
   'error.schedule_needs_trigger': "A task runs on demand, on a schedule, or both.",
+  'error.schedule_worktree_needs_project': "Only a task in a project can run in a new worktree.",
+  'error.schedule_confined_needs_project': "Only a task in a project can run confined.",
+  'error.vault_unconfigured': "No vault folder is configured.",
   // Les pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
   'place.seeAll': "see all",
   'place.demand.awaiting': "waiting on you",

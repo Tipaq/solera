@@ -62,6 +62,8 @@ export interface CreateConversationInput {
   origin: { tokenId: string; label: string } | null
   /** Tâche planifiée dont ce fil est un tir ; absent pour toute autre conversation. */
   scheduleId?: string
+  /** Lieu d'un fil sans projet ouvert par une tâche Savoir ou Instance ; absent ailleurs. */
+  place?: 'vault' | 'instance' | null
   /**
    * Contexte transmis depuis une autre conversation, quand celle-ci la continue dans un
    * autre CLI : écrit avec la ligne, pour que le premier démarrage du CLI le trouve.
@@ -134,6 +136,7 @@ export async function createConversation(
     createdByTokenId: input.origin?.tokenId ?? null,
     originLabel: input.origin?.label ?? null,
     scheduleId: input.scheduleId ?? null,
+    place: input.projectId === null ? (input.place ?? null) : null,
     config: JSON.stringify(config),
     configOverrides: JSON.stringify(overrides),
     status: 'idle',

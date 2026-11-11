@@ -6,7 +6,9 @@ import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
 import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
-import { HttpError, notFound } from './http/errors.js'
+import type { Config } from './config.js'
+import { HttpError, badRequest, notFound } from './http/errors.js'
+import { vaultRoot } from './settings/app-settings.js'
 import { directoryGone, markWorktreeGone, workingDirectoryMissing } from './worktrees/gone.js'
 
 /**
@@ -139,18 +141,35 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
 }
 
 /**
+ * Le dossier d'un lieu hors projet : le vault du Savoir, ou le dossier de données de
+ * l'instance. Le vault se relit à chaque appel : il se règle dans l'interface.
+ */
+export function placeDirectory(db: Db, config: Pick<Config, 'paths' | 'vault'>, place: 'vault' | 'instance'): string {
+  if (place === 'instance') return config.paths.data
+  const root = vaultRoot(db, config)
+  if (root === null) throw badRequest('vault_unconfigured', 'No vault folder is configured.')
+  return root
+}
+
+/**
  * Le dossier où le CLI d'une conversation tourne réellement.
  *
  * Distinct de `resolveConversationCwd` : un fil libre n'a pas de répertoire de travail
  * au sens du produit — l'interface ne lui montre ni fichiers, ni git, ni terminaux —
  * mais un process se lance toujours quelque part. On lui donne un dossier vide à lui,
  * sous `<data>/threads/<id>`, plutôt que le home, qui offrirait la machine entière à
- * lire à un agent dont l'interface annonce qu'il n'a pas de dossier.
+ * lire à un agent dont l'interface annonce qu'il n'a pas de dossier. Sauf le fil d'une
+ * tâche Savoir ou Instance, qui tourne dans le lieu de sa tâche (`place`).
  */
-export function agentCwd(db: Db, threadsRoot: string, conversation: ConversationRow): string {
+export function agentCwd(db: Db, config: Pick<Config, 'paths' | 'vault'>, conversation: ConversationRow): string {
   const cwd = resolveConversationCwd(db, conversation)
   if (cwd !== null) return cwd
-  const thread = resolve(threadsRoot, conversation.id)
+  if (conversation.place) {
+    const place = placeDirectory(db, config, conversation.place)
+    if (directoryGone(place)) throw workingDirectoryMissing(place)
+    return place
+  }
+  const thread = resolve(config.paths.threads, conversation.id)
   mkdirSync(thread, { recursive: true })
   return thread
 }

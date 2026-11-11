@@ -3625,6 +3625,9 @@ export const fr: Catalog = {
   "error.schedule_already_running": "Un tir de cette tâche est encore en cours.",
   "error.schedule_never_fires": "Cette cadence ne donne aucun tir à venir.",
   "error.schedule_needs_trigger": "Une tâche part à la demande, à sa cadence, ou les deux.",
+  "error.schedule_worktree_needs_project": "Seule une tâche de projet peut tourner dans un worktree neuf.",
+  "error.schedule_confined_needs_project": "Seule une tâche de projet peut tourner confinée.",
+  "error.vault_unconfigured": "Aucun dossier de vault n’est configuré.",
   // Les pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
   'place.seeAll': "tout voir",
   'place.demand.awaiting': "attend ta réponse",
