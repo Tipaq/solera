@@ -105,7 +105,7 @@ export function justRecipes(text: string): string[] {
     }
     const match = /^@?([A-Za-z][A-Za-z0-9_-]*)([^:]*):(?!=)/.exec(line)
     const privateRecipe = attributes.some((attribute) => attribute.includes('private'))
-    if (trimmed !== '' && !line.startsWith(' ') && !line.startsWith('\t')) attributes = []
+    if (trimmed !== '' && !trimmed.startsWith('#') && !line.startsWith(' ') && !line.startsWith('\t')) attributes = []
     if (!match || JUST_KEYWORDS.has(match[1]!) || privateRecipe) continue
     if (match[2]!.trim() !== '') continue
     if (!recipes.includes(match[1]!)) recipes.push(match[1]!)
@@ -207,7 +207,7 @@ const MAKEFILES = ['GNUmakefile', 'makefile', 'Makefile']
 const JUSTFILES = ['justfile', 'Justfile', '.justfile']
 
 /** Les scripts qu'on lance le plus, dans l'ordre où l'état vide en montre trois. */
-const PRIORITY = ['dev', 'start', 'serve', 'test', 'lint', 'build', 'typecheck', 'check', 'format', 'storybook', 'preview']
+const PRIORITY = ['dev', 'test', 'lint', 'build', 'start', 'serve', 'typecheck', 'check', 'format', 'storybook', 'preview']
 
 /**
  * Tout ce que le dépôt sait lancer, la racine d'abord, et à la racine les scripts

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   actionRunStatusOf,
   MAX_ACTION_LABEL_CHARS,
+  MAX_TRY_TITLE_CHARS,
   resolveActionUrl,
   type ActionRunDetailDto,
   type ActionSuggestion,
@@ -179,7 +180,7 @@ export function useTryAction(projectId: string) {
       return api.post<TerminalDto>(`/api/projects/${projectId}/actions/try`, {
         command,
         subdir: subdir || undefined,
-        title: t('actions.try.title', { name }).slice(0, MAX_ACTION_LABEL_CHARS * 2),
+        title: t('actions.try.title', { name }).slice(0, MAX_TRY_TITLE_CHARS),
         conversationId,
       })
     },
@@ -196,6 +197,9 @@ const SUGGESTION_LABELS: Record<string, MessageKey> = {
   build: 'actionSuggestion.label.build',
   typecheck: 'actionSuggestion.label.typecheck',
   format: 'actionSuggestion.label.format',
+  check: 'actionSuggestion.label.check',
+  storybook: 'actionSuggestion.label.storybook',
+  preview: 'actionSuggestion.label.preview',
   compose: 'actionSuggestion.label.compose',
 }
 

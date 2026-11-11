@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { and, asc, count, eq, inArray } from 'drizzle-orm'
 import { conversations, projectActions, type Db, type ProjectActionRow } from '@solera/db'
 import {
-  MAX_ACTION_LABEL_CHARS,
   MAX_ACTIONS_PER_PROJECT,
+  MAX_TRY_TITLE_CHARS,
   type ActionRunDto,
   type ActionRunTrigger,
   type CreateProjectActionBody,
@@ -45,9 +45,6 @@ export function actionUnit(actionId: string): string {
 
 /** Le terminal de lecture du journal d'un service se range sous cette clé, à part de l'action. */
 const logsKey = (actionId: string) => `${actionId}:logs`
-
-/** Les essais d'une personne se rangent sous cette clé : un seul à la fois par projet. */
-const tryKey = (userId: string) => `try:${userId}`
 
 export function listActionRows(db: Db, projectIds: string[]): ProjectActionRow[] {
   if (projectIds.length === 0) return []
@@ -389,9 +386,8 @@ export class ActionRunner {
    * de passage : rien n'est enregistré.
    *
    * Un essai remplace le précédent de la même personne dans le projet, même s'il
-   * tourne encore : c'est la même commande retouchée, et un serveur de dev oublié
-   * garderait son port. La clé tient lieu d'`actionId` sans désigner d'action ; elle
-   * vaut aussi au terminal de ne pas être fauché comme un shell inactif.
+   * tourne encore et d'où qu'il ait été lancé : c'est la même commande retouchée, et
+   * un serveur de dev oublié garderait son port.
    */
   async tryCommand(
     projectId: string,
@@ -401,14 +397,12 @@ export class ActionRunner {
     userId: string,
   ): Promise<TerminalDto> {
     const cwd = await this.cwdFor(attempt.subdir, base)
-    const key = tryKey(userId)
-    for (const previous of this.terminals.list(projectId)) {
-      if (previous.actionId === key) this.terminals.close(previous.id)
-    }
+    this.terminals.closeTrials(projectId, userId)
     return this.openInEnvironment(projectId, cwd, conversationId, {
       command: attempt.command,
-      title: attempt.title ?? attempt.command.split('\n')[0]!.trim().slice(0, MAX_ACTION_LABEL_CHARS),
-      actionId: key,
+      title: attempt.title ?? attempt.command.split('\n')[0]!.trim().slice(0, MAX_TRY_TITLE_CHARS),
+      actionId: null,
+      trialOf: userId,
       env: processOrigins(this.config.paths.data).environment(projectId, conversationId),
     })
   }

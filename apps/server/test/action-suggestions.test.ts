@@ -113,6 +113,11 @@ test('justfile recipes: without parameters, neither private nor settings', () =>
     'hidden:',
     '  echo',
     '',
+    '[private]',
+    '# a comment does not lift the attribute',
+    'quiet:',
+    '  echo',
+    '',
     'lint: build',
     '  cargo clippy',
   ].join('\n')
@@ -127,7 +132,7 @@ async function repository(t: TestContext): Promise<string> {
     await writeFile(join(dir, path), content)
   }
   await write('pnpm-lock.yaml', '')
-  await write('package.json', JSON.stringify({ scripts: { build: 'tsc -b', lint: 'eslint .', test: 'node --test', dev: 'vite' } }))
+  await write('package.json', JSON.stringify({ scripts: { start: 'node .', build: 'tsc -b', lint: 'eslint .', test: 'node --test', dev: 'vite' } }))
   await write('pnpm-workspace.yaml', 'packages:\n  - "apps/*"\n  - packages/db\n  - "!apps/ignored"\n')
   await write('apps/catalog/package.json', JSON.stringify({ name: '@x/catalog', scripts: { storybook: 'storybook dev' } }))
   await write('apps/ignored/package.json', JSON.stringify({ scripts: { dev: 'vite' } }))
@@ -152,6 +157,7 @@ test('a repository is read source by source, the root and its most useful script
     'task . $ pnpm test',
     'task . $ pnpm lint',
     'task . $ pnpm build',
+    'service . $ pnpm start',
     'task . $ make seed',
     'task . $ just fmt',
     'service . $ docker compose up',
@@ -275,6 +281,9 @@ test('trying a command opens a terminal in the project, under the given title, w
   assert.equal(response.statusCode, 201)
   const terminal = response.json() as TerminalDto
   assert.equal(terminal.title, 'Essai · pwd')
+  // Un essai n'est l'exécution d'aucune action.
+  assert.equal(terminal.actionId, null)
+  assert.equal(terminal.trial, true)
   assert.equal(terminal.cwd, join(dir, 'packages/db'))
   assert.equal((await finished(terminals, terminal.id)).exitCode, 4)
   assert.equal(db.select().from(conversations).all().length, 2)

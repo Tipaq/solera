@@ -242,10 +242,13 @@ export interface ProjectActionRunResult {
  * environnement ; sinon à la racine du projet. Le titre vient de l'interface, qui le
  * traduit ; sans lui, la première ligne de la commande en tient lieu.
  */
+/** Le titre d'un terminal d'essai : « Essai · » suivi du libellé ou de la commande. */
+export const MAX_TRY_TITLE_CHARS = 80
+
 export const tryProjectActionBodySchema = z.object({
   command: z.string().trim().min(1).max(MAX_ACTION_COMMAND_CHARS),
   subdir: actionSubdirSchema.optional(),
-  title: z.string().trim().min(1).max(MAX_ACTION_LABEL_CHARS * 2).optional(),
+  title: z.string().trim().min(1).max(MAX_TRY_TITLE_CHARS).optional(),
   conversationId: z.string().min(1).optional(),
 })
 export type TryProjectActionBody = z.infer<typeof tryProjectActionBodySchema>
