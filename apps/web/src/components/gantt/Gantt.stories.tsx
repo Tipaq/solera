@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import type { CardConversationDto, CardDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { useMediaQuery } from '../../lib/viewport'
+import { fixtureCard } from '../board/card-fixtures'
 import { CardBar, BAR_H } from './CardBar'
 import { AXIS_H, GanttAxis } from './GanttAxis'
 import { GanttArrows } from './GanttArrows'
@@ -18,14 +19,9 @@ const session = (id: string, status: CardConversationDto['status']): CardConvers
   id, title: id, agent: 'claude', status, costUsd: 0, worktreeId: null, worktreeName: null, archivedAt: null, createdAt: NOW,
 })
 
-function card(number: number, title: string, column: CardDto['column'], createdAt: number, dueAt: number | null, extra: Partial<CardDto> = {}): CardDto {
-  return {
-    id: `card-${number}`, projectId: 'p', number, title, description: '', column, position: number,
-    dueAt, parent: null, milestone: false, children: [], acceptedAt: createdAt, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt, updatedAt: createdAt, columnSince: createdAt,
-    conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [], issue: null,
-    ...extra,
-  }
-}
+/** Une carte créée à `createdAt`, d'échéance `dueAt` : le reste vient de la fixture commune. */
+const card = (number: number, title: string, column: CardDto['column'], createdAt: number, dueAt: number | null, extra: Partial<CardDto> = {}) =>
+  fixtureCard(number, title, column, { createdAt, dueAt, acceptedAt: createdAt, updatedAt: createdAt, columnSince: createdAt, ...extra })
 
 const blockedBy = (...cards: CardDto[]) => ({ blockedBy: cards.map(({ id, number, title, column }) => ({ id, number, title, column })) })
 
