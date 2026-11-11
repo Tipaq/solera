@@ -2,11 +2,11 @@ import { useRef } from 'react'
 import type { CardDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
-import { awaitsMe, cardState, isLate, liveSessions } from '../../lib/card-state'
+import { awaitsMe, cardState, isLate, lateDays, liveSessions } from '../../lib/card-state'
 import { formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { FloatingTip } from './FloatingTip'
-import { BAR_PAD, DAY, LABEL_GAP, barOf, labelPlacement, type Scale } from './scale'
+import { BAR_PAD, LABEL_GAP, barOf, labelPlacement, type Scale } from './scale'
 import { STATE_BAR, STATE_DOT } from './tones'
 
 export const BAR_H = 20
@@ -83,7 +83,9 @@ export function CardBar({
   return (
     <div
       ref={anchor}
-      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30', hovered && 'z-30')}
+      // Survolée, au-dessus des barres voisines et de leurs titres, mais sous la liste
+      // collée à gauche (z-10) : à z-30, elle passait par-dessus en défilant.
+      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30', hovered && 'z-[3]')}
       style={{ left, top, height, width }}
       onMouseEnter={() => onHover?.(card.id)}
       onMouseLeave={() => onHover?.(null)}
@@ -148,9 +150,9 @@ export function CardBar({
 function CardTip({ card, now }: { card: CardDto; now: number }) {
   const t = useTranslate()
   const state = cardState(card)
-  const late = isLate(card, now)
+  const lateBy = lateDays(card, now)
+  const late = lateBy > 0
   const live = liveSessions(card)
-  const lateBy = late && card.dueAt !== null ? Math.ceil((now - card.dueAt) / DAY) : 0
   return (
     <div className="surface w-64 rounded-lg border border-line p-2.5 text-xs shadow-pop">
       <p className="flex items-start gap-1.5 text-sm leading-snug font-medium text-ink">

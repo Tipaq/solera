@@ -13,8 +13,12 @@ const MONTH_LONG_MIN = 110
  * collé à gauche pendant qu'on défile), puis les jours (zoom semaine) ou les semaines
  * (zoom mois). Aujourd'hui est une pastille posée sur l'axe, au pied du trait qui
  * descend dans la grille. Mois et jours s'écrivent dans la langue de l'interface.
+ *
+ * `inset` : la largeur de ce qui est collé à gauche du conteneur qui défile (la liste
+ * des libellés). Le nom du mois se colle à son bord ; collé au bord du conteneur, il
+ * passait dessous et disparaissait dès qu'on défilait.
  */
-export function GanttAxis({ scale, zoom, now = Date.now() }: { scale: Scale; zoom: Zoom; now?: number }) {
+export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale: Scale; zoom: Zoom; now?: number; inset?: number }) {
   const t = useTranslate()
   const lang = locale()
   const formats = useMemo(
@@ -39,7 +43,10 @@ export function GanttAxis({ scale, zoom, now = Date.now() }: { scale: Scale; zoo
             className="absolute top-0 border-b border-l border-line/70"
             style={{ left: scale.x(at), width, height: AXIS_TOP }}
           >
-            <span className="sticky left-0 inline-block px-2 text-xs leading-[22px] font-medium whitespace-nowrap text-ink-soft first-letter:uppercase">
+            <span
+              className="sticky inline-block px-2 text-xs leading-[22px] font-medium whitespace-nowrap text-ink-soft first-letter:uppercase"
+              style={{ left: inset }}
+            >
               {(width > MONTH_LONG_MIN ? formats.month : formats.monthShort).format(at)}
             </span>
           </div>

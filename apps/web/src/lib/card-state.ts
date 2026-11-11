@@ -22,8 +22,25 @@ export function cardState(card: Pick<CardDto, 'column' | 'blockedBy'>): CardStat
   return 'todo'
 }
 
+function midnight(at: number): number {
+  const date = new Date(at)
+  date.setHours(0, 0, 0, 0)
+  return date.getTime()
+}
+
+/**
+ * Les jours de retard d'une carte ouverte, au calendrier : une échéance est un jour, pas
+ * un instant (`lib/dates`), donc posée le 4 elle n'est en retard qu'à partir du 5, comme
+ * sur le board. 0 quand elle ne l'est pas.
+ */
+export function lateDays(card: Pick<CardDto, 'column' | 'dueAt'>, now = Date.now()): number {
+  if (!isOpen(card) || card.dueAt === null) return 0
+  // Arrondi : un jour de changement d'heure dure 23 h ou 25 h.
+  return Math.max(0, Math.round((midnight(now) - midnight(card.dueAt)) / 86_400_000))
+}
+
 export function isLate(card: Pick<CardDto, 'column' | 'dueAt'>, now = Date.now()): boolean {
-  return isOpen(card) && card.dueAt !== null && card.dueAt < now
+  return lateDays(card, now) > 0
 }
 
 /** Les sessions vivantes d'une carte : qui tourne, qui attend quelqu'un. */

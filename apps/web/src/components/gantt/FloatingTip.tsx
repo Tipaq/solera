@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
 /** Écart entre l'ancre et l'infobulle, et marge gardée au bord de la fenêtre. */
@@ -12,11 +12,16 @@ const EDGE = 8
  * défilement dès qu'on survolait la dernière ligne.
  *
  * Elle ne capte pas le pointeur : c'est le survol de l'ancre qui la montre et la retire.
+ *
+ * La mesure attend un effet passif : quand l'ancre et l'infobulle montent ensemble
+ * (une ligne survolée d'office), l'effet de mise en page de l'enfant passe avant que
+ * React pose la ref de l'ancre, son parent, et l'infobulle restait cachée. D'ici là, elle
+ * est hors de l'écran et invisible : rien ne clignote.
  */
 export function FloatingTip({ anchor, children }: { anchor: RefObject<HTMLElement | null>; children: ReactNode }) {
   const tip = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null)
-  useLayoutEffect(() => {
+  useEffect(() => {
     const a = anchor.current?.getBoundingClientRect()
     const t = tip.current?.getBoundingClientRect()
     if (!a || !t) return

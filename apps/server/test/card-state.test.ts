@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { CardConversationDto, CardDto } from '@solera/protocol'
 
-const { awaitsMe, cardState, isLate, liveSessions } = await import('../../web/src/lib/card-state.js')
+const { awaitsMe, cardState, isLate, lateDays, liveSessions } = await import('../../web/src/lib/card-state.js')
 
 const link = (column: CardDto['column']) => ({ id: `l-${column}`, number: 1, title: 'bloqueuse', column })
 const session = (status: CardConversationDto['status'], archivedAt: number | null = null) =>
@@ -22,12 +22,23 @@ test('état d’une carte : la colonne, plus « bloquée » déduit d’un bloqu
   assert.equal(cardState(card('review', { blockedBy: [link('todo')] })), 'review')
 })
 
-test('état d’une carte : en retard seulement ouverte et l’échéance passée', () => {
-  const now = 1_000_000
-  assert.equal(isLate(card('todo', { dueAt: now - 1 }), now), true)
-  assert.equal(isLate(card('todo', { dueAt: now + 1 }), now), false)
-  assert.equal(isLate(card('done', { dueAt: now - 1 }), now), false)
-  assert.equal(isLate(card('todo'), now), false)
+test('état d’une carte : en retard une fois le jour de l’échéance passé, et ouverte', () => {
+  // Une échéance est un jour : posée le 4, la carte n'est en retard qu'à partir du 5.
+  const due = new Date(2026, 10, 4).getTime()
+  const morning = new Date(2026, 10, 4, 10).getTime()
+  const next = new Date(2026, 10, 5, 0, 1).getTime()
+  assert.equal(isLate(card('todo', { dueAt: due }), morning), false)
+  assert.equal(isLate(card('todo', { dueAt: due }), next), true)
+  assert.equal(isLate(card('done', { dueAt: due }), next), false)
+  assert.equal(isLate(card('todo'), next), false)
+})
+
+test('état d’une carte : les jours de retard se comptent au calendrier', () => {
+  const due = new Date(2026, 10, 4).getTime()
+  assert.equal(lateDays(card('todo', { dueAt: due }), new Date(2026, 10, 4, 23).getTime()), 0)
+  assert.equal(lateDays(card('todo', { dueAt: due }), new Date(2026, 10, 5, 0, 1).getTime()), 1)
+  assert.equal(lateDays(card('todo', { dueAt: due }), new Date(2026, 10, 11, 10).getTime()), 7)
+  assert.equal(lateDays(card('done', { dueAt: due }), new Date(2026, 10, 11, 10).getTime()), 0)
 })
 
 test('état d’une carte : ses sessions vivantes, archivées exclues', () => {

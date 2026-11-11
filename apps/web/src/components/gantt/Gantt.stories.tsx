@@ -71,7 +71,7 @@ function Assembled({ zoom, cards, hover = null }: { zoom: Zoom; cards: CardDto[]
       <div className="relative" style={{ width: listWidth + scale.width }}>
         <div className="sticky top-0 z-20 flex">
           <div className="sticky left-0 z-30 shrink-0 border-r border-b border-line bg-canvas" style={{ width: listWidth, height: AXIS_H }} />
-          <GanttAxis scale={scale} zoom={zoom} now={NOW} />
+          <GanttAxis scale={scale} zoom={zoom} now={NOW} inset={listWidth} />
         </div>
         <div className="relative" onMouseLeave={() => setHovered(null)}>
           <div className="absolute top-0" style={{ left: listWidth }}>
