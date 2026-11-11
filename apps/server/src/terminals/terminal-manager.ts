@@ -189,12 +189,13 @@ export class TerminalManager {
   }
 
   /**
-   * L'exécution de cette action qui tourne encore à cet endroit : celle qu'une autre
-   * session ou un autre dossier fait tourner n'empêche pas d'en lancer une ici.
+   * L'exécution de cette action qui tourne encore dans ce dossier, quelle que soit la
+   * session qui l'a lancée : deux exécutions dans le même arbre se disputeraient ses
+   * ports et sa base. Celle d'un autre worktree n'empêche pas d'en lancer une ici.
    */
-  liveForAction(projectId: string, actionId: string, conversationId: string | null, cwd: string): TerminalDto | null {
+  liveForAction(projectId: string, actionId: string, cwd: string): TerminalDto | null {
     const found = this.of(projectId)
-      .filter((managed) => managed.actionId === actionId && !managed.exited && samePlace(managed, conversationId, cwd))
+      .filter((managed) => managed.actionId === actionId && !managed.exited && managed.cwd === cwd)
       .at(-1)
     return found ? toDto(found) : null
   }

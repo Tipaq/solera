@@ -27,6 +27,9 @@ export interface RunStart {
   cwd: string
 }
 
+/** Le plus récent d'abord ; deux lancements de la même milliseconde, dans l'ordre d'écriture. */
+const newestFirst = [desc(actionRuns.startedAt), sql`${actionRuns}.rowid desc`]
+
 export function startRun(db: Db, start: RunStart): string {
   const id = randomUUID()
   db.insert(actionRuns)
@@ -37,7 +40,7 @@ export function startRun(db: Db, start: RunStart): string {
     .select({ id: actionRuns.id })
     .from(actionRuns)
     .where(eq(actionRuns.actionId, start.actionId))
-    .orderBy(desc(actionRuns.startedAt))
+    .orderBy(...newestFirst)
     .limit(ACTION_RUNS_KEPT)
   db.delete(actionRuns)
     .where(and(eq(actionRuns.actionId, start.actionId), notInArray(actionRuns.id, kept)))
@@ -93,7 +96,7 @@ export function latestRuns(db: Db, actionIds: string[]): Map<string, ActionRunDt
     .from(actionRuns)
     .innerJoin(ranked, eq(ranked.id, actionRuns.id))
     .where(sql`${ranked.rank} <= ${ACTION_RUNS_SHOWN}`)
-    .orderBy(desc(actionRuns.startedAt), sql`${actionRuns}.rowid desc`)
+    .orderBy(...newestFirst)
     .all()
   for (const row of rows) {
     const list = runs.get(row.actionId) ?? []
@@ -109,7 +112,7 @@ export function runDetails(db: Db, actionId: string): ActionRunDetailDto[] {
     .select({ ...listedColumns, excerpt: actionRuns.excerpt })
     .from(actionRuns)
     .where(eq(actionRuns.actionId, actionId))
-    .orderBy(desc(actionRuns.startedAt), sql`rowid desc`)
+    .orderBy(...newestFirst)
     .limit(ACTION_RUNS_SHOWN)
     .all()
 }

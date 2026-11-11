@@ -159,10 +159,11 @@ export function approveAction(db: Db, row: ProjectActionRow): ProjectActionRow {
   const approval = reviewed(row, Date.now())
   // Gardé par `updatedAt` : un agent qui réécrit la commande pendant qu'on la lit ne
   // doit pas faire valider ce qu'on n'a pas vu.
-  db.update(projectActions)
+  const written = db.update(projectActions)
     .set(approval)
     .where(and(eq(projectActions.id, row.id), eq(projectActions.updatedAt, row.updatedAt)))
     .run()
+  if (written.changes === 0) throw changedMeanwhile()
   return { ...row, ...approval }
 }
 
@@ -184,11 +185,17 @@ export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | 
     approvedAt: now,
     updatedAt: now,
   }
-  db.update(projectActions)
+  const written = db.update(projectActions)
     .set(next)
     .where(and(eq(projectActions.id, row.id), eq(projectActions.updatedAt, row.updatedAt)))
     .run()
+  if (written.changes === 0) throw changedMeanwhile()
   return next
+}
+
+/** La relecture portait sur une version que quelqu'un a réécrite depuis : à relire. */
+function changedMeanwhile() {
+  return conflict('action_changed', 'This action changed while you were reviewing it.')
 }
 
 export function deleteAction(db: Db, actionId: string): void {
@@ -312,10 +319,11 @@ export class ActionRunner {
   }
 
   /**
-   * Lance l'action. Une exécution qui tourne encore au même endroit est rendue telle
-   * quelle plutôt que doublée : deux serveurs de dev se disputeraient le port, deux
-   * suites de tests la base. Celle d'une autre session ou d'un autre worktree ne la
-   * bloque pas : chacun a son arbre.
+   * Lance l'action. Une exécution qui tourne encore dans le même dossier est rendue
+   * telle quelle plutôt que doublée, d'où qu'on l'ait lancée : deux serveurs de dev se
+   * disputeraient le port, deux suites de tests la base. Celle d'un autre worktree ne
+   * la bloque pas : chacun a son arbre. Des `args` n'y changent rien : la réponse dit
+   * `alreadyRunning`, à l'appelant de le montrer.
    *
    * Lancée dans un terminal, elle écrit un passage, clos à la sortie du terminal.
    */
@@ -325,6 +333,11 @@ export class ActionRunner {
     conversationId: string | null,
     { trigger = 'manual', args = [] }: ActionRunOptions = {},
   ): Promise<ProjectActionRunResult> {
+    // « Relancer seulement les échecs » vise une commande qui finit ; un service relancé
+    // avec d'autres arguments serait une autre commande que celle relue.
+    if (args.length > 0 && row.kind === 'service') {
+      throw conflict('action_args_task_only', 'Extra arguments only apply to a task.')
+    }
     const cwd = await this.cwdFor(row, base)
     const command = args.length > 0 ? `${row.command} ${args.map(shellQuote).join(' ')}` : row.command
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
@@ -348,7 +361,7 @@ export class ActionRunner {
       return { terminal: null, service: (await this.serviceStates([row])).get(row.id)!, alreadyRunning: false }
     }
 
-    const previous = this.terminals.liveForAction(row.projectId, row.id, conversationId, cwd)
+    const previous = this.terminals.liveForAction(row.projectId, row.id, cwd)
     if (previous) return { terminal: previous, service: null, alreadyRunning: true }
     // Dans l'environnement de la session qui la lance, et hors session dans celui du
     // projet : comme un terminal.
