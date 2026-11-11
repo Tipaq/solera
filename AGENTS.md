@@ -86,7 +86,7 @@ React, chargé à côté de celui de l'application.
 
 La règle « les primitives ne savent rien du produit » est tenue par la séparation des
 dépôts : le design system n'a pas Solera parmi ses dépendances, il ne *peut pas* en
-importer du code. Les deux libellés que ses primitives portent sont fournis par
+importer du code. Les libellés que ses primitives portent sont fournis par
 l'application (`UiLabelsProvider`, posé dans `main.tsx`).
 
 ### Le catalogue de Solera
