@@ -3470,6 +3470,7 @@ export const fr: Catalog = {
   "schedule.cadence.hours": "Toutes les {count} h",
   "schedule.cadence.minutes": "Toutes les {count} min",
   "schedule.cadence.onceAt": "Une fois, {date}",
+  "schedule.cadence.onDemand": "À la demande",
   "schedule.form.createTitle": "Nouvelle tâche planifiée",
   "schedule.form.editTitle": "Modifier la tâche",
   "schedule.form.name": "Nom",
@@ -3517,6 +3518,7 @@ export const fr: Catalog = {
   "error.schedule_write_forbidden": "Seul le créateur de la tâche ou le propriétaire du projet peut la modifier.",
   "error.schedule_already_running": "Un tir de cette tâche est encore en cours.",
   "error.schedule_never_fires": "Cette cadence ne donne aucun tir à venir.",
+  "error.schedule_needs_trigger": "Une tâche part à la demande, à sa cadence, ou les deux.",
   // Les pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
   'place.seeAll': "tout voir",
   'place.project.menu': "Actions du projet",

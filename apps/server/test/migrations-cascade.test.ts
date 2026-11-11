@@ -135,3 +135,34 @@ test('le drapeau « jalon » est posé sur les cartes de premier niveau qui ont 
   assert.deepEqual(flags, { top: 1, mid: 0, leaf: 0, alone: 0 })
   assert.equal((sqlite.prepare("select cap from projects where id = 'p1'").get() as { cap: string | null }).cap, null)
 })
+
+test('rendre la cadence facultative garde les tâches planifiées et leurs tirs', async (t) => {
+  const dir = await harness(t)
+  const file = join(dir, 'test.sqlite')
+  const before = await migrationsBefore(dir, '0075_tache_a_la_demande')
+
+  // `scheduled_runs` est fille de `scheduled_tasks` en cascade : la recréation de la mère
+  // ne doit pas emporter l'historique des tirs.
+  const first = openDatabase(file)
+  runMigrations(first.db, before)
+  first.sqlite.exec(`
+    INSERT INTO users (id, username, display_name, password_hash, is_admin, created_at)
+      VALUES ('u1', 'alex', 'Alex', '', 0, 1);
+    INSERT INTO projects (id, owner_id, name, workspace_path, visibility, position, created_at)
+      VALUES ('p1', 'u1', 'Projet', '/tmp/p1', 'private', 0, 1);
+    INSERT INTO scheduled_tasks (id, project_id, user_id, name, agent, config, prompt, cadence, max_duration_minutes, next_run_at, created_at, updated_at)
+      VALUES ('s1', 'p1', 'u1', 'Veille', 'claude', '{}', 'Sonde.', '{"kind":"cron","expression":"0 9 * * 1"}', 30, 5, 1, 1);
+    INSERT INTO scheduled_runs (id, task_id, trigger, status, scheduled_for, started_at)
+      VALUES ('r1', 's1', 'schedule', 'succeeded', 1, 1);
+  `)
+  first.sqlite.close()
+
+  const { db, sqlite } = openDatabase(file)
+  t.after(() => sqlite.close())
+  runMigrations(db, MIGRATIONS)
+
+  const task = sqlite.prepare("select cadence, on_demand, worktree_mode, next_run_at from scheduled_tasks where id = 's1'").get()
+  // Une tâche d'avant se lançait déjà d'un clic, à la racine du projet.
+  assert.deepEqual(task, { cadence: '{"kind":"cron","expression":"0 9 * * 1"}', on_demand: 1, worktree_mode: 'root', next_run_at: 5 })
+  assert.equal((sqlite.prepare('select count(*) c from scheduled_runs').get() as { c: number }).c, 1)
+})

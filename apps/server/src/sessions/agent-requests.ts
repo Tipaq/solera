@@ -42,6 +42,7 @@ import {
   formatSessionMessage,
   parseAgentConfig,
   scheduleCadenceSchema,
+  scheduleWorktreeModeSchema,
   type ScheduleCadence,
   type AgentConfig,
   type AgentKind,
@@ -1245,6 +1246,17 @@ export class AgentRequests {
     }
 
     const cadence = parseAgentCadence(payload)
+    const onDemand = payload.on_demand ?? true
+    if (typeof onDemand !== 'boolean') throw new Refusal('`on_demand` vaut `true` ou `false`.')
+    if (!cadence && !onDemand) {
+      throw new Refusal(
+        'Refusé : sans cadence et sans `on_demand`, la tâche ne partirait jamais. Donne une cadence, ou laisse-la à la demande.',
+      )
+    }
+    const worktreeMode = scheduleWorktreeModeSchema.safeParse(payload.worktree_mode ?? 'root')
+    if (!worktreeMode.success) {
+      throw new Refusal('`worktree_mode` vaut `root` (à la racine du projet) ou `new` (un worktree neuf par tir).')
+    }
     const maxDurationMinutes = payload.max_duration_minutes ?? DEFAULT_SCHEDULE_DURATION_MINUTES
     if (
       typeof maxDurationMinutes !== 'number' ||
@@ -1282,6 +1294,8 @@ export class AgentRequests {
         config,
         prompt,
         cadence,
+        onDemand,
+        worktreeMode: worktreeMode.data,
         overlapPolicy: overlap,
         maxDurationMinutes,
         enabled: true,
@@ -1292,8 +1306,10 @@ export class AgentRequests {
 
     const lines = [
       `Tâche planifiée « ${task.name} » créée, id ${task.id}.`,
-      `Cadence : ${describeCadence(cadence)}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`,
-      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, à la racine du projet.`,
+      cadence
+        ? `Cadence : ${describeCadence(cadence)}${onDemand ? ', et à la demande' : ''}. Prochain tir : ${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur).`
+        : "Sans cadence : elle ne part qu'à la demande, d'un clic dans l'interface.",
+      `Chaque tir ouvre une session neuve : CLI ${agent}, modèle ${describeModel(config)}, effort ${describeEffort(config)}, ${task.maxDurationMinutes} min au plus, ${worktreeMode.data === 'new' ? 'dans un worktree neuf, sur une branche à lui' : 'à la racine du projet'}.`,
       describePermissions(config)
         ? "Attention : avec les permissions par défaut du projet, un tir s'arrêtera pour demander un accord que personne ne donnera, jusqu'à sa durée maximale. Dis-le à l'utilisateur : il règle les permissions de la tâche dans la vue Planification."
         : null,
@@ -2427,15 +2443,17 @@ export class AgentRequests {
  * Trois paramètres à plat plutôt qu'un objet discriminé : c'est la forme qu'un modèle
  * remplit sans se tromper, et celle de `CronCreate` qu'il connaît déjà.
  */
-function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence {
+/** La cadence donnée à `schedule_task`, ou null sans cadence : la tâche ne part qu'à la demande. */
+function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence | null {
   const given = ['every_minutes', 'cron', 'at'].filter(
     (key) => payload[key] !== undefined && payload[key] !== null && payload[key] !== '',
   )
-  if (given.length !== 1) {
+  if (given.length > 1) {
     throw new Refusal(
-      'Donne exactement une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601).',
+      'Donne au plus une cadence : `every_minutes` (intervalle), `cron` (motif à cinq champs) ou `at` (date et heure uniques, ISO 8601). Sans cadence, la tâche ne part qu’à la demande.',
     )
   }
+  if (given.length === 0) return null
 
   let candidate: unknown
   if (given[0] === 'every_minutes') {

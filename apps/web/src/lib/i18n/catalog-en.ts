@@ -3476,6 +3476,7 @@ export const en = {
   'schedule.cadence.hours': "Every {count} h",
   'schedule.cadence.minutes': "Every {count} min",
   'schedule.cadence.onceAt': "Once, {date}",
+  'schedule.cadence.onDemand': "On demand",
   'schedule.form.createTitle': "New scheduled task",
   'schedule.form.editTitle': "Edit the task",
   'schedule.form.name': "Name",
@@ -3523,6 +3524,7 @@ export const en = {
   'error.schedule_write_forbidden': "Only the task creator or the project owner can change it.",
   'error.schedule_already_running': "A run of this task is still in progress.",
   'error.schedule_never_fires': "This schedule has no upcoming run.",
+  'error.schedule_needs_trigger': "A task runs on demand, on a schedule, or both.",
   // Les pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
   'place.seeAll': "see all",
   'place.project.menu': "Project actions",
