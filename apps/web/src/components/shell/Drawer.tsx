@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { IconButton, cx } from '@solera/ui'
 import { useEscapeLayer } from '../../lib/escape-layers'
 import { useTranslate } from '../../lib/i18n'
-import { PANEL_TRANSITION_MS } from '../../lib/panel'
+import { usePresence } from '../../lib/panel'
 import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
 
@@ -21,7 +21,7 @@ export const DRAWER_LAYER_ID = 'drawer-layer'
 
 /**
  * Le calque où les tiroirs se posent, dans le conteneur `relative` sous la rangée :
- * `PlaceShell` le pose, `/sessions` aussi. Transparent aux clics, masqué quand il est
+ * `PlaceShell` le pose, et `/sessions` le posera sous sa bande (#232). Transparent aux clics, masqué quand il est
  * vide. Une page qui veut un autre point d'ancrage pose le sien sous un autre `id`.
  */
 export function DrawerLayer({ id = DRAWER_LAYER_ID }: { id?: string }) {
@@ -33,6 +33,8 @@ const WIDTH = {
   /** L'éditeur d'une action, et rien d'autre : deux largeurs, pas plus. */
   wide: 'md:w-[min(48rem,calc(100%-3rem))]',
 } as const
+
+export type DrawerWidth = keyof typeof WIDTH
 
 /** L'en-tête commun : méta facultative au-dessus, le titre, `✕` à droite. */
 export function DrawerHeader({ title, subtitle, onClose }: { title: ReactNode; subtitle?: ReactNode; onClose: () => void }) {
@@ -58,32 +60,27 @@ interface DrawerProps {
   /** Sans `title`, le contenu porte lui-même son `DrawerHeader`. */
   title?: ReactNode
   subtitle?: ReactNode
-  width?: keyof typeof WIDTH
+  width?: DrawerWidth
   /** Un autre calque que celui de la coque ; absent du document, on retombe sur elle. */
   layerId?: string
   children: ReactNode
 }
 
 /**
- * Le tiroir reste monté le temps de sortir de l'écran, comme `CardPanel` : le démonter
- * à la fermeture le ferait disparaître d'un coup.
+ * Le tiroir reste monté le temps de sortir de l'écran (`usePresence`) : le démonter à la
+ * fermeture le ferait disparaître d'un coup.
  */
 export function Drawer(props: DrawerProps) {
   const { open } = props
-  const [present, setPresent] = useState(open)
   /* Le déclencheur, retenu avant que le tiroir monte : un champ `autoFocus` du contenu
-     prend le focus dans le même rendu, et `PanelFocus` ne saurait plus où le rendre. */
+     prend le focus dans le même rendu, et `PanelFocus` ne saurait plus où le rendre.
+     Oublié à la fermeture : rouvert pendant sa sortie, le tiroir est encore monté, et
+     `PanelFocus` lit lui-même le focus du moment. */
   const opener = useRef<Element | null>(null)
   useEffect(() => {
-    if (open) {
-      opener.current = document.activeElement
-      setPresent(true)
-      return
-    }
-    const timer = setTimeout(() => setPresent(false), PANEL_TRANSITION_MS)
-    return () => clearTimeout(timer)
+    opener.current = open ? document.activeElement : null
   }, [open])
-  if (!present) return null
+  if (!usePresence(open)) return null
   return <DrawerPanel {...props} opener={opener.current} />
 }
 

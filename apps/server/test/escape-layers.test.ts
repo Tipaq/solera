@@ -71,3 +71,16 @@ test('une touche déjà traitée, en composition ou autre ne ferme rien', () => 
   assert.deepEqual(closed, [])
 })
 
+
+test("une couche bornée ne prend Échap que si l'appui vient de chez elle", () => {
+  const stack = createEscapeStack()
+  const { closed, close } = recorder()
+  stack.push(close('tiroir'))
+  // Un détail en pile dans le panneau : Échap tapé dans le champ de la conversation
+  // revient à son autocomplétion, pas au détail — ni au tiroir dessous.
+  stack.push(close('détail'), (target) => target === 'panneau')
+  assert.equal(stack.handle({ ...escape, target: 'composer' }, false), false)
+  assert.deepEqual(closed, [])
+  assert.equal(stack.handle({ ...escape, target: 'panneau' }, false), true)
+  assert.deepEqual(closed, ['détail'])
+})

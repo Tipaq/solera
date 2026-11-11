@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react'
 import { Button, IconButton, Menu, MenuItem } from '@solera/ui'
 import { DetailSurfaceContext, type DetailSurface } from '../../lib/detail-surface'
 import { Detail } from './Detail'
-import { Drawer, DrawerLayer } from './Drawer'
+import { Drawer, DrawerLayer, type DrawerWidth } from './Drawer'
 
 /** Une zone de contenu de lieu, sous une rangée, qui porte le calque des tiroirs. */
 function Place({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
@@ -20,7 +20,7 @@ function Place({ children, aside }: { children: ReactNode; aside?: ReactNode }) 
   )
 }
 
-function Card({ width }: { width: 'normal' | 'wide' }) {
+function Card({ width }: { width: DrawerWidth }) {
   const [open, setOpen] = useState(true)
   return (
     <Place>

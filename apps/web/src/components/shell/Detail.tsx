@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { StackHeader } from '@solera/ui'
 import { useDetailSurface } from '../../lib/detail-surface'
 import { useEscapeLayer } from '../../lib/escape-layers'
-import { Drawer } from './Drawer'
+import { Drawer, type DrawerWidth } from './Drawer'
 
 interface DetailProps {
   open: boolean
@@ -13,7 +13,7 @@ interface DetailProps {
   subtitle?: ReactNode
   /** Le nom de l'onglet du panneau où l'on revient : « ‹ Actions ». */
   back: string
-  width?: 'normal' | 'wide'
+  width?: DrawerWidth
   children: ReactNode
 }
 
@@ -23,7 +23,8 @@ interface DetailProps {
  * d'une conversation. Jamais un tiroir à côté du panneau.
  *
  * En pile, il **remplace** ce que l'onglet montrait : c'est à l'onglet de ne plus rendre
- * sa liste pendant qu'il est ouvert. Échap remonte d'un niveau, comme `‹`.
+ * sa liste pendant qu'il est ouvert. Échap remonte d'un niveau, comme `‹` — s'il est
+ * tapé dans le détail : dans le champ de la conversation, il reste à son autocomplétion.
  */
 export function Detail({ open, onClose, label, title, subtitle, back, width, children }: DetailProps) {
   const surface = useDetailSurface()
@@ -38,9 +39,10 @@ export function Detail({ open, onClose, label, title, subtitle, back, width, chi
 }
 
 function StackedDetail({ onClose, title, subtitle, back, children }: Pick<DetailProps, 'onClose' | 'title' | 'subtitle' | 'back' | 'children'>) {
-  useEscapeLayer(true, onClose)
+  const frame = useRef<HTMLDivElement>(null)
+  useEscapeLayer(true, onClose, frame)
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div ref={frame} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <StackHeader back={back} onBack={onClose} title={title} meta={subtitle} />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
     </div>
