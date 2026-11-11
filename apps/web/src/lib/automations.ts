@@ -74,6 +74,11 @@ export interface AutomationSchedule {
   cadence: ScheduleCadence
   enabled: boolean
   nextRunAt: number | null
+  /**
+   * Un service planifié : `cadence` le démarre, `stopCadence` l'arrête (AC-06, Q11). Le
+   * serveur ne le donne pas encore : absent, le service tourne jusqu'à ce qu'on l'arrête.
+   */
+  serviceWindow?: { stopCadence: ScheduleCadence } | null
 }
 
 export interface Automation {

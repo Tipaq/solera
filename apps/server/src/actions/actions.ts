@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { and, asc, count, eq, inArray } from 'drizzle-orm'
-import { conversations, projectActions, type Db, type ProjectActionRow } from '@solera/db'
+import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
+import { conversations, projectActions, projects, worktrees, type Db, type ProjectActionRow } from '@solera/db'
 import {
   MAX_ACTIONS_PER_PROJECT,
   MAX_TRY_TITLE_CHARS,
+  resolveActionUrl,
+  type ActionPlacement,
   type ActionRunDto,
   type ActionRunTrigger,
   type CreateProjectActionBody,
@@ -17,18 +19,15 @@ import {
   type UpdateProjectActionBody,
 } from '@solera/protocol'
 import type { Config } from '../config.js'
-import { HttpError, conflict, notFound } from '../http/errors.js'
-import {
-  controlServiceApp,
-  scanServiceApps,
-  serviceAppsAvailable,
-  startServiceApp,
-} from '../services/apps.js'
+import { HttpError, badRequest, conflict, notFound } from '../http/errors.js'
+import { systemdUnits, type ServiceUnits, type ServiceUnitState } from '../services/apps.js'
 import { processOrigins } from '../services/origins.js'
 import type { TerminalCommand, TerminalManager } from '../terminals/terminal-manager.js'
 import type { Environments } from '../environments/environments.js'
 import { hostEnvironment } from '../environments/host.js'
 import { closeOrphanRuns, finishRun, latestRuns, startRun } from './runs.js'
+import { readGitHead } from '../git.js'
+import { ServedReader, treeOf, type ProjectTree } from './served.js'
 
 /**
  * Actions de projet : stockage, et exécution dans un terminal ou une unité systemd.
@@ -73,6 +72,21 @@ function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'u
   }
 }
 
+/**
+ * Le placement et sa branche, tels qu'ils s'écrivent : une tâche suit toujours, une
+ * branche fixée ne vaut que pour `branch`, qui ne va pas sans elle ; une instance par
+ * arbre n'existe pas encore.
+ */
+function placed(kind: ProjectActionRow['kind'], placement: ActionPlacement, pinnedBranch: string | null | undefined) {
+  if (kind === 'task') return { placement: 'follow' as const, pinnedBranch: null }
+  if (placement === 'per-worktree') {
+    throw badRequest('action_placement_unsupported', 'One instance per worktree is not available yet.')
+  }
+  if (placement !== 'branch') return { placement, pinnedBranch: null }
+  if (!pinnedBranch) throw badRequest('action_branch_required', 'Choose the branch this service always runs on.')
+  return { placement, pinnedBranch }
+}
+
 const neverReviewed = {
   approvedAt: null,
   approvedKind: null,
@@ -111,6 +125,7 @@ export function createAction(
     label: body.label,
     description: body.description || null,
     ...fields,
+    ...placed(body.kind, body.placement ?? 'follow', body.pinnedBranch),
     ...(agentConversationId ? neverReviewed : reviewed(fields, now)),
     agentConversationId,
     createdAt: now,
@@ -140,6 +155,11 @@ export function updateAction(
     command: patch.command ?? row.command,
     subdir: patch.subdir === undefined ? row.subdir : patch.subdir || null,
     url: patch.url === undefined ? row.url : patch.url || null,
+    ...placed(
+      patch.kind ?? row.kind,
+      patch.placement ?? row.placement,
+      patch.pinnedBranch === undefined ? row.pinnedBranch : patch.pinnedBranch,
+    ),
     updatedAt: Date.now(),
   }
   // L'URL compte avec ce qui s'exécute : c'est un lien qu'on suivra sans le relire.
@@ -219,6 +239,8 @@ function toDto(
     command: row.command,
     subdir: row.subdir,
     url: row.url,
+    placement: row.placement,
+    pinnedBranch: row.pinnedBranch,
     status: row.approvedAt ? 'approved' : 'proposed',
     approved:
       row.approvedCommand === null
@@ -242,14 +264,22 @@ export interface ActionRunOptions {
   trigger?: ActionRunTrigger
   /** Ajoutés à la commande relue, chacun cité pour le shell. */
   args?: string[]
+  /** Un service qui tourne depuis un autre arbre y est arrêté, puis démarré ici. */
+  switch?: boolean
 }
 
+const SERVICE_RUNNING = ['active', 'activating', 'reloading']
+
 export class ActionRunner {
+  private readonly served = new ServedReader()
+
   constructor(
     private readonly db: Db,
     private readonly config: Config,
     private readonly terminals: TerminalManager,
     private readonly environments: Environments,
+    /** systemd, sauf dans les tests. */
+    private readonly units: ServiceUnits = systemdUnits,
   ) {
     // Construit après la relecture des terminaux : aucun ne tourne plus d'avant.
     closeOrphanRuns(db, terminals.live().map((terminal) => terminal.id))
@@ -259,25 +289,53 @@ export class ActionRunner {
     return process.env.SHELL || '/bin/sh'
   }
 
-  /** L'état des unités, lu en une passe pour toute la liste. */
+  /**
+   * L'état des unités, lu en une passe pour toute la liste, et ce que sert chacune de
+   * celles qui tournent.
+   */
   private async serviceStates(rows: ProjectActionRow[]): Promise<Map<string, ProjectActionServiceState>> {
     const states = new Map<string, ProjectActionServiceState>()
-    if (!rows.some((row) => row.kind === 'service') || !(await serviceAppsAvailable())) return states
-    const apps = await scanServiceApps(processOrigins(this.config.paths.data))
-    const byUnit = new Map(apps.map((app) => [app.unit, app]))
-    for (const row of rows) {
-      if (row.kind !== 'service') continue
+    const services = rows.filter((row) => row.kind === 'service')
+    if (services.length === 0 || !(await this.units.available())) return states
+    const apps = await this.units.scan(processOrigins(this.config.paths.data))
+    const byUnit = new Map<string, ServiceUnitState>(apps.map((app) => [app.unit, app]))
+    const trees = this.projectTrees([...new Set(services.map((row) => row.projectId))])
+    await Promise.all(services.map(async (row) => {
       const unit = actionUnit(row.id)
       const app = byUnit.get(unit)
+      const state = app?.state ?? 'inactive'
+      const cwd = app?.cwd ?? null
+      const running = cwd !== null && SERVICE_RUNNING.includes(state)
       states.set(row.id, {
         unit,
-        state: app?.state ?? 'inactive',
-        cwd: app?.cwd ?? null,
+        state,
+        cwd,
         ports: app?.ports ?? [],
         startedAt: app?.startedAt ?? null,
+        served: running ? await this.served.read(cwd, treeOf(cwd, trees.get(row.projectId) ?? [])) : null,
       })
-    }
+    }))
     return states
+  }
+
+  /** Les arbres de chaque projet : sa racine, puis ses worktrees Solera encore là. */
+  private projectTrees(projectIds: string[]): Map<string, ProjectTree[]> {
+    const trees = new Map<string, ProjectTree[]>()
+    for (const project of this.db
+      .select({ id: projects.id, path: projects.workspacePath })
+      .from(projects)
+      .where(inArray(projects.id, projectIds))
+      .all()) {
+      trees.set(project.id, [{ path: project.path, worktreeId: null, root: true }])
+    }
+    for (const worktree of this.db
+      .select({ id: worktrees.id, projectId: worktrees.projectId, path: worktrees.path })
+      .from(worktrees)
+      .where(and(inArray(worktrees.projectId, projectIds), isNull(worktrees.removedAt)))
+      .all()) {
+      trees.get(worktree.projectId)?.push({ path: worktree.path, worktreeId: worktree.id, root: false })
+    }
+    return trees
   }
 
   async toDtos(rows: ProjectActionRow[]): Promise<ProjectActionDto[]> {
@@ -320,38 +378,65 @@ export class ActionRunner {
   }
 
   /**
+   * L'arbre où un service tourne d'après son placement ; pour une tâche, et un service
+   * qui suit, celui d'où on le lance. Une branche fixée tourne à la racine quand elle y
+   * est. Ailleurs, refus : le worktree d'une session qui l'aurait sortie disparaît à sa
+   * fusion, et le service avec ; il faudra un worktree dédié, tenu par Solera.
+   */
+  private async placedBase(row: ProjectActionRow, requested: string): Promise<string> {
+    if (row.kind !== 'service' || row.placement === 'follow') return requested
+    const project = this.db
+      .select({ path: projects.workspacePath })
+      .from(projects)
+      .where(eq(projects.id, row.projectId))
+      .get()
+    if (!project) throw notFound('project_not_found', 'Project not found.')
+    if (row.placement === 'root') return project.path
+    const branch = row.pinnedBranch ?? ''
+    if ((await readGitHead(project.path))?.branch !== branch) {
+      throw conflict('action_branch_needs_worktree', 'The project root is not on {branch}, and no worktree is kept for it yet.', { branch })
+    }
+    return project.path
+  }
+
+  /**
    * Lance l'action. Une exécution qui tourne encore dans le même dossier est rendue
    * telle quelle plutôt que doublée, d'où qu'on l'ait lancée : deux serveurs de dev se
-   * disputeraient le port, deux suites de tests la base. Celle d'un autre worktree ne
-   * la bloque pas : chacun a son arbre. Des `args` n'y changent rien : la réponse dit
-   * `alreadyRunning`, à l'appelant de le montrer.
+   * disputeraient le port, deux suites de tests la base. Des `args` n'y changent rien :
+   * la réponse dit `alreadyRunning`, à l'appelant de le montrer.
+   *
+   * Une tâche d'un autre worktree ne bloque pas : chacun a son arbre. Un service, si :
+   * il n'a qu'une unité, et la rendre en silence ferait croire qu'on voit cet arbre-ci
+   * quand il en sert un autre. Il est refusé avec ce qu'il sert, et `switch` le bascule.
    *
    * Lancée dans un terminal, elle écrit un passage, clos à la sortie du terminal.
    */
   async run(
     row: ProjectActionRow,
-    base: string,
+    requested: string,
     conversationId: string | null,
-    { trigger = 'manual', args = [] }: ActionRunOptions = {},
+    { trigger = 'manual', args = [], switch: switching = false }: ActionRunOptions = {},
   ): Promise<ProjectActionRunResult> {
     // « Relancer seulement les échecs » vise une commande qui finit ; un service relancé
     // avec d'autres arguments serait une autre commande que celle relue.
     if (args.length > 0 && row.kind === 'service') {
       throw conflict('action_args_task_only', 'Extra arguments only apply to a task.')
     }
-    const cwd = await this.cwdFor(row.subdir, base)
+    const cwd = await this.cwdFor(row.subdir, await this.placedBase(row, requested))
     const command = args.length > 0 ? `${row.command} ${args.map(shellQuote).join(' ')}` : row.command
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
 
     // Un service tourne sous systemd, sur l'hôte : lancé depuis un environnement confiné,
     // il en sortirait. Il passe alors par un terminal, que l'environnement confine.
     const confined = (conversationId ? this.environments.ofConversation(conversationId) : this.environments.ofProject(row.projectId)).confined
-    if (row.kind === 'service' && !confined && (await serviceAppsAvailable())) {
+    if (row.kind === 'service' && !confined && (await this.units.available())) {
       const current = (await this.serviceStates([row])).get(row.id)!
-      if (['active', 'activating', 'reloading'].includes(current.state)) {
-        return { terminal: null, service: current, alreadyRunning: true }
+      if (SERVICE_RUNNING.includes(current.state)) {
+        if (current.cwd === cwd) return { terminal: null, service: current, alreadyRunning: true }
+        if (!switching) throw runningElsewhere(row, current)
+        await this.units.stop(current.unit)
       }
-      await startServiceApp({
+      await this.units.start({
         unit: current.unit,
         description: row.label,
         cwd,
@@ -442,13 +527,13 @@ export class ActionRunner {
   /** Arrêter ou relancer un service ; repli sur son terminal sans systemd. */
   async control(row: ProjectActionRow, op: ServiceActionControl, base: string): Promise<ProjectActionRunResult> {
     if (row.kind !== 'service') throw conflict('action_not_service', 'Only service actions can be stopped or restarted.')
-    if (await serviceAppsAvailable()) {
+    if (await this.units.available()) {
       const current = (await this.serviceStates([row])).get(row.id)!
       if (current.state === 'inactive' || current.state === 'failed') {
         if (op === 'stop') return { terminal: null, service: current, alreadyRunning: false }
         return this.run(row, base, null)
       }
-      await controlServiceApp(current.unit, op)
+      await this.units.control(current.unit, op)
       return { terminal: null, service: current, alreadyRunning: false }
     }
     const previous = this.terminals.latestForAction(row.projectId, row.id)
@@ -459,7 +544,7 @@ export class ActionRunner {
 
   /** Le journal d'un service, suivi dans un terminal du panneau. */
   async logs(row: ProjectActionRow, base: string): Promise<ProjectActionRunResult> {
-    if (row.kind !== 'service' || !(await serviceAppsAvailable())) {
+    if (row.kind !== 'service' || !(await this.units.available())) {
       throw conflict('action_no_logs', 'Only services run by systemd have a journal.')
     }
     const key = logsKey(row.id)
@@ -476,10 +561,30 @@ export class ActionRunner {
 
   /** À la suppression : une unité orpheline tournerait sans bouton pour l'arrêter. */
   async forget(row: ProjectActionRow): Promise<void> {
-    if (row.kind === 'service' && (await serviceAppsAvailable())) {
-      await controlServiceApp(actionUnit(row.id), 'stop').catch(() => undefined)
+    if (row.kind === 'service' && (await this.units.available())) {
+      await this.units.control(actionUnit(row.id), 'stop').catch(() => undefined)
     }
   }
+}
+
+/**
+ * Le refus d'un service qui tourne depuis un autre arbre, avec de quoi dire lequel et
+ * ouvrir celui qui tourne plutôt que de le basculer.
+ */
+function runningElsewhere(row: ProjectActionRow, current: ProjectActionServiceState): HttpError {
+  const served = current.served
+  // Des chaînes, comme tout `params` : vide quand on ne sait pas.
+  return conflict('service_running_elsewhere', '{label} already runs from {cwd}: switch it to run it here.', {
+    label: row.label,
+    cwd: current.cwd ?? '',
+    worktreeId: served?.worktreeId ?? '',
+    root: served?.root ? 'true' : '',
+    branch: served?.branch ?? '',
+    head: served?.head ?? '',
+    dirtyFiles: served?.dirtyFiles ?? 0,
+    ports: current.ports.map((port) => `:${port}`).join(' '),
+    href: resolveActionUrl(row.url, current.ports) ?? '',
+  })
 }
 
 /** Un argument cité pour un shell POSIX : passé tel quel, espaces et `$` compris. */

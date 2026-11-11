@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join, posix, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { FileState, GitHeadDto } from '@solera/protocol'
+import { defaultBase } from './worktrees/assess.js'
 
 const run = promisify(execFile)
 
@@ -157,6 +158,43 @@ export async function readGitHead(cwd: string): Promise<GitHeadDto | null> {
     }
   }
   return { branch: null, detached: hash, rebasing }
+}
+
+/** Ce qu'un dossier a d'extrait : chaque champ null quand git ne sait pas le dire. */
+export interface Checkout {
+  /** Null en HEAD détachée ou hors d'un dépôt. */
+  branch: string | null
+  /** Le commit court. */
+  head: string | null
+  /** Commits en avance sur la branche par défaut, et en retard sur elle. */
+  ahead: number | null
+  behind: number | null
+  /** Fichiers modifiés ou non suivis. */
+  dirtyFiles: number | null
+}
+
+/**
+ * Branche, commit, écart à la base et fichiers non commités d'un dossier, sous-dossier
+ * d'un arbre compris : ce qu'un service lancé là sert (`actions/served.ts`).
+ */
+export async function readCheckout(cwd: string): Promise<Checkout> {
+  const read = (args: string[]) => git(cwd, args).then((out) => out.trim(), () => null)
+  const [branch, head, status, base] = await Promise.all([
+    read(['symbolic-ref', '--quiet', '--short', 'HEAD']),
+    read(['rev-parse', '--short', 'HEAD']),
+    read(['status', '--porcelain', '--untracked-files=all']),
+    defaultBase(cwd).catch(() => null),
+  ])
+  const counts = base && head ? await read(['rev-list', '--left-right', '--count', `${base}...HEAD`]) : null
+  const [behind = null, ahead = null] = counts ? counts.split(/\s+/).map((n) => Number(n) || 0) : []
+  return {
+    branch: branch || null,
+    head: head || null,
+    ahead,
+    behind,
+    // Une ligne par fichier, renommage compris ; un nom à retour à la ligne est cité.
+    dirtyFiles: status === null ? null : status.split('\n').filter(Boolean).length,
+  }
 }
 
 export async function listBranches(cwd: string): Promise<string[]> {
