@@ -10,6 +10,7 @@ import type {
   ScheduledTaskDto,
 } from '@solera/protocol'
 import { api } from './api'
+import { cadenceWords, formatDateTime as dateTimeIn, RUN_VERDICTS, VERDICT_FILL } from './automations'
 import { locale, translate, type MessageKey } from './i18n'
 
 export const SCHEDULES_KEY = ['schedules']
@@ -134,32 +135,21 @@ export function lastRun(task: ScheduledTaskDto): ScheduledRunDto | undefined {
   return task.runs.find((run) => run.status !== 'skipped')
 }
 
-export const RUN_LABELS: Record<ScheduleRunStatus, MessageKey> = {
-  checking: 'schedule.run.checking',
-  running: 'schedule.run.running',
-  succeeded: 'schedule.run.succeeded',
-  failed: 'schedule.run.failed',
-  timed_out: 'schedule.run.timedOut',
-  skipped: 'schedule.run.skipped',
-}
+/** Le mot, le point et la teinte d'un tir : lus de la table commune des passages. */
+export const RUN_LABELS = mapRuns((status) => RUN_VERDICTS[status].label)
 
-export const RUN_DOTS: Record<ScheduleRunStatus, string> = {
-  checking: 'bg-accent animate-pulse',
-  running: 'bg-accent animate-pulse',
-  succeeded: 'bg-positive',
-  failed: 'bg-critical',
-  timed_out: 'bg-caution',
-  skipped: 'bg-line-strong',
-}
+export const RUN_DOTS = mapRuns((status) => {
+  const { tone, live } = RUN_VERDICTS[status]
+  return live ? `${VERDICT_FILL[tone]} animate-pulse` : VERDICT_FILL[tone]
+})
 
 /** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
-export const RUN_TONES: Record<ScheduleRunStatus, 'neutral' | 'accent' | 'positive' | 'caution' | 'critical'> = {
-  checking: 'accent',
-  running: 'accent',
-  succeeded: 'positive',
-  failed: 'critical',
-  timed_out: 'caution',
-  skipped: 'neutral',
+export const RUN_TONES = mapRuns((status) => RUN_VERDICTS[status].tone)
+
+/** Les statuts d'un tir d'agent : ceux de la table commune, sauf `stopped`, propre aux commandes. */
+function mapRuns<T>(pick: (status: ScheduleRunStatus) => T): Record<ScheduleRunStatus, T> {
+  const statuses = Object.keys(RUN_VERDICTS).filter((status): status is ScheduleRunStatus => status !== 'stopped')
+  return Object.fromEntries(statuses.map((status) => [status, pick(status)])) as Record<ScheduleRunStatus, T>
 }
 
 export function scheduleState(task: ScheduledTaskDto): ScheduleState {
@@ -173,25 +163,12 @@ export function scheduleState(task: ScheduledTaskDto): ScheduleState {
   return 'waiting'
 }
 
-function formatMinutes(minutes: number): string {
-  if (minutes % 1440 === 0) return translate('schedule.cadence.days', { count: minutes / 1440 })
-  if (minutes % 60 === 0) return translate('schedule.cadence.hours', { count: minutes / 60 })
-  return translate('schedule.cadence.minutes', { count: minutes })
-}
-
 export function formatDateTime(ts: number): string {
-  return new Date(ts).toLocaleString(locale(), {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return dateTimeIn(ts, locale())
 }
 
 /** La cadence en clair ; le motif cron est traduit par l'appelant, qui a `cronToHuman`. */
 export function describeCadence(cadence: ScheduleCadence, cronHuman: (expression: string) => string | null): string {
-  if (cadence.kind === 'interval') return formatMinutes(cadence.minutes)
-  if (cadence.kind === 'once') return translate('schedule.cadence.onceAt', { date: formatDateTime(cadence.at) })
-  return cronHuman(cadence.expression) ?? cadence.expression
+  if (cadence.kind === 'cron') return cronHuman(cadence.expression) ?? cadence.expression
+  return cadenceWords(cadence, translate, locale())
 }
