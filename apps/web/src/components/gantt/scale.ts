@@ -30,7 +30,7 @@ export interface Scale {
 }
 
 /** Ce qu'une barre a besoin de savoir d'une carte. */
-export interface Span {
+export interface Dated {
   createdAt: number
   dueAt: number | null
 }
@@ -74,7 +74,7 @@ function wallDays(from: number, at: number): number {
  * Le zoom semaine garde ses 30 px par jour et défile si la période est longue ; le zoom
  * mois est la vue d'ensemble, il tient dans la largeur tant qu'un jour garde 3 px.
  */
-export function scaleOf(cards: readonly Span[], zoom: Zoom, now = Date.now(), minWidth = 0): Scale {
+export function scaleOf(cards: readonly Dated[], zoom: Zoom, now = Date.now(), minWidth = 0): Scale {
   const starts = cards.map((card) => card.createdAt)
   const ends = cards.flatMap((card) => (card.dueAt === null ? [] : [card.dueAt]))
   const from = mondayOf(addDays(Math.min(now, ...starts), -1))
@@ -122,7 +122,7 @@ export function isoWeek(at: number): number {
 }
 
 /** Début et fin d'une carte : création → échéance, ou → aujourd'hui sans échéance. */
-export function barOf(card: Span, now = Date.now()): { start: number; end: number; loose: boolean } {
+export function barOf(card: Dated, now = Date.now()): { start: number; end: number; loose: boolean } {
   if (card.dueAt === null) return { start: card.createdAt, end: Math.max(card.createdAt + DAY, now), loose: true }
   return { start: Math.min(card.createdAt, card.dueAt - DAY), end: card.dueAt, loose: false }
 }
@@ -144,8 +144,8 @@ export function labelPlacement({
   left,
   width,
   overdue,
-  label,
-  extra,
+  labelWidth,
+  marker,
   axisWidth,
 }: {
   left: number
@@ -153,13 +153,13 @@ export function labelPlacement({
   /** Le prolongement hachuré du retard, après la barre. */
   overdue: number
   /** Largeur mesurée du titre. */
-  label: number
-  /** Ce que la barre porte déjà devant le titre (le point d'une session vivante). */
-  extra: number
+  labelWidth: number
+  /** La place du repère de session que la barre porte devant le titre. */
+  marker: number
   axisWidth: number
 }): 'inside' | 'right' | 'left' {
-  if (label + BAR_PAD * 2 + extra <= width) return 'inside'
-  return left + width + overdue + LABEL_GAP + label > axisWidth ? 'left' : 'right'
+  if (labelWidth + BAR_PAD * 2 + marker <= width) return 'inside'
+  return left + width + overdue + LABEL_GAP + labelWidth > axisWidth ? 'left' : 'right'
 }
 
 /* ------------------------------------------------------------------ flèches */
@@ -175,7 +175,7 @@ export interface Anchor {
 }
 
 /** Ce que les flèches et la chaîne lisent d'une carte. */
-export interface Linked extends Span {
+export interface Linked extends Dated {
   id: string
   blockedBy: readonly { id: string }[]
 }

@@ -44,8 +44,8 @@ export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale:
             style={{ left: scale.x(at), width, height: AXIS_TOP }}
           >
             <span
-              className="sticky inline-block px-2 text-xs leading-[22px] font-medium whitespace-nowrap text-ink-soft first-letter:uppercase"
-              style={{ left: inset }}
+              className="sticky inline-block px-2 text-xs font-medium whitespace-nowrap text-ink-soft first-letter:uppercase"
+              style={{ left: inset, lineHeight: `${AXIS_TOP}px` }}
             >
               {(width > MONTH_LONG_MIN ? formats.month : formats.monthShort).format(at)}
             </span>
@@ -65,7 +65,7 @@ export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale:
               )}
               style={{ left: scale.x(at), width: scale.ppd, top: AXIS_TOP, height: AXIS_H - AXIS_TOP }}
             >
-              <span className="text-[9px] opacity-70">{formats.weekday.format(at)}</span>
+              <span className="text-micro opacity-70">{formats.weekday.format(at)}</span>
               <span>{new Date(at).getDate()}</span>
             </span>
           ))

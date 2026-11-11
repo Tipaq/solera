@@ -1,4 +1,4 @@
-import type { CardColumn, CardConversationDto, CardDto } from '@solera/protocol'
+import { CARD_CLOSED_COLUMNS, type CardConversationDto, type CardDto } from '@solera/protocol'
 
 /**
  * L'état qu'une barre ou une pastille montre d'une carte : sa colonne, plus « bloquée »
@@ -6,10 +6,8 @@ import type { CardColumn, CardConversationDto, CardDto } from '@solera/protocol'
  */
 export type CardState = 'todo' | 'blocked' | 'running' | 'review' | 'done' | 'abandoned'
 
-const CLOSED: readonly CardColumn[] = ['done', 'abandoned']
-
 export function isOpen(card: Pick<CardDto, 'column'>): boolean {
-  return !CLOSED.includes(card.column)
+  return !CARD_CLOSED_COLUMNS.includes(card.column)
 }
 
 /** Bloquée tant qu'une carte qui la bloque reste ouverte ; à relire, son travail est fait. */

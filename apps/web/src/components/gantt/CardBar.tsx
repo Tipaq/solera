@@ -12,8 +12,12 @@ import { STATE_BAR, STATE_DOT } from './tones'
 export const BAR_H = 20
 /** Une barre plus courte ne se verrait plus. */
 const BAR_MIN_W = 8
-/** La place que prend le point d'une session vivante devant le titre. */
+/** La place que prend le repère d'une session devant le titre : le point (8 px si elle
+    attend, 6 px si elle tourne) et l'écart de 4 px qui le suit. */
+const ASKING_DOT_W = 12
 const LIVE_DOT_W = 10
+/** L'écart entre le numéro et le titre, dans la barre (`gap-1`). */
+const NUMBER_GAP = 4
 /** Le prolongement du retard ne disparaît pas même quand il ne fait que quelques heures. */
 const OVERDUE_MIN_W = 2
 const LATE_HATCH =
@@ -76,8 +80,11 @@ export function CardBar({
   const live = liveSessions(card)
   const asking = awaitsMe(card)
   const label = `#${card.number} ${card.title}`
+  // Mesuré comme il s'affiche dans la barre : le numéro et le titre séparés par `gap-1`.
+  const labelWidth = textWidth(`#${card.number}`) + NUMBER_GAP + textWidth(card.title)
+  const marker = asking ? ASKING_DOT_W : live.length > 0 ? LIVE_DOT_W : 0
   const placement = labelInside
-    ? labelPlacement({ left, width, overdue, label: textWidth(label), extra: live.length ? LIVE_DOT_W : 0, axisWidth: scale.width })
+    ? labelPlacement({ left, width, overdue, labelWidth, marker, axisWidth: scale.width })
     : null
 
   return (
@@ -100,9 +107,12 @@ export function CardBar({
       <button
         type="button"
         onClick={onOpen}
-        aria-label={`${label} — ${t(`card.state.${state}`)}`}
+        // Au clavier aussi : le focus montre l'infobulle et éclaire la chaîne, comme le survol.
+        onFocus={() => onHover?.(card.id)}
+        onBlur={() => onHover?.(null)}
+        aria-label={t('gantt.barLabel', { card: label, state: t(`card.state.${state}`) })}
         className={cx(
-          'absolute inset-0 flex items-center gap-1 overflow-hidden rounded-[5px] text-left text-xs whitespace-nowrap',
+          'absolute inset-0 flex items-center gap-1 overflow-hidden rounded-sm text-left text-xs whitespace-nowrap',
           'transition-[filter,box-shadow] hover:brightness-105 focus-visible:outline-2 focus-visible:outline-accent',
           STATE_BAR[state],
           loose && 'border-dashed opacity-75 [mask-image:linear-gradient(to_right,black_70%,transparent)]',
@@ -169,8 +179,11 @@ function CardTip({ card, now }: { card: CardDto; now: number }) {
         <dd className="tabular-nums">{formatDay(card.createdAt)}</dd>
         <dt className="text-ink-faint">{t('gantt.tip.due')}</dt>
         <dd className={cx('tabular-nums', late && 'font-medium text-critical')}>
-          {card.dueAt === null ? t('gantt.tip.noDue') : formatDay(card.dueAt)}
-          {late ? ` · ${t('gantt.tip.lateBy', { days: lateBy })}` : ''}
+          {card.dueAt === null
+            ? t('gantt.tip.noDue')
+            : late
+              ? t('gantt.tip.dueLate', { due: formatDay(card.dueAt), days: lateBy })
+              : formatDay(card.dueAt)}
         </dd>
         {live.length > 0 ? (
           <>

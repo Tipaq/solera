@@ -180,11 +180,11 @@ test('gantt : la chaîne s’arrête sur un cycle', () => {
 })
 
 test('gantt : le titre se loge dans la barre s’il y tient en entier, sinon à droite, sinon à gauche', () => {
-  const base = { left: 100, width: 200, overdue: 0, label: 120, extra: 0, axisWidth: 1000 }
+  const base = { left: 100, width: 200, overdue: 0, labelWidth: 120, marker: 0, axisWidth: 1000 }
   assert.equal(labelPlacement(base), 'inside')
   // 120 + 2 × 8 de marge intérieure + le point d'une session vivante = 146.
-  assert.equal(labelPlacement({ ...base, width: 145, extra: 10 }), 'right')
-  assert.equal(labelPlacement({ ...base, width: 146, extra: 10 }), 'inside')
+  assert.equal(labelPlacement({ ...base, width: 145, marker: 10 }), 'right')
+  assert.equal(labelPlacement({ ...base, width: 146, marker: 10 }), 'inside')
   // À droite, il sortirait de l'axe : il passe à gauche.
   assert.equal(labelPlacement({ ...base, left: 800, width: 60 }), 'right')
   assert.equal(labelPlacement({ ...base, left: 800, width: 60, overdue: 20 }), 'left')
