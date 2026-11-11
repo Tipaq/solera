@@ -4491,6 +4491,8 @@ export const fr: Catalog = {
   "attachments.refOrInclude": "#{number} : référence ou incluse",
   "attachments.cardPreview": "#{number} {title} — {column}",
   "attachments.cardPreviewInParent": "#{number} {title} — {column} · dans #{parentNumber} {parentTitle}",
+  "attachments.pr": "PR #{number}",
+  "attachments.issue": "Issue #{number}",
   "attachments.size.bytes": "{value} o",
   "attachments.size.kb": "{value} Ko",
   "attachments.size.mb": "{value} Mo",

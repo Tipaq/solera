@@ -4494,6 +4494,8 @@ export const en = {
   "attachments.refOrInclude": "#{number}: reference or included",
   "attachments.cardPreview": "#{number} {title} — {column}",
   "attachments.cardPreviewInParent": "#{number} {title} — {column} · in #{parentNumber} {parentTitle}",
+  "attachments.pr": "PR #{number}",
+  "attachments.issue": "Issue #{number}",
   "attachments.size.bytes": "{value} B",
   "attachments.size.kb": "{value} KB",
   "attachments.size.mb": "{value} MB",

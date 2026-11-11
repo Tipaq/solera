@@ -32,12 +32,13 @@ import {
 import { columnLabel } from '../board/columns'
 import type { BriefAttachments } from './use-brief-attachments'
 
-/** Hauteur d'une ligne (`leading-6`) et marges verticales de la zone. */
+/** Hauteur d'une ligne (`leading-6`) et marges verticales de la zone (`pt-3 pb-2`) :
+    à changer avec ces classes. */
 const LINE = 24
 const PADDING = 20
 /** Au-delà, la zone défile au lieu de grandir. */
 const MAX_HEIGHT = 384
-/** Hauteur d'une suggestion et du pied de la liste, pour décider dessus ou dessous. */
+/** Hauteur d'une suggestion (`h-8`) et du pied de la liste, pour décider dessus ou dessous. */
 const OPTION_HEIGHT = 32
 const LIST_CHROME = 44
 
@@ -109,7 +110,8 @@ export function BriefField({
   const frame = useRef<HTMLDivElement>(null)
   const [above, setAbove] = useState(false)
   const [caret, setCaret] = useState(0)
-  const [cursor, setCursor] = useState(0)
+  /** L'option surlignée de la liste ; `caret` est la position dans le texte. */
+  const [activeOption, setActiveOption] = useState(0)
   /** Le `#` dont on a fermé la liste sans choisir : elle ne se rouvre pas pour lui. */
   const [dismissed, setDismissed] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -119,7 +121,7 @@ export function BriefField({
   const mention = mentionQuery(value, caret)
   const open = mention && mention.start !== dismissed ? mention : null
   const matches = open ? suggestCards(cards, open.query) : []
-  const active = Math.min(cursor, Math.max(matches.length - 1, 0))
+  const active = Math.min(activeOption, Math.max(matches.length - 1, 0))
   const suggesting = open !== null && matches.length > 0
 
   /** Écrit le texte suivant et y replace le curseur ; `focus` le rend à la zone. */
@@ -147,7 +149,12 @@ export function BriefField({
     const next = Math.max(rows * LINE + PADDING, Math.min(area.scrollHeight, MAX_HEIGHT))
     area.style.height = `${next}px`
     area.style.overflowY = area.scrollHeight > MAX_HEIGHT ? 'auto' : 'hidden'
-    if (mirror.current) mirror.current.scrollTop = area.scrollTop
+    if (mirror.current) {
+      // Le calque prend la même barre de défilement que la zone, sinon le texte y passe à
+      // la ligne plus loin et le surlignage se décale.
+      mirror.current.style.overflowY = area.style.overflowY
+      mirror.current.scrollTop = area.scrollTop
+    }
   }, [value, rows, textRef])
 
   // La liste se pose sous le cadre entier, barre comprise, ou au-dessus s'il manque de
@@ -192,10 +199,10 @@ export function BriefField({
     if (!suggesting) return
     if (event.key === 'ArrowDown') {
       event.preventDefault()
-      setCursor((active + 1) % matches.length)
+      setActiveOption((active + 1) % matches.length)
     } else if (event.key === 'ArrowUp') {
       event.preventDefault()
-      setCursor((active - 1 + matches.length) % matches.length)
+      setActiveOption((active - 1 + matches.length) % matches.length)
     } else if (event.key === 'Enter' || event.key === 'Tab') {
       event.preventDefault()
       choose(matches[active]!)
@@ -236,7 +243,7 @@ export function BriefField({
       ref={frame}
       data-brief-field=""
       className={cx(
-        'relative flex flex-col rounded-lg border bg-canvas transition-colors focus-within:border-line-strong',
+        'relative flex flex-col rounded-md border bg-canvas transition-colors focus-within:border-line-strong',
         dragging ? 'border-accent' : 'border-line',
       )}
       onDragOver={(event) => {
@@ -261,7 +268,7 @@ export function BriefField({
           onChange={(event) => {
             onChange(event.target.value)
             setCaret(event.target.selectionStart)
-            setCursor(0)
+            setActiveOption(0)
           }}
           onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
           onScroll={(event) => {
@@ -283,7 +290,7 @@ export function BriefField({
           className={cx(shared, 'relative block resize-none bg-transparent text-transparent caret-ink outline-none selection:bg-accent/25 placeholder:text-ink-faint')}
         />
         {dragging ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-t-lg bg-accent-wash/60 text-sm text-accent">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-t-md bg-accent-wash/60 text-sm text-accent">
             {t('writing.drop')}
           </div>
         ) : null}
@@ -297,7 +304,7 @@ export function BriefField({
           role="listbox"
           aria-label={t('writing.suggestAria')}
           className={cx(
-            'surface absolute inset-x-0 z-30 overflow-hidden rounded-lg border border-line py-1 shadow-float',
+            'surface absolute inset-x-0 z-20 overflow-hidden rounded-lg border border-line py-1 shadow-float',
             above ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
           )}
         >
@@ -315,7 +322,7 @@ export function BriefField({
                   event.preventDefault()
                   choose(card)
                 }}
-                onMouseEnter={() => setCursor(index)}
+                onMouseEnter={() => setActiveOption(index)}
                 className={cx(
                   'grid h-8 w-full grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2 px-3 text-left text-sm',
                   index === active ? 'bg-surface-high' : '',
@@ -383,13 +390,13 @@ function WriteToolbar({ attachments, onCard, aside }: { attachments: BriefAttach
       ) : (
         <>
           <IconButton label={t('writing.card')} title={t('writing.cardTip')} size="sm" onClick={onCard}>
-            <Hash size={15} />
+            <Hash size={14} />
           </IconButton>
           <IconButton label={t('writing.link')} title={t('writing.linkTip')} size="sm" onClick={() => setLinking(true)}>
-            <Link2 size={15} />
+            <Link2 size={14} />
           </IconButton>
           <IconButton label={t('writing.file')} title={t('writing.fileTip')} size="sm" onClick={() => fileInput.current?.click()}>
-            <Paperclip size={15} />
+            <Paperclip size={14} />
           </IconButton>
           {aside ? <span className="ml-auto flex items-center gap-2 pr-1">{aside}</span> : null}
         </>

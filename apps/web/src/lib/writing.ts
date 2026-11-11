@@ -126,18 +126,16 @@ export function normalizeUrl(input: string): string | null {
   return /^https?:\/\//i.test(url) ? url : `https://${url}`
 }
 
-export interface LinkPiece {
-  url: string
-  kind: 'pr' | 'issue' | 'web'
-  /** « PR #212 », « Issue #34 », ou un titre tiré du chemin. */
-  label: string
-  /** `owner/repo` pour GitHub, l'hôte sinon. */
-  detail: string
-}
+/**
+ * Ce qu'une URL donne à lire. Une PR ou une issue GitHub rend son numéro, que le
+ * composant met dans sa langue (« PR #212 ») ; un autre lien, un titre tiré du chemin.
+ */
+export type LinkPiece =
+  | { url: string; kind: 'pr' | 'issue'; number: string; /** `owner/repo`. */ detail: string }
+  | { url: string; kind: 'web'; label: string; /** L'hôte, vide s'il sert déjà de libellé. */ detail: string }
 
 const LINK_LABEL_MAX = 48
 
-/** Ce qu'une URL donne à lire : « PR #212 · owner/repo », ou un titre tiré du chemin. */
 export function linkPiece(url: string): LinkPiece {
   let parsed: URL
   try {
@@ -148,8 +146,7 @@ export function linkPiece(url: string): LinkPiece {
   const host = parsed.hostname.replace(/^www\./, '')
   const parts = parsed.pathname.split('/').filter(Boolean)
   if (host === 'github.com' && parts.length >= 4 && (parts[2] === 'pull' || parts[2] === 'issues')) {
-    const pr = parts[2] === 'pull'
-    return { url, kind: pr ? 'pr' : 'issue', label: `${pr ? 'PR' : 'Issue'} #${parts[3]}`, detail: `${parts[0]}/${parts[1]}` }
+    return { url, kind: parts[2] === 'pull' ? 'pr' : 'issue', number: parts[3]!, detail: `${parts[0]}/${parts[1]}` }
   }
   let last = parts.at(-1) ?? ''
   try {
@@ -158,7 +155,8 @@ export function linkPiece(url: string): LinkPiece {
     // Un `%` isolé : le segment se lit tel quel.
   }
   last = last.replace(/\.[a-z0-9]{1,5}$/i, '').replace(/[-_+]+/g, ' ').trim()
-  const label = last && !/^\d+$/.test(last) && last.length > 2 ? last.charAt(0).toUpperCase() + last.slice(1) : host
+  if (!last || /^\d+$/.test(last) || last.length <= 2) return { url, kind: 'web', label: host, detail: '' }
+  const label = last.charAt(0).toUpperCase() + last.slice(1)
   return { url, kind: 'web', label: label.length > LINK_LABEL_MAX ? `${label.slice(0, LINK_LABEL_MAX - 3)}…` : label, detail: host }
 }
 

@@ -324,6 +324,8 @@ try {
     const grown = await area.evaluate((element) => ({ height: element.getBoundingClientRect().height, overflow: getComputedStyle(element).overflowY }))
     assert.equal(Math.round(grown.height), 384)
     assert.equal(grown.overflow, 'auto')
+    const widths = await frame.evaluate((element) => [element.querySelector('[aria-hidden]').clientWidth, element.querySelector('textarea').clientWidth])
+    assert.equal(widths[0], widths[1], 'WRT-2 : le calque garde la largeur de la zone, barre de défilement comprise')
 
     console.log(width, 'Échap, toutes couches fermées, ferme le tiroir')
     await page.keyboard.press('Escape')

@@ -41,7 +41,7 @@ const SECTION_PATTERNS: [Section, RegExp][] = [
 ]
 
 /** « doit », « ne pas », « sans » ; « must », « do not », « without ». */
-const MUST = /\b(doit|doivent|ne (?:doit|pas)|sans|must|do(?:es)? not|don't|without)\b/i
+const MUST = /\b(doit|doivent|ne (?:doit|pas)|sans(?!-)|must|do(?:es)? not|don't|without)\b/i
 /** `\b` ne voit pas le bord d'un « à » : la limite de mot se dit en lettres Unicode. */
 const UNDECIDED = /(?<![\p{L}\p{N}])([àa] d[ée]cider|to be decided|tbd)(?![\p{L}\p{N}])/iu
 const LIST_ITEM = /^\s*(?:[-*+•]|\d+[.)])\s+/
@@ -51,19 +51,27 @@ function clean(line: string): string {
   return line.replace(LIST_ITEM, '').replace(/^#+\s*/, '').replace(/\*\*/g, '').trim()
 }
 
-/** La section qu'une ligne ouvre, et ce qui la suit sur la même ligne. */
+/**
+ * La section qu'une ligne ouvre, et ce qui la suit sur la même ligne. Il faut un titre
+ * (`## Étapes`, `Étapes :`), le mot seul, ou le mot suivi de sa ponctuation (« Objectif :
+ * tenir la charge ») : une phrase qui commence par « Plan », ou un « But » anglais, n'en
+ * ouvre pas.
+ */
 function sectionOf(raw: string): { section: Section; rest: string } | null {
   const line = raw.trim()
   if (LIST_ITEM.test(raw)) return null
   const content = clean(line)
   const heading = /^#+\s/.test(line) || /:\s*$/.test(line)
-  const text = content.replace(/:\s*$/, '')
-  const matched = SECTION_PATTERNS.find(([, pattern]) => pattern.test(text))
-  // Une phrase qui commence par « Plan » n'ouvre pas une section : il faut un titre, ou
-  // une ligne courte (« Objectif : tenir la charge »).
-  if (!matched || !(heading || text.length < 40)) return null
-  const rest = text.replace(matched[1], '').replace(/^\s*[:—–-]\s*/, '').trim()
-  return { section: matched[0], rest }
+  const text = content.replace(/:\s*$/, '').trim()
+  for (const [section, pattern] of SECTION_PATTERNS) {
+    const word = pattern.exec(text)?.[0]
+    if (!word) continue
+    const after = text.slice(word.length)
+    if (heading || !after.trim()) return { section, rest: heading ? '' : after.trim() }
+    if (/^\s*[:—–-]\s*/.test(after)) return { section, rest: after.replace(/^\s*[:—–-]\s*/, '').trim() }
+    return null
+  }
+  return null
 }
 
 export function readBrief(text: string): BriefReading {
@@ -75,6 +83,7 @@ export function readBrief(text: string): BriefReading {
   const openPoints: string[] = []
   let objective: string | null = null
   let section: Section | null = null
+  const listOf = { steps, constraints, out: outOfScope }
 
   // Le premier titre est celui du jalon, pas une étape — sauf s'il ouvre une section :
   // un brief qui commence par « ## Objectif » n'a pas de titre.
@@ -88,9 +97,8 @@ export function readBrief(text: string): BriefReading {
 
     if (opened) {
       section = opened.section
-      const { rest } = opened
-      if (rest && section === 'objective') objective = rest
-      else if (rest) (section === 'constraints' ? constraints : section === 'out' ? outOfScope : steps).push(rest)
+      if (opened.rest && section === 'objective') objective = opened.rest
+      else if (opened.rest) listOf[section as Exclude<Section, 'objective'>].push(opened.rest)
       continue
     }
 
@@ -119,13 +127,13 @@ const TITLE_MAX = 70
 
 /**
  * Le titre d'un jalon tiré de ce qu'on a écrit : le premier titre, sinon la première
- * phrase ; une ligne qui ouvre une section (« ## Objectif ») est passée. Vide sans texte.
+ * phrase ; un titre de section seul (« ## Objectif ») est passé. Vide sans texte.
  */
 export function titleFromBrief(text: string): string {
   const first = text
     .split('\n')
     .map((line) => line.trim())
-    .find((line) => line && !sectionOf(line)) ?? ''
+    .find((line) => line && sectionOf(line)?.rest !== '') ?? ''
   const title = first
     .replace(/^#+\s*/, '')
     .replace(/\*\*/g, '')

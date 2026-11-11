@@ -93,6 +93,23 @@ test('brief : objectif sur une ligne, en français et en anglais', () => {
   assert.equal(readBrief('Goal: make the board readable').objective, 'make the board readable')
 })
 
+test('brief : un objectif en ligne, même long', () => {
+  const long = 'pouvoir relire et répondre aux sessions sans aucun réseau, partout'
+  assert.equal(readBrief(`Mode hors ligne\nObjectif : ${long}`).objective, long)
+  assert.equal(readBrief(`Offline\nGoal: ${long}`).objective, long)
+})
+
+test('brief : une phrase qui commence par un mot de section n’ouvre pas de section', () => {
+  // « But » anglais, « Plan de… » : ni titre, ni « mot : … ».
+  const reading = readBrief('Refonte\nBut it must stay fast\nPlan de migration progressif\n- a')
+  assert.equal(reading.objective, null)
+  assert.deepEqual(reading.steps, ['a'])
+})
+
+test('brief : « sans-serif » n’est pas « sans »', () => {
+  assert.deepEqual(readBrief('- Police sans-serif partout').steps, ['Police sans-serif partout'])
+})
+
 test('brief : une ligne de liste qui dit « doit », « ne pas » ou « sans » est une contrainte', () => {
   const reading = readBrief('- Le cache doit tenir 50 Mo\n- Ne pas bloquer l’interface\n- Sans dépendance nouvelle\n- Ajouter un bouton')
   assert.deepEqual(reading.constraints, ['Le cache doit tenir 50 Mo', 'Ne pas bloquer l’interface', 'Sans dépendance nouvelle'])
@@ -157,6 +174,11 @@ test('titre : 70 caractères au plus, avec « … »', () => {
 
 test('titre : un brief qui commence par une section prend sa première ligne de texte', () => {
   assert.equal(titleFromBrief('## Objectif\nPouvoir relire hors ligne.\n## Étapes\n- Cache'), 'Pouvoir relire hors ligne')
+})
+
+test('titre : une idée courte qui commence par un mot de section reste le titre', () => {
+  assert.equal(titleFromBrief('Plan de migration'), 'Plan de migration')
+  assert.equal(titleFromBrief('Règles d’automatisation'), 'Règles d’automatisation')
 })
 
 test('titre : vide sans texte', () => {
@@ -262,11 +284,12 @@ test('surlignage : carte connue, carte inconnue, URL, texte', () => {
 /* ------------------------------------------------------------------ liens et fichiers */
 
 test('lien : une PR et une issue GitHub', () => {
+  // Le libellé « PR #212 » se traduit dans le composant : la lecture rend le numéro.
   assert.deepEqual(linkPiece('https://github.com/Tipaq/solera/pull/212'), {
-    url: 'https://github.com/Tipaq/solera/pull/212', kind: 'pr', label: 'PR #212', detail: 'Tipaq/solera',
+    url: 'https://github.com/Tipaq/solera/pull/212', kind: 'pr', number: '212', detail: 'Tipaq/solera',
   })
   assert.deepEqual(linkPiece('https://www.github.com/o/r/issues/34#issuecomment-1'), {
-    url: 'https://www.github.com/o/r/issues/34#issuecomment-1', kind: 'issue', label: 'Issue #34', detail: 'o/r',
+    url: 'https://www.github.com/o/r/issues/34#issuecomment-1', kind: 'issue', number: '34', detail: 'o/r',
   })
 })
 
@@ -274,10 +297,12 @@ test('lien : le dernier segment du chemin, lisible, sinon l’hôte', () => {
   assert.deepEqual(linkPiece('https://www.example.com/docs/offline-first_sync.html'), {
     url: 'https://www.example.com/docs/offline-first_sync.html', kind: 'web', label: 'Offline first sync', detail: 'example.com',
   })
-  assert.equal(linkPiece('https://example.com/').label, 'example.com')
-  assert.equal(linkPiece('https://example.com/items/1234').label, 'example.com')
-  assert.equal(linkPiece('https://example.com/ab').label, 'example.com')
-  const long = linkPiece(`https://example.com/${'a'.repeat(60)}`).label
+  // Sans titre lisible, l'hôte devient le libellé, et n'est pas répété en gris.
+  assert.deepEqual(linkPiece('https://example.com/'), { url: 'https://example.com/', kind: 'web', label: 'example.com', detail: '' })
+  assert.deepEqual(linkPiece('https://example.com/items/1234'), { url: 'https://example.com/items/1234', kind: 'web', label: 'example.com', detail: '' })
+  assert.deepEqual(linkPiece('https://example.com/ab'), { url: 'https://example.com/ab', kind: 'web', label: 'example.com', detail: '' })
+  const piece = linkPiece(`https://example.com/${'a'.repeat(60)}`)
+  const long = piece.kind === 'web' ? piece.label : ''
   assert.equal(long.length, 46)
   assert.ok(long.endsWith('…'))
 })

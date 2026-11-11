@@ -1,9 +1,10 @@
 import { CircleDot, FileText, GitPullRequest, Globe, Hash, X } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { CardDto } from '@solera/protocol'
 import { Tooltip, cx } from '@solera/ui'
 import { locale, useTranslate } from '../../lib/i18n'
-import { sizeParts } from '../../lib/writing'
+import { sizeParts, type LinkPiece } from '../../lib/writing'
 import { columnLabel } from '../board/columns'
 import type { BriefAttachments, CardMode } from './use-brief-attachments'
 
@@ -44,11 +45,13 @@ function Piece({ icon, onRemove, removeLabel, children, tall = false }: {
         onClick={onRemove}
         className="grid size-5 shrink-0 place-items-center rounded-sm text-ink-faint opacity-0 transition-opacity group-focus-within/piece:opacity-100 group-hover/piece:opacity-100 hover:bg-surface-high hover:text-ink pointer-coarse:opacity-100"
       >
-        <X size={12} />
+        <X size={11} />
       </button>
     </span>
   )
 }
+
+const LINK_ICONS: Record<LinkPiece['kind'], LucideIcon> = { pr: GitPullRequest, issue: CircleDot, web: Globe }
 
 /** Réf. ou Inclure, dans la puce d'une carte. */
 function ModeSwitch({ card, mode, onChange }: { card: CardDto; mode: CardMode; onChange: (mode: CardMode) => void }) {
@@ -94,7 +97,7 @@ export function AttachedPieces({ attachments, allowInclude }: { attachments: Bri
             ? t('attachments.cardPreviewInParent', { number: card.number, title: card.title, column: columnLabel(card.column), parentNumber: card.parent.number, parentTitle: card.parent.title })
             : t('attachments.cardPreview', { number: card.number, title: card.title, column: columnLabel(card.column) })
           return (
-            <Piece key={card.id} icon={<Hash size={12} />} removeLabel={t('attachments.remove', { name: `#${card.number}` })} onRemove={() => attachments.removeCard(card)}>
+            <Piece key={card.id} icon={<Hash size={11} />} removeLabel={t('attachments.remove', { name: `#${card.number}` })} onRemove={() => attachments.removeCard(card)}>
               <Tooltip label={preview}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="text-ink-faint tabular-nums">{card.number}</span>
@@ -106,12 +109,13 @@ export function AttachedPieces({ attachments, allowInclude }: { attachments: Bri
           )
         })}
         {attachments.links.map((link) => {
-          const Icon = link.kind === 'pr' ? GitPullRequest : link.kind === 'issue' ? CircleDot : Globe
+          const Icon = LINK_ICONS[link.kind]
+          const label = link.kind === 'web' ? link.label : t(`attachments.${link.kind}`, { number: link.number })
           return (
-            <Piece key={link.url} icon={<Icon size={12} />} removeLabel={t('attachments.remove', { name: link.label })} onRemove={() => attachments.removeLink(link.url)}>
+            <Piece key={link.url} icon={<Icon size={11} />} removeLabel={t('attachments.remove', { name: label })} onRemove={() => attachments.removeLink(link.url)}>
               <Tooltip label={link.url}>
                 <a href={link.url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-1.5 hover:underline">
-                  <span className="max-w-48 truncate text-ink">{link.label}</span>
+                  <span className="max-w-48 truncate text-ink">{label}</span>
                   {link.detail ? <span className="max-w-32 truncate text-ink-faint">{link.detail}</span> : null}
                 </a>
               </Tooltip>
@@ -122,7 +126,7 @@ export function AttachedPieces({ attachments, allowInclude }: { attachments: Bri
           <Piece
             key={piece.key}
             tall={piece.preview !== null}
-            icon={piece.preview ? <img src={piece.preview} alt="" className="size-8 rounded-sm object-cover" /> : <FileText size={12} />}
+            icon={piece.preview ? <img src={piece.preview} alt="" className="size-8 rounded-sm object-cover" /> : <FileText size={11} />}
             removeLabel={t('attachments.remove', { name: piece.file.name })}
             onRemove={() => attachments.removeFile(piece.key)}
           >
