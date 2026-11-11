@@ -13,6 +13,7 @@ import {
   type BranchFacts,
   type LooseBranch,
 } from './assess.js'
+import { DiskUsage } from './disk-usage.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
 
@@ -82,6 +83,8 @@ export class WorktreeStatusService {
      * avancé (#126). Sans elle, ou quand la forge ne répond pas, seul le contenu juge.
      */
     private readonly mergedPullRequests?: MergedPullRequestSource,
+    /** La taille des arbres, mesurée en fond : partagée par tous les projets, une mesure à la fois. */
+    private readonly disk = new DiskUsage(),
   ) {
     // La fin d'un tour est le moment où l'arbre a le plus de chances d'avoir changé ;
     // une édition hors du cwd peut rattacher la session à un nouvel arbre.
@@ -203,6 +206,35 @@ export class WorktreeStatusService {
     return entry.pending
   }
 
+  /**
+   * Comme `get`, complétée des tailles sur disque déjà mesurées : ce que les routes de
+   * la liste servent. Une taille manquante ou vieillie part en mesure, et la liste ne
+   * l'attend pas ; `sizesPending` dit à l'interface de repasser.
+   */
+  async sized(project: ProjectRow): Promise<WorktreeStatusListDto> {
+    const list = await this.get(project)
+    let pending = false
+    const read = (path: string) => {
+      const size = this.disk.read(path)
+      pending ||= size.pending
+      return size.bytes
+    }
+    const rootSizeBytes = read(project.workspacePath)
+    const trees = list.worktrees.map((tree) => {
+      if (tree.state !== 'missing') return { ...tree, sizeBytes: read(tree.path) }
+      // Parti hors d'un nettoyage (une PR fusionnée avec sa branche, un `git worktree
+      // remove`) : recréé au même chemin, il ne doit pas reprendre l'ancienne taille.
+      this.disk.forget(tree.path)
+      return tree
+    })
+    return { ...list, worktrees: trees, rootSizeBytes, sizesPending: pending }
+  }
+
+  /** Oublie la taille d'un arbre retiré : recréé au même chemin, il se remesure. */
+  forgetSize(path: string): void {
+    this.disk.forget(path)
+  }
+
   /** Comme `get`, mais attend le recalcul plutôt que de rendre une liste périmée. */
   async current(project: ProjectRow): Promise<WorktreeStatusListDto> {
     const list = await this.get(project)
@@ -308,6 +340,7 @@ export class WorktreeStatusService {
       external: tree.id === null,
       head: tree.head,
       conversations: this.linkedConversations(tree.id, tree.path, paths),
+      sizeBytes: null,
       ...assessed[index]!,
     }))
 
@@ -340,6 +373,9 @@ export class WorktreeStatusService {
       worktrees: result,
       branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head))),
       branchesPending: missing.length > 0,
+      // Les tailles ne sont pas de ce calcul : `sized` les ajoute, depuis leur propre cache.
+      rootSizeBytes: null,
+      sizesPending: false,
     }
     if (!base || !baseHead || missing.length === 0) return { value, details: null }
 

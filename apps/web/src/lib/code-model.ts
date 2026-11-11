@@ -111,7 +111,7 @@ export interface TreeFields {
   uncommitted: number
   conflicts: boolean
   unmergedCommits: boolean
-  /** Null tant que le serveur ne le mesure pas (#166). */
+  /** Null tant que le serveur ne l'a pas mesurée : la mesure se fait en fond (#166). */
   sizeBytes: number | null
   lastUsedAt: number | null
 }
@@ -508,7 +508,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
       uncommitted: project.git.changedFiles,
       conflicts: false,
       unmergedCommits: false,
-      sizeBytes: null,
+      sizeBytes: statuses?.rootSizeBytes ?? null,
       lastUsedAt: root.lastAt,
     })
   }
@@ -538,7 +538,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
       uncommitted: tree.modified + tree.untracked,
       conflicts: tree.conflicts,
       unmergedCommits: tree.unmergedCommits,
-      sizeBytes: null,
+      sizeBytes: tree.sizeBytes,
       lastUsedAt: latest([mine.lastAt, tree.lastCommitAt, tree.lastEditAt]),
     })
   }

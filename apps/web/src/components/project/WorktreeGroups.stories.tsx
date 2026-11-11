@@ -17,7 +17,7 @@ function tree(name: string, state: WorktreeStatusDto['state'], extra: Partial<Wo
   return {
     id: `wt-${name}`, name, path: `${ROOT}/${name.replace(/\//g, '__')}`, branch: name, external: false, state,
     ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, unmergedCommits: false, mergedPullRequest: null, head: null,
-    lastCommitAt: null, lastEditAt: null, conversations: [], ...extra,
+    lastCommitAt: null, lastEditAt: null, conversations: [], sizeBytes: null, ...extra,
   }
 }
 
@@ -81,6 +81,8 @@ const STATUS: WorktreeStatusListDto = {
   base: 'main',
   computedAt: now,
   fresh: true,
+  rootSizeBytes: null,
+  sizesPending: false,
   worktrees: [
     DESIGN,
     SILLAGE,
