@@ -16,7 +16,7 @@ export const SOLERA_SKILLS_SOURCE_ID = 'builtin:solera-skills'
 const MARKER = 'solera_skills_installed'
 
 /** Un skill du même nom dans la bibliothèque : celui de l'instance reste. */
-const KEPT = new Set(['skill_name_taken', 'skill_directory_exists'])
+const NAME_CONFLICTS = new Set(['skill_name_taken', 'skill_directory_exists'])
 
 /**
  * Le tag d'où lire les skills de Solera : celui de la version installée, pour qu'un skill
@@ -48,17 +48,16 @@ export async function installSoleraSkills(db: Db, sources: SkillSources, library
     const row = await sources.refresh(source, {})
     for (const entry of sources.entries(row)) {
       if (entry.problem || posix.dirname(entry.path) !== (row.subpath ?? '.')) continue
-      const { commit } = sources.entry(row, entry.path)
       try {
         library.install(sources.files(row, entry.path), { scope: 'global', projectId: null }, null, {
           sourceId: row.id,
           path: entry.path,
-          commit,
+          commit: row.lastCommit!,
           hash: entry.hash,
         })
         installed.push(entry.name)
       } catch (err) {
-        if (!(err instanceof HttpError && KEPT.has(err.code))) throw err
+        if (!(err instanceof HttpError && NAME_CONFLICTS.has(err.code))) throw err
       }
     }
   }

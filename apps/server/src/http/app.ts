@@ -38,8 +38,9 @@ import { registerInstructionRoutes } from './routes/instructions.js'
 import { registerMemoryRoutes } from './routes/memory.js'
 import { registerSkillLibraryRoutes } from './routes/skill-library.js'
 import { registerSkillSourceRoutes } from './routes/skill-sources.js'
-import { installSoleraSkills } from '../skill-library/solera-skills.js'
+import { installSoleraSkills, versionRef } from '../skill-library/solera-skills.js'
 import { SkillSources } from '../skill-library/sources.js'
+import { CURRENT_VERSION } from '../update/version.js'
 import { SkillLibrary } from '../skill-library/store.js'
 import { registerSecretRoutes } from './routes/secrets.js'
 import type { SecretStore } from '../secrets/store.js'
@@ -204,8 +205,10 @@ export async function buildApp(
   registerMemoryRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
   // Les skills de Solera, installés d'office au premier démarrage qui connaît leur source.
-  // Sans l'attendre : le clone passe par le réseau.
-  if (ctx.config.skills.library) {
+  // Sans l'attendre : le clone passe par le réseau. Seulement pour une version publiée :
+  // sans tag (`dev`, les suites UI qui lancent `src/main.ts`), on clonerait `main` à
+  // chaque base jetable, et un skill de `main` peut citer un outil que ce code n'a pas.
+  if (ctx.config.skills.library && versionRef(CURRENT_VERSION)) {
     void installSoleraSkills(ctx.db, skillSources, skillLibrary)
       .then((skills) => {
         if (skills.length > 0) app.log.info({ skills }, 'skills de Solera installes')

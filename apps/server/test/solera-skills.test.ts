@@ -36,7 +36,7 @@ function soleraRepository(dir: string) {
   skill('skills/affiner-un-jalon', 'affiner-un-jalon')
   git('add', '-A')
   git('commit', '-q', '-m', 'main')
-  return { root, tagged, head: git('rev-parse', 'HEAD') }
+  return { root, git, skill, tagged, head: git('rev-parse', 'HEAD') }
 }
 
 /** La source de la migration, pointée sur le dépôt local. */
@@ -64,7 +64,7 @@ test('source de Solera : une mise à jour de Solera lit le tag suivant dans le m
   const repo = soleraRepository(dir)
   pointAt(db, repo.root)
   await refresh(call)
-  execFileSync('git', ['tag', 'v0.21.0'], { cwd: repo.root })
+  repo.git('tag', 'v0.21.0')
 
   const upgraded = new SkillSources(db, join(dir, 'sources'), '0.21.0')
   const row = await upgraded.refresh(upgraded.row(SOLERA_SKILLS_SOURCE_ID), {})
@@ -107,10 +107,9 @@ test('installation d’office : une fois, dans la bibliothèque globale, puis d�
 test('installation d’office : un skill homonyme de la bibliothèque est gardé, un skill secondaire seulement proposé', async (t) => {
   const { db, dir, library, sources } = harness(t, 'dev')
   const repo = soleraRepository(dir)
-  mkdirSync(join(repo.root, 'skills/extras/rarement'), { recursive: true })
-  writeFileSync(join(repo.root, 'skills/extras/rarement/SKILL.md'), '---\nname: rarement\ndescription: Use rarely.\n---\n\nRare.\n')
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'add', '-A'], { cwd: repo.root })
-  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'extras'], { cwd: repo.root })
+  repo.skill('skills/extras/rarement', 'rarement')
+  repo.git('add', '-A')
+  repo.git('commit', '-q', '-m', 'extras')
   pointAt(db, repo.root)
   createSkill(library, { name: 'ranger-une-idee', description: 'Use when mine.' })
 
