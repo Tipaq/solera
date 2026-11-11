@@ -31,7 +31,6 @@ import { Environments } from '../src/environments/environments.js'
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-actions-'))
-  t.after(() => rm(dir, { recursive: true, force: true }))
   const dbPath = join(dir, 'test.sqlite')
   const { db, sqlite } = openDatabase(dbPath)
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
@@ -51,7 +50,12 @@ async function harness(t: TestContext) {
     limits: { ptyIdleTimeoutMin: 5 },
   } as unknown as Config
   const terminals = new TerminalManager(config)
-  t.after(() => terminals.shutdown())
+  // Le dossier ne part qu'une fois les shells sortis : les hooks passent dans l'ordre
+  // où on les pose, et un shell qui finit réécrirait data/terminals pendant l'effacement (#250).
+  t.after(async () => {
+    await terminals.shutdown()
+    await rm(dir, { recursive: true, force: true })
+  })
   const runner = new ActionRunner(db, config, terminals, new Environments(db))
   const sessions = { workingDirectory: () => dir } as unknown as SessionManager
   const requests = new AgentRequests({ db, config }, sessions, {} as AgentRegistry, {} as EventLog, undefined, undefined, runner)
