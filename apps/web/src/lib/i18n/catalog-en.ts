@@ -2437,7 +2437,6 @@ export const en = {
   'travail.display.indexFilter': '(filters)',
   'travail.display.indexScroll': '(scrolls)',
   'travail.session.button': 'Session',
-  'travail.session.label': 'New session',
   'travail.session.where': 'Where to work',
   'travail.session.root': '{branch} (root)',
   'travail.session.newTree': 'New worktree…',

@@ -2,7 +2,7 @@ import { Activity, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
-import { Button, EmptyState, Popover, cx } from '@solera/ui'
+import { Button, EmptyState, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { AgentIcon, AGENT_LABELS } from '../components/AgentIcon'
 import { ActivityRail, type RailModel } from '../components/activity/ActivityRail'
 import { BaseLine } from '../components/code/BaseLine'
@@ -101,10 +101,11 @@ export function ProjectTravailPage() {
   return <TravailPage projectId={projectId} project={project} />
 }
 
+/** Les jours que la période réclame au journal : « Aujourd'hui » tient dans un. */
+const PERIOD_DAYS: Record<Period, number> = { today: 1, '7': 7, '30': 30 }
+
 function TravailPage({ projectId, project }: { projectId: string; project: ProjectDto }) {
   const t = useTranslate()
-  const travail = useTravail(projectId, project)
-  const { code, branches, milestones } = travail
   const [params, setParams] = useSearchParams()
   const hasGit = Boolean(project.git)
 
@@ -115,7 +116,9 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   }))
   const [view, setView] = useView<TravailView>('travail', projectId, views.map((option) => option.key))
   const [filters, setFilters] = useStoredPref(viewStorageKey('travail.filtres', projectId), readFilters)
+  const travail = useTravail(projectId, project, filters.period ? PERIOD_DAYS[filters.period] : 0)
   const [display, setDisplay] = useStoredPref(viewStorageKey('travail.affichage', projectId), readDisplay)
+  const { code, branches, milestones } = travail
   const [query, setQuery] = useState('')
   const search = useMemo(() => parseActivityFilter(query), [query])
 
@@ -143,10 +146,12 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const now = Date.now()
   const from = periodStart(filters.period, now)
   const milestoneOfRow = (row: ActivityRow) => milestones.ofCard(row.entry.conversation.card?.number ?? null)
-  const searchesRow = (row: ActivityRow) =>
-    matchesActivity(search, { group: row.group, title: row.entry.conversation.title, branch: row.place.branch, card: row.entry.conversation.card })
+  /** Une session que la recherche et les filtres gardent, vivante ou non. */
+  const keepsRow = (row: ActivityRow) =>
+    matchesActivity(search, { group: row.group, title: row.entry.conversation.title, branch: row.place.branch, card: row.entry.conversation.card }) &&
+    rowPasses(row, filters, target, milestoneOfRow(row)?.number ?? null)
 
-  const live = travail.live.filter((row) => searchesRow(row) && rowPasses(row, filters, target, milestoneOfRow(row)?.number ?? null))
+  const live = travail.live.filter(keepsRow)
   const inbox = travail.inbox.filter((item) => inboxSearched(search, item) && inboxPasses(item, filters, target))
   const entries = travail.history.filter(
     (entry) =>
@@ -162,7 +167,11 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
 
   const active = filterCount(filters, target !== null)
   const narrowed = active > 0 || isActiveFilter(search)
-  const nothing = active > 0 && live.length === 0 && inbox.length === 0 && entries.length === 0
+  // « Par arbre » montre toutes les sessions, terminées comprises ; « Par moment », le
+  // vivant et l'historique.
+  const treeRows = view === 'couloirs' ? travail.rows.filter(keepsRow) : []
+  const shown = view === 'couloirs' ? treeRows.length : live.length + entries.length
+  const nothing = active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
 
@@ -346,7 +355,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               rowAside={(row) => chipOf(travail.treeOfRow(row))}
             />
           ) : (
-            <TreesInterim travail={travail} projectId={projectId} project={project} base={base} inbox={inbox} filters={filters} target={target} search={search} />
+            <TreesInterim travail={travail} projectId={projectId} project={project} base={base} inbox={inbox} rows={treeRows} search={search} />
           )}
         </div>
       </div>
@@ -385,8 +394,7 @@ function TreesInterim({
   project,
   base,
   inbox,
-  filters,
-  target,
+  rows,
   search,
 }: {
   travail: Travail
@@ -394,17 +402,12 @@ function TreesInterim({
   project: ProjectDto
   base: ReactNode
   inbox: InboxItem[]
-  filters: TravailFilters
-  target: ReturnType<typeof targetOf>
+  /** Les sessions que la recherche et les filtres gardent, terminées comprises. */
+  rows: ActivityRow[]
   search: ReturnType<typeof parseActivityFilter>
 }) {
   const { data: status } = useWorktreeStatuses(project.git ? projectId : undefined)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
-  const rows = travail.rows.filter(
-    (row) =>
-      matchesActivity(search, { group: row.group, title: row.entry.conversation.title, branch: row.place.branch, card: row.entry.conversation.card }) &&
-      rowPasses(row, filters, target, travail.milestones.ofCard(row.entry.conversation.card?.number ?? null)?.number ?? null),
-  )
   return (
     <div className="flex flex-col gap-5 pt-4 pb-28">
       {base ? <div className="px-4 md:px-6">{base}</div> : null}
@@ -442,51 +445,36 @@ function TreesInterim({
 function NewSession({ projectId, trees }: { projectId: string; trees: TreeRow[] }) {
   const t = useTranslate()
   const navigate = useNavigate()
-  const [open, setOpen] = useState(false)
   const usable = trees.filter((tree) => tree.root || (tree.id !== null && !isCleanable(tree) && tree.verdict !== 'missing'))
-  const go = (path: string) => {
-    setOpen(false)
-    navigate(path)
-  }
   return (
-    <Popover
-      open={open}
-      onOpenChange={setOpen}
-      label={t('travail.session.label')}
-      side="bottom"
+    <Menu
       align="end"
-      className="w-72"
       trigger={
         <Button size="sm" icon={<Plus size={15} />}>
           {t('travail.session.button')}
         </Button>
       }
     >
-      <div className="py-2">
-        <MenuHeading>{t('travail.session.where')}</MenuHeading>
-        {usable.map((tree) => {
-          const name = tree.branch ?? tree.name
-          return (
-            <button
-              key={tree.key}
-              type="button"
-              onClick={() => go(tree.root || !tree.id ? `/p/${projectId}/c/new` : `/p/${projectId}/c/new?worktree=${tree.id}`)}
-              className="flex min-h-11 w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-high md:min-h-8 pointer-coarse:min-h-11"
-            >
-              {tree.root ? <FolderGit2 size={13} aria-hidden className="shrink-0 text-ink-faint" /> : <GitBranch size={13} aria-hidden className="shrink-0 text-ink-faint" />}
-              <span className="min-w-0 flex-1 truncate font-mono text-sm">{tree.root ? t('travail.session.root', { branch: name }) : shortBranch(name)}</span>
+      <MenuLabel>{t('travail.session.where')}</MenuLabel>
+      {usable.map((tree) => {
+        const name = tree.branch ?? tree.name
+        return (
+          <MenuItem
+            key={tree.key}
+            icon={tree.root ? <FolderGit2 size={14} /> : <GitBranch size={14} />}
+            onSelect={() => navigate(tree.root || !tree.id ? `/p/${projectId}/c/new` : `/p/${projectId}/c/new?worktree=${tree.id}`)}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 flex-1 truncate font-mono">{tree.root ? t('travail.session.root', { branch: name }) : shortBranch(name)}</span>
               <VerdictDot verdict={tree.verdict} className="size-1.5" />
-            </button>
-          )
-        })}
-        <button
-          type="button"
-          onClick={() => go(`/p/${projectId}/c/new`)}
-          className="mt-1 flex min-h-11 w-full items-center gap-2 border-t border-line px-3 pt-2 pb-1 text-left text-sm text-ink-soft hover:text-ink md:min-h-8 pointer-coarse:min-h-11"
-        >
-          <Plus size={13} aria-hidden /> {t('travail.session.newTree')}
-        </button>
-      </div>
-    </Popover>
+            </span>
+          </MenuItem>
+        )
+      })}
+      <MenuSeparator />
+      <MenuItem icon={<Plus size={14} />} onSelect={() => navigate(`/p/${projectId}/c/new`)}>
+        {t('travail.session.newTree')}
+      </MenuItem>
+    </Menu>
   )
 }

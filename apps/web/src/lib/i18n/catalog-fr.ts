@@ -2433,7 +2433,6 @@ export const fr: Catalog = {
   'travail.display.indexFilter': '(filtre)',
   'travail.display.indexScroll': '(défile)',
   'travail.session.button': 'Session',
-  'travail.session.label': 'Nouvelle session',
   'travail.session.where': 'Où travailler',
   'travail.session.root': '{branch} (racine)',
   'travail.session.newTree': 'Nouveau worktree…',

@@ -310,6 +310,15 @@ try {
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
   await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
 
+  // ─── + Session : la racine, les arbres utilisables, un nouveau worktree ─────
+  await toolbar.getByRole('button', { name: 'Session', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'main (racine)', exact: true }).waitFor()
+  await page.getByRole('menuitem', { name: 'Nouveau worktree…', exact: true }).waitFor()
+  await page.getByRole('menuitem', { name: short, exact: true }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/c/new?worktree=${tree.id}`)
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
+
   // ─── Filtrer ▾ et ses puces, retenus pour le projet ────────────────────────
   const filterButton = toolbar.getByRole('button', { name: /^Filtrer/ })
   await filterButton.click()

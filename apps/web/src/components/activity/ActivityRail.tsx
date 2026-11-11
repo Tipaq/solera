@@ -2,7 +2,7 @@ import { ChevronDown, Diamond } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { JOURNAL_FAMILY_OF, type AgentKind, type JournalEntryDto, type JournalFamily, type MilestoneRunDto } from '@solera/protocol'
-import { cx } from '@solera/ui'
+import { Button, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { MilestoneTag } from '../code/MilestoneChip'
 import { AskInbox } from '../inbox/AskInbox'
@@ -38,10 +38,17 @@ export interface RailModel {
   entryHref: (entry: JournalEntryDto) => string | null
 }
 
-/** La largeur de la colonne de l'heure, et donc l'axe du rail. */
+/**
+ * La géométrie du rail : la colonne de l'heure (`w-12`, 3 rem), un écart `gap-3`
+ * (0,75 rem), la pastille (`w-5`, 1,25 rem). L'axe du rail passe au milieu de la
+ * pastille (3 + 0,75 + 0,625 = 4,375 rem), le contenu de « Maintenant » s'aligne sur le
+ * texte des lignes (3 + 0,75 + 1,25 + 0,75 = 5,75 rem). Changer l'un change les autres.
+ */
 const TIME_W = 'w-12'
-/** Décalage du contenu « Maintenant », aligné sur le texte des lignes du fil. */
+const RAIL_X = 'left-[4.375rem]'
 const INDENT = 'pl-[5.75rem]'
+/** L'heure d'une ligne, dans sa colonne. */
+const TIME_CELL = cx(TIME_W, 'shrink-0 text-right text-ink-faint tabular-nums')
 
 /**
  * Le fil d'un projet, « Par moment » (`projet.md` T-5) : le vivant, puis l'historique
@@ -78,7 +85,7 @@ export function ActivityRail({
       {before ? <div className="flex flex-col gap-6 pt-2 pb-6">{before}</div> : null}
       <ol className="relative flex flex-col">
         {/* Le rail, derrière les pastilles : au milieu de la colonne de 1,25 rem qui suit l'heure. */}
-        <span aria-hidden className="absolute top-3 bottom-0 left-[4.375rem] w-px -translate-x-1/2 bg-line" />
+        <span aria-hidden className={cx('absolute top-3 bottom-0 w-px -translate-x-1/2 bg-line', RAIL_X)} />
 
         <li className="relative flex flex-col gap-3 pb-6">
           <RailHead label={t('activityRail.now')} pulse={pulse} />
@@ -240,7 +247,7 @@ function RailEntry({ entry, model, aside }: { entry: JournalEntryDto; model: Rai
   const to = model.entryHref(entry)
   return (
     <li className={cx(ROW, to && 'transition-colors hover:bg-sunken/60')}>
-      <span className={cx(TIME_W, 'shrink-0 pt-0.5 text-right text-xs text-ink-faint tabular-nums')}>{timeOf(entry.at)}</span>
+      <span className={cx(TIME_CELL, 'pt-0.5 text-xs')}>{timeOf(entry.at)}</span>
       <Pip entry={entry} model={model} />
       <EntryText entry={entry} model={model} to={to} aside={aside} />
     </li>
@@ -297,7 +304,7 @@ function RailCluster({ cluster, model, aside }: { cluster: Cluster; model: RailM
   return (
     <li>
       <div className={cx(ROW, 'transition-colors hover:bg-sunken/60')}>
-        <span className={cx(TIME_W, 'shrink-0 pt-0.5 text-right text-xs text-ink-faint tabular-nums')}>{timeOf(head.at)}</span>
+        <span className={cx(TIME_CELL, 'pt-0.5 text-xs')}>{timeOf(head.at)}</span>
         <span className="relative z-[1] flex size-5 shrink-0 items-center justify-center rounded-full bg-canvas text-micro font-semibold text-ink-soft tabular-nums ring-1 ring-line">
           {cluster.entries.length}
         </span>
@@ -319,7 +326,7 @@ function RailCluster({ cluster, model, aside }: { cluster: Cluster; model: RailM
             const to = model.entryHref(entry)
             return (
               <li key={entry.id} className={cx('group relative flex items-center gap-3 rounded-md py-1 pr-2', to && 'transition-colors hover:bg-sunken/60')}>
-                <span className={cx(TIME_W, 'shrink-0 text-right text-micro text-ink-faint tabular-nums')}>{timeOf(entry.at)}</span>
+                <span className={cx(TIME_CELL, 'text-micro')}>{timeOf(entry.at)}</span>
                 <span className="flex w-5 shrink-0 justify-center">
                   <Pip entry={entry} model={model} size="sm" />
                 </span>
@@ -358,9 +365,9 @@ function Older({ model }: { model: RailModel }) {
   else if (!can) content = <span className="text-xs text-ink-faint">{t('activityRail.start')}</span>
   else
     content = (
-      <button type="button" onClick={load} className="rounded-md px-2 py-1 text-xs text-ink-faint hover:bg-sunken hover:text-ink">
+      <Button variant="ghost" size="sm" onClick={load}>
         {t('activityRail.older', { count: model.journalDays })}
-      </button>
+      </Button>
     )
 
   return (

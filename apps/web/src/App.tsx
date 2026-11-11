@@ -60,7 +60,7 @@ const OnboardingPage = lazy(() =>
 )
 
 /**
- * L'onglet Activité d'un projet, chargé à part : le paquet principal frôle la limite de
+ * L'onglet Travail d'un projet, chargé à part : le paquet principal frôle la limite de
  * précache, et cette vue n'est pas celle d'arrivée.
  */
 const ProjectTravailPage = lazy(() =>

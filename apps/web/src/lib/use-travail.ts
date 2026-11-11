@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { JOURNAL_DEFAULT_DAYS, type AgentKind, type JournalEntryDto, type ProjectDto } from '@solera/protocol'
+import { JOURNAL_DEFAULT_DAYS, agentKindSchema, type AgentKind, type JournalEntryDto, type ProjectDto } from '@solera/protocol'
 import { useActivityRows, type ActivityRow } from './activity-rows'
 import { useCards } from './cards'
 import { useBranchInfos, useCodeData } from './code-data'
@@ -21,7 +21,7 @@ const MAX_JOURNAL_DAYS = 365
  * Aucune requête de plus que l'Activité, l'Aperçu et le Journal n'en faisaient : React
  * Query les partage. Rien n'est filtré ici ; la page le fait, avec `travail-model`.
  */
-export function useTravail(projectId: string, project: ProjectDto) {
+export function useTravail(projectId: string, project: ProjectDto, minDays = 0) {
   const rows = useActivityRows(projectId, project)
   const { data: runs } = useActiveMilestones(projectId)
   const { data: cards } = useCards(projectId)
@@ -33,12 +33,14 @@ export function useTravail(projectId: string, project: ProjectDto) {
 
   // « Plus ancien » élargit la fenêtre ; la lecture précédente reste affichée pendant
   // que la suivante arrive, pour que le fil ne se vide pas sous les yeux.
-  const [windowDays, setWindowDays] = useState(JOURNAL_DEFAULT_DAYS)
+  // `minDays` : la période choisie dans « Filtrer » ; la fenêtre la couvre d'emblée.
+  const [olderDays, setWindowDays] = useState(JOURNAL_DEFAULT_DAYS)
+  const windowDays = Math.max(olderDays, Math.min(minDays, MAX_JOURNAL_DAYS))
   const { data: fresh, isFetching, isPending: journalPending } = useJournal(projectId, windowDays)
   const lastJournal = useRef(fresh)
   if (fresh) lastJournal.current = fresh
   const journal = fresh ?? lastJournal.current
-  const loadOlder = useCallback(() => setWindowDays((current) => Math.min(current * 2, MAX_JOURNAL_DAYS)), [])
+  const loadOlder = useCallback(() => setWindowDays(Math.min(windowDays * 2, MAX_JOURNAL_DAYS)), [windowDays])
 
   // Le vivant, sans les terminées ; l'historique, sans les sessions vivantes, que
   // « Maintenant » montre déjà.
@@ -60,8 +62,13 @@ export function useTravail(projectId: string, project: ProjectDto) {
     (row: ActivityRow): TreeRow | null => treeOf(code.trees, (tree) => rowInTree(row, tree, scopes.get(tree.key)!)),
     [code.trees, scopes],
   )
-  /** L'agent d'une ligne d'historique : celui de sa session. */
-  const agentOf = useCallback((entry: JournalEntryDto): AgentKind | null => (entry.conversationId ? (byId.get(entry.conversationId)?.agent ?? null) : null), [byId])
+  /** L'agent d'une ligne d'historique : celui de sa session, sinon le CLI que nomme sa source. */
+  const agentOf = useCallback((entry: JournalEntryDto): AgentKind | null => {
+    const session = entry.conversationId ? byId.get(entry.conversationId) : undefined
+    if (session) return session.agent
+    const named = agentKindSchema.safeParse(entry.source?.toLowerCase())
+    return named.success ? named.data : null
+  }, [byId])
 
   return {
     /** Toutes les sessions du projet, terminées comprises. */
