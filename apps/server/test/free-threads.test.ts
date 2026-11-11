@@ -82,10 +82,11 @@ test('un fil libre n’a pas de répertoire de travail, mais l’agent tourne qu
   // Un dossier à lui, vide et créé à la demande : le home donnerait la machine entière
   // à lire à un agent dont l'interface annonce qu'il n'a pas de dossier.
   const threads = join(dir, 'threads')
-  const cwd = agentCwd(db, threads, free)
+  const config = { paths: { threads, data: join(dir, 'data') }, vault: { path: '' } } as never
+  const cwd = agentCwd(db, config, free)
   assert.equal(cwd, join(threads, 'free'))
   assert.ok(existsSync(cwd))
-  assert.equal(agentCwd(db, threads, owned), join(dir, 'private'))
+  assert.equal(agentCwd(db, config, owned), join(dir, 'private'))
 })
 
 test('les routes du panneau refusent un fil libre, sans le rendre introuvable', async (t) => {

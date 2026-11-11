@@ -329,8 +329,8 @@ CREATE TABLE library_skills (
   updated_at     INTEGER NOT NULL
 );
 
--- Dépôts git d'où la bibliothèque s'installe. Deux sources préconfigurées,
--- insérées par la migration : anthropics/skills et openai/skills.
+-- Dépôts git d'où la bibliothèque s'installe. Trois sources préconfigurées,
+-- insérées par migration : anthropics/skills, openai/skills et Tipaq/solera.
 
 CREATE TABLE skill_sources (
   id              TEXT PRIMARY KEY,
@@ -1487,8 +1487,9 @@ annexes, et l'on y lit ce que le skill fera différemment chez Claude et chez Co
 écriture vaut tout de suite pour les sessions ouvertes. Le fonctionnement et ses raisons
 sont dans `docs/skill-library.md`.
 
-Sous la bibliothèque, ses sources : des dépôts git (anthropics/skills et openai/skills
-préconfigurés, tout autre ajouté par un admin, ou trouvé sur skills.sh). Un catalogue se
+Sous la bibliothèque, ses sources : des dépôts git (anthropics/skills, openai/skills et
+les skills de Solera préconfigurés, tout autre ajouté par un admin, ou trouvé sur
+skills.sh). Un catalogue se
 parcourt et chaque skill se relit, `SKILL.md` brut et fichiers, avant d'être installé
 dans une portée. L'installation est une copie figée sur un commit ; quand la source
 avance, le skill l'annonce, et la mise à jour se lit en diff avant de s'appliquer.

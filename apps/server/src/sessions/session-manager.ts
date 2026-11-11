@@ -424,7 +424,7 @@ export class SessionManager {
    * justement qu'il n'a pas de dossier.
    */
   private resolveCwd(conversation: ConversationRow): string {
-    return agentCwd(this.db, this.config.paths.threads, conversation)
+    return agentCwd(this.db, this.config, conversation)
   }
 
   private setStatus(conversationId: string, status: ConversationStatus): void {

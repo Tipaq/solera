@@ -162,6 +162,7 @@ export function registerClaudeSessionRoutes(
       id: randomUUID(),
       projectId: project.id,
       worktreeId: null,
+      place: null,
       // Une session importée depuis le CLI ne vient d'aucune carte.
       cardId: null,
       purpose: null,
@@ -269,7 +270,7 @@ export function registerClaudeSessionRoutes(
     if (pending) return pending
     const sync = (async (): Promise<ClaudeSyncDto> => {
       try {
-        const cwd = agentCwd(ctx.db, ctx.config.paths.threads, conversation)
+        const cwd = agentCwd(ctx.db, ctx.config, conversation)
         // Les repères ne se calculent que sans curseur valable : ils lisent tout le journal.
         let anchors: ReturnType<EventLog['importAnchors']> | undefined
         const prepared = await prepareTranscript(

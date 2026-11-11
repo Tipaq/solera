@@ -6,6 +6,7 @@ import type {
   ScheduleOverlapPolicy,
   ScheduleCheckResultDto,
   ScheduleRunStatus,
+  ScheduleScope,
   ScheduleWorktreeMode,
   ScheduledRunDto,
   ScheduledTaskDto,
@@ -84,6 +85,23 @@ export function useCreateSchedule(projectId: string) {
   })
 }
 
+/**
+ * Où créer une tâche depuis la page Planifiées : un projet, le vault (Savoir), l'instance
+ * (réservée aux administrateurs) ou nulle part. Hors projet, ni worktree neuf ni
+ * confinement.
+ */
+export type ScheduleTarget = { scope: 'project'; projectId: string } | { scope: Exclude<ScheduleScope, 'project'> }
+
+/** Crée une tâche dans la portée choisie (`POST /api/schedules`). */
+export function useCreateScopedSchedule() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: ({ target, input }: { target: ScheduleTarget; input: ScheduleInput }) =>
+      api.post<ScheduledTaskDto>('/api/schedules', { ...input, ...target }),
+    onSuccess: invalidate,
+  })
+}
+
 export function useUpdateSchedule() {
   const invalidate = useInvalidate()
   return useMutation({
@@ -115,6 +133,14 @@ export function useTestScheduleCheck(projectId: string) {
   return useMutation({
     mutationFn: (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
       api.post<ScheduleCheckResultDto>(`/api/projects/${projectId}/schedules/check-test`, input),
+  })
+}
+
+/** Comme `useTestScheduleCheck`, joué où la portée tourne : le vault, le dossier de données. */
+export function useTestScopedScheduleCheck() {
+  return useMutation({
+    mutationFn: ({ target, ...input }: { target: ScheduleTarget; script: string; timeoutSeconds: number; taskId?: string }) =>
+      api.post<ScheduleCheckResultDto>('/api/schedules/check-test', { ...input, ...target }),
   })
 }
 
