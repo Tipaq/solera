@@ -108,6 +108,12 @@ export const projects = sqliteTable(
      * (#146) ? Faux : elles prennent l'environnement du projet, comme les autres.
      */
     autonomousConfined: integer('autonomous_confined', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * Le cap du projet (#183) : où il va, en une phrase de 280 caractères au plus,
+     * affichée en tête de l'onglet Jalons et donnée à la session qui affine un jalon.
+     * Null tant que personne n'en a écrit.
+     */
+    cap: text('cap'),
     archivedAt: timestamp('archived_at'),
     createdAt: timestamp('created_at').notNull(),
   },
@@ -237,10 +243,10 @@ export const cards = sqliteTable(
     dueAt: timestamp('due_at'),
     /**
      * La carte parente : les cartes forment un arbre, et c'est la seule hiérarchie du
-     * board. Un jalon n'est pas un type, c'est une carte de haut niveau qui a une
-     * échéance et des enfants ; découper une carte, c'est lui en ajouter, sans qu'elle
-     * change de nature. Une table `milestones` aurait dupliqué ce qu'une carte porte
-     * déjà : un nom, une date, un fil de notes, un état.
+     * board. Un jalon reste une carte, de premier niveau, que distingue son drapeau
+     * (`milestone`) ; découper une carte, c'est lui ajouter des enfants. Une table
+     * `milestones` aurait dupliqué ce qu'une carte porte déjà : un nom, une date, un fil
+     * de notes, un état.
      *
      * Profondeur libre dans le modèle (l'interface en rend bien trois niveaux), sans
      * cycle : la route qui rattache refuse une descendante (`cards/tree.ts`).
@@ -254,6 +260,17 @@ export const cards = sqliteTable(
     parentId: text('parent_id').references((): AnySQLiteColumn => cards.id, {
       onDelete: 'set null',
     }),
+    /**
+     * Le drapeau « jalon » (#183) : la carte est un jalon, ou l'idée d'un jalon qu'on
+     * affinera. Coché à la main sur une carte sans parente, et posé d'office quand une
+     * carte de premier niveau reçoit son premier enfant : il reste quand on les détache,
+     * pour qu'un jalon vidé redevienne une idée et non une carte ordinaire.
+     *
+     * Jamais vrai sur une carte qui a une parente : une carte rangée dans un jalon n'en
+     * est pas un. La poser sous une parente lève le drapeau (`cards/tree.ts`), et le
+     * cocher sur une enfant est refusé.
+     */
+    milestone: integer('milestone', { mode: 'boolean' }).notNull().default(false),
     /**
      * Date d'acceptation ; `null` pour une carte venue de l'extérieur (une issue
      * absorbée) que personne n'a encore acceptée. Elle attend en tête de « à faire »

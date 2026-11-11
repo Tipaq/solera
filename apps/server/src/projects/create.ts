@@ -112,6 +112,7 @@ export async function insertProject(
     ownerId,
     defaultConfig: null,
     designSystemPath: null,
+    cap: null,
     turnCheckpoints: true,
     confinedServices: 'shared',
     autonomousConfined: false,

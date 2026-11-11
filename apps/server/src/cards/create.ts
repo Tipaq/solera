@@ -4,7 +4,7 @@ import { cardRefs, cards, writeTransaction, type CardRow, type Db } from '@soler
 import { parseCardReferences, type CardColumn } from '@solera/protocol'
 import type { AppContext } from '../http/context.js'
 import { recordCardMove } from './moves.js'
-import { resolveParent, syncParentColumn } from './tree.js'
+import { milestoneChildConflict, resolveParent, syncMilestoneFlag, syncParentColumn } from './tree.js'
 
 /**
  * Passe une carte de `todo` à `in_progress` au lancement de sa première session.
@@ -50,10 +50,13 @@ export function createCard(
   options: CreateCardOptions = {},
 ): CardRow {
   const parentId = options.parentId ? resolveParent(db, { id: '', projectId }, options.parentId) : null
+  if (parentId && options.milestone) throw milestoneChildConflict()
   const row = insertCard(db, projectId, userId, body, { ...options, parentId })
   syncCardReferences(db, row, row.description)
   // Un enfant né ailleurs qu'en « à faire » fait peut-être démarrer sa parente.
   syncParentColumn(db, parentId, { userId, conversationId: options.conversationId })
+  // Et son premier enfant en fait un jalon.
+  syncMilestoneFlag(db, parentId)
   return row
 }
 
@@ -70,6 +73,8 @@ export interface CreateCardOptions {
   conversationId?: string
   /** L'échéance, en minuit local du jour, quand celle qui crée en donne une. */
   dueAt?: number | null
+  /** Le drapeau « jalon », pour une carte sans parente : refusé avec une. */
+  milestone?: boolean
 }
 
 function insertCard(
@@ -108,6 +113,7 @@ function insertCard(
       // pas de date à proposer. Un agent qui découpe un chantier daté en donne une.
       dueAt: options.dueAt ?? null,
       parentId: options.parentId,
+      milestone: options.milestone ?? false,
       acceptedAt: options.accepted === false ? null : now,
       toClarifySince: null,
       branch: null,

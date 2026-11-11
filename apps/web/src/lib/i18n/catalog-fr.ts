@@ -2671,6 +2671,8 @@ export const fr: Catalog = {
   'composer.setting.cardFiling': 'Rangement de carte',
   'error.card_filing_forbidden': 'Seul le propriétaire du projet peut ranger son board.',
   'error.card_filing_stale': "Aucune de ces cartes ne peut plus être déplacée.",
+  'error.card_milestone_child': 'Une carte rangée dans un jalon ne peut pas en être un.',
+  'error.card_milestone_has_children': "Une carte qui a des enfants est un jalon d'office.",
 
   // Permissions (demandes de l'agent)
   'permission.status.allowed': 'Autorisé',

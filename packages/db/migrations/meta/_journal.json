@@ -491,6 +491,13 @@
       "when": 1794170728388,
       "tag": "0070_sessions_autonomes",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1794421893018,
+      "tag": "0071_drapeau_jalon_et_cap",
+      "breakpoints": true
     }
   ]
 }

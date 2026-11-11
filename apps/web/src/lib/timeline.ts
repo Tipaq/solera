@@ -11,9 +11,9 @@ export interface Span {
 /**
  * Une carte parente, avec ses enfants : ce que la chronologie appelle un jalon.
  *
- * Un jalon n'est pas un type (carte #83) : c'est une carte qui a des enfants, et une
- * échéance le plus souvent. Le jeu des jalons se déduit donc de la liste des cartes,
- * sans second appel. Chaque parente fait sa ligne, quelle que soit sa profondeur.
+ * La frise d'avant le drapeau « jalon » (#183) : elle prend pour jalon toute carte qui a
+ * des enfants, et une échéance le plus souvent. Le jeu se déduit donc de la liste des
+ * cartes, sans second appel. Chaque parente fait sa ligne, quelle que soit sa profondeur.
  */
 export interface Milestone {
   card: CardDto

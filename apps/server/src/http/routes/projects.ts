@@ -137,6 +137,7 @@ export function registerProjectRoutes(
           configLayer: readProjectLayer(project.defaultConfig),
           instructionsMode: project.instructionsMode,
           designSystemPath: project.designSystemPath,
+          cap: project.cap,
           turnCheckpoints: project.turnCheckpoints,
           activeTerminals: terminals.aliveCount(project.id),
           git: await readGitStatus(project.workspacePath),
@@ -310,6 +311,7 @@ export function registerProjectRoutes(
     }
 
     if (body.confinedServices !== undefined) patch.confinedServices = body.confinedServices
+    if (body.cap !== undefined) patch.cap = body.cap
     if (body.autonomousConfined !== undefined) {
       // Comme l'environnement du projet : un réglage que ce serveur ne sait pas tenir
       // ferait refuser chaque tâche et chaque jalon lancés ensuite.
