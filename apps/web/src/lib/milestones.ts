@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  CardRefinementDetailDto,
   LaunchMilestoneCardBody,
   MilestonePlanDto,
   MilestoneRunDto,
@@ -49,6 +50,23 @@ export function useActiveMilestones(projectId: string | undefined) {
     queryFn: () => api.get<MilestoneRunDto[]>(`/api/projects/${projectId}/milestones/active`),
     enabled: Boolean(projectId),
     refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS),
+  })
+}
+
+/**
+ * L'affinage d'une carte lu hors du fil (#184) : la session, sa question ouverte, son
+ * brouillon et son changement en attente. Relu au rythme d'un jalon qui tourne tant que
+ * la session travaille ou attend : sa question ou son brouillon peut arriver à tout moment.
+ */
+export function useCardRefinement(cardId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['card-refinement', cardId],
+    queryFn: () => api.get<CardRefinementDetailDto>(`/api/cards/${cardId}/refinement`),
+    enabled,
+    refetchInterval: (query) => {
+      const status = query.state.data?.session?.status
+      return status === 'running' || status === 'awaiting_input' ? LIVE_REFETCH_MS : false
+    },
   })
 }
 

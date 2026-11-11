@@ -26,7 +26,7 @@ function session(id: string, title: string, agent: CardConversationDto['agent'],
 function card(number: number, title: string, column: CardDto['column'], extra: Partial<CardDto> = {}): CardDto {
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
-    dueAt: null, parent: null, milestone: false, children: [], branch: null, branchPr: null, acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
+    dueAt: null, parent: null, milestone: false, children: [], branch: null, branchPr: null, refinement: null, acceptedAt: now - 3 * DAY, toClarifySince: null, createdBy: 'u1', createdByName: 'Tim', createdAt: now - 3 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY,
     conversations: [], attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null, duplicates: [], issue: null,
     ...extra,
   }

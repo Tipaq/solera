@@ -20,14 +20,17 @@ import { useMcpServers } from '../../lib/mcp'
  */
 
 /** Le réflexe natif du CLI : ce qui reste réglé par CLI dans la section Permissions. */
-const REFLEX_KEYS = ['permission', 'approval', 'sandbox', 'permission-edit', 'permission-bash', 'permission-webfetch']
+export const REFLEX_KEYS = ['permission', 'approval', 'sandbox', 'permission-edit', 'permission-bash', 'permission-webfetch']
 /** Ce que Solera prête à l'agent, commun à tous les CLI. */
-const LENT_KEYS = ['skillLibrary', 'agentMemory']
+export const LENT_KEYS = ['skillLibrary', 'agentMemory']
 /** Ce que « Modèles par défaut » garde (Q32), et ce qui part dans son repli « Avancé ». */
-const MODEL_KEYS = ['model', 'effort', 'account']
-const ADVANCED_KEYS = ['mode', 'speed', 'ultracode', 'outputStyle', 'advisor', 'webSearch']
+export const MODEL_KEYS = ['model', 'effort', 'account']
+export const ADVANCED_KEYS = ['mode', 'speed', 'ultracode', 'outputStyle', 'advisor', 'webSearch']
 
-const pick = (groups: SettingGroup[], keys: string[]) =>
+/** Les champs du contrôle des serveurs MCP, qui n'est pas une catégorie de `SETTING_FIELDS`. */
+export const MCP_FIELDS = ['mcpServers', 'soleraMcp', 'strictMcp']
+
+export const pick = (groups: SettingGroup[], keys: string[]) =>
   keys.flatMap((key) => groups.filter((group) => group.key === key))
 
 interface RowContext {
@@ -187,7 +190,7 @@ function LentCard({ level }: { level: SettingsLevel }) {
   const t = useTranslate()
   const shared = useLevelConfig(level, 'claude')
   const { groups, mcp } = useAgentSettings({ config: shared.config, onConfigChange: shared.write, disabled: isReadOnly(level) })
-  const local = level.kind === 'project' && ['mcpServers', 'soleraMcp', 'strictMcp'].some((field) => shared.sources[field] === 'project')
+  const local = level.kind === 'project' && MCP_FIELDS.some((field) => shared.sources[field] === 'project')
 
   return (
     <Card>
@@ -207,7 +210,7 @@ function LentCard({ level }: { level: SettingsLevel }) {
                   <InheritanceMark
                     local={local}
                     disabled={isReadOnly(level)}
-                    onReset={() => shared.reset(['mcpServers', 'soleraMcp', 'strictMcp'])}
+                    onReset={() => shared.reset(MCP_FIELDS)}
                   />
                 ) : null}
               </div>

@@ -137,21 +137,12 @@ try {
   const asking = conversations.filter((entry) => ['awaiting_input', 'error', 'interrupted'].includes(entry.status)).length
   assert.equal(await row.getByRole('link', { name: /^Travail/ }).locator('span[title] [aria-hidden]').innerText(), String(asking))
 
-  // ─── L'Aperçu : « En ce moment » sous les tuiles (#114, planche A1) ─────────
-  const now = page.getByRole('region', { name: 'En ce moment', exact: true })
-  await now.waitFor()
-  const nowRows = now.getByRole('listitem')
-  // Ce qui te demande quelque chose passe d'abord, et les terminées n'y sont pas.
-  await nowRows.first().getByText(/^(Attend |Interrompue|En erreur)/).waitFor()
-  await now.getByRole('link', { name: new RegExp(running.title) }).waitFor()
-  const finished = conversations.filter((entry) => entry.status === 'idle' && !entry.card && entry.id !== withPr?.id)
-  for (const entry of finished) {
-    assert.equal(await now.getByRole('link', { name: entry.title, exact: true }).count(), 0, `${entry.title} est finie : elle reste à l’onglet`)
-  }
+  // « En ce moment » a quitté l'Aperçu (#172) : les sessions vivantes sont à Travail, et
+  // le phare des jalons dira celles d'un jalon.
+  assert.equal(await page.getByRole('region', { name: 'En ce moment', exact: true }).count(), 0)
   // ─── « Ce qui t'attend » (#163) : une liste, une ligne par demande ─────────
   const inbox = page.getByRole('region', { name: 'Ce qui t’attend', exact: true })
   await inbox.waitFor()
-  assert.ok((await now.boundingBox()).y > (await inbox.boundingBox()).y, '« En ce moment » vient sous la liste')
   // Les tuiles « attend ta réponse » et « à relire » s'y sont fondues : rien n'est dit deux fois.
   assert.equal(await page.getByRole('link', { name: /attend ta réponse/i }).count(), 0)
   // Ce qui doit y être : les sessions qui te demandent quelque chose, les cartes feuilles
@@ -255,10 +246,6 @@ try {
     break
   }
   assert.ok(calm, 'Le jeu d’essai a un projet où rien n’attend')
-  await page.goto(`${base}/p/${nimbus.id}`)
-  await now.waitFor()
-  await now.getByRole('link', { name: /^Toute l'activité/ }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/travail`)
   await page.goto(`${base}/p/${nimbus.id}`)
   await row.waitFor()
 
@@ -463,11 +450,6 @@ try {
   assert.equal(await banner.getByText(/te demande/).count(), 0)
   assert.ok((await banner.boundingBox()).y < (await runningRow.boundingBox()).y, 'Le bandeau vient avant les sessions au travail')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-du-fil.png') })
-
-  // Le même bandeau sur l'Aperçu, entre les tuiles et « En ce moment ».
-  await page.goto(`${base}/p/${nimbus.id}`)
-  await banner.waitFor()
-  assert.ok((await banner.boundingBox()).y < (await now.boundingBox()).y, 'Le bandeau vient avant « En ce moment »')
 
   // C2 : la vue du jalon, par vagues, avec la file en pied.
   await banner.getByRole('link', { name: 'Voir le jalon' }).click()
