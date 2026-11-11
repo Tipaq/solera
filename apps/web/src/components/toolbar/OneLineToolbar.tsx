@@ -1,6 +1,6 @@
 import { Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { cx } from '@solera/ui'
+import { IconButton, cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -87,14 +87,9 @@ export function ToolbarSearch({
         className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-soft [&::-webkit-search-cancel-button]:hidden"
       />
       {value ? (
-        <button
-          type="button"
-          aria-label={t('toolbar.search.clear')}
-          onClick={() => onChange('')}
-          className="grid size-5 shrink-0 place-items-center rounded text-ink-faint hover:text-ink"
-        >
+        <IconButton label={t('toolbar.search.clear')} size="sm" onClick={() => onChange('')} className="-mr-1.5">
           <X size={14} />
-        </button>
+        </IconButton>
       ) : null}
     </label>
   )
@@ -111,7 +106,13 @@ export const toolbarButtonClass = (active: boolean) =>
     active ? 'border-line-strong bg-surface-high text-ink' : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
   )
 
-/** Un filtre actif, effaçable, posé sur la même ligne que « Filtrer ». */
+/**
+ * Un filtre actif, effaçable, posé sur la même ligne que « Filtrer ».
+ *
+ * Une pastille de 28 px : sa croix ne peut pas être un `IconButton`, dont les 44 px au
+ * doigt déborderaient de la puce. Elle reste petite à l'œil et prend sa cible de 44 px
+ * au doigt par un calque invisible.
+ */
 export function FilterChip({ children, onClear, title }: { children: ReactNode; onClear: () => void; title?: string }) {
   const t = useTranslate()
   return (
@@ -121,7 +122,7 @@ export function FilterChip({ children, onClear, title }: { children: ReactNode; 
         type="button"
         aria-label={t('toolbar.chip.remove')}
         onClick={onClear}
-        className="grid size-5 shrink-0 place-items-center rounded text-ink-faint hover:bg-canvas hover:text-ink"
+        className="relative grid size-5 shrink-0 place-items-center rounded text-ink-faint hover:bg-canvas hover:text-ink pointer-coarse:after:absolute pointer-coarse:after:-inset-3"
       >
         <X size={12} />
       </button>

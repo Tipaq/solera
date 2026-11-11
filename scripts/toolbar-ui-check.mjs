@@ -95,6 +95,7 @@ try {
     const search = toolbar.getByRole('searchbox')
     const filter = toolbar.getByRole('button', { name: /^Filtrer/ })
     const display = toolbar.getByRole('button', { name: /^Affichage : / })
+    const displayName = () => display.getAttribute('aria-label')
     const action = toolbar.getByRole('button', { name: 'Carte' })
 
     // BAR-1 / BAR-3 : une ligne de 48 px, les boutons à la hauteur de `Button size="sm"`.
@@ -164,7 +165,7 @@ try {
     assert.equal(await chips.locator('*').count(), 0)
 
     // BAR-6 : « Affichage » — vues en tuiles, la vue courante dans l'infobulle.
-    assert.equal(await display.getAttribute('title'), 'Affichage : Kanban')
+    assert.equal(await displayName(), 'Affichage : Kanban')
     assert.equal(await display.getByText('Affichage', { exact: true }).isVisible(), !narrow, 'libellé tu au téléphone')
     await display.click()
     const panel = page.getByRole('dialog', { name: 'Affichage' })
@@ -174,7 +175,7 @@ try {
     await panel.getByRole('radio', { name: 'Couloirs par jalon' }).click()
     await panel.screenshot({ path: join(output, `affichage-${viewport.width}.png`) })
     await page.keyboard.press('Escape')
-    assert.equal(await display.getAttribute('title'), 'Affichage : Liste')
+    assert.equal(await displayName(), 'Affichage : Liste')
 
     // BAR-7 : la vue s'écrit dans l'adresse et dans la mémoire du projet…
     assert.equal(await page.locator('#location').textContent(), '?vue=liste')

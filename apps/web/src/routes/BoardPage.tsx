@@ -320,19 +320,22 @@ export function BoardPage() {
           filter={parents.length > 0 ? (
             <FilterMenu active={parentCard ? 1 : 0} onClearAll={() => setParentFilter(null)}>
               <MenuHeading>{t('board.filter.parent')}</MenuHeading>
-              {parents.map((parent) => (
-                <MenuCheck
-                  key={parent.id}
-                  checked={parent.id === parentCard?.id}
-                  onChange={(checked) => setParentFilter(checked ? parent.number : null)}
-                  aside={parent.children.length}
-                >
-                  <span className="flex min-w-0 items-center gap-1.5" title={parent.title}>
-                    <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{parent.number}</span>
-                    <span className="min-w-0 truncate">{parent.title}</span>
-                  </span>
-                </MenuCheck>
-              ))}
+              <div role="radiogroup" aria-label={t('board.filter.parent')}>
+                {parents.map((parent) => (
+                  <MenuCheck
+                    key={parent.id}
+                    exclusive
+                    checked={parent.id === parentCard?.id}
+                    onChange={() => setParentFilter(parent.number)}
+                    aside={parent.children.length}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5" title={parent.title}>
+                      <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{parent.number}</span>
+                      <span className="min-w-0 truncate">{parent.title}</span>
+                    </span>
+                  </MenuCheck>
+                ))}
+              </div>
             </FilterMenu>
           ) : null}
           chips={parentCard ? (

@@ -1,6 +1,6 @@
 import { Check, Filter, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Popover, SegmentedControl, cx, type Segment } from '@solera/ui'
+import { Button, Popover, SegmentedControl, TooltipButton, cx, type Segment } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import { toolbarButtonClass } from './OneLineToolbar'
 
@@ -35,24 +35,24 @@ export function FilterMenu({ active, onClearAll, children }: { active: number; o
       align="start"
       className="w-80"
       trigger={
-        <button
+        <TooltipButton
           type="button"
           className={toolbarButtonClass(active > 0)}
           title={active > 0 ? t(active === 1 ? 'toolbar.filter.active.one' : 'toolbar.filter.active.many', { count: active }) : undefined}
         >
           <Filter size={13} />
           {label}
-          {active > 0 ? <span className="rounded bg-accent px-1 text-[10px] font-semibold tabular-nums text-accent-ink">{active}</span> : null}
-        </button>
+          {active > 0 ? <span className="rounded bg-accent px-1 text-micro font-semibold tabular-nums text-accent-ink">{active}</span> : null}
+        </TooltipButton>
       }
     >
       <div className="max-h-[70vh] overflow-y-auto pb-2">
         {children}
         {active > 0 && onClearAll ? (
-          <div className="mt-2 border-t border-line px-3 pt-2">
-            <button type="button" onClick={onClearAll} className="min-h-8 text-xs text-ink-faint hover:text-ink">
+          <div className="mt-2 border-t border-line px-1.5 pt-1.5">
+            <Button variant="ghost" size="sm" onClick={onClearAll}>
               {t('toolbar.filter.clearAll')}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -84,15 +84,15 @@ export function DisplayMenu<K extends string>(
       align="end"
       className="w-80"
       trigger={
-        <button
+        <TooltipButton
           type="button"
           className={toolbarButtonClass(false)}
-          title={current ? t('toolbar.display.current', { view: current.label }) : label}
+          title={current ? t('toolbar.display.current', { view: current.label }) : undefined}
           aria-label={current ? t('toolbar.display.current', { view: current.label }) : label}
         >
           {current?.icon ?? <SlidersHorizontal size={16} />}
           <span className="hidden sm:inline">{label}</span>
-        </button>
+        </TooltipButton>
       }
     >
       <div className="max-h-[70vh] overflow-y-auto pb-3">
@@ -138,40 +138,47 @@ export function ViewTiles<K extends string>({ options, value, onChange }: { opti
 
 /** Le titre d'un groupe dans un popover de la barre, en petites capitales. */
 export function MenuHeading({ children }: { children: ReactNode }) {
-  return <p className="px-3 pt-3 pb-1 text-[11px] font-medium tracking-wide text-ink-faint uppercase">{children}</p>
+  return <p className="px-3 pt-3 pb-1 text-meta font-medium tracking-wide text-ink-faint uppercase">{children}</p>
 }
 
 /**
  * Une ligne cochable d'un popover, son compte en regard. Une case à cocher et non un
  * `menuitemcheckbox` : le popover n'est pas un menu, et ce rôle n'y aurait pas de sens.
+ *
+ * `exclusive` en fait une option d'un choix unique trop long pour un `MenuSegment` (une
+ * carte parente parmi vingt) : un rond au lieu d'une case, et l'appelant pose le
+ * `radiogroup` autour. Choisie, elle ne se décoche pas d'un clic : sa puce l'efface.
  */
 export function MenuCheck({
   checked,
   onChange,
   aside,
+  exclusive = false,
   children,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   aside?: ReactNode
+  exclusive?: boolean
   children: ReactNode
 }) {
   return (
     <button
       type="button"
-      role="checkbox"
+      role={exclusive ? 'radio' : 'checkbox'}
       aria-checked={checked}
-      onClick={() => onChange(!checked)}
+      onClick={() => onChange(exclusive || !checked)}
       className="flex min-h-11 w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-high md:min-h-8 pointer-coarse:min-h-11"
     >
       <span
         aria-hidden
         className={cx(
-          'grid size-4 shrink-0 place-items-center rounded border',
+          'grid size-4 shrink-0 place-items-center border',
+          exclusive ? 'rounded-full' : 'rounded',
           checked ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong',
         )}
       >
-        {checked ? <Check size={11} strokeWidth={3} /> : null}
+        {checked ? exclusive ? <span className="size-1.5 rounded-full bg-accent-ink" /> : <Check size={11} strokeWidth={3} /> : null}
       </span>
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {aside !== undefined ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{aside}</span> : null}

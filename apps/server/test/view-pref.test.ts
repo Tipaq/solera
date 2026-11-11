@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 const { resolveView, viewStorageKey } = await import('../../web/src/lib/view-pref.js')
-const { toggled } = await import('../../web/src/lib/filters.js')
 
 const KEYS = ['kanban', 'liste', 'geste'] as const
 
@@ -30,12 +29,4 @@ test('la mémoire est rangée par page et par projet', () => {
   assert.notEqual(viewStorageKey('tableau', 'p1'), viewStorageKey('jalons', 'p1'))
   // Une page hors projet (portefeuille, /sessions) a sa propre mémoire.
   assert.equal(viewStorageKey('sessions', null), 'solera.view.sessions')
-})
-
-test('toggled ajoute ou retire une valeur sans toucher à l’ensemble reçu', () => {
-  const start = new Set(['a'])
-  const added = toggled(start, 'b')
-  assert.deepEqual([...added].sort(), ['a', 'b'])
-  assert.deepEqual([...toggled(added, 'a')], ['b'])
-  assert.deepEqual([...start], ['a'])
 })

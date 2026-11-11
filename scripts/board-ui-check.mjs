@@ -357,7 +357,7 @@ try {
   // Le filtre par parente, dans « Filtrer ▾ » : une coche, puis une puce sur la ligne.
   const filters = page.getByRole('dialog', { name: 'Filtrer', exact: true })
   await page.getByRole('button', { name: /^Filtrer/ }).click()
-  await filters.getByRole('checkbox', { name: /#11/ }).click()
+  await filters.getByRole('radiogroup', { name: 'Parente', exact: true }).getByRole('radio', { name: /#11/ }).click()
   await page.waitForFunction(() => new URL(location.href).searchParams.get('parente') === '11')
   await page.keyboard.press('Escape')
   await filters.waitFor({ state: 'detached' })
