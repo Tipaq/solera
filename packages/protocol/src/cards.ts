@@ -6,6 +6,7 @@ import { z } from 'zod'
 import type { ConversationStatus } from './api.js'
 import type { AgentKind } from './events.js'
 import type { CardIssueDto } from './issues.js'
+import type { CardRefinementDto } from './refinement.js'
 
 /**
  * Colonne du board, c'est-à-dire la position choisie d'une carte dans le workflow.
@@ -287,6 +288,12 @@ export interface CardDto {
   branch: string | null
   /** La PR de cette branche vers la branche par défaut, une fois ouverte (#187). */
   branchPr: CardBranchPrDto | null
+  /**
+   * La session d'affinage de la carte (#184) — la conversation `split` non archivée la
+   * plus récente qui la découpe —, ou `null` tant qu'aucune n'a été lancée. Le détail
+   * (questions, brouillon) se lit par `GET /api/cards/:id/refinement`.
+   */
+  refinement: CardRefinementDto | null
   /** `null` : venue de l'extérieur et pas encore acceptée. Elle ne lance pas de session. */
   acceptedAt: number | null
   /** « À préciser » depuis cette date, ou `null`. Ne se pose qu'en « à faire ». */

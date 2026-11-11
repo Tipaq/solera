@@ -12,6 +12,7 @@ import { projectInstructionsModeSchema, type InstructionsMode } from './instruct
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 import { confinedServicesSchema, executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
+import { splitModeSchema } from './refinement.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -343,6 +344,11 @@ export const createConversationBodySchema = z.object({
    */
   purpose: z.literal('split').nullable().default(null),
   splitCardId: z.string().uuid().nullable().default(null),
+  /**
+   * Le mode d'une session d'affinage (#184). Absent d'un découpage : `questions`. Refusé
+   * hors découpage.
+   */
+  splitMode: splitModeSchema.nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
    * L'environnement d'exécution de la session, figé à sa création. Absent : celui du
@@ -373,6 +379,7 @@ export const createFreeConversationBodySchema = createConversationBodySchema.omi
   cardId: true,
   purpose: true,
   splitCardId: true,
+  splitMode: true,
   environment: true,
 })
 

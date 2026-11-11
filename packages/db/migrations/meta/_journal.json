@@ -561,6 +561,13 @@
       "when": 1794437927815,
       "tag": "0083_commande_planifiee",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1794439831696,
+      "tag": "0084_affinage_d_un_jalon",
+      "breakpoints": true
     }
   ]
 }

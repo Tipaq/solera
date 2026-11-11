@@ -69,6 +69,7 @@ import {
   assertCardInProject,
   CONVERSATION_LINKS,
   milestoneCards,
+  MILESTONE_OF_CONVERSATION,
   NO_LINKS,
   readConversationLinks,
   type ConversationLinks,
@@ -257,7 +258,7 @@ export function registerConversationRoutes(
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
-      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
+      .leftJoin(milestoneCards, MILESTONE_OF_CONVERSATION)
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
@@ -307,7 +308,7 @@ export function registerConversationRoutes(
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
-      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
+      .leftJoin(milestoneCards, MILESTONE_OF_CONVERSATION)
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(
         conversationReads,
@@ -436,6 +437,9 @@ export function registerConversationRoutes(
       if (body.purpose !== 'split') throw badRequest('split_card_without_purpose', 'splitCardId only goes with purpose "split".')
       assertCardInProject(ctx, body.splitCardId, id)
     }
+    if (body.splitMode && body.purpose !== 'split') {
+      throw badRequest('split_mode_without_purpose', 'splitMode only goes with purpose "split".')
+    }
 
     // Les `CLI_DEFAULT` sont remplacés par ce que le CLI annonce, avant d'écrire en
     // base : la conversation garde ensuite une configuration explicite et stable.
@@ -451,6 +455,7 @@ export function registerConversationRoutes(
       cardId: body.cardId,
       purpose: body.purpose,
       splitCardId: body.splitCardId,
+      splitMode: body.splitMode,
       title: body.title,
       environment: body.environment,
       origin: null,
@@ -481,7 +486,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readConversationLinks(ctx, body.cardId),
+          readConversationLinks(ctx, row),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -612,7 +617,7 @@ export function registerConversationRoutes(
           { ...row, lastSeq: copied },
           user.id,
           0,
-          readConversationLinks(ctx, row.cardId),
+          readConversationLinks(ctx, row),
           false,
         ),
       )
@@ -664,6 +669,7 @@ export function registerConversationRoutes(
       cardId: source.cardId,
       purpose: source.purpose,
       splitCardId: source.splitCardId,
+      splitMode: source.splitMode,
       title: body.title ?? source.title,
       // Le même monde que l'original : la suite poursuit le même travail.
       environment: environmentOf(source),
@@ -683,7 +689,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readConversationLinks(ctx, row.cardId),
+          readConversationLinks(ctx, row),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -722,7 +728,7 @@ export function registerConversationRoutes(
       conversation,
       user.id,
       readCursor(id, user.id),
-      readConversationLinks(ctx, conversation.cardId),
+      readConversationLinks(ctx, conversation),
       worktree.gone,
     )
   })
@@ -1021,7 +1027,7 @@ export function registerConversationRoutes(
       result.row,
       user.id,
       readCursor(id, user.id),
-      result.moved ? NO_LINKS : readConversationLinks(ctx, conversation.cardId),
+      result.moved ? NO_LINKS : readConversationLinks(ctx, conversation),
       checkWorktree(ctx.db, result.row.worktreeId).gone,
     )
   })
@@ -1040,7 +1046,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readConversationLinks(ctx, row.cardId),
+      readConversationLinks(ctx, row),
       false,
     )
   })
@@ -1058,7 +1064,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readConversationLinks(ctx, row.cardId),
+      readConversationLinks(ctx, row),
       false,
     )
   })
