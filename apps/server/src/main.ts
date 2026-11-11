@@ -9,6 +9,7 @@ import { purgeExpiredSessions } from './auth/sessions.js'
 import { loadConfig } from './config.js'
 import { AttachmentStore } from './attachments/store.js'
 import { ActionRunner } from './actions/actions.js'
+import { CommandScheduler } from './actions/scheduled.js'
 import { EventLog } from './events/event-log.js'
 import { buildApp } from './http/app.js'
 import { announceToLauncher, openDesktopSession, scrubLauncherEnv } from './instance/desktop.js'
@@ -113,6 +114,10 @@ async function main(): Promise<void> {
   const relay = new SessionRelay(db, sessions, log)
   // Tâches planifiées par l'utilisateur ou par un agent, tirées dans des sessions neuves.
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
+  // Les commandes planifiées, tirées dans la même passe, détachées de tout terminal.
+  // Après l'`ActionRunner`, qui clôt au démarrage les passages qu'un arrêt a emportés.
+  const scheduledCommands = new CommandScheduler(db, config, sessions.environments)
+  tasks.setCommands(scheduledCommands)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.
   const orphans = await attachments.purgeOrphans()
@@ -122,6 +127,7 @@ async function main(): Promise<void> {
   // le hub WebSocket lui dira qui regarde quoi.
   const notifications = new Notifications(db, push)
   sessions.setNotifier(notifications)
+  scheduledCommands.setNotifications(notifications)
   // Les décisions que les sessions demandent : déposées et échues par le balayage des
   // demandes d'agent, tranchées par la route. Elles notifient par l'aiguillage.
   const decisions = new Decisions({ db, config }, log, sessions.statusBus, notifications)
@@ -231,6 +237,7 @@ async function main(): Promise<void> {
   issueSources.start(app.log)
   // Après `recoverInterrupted` aussi : un tir coupé par le redémarrage doit se lire
   // « interrompu », pas « en cours » jusqu'à sa durée maximale.
+  scheduledCommands.setLogger(app.log)
   tasks.start(app.log)
 
   /**

@@ -16,6 +16,7 @@ import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError, conflict } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import type { CommandScheduler } from '../actions/scheduled.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 
@@ -44,6 +45,8 @@ export class TaskScheduler {
    * secondes, pendant lesquelles « lancer maintenant » ne doit pas en ouvrir un second.
    */
   private readonly firing = new Set<string>()
+  /** Les commandes planifiées, tirées dans la même passe (AC-03). */
+  private commands: Pick<CommandScheduler, 'tick'> | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -70,6 +73,10 @@ export class TaskScheduler {
     this.timer = null
   }
 
+  setCommands(commands: Pick<CommandScheduler, 'tick'>): void {
+    this.commands = commands
+  }
+
   async tick(now = Date.now()): Promise<void> {
     if (this.busy) return
     this.busy = true
@@ -78,6 +85,7 @@ export class TaskScheduler {
       // celui qui attendait derrière lui, dans le même balayage.
       await this.settleRuns(now)
       await this.fireDue(now)
+      await this.commands?.tick(now)
     } catch (err) {
       this.logger?.error({ err }, 'balayage des tâches planifiées en échec')
     } finally {

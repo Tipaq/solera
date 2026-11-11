@@ -4,19 +4,24 @@ import { join } from 'node:path'
 import { and, asc, count, eq, inArray } from 'drizzle-orm'
 import { conversations, projectActions, type Db, type ProjectActionRow } from '@solera/db'
 import {
+  DEFAULT_ACTION_SCHEDULE_DURATION_MINUTES,
   MAX_ACTIONS_PER_PROJECT,
+  nextScheduleRun,
+  scheduleCadenceSchema,
   type ActionRunDto,
   type ActionRunTrigger,
   type CreateProjectActionBody,
   type ProjectActionDto,
   type ProjectActionRunResult,
+  type ProjectActionSchedule,
   type ProjectActionServiceState,
+  type ScheduleCadence,
   type ServiceActionControl,
   type TerminalDto,
   type UpdateProjectActionBody,
 } from '@solera/protocol'
 import type { Config } from '../config.js'
-import { HttpError, conflict, notFound } from '../http/errors.js'
+import { HttpError, badRequest, conflict, notFound } from '../http/errors.js'
 import {
   controlServiceApp,
   scanServiceApps,
@@ -62,13 +67,14 @@ export function loadAction(db: Db, actionId: string): ProjectActionRow {
 }
 
 /** Ce qu'une personne vient de relire : la relecture suivante s'y comparera. */
-function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'url'>, at: number) {
+function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'url' | 'cadence'>, at: number) {
   return {
     approvedAt: at,
     approvedKind: row.kind,
     approvedCommand: row.command,
     approvedSubdir: row.subdir,
     approvedUrl: row.url,
+    approvedCadence: row.cadence,
   }
 }
 
@@ -78,6 +84,32 @@ const neverReviewed = {
   approvedCommand: null,
   approvedSubdir: null,
   approvedUrl: null,
+  approvedCadence: null,
+}
+
+export function readActionCadence(raw: string | null): ScheduleCadence | null {
+  return raw === null ? null : scheduleCadenceSchema.parse(JSON.parse(raw))
+}
+
+/**
+ * Le prochain tir, ou l'erreur qui dit pourquoi il n'y en a pas : une commande planifiée
+ * active qui ne partira jamais doit être refusée à l'écriture, pas découverte en silence.
+ */
+function armedAt(cadence: ScheduleCadence | null, enabled: boolean, lastRunAt: number | null): number | null {
+  if (!cadence || !enabled) return null
+  const next = nextScheduleRun(cadence, Date.now(), lastRunAt)
+  if (next === null) throw badRequest('schedule_never_fires', 'This schedule has no upcoming run.')
+  return next
+}
+
+/** Ce qu'une action doit tenir une fois écrite, quel que soit le chemin qui l'écrit. */
+function assertRunnable(row: Pick<ProjectActionRow, 'kind' | 'cadence' | 'onDemand'>): void {
+  if (row.cadence !== null && row.kind !== 'task') {
+    throw badRequest('action_schedule_task_only', 'Only a task can be scheduled.')
+  }
+  if (!row.onDemand && row.cadence === null) {
+    throw badRequest('action_never_runs', 'On demand, scheduled, or both.')
+  }
 }
 
 /** `agentConversationId` null : créée depuis l'interface, donc relue d'office. */
@@ -98,12 +130,15 @@ export function createAction(
     })
   }
   const now = Date.now()
+  const schedule = body.schedule ?? null
   const fields = {
     kind: body.kind,
     command: body.command,
     subdir: body.subdir || null,
     url: body.url || null,
+    cadence: schedule ? JSON.stringify(schedule.cadence) : null,
   }
+  const scheduleEnabled = schedule ? (schedule.enabled ?? true) : false
   const row: ProjectActionRow = {
     id: randomUUID(),
     projectId,
@@ -111,10 +146,16 @@ export function createAction(
     description: body.description || null,
     ...fields,
     ...(agentConversationId ? neverReviewed : reviewed(fields, now)),
+    onDemand: body.onDemand ?? true,
+    scheduleEnabled,
+    scheduleMaxMinutes: schedule?.maxDurationMinutes ?? DEFAULT_ACTION_SCHEDULE_DURATION_MINUTES,
+    lastScheduledAt: null,
+    nextRunAt: armedAt(schedule?.cadence ?? null, scheduleEnabled, null),
     agentConversationId,
     createdAt: now,
     updatedAt: now,
   }
+  assertRunnable(row)
   db.insert(projectActions).values(row).run()
   return row
 }
@@ -124,6 +165,10 @@ export function createAction(
  * en `proposed` dès qu'elle touche à ce qui s'exécute : renommer un bouton ne change
  * rien au risque, changer sa commande si. Ce qui avait été relu reste noté, pour
  * montrer l'écart et y revenir au refus.
+ *
+ * La cadence compte avec ce qui s'exécute : une commande planifiée part sans clic, et
+ * un agent qui en planifie une la ferait tourner sans que personne l'ait vue. La pause,
+ * elle, ne lance rien.
  */
 export function updateAction(
   db: Db,
@@ -131,6 +176,17 @@ export function updateAction(
   patch: UpdateProjectActionBody,
   agentConversationId: string | null,
 ): ProjectActionRow {
+  const cadence =
+    patch.schedule === undefined
+      ? row.cadence
+      : patch.schedule === null
+        ? null
+        : patch.schedule.cadence
+          ? JSON.stringify(patch.schedule.cadence)
+          : row.cadence
+  // Planifier une commande qui ne l'était pas la met en marche, sauf pause demandée.
+  const scheduleEnabled =
+    cadence === null ? false : (patch.schedule?.enabled ?? (row.cadence === null ? true : row.scheduleEnabled))
   const next: ProjectActionRow = {
     ...row,
     label: patch.label ?? row.label,
@@ -139,11 +195,25 @@ export function updateAction(
     command: patch.command ?? row.command,
     subdir: patch.subdir === undefined ? row.subdir : patch.subdir || null,
     url: patch.url === undefined ? row.url : patch.url || null,
+    onDemand: patch.onDemand ?? row.onDemand,
+    cadence,
+    scheduleEnabled,
+    scheduleMaxMinutes: patch.schedule?.maxDurationMinutes ?? row.scheduleMaxMinutes,
     updatedAt: Date.now(),
+  }
+  assertRunnable(next)
+  // Réarmée seulement si la cadence ou la pause ont bougé : renommer une commande ne
+  // doit pas repousser un tir par intervalle qui approchait.
+  if (next.cadence !== row.cadence || next.scheduleEnabled !== row.scheduleEnabled) {
+    next.nextRunAt = armedAt(readActionCadence(next.cadence), next.scheduleEnabled, row.lastScheduledAt)
   }
   // L'URL compte avec ce qui s'exécute : c'est un lien qu'on suivra sans le relire.
   const executionChanged =
-    next.kind !== row.kind || next.command !== row.command || next.subdir !== row.subdir || next.url !== row.url
+    next.kind !== row.kind ||
+    next.command !== row.command ||
+    next.subdir !== row.subdir ||
+    next.url !== row.url ||
+    (next.cadence !== null && next.cadence !== row.cadence)
   if (agentConversationId) {
     next.agentConversationId = agentConversationId
     if (executionChanged) next.approvedAt = null
@@ -182,8 +252,18 @@ export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | 
     command: row.approvedCommand,
     subdir: row.approvedSubdir,
     url: row.approvedUrl,
+    cadence: row.approvedCadence,
     approvedAt: now,
     updatedAt: now,
+  }
+  // Une cadence ajoutée par l'agent s'en va ; la commande redevient alors lançable d'un
+  // clic, sans quoi plus rien ne la lancerait.
+  if (next.cadence === null) {
+    next.scheduleEnabled = false
+    next.onDemand = true
+  }
+  if (next.cadence !== row.cadence) {
+    next.nextRunAt = next.cadence === null ? null : nextScheduleRun(readActionCadence(next.cadence)!, now, row.lastScheduledAt)
   }
   const written = db.update(projectActions)
     .set(next)
@@ -222,7 +302,15 @@ function toDto(
     approved:
       row.approvedCommand === null
         ? null
-        : { kind: row.approvedKind ?? row.kind, command: row.approvedCommand, subdir: row.approvedSubdir, url: row.approvedUrl },
+        : {
+            kind: row.approvedKind ?? row.kind,
+            command: row.approvedCommand,
+            subdir: row.approvedSubdir,
+            url: row.approvedUrl,
+            cadence: readActionCadence(row.approvedCadence),
+          },
+    onDemand: row.onDemand,
+    schedule: scheduleOf(row),
     agentConversationId: row.agentConversationId,
     agentConversationTitle,
     createdAt: row.createdAt,
@@ -232,6 +320,18 @@ function toDto(
       ? { terminalId: terminal.id, alive: terminal.alive, exitCode: terminal.exitCode, startedAt: terminal.createdAt }
       : null,
     runs,
+  }
+}
+
+function scheduleOf(row: ProjectActionRow): ProjectActionSchedule | null {
+  const cadence = readActionCadence(row.cadence)
+  if (!cadence) return null
+  return {
+    cadence,
+    enabled: row.scheduleEnabled,
+    nextRunAt: row.nextRunAt,
+    lastRunAt: row.lastScheduledAt,
+    maxDurationMinutes: row.scheduleMaxMinutes,
   }
 }
 
@@ -337,6 +437,11 @@ export class ActionRunner {
     // avec d'autres arguments serait une autre commande que celle relue.
     if (args.length > 0 && row.kind === 'service') {
       throw conflict('action_args_task_only', 'Extra arguments only apply to a task.')
+    }
+    // Une commande qui ne part qu'à sa cadence n'a pas de bouton : la lancer à la main
+    // doublerait ce que la cadence fait déjà.
+    if (!row.onDemand) {
+      throw conflict('action_not_on_demand', 'This command only runs on its schedule.')
     }
     const cwd = await this.cwdFor(row, base)
     const command = args.length > 0 ? `${row.command} ${args.map(shellQuote).join(' ')}` : row.command

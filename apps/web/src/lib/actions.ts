@@ -7,6 +7,7 @@ import {
   type ProjectActionDto,
   type ProjectActionRunResult,
   type ServiceActionControl,
+  type UpdateProjectActionBody,
 } from '@solera/protocol'
 import { api } from './api'
 import { relativeDate } from './dates'
@@ -48,10 +49,11 @@ export function useCreateAction(projectId: string) {
   })
 }
 
+/** La pause d'une commande planifiée n'envoie que `{ schedule: { enabled } }`. */
 export function useUpdateAction() {
   const invalidate = useInvalidate()
   return useMutation({
-    mutationFn: ({ id, ...patch }: { id: string } & Partial<CreateProjectActionBody>) =>
+    mutationFn: ({ id, ...patch }: { id: string } & UpdateProjectActionBody) =>
       api.patch<ProjectActionDto>(`/api/actions/${id}`, patch),
     onSuccess: () => invalidate(),
   })
