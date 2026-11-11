@@ -8,6 +8,7 @@ import type {
   ExecutionEnvironment,
   HandoffDto,
   JournalPageDto,
+  ProjectBackgroundDto,
   SoleraEvent,
 } from '@solera/protocol'
 import { api } from './api'
@@ -118,6 +119,24 @@ export function useConversations(projectId: string | undefined) {
     enabled: Boolean(projectId),
     staleTime: 15_000,
   })
+}
+
+/**
+ * Ce que les sessions du projet ont laissé tourner, session par session (AC-07). Le flux
+ * des statuts n'en pousse que le nombre : `useStatusFeed` relit cette liste quand le
+ * nombre d'une session bouge.
+ */
+export function useProjectBackground(projectId: string | undefined) {
+  return useQuery({
+    queryKey: projectBackgroundKey(projectId ?? ''),
+    queryFn: () => api.get<ProjectBackgroundDto[]>(`/api/projects/${projectId}/background`),
+    enabled: Boolean(projectId),
+    staleTime: 15_000,
+  })
+}
+
+export function projectBackgroundKey(projectId: string) {
+  return ['project-background', projectId] as const
 }
 
 export function useConversation(conversationId: string | undefined) {

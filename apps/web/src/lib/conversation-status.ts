@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@solera/protocol'
+import { projectBackgroundKey } from './conversations'
 import { wsClient } from './ws-client'
 
 /**
@@ -223,6 +224,13 @@ export function useStatusFeed(): void {
           }
         }
         if (busy) settledAt.delete(conversationId)
+        // La liste détaillée des travaux de fond d'un projet suit leur nombre.
+        if ((backgrounds.get(conversationId) ?? 0) !== background) {
+          const projectId = queryClient
+            .getQueryData<ConversationDto[]>(['conversations', 'all'])
+            ?.find((entry) => entry.id === conversationId)?.projectId
+          void queryClient.invalidateQueries({ queryKey: projectId ? projectBackgroundKey(projectId) : ['project-background'] })
+        }
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
@@ -243,6 +251,7 @@ export function useStatusFeed(): void {
         metrics.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        void queryClient.invalidateQueries({ queryKey: ['project-background'] })
       },
       onListsChanged: () => {
         if (listsTimer !== null) return

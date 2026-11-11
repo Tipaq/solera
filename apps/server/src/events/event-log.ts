@@ -172,6 +172,12 @@ interface PendingDelta {
   rawFormat: string | null
 }
 
+/** Un travail de fond encore ouvert, avec son départ (`EventLog.openBackgroundWork`). */
+export interface OpenBackgroundWork extends BackgroundTask {
+  startedAt: number
+  toolCallId: string | null
+}
+
 export class EventLog {
   /** Le fil projeté de chaque conversation, tenu à jour après chaque écriture. */
   readonly thread: ThreadProjection
@@ -892,35 +898,87 @@ export class EventLog {
    * niveau remplace, une fin de travail retire, une fin de session vide tout.
    */
   openBackgroundTasks(conversationId: string): BackgroundTask[] {
+    return this.openBackgroundWork(conversationId).map(({ id, kind, description }) => ({ id, kind, description }))
+  }
+
+  /**
+   * Les mêmes, avec ce que le journal sait de leur départ : l'heure, et l'appel d'outil
+   * qui les a lancés quand `task.started` le nomme. Sans lui, le départ est la première
+   * liste de niveau qui a annoncé le travail.
+   */
+  openBackgroundWork(conversationId: string): OpenBackgroundWork[] {
     this.flush(conversationId)
     const rows = this.db
-      .select({ type: events.type, payload: events.payload })
+      .select({ type: events.type, payload: events.payload, ts: events.ts })
       .from(events)
       .where(
         and(
           eq(events.conversationId, conversationId),
-          inArray(events.type, ['background.updated', 'task.completed', 'session.ended']),
+          inArray(events.type, ['background.updated', 'task.started', 'task.completed', 'session.ended']),
         ),
       )
       .orderBy(asc(events.seq))
       .all()
 
-    let live = new Map<string, BackgroundTask>()
+    const started = new Map<string, { ts: number; toolCallId: string | null }>()
+    let live = new Map<string, { task: BackgroundTask; announcedAt: number }>()
     for (const row of rows) {
       if (row.type === 'session.ended') {
         live.clear()
         continue
       }
 
-      const payload = JSON.parse(row.payload) as { tasks?: BackgroundTask[]; taskId?: string }
+      const payload = JSON.parse(row.payload) as {
+        tasks?: BackgroundTask[]
+        taskId?: string
+        toolCallId?: string | null
+      }
       if (row.type === 'background.updated') {
-        live = new Map((payload.tasks ?? []).map((task) => [task.id, task]))
-      } else if (typeof payload.taskId === 'string') {
+        const before = live
+        live = new Map((payload.tasks ?? []).map((task) => [task.id, { task, announcedAt: before.get(task.id)?.announcedAt ?? row.ts }]))
+      } else if (typeof payload.taskId !== 'string') {
+        continue
+      } else if (row.type === 'task.started') {
+        started.set(payload.taskId, { ts: row.ts, toolCallId: payload.toolCallId ?? null })
+      } else {
         live.delete(payload.taskId)
       }
     }
 
-    return [...live.values()]
+    return [...live.values()].map(({ task, announcedAt }) => {
+      const origin = started.get(task.id)
+      return { ...task, startedAt: origin?.ts ?? announcedAt, toolCallId: origin?.toolCallId ?? null }
+    })
+  }
+
+  /**
+   * Les arguments d'appels d'outils, par identifiant : le dernier `tool.input_updated`
+   * l'emporte sur le `tool.started`, comme dans le fil. Filtré par SQLite, comme
+   * `toolOutput` : un fil porte des milliers d'appels.
+   */
+  toolInputs(conversationId: string, toolCallIds: string[]): Map<string, { name: string; input: unknown }> {
+    const found = new Map<string, { name: string; input: unknown }>()
+    if (toolCallIds.length === 0) return found
+    this.flush(conversationId)
+    const rows = this.db
+      .select({ payload: events.payload })
+      .from(events)
+      .where(
+        and(
+          eq(events.conversationId, conversationId),
+          inArray(events.type, ['tool.started', 'tool.input_updated']),
+          inArray(sql`${events.payload} ->> '$.toolCallId'`, toolCallIds),
+        ),
+      )
+      .orderBy(asc(events.seq))
+      .all()
+
+    for (const row of rows) {
+      const payload = JSON.parse(row.payload) as { toolCallId: string; name?: string; input?: unknown }
+      const name = payload.name ?? found.get(payload.toolCallId)?.name
+      if (name !== undefined) found.set(payload.toolCallId, { name, input: payload.input })
+    }
+    return found
   }
 
   /**
