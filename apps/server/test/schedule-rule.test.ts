@@ -7,6 +7,7 @@ import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 const {
   cadenceFromState,
   defaultState,
+  edit,
   localDayOf,
   marksOf,
   problemOf,
@@ -134,6 +135,25 @@ test('un intervalle d’heures du menu se relit en « toutes les N heures »', (
   assert.deepEqual(pick(hours, ['frequency', 'every']), { frequency: 'hours', every: 6 })
 })
 
+test('un intervalle relu est rendu tel quel tant qu’on n’a rien touché', () => {
+  // Un intervalle se compte depuis le dernier tir ; le motif qui le montre s'aligne sur
+  // l'horloge. Ouvrir puis enregistrer ne doit pas changer l'un en l'autre.
+  for (const minutes of [360, 30, 90, 1440, 7 * 1440]) {
+    const read = stateFromCadence({ kind: 'interval', minutes }, clock)
+    assert.deepEqual(cadenceFromState(read, clock), { kind: 'interval', minutes }, `${minutes} min`)
+  }
+  const say = (minutes: number) => {
+    const read = stateFromCadence({ kind: 'interval', minutes }, clock)
+    return sentenceOf(read, cadenceFromState(read, clock), t, 'fr')
+  }
+  assert.equal(say(90), t('schedule.cadence.minutes', { count: 90 }))
+  assert.equal(say(360), t('schedule.cadence.hours', { count: 6 }))
+  // Le premier changement fait de la règle affichée la règle rendue.
+  const touched = withFrequency(stateFromCadence({ kind: 'interval', minutes: 360 }, clock), 'hours', clock)
+  assert.deepEqual(cadenceFromState(touched, clock), cron('0 */6 * * *'))
+  assert.deepEqual(cadenceFromState(edit(stateFromCadence({ kind: 'interval', minutes: 90 }, clock), {}), clock), cron('0 */2 * * *'))
+})
+
 test('ce qui ne se relit pas passe en Personnalisé, le cron tel quel', () => {
   for (const expression of ['0 9 1 1 *', '*/10 * * * *', '0 9 * * 1-3', '0 9 1 * 1', '30 */6 * * *', '0 9-17 * * *', '0 0 12 * * 1']) {
     const read = stateFromCadence(cron(expression), clock)
@@ -142,7 +162,7 @@ test('ce qui ne se relit pas passe en Personnalisé, le cron tel quel', () => {
   }
 })
 
-test('un intervalle hors du menu passe en Personnalisé, au cron le plus proche', () => {
+test('un intervalle hors du menu se montre en Personnalisé, au cron le plus proche', () => {
   assert.deepEqual(pick(stateFromCadence({ kind: 'interval', minutes: 30 }, clock), ['frequency', 'cron']), {
     frequency: 'custom',
     cron: '*/30 * * * *',

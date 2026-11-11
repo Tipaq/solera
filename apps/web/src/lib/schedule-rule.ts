@@ -1,6 +1,6 @@
 import { Cron } from 'croner'
 import { cronScheduleSchema, nextScheduleRun, type ScheduleCadence } from '@solera/protocol'
-import type { Translate } from './automations'
+import { cadenceWords, type Translate } from './automations'
 import { cronToHuman } from './cron'
 
 /**
@@ -62,6 +62,13 @@ export interface BuilderState {
   /** Chaque mois : 1–31, ou 'L' pour le dernier jour. */
   monthDay: number | 'L'
   cron: string
+  /**
+   * L'intervalle relu, rendu tel quel tant qu'on n'a rien touché : il se compte depuis
+   * le dernier tir, et le motif qui le montre s'aligne sur l'horloge. Ouvrir puis
+   * enregistrer ne change pas l'un en l'autre. Toute modification passe par `edit`, qui
+   * l'efface.
+   */
+  kept: Extract<ScheduleCadence, { kind: 'interval' }> | null
 }
 
 /** Ce qui empêche une règle de donner une cadence. */
@@ -162,6 +169,7 @@ export function defaultState(clock: Clock): BuilderState {
     days: [1],
     monthDay: 1,
     cron: '0 3 * * *',
+    kept: null,
   }
 }
 
@@ -191,8 +199,8 @@ export function stateFromCadence(cadence: ScheduleCadence | null | undefined, cl
   }
   if (cadence.kind === 'interval') {
     const hours = cadence.minutes / 60
-    if (EVERY_HOURS.includes(hours)) return { ...base, frequency: 'hours', every: hours }
-    return { ...base, frequency: 'custom', cron: cronOfInterval(cadence.minutes) }
+    if (EVERY_HOURS.includes(hours)) return { ...base, frequency: 'hours', every: hours, kept: cadence }
+    return { ...base, frequency: 'custom', cron: cronOfInterval(cadence.minutes), kept: cadence }
   }
   const expression = cadence.expression.trim()
   const custom: BuilderState = { ...base, frequency: 'custom', cron: expression }
@@ -234,6 +242,7 @@ function validCron(expression: string): boolean {
 
 /** Ce qui manque à la règle pour donner une cadence ; null si elle est complète. */
 export function problemOf(state: BuilderState, clock: Clock): RuleProblem | null {
+  if (state.kept) return null
   if (state.frequency === 'weekly' && state.days.length === 0) return 'weekdays'
   if (state.frequency === 'custom' && !validCron(state.cron.trim())) return 'cron'
   if (state.frequency === 'once' && zonedTime(state.date, state.hour, state.minute, clock.timeZone) <= clock.now) return 'past'
@@ -242,6 +251,7 @@ export function problemOf(state: BuilderState, clock: Clock): RuleProblem | null
 
 /** La cadence du protocole ; null si la règle est incomplète (`problemOf`). */
 export function cadenceFromState(state: BuilderState, clock: Clock): ScheduleCadence | null {
+  if (state.kept) return state.kept
   if (problemOf(state, clock)) return null
   const time = `${state.minute} ${state.hour}`
   switch (state.frequency) {
@@ -265,23 +275,28 @@ export function cadenceFromState(state: BuilderState, clock: Clock): ScheduleCad
 
 const cron = (expression: string): ScheduleCadence => ({ kind: 'cron', expression })
 
+/** Une modification de la règle : dès lors, c'est elle qui est rendue, plus l'intervalle relu. */
+export function edit(state: BuilderState, patch: Partial<Omit<BuilderState, 'kept'>>): BuilderState {
+  return { ...state, ...patch, kept: null }
+}
+
 /** Change de fréquence ; passer en Personnalisé part du cron de ce qu'on voyait. */
 export function withFrequency(state: BuilderState, frequency: Frequency, clock: Clock): BuilderState {
-  const cadence = cadenceFromState(state, clock)
-  if (frequency === 'custom' && cadence?.kind === 'cron') return { ...state, frequency, cron: cadence.expression }
-  return { ...state, frequency }
+  const shown = cadenceFromState(edit(state, {}), clock)
+  if (frequency === 'custom' && shown?.kind === 'cron') return edit(state, { frequency, cron: shown.expression })
+  return edit(state, { frequency })
 }
 
 /** Déplace la plage horaire en gardant une fin après le début. */
 export function withRange(state: BuilderState, change: { from?: number; to?: number }): BuilderState {
   const from = Math.min(change.from ?? state.from, 22)
   const to = Math.min(Math.max(change.to ?? state.to, from + 1), 23)
-  return { ...state, from, to }
+  return edit(state, { from, to })
 }
 
 /* ------------------------------------------------------------------ les mots */
 
-/** « lundi », « Monday » ; `short` donne l'initiale (« L », « M »). */
+/** « lundi », « Monday » ; `narrow` donne l'initiale (« L », « M »). */
 export function weekdayName(cronDay: number, locale: string, style: 'long' | 'narrow' = 'long'): string {
   // Le 7 janvier 2024 est un dimanche.
   return new Intl.DateTimeFormat(locale, { weekday: style, timeZone: 'UTC' }).format(Date.UTC(2024, 0, 7 + cronDay))
@@ -311,19 +326,20 @@ export function dayWords(day: CalendarDay, locale: string, style: 'long' | 'shor
   )
 }
 
-export function pluralOf(count: number, locale: string): 'one' | 'other' {
+export function pluralKey(count: number, locale: string): 'one' | 'other' {
   return new Intl.PluralRules(locale).select(count) === 'one' ? 'one' : 'other'
 }
 
 /** La phrase en clair de la règle ; null quand elle n'a pas de cadence. */
 export function sentenceOf(state: BuilderState, cadence: ScheduleCadence | null, t: Translate, locale: string): string | null {
   if (!cadence) return null
+  if (cadence.kind === 'interval') return cadenceWords(cadence, t, locale)
   const time = clockWords(state.hour, state.minute, t)
   switch (state.frequency) {
     case 'once':
       return t('scheduleRule.sentence.once', { date: dayWords(state.date, locale), time })
     case 'hours': {
-      const count = pluralOf(state.every, locale)
+      const count = pluralKey(state.every, locale)
       return state.rangeOn
         ? t(`scheduleRule.sentence.hoursRange.${count}`, {
             count: state.every,

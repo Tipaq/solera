@@ -3668,7 +3668,6 @@ export const fr: Catalog = {
   "schedule.form.save": "Enregistrer",
   "schedule.form.create": "Créer la tâche",
   "scheduleRule.repeat": "Répéter",
-  "scheduleRule.frequency.label": "Fréquence",
   "scheduleRule.frequency.once": "Une seule fois",
   "scheduleRule.frequency.hours": "toutes les",
   "scheduleRule.frequency.hoursMenu": "Toutes les N heures",

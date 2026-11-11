@@ -1,5 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useState, type ComponentProps, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import type { ScheduleCadence } from '@solera/protocol'
 import { Menu, MenuRadioGroup, MenuRadioItem, MenuSeparator, MonthGrid, Popover, TimePicker, cx } from '@solera/ui'
 import { formatDateTime } from '../../lib/automations'
@@ -11,12 +11,13 @@ import {
   cadenceFromState,
   calendarDayOfLocal,
   dayWords,
+  edit,
   hourWords,
   localDayOf,
   localMidnightOf,
   marksOf,
   ordinalWords,
-  pluralOf,
+  pluralKey,
   problemOf,
   relativeDay,
   sentenceOf,
@@ -27,6 +28,7 @@ import {
   withRange,
   zonedTime,
   type BuilderState,
+  type CalendarDay,
   type Clock,
   type Frequency,
 } from '../../lib/schedule-rule'
@@ -67,8 +69,21 @@ export function ScheduleBuilder({
   const [mountedAt] = useState(() => Date.now())
   const clock: Clock = useMemo(() => ({ now: fixedNow ?? mountedAt, timeZone }), [fixedNow, mountedAt, timeZone])
 
-  const [state, setState] = useState<BuilderState>(() => stateFromCadence(initial, clock))
-  const set = (patch: Partial<BuilderState>) => setState((current) => ({ ...current, ...patch }))
+  const [state, setRule] = useState<BuilderState>(() => stateFromCadence(initial, clock))
+  const touched = useRef(false)
+  const setState = (next: BuilderState) => {
+    touched.current = true
+    setRule(next)
+  }
+  const set = (patch: Parameters<typeof edit>[1]) => setState(edit(state, patch))
+
+  // Le fuseau du serveur arrive avec l'instance : tant qu'on n'a rien touché, la règle se
+  // relit dans celui-là, sans quoi une date unique lue à l'heure du poste se décalerait.
+  useEffect(() => {
+    if (!touched.current) setRule(stateFromCadence(initial, clock))
+    // `initial` ne compte qu'au montage, comme une valeur par défaut.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeZone])
   const cadence = useMemo(() => cadenceFromState(state, clock), [state, clock])
   const problem = problemOf(state, clock)
   const sentence = sentenceOf(state, cadence, t, locale)
@@ -95,7 +110,7 @@ export function ScheduleBuilder({
         {state.frequency === 'once' ? (
           <>
             <Word>{t('scheduleRule.word.on')}</Word>
-            <DateButton state={state} clock={clock} onChange={(date) => set({ date })} />
+            <DateButton date={state.date} today={localDayOf(clock.now, clock.timeZone)} onChange={(date) => set({ date })} />
             <Word>{t('scheduleRule.word.at')}</Word>
             {time}
           </>
@@ -110,12 +125,12 @@ export function ScheduleBuilder({
                 <TimeButton hour={state.from} minute={0} hoursOnly onChange={(from) => setState(withRange(state, { from }))} />
                 <Word>{t('scheduleRule.word.and')}</Word>
                 <TimeButton hour={state.to} minute={0} hoursOnly onChange={(to) => setState(withRange(state, { to }))} />
-                <Toggle on={false} onClick={() => set({ rangeOn: false })}>
+                <Toggle onClick={() => set({ rangeOn: false })}>
                   {t('scheduleRule.range.allDay')}
                 </Toggle>
               </>
             ) : (
-              <Toggle on={false} onClick={() => set({ rangeOn: true })}>
+              <Toggle onClick={() => set({ rangeOn: true })}>
                 {t('scheduleRule.range.add')}
               </Toggle>
             )}
@@ -159,7 +174,7 @@ export function ScheduleBuilder({
             aria-invalid={problem === 'cron' || undefined}
             placeholder={t('scheduleRule.custom.placeholder')}
             className={cx(
-              'h-9 min-w-0 flex-1 basis-48 rounded-md border bg-canvas px-2.5 font-mono text-sm text-ink outline-none',
+              'h-9 min-w-0 flex-1 basis-48 rounded-md border bg-canvas px-2.5 font-mono text-sm text-ink outline-none pointer-coarse:h-11',
               'placeholder:text-ink-faint placeholder:italic',
               problem === 'cron' ? 'border-critical' : 'border-line hover:border-line-strong focus:border-accent',
             )}
@@ -208,7 +223,7 @@ function Word({ children }: { children: ReactNode }) {
 
 /** Le bouton d'un morceau de la phrase : la valeur, un chevron, la même hauteur partout. */
 const PART = cx(
-  'inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-canvas px-2.5',
+  'inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-canvas px-2.5 pointer-coarse:h-11',
   'text-sm font-medium text-ink tabular-nums transition-colors hover:border-line-strong',
   'data-[state=open]:border-accent',
   'focus-visible:outline-2 focus-visible:outline-accent',
@@ -223,14 +238,19 @@ function PartButton({ children, ...rest }: ComponentProps<'button'>) {
   )
 }
 
-function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; children: ReactNode }) {
+/**
+ * Une case dans la phrase. Avec `on`, un interrupteur (« jours ouvrés seulement ») ; sans,
+ * une action en toutes lettres qui change la phrase (« + sur une plage horaire »).
+ */
+function Toggle({ on, onClick, children }: { on?: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
-      aria-pressed={on}
+      role={on === undefined ? undefined : 'switch'}
+      aria-checked={on}
       onClick={onClick}
       className={cx(
-        'inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm transition-colors',
+        'inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm transition-colors pointer-coarse:h-11',
         'focus-visible:outline-2 focus-visible:outline-accent',
         on ? 'text-ink' : 'text-ink-faint hover:text-ink',
       )}
@@ -284,12 +304,13 @@ function FrequencyMenu({ value, onChange }: { value: Frequency; onChange: (next:
   )
 }
 
-/** Un choix dans une grille qui se referme : intervalle, jour du mois. */
+/** Une option d'une grille qui se referme au choix : intervalle, jour du mois. */
 function GridChoice({ on, faint = false, className, ...rest }: ComponentProps<'button'> & { on: boolean; faint?: boolean }) {
   return (
     <button
       type="button"
-      aria-pressed={on}
+      role="radio"
+      aria-checked={on}
       className={cx(
         'h-8 rounded text-xs tabular-nums pointer-coarse:h-11',
         'focus-visible:outline-2 focus-visible:outline-accent',
@@ -318,10 +339,10 @@ function EveryButton({ value, onChange }: { value: number; onChange: (next: numb
       align="start"
       className="w-48 p-1.5"
       trigger={
-        <PartButton>{t(`scheduleRule.everyHours.${pluralOf(value, locale)}`, { count: value })}</PartButton>
+        <PartButton>{t(`scheduleRule.everyHours.${pluralKey(value, locale)}`, { count: value })}</PartButton>
       }
     >
-      <div className="grid grid-cols-4 gap-1">
+      <div role="radiogroup" aria-label={t('scheduleRule.every.label')} className="grid grid-cols-4 gap-1">
         {EVERY_HOURS.map((entry) => (
           <GridChoice
             key={entry}
@@ -346,7 +367,7 @@ function WeekdayPills({ value, onChange }: { value: number[]; onChange: (next: n
     <span
       role="group"
       aria-label={t('scheduleRule.weekdays.label')}
-      className="inline-flex h-9 items-center gap-0.5 rounded-md border border-line bg-canvas p-0.5"
+      className="inline-flex h-9 items-center gap-0.5 rounded-md border border-line bg-canvas p-0.5 pointer-coarse:h-12"
     >
       {WEEK.map((day) => {
         const on = value.includes(day)
@@ -355,12 +376,13 @@ function WeekdayPills({ value, onChange }: { value: number[]; onChange: (next: n
           <button
             key={day}
             type="button"
-            aria-pressed={on}
+            role="checkbox"
+            aria-checked={on}
             aria-label={name}
             title={name}
             onClick={() => onChange(on ? value.filter((entry) => entry !== day) : [...value, day])}
             className={cx(
-              'grid size-7 place-items-center rounded text-xs font-semibold uppercase transition-colors',
+              'grid size-7 place-items-center rounded text-xs font-semibold uppercase transition-colors pointer-coarse:size-11',
               'focus-visible:outline-2 focus-visible:outline-accent',
               on ? 'bg-accent text-accent-ink' : 'text-ink-faint hover:bg-surface-high hover:text-ink',
             )}
@@ -435,7 +457,7 @@ function MonthDayButton({ value, onChange }: { value: number | 'L'; onChange: (n
         </PartButton>
       }
     >
-      <div className="grid grid-cols-7 gap-0.5">
+      <div role="radiogroup" aria-label={t('scheduleRule.monthDay.label')} className="grid grid-cols-7 gap-0.5">
         {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
           <GridChoice key={day} on={value === day} faint={day > 28} onClick={() => pick(day)}>
             {day}
@@ -450,7 +472,7 @@ function MonthDayButton({ value, onChange }: { value: number | 'L'; onChange: (n
 }
 
 /** Le jour d'une règle « une fois » : un mois où les jours passés ne se choisissent pas. */
-function DateButton({ state, clock, onChange }: { state: BuilderState; clock: Clock; onChange: (next: BuilderState['date']) => void }) {
+function DateButton({ date, today, onChange }: { date: CalendarDay; today: number; onChange: (next: CalendarDay) => void }) {
   const t = useTranslate()
   const locale = useLocale()
   const [open, setOpen] = useState(false)
@@ -462,11 +484,11 @@ function DateButton({ state, clock, onChange }: { state: BuilderState; clock: Cl
       side="bottom"
       align="start"
       className="w-auto p-2"
-      trigger={<PartButton>{dayWords(state.date, locale, 'short')}</PartButton>}
+      trigger={<PartButton>{dayWords(date, locale, 'short')}</PartButton>}
     >
       <MonthGrid
-        pick={localMidnightOf(state.date)}
-        today={localDayOf(clock.now, clock.timeZone)}
+        pick={localMidnightOf(date)}
+        today={today}
         locale={locale}
         onPick={(day) => {
           onChange(calendarDayOfLocal(day))
@@ -512,7 +534,7 @@ function Preview({ cadence, sentence, clock }: { cadence: ScheduleCadence | null
           month={month}
           onMonth={setMonth}
           marked={marked}
-          markedLabel={(count) => t(`scheduleRule.preview.passes.${pluralOf(count, locale)}`, { count })}
+          markedLabel={(count) => t(`scheduleRule.preview.passes.${pluralKey(count, locale)}`, { count })}
           today={today}
           locale={locale}
         />

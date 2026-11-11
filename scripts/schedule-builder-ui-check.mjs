@@ -106,7 +106,7 @@ try {
     // PLA-1 : la phrase par défaut, chaque contrôle à 36 px, rien ne déborde.
     await sentence('Chaque jour à 3 h 00')
     await expectCadence({ kind: 'cron', expression: '0 3 * * *' }, 'défaut')
-    const heights = await Promise.all((await phrase.getByRole('button').all()).map((button) => box(button)))
+    const heights = await Promise.all((await phrase.locator('button').all()).map((button) => box(button)))
     assert.ok(heights.every((part) => part.height === 36), `hauteurs ${heights.map((part) => part.height)}`)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'la phrase déborde')
     await shot(phrase, 'phrase-jour')
@@ -130,7 +130,7 @@ try {
     await expectCadence({ kind: 'cron', expression: '30 9 * * *' }, 'heure tapée')
 
     // PLA-5 : jours ouvrés.
-    await check.getByRole('button', { name: 'jours ouvrés seulement' }).click()
+    await check.getByRole('switch', { name: 'jours ouvrés seulement' }).click()
     await expectCadence({ kind: 'cron', expression: '30 9 * * 1-5' }, 'jours ouvrés')
     await sentence('Chaque jour ouvré (lundi à vendredi) à 9 h 30')
 
@@ -144,28 +144,28 @@ try {
 
     // PLA-6 : lundi d'abord, au moins un jour.
     const days = check.getByRole('group', { name: 'Jours de la semaine' })
-    assert.equal((await days.getByRole('button').first().getAttribute('aria-label')), 'lundi')
-    await days.getByRole('button', { name: 'jeudi' }).click()
+    assert.equal((await days.getByRole('checkbox').first().getAttribute('aria-label')), 'lundi')
+    await days.getByRole('checkbox', { name: 'jeudi' }).click()
     await expectCadence({ kind: 'cron', expression: '30 9 * * 1,4' }, 'lundi et jeudi')
     await sentence('Chaque lundi et jeudi à 9 h 30')
     await shot(phrase, 'phrase-semaine')
-    await days.getByRole('button', { name: 'lundi' }).click()
-    await days.getByRole('button', { name: 'jeudi' }).click()
+    await days.getByRole('checkbox', { name: 'lundi' }).click()
+    await days.getByRole('checkbox', { name: 'jeudi' }).click()
     await check.getByRole('alert').getByText('Choisis au moins un jour.').waitFor()
     await sentence('Règle incomplète.')
     assert.equal(await cadence(), null)
-    await days.getByRole('button', { name: 'mardi' }).click()
+    await days.getByRole('checkbox', { name: 'mardi' }).click()
 
     // PLA-7 : le jour du mois, l'aide au-delà de 28, le dernier jour.
     await frequency('chaque semaine', 'chaque mois')
     await check.getByRole('button', { name: '1er' }).click()
     const monthDays = page.getByRole('dialog', { name: 'Jour du mois' })
     await shot(monthDays, 'jour-du-mois')
-    await monthDays.getByRole('button', { name: '31', exact: true }).click()
+    await monthDays.getByRole('radio', { name: '31', exact: true }).click()
     await check.getByText('Les mois sans 31, rien ne part', { exact: false }).waitFor()
     await expectCadence({ kind: 'cron', expression: '30 9 31 * *' }, 'le 31')
     await check.getByRole('button', { name: '31', exact: true }).click()
-    await page.getByRole('dialog', { name: 'Jour du mois' }).getByRole('button', { name: 'Dernier jour' }).click()
+    await page.getByRole('dialog', { name: 'Jour du mois' }).getByRole('radio', { name: 'Dernier jour' }).click()
     await expectCadence({ kind: 'cron', expression: '30 9 L * *' }, 'dernier jour')
     await sentence('Le dernier jour de chaque mois à 9 h 30')
     // Novembre : seul le 30 est marqué.
@@ -174,7 +174,7 @@ try {
     // PLA-4 : toutes les N heures, puis sur une plage dont la fin suit le début.
     await frequency('chaque mois', 'Toutes les N heures')
     await check.getByRole('button', { name: '6 heures' }).click()
-    await page.getByRole('dialog', { name: 'Intervalle' }).getByRole('button', { name: '2 h', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Intervalle' }).getByRole('radio', { name: '2 h', exact: true }).click()
     await expectCadence({ kind: 'cron', expression: '0 */2 * * *' }, 'toutes les 2 heures')
     await check.getByRole('button', { name: '+ sur une plage horaire' }).click()
     await expectCadence({ kind: 'cron', expression: '0 8-20/2 * * *' }, 'plage')
@@ -220,9 +220,15 @@ try {
     // PLA-10 : une cadence existante se relit ; ce qui ne se relit pas reste tel quel.
     await page.evaluate(() => window.mount({ kind: 'cron', expression: '0 3 * * 1,4' }))
     await check.getByRole('button', { name: 'chaque semaine' }).waitFor()
-    assert.equal(await check.getByRole('group', { name: 'Jours de la semaine' }).getByRole('button', { pressed: true }).count(), 2)
+    assert.equal(await check.getByRole('group', { name: 'Jours de la semaine' }).getByRole('checkbox', { checked: true }).count(), 2)
     await page.evaluate(() => window.mount({ kind: 'cron', expression: '15 4 1 1 *' }))
     assert.equal(await check.getByRole('textbox', { name: 'Expression cron' }).inputValue(), '15 4 1 1 *')
+    // Un intervalle relu repart tel quel : il ne devient le motif affiché qu'au premier geste.
+    await page.evaluate(() => window.mount({ kind: 'interval', minutes: 90 }))
+    await expectCadence({ kind: 'interval', minutes: 90 }, 'intervalle relu')
+    await sentence('Toutes les 90 min')
+    await check.getByRole('textbox', { name: 'Expression cron' }).fill('0 */3 * * *')
+    await expectCadence({ kind: 'cron', expression: '0 */3 * * *' }, 'intervalle modifié')
 
     assert.deepEqual(errors, [])
     console.log(`OK : planification lisible, chaque fréquence, aperçu à l'heure du serveur (${viewport.width}px).`)

@@ -3674,7 +3674,6 @@ export const en = {
   'schedule.form.save': "Save",
   'schedule.form.create': "Create the task",
   'scheduleRule.repeat': "Repeat",
-  'scheduleRule.frequency.label': "Frequency",
   'scheduleRule.frequency.once': "Once",
   'scheduleRule.frequency.hours': "every",
   'scheduleRule.frequency.hoursMenu': "Every N hours",
