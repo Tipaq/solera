@@ -2676,6 +2676,8 @@ export const en = {
   'composer.setting.cardFiling': 'Card filing',
   'error.card_filing_forbidden': 'Only the project owner can file cards on their board.',
   'error.card_filing_stale': 'None of these cards can still be moved.',
+  'error.card_milestone_child': 'A card filed under a milestone cannot be one itself.',
+  'error.card_milestone_has_children': 'A card with children is a milestone by default.',
 
   // Permissions (demandes de l'agent)
   'permission.status.allowed': 'Allowed',

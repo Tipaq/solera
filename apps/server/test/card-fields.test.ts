@@ -69,10 +69,11 @@ test('échéance et parente : posées, relues, et détachées sans toucher à la
     column: 'todo',
   })
 
-  // Aucun drapeau ne marque la parente : elle reste une carte, qui a des enfants.
+  // Son premier enfant fait de la parente un jalon, d'office.
   const board: CardDto[] = (await app.inject('/api/projects/project/cards')).json()
   const read = board.find((row) => row.id === parent.id)
   assert.equal(read?.parent, null)
+  assert.equal(read?.milestone, true)
   assert.deepEqual(read?.children.map((child) => child.id), [card.id])
 
   const detached = await app.inject({

@@ -85,7 +85,16 @@ export function useCardSearch(query: string, enabled: boolean) {
 export function useCreateCard(projectId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (input: { title: string; description?: string; column?: CardColumn; parentId?: string }) =>
+    mutationFn: (input: {
+      title: string
+      description?: string
+      column?: CardColumn
+      parentId?: string
+      /** L'échéance, en minuit local du jour. */
+      dueAt?: number | null
+      /** Le drapeau « jalon » ; refusé avec une parente. */
+      milestone?: boolean
+    }) =>
       api.post<CardDto>(`/api/projects/${projectId}/cards`, input),
     onSuccess: (card) => {
       // Posée dans la liste avant la relecture : qui crée une carte l'ouvre dans la
@@ -115,6 +124,8 @@ export function useUpdateCard(projectId: string) {
       parentId?: string | null
       /** Pose ou lève l'état « à préciser » ; le poser ramène la carte en « à faire ». */
       toClarify?: boolean
+      /** Coche ou décoche « C'est un jalon » ; refusé sur une enfant ou une carte qui a des enfants. */
+      milestone?: boolean
     }) => api.patch<CardDto>(`/api/cards/${id}`, patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: cardsKey(projectId) }),
   })

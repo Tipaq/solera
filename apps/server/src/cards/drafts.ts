@@ -232,7 +232,7 @@ export function createDraftCards(
         projectId,
         userId,
         { title: draft.parent.title.trim(), description: draft.parent.description.trim(), column: 'todo' },
-        { dueAt: draft.parent.dueAt, conversationId },
+        { dueAt: draft.parent.dueAt, milestone: true, conversationId },
       )
       note(parent.id, 'Jalon ouvert par le découpage de cette session, validé dans le fil.')
     }

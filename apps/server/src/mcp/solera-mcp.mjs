@@ -556,7 +556,7 @@ const ALL_TOOLS = [
   {
     name: 'list_cards',
     description:
-      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance, sa parente et son état dans « à faire » (non acceptée, à préciser) compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
+      "Liste le board de ce projet : les cartes, c'est-à-dire le travail à faire, en cours, à vérifier ou terminé. Une carte est un chantier, distinct des conversations qui l'exécutent : elle leur survit et en porte plusieurs. Appelle cet outil avant d'ouvrir un sujet neuf, pour vérifier que ce qu'on te demande n'est pas déjà décrit dans une carte, et quand l'utilisateur cite une carte par son numéro (`#12`). Rend un résumé par carte — son échéance, sa parente, si c'est un jalon et son état dans « à faire » (non acceptée, à préciser) compris —, pas les descriptions entières : utiliser read_card ensuite pour en lire une.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -2232,6 +2232,7 @@ function listCards(column) {
               c.due_at      AS dueAt,
               c.accepted_at AS acceptedAt,
               c.to_clarify_since AS toClarifySince,
+              c.milestone   AS milestone,
               m.number      AS parentNumber,
               m.title       AS parentTitle,
               (SELECT COUNT(*) FROM conversations AS v WHERE v.card_id = c.id) AS sessions,
@@ -2285,6 +2286,7 @@ function readCard(number) {
     .prepare(
       `SELECT c.id, c.number, c.title, c.column, c.description, c.created_at AS createdAt,
               c.due_at AS dueAt, c.accepted_at AS acceptedAt, c.to_clarify_since AS toClarifySince,
+              c.milestone AS milestone,
               m.number AS parentNumber, m.title AS parentTitle,
               m.column AS parentColumn, m.due_at AS parentDueAt,
               i.url AS issueUrl, i.state AS issueState
@@ -2703,7 +2705,8 @@ function renderCards(rows, column) {
     const due = row.dueAt ? `, échéance ${dueDate(row.dueAt)}` : ''
     const parent = row.parentNumber ? `, enfant de #${row.parentNumber} « ${row.parentTitle} »` : ''
     const children = row.children > 0 ? `, ${row.children} enfant(s)` : ''
-    return `- #${row.number} [${cardState(row)}] ${row.title}${due}${parent}${children}${sessions}${self}${summary}`
+    const milestone = row.milestone ? (row.children > 0 ? ', jalon' : ', idée de jalon') : ''
+    return `- #${row.number} [${cardState(row)}] ${row.title}${milestone}${due}${parent}${children}${sessions}${self}${summary}`
   })
 
   const head = `${shown.length} carte(s)${column ? ` en « ${COLUMN_LABELS[column]} »` : ''} :`
@@ -2733,6 +2736,15 @@ function renderCard(card) {
   }
   if (card.toClarifySince) {
     head.push(`À préciser depuis ${ago(card.toClarifySince)} : des questions attendent une réponse avant le code.`)
+  }
+  if (card.milestone) {
+    // Le drapeau seul, sans enfant, fait une idée de jalon : un chantier à affiner avant
+    // de le découper en cartes.
+    head.push(
+      card.children.length > 0
+        ? 'Jalon : ses enfants livrent dans sa branche, et sa colonne se déduit de la leur.'
+        : "Idée de jalon : pas encore d'enfant, elle attend d'être affinée et découpée en cartes.",
+    )
   }
   if (card.dueAt) head.push(`Échéance : ${dueDate(card.dueAt)}.`)
   if (card.parentNumber) {

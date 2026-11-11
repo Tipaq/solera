@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { cards, writeTransaction, type CardRow, type Db, type Tx } from '@solera/db'
 import { CARD_CLOSED_COLUMNS, deriveParentColumn } from '@solera/protocol'
-import { badRequest, conflict, notFound } from '../http/errors.js'
+import { badRequest, conflict, notFound, type HttpError } from '../http/errors.js'
 import { recordCardMove } from './moves.js'
 
 /**
@@ -103,6 +103,37 @@ export function writeCardParent(
   tx.update(cards).set({ parentId: next, updatedAt: at }).where(eq(cards.id, card.id)).run()
   syncParentColumn(tx, card.parentId, { ...by, at })
   syncParentColumn(tx, next, { ...by, at })
+  syncMilestoneFlag(tx, card.id)
+  syncMilestoneFlag(tx, next)
+}
+
+/** Le refus de cocher « jalon » sur une carte qui a, ou aura, une parente. */
+export function milestoneChildConflict(): HttpError {
+  return conflict('card_milestone_child', 'A card filed under a parent cannot be a milestone.')
+}
+
+/**
+ * Tient le drapeau « jalon » d'une carte après un changement de son arbre.
+ *
+ * Levé quand elle a une parente : une carte rangée dans un jalon n'en est pas un. Posé
+ * quand, sans parente, elle a des enfants : c'est le premier enfant qui fait le jalon,
+ * et le drapeau reste quand on les détache, pour qu'un jalon vidé demeure une idée de
+ * jalon. Jamais levé ici sur une carte sans parente : c'est une personne qui décoche.
+ */
+export function syncMilestoneFlag(db: Db | Tx, cardId: string | null): void {
+  if (!cardId) return
+  const card = db
+    .select({ parentId: cards.parentId, milestone: cards.milestone })
+    .from(cards)
+    .where(eq(cards.id, cardId))
+    .get()
+  if (!card) return
+  const flagged = card.parentId === null && (card.milestone || hasChildren(db, cardId))
+  if (flagged !== card.milestone) db.update(cards).set({ milestone: flagged }).where(eq(cards.id, cardId)).run()
+}
+
+function hasChildren(db: Db | Tx, cardId: string): boolean {
+  return db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get() !== undefined
 }
 
 /**

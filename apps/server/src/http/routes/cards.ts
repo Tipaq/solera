@@ -46,7 +46,7 @@ import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { queueIssueRefusal, toCardIssueDto } from '../../issues/links.js'
-import { resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
+import { milestoneChildConflict, resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -329,6 +329,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       position: row.position,
       dueAt: row.dueAt,
       parent: row.parentId ? (parents.get(row.parentId) ?? null) : null,
+      milestone: row.milestone,
       children: offspring.get(row.id) ?? [],
       acceptedAt: row.acceptedAt,
       toClarifySince: row.toClarifySince,
@@ -460,8 +461,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     const body = createCardBodySchema.parse(request.body)
     loadProject(id, user.id)
 
-    const { parentId, ...fields } = body
-    const row = createCard(ctx.db, id, user.id, fields, { parentId })
+    const { parentId, dueAt, milestone, ...fields } = body
+    const row = createCard(ctx.db, id, user.id, fields, { parentId, dueAt, milestone })
     return reply.status(201).send(readCard(row.id, id))
   })
 
@@ -474,6 +475,13 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     // Le rattachement se vérifie avant toute écriture : un cycle refusé ne doit pas
     // laisser derrière lui un titre à moitié enregistré.
     if (body.parentId) resolveParent(ctx.db, card, body.parentId)
+    // La parente qu'elle aura après ce geste : se détacher et devenir un jalon va d'un tenant.
+    const parentAfter = body.parentId !== undefined ? body.parentId : card.parentId
+    if (body.milestone && parentAfter !== null) throw milestoneChildConflict()
+    // Une carte de premier niveau qui a des enfants est un jalon d'office : rien à décocher.
+    if (body.milestone === false && parentAfter === null && hasChildren(id)) {
+      throw conflict('card_milestone_has_children', 'A card with children is a milestone.')
+    }
 
     const patch: Partial<typeof cards.$inferInsert> = {}
     if (body.title !== undefined) patch.title = body.title
@@ -499,6 +507,10 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       recordCardMove(ctx.db, { cardId: id, from: card.column, to: patch.column, userId: user.id })
     }
     if (body.parentId !== undefined) setCardParent(ctx.db, card, body.parentId, { userId: user.id })
+    // Après la parente, qui pose ou lève le drapeau d'office : le choix dit ici l'emporte.
+    if (body.milestone !== undefined) {
+      ctx.db.update(cards).set({ milestone: body.milestone, updatedAt: Date.now() }).where(eq(cards.id, id)).run()
+    }
     // Une parente ouverte ne garde pas une colonne choisie à la main : la rouvrir, ou la
     // poser ailleurs qu'en fermé, revient à la colonne que ses enfants disent. La fermer
     // reste un geste, celui que `parentCloseProposed` propose.
@@ -509,10 +521,12 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     return readCard(id, card.projectId)
   })
 
+  const hasChildren = (cardId: string): boolean =>
+    ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get() !== undefined
+
   /** La colonne d'une carte qui a des enfants, recalculée depuis eux après un geste. */
   const syncOwnColumn = (cardId: string, userId: string): void => {
-    const child = ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get()
-    if (child) syncParentColumn(ctx.db, cardId, { userId })
+    if (hasChildren(cardId)) syncParentColumn(ctx.db, cardId, { userId })
   }
 
   /**

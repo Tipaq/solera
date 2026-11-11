@@ -46,6 +46,10 @@ export const createCardBodySchema = z.object({
   column: cardColumnSchema.default('todo'),
   /** La parente, pour découper une carte : lui ajouter un enfant. */
   parentId: z.string().uuid().optional(),
+  /** L'échéance, en minuit local du jour : un jalon se crée daté d'un seul appel. */
+  dueAt: z.number().int().nullable().optional(),
+  /** Le drapeau « jalon ». Refusé avec une parente : une enfant n'en est pas un. */
+  milestone: z.boolean().optional(),
 })
 
 export const updateCardBodySchema = z
@@ -65,6 +69,11 @@ export const updateCardBodySchema = z
      * c'est un état de cette colonne, pas une colonne de plus.
      */
     toClarify: z.boolean(),
+    /**
+     * Coche ou décoche le drapeau « jalon ». Refusé (409 `card_milestone_child`) sur une
+     * carte qui garde une parente.
+     */
+    milestone: z.boolean(),
   })
   .partial()
 
@@ -245,11 +254,14 @@ export interface CardDto {
   position: number
   /** Échéance choisie, `null` tant que personne n'en a posé — et c'est la norme. */
   dueAt: number | null
-  /**
-   * La carte parente. Un jalon n'est pas un type : c'est une carte de haut niveau, qui
-   * a une échéance et des enfants.
-   */
+  /** La carte parente : une carte qui en a une n'est jamais un jalon. */
   parent: CardLinkDto | null
+  /**
+   * Le drapeau « jalon » tel qu'il est stocké : coché à la main, ou posé d'office au
+   * premier enfant et gardé ensuite. Une carte est un jalon si ce drapeau est vrai ou si
+   * elle a des enfants ; le drapeau seul, sans enfant, en fait une idée de jalon.
+   */
+  milestone: boolean
   /**
    * Les enfants directs, par numéro. Une carte qui en a sert de regroupement : le
    * kanban ne la montre pas, et sa colonne se déduit d'eux (`deriveParentColumn`).

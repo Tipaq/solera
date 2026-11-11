@@ -142,6 +142,9 @@ export function slugifyProjectName(name: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+/** Le cap d'un projet tient en une phrase. */
+export const PROJECT_CAP_MAX = 280
+
 export const updateProjectBodySchema = z
   .object({
     name: z.string().min(1).max(120),
@@ -174,6 +177,13 @@ export const updateProjectBodySchema = z
     confinedServices: confinedServicesSchema,
     /** Les sessions autonomes confinées quand leur lancement ne dit rien (#146). */
     autonomousConfined: z.boolean(),
+    /** Le cap, en une phrase ; vide ou `null` le retire. */
+    cap: z
+      .string()
+      .trim()
+      .max(PROJECT_CAP_MAX)
+      .nullable()
+      .transform((cap) => cap || null),
   })
   .partial()
 
@@ -243,6 +253,8 @@ export interface ProjectDto {
   instructionsMode: InstructionsMode | null
   /** Le design system lié, null s'il n'y en a pas. */
   designSystemPath: string | null
+  /** Où va le projet, en une phrase ; null tant que personne n'en a écrit. */
+  cap: string | null
   /** Points de reprise git par tour (voir `checkpoints.ts` côté serveur). */
   turnCheckpoints: boolean
   /** Shells vivants dans le projet, pour signaler qu'un terminal y tourne encore. */
