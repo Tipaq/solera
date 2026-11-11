@@ -10,22 +10,20 @@ import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
 /*
- * L'onglet Activité d'un projet (carte #110, planches B1, B4 et E1 de
- * `docs/audits/2026-10-21-page-projet/final/`).
+ * L'onglet Travail d'un projet (carte #175, `projet.md` T-1 à T-5, T-14), qui remplace
+ * l'Activité et le Journal, et ce qui l'entoure.
  *
- * Ce que la suite tient : la rangée à six vues, le compteur ambre qui ne compte que ce
- * qui réclame, l'ordre des groupes, la branche de chaque session lue dans la liste
- * d'état des worktrees, le filtre `s:` et `#N`, le pliage des terminées, et la ligne à
- * deux étages au téléphone, et la demande dépliée sous sa ligne (#112). Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * Ce que la suite tient : la rangée, le compteur ambre qui ne compte que ce qui réclame,
+ * les anciennes adresses (`/activity?groupe=worktree` → « Par arbre », `/journal` →
+ * « Par moment »), la barre sur une ligne (bilan neutre, Filtrer ▾ et ses puces, retenus
+ * pour le projet, « Rien ne correspond »), la vue dans l'adresse et retenue, le fil
+ * « Par moment » (Maintenant, En cours, Ce qui t'attend, la ligne de base, les jours),
+ * l'index et la puce d'arbre qui filtrent, la recherche, et le téléphone sans
+ * débordement. Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
- * Le badge de PR (#115) : le projet de démo n'a pas de forge, la liste des PR est donc
- * simulée au niveau de la page. La suite tient qu'une PR ouverte fait passer une session
- * finie dans « Prête à relire », que le badge porte `#N` et son mot, et qu'une session
- * de la racine n'en porte pas.
- *
- * Le jalon lancé (#116) : le pilotage est simulé de la même façon. La suite tient le
- * bandeau et le groupe du jalon, leur absence sans jalon lancé, la vue par vagues et sa
- * file, la pause, et la ligne de la frise qui mène à la vue.
+ * Les PR sont simulées au niveau de la page (le projet de démo n'a pas de forge), le
+ * pilotage d'un jalon aussi (#116) : la suite tient son bandeau en tête du fil, la vue
+ * par vagues et sa file, la pause, et la ligne de la frise qui mène à la vue.
  *
  * « Ce qui t'attend » (#163), sur l'Aperçu : le résumé de l'en-tête, trois lignes puis
  * « N de plus », les lourdes avant les légères, une seule réponse dépliée, l'ouverture de
@@ -129,7 +127,7 @@ try {
   const shots = join(root, 'docs/audits/2026-10-21-page-projet/portage')
   await mkdir(shots, { recursive: true })
 
-  // ─── La rangée v2 (#160) : Travail en deuxième, qui rend l'Activité jusqu'à #175 ──
+  // ─── La rangée v2 (#160) : Travail en deuxième ──────────────────────────────
   await page.goto(`${base}/p/${nimbus.id}`)
   const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
   await row.waitFor()
@@ -264,146 +262,134 @@ try {
   await page.goto(`${base}/p/${nimbus.id}`)
   await row.waitFor()
 
-  // ─── Les groupes, dans l'ordre ─────────────────────────────────────────────
-  await row.getByRole('link', { name: /^Travail/ }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/travail`)
-  const headings = page.getByRole('heading', { level: 2 })
-  await headings.first().waitFor()
-  const order = ['Te demande quelque chose', 'Prête à relire', 'En cours', 'Terminées']
-  const shown = (await headings.allInnerTexts()).map((text) => text.replace(/\s*\d+$/, '').trim())
-  assert.deepEqual(shown, order.filter((label) => shown.includes(label)), 'Les groupes suivent l’ordre arrêté')
+  // ─── Travail (#175) : les anciennes adresses mènent à leur vue ──────────────
+  await page.goto(`${base}/p/${nimbus.id}/activity?groupe=worktree`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
+  await page.goto(`${base}/p/${nimbus.id}/journal`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=fil`)
 
-  const section = (name) => page.getByRole('region', { name: new RegExp(`^${name}`) })
-  // Une session qui te demande quelque chose se déplie au lieu de mener au fil (#112).
-  const awaitingRow = section('Te demande quelque chose').getByRole('button', { name: new RegExp(awaiting.title) })
-  await awaitingRow.waitFor()
-  const runningRow = section('En cours').getByRole('link', { name: new RegExp(running.title) })
+  // ─── La barre sur une ligne ────────────────────────────────────────────────
+  const toolbar = page.locator('[data-toolbar]')
+  const search = toolbar.getByRole('searchbox', { name: 'Chercher, #12, branche', exact: true })
+  await search.waitFor()
+  assert.equal(Math.round((await toolbar.boundingBox()).height), 48, 'Une seule ligne de 48 px')
+  // Le bilan, neutre : les worktrees sans la racine.
+  const treeCount = trees.worktrees.length
+  await toolbar.getByText(new RegExp(`^${treeCount} arbres?`)).waitFor()
+  assert.equal(await toolbar.getByRole('button', { name: new RegExp(`^${treeCount} arbre`) }).count(), 0, 'Le bilan ne se clique pas')
+
+  // ─── La vue « Par moment » : Maintenant, puis les jours ─────────────────────
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
+  const runningRow = page.getByRole('link', { name: new RegExp(running.title) }).first()
   await runningRow.waitFor()
-  // La branche vient de la liste d'état des worktrees, sans lecture par fil.
+  const working = page.locator('section', { has: page.getByRole('heading', { name: /^En cours \d+$/ }) })
+  await working.getByRole('link', { name: new RegExp(running.title) }).waitFor()
+  await page.getByRole('region', { name: 'Ce qui t’attend', exact: true }).getByText(awaiting.title).first().waitFor()
+  // Ce qui t'attend n'est pas redit sous « En cours ».
+  assert.equal(await working.getByRole('link', { name: new RegExp(awaiting.title) }).count(), 0, 'La session qui attend vit dans la liste des demandes')
+  // La ligne de base en tête, pleine largeur.
+  await page.getByText('la racine y est', { exact: true }).waitFor()
+  // L'historique, par jour.
+  await page.getByRole('heading', { name: /^(Aujourd’hui|Hier|[a-zé]+ \d+ [a-zéû]+)$/ }).first().waitFor()
   const tree = trees.worktrees.find((entry) => entry.id === running.worktreeId)
-  await runningRow.getByText(tree.branch ?? tree.name, { exact: true }).waitFor()
-  // Une session de la racine dit « racine · branche ».
-  await page.getByText(/^racine · /).first().waitFor()
-  // La ligne qui attend dit depuis quand, en ambre.
-  await section('Te demande quelque chose').getByText(/^Attend /).first().waitFor()
+  const branch = tree.branch ?? tree.name
+  const short = branch.replace(/^(feat|fix|spike|chore|jalon)\//, '')
+  // La puce d'arbre de la session qui tourne : un clic filtre le fil sur l'arbre.
+  const chip = page.getByTitle(`Filtrer le fil sur ${branch}`, { exact: true }).first()
+  await chip.waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't1-travail-par-moment.png') })
 
-  // ─── Le badge de PR (#115) ─────────────────────────────────────────────────
-  // Une PR en checks ne sort pas la session de « En cours » : elle travaille encore.
-  await runningRow.getByText('#18', { exact: true }).filter({ visible: true }).waitFor()
-  await runningRow.getByText('checks…', { exact: true }).filter({ visible: true }).waitFor()
-  if (withPr) {
-    const reviewRow = section('Prête à relire').getByRole('link', { name: new RegExp(withPr.title) })
-    await reviewRow.getByText('#17', { exact: true }).filter({ visible: true }).waitFor()
-    await reviewRow.getByText('prête', { exact: true }).filter({ visible: true }).waitFor()
-  }
-  // La racine ne porte pas de PR : c'est elle que les PR visent.
-  const rootRow = page.getByRole('link').filter({ hasText: /racine · / }).first()
-  assert.equal(await rootRow.getByText(/^#\d+$/).count(), 0, 'Une session de la racine n’a pas de badge')
+  // ─── Affichage ▾ : la vue dans l'adresse, retenue pour le projet ────────────
+  await toolbar.getByRole('button', { name: 'Affichage : Par moment', exact: true }).click()
+  await page.getByRole('radio', { name: 'Par arbre', exact: true }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
+  await page.getByRole('region', { name: new RegExp(`^${branch.replace(/[/.]/g, '\\$&')}`) }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.goto(`${base}/p/${nimbus.id}/travail`)
+  await toolbar.getByRole('button', { name: 'Affichage : Par arbre', exact: true }).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
 
-  // ─── La demande dépliée sous sa ligne (#112, planche B2) ────────────────────
-  // La quatrième colonne dit la demande elle-même, lue dans le journal.
-  const { prompts } = await (await context.request.get(`${base}/api/projects/${nimbus.id}/prompts`)).json()
-  const prompt = prompts.find((entry) => entry.conversationId === awaiting.id)
-  assert.equal(prompt?.kind, 'permission', 'Le jeu d’essai fait attendre une permission')
-  const command = prompt.event.input.command
-  await awaitingRow.getByText(new RegExp(`^Attend .+ · Bash : ${command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)).waitFor()
-  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'false')
-  await awaitingRow.click()
-  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'true')
-  const preview = section('Te demande quelque chose').getByRole('listitem').filter({ has: page.getByRole('button', { name: new RegExp(awaiting.title) }) })
-  await preview.getByText('Permission demandée', { exact: true }).waitFor()
-  await preview.getByText(command, { exact: true }).waitFor()
-  for (const name of ['Refuser', 'Autoriser pour la session', 'Autoriser']) {
-    await preview.getByRole('button', { name, exact: true }).waitFor()
-  }
-  assert.equal(
-    await preview.getByRole('link', { name: 'Ouvrir le fil' }).getAttribute('href'),
-    `/p/${nimbus.id}/c/${awaiting.id}`,
-  )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'b2-demande-depliee.png') })
-  // La réponse part par la route du fil. Le jeu d'essai n'a pas de CLI derrière la
-  // demande : le serveur la dit expirée, et l'aperçu le montre au lieu d'attendre.
-  const [decision] = await Promise.all([
-    page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/conversations/${awaiting.id}/permissions/${prompt.requestId}`)),
-    preview.getByRole('button', { name: 'Refuser', exact: true }).click(),
-  ])
-  assert.deepEqual(decision.request().postDataJSON(), { decision: 'denied', scope: 'once' })
-  await preview.getByText('Cette demande a expiré, la session est terminée.').waitFor()
-  // ↑ et ↓ passent d'une ligne à l'autre sans refermer l'aperçu ; Espace le replie.
-  await awaitingRow.focus()
-  await page.keyboard.press('ArrowDown')
-  assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-session-row')), true)
-  assert.notEqual(await page.evaluate(() => document.activeElement?.textContent), await awaitingRow.textContent())
-  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'true')
-  await page.keyboard.press('ArrowUp')
-  await page.keyboard.press('Space')
-  assert.equal(await awaitingRow.getAttribute('aria-expanded'), 'false')
-
-  // Les terminées se plient après trois lignes.
-  const done = section('Terminées')
-  if (await done.count()) {
-    const total = Number((await done.getByRole('heading').innerText()).match(/(\d+)$/)[1])
-    if (total > 3) {
-      assert.equal(await done.getByRole('listitem').count(), 4, 'Trois lignes et « … N de plus »')
-      await done.getByRole('button', { name: `… ${total - 3} de plus` }).click()
-      assert.equal(await done.getByRole('listitem').count(), total)
-    }
-  }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'b1-activite-par-etat.png') })
-
-  // ─── Le filtre ────────────────────────────────────────────────────────────
-  const filter = page.getByRole('searchbox', { name: 'Filtrer les sessions' })
-  await filter.fill('s:cours')
+  // ─── Filtrer ▾ et ses puces, retenus pour le projet ────────────────────────
+  const filterButton = toolbar.getByRole('button', { name: /^Filtrer/ })
+  await filterButton.click()
+  const filterPanel = page.getByRole('dialog', { name: 'Filtrer', exact: true })
+  await filterPanel.getByRole('checkbox', { name: 'Sessions', exact: true }).click()
+  await filterPanel.getByRole('checkbox', { name: 'Travaille', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const chips = toolbar.locator('[data-filter-chip]')
+  assert.deepEqual(await chips.allInnerTexts(), ['Sessions', 'Travaille'])
+  await filterButton.getByText('2', { exact: true }).waitFor()
+  // Sessions seulement : plus d'historique ; Travaille : plus de demandes.
   await runningRow.waitFor()
-  assert.equal(await section('Te demande quelque chose').count(), 0, 's:cours ne garde que ce qui tourne')
-  await filter.fill('s:attend')
-  await section('Te demande quelque chose').waitFor()
-  assert.equal(await section('En cours').count(), 0)
+  await page.getByText('Rien dans l’historique ne correspond.', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('region', { name: 'Ce qui t’attend', exact: true }).count(), 0)
+  await page.reload()
+  await chips.first().waitFor()
+  assert.deepEqual(await chips.allInnerTexts(), ['Sessions', 'Travaille'], 'Les filtres sont retenus pour le projet')
+  // Une puce s'efface par sa croix.
+  await chips.filter({ hasText: 'Travaille' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+  assert.deepEqual(await chips.allInnerTexts(), ['Sessions'])
+  // La période de l'historique.
+  await filterButton.click()
+  await filterPanel.getByRole('radio', { name: '7 j', exact: true }).click()
+  await page.keyboard.press('Escape')
+  assert.deepEqual(await chips.allInnerTexts(), ['Sessions', '7 jours'])
+  // Rien ne correspond : le cadre pointillé, et de quoi tout effacer.
+  await filterButton.click()
+  await filterPanel.getByRole('checkbox', { name: 'Fusionné', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.getByText('Rien ne correspond à ces filtres.', { exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't2-rien-ne-correspond.png') })
+  await page.getByRole('button', { name: 'Effacer les filtres', exact: true }).click()
+  assert.equal(await chips.count(), 0)
+  await runningRow.waitFor()
+
+  // ─── L'index, en filtre : un arbre, puis tous ──────────────────────────────
+  const index = page.getByRole('navigation', { name: 'Index des arbres', exact: true })
+  await index.getByRole('button', { name: new RegExp(`^${short.replace(/[/.]/g, '\\$&')}`) }).click()
+  await page.waitForURL((url) => url.searchParams.get('arbre') === tree.path)
+  await chips.first().waitFor()
+  assert.deepEqual((await chips.allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')), [`Arbre : ${short}`])
+  await runningRow.waitFor()
+  assert.equal(await page.getByText('la racine y est', { exact: true }).count(), 0, 'La ligne de base se tait quand un arbre est choisi')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't3-un-arbre-choisi.png') })
+  await index.getByRole('button', { name: /^Tous/ }).click()
+  await page.waitForURL((url) => !url.searchParams.has('arbre'))
+  await chips.first().waitFor({ state: 'detached' })
+  // La puce d'arbre d'une ligne fait la même chose, et se défait au second clic.
+  await chip.click()
+  await page.waitForURL((url) => url.searchParams.get('arbre') === tree.path)
+  await chips.first().waitFor()
+  assert.equal(await chip.getAttribute('aria-pressed'), 'true')
+  await chip.click()
+  await page.waitForURL((url) => !url.searchParams.has('arbre'))
+  await chips.first().waitFor({ state: 'detached' })
+
+  // ─── La recherche filtre le vivant et l'historique ─────────────────────────
+  await search.fill('aucune session ne porte ce nom')
+  await page.getByText('Aucune session vivante ne correspond.', { exact: true }).waitFor()
+  await page.getByText('Rien dans l’historique ne correspond.', { exact: true }).waitFor()
   if (running.card) {
-    await filter.fill(`#${running.card.number}`)
+    await search.fill(`#${running.card.number}`)
     await runningRow.waitFor()
-    assert.equal(await section('Te demande quelque chose').count(), awaiting.card?.number === running.card.number ? 1 : 0)
   }
-  await filter.fill('aucune session ne porte ce nom')
-  await page.getByText('Aucune session ne correspond à ce filtre').waitFor()
-  await filter.fill('')
-
-  // Plier un groupe.
-  await page.getByRole('button', { name: /^Terminées/ }).click()
-  assert.equal(await section('Terminées').getByRole('listitem').count(), 0)
-  await page.getByRole('button', { name: /^Terminées/ }).click()
-
-  // ─── Grouper par worktree (#111, planche B3) ────────────────────────────────
-  await page.getByRole('radio', { name: 'Worktree', exact: true }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/travail?groupe=worktree`)
-  const treeGroup = page.getByRole('region', { name: new RegExp(`^${(tree.branch ?? tree.name).replace(/[/.]/g, '\\$&')}`) })
-  const treeRow = treeGroup.getByRole('link', { name: new RegExp(running.title) })
-  await treeRow.waitFor()
-  // L'en-tête porte la branche : la ligne ne la répète pas.
-  assert.equal(await treeRow.getByText(tree.branch ?? tree.name, { exact: true }).count(), 0, 'La ligne perd sa colonne branche')
-  // Le badge de PR passe dans l'en-tête (#115) : la ligne ne le porte plus.
-  await treeGroup.getByText('#18', { exact: true }).filter({ visible: true }).waitFor()
-  assert.equal(await treeRow.getByText('#18', { exact: true }).count(), 0, 'La ligne perd son badge de PR')
-  await page.getByRole('region', { name: /^main racine du projet/ }).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'b3-activite-par-worktree.png') })
-  await page.getByRole('radio', { name: 'État', exact: true }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/travail`)
-  await section('En cours').waitFor()
+  await search.fill('')
 
   // ─── Sombre ───────────────────────────────────────────────────────────────
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'b1-activite-par-etat-sombre.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't4-travail-par-moment-sombre.png') })
+  await page.evaluate(() => { delete document.documentElement.dataset.theme })
 
-  // ─── Au téléphone : deux étages, la carte tombe ────────────────────────────
+  // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(`${base}/p/${nimbus.id}/travail`)
-  await headings.first().waitFor()
-  assert.equal(await filter.isVisible(), false, 'Au téléphone, la barre ne garde que les compteurs (E1)')
-  if (running.card) {
-    assert.equal(await runningRow.getByText(`#${running.card.number}`, { exact: true }).isVisible(), false, 'La carte tombe au téléphone')
-  }
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
+  assert.equal(Math.round((await toolbar.boundingBox()).height), 48, 'La barre tient sur une ligne au téléphone')
+  assert.equal(await index.isVisible(), false, 'L’index se replie au téléphone')
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
   await page.waitForTimeout(300)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'e1-activite-au-telephone.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't5-travail-au-telephone.png') })
 
   // ─── Jalons, au portefeuille aussi ─────────────────────────────────────────
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -411,11 +397,10 @@ try {
   await page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true }).getByRole('link', { name: /^Jalons/ }).waitFor()
 
   // ─── Le jalon lancé (#116, planches C1, C2 et C3) ──────────────────────────
-  // Sans jalon lancé, ni bandeau ni groupe.
-  await page.goto(`${base}/p/${nimbus.id}/travail`)
-  await headings.first().waitFor()
+  // Sans jalon lancé, pas de bandeau dans « Maintenant ».
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   assert.equal(await page.getByRole('region', { name: /^Jalon #\d+ lancé/ }).count(), 0, 'Pas de bandeau sans jalon lancé')
-  assert.equal(await page.getByRole('heading', { name: /^Jalon #/ }).count(), 0, 'Pas de groupe sans jalon lancé')
 
   // Le pilotage est simulé : lancer pour de vrai demanderait une forge et des CLI. Le
   // jalon est la parente du jeu d'essai, et la session qui tourne porte une de ses cartes.
@@ -458,7 +443,7 @@ try {
     return route.fulfill({ json: milestoneRun })
   })
 
-  // C1 : le bandeau en tête, et le groupe du jalon avant les groupes d'état.
+  // C1 : le bandeau ouvre « Maintenant », au-dessus des sessions du fil.
   await page.reload()
   const banner = page.getByRole('region', { name: `Jalon #${parent.number} lancé`, exact: true })
   await banner.waitFor()
@@ -467,11 +452,8 @@ try {
   await banner.getByText(/^1 prête en file$/).waitFor()
   // Une session au repos sans PR n'a rien demandé : elle ne compte pas dans « te demande ».
   assert.equal(await banner.getByText(/te demande/).count(), 0)
-  const milestoneLabel = `Jalon #${parent.number} · ses sessions`
-  assert.equal((await headings.first().innerText()).replace(/\s*\d+$/, '').trim(), milestoneLabel, 'Le groupe du jalon passe en premier')
-  await section(milestoneLabel.replace(/[#·]/g, '.')).getByRole('link', { name: new RegExp(running.title) }).waitFor()
-  assert.equal(await section('En cours').getByRole('link', { name: new RegExp(running.title) }).count(), 0, 'Ses sessions ne sont pas redites')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-de-l-activite.png') })
+  assert.ok((await banner.boundingBox()).y < (await runningRow.boundingBox()).y, 'Le bandeau vient avant les sessions au travail')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-du-fil.png') })
 
   // Le même bandeau sur l'Aperçu, entre les tuiles et « En ce moment ».
   await page.goto(`${base}/p/${nimbus.id}`)
@@ -504,7 +486,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : six vues, compteur de demandes, ce qui t’attend, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone, jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

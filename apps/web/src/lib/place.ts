@@ -24,7 +24,7 @@ export function openLeafCount(cards: readonly Pick<CardDto, 'children' | 'column
 
 /**
  * L'adresse où mène une ancienne vue, sa requête gardée : un lien partagé vers
- * `/activity?groupe=worktree` doit ouvrir le même regroupement sous `/travail`.
+ * `/schedules` doit mener sous `/actions`, sa requête comprise.
  * `force` impose des paramètres par-dessus ceux de l'ancienne adresse.
  */
 export function movedView(to: string, search: string, force: Record<string, string> = {}): string {

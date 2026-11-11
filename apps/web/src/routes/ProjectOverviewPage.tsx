@@ -456,7 +456,7 @@ function JournalTile({ projectId }: { projectId: string }) {
     <section className="flex min-w-0 flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
       <SectionHeading icon={<History size={14} />} title={t('project.view.journal')}>
         <Link
-          to={`/p/${projectId}/travail?vue=moment`}
+          to={`/p/${projectId}/travail?vue=fil`}
           className="flex items-center gap-1 rounded px-1 text-xs text-ink-faint hover:text-ink"
         >
           {t('place.seeAll')}
