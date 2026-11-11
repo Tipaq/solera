@@ -31,7 +31,7 @@ import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
 import { Button, EmptyState, IconButton, Menu, MenuRadioGroup, MenuRadioItem, cx } from '@solera/ui'
 import { CardRefContext } from '../lib/card-refs'
 import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
-import { NEW_PARAM } from './ProjectLayout'
+import { NEW_PARAM } from '../lib/place'
 import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS, setPanelOpen, usePanelPresence } from '../lib/panel'
 import { useProjects } from '../lib/projects'
@@ -199,10 +199,10 @@ export function BoardPage() {
   /**
    * La création d'une carte est ouverte par l'adresse, pas par un état local.
    *
-   * C'est la rangée d'onglets de `ProjectLayout` qui porte *+ Carte*, et elle ne
-   * connaît pas ce dialogue : elle écrit `?nouvelle=1`, cette page le lit. Le `+` d'une
-   * colonne, lui, vise une colonne précise et garde son état local — il ne demande pas
-   * la même chose.
+   * *+ Carte*, au bout de la barre, écrit `?nouvelle=1` comme le ferait un lien d'ailleurs
+   * (la palette, un favori) : un seul chemin vers ce dialogue. Le `+` d'une colonne,
+   * lui, vise une colonne précise et garde son état local — il ne demande pas la même
+   * chose.
    */
   const creating = params.get(NEW_PARAM) === '1'
   const setCreating = (open: boolean) => {
@@ -302,7 +302,7 @@ export function BoardPage() {
        sa ligne de filtres. */
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-2.5 md:px-6">
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-sunken px-3 sm:max-w-sm">
             <Search size={16} className="shrink-0 text-ink-faint" />
             <input type="search" value={query} onChange={(event) => {
@@ -315,7 +315,7 @@ export function BoardPage() {
             }} aria-label={t('board.search')}
               placeholder={t('board.search')} className="min-h-10 min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-ink-faint" />
           </div>
-          <p className="hidden text-xs text-ink-faint lg:block">{t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}</p>
+          <p className="hidden text-xs text-ink-faint 2xl:block">{t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}</p>
           {reorder.isError ? <p role="alert" className="text-sm text-critical">{t('board.moveError')}</p> : null}
           {/* Les deux réglages du board, descendus de la bande auprès de ce qu'ils
               règlent : le repli du cimetière filtre les colonnes qui suivent, et le
@@ -380,9 +380,14 @@ export function BoardPage() {
             >
               <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
             </IconButton>
+            {/* L'action de la vue, sortie de la rangée d'onglets : elle crée dans ce
+                board, elle se pose donc dans sa barre. */}
+            <Button size="sm" icon={<Plus size={15} />} onClick={() => setCreating(true)}>
+              {t('project.action.newCard')}
+            </Button>
           </div>
         </div>
-        {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-5 pt-4 text-sm text-ink-faint">{t('board.noResults')}</p> : null}
+        {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-4 pt-4 text-sm text-ink-faint md:px-6">{t('board.noResults')}</p> : null}
         {!wide ? (
           <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
             {CARD_COLUMNS.map((column) => {
@@ -423,7 +428,7 @@ export function BoardPage() {
           onDragCancel={() => setDragging(null)}
         >
           <div
-            className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-3 md:p-5"
+            className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-4 md:p-6"
             // Le tiroir se referme d'un clic à côté, comme une fenêtre qu'on quitte. Le
             // clavier a déjà Échap ; au téléphone, le tiroir couvre tout l'écran.
             onClick={(event) => {

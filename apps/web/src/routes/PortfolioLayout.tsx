@@ -1,14 +1,14 @@
-import { Flag, FolderPlus, History, Layers, Plus, SquareKanban } from 'lucide-react'
+import { Flag, FolderPlus, History, Layers, SquareKanban } from 'lucide-react'
 import { useMemo } from 'react'
-import { Outlet, useMatch, useNavigate } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
-import { HeaderBand } from '../components/HeaderBand'
-import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
+import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
+import { openLeafCount } from '../lib/place'
 import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
+import { openSettings } from '../lib/settings-dialog'
 
 /**
  * La coque du portefeuille : la même grammaire qu'un projet, **un cran au-dessus**.
@@ -21,8 +21,9 @@ import { useProjects } from '../lib/projects'
  * transversal appartenant à la page qui montre déjà tous les projets. *Travail* s'est
  * depuis fondu dans l'Activité (#117), la même liste que celle d'un projet.
  *
- * Pas de `⋯` dans la bande, à la différence d'un projet : un portefeuille n'a pas de
- * gestes à soi. Un menu n'aurait porté que les vues, que la rangée dit déjà.
+ * La même coque qu'un projet (`PlaceShell`) : la bande porte les gestes, la rangée ne
+ * porte que des vues, et Réglages au bout ouvre ceux de l'instance. Ses vues v2
+ * arrivent avec le jalon 6 de la page projet v2.
  */
 export function PortfolioLayout() {
   const navigate = useNavigate()
@@ -35,11 +36,9 @@ export function PortfolioLayout() {
   )
   const { cards } = useAllCards(visible)
   const asking = usePortfolioAskingCount()
-  const onProjects = useMatch('/projects') !== null
 
-  const openCards = cards.filter((card) => !CARD_CLOSED_COLUMNS.includes(card.column))
 
-  const tabs: ViewTab[] = [
+  const tabs: PlaceTab[] = [
     {
       to: '/projects',
       end: true,
@@ -60,7 +59,7 @@ export function PortfolioLayout() {
       to: '/projects/board',
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
-      count: openCards.length,
+      count: openLeafCount(cards),
     },
     {
       to: '/projects/timeline',
@@ -75,35 +74,19 @@ export function PortfolioLayout() {
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <SquareKanban size={16} className="shrink-0 text-ink-faint" />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{t('place.projects.title')}</h1>
-        <Button
-          size="sm"
-          aria-label={t('shell.conversation.new')}
-          icon={<Plus size={16} />}
-          onClick={() => navigate('/c/new')}
-        >
-          <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
+    <PlaceShell
+      icon={<SquareKanban size={16} className="shrink-0 text-ink-faint" />}
+      title={t('place.projects.title')}
+      label={t('portfolio.views')}
+      tabs={tabs}
+      settings={{ onOpen: () => openSettings(), label: t('place.settings.instance') }}
+      actions={
+        /* Un seul geste, et le même sur toutes les vues : la bande ne dépend pas de la
+           vue. Une conversation se lance depuis la barre latérale. */
+        <Button size="sm" aria-label={t('portfolio.action.newProject')} icon={<FolderPlus size={15} />} onClick={() => navigate('/projects/new')}>
+          <span className="hidden sm:inline">{t('portfolio.action.newProject')}</span>
         </Button>
-      </HeaderBand>
-
-      <ProjectTabs
-        label={t('portfolio.views')}
-        tabs={tabs}
-        action={
-          onProjects ? (
-            <Button size="sm" icon={<FolderPlus size={15} />} onClick={() => navigate('/projects/new')}>
-              {t('portfolio.action.newProject')}
-            </Button>
-          ) : null
-        }
-      />
-
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip">
-        <Outlet />
-      </div>
-    </div>
+      }
+    />
   )
 }

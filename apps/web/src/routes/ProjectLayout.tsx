@@ -1,82 +1,39 @@
-import {
-  CalendarClock,
-  Flag,
-  GitBranch,
-  History,
-  Layers,
-  MoreHorizontal,
-  Palette,
-  Plus,
-  SlidersHorizontal,
-  Split,
-  SquareKanban,
-  Target,
-} from 'lucide-react'
+import { Flag, Layers, Plus, SquareKanban, Target, Zap } from 'lucide-react'
 import { useMemo } from 'react'
-import { Outlet, useMatch, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
-import {
-  Badge,
-  Button,
-  EmptyState,
-  IconButton,
-  Menu,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  MenuSwatch,
-  MenuSwatchRow,
-} from '@solera/ui'
-import { HeaderBand } from '../components/HeaderBand'
+import { useNavigate, useParams } from 'react-router-dom'
+import { Button, EmptyState } from '@solera/ui'
 import { ProjectAvatar } from '../components/ProjectAvatar'
-import { ProjectTabs, type ViewTab } from '../components/project/ProjectTabs'
+import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { askingCount, useLiveConversations } from '../lib/activity'
 import { useSessionRequests } from '../lib/session-requests'
 import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
-import { PROJECT_COLORS } from '../lib/project-colors'
-import { useProjects, useUpdateProject } from '../lib/projects'
-import { useSchedules } from '../lib/schedules'
+import { openLeafCount } from '../lib/place'
+import { useProjects } from '../lib/projects'
 
 /**
- * Le paramètre par lequel une vue ouvre son propre dialogue de création.
+ * La coque d'un projet : la bande, la rangée de ses vues, Réglages au bout.
  *
- * C'est ce qui permet à la rangée de porter *+ Carte* et *+ Tâche* sans connaître les
- * dialogues : elle écrit l'intention dans l'adresse, la vue la lit. Une autre voie
- * aurait été de faire remonter un gestionnaire depuis la page, ce qui demande un
- * contexte, un effet et un ordre de montage ; celle-ci survit en plus à un
- * rechargement et se partage par lien.
- */
-export const NEW_PARAM = 'nouvelle'
-
-/**
- * La coque d'un projet : la bande, puis la rangée de ses vues.
+ * Une route de disposition et non un en-tête recopié dans chaque page : la bande **ne
+ * dépend pas de la vue**, donc elle ne se remonte pas quand on change d'onglet, et le
+ * focus ne saute pas. Les pages qui s'y logent n'ont plus de bande ni d'en-tête propre :
+ * elles commencent à leur contenu. Les réglages en sont une comme les autres.
  *
- * Une route de disposition et non un en-tête recopié dans chaque page : c'est ce qui
- * rend la décision 2 de l'audit littérale — la bande **ne dépend pas de la vue**, donc
- * elle ne se remonte pas quand on change d'onglet, et le focus ne saute pas. Les pages
- * qui s'y logent n'ont plus de bande ni d'en-tête propre : elles commencent à leur
- * contenu.
+ * Hors de la coque, volontairement : les conversations (`/c/*`), qui ont leur propre
+ * bande, le nom de la session y valant celui du projet.
  *
- * Hors de la coque, volontairement : les réglages du projet (`/settings`, qui n'est pas
- * une vue mais une destination du `⋯`) et les conversations (`/c/*`, qui ont leur propre
- * bande, le nom de la session y valant celui du projet).
- *
- * Référence d'interface : `docs/audits/2026-10-14-gestion-de-projet/final/pages/`,
- * écrans F1 à F5, et F14 au téléphone.
+ * Référence : `docs/specs/2026-11-page-projet-v2/coque.md` (branche `proto/page-projet`),
+ * COQ-1 à COQ-11.
  */
 export function ProjectLayout() {
   const { projectId } = useParams()
   const navigate = useNavigate()
   const t = useTranslate()
-  const [, setParams] = useSearchParams()
 
   const { data: projects, isPending } = useProjects()
   const { data: cards } = useCards(projectId)
-  const { data: schedules } = useSchedules()
   const { data: conversations } = useAllConversations()
-  const updateProject = useUpdateProject()
   const mine = useMemo(
     () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
     [conversations, projectId],
@@ -85,100 +42,47 @@ export function ProjectLayout() {
   const requests = useSessionRequests(projectId, live)
 
   const project = projects?.find((entry) => entry.id === projectId)
-  const onBoard = useMatch('/p/:projectId/board') !== null
-  const onSchedules = useMatch('/p/:projectId/schedules') !== null
 
   if (isPending) return null
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
 
-  /* Les cartes **ouvertes**, pas l'inventaire : « 9 » doit dire ce qui reste à faire,
-     et compter le cimetière ferait monter le nombre à mesure qu'on avance. Les feuilles
-     seulement, comme le kanban : une parente compterait deux fois le travail de ses
-     enfants. */
-  const openCards = (cards ?? []).filter((card) => card.children.length === 0 && !CARD_CLOSED_COLUMNS.includes(card.column))
-  const tasks = (schedules ?? []).filter((task) => task.projectId === projectId)
-
-  const tabs: ViewTab[] = [
+  /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de sessions :
+     le compte de Travail est une demande, d'où l'ambre. Celui du Tableau est un
+     inventaire, gris. Jalons n'en a pas ; celui d'Actions (vert « en marche », ambre
+     « à relire ») arrive avec sa vue. */
+  const asking = askingCount(live, requests)
+  const open = openLeafCount(cards)
+  const tabs: PlaceTab[] = [
+    { to: `/p/${projectId}`, end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
     {
-      to: `/p/${projectId}`,
-      end: true,
-      label: t('project.view.overview'),
-      icon: <Target size={15} />,
-    },
-    {
-      to: `/p/${projectId}/activity`,
-      label: t('project.view.activity'),
+      to: `/p/${projectId}/travail`,
+      label: t('project.view.travail'),
       icon: <Layers size={15} />,
-      /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de
-         sessions : le compte d'un onglet est une demande, d'où l'ambre. */
-      count: askingCount(live, requests),
+      count: asking,
       tone: 'caution',
+      countTitle: t(asking === 1 ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
     },
     {
       to: `/p/${projectId}/board`,
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
-      count: openCards.length,
+      count: open,
+      countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
-    {
-      to: `/p/${projectId}/schedules`,
-      label: t('place.schedules.title'),
-      icon: <CalendarClock size={15} />,
-      count: tasks.length,
-    },
-    {
-      to: `/p/${projectId}/timeline`,
-      label: t('project.view.timeline'),
-      icon: <Flag size={15} />,
-    },
-    {
-      to: `/p/${projectId}/journal`,
-      label: t('project.view.journal'),
-      icon: <History size={15} />,
-      /* Sans compteur, et c'est voulu : un journal n'a pas de reste à faire. Le nombre
-         de lignes des quinze derniers jours dirait l'inventaire que le gabarit interdit
-         au bandeau, et coûterait de surcroît un `git log` par projet rien que pour
-         dessiner la rangée. */
-    },
+    { to: `/p/${projectId}/timeline`, label: t('project.view.timeline'), icon: <Flag size={15} /> },
+    { to: `/p/${projectId}/actions`, label: t('project.view.actions'), icon: <Zap size={15} /> },
   ]
 
-  /* L'Aperçu est la seule vue sans action propre : elle ne crée rien, elle envoie. */
-  const create =
-    onBoard || onSchedules ? (
-      <Button
-        size="sm"
-        icon={<Plus size={15} />}
-        onClick={() => setParams((current) => {
-          current.set(NEW_PARAM, '1')
-          return current
-        })}
-      >
-        {t(onBoard ? 'project.action.newCard' : 'project.action.newTask')}
-      </Button>
-    ) : null
-  // Le découpage d'un chantier en cartes (#70), à côté de la carte seule : les deux
-  // répondent à « j'ai du travail à poser sur le board ».
-  const action = onBoard ? (
-    <>
-      <Button size="sm" variant="secondary" icon={<Split size={15} />} onClick={() => navigate(`/p/${projectId}/c/new?split=new`)}>
-        {t('split.action')}
-      </Button>
-      {create}
-    </>
-  ) : create
-
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <HeaderBand>
-        <ProjectAvatar project={project} className="size-5 shrink-0" />
-        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">{project.name}</h1>
-        {project.git ? (
-          <span className="hidden sm:block">
-            <Badge icon={<GitBranch size={11} />}>{project.git.branch}</Badge>
-          </span>
-        ) : null}
-        {/* Au doigt l'intitulé ferait passer la bande à deux lignes : l'icône suffit,
-            et le nom reste porté par le bouton pour qui ne voit pas. */}
+    <PlaceShell
+      icon={<ProjectAvatar project={project} className="size-5 shrink-0" />}
+      title={project.name}
+      label={t('project.views')}
+      tabs={tabs}
+      settings={{ to: `/p/${projectId}/settings`, label: t('project.settings.title') }}
+      actions={
+        /* Au doigt l'intitulé ferait passer la bande à deux lignes : l'icône suffit, et
+           le nom reste porté par le bouton pour qui ne voit pas. */
         <Button
           size="sm"
           aria-label={t('board.newConversation.short')}
@@ -187,52 +91,7 @@ export function ProjectLayout() {
         >
           <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
         </Button>
-        {/* Le `⋯` ne navigue plus vers une vue : la rangée est juste en dessous, et
-            redire les cinq vues ici est exactement la redondance que l'audit est
-            venu défaire. Il ne porte donc que les gestes du projet. */}
-        <Menu
-          trigger={
-            <IconButton label={t('place.project.menu')} size="sm">
-              <MoreHorizontal size={16} />
-            </IconButton>
-          }
-        >
-          <MenuItem
-            icon={<SlidersHorizontal size={16} />}
-            onSelect={() => navigate(`/p/${projectId}/settings`)}
-          >
-            {t('project.settings.title')}
-          </MenuItem>
-          {project.isOwner ? (
-            <>
-              <MenuSeparator />
-              <MenuLabel>
-                <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
-              </MenuLabel>
-              <MenuSwatchRow>
-                {PROJECT_COLORS.map((entry) => (
-                  <MenuSwatch
-                    key={entry.value ?? 'default'}
-                    color={entry.value}
-                    label={t(entry.label)}
-                    selected={project.color === entry.value}
-                    onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-                  />
-                ))}
-              </MenuSwatchRow>
-            </>
-          ) : null}
-        </Menu>
-      </HeaderBand>
-
-      <ProjectTabs label={t('project.views')} tabs={tabs} action={action} />
-
-      {/* `relative` : le tiroir de carte et le panneau du board s'y posent en absolu.
-          Ils ne recouvrent donc plus la bande ni la rangée, ce qui est le but — la
-          bande d'un projet reste lisible pendant qu'on lit un diff. */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip">
-        <Outlet />
-      </div>
-    </div>
+      }
+    />
   )
 }
