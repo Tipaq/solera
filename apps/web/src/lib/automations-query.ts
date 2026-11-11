@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { ProjectActionDto } from '@solera/protocol'
+import type { ProjectActionDto, ScheduledTaskDto } from '@solera/protocol'
 import {
   ACTIONS_KEY,
   useActions,
@@ -86,63 +86,65 @@ export function useAutomationMutations(projectId: string | null) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ACTIONS_KEY }),
   })
 
-  const actionOf = (item: Automation) => (item.source.kind === 'action' ? item.source.action : null)
-  const taskOf = (item: Automation) => (item.source.kind === 'task' ? item.source.task : null)
+  /** Le geste qui convient à la table de l'action. */
+  const bySource = <T,>(
+    item: Automation,
+    onAction: (action: ProjectActionDto) => Promise<T>,
+    onTask: (task: ScheduledTaskDto) => Promise<T>,
+  ): Promise<T> => (item.source.kind === 'action' ? onAction(item.source.action) : onTask(item.source.task))
 
   return {
     /** Crée, ou enregistre `existing` dans sa table. */
     save: async (draft: AutomationDraft, existing?: Automation): Promise<void> => {
+      // Une erreur de programmation, pas un message : l'éditeur fige la nature d'une action existante.
       if (existing && existing.what !== draft.what) throw new Error('An action keeps its nature: duplicate it instead.')
-      const action = existing ? actionOf(existing) : null
-      const task = existing ? taskOf(existing) : null
       if (draft.what === 'command') {
-        if (action) await updateAction.mutateAsync({ id: action.id, ...draft.body })
+        if (existing?.source.kind === 'action') await updateAction.mutateAsync({ id: existing.source.action.id, ...draft.body })
         else await createAction.mutateAsync(draft.body)
-        return
+      } else if (existing?.source.kind === 'task') {
+        await updateSchedule.mutateAsync({ id: existing.source.task.id, ...draft.body })
+      } else {
+        await createSchedule.mutateAsync(draft.body)
       }
-      if (task) await updateSchedule.mutateAsync({ id: task.id, ...draft.body })
-      else await createSchedule.mutateAsync(draft.body)
     },
-    remove: async (item: Automation): Promise<void> => {
-      const action = actionOf(item)
-      if (action) await deleteAction.mutateAsync(action.id)
-      else await deleteSchedule.mutateAsync(taskOf(item)!.id)
-    },
+    remove: (item: Automation) =>
+      bySource(item, (action) => deleteAction.mutateAsync(action.id), (task) => deleteSchedule.mutateAsync(task.id)),
     /** Lance une commande (ou démarre un service), ou un passage d'agent. */
-    run: async (item: Automation, place: LaunchPlace = {}): Promise<void> => {
-      const action = actionOf(item)
-      if (action) await runAction.mutateAsync({ action, conversationId: place.conversationId })
-      else await runSchedule.mutateAsync({ id: taskOf(item)!.id })
-    },
-    /** Arrête un service. */
+    run: (item: Automation, place: LaunchPlace = {}) =>
+      bySource<unknown>(
+        item,
+        (action) => runAction.mutateAsync({ action, conversationId: place.conversationId }),
+        (task) => runSchedule.mutateAsync({ id: task.id }),
+      ),
+    /** Arrête un service ; rien pour le reste. */
     stop: async (item: Automation): Promise<void> => {
-      const action = actionOf(item)
-      if (action?.kind === 'service') await runAction.mutateAsync({ action, op: 'stop' })
-    },
-    setPaused: async (item: Automation, paused: boolean): Promise<void> => {
-      const action = actionOf(item)
-      if (action) await actionRequest.mutateAsync({ method: 'patch', path: `/api/actions/${action.id}`, body: { schedule: { enabled: !paused } } })
-      else await updateSchedule.mutateAsync({ id: taskOf(item)!.id, enabled: !paused })
-    },
-    /** Valide une commande proposée, ou le script de vérification d'une tâche. */
-    approve: async (item: Automation): Promise<void> => {
-      const action = actionOf(item)
-      if (action) {
-        await approveAction.mutateAsync(action.id)
-        return
+      if (item.source.kind === 'action' && item.source.action.kind === 'service') {
+        await runAction.mutateAsync({ action: item.source.action, op: 'stop' })
       }
-      const task = taskOf(item)!
-      if (task.check) await approveCheck.mutateAsync({ id: task.id, script: task.check.script })
     },
+    setPaused: (item: Automation, paused: boolean) =>
+      bySource<unknown>(
+        item,
+        (action) => actionRequest.mutateAsync({ method: 'patch', path: `/api/actions/${action.id}`, body: { schedule: { enabled: !paused } } }),
+        (task) => updateSchedule.mutateAsync({ id: task.id, enabled: !paused }),
+      ),
+    /** Valide une commande proposée, ou le script de vérification d'une tâche. */
+    approve: (item: Automation) =>
+      bySource<unknown>(
+        item,
+        (action) => approveAction.mutateAsync(action.id),
+        async (task) => (task.check ? approveCheck.mutateAsync({ id: task.id, script: task.check.script }) : undefined),
+      ),
     /**
      * Refuse : une commande revient à ce qui a été validé (ou disparaît si rien ne l'a
      * été) ; une tâche perd son script de vérification et se met en pause (Q3).
      */
-    reject: async (item: Automation): Promise<void> => {
-      const action = actionOf(item)
-      if (action) await actionRequest.mutateAsync({ method: 'post', path: `/api/actions/${action.id}/reject` })
-      else await updateSchedule.mutateAsync({ id: taskOf(item)!.id, checkScript: null, enabled: false })
-    },
+    reject: (item: Automation) =>
+      bySource<unknown>(
+        item,
+        (action) => actionRequest.mutateAsync({ method: 'post', path: `/api/actions/${action.id}/reject` }),
+        (task) => updateSchedule.mutateAsync({ id: task.id, checkScript: null, enabled: false }),
+      ),
   }
 }
 

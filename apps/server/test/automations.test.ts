@@ -195,6 +195,11 @@ test('fromAction : sans passages du serveur, le dernier lancement fini en tient 
   const cut = fromAction(action({ lastRun: { terminalId: 'x', alive: false, exitCode: null, startedAt: NOW - HOUR } }))
   assert.equal(cut.runs[0]!.status, 'stopped')
   assert.equal(cut.failStreak, 0)
+  // 128 + n : tuée par le signal n. Ctrl-C ou SIGTERM l'ont arrêtée, SIGSEGV l'a fait planter.
+  const interrupted = fromAction(action({ lastRun: { terminalId: 'x', alive: false, exitCode: 130, startedAt: NOW - HOUR } }))
+  assert.equal(interrupted.runs[0]!.status, 'stopped')
+  const crashed = fromAction(action({ lastRun: { terminalId: 'x', alive: false, exitCode: 139, startedAt: NOW - HOUR } }))
+  assert.equal(crashed.runs[0]!.status, 'failed')
 })
 
 test('fromAction : les passages du serveur priment, et les arrêtés ne jugent pas', () => {
@@ -410,6 +415,26 @@ for (const [name, item, expected] of sentences) {
   })
 }
 
+test('stateSentence : « dernier » date le dernier échec, pas un passage sauté après lui', () => {
+  const item = fromTask(task({ runs: [run('skipped', NOW - 10 * MIN), run('failed', NOW - HOUR), run('failed', NOW - 2 * HOUR)] }))
+  assert.equal(stateSentence(item, NOW, t).text, '2 échecs d’affilée — dernier il y a 1 h.')
+})
+
+test('un service en échec se dit pareil sur la tuile et dans le détail', () => {
+  const item = fromAction(
+    action({
+      kind: 'service',
+      service: service('failed'),
+      runs: [
+        { id: 'r2', status: 'failed', exitCode: 1, startedAt: NOW - HOUR, finishedAt: NOW - HOUR + 1, conversationId: null },
+        { id: 'r1', status: 'failed', exitCode: 1, startedAt: NOW - 2 * HOUR, finishedAt: NOW - 2 * HOUR + 1, conversationId: null },
+      ],
+    }),
+  )
+  assert.equal(actionState(item, NOW, t).text, 'Arrêté sur une erreur')
+  assert.equal(stateSentence(item, NOW, t).text, 'Le service s’est arrêté sur une erreur.')
+})
+
 /* ------------------------------------------------------------------ nature, quand, cadence */
 
 test('natureOf, natureWord', () => {
@@ -571,10 +596,11 @@ test('healthOf : la dernière erreur d’une commande se lit dans son extrait', 
       ],
     }),
   )
-  const health = healthOf(item, () => null, NOW)
+  // Le passage d'une commande porte la session d'où elle est partie : son coût n'est pas le sien.
+  const health = healthOf(item, () => 5, NOW)
   assert.deepEqual(health.lastFailure, { error: 'find: ‘logs/archive’: No such file or directory', code: 2 })
   assert.equal(health.rate, 0)
-  assert.equal(health.cost30, 0)
+  assert.equal(health.cost30, null)
   assert.equal(healthOf(fromAction(action()), () => null, NOW).rate, null)
   assert.equal(healthOf(fromTask(task({ runs: [run('succeeded', NOW - HOUR)] })), () => null, NOW).lastFailure, null)
 })

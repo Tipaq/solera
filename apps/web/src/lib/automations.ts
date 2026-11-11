@@ -123,6 +123,17 @@ export type TaskInput = Omit<ScheduledTaskDto, 'cadence'> & { cadence: ScheduleC
 
 const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
+/** 128 + n : tuée par le signal n. SIGHUP, SIGINT, SIGKILL, SIGTERM l'ont arrêtée ; les autres l'ont fait planter. */
+const STOP_SIGNALS = [1, 2, 9, 15]
+
+/** Le verdict d'un code de sortie, comme le serveur le donne à ses passages (AC-02). */
+function commandStatusOf(exitCode: number | null): 'succeeded' | 'failed' | 'stopped' {
+  // Sans code, le daemon a redémarré pendant qu'elle tournait : on ne sait rien.
+  if (exitCode === null) return 'stopped'
+  if (exitCode === 0) return 'succeeded'
+  return STOP_SIGNALS.includes(exitCode - 128) ? 'stopped' : 'failed'
+}
+
 export function fromAction(input: ProjectActionDto): Automation {
   const action = input as ActionInput
   const { service, lastRun } = action
@@ -140,8 +151,7 @@ export function fromAction(input: ProjectActionDto): Automation {
       ? [
           {
             id: `${action.id}-last`,
-            // Sans code, le daemon a redémarré pendant qu'elle tournait : on ne sait rien.
-            status: lastRun.exitCode === null ? 'stopped' : lastRun.exitCode === 0 ? 'succeeded' : 'failed',
+            status: commandStatusOf(lastRun.exitCode),
             startedAt: lastRun.startedAt,
             finishedAt: null,
             exitCode: lastRun.exitCode,
@@ -274,21 +284,24 @@ export const VERDICT_FILL: Record<VerdictTone, string> = {
 
 /* ------------------------------------------------------------------ durées */
 
+/** Un écart en minutes (au moins une), heures ou jours. */
+function roughSpan(delta: number): { unit: 'minutes' | 'hours' | 'days'; count: number } {
+  if (delta < HOUR) return { unit: 'minutes', count: Math.max(1, Math.round(delta / MIN)) }
+  if (delta < DAY) return { unit: 'hours', count: Math.round(delta / HOUR) }
+  return { unit: 'days', count: Math.round(delta / DAY) }
+}
+
 /** « 3 min », « 2 h », « 4 j » : depuis quand. */
 export function ago(ts: number, now: number, t: Translate): string {
-  const delta = Math.max(0, now - ts)
-  if (delta < HOUR) return t('automation.ago.minutes', { count: Math.max(1, Math.round(delta / MIN)) })
-  if (delta < DAY) return t('automation.ago.hours', { count: Math.round(delta / HOUR) })
-  return t('automation.ago.days', { count: Math.round(delta / DAY) })
+  const { unit, count } = roughSpan(Math.max(0, now - ts))
+  return t(`automation.ago.${unit}`, { count })
 }
 
 /** « dans 3 h » : la prochaine échéance, en court. */
 export function inShort(ts: number, now: number, t: Translate): string {
-  const delta = ts - now
-  if (delta <= 0) return t('automation.next.now')
-  if (delta < HOUR) return t('automation.next.minutes', { count: Math.max(1, Math.round(delta / MIN)) })
-  if (delta < DAY) return t('automation.next.hours', { count: Math.round(delta / HOUR) })
-  return t('automation.next.days', { count: Math.round(delta / DAY) })
+  if (ts <= now) return t('automation.next.now')
+  const { unit, count } = roughSpan(ts - now)
+  return t(`automation.next.${unit}`, { count })
 }
 
 /** « 20 s », « 12 min », « 1 h 05 » : la durée d'un passage. */
@@ -454,14 +467,16 @@ export function stateSentence(
   }
   if (live?.kind === 'terminal') return say(t('automation.sentence.terminal'))
   if (live?.kind === 'run') return say(t('automation.sentence.run', { ago: ago(live.since, now, t) }))
-  const run = lastFinished(item)
-  if (item.failStreak >= 2) {
-    return say(t('automation.sentence.failStreak', { count: item.failStreak, ago: run ? ago(run.startedAt, now, t) : '—' }), 'fail')
-  }
   if (isService(item)) return say(t(serviceFailed(item) ? 'automation.sentence.serviceFailed' : 'automation.sentence.serviceStopped'))
+  if (item.failStreak >= 2) {
+    // Le dernier échec, pas un passage sauté ou arrêté depuis.
+    const failure = verdictRuns(item.runs)[0]!
+    return say(t('automation.sentence.failStreak', { count: item.failStreak, ago: ago(failure.startedAt, now, t) }), 'fail')
+  }
   if (item.schedule && !item.schedule.enabled) {
     return say(t(item.onDemand ? 'automation.sentence.paused' : 'automation.sentence.pausedOnly'))
   }
+  const run = lastFinished(item)
   if (!run) return say(t('automation.sentence.never'))
   const params = { verdict: t(RUN_VERDICTS[run.status].label), ago: ago(run.startedAt, now, t) }
   return say(
@@ -576,8 +591,11 @@ export interface Health {
   /** Part des réussites parmi les passages jugés des 30 derniers jours ; null sans aucun. */
   rate: number | null
   judged: number
-  /** Coût des passages des 30 derniers jours (celui de leurs sessions). */
-  cost30: number
+  /**
+   * Coût des passages d'agent des 30 derniers jours (celui de leurs sessions) ; null pour
+   * une commande, dont la session est celle d'où elle est partie, pas la sienne.
+   */
+  cost30: number | null
   /** L'échec du dernier passage jugé : son erreur, ou la ligne de sa sortie qui la dit. */
   lastFailure: { error: string | null; code: number | null } | null
 }
@@ -591,7 +609,7 @@ export function healthOf(item: Automation, costOf: (run: UnifiedRun) => number |
   return {
     rate: judged.length ? judged.filter((run) => run.status === 'succeeded').length / judged.length : null,
     judged: judged.length,
-    cost30: recent.reduce((sum, run) => sum + (costOf(run) ?? 0), 0),
+    cost30: item.what === 'agent' ? recent.reduce((sum, run) => sum + (costOf(run) ?? 0), 0) : null,
     lastFailure:
       last && isFailure(last)
         ? {

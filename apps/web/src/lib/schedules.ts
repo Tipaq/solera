@@ -146,8 +146,9 @@ export const RUN_DOTS = mapRuns((status) => {
 /** La teinte d'une pastille de verdict, quand un tir se résume en un mot. */
 export const RUN_TONES = mapRuns((status) => RUN_VERDICTS[status].tone)
 
+/** Les statuts d'un tir d'agent : ceux de la table commune, sauf `stopped`, propre aux commandes. */
 function mapRuns<T>(pick: (status: ScheduleRunStatus) => T): Record<ScheduleRunStatus, T> {
-  const statuses: ScheduleRunStatus[] = ['checking', 'running', 'succeeded', 'failed', 'timed_out', 'skipped']
+  const statuses = Object.keys(RUN_VERDICTS).filter((status): status is ScheduleRunStatus => status !== 'stopped')
   return Object.fromEntries(statuses.map((status) => [status, pick(status)])) as Record<ScheduleRunStatus, T>
 }
 
