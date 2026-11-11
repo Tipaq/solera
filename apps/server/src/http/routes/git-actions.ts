@@ -2,7 +2,9 @@ import { eq, inArray } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { conversations, projects, worktrees, type Db } from '@solera/db'
 import {
+  branchCleanupBodySchema,
   gitActionSchema,
+  type BranchCleanupResultDto,
   type GitAction,
   type GitImpactDto,
   type GitLockDto,
@@ -12,8 +14,10 @@ import {
 import { credentialEnv } from '../../git-credential/helper.js'
 import { GitError } from '../../git.js'
 import { impactOf, perform, readStashDetails, readWriteState, serialized, UndoJournal } from '../../git-write.js'
+import { visibleProject } from '../../projects/scope.js'
+import { triageBranchCleanup } from '../../worktrees/branch-cleanup.js'
 import type { AppContext } from '../context.js'
-import { HttpError, badRequest, conflict } from '../errors.js'
+import { HttpError, badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import { workspaceScopes } from './workspace-scopes.js'
 import type { WorktreeStatusService } from '../../worktrees/status-service.js'
@@ -228,6 +232,49 @@ export function registerGitActionRoutes(
       }
     })
   }
+
+  /**
+   * Supprime en lot les branches fusionnées (S8) : la section « branches » de Nettoyer.
+   *
+   * Le serveur rejuge chaque branche, comme la liste des branches l'a fait, et la juge
+   * dans la même file que les écritures du dépôt : entre le jugement et la suppression,
+   * rien d'autre n'écrit. `-D` et non `-d` : une branche fusionnée par squash n'est pas
+   * ancêtre de la base, et `-d` la refuserait ; c'est le jugement, sur le contenu ou sur
+   * la PR, qui garde. Le geste s'annule comme un autre, par le journal.
+   */
+  app.post('/api/projects/:id/branches/cleanup', async (request): Promise<BranchCleanupResultDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const parsed = branchCleanupBodySchema.safeParse(request.body)
+    if (!parsed.success) throw badRequest('bad_branch_cleanup', parsed.error.issues[0]?.message ?? 'Invalid branch list.')
+    const project = visibleProject(ctx, id, user.id)
+    if (!project) throw notFound('project_not_found', 'Project not found.')
+    if (project.ownerId !== user.id) throw forbidden('branch_delete_forbidden', 'Only the project owner can delete branches.')
+    const repo = project.workspacePath
+
+    refuseWhileRunning(ctx, repo)
+    const result = await serialized(repo, async (): Promise<BranchCleanupResultDto> => {
+      const { deletable, refused } = triageBranchCleanup(parsed.data.names, await worktreeStatus.looseBranches(project))
+      if (deletable.length === 0) return { deleted: [], refused }
+      let failed: { name: string; message: string }[]
+      try {
+        const outcome = await perform(repo, { kind: 'branches-delete', names: deletable }, credentialEnv(ctx.config.paths, user.id))
+        journal.record(repo, outcome.undo)
+        failed = outcome.failed ?? []
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        failed = deletable.map((name) => ({ name, message }))
+      }
+      const lost = new Set(failed.map((branch) => branch.name))
+      return {
+        deleted: deletable.filter((name) => !lost.has(name)),
+        refused: [...refused, ...failed.map(({ name, message }) => ({ name, reason: 'failed' as const, message }))],
+      }
+    })
+    // Des branches parties : la liste ne doit pas les resservir le temps du recalcul.
+    if (result.deleted.length > 0) worktreeStatus.forget(project.id)
+    return result
+  })
 }
 
 function parseAction(body: unknown): GitAction {

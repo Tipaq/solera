@@ -2,7 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
 import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches } from './assess.js'
+import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches, type LooseBranch } from './assess.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
 
@@ -175,7 +175,19 @@ export class WorktreeStatusService {
     return (await this.cache.get(project.id)?.pending) ?? list
   }
 
-  private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
+  /**
+   * Les branches sans arbre, jugées à l'instant et sans passer par le cache : ce que la
+   * suppression en lot rejuge avant de rien toucher. La base et les branches sorties
+   * dans un arbre, l'arbre principal compris, n'y sont pas ; elles sont rendues à côté.
+   */
+  async looseBranches(project: ProjectRow): Promise<{ base: string | null; checkedOut: Set<string>; branches: LooseBranch[] }> {
+    const { entries, base, landed } = await this.read(project)
+    const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
+    return { base, checkedOut, branches: await looseBranches(project.workspacePath, base, checkedOut, landed) }
+  }
+
+  /** Ce que git et la forge disent du dépôt, avant de juger quoi que ce soit. */
+  private async read(project: ProjectRow) {
     const repo = project.workspacePath
     const [entries, base, merged] = await Promise.all([
       listWorktrees(repo),
@@ -183,6 +195,12 @@ export class WorktreeStatusService {
       this.mergedPullRequests?.(project).catch(() => null) ?? null,
     ])
     const landed = base && merged ? landedPullRequests(merged, base) : new Map<string, never[]>()
+    return { entries, base, landed }
+  }
+
+  private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
+    const repo = project.workspacePath
+    const { entries, base, landed } = await this.read(project)
     const rows = this.db
       .select()
       .from(worktrees)

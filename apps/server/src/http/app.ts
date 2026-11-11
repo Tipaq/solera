@@ -92,6 +92,7 @@ import { registerUserSettingsRoutes } from './routes/user-settings.js'
 import { registerUserRoutes } from './routes/users.js'
 import { registerWorktreeRoutes } from './routes/worktrees.js'
 import { registerPullRequestRoutes } from './routes/pull-requests.js'
+import { ghForge } from '../reviews/forge.js'
 import { ProjectPullRequests, ghListPullRequests } from '../reviews/pull-requests.js'
 import { registerWebRoutes } from './routes/web.js'
 import { registerFrameGuard } from './frame-guard.js'
@@ -209,17 +210,18 @@ export async function buildApp(
   registerWorktreeRoutes(app, ctx, terminals, worktreeStatus, worktreeCleanup)
   // Un jeton GitHub enregistré passe devant `gh`, comme pour la revue ; un jeton qui ne
   // se déchiffre plus laisse `gh` répondre avec le sien.
+  const githubToken = (userId: string): string | undefined => {
+    try {
+      return gitCredentials.resolve(userId, 'github.com')?.token
+    } catch {
+      return undefined
+    }
+  }
   registerPullRequestRoutes(
     app,
     ctx,
-    pullRequests ??
-      new ProjectPullRequests(ctx.db, ghListPullRequests, (userId) => {
-        try {
-          return gitCredentials.resolve(userId, 'github.com')?.token
-        } catch {
-          return undefined
-        }
-      }),
+    pullRequests ?? new ProjectPullRequests(ctx.db, ghListPullRequests, githubToken),
+    { forge: ghForge, worktreeStatus, token: githubToken },
   )
   registerCardRoutes(app, ctx, attachments)
   if (milestones) registerMilestoneRoutes(app, ctx, milestones)

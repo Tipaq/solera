@@ -409,6 +409,12 @@ export async function impactOf(cwd: string, action: GitAction): Promise<GitImpac
       add(await commitLoss(cwd, [action.name, '--not', '--all', `--exclude=${action.name}`]))
       return { undoable: true, losses, offerStash: false }
     }
+    case 'branches-delete': {
+      // `--exclude` vaut pour le `--all` qui le suit, et compare le nom complet.
+      const excluded = action.names.map((name) => `--exclude=refs/heads/${name}`)
+      add(await commitLoss(cwd, [...action.names, '--not', ...excluded, '--all']))
+      return { undoable: true, losses, offerStash: false }
+    }
     case 'push': {
       if (!action.force) return { undoable: false, losses, offerStash: false }
       const branch = action.branch ?? (await git(cwd, ['branch', '--show-current'])).trim()
@@ -466,6 +472,7 @@ const UNDOABLE: ReadonlySet<GitAction['kind']> = new Set([
   'branch-rebase',
   'branch-rename',
   'branch-delete',
+  'branches-delete',
   'branch-track',
   'commit-switch',
   'commit-branch',
@@ -516,6 +523,8 @@ export interface ActionOutcome {
   undo: UndoRecord | null
   /** Ce que git a dit, quand ça vaut d'être lu : « Already up to date. » */
   message: string
+  /** Un geste sur plusieurs branches : celles que git a refusées, et pourquoi. */
+  failed?: { name: string; message: string }[]
 }
 
 /**
@@ -722,6 +731,36 @@ export async function perform(
           redo: action,
         },
         message: '',
+      }
+    }
+    case 'branches-delete': {
+      // Une à une : une branche que git refuse n'empêche pas les autres de partir, et
+      // l'annulation ne ressuscite que celles qui sont parties.
+      const deleted: { name: string; hash: string }[] = []
+      const failed: { name: string; message: string }[] = []
+      for (const name of action.names) {
+        try {
+          const hash = (await git(cwd, ['rev-parse', '--verify', `refs/heads/${name}`])).trim()
+          await git(cwd, ['branch', '-D', name])
+          deleted.push({ name, hash })
+        } catch (err) {
+          failed.push({ name, message: err instanceof Error ? err.message : String(err) })
+        }
+      }
+      if (deleted.length === 0) throw new GitError(failed[0]?.message ?? 'No branch was deleted.')
+      return {
+        undo: {
+          kind: deleted.length === 1 ? 'branch-delete' : 'branches-delete',
+          subject: deleted.map((branch) => branch.name).join(', '),
+          target: deleted.length === 1 ? deleted[0]!.hash.slice(0, 7) : null,
+          steps: deleted.map((branch) => ['branch', branch.name, branch.hash]),
+          head: await after(),
+          requiresClean: false,
+          stashHash: null,
+          redo: { kind: 'branches-delete', names: deleted.map((branch) => branch.name) },
+        },
+        message: '',
+        failed,
       }
     }
     case 'branch-track': {

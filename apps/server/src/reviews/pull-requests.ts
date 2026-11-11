@@ -194,6 +194,11 @@ export class ProjectPullRequests {
     return listing.dto.available ? listing.merged : null
   }
 
+  /** Oublie la liste du projet : la prochaine lecture repasse par la forge. Après une fusion, par exemple. */
+  invalidate(projectId: string): void {
+    this.cache.delete(projectId)
+  }
+
   private async listing(project: ProjectRow, userId: string): Promise<Listing> {
     const entry = this.cache.get(project.id) ?? { value: null, pending: null }
     this.cache.set(project.id, entry)
