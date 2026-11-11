@@ -217,6 +217,46 @@ export async function scanServiceProcesses(origins: ProcessOrigins): Promise<Ser
 }
 
 /**
+ * Un scan de `/proc` coûte : il est gardé deux secondes, et deux demandes simultanées
+ * attendent le même. Partagé par registre d'origines, donc par instance : la page
+ * Services et les travaux de fond d'un projet lisent le même relevé.
+ */
+export class ServiceProcessScanner {
+  private pending: Promise<ServiceProcess[]> | undefined
+  private cached: { processes: ServiceProcess[]; at: number } | undefined
+
+  constructor(private readonly origins: ProcessOrigins) {}
+
+  /** `fresh` pour une action, qui doit viser l'état du moment. */
+  scan(fresh = false): Promise<ServiceProcess[]> {
+    if (!fresh && this.cached && Date.now() - this.cached.at < 2000) return Promise.resolve(this.cached.processes)
+    return this.pending ??= scanServiceProcesses(this.origins).then((processes) => {
+      this.cached = { processes, at: Date.now() }
+      return processes
+    }).finally(() => { this.pending = undefined })
+  }
+
+  /** L'heure du dernier relevé, que la charge rapporte au temps écoulé. */
+  get scannedAt(): number | undefined {
+    return this.cached?.at
+  }
+
+  invalidate(): void {
+    this.cached = undefined
+  }
+}
+
+const scanners = new WeakMap<ProcessOrigins, ServiceProcessScanner>()
+export function serviceProcessScanner(origins: ProcessOrigins): ServiceProcessScanner {
+  let scanner = scanners.get(origins)
+  if (!scanner) {
+    scanner = new ServiceProcessScanner(origins)
+    scanners.set(origins, scanner)
+  }
+  return scanner
+}
+
+/**
  * Revalide la racine, parenté comprise : un service transféré à tmux doit devenir
  * inarrêtable ici. Puis SIGTERM à chaque processus de l'arbre vu au scan, revérifié par
  * son instant de départ : un shell non interactif ne relaie pas le signal à ses enfants,

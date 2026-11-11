@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import type { ConversationDto, ConversationMetrics, ConversationStatus } from '@solera/protocol'
+import { projectBackgroundKey } from './conversations'
 import { wsClient } from './ws-client'
 
 /**
@@ -206,15 +207,16 @@ export function useStatusFeed(): void {
         const previous = statuses.get(conversationId)
         const wasBusy = previous === 'running' || previous === 'awaiting_input' || (backgrounds.get(conversationId) ?? 0) > 0
         const busy = status === 'running' || status === 'awaiting_input' || background > 0
+        const projectOf = () => queryClient
+          .getQueryData<ConversationDto[]>(['conversations', 'all'])
+          ?.find((entry) => entry.id === conversationId)?.projectId
         if (wasBusy && !busy) {
           settledAt.set(conversationId, Date.now())
           // Un tour fini a pu commiter ou écrire dans un arbre : les chantiers se relisent.
           // Ceux de son projet seulement, et la vue du portefeuille qui les contient : les
           // autres projets n'ont pas bougé, et chaque relecture y coûte des commandes git.
           // Un fil libre, ou dont on ne connaît pas le projet, relit tout comme avant.
-          const projectId = queryClient
-            .getQueryData<ConversationDto[]>(['conversations', 'all'])
-            ?.find((entry) => entry.id === conversationId)?.projectId
+          const projectId = projectOf()
           if (projectId) {
             void queryClient.invalidateQueries({ queryKey: ['worktree-status', projectId] })
             void queryClient.invalidateQueries({ queryKey: ['worktree-status'], exact: true })
@@ -223,6 +225,10 @@ export function useStatusFeed(): void {
           }
         }
         if (busy) settledAt.delete(conversationId)
+        // La liste détaillée des travaux de fond d'un projet suit leur nombre.
+        if ((backgrounds.get(conversationId) ?? 0) !== background) {
+          void queryClient.invalidateQueries({ queryKey: projectBackgroundKey(projectOf()) })
+        }
         statuses.set(conversationId, status)
         backgrounds.set(conversationId, background)
         loops.set(conversationId, loopCount)
@@ -243,6 +249,7 @@ export function useStatusFeed(): void {
         metrics.clear()
         emit()
         void queryClient.invalidateQueries({ queryKey: ['conversations'] })
+        void queryClient.invalidateQueries({ queryKey: projectBackgroundKey() })
       },
       onListsChanged: () => {
         if (listsTimer !== null) return

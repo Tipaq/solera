@@ -6,7 +6,7 @@ import { agentConfigSchema, type CodexMode } from './agent-config.js'
 import type { CardLinkDto } from './cards.js'
 import type { TaskPendingDto } from './v1.js'
 import { elicitationActionSchema, elicitationContentSchema } from './elicitation.js'
-import { agentKindSchema, type AgentKind } from './events.js'
+import { agentKindSchema, type AgentKind, type BackgroundTask } from './events.js'
 import { mcpServerNameSchema, mcpTransportSchema, type McpServer } from './mcp.js'
 import { projectInstructionsModeSchema, type InstructionsMode } from './instructions.js'
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
@@ -650,6 +650,32 @@ export interface ConversationDto {
  */
 export interface ConversationPromptDto extends TaskPendingDto {
   conversationId: string
+}
+
+/**
+ * Un travail de fond d'une session, vu depuis la liste d'un projet (#206) : ce que le
+ * flux des statuts ne donne que par son nombre, avec ce que le journal en sait de plus.
+ */
+export interface ProjectBackgroundTaskDto extends BackgroundTask {
+  /** Son départ : `task.started`, sinon la première liste de niveau qui l'a annoncé. */
+  startedAt: number
+  /** L'appel d'outil qui l'a lancé ; nul pour un travail que le harnais lance de lui-même. */
+  toolCallId: string | null
+  /** La commande exacte d'un `Bash` lancé en fond ; nulle pour un workflow ou un sous-agent. */
+  command: string | null
+  /**
+   * L'entrée de `GET /api/services` qui le porte : même session, même commande. Celle-là
+   * ne se montre pas une seconde fois à côté du travail.
+   */
+  serviceId: string | null
+}
+
+/** Une session du projet qui a laissé tourner quelque chose (`GET /api/projects/:id/background`). */
+export interface ProjectBackgroundDto {
+  conversationId: string
+  title: string
+  agent: AgentKind
+  tasks: ProjectBackgroundTaskDto[]
 }
 
 export interface JournalPageDto {
