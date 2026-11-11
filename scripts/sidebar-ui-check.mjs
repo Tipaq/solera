@@ -35,6 +35,39 @@ function run(args, cwd, env) {
   return child
 }
 
+/**
+ * Le centre horizontal de chaque élément, mesuré depuis le bord gauche de la colonne.
+ * Arrondi au demi-pixel : un `size-3.5` centré dans un créneau de 16 px tombe sur un
+ * demi-pixel, et la comparaison porte sur la colonne, pas sur l'anticrénelage.
+ */
+function centersFromLeft(locator) {
+  return locator.evaluateAll((nodes) => nodes.map((node) => {
+    const column = node.closest('aside').getBoundingClientRect()
+    const box = node.getBoundingClientRect()
+    return Math.round((box.left + box.width / 2 - column.left) * 2) / 2
+  }))
+}
+
+/** Le bord droit de chaque élément, mesuré depuis le bord droit de la colonne. */
+function rightsFromRight(locator) {
+  return locator.evaluateAll((nodes) => nodes.map((node) => {
+    const column = node.closest('aside').getBoundingClientRect()
+    return Math.round((column.right - node.getBoundingClientRect().right) * 2) / 2
+  }))
+}
+
+/** Le centre horizontal de chaque élément, mesuré depuis le bord droit de la colonne. */
+function centersFromRight(locator) {
+  return locator.evaluateAll((nodes) => nodes.map((node) => {
+    const column = node.closest('aside').getBoundingClientRect()
+    const box = node.getBoundingClientRect()
+    return Math.round((column.right - box.left - box.width / 2) * 2) / 2
+  }))
+}
+
+/** Toutes les valeurs d'une mesure, ramenées à leurs valeurs distinctes. */
+const distinct = (values) => [...new Set(values)]
+
 async function ready(url, child) {
   for (let i = 0; i < 150; i++) {
     if (child.exitCode !== null) throw new Error(child.diagnostics)
@@ -158,14 +191,82 @@ try {
   await page.waitForTimeout(200)
   await places.screenshot({ animations: 'disabled', path: join(shots, 'lieux-raccourci-projet.png') })
 
-  // L'activité est fixe : faire défiler la zone basse ne la déplace pas.
   const activity = column.getByRole('group', { name: 'Suivi des conversations' })
   await activity.waitFor()
   // Attendre qu'elle soit remplie avant de la mesurer : ses lignes viennent du socket,
   // qui arrive après le premier rendu, et une mesure prise sur « Aucune session en
-  // cours » ne vaut rien pour la comparaison d'après.
+  // cours » ne vaut rien.
   await activity.getByRole('link').first().waitFor()
-  const before = await activity.boundingBox()
+  await places.getByRole('button', { name: /^Projets/ }).click()
+  await column.getByRole('link', { name: 'Nouveau projet…' }).waitFor()
+
+  /*
+    SID-3 : une seule colonne d'icônes. Chaque ligne pose son icône dans un créneau de
+    16 px centré à 26 px du bord (conteneur 8 + ligne 10 + 8) ; le texte part à 44 px.
+    Les lieux, l'en-tête et les lignes de l'Activité, les groupes de l'arbre et la
+    ligne « Nouveau projet… » tombent sur la même verticale. Les sessions d'un groupe,
+    en retrait sous leur filet, forment la leur.
+  */
+  const iconColumn = [
+    ...await centersFromLeft(places.locator('li button > :first-child')),
+    ...await centersFromLeft(activity.locator(':scope > button > :first-child')),
+    ...await centersFromLeft(activity.locator('li > :is(a, button) > :first-child')),
+    ...await centersFromLeft(column.locator(`a[href="/p/${project.id}"] > :first-child`)),
+    ...await centersFromLeft(column.getByRole('button', { name: 'Sans projet', exact: true }).locator(':scope > :first-child')),
+    ...await centersFromLeft(column.getByRole('link', { name: 'Nouveau projet…' }).locator(':scope > :first-child')),
+  ]
+  assert.deepEqual(distinct(iconColumn), [26], `une seule colonne d'icônes, à 26 px : ${iconColumn}`)
+  const placeTexts = await places.locator('li button > span').evaluateAll((nodes) => nodes.map((node) =>
+    node.getBoundingClientRect().left - node.closest('aside').getBoundingClientRect().left))
+  assert.deepEqual(distinct(placeTexts), [44], 'les libellés partent à 44 px')
+  const treeSessions = await centersFromLeft(column.locator('[data-sidebar-scroll] ul > li > a[href*="/c/"]:not([role=group] a) > :first-child'))
+  assert.equal(distinct(treeSessions).length, 1, `les sessions de l'arbre forment une colonne : ${treeSessions}`)
+
+  /*
+    Un bord droit commun : les compteurs des lieux, le « ↗ » de l'Activité et le
+    `Ctrl K` de *Rechercher* finissent sur la même verticale. SID-2 la tient quand la
+    barre de défilement paraît : la bande, le bloc du haut et le bloc qui défile
+    réservent la même gouttière, et leurs boîtes utiles ont la même largeur.
+  */
+  // La souris hors de la colonne : au survol, le compteur d'un lieu cède sa place au « ↗ ».
+  await page.mouse.move(900, 400)
+  const rightEdge = [
+    ...await rightsFromRight(places.locator('li > div > span[aria-hidden]')),
+    ...await rightsFromRight(activity.locator(':scope > button > :last-child')),
+    ...await rightsFromRight(column.locator('kbd')),
+  ]
+  assert.equal(distinct(rightEdge).length, 1, `un bord droit commun : ${rightEdge}`)
+  const scroller = column.locator('[data-sidebar-scroll]')
+  const searchBlock = column.getByRole('button', { name: /^Rechercher/ }).locator('xpath=..')
+  const band = column.getByRole('button', { name: 'Masquer la navigation' }).locator('xpath=ancestor::header[1]')
+  for (const [name, block] of [['bloc qui défile', scroller], ['bloc du haut', searchBlock], ['bande', band]]) {
+    assert.equal(await block.evaluate((node) => getComputedStyle(node).scrollbarGutter), 'stable', `${name} : gouttière réservée`)
+  }
+
+  /*
+    SID-1 : un seul bloc qui défile — lieux, Activité, projets et sessions ensemble. Le
+    haut (bande, Rechercher, Nouvelle conversation) et le compte restent fixes. Tout se
+    déplie pour que la colonne déborde à coup sûr.
+  */
+  await column.getByRole('button', { name: /autres sessions…$/ }).click()
+  await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
+  assert.equal(await scroller.locator('nav[aria-label="Lieux"]').count(), 1, 'les lieux sont dans le bloc qui défile')
+  assert.equal(await scroller.getByRole('group', { name: 'Suivi des conversations' }).count(), 1, 'l’Activité aussi')
+  const account = column.getByRole('button', { name: 'Alex' })
+  const fixed = async () => [
+    (await searchBlock.boundingBox()).y,
+    (await account.boundingBox()).y,
+  ]
+  // Le clic sur « autres sessions… » a pu faire défiler la colonne : repartir du haut.
+  await scroller.evaluate((node) => { node.scrollTop = 0 })
+  const fixedBefore = await fixed()
+  const placesBefore = (await places.boundingBox()).y
+  await scroller.evaluate((node) => { node.scrollTop = 160 })
+  assert.ok((await places.boundingBox()).y < placesBefore - 100, 'les lieux montent avec le reste')
+  assert.deepEqual(await fixed(), fixedBefore, 'le haut et le compte restent en place')
+  await page.screenshot({ path: join(shots, 'defilement-unique.png') })
+  await scroller.evaluate((node) => { node.scrollTop = 0 })
+  await column.getByRole('button', { name: 'Réduire la liste' }).click()
 
   // Lieu *Fils* : l'historique daté. Une tranche au moins porte des lignes.
   await places.getByRole('button', { name: /^Fils/ }).click()
@@ -190,7 +291,6 @@ try {
   const more = column.getByRole('button', { name: /autres sessions…$/ })
   await more.click()
   await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
-  assert.deepEqual(await activity.boundingBox(), before, 'l’activité doit rester fixe')
   await column.getByRole('button', { name: 'Réduire la liste' }).click()
   assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
 
@@ -243,8 +343,8 @@ try {
     return groups[0]?.textContent?.startsWith('Sans projet') ?? false
   })
   assert.equal(order, true, '*Sans projet* doit être le premier groupe')
-  // La zone basse est la seule partie qui défile : la remonter avant la capture, sinon
-  // l'image s'ouvre là où le dépli l'a laissée et le premier groupe est hors champ.
+  // Remonter le bloc qui défile avant la capture, sinon l'image s'ouvre là où le dépli
+  // l'a laissée et le premier groupe est hors champ.
   await column.evaluate((node) => {
     for (const child of node.querySelectorAll('*')) if (child.scrollTop > 0) child.scrollTop = 0
   })
@@ -299,6 +399,36 @@ try {
   assert.equal(await column.getByRole('button', { name: 'Sans projet', exact: true }).count(), 0, 'un seul groupe à la fois')
   assert.equal(await column.getByRole('link', { name: /^Tableau/ }).count(), 0, 'pas de liens de vues sous la ligne')
   await column.locator(`a[href$="/c/${hero.id}"]`).first().waitFor()
+  /*
+    SID-5 : le ⇅ et les sessions du projet sont sur la colonne d'icônes, sans retrait.
+    SID-4 : le ⋯ du projet et le bouton de repli de la bande sont deux boutons `sm`
+    (28 px) centrés sur la même verticale, à 26 px du bord droit utile.
+  */
+  const focusColumn = [
+    ...await centersFromLeft(focusLine.locator(':scope > :first-child')),
+    ...await centersFromLeft(focusLine.locator('xpath=..').locator('ul > li > a > :first-child')),
+  ]
+  assert.deepEqual(distinct(focusColumn), [26], `mode projet sur la colonne d'icônes : ${focusColumn}`)
+  const focusName = focusLine.getByRole('link', { name: project.name, exact: true })
+  await focusName.hover()
+  // Les fonds sont en transition : laisser la couleur arriver avant de la lire.
+  await page.waitForTimeout(250)
+  const collapse = column.getByRole('button', { name: 'Masquer la navigation' })
+  const projectMenu = focusLine.getByRole('button', { name: /^Actions du projet/ })
+  assert.deepEqual(
+    [await collapse.evaluate((node) => node.offsetWidth), await projectMenu.evaluate((node) => node.offsetWidth)],
+    [28, 28],
+    'le repli et le ⋯ en taille sm',
+  )
+  assert.deepEqual(
+    distinct([...await centersFromRight(collapse), ...await centersFromRight(projectMenu)]).length,
+    1,
+    'le repli et le ⋯ sur la même verticale',
+  )
+  // Pas de fond sur toute la ligne au survol : chaque geste a le sien, le nom le sien.
+  assert.equal(await focusLine.evaluate((node) => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)')
+  assert.notEqual(await focusName.evaluate((node) => getComputedStyle(node).backgroundColor), 'rgba(0, 0, 0, 0)')
+  assert.equal(await focusLine.evaluate((node) => getComputedStyle(node.parentElement).paddingTop), '8px', 'de l’air sous le filet')
   await page.screenshot({ path: join(shots, 'mode-projet.png') })
 
   const switcher = focusLine.getByRole('button', { name: /^Changer de projet/ })
@@ -499,7 +629,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, activité fixe et sa modale, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

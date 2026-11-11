@@ -266,7 +266,7 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold"
+          className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 text-left text-sm font-semibold"
         >
           <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
           <span className="truncate">{t('destination.none')}</span>
@@ -436,7 +436,7 @@ function ProjectGroup({
               event.preventDefault()
               if (project.isOwner) setEditing(true)
             }}
-            className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-sm font-semibold"
+            className="flex h-full min-w-0 flex-1 items-center gap-2.5 px-2.5 text-sm font-semibold"
             title={project.name}
           >
             <ProjectAvatar project={project} className="size-4" />
@@ -611,9 +611,9 @@ function ProjectSessions({ conversations, onNavigate }: {
         <button
           type="button"
           onClick={() => setShowAll((value) => !value)}
-          className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
+          className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
         >
-          <MessagesSquare size={14} className="shrink-0" />
+          <span className="flex w-4 shrink-0 justify-center"><MessagesSquare size={14} /></span>
           {showAll
             ? t('shell.sessions.less')
             : t('shell.sessions.more', { count: sessions.length - visible.length })}
@@ -744,10 +744,14 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
   }
 
   return (
-    <div className="px-2 pb-4">
+    // Un peu d'air sous le filet de la section. La ligne n'a pas de fond au survol :
+    // elle porte quatre gestes (⇅, nom, +, ⋯) qui ont chacun le leur, et un fond commun
+    // collait au filet et doublait celui des boutons.
+    <div className="px-2 pt-2 pb-4">
       <div
         data-project-focus
-        className="group mb-1 flex h-11 items-center gap-0.5 rounded-md pr-1 text-ink transition-colors hover:bg-surface-high md:h-9 pointer-coarse:h-11"
+        // `pl-1` pose le ⇅ (28 px) sur la colonne d'icônes : son centre tombe à 26 px.
+        className="group mb-1 flex h-11 items-center gap-0.5 pr-1 pl-1 text-ink md:h-9 pointer-coarse:h-11"
       >
         <Menu
           align="start"
@@ -799,13 +803,13 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
             to={`/p/${project.id}`}
             onClick={onNavigate}
             title={project.name}
-            className="flex h-full min-w-0 flex-1 items-center gap-2 pl-0.5 text-sm font-semibold"
+            className="flex h-full min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-sm font-semibold transition-colors hover:bg-surface-high"
           >
             <ProjectAvatar project={project} className="size-4" />
             <span className="truncate">{project.name}</span>
           </NavLink>
         ) : (
-          <span className="flex h-full min-w-0 flex-1 items-center gap-2 pl-0.5 text-sm font-semibold">
+          <span className="flex h-full min-w-0 flex-1 items-center gap-2 px-1.5 text-sm font-semibold">
             <MessagesSquare size={16} className="shrink-0 text-ink-faint" />
             <span className="truncate">{name}</span>
           </span>
@@ -879,9 +883,9 @@ function ArchivedSection({ conversations, onNavigate }: {
         type="button"
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
-        className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft md:h-8 pointer-coarse:h-11"
+        className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft md:h-8 pointer-coarse:h-11"
       >
-        <Archive size={14} className="shrink-0" />
+        <span className="flex w-4 shrink-0 justify-center"><Archive size={14} /></span>
         <span className="flex-1">{t('shell.conversations.archived', { count: String(conversations.length) })}</span>
         <ChevronRight size={11} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
       </button>
