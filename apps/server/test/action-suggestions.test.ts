@@ -204,7 +204,6 @@ test('a suggestion already saved as an action of the project is not suggested ag
 async function harness(t: TestContext) {
   const dir = await repository(t)
   const data = await mkdtemp(join(tmpdir(), 'solera-suggestions-data-'))
-  t.after(() => rm(data, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(data, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   t.after(() => sqlite.close())
@@ -228,7 +227,13 @@ async function harness(t: TestContext) {
     limits: { ptyIdleTimeoutMin: 5 },
   } as unknown as Config
   const terminals = new TerminalManager(config)
-  t.after(() => terminals.shutdown())
+  // Les hooks passent dans l'ordre où on les pose : le dossier de données ne part qu'une
+  // fois les shells sortis, sans quoi la fin d'un essai réécrit data/terminals pendant
+  // qu'on l'efface (ENOTEMPTY, #250).
+  t.after(async () => {
+    await terminals.shutdown()
+    await rm(data, { recursive: true, force: true })
+  })
   const runner = new ActionRunner(db, config, terminals, new Environments(db))
   const previousShell = process.env.SHELL
   process.env.SHELL = '/bin/sh'
