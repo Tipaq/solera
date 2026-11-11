@@ -27,6 +27,7 @@
     "test:milestones-ui": "node scripts/milestones-ui-check.mjs",
     "test:card-draft-ui": "node scripts/card-draft-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",
+    "test:terminals-ui": "node scripts/terminals-ui-check.mjs",
     "test:images-ui": "node scripts/fil-images-ui-check.mjs",
     "test:explorer-ui": "node scripts/explorer-ui-check.mjs",
     "test:places-ui": "node scripts/places-ui-check.mjs",
