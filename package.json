@@ -23,6 +23,7 @@
     "test:grok-accounts-ui": "node scripts/grok-accounts-ui-check.mjs",
     "test:board-ui": "node scripts/board-ui-check.mjs",
     "test:shell-ui": "node scripts/shell-ui-check.mjs",
+    "test:milestones-ui": "node scripts/milestones-ui-check.mjs",
     "test:card-draft-ui": "node scripts/card-draft-ui-check.mjs",
     "test:git-ui": "node scripts/git-ui-check.mjs",
     "test:images-ui": "node scripts/fil-images-ui-check.mjs",

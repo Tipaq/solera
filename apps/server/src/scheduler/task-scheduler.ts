@@ -6,12 +6,13 @@ import {
   projects,
   scheduledRuns,
   scheduledTasks,
+  users,
   worktrees,
   type ScheduledRunRow,
   type ScheduledTaskRow,
   type WorktreeRow,
 } from '@solera/db'
-import { nextScheduleRun, parseAgentConfig, slugifyProjectName, type ScheduleRunTrigger } from '@solera/protocol'
+import { nextScheduleRun, parseAgentConfig, schedulePlaceOf, slugifyProjectName, type ScheduleRunTrigger } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
 import { listBranches } from '../git.js'
@@ -19,6 +20,9 @@ import type { EventLog } from '../events/event-log.js'
 import type { AppContext } from '../http/context.js'
 import { HttpError, conflict } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
+import { vaultRoot } from '../settings/app-settings.js'
+import { placeDirectory } from '../workspace.js'
+import { directoryGone } from '../worktrees/gone.js'
 import { defaultBase } from '../worktrees/assess.js'
 import { createWorktree } from '../worktrees/create.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
@@ -216,15 +220,16 @@ export class TaskScheduler {
       this.ctx.db.update(scheduledRuns).set(patch).where(eq(scheduledRuns.id, run.id)).run()
     try {
       const stateDir = checkStateDir(this.ctx.config.paths.data, task.id)
-      // Une tâche sans projet joue son script dans son dossier d'état : il n'y a pas de
-      // racine de projet où le poser.
+      // Le script joue où le tir s'ouvrira : la racine du projet, le vault, le dossier de
+      // données. Sans projet ni lieu, dans son dossier d'état : il n'y a rien d'autre où le poser.
+      const placeDir = this.placeDirectoryOf(task)
       const project = task.projectId
         ? this.ctx.db
             .select({ workspacePath: projects.workspacePath })
             .from(projects)
             .where(eq(projects.id, task.projectId))
             .get()
-        : { workspacePath: stateDir }
+        : { workspacePath: placeDir ?? stateDir }
       if (!project) throw new Error('Le projet a disparu.')
       const previous = this.previousRun(task.id)
       const result = await runCheck(task.checkScript ?? '', {
@@ -360,10 +365,14 @@ export class TaskScheduler {
     /** Sortie de la vérification, quand le tir en a joué une. */
     checkOutput?: string,
   ): Promise<string> {
+    // Vérifié avant d'ouvrir le fil : sans son vault, une tâche Savoir n'aurait nulle part
+    // où tourner, et le fil le découvrirait au lancement du CLI.
+    this.placeDirectoryOf(task)
     const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
     const tree = task.worktreeMode === 'new' ? await this.openWorktree(task, startedAt) : null
     const row = await createConversation(this.ctx.db, this.sessions, {
       projectId: task.projectId,
+      place: schedulePlaceOf(task.scope),
       userId: task.userId,
       agent: task.agent,
       config,
@@ -425,6 +434,28 @@ export class TaskScheduler {
     // Un tir ne travaille pour aucune carte : son arbre n'est rattaché à aucune.
     const base = (await defaultBase(project.workspacePath)) ?? 'HEAD'
     return createWorktree(this.ctx, project, task.userId, name, base, null)
+  }
+
+  /**
+   * Le dossier du lieu d'une tâche Savoir ou Instance, ou l'erreur rédigée pour son tir ;
+   * null pour une tâche de projet ou sans projet, qui n'ont pas de lieu à elles.
+   *
+   * Le droit d'administrateur d'une tâche Instance est relu à chaque tir, pas seulement à
+   * la création : un compte qui l'a perdu ne garde pas un agent dans le dossier de données.
+   */
+  private placeDirectoryOf(task: Pick<ScheduledTaskRow, 'scope' | 'userId'>): string | null {
+    const place = schedulePlaceOf(task.scope)
+    if (place === null) return null
+    if (place === 'instance') {
+      const owner = this.ctx.db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, task.userId)).get()
+      if (!owner?.isAdmin) throw new Error("son créateur n'est plus administrateur, une tâche de l'instance ne tourne plus en son nom.")
+    }
+    if (place === 'vault' && vaultRoot(this.ctx.db, this.ctx.config) === null) {
+      throw new Error("aucun vault n'est configuré, une tâche du Savoir n'a pas où tourner.")
+    }
+    const directory = placeDirectory(this.ctx.db, this.ctx.config, place)
+    if (directoryGone(directory)) throw new Error(`le dossier ${directory} n'existe plus.`)
+    return directory
   }
 
   /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */
@@ -556,6 +587,14 @@ function branchStamp(ts: number): string {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`
 }
 
+/** Ce que l'agent d'un tir hors projet doit savoir du dossier où il s'ouvre. */
+const PLACE_LINES: Record<ScheduledTaskRow['scope'], string | null> = {
+  project: null,
+  vault: "Tu travailles dans le vault de Solera, le Savoir : des notes markdown liées entre elles, que d'autres lisent et écrivent aussi. Ne déplace ni ne renomme une note sans que la consigne le demande.",
+  instance: "Tu travailles dans le dossier de données de cette instance Solera : sa base, ses journaux et ses réglages. Lis autant qu'il faut, mais n'écris ni ne supprime rien que la consigne ne nomme : le serveur s'en sert pendant que tu tournes.",
+  none: null,
+}
+
 const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
   checking: 'en vérification',
   running: 'encore en cours',
@@ -579,7 +618,7 @@ const RUN_OUTCOMES: Record<ScheduledRunRow['status'], string> = {
  * `{{previous_run_date}}`, `{{previous_run_url}}` et `{{previous_run_summary}}`.
  */
 export function buildRunPrompt(input: {
-  task: Pick<ScheduledTaskRow, 'name' | 'prompt' | 'projectId' | 'maxDurationMinutes'>
+  task: Pick<ScheduledTaskRow, 'name' | 'prompt' | 'projectId' | 'scope' | 'maxDurationMinutes'>
   trigger: ScheduleRunTrigger
   firedAt: number
   previous: Pick<ScheduledRunRow, 'startedAt' | 'status' | 'conversationId' | 'summary' | 'error'> | null
@@ -594,7 +633,7 @@ export function buildRunPrompt(input: {
   const date = stamp(firedAt)
   const previousDate = previous ? stamp(previous.startedAt) : ''
   const previousUrl = previous?.conversationId
-    ? `${publicUrl.replace(/\/+$/, '')}/p/${task.projectId}/c/${previous.conversationId}`
+    ? `${publicUrl.replace(/\/+$/, '')}${task.projectId ? `/p/${task.projectId}` : ''}/c/${previous.conversationId}`
     : ''
   const previousSummary = previous?.summary ?? ''
 
@@ -604,6 +643,9 @@ export function buildRunPrompt(input: {
     `Tu tournes seul, dans une session neuve ouverte par le planificateur de Solera : personne n'est au clavier. Ne pose pas de question et ne demande pas de confirmation, personne n'y répondrait : décide, et note tes hypothèses dans ta réponse finale. Ce qui demande un accord ou sort de la consigne, ouvre une carte (create_card) plutôt que de le faire. Le tir est interrompu au bout de ${task.maxDurationMinutes} min. Ta dernière réponse sera transmise au tir suivant : fais-en un compte rendu court de ce que tu as trouvé et fait.`,
     '',
   ]
+
+  const place = PLACE_LINES[task.scope]
+  if (place) header.push(place, '')
 
   if (input.worktree) {
     header.push(
