@@ -6,12 +6,13 @@ import {
   projects,
   scheduledRuns,
   scheduledTasks,
+  users,
   worktrees,
   type ScheduledRunRow,
   type ScheduledTaskRow,
   type WorktreeRow,
 } from '@solera/db'
-import { nextScheduleRun, parseAgentConfig, slugifyProjectName, type ScheduleRunTrigger } from '@solera/protocol'
+import { nextScheduleRun, parseAgentConfig, schedulePlaceOf, slugifyProjectName, type ScheduleRunTrigger } from '@solera/protocol'
 import type { AgentRegistry } from '../agents/registry.js'
 import { createConversation } from '../conversations/create.js'
 import { listBranches } from '../git.js'
@@ -20,6 +21,7 @@ import type { AppContext } from '../http/context.js'
 import { HttpError, conflict } from '../http/errors.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { vaultRoot } from '../settings/app-settings.js'
+import { placeDirectory } from '../workspace.js'
 import { directoryGone } from '../worktrees/gone.js'
 import { defaultBase } from '../worktrees/assess.js'
 import { createWorktree } from '../worktrees/create.js'
@@ -220,14 +222,14 @@ export class TaskScheduler {
       const stateDir = checkStateDir(this.ctx.config.paths.data, task.id)
       // Le script joue où le tir s'ouvrira : la racine du projet, le vault, le dossier de
       // données. Sans projet ni lieu, dans son dossier d'état : il n'y a rien d'autre où le poser.
-      const place = this.scopeDirectory(task)
+      const placeDir = this.placeDirectoryOf(task)
       const project = task.projectId
         ? this.ctx.db
             .select({ workspacePath: projects.workspacePath })
             .from(projects)
             .where(eq(projects.id, task.projectId))
             .get()
-        : { workspacePath: place ?? stateDir }
+        : { workspacePath: placeDir ?? stateDir }
       if (!project) throw new Error('Le projet a disparu.')
       const previous = this.previousRun(task.id)
       const result = await runCheck(task.checkScript ?? '', {
@@ -363,13 +365,14 @@ export class TaskScheduler {
     /** Sortie de la vérification, quand le tir en a joué une. */
     checkOutput?: string,
   ): Promise<string> {
-    // Avant d'ouvrir le fil : sans son vault, une tâche Savoir n'aurait nulle part où tourner.
-    this.scopeDirectory(task)
+    // Vérifié avant d'ouvrir le fil : sans son vault, une tâche Savoir n'aurait nulle part
+    // où tourner, et le fil le découvrirait au lancement du CLI.
+    this.placeDirectoryOf(task)
     const config = await this.registry.adapter(task.agent).resolveDefaults(parseAgentConfig(task.config))
     const tree = task.worktreeMode === 'new' ? await this.openWorktree(task, startedAt) : null
     const row = await createConversation(this.ctx.db, this.sessions, {
       projectId: task.projectId,
-      place: task.scope === 'vault' || task.scope === 'instance' ? task.scope : null,
+      place: schedulePlaceOf(task.scope),
       userId: task.userId,
       agent: task.agent,
       config,
@@ -436,14 +439,23 @@ export class TaskScheduler {
   /**
    * Le dossier du lieu d'une tâche Savoir ou Instance, ou l'erreur rédigée pour son tir ;
    * null pour une tâche de projet ou sans projet, qui n'ont pas de lieu à elles.
+   *
+   * Le droit d'administrateur d'une tâche Instance est relu à chaque tir, pas seulement à
+   * la création : un compte qui l'a perdu ne garde pas un agent dans le dossier de données.
    */
-  private scopeDirectory(task: Pick<ScheduledTaskRow, 'scope'>): string | null {
-    if (task.scope === 'instance') return this.ctx.config.paths.data
-    if (task.scope !== 'vault') return null
-    const root = vaultRoot(this.ctx.db, this.ctx.config)
-    if (root === null) throw new Error("aucun vault n'est configuré, une tâche du Savoir n'a pas où tourner.")
-    if (directoryGone(root)) throw new Error(`le dossier du vault ${root} n'existe plus.`)
-    return root
+  private placeDirectoryOf(task: Pick<ScheduledTaskRow, 'scope' | 'userId'>): string | null {
+    const place = schedulePlaceOf(task.scope)
+    if (place === null) return null
+    if (place === 'instance') {
+      const owner = this.ctx.db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, task.userId)).get()
+      if (!owner?.isAdmin) throw new Error("son créateur n'est plus administrateur, une tâche de l'instance ne tourne plus en son nom.")
+    }
+    if (place === 'vault' && vaultRoot(this.ctx.db, this.ctx.config) === null) {
+      throw new Error("aucun vault n'est configuré, une tâche du Savoir n'a pas où tourner.")
+    }
+    const directory = placeDirectory(this.ctx.db, this.ctx.config, place)
+    if (directoryGone(directory)) throw new Error(`le dossier ${directory} n'existe plus.`)
+    return directory
   }
 
   /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */

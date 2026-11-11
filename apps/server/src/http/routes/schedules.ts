@@ -1,7 +1,7 @@
 import { rm } from 'node:fs/promises'
 import { and, asc, desc, eq, isNotNull, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { projects, scheduledRuns, scheduledTasks, type ProjectRow, type ScheduledTaskRow, type UserRow } from '@solera/db'
+import { projects, scheduledRuns, scheduledTasks, users, type ProjectRow, type ScheduledTaskRow, type UserRow } from '@solera/db'
 import {
   approveScheduleCheckBodySchema,
   createScheduledTaskBodySchema,
@@ -55,6 +55,11 @@ export function registerScheduleRoutes(
     return project
   }
 
+  const assertAdmin = (userId: string) => {
+    const user = ctx.db.select({ isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).get()
+    if (!user?.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+  }
+
   const loadWritable = (taskId: string, userId: string): ScheduledTaskRow => {
     const task = ctx.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, taskId)).get()
     if (!task) throw notFound('schedule_not_found', 'Scheduled task not found.')
@@ -64,6 +69,9 @@ export function registerScheduleRoutes(
     if (task.userId !== userId && owner !== userId) {
       throw forbidden('schedule_write_forbidden', 'Only the task creator or the project owner can change it.')
     }
+    // Relu à chaque geste : un créateur qui n'est plus administrateur ne touche plus au
+    // dossier de données par sa tâche.
+    if (task.scope === 'instance') assertAdmin(userId)
     return task
   }
 
@@ -94,7 +102,7 @@ export function registerScheduleRoutes(
     target: { scope: ScheduleScope; projectId?: string },
   ): { project: ProjectRow | null; directory: string | null } => {
     if (target.scope === 'project') return { project: loadProject(target.projectId!, user.id), directory: null }
-    if (target.scope === 'instance' && !user.isAdmin) throw forbidden('admin_only', 'Administrators only.')
+    if (target.scope === 'instance') assertAdmin(user.id)
     if (target.scope === 'none') return { project: null, directory: null }
     return { project: null, directory: placeDirectory(ctx.db, ctx.config, target.scope) }
   }

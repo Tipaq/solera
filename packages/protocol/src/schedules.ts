@@ -101,6 +101,17 @@ export type ScheduleWorktreeMode = z.infer<typeof scheduleWorktreeModeSchema>
 export const scheduleScopeSchema = z.enum(['project', 'vault', 'instance', 'none'])
 export type ScheduleScope = z.infer<typeof scheduleScopeSchema>
 
+/**
+ * Les portées qui ont un dossier à elles hors de tout projet : le vault, le dossier de
+ * données. C'est aussi le lieu d'un fil qu'elles ouvrent (`conversations.place`).
+ */
+export type SchedulePlace = Extract<ScheduleScope, 'vault' | 'instance'>
+
+/** Le lieu d'une portée, ou null : un projet a sa racine, `none` un dossier vide par fil. */
+export function schedulePlaceOf(scope: ScheduleScope): SchedulePlace | null {
+  return scope === 'vault' || scope === 'instance' ? scope : null
+}
+
 /** Où créer une tâche, ou essayer un script, depuis la page Planifiées : la portée, et son projet pour `project`. */
 const scheduleTargetShape = {
   scope: scheduleScopeSchema,

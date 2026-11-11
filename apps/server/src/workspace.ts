@@ -5,7 +5,7 @@ import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { eq } from 'drizzle-orm'
 import { conversations, projects, worktrees, type ConversationRow, type Db } from '@solera/db'
-import { MAX_UPLOAD_BYTES, type TreeEntryDto } from '@solera/protocol'
+import { MAX_UPLOAD_BYTES, type SchedulePlace, type TreeEntryDto } from '@solera/protocol'
 import type { Config } from './config.js'
 import { HttpError, badRequest, notFound } from './http/errors.js'
 import { vaultRoot } from './settings/app-settings.js'
@@ -144,7 +144,7 @@ export function resolveConversationCwd(db: Db, conversation: ConversationRow): s
  * Le dossier d'un lieu hors projet : le vault du Savoir, ou le dossier de données de
  * l'instance. Le vault se relit à chaque appel : il se règle dans l'interface.
  */
-export function placeDirectory(db: Db, config: Pick<Config, 'paths' | 'vault'>, place: 'vault' | 'instance'): string {
+export function placeDirectory(db: Db, config: Pick<Config, 'paths' | 'vault'>, place: SchedulePlace): string {
   if (place === 'instance') return config.paths.data
   const root = vaultRoot(db, config)
   if (root === null) throw badRequest('vault_unconfigured', 'No vault folder is configured.')

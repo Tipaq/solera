@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@solera/db'
-import { HOST_CONFINED_ENVIRONMENT, HOST_ENVIRONMENT, resolveAgentConfig, unattendedConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment } from '@solera/protocol'
+import { HOST_CONFINED_ENVIRONMENT, HOST_ENVIRONMENT, resolveAgentConfig, unattendedConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment, type SchedulePlace } from '@solera/protocol'
 import { environmentColumns } from '../environments/environments.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import type { OutgoingAttachment } from '../agents/types.js'
@@ -63,7 +63,7 @@ export interface CreateConversationInput {
   /** Tâche planifiée dont ce fil est un tir ; absent pour toute autre conversation. */
   scheduleId?: string
   /** Lieu d'un fil sans projet ouvert par une tâche Savoir ou Instance ; absent ailleurs. */
-  place?: 'vault' | 'instance' | null
+  place?: SchedulePlace | null
   /**
    * Contexte transmis depuis une autre conversation, quand celle-ci la continue dans un
    * autre CLI : écrit avec la ligne, pour que le premier démarrage du CLI le trouve.

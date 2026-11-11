@@ -946,7 +946,9 @@ test('a run opens its session where its scope lives: the vault, the data folder,
   const { db, config, scheduler, vault, useVault } = await scopedHarness(t)
   useVault()
   const cwdOf = async (scope: 'vault' | 'instance' | 'none') => {
-    const created = createScheduledTask(db, { projectId: null, scope, userId: 'owner' }, onDemandInput({ name: scope }))
+    // L'instance est réservée aux administrateurs, à chaque tir.
+    const userId = scope === 'instance' ? 'admin' : 'owner'
+    const created = createScheduledTask(db, { projectId: null, scope, userId }, onDemandInput({ name: scope }))
     const run = await scheduler.runNow(created.id)
     assert.equal(run.status, 'running', run.error ?? '')
     const thread = db.select().from(conversations).where(eq(conversations.id, run.conversationId!)).get()!
@@ -982,7 +984,7 @@ test('a check script runs where its scope lives', async (t) => {
   const where = async (scope: 'vault' | 'instance') => {
     const created = createScheduledTask(
       db,
-      { projectId: null, scope, userId: 'owner' },
+      { projectId: null, scope, userId: scope === 'instance' ? 'admin' : 'owner' },
       onDemandInput({ name: scope, checkScript: `pwd\nexit ${CHECK_SKIP_EXIT_CODE}` }),
     )
     await scheduler.runNow(created.id)
@@ -1013,4 +1015,17 @@ test('the prompt of a run outside a project links the previous thread where it l
   assert.match(prompt, /https:\/\/solera\.example\/c\/prev /)
   assert.doesNotMatch(prompt, /\/p\/null\//)
   assert.match(prompt, /vault/)
+})
+
+test('an instance task stops running, and can no longer be changed, once its creator is no longer an administrator', async (t) => {
+  const { db, call, body, scheduler, sent } = await scopedHarness(t)
+  const created = await call('POST', '/api/schedules', body({ scope: 'instance' }), 'admin')
+  db.update(users).set({ isAdmin: false }).where(eq(users.id, 'admin')).run()
+
+  const patched = await call('PATCH', `/api/schedules/${created.body.id}`, { name: 'Autre' }, 'admin')
+  assert.equal(patched.status, 403)
+  const run = await scheduler.runNow(created.body.id)
+  assert.equal(run.status, 'failed')
+  assert.match(run.error ?? '', /administrat/)
+  assert.equal(sent.length, 0)
 })

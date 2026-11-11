@@ -1,4 +1,4 @@
-import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, ScheduleScope, ScheduleWorktreeMode } from '@solera/protocol'
+import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, SchedulePlace, ScheduleScope, ScheduleWorktreeMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1068,7 +1068,7 @@ export const conversations = sqliteTable(
      * (`instance`) ; null : son dossier à lui sous `threads`. Sur le fil et non relu de sa
      * tâche : la tâche supprimée, il doit reprendre là où il a commencé.
      */
-    place: text('place').$type<'vault' | 'instance'>(),
+    place: text('place').$type<SchedulePlace>(),
     /**
      * JSON `AgentConfig` : la configuration complète que ce fil reçoit, l'héritage puis
      * ses propres changements. Recalculée à chaque lancement de session et à chaque
