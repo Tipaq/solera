@@ -1,13 +1,15 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, worktrees, type ProjectActionRow } from '@solera/db'
+import { conversations, projects, worktrees } from '@solera/db'
 import {
   actionPlaceBodySchema,
   createProjectActionBodySchema,
   runProjectActionBodySchema,
   serviceActionControlSchema,
+  tryProjectActionBodySchema,
   updateProjectActionBodySchema,
   type ActionRunDetailDto,
+  type ActionSuggestion,
   type ProjectActionDto,
 } from '@solera/protocol'
 import {
@@ -21,6 +23,7 @@ import {
   type ActionRunner,
 } from '../../actions/actions.js'
 import { runDetails } from '../../actions/runs.js'
+import { readSuggestions, withoutExisting } from '../../actions/suggestions.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { conflict, notFound } from '../errors.js'
@@ -55,10 +58,10 @@ export function registerActionRoutes(
 
   /**
    * Le worktree de la conversation si elle est donnée, sinon le worktree choisi, sinon
-   * la racine. L'un ou l'autre doit appartenir au projet de l'action.
+   * la racine. L'un ou l'autre doit appartenir au projet.
    */
   const baseDir = (
-    action: ProjectActionRow,
+    projectId: string,
     workspacePath: string,
     { conversationId, worktreeId }: { conversationId?: string; worktreeId?: string },
   ) => {
@@ -66,7 +69,7 @@ export function registerActionRoutes(
       const worktree = ctx.db
         .select({ path: worktrees.path })
         .from(worktrees)
-        .where(and(eq(worktrees.id, worktreeId), eq(worktrees.projectId, action.projectId), isNull(worktrees.removedAt)))
+        .where(and(eq(worktrees.id, worktreeId), eq(worktrees.projectId, projectId), isNull(worktrees.removedAt)))
         .get()
       if (!worktree) throw notFound('worktree_not_found', 'Worktree not found.')
       return worktree.path
@@ -77,7 +80,7 @@ export function registerActionRoutes(
       .from(conversations)
       .where(eq(conversations.id, conversationId))
       .get()
-    if (!row || row.projectId !== action.projectId) {
+    if (!row || row.projectId !== projectId) {
       throw notFound('conversation_not_found', 'Conversation not found.')
     }
     return sessions.workingDirectory(conversationId)
@@ -97,6 +100,24 @@ export function registerActionRoutes(
     const body = createProjectActionBodySchema.parse(request.body)
     const row = createAction(ctx.db, id, body, null)
     return reply.status(201).send(await runner.toDto(row))
+  })
+
+  /** « Trouvé dans le dépôt » : ce que la racine du projet sait lancer, moins ses boutons. */
+  app.get('/api/projects/:id/actions/suggestions', async (request): Promise<ActionSuggestion[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = guardProject(id, user.id)
+    return withoutExisting(await readSuggestions(project.workspacePath), listActionRows(ctx.db, [id]))
+  })
+
+  /** « Essayer » depuis l'éditeur : un terminal d'essai, rien d'enregistré, les droits d'un terminal. */
+  app.post('/api/projects/:id/actions/try', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const project = guardProject(id, user.id)
+    const { conversationId, ...attempt } = tryProjectActionBodySchema.parse(request.body ?? {})
+    const base = baseDir(id, project.workspacePath, { conversationId })
+    return reply.status(201).send(await runner.tryCommand(id, attempt, base, conversationId ?? null, user.id))
   })
 
   app.patch('/api/actions/:id', async (request): Promise<ProjectActionDto> => {
@@ -156,7 +177,7 @@ export function registerActionRoutes(
     if (!action.approvedAt) {
       throw conflict('action_not_approved', 'Review this action before running it.')
     }
-    const result = await runner.run(action, baseDir(action, project.workspacePath, body), body.conversationId ?? null, {
+    const result = await runner.run(action, baseDir(action.projectId, project.workspacePath, body), body.conversationId ?? null, {
       args: body.args,
       switch: body.switch,
     })
@@ -168,7 +189,7 @@ export function registerActionRoutes(
     const { id, op } = request.params as { id: string; op: string }
     const { action, project } = guardAction(id, user.id)
     const body = actionPlaceBodySchema.parse(request.body ?? {})
-    const base = baseDir(action, project.workspacePath, body)
+    const base = baseDir(action.projectId, project.workspacePath, body)
     if (op === 'logs') return runner.logs(action, base)
     // Relancer un service arrêté revient à le lancer : même relecture préalable.
     if (op === 'restart' && !action.approvedAt) {

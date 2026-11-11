@@ -286,3 +286,48 @@ export interface ProjectActionRunResult {
   /** Une exécution précédente tourne encore : on la rend au lieu d'en lancer une seconde. */
   alreadyRunning: boolean
 }
+
+/**
+ * « Essayer » une commande depuis l'éditeur, sans l'enregistrer : un terminal d'essai,
+ * avec les droits d'un terminal. Depuis une conversation, dans son worktree et son
+ * environnement ; sinon à la racine du projet. Le titre vient de l'interface, qui le
+ * traduit ; sans lui, la première ligne de la commande en tient lieu.
+ */
+/** Le titre d'un terminal d'essai : « Essai · » suivi du libellé ou de la commande. */
+export const MAX_TRY_TITLE_CHARS = 80
+
+export const tryProjectActionBodySchema = z.object({
+  command: z.string().trim().min(1).max(MAX_ACTION_COMMAND_CHARS),
+  subdir: actionSubdirSchema.optional(),
+  title: z.string().trim().min(1).max(MAX_TRY_TITLE_CHARS).optional(),
+  conversationId: z.string().min(1).optional(),
+})
+export type TryProjectActionBody = z.infer<typeof tryProjectActionBodySchema>
+
+/** Au-delà, la liste n'aide plus à choisir : un dépôt à cent scripts se parcourt ailleurs. */
+export const MAX_ACTION_SUGGESTIONS = 40
+
+/**
+ * Pourquoi une suggestion a cette nature : son nom annonce un serveur (`dev`, `start`,
+ * `serve`, `storybook`, `preview`), elle lance des conteneurs (`docker compose up`), ou,
+ * par défaut, c'est une commande qui se termine.
+ */
+export type ActionSuggestionReason = 'service-name' | 'compose' | 'task'
+
+/**
+ * Une commande trouvée dans le dépôt du projet, pour remplir l'éditeur d'un clic. Le
+ * libellé et l'explication se composent côté interface, à partir de `name` et `reason`.
+ */
+export interface ActionSuggestion {
+  /** Fichier d'où elle vient, relatif à la racine : `package.json`, `apps/web/package.json`, `Makefile`… */
+  source: string
+  /** Le script, la cible, la recette ou le fichier, tel qu'écrit dans la source. */
+  name: string
+  kind: ProjectActionKind
+  reason: ActionSuggestionReason
+  command: string
+  /** Dossier où la lancer, relatif à la racine ; '' pour la racine. */
+  subdir: string
+  /** Gabarit de lien d'un service web ; null sinon. */
+  url: string | null
+}

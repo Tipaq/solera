@@ -5,6 +5,7 @@ import { and, asc, count, eq, inArray, isNull } from 'drizzle-orm'
 import { conversations, projectActions, projects, worktrees, type Db, type ProjectActionRow } from '@solera/db'
 import {
   MAX_ACTIONS_PER_PROJECT,
+  MAX_TRY_TITLE_CHARS,
   resolveActionUrl,
   type ActionPlacement,
   type ActionRunDto,
@@ -21,7 +22,7 @@ import type { Config } from '../config.js'
 import { HttpError, badRequest, conflict, notFound } from '../http/errors.js'
 import { systemdUnits, type ServiceUnits, type ServiceUnitState } from '../services/apps.js'
 import { processOrigins } from '../services/origins.js'
-import type { TerminalManager } from '../terminals/terminal-manager.js'
+import type { TerminalCommand, TerminalManager } from '../terminals/terminal-manager.js'
 import type { Environments } from '../environments/environments.js'
 import { hostEnvironment } from '../environments/host.js'
 import { closeOrphanRuns, finishRun, latestRuns, startRun } from './runs.js'
@@ -367,8 +368,8 @@ export class ActionRunner {
   }
 
   /** Le dossier d'exécution : le worktree donné, plus le sous-dossier de l'action. */
-  private async cwdFor(row: ProjectActionRow, base: string): Promise<string> {
-    const cwd = row.subdir ? join(base, row.subdir) : base
+  private async cwdFor(subdir: string | null | undefined, base: string): Promise<string> {
+    const cwd = subdir ? join(base, subdir) : base
     const isDir = await stat(cwd).then((s) => s.isDirectory(), () => false)
     if (!isDir) {
       throw new HttpError(409, 'action_cwd_missing', 'The directory {path} does not exist.', { path: cwd })
@@ -421,7 +422,7 @@ export class ActionRunner {
     if (args.length > 0 && row.kind === 'service') {
       throw conflict('action_args_task_only', 'Extra arguments only apply to a task.')
     }
-    const cwd = await this.cwdFor(row, await this.placedBase(row, requested))
+    const cwd = await this.cwdFor(row.subdir, await this.placedBase(row, requested))
     const command = args.length > 0 ? `${row.command} ${args.map(shellQuote).join(' ')}` : row.command
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
 
@@ -448,31 +449,68 @@ export class ActionRunner {
 
     const previous = this.terminals.liveForAction(row.projectId, row.id, cwd)
     if (previous) return { terminal: previous, service: null, alreadyRunning: true }
-    // Dans l'environnement de la session qui la lance, et hors session dans celui du
-    // projet : comme un terminal.
-    await this.environments.prepare(this.environments.terminalEnvironment(row.projectId, conversationId), row.projectId, { cwd })
-    const environment = await this.environments.forTerminal(row.projectId, conversationId, cwd)
-    let terminal: ReturnType<TerminalManager['open']>
     // Le passage est écrit juste après l'ouverture, dans le même tour de boucle : la
     // sortie du terminal, même immédiate, arrive après.
     let runId: string | null = null
+    const terminal = await this.openInEnvironment(row.projectId, cwd, conversationId, {
+      command,
+      title: row.label,
+      actionId: row.id,
+      env: origin,
+      onExit: (end) => {
+        if (runId) finishRun(this.db, runId, end)
+      },
+    })
+    runId = startRun(this.db, { actionId: row.id, projectId: row.projectId, trigger, conversationId, terminalId: terminal.id, cwd })
+    return { terminal, service: null, alreadyRunning: false }
+  }
+
+  /**
+   * « Essayer » une commande de l'éditeur, sans l'enregistrer : toujours dans un
+   * terminal, même un service, puisqu'on veut voir sa sortie et pouvoir l'arrêter. Pas
+   * de passage : rien n'est enregistré.
+   *
+   * Un essai remplace le précédent de la même personne dans le projet, même s'il
+   * tourne encore et d'où qu'il ait été lancé : c'est la même commande retouchée, et
+   * un serveur de dev oublié garderait son port.
+   */
+  async tryCommand(
+    projectId: string,
+    attempt: { command: string; subdir?: string; title?: string },
+    base: string,
+    conversationId: string | null,
+    userId: string,
+  ): Promise<TerminalDto> {
+    const cwd = await this.cwdFor(attempt.subdir, base)
+    this.terminals.closeTrials(projectId, userId)
+    return this.openInEnvironment(projectId, cwd, conversationId, {
+      command: attempt.command,
+      title: attempt.title ?? attempt.command.split('\n')[0]!.trim().slice(0, MAX_TRY_TITLE_CHARS),
+      actionId: null,
+      trialOf: userId,
+      env: processOrigins(this.config.paths.data).environment(projectId, conversationId),
+    })
+  }
+
+  /**
+   * Dans l'environnement de la session qui lance, et hors session dans celui du
+   * projet : comme un terminal.
+   */
+  private async openInEnvironment(
+    projectId: string,
+    cwd: string,
+    conversationId: string | null,
+    run: TerminalCommand,
+  ): Promise<TerminalDto> {
+    await this.environments.prepare(this.environments.terminalEnvironment(projectId, conversationId), projectId, { cwd })
+    const environment = await this.environments.forTerminal(projectId, conversationId, cwd)
     try {
-      terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
-        command,
-        title: row.label,
-        actionId: row.id,
-        env: origin,
-        onExit: (end) => {
-          if (runId) finishRun(this.db, runId, end)
-        },
-      })
+      return this.openTerminal(projectId, cwd, { environment, conversationId }, run)
     } catch (err) {
       // Un conteneur éphémère démarré pour rien ne doit pas rester.
       await environment.close().catch(() => undefined)
       throw err
     }
-    runId = startRun(this.db, { actionId: row.id, projectId: row.projectId, trigger, conversationId, terminalId: terminal.id, cwd })
-    return { terminal, service: null, alreadyRunning: false }
   }
 
   private openTerminal(...args: Parameters<TerminalManager['open']>) {

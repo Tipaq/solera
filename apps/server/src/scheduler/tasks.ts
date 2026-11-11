@@ -17,6 +17,8 @@ import {
   type AgentKind,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
+  type ScheduleScope,
+  type ScheduleWorktreeMode,
   type ScheduledRunDto,
   type ScheduledTaskDto,
 } from '@solera/protocol'
@@ -30,8 +32,13 @@ import { badRequest, conflict, notFound } from '../http/errors.js'
 /** Tirs rendus avec une tâche : de quoi remplir son historique sans second appel. */
 const RUNS_PER_TASK = 20
 
-export function readCadence(raw: string): ScheduleCadence {
-  return scheduleCadenceSchema.parse(JSON.parse(raw))
+/** Null : une tâche sans cadence, qui ne part qu'à la demande. */
+export function readCadence(raw: string | null): ScheduleCadence | null {
+  return raw === null ? null : scheduleCadenceSchema.parse(JSON.parse(raw))
+}
+
+function writeCadence(cadence: ScheduleCadence | null): string | null {
+  return cadence === null ? null : JSON.stringify(cadence)
 }
 
 export function runToDto(row: ScheduledRunRow): ScheduledRunDto {
@@ -86,12 +93,15 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[]): ScheduledTaskDto[]
     return {
       id: row.id,
       projectId: row.projectId,
+      scope: row.scope,
       userId: row.userId,
       name: row.name,
       agent: row.agent,
       config: parseAgentConfig(row.config),
       prompt: row.prompt,
       cadence: readCadence(row.cadence),
+      onDemand: row.onDemand,
+      worktreeMode: row.worktreeMode,
       executionMode: row.executionMode,
       overlapPolicy: row.overlapPolicy,
       confined: row.confined,
@@ -123,7 +133,12 @@ export interface ScheduledTaskInput {
   /** Déjà résolue : les `CLI_DEFAULT` sont remplacés avant l'écriture. */
   config: AgentConfig
   prompt: string
-  cadence: ScheduleCadence
+  /** Null : la tâche ne part qu'à la demande. */
+  cadence: ScheduleCadence | null
+  /** Absent : vrai, comme une tâche d'avant que le choix existe. */
+  onDemand?: boolean
+  /** Absent : à la racine du projet. */
+  worktreeMode?: ScheduleWorktreeMode
   overlapPolicy: ScheduleOverlapPolicy
   /** Tirs confinés ou non (#146) ; null ou absent : le réglage du projet. */
   confined?: boolean | null
@@ -141,13 +156,34 @@ function assertCoherent(agent: AgentKind, config: AgentConfig): void {
 }
 
 /**
+ * Hors projet, ni worktree neuf ni confinement : pas de dépôt où ouvrir l'un, pas
+ * d'environnement de projet pour l'autre. Refusé à l'écriture plutôt qu'au premier tir.
+ */
+function assertPlaceable(scope: ScheduleScope, worktreeMode: ScheduleWorktreeMode, confined: boolean | null): void {
+  if (scope === 'project') return
+  if (worktreeMode === 'new') {
+    throw badRequest('schedule_worktree_needs_project', 'Only a task in a project can run in a new worktree.')
+  }
+  if (confined) {
+    throw badRequest('schedule_confined_needs_project', 'Only a task in a project can run confined.')
+  }
+}
+
+/** Ni bouton ni cadence : une tâche que rien ne lancerait jamais. */
+function assertTriggerable(cadence: ScheduleCadence | null, onDemand: boolean): void {
+  if (cadence === null && !onDemand) {
+    throw badRequest('schedule_needs_trigger', 'A task runs on demand, on a schedule, or both.')
+  }
+}
+
+/**
  * Prochain tir à armer, ou l'erreur qui dit pourquoi il n'y en a pas.
  *
  * Une tâche active sans prochain tir est une tâche qui ne partira jamais sans le dire :
  * autant la refuser à l'écriture.
  */
-function armedAt(cadence: ScheduleCadence, enabled: boolean, lastRunAt: number | null): number | null {
-  if (!enabled) return null
+function armedAt(cadence: ScheduleCadence | null, enabled: boolean, lastRunAt: number | null): number | null {
+  if (!enabled || cadence === null) return null
   const next = nextScheduleRun(cadence, Date.now(), lastRunAt)
   if (next === null) {
     throw badRequest('schedule_never_fires', 'This schedule has no upcoming run.')
@@ -155,22 +191,34 @@ function armedAt(cadence: ScheduleCadence, enabled: boolean, lastRunAt: number |
   return next
 }
 
+/**
+ * Crée une tâche. Sans projet, `scope` dit où ses tirs s'ouvrent (`none` par défaut) ;
+ * avec un projet, la portée est `project` et `scope` est ignoré.
+ */
 export function createScheduledTask(
   db: Db,
-  owner: { projectId: string; userId: string; conversationId?: string },
+  owner: { projectId: string | null; scope?: Exclude<ScheduleScope, 'project'>; userId: string; conversationId?: string },
   input: ScheduledTaskInput,
 ): ScheduledTaskRow {
   assertCoherent(input.agent, input.config)
+  const onDemand = input.onDemand ?? true
+  assertTriggerable(input.cadence, onDemand)
+  const scope: ScheduleScope = owner.projectId !== null ? 'project' : (owner.scope ?? 'none')
+  const worktreeMode = input.worktreeMode ?? 'root'
+  assertPlaceable(scope, worktreeMode, input.confined ?? null)
   const now = Date.now()
   const row: ScheduledTaskRow = {
     id: randomUUID(),
     projectId: owner.projectId,
+    scope,
     userId: owner.userId,
     name: input.name,
     agent: input.agent,
     config: JSON.stringify(input.config),
     prompt: input.prompt,
-    cadence: JSON.stringify(input.cadence),
+    cadence: writeCadence(input.cadence),
+    onDemand,
+    worktreeMode,
     executionMode: 'fresh',
     overlapPolicy: input.overlapPolicy,
     confined: input.confined ?? null,
@@ -207,7 +255,12 @@ export function updateScheduledTask(
   const config = patch.config ?? parseAgentConfig(current.config)
   assertCoherent(agent, config)
 
-  const cadence = patch.cadence ?? readCadence(current.cadence)
+  const cadence = patch.cadence !== undefined ? patch.cadence : readCadence(current.cadence)
+  const onDemand = patch.onDemand ?? current.onDemand
+  assertTriggerable(cadence, onDemand)
+  const worktreeMode = patch.worktreeMode ?? current.worktreeMode
+  const confined = patch.confined !== undefined ? patch.confined : current.confined
+  assertPlaceable(current.scope, worktreeMode, confined)
   const enabled = patch.enabled ?? current.enabled
   // Réarmée seulement si la cadence ou la pause ont bougé : renommer une tâche ne doit
   // pas repousser un tir par intervalle qui approchait.
@@ -218,9 +271,11 @@ export function updateScheduledTask(
     agent,
     config: JSON.stringify(config),
     prompt: patch.prompt ?? current.prompt,
-    cadence: JSON.stringify(cadence),
+    cadence: writeCadence(cadence),
+    onDemand,
+    worktreeMode,
     overlapPolicy: patch.overlapPolicy ?? current.overlapPolicy,
-    confined: patch.confined !== undefined ? patch.confined : current.confined,
+    confined,
     maxDurationMinutes: patch.maxDurationMinutes ?? current.maxDurationMinutes,
     enabled,
     nextRunAt: rearm ? armedAt(cadence, enabled, current.lastRunAt) : current.nextRunAt,

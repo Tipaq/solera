@@ -131,11 +131,11 @@ function TaskLine({ task, project, onNavigate }: {
         onClick={onNavigate}
         title={`${task.name} · ${t(SCHEDULE_STATE_LABELS[state])}`}
         className={({ isActive }) => cx(
-          'flex h-11 items-center gap-2 rounded-md px-2.5 text-sm transition-colors md:h-8 pointer-coarse:h-11',
+          'flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors md:h-8 pointer-coarse:h-11',
           isActive ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >
-        <CalendarClock size={14} className="shrink-0 text-ink-faint" />
+        <span className="flex w-4 shrink-0 justify-center text-ink-faint"><CalendarClock size={14} /></span>
         <span className="min-w-0 flex-1 truncate">{task.name}</span>
         {project ? <ProjectAvatar project={project} className="size-3" /> : null}
         {awaiting ? <StateDot state="awaiting" labelled={false} /> : null}

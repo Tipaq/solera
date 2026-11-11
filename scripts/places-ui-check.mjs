@@ -14,8 +14,8 @@ import { launchBrowser } from './checks/browser.mjs'
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : que le bandeau du haut
  * dit ce qui réclame et **omet ce qui est à zéro**, que le board de l'Aperçu est bien
- * celui de l'application — mêmes colonnes, mêmes tuiles — et que l'ancienne page de
- * réglages est toujours joignable depuis le `⋯` qui l'a reprise.
+ * celui de l'application — mêmes colonnes, mêmes tuiles — et que les
+ * réglages du projet sont toujours joignables, dans la coque.
  *
  * La vue d'un projet est logée dans une coque (`PlaceShell`, page projet v2) : la bande
  * porte l'avatar, le nom et « + Conversation », la rangée porte les cinq vues puis
@@ -174,13 +174,17 @@ try {
   // Réglages est une vue de la coque : la rangée reste, son onglet s'allume.
   await settingsTab.click()
   await page.waitForURL(`**/p/${nimbus.id}/settings`)
-  await page.getByRole('heading', { name: 'Réglages du projet', exact: true }).waitFor()
+  await page.getByRole('complementary', { name: 'Sections des réglages', exact: true }).waitFor()
   await row.waitFor()
   await settingsTab.and(page.locator('[aria-current="page"]')).waitFor()
   assert.equal(await page.getByRole('heading', { name: 'Nimbus', exact: true }).count(), 1, 'Les réglages ne redisent pas le nom du projet')
   // La couleur a quitté le `⋯` pour les réglages.
   await page.getByRole('radiogroup', { name: 'Couleur', exact: true }).waitFor()
-  await assertGutter('sur les réglages')
+  // La page des réglages part de son menu : son titre « Réglages » est sur la gouttière.
+  const menuTitle = await page.getByRole('complementary', { name: 'Sections des réglages', exact: true })
+    .getByRole('heading', { name: 'Réglages', exact: true }).evaluate((title) => title.getBoundingClientRect().left)
+  const { band: settingsEdge } = await gutter()
+  assert.ok(Math.abs(menuTitle - settingsEdge) <= 1, `Les réglages suivent la gouttière : ${menuTitle} / ${settingsEdge}`)
 
   // Le Tableau porte son « + Carte » dans sa barre, plus dans la rangée.
   await row.getByRole('link', { name: /^Tableau/ }).click()
