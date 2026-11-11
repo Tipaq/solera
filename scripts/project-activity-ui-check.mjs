@@ -129,15 +129,15 @@ try {
   const shots = join(root, 'docs/audits/2026-10-21-page-projet/portage')
   await mkdir(shots, { recursive: true })
 
-  // ─── La rangée : six vues, Activité en deuxième, Jalons à la place de Chronologie ──
+  // ─── La rangée v2 (#160) : Travail en deuxième, qui rend l'Activité jusqu'à #175 ──
   await page.goto(`${base}/p/${nimbus.id}`)
   const row = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
   await row.waitFor()
-  const labels = (await row.getByRole('link').allInnerTexts()).map((text) => text.replace(/\s*\d+$/, '').trim())
-  assert.deepEqual(labels, ['Aperçu', 'Activité', 'Board', 'Planifiées', 'Jalons', 'Journal'])
+  const labels = (await row.getByRole('link').evaluateAll((links) => links.map((link) => link.querySelector('span[title]') ? link.innerText.replace(link.querySelector('span[title]').innerText, '') : link.innerText))).map((text) => text.trim())
+  assert.deepEqual(labels, ['Aperçu', 'Travail', 'Tableau', 'Jalons', 'Actions', 'Réglages'])
   // Le compteur de l'onglet est ce qui te demande quelque chose, pas l'inventaire.
   const asking = conversations.filter((entry) => ['awaiting_input', 'error', 'interrupted'].includes(entry.status)).length
-  assert.match(await row.getByRole('link', { name: /^Activité/ }).innerText(), new RegExp(`${asking}$`))
+  assert.equal(await row.getByRole('link', { name: /^Travail/ }).locator('span[title] [aria-hidden]').innerText(), String(asking))
 
   // ─── L'Aperçu : « En ce moment » sous les tuiles (#114, planche A1) ─────────
   const now = page.getByRole('region', { name: 'En ce moment', exact: true })
@@ -260,13 +260,13 @@ try {
   await page.goto(`${base}/p/${nimbus.id}`)
   await now.waitFor()
   await now.getByRole('link', { name: /^Toute l'activité/ }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/activity`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail`)
   await page.goto(`${base}/p/${nimbus.id}`)
   await row.waitFor()
 
   // ─── Les groupes, dans l'ordre ─────────────────────────────────────────────
-  await row.getByRole('link', { name: /^Activité/ }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/activity`)
+  await row.getByRole('link', { name: /^Travail/ }).click()
+  await page.waitForURL(`**/p/${nimbus.id}/travail`)
   const headings = page.getByRole('heading', { level: 2 })
   await headings.first().waitFor()
   const order = ['Te demande quelque chose', 'Prête à relire', 'En cours', 'Terminées']
@@ -375,7 +375,7 @@ try {
 
   // ─── Grouper par worktree (#111, planche B3) ────────────────────────────────
   await page.getByRole('radio', { name: 'Worktree', exact: true }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/activity?groupe=worktree`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?groupe=worktree`)
   const treeGroup = page.getByRole('region', { name: new RegExp(`^${(tree.branch ?? tree.name).replace(/[/.]/g, '\\$&')}`) })
   const treeRow = treeGroup.getByRole('link', { name: new RegExp(running.title) })
   await treeRow.waitFor()
@@ -387,7 +387,7 @@ try {
   await page.getByRole('region', { name: /^main racine du projet/ }).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'b3-activite-par-worktree.png') })
   await page.getByRole('radio', { name: 'État', exact: true }).click()
-  await page.waitForURL(`**/p/${nimbus.id}/activity`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail`)
   await section('En cours').waitFor()
 
   // ─── Sombre ───────────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ try {
 
   // ─── Au téléphone : deux étages, la carte tombe ────────────────────────────
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto(`${base}/p/${nimbus.id}/activity`)
+  await page.goto(`${base}/p/${nimbus.id}/travail`)
   await headings.first().waitFor()
   assert.equal(await filter.isVisible(), false, 'Au téléphone, la barre ne garde que les compteurs (E1)')
   if (running.card) {
@@ -412,7 +412,7 @@ try {
 
   // ─── Le jalon lancé (#116, planches C1, C2 et C3) ──────────────────────────
   // Sans jalon lancé, ni bandeau ni groupe.
-  await page.goto(`${base}/p/${nimbus.id}/activity`)
+  await page.goto(`${base}/p/${nimbus.id}/travail`)
   await headings.first().waitFor()
   assert.equal(await page.getByRole('region', { name: /^Jalon #\d+ lancé/ }).count(), 0, 'Pas de bandeau sans jalon lancé')
   assert.equal(await page.getByRole('heading', { name: /^Jalon #/ }).count(), 0, 'Pas de groupe sans jalon lancé')

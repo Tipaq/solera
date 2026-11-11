@@ -16,7 +16,7 @@ import { controlServiceApp, scanServiceApps, type ServiceApp } from '../../servi
 import { EnvironmentInventory, sandboxUsage, type ScannedEnvironment } from '../../services/environments.js'
 import { readProcessHost } from '../../services/ownership.js'
 import { processOrigins } from '../../services/origins.js'
-import { scanServiceProcesses, stopServiceProcess, type ServiceProcess } from '../../services/processes.js'
+import { serviceProcessScanner, stopServiceProcess, type ServiceProcess } from '../../services/processes.js'
 import { readSystemLoad } from '../../services/system.js'
 import type { AppContext } from '../context.js'
 import { HttpError } from '../errors.js'
@@ -39,8 +39,7 @@ export function registerServiceRoutes(
       ctx.db.select({ projectId: conversations.projectId }).from(conversations).where(eq(conversations.id, conversationId)).get()
         ?.projectId ?? null,
   })
-  let pending: Promise<ServiceProcess[]> | undefined
-  let cached: { processes: ServiceProcess[]; at: number } | undefined
+  const scanner = serviceProcessScanner(origins)
   /**
    * Le temps CPU de chaque entrée au scan précédent : la charge d'un service est l'écart
    * entre deux scans, rapporté au temps écoulé. Une entrée disparue sort au scan suivant.
@@ -60,13 +59,7 @@ export function registerServiceRoutes(
     }
     cpuBefore = next
   }
-  const scan = async (fresh = false): Promise<ServiceProcess[]> => {
-    if (!fresh && cached && Date.now() - cached.at < 2000) return cached.processes
-    return pending ??= scanServiceProcesses(origins).then((processes) => {
-      cached = { processes, at: Date.now() }
-      return processes
-    }).finally(() => { pending = undefined })
-  }
+  const scan = (fresh = false): Promise<ServiceProcess[]> => scanner.scan(fresh)
 
   /**
    * Le projet et la conversation d'une origine, ou null si l'utilisateur ne doit pas
@@ -199,12 +192,13 @@ export function registerServiceRoutes(
     ])
     // Une mesure par scan et non par requête : deux onglets ouverts ne doivent pas
     // ramener l'intervalle à quelques millisecondes.
-    if (measured !== cached!.at) {
-      measure([...processes, ...apps], cached!.at)
-      measured = cached!.at
+    const scannedAt = scanner.scannedAt ?? Date.now()
+    if (measured !== scannedAt) {
+      measure([...processes, ...apps], scannedAt)
+      measured = scannedAt
     }
     return {
-      supported: true, scannedAt: cached!.at, system,
+      supported: true, scannedAt, system,
       services: visible(processes, user.id, user.isAdmin),
       apps: visibleApps(apps, user.id, user.isAdmin),
       environments: visibleEnvironments(environments, processes, user.id, user.isAdmin),
@@ -257,7 +251,7 @@ export function registerServiceRoutes(
       throw new HttpError(409, 'service_environment_failed', message, { message })
     }
     inventory.invalidate()
-    cached = undefined
+    scanner.invalidate()
     return reply.status(202).send({ accepted: true })
   })
 
@@ -299,7 +293,7 @@ export function registerServiceRoutes(
     if (!stopServiceProcess(processes.find((entry) => entry.id === id)!, origins, await readProcessHost())) {
       throw new HttpError(409, 'service_changed', 'The service has changed or could not be stopped. Refresh the list.')
     }
-    cached = undefined
+    scanner.invalidate()
     return reply.status(202).send({ stopping: true })
   })
 

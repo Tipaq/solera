@@ -1,11 +1,12 @@
 import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { AppearanceSync } from './lib/appearance-sync'
 import { visibleSections } from './components/settings/sections'
 import { LEGACY_SETTINGS_SECTIONS, openSettings, useSettingsDialog } from './lib/settings-dialog'
 import { useInstance } from './lib/instance'
 import { useCurrentUser } from './lib/session'
+import { movedView } from './lib/place'
 import { useProjects } from './lib/projects'
 import { useUserSettings } from './lib/user-settings'
 import { ConversationPage } from './routes/ConversationPage'
@@ -175,6 +176,25 @@ function LegacySettingsRoute() {
   return <Navigate to={section === 'projets' ? '/projects/new' : '/'} replace />
 }
 
+/** Une ancienne vue d'un projet, redirigée vers celle qui l'a absorbée sans perdre sa requête. */
+function MovedView({ to, force }: { to: string; force?: Record<string, string> }) {
+  const { projectId } = useParams()
+  const { search } = useLocation()
+  return <Navigate to={movedView(`/p/${projectId}/${to}`, search, force)} replace />
+}
+
+/**
+ * L'onglet Travail, tant que sa vue n'est pas livrée (jalon 2) : l'Activité actuelle,
+ * et le Journal sous `?vue=moment`, l'adresse que la vue « Par moment » reprendra.
+ * Alias à retirer avec elle.
+ */
+function ProjectTravailAlias() {
+  const [params] = useSearchParams()
+  return params.get('vue') === 'moment'
+    ? <Deferred><ProjectJournalPage /></Deferred>
+    : <Suspense fallback={null}><ProjectActivityPage /></Suspense>
+}
+
 export function App() {
   const { data: user, isPending } = useCurrentUser()
   // Attendu avec la session : les écrans lisent ses capacités sans état intermédiaire.
@@ -262,19 +282,24 @@ export function App() {
           <Route path="/vault" element={<Suspense fallback={null}><VaultPage /></Suspense>} />
           <Route path="/services" element={<Deferred><ServicesPage /></Deferred>} />
           {/* Les vues d'un projet partagent une coque : la bande, qui ne dépend pas de
-              la vue, et la rangée d'onglets qui les porte. Les réglages restent dehors —
-              ils ne sont pas une vue mais une destination du `⋯` — et les conversations
-              aussi, leur bande nommant la session plutôt que le projet. */}
+              la vue, et la rangée d'onglets qui les porte, réglages compris. Les
+              conversations restent dehors, leur bande nommant la session plutôt que le
+              projet. */}
           <Route path="/p/:projectId" element={<ProjectLayout />}>
             <Route index element={<ProjectOverviewPage />} />
-            <Route path="activity" element={<Suspense fallback={null}><ProjectActivityPage /></Suspense>} />
+            <Route path="travail" element={<ProjectTravailAlias />} />
             <Route path="board" element={<Deferred><BoardPage /></Deferred>} />
-            <Route path="schedules" element={<Deferred><SchedulePage /></Deferred>} />
+            {/* Alias provisoire : les Planifiées du projet, jusqu'à la vue Actions (jalon 4). */}
+            <Route path="actions" element={<Deferred><SchedulePage /></Deferred>} />
             <Route path="timeline" element={<Deferred><ProjectTimelinePage /></Deferred>} />
             <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
-            <Route path="journal" element={<Deferred><ProjectJournalPage /></Deferred>} />
+            <Route path="settings" element={<Deferred><ProjectPage /></Deferred>} />
+            {/* Les anciennes adresses : elles ont circulé, elles mènent à la vue qui les a
+                absorbées, requête comprise. */}
+            <Route path="activity" element={<MovedView to="travail" />} />
+            <Route path="journal" element={<MovedView to="travail" force={{ vue: 'moment' }} />} />
+            <Route path="schedules" element={<MovedView to="actions" />} />
           </Route>
-          <Route path="/p/:projectId/settings" element={<Deferred><ProjectPage /></Deferred>} />
           {/* Avant l'identifiant : « new » ne doit pas être pris pour une conversation. */}
           <Route path="/p/:projectId/c/new" element={<DraftConversationPage />} />
           <Route path="/p/:projectId/c/:conversationId" element={<ConversationPage />} />
