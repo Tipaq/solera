@@ -34,13 +34,17 @@ void initLocale().then(() => {
   createRoot(container).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        {/* Les deux libellés que les primitives portent elles-mêmes. Le design system
+        {/* Les libellés que les primitives portent elles-mêmes. Le design system
             ne connaît pas le catalogue de traduction : c'est l'application qui les lui
             donne, une fois. */}
         <UiLabelsProvider
           labels={{
             cancel: translate('dialog.cancel'),
             selectPlaceholder: translate('common.select.placeholder'),
+            close: translate('common.close'),
+            previousMonth: translate('common.month.previous'),
+            nextMonth: translate('common.month.next'),
+            typeTime: translate('common.time.type'),
           }}
         >
           <TooltipProvider>
