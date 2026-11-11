@@ -48,3 +48,16 @@ export function useRenameTerminal(projectId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: key(projectId) }),
   })
 }
+
+/**
+ * Arrêter la commande d'un terminal : Ctrl-C côté serveur. Le terminal reste, avec son
+ * écran ; sa fin arrive par la socket, puis par la liste qu'on recharge.
+ */
+export function useInterruptTerminal(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (terminalId: string) =>
+      api.post(`/api/projects/${projectId}/terminals/${terminalId}/interrupt`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: key(projectId) }),
+  })
+}

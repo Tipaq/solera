@@ -2958,6 +2958,7 @@ export const en = {
   'error.stale_write': "The file changed on disk since it was opened.",
   'error.steer_unavailable': "No turn in progress to steer, or this CLI does not support it.",
   'error.system_directory_denied': "This system directory cannot be browsed.",
+  'error.terminal_finished': "This terminal has already finished.",
   'error.terminal_not_found': "Terminal not found.",
   'error.too_large': "File is {sizeKb} KB, above the {maxKb} KB limit, and will not be opened.",
   'error.too_many_attempts': "Too many attempts. Try again in {seconds} seconds.",

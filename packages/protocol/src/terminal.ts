@@ -40,6 +40,11 @@ export interface TerminalDto {
   actionId: string | null
   /** Code de sortie d'une commande d'action terminée ; null pour un shell ou tant qu'elle tourne. */
   exitCode: number | null
+  /**
+   * Quand son process s'est terminé, relu après un redémarrage ; null tant qu'il tourne,
+   * et pour une entrée interrompue, dont la fin n'a pas été vue.
+   */
+  finishedAt: number | null
 }
 
 export const renameTerminalBodySchema = z.object({ title: z.string().min(1).max(60) })
