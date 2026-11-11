@@ -1206,7 +1206,7 @@ export interface PushPayload {
    * la langue de l'appareil : le serveur ne connaît pas celle de l'interface. `title`
    * reste le repli, pour une sorte que le service worker en cache ne connaît pas encore.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'scheduleFailed' | 'test'
   /**
    * Le nombre de décisions en attente, pour la pastille de l'icône de l'application
    * installée : le service worker la pose à la réception, application fermée comprise.
