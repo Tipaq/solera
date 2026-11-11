@@ -43,7 +43,7 @@ export function demoActions(projectId: string): ProjectActionDto[] {
       description: 'Le serveur et vite, avec rechargement à chaud.',
       kind: 'service',
       command: 'scripts/dev.sh',
-      url: 'https://tim-north.taildd6425.ts.net:{port}',
+      url: 'https://mon-hote:{port}',
       service: { unit: 'solera-app-dev-3f2a', state: 'active', cwd: '~/projects/solera', ports: [5173, 7417], startedAt: now - 2 * HOUR },
     },
     {
