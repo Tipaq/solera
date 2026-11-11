@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  LaunchMilestoneCardBody,
   MilestonePlanDto,
   MilestoneRunDto,
+  MilestoneRunMode,
   UpdateMilestoneRunBody,
 } from '@solera/protocol'
 import { api } from './api'
@@ -64,7 +66,13 @@ export function useMilestonePlan(cardId: string, enabled: boolean) {
 export function useLaunchMilestone(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { concurrency: number; config: AgentConfig; cards: Record<string, AgentConfig>; confined: boolean | null }) =>
+    mutationFn: (body: {
+      mode?: MilestoneRunMode
+      concurrency: number
+      config: AgentConfig
+      cards: Record<string, AgentConfig>
+      confined: boolean | null
+    }) =>
       api.post<MilestoneRunDto>(`/api/cards/${cardId}/milestone`, body),
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)
@@ -81,6 +89,24 @@ export function useUpdateMilestone(cardId: string) {
     onSuccess: (run) => {
       queryClient.setQueryData(runKey(cardId), run)
       // Le bandeau et la frise suivent : une pause s'y lit, un arrêt les retire.
+      void queryClient.invalidateQueries({ queryKey: [ACTIVE_PREFIX] })
+    },
+  })
+}
+
+/**
+ * Lance une enfant du jalon `cardId` à la main (#186) ; le serveur ouvre un pilotage à
+ * la main s'il n'y en a pas de vivant, et rend le pilotage.
+ */
+export function useLaunchMilestoneCard(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ childId, ...body }: LaunchMilestoneCardBody & { childId: string }) =>
+      api.post<MilestoneRunDto>(`/api/cards/${cardId}/milestone/cards/${childId}/launch`, body),
+    onSuccess: (run) => {
+      queryClient.setQueryData(runKey(cardId), run)
+      // La carte passe « en cours » et sa session apparaît.
+      void queryClient.invalidateQueries({ queryKey: ['cards', projectId] })
       void queryClient.invalidateQueries({ queryKey: [ACTIVE_PREFIX] })
     },
   })

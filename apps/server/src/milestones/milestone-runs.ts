@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, ne } from 'drizzle-orm'
 import type { FastifyBaseLogger } from 'fastify'
 import {
   cardBlocks,
@@ -20,9 +20,11 @@ import {
 import {
   cardBranchName,
   parseAgentConfig,
+  DEFAULT_MILESTONE_CONCURRENCY,
   MILESTONE_BUSY_STATUSES,
   type AgentConfig,
   type ConversationStatus,
+  type LaunchMilestoneCardBody,
   type MilestoneBlockReason,
   type MilestoneBlockerDto,
   type MilestoneExcludedReason,
@@ -39,7 +41,7 @@ import { ensureParentBranch, parentBranchOf } from '../cards/parent-branch.js'
 import { createConversation } from '../conversations/create.js'
 import { readGitStatus } from '../git.js'
 import type { AppContext } from '../http/context.js'
-import { badRequest, conflict } from '../http/errors.js'
+import { badRequest, conflict, HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
@@ -98,6 +100,9 @@ interface Facts {
  * session rattachée à la carte, et la consigne de livraison de #68, qui finit par la
  * fusion dans la branche du jalon. La fin d'une carte, c'est cette fusion.
  *
+ * À la main (#186), le tour ne lance rien : une personne lance les cartes une à une
+ * (`launchByHand`), et le pilotage fait le reste, adoption, blocages et fin compris.
+ *
  * Les limites de `start_session` (lancements par heure, profondeur de chaîne) ne
  * s'appliquent pas : elles gardent d'un agent qui s'emballe, et ici c'est une personne
  * qui a lancé, avec une concurrence bornée par `MAX_MILESTONE_CONCURRENCY`.
@@ -137,14 +142,7 @@ export class MilestoneRuns {
     const blockers = this.unfinishedBlockers(childIds)
 
     const planned: MilestonePlanCardDto[] = children.map((child) => {
-      const excludedReason: MilestoneExcludedReason | null =
-        child.acceptedAt === null
-          ? 'not_accepted'
-          : child.column === 'done' || child.column === 'abandoned'
-            ? 'closed'
-            : withChildren.has(child.id)
-              ? 'has_children'
-              : null
+      const excludedReason = exclusionOf(child, withChildren)
       const blockedBy = blockers.get(child.id) ?? []
       return {
         cardId: child.id,
@@ -172,6 +170,10 @@ export class MilestoneRuns {
    * blocages, ou s'il n'y a rien à lancer.
    */
   async launch(parent: CardRow, project: ProjectRow, userId: string, body: StartMilestoneBody): Promise<MilestoneRunDto> {
+    return this.read(await this.open(parent, project, userId, body))
+  }
+
+  private async open(parent: CardRow, project: ProjectRow, userId: string, body: StartMilestoneBody): Promise<MilestoneRunRow> {
     if (this.activeRun(parent.id)) throw conflict('milestone_running', 'This milestone is already running.')
     if (!(await readGitStatus(project.workspacePath))) {
       throw badRequest('not_a_repository', 'This project is not a git repository.')
@@ -198,6 +200,7 @@ export class MilestoneRuns {
           projectId: project.id,
           cardId: parent.id,
           state: 'running',
+          mode: body.mode,
           concurrency: body.concurrency,
           confined: body.confined,
           config: JSON.stringify(config),
@@ -224,23 +227,75 @@ export class MilestoneRuns {
           .run()
       }
     })
+    const confined = environment.confined ? ', confinées et sans demandes d\'autorisation' : ''
     this.note(
       parent.id,
       userId,
-      `Jalon lancé : ${taken.length} carte(s), ${body.concurrency} session(s) en parallèle au plus${environment.confined ? ', confinées et sans demandes d\'autorisation' : ''}. Les cartes se fusionnent dans \`${plan.branch}\`.`,
+      body.mode === 'auto'
+        ? `Jalon lancé : ${taken.length} carte(s), ${body.concurrency} session(s) en parallèle au plus${confined}. Les cartes se fusionnent dans \`${plan.branch}\`.`
+        : `Jalon lancé à la main : ${taken.length} carte(s) suivie(s), lancées une à une${confined}. Les cartes se fusionnent dans \`${plan.branch}\`.`,
     )
     // Le premier tour sans attendre : l'aperçu promettait des départs immédiats.
     void this.sweep()
-    return this.read(this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, runId)).get()!)
+    return this.runRow(runId)
   }
 
-  /** Pause, reprise, arrêt, concurrence. */
+  /**
+   * Lance une carte du jalon à la main (LCH-8), par le même chemin que le tour : sa
+   * branche partie de celle du jalon, sa mission, la carte « en cours ». Sans pilotage
+   * vivant, un pilotage à la main s'ouvre, avec les refus du lancement ; un pilotage
+   * vivant la prend telle quelle, sans regarder ni la concurrence ni la pause : la pause
+   * arrête les lancements du serveur, et ici c'est une personne qui décide. La session
+   * est à elle.
+   *
+   * Refusé si la carte n'est pas une enfant ouverte, acceptée, sans enfants ni bloqueur
+   * ouvert, ou si une session la porte déjà.
+   */
+  async launchByHand(parent: CardRow, project: ProjectRow, userId: string, cardId: string, body: LaunchMilestoneCardBody): Promise<MilestoneRunDto> {
+    const card = this.ctx.db.select().from(cards).where(eq(cards.id, cardId)).get()
+    const ready =
+      card !== undefined &&
+      card.parentId === parent.id &&
+      exclusionOf(card, this.withChildren([card.id])) === null &&
+      !this.unfinishedBlockers([card.id]).has(card.id)
+    if (!ready) throw conflict('milestone_card_not_ready', 'This card is not an open, accepted card of the milestone without open blockers.')
+    if (this.currentSessions([card.id]).has(card.id)) throw conflict('milestone_card_running', 'This card already has a session.')
+
+    const run =
+      this.activeRun(parent.id) ??
+      (await this.open(parent, project, userId, { mode: 'manual', concurrency: DEFAULT_MILESTONE_CONCURRENCY, cards: {}, confined: body.confined }))
+    // Une enfant arrivée depuis le lancement n'est peut-être pas encore dans la file.
+    this.adoptNewChildren(run, Date.now())
+    // Pris comme le tour le prend, pour qu'un tour en cours ne la lance pas une seconde
+    // fois ; mais aussi depuis un échec ou une session archivée, que le tour ne relance pas.
+    const claimed = this.ctx.db
+      .update(milestoneRunCards)
+      .set({ launch: 'launching', updatedAt: Date.now() })
+      .where(and(eq(milestoneRunCards.runId, run.id), eq(milestoneRunCards.cardId, card.id), ne(milestoneRunCards.launch, 'launching')))
+      .run()
+    if (claimed.changes === 0) throw conflict('milestone_card_running', 'This card already has a session.')
+    const facts = this.gather(run)!
+    const row = facts.rows.find((entry) => entry.cardId === card.id)!
+    const failure = await this.startCard(run, facts, row, userId)
+    if (failure !== null) {
+      throw new HttpError(500, 'milestone_card_launch_failed', 'Card #{number} could not be launched: {error}', { number: card.number, error: failure })
+    }
+    this.note(parent.id, userId, `Carte #${card.number} lancée à la main.`)
+    return this.read(this.runRow(run.id))
+  }
+
+  /** Pause, reprise, arrêt, concurrence, mode et confinement. */
   update(run: MilestoneRunRow, userId: string, body: UpdateMilestoneRunBody): MilestoneRunDto {
     if (run.state !== 'running' && run.state !== 'paused') {
       throw conflict('milestone_ended', 'This milestone run has ended.')
     }
     const now = Date.now()
     const patch: Partial<MilestoneRunRow> = { updatedAt: now }
+    // Revérifié avant toute écriture : un confinement que ce serveur ne sait pas donner
+    // ne change rien, pas même le reste de la demande.
+    const confinedChanged = body.confined !== undefined && body.confined !== run.confined
+    const environment = confinedChanged ? this.sessions.environments.forAutonomous(run.projectId, body.confined ?? null) : null
+    if (environment) this.sessions.environments.assertAvailable(run.projectId, environment)
     if (body.concurrency !== undefined) patch.concurrency = body.concurrency
     if (body.state !== undefined && body.state !== run.state) {
       patch.state = body.state
@@ -248,9 +303,32 @@ export class MilestoneRuns {
       const words = { running: 'Jalon repris.', paused: 'Jalon en pause : plus aucun lancement, les sessions en cours continuent.', stopped: 'Jalon arrêté : les cartes qui attendaient ne partiront pas, les sessions en cours continuent.' }
       this.note(run.cardId, userId, words[body.state])
     }
+    if (body.mode !== undefined && body.mode !== run.mode) {
+      patch.mode = body.mode
+      this.note(
+        run.cardId,
+        userId,
+        body.mode === 'manual'
+          ? 'Jalon repassé à la main : plus aucun lancement, les sessions en cours continuent.'
+          : (patch.state ?? run.state) === 'paused'
+            ? 'Jalon passé en autonome : les lancements reprendront avec lui.'
+            : `Jalon passé en autonome : Solera lance les cartes prêtes, ${patch.concurrency ?? run.concurrency} session(s) en parallèle au plus.`,
+      )
+    }
+    if (environment) {
+      patch.confined = body.confined ?? null
+      const how = environment.confined ? 'confinées, sans demandes d\'autorisation' : 'non confinées'
+      this.note(
+        run.cardId,
+        userId,
+        body.confined === null || body.confined === undefined
+          ? `Les prochaines sessions du jalon suivront le réglage du projet : ${how}.`
+          : `Les prochaines sessions du jalon seront ${how}.`,
+      )
+    }
     this.ctx.db.update(milestoneRuns).set(patch).where(eq(milestoneRuns.id, run.id)).run()
-    if (patch.state === 'running') void this.sweep()
-    return this.read(this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, run.id)).get()!)
+    if (patch.state === 'running' || patch.mode === 'auto') void this.sweep()
+    return this.read(this.runRow(run.id))
   }
 
   /** Le pilotage vivant d'une parente, ou à défaut le dernier ; null si elle n'a jamais été lancée. */
@@ -306,6 +384,7 @@ export class MilestoneRuns {
       cardNumber: facts?.parent.number ?? 0,
       cardTitle: facts?.parent.title ?? '',
       state: run.state,
+      mode: run.mode,
       concurrency: run.concurrency,
       confined: run.confined,
       agent: config.agent,
@@ -380,7 +459,8 @@ export class MilestoneRuns {
       this.note(run.cardId, null, 'Jalon terminé : toutes ses cartes sont closes. Solera ouvre la PR de sa branche vers la branche par défaut.')
       return
     }
-    if (run.state !== 'running') return
+    // À la main, une personne lance : le tour adopte, suit et termine, sans rien lancer.
+    if (run.state !== 'running' || run.mode !== 'auto') return
 
     let free = run.concurrency - statuses.filter((status) => MILESTONE_BUSY_STATUSES.includes(status)).length
     const ready = facts.rows
@@ -402,22 +482,26 @@ export class MilestoneRuns {
         .run()
       if (claimed.changes === 0) continue
       free -= 1
-      await this.launchCard(run, facts, row)
+      await this.startCard(run, facts, row)
     }
   }
 
-  /** Lance la session d'une carte, dans sa branche partie de celle du jalon. */
-  private async launchCard(run: MilestoneRunRow, facts: Facts, row: MilestoneRunCardRow): Promise<void> {
+  /**
+   * Lance la session d'une carte, dans sa branche partie de celle du jalon, au nom de
+   * `userId` (celui qui a lancé le jalon, ou qui lance la carte à la main). Rend la raison
+   * si elle n'a pas pu partir : la carte est en échec, notée, et le propriétaire prévenu.
+   */
+  private async startCard(run: MilestoneRunRow, facts: Facts, row: MilestoneRunCardRow, userId = run.startedBy): Promise<string | null> {
     const card = facts.cards.get(row.cardId)!
     const where = and(eq(milestoneRunCards.runId, run.id), eq(milestoneRunCards.cardId, row.cardId))
     try {
       const base = await ensureParentBranch(this.ctx.db, facts.project, facts.parent)
-      const worktreeId = await this.cardWorktree(facts.project, run.startedBy, card, base)
+      const worktreeId = await this.cardWorktree(facts.project, userId, card, base)
       const wanted = parseAgentConfig(row.config ?? run.config)
       const config = await this.registry.adapter(wanted.agent).resolveDefaults(wanted)
       const conversation = await createConversation(this.ctx.db, this.sessions, {
         projectId: facts.project.id,
-        userId: run.startedBy,
+        userId,
         agent: config.agent,
         config,
         worktreeId,
@@ -433,7 +517,7 @@ export class MilestoneRuns {
           skills: [],
         },
       })
-      advanceCardOnLaunch(this.ctx, card.id, run.startedBy)
+      advanceCardOnLaunch(this.ctx, card.id, userId)
       const now = Date.now()
       this.ctx.db
         .update(milestoneRunCards)
@@ -441,6 +525,7 @@ export class MilestoneRuns {
         .where(where)
         .run()
       this.sessions.statusBus.emit('lists', { conversationId: conversation.id })
+      return null
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       this.ctx.db.update(milestoneRunCards).set({ launch: 'failed', error: reason, updatedAt: Date.now() }).where(where).run()
@@ -448,6 +533,7 @@ export class MilestoneRuns {
       this.note(card.id, null, `Session non lancée par le jalon : ${reason}`)
       await this.notify(facts, card, `n'a pas pu être lancée : ${reason}`)
       this.logger?.warn({ err, card: card.id }, 'carte de jalon non lancee')
+      return reason
     }
   }
 
@@ -682,6 +768,10 @@ export class MilestoneRuns {
     return result
   }
 
+  private runRow(id: string): MilestoneRunRow {
+    return this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, id)).get()!
+  }
+
   private activeRun(parentId: string): MilestoneRunRow | null {
     return (
       this.ctx.db
@@ -700,6 +790,13 @@ export class MilestoneRuns {
   private note(cardId: string, userId: string | null, body: string): void {
     this.ctx.db.insert(cardNotes).values({ id: randomUUID(), cardId, conversationId: null, userId, body, createdAt: Date.now() }).run()
   }
+}
+
+/** Pourquoi une enfant ne part pas avec son jalon, ni à la main ; null si rien ne l'écarte. */
+function exclusionOf(child: CardRow, withChildren: ReadonlySet<string>): MilestoneExcludedReason | null {
+  if (child.acceptedAt === null) return 'not_accepted'
+  if (child.column === 'done' || child.column === 'abandoned') return 'closed'
+  return withChildren.has(child.id) ? 'has_children' : null
 }
 
 /**
