@@ -1,10 +1,20 @@
 import { useState } from 'react'
-import { Archive, ArchiveRestore, FileCode2, GitBranch, Loader, Trash2 } from 'lucide-react'
+import { Archive, ArchiveRestore, FileCode2, GitBranch, Loader, MoreHorizontal, Trash2 } from 'lucide-react'
 import type { StashDto } from '@solera/protocol'
 import { shortAge } from '../../../lib/dates'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
-import { Banner, cx } from '@solera/ui'
+import {
+  Banner,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  PanelEmpty,
+  PanelStatusIcon,
+  cx,
+  panelGestureClass,
+  panelRowClass,
+} from '@solera/ui'
 import { useGitActions } from './actions'
 import { NameDialog } from './menus'
 import { useStashes } from './queries'
@@ -16,9 +26,7 @@ import { useStashes } from './queries'
  * « WIP on main » ne dit rien de ce qui reviendrait dans l'arbre. C'est le seul ajout
  * de la planche par rapport à une liste, et c'est tout son intérêt.
  *
- * *En faire une branche* est l'entrée que GitKraken a et qu'on oublie toujours : c'est
- * souvent ce qu'on voulait, plutôt que de verser la remise dans un arbre qui a changé
- * depuis. Usage propre à Solera : remiser avant de lancer un tour, pour que l'agent ne
+ * Usage propre à Solera : remiser avant de lancer un tour, pour que l'agent ne
  * trouve pas l'arbre sale.
  */
 export function StashesView({ scope }: { scope: WorkspaceScope }) {
@@ -26,9 +34,9 @@ export function StashesView({ scope }: { scope: WorkspaceScope }) {
   const { data, error, isPending } = useStashes(scope, true)
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-y-auto p-2 pb-safe">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto py-1 pb-safe">
       {isPending ? (
-        <p className="flex items-center gap-1.5 px-1 py-2 text-xs text-ink-faint">
+        <p className="flex items-center gap-1.5 px-3 py-2 text-xs text-ink-faint">
           <Loader size={11} className="animate-spin" />
           {t('git.stashes.loading')}
         </p>
@@ -36,9 +44,7 @@ export function StashesView({ scope }: { scope: WorkspaceScope }) {
 
       {error ? <Banner>{error instanceof Error ? error.message : t('git.stashes.error')}</Banner> : null}
 
-      {data?.stashes.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-ink-faint">{t('git.stashes.empty')}</p>
-      ) : null}
+      {data?.stashes.length === 0 ? <PanelEmpty>{t('git.stashes.empty')}</PanelEmpty> : null}
 
       {(data?.stashes ?? []).map((stash) => (
         <Stash key={stash.hash} stash={stash} />
@@ -47,6 +53,11 @@ export function StashesView({ scope }: { scope: WorkspaceScope }) {
   )
 }
 
+/**
+ * Une remise, en ligne du cadre commun et sans carte bordée : son message, sa branche
+ * et son âge, **Dépiler** au survol — le geste qu'on vient faire — et le reste dans son
+ * menu. L'aperçu suit, en retrait sous la ligne.
+ */
 function Stash({ stash }: { stash: StashDto }) {
   const t = useTranslate()
   const { run, lock, pending } = useGitActions()
@@ -55,87 +66,72 @@ function Stash({ stash }: { stash: StashDto }) {
   const target = { index: stash.index, hash: stash.hash }
 
   return (
-    <div className="overflow-hidden rounded-md border border-line">
-      <div className="flex items-center gap-1.5 border-b border-line/60 px-2 py-1.5">
-        <Archive size={12} className="shrink-0 text-ink-faint" />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink" title={stash.message}>
-          {stash.message}
+    <div data-stash className="flex flex-col pb-1">
+      <div className={panelRowClass} title={stash.message}>
+        <PanelStatusIcon icon={<Archive size={15} />} />
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{stash.message}</span>
+        <span className="flex shrink-0 items-center gap-1.5 text-xs text-ink-faint">
+          {stash.branch ? <span className="max-w-[8rem] truncate font-mono">{stash.branch}</span> : null}
+          <span className="tabular-nums">{shortAge(stash.ts)}</span>
         </span>
-        {stash.branch ? (
-          <span className="shrink-0 rounded bg-accent-wash px-1 py-px text-micro font-medium text-accent">
-            {stash.branch}
-          </span>
-        ) : null}
-        <span className="shrink-0 text-micro text-ink-faint tabular-nums">{shortAge(stash.ts)}</span>
-      </div>
-
-      {/* L'aperçu : les fichiers et leur volume, pas le diff. Ce qu'il faut pour
-          décider de dépiler tient en trois lignes. */}
-      <div className="flex flex-col py-1">
-        {stash.files.map((file) => (
-          <div key={file.path} className="flex items-center gap-1.5 px-2 py-0.5">
-            <FileCode2 size={11} className="shrink-0 text-ink-faint" />
-            <span className="min-w-0 flex-1 truncate text-micro text-ink-soft" title={file.path}>
-              {file.path}
-            </span>
-            {file.added > 0 ? (
-              <span className="font-mono text-micro text-positive tabular-nums">+{file.added}</span>
-            ) : null}
-            {file.removed > 0 ? (
-              <span className="font-mono text-micro text-critical tabular-nums">−{file.removed}</span>
-            ) : null}
-          </div>
-        ))}
-        {stash.truncated ? (
-          <span className="px-2 text-micro text-ink-faint">{t('git.stashes.more')}</span>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5 border-t border-line/60 px-2 py-1.5">
         <button
           type="button"
           disabled={frozen}
           onClick={() => run({ kind: 'stash-pop', ...target })}
-          className="flex items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-micro font-medium text-on-accent disabled:opacity-45"
-        >
-          <ArchiveRestore size={12} />
-          {t('git.stashes.pop')}
-        </button>
-        <button
-          type="button"
-          disabled={frozen}
-          onClick={() => run({ kind: 'stash-apply', ...target })}
-          className="rounded-md border border-line px-2 py-1 text-micro font-medium text-ink-soft hover:bg-surface-high disabled:opacity-45"
-        >
-          {t('git.stashes.apply')}
-        </button>
-        <button
-          type="button"
-          disabled={frozen}
-          onClick={() => setNaming(true)}
-          className="flex items-center gap-1.5 rounded-md border border-line px-2 py-1 text-micro font-medium text-ink-soft hover:bg-surface-high disabled:opacity-45"
-        >
-          <GitBranch size={12} />
-          {t('git.stashes.branch')}
-        </button>
-
-        <span className="flex-1" />
-
-        {/* Supprimer une remise ne s'annule pas : garde-fou, et rien d'autre. */}
-        <button
-          type="button"
-          disabled={frozen}
-          aria-label={t('git.stashes.drop')}
-          title={t('git.stashes.drop')}
-          onClick={() => run({ kind: 'stash-drop', ...target })}
           className={cx(
-            'flex size-6 items-center justify-center rounded-md text-ink-faint',
-            'hover:bg-critical/12 hover:text-critical disabled:opacity-45',
+            panelGestureClass,
+            'shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100',
           )}
         >
-          <Trash2 size={13} />
+          <ArchiveRestore size={13} aria-hidden />
+          {t('git.stashes.pop')}
         </button>
+        <Menu
+          align="end"
+          trigger={
+            <button
+              type="button"
+              aria-label={t('git.stashes.menu', { message: stash.message })}
+              className="flex size-5 shrink-0 items-center justify-center rounded text-ink-faint opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+            >
+              <MoreHorizontal size={13} />
+            </button>
+          }
+        >
+          <MenuItem icon={<ArchiveRestore size={13} />} disabled={frozen} onSelect={() => run({ kind: 'stash-apply', ...target })}>
+            {t('git.stashes.apply')}
+          </MenuItem>
+          {/* *En faire une branche* est l'entrée que GitKraken a et qu'on oublie
+              toujours : c'est souvent ce qu'on voulait, plutôt que de verser la remise
+              dans un arbre qui a changé depuis. */}
+          <MenuItem icon={<GitBranch size={13} />} disabled={frozen} onSelect={() => setNaming(true)}>
+            {t('git.stashes.branch')}
+          </MenuItem>
+          <MenuSeparator />
+          {/* Supprimer une remise ne s'annule pas : garde-fou, et rien d'autre. */}
+          <MenuItem icon={<Trash2 size={13} />} tone="critical" disabled={frozen} onSelect={() => run({ kind: 'stash-drop', ...target })}>
+            {t('git.stashes.drop')}
+          </MenuItem>
+        </Menu>
       </div>
+
+      {/* L'aperçu : les fichiers et leur volume, pas le diff. Ce qu'il faut pour
+          décider de dépiler tient en trois lignes. */}
+      {stash.files.map((file) => (
+        <div key={file.path} className="flex items-center gap-1.5 pr-3 pl-10.5">
+          <FileCode2 size={11} className="shrink-0 text-ink-faint" />
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-soft" title={file.path}>
+            {file.path}
+          </span>
+          {file.added > 0 ? (
+            <span className="font-mono text-xs text-positive tabular-nums">+{file.added}</span>
+          ) : null}
+          {file.removed > 0 ? (
+            <span className="font-mono text-xs text-critical tabular-nums">−{file.removed}</span>
+          ) : null}
+        </div>
+      ))}
+      {stash.truncated ? <span className="pl-10.5 text-xs text-ink-faint">{t('git.stashes.more')}</span> : null}
 
       {naming ? (
         <NameDialog

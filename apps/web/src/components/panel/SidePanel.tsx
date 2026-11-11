@@ -286,9 +286,12 @@ export const SidePanel = memo(function SidePanel({
       className={cx(
         // Pas d'`overflow-hidden` ici : il rognerait la poignée, posée en débord sur
         // le bord gauche. C'est la zone de défilement interne qui borne le contenu.
-        // L'ombre porte le décollement : sans elle, un panneau posé sur le fil se lit
-        // comme une colonne de plus, et on cherche pourquoi le fil est coupé.
-        'surface flex flex-col border-l border-line shadow-pop',
+        'surface flex flex-col border-l border-line',
+        // La règle des deux familles (gabarit « Panneau et tiroir ») : ancré, le panneau
+        // pousse le fil et n'a pas d'ombre. Posé par-dessus — en feuille, au téléphone,
+        // en plein écran — l'ombre porte le décollement : sans elle, il se lirait comme
+        // une colonne de plus, et on chercherait pourquoi le fil est coupé.
+        docked && !fullscreen ? null : 'shadow-pop',
         // Plein écran au doigt, largeur réglable au-delà. `absolute` et non `fixed` :
         // le repère est le calque de la coque, donc le panneau suit le viewport visuel.
         // La largeur est bornée en CSS et pas seulement à l'enregistrement : une

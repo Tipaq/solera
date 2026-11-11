@@ -1,7 +1,8 @@
-import { Lock, Undo2, X } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Lock, Undo2 } from 'lucide-react'
 import type { GitLockDto, GitUndoDto, GitUndoKind } from '@solera/protocol'
 import { useTranslate, type MessageKey } from '../../../lib/i18n'
-import { cx } from '@solera/ui'
+import { PanelNotice, cx, panelGestureClass } from '@solera/ui'
 import { useGitActions } from './actions'
 
 /**
@@ -11,6 +12,9 @@ import { useGitActions } from './actions'
  * Les deux premiers sont les deux moitiés d'une même promesse (planches
  * `tour-1/clair/04` et T13) : on n'écrit pas à deux, et on ne promet pas une
  * annulation qu'on ne peut pas tenir.
+ *
+ * Tous trois sont des bandes de retour du cadre commun (`PanelNotice`) : sous la ligne
+ * d'outils, au même endroit que dans les autres onglets du panneau.
  */
 
 /** Chaque geste annulable a sa phrase : « annuler » tout court n'apprend rien. */
@@ -49,22 +53,18 @@ export function LockBanner({
 }) {
   const t = useTranslate()
   return (
-    <div className="flex items-center gap-2 border-b border-line bg-surface-high px-2.5 py-2">
-      <Lock size={14} className="shrink-0 text-ink-faint" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-ink">
-          {t('git.lock.title', { title: lock.title })}
-        </p>
-        <p className="truncate text-micro text-ink-faint">{t('git.lock.hint')}</p>
-      </div>
-      <button
-        type="button"
-        onClick={() => onOpenThread(lock.threadId)}
-        className="shrink-0 rounded-md border border-line px-2 py-1 text-micro font-medium text-ink-soft hover:bg-surface"
-      >
-        {t('git.lock.open')}
-      </button>
-    </div>
+    <PanelNotice>
+      <Notice
+        icon={<Lock size={14} />}
+        title={t('git.lock.title', { title: lock.title })}
+        hint={t('git.lock.hint')}
+        action={
+          <button type="button" onClick={() => onOpenThread(lock.threadId)} className={cx(panelGestureClass, 'shrink-0')}>
+            {t('git.lock.open')}
+          </button>
+        }
+      />
+    </PanelNotice>
   )
 }
 
@@ -80,43 +80,47 @@ export function UndoBanner({ undo }: { undo: GitUndoDto }) {
   const { undo: run, pending, lock } = useGitActions()
 
   return (
-    <div className="flex items-center gap-2 border-b border-line px-2.5 py-2">
-      <Undo2 size={14} className="shrink-0 text-ink-faint" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-xs text-ink">{t(UNDO_LABELS[undo.kind], { subject: undo.subject })}</p>
-        <p className="truncate text-micro text-ink-faint">
-          {undo.target ? t('git.undo.back', { target: undo.target }) : t('git.undo.backNowhere')}
-          {' '}
-          {undo.pushed ? t('git.undo.pushed') : t('git.undo.notPushed')}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={run}
-        disabled={pending || !!lock}
-        className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-micro font-medium text-on-accent disabled:opacity-45"
-      >
-        <Undo2 size={12} />
-        {t('git.toolbar.undo')}
-      </button>
-    </div>
+    <PanelNotice>
+      <Notice
+        icon={<Undo2 size={14} />}
+        title={t(UNDO_LABELS[undo.kind], { subject: undo.subject })}
+        hint={
+          <>
+            {undo.target ? t('git.undo.back', { target: undo.target }) : t('git.undo.backNowhere')}
+            {' '}
+            {undo.pushed ? t('git.undo.pushed') : t('git.undo.notPushed')}
+          </>
+        }
+        action={
+          <button type="button" onClick={run} disabled={pending || !!lock} className={cx(panelGestureClass, 'shrink-0')}>
+            <Undo2 size={13} aria-hidden />
+            {t('git.toolbar.undo')}
+          </button>
+        }
+      />
+    </PanelNotice>
   )
 }
 
 /** Ce que git a répondu quand il a refusé. Sa phrase, pas une reformulation. */
 export function ErrorBanner({ message, onClose }: { message: string; onClose: () => void }) {
-  const t = useTranslate()
   return (
-    <div className={cx('flex items-start gap-2 border-b border-critical/30 bg-critical/8 px-2.5 py-2')}>
-      <p className="min-w-0 flex-1 text-micro break-words text-critical">{message}</p>
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={t('git.error.dismiss')}
-        className="shrink-0 rounded text-critical/70 hover:text-critical"
-      >
-        <X size={13} />
-      </button>
-    </div>
+    <PanelNotice tone="critical" onClose={onClose}>
+      <span className="break-words">{message}</span>
+    </PanelNotice>
+  )
+}
+
+/** Une bande à deux lignes — ce qui se passe, ce que ça veut dire — et son geste. */
+function Notice({ icon, title, hint, action }: { icon: ReactNode; title: ReactNode; hint: ReactNode; action: ReactNode }) {
+  return (
+    <span className="flex items-center gap-2">
+      <span aria-hidden className="shrink-0 text-ink-faint">{icon}</span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-ink">{title}</span>
+        <span className="truncate text-ink-faint">{hint}</span>
+      </span>
+      {action}
+    </span>
   )
 }

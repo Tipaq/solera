@@ -210,14 +210,76 @@ try {
     return panel
   }
 
-  // ─── Le rail, et le graphe à la largeur par défaut ────────────────────────
-  await openGit(640)
-  for (const destination of ['Graphe', 'En cours', 'Branches', 'Remises', 'Recherche', 'Historique d’un fichier']) {
-    await panel.getByRole('tab', { name: destination, exact: true }).waitFor()
+  // Les destinations ne sont plus un rail mais le menu « Affichage ▾ » de la ligne
+  // d'outils : y aller, c'est l'ouvrir et choisir.
+  const view = async (name) => {
+    await panel.getByRole('button', { name: /^Affichage : / }).click()
+    await page.getByRole('dialog', { name: 'Affichage' }).getByRole('button', { name, exact: true }).click()
+    await page.getByRole('dialog', { name: 'Affichage' }).waitFor({ state: 'detached' })
   }
+  /**
+   * Un en-tête de groupe du cadre commun : son titre et son compte, deux nœuds de
+   * texte côte à côte. L'ancre en tête de motif tient « Indexés » à l'écart de « Non
+   * indexés », qui le contient.
+   */
+  const group = (title, count) =>
+    panel.getByRole('heading').filter({ hasText: new RegExp(`^${title}\\s*${count}(?!\\d)`) })
+  /** La ligne d'outils de l'onglet : une seule, de 48 px, qui ne déborde pas. */
+  const gitLine = () => panel.locator('[data-git-line]')
+  const oneLine = async (label) => {
+    const box = await gitLine().evaluate((node) => ({
+      height: node.getBoundingClientRect().height,
+      overflow: node.scrollWidth - node.clientWidth,
+    }))
+    assert.equal(box.height, 48, `${label} : la ligne d'outils fait 48 px`)
+    assert.ok(box.overflow <= 0, `${label} : rien ne déborde de la ligne (${box.overflow} px)`)
+  }
+
+  // ─── La ligne d'outils, et le graphe à la largeur par défaut ───────────────
+  await openGit(640)
+  // Plus de rail : une seule ligne porte le titre, la branche, « Affichage ▾ » et les
+  // gestes du dépôt (PGIT-1).
+  assert.equal(await panel.getByRole('tablist', { name: 'Vues Git' }).count(), 0, 'le rail a disparu')
+  await gitLine().getByText('Git', { exact: true }).waitFor()
+  await gitLine().getByText('feat/offline-cache', { exact: true }).waitFor()
+  for (const name of ['Annuler', 'Refaire', 'Tirer', 'Pousser', 'Récupérer', 'Branche', 'Remiser', 'Dépiler', 'Relire le dépôt']) {
+    await gitLine().getByRole('button', { name, exact: true }).waitFor()
+  }
+  await oneLine('40 rem')
+  // La règle des deux familles (PAN-3) : ancré, le panneau pousse le fil et n'a pas
+  // d'ombre ; posé par-dessus, il en prend une, comme un tiroir.
+  const shadow = () => panel.evaluate((node) => getComputedStyle(node).boxShadow)
+  assert.equal(await shadow(), 'none', 'ancré : pas d’ombre')
+  await page.evaluate(() => localStorage.setItem('solera.panelExpanded', '1'))
+  await openGit(640)
+  assert.notEqual(await shadow(), 'none', 'par-dessus : une ombre')
+  await page.evaluate(() => localStorage.setItem('solera.panelExpanded', '0'))
+  await openGit(640)
+  await panel.getByRole('button', { name: 'Affichage : Graphe', exact: true }).click()
+  const menu = page.getByRole('dialog', { name: 'Affichage' })
+  const hints = {
+    Graphe: 'Les commits et leurs branches',
+    'En cours': 'Ce qui n’est pas commité',
+    Branches: 'Locales, distantes, worktrees',
+    Remises: 'Le travail mis de côté',
+    Recherche: 'Dans les messages et les auteurs',
+    'Historique d’un fichier': 'Ses versions et son blâme',
+  }
+  for (const [destination, hint] of Object.entries(hints)) {
+    const entry = menu.getByRole('button', { name: destination, exact: true })
+    await entry.waitFor()
+    await entry.getByText(hint, { exact: true }).waitFor()
+  }
+  assert.equal(await menu.getByRole('button', { name: 'Graphe', exact: true }).getAttribute('aria-pressed'), 'true')
+  // Le compte des remises suit son nom : la démo en a une.
+  await menu.getByRole('button', { name: 'Remises', exact: true }).getByText('1', { exact: true }).waitFor()
   // *Conflits* n'est pas là, et c'est la décision : la destination n'apparaît que
-  // pendant un conflit, et la détection appartient au lot 3.
-  assert.equal(await panel.getByRole('tab', { name: 'Conflits', exact: true }).count(), 0)
+  // pendant un conflit, en repère ambre sur la ligne.
+  assert.equal(await menu.getByRole('button', { name: 'Conflits', exact: true }).count(), 0)
+  assert.equal(await gitLine().getByRole('button', { name: /conflits?$/ }).count(), 0)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'affichage.png'), clip: await panel.boundingBox() })
+  await page.keyboard.press('Escape')
+  await menu.waitFor({ state: 'detached' })
 
   await panel.getByText(/^En cours — /).first().waitFor()
   await panel.getByText('Merge radar prefetching into main').waitFor()
@@ -232,6 +294,8 @@ try {
   const columns = async () => panel.evaluate((node) =>
     [...node.querySelectorAll('span')]
       .filter((span) => span.offsetParent !== null)
+      // « Affichage : Graphe » nomme la destination, pas une colonne.
+      .filter((span) => !span.closest('[data-git-line]'))
       // Les en-têtes sont mis en capitales par la feuille, pas dans le texte : on
       // compare donc ce que le DOM porte, et non ce que l'écran montre.
       .map((span) => span.textContent.trim().toUpperCase())
@@ -246,6 +310,30 @@ try {
   await panel.getByText(/^En cours — /).first().waitFor()
   assert.deepEqual((await columns()).sort(), ['GRAPHE', 'MESSAGE'], '22 rem : le graphe et le message, rien d’autre')
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'graphe-22rem.png') })
+  // Étroit, la ligne se replie au lieu de passer à la ligne : annuler et refaire
+  // attendent 22 rem de largeur utile (le panneau, marges ôtées), le titre et
+  // Récupérer 26, brancher, remiser et dépiler 38, les libellés de Tirer et Pousser 46.
+  await oneLine('22 rem')
+  assert.equal(await gitLine().getByText('Git', { exact: true }).isVisible(), false, '22 rem : le titre s’efface')
+  for (const name of ['Récupérer', 'Annuler', 'Remiser']) {
+    assert.equal(await gitLine().getByRole('button', { name, exact: true }).isVisible(), false, `22 rem : ${name} attend`)
+  }
+  await gitLine().getByRole('button', { name: 'Affichage : Graphe', exact: true }).getByText('Graphe').waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ligne-22rem.png'), clip: await gitLine().boundingBox() })
+  // Au plus étroit qu'un panneau ancré puisse être, la ligne tient encore.
+  await openGit(320)
+  await oneLine('20 rem')
+  for (const width of [416, 496, 624, 752]) {
+    await openGit(width)
+    await oneLine(`${width / 16} rem`)
+  }
+  // Au téléphone, le panneau prend l'écran : annuler et refaire y tiennent.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openGit(640)
+  await oneLine('téléphone')
+  await gitLine().getByRole('button', { name: 'Annuler', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'ligne-telephone.png'), clip: await gitLine().boundingBox() })
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   // ─── Et à 60 rem : la colonne Fil entre ───────────────────────────────────
   // Fenêtre plus large, parce que le panneau accosté ne peut pas dépasser ce que la
@@ -305,7 +393,7 @@ try {
   console.log('OK : un commit dit son auteur agent, son parent, les branches qui le contiennent, et son diff.')
 
   // ─── Branches ─────────────────────────────────────────────────────────────
-  await panel.getByRole('tab', { name: 'Branches', exact: true }).click()
+  await view('Branches')
   for (const section of ['Local', 'Worktrees', 'Distant', 'Étiquettes', 'Sous-modules']) {
     await panel.getByText(section, { exact: true }).first().waitFor()
   }
@@ -313,7 +401,7 @@ try {
   // démo n'a ni distant ni sous-module, et les deux sections le disent.
   await panel.getByText('aucun dans ce dépôt').first().waitFor()
   assert.equal(await panel.getByText('aucun dans ce dépôt').count(), 2)
-  await panel.getByText('feat/offline-cache', { exact: true }).waitFor()
+  await panel.getByLabel('Déplacer la branche feat/offline-cache').waitFor()
   // Le fil qui occupe le worktree, l'autre chose que GitKraken ne peut pas avoir.
   await panel.getByRole('button', { name: /Add offline caching/ }).first().waitFor()
   await panel.screenshot({ animations: 'disabled', path: join(shots, 'branches.png') })
@@ -324,15 +412,15 @@ try {
   // un tour, et c'est l'autre moitié de la démonstration (plus bas).
   dirtyWorktree(radarPath)
   await openGit(640, radarThread)
-  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
-  await panel.getByText('Non indexés · 3').waitFor()
+  await view('En cours')
+  await group('Non indexés', 3).waitFor()
 
   await panel.getByRole('button', { name: 'Indexer src/lib/radar-cache.ts', exact: true }).click()
-  await panel.getByText('Indexés · 1').waitFor()
+  await group('Indexés', 1).waitFor()
   await panel.getByRole('button', { name: 'Indexer notes.md', exact: true }).click()
-  await panel.getByText('Indexés · 2').waitFor()
+  await group('Indexés', 2).waitFor()
   // Par fichier, et pas tout d'un coup : le troisième reste de l'autre côté.
-  await panel.getByText('Non indexés · 1').waitFor()
+  await group('Non indexés', 1).waitFor()
 
   await panel.getByLabel('Résumé', { exact: true }).fill('Prefetch a second ring of tiles')
   await panel.getByLabel('Description', { exact: true }).fill('Panning two tiles out no longer shows a blank.')
@@ -354,16 +442,24 @@ try {
   console.log('OK : indexer par fichier, résumé et description séparés, co-auteur de l’agent, commit.')
 
   // ─── Remises, avec l'aperçu sans lequel on n'ose plus dépiler ─────────────
-  await panel.getByRole('tab', { name: 'Remises', exact: true }).click()
+  await view('Remises')
   await panel.getByText('Before picking the toolbar back up').waitFor()
   await panel.getByText('src/lib/stashed.ts').waitFor()
-  await panel.getByRole('button', { name: 'Dépiler', exact: true }).last().waitFor()
-  await panel.getByRole('button', { name: 'En faire une branche', exact: true }).waitFor()
+  // Une ligne par remise, sans carte bordée : « Dépiler » au survol, le reste dans
+  // son menu (PAN-4).
+  const stashRow = panel.locator('[data-stash]').first()
+  await stashRow.hover()
+  await stashRow.getByRole('button', { name: 'Dépiler', exact: true }).waitFor()
   await panel.screenshot({ animations: 'disabled', path: join(shots2, 'remises.png') })
+  await stashRow.getByRole('button', { name: /^Gestes sur la remise/ }).click()
+  for (const entry of ['Appliquer', 'En faire une branche', 'Supprimer cette remise']) {
+    await page.getByRole('menuitem', { name: entry, exact: true }).waitFor()
+  }
+  await page.keyboard.press('Escape')
   console.log('OK : chaque remise dit ce qu’elle contient avant qu’on la dépile.')
 
   // ─── Le menu d'un commit, et le garde-fou de ce qui ne s'annule pas ───────
-  await panel.getByRole('tab', { name: 'Graphe', exact: true }).click()
+  await view('Graphe')
   const row = panel.getByRole('button', { name: /Gestes sur « Prefetch radar tiles/ })
   await row.hover()
   await row.click()
@@ -391,9 +487,9 @@ try {
   // Et seulement maintenant, l'annulation : le bandeau ne dit pas « annuler » mais
   // quoi et où ça ramène, et il tient sa promesse. Il a survécu au détour par le
   // menu et par le garde-fou, parce que le dépôt n'a pas bougé entre-temps.
-  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
+  await view('En cours')
   await panel.getByRole('button', { name: 'Annuler', exact: true }).last().click()
-  await panel.getByText('Indexés · 2').waitFor()
+  await group('Indexés', 2).waitFor()
   assert.equal(
     execFileSync('git', ['log', '-1', '--format=%s'], { cwd: radarPath, encoding: 'utf8' }).trim(),
     'Prefetch radar tiles around the viewport',
@@ -403,11 +499,11 @@ try {
 
   // ─── Un tour tourne : les écritures sont fermées, la lecture continue ─────
   await openGit(640, hero)
-  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
+  await view('En cours')
   await panel.getByText('Un agent travaille ici — Add offline caching for forecasts').waitFor()
   await panel.getByText(/rouvriront à la fin du tour/).waitFor()
   // Les gestes sont éteints, et la liste des fichiers, elle, est bien là.
-  await panel.getByText(/^Non indexés · /).waitFor()
+  await group('Non indexés', '\\d+').waitFor()
   for (const name of ['Tirer', 'Pousser', 'Remiser']) {
     assert.ok(
       await panel.getByRole('button', { name, exact: true }).first().isDisabled(),
@@ -418,7 +514,7 @@ try {
   console.log('OK : pendant un tour, les écritures sont fermées et la lecture continue.')
 
   // ─── Recherche ────────────────────────────────────────────────────────────
-  await panel.getByRole('tab', { name: 'Recherche', exact: true }).click()
+  await view('Recherche')
   const field = panel.getByPlaceholder('Chercher dans l’histoire')
   await field.fill('radar')
   await panel.getByText('Merge radar prefetching into main').waitFor()
@@ -467,8 +563,8 @@ try {
   ].join('\n'))
 
   await openGit(640, radarThread)
-  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
-  await panel.getByText('Non indexés · 1').waitFor()
+  await view('En cours')
+  await group('Non indexés', 1).waitFor()
 
   // Le diff se déplie sous la ligne du fichier, et chaque ligne modifiée y porte sa
   // case : c'est ce qui fait du diff un formulaire plutôt qu'une illustration. Le nom
@@ -489,10 +585,9 @@ try {
   await panel.screenshot({ animations: 'disabled', path: join(shots3, 'indexer-par-ligne.png') })
 
   await panel.getByRole('button', { name: 'Indexer 2 lignes', exact: true }).click()
-  // `exact` n'est pas une précaution de style : `getByText` cherche une sous-chaîne
-  // sans tenir compte de la casse, et « Indexés · 1 » se trouve dans « Non indexés
-  // · 1 » — la suite attendrait alors l'écran qu'elle a déjà sous les yeux.
-  await panel.getByText('Indexés · 1', { exact: true }).waitFor()
+  // L'ancre de `group` n'est pas une précaution de style : « Indexés 1 » se trouve
+  // dans « Non indexés 1 », et la suite attendrait l'écran qu'elle a déjà sous les yeux.
+  await group('Indexés', 1).waitFor()
   // Et la vérité, qui ne se voit pas sur une image : l'index porte exactement la ligne
   // cochée, les deux autres sont restées dehors, et le disque n'a pas bougé.
   const staged3 = demoGit('show', ':src/lib/radar-prefetch.ts')
@@ -571,7 +666,7 @@ try {
   conflictGit('merge', 'audit/bundle-web')
 
   await openGit(640, radarThread)
-  const conflicts = panel.getByRole('tab', { name: 'Conflits', exact: true })
+  const conflicts = gitLine().getByRole('button', { name: '1 conflit', exact: true })
   await conflicts.waitFor()
   await conflicts.click()
   await panel.getByText(/fichier — fusion de audit\/bundle-web/).waitFor()
@@ -585,7 +680,7 @@ try {
 
   await panel.getByRole('button', { name: 'prendre', exact: true }).last().click()
   await panel.getByRole('button', { name: 'Marquer résolu', exact: true }).click()
-  // Le conflit résolu, la destination disparaît du rail : elle n'occupe rien le reste
+  // Le conflit résolu, le repère disparaît de la ligne : elle n'occupe rien le reste
   // du temps, et c'est la décision de T10.
   await conflicts.waitFor({ state: 'detached' })
   assert.match(
@@ -622,7 +717,7 @@ try {
   )
 
   await openGit(640, radarThread)
-  await panel.getByRole('tab', { name: 'En cours', exact: true }).click()
+  await view('En cours')
   const row3 = panel.getByRole('button', { name: 'Gestes sur src/lib/radar-prefetch.ts' })
   await row3.hover()
   await row3.click()
@@ -649,7 +744,7 @@ try {
   demoGit('branch', 'feat/lot-4-drop')
 
   await openGit(640, radarThread)
-  await panel.getByRole('tab', { name: 'Branches', exact: true }).click()
+  await view('Branches')
   const movable = panel.locator('[aria-roledescription^="branche déplaçable"]')
   const dropped = movable.filter({ hasText: 'feat/lot-4-drop' }).first()
   await dropped.waitFor()
@@ -724,7 +819,7 @@ try {
   demoGit('add', '-A')
 
   await openGit(640, radarThread)
-  await panel.getByRole('tab', { name: 'Branches', exact: true }).click()
+  await view('Branches')
   const again = movable.filter({ hasText: 'feat/lot-4-drop' }).first()
   await again.focus()
   await page.keyboard.press(' ')

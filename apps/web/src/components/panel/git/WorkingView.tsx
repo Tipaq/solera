@@ -16,7 +16,7 @@ import type { DiffFileDto, GitStateDto } from '@solera/protocol'
 import { parseUnifiedDiff } from '../../../lib/diff'
 import { useTranslate } from '../../../lib/i18n'
 import type { WorkspaceScope } from '../../../lib/workspace-scope'
-import { Banner, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import { Banner, Menu, MenuItem, MenuSeparator, PanelGroup, PanelNotice, PanelStatusIcon, cx, panelGestureClass, panelRowClass } from '@solera/ui'
 import { useGitActions } from './actions'
 import { LineStage } from './LineStage'
 import { useGitState } from './queries'
@@ -140,7 +140,7 @@ export function WorkingView({
         ) : null}
 
         <Section
-          title={t('git.working.unstaged', { count: unstaged.length })}
+          title={t('git.working.unstaged')}
           action={t('git.working.stageAll')}
           onAction={
             unstaged.length > 0
@@ -158,7 +158,7 @@ export function WorkingView({
         />
 
         <Section
-          title={t('git.working.staged', { count: staged.length })}
+          title={t('git.working.staged')}
           action={t('git.working.unstageAll')}
           onAction={
             staged.length > 0
@@ -335,20 +335,22 @@ function Section({
 
   return (
     <div className="flex flex-col">
-      <div className="flex items-center gap-2 px-2.5 pt-2 pb-1">
-        <span className="text-micro font-semibold tracking-wide text-ink-soft uppercase">{title}</span>
-        <span className="h-px flex-1 bg-line" />
-        {onAction ? (
-          <button
-            type="button"
-            onClick={onAction}
-            disabled={frozen}
-            className="text-micro text-ink-faint hover:text-ink disabled:opacity-45"
-          >
-            {action}
-          </button>
-        ) : null}
-      </div>
+      <PanelGroup
+        title={title}
+        count={files.length}
+        aside={
+          onAction ? (
+            <button
+              type="button"
+              onClick={onAction}
+              disabled={frozen}
+              className="text-micro text-ink-faint hover:text-ink disabled:opacity-45"
+            >
+              {action}
+            </button>
+          ) : null
+        }
+      />
 
       {files.map((file) => {
         const name = file.path.slice(file.path.lastIndexOf('/') + 1)
@@ -357,7 +359,7 @@ function Section({
 
         return (
           <div key={file.path} className="flex flex-col">
-            <div className="group flex items-center gap-1.5 px-2.5 py-1 hover:bg-surface-high">
+            <div className={panelRowClass}>
               <button
                 type="button"
                 disabled={frozen}
@@ -373,7 +375,7 @@ function Section({
                 {staged ? <Check size={10} /> : <Plus size={10} />}
               </button>
 
-              <FileCode2 size={12} className="shrink-0 text-ink-faint" />
+              <PanelStatusIcon icon={<FileCode2 size={15} />} />
 
               <button
                 type="button"
@@ -381,17 +383,17 @@ function Section({
                 className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left"
                 title={file.path}
               >
-                <span className="truncate text-xs text-ink">{name}</span>
-                <span className="hidden truncate text-micro text-ink-faint @min-[28rem]:inline">
+                <span className="truncate text-sm text-ink">{name}</span>
+                <span className="hidden truncate text-xs text-ink-faint @min-[28rem]:inline">
                   {folder}
                 </span>
               </button>
 
               {file.added > 0 ? (
-                <span className="shrink-0 font-mono text-micro text-positive tabular-nums">+{file.added}</span>
+                <span className="shrink-0 font-mono text-xs text-positive tabular-nums">+{file.added}</span>
               ) : null}
               {file.removed > 0 ? (
-                <span className="shrink-0 font-mono text-micro text-critical tabular-nums">−{file.removed}</span>
+                <span className="shrink-0 font-mono text-xs text-critical tabular-nums">−{file.removed}</span>
               ) : null}
 
               <Menu
@@ -480,28 +482,26 @@ function Review({
     : 0
 
   return (
-    <div className="m-2 flex items-center gap-2 rounded-md border border-caution/40 bg-caution/8 px-2.5 py-2">
-      <Bot size={14} className="shrink-0 text-caution" />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-medium text-ink">{t('git.review.title')}</p>
-        <p className="truncate text-micro text-ink-faint">
-          {committed
-            ? t('git.review.committed', {
-                subject: committed.subject,
-                gone,
-                total: held.staged.length,
-              })
-            : t('git.review.changed')}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onReread}
-        className="flex shrink-0 items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-micro font-medium text-on-accent"
-      >
-        <RefreshCw size={12} />
-        {t('git.review.reread')}
-      </button>
-    </div>
+    <PanelNotice tone="caution">
+      <span className="flex items-center gap-2">
+        <Bot size={14} aria-hidden className="shrink-0" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="font-medium text-ink">{t('git.review.title')}</span>
+          <span className="truncate text-ink-faint">
+            {committed
+              ? t('git.review.committed', {
+                  subject: committed.subject,
+                  gone,
+                  total: held.staged.length,
+                })
+              : t('git.review.changed')}
+          </span>
+        </span>
+        <button type="button" onClick={onReread} className={cx(panelGestureClass, 'shrink-0')}>
+          <RefreshCw size={13} aria-hidden />
+          {t('git.review.reread')}
+        </button>
+      </span>
+    </PanelNotice>
   )
 }
