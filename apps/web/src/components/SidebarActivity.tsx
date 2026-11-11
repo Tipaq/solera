@@ -51,10 +51,10 @@ export function activityCapacity(height: number, requests: number, sessions: num
  * cet ordre et quel que soit le projet. Une ligne par demande — un fil qui tourne et
  * attend un accord est donc une fois dans chaque groupe.
  *
- * Elle ne défile pas et ne se replie pas : la zone basse est la seule partie mobile de
- * la colonne. Le bloc entier tient sous **le quart de la hauteur de la colonne**, et ce
- * qui dépasse est compté sur une ligne ; la modale porte le reste. Au doigt, l'en-tête
- * seul : ses deux compteurs disent l'état, et la zone basse garde toute la hauteur.
+ * Elle défile avec les lieux et les sessions, dans le bloc qui défile de la colonne. Le
+ * bloc entier tient sous **le quart de la hauteur de ce bloc**, et ce qui dépasse est
+ * compté sur une ligne ; la modale porte le reste. Au doigt, l'en-tête seul : ses deux
+ * compteurs disent l'état, et la zone basse garde toute la hauteur.
  */
 export function SidebarActivity({
   conversations = EMPTY,
@@ -128,9 +128,9 @@ export function SidebarActivity({
           type="button"
           onClick={() => show()}
           aria-haspopup="dialog"
-          className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11"
+          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-surface-high pointer-coarse:h-11"
         >
-          <Activity size={14} className="shrink-0 text-ink-faint" />
+          <span className="flex w-4 shrink-0 justify-center"><Activity size={14} className="text-ink-faint" /></span>
           <span className="flex-1 text-meta font-semibold uppercase tracking-wider text-ink-faint">
             {t('shell.overview.heading')}
           </span>
@@ -154,7 +154,9 @@ export function SidebarActivity({
         </button>
 
         {coarse ? null : forYou.length === 0 && sessions.length === 0 ? (
-          <p className="px-2 py-1.5 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>
+          // `pl-9` hors de l'échelle courante, à dessein : 8 + 36 = 44 px, le départ des
+          // textes de la colonne, sous le libellé de l'en-tête.
+          <p className="py-1.5 pr-2.5 pl-9 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>
         ) : (
           <>
             {shownRequests.length > 0 ? (
@@ -185,9 +187,9 @@ export function SidebarActivity({
               <button
                 type="button"
                 onClick={() => show()}
-                className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
+                className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink"
               >
-                <Activity size={14} className="shrink-0" />
+                <span className="flex w-4 shrink-0 justify-center"><Activity size={14} /></span>
                 <span className="min-w-0 flex-1 truncate">{t('forYou.more', { rest: more })}</span>
                 {restRequests > 0 ? <StateDot state="awaiting" labelled={false} /> : null}
               </button>
@@ -218,11 +220,15 @@ export function SidebarActivity({
 /**
  * La hauteur de la colonne qui porte le bloc, suivie au redimensionnement. Mesurée
  * avant la peinture : un premier rendu à sept lignes ferait sauter la zone basse.
+ *
+ * La colonne est le bloc qui défile de la sidebar, et non le parent du bloc : celui-là
+ * grandit avec son contenu, Activité comprise, et une part calculée sur lui se
+ * nourrirait d'elle-même. Hors de la sidebar (une story), le parent fait l'affaire.
  */
 function useColumnHeight(block: HTMLElement | null): number {
   const [height, setHeight] = useState(0)
   useLayoutEffect(() => {
-    const column = block?.parentElement
+    const column = block?.closest<HTMLElement>('[data-sidebar-scroll]') ?? block?.parentElement
     if (!column) return
     setHeight(column.getBoundingClientRect().height)
     const observer = new ResizeObserver(([entry]) => {
@@ -236,12 +242,14 @@ function useColumnHeight(block: HTMLElement | null): number {
 
 /**
  * Le repère d'une ligne : son projet, ou l'icône des fils libres. Dans l'activité, on
- * cherche *où* ça se passe.
+ * cherche *où* ça se passe. Posé dans le créneau de 16 px de la colonne d'icônes.
  */
 function EntryMark({ project, free }: { project?: ProjectDto; free: boolean }) {
-  return free
-    ? <MessagesSquare size={14} className="shrink-0 text-ink-faint" />
-    : <ProjectAvatar project={project} className="size-3.5" />
+  return (
+    <span className="flex w-4 shrink-0 justify-center">
+      {free ? <MessagesSquare size={14} className="text-ink-faint" /> : <ProjectAvatar project={project} className="size-3.5" />}
+    </span>
+  )
 }
 
 /**
@@ -271,7 +279,7 @@ function ForYouLine({ entry, project, onOpen }: {
         onClick={onOpen}
         aria-haspopup="dialog"
         title={forYouTitle(entry, t)}
-        className="flex h-8 w-full items-center gap-2 rounded-md px-1.5 pl-2.5 text-left text-sm text-ink transition-colors hover:bg-surface-high"
+        className="flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink transition-colors hover:bg-surface-high"
       >
         <EntryMark project={project} free={entry.projectId === null} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
@@ -300,7 +308,7 @@ function ActivityLine({ entry, project, onNavigate }: {
         onClick={onNavigate}
         title={entry.conversation.title}
         className={({ isActive }) => cx(
-          'flex h-8 items-center gap-2 rounded-md px-1.5 pl-2.5 text-sm transition-colors',
+          'flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors',
           isActive ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >

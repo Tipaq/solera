@@ -307,8 +307,9 @@ export function formatCost(usd: number | null, t: Translate, locale: string): st
   return usd > 0 && usd < 0.01 ? t('automation.cost.under', { amount: format(0.01) }) : format(usd)
 }
 
-export function formatDateTime(ts: number, locale: string): string {
-  return new Date(ts).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+/** `timeZone` lit la date à l'heure du serveur, celle d'un motif cron ; absent, à celle du poste. */
+export function formatDateTime(ts: number, locale: string, timeZone?: string): string {
+  return new Date(ts).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone })
 }
 
 /* ------------------------------------------------------------------ nature, quand */

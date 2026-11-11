@@ -84,13 +84,13 @@ export function ScheduleDialog({
 
   const [name, setName] = useState(task?.name ?? '')
   const [prompt, setPrompt] = useState(task?.prompt ?? '')
-  const [kind, setKind] = useState<CadenceKind>(task?.cadence.kind ?? 'interval')
-  const initialInterval = splitInterval(task?.cadence.kind === 'interval' ? task.cadence.minutes : 1440)
+  const [kind, setKind] = useState<CadenceKind>(task?.cadence?.kind ?? 'interval')
+  const initialInterval = splitInterval(task?.cadence?.kind === 'interval' ? task.cadence.minutes : 1440)
   const [intervalValue, setIntervalValue] = useState(initialInterval.value)
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>(initialInterval.unit)
-  const [cron, setCron] = useState(task?.cadence.kind === 'cron' ? task.cadence.expression : '0 9 * * 1')
+  const [cron, setCron] = useState(task?.cadence?.kind === 'cron' ? task.cadence.expression : '0 9 * * 1')
   const [onceAt, setOnceAt] = useState(() =>
-    toLocalInput(task?.cadence.kind === 'once' ? task.cadence.at : Date.now() + 60 * 60_000),
+    toLocalInput(task?.cadence?.kind === 'once' ? task.cadence.at : Date.now() + 60 * 60_000),
   )
   const [agent, setAgent] = useState<AgentKind>(task?.agent ?? 'claude')
   const [edited, setEdited] = useState<AgentConfig | null>(task?.config ?? null)

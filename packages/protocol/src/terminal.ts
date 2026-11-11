@@ -38,6 +38,8 @@ export interface TerminalDto {
   createdAt: number
   /** Action de projet qui a ouvert ce terminal pour y jouer sa commande. */
   actionId: string | null
+  /** L'essai d'une commande depuis l'éditeur d'actions, qui n'est l'exécution d'aucune action. */
+  trial: boolean
   /** Code de sortie d'une commande d'action terminée ; null pour un shell ou tant qu'elle tourne. */
   exitCode: number | null
   /**

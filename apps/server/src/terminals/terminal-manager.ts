@@ -68,6 +68,8 @@ interface ManagedTerminal {
   interrupted: boolean
   /** Action de projet dont ce terminal joue la commande ; null pour un shell. */
   actionId: string | null
+  /** L'essai d'une commande de l'éditeur, et la personne qui l'a lancé ; null sinon. */
+  trialOf: string | null
   /** Session qui l'a ouvert, et dont il suit l'environnement ; null hors session. */
   conversationId: string | null
   exitCode: number | null
@@ -82,6 +84,7 @@ interface PersistedTerminal {
   cwd: string
   createdAt: number
   actionId?: string | null
+  trialOf?: string | null
   conversationId?: string | null
   /** Absents tant que le process tourne : l'entrée relue sans eux est une interrompue. */
   exitCode?: number | null
@@ -102,6 +105,8 @@ export interface TerminalCommand {
   command: string
   title: string
   actionId: string | null
+  /** Personne qui essaie la commande depuis l'éditeur, sans l'enregistrer. */
+  trialOf?: string
   /** Variables propres à cette exécution, par-dessus celles du daemon et l'origine. */
   env?: Record<string, string>
   /**
@@ -165,7 +170,7 @@ export class TerminalManager {
 
     // Le process d'une action est la commande elle-même (`sh -c` l'exécute souvent à la
     // place du shell) : pas d'enfant à voir, mais rien d'inactif non plus.
-    if (managed.actionId || hasChildProcess(managed.pty.pid)) {
+    if (managed.actionId || managed.trialOf || hasChildProcess(managed.pty.pid)) {
       this.touch(terminalId)
       return
     }
@@ -281,6 +286,7 @@ export class TerminalManager {
       exited: false,
       interrupted: false,
       actionId: run?.actionId ?? null,
+      trialOf: run?.trialOf ?? null,
       conversationId: place.conversationId,
       exitCode: null,
       finishedAt: null,
@@ -456,6 +462,13 @@ export class TerminalManager {
     this.close(terminalId)
   }
 
+  /** Les essais de cette personne dans le projet, qu'un nouvel essai remplace. */
+  closeTrials(projectId: string, userId: string): void {
+    for (const managed of this.of(projectId)) {
+      if (managed.trialOf === userId) this.close(managed.id)
+    }
+  }
+
   /** À la suppression du projet : rien ne doit continuer à tourner en son nom. */
   closeForProject(projectId: string): void {
     for (const managed of this.of(projectId)) this.close(managed.id)
@@ -534,6 +547,7 @@ export class TerminalManager {
         // Une fin enregistrée dit que le process est sorti de lui-même avant l'arrêt.
         interrupted: meta.finishedAt == null,
         actionId: meta.actionId ?? null,
+        trialOf: meta.trialOf ?? null,
         conversationId: meta.conversationId ?? null,
         exitCode: meta.exitCode ?? null,
         finishedAt: meta.finishedAt ?? null,
@@ -549,6 +563,7 @@ export class TerminalManager {
       cwd: managed.cwd,
       createdAt: managed.createdAt,
       actionId: managed.actionId,
+      trialOf: managed.trialOf,
       conversationId: managed.conversationId,
       exitCode: managed.exitCode,
       finishedAt: managed.finishedAt,
@@ -609,6 +624,7 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     cwd: managed.cwd,
     createdAt: managed.createdAt,
     actionId: managed.actionId,
+    trial: managed.trialOf !== null,
     conversationId: managed.conversationId,
     exitCode: managed.exitCode,
     finishedAt: managed.finishedAt,
