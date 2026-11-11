@@ -25,6 +25,7 @@ import { placeDirectory } from '../workspace.js'
 import { directoryGone } from '../worktrees/gone.js'
 import { defaultBase } from '../worktrees/assess.js'
 import { createWorktree } from '../worktrees/create.js'
+import type { CommandScheduler } from '../actions/scheduled.js'
 import { checkStateDir, firstLine, runCheck } from './check.js'
 import { readCadence } from './tasks.js'
 
@@ -53,6 +54,8 @@ export class TaskScheduler {
    * secondes, pendant lesquelles « lancer maintenant » ne doit pas en ouvrir un second.
    */
   private readonly firing = new Set<string>()
+  /** Les commandes planifiées, tirées dans la même passe (AC-03). */
+  private commands: Pick<CommandScheduler, 'tick'> | null = null
 
   constructor(
     private readonly ctx: AppContext,
@@ -79,6 +82,10 @@ export class TaskScheduler {
     this.timer = null
   }
 
+  setCommands(commands: Pick<CommandScheduler, 'tick'>): void {
+    this.commands = commands
+  }
+
   async tick(now = Date.now()): Promise<void> {
     if (this.busy) return
     this.busy = true
@@ -89,6 +96,12 @@ export class TaskScheduler {
       await this.fireDue(now)
     } catch (err) {
       this.logger?.error({ err }, 'balayage des tâches planifiées en échec')
+    }
+    // À part : une tâche qui fait échouer le balayage ne doit pas retenir les commandes.
+    try {
+      await this.commands?.tick(now)
+    } catch (err) {
+      this.logger?.error({ err }, 'balayage des commandes planifiées en échec')
     } finally {
       this.busy = false
     }

@@ -2695,6 +2695,8 @@ export const fr: Catalog = {
   'push.prefs.cliRequest.hint': "Une session attend une autorisation, une réponse ou la validation d'un plan. Toast si Solera est ouvert, notification sinon.",
   'push.prefs.turnCompleted': 'Tours terminés',
   'push.prefs.turnCompleted.hint': 'Une session a fini son tour. Notification seulement, jamais de toast : la colonne le montre déjà.',
+  'push.prefs.scheduleFailed': 'Commandes planifiées en échec',
+  'push.prefs.scheduleFailed.hint': "Une commande planifiée vient d'échouer, la première fois d'une série. Notification seulement.",
   'toast.region': 'Notifications',
   'toast.more': '{count} de plus',
   'toast.later': 'Plus tard',

@@ -1386,6 +1386,20 @@ export const projectActions = sqliteTable(
     approvedCommand: text('approved_command'),
     approvedSubdir: text('approved_subdir'),
     approvedUrl: text('approved_url'),
+    /** La cadence relue en dernier (JSON) : une commande planifiée part sans clic. */
+    approvedCadence: text('approved_cadence'),
+    /** Un clic ou un agent peut la lancer ; faux, elle ne part qu'à sa cadence. */
+    onDemand: integer('on_demand', { mode: 'boolean' }).notNull().default(true),
+    /** `ScheduleCadence` en JSON ; NULL pour une commande qui ne part jamais seule. */
+    cadence: text('cadence'),
+    /** Faux : en pause, la cadence gardée. */
+    scheduleEnabled: integer('schedule_enabled', { mode: 'boolean' }).notNull().default(false),
+    /** Au-delà, le tir planifié est coupé : personne n'est là pour l'arrêter. */
+    scheduleMaxMinutes: integer('schedule_max_minutes').notNull().default(30),
+    /** L'heure du dernier tir de la cadence, d'où se compte un intervalle. */
+    lastScheduledAt: timestamp('last_scheduled_at'),
+    /** NULL quand rien n'est prévu : sans cadence, en pause, ou ponctuelle déjà tirée. */
+    nextRunAt: timestamp('next_run_at'),
     /**
      * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
      * à la racine quand elle est sur `pinned_branch`. Hors relecture : il ne change pas ce
@@ -1398,7 +1412,10 @@ export const projectActions = sqliteTable(
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
-  (t) => [index('idx_project_actions_project').on(t.projectId, t.createdAt)],
+  (t) => [
+    index('idx_project_actions_project').on(t.projectId, t.createdAt),
+    index('idx_project_actions_next_run').on(t.nextRunAt),
+  ],
 )
 
 /**
@@ -1422,7 +1439,7 @@ export const actionRuns = sqliteTable(
     trigger: text('trigger').$type<ActionRunTrigger>().notNull(),
     /** La session d'où elle a été lancée ; NULL hors session. */
     conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
-    /** Le terminal qui l'a jouée, tant qu'il existe. */
+    /** Le terminal qui l'a jouée, tant qu'il existe ; NULL pour un tir planifié, détaché. */
     terminalId: text('terminal_id'),
     cwd: text('cwd').notNull(),
     status: text('status').$type<ActionRunStatus>().notNull(),

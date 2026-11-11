@@ -15,11 +15,12 @@ function action(id: string, extra: Partial<ProjectActionDto>): ProjectActionDto 
   const shown = {
     id, projectId: PROJECT_ID, label: id, description: null, kind: 'task' as const, command: 'pnpm test', subdir: null,
     url: null, placement: 'follow' as const, pinnedBranch: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: now,
-    updatedAt: now, service: null, lastRun: null, runs: [], ...extra,
+    updatedAt: now, service: null, lastRun: null, runs: [], onDemand: true, schedule: null, ...extra,
   }
   // Une action validée l'a été telle qu'elle est ; une proposée n'a jamais été relue.
-  const { kind, command, subdir, url } = shown
-  return { approved: shown.status === 'approved' ? { kind, command, subdir, url } : null, ...shown }
+  const { kind, command, subdir, url, schedule } = shown
+  const cadence = schedule?.cadence ?? null
+  return { approved: shown.status === 'approved' ? { kind, command, subdir, url, cadence } : null, ...shown }
 }
 
 export const ACTIONS: ProjectActionDto[] = [

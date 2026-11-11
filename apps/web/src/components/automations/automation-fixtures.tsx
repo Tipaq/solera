@@ -18,10 +18,11 @@ function action(id: string, extra: Partial<ProjectActionDto>): Automation {
   const shown = {
     id, projectId: PROJECT_ID, label: id, description: null, kind: 'task' as const, command: 'pnpm test', subdir: null,
     url: null, placement: 'follow' as const, pinnedBranch: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: NOW,
-    updatedAt: NOW, service: null, lastRun: null, runs: [], ...extra,
+    updatedAt: NOW, service: null, lastRun: null, runs: [], onDemand: true, schedule: null, ...extra,
   }
-  const { kind, command, subdir, url } = shown
-  return fromAction({ approved: shown.status === 'approved' ? { kind, command, subdir, url } : null, ...shown })
+  const { kind, command, subdir, url, schedule } = shown
+  const cadence = schedule?.cadence ?? null
+  return fromAction({ approved: shown.status === 'approved' ? { kind, command, subdir, url, cadence } : null, ...shown })
 }
 
 const cmdRun = (id: string, ago: number, exitCode: number) => ({

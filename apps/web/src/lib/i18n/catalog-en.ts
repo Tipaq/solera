@@ -2699,6 +2699,8 @@ export const en = {
   'push.prefs.cliRequest.hint': 'A session is waiting for an approval, an answer or a plan review. A toast if Solera is open, a notification otherwise.',
   'push.prefs.turnCompleted': 'Finished turns',
   'push.prefs.turnCompleted.hint': 'A session has finished its turn. Notification only, never a toast: the sidebar already shows it.',
+  'push.prefs.scheduleFailed': 'Failed scheduled commands',
+  'push.prefs.scheduleFailed.hint': 'A scheduled command has just failed, the first time in a row. Notification only.',
   'toast.region': 'Notifications',
   'toast.more': '{count} more',
   'toast.later': 'Later',
