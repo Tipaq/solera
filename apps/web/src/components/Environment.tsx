@@ -30,12 +30,15 @@ export function EnvironmentSelect({
   onChange,
   disabled,
   className,
+  hideLabel,
 }: {
   value: ExecutionEnvironment
   choices: ExecutionEnvironment[]
   onChange: (environment: ExecutionEnvironment) => void
   disabled?: boolean
   className?: string
+  /** Le libellé est déjà dit à côté (une rangée de réglages) : il ne reste qu'en `aria-label`. */
+  hideLabel?: boolean
 }) {
   const t = useTranslate()
   // Le réglage courant reste affiché même si le serveur ne le propose plus.
@@ -44,7 +47,8 @@ export function EnvironmentSelect({
     : [value, ...choices]
   return (
     <Select
-      label={t('environment.label')}
+      label={hideLabel ? undefined : t('environment.label')}
+      placeholder={t('environment.label')}
       value={environmentKey(value)}
       onChange={(key) => {
         const next = options.find((choice) => environmentKey(choice) === key)
@@ -136,6 +140,7 @@ export function AutonomousConfinementSelect({
   inherited,
   disabled,
   className,
+  hideLabel,
 }: {
   value: boolean | null
   onChange: (confined: boolean | null) => void
@@ -143,12 +148,15 @@ export function AutonomousConfinementSelect({
   inherited?: boolean
   disabled?: boolean
   className?: string
+  /** Le libellé est déjà dit à côté (une rangée de réglages) : il ne reste qu'en `aria-label`. */
+  hideLabel?: boolean
 }) {
   const t = useTranslate()
   const choices: AutonomousChoice[] = inherited === undefined ? ['free', 'confined'] : ['project', 'free', 'confined']
   return (
     <Select
-      label={t('environment.autonomous.label')}
+      label={hideLabel ? undefined : t('environment.autonomous.label')}
+      placeholder={t('environment.autonomous.label')}
       value={autonomousChoice(inherited === undefined ? Boolean(value) : value)}
       onChange={(choice) => onChange(choice === 'project' ? null : choice === 'confined')}
       disabled={disabled}

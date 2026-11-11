@@ -125,11 +125,11 @@ function NoteLine({ note, onNavigate }: { note: VaultNoteDto; onNavigate: () => 
         onClick={onNavigate}
         title={note.path}
         className={({ isActive }) => cx(
-          'flex h-11 items-center gap-2 rounded-md px-2.5 text-sm transition-colors md:h-8 pointer-coarse:h-11',
+          'flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors md:h-8 pointer-coarse:h-11',
           isActive ? 'bg-accent-wash text-ink' : 'text-ink-soft hover:bg-surface-high hover:text-ink',
         )}
       >
-        <FileText size={14} className="shrink-0 text-ink-faint" />
+        <span className="flex w-4 shrink-0 justify-center text-ink-faint"><FileText size={14} /></span>
         <span className="min-w-0 flex-1 truncate">{note.title}</span>
         {/* Le degré entrant, pour qui range : une note que personne ne cite se repère
             sans ouvrir la liste qui les compte. */}

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type {
   BlameDto,
   CommitDetailDto,
+  CommitTurnDto,
   ConflictsDto,
   FileHistoryDto,
   GitStateDto,
@@ -69,6 +70,22 @@ export function useCommitDetail(scope: WorkspaceScope, hash: string | null) {
     queryKey: ['git-commit', scope, hash],
     queryFn: () => api.get<CommitDetailDto>(`${workspaceApiBase(scope)}/commits/${hash}/detail`),
     staleTime: Infinity,
+    enabled: hash !== null,
+  })
+}
+
+/**
+ * Le tour qui a produit un commit, lu dans les points de reprise : « tour N · message ».
+ *
+ * À part du détail parce que le serveur parcourt alors toutes les captures du dépôt.
+ * Immuable comme le commit, sauf qu'un tour encore ouvert le revendiquera à sa fin :
+ * une minute suffit à le voir apparaître.
+ */
+export function useCommitTurn(scope: WorkspaceScope, hash: string | null) {
+  return useQuery({
+    queryKey: ['git-commit-turn', scope, hash],
+    queryFn: () => api.get<CommitTurnDto | null>(`${workspaceApiBase(scope)}/commits/${hash}/turn`),
+    staleTime: 60_000,
     enabled: hash !== null,
   })
 }
