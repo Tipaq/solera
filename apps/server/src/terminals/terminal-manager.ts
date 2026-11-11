@@ -106,7 +106,10 @@ export interface TerminalCommand {
   env?: Record<string, string>
 }
 
-/** Le shell s'est terminé, ou n'a jamais démarré : deux refus distincts à afficher. */
+/**
+ * Trois refus distincts à afficher : le plafond de terminaux est atteint, le terminal
+ * n'existe pas (ou pas dans ce projet), ou son process est déjà sorti.
+ */
 export class TerminalError extends Error {
   constructor(
     readonly code: 'too_many_terminals' | 'terminal_not_found' | 'terminal_finished',
@@ -204,12 +207,7 @@ export class TerminalManager {
       // relancer un bouton ne doit pas épuiser le plafond de terminaux avec des écrans
       // périmés. Celle d'une autre session ou d'un autre dossier reste à lire.
       for (const previous of existing) {
-        if (
-          previous.actionId === run.actionId &&
-          previous.exited &&
-          previous.conversationId === place.conversationId &&
-          previous.cwd === cwd
-        ) {
+        if (previous.actionId === run.actionId && previous.exited && samePlace(previous, place.conversationId, cwd)) {
           this.close(previous.id)
         }
       }
@@ -588,6 +586,14 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     exitCode: managed.exitCode,
     finishedAt: managed.finishedAt,
   }
+}
+
+/**
+ * Le lieu d'une exécution : la session qui l'a lancée (null à la racine) et son dossier.
+ * Une même session peut lancer une action à deux endroits, son worktree et un autre.
+ */
+function samePlace(managed: ManagedTerminal, conversationId: string | null, cwd: string): boolean {
+  return managed.conversationId === conversationId && managed.cwd === cwd
 }
 
 /** Premier numéro libre, pour que les intitulés restent lisibles après des fermetures. */

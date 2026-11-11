@@ -2953,6 +2953,7 @@ export const fr: Catalog = {
   'error.stale_write': "Le fichier a changé sur le disque depuis son ouverture.",
   'error.steer_unavailable': "Aucun tour en cours à infléchir, ou ce CLI ne le gère pas.",
   'error.system_directory_denied': "Ce dossier système ne peut pas être parcouru.",
+  'error.terminal_finished': "Ce terminal a déjà fini.",
   'error.terminal_not_found': "Terminal introuvable.",
   'error.too_large': "Le fichier fait {sizeKb} Ko, au-delà de la limite de {maxKb} Ko, et ne sera pas ouvert.",
   'error.too_many_attempts': "Trop de tentatives. Réessaie dans {seconds} secondes.",

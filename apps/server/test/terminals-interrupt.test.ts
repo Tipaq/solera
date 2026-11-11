@@ -181,3 +181,21 @@ test('running again recycles the finished terminal of the same place only', asyn
   assert.ok(ids.includes(inSession.terminal!.id))
   assert.ok(!ids.includes(atRoot.terminal!.id))
 })
+
+test('in the same session, a run in another directory keeps its finished terminal', async (t) => {
+  const { dir, terminals } = await harness(t)
+  const place = { environment: hostEnvironment, conversationId: 'agent' }
+  const run = { command: 'exit 0', title: 'Quick', actionId: 'action' }
+
+  const here = terminals.open('project', dir, place, run)
+  await finished(terminals, 'project', here.id)
+  const elsewhere = terminals.open('project', join(dir, 'data'), place, run)
+  await finished(terminals, 'project', elsewhere.id)
+  assert.equal(terminals.list('project').length, 2)
+
+  const again = terminals.open('project', dir, place, run)
+  assert.deepEqual(
+    terminals.list('project').map((terminal) => terminal.id).sort(),
+    [elsewhere.id, again.id].sort(),
+  )
+})
