@@ -41,7 +41,7 @@ import { ensureParentBranch, parentBranchOf } from '../cards/parent-branch.js'
 import { createConversation } from '../conversations/create.js'
 import { readGitStatus } from '../git.js'
 import type { AppContext } from '../http/context.js'
-import { badRequest, conflict } from '../http/errors.js'
+import { badRequest, conflict, HttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager } from '../sessions/session-manager.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
@@ -142,14 +142,7 @@ export class MilestoneRuns {
     const blockers = this.unfinishedBlockers(childIds)
 
     const planned: MilestonePlanCardDto[] = children.map((child) => {
-      const excludedReason: MilestoneExcludedReason | null =
-        child.acceptedAt === null
-          ? 'not_accepted'
-          : child.column === 'done' || child.column === 'abandoned'
-            ? 'closed'
-            : withChildren.has(child.id)
-              ? 'has_children'
-              : null
+      const excludedReason = exclusionOf(child, withChildren)
       const blockedBy = blockers.get(child.id) ?? []
       return {
         cardId: child.id,
@@ -177,6 +170,10 @@ export class MilestoneRuns {
    * blocages, ou s'il n'y a rien à lancer.
    */
   async launch(parent: CardRow, project: ProjectRow, userId: string, body: StartMilestoneBody): Promise<MilestoneRunDto> {
+    return this.read(await this.open(parent, project, userId, body))
+  }
+
+  private async open(parent: CardRow, project: ProjectRow, userId: string, body: StartMilestoneBody): Promise<MilestoneRunRow> {
     if (this.activeRun(parent.id)) throw conflict('milestone_running', 'This milestone is already running.')
     if (!(await readGitStatus(project.workspacePath))) {
       throw badRequest('not_a_repository', 'This project is not a git repository.')
@@ -240,14 +237,16 @@ export class MilestoneRuns {
     )
     // Le premier tour sans attendre : l'aperçu promettait des départs immédiats.
     void this.sweep()
-    return this.read(this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, runId)).get()!)
+    return this.runRow(runId)
   }
 
   /**
    * Lance une carte du jalon à la main (LCH-8), par le même chemin que le tour : sa
    * branche partie de celle du jalon, sa mission, la carte « en cours ». Sans pilotage
    * vivant, un pilotage à la main s'ouvre, avec les refus du lancement ; un pilotage
-   * vivant la prend telle quelle, sans regarder la concurrence : une personne a décidé.
+   * vivant la prend telle quelle, sans regarder ni la concurrence ni la pause : la pause
+   * arrête les lancements du serveur, et ici c'est une personne qui décide. La session
+   * est à elle.
    *
    * Refusé si la carte n'est pas une enfant ouverte, acceptée, sans enfants ni bloqueur
    * ouvert, ou si une session la porte déjà.
@@ -257,27 +256,18 @@ export class MilestoneRuns {
     const ready =
       card !== undefined &&
       card.parentId === parent.id &&
-      card.acceptedAt !== null &&
-      card.column !== 'done' &&
-      card.column !== 'abandoned' &&
-      !this.withChildren([card.id]).has(card.id) &&
+      exclusionOf(card, this.withChildren([card.id])) === null &&
       !this.unfinishedBlockers([card.id]).has(card.id)
     if (!ready) throw conflict('milestone_card_not_ready', 'This card is not an open, accepted card of the milestone without open blockers.')
     if (this.currentSessions([card.id]).has(card.id)) throw conflict('milestone_card_running', 'This card already has a session.')
 
-    let run = this.activeRun(parent.id)
-    if (!run) {
-      const opened = await this.launch(parent, project, userId, {
-        mode: 'manual',
-        concurrency: DEFAULT_MILESTONE_CONCURRENCY,
-        cards: {},
-        confined: body.confined,
-      })
-      run = this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, opened.id)).get()!
-    }
+    const run =
+      this.activeRun(parent.id) ??
+      (await this.open(parent, project, userId, { mode: 'manual', concurrency: DEFAULT_MILESTONE_CONCURRENCY, cards: {}, confined: body.confined }))
     // Une enfant arrivée depuis le lancement n'est peut-être pas encore dans la file.
     this.adoptNewChildren(run, Date.now())
-    // Pris comme le tour le prend, pour qu'un tour en cours ne la lance pas une seconde fois.
+    // Pris comme le tour le prend, pour qu'un tour en cours ne la lance pas une seconde
+    // fois ; mais aussi depuis un échec ou une session archivée, que le tour ne relance pas.
     const claimed = this.ctx.db
       .update(milestoneRunCards)
       .set({ launch: 'launching', updatedAt: Date.now() })
@@ -286,8 +276,12 @@ export class MilestoneRuns {
     if (claimed.changes === 0) throw conflict('milestone_card_running', 'This card already has a session.')
     const facts = this.gather(run)!
     const row = facts.rows.find((entry) => entry.cardId === card.id)!
-    if (await this.startCard(run, facts, row)) this.note(parent.id, userId, `Carte #${card.number} lancée à la main.`)
-    return this.read(this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, run.id)).get()!)
+    const failure = await this.startCard(run, facts, row, userId)
+    if (failure !== null) {
+      throw new HttpError(500, 'milestone_card_launch_failed', 'Card #{number} could not be launched: {error}', { number: card.number, error: failure })
+    }
+    this.note(parent.id, userId, `Carte #${card.number} lancée à la main.`)
+    return this.read(this.runRow(run.id))
   }
 
   /** Pause, reprise, arrêt, concurrence, mode et confinement. */
@@ -314,9 +308,11 @@ export class MilestoneRuns {
       this.note(
         run.cardId,
         userId,
-        body.mode === 'auto'
-          ? `Jalon passé en autonome : Solera lance les cartes prêtes, ${patch.concurrency ?? run.concurrency} session(s) en parallèle au plus.`
-          : 'Jalon repassé à la main : plus aucun lancement, les sessions en cours continuent.',
+        body.mode === 'manual'
+          ? 'Jalon repassé à la main : plus aucun lancement, les sessions en cours continuent.'
+          : (patch.state ?? run.state) === 'paused'
+            ? 'Jalon passé en autonome : les lancements reprendront avec lui.'
+            : `Jalon passé en autonome : Solera lance les cartes prêtes, ${patch.concurrency ?? run.concurrency} session(s) en parallèle au plus.`,
       )
     }
     if (environment) {
@@ -332,7 +328,7 @@ export class MilestoneRuns {
     }
     this.ctx.db.update(milestoneRuns).set(patch).where(eq(milestoneRuns.id, run.id)).run()
     if (patch.state === 'running' || patch.mode === 'auto') void this.sweep()
-    return this.read(this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, run.id)).get()!)
+    return this.read(this.runRow(run.id))
   }
 
   /** Le pilotage vivant d'une parente, ou à défaut le dernier ; null si elle n'a jamais été lancée. */
@@ -491,20 +487,21 @@ export class MilestoneRuns {
   }
 
   /**
-   * Lance la session d'une carte, dans sa branche partie de celle du jalon. Rend faux si
-   * elle n'a pas pu partir : la carte est en échec, notée, et le propriétaire prévenu.
+   * Lance la session d'une carte, dans sa branche partie de celle du jalon, au nom de
+   * `userId` (celui qui a lancé le jalon, ou qui lance la carte à la main). Rend la raison
+   * si elle n'a pas pu partir : la carte est en échec, notée, et le propriétaire prévenu.
    */
-  private async startCard(run: MilestoneRunRow, facts: Facts, row: MilestoneRunCardRow): Promise<boolean> {
+  private async startCard(run: MilestoneRunRow, facts: Facts, row: MilestoneRunCardRow, userId = run.startedBy): Promise<string | null> {
     const card = facts.cards.get(row.cardId)!
     const where = and(eq(milestoneRunCards.runId, run.id), eq(milestoneRunCards.cardId, row.cardId))
     try {
       const base = await ensureParentBranch(this.ctx.db, facts.project, facts.parent)
-      const worktreeId = await this.cardWorktree(facts.project, run.startedBy, card, base)
+      const worktreeId = await this.cardWorktree(facts.project, userId, card, base)
       const wanted = parseAgentConfig(row.config ?? run.config)
       const config = await this.registry.adapter(wanted.agent).resolveDefaults(wanted)
       const conversation = await createConversation(this.ctx.db, this.sessions, {
         projectId: facts.project.id,
-        userId: run.startedBy,
+        userId,
         agent: config.agent,
         config,
         worktreeId,
@@ -520,7 +517,7 @@ export class MilestoneRuns {
           skills: [],
         },
       })
-      advanceCardOnLaunch(this.ctx, card.id, run.startedBy)
+      advanceCardOnLaunch(this.ctx, card.id, userId)
       const now = Date.now()
       this.ctx.db
         .update(milestoneRunCards)
@@ -528,7 +525,7 @@ export class MilestoneRuns {
         .where(where)
         .run()
       this.sessions.statusBus.emit('lists', { conversationId: conversation.id })
-      return true
+      return null
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
       this.ctx.db.update(milestoneRunCards).set({ launch: 'failed', error: reason, updatedAt: Date.now() }).where(where).run()
@@ -536,7 +533,7 @@ export class MilestoneRuns {
       this.note(card.id, null, `Session non lancée par le jalon : ${reason}`)
       await this.notify(facts, card, `n'a pas pu être lancée : ${reason}`)
       this.logger?.warn({ err, card: card.id }, 'carte de jalon non lancee')
-      return false
+      return reason
     }
   }
 
@@ -771,6 +768,10 @@ export class MilestoneRuns {
     return result
   }
 
+  private runRow(id: string): MilestoneRunRow {
+    return this.ctx.db.select().from(milestoneRuns).where(eq(milestoneRuns.id, id)).get()!
+  }
+
   private activeRun(parentId: string): MilestoneRunRow | null {
     return (
       this.ctx.db
@@ -789,6 +790,13 @@ export class MilestoneRuns {
   private note(cardId: string, userId: string | null, body: string): void {
     this.ctx.db.insert(cardNotes).values({ id: randomUUID(), cardId, conversationId: null, userId, body, createdAt: Date.now() }).run()
   }
+}
+
+/** Pourquoi une enfant ne part pas avec son jalon, ni à la main ; null si rien ne l'écarte. */
+function exclusionOf(child: CardRow, withChildren: ReadonlySet<string>): MilestoneExcludedReason | null {
+  if (child.acceptedAt === null) return 'not_accepted'
+  if (child.column === 'done' || child.column === 'abandoned') return 'closed'
+  return withChildren.has(child.id) ? 'has_children' : null
 }
 
 /**

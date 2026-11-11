@@ -155,7 +155,7 @@ async function harness(t: TestContext) {
   }
 
   return {
-    db, repo, origin, ids, parentId, addCard, block, sent, pushed, milestones, environments, card, parent, project, launch, byHand,
+    db, repo, origin, ids, parentId, addCard, block, sent, pushed, milestones, environments, registry, card, parent, project, launch, byHand,
     status, sessionOf, setSession, setColumn, notes, openSession,
   }
 }
@@ -572,6 +572,8 @@ test('routes : lancer une carte à la main, basculer le mode et le confinement',
   assert.equal(patched.statusCode, 200, patched.body)
   assert.equal(patched.json<MilestoneRunDto>().mode, 'auto')
   assert.equal(patched.json<MilestoneRunDto>().confined, false)
+  // Le tour relancé par la bascule doit finir avant qu'on efface le dépôt.
+  await milestones.sweep()
 })
 
 test('protocole : le mode par défaut est autonome, et les corps acceptent mode et confinement', () => {
@@ -581,4 +583,45 @@ test('protocole : le mode par défaut est autonome, et les corps acceptent mode 
   assert.deepEqual(updateMilestoneRunBodySchema.parse({ mode: 'manual', confined: null }), { mode: 'manual', confined: null })
   assert.equal('confined' in updateMilestoneRunBodySchema.parse({}), false, 'omis, le confinement ne change pas')
   assert.deepEqual(launchMilestoneCardBodySchema.parse({}), { confined: null })
+})
+
+test('lancer une carte à la main : en pause aussi, au nom de qui lance, et un échec se dit', async (t) => {
+  const { db, registry, launch, milestones, parentId, ids, parent, project, sessionOf, status, byHand, notes } = await harness(t)
+  db.insert(users).values({ id: 'other', username: 'other', displayName: 'Léa', passwordHash: '', createdAt: 1 }).run()
+  await launch({ mode: 'manual' })
+  milestones.update(milestones.latestRun(parentId)!, 'owner', { state: 'paused' })
+
+  // La pause arrête les lancements du serveur, pas le geste d'une personne.
+  const run = await milestones.launchByHand(parent(), project(), 'other', ids.get(13)!, launchMilestoneCardBodySchema.parse({}))
+  assert.equal(run.state, 'paused')
+  assert.equal(status()[13], 'working')
+  assert.equal(sessionOf(13)!.userId, 'other', 'la session est à qui la lance')
+
+  // Un CLI qui ne répond pas : la carte est en échec, et la route le dit.
+  registry.adapter = () => ({ resolveDefaults: async () => { throw new Error('CLI absent') } }) as never
+  await assert.rejects(byHand(11), (err: unknown) => refused('milestone_card_launch_failed')(err) && (err as HttpError).params?.error === 'CLI absent')
+  assert.equal(status()[11], 'failed')
+  assert.ok(!notes().some((note) => /^Carte #11 lancée à la main/.test(note)))
+})
+
+test('lancer une carte à la main : refusé hors d’un dépôt git', async (t) => {
+  const { db, byHand, milestones, parentId } = await harness(t)
+  const plain = await mkdtemp(join(tmpdir(), 'solera-not-git-'))
+  t.after(() => rm(plain, { recursive: true, force: true }))
+  db.update(projects).set({ workspacePath: plain }).run()
+  await assert.rejects(byHand(11), refused('not_a_repository'))
+  assert.equal(milestones.latestRun(parentId), null)
+})
+
+test('jalon : passer en autonome pendant une pause ne lance rien avant la reprise', async (t) => {
+  const { launch, milestones, parentId, sent, notes } = await harness(t)
+  await launch({ mode: 'manual' })
+  milestones.update(milestones.latestRun(parentId)!, 'owner', { state: 'paused' })
+  milestones.update(milestones.latestRun(parentId)!, 'owner', { mode: 'auto' })
+  await milestones.sweep()
+  assert.equal(sent.length, 0)
+  assert.ok(notes().some((note) => note === 'Jalon passé en autonome : les lancements reprendront avec lui.'))
+  milestones.update(milestones.latestRun(parentId)!, 'owner', { state: 'running' })
+  await milestones.sweep()
+  assert.equal(sent.length, 3)
 })
