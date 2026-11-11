@@ -34,7 +34,10 @@ export class PullRequestNotReady extends Error {
  * fusionnée en squash au commit lu, pour qu'un push arrivé entre-temps fasse échouer la
  * fusion au lieu de partir sans avoir été vu. La branche n'est jamais supprimée.
  *
- * Partagée par le « Fusionner la PR » d'un arbre et par la PR finale d'un jalon.
+ * Celle du « Fusionner la PR » d'un arbre, faite pour servir aussi la PR finale d'un
+ * jalon (#187). Pas celle de la revue (`reviews.ts`) : elle fusionne au commit relu,
+ * non à celui que la forge montre, et ne juge pas les checks.
+ *
  * `PullRequestNotReady` si elle ne l'est pas, `ForgeError` si la forge refuse.
  */
 export async function mergeReadyPullRequest(forge: Forge, cwd: string, ref: string, token?: string): Promise<PullRequest> {

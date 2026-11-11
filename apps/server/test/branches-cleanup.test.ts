@@ -193,3 +193,15 @@ test('seul le propriétaire supprime ; un agent au travail à la racine ferme la
   assert.equal(locked.json().error.code, 'turn_running')
   assert.ok(branches(repo).includes('ancetre'), 'rien n’a été supprimé')
 })
+
+test("la suppression en lot ne passe pas par l'onglet Git, qui ne jugerait pas « fusionnée »", async (t) => {
+  const { app, repo } = await harness(t)
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/projects/project/git/act',
+    payload: { kind: 'branches-delete', names: ['en-cours'] },
+  })
+  assert.equal(res.statusCode, 400)
+  assert.equal(res.json().error.code, 'bad_git_action')
+  assert.ok(branches(repo).includes('en-cours'))
+})

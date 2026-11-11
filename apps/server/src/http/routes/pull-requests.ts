@@ -98,9 +98,9 @@ const NOT_READY: Record<PullRequestNotReady['reason'], string> = {
   merged: 'Pull request #{number} is already merged.',
   closed: 'Pull request #{number} was closed without being merged.',
   draft: 'Pull request #{number} is still a draft.',
-  conflicting: 'Pull request #{number} conflicts with its base.',
-  checks_failing: 'Pull request #{number} has failing checks.',
-  checks_pending: 'Pull request #{number} still has checks running.',
+  conflicting: 'Pull request #{number} conflicts with its base: rebase it first.',
+  checks_failing: 'Some checks of pull request #{number} failed.',
+  checks_pending: 'Some checks of pull request #{number} are still running.',
 }
 
 /** Le message de la forge part tel quel : c'est lui qui dit quoi faire (rebaser, attendre). */

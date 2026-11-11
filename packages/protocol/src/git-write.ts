@@ -117,7 +117,10 @@ export const gitActionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('branch-rebase'), name: refNameSchema }),
   z.object({ kind: z.literal('branch-rename'), name: refNameSchema, to: refNameSchema }),
   z.object({ kind: z.literal('branch-delete'), name: refNameSchema, force: z.boolean().default(false) }),
-  /** Plusieurs branches d'un geste, sans garde « fusionnée » : c'est l'appelant qui juge. */
+  /**
+   * Plusieurs branches d'un geste, sans garde « fusionnée » : c'est l'appelant qui juge.
+   * Refusé par `git/act` ; seule la route `branches/cleanup` le lance, et le journal le rejoue.
+   */
   z.object({ kind: z.literal('branches-delete'), names: z.array(refNameSchema).min(1).max(100) }),
   z.object({ kind: z.literal('branch-track'), name: refNameSchema, upstream: z.string().trim().min(1).max(200) }),
   z.object({ kind: z.literal('commit-switch'), hash: hashSchema }),

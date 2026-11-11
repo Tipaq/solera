@@ -13,7 +13,7 @@ import {
 } from '@solera/protocol'
 import { credentialEnv } from '../../git-credential/helper.js'
 import { GitError } from '../../git.js'
-import { impactOf, perform, readStashDetails, readWriteState, serialized, UndoJournal } from '../../git-write.js'
+import { impactOf, perform, readStashDetails, readWriteState, serialized, UndoJournal, type FailedBranch } from '../../git-write.js'
 import { visibleProject } from '../../projects/scope.js'
 import { triageBranchCleanup } from '../../worktrees/branch-cleanup.js'
 import type { AppContext } from '../context.js'
@@ -256,7 +256,7 @@ export function registerGitActionRoutes(
     const result = await serialized(repo, async (): Promise<BranchCleanupResultDto> => {
       const { deletable, refused } = triageBranchCleanup(parsed.data.names, await worktreeStatus.looseBranches(project))
       if (deletable.length === 0) return { deleted: [], refused }
-      let failed: { name: string; message: string }[]
+      let failed: FailedBranch[]
       try {
         const outcome = await perform(repo, { kind: 'branches-delete', names: deletable }, credentialEnv(ctx.config.paths, user.id))
         journal.record(repo, outcome.undo)
@@ -271,8 +271,11 @@ export function registerGitActionRoutes(
         refused: [...refused, ...failed.map(({ name, message }) => ({ name, reason: 'failed' as const, message }))],
       }
     })
-    // Des branches parties : la liste ne doit pas les resservir le temps du recalcul.
-    if (result.deleted.length > 0) worktreeStatus.forget(project.id)
+    // Des branches parties, ou peut-être parties : la liste ne doit pas les resservir le
+    // temps du recalcul.
+    if (result.deleted.length > 0 || result.refused.some((branch) => branch.reason === 'failed')) {
+      worktreeStatus.forget(project.id)
+    }
     return result
   })
 }
@@ -281,6 +284,11 @@ function parseAction(body: unknown): GitAction {
   const parsed = gitActionSchema.safeParse(body)
   if (!parsed.success) {
     throw badRequest('bad_git_action', parsed.error.issues[0]?.message ?? 'Unsupported git action.')
+  }
+  // Supprimer en lot ne se juge pas ici : il passe par `branches/cleanup`, qui rejuge
+  // « fusionnée ». Le journal le rejoue sans passer par cette porte.
+  if (parsed.data.kind === 'branches-delete') {
+    throw badRequest('bad_git_action', 'Delete branches through branches/cleanup.')
   }
   return parsed.data
 }

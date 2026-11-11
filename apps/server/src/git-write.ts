@@ -524,7 +524,13 @@ export interface ActionOutcome {
   /** Ce que git a dit, quand ça vaut d'être lu : « Already up to date. » */
   message: string
   /** Un geste sur plusieurs branches : celles que git a refusées, et pourquoi. */
-  failed?: { name: string; message: string }[]
+  failed?: FailedBranch[]
+}
+
+/** Une branche que git a refusé de toucher, et ce qu'il a dit. */
+export interface FailedBranch {
+  name: string
+  message: string
 }
 
 /**
@@ -736,8 +742,11 @@ export async function perform(
     case 'branches-delete': {
       // Une à une : une branche que git refuse n'empêche pas les autres de partir, et
       // l'annulation ne ressuscite que celles qui sont parties.
+      // Supprimer une branche non extraite ne bouge pas HEAD : lu avant, il ne peut plus
+      // échouer une fois les branches parties.
+      const head = await after()
       const deleted: { name: string; hash: string }[] = []
-      const failed: { name: string; message: string }[] = []
+      const failed: FailedBranch[] = []
       for (const name of action.names) {
         try {
           const hash = (await git(cwd, ['rev-parse', '--verify', `refs/heads/${name}`])).trim()
@@ -754,7 +763,7 @@ export async function perform(
           subject: deleted.map((branch) => branch.name).join(', '),
           target: deleted.length === 1 ? deleted[0]!.hash.slice(0, 7) : null,
           steps: deleted.map((branch) => ['branch', branch.name, branch.hash]),
-          head: await after(),
+          head,
           requiresClean: false,
           stashHash: null,
           redo: { kind: 'branches-delete', names: deleted.map((branch) => branch.name) },
