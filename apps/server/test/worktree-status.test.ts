@@ -872,7 +872,20 @@ test("la carte d'un arbre et d'une branche : session, création, nom", async (t)
   // Le numéro d'une carte d'un autre projet ne désigne rien ici.
   git(repo, 'branch', 'feat/157-ailleurs', 'main')
 
-  const list = await new WorktreeStatusService(db, new EventLog(db)).get(projectRow)
+  const service = new WorktreeStatusService(db, new EventLog(db))
+  const first = await service.get(projectRow)
+  assert.equal(first.branchesPending, true)
+  // La liste que les faits des branches complètent garde leurs cartes.
+  let list = first
+  for (let i = 0; i < 50 && list.branchesPending; i += 1) {
+    await new Promise((done) => setTimeout(done, 50))
+    list = await service.get(projectRow)
+  }
+  assert.equal(list.branchesPending, false)
+  assert.deepEqual(
+    first.branches.map((b) => [b.name, b.card?.number ?? null, b.cardSource]),
+    list.branches.map((b) => [b.name, b.card?.number ?? null, b.cardSource]),
+  )
   const ofTree = Object.fromEntries(list.worktrees.map((w) => [w.name, [w.card?.number ?? null, w.cardSource]]))
   assert.deepEqual(ofTree, {
     'feat/153-a': [155, 'session'],
