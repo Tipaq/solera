@@ -1,4 +1,4 @@
-import type { ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, ScheduleWorktreeMode } from '@solera/protocol'
+import type { ActionPlacement, ActionRunStatus, ActionRunTrigger, AgentKind, CardColumn, CardRelationKind, ConfinedServices, EnvironmentWhere, GitForge, InstructionsMode, IssueProvider, IssuePush, IssueState, SchedulePlace, ScheduleScope, ScheduleWorktreeMode } from '@solera/protocol'
 import { sql } from 'drizzle-orm'
 import {
   blob,
@@ -1064,6 +1064,12 @@ export const conversations = sqliteTable(
      */
     scheduleId: text('schedule_id'),
     /**
+     * Où tourne un fil sans projet ouvert par une tâche Savoir (`vault`) ou Instance
+     * (`instance`) ; null : son dossier à lui sous `threads`. Sur le fil et non relu de sa
+     * tâche : la tâche supprimée, il doit reprendre là où il a commencé.
+     */
+    place: text('place').$type<SchedulePlace>(),
+    /**
      * JSON `AgentConfig` : la configuration complète que ce fil reçoit, l'héritage puis
      * ses propres changements. Recalculée à chaque lancement de session et à chaque
      * changement d'un niveau du dessus ; c'est elle que lisent les runners et les gardes
@@ -1192,6 +1198,12 @@ export const scheduledTasks = sqliteTable(
     id: text('id').primaryKey(),
     /** Projet visé, ou NULL : une tâche planifiée n'a pas besoin de projet non plus. */
     projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    /**
+     * Où s'ouvrent ses tirs : `project` quand `project_id` est posé, sinon le vault
+     * (`vault`), le dossier de données (`instance`) ou un dossier vide par fil (`none`).
+     * Figée à la création.
+     */
+    scope: text('scope').$type<ScheduleScope>().notNull().default('project'),
     /** Compte au nom duquel les tirs s'ouvrent : celui qui a créé la tâche. */
     userId: text('user_id')
       .notNull()
@@ -1388,6 +1400,13 @@ export const projectActions = sqliteTable(
     lastScheduledAt: timestamp('last_scheduled_at'),
     /** NULL quand rien n'est prévu : sans cadence, en pause, ou ponctuelle déjà tirée. */
     nextRunAt: timestamp('next_run_at'),
+    /**
+     * Où tourne un service : `follow` là où on le lance, `root` à la racine, `branch`
+     * à la racine quand elle est sur `pinned_branch`. Hors relecture : il ne change pas ce
+     * qui s'exécute, seulement lequel des arbres du projet le porte.
+     */
+    placement: text('placement').$type<ActionPlacement>().notNull().default('follow'),
+    pinnedBranch: text('pinned_branch'),
     /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
     agentConversationId: text('agent_conversation_id'),
     createdAt: timestamp('created_at').notNull(),

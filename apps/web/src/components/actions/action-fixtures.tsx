@@ -14,7 +14,7 @@ const now = Date.UTC(2026, 9, 24, 10, 0)
 function action(id: string, extra: Partial<ProjectActionDto>): ProjectActionDto {
   const shown = {
     id, projectId: PROJECT_ID, label: id, description: null, kind: 'task' as const, command: 'pnpm test', subdir: null,
-    url: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: now,
+    url: null, placement: 'follow' as const, pinnedBranch: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: now,
     updatedAt: now, service: null, lastRun: null, runs: [], onDemand: true, schedule: null, ...extra,
   }
   // Une action validée l'a été telle qu'elle est ; une proposée n'a jamais été relue.
@@ -27,7 +27,9 @@ export const ACTIONS: ProjectActionDto[] = [
   action('a-dev', {
     label: 'Serveur de dev', kind: 'service', command: 'pnpm dev --host 127.0.0.1', subdir: 'apps/web',
     description: 'Vite, avec le rechargement à chaud.', url: 'http://nimbus.local:{port}',
-    service: { unit: 'solera-app-action-a-dev.service', state: 'active', cwd: '/srv/nimbus/apps/web', ports: [5173], startedAt: now - 3_600_000 },
+    service: { unit: 'solera-app-action-a-dev.service', state: 'active', cwd: '/srv/nimbus/apps/web', ports: [5173], startedAt: now - 3_600_000,
+      served: { path: '/srv/nimbus', worktreeId: null, root: true, branch: 'main', head: 'a1b2c3d', ahead: 0, behind: 0, dirtyFiles: 0 },
+    },
   }),
   action('a-tests', {
     label: 'Tests', command: 'pnpm test',
@@ -39,7 +41,7 @@ export const ACTIONS: ProjectActionDto[] = [
   }),
   action('a-storybook', {
     label: 'Storybook', kind: 'service', command: 'pnpm storybook',
-    service: { unit: 'solera-app-action-a-storybook.service', state: 'failed', cwd: null, ports: [], startedAt: null },
+    service: { unit: 'solera-app-action-a-storybook.service', state: 'failed', cwd: null, ports: [], startedAt: null, served: null },
   }),
 ]
 

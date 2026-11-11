@@ -179,6 +179,7 @@ export function registerActionRoutes(
     }
     const result = await runner.run(action, baseDir(action.projectId, project.workspacePath, body), body.conversationId ?? null, {
       args: body.args,
+      switch: body.switch,
     })
     return reply.status(result.alreadyRunning ? 200 : 201).send(result)
   })

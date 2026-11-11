@@ -535,10 +535,31 @@
       "breakpoints": true
     },
     {
-      "idx": 77,
+      "idx": 80,
       "version": "6",
-      "when": 1794434102824,
-      "tag": "0077_commande_planifiee",
+      "when": 1794430761348,
+      "tag": "0080_skills_de_solera",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1794434842605,
+      "tag": "0081_portee_des_taches",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1794435584338,
+      "tag": "0082_placement_des_services",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1794437927815,
+      "tag": "0083_commande_planifiee",
       "breakpoints": true
     }
   ]

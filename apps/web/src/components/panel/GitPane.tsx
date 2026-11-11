@@ -13,10 +13,9 @@ import { ConflictsView } from './git/ConflictsView'
 import { GraphView } from './git/GraphView'
 import { HistoryView } from './git/HistoryView'
 import { RebaseView } from './git/RebaseView'
-import { Rail, type Destination } from './git/rail'
+import { GitLine, type Destination } from './git/GitLine'
 import { SearchView } from './git/SearchView'
 import { StashesView } from './git/StashesView'
-import { Toolbar } from './git/toolbar'
 import { TurnChangesView } from './git/TurnChangesView'
 import { WorkingView } from './git/WorkingView'
 import type { MenuContext } from './git/menus'
@@ -30,14 +29,16 @@ import {
 } from './git/queries'
 
 /**
- * La vue Git du panneau : un rail de destinations, une barre d'outils au-dessus, et
- * le dépôt partout ailleurs.
+ * La vue Git du panneau : une ligne d'outils (`GitLine`) qui choisit la destination et
+ * porte les gestes du dépôt, et le dépôt partout ailleurs.
  *
  * Le dessin est arrêté par la carte #10 et daté dans `docs/audits/2026-10-15-git/` :
  * quatre tours de maquettes, dont le tour 3 pour la règle de rangement et le tour 4
  * pour l'échelle des colonnes. **Les planches sont la spécification**, pas une
  * inspiration — les notes sous chaque image disent pourquoi, ce qui évite de défaire
- * une décision en croyant l'améliorer.
+ * une décision en croyant l'améliorer. Une seule l'a été, et sciemment : le rail
+ * vertical du tour 2 est devenu « Affichage ▾ » dans la ligne d'outils, avec la page
+ * projet v2 (carte #222).
  *
  * Le lot 1 posait la lecture ; **ce lot-ci écrit** : indexer, commiter, pousser,
  * basculer, remiser, fusionner, rebaser, réinitialiser. Deux règles traversent tout :
@@ -100,7 +101,7 @@ export const GitPane = memo(function GitPane({
    * Le rebase interactif, quand il est ouvert : la valeur est le point de départ
    * désigné par le menu d'un commit, ou `null` pour l'amont.
    *
-   * Un état plutôt qu'une destination du rail : la règle T0 range dans le rail les
+   * Un état plutôt qu'une destination : la règle T0 range dans « Affichage » les
    * listes qu'on vient consulter, et un rebase n'est pas une liste — c'est un geste
    * sur *ces* commits, qui part du menu de l'un d'eux ou de la branche courante.
    */
@@ -116,8 +117,8 @@ export const GitPane = memo(function GitPane({
   const body = useRef<HTMLDivElement>(null)
   const state = useGitState(scope)
   const graph = useGraph(scope, {}, limit)
-  // Lus dès l'ouverture et pas seulement sur leur destination : c'est d'eux que le
-  // rail tire ses compteurs, et un compteur qui n'apparaît qu'une fois la destination
+  // Lus dès l'ouverture et pas seulement sur leur destination : c'est d'eux que
+  // « Affichage » tire ses compteurs, et un compteur qui n'apparaît qu'une fois la destination
   // visitée ne sert à rien.
   const refs = useRefs(scope, true)
   const stashes = useStashes(scope, true)
@@ -152,7 +153,6 @@ export const GitPane = memo(function GitPane({
   const decoded = decodeScope(scope)
   const threadId = decoded.kind === 'conversation' ? decoded.id : null
 
-  const conflicted = state.data?.conflicted.length ?? 0
   const running = state.data?.rebase ?? null
 
   // Un rebase qui court ouvre son tableau de bord de lui-même : on ne laisse pas
@@ -193,7 +193,7 @@ export const GitPane = memo(function GitPane({
     setSelected(null)
   }
 
-  /** Ni tour ni rebase ne tient la colonne : les destinations du rail s'y montrent. */
+  /** Ni tour ni rebase ne tient la colonne : les destinations d'« Affichage » s'y montrent. */
   const browsing = !checkpoint && !rebasing
 
   const menus: MenuContext = {
@@ -208,13 +208,22 @@ export const GitPane = memo(function GitPane({
   }
 
   return (
-    // `@container` : les colonnes du graphe et les libellés de la barre d'outils
-    // suivent la largeur du **panneau**, pas celle de la fenêtre. Voir `GraphRows`.
+    // `@container` : les colonnes du graphe suivent la largeur du **panneau**, pas
+    // celle de la fenêtre. Voir `GraphRows`.
     <GitActionsProvider scope={scope} lock={state.data?.lock ?? null}>
       <div className="@container flex h-full min-h-0 min-w-0 flex-col">
-        <Toolbar
+        <GitLine
           state={state.data}
-          stashes={counts.stashes}
+          destination={destination}
+          counts={counts}
+          onDestination={(next) => {
+            setDestination(next)
+            setSelected(null)
+            clearCheckpoint()
+            // Changer de destination ferme le plan de rebase qu'on composait — sauf
+            // s'il court déjà, auquel cas il n'y a rien à quitter.
+            if (!running) setRebasing(null)
+          }}
           onRefresh={refresh}
           refreshing={graph.isFetching || state.isFetching}
         />
@@ -222,24 +231,10 @@ export const GitPane = memo(function GitPane({
         <Banners state={state.data} onOpenThread={openThread} />
 
         <div ref={body} className="flex min-h-0 min-w-0 flex-1">
-          <Rail
-            active={destination}
-            counts={counts}
-            conflicted={conflicted}
-            onSelect={(next) => {
-              setDestination(next)
-              setSelected(null)
-              clearCheckpoint()
-              // Quitter le rail ferme le plan de rebase qu'on composait — sauf s'il
-              // court déjà, auquel cas il n'y a rien à quitter.
-              if (!running) setRebasing(null)
-            }}
-          />
-
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {/* Le tour désigné depuis le fil prend la colonne, comme un rebase : c'est la
                 question « qu'est-ce qui a changé ? » posée à un tour plutôt qu'au dépôt.
-                Le rail le referme, et la croix ramène au dépôt. */}
+                « Affichage » le referme, et la croix ramène au dépôt. */}
             {checkpoint && conversationId ? (
               <TurnChangesView
                 conversationId={conversationId}

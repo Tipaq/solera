@@ -41,7 +41,9 @@ async function harness(t: TestContext) {
     app.inject({ method: 'PATCH', url: '/api/projects/project', headers: { 'x-user': user }, payload: { cap } })
   const listed = async (): Promise<ProjectDto> =>
     ((await app.inject('/api/projects')).json() as ProjectDto[]).find((project) => project.id === 'project')!
-  return { setCap, listed }
+  const patch = (payload: Record<string, unknown>) =>
+    app.inject({ method: 'PATCH', url: '/api/projects/project', headers: { 'x-user': 'owner' }, payload })
+  return { setCap, listed, patch }
 }
 
 test('cap : absent par défaut, posé sans ses espaces, relu dans ProjectDto', async (t) => {
@@ -74,4 +76,15 @@ test('cap : 280 caractères au plus, et seul le propriétaire l’écrit', async
 
   assert.equal((await setCap('Autre cap', 'guest')).statusCode, 403)
   assert.equal((await listed()).cap, 'b'.repeat(280))
+})
+
+test('cap : part avec le reste du brouillon des réglages, en un seul PATCH', async (t) => {
+  const { patch, listed } = await harness(t)
+  const saved = await patch({ name: 'Nimbus', cap: 'Où va le projet.', color: '#e11d48', visibility: 'private', turnCheckpoints: false })
+  assert.equal(saved.statusCode, 200, saved.body)
+  const project = await listed()
+  assert.deepEqual(
+    { name: project.name, cap: project.cap, color: project.color, visibility: project.visibility, turnCheckpoints: project.turnCheckpoints },
+    { name: 'Nimbus', cap: 'Où va le projet.', color: '#e11d48', visibility: 'private', turnCheckpoints: false },
+  )
 })
