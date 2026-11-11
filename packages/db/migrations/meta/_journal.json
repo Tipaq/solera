@@ -535,9 +535,16 @@
       "breakpoints": true
     },
     {
-      "idx": 77,
+      "idx": 80,
       "version": "6",
-      "when": 1794433590134,
+      "when": 1794430761348,
+      "tag": "0080_skills_de_solera",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1794434842605,
       "tag": "0081_portee_des_taches",
       "breakpoints": true
     }
