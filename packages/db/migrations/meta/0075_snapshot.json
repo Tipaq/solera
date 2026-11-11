@@ -1,9 +1,160 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7fd35d56-4ff4-49ba-b0bd-5e80248217a2",
-  "prevId": "70a5ab27-488f-4f99-a0a9-8eec0006c1f7",
+  "id": "d2c030c2-7efa-4829-93a3-2b6246e3bb19",
+  "prevId": "30535ec0-95f0-4f7d-a11e-bf32cdebddb3",
   "tables": {
+    "action_runs": {
+      "name": "action_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "action_id": {
+          "name": "action_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trigger": {
+          "name": "trigger",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "terminal_id": {
+          "name": "terminal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cwd": {
+          "name": "cwd",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exit_code": {
+          "name": "exit_code",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "excerpt": {
+          "name": "excerpt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_action_runs_action": {
+          "name": "idx_action_runs_action",
+          "columns": [
+            "action_id",
+            "started_at"
+          ],
+          "isUnique": false
+        },
+        "idx_action_runs_project": {
+          "name": "idx_action_runs_project",
+          "columns": [
+            "project_id",
+            "started_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "action_runs_action_id_project_actions_id_fk": {
+          "name": "action_runs_action_id_project_actions_id_fk",
+          "tableFrom": "action_runs",
+          "tableTo": "project_actions",
+          "columnsFrom": [
+            "action_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "action_runs_project_id_projects_id_fk": {
+          "name": "action_runs_project_id_projects_id_fk",
+          "tableFrom": "action_runs",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "action_runs_conversation_id_conversations_id_fk": {
+          "name": "action_runs_conversation_id_conversations_id_fk",
+          "tableFrom": "action_runs",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "agent_requests": {
       "name": "agent_requests",
       "columns": {
@@ -1534,6 +1685,13 @@
         "branch_pr_url": {
           "name": "branch_pr_url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "branch_pr_merged_at": {
+          "name": "branch_pr_merged_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -3555,6 +3713,34 @@
           "notNull": false,
           "autoincrement": false
         },
+        "approved_kind": {
+          "name": "approved_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_command": {
+          "name": "approved_command",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_subdir": {
+          "name": "approved_subdir",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_url": {
+          "name": "approved_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "agent_conversation_id": {
           "name": "agent_conversation_id",
           "type": "text",
@@ -4105,24 +4291,8 @@
           "name": "cadence",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
-        },
-        "on_demand": {
-          "name": "on_demand",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "worktree_mode": {
-          "name": "worktree_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'root'"
         },
         "execution_mode": {
           "name": "execution_mode",
@@ -5259,6 +5429,13 @@
         "removed_at": {
           "name": "removed_at",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "card_id": {
+          "name": "card_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false

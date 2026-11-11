@@ -422,8 +422,9 @@ export class TaskScheduler {
     let name = stem
     for (let suffix = 2; branches.has(name) || trees.has(name); suffix++) name = `${stem}-${suffix}`
 
+    // Un tir ne travaille pour aucune carte : son arbre n'est rattaché à aucune.
     const base = (await defaultBase(project.workspacePath)) ?? 'HEAD'
-    return createWorktree(this.ctx, project, task.userId, name, base)
+    return createWorktree(this.ctx, project, task.userId, name, base, null)
   }
 
   /** Le dernier tir qui a réellement ouvert une session, celui dont le suivant hérite. */

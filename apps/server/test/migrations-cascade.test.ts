@@ -139,7 +139,7 @@ test('le drapeau « jalon » est posé sur les cartes de premier niveau qui ont 
 test('rendre la cadence facultative garde les tâches planifiées et leurs tirs', async (t) => {
   const dir = await harness(t)
   const file = join(dir, 'test.sqlite')
-  const before = await migrationsBefore(dir, '0075_tache_a_la_demande')
+  const before = await migrationsBefore(dir, '0076_tache_a_la_demande')
 
   // `scheduled_runs` est fille de `scheduled_tasks` en cascade : la recréation de la mère
   // ne doit pas emporter l'historique des tirs.

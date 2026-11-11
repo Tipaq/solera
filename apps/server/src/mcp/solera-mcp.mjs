@@ -839,7 +839,7 @@ const ALL_TOOLS = [
   {
     name: 'run_action',
     description:
-      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore n'est pas doublée.",
+      "Lance une action du projet dans le worktree de cette conversation, comme le ferait un clic de l'utilisateur. Un `service` démarre son unité systemd : la réponse dit s'il tient, ses ports, et comment lire son journal. Une `task` s'ouvre dans un terminal du panneau, sous les yeux de l'utilisateur, mais tu n'en lis pas la sortie : pour exploiter un résultat, exécute plutôt la commande dans ton shell. Une exécution qui tourne encore dans ce worktree n'est pas doublée. La commande part telle quelle, sans argument ajouté.",
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string', description: "Identifiant de l'action (voir list_actions)." } },

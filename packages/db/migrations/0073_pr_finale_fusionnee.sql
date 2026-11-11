@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `branch_pr_merged_at` integer;

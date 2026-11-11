@@ -35,7 +35,6 @@ export function useCodeData(projectId: string | undefined, project: ProjectDto |
         title: entry.conversation.title,
         agent: entry.conversation.agent,
         worktreeId: entry.conversation.worktreeId,
-        cardId: entry.conversation.card?.id ?? null,
         tone: state ? (TONE[state] ?? null) : null,
         at: entry.since,
       }
@@ -47,7 +46,7 @@ export function useCodeData(projectId: string | undefined, project: ProjectDto |
   }, [live, project, statuses, pullRequests, cards, git, isPending])
 }
 
-/** Les branches sans arbre du projet, avec leur PR et leur carte devinée. */
+/** Les branches sans arbre du projet, avec leur PR et leur carte. */
 export function useBranchInfos(projectId: string | undefined, project: ProjectDto | undefined, code: CodeData): BranchInfo[] {
   const { data: pullRequests } = usePullRequests(project?.git ? projectId : undefined)
   const { data: cards } = useCards(projectId)

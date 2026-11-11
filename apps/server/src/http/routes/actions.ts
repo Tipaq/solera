@@ -1,11 +1,13 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { conversations, projects, type ProjectActionRow } from '@solera/db'
+import { conversations, projects, worktrees, type ProjectActionRow } from '@solera/db'
 import {
+  actionPlaceBodySchema,
   createProjectActionBodySchema,
   runProjectActionBodySchema,
   serviceActionControlSchema,
   updateProjectActionBodySchema,
+  type ActionRunDetailDto,
   type ProjectActionDto,
 } from '@solera/protocol'
 import {
@@ -14,9 +16,11 @@ import {
   deleteAction,
   listActionRows,
   loadAction,
+  rejectAction,
   updateAction,
   type ActionRunner,
 } from '../../actions/actions.js'
+import { runDetails } from '../../actions/runs.js'
 import type { SessionManager } from '../../sessions/session-manager.js'
 import type { AppContext } from '../context.js'
 import { conflict, notFound } from '../errors.js'
@@ -49,8 +53,24 @@ export function registerActionRoutes(
     return { action, project }
   }
 
-  /** Le worktree de la conversation si elle est donnée et du même projet, sinon la racine. */
-  const baseDir = (action: ProjectActionRow, workspacePath: string, conversationId?: string) => {
+  /**
+   * Le worktree de la conversation si elle est donnée, sinon le worktree choisi, sinon
+   * la racine. L'un ou l'autre doit appartenir au projet de l'action.
+   */
+  const baseDir = (
+    action: ProjectActionRow,
+    workspacePath: string,
+    { conversationId, worktreeId }: { conversationId?: string; worktreeId?: string },
+  ) => {
+    if (worktreeId) {
+      const worktree = ctx.db
+        .select({ path: worktrees.path })
+        .from(worktrees)
+        .where(and(eq(worktrees.id, worktreeId), eq(worktrees.projectId, action.projectId), isNull(worktrees.removedAt)))
+        .get()
+      if (!worktree) throw notFound('worktree_not_found', 'Worktree not found.')
+      return worktree.path
+    }
     if (!conversationId) return workspacePath
     const row = ctx.db
       .select({ projectId: conversations.projectId })
@@ -96,6 +116,29 @@ export function registerActionRoutes(
     return runner.toDto(approveAction(ctx.db, action))
   })
 
+  /**
+   * Refuser ce qu'un agent propose : la commande relue en dernier revient, validée. Une
+   * action jamais relue n'a rien où revenir : elle est supprimée (204).
+   */
+  app.post('/api/actions/:id/reject', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const { action } = guardAction(id, user.id)
+    const restored = rejectAction(ctx.db, action)
+    if (restored) return reply.send(await runner.toDto(restored))
+    await runner.forget(action)
+    deleteAction(ctx.db, id)
+    return reply.status(204).send()
+  })
+
+  /** Les derniers passages, avec l'extrait de leur sortie : le détail d'une action. */
+  app.get('/api/actions/:id/runs', async (request): Promise<ActionRunDetailDto[]> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    guardAction(id, user.id)
+    return runDetails(ctx.db, id)
+  })
+
   app.delete('/api/actions/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -113,7 +156,9 @@ export function registerActionRoutes(
     if (!action.approvedAt) {
       throw conflict('action_not_approved', 'Review this action before running it.')
     }
-    const result = await runner.run(action, baseDir(action, project.workspacePath, body.conversationId), body.conversationId ?? null)
+    const result = await runner.run(action, baseDir(action, project.workspacePath, body), body.conversationId ?? null, {
+      args: body.args,
+    })
     return reply.status(result.alreadyRunning ? 200 : 201).send(result)
   })
 
@@ -121,8 +166,8 @@ export function registerActionRoutes(
     const user = requireUser(request)
     const { id, op } = request.params as { id: string; op: string }
     const { action, project } = guardAction(id, user.id)
-    const body = runProjectActionBodySchema.parse(request.body ?? {})
-    const base = baseDir(action, project.workspacePath, body.conversationId)
+    const body = actionPlaceBodySchema.parse(request.body ?? {})
+    const base = baseDir(action, project.workspacePath, body)
     if (op === 'logs') return runner.logs(action, base)
     // Relancer un service arrêté revient à le lancer : même relecture préalable.
     if (op === 'restart' && !action.approvedAt) {

@@ -80,16 +80,17 @@ export function registerWorktreeRoutes(
   /**
    * Les chantiers du projet : tous les arbres que git ou la base connaissent, jugés
    * contre la branche par défaut, avec les conversations qui y tiennent. Servi depuis
-   * le cache du service, qui ne bloque jamais sur un gros dépôt (voir là-bas).
+   * le cache du service, qui ne bloque jamais sur un gros dépôt (voir là-bas), avec les
+   * tailles sur disque déjà mesurées.
    */
   app.get('/api/projects/:id/worktrees/status', async (request): Promise<WorktreeStatusListDto> => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const project = loadProject(id, user.id)
     if (!(await readGitStatus(project.workspacePath))) {
-      return { base: null, computedAt: Date.now(), fresh: true, worktrees: [], branches: [], branchesPending: false }
+      return { base: null, computedAt: Date.now(), fresh: true, worktrees: [], branches: [], branchesPending: false, rootSizeBytes: null, sizesPending: false }
     }
-    return worktreeStatus.get(project)
+    return worktreeStatus.sized(project)
   })
 
   /**
@@ -109,7 +110,7 @@ export function registerWorktreeRoutes(
       rows.map(async (project) => {
         if (!(await readGitStatus(project.workspacePath))) return null
         try {
-          return [project.id, await worktreeStatus.get(project)] as const
+          return [project.id, await worktreeStatus.sized(project)] as const
         } catch {
           return null
         }
@@ -149,7 +150,7 @@ export function registerWorktreeRoutes(
     const project = loadProject(id, user.id)
     // Une carte enfant part de la branche de sa parente, où elle sera fusionnée (#68).
     const base = (await parentBranchFor(ctx.db, project, body.cardId ?? null)) ?? body.baseRef
-    const row = await createWorktree(ctx, project, user.id, body.name, base)
+    const row = await createWorktree(ctx, project, user.id, body.name, base, body.cardId ?? null)
     worktreeStatus.forget(project.id)
 
     return reply.status(201).send(await toDto(row))
@@ -196,6 +197,7 @@ export function registerWorktreeRoutes(
     // « worktree disparu », qui propose de les archiver ou de les continuer à la racine.
     markWorktreeGone(ctx.db, id)
     worktreeStatus.forget(project.id)
+    worktreeStatus.forgetSize(row.path)
 
     return reply.status(204).send()
   })
