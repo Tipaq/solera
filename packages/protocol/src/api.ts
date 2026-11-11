@@ -165,8 +165,10 @@ export const updateProjectBodySchema = z
     /**
      * Un changement du niveau du projet, champ par champ (#120) : ce que l'écran des
      * réglages du projet envoie. `defaultConfig` reste lu pour les clients d'avant.
+     * Une liste quand le brouillon des réglages en porte plusieurs, une par portée au
+     * plus (le commun, puis chaque CLI) : ils s'appliquent dans l'ordre.
      */
-    configLayer: configLayerPatchSchema,
+    configLayer: z.union([configLayerPatchSchema, z.array(configLayerPatchSchema).max(5)]),
     /** Chemin absolu d'un dossier qui porte un `.storybook/` ; `null` délie le DS. */
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),

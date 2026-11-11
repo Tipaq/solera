@@ -225,6 +225,78 @@ try {
   await menu.getByRole('button', { name: 'Général', exact: true }).click()
   await until(() => menu.getByRole('button', { name: 'Identité', exact: true }).getAttribute('aria-current'), (value) => value === 'location', 'Général allume Identité')
 
+  // ─── Agents : des rangées à plat, dans le brouillon ────────────────────────
+  await page.goto(`${base}/p/${nimbus.id}/settings`)
+  await menu.getByRole('button', { name: 'Agents', exact: true }).click()
+  for (const group of ['Ce que l’agent demande à Solera', 'Ce que Solera lui prête', 'Permissions du CLI', 'Modèle par défaut']) {
+    await menu.getByRole('button', { name: group, exact: true }).waitFor()
+  }
+  // Plus de cartes emboîtées : l'ancien bloc et ses titres ont disparu.
+  assert.equal(await page.locator('#reglage-agent-settings').count(), 0, 'L’ancien bloc des réglages d’agent a disparu')
+  assert.equal(await page.getByRole('heading', { name: 'Modèles par défaut' }).count(), 0)
+  const decisions = row('agent-requests-decisions')
+  await decisions.getByText('hérité du compte', { exact: true }).waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  for (const [anchor, name] of [['reglages-agents-1', 'agents-demandes'], ['reglages-agents-2', 'agents-prete'], ['reglages-agents-3', 'agents-permissions'], ['reglages-agents-4', 'agents-modele']]) {
+    await shot(page.locator(`#${anchor}`), `1280-${name}`)
+  }
+  const stored = (await reread()).configLayer
+  // Trois choix trop longs pour un segment : une liste, qui ne déborde pas de sa colonne.
+  const policies = { Interdit: 'deny', 'Demande mon accord': 'ask', Automatique: 'auto' }
+  const decisionsList = decisions.getByRole('combobox', { name: 'Décisions' })
+  const current = (await decisionsList.textContent()).trim()
+  const choiceLabel = Object.keys(policies).find((label) => !current.startsWith(label))
+  const choose = async (label) => {
+    await decisionsList.click()
+    await page.getByRole('option', { name: new RegExp(`^${label}`) }).click()
+  }
+  await choose(choiceLabel)
+  await bar.filter({ hasText: '1 modification non enregistrée' }).waitFor()
+  await decisions.getByRole('img', { name: 'Modifié, pas encore enregistré' }).waitFor()
+  await menu.getByRole('button', { name: /^Agents/ }).getByRole('img', { name: 'Modifications en attente' }).waitFor()
+  await decisions.getByRole('button', { name: 'modifié ici' }).waitFor()
+  await shot(page.locator('#reglages-agents-1'), '1280-agents-modifie')
+  // Le CLI choisi ne règle que ce qui existe pour lui ; le brouillon survit au changement.
+  const cli = row('agent-permissions-cli').getByRole('radiogroup', { name: 'CLI' })
+  assert.equal(await row('agent-permissions-sandbox').count(), 0, 'Claude n’a pas de bac à sable')
+  await cli.getByRole('radio', { name: 'Codex' }).click()
+  await row('agent-permissions-sandbox').waitFor()
+  await shot(page.locator('#reglages-agents-3'), '1280-agents-permissions-codex')
+  await cli.getByRole('radio', { name: 'Claude' }).click()
+  // Annuler efface aussi les réglages d'agent.
+  await barButton('Annuler').click()
+  await bar.waitFor({ state: 'detached' })
+  assert.ok((await decisionsList.textContent()).startsWith(current), 'Annuler rend la valeur enregistrée')
+
+  // Enregistrer : le niveau du projet part avec le reste, dans le même PATCH.
+  const agentPatches = []
+  const onPatch = (request) => {
+    if (request.method() === 'PATCH' && new URL(request.url()).pathname === `/api/projects/${nimbus.id}`) agentPatches.push(request.postDataJSON())
+  }
+  page.on('request', onPatch)
+  await choose(choiceLabel)
+  await row('name').getByRole('textbox').fill('Nimbus agents')
+  await bar.filter({ hasText: '2 modifications non enregistrées' }).waitFor()
+  await barButton('Enregistrer').click()
+  await page.getByText('2 réglages enregistrés.', { exact: true }).waitFor()
+  const value = policies[choiceLabel]
+  assert.deepEqual(agentPatches, [{ name: 'Nimbus agents', configLayer: [{ scope: 'shared', set: { decisions: value } }] }], 'Un seul PATCH, le niveau du projet avec le reste')
+  assert.equal((await reread()).configLayer.shared.decisions, value)
+  await decisions.getByRole('button', { name: 'modifié ici' }).waitFor()
+  assert.equal(await decisions.getByRole('img', { name: 'Modifié, pas encore enregistré' }).count(), 0)
+
+  // Revenir à l'héritage : un `unset`, compté et enregistré comme le reste.
+  agentPatches.length = 0
+  await decisions.getByRole('button', { name: 'modifié ici' }).click()
+  await decisions.getByText('hérité du compte', { exact: true }).waitFor()
+  await bar.filter({ hasText: '1 modification non enregistrée' }).waitFor()
+  await barButton('Enregistrer').click()
+  await page.getByText('1 réglage enregistré.', { exact: true }).waitFor()
+  assert.deepEqual(agentPatches, [{ configLayer: [{ scope: 'shared', unset: ['decisions'] }] }])
+  assert.deepEqual((await reread()).configLayer.shared, stored.shared)
+  page.off('request', onPatch)
+  await page.getByText('1 réglage enregistré.', { exact: true }).waitFor({ state: 'detached', timeout: 6000 })
+
   // ─── Zone de danger : retirer un projet, pour de vrai ─────────────────────
   await page.goto(`${base}/p/${docs.id}/settings`)
   await row('remove').getByRole('button', { name: 'Retirer le projet' }).click()
@@ -251,6 +323,8 @@ try {
     assert.equal(await guestMenu.getByRole('button', { name: hidden, exact: true }).count(), 0, `${hidden} n’est pas montré à un membre`)
   }
   assert.ok(await guestPage.locator('#reglage-name').getByRole('textbox').isDisabled(), 'Le nom se lit sans se changer')
+  assert.equal(await guestPage.locator('[id^="reglage-agent-"]').count(), 0, 'Les réglages d’agent ne sont pas montrés à un membre')
+  await guestMenu.getByRole('button', { name: 'Ce que les agents savent', exact: true }).waitFor()
   assert.ok(await guestPage.locator('#reglage-color').getByRole('radio').first().isDisabled())
   await shot(guestPage.locator('[data-place-content]'), '1280-partage')
   await guest.close()
@@ -269,6 +343,9 @@ try {
   for (const [anchor, name] of [['reglages-general-0', 'identite'], ['reglages-general-1', 'apparence'], ['reglages-general-2', 'execution']]) {
     await shot(page.locator(`#${anchor}`), `390-${name}`)
   }
+  for (const [anchor, name] of [['reglages-agents-1', 'agents-demandes'], ['reglages-agents-2', 'agents-prete'], ['reglages-agents-3', 'agents-permissions'], ['reglages-agents-4', 'agents-modele']]) {
+    await shot(page.locator(`#${anchor}`), `390-${name}`)
+  }
   await goTo.selectOption({ label: 'Général › Exécution' })
   await until(() => page.locator('#reglages-general-2').evaluate((element) => element.getBoundingClientRect().top), (top) => top < 300, 'le sélecteur amène au groupe')
   await page.getByRole('button', { name: 'Rechercher un réglage', exact: true }).last().click()
@@ -282,7 +359,7 @@ try {
   await shot(page, '390-brouillon')
 
   assert.deepEqual(errors, [])
-  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, recherche, lecture suivie, Zone de danger, partage, téléphone.')
+  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, agents à plat, recherche, lecture suivie, Zone de danger, partage, téléphone.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

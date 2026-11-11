@@ -14,12 +14,13 @@ import {
   SettingInput,
 } from '../components/project-settings/GeneralControls'
 import { ProjectDesignSystem, ProjectIssueSource } from '../components/project-settings/Integrations'
-import { ProjectAgentSettings } from '../components/project-settings/ProjectAgentSettings'
+import { useAgentSettingItems } from '../components/project-settings/AgentSettingRows'
 import { ProjectDevcontainer } from '../components/project-settings/ProjectDevcontainer'
 import { SettingsPage, type SettingsCategory } from '../components/settings-page/SettingsPage'
 import type { SettingItem } from '../components/settings-page/SettingRow'
 import { ProjectSkills } from '../components/skills/ProjectSkills'
 import { ApiRequestError } from '../lib/api'
+import { useConfigLayerDraft } from '../lib/config-layers'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import { useCapability } from '../lib/instance'
 import {
@@ -45,8 +46,9 @@ const NOTICE_MS = 3200
  * Les réglages d'un projet (page projet v2, PP-21) : une page à menu gauche, un
  * brouillon unique et sa barre d'enregistrement.
  *
- * Général et Zone de danger sont faits ici ; Agents et Intégrations posent encore les
- * blocs de l'ancienne page, que #243 à #245 refont en rangées.
+ * Général, les réglages d'agent et la Zone de danger sont faits ici ; les savoirs des
+ * agents et les Intégrations posent encore les blocs de l'ancienne page, que #244 et
+ * #245 refont en rangées.
  */
 export function ProjectSettingsPage() {
   const { projectId } = useParams()
@@ -59,14 +61,15 @@ export function ProjectSettingsPage() {
 }
 
 /**
- * Le brouillon des réglages simples : les modifications par-dessus l'enregistré, comptées
- * dans la barre et envoyées ensemble en un seul `PATCH`.
+ * Le brouillon des réglages simples et du niveau d'agent du projet : les modifications
+ * par-dessus l'enregistré, comptées dans la barre et envoyées ensemble en un seul `PATCH`.
  */
 function useSettingsDraft(project: ProjectDto) {
   const t = useTranslate()
   const { data: environments } = useProjectEnvironments(project.id)
   const { data: devcontainer } = useProjectDevcontainer(project.id)
   const update = useUpdateProject()
+  const agents = useConfigLayerDraft(project)
   const [edits, setEdits] = useState<SettingsEdits>({})
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -90,16 +93,20 @@ function useSettingsDraft(project: ProjectDto) {
       update.reset()
       setEdits((current) => ({ ...current, [field]: value }))
     },
+    count: changed.length + agents.changed.length,
     reset: () => {
       update.reset()
       setEdits({})
+      agents.clear()
     },
     save: async () => {
-      const count = changed.length
+      const count = changed.length + agents.changed.length
+      const configLayer = agents.body()
       // L'enregistré relu (la mutation attend l'invalidation) avant d'effacer le brouillon :
       // sinon les champs repasseraient un instant par les anciennes valeurs.
-      await update.mutateAsync({ id: project.id, ...settingsPatchOf(base, edits) })
+      await update.mutateAsync({ id: project.id, ...settingsPatchOf(base, edits), ...(configLayer.length > 0 ? { configLayer } : {}) })
       setEdits({})
+      agents.clear()
       setNotice(t(count > 1 ? 'projectSettings.save.done.other' : 'projectSettings.save.done.one', { count: String(count) }))
     },
     busy: update.isPending,
@@ -108,6 +115,7 @@ function useSettingsDraft(project: ProjectDto) {
     notice,
     environments,
     devcontainer,
+    agents,
   }
 }
 
@@ -117,6 +125,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
   const model = useSettingsDraft(project)
   const { draft, set, isChanged, environments, devcontainer } = model
   const owner = project.isOwner
+  const agentRows = useAgentSettingItems(project, model.agents)
 
   const categories: SettingsCategory[] = [
     { key: 'general', label: t('projectSettings.category.general') },
@@ -248,8 +257,9 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
     },
   ]
 
-  /* Agents et Intégrations : les blocs de l'ancienne page, en attendant leurs rangées
-     (#243 à #245). Un projet partagé n'en montre que ce que les agents savent. */
+  /* Les savoirs des agents et les Intégrations : les blocs de l'ancienne page, en
+     attendant leurs rangées (#244, #245). Un projet partagé ne montre des Agents que ce
+     que les agents savent. */
   const knowledge = t('projectSettings.group.knowledge')
   const agents: SettingItem[] = [
     {
@@ -268,14 +278,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
       label: t('projectSettings.item.skills.label'), keywords: keywords('projectSettings.item.skills.keywords'),
       render: () => <ProjectSkills projectId={project.id} isOwner={owner} />,
     },
-    ...(owner
-      ? [{
-          id: 'agent-settings', category: 'agents', group: t('projectSettings.group.agentSettings'), kind: 'bare',
-          label: t('project.agentSettings.title'), help: t('project.agentSettings.description'),
-          keywords: keywords('projectSettings.item.agentSettings.keywords'),
-          render: () => <ProjectAgentSettings project={project} />,
-        } satisfies SettingItem]
-      : []),
+    ...agentRows,
   ]
   const integrations: SettingItem[] = owner
     ? [
@@ -302,7 +305,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
       }]
     : []
 
-  const count = model.changed.length
+  const count = model.count
   const message = model.problem ?? model.error
   return (
     <SettingsPage
