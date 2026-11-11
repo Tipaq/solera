@@ -2864,6 +2864,9 @@ export const fr: Catalog = {
 
   // Commun
   'common.select.placeholder': 'Choisir...',
+  'common.month.previous': 'Mois précédent',
+  'common.month.next': 'Mois suivant',
+  'common.time.type': "Taper l'heure",
 
   // Queue de l'extraction : divers
   'common.copy': 'Copier',

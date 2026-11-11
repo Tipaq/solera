@@ -2868,6 +2868,9 @@ export const en = {
 
   // Commun
   'common.select.placeholder': 'Choose...',
+  'common.month.previous': 'Previous month',
+  'common.month.next': 'Next month',
+  'common.time.type': 'Type a time',
 
   // Queue de l'extraction : divers
   'common.copy': 'Copy',
