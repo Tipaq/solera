@@ -53,8 +53,8 @@ export function activityCapacity(height: number, requests: number, sessions: num
  *
  * Elle défile avec les lieux et les sessions, dans le bloc qui défile de la colonne. Le
  * bloc entier tient sous **le quart de la hauteur de ce bloc**, et ce qui dépasse est
- * compté sur une ligne ; la modale porte le reste. Au doigt, l'en-tête
- * seul : ses deux compteurs disent l'état, et la zone basse garde toute la hauteur.
+ * compté sur une ligne ; la modale porte le reste. Au doigt, l'en-tête seul : ses deux
+ * compteurs disent l'état, et la zone basse garde toute la hauteur.
  */
 export function SidebarActivity({
   conversations = EMPTY,
@@ -154,6 +154,8 @@ export function SidebarActivity({
         </button>
 
         {coarse ? null : forYou.length === 0 && sessions.length === 0 ? (
+          // `pl-9` hors de l'échelle courante, à dessein : 8 + 36 = 44 px, le départ des
+          // textes de la colonne, sous le libellé de l'en-tête.
           <p className="py-1.5 pr-2.5 pl-9 text-xs text-ink-faint">{t('shell.overview.quiet')}</p>
         ) : (
           <>

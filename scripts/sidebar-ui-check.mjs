@@ -98,7 +98,8 @@ try {
   const [seedCode] = await once(seed, 'exit')
   assert.equal(seedCode, 0, seed.diagnostics)
 
-  browser = await launchBrowser()
+  // Les barres de défilement visibles : la gouttière réservée (SID-2) a alors une largeur.
+  browser = await launchBrowser({ scrollbars: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
@@ -239,9 +240,12 @@ try {
   const scroller = column.locator('[data-sidebar-scroll]')
   const searchBlock = column.getByRole('button', { name: /^Rechercher/ }).locator('xpath=..')
   const band = column.getByRole('button', { name: 'Masquer la navigation' }).locator('xpath=ancestor::header[1]')
-  for (const [name, block] of [['bloc qui défile', scroller], ['bloc du haut', searchBlock], ['bande', band]]) {
-    assert.equal(await block.evaluate((node) => getComputedStyle(node).scrollbarGutter), 'stable', `${name} : gouttière réservée`)
+  const gutters = []
+  for (const block of [scroller, searchBlock, band]) {
+    gutters.push(await block.evaluate((node) => node.offsetWidth - node.clientWidth - parseFloat(getComputedStyle(node).borderLeftWidth) - parseFloat(getComputedStyle(node).borderRightWidth)))
   }
+  assert.ok(gutters[0] > 0, `la gouttière du bloc qui défile est réservée : ${gutters}`)
+  assert.equal(distinct(gutters).length, 1, `la bande, le bloc du haut et le bloc qui défile réservent la même gouttière : ${gutters}`)
 
   /*
     SID-1 : un seul bloc qui défile — lieux, Activité, projets et sessions ensemble. Le
@@ -263,6 +267,12 @@ try {
   const placesBefore = (await places.boundingBox()).y
   await scroller.evaluate((node) => { node.scrollTop = 160 })
   assert.ok((await places.boundingBox()).y < placesBefore - 100, 'les lieux montent avec le reste')
+  // La colonne déborde maintenant : la barre a paru, et le bord droit n'a pas bougé.
+  assert.deepEqual(
+    distinct([...await rightsFromRight(places.locator('li > div > span[aria-hidden]')), ...await rightsFromRight(column.locator('kbd'))]),
+    [rightEdge[0]],
+    'rien ne bouge quand la barre paraît',
+  )
   assert.deepEqual(await fixed(), fixedBefore, 'le haut et le compte restent en place')
   await page.screenshot({ path: join(shots, 'defilement-unique.png') })
   await scroller.evaluate((node) => { node.scrollTop = 0 })
