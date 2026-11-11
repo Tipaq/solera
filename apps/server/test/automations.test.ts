@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { ProjectActionDto, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
+import type { ActionRunDto, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import type { ActionInput, Automation, UnifiedRun } from '../../web/src/lib/automations.js'
 import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 
@@ -69,7 +69,14 @@ const action = (over: Partial<ActionInput> = {}): ActionInput => ({
   updatedAt: NOW - 30 * DAY,
   service: null,
   lastRun: null,
+  runs: [],
+  approved: null,
   ...over,
+})
+
+const cmdRun = (id: string, status: ActionRunDto['status'], startedAt: number, exitCode: number | null): ActionRunDto => ({
+  id, actionId: 'a1', trigger: 'manual', conversationId: null, terminalId: null, cwd: '/w/p1', status, exitCode, startedAt,
+  finishedAt: status === 'running' ? null : startedAt + MIN,
 })
 
 const service = (state: string, over: Partial<NonNullable<ProjectActionDto['service']>> = {}) => ({
@@ -209,10 +216,10 @@ test('fromAction : les passages du serveur priment, et les arrêtés ne jugent p
   const item = fromAction(
     action({
       runs: [
-        { id: 'r3', status: 'failed', exitCode: 1, startedAt: NOW - HOUR, finishedAt: NOW - HOUR + MIN, conversationId: null },
-        { id: 'r2', status: 'stopped', exitCode: 130, startedAt: NOW - 2 * HOUR, finishedAt: NOW - 2 * HOUR + MIN, conversationId: null },
-        { id: 'r1', status: 'failed', exitCode: 1, startedAt: NOW - 3 * HOUR, finishedAt: NOW - 3 * HOUR + MIN, conversationId: null },
-        { id: 'r0', status: 'succeeded', exitCode: 0, startedAt: NOW - 4 * HOUR, finishedAt: NOW - 4 * HOUR + MIN, conversationId: null },
+        cmdRun('r3', 'failed', NOW - HOUR, 1),
+        cmdRun('r2', 'stopped', NOW - 2 * HOUR, 130),
+        cmdRun('r1', 'failed', NOW - 3 * HOUR, 1),
+        cmdRun('r0', 'succeeded', NOW - 4 * HOUR, 0),
       ],
       lastRun: { terminalId: 'x', alive: false, exitCode: 1, startedAt: NOW - HOUR },
     }),
@@ -224,7 +231,7 @@ test('fromAction : les passages du serveur priment, et les arrêtés ne jugent p
 test('fromAction : un passage planifié qui tourne sans terminal est live « run »', () => {
   const item = fromAction(
     action({
-      runs: [{ id: 'r1', status: 'running', exitCode: null, startedAt: NOW - 4 * MIN, finishedAt: null, conversationId: null, terminalId: null }],
+      runs: [cmdRun('r1', 'running', NOW - 4 * MIN, null)],
     }),
   )
   assert.deepEqual(item.live, { kind: 'run', since: NOW - 4 * MIN, conversationId: null, checking: false })
@@ -437,10 +444,7 @@ test('un service en échec se dit pareil sur la tuile et dans le détail', () =>
     action({
       kind: 'service',
       service: service('failed'),
-      runs: [
-        { id: 'r2', status: 'failed', exitCode: 1, startedAt: NOW - HOUR, finishedAt: NOW - HOUR + 1, conversationId: null },
-        { id: 'r1', status: 'failed', exitCode: 1, startedAt: NOW - 2 * HOUR, finishedAt: NOW - 2 * HOUR + 1, conversationId: null },
-      ],
+      runs: [cmdRun('r2', 'failed', NOW - HOUR, 1), cmdRun('r1', 'failed', NOW - 2 * HOUR, 1)],
     }),
   )
   assert.equal(actionState(item, NOW, t).text, 'Arrêté sur une erreur')
@@ -598,16 +602,12 @@ test('healthOf : taux sur les passages jugés des 30 jours, coût, dernière err
 })
 
 test('healthOf : la dernière erreur d’une commande se lit dans son extrait', () => {
-  const item = fromAction(
-    action({
-      runs: [
-        {
-          id: 'r1', status: 'failed', exitCode: 2, startedAt: NOW - HOUR, finishedAt: NOW - HOUR + 1, conversationId: null,
-          excerpt: 'purge…\nfind: ‘logs/archive’: No such file or directory\nexit 2',
-        },
-      ],
-    }),
-  )
+  const failed = cmdRun('r1', 'failed', NOW - HOUR, 2)
+  // La liste ne porte pas l'extrait : seuls les passages détaillés (`useActionRuns`) l'ont.
+  assert.equal(healthOf(fromAction(action({ runs: [failed] })), () => null, NOW).lastFailure?.error, null)
+  const item = fromAction(action({ runs: [failed] }), [
+    { ...failed, excerpt: 'purge…\nfind: ‘logs/archive’: No such file or directory\nexit 2' },
+  ])
   // Le passage d'une commande porte la session d'où elle est partie : son coût n'est pas le sien.
   const health = healthOf(item, () => 5, NOW)
   assert.deepEqual(health.lastFailure, { error: 'find: ‘logs/archive’: No such file or directory', code: 2 })
