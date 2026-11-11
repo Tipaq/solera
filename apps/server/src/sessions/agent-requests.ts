@@ -415,6 +415,8 @@ export class AgentRequests {
       await this.reviews?.mergeReady()
       // Et la PR d'une parente vers la branche par défaut, quand ses enfants sont closes.
       await this.parentPullRequests?.sweep()
+      // Et la fusion de ces PR sur la forge, sans retenir le balayage : voir `checkMerged`.
+      void this.parentPullRequests?.checkMerged().catch((err: unknown) => this.logger?.warn({ err }, 'PR de parente non relues'))
     } finally {
       this.busy = false
     }
@@ -1032,7 +1034,7 @@ export class AgentRequests {
 
     assertWorktreeName(name)
     const base = (await parentBranchFor(this.ctx.db, project, cardId)) ?? 'HEAD'
-    const row = await createWorktree(this.ctx, project, requester.userId, name, base)
+    const row = await createWorktree(this.ctx, project, requester.userId, name, base, cardId)
     this.worktreeStatus?.forget(project.id)
     return row.id
   }
@@ -1080,7 +1082,7 @@ export class AgentRequests {
         (await parentBranchFor(this.ctx.db, project, requester.cardId)) ||
         (await defaultBase(project.workspacePath)) ||
         'HEAD'
-      row = await createWorktree(this.ctx, project, requester.userId, branch, base)
+      row = await createWorktree(this.ctx, project, requester.userId, branch, base, requester.cardId)
       origin = row.baseRef === branch
         ? `La branche « ${branch} » existait : elle est reprise telle quelle.`
         : `Branche neuve, partie de ${base}.`
@@ -2366,6 +2368,9 @@ export class AgentRequests {
    * Lance l'action dans le worktree de la session qui demande. Permis même pour une
    * action encore proposée : l'agent pourrait exécuter la même commande dans son shell,
    * la relecture protège le clic de l'utilisateur, pas l'agent de lui-même.
+   *
+   * Sans arguments ajoutés : la commande qui part d'ici est celle que l'action porte,
+   * et une variante se lance dans son propre shell.
    */
   private async runAction(
     requester: ConversationRow,
@@ -2373,8 +2378,13 @@ export class AgentRequests {
     payload: Record<string, unknown>,
   ): Promise<string> {
     if (!this.actions) throw new Refusal('Les actions ne sont pas disponibles sur ce serveur.')
+    if (payload.args !== undefined && payload.args !== null) {
+      throw new Refusal("`args` n'est pas accepté : run_action lance la commande de l'action telle quelle. Pour une variante, exécute-la dans ton shell.")
+    }
     const row = this.projectAction(requester, payload.id)
-    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester) ?? project.workspacePath, requester.id)
+    const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester) ?? project.workspacePath, requester.id, {
+      trigger: 'agent',
+    })
     if (result.service) {
       // Un temps pour qu'un échec immédiat (port pris, commande introuvable) se voie.
       if (!result.alreadyRunning) await new Promise((resolve) => setTimeout(resolve, 2000))

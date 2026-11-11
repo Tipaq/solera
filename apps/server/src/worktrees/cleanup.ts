@@ -226,6 +226,7 @@ export class WorktreeCleanup {
 
     if (tree.id) markWorktreeGone(this.db, tree.id)
     this.status.forget(project.id)
+    this.status.forgetSize(tree.path)
     return result
   }
 

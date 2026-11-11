@@ -340,6 +340,11 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       parent: row.parentId ? (parents.get(row.parentId) ?? null) : null,
       milestone: row.milestone,
       children: offspring.get(row.id) ?? [],
+      branch: row.branch,
+      branchPr:
+        row.branchPrNumber !== null && row.branchPrUrl !== null
+          ? { number: row.branchPrNumber, url: row.branchPrUrl, mergedAt: row.branchPrMergedAt }
+          : null,
       acceptedAt: row.acceptedAt,
       toClarifySince: row.toClarifySince,
       createdBy: row.createdBy,

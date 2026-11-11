@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  actionRunStatusOf,
   resolveActionUrl,
+  type ActionRunDetailDto,
   type CreateProjectActionBody,
   type ProjectActionDto,
   type ProjectActionRunResult,
@@ -63,6 +65,33 @@ export function useApproveAction() {
   })
 }
 
+/**
+ * Refuser ce qu'un agent propose : la commande relue en dernier revient, ou l'action
+ * disparaît si elle n'a jamais été relue (rien n'est alors rendu).
+ */
+export function useRejectAction() {
+  const invalidate = useInvalidate()
+  return useMutation({
+    mutationFn: (id: string) => api.post<ProjectActionDto | undefined>(`/api/actions/${id}/reject`),
+    onSuccess: () => invalidate(),
+  })
+}
+
+/**
+ * Les derniers passages d'une action avec l'extrait de leur sortie, pour son détail : la
+ * liste des actions ne les porte pas, relue trop souvent pour charger vingt extraits par
+ * action. Relue avec elle, pour qu'un passage en cours se close sous les yeux.
+ */
+export function useActionRuns(actionId: string | null) {
+  return useQuery({
+    queryKey: [...ACTIONS_KEY, actionId, 'runs'],
+    queryFn: () => api.get<ActionRunDetailDto[]>(`/api/actions/${actionId}/runs`),
+    enabled: actionId !== null,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  })
+}
+
 export function useDeleteAction() {
   const invalidate = useInvalidate()
   return useMutation({
@@ -74,6 +103,10 @@ export function useDeleteAction() {
 /**
  * Lancer, piloter un service ou suivre son journal. Ce qui ouvre un terminal le met
  * devant : cliquer un bouton sans voir sa sortie donnerait l'impression qu'il n'a rien fait.
+ *
+ * Où : le worktree de `conversationId`, sinon `worktreeId` (« Lancer dans… » hors
+ * conversation), sinon la racine. `args` s'ajoutent à la commande d'un lancement
+ * (« relancer seulement les échecs »).
  */
 export function useRunAction() {
   const invalidate = useInvalidate()
@@ -82,14 +115,21 @@ export function useRunAction() {
       action,
       op = 'run',
       conversationId,
+      worktreeId,
+      args,
     }: {
       action: ProjectActionDto
       op?: 'run' | 'logs' | ServiceActionControl
       conversationId?: string
+      worktreeId?: string
+      args?: string[]
     }) =>
       api.post<ProjectActionRunResult>(
         op === 'run' ? `/api/actions/${action.id}/run` : `/api/actions/${action.id}/service/${op}`,
-        conversationId ? { conversationId } : {},
+        {
+          ...(conversationId ? { conversationId } : worktreeId ? { worktreeId } : {}),
+          ...(op === 'run' && args && args.length > 0 ? { args } : {}),
+        },
       ),
     onSuccess: (result, { action }) => {
       invalidate(action.projectId)
@@ -118,9 +158,10 @@ export interface ActionView {
 export function actionView(action: ProjectActionDto): ActionView {
   const { service, lastRun } = action
   const live = service ? RUNNING_STATES.includes(service.state) : (lastRun?.alive ?? false)
+  // Une commande arrêtée (Ctrl-C, 130) n'a pas échoué.
   const failed = service
     ? service.state === 'failed'
-    : lastRun !== null && !lastRun.alive && lastRun.exitCode !== null && lastRun.exitCode !== 0
+    : lastRun !== null && !lastRun.alive && lastRun.exitCode !== null && actionRunStatusOf(lastRun.exitCode) === 'failed'
   const primary =
     action.status === 'proposed' ? 'review' : service && live ? 'stop' : live ? 'output' : 'run'
   return { live, failed, primary, href: service && live ? resolveActionUrl(action.url, service.ports) : null }
@@ -146,7 +187,9 @@ export function describeActionState(action: ProjectActionDto, t: (key: MessageKe
   if (!lastRun) return t('actions.state.neverRun')
   if (lastRun.alive) return t('actions.state.taskRunning')
   const when = relativeDate(lastRun.startedAt)
-  if (lastRun.exitCode === null) return t('actions.state.taskInterrupted', { when })
+  if (lastRun.exitCode === null || actionRunStatusOf(lastRun.exitCode) === 'stopped') {
+    return t('actions.state.taskInterrupted', { when })
+  }
   return lastRun.exitCode === 0
     ? t('actions.state.taskOk', { when })
     : t('actions.state.taskFailed', { code: lastRun.exitCode, when })

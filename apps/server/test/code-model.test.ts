@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { CardDto, LooseBranchDto, ProjectPullRequestDto, WorktreeStatusDto } from '@solera/protocol'
+import { cardNumberOfBranch, type CardDto, type LooseBranchDto, type ProjectPullRequestDto, type WorktreeStatusDto } from '@solera/protocol'
 import type { TreeFields, TreeRow, BranchInfo, CodeSession } from '../../web/src/lib/code-model.js'
 
 const {
@@ -23,7 +23,6 @@ const {
   inboxInTree,
   treeOf,
   shortBranch,
-  cardNumberOf,
   baseLineOf,
   formatBytes,
   codeDataOf,
@@ -310,14 +309,17 @@ test('l’arbre d’une ligne : un arbre de travail avant la racine', () => {
 
 /* ------------------------------------------------------------------ petites fonctions */
 
-test('nom court, carte devinée du nom', () => {
+test('nom court, numéro de carte du nom', () => {
   assert.equal(shortBranch('feat/12-truc'), '12-truc')
   assert.equal(shortBranch('jalon/164-page'), '164-page')
   assert.equal(shortBranch('main'), 'main')
-  assert.equal(cardNumberOf('feat/153-titre'), 153)
-  assert.equal(cardNumberOf('jalon/164-page-projet'), 164)
-  assert.equal(cardNumberOf('spike/terminal-wasm'), null)
-  assert.equal(cardNumberOf('153-titre'), null)
+  assert.equal(cardNumberOfBranch('feat/153-titre'), 153)
+  assert.equal(cardNumberOfBranch('jalon/164-page-projet'), 164)
+  // `cardBranchName` d'une carte au titre vide.
+  assert.equal(cardNumberOfBranch('feat/153'), 153)
+  assert.equal(cardNumberOfBranch('spike/terminal-wasm'), null)
+  assert.equal(cardNumberOfBranch('fix/2fa-login'), null)
+  assert.equal(cardNumberOfBranch('153-titre'), null)
 })
 
 test('pluriel : un seul, sinon plusieurs (zéro compris)', () => {
@@ -353,26 +355,27 @@ test('ligne de base : la racine sur la base, ou sortie ailleurs', () => {
 const status = (over: Partial<WorktreeStatusDto>): WorktreeStatusDto => ({
   id: 'w1', name: 'feat/12-truc', path: '/w/feat', branch: 'feat/12-truc', external: false, state: 'unmerged',
   ahead: 1, behind: 2, modified: 1, untracked: 2, conflicts: false, unmergedCommits: true, mergedPullRequest: null,
-  head: 'abc', lastCommitAt: NOW - 3 * DAY, lastEditAt: NOW - 2 * DAY, conversations: [], ...over,
+  head: 'abc', lastCommitAt: NOW - 3 * DAY, lastEditAt: NOW - 2 * DAY, conversations: [], sizeBytes: null, card: null, cardSource: null, ...over,
 })
 
 const card = (number: number, over: Partial<CardDto> = {}): CardDto =>
   ({ id: `k${number}`, number, title: `Carte ${number}`, parent: null, children: [], column: 'in_progress', ...over }) as CardDto
 
-test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de simulé', () => {
+test('assemblage : la racine sur sa vraie branche, les arbres jugés, les tailles mesurées, rien de simulé', () => {
   const cards = [card(164), card(12, { parent: { id: 'k164', number: 164, title: 'Carte 164', column: 'in_progress' } }), card(30)]
   const sessions: CodeSession[] = [
-    { id: 's-root', title: 'r', agent: 'claude', worktreeId: null, cardId: null, tone: 'running', at: NOW - 1000 },
-    { id: 's-old', title: 'o', agent: 'codex', worktreeId: 'w1', cardId: 'k30', tone: null, at: NOW - 5 * DAY },
-    { id: 's-new', title: 'n', agent: 'claude', worktreeId: 'w1', cardId: 'k12', tone: 'awaiting', at: NOW - DAY },
+    { id: 's-root', title: 'r', agent: 'claude', worktreeId: null, tone: 'running', at: NOW - 1000 },
+    { id: 's-old', title: 'o', agent: 'codex', worktreeId: 'w1', tone: null, at: NOW - 5 * DAY },
+    { id: 's-new', title: 'n', agent: 'claude', worktreeId: 'w1', tone: 'awaiting', at: NOW - DAY },
   ]
   const data = codeDataOf({
     project: { workspacePath: '/p', git: { branch: 'feat/repointage', changedFiles: 3 } },
     statuses: {
-      base: 'main', computedAt: NOW, fresh: true,
+      base: 'main', computedAt: NOW, fresh: true, rootSizeBytes: 2_000_000_000, sizesPending: true,
       worktrees: [
-        status({}),
-        status({ id: null, name: 'jalon/164-x', path: '/w/j', branch: 'jalon/164-x', external: true, state: 'merged', mergedPullRequest: 9, unmergedCommits: false, modified: 0, untracked: 0 }),
+        // Le serveur a tranché : la carte de l'arbre est celle de sa session.
+        status({ sizeBytes: 450_000_000, card: { id: 'k12', number: 12 }, cardSource: 'session' }),
+        status({ id: null, name: 'jalon/164-x', path: '/w/j', branch: 'jalon/164-x', external: true, state: 'merged', mergedPullRequest: 9, unmergedCommits: false, modified: 0, untracked: 0, card: { id: 'k164', number: 164 }, cardSource: 'name' }),
       ],
       branches: [loose('feat/77-y', false)],
       branchesPending: false,
@@ -389,7 +392,7 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   assert.equal(root!.root, true)
   assert.equal(root!.branch, 'feat/repointage')
   assert.equal(root!.uncommitted, 3)
-  assert.equal(root!.sizeBytes, null)
+  assert.equal(root!.sizeBytes, 2_000_000_000)
   assert.deepEqual(root!.sessions.map((entry) => entry.id), ['s-root'])
 
   assert.equal(tree!.verdict, 'waiting')
@@ -399,14 +402,40 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   assert.deepEqual(tree!.pr, { number: 5, url: 'u5', state: 'ready' })
   assert.equal(tree!.uncommitted, 3)
   assert.equal(tree!.lastUsedAt, NOW - DAY)
-  assert.equal(tree!.sizeBytes, null)
+  assert.equal(tree!.sizeBytes, 450_000_000)
 
   assert.equal(jalon!.verdict, 'clean')
   assert.equal(jalon!.key, '/w/j')
   assert.deepEqual(jalon!.pr, { number: 9, url: null, state: 'merged' })
   assert.deepEqual(jalon!.card, { id: 'k164', number: 164, title: 'Carte 164', milestone: null, source: 'name' })
+  assert.equal(jalon!.sizeBytes, null, 'pas encore mesuré')
 
   assert.deepEqual(data.branches, [loose('feat/77-y', false)])
+})
+
+test("assemblage : la carte d'un arbre est celle du serveur, rien n'est deviné du nom", () => {
+  const data = codeDataOf({
+    project: { workspacePath: '/p', git: null },
+    statuses: {
+      base: 'main', computedAt: NOW, fresh: true,
+      worktrees: [
+        status({ id: 'w1', path: '/w/a', branch: 'feat/12-truc', card: null, cardSource: null }),
+        status({ id: 'w2', path: '/w/b', branch: 'feat/x', card: { id: 'k30', number: 30 }, cardSource: 'created' }),
+        // Une carte que la liste du client ne connaît pas (encore) : rien plutôt qu'une carte vide.
+        status({ id: 'w3', path: '/w/c', branch: 'feat/y', card: { id: 'k99', number: 99 }, cardSource: 'session' }),
+      ],
+      branches: [],
+      branchesPending: false,
+    },
+    pullRequests: undefined,
+    cards: [card(12), card(30)],
+    sessions: [{ id: 's', title: 's', agent: 'claude', worktreeId: 'w1', tone: null, at: NOW }],
+    now: NOW,
+  })
+  const byKey = new Map(data.trees.map((tree) => [tree.key, tree.card]))
+  assert.equal(byKey.get('/w/a'), null)
+  assert.deepEqual(byKey.get('/w/b'), { id: 'k30', number: 30, title: 'Carte 30', milestone: null, source: 'created' })
+  assert.equal(byKey.get('/w/c'), null)
 })
 
 test('assemblage : hors dépôt, ni racine ni arbres', () => {
@@ -418,18 +447,24 @@ test('assemblage : hors dépôt, ni racine ni arbres', () => {
 
 function loose(name: string, merged: boolean, extra: Partial<LooseBranchDto> = {}): LooseBranchDto {
   return {
-    name, merged, remoteOnly: false, head: 'h', subject: null, lastCommitAt: null, ahead: null, behind: null, recentCommits: [],
+    name, merged, remoteOnly: false, head: 'h', subject: null, lastCommitAt: null, ahead: null, behind: null, recentCommits: [], card: null, cardSource: null,
     ...extra,
   }
 }
 
-test('branches sans arbre : PR, carte devinée, et ce que le serveur ne dit pas encore à null', () => {
+test('branches sans arbre : PR, carte du serveur, et ce que le serveur ne dit pas encore à null', () => {
   const infos = branchInfosOf({
-    branches: [loose('feat/12-truc', false), loose('feat/old', true), loose('spike/z', false)],
+    branches: [
+      loose('feat/12-truc', false, { card: { id: 'k12', number: 12 }, cardSource: 'name' }),
+      loose('feat/old', true, { card: { id: 'k30', number: 30 }, cardSource: 'created' }),
+      loose('spike/z', false),
+    ],
     pullRequests: { available: true, fetchedAt: NOW, pullRequests: [{ number: 5, url: 'u5', title: 'Le titre', branch: 'feat/12-truc', base: 'main', state: 'draft', checks: { passed: 0, pending: 0, failed: [] }, review: null, updatedAt: NOW }] },
-    cards: [card(12)],
+    cards: [card(12), card(30)],
   })
   assert.deepEqual(infos.map((entry) => [entry.name, entry.kind]), [['feat/12-truc', 'pr'], ['spike/z', 'unmerged'], ['feat/old', 'merged']])
+  assert.equal(infos[1]!.card, null)
+  assert.equal(infos[2]!.card?.source, 'created')
   const first = infos[0]!
   assert.deepEqual(first.pr, { number: 5, url: 'u5', state: 'draft', title: 'Le titre' })
   assert.deepEqual(first.card, { id: 'k12', number: 12, title: 'Carte 12', milestone: null, source: 'name' })

@@ -200,6 +200,17 @@ export interface CardLinkDto {
 }
 
 /**
+ * La PR d'une branche de parente vers la branche par défaut, que Solera ouvre quand les
+ * enfants sont closes (#68). Un jalon reste « Lancé » tant que `mergedAt` est nul.
+ */
+export interface CardBranchPrDto {
+  number: number
+  url: string
+  /** Fusionnée depuis Solera ou vue fusionnée sur la forge ; `null` tant qu'elle ne l'est pas. */
+  mergedAt: number | null
+}
+
+/**
  * Une conversation rattachée, telle que la carte a besoin de la montrer.
  *
  * `status` est l'état au chargement, comme partout ailleurs : le flux de statuts du
@@ -269,6 +280,13 @@ export interface CardDto {
    * kanban ne la montre pas, et sa colonne se déduit d'eux (`deriveParentColumn`).
    */
   children: CardLinkDto[]
+  /**
+   * La branche où les enfants se fusionnent (#68), créée au premier besoin ; `null` pour
+   * une carte qui n'en a pas encore.
+   */
+  branch: string | null
+  /** La PR de cette branche vers la branche par défaut, une fois ouverte (#187). */
+  branchPr: CardBranchPrDto | null
   /** `null` : venue de l'extérieur et pas encore acceptée. Elle ne lance pas de session. */
   acceptedAt: number | null
   /** « À préciser » depuis cette date, ou `null`. Ne se pose qu'en « à faire ». */
@@ -618,6 +636,16 @@ export function cardBranchName(number: number, title: string): string {
  */
 export function parentBranchName(number: number, title: string): string {
   return branchName('jalon', number, title)
+}
+
+/**
+ * Le numéro de carte que porte un nom de branche fait par `cardBranchName` ou
+ * `parentBranchName` : `feat/153-titre` → 153. Une déduction, que le serveur ne retient
+ * que si le projet a une carte de ce numéro (#168).
+ */
+export function cardNumberOfBranch(name: string): number | null {
+  const match = /\/(\d+)(?:-|$)/.exec(name)
+  return match ? Number(match[1]) : null
 }
 
 function branchName(prefix: string, number: number, title: string): string {

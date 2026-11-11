@@ -22,6 +22,8 @@ export interface PullRequest {
   /** `UNKNOWN` tant que GitHub n'a pas calculé la fusion : il tranchera lui-même. */
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
   checks: { passed: number; pending: number; failed: string[] }
+  /** Quand la forge l'a fusionnée, `null` sinon. Absente d'une forge qui ne la dit pas. */
+  mergedAt?: number | null
 }
 
 /**
@@ -59,7 +61,7 @@ export class ForgeError extends Error {}
 export const ghForge: Forge = {
   async readPullRequest(cwd, ref, token) {
     try {
-      const { stdout } = await gh(cwd, ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state,isDraft,mergeable,statusCheckRollup'], token)
+      const { stdout } = await gh(cwd, ['pr', 'view', ref, '--json', 'number,url,headRefName,headRefOid,baseRefName,state,isDraft,mergeable,mergedAt,statusCheckRollup'], token)
       const value = JSON.parse(stdout) as Record<string, unknown>
       return {
         number: Number(value.number),
@@ -71,6 +73,7 @@ export const ghForge: Forge = {
         isDraft: value.isDraft === true,
         mergeable: value.mergeable === 'MERGEABLE' ? 'MERGEABLE' : value.mergeable === 'CONFLICTING' ? 'CONFLICTING' : 'UNKNOWN',
         checks: countChecks((value.statusCheckRollup ?? null) as RawPullRequest['statusCheckRollup']),
+        mergedAt: typeof value.mergedAt === 'string' ? Date.parse(value.mergedAt) || null : null,
       }
     } catch (err) {
       throw forgeError(err, `Solera n'a pas pu lire la PR « ${ref} »`)

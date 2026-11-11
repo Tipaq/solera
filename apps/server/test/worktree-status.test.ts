@@ -13,6 +13,8 @@ import { touchedPaths } from '../src/events/touched-paths.js'
 import { assessWorktree, branchFacts, defaultBase, listWorktrees, looseBranches, parseWorktreeList } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
+import { DiskUsage, measureDisk, walkSize } from '../src/worktrees/disk-usage.js'
+import { createWorktree } from '../src/worktrees/create.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
@@ -687,4 +689,233 @@ test("le service rend les branches sans attendre leurs faits, puis les complète
   // La suppression en lot ne connaît que les locales : une distante ne se supprime pas.
   const judged = await service.looseBranches(project)
   assert.ok(judged.branches.every((b) => !b.remoteOnly))
+})
+
+test('la taille sur disque : du sous nice, ou le parcours des fichiers, voit les octets écrits', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'solera-disk-usage-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  write(dir, 'deep/blob.bin', 'x'.repeat(200_000))
+  write(dir, 'small.txt', 'y')
+
+  assert.ok((await measureDisk(dir))! >= 200_000)
+  assert.ok((await walkSize(dir)) >= 200_000)
+  assert.equal(await measureDisk(join(dir, 'nowhere')), null, 'un dossier absent ne se mesure pas')
+})
+
+test('la taille sur disque : mesurée en fond, une à la fois, gardée dix minutes, oubliée sur demande', async () => {
+  let now = 1_000
+  let running = 0
+  let peak = 0
+  const calls: string[] = []
+  const sizes = new Map([['/a', 10], ['/b', 20]])
+  let gate: Promise<void> = Promise.resolve()
+  const disk = new DiskUsage({
+    now: () => now,
+    measure: async (path) => {
+      calls.push(path)
+      running++
+      peak = Math.max(peak, running)
+      await gate
+      running--
+      if (path === '/broken') throw new Error('du a échoué')
+      return sizes.get(path) ?? null
+    },
+  })
+
+  // Rien n'attend la mesure : la première lecture rend null et la met en file.
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true })
+  assert.deepEqual(disk.read('/b'), { bytes: null, pending: true })
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true }, 'une seule mesure en file par chemin')
+  await disk.idle()
+  assert.deepEqual(calls, ['/a', '/b'])
+  assert.equal(peak, 1, 'une mesure à la fois, la machine est partagée')
+  assert.deepEqual(disk.read('/a'), { bytes: 10, pending: false })
+
+  // Dans les dix minutes, resservie sans remesurer.
+  now += 9 * 60_000
+  assert.deepEqual(disk.read('/b'), { bytes: 20, pending: false })
+  await disk.idle()
+  assert.equal(calls.length, 2)
+
+  // Au-delà, l'ancienne valeur reste servie le temps de la suivante.
+  now += 2 * 60_000
+  sizes.set('/b', 25)
+  assert.deepEqual(disk.read('/b'), { bytes: 20, pending: false })
+  await disk.idle()
+  assert.deepEqual(disk.read('/b'), { bytes: 25, pending: false })
+
+  // Une mesure en échec vaut null, sans que la liste attende pour toujours.
+  disk.read('/broken')
+  await disk.idle()
+  assert.deepEqual(disk.read('/broken'), { bytes: null, pending: false })
+
+  // Oubliée (un arbre nettoyé), la taille repart de rien ; une mesure en vol au moment
+  // de l'oubli ne la ramène pas.
+  let release!: () => void
+  gate = new Promise((done) => { release = done })
+  now += 11 * 60_000
+  disk.read('/a')
+  await new Promise((done) => setImmediate(done))
+  disk.forget('/a')
+  release()
+  await disk.idle()
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true })
+  await disk.idle()
+  assert.deepEqual(disk.read('/a'), { bytes: 10, pending: false })
+})
+
+test('le service rend la liste sans attendre les tailles, puis la complète ; le nettoyage les oublie', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-size-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+
+  const heavy = addTree(repo, trees, 'feat/heavy')
+  write(heavy, 'build/blob.bin', 'x'.repeat(300_000))
+  addTree(repo, trees, 'feat/vanished')
+  db.insert(worktrees).values({ id: 'wt-ghost', projectId: 'project', name: 'feat/ghost', path: join(trees, 'ghost'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
+
+  const disk = new DiskUsage()
+  const status = new WorktreeStatusService(db, new EventLog(db), undefined, disk)
+
+  // Le calcul git ne demande aucune taille : seule la lecture pour l'affichage en lance.
+  const bare = await status.get(projectRow)
+  assert.deepEqual([bare.rootSizeBytes, bare.sizesPending], [null, false])
+  assert.ok(bare.worktrees.every((w) => w.sizeBytes === null))
+  await disk.idle()
+  assert.equal(disk.read(heavy).pending, true, 'rien n\'a été mesuré')
+
+  const first = await status.sized(projectRow)
+  assert.equal(first.fresh, true)
+  assert.equal(first.sizesPending, true)
+  assert.equal(first.rootSizeBytes, null)
+  assert.ok(first.worktrees.every((w) => w.sizeBytes === null))
+
+  await disk.idle()
+  const next = await status.sized(projectRow)
+  const byName = new Map(next.worktrees.map((w) => [w.name, w]))
+  assert.equal(next.fresh, true, 'une taille complétée ne périme pas la liste')
+  assert.equal(next.sizesPending, false)
+  assert.ok(byName.get('feat/heavy')!.sizeBytes! >= 300_000)
+  assert.equal(byName.get('feat/ghost')!.sizeBytes, null, 'un arbre introuvable ne se mesure pas')
+  assert.ok(next.rootSizeBytes! > 0)
+
+  // Parti hors de Solera : la liste le voit introuvable, et sa taille est oubliée.
+  const vanished = byName.get('feat/vanished')!.path
+  assert.ok(disk.read(vanished).bytes! > 0)
+  rmSync(vanished, { recursive: true, force: true })
+  status.forget(projectRow.id)
+  assert.equal((await status.sized(projectRow)).worktrees.find((w) => w.path === vanished)?.state, 'missing')
+  assert.deepEqual(disk.read(vanished), { bytes: null, pending: true })
+
+  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => {}, releaseRunner: async () => true })
+  await cleanup.run(projectRow, { path: heavy, deleteBranch: false, stopServices: false })
+  assert.deepEqual(disk.read(heavy), { bytes: null, pending: true }, 'un arbre nettoyé se remesure s\'il revient au même chemin')
+  await disk.idle()
+})
+
+/** Une base migrée avec le propriétaire et le projet sur `repo`. */
+function database(t: TestContext, repo: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-card-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values([
+    { id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 },
+    { id: 'other', name: 'other', workspacePath: join(dir, 'other'), ownerId: 'owner', visibility: 'private', createdAt: 1 },
+  ]).run()
+  const card = (id: string, number: number, projectId = 'project') =>
+    ({ id, projectId, number, title: `Carte ${number}`, description: '', column: 'in_progress', position: number, createdBy: 'owner', createdAt: 1, updatedAt: 1 }) as never
+  db.insert(cards).values([card('k153', 153), card('k154', 154), card('k155', 155), card('k157', 157, 'other')]).run()
+  return { db, dir, projectRow: db.select().from(projects).where(sqlEq(projects.id, 'project')).get()! }
+}
+
+test("la carte d'un arbre et d'une branche : session, création, nom", async (t) => {
+  const { repo, trees } = repository(t)
+  const { db, projectRow } = database(t, repo)
+
+  const row = (id: string, name: string, path: string, cardId: string | null, removedAt: number | null = null) =>
+    db.insert(worktrees).values({ id, projectId: 'project', name, path, baseRef: 'main', createdBy: 'owner', createdAt: 1, removedAt, cardId }).run()
+  const session = (id: string, worktreeId: string, cardId: string | null, updatedAt: number) =>
+    db.insert(conversations).values({ id, projectId: 'project', userId: 'owner', title: id, agent: 'claude', config: '{}', status: 'idle', worktreeId, cardId, createdAt: 1, updatedAt }).run()
+
+  // La session la plus récente qui traite une carte l'emporte sur la carte de création
+  // et sur le nom ; une session plus récente sans carte ne l'efface pas.
+  row('wt-a', 'feat/153-a', addTree(repo, trees, 'feat/153-a'), 'k154')
+  session('s-old', 'wt-a', 'k154', 1)
+  session('s-new', 'wt-a', 'k155', 2)
+  session('s-none', 'wt-a', null, 3)
+  // Sans session : la carte donnée à la création, plutôt que le nom.
+  row('wt-b', 'feat/153-b', addTree(repo, trees, 'feat/153-b'), 'k154')
+  // Ni session ni carte de création : le numéro du nom, s'il désigne une carte du projet.
+  addTree(repo, trees, 'feat/153-c')
+  addTree(repo, trees, 'feat/999-d')
+  addTree(repo, trees, 'fix/sans-numero')
+  // Une carte de création effacée ne compte plus : on retombe sur le nom.
+  row('wt-e', 'feat/155-e', addTree(repo, trees, 'feat/155-e'), 'k-effacee')
+
+  // Les branches sans arbre suivent la même règle, par l'arbre retiré qui les portait.
+  git(repo, 'branch', 'feat/155-loose', 'main')
+  git(repo, 'branch', 'feat/old', 'main')
+  row('wt-old', 'feat/old', join(trees, 'old'), 'k154', 5)
+  git(repo, 'branch', 'feat/153-done', 'main')
+  row('wt-done', 'feat/153-done', join(trees, 'done'), 'k154', 5)
+  session('s-done', 'wt-done', 'k155', 4)
+  // Le numéro d'une carte d'un autre projet ne désigne rien ici.
+  git(repo, 'branch', 'feat/157-ailleurs', 'main')
+
+  const service = new WorktreeStatusService(db, new EventLog(db))
+  const first = await service.get(projectRow)
+  assert.equal(first.branchesPending, true)
+  // La liste que les faits des branches complètent garde leurs cartes.
+  let list = first
+  for (let i = 0; i < 50 && list.branchesPending; i += 1) {
+    await new Promise((done) => setTimeout(done, 50))
+    list = await service.get(projectRow)
+  }
+  assert.equal(list.branchesPending, false)
+  assert.deepEqual(
+    first.branches.map((b) => [b.name, b.card?.number ?? null, b.cardSource]),
+    list.branches.map((b) => [b.name, b.card?.number ?? null, b.cardSource]),
+  )
+  const ofTree = Object.fromEntries(list.worktrees.map((w) => [w.name, [w.card?.number ?? null, w.cardSource]]))
+  assert.deepEqual(ofTree, {
+    'feat/153-a': [155, 'session'],
+    'feat/153-b': [154, 'created'],
+    'feat/153-c': [153, 'name'],
+    'feat/999-d': [null, null],
+    'fix/sans-numero': [null, null],
+    'feat/155-e': [155, 'name'],
+  })
+  assert.deepEqual(list.worktrees.find((w) => w.name === 'feat/153-a')?.card, { id: 'k155', number: 155 })
+
+  const ofBranch = Object.fromEntries(list.branches.map((b) => [b.name, [b.card?.number ?? null, b.cardSource]]))
+  assert.deepEqual(ofBranch, {
+    'feat/155-loose': [155, 'name'],
+    'feat/old': [154, 'created'],
+    'feat/153-done': [155, 'session'],
+    'feat/157-ailleurs': [null, null],
+  })
+})
+
+test("un arbre créé pour une carte la garde, si elle est du projet", async (t) => {
+  const { repo } = repository(t)
+  const { db, dir, projectRow } = database(t, repo)
+  const ctx = { db, config: { paths: { worktrees: join(dir, 'worktrees') } } } as never
+
+  const mine = await createWorktree(ctx, projectRow, 'owner', 'feat/153-mine', 'main', 'k153')
+  assert.equal(mine.cardId, 'k153')
+  const foreign = await createWorktree(ctx, projectRow, 'owner', 'feat/x', 'main', 'k157')
+  assert.equal(foreign.cardId, null, "la carte d'un autre projet n'est pas retenue")
+  const none = await createWorktree(ctx, projectRow, 'owner', 'feat/y', 'main', null)
+  assert.equal(none.cardId, null)
+  assert.equal(db.select().from(worktrees).where(sqlEq(worktrees.id, mine.id)).get()?.cardId, 'k153')
 })

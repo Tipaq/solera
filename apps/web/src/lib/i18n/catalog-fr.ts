@@ -2874,6 +2874,9 @@ export const fr: Catalog = {
 
   // Commun
   'common.select.placeholder': 'Choisir...',
+  'common.month.previous': 'Mois précédent',
+  'common.month.next': 'Mois suivant',
+  'common.time.type': "Taper l'heure",
 
   // Queue de l'extraction : divers
   'common.copy': 'Copier',
@@ -3070,6 +3073,7 @@ export const fr: Catalog = {
   'error.pull_request_checks_pending': "Des checks de la PR #{number} tournent encore.",
   'error.pull_request_merge_forbidden': "Seul le propriétaire du projet peut fusionner une PR.",
   'error.bad_pull_request_number': "Ce n’est pas un numéro de PR.",
+  'error.branch_pr_missing': "La carte #{number} n’a pas encore de PR vers la branche par défaut.",
   'error.forge_failed': "La forge a refusé : {error}",
   'error.branch_delete_forbidden': "Seul le propriétaire du projet peut supprimer des branches.",
   'error.bad_branch_cleanup': "Liste de branches invalide.",
@@ -3524,6 +3528,9 @@ export const fr: Catalog = {
   "error.action_not_service": "Seul un service s’arrête ou se relance.",
   "error.action_no_logs": "Seuls les services portés par systemd ont un journal.",
   "error.too_many_actions": "{max} actions par projet au plus.",
+  "error.action_not_proposed": "Cette action n’a rien à relire.",
+  "error.action_changed": "Cette action a changé pendant ta relecture : relis-la.",
+  "error.action_args_task_only": "Des arguments ne s’ajoutent qu’à une commande qui se termine, pas à un service.",
   "error.schedule_write_forbidden": "Seul le créateur de la tâche ou le propriétaire du projet peut la modifier.",
   "error.schedule_already_running": "Un tir de cette tâche est encore en cours.",
   "error.schedule_never_fires": "Cette cadence ne donne aucun tir à venir.",

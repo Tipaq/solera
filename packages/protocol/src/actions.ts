@@ -85,10 +85,37 @@ export type CreateProjectActionBody = z.infer<typeof createProjectActionBodySche
 export const updateProjectActionBodySchema = createProjectActionBodySchema.partial()
 export type UpdateProjectActionBody = z.infer<typeof updateProjectActionBodySchema>
 
-/** Depuis une conversation, l'action tourne dans son worktree ; sinon à la racine du projet. */
-export const runProjectActionBodySchema = z.object({
+/** Au-delà, ce ne sont plus des arguments mais une autre commande, à relire comme telle. */
+export const MAX_ACTION_RUN_ARGS = 200
+export const MAX_ACTION_RUN_ARG_CHARS = 1000
+
+const actionPlaceShape = {
   conversationId: z.string().min(1).optional(),
-})
+  worktreeId: z.string().min(1).optional(),
+}
+
+const onePlace = (body: { conversationId?: string; worktreeId?: string }) =>
+  !(body.conversationId && body.worktreeId)
+const onePlaceMessage = { message: 'Either a conversation or a worktree, not both.' }
+
+/**
+ * Où l'action tourne : le worktree d'une conversation, un worktree du projet choisi hors
+ * conversation, ou à défaut la racine du projet.
+ */
+export const actionPlaceBodySchema = z.object(actionPlaceShape).refine(onePlace, onePlaceMessage)
+
+/**
+ * `args` s'ajoutent à la commande validée, chacun cité pour le shell : « relancer
+ * seulement les échecs » passe des chemins, pas du code. Refusés par `run_action` : un
+ * agent n'a pas à étendre une commande que l'utilisateur a relue.
+ */
+export const runProjectActionBodySchema = z
+  .object({
+    ...actionPlaceShape,
+    args: z.array(z.string().min(1).max(MAX_ACTION_RUN_ARG_CHARS)).max(MAX_ACTION_RUN_ARGS).optional(),
+  })
+  .refine(onePlace, onePlaceMessage)
+export type RunProjectActionBody = z.infer<typeof runProjectActionBodySchema>
 
 export const serviceActionControlSchema = z.enum(['stop', 'restart'])
 export type ServiceActionControl = z.infer<typeof serviceActionControlSchema>
@@ -125,10 +152,72 @@ export interface ProjectActionDto {
   agentConversationTitle: string | null
   createdAt: number
   updatedAt: number
+  /**
+   * Ce qu'une personne a validé en dernier. Différent de la commande quand un agent l'a
+   * modifiée depuis : la relecture montre l'écart, et le refus y revient. Null tant que
+   * l'action n'a jamais été validée.
+   */
+  approved: ProjectActionReviewed | null
   /** Null pour une `task`, ou quand systemd n'est pas disponible. */
   service: ProjectActionServiceState | null
   /** Dernière exécution dans un terminal, tant que son onglet est ouvert. */
   lastRun: ProjectActionLastRun | null
+  /** Les derniers passages, le plus récent d'abord, sans leur extrait (`ACTION_RUNS_SHOWN` au plus). */
+  runs: ActionRunDto[]
+}
+
+export interface ProjectActionReviewed {
+  kind: ProjectActionKind
+  command: string
+  subdir: string | null
+  url: string | null
+}
+
+/** Combien de passages une action montre, et combien le serveur en garde. */
+export const ACTION_RUNS_SHOWN = 20
+export const ACTION_RUNS_KEPT = 100
+/** Les dernières lignes de la sortie d'un passage, coupées sur une fin de ligne. */
+export const MAX_ACTION_RUN_EXCERPT_CHARS = 4000
+
+/** `schedule` : lancée par sa cadence (commande planifiée). */
+export const actionRunTriggerSchema = z.enum(['manual', 'agent', 'schedule'])
+export type ActionRunTrigger = z.infer<typeof actionRunTriggerSchema>
+
+/** `stopped` : arrêtée, par Ctrl-C, la fermeture de son terminal ou l'arrêt du daemon. */
+export type ActionRunStatus = 'running' | 'succeeded' | 'failed' | 'stopped'
+
+/** Un lancement d'une action dans un terminal. */
+export interface ActionRunDto {
+  id: string
+  actionId: string
+  trigger: ActionRunTrigger
+  /** La session d'où elle est partie ; null hors session. */
+  conversationId: string | null
+  /** Le terminal qui l'a jouée ; il peut avoir été fermé depuis. */
+  terminalId: string | null
+  cwd: string
+  status: ActionRunStatus
+  /** Null tant qu'elle tourne, ou quand l'arrêt du daemon l'a emportée. */
+  exitCode: number | null
+  startedAt: number
+  finishedAt: number | null
+}
+
+/** Un passage avec les dernières lignes de sa sortie, pour le détail d'une action. */
+export interface ActionRunDetailDto extends ActionRunDto {
+  excerpt: string | null
+}
+
+const STOP_SIGNALS = [1, 2, 9, 15]
+
+/**
+ * Le verdict d'un code de sortie. 128 + n est le code d'une commande tuée par le signal
+ * n : SIGHUP (son terminal fermé), SIGINT (Ctrl-C), SIGKILL et SIGTERM disent qu'on l'a
+ * arrêtée, pas qu'elle a échoué. Les autres signaux (SIGSEGV, SIGABRT) sont des plantages.
+ */
+export function actionRunStatusOf(exitCode: number): Exclude<ActionRunStatus, 'running'> {
+  if (exitCode === 0) return 'succeeded'
+  return STOP_SIGNALS.includes(exitCode - 128) ? 'stopped' : 'failed'
 }
 
 export interface ProjectActionLastRun {

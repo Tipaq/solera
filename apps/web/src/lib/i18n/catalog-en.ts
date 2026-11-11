@@ -2878,6 +2878,9 @@ export const en = {
 
   // Commun
   'common.select.placeholder': 'Choose...',
+  'common.month.previous': 'Previous month',
+  'common.month.next': 'Next month',
+  'common.time.type': 'Type a time',
 
   // Queue de l'extraction : divers
   'common.copy': 'Copy',
@@ -3075,6 +3078,7 @@ export const en = {
   'error.pull_request_checks_pending': "Some checks of pull request #{number} are still running.",
   'error.pull_request_merge_forbidden': "Only the project owner can merge a pull request.",
   'error.bad_pull_request_number': "This is not a pull request number.",
+  'error.branch_pr_missing': "Card #{number} has no pull request to the default branch yet.",
   'error.forge_failed': "The forge refused: {error}",
   'error.branch_delete_forbidden': "Only the project owner can delete branches.",
   'error.bad_branch_cleanup': "Invalid branch list.",
@@ -3530,6 +3534,9 @@ export const en = {
   'error.action_not_service': "Only services can be stopped or restarted.",
   'error.action_no_logs': "Only services run by systemd have a journal.",
   'error.too_many_actions': "At most {max} actions per project.",
+  'error.action_not_proposed': "This action has nothing to review.",
+  'error.action_changed': "This action changed while you were reviewing it: review it again.",
+  'error.action_args_task_only': "Extra arguments only apply to a command that ends, not to a service.",
   'error.schedule_write_forbidden': "Only the task creator or the project owner can change it.",
   'error.schedule_already_running': "A run of this task is still in progress.",
   'error.schedule_never_fires': "This schedule has no upcoming run.",
