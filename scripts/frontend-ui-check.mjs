@@ -234,7 +234,15 @@ try {
   await page.goto(board)
   const column = page.getByRole('region', { name: 'À faire', exact: true })
   await column.waitFor()
-  assert.ok((await column.boundingBox()).width >= 360, 'The mobile board must use its available width')
+  /* La largeur disponible et non une constante : la colonne remplit son conteneur, à la
+     gouttière près (16 px au téléphone depuis la coque commune, #160). */
+  const fill = await column.evaluate((element) => {
+    const lane = element.parentElement
+    const style = getComputedStyle(lane)
+    const available = lane.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+    return { width: element.getBoundingClientRect().width, available }
+  })
+  assert.ok(fill.available >= 350 && Math.abs(fill.width - fill.available) <= 1, `The mobile board must use its available width: ${fill.width} / ${fill.available}`)
   await page.evaluate(() => { document.body.tabIndex = -1; document.body.focus() })
   await page.keyboard.press('Tab')
   assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Ouvrir la navigation')
