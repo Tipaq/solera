@@ -26,7 +26,8 @@ import { processOrigins } from '../services/origins.js'
  * Les process ne survivent pas au redémarrage du daemon, et c'est assumé : les faire
  * survivre demanderait un porteur externe (la pente tmux). En revanche les
  * métadonnées et le dernier écran sont écrits sur disque : au redémarrage, l'entrée
- * réapparaît marquée « interrompue », écran lisible, prête à être relancée.
+ * réapparaît marquée « interrompue », écran lisible, prête à être relancée. Celle d'un
+ * process déjà sorti revient telle qu'elle a fini, avec son code et sa date.
  */
 
 /** Tampon de restitution. Au-delà, on ne reconstitue plus un écran mais un historique. */
@@ -70,6 +71,8 @@ interface ManagedTerminal {
   /** Session qui l'a ouvert, et dont il suit l'environnement ; null hors session. */
   conversationId: string | null
   exitCode: number | null
+  /** Quand le process s'est terminé ; null tant qu'il tourne, ou s'il a été interrompu. */
+  finishedAt: number | null
 }
 
 interface PersistedTerminal {
@@ -80,6 +83,9 @@ interface PersistedTerminal {
   createdAt: number
   actionId?: string | null
   conversationId?: string | null
+  /** Absents tant que le process tourne : l'entrée relue sans eux est une interrompue. */
+  exitCode?: number | null
+  finishedAt?: number | null
 }
 
 /**
@@ -103,7 +109,7 @@ export interface TerminalCommand {
 /** Le shell s'est terminé, ou n'a jamais démarré : deux refus distincts à afficher. */
 export class TerminalError extends Error {
   constructor(
-    readonly code: 'too_many_terminals' | 'terminal_not_found',
+    readonly code: 'too_many_terminals' | 'terminal_not_found' | 'terminal_finished',
     message: string,
   ) {
     super(message)
@@ -194,10 +200,18 @@ export class TerminalManager {
   open(projectId: string, cwd: string, place: TerminalPlace, run?: TerminalCommand): TerminalDto {
     const existing = this.of(projectId)
     if (run?.actionId) {
-      // Une exécution terminée de la même action cède sa place : relancer un bouton ne
-      // doit pas épuiser le plafond de terminaux avec des écrans périmés.
+      // Une exécution terminée de la même action, au même endroit, cède sa place :
+      // relancer un bouton ne doit pas épuiser le plafond de terminaux avec des écrans
+      // périmés. Celle d'une autre session ou d'un autre dossier reste à lire.
       for (const previous of existing) {
-        if (previous.actionId === run.actionId && previous.exited) this.close(previous.id)
+        if (
+          previous.actionId === run.actionId &&
+          previous.exited &&
+          previous.conversationId === place.conversationId &&
+          previous.cwd === cwd
+        ) {
+          this.close(previous.id)
+        }
       }
     }
     const remaining = this.of(projectId)
@@ -253,6 +267,7 @@ export class TerminalManager {
       actionId: run?.actionId ?? null,
       conversationId: place.conversationId,
       exitCode: null,
+      finishedAt: null,
     }
     this.terminals.set(id, managed)
     this.persistMeta(managed)
@@ -263,13 +278,18 @@ export class TerminalManager {
       for (const subscriber of managed.subscribers) subscriber.onOutput(data)
     })
 
-    pty.onExit(({ exitCode }) => {
+    pty.onExit(({ exitCode: code, signal }) => {
+      // Tué par un signal, le process sort « en 0 » pour node-pty : on lui rend le code
+      // qu'un shell afficherait (130 pour Ctrl-C), sans quoi une commande arrêtée
+      // passerait pour réussie.
+      const exitCode = signal ? 128 + signal : code
       // Un terminal confiné a son propre bac à sable : ce qu'il a lancé meurt avec lui,
       // et son home privé s'efface. Sans effet sur l'hôte.
       void place.environment.close()
       // L'entrée survit à son process, avec son dernier écran : un `exit` accidentel ou
       // une commande qui plante ne doivent pas faire disparaître ce qu'on voulait lire.
       managed.exited = true
+      managed.finishedAt = Date.now()
       if (managed.idleTimer) clearTimeout(managed.idleTimer)
       managed.idleTimer = null
       if (run) {
@@ -278,6 +298,12 @@ export class TerminalManager {
         managed.replay = (managed.replay + footer).slice(-REPLAY_BYTES)
         managed.replayDirty = true
         for (const subscriber of managed.subscribers) subscriber.onOutput(footer)
+      }
+      // Un terminal fermé, ou emporté par l'arrêt du daemon, n'est plus le nôtre : le
+      // réécrire ferait revenir le premier, et donnerait au second une fin qu'il n'a pas eue.
+      if (this.terminals.get(id) === managed) {
+        this.persistMeta(managed)
+        this.flushReplay(managed)
       }
       for (const subscriber of managed.subscribers) subscriber.onExit(exitCode)
     })
@@ -327,6 +353,19 @@ export class TerminalManager {
       // pas tuer une commande en cours. C'est l'inactivité qui finit par le libérer.
       detach: () => managed.subscribers.delete(subscriber),
     }
+  }
+
+  /**
+   * Ctrl-C, comme au clavier : le pty le traduit en SIGINT pour ce qui tourne au premier
+   * plan, dans un conteneur comme sur l'hôte. Le terminal et son écran restent.
+   */
+  interrupt(projectId: string, terminalId: string): void {
+    const managed = this.require(projectId, terminalId)
+    if (managed.exited || !managed.pty) {
+      throw new TerminalError('terminal_finished', 'This terminal has already finished.')
+    }
+    managed.pty.write('\x03')
+    this.touch(terminalId)
   }
 
   write(projectId: string, terminalId: string, data: string): void {
@@ -467,10 +506,12 @@ export class TerminalManager {
         rows: DEFAULT_ROWS,
         createdAt: meta.createdAt,
         exited: true,
-        interrupted: true,
+        // Une fin enregistrée dit que le process est sorti de lui-même avant l'arrêt.
+        interrupted: meta.finishedAt == null,
         actionId: meta.actionId ?? null,
         conversationId: meta.conversationId ?? null,
-        exitCode: null,
+        exitCode: meta.exitCode ?? null,
+        finishedAt: meta.finishedAt ?? null,
       })
     }
   }
@@ -484,6 +525,8 @@ export class TerminalManager {
       createdAt: managed.createdAt,
       actionId: managed.actionId,
       conversationId: managed.conversationId,
+      exitCode: managed.exitCode,
+      finishedAt: managed.finishedAt,
     }
     try {
       writeFileSync(join(this.storeDir, `${managed.id}.json`), JSON.stringify(meta))
@@ -543,6 +586,7 @@ function toDto(managed: ManagedTerminal): TerminalDto {
     actionId: managed.actionId,
     conversationId: managed.conversationId,
     exitCode: managed.exitCode,
+    finishedAt: managed.finishedAt,
   }
 }
 

@@ -115,6 +115,16 @@ export function registerTerminalRoutes(
     return wrap(() => terminals.rename(id, terminalId, title))
   })
 
+  /** Arrêter une commande : Ctrl-C, et l'écran reste pour lire ce qu'elle a laissé. */
+  app.post('/api/projects/:id/terminals/:terminalId/interrupt', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, terminalId } = request.params as { id: string; terminalId: string }
+    guard(id, user.id)
+
+    wrap(() => terminals.interrupt(id, terminalId))
+    return reply.status(204).send()
+  })
+
   app.delete('/api/projects/:id/terminals/:terminalId', async (request, reply) => {
     const user = requireUser(request)
     const { id, terminalId } = request.params as { id: string; terminalId: string }
