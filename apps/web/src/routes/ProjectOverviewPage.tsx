@@ -9,7 +9,7 @@ import {
   Plus,
   TriangleAlert,
 } from 'lucide-react'
-import { Suspense, lazy, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
@@ -45,15 +45,11 @@ import {
   lastRun,
   useSchedules,
 } from '../lib/schedules'
+import type { EditorSeed } from '../lib/action-editor'
+import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer'
 
-/**
- * La création d'une tâche planifiée, chargée à son ouverture (#128) : elle porte le
- * calcul des prochains passages cron et la section de vérification, qui n'ont rien à
- * faire dans le paquet d'entrée pour un bouton qu'on presse rarement.
- */
-const ScheduleDialog = lazy(() =>
-  import('../components/schedule/ScheduleDialog').then((m) => ({ default: m.ScheduleDialog })),
-)
+/** « + Tâche » : un agent, planifié, dans l'éditeur unifié (chargé à son ouverture). */
+const NEW_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
 /** Échéances montrées : au-delà, la tuile redirait la chronologie, qui est à un onglet. */
 const DUE_SHOWN = 4
@@ -252,11 +248,7 @@ export function ProjectOverviewPage() {
         </section>
       </div>
 
-      {creatingTask ? (
-        <Suspense fallback={null}>
-          <ScheduleDialog project={project} onClose={() => setCreatingTask(false)} />
-        </Suspense>
-      ) : null}
+      <ActionEditorDrawer projectId={project.id} seed={creatingTask ? NEW_TASK : null} onClose={() => setCreatingTask(false)} />
     </div>
   )
 }

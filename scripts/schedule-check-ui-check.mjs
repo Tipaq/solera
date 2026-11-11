@@ -124,8 +124,8 @@ try {
   // --- Création, avec un script qui ne trouve rien ---------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nouvelle tâche planifiée', exact: true })
-  await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille avec vérification')
+  const dialog = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  await dialog.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Veille avec vérification')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   await dialog.getByRole('button', { name: 'Ajouter une vérification', exact: true }).click()
   // Le modèle de départ est un vrai script, qui parle du dossier d'état.
@@ -135,7 +135,7 @@ try {
   await dialog.locator('[data-check-result="skip"]').waitFor({ timeout: 30_000 })
   await dialog.locator('[data-check-result]').getByText('Rien de neuf').waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'check-form-desktop.png') })
-  await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
 
   const card = page.locator('[data-schedule="Veille avec vérification"]')

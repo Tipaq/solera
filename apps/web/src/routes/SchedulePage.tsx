@@ -5,10 +5,12 @@ import { conversationPath } from '../lib/conversation-route'
 import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { CheckApprovalDialog } from '../components/schedule/CheckSection'
-import { ScheduleDialog } from '../components/schedule/ScheduleDialog'
+import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
+import type { EditorSeed } from '../lib/action-editor'
+import { fromTask } from '../lib/automations'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { NEW_PARAM } from '../lib/place'
@@ -34,6 +36,9 @@ const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'cri
   done: 'neutral',
   waiting: 'positive',
 }
+
+/** « + Tâche » : un agent, planifié. */
+const NEW_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
 /**
  * Les tâches planifiées d'un projet : ce que le daemon rejoue tout seul, et ce que
@@ -69,6 +74,10 @@ export function SchedulePage() {
     }, { replace: true })
   }
   const open = creating ? 'new' : editing
+  const seed = useMemo<EditorSeed | null>(
+    () => (open === null ? null : open === 'new' ? NEW_TASK : { from: fromTask(open) }),
+    [open],
+  )
 
   return (
     /* Plus de bande propre : le nom du projet est dans la bande de la coque. *+ Tâche*
@@ -100,13 +109,10 @@ export function SchedulePage() {
         )}
       </div>
 
-      {open && project ? (
-        <ScheduleDialog
-          // La clé remonte le formulaire d'une tâche à l'autre : ses champs sont un état
-          // initial, pas un reflet de la tâche.
-          key={open === 'new' ? 'new' : open.id}
-          project={project}
-          task={open === 'new' ? undefined : open}
+      {project ? (
+        <ActionEditorDrawer
+          projectId={project.id}
+          seed={seed}
           onClose={() => {
             setEditing(null)
             if (creating) closeCreating()

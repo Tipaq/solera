@@ -172,6 +172,104 @@ async function checkPieces(base) {
   }
 }
 
+/**
+ * L'éditeur unifié (`ActionEditor`), ouvert par « Nouvelle action » du panneau : chaque
+ * nature s'enregistre par la vraie API, et ce qui est refusé l'est avant d'arriver au
+ * serveur, sous son champ.
+ */
+async function checkEditor(page, base, project, conversation, api, context) {
+  const editor = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  const open = async () => {
+    await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+    await editor.getByRole('heading', { name: 'Nouvelle action' }).waitFor()
+  }
+  const save = editor.getByRole('button', { name: 'Enregistrer', exact: true })
+  const mine = async (label) => (await api('/api/actions')).find((action) => action.projectId === project.id && action.label === label)
+
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
+  await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
+  await page.locator('button[aria-pressed][aria-label^="Actions"]').click()
+
+  // --- Une commande : suggestion du dépôt, dossier choisi dans l'arbre, essai, planifiée.
+  await open()
+  await editor.locator('[data-suggestions]').getByRole('button', { name: /^Tests/ }).click()
+  assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Tests')
+  await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Tests (éditeur)')
+  await editor.getByRole('textbox', { name: 'Commande', exact: true }).fill('echo essai-editeur')
+  await editor.getByRole('button', { name: /^Dossier :/ }).click()
+  await page.getByRole('treeitem', { name: 'src', exact: true }).click()
+  await editor.getByRole('button', { name: 'Dossier : src', exact: true }).waitFor()
+  await editor.getByText('s’exécutera dans <worktree>/src', { exact: false }).waitFor()
+  await editor.getByRole('button', { name: 'Essayer', exact: true }).click()
+  await editor.getByRole('region', { name: 'Sortie de l’essai' }).or(editor.getByLabel('Sortie de l’essai')).getByText('essai-editeur').first().waitFor({ timeout: 15000 })
+  // Toute modification de la commande efface l'essai.
+  await editor.getByRole('textbox', { name: 'Commande', exact: true }).fill('echo essai-editeur; exit 0')
+  assert.equal(await editor.getByLabel('Sortie de l’essai').count(), 0)
+  await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
+  await editor.getByRole('checkbox', { name: /^À la demande/ }).click()
+  await editor.locator('[data-editor-summary]').getByText(/^Commande · tâche · /).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-command.png') })
+  await save.click()
+  await editor.waitFor({ state: 'hidden' })
+  const planned = await mine('Tests (éditeur)')
+  assert.equal(planned.command, 'echo essai-editeur; exit 0')
+  assert.equal(planned.subdir, 'src')
+  assert.equal(planned.onDemand, false)
+  assert.equal(planned.schedule?.cadence.kind, 'cron')
+
+  // --- Un service : lien {port}, placement, et pas de planification (AC-06).
+  await open()
+  await editor.getByRole('radio', { name: /^Service/ }).click()
+  await editor.getByRole('textbox', { name: 'Commande', exact: true }).fill('python3 -m http.server 0')
+  // Une erreur s'affiche quand on quitte le champ, pas avant.
+  await editor.getByRole('textbox', { name: 'Lien du service', exact: true }).fill('localhost:{port}')
+  assert.equal(await editor.getByText('Une adresse http(s), avec {port} si tu veux.').count(), 0)
+  await editor.getByRole('textbox', { name: 'Libellé', exact: true }).click()
+  await editor.getByText('Une adresse http(s), avec {port} si tu veux.').waitFor()
+  await editor.getByRole('textbox', { name: 'Lien du service', exact: true }).fill('http://localhost:{port}/')
+  await editor.getByText('quand il écoute sur :5173, le lien sera http://localhost:5173/').waitFor()
+  await editor.getByRole('radio', { name: /^Toujours la racine du projet/ }).click()
+  await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Aperçu statique')
+  await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
+  await editor.locator('[data-service-schedule]').waitFor()
+  assert.equal(await save.isDisabled(), true)
+  await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-service.png') })
+  await save.click()
+  await editor.waitFor({ state: 'hidden' })
+  const service = await mine('Aperçu statique')
+  assert.equal(service.kind, 'service')
+  assert.equal(service.placement, 'root')
+  assert.equal(service.url, 'http://localhost:{port}/')
+  assert.equal(service.status, 'approved')
+
+  // --- Un agent, à la demande seulement : une tâche sans cadence.
+  await open()
+  await editor.getByRole('radio', { name: /^Un agent/ }).click()
+  await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Revue (éditeur)')
+  await editor.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK ».')
+  await editor.getByRole('radio', { name: /^Nouveau worktree/ }).click()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-agent.png') })
+  await save.click()
+  await editor.waitFor({ state: 'hidden' })
+  const task = (await api('/api/schedules')).find((entry) => entry.projectId === project.id && entry.name === 'Revue (éditeur)')
+  assert.ok(task, 'la tâche d’agent est créée')
+  assert.equal(task.cadence, null)
+  assert.equal(task.onDemand, true)
+  assert.equal(task.worktreeMode, 'new')
+
+  // --- Modifier : l'éditeur relit l'action, sa nature est figée.
+  await page.locator('li', { hasText: 'Aperçu statique' }).getByRole('button', { name: 'Plus' }).click()
+  await page.getByRole('menuitem', { name: 'Modifier' }).click()
+  assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Aperçu statique')
+  assert.equal(await editor.getByRole('radio', { name: /^Un agent/ }).count(), 0)
+  assert.equal(await editor.getByRole('radio', { name: /^Toujours la racine du projet/ }).getAttribute('aria-checked'), 'true')
+  await editor.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await editor.waitFor({ state: 'hidden' })
+  void context
+}
+
 const linuxServices = process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
@@ -330,11 +428,17 @@ try {
   await mobile.getByText('Dire bonjour').waitFor()
   await mobile.screenshot({ path: join(shots, 'actions-phone.png') })
 
+  // L'éditeur unifié : une commande planifiée, un service et un agent, créés pour de vrai.
+  await checkEditor(page, base, project, conversation, api, context)
+
   // Supprimer le service arrête et retire son unité.
   for (const action of await api('/api/actions')) {
     if (action.projectId !== project.id) continue
     const removed = await context.request.delete(`${base}/api/actions/${action.id}`)
     assert.equal(removed.status(), 204)
+  }
+  for (const task of await api('/api/schedules')) {
+    if (task.projectId === project.id && task.name === 'Revue (éditeur)') await context.request.delete(`${base}/api/schedules/${task.id}`)
   }
   assert.deepEqual(errors, [])
   console.log(`actions-ui-check: ok — captures dans ${shots}`)

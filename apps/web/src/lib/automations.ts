@@ -654,7 +654,7 @@ export type AutomationDraft =
 
 export function draftOf(item: Automation): AutomationDraft {
   if (item.source.kind === 'action') {
-    const { label, description, kind, command, subdir, url } = item.source.action
+    const { label, description, kind, command, subdir, url, placement, pinnedBranch, onDemand, schedule } = item.source.action
     return {
       what: 'command',
       body: {
@@ -664,6 +664,10 @@ export function draftOf(item: Automation): AutomationDraft {
         ...(description ? { description } : {}),
         ...(subdir ? { subdir } : {}),
         ...(url ? { url } : {}),
+        placement,
+        ...(pinnedBranch ? { pinnedBranch } : {}),
+        onDemand,
+        ...(schedule ? { schedule: { cadence: schedule.cadence, maxDurationMinutes: schedule.maxDurationMinutes } } : {}),
       },
     }
   }
@@ -676,6 +680,8 @@ export function draftOf(item: Automation): AutomationDraft {
       config: task.config,
       prompt: task.prompt,
       cadence: task.cadence,
+      onDemand: task.onDemand,
+      worktreeMode: task.worktreeMode,
       overlapPolicy: task.overlapPolicy,
       confined: task.confined,
       maxDurationMinutes: task.maxDurationMinutes,

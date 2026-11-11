@@ -112,34 +112,40 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await mkdir(shots, { recursive: true })
 
-  // --- Création par le formulaire ------------------------------------------------
+  // --- Création par l'éditeur unifié ---------------------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
   await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nouvelle tâche planifiée', exact: true })
-  await dialog.getByRole('textbox', { name: 'Nom', exact: true }).fill('Veille de test')
+  const dialog = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  // « + Tâche » arrive sur un agent, « Planifiée » cochée.
+  assert.equal(await dialog.getByRole('radio', { name: /^Un agent/ }).getAttribute('aria-checked'), 'true')
+  assert.equal(await dialog.getByRole('checkbox', { name: /^Planifiée/ }).getAttribute('aria-checked'), 'true')
+  // Une erreur s'affiche sous son champ, une fois quitté ; Enregistrer reste grisé.
+  const label = dialog.getByRole('textbox', { name: 'Libellé', exact: true })
+  await label.focus()
+  await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
+  await dialog.getByRole('alert').getByText('Un libellé court : c’est le texte du bouton.').waitFor()
+  assert.equal(await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).isDisabled(), true)
+  await label.fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
-  // Sans cadence valide, rien ne part : le bouton doit le dire.
-  await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('0')
-  assert.equal(await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).isDisabled(), true)
-  await dialog.getByRole('radio', { name: 'Cron', exact: true }).click()
-  await dialog.getByText(/À 09:00, uniquement le lundi/).waitFor()
-  await dialog.getByRole('radio', { name: 'Intervalle', exact: true }).click()
-  await dialog.getByRole('spinbutton', { name: 'Tous les', exact: true }).fill('1')
-  await dialog.getByRole('combobox', { name: 'Unité', exact: true }).click()
-  await page.getByRole('option', { name: 'minutes', exact: true }).click()
+  // Chaque minute, pour qu'un tir parte pendant la suite : une règle personnalisée.
+  await dialog.getByRole('button', { name: 'chaque jour', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Personnalisé (cron)' }).click()
+  await dialog.getByRole('textbox', { name: 'Expression cron', exact: true }).fill('* * * * *')
+  await dialog.getByRole('button', { name: /^Options/ }).click()
   await dialog.getByRole('spinbutton', { name: 'Durée maximale (min)', exact: true }).fill('3')
-  await dialog.getByText(/Prochain tir :/).waitFor()
+  await dialog.locator('[data-editor-summary]').getByText(/^Agent · Claude · à la demande \+ /).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'form-desktop.png') })
-  await dialog.getByRole('button', { name: 'Créer la tâche', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
 
   const card = page.locator('[data-schedule="Veille de test"]')
   await card.getByText('Active', { exact: true }).waitFor()
-  await card.getByText('Toutes les 1 min').waitFor()
   const [created] = await schedules()
-  assert.deepEqual(created.cadence, { kind: 'interval', minutes: 1 })
+  assert.deepEqual(created.cadence, { kind: 'cron', expression: '* * * * *' })
   assert.equal(created.maxDurationMinutes, 3)
+  assert.equal(created.onDemand, true)
+  assert.equal(created.worktreeMode, 'root')
 
   // --- Le tir part tout seul, à l'heure ------------------------------------------
   const fired = await until('le tir planifié part', (task) => task.runs.some((entry) => entry.conversationId), 100_000)
@@ -217,8 +223,10 @@ try {
   await page.goto(`${base}/p/${project.id}/schedules`)
 
   await page.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: 'Modifier la tâche', exact: true })
-  assert.equal(await editor.getByRole('textbox', { name: 'Nom', exact: true }).inputValue(), 'Veille de test')
+  const editor = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Veille de test')
+  // La nature d'une action existante est figée : seule sa carte reste.
+  assert.equal(await editor.getByRole('radio', { name: /^Une commande/ }).count(), 0)
   const saveBox = await editor.getByRole('button', { name: 'Enregistrer', exact: true }).boundingBox()
   assert.ok(saveBox.y + saveBox.height <= 844, 'The mobile save action remains visible')
   assert.equal(await editor.evaluate((node) => node.scrollWidth <= node.clientWidth), true)

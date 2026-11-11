@@ -13,7 +13,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import { Suspense, lazy, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ProjectActionDto } from '@solera/protocol'
 import {
   actionView,
@@ -22,12 +22,15 @@ import {
   useDeleteAction,
   useRunAction,
 } from '../../lib/actions'
+import type { EditorSeed } from '../../lib/action-editor'
+import { fromAction } from '../../lib/automations'
 import { useTranslate } from '../../lib/i18n'
+import { ActionEditorDrawer } from '../automations/ActionEditorDrawer'
 import { showTerminal } from '../../lib/panel'
 import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
 
-/** L'édition d'une action, chargée à son ouverture (#128) : hors du paquet d'entrée. */
-const ActionDialog = lazy(() => import('./ActionDialog').then((m) => ({ default: m.ActionDialog })))
+/** « + Action » : une commande, à la demande. */
+const NEW_ACTION: EditorSeed = { preset: { what: 'command' } }
 
 /**
  * Les actions d'un projet, présentées comme les listes des réglages. Chaque élément
@@ -106,6 +109,10 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const [deleting, setDeleting] = useState<ProjectActionDto | null>(null)
   const [editing, setEditing] = useState<ProjectActionDto | 'new' | null>(null)
   const failure = approve.error ?? remove.error ?? run.error
+  const seed = useMemo<EditorSeed | null>(
+    () => (editing === null ? null : editing === 'new' ? NEW_ACTION : { from: fromAction(editing) }),
+    [editing],
+  )
 
   const handlers: ActionHandlers = {
     onReview: setReviewing,
@@ -115,15 +122,7 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
 
   const dialogs = (
     <>
-      {editing ? (
-        <Suspense fallback={null}>
-          <ActionDialog
-            projectId={projectId}
-            action={editing === 'new' ? undefined : editing}
-            onClose={() => setEditing(null)}
-          />
-        </Suspense>
-      ) : null}
+      <ActionEditorDrawer projectId={projectId} seed={seed} conversationId={conversationId} onClose={() => setEditing(null)} />
 
       <ConfirmDialog
         open={reviewing !== null}
