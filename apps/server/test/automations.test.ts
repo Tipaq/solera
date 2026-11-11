@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { ActionRunDto, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
+import type { ActionRunDto, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto, WorktreeDto } from '@solera/protocol'
 import type { ActionInput, Automation, UnifiedRun } from '../../web/src/lib/automations.js'
 import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 
@@ -23,12 +23,15 @@ const {
   fromTask,
   healthOf,
   inShort,
+  launchTrees,
   launcherGroupOf,
   liveText,
   matchesFilters,
   matchesQuery,
   natureOf,
   natureWord,
+  picksTree,
+  primaryGestureOf,
   sectionOf,
   showsSessionWorks,
   stateSentence,
@@ -624,4 +627,41 @@ test('duplicateDraft : même nature, libellé « (copie) »', () => {
   assert.equal(copy.what === 'command' && copy.body.label, 'Tests (copie)')
   const agent = duplicateDraft(fromTask(task()), tEn)
   assert.equal(agent.what === 'agent' && agent.body.name, 'Revue nocturne (copy)')
+})
+
+/* ------------------------------------------------------------------ LAN-7, LAN-9 : les gestes */
+
+test('primaryGestureOf : un seul geste principal, dans l’ordre de LAN-7', () => {
+  const proposed = fromAction(action({ kind: 'service', status: 'proposed', service: service('active', { ports: [5173] }) }))
+  assert.equal(primaryGestureOf(proposed), 'review')
+  assert.equal(primaryGestureOf(fromTask(task({ check: { script: 'test -f out', approved: false, timeoutSeconds: 60 } as ScheduledTaskDto['check'] }))), 'review')
+  // Un service a son interrupteur, qu'il tourne ou non.
+  assert.equal(primaryGestureOf(fromAction(action({ kind: 'service', service: service('active') }))), 'switch')
+  assert.equal(primaryGestureOf(fromAction(action({ kind: 'service', service: service('inactive') }))), 'switch')
+  assert.equal(
+    primaryGestureOf(fromAction(action({ lastRun: { terminalId: 'term1', alive: true, exitCode: null, startedAt: NOW - MIN } }))),
+    'terminal',
+  )
+  assert.equal(primaryGestureOf(fromTask(task({ runs: [run('running', NOW - MIN)] }))), 'session')
+  // Un passage sans session à rejoindre (une commande planifiée) se relance.
+  assert.equal(primaryGestureOf(fromAction(action({ runs: [cmdRun('x1', 'running', NOW - MIN, null)] }))), 'launch')
+  assert.equal(primaryGestureOf(fromAction(action())), 'launch')
+  assert.equal(primaryGestureOf(fromTask(task())), 'launch')
+})
+
+test('picksTree : seule une commande choisit son arbre (Q6)', () => {
+  assert.equal(picksTree(fromAction(action())), true)
+  assert.equal(picksTree(fromAction(action({ kind: 'service' }))), true)
+  // Une tâche d’agent dit elle-même où elle tourne (racine ou nouveau worktree).
+  assert.equal(picksTree(fromTask(task())), false)
+})
+
+test('launchTrees : les arbres présents sur le disque, six au plus', () => {
+  const tree = (id: string, present = true): WorktreeDto => ({
+    id, projectId: 'p1', name: `feat/${id}`, path: `/w/${id}`, baseRef: 'main', createdAt: NOW, conversationCount: 0,
+    git: present ? ({} as WorktreeDto['git']) : null,
+  })
+  assert.deepEqual(launchTrees(undefined), [])
+  assert.deepEqual(launchTrees([tree('a'), tree('gone', false), tree('b')]).map((entry) => entry.id), ['a', 'b'])
+  assert.equal(launchTrees(Array.from({ length: 9 }, (_, i) => tree(`t${i}`))).length, 6)
 })
