@@ -1,5 +1,5 @@
 import { cx } from '@solera/ui'
-import type { BranchKind, TreeVerdict, VerdictReason } from '../../lib/code-model'
+import { pluralOf, type BranchKind, type TreeVerdict, type VerdictReason } from '../../lib/code-model'
 import type { MessageKey, MessageParams } from '../../lib/i18n'
 
 /**
@@ -52,7 +52,7 @@ export function verdictLabel(t: Translate, verdict: TreeVerdict): string {
 export function verdictReason(t: Translate, reason: VerdictReason): string {
   const count = reason.count ?? 0
   if (reason.id === 'rootDirty' || reason.id === 'mergedDirty') {
-    return t(`code.reason.${reason.id}.${count === 1 ? 'one' : 'other'}`, { count })
+    return t(`code.reason.${reason.id}.${pluralOf(count)}`, { count })
   }
   return t(`code.reason.${reason.id}`, { count })
 }

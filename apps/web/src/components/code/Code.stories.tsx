@@ -68,7 +68,7 @@ const TREES: TreeRow[] = sortTrees([
   tree('feat/850-ancienne', { state: 'missing', ahead: 0, behind: 0, unmergedCommits: false }),
 ])
 
-function Verdicts() {
+function VerdictList() {
   const t = useTranslate()
   return (
     <ul className="flex flex-col gap-2">
@@ -77,7 +77,7 @@ function Verdicts() {
           <VerdictDot verdict={row.verdict} className="mt-1.5" />
           <span className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-center gap-2">
-              <span className="font-mono text-[13px] text-ink">{row.branch}</span>
+              <span className="font-mono text-code text-ink">{row.branch}</span>
               <span className="text-xs font-medium text-ink-soft">{verdictLabel(t, row.verdict)}</span>
             </span>
             <span className="text-xs text-ink-soft">{verdictReason(t, row.reason)}</span>
@@ -131,9 +131,9 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 /** Les dix verdicts d'un arbre (T-10.1, T-10.2), dans l'ordre d'affichage. */
-export const Verdicts_: Story = {
+export const Verdicts: Story = {
   name: 'Verdicts',
-  render: () => <Verdicts />,
+  render: () => <VerdictList />,
 }
 
 /** Les quatre genres d'une branche sans arbre (T-10.3). */

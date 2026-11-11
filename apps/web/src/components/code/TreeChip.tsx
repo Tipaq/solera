@@ -27,7 +27,7 @@ export function TreeChip({ tree, active = false, onSelect }: { tree: TreeRow; ac
         if (event.key === 'Enter' || event.key === ' ') run(event)
       }}
       className={cx(
-        'inline-flex h-5 max-w-[11rem] shrink cursor-pointer items-center gap-1 rounded px-1.5 font-mono text-[11px] transition-colors',
+        'inline-flex h-5 max-w-[11rem] shrink cursor-pointer items-center gap-1 rounded px-1.5 font-mono text-micro transition-colors focus-visible:outline-2 focus-visible:outline-accent',
         active ? 'bg-accent-wash text-ink' : 'bg-sunken text-ink-soft hover:bg-surface-high hover:text-ink',
       )}
     >

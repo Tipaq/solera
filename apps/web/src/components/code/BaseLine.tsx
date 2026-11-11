@@ -1,6 +1,6 @@
 import { Check, GitBranch, TriangleAlert } from 'lucide-react'
 import { cx } from '@solera/ui'
-import { baseLineOf, type TreeRow } from '../../lib/code-model'
+import { baseLineOf, pluralOf, type TreeRow } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -18,7 +18,7 @@ export function BaseLine({ code, className }: { code: { base: string | null; tre
     <p className={cx('flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs', line.off ? 'text-caution' : 'text-ink-faint', className)}>
       <GitBranch size={12} className="shrink-0" />
       <span>
-        {t('code.base.label')} <code className="font-mono text-[12px] font-semibold text-ink">{line.base}</code>
+        {t('code.base.label')} <code className="font-mono font-semibold text-ink">{line.base}</code>
       </span>
       <span aria-hidden>·</span>
       {line.off ? (
@@ -26,10 +26,10 @@ export function BaseLine({ code, className }: { code: { base: string | null; tre
           <TriangleAlert size={12} className="shrink-0" />
           <span>
             {before}
-            <code className="font-mono text-[12px] font-semibold">{line.rootBranch}</code>
+            <code className="font-mono font-semibold">{line.rootBranch}</code>
             {after}
             {line.uncommitted > 0
-              ? t(`code.base.rootOffDirty.${line.uncommitted === 1 ? 'one' : 'other'}`, { count: line.uncommitted })
+              ? t(`code.base.rootOffDirty.${pluralOf(line.uncommitted)}`, { count: line.uncommitted })
               : null}
           </span>
         </>

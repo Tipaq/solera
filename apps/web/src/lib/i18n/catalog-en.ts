@@ -2846,7 +2846,6 @@ export const en = {
   'code.base.rootOffDirty.one': ', {count} uncommitted file',
   'code.base.rootOffDirty.other': ', {count} uncommitted files',
   'code.milestone': 'Milestone #{number}',
-  'code.card.deduced': 'Card deduced from the branch name',
   'code.chip.filter': 'Filter the thread on {branch}',
 
   // Recherche dans le fil et navigation par tours

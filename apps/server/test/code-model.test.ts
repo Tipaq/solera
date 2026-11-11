@@ -28,6 +28,7 @@ const {
   formatBytes,
   codeDataOf,
   branchInfosOf,
+  pluralOf,
 } = await import('../../web/src/lib/code-model.js')
 
 const DAY = 86_400_000
@@ -317,6 +318,10 @@ test('nom court, carte devinée du nom', () => {
   assert.equal(cardNumberOf('jalon/164-page-projet'), 164)
   assert.equal(cardNumberOf('spike/terminal-wasm'), null)
   assert.equal(cardNumberOf('153-titre'), null)
+})
+
+test('pluriel : un seul, sinon plusieurs (zéro compris)', () => {
+  assert.deepEqual([0, 1, 2, 40].map(pluralOf), ['other', 'one', 'other', 'other'])
 })
 
 test('formatBytes en français et en anglais', () => {

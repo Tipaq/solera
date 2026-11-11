@@ -2842,7 +2842,6 @@ export const fr: Catalog = {
   'code.base.rootOffDirty.one': ', {count} fichier non commité',
   'code.base.rootOffDirty.other': ', {count} fichiers non commités',
   'code.milestone': 'Jalon #{number}',
-  'code.card.deduced': 'Carte déduite du nom de la branche',
   'code.chip.filter': 'Filtrer le fil sur {branch}',
 
   // Recherche dans le fil et navigation par tours

@@ -1,7 +1,20 @@
 import { ArrowDown, ArrowUp, HardDrive } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Badge, cx } from '@solera/ui'
-import { PR_TONE, formatBytes, type TreeRow } from '../../lib/code-model'
+import { BEHIND_ALERT, PR_TONE, formatBytes, pluralOf, type TreeRow } from '../../lib/code-model'
 import { useLocale, useTranslate } from '../../lib/i18n'
+
+/** Un fait en signes, et sa phrase pour un lecteur d'écran : l'infobulle n'existe pas au doigt. */
+function Fact({ label, className, children }: { label: string; className?: string; children: ReactNode }) {
+  return (
+    <span title={label}>
+      <span aria-hidden className={className}>
+        {children}
+      </span>
+      <span className="sr-only">{label}</span>
+    </span>
+  )
+}
 
 /**
  * Les faits d'un arbre en une ligne : sa PR, son avance et son retard sur la base (↓
@@ -10,7 +23,6 @@ import { useLocale, useTranslate } from '../../lib/i18n'
 export function TreeFacts({ tree, className }: { tree: TreeRow; className?: string }) {
   const t = useTranslate()
   const locale = useLocale()
-  const many = (count: number) => (count === 1 ? 'one' : 'other')
   return (
     <span className={cx('flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-ink-faint', className)}>
       {tree.pr ? (
@@ -20,29 +32,29 @@ export function TreeFacts({ tree, className }: { tree: TreeRow; className?: stri
       ) : null}
       {tree.root ? null : (
         <span className="inline-flex items-center gap-1">
-          <span className="inline-flex items-center" title={t(`code.drift.ahead.${many(tree.ahead)}`, { count: tree.ahead })}>
+          <Fact label={t(`code.drift.ahead.${pluralOf(tree.ahead)}`, { count: tree.ahead })} className="inline-flex items-center">
             <ArrowUp size={11} />
             {tree.ahead}
-          </span>
-          <span
-            className={cx('inline-flex items-center', tree.behind > 20 && 'text-caution')}
-            title={t(`code.drift.behind.${many(tree.behind)}`, { count: tree.behind })}
+          </Fact>
+          <Fact
+            label={t(`code.drift.behind.${pluralOf(tree.behind)}`, { count: tree.behind })}
+            className={cx('inline-flex items-center', tree.behind > BEHIND_ALERT.tree && 'text-caution')}
           >
             <ArrowDown size={11} />
             {tree.behind}
-          </span>
+          </Fact>
         </span>
       )}
       {tree.uncommitted > 0 ? (
-        <span className="text-caution" title={t(`code.drift.dirty.${many(tree.uncommitted)}`, { count: tree.uncommitted })}>
+        <Fact label={t(`code.drift.dirty.${pluralOf(tree.uncommitted)}`, { count: tree.uncommitted })} className="text-caution">
           ●{tree.uncommitted}
-        </span>
+        </Fact>
       ) : null}
       {tree.sizeBytes !== null ? (
-        <span className="inline-flex items-center gap-1" title={t('code.size')}>
+        <Fact label={t('code.size')} className="inline-flex items-center gap-1">
           <HardDrive size={11} />
           {formatBytes(tree.sizeBytes, locale)}
-        </span>
+        </Fact>
       ) : null}
     </span>
   )

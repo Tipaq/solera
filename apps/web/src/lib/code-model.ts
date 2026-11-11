@@ -7,6 +7,7 @@ import type {
   WorktreeState,
   WorktreeStatusListDto,
 } from '@solera/protocol'
+import type { ActivityGroup } from './activity-groups'
 
 /**
  * Le modèle « Code » d'un projet : ses arbres (la racine et les worktrees), ce que chacun
@@ -18,7 +19,7 @@ import type {
  *
  * Ce que le serveur ne dit pas encore (taille d'un arbre, date et avance d'une branche
  * sans arbre, ses derniers commits, les branches distantes) vaut `null` ou vide : rien
- * n'est simulé, et l'interface écrit « — » plutôt qu'un chiffre inventé.
+ * n'est simulé, et l'interface tait ce qu'elle ne sait pas plutôt que d'inventer.
  */
 
 const DAY = 86_400_000
@@ -26,8 +27,17 @@ const DAY = 86_400_000
 /** Au-delà, un arbre ou une branche sans activité est soupçonné d'abandon. */
 export const STALE_DAYS = 14
 
-/** Au-delà, un arbre est « lourd » : sa taille s'écrit à l'encre forte. */
-export const HEAVY_BYTES = 400 * 1024 * 1024
+/**
+ * Au-delà de ce retard sur la base, ↓ passe à l'ambre : dès 3 commits dans le graphe de
+ * l'Aperçu (A-4.4), qui ne montre que le travail en cours ; au-delà de 20 dans les faits
+ * d'un arbre (T-4.3), où tout arbre finit par prendre du retard.
+ */
+export const BEHIND_ALERT = { line: 2, tree: 20 } as const
+
+/** La catégorie de pluriel d'un compte, pour les clés `….one` / `….other`. */
+export function pluralOf(count: number): 'one' | 'other' {
+  return count === 1 ? 'one' : 'other'
+}
 
 /* ------------------------------------------------------------------ les arbres */
 
@@ -287,7 +297,7 @@ export function statesOfBranch(branch: BranchInfo, now: number): Set<StateKey> {
 }
 
 /** Une session du fil, par le groupe de l'Activité. */
-export function statesOfRow(row: { group: 'asking' | 'review' | 'running' | 'done' }): Set<StateKey> {
+export function statesOfRow(row: { group: ActivityGroup }): Set<StateKey> {
   const out = new Set<StateKey>()
   if (row.group === 'asking') out.add('waiting')
   if (row.group === 'running') out.add('working')
@@ -450,6 +460,8 @@ function cardIndex(cards: CardDto[]) {
   }
 }
 
+// Le même que `pullRequestFor` (`lib/pull-requests.ts`), qui vit à côté des requêtes et
+// ne se charge pas hors navigateur : le modèle reste lisible par les tests.
 function pullRequestOf(list: ProjectPullRequestListDto | undefined, branch: string | null) {
   if (!list?.available || !branch) return null
   return list.pullRequests.find((pr) => pr.branch === branch) ?? null
@@ -473,11 +485,11 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
   }
 
   const trees: TreeRow[] = []
-  const judge = (fields: TreeFields) => trees.push({ ...fields, ...verdictOf(fields, now) })
+  const addTree = (fields: TreeFields) => trees.push({ ...fields, ...verdictOf(fields, now) })
 
   if (project.git) {
     const root = sessionsOf(null)
-    judge({
+    addTree({
       key: 'root',
       root: true,
       id: null,
@@ -503,7 +515,7 @@ export function codeDataOf({ project, statuses, pullRequests, cards, sessions, n
   for (const tree of statuses?.worktrees ?? []) {
     const mine = tree.id ? sessionsOf(tree.id) : { live: [], latestId: null, lastAt: null, card: null }
     const pr = pullRequestOf(pullRequests, tree.branch)
-    judge({
+    addTree({
       key: tree.path,
       root: false,
       id: tree.id,
