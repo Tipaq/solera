@@ -5,10 +5,18 @@ import { cardNotes, cardReviews, cards, projects, type CardRow, type ProjectRow 
 import type { AppContext } from '../http/context.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import { defaultBase } from '../worktrees/assess.js'
-import type { Forge } from './forge.js'
+import type { Forge, PullRequest } from './forge.js'
+import { PullRequestNotReady, mergeReadyPullRequest } from './merge.js'
 
 /** Après un échec, la forge n'est relancée pour cette parente qu'une demi-heure plus tard. */
 const RETRY_MS = 30 * 60_000
+
+/**
+ * Une PR de parente ouverte se relit une fois par minute : le balayage passe deux fois par
+ * seconde, et un `gh` par jalon à ce rythme serait du bruit pour la forge. La minute est
+ * celle du cache des PR de l'Activité.
+ */
+const CHECK_MS = 60_000
 
 /** Ce que ce module attend de l'aiguillage des notifications. */
 export type ParentNotifier = Pick<Notifications, 'dispatch'>
@@ -30,6 +38,8 @@ export type ParentNotifier = Pick<Notifications, 'dispatch'>
  */
 export class ParentPullRequests {
   private readonly retryAt = new Map<string, number>()
+  /** Quand relire chaque PR ouverte, par parente : la fusion faite sur la forge (#187). */
+  private readonly checkAt = new Map<string, number>()
   private logger: FastifyBaseLogger | null = null
 
   constructor(
@@ -56,6 +66,39 @@ export class ParentPullRequests {
       const project = this.ctx.db.select().from(projects).where(eq(projects.id, parent.projectId)).get()
       if (!project) continue
       await this.open(parent, project, merged)
+    }
+    await this.checkOpen(now)
+  }
+
+  /**
+   * Relit les PR de parente ouvertes, et pose leur date de fusion quand la forge les dit
+   * fusionnées : une fusion faite sur GitHub livre le jalon comme celle faite depuis
+   * Solera. Une PR fermée sans fusion peut être rouverte : elle se relit à la demi-heure.
+   */
+  private async checkOpen(now: number): Promise<void> {
+    const open = this.ctx.db
+      .select()
+      .from(cards)
+      .where(and(isNotNull(cards.branchPrNumber), isNull(cards.branchPrMergedAt)))
+      .all()
+    for (const parent of open) {
+      if ((this.checkAt.get(parent.id) ?? 0) > now) continue
+      const project = this.ctx.db.select().from(projects).where(eq(projects.id, parent.projectId)).get()
+      if (!project) continue
+      let pr: PullRequest
+      try {
+        pr = await this.forge.readPullRequest(project.workspacePath, String(parent.branchPrNumber), this.token?.(project.ownerId))
+      } catch (err) {
+        this.checkAt.set(parent.id, now + RETRY_MS)
+        this.logger?.warn({ err, card: parent.id }, 'PR de carte parente non relue')
+        continue
+      }
+      if (pr.state === 'MERGED') {
+        this.checkAt.delete(parent.id)
+        recordBranchPrMerged(this.ctx, parent, pr, now)
+      } else {
+        this.checkAt.set(parent.id, now + (pr.state === 'CLOSED' ? RETRY_MS : CHECK_MS))
+      }
     }
   }
 
@@ -152,9 +195,61 @@ export class ParentPullRequests {
   }
 
   private note(cardId: string, body: string): void {
-    this.ctx.db
-      .insert(cardNotes)
-      .values({ id: randomUUID(), cardId, conversationId: null, userId: null, body, createdAt: Date.now() })
-      .run()
+    note(this.ctx, cardId, body)
   }
+}
+
+/** La carte n'a pas de PR finale : sa branche n'a pas encore été proposée. */
+export class BranchPrMissing extends Error {}
+
+/**
+ * Fusionne la PR d'une parente vers la branche par défaut (#187) : le « Fusionner dans
+ * main » d'un jalon. La fusion est celle d'un arbre (`mergeReadyPullRequest`), avec ses
+ * refus : la PR doit être prête. Pose la date de fusion et une note ; **ne clôt pas la
+ * carte**, dont la clôture reste un geste à part (#69).
+ *
+ * Une PR que la forge dit déjà fusionnée est refusée comme les autres, mais sa date est
+ * posée au passage : elle l'a été sur GitHub, et le jalon est livré.
+ *
+ * `BranchPrMissing` sans PR, `PullRequestNotReady` si elle n'est pas prête, `ForgeError`
+ * si la forge refuse.
+ */
+export async function mergeBranchPullRequest(
+  ctx: AppContext,
+  forge: Forge,
+  card: CardRow,
+  project: ProjectRow,
+  token?: string,
+): Promise<{ number: number; url: string; mergedAt: number }> {
+  if (card.branchPrNumber === null) throw new BranchPrMissing(`#${card.number} n'a pas de PR vers la branche par défaut.`)
+  let pr: PullRequest
+  try {
+    pr = await mergeReadyPullRequest(forge, project.workspacePath, String(card.branchPrNumber), token)
+  } catch (err) {
+    if (err instanceof PullRequestNotReady && err.reason === 'merged') {
+      recordBranchPrMerged(ctx, card, err.pullRequest, Date.now())
+    }
+    throw err
+  }
+  const mergedAt = Date.now()
+  recordBranchPrMerged(ctx, card, pr, mergedAt)
+  return { number: pr.number, url: pr.url, mergedAt }
+}
+
+/** La date de fusion, et sa note, une seule fois : la première à la voir l'écrit. */
+function recordBranchPrMerged(ctx: AppContext, card: CardRow, pr: PullRequest, at: number): void {
+  const { changes } = ctx.db
+    .update(cards)
+    .set({ branchPrMergedAt: at })
+    .where(and(eq(cards.id, card.id), isNull(cards.branchPrMergedAt)))
+    .run()
+  if (changes === 0) return
+  note(ctx, card.id, `PR #${pr.number} de \`${pr.head}\` fusionnée dans \`${pr.base}\` : le travail de #${card.number} est livré.`)
+}
+
+function note(ctx: AppContext, cardId: string, body: string): void {
+  ctx.db
+    .insert(cardNotes)
+    .values({ id: randomUUID(), cardId, conversationId: null, userId: null, body, createdAt: Date.now() })
+    .run()
 }

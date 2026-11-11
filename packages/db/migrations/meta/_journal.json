@@ -505,6 +505,13 @@
       "when": 1794425239140,
       "tag": "0072_pilotage_a_la_main",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1794426640869,
+      "tag": "0073_pr_finale_fusionnee",
+      "breakpoints": true
     }
   ]
 }
