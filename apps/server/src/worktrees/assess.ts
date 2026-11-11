@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
-import type { WorktreeState } from '@solera/protocol'
+import type { BranchCommitDto, WorktreeState } from '@solera/protocol'
 import type { LandedPullRequest } from './landed.js'
 
 /**
@@ -163,8 +163,8 @@ function gitVersionAtLeast(cwd: string, major: number, minor: number): Promise<b
     (result) => {
       const match = /(\d+)\.(\d+)/.exec(result.stdout)
       if (!match) return false
-      const [found, foundMinor] = [Number(match[1]), Number(match[2])]
-      return found > major || (found === major && foundMinor >= minor)
+      const [foundMajor, foundMinor] = [Number(match[1]), Number(match[2])]
+      return foundMajor > major || (foundMajor === major && foundMinor >= minor)
     },
     () => false,
   )
@@ -464,7 +464,7 @@ export async function looseBranches(
       if (name !== 'HEAD' && `${REMOTE}/${name}` !== base) remotes.push({ name, merged: false, remoteOnly: true, head })
     }
   }
-  const branches = [...locals, ...remotes.filter((branch) => !localNames.has(branch.name) && branch.name !== base)]
+  const branches = [...locals, ...remotes.filter((branch) => !localNames.has(branch.name))]
   if (!base || branches.length === 0) return branches
 
   const ancestors = await git(repo, ['for-each-ref', '--format=%(refname)', `--merged=${base}`, 'refs/heads/', `refs/remotes/${REMOTE}/`])
@@ -490,15 +490,6 @@ export async function looseBranches(
   return branches
 }
 
-/** Un commit propre à une branche, du plus récent au plus ancien. */
-export interface BranchCommit {
-  hash: string
-  shortHash: string
-  subject: string
-  /** Date du commit, en millisecondes. */
-  ts: number
-}
-
 /** Ce qu'on lit d'une branche sans arbre, une fois la liste rendue. */
 export interface BranchFacts {
   /** Le sujet de son commit de tête. */
@@ -508,7 +499,7 @@ export interface BranchFacts {
   ahead: number
   behind: number
   /** Ses derniers commits que la base n'a pas, `RECENT_COMMITS` au plus. */
-  recentCommits: BranchCommit[]
+  recentCommits: BranchCommitDto[]
 }
 
 /** Le commit que désigne `ref`, ou null. */
@@ -530,8 +521,8 @@ function supportsAheadBehind(cwd: string): Promise<boolean> {
 
 /**
  * La date, l'avance, le retard et les derniers commits des branches sans arbre, par
- * nom. Une commande pour toutes (deux par branche avant git 2.41), puis un `git log`
- * par branche pour ses commits propres. Une branche que git ne sait pas lire n'y est pas.
+ * nom. Une commande pour toutes (une de plus par branche avant git 2.41), puis un
+ * `git log` par branche en avance sur la base, pour ses commits propres. Une branche que git ne sait pas lire n'y est pas.
  */
 export async function branchFacts(
   repo: string,
@@ -565,7 +556,11 @@ export async function branchFacts(
       if (result.code !== 0) continue
       ;[behind = 0, ahead = 0] = result.stdout.trim().split('\t').map((n) => Number(n) || 0)
     }
-    const log = await git(repo, ['log', `-${RECENT_COMMITS}`, '--format=%H%x00%h%x00%ct%x00%s', `${base}..${ref}`, '--'])
+    // Rien en avance, rien à lister : les fusionnées par fast-forward n'en coûtent pas.
+    const log =
+      ahead === 0
+        ? { code: 0, stdout: '' }
+        : await git(repo, ['log', `-${RECENT_COMMITS}`, '--format=%H%x00%h%x00%ct%x00%s', `${base}..${ref}`, '--'])
     if (log.code !== 0) continue
     const recentCommits = log.stdout
       .split('\n')

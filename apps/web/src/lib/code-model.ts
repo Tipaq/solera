@@ -249,7 +249,7 @@ export interface BranchInfo {
   lastCommitAt: number | null
   ahead: number | null
   behind: number | null
-  commits: { hash: string; title: string; at: number }[]
+  commits: { hash: string; shortHash: string; title: string; at: number }[]
   pr: { number: number; url: string; state: PullRequestBadgeState; title: string } | null
   card: CodeCard | null
 }
@@ -575,7 +575,7 @@ export function branchInfosOf({
         lastCommitAt: branch.lastCommitAt,
         ahead: branch.ahead,
         behind: branch.behind,
-        commits: branch.recentCommits.map((commit) => ({ hash: commit.hash, title: commit.subject, at: commit.ts })),
+        commits: branch.recentCommits.map((commit) => ({ hash: commit.hash, shortHash: commit.shortHash, title: commit.subject, at: commit.ts })),
         pr,
         card: index.ofName(branch.name),
       }

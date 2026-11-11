@@ -457,7 +457,7 @@ test('branches sans arbre : la date, l\'avance et les commits lus par le serveur
   assert.deepEqual(infos.map((entry) => [entry.name, entry.kind]), [['spike/recente', 'unmerged'], ['spike/vieille', 'unmerged'], ['fix/distante', 'remote']])
   const remote = infos[2]!
   assert.deepEqual([remote.lastCommitAt, remote.ahead, remote.behind, remote.remoteOnly], [NOW - DAY, 1, 0, true])
-  assert.deepEqual(remote.commits, [{ hash: 'abc123', title: 'd', at: NOW - DAY }])
+  assert.deepEqual(remote.commits, [{ hash: 'abc123', shortHash: 'abc', title: 'd', at: NOW - DAY }])
   assert.deepEqual([...statesOfBranch(infos[1]!, NOW)], ['stale'])
   assert.deepEqual([...statesOfBranch(infos[0]!, NOW)], [])
 })
