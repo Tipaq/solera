@@ -8,7 +8,7 @@ export function MoreLink({ to, children }: { to: string; children: ReactNode }) 
   return (
     <Link
       to={to}
-      className="inline-flex items-center gap-1 rounded text-xs text-ink-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+      className="inline-flex items-center gap-1 rounded text-xs text-ink-faint hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
     >
       {children}
       <ArrowUpRight size={12} aria-hidden />
@@ -37,7 +37,7 @@ export function OverviewSection({
   const id = useId()
   return (
     <section aria-labelledby={id} className="flex min-w-0 flex-col">
-      <div className="mb-2 flex h-6 items-center gap-3">
+      <div className="mb-2 flex min-h-6 items-center gap-3">
         <h2 id={id} className={cx('text-xs font-medium text-ink-faint', caps && 'tracking-wide uppercase')}>
           {title}
         </h2>

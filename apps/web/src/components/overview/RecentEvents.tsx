@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { JOURNAL_DEFAULT_DAYS, type JournalEntryDto } from '@solera/protocol'
+import type { JournalEntryDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { elapsed } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
@@ -19,16 +19,18 @@ const EVENTS_SHOWN = 5
  */
 export function RecentEvents({ projectId }: { projectId: string }) {
   const { data } = useJournal(projectId)
+  // Rien tant que le journal charge (A-1.4) : « Rien ces 14 derniers jours » serait faux.
+  if (!data) return null
   return (
     <RecentEventsView
       projectId={projectId}
-      entries={(data?.entries ?? []).slice(0, EVENTS_SHOWN)}
-      days={data?.days ?? JOURNAL_DEFAULT_DAYS}
+      entries={data.entries.slice(0, EVENTS_SHOWN)}
+      days={data.days}
     />
   )
 }
 
-const SHAPE = 'grid h-9 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-sm'
+const SHAPE = 'grid h-9 pointer-coarse:h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 text-sm'
 
 /** Le bloc sans sa requête, pour sa story. */
 export function RecentEventsView({ projectId, entries, days }: { projectId: string; entries: JournalEntryDto[]; days: number }) {

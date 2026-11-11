@@ -18,7 +18,9 @@ import { MoreLink, OverviewSection } from './OverviewSection'
  * l'onglet Actions : le lanceur ⚡ de la bande n'est plus (décision du 2026-11-11).
  */
 export function OverviewActions({ projectId }: { projectId: string }) {
-  const { items } = useAutomations({ projectId })
+  const { items, isPending } = useAutomations({ projectId })
+  // Rien tant que les actions chargent (A-1.4) : « Aucune action » serait un mensonge.
+  if (isPending) return null
   return <OverviewActionsView projectId={projectId} items={items} now={Date.now()} />
 }
 
@@ -38,7 +40,7 @@ export function OverviewActionsView({ projectId, items, now }: { projectId: stri
           {shown.map((item) => {
             const line = overviewLine(item, projectId, now, t)
             return (
-              <li key={item.id} className="flex min-h-9 min-w-0 items-center gap-2 text-sm">
+              <li key={item.id} className="flex min-h-9 min-w-0 items-center gap-2 text-sm pointer-coarse:min-h-11">
                 <span
                   aria-hidden
                   className={cx(
@@ -67,7 +69,12 @@ export function OverviewActionsView({ projectId, items, now }: { projectId: stri
   )
 }
 
-const GESTURE = 'ml-auto inline-flex shrink-0 items-center gap-1 rounded text-xs focus-visible:outline-2 focus-visible:outline-accent'
+/**
+ * Un geste discret au bout de la ligne, à la hauteur des gestes `row` d'une action
+ * (`ActionGestures.tsx` : 32 px, 44 au doigt), sa couleur posée par chaque cas.
+ */
+const GESTURE =
+  'ml-auto inline-flex h-8 shrink-0 items-center gap-1 rounded text-xs focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11'
 
 /** Le geste au bout de la ligne : un lien discret, de la couleur de ce qu'il fait. */
 function Gesture({ gesture, projectId }: { gesture: OverviewGesture; projectId: string }) {

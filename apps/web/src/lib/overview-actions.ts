@@ -1,4 +1,4 @@
-import { ago, liveText, reviewReason, sectionOf, type Automation, type Translate } from './automations'
+import { ago, liveText, primaryGestureOf, reviewReason, sectionOf, type Automation, type Translate } from './automations'
 
 /**
  * Le bloc « Actions » de l'Aperçu (`projet.md` A-5) : ce qui **tourne** ou **attend**
@@ -14,7 +14,7 @@ export function actionsTabPath(projectId: string, automationId?: string): string
   return automationId ? `${base}?action=${encodeURIComponent(automationId)}` : base
 }
 
-export interface OverviewActions {
+export interface ActionsDigest {
   /** Ce qui tourne d'abord, puis ce qui attend une relecture : l'ordre de l'onglet. */
   shown: Automation[]
   /** Les autres, au repos. */
@@ -22,7 +22,7 @@ export interface OverviewActions {
   total: number
 }
 
-export function overviewActionsOf(items: readonly Automation[]): OverviewActions {
+export function overviewActionsOf(items: readonly Automation[]): ActionsDigest {
   const live = items.filter((item) => sectionOf(item) === 'live')
   const review = items.filter((item) => sectionOf(item) === 'review')
   const shown = [...live, ...review]
@@ -49,28 +49,42 @@ export interface OverviewLine {
   gesture: OverviewGesture
 }
 
-/** Une ligne du bloc : son point, ce qui tourne ou pourquoi relire, et son geste (A-5.2). */
+/**
+ * Une ligne du bloc : son point, ce qui tourne ou pourquoi relire, et son geste (A-5.2).
+ * Le geste suit le geste principal de l'action (`primaryGestureOf`, LAN-7), en lien : un
+ * service mène à son adresse, une commande à son terminal, un passage à sa session.
+ */
 export function overviewLine(item: Automation, projectId: string, now: number, t: Translate): OverviewLine {
-  const detail = actionsTabPath(projectId, item.id)
-  if (item.review) {
-    return {
-      tone: 'review',
-      detail: t('project.overview.actions.review', { reason: reviewReason(item.review, t) }),
-      gesture: { kind: 'review', to: detail },
-    }
-  }
+  const detailPath = actionsTabPath(projectId, item.id)
   const { live } = item
-  if (live?.kind === 'terminal') {
-    return {
-      tone: 'live',
-      detail: t('project.overview.actions.terminal', { ago: ago(live.since, now, t) }),
-      gesture: { kind: 'terminal', terminalId: live.terminalId },
-    }
+  switch (primaryGestureOf(item)) {
+    case 'review':
+      return {
+        tone: 'review',
+        detail: t('project.overview.actions.review', { reason: reviewReason(item.review!, t) }),
+        gesture: { kind: 'review', to: detailPath },
+      }
+    case 'terminal':
+      if (live?.kind === 'terminal') {
+        return {
+          tone: 'live',
+          detail: t('project.overview.actions.terminal', { ago: ago(live.since, now, t) }),
+          gesture: { kind: 'terminal', terminalId: live.terminalId },
+        }
+      }
+      break
+    case 'switch':
+      if (live?.kind === 'service' && live.href) {
+        return { tone: 'live', detail: liveText(item, now, t) ?? '', gesture: { kind: 'open', href: live.href } }
+      }
+      break
+    case 'session':
+      if (live?.kind === 'run' && live.conversationId) {
+        return { tone: 'live', detail: liveText(item, now, t) ?? '', gesture: { kind: 'session', conversationId: live.conversationId } }
+      }
+      break
+    case 'launch':
+      break
   }
-  const text = liveText(item, now, t) ?? ''
-  if (live?.kind === 'service' && live.href) return { tone: 'live', detail: text, gesture: { kind: 'open', href: live.href } }
-  if (live?.kind === 'run' && live.conversationId) {
-    return { tone: 'live', detail: text, gesture: { kind: 'session', conversationId: live.conversationId } }
-  }
-  return { tone: 'live', detail: text, gesture: { kind: 'detail', to: detail } }
+  return { tone: 'live', detail: liveText(item, now, t) ?? '', gesture: { kind: 'detail', to: detailPath } }
 }
