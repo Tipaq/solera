@@ -17,9 +17,10 @@ import type { ActivityGroup } from './activity-groups'
  * Pur, et sans texte : les raisons sont des identifiants que l'interface traduit
  * (`code.reason.*`). `lib/code-data.ts` l'alimente des requêtes ; les tests le lisent seul.
  *
- * Ce que le serveur ne dit pas encore (taille d'un arbre, date et avance d'une branche
- * sans arbre, ses derniers commits, les branches distantes) vaut `null` ou vide : rien
- * n'est simulé, et l'interface tait ce qu'elle ne sait pas plutôt que d'inventer.
+ * Ce que le serveur ne dit pas encore (taille d'un arbre), ou pas encore lu (la date,
+ * l'avance et les commits d'une branche, le temps de `branchesPending`), vaut `null` ou
+ * vide : rien n'est simulé, et l'interface tait ce qu'elle ne sait pas plutôt que
+ * d'inventer.
  */
 
 const DAY = 86_400_000
@@ -244,11 +245,11 @@ export interface BranchInfo {
   kind: BranchKind
   merged: boolean
   remoteOnly: boolean
-  /** Null, comme l'avance, le retard et les commits, tant que #167 n'est pas livrée. */
+  /** Null, comme l'avance et le retard, tant que le serveur ne les a pas lus. */
   lastCommitAt: number | null
   ahead: number | null
   behind: number | null
-  commits: { hash: string; title: string; at: number }[]
+  commits: { hash: string; shortHash: string; title: string; at: number }[]
   pr: { number: number; url: string; state: PullRequestBadgeState; title: string } | null
   card: CodeCard | null
 }
@@ -556,7 +557,7 @@ export function branchInfosOf({
   pullRequests,
   cards,
 }: {
-  branches: { name: string; merged: boolean; remoteOnly?: boolean }[]
+  branches: WorktreeStatusListDto['branches']
   pullRequests: ProjectPullRequestListDto | undefined
   cards: CardDto[]
 }): BranchInfo[] {
@@ -565,17 +566,16 @@ export function branchInfosOf({
     branches.map((branch) => {
       const found = pullRequestOf(pullRequests, branch.name)
       const pr = found ? { number: found.number, url: found.url, state: found.state, title: found.title } : null
-      const remoteOnly = branch.remoteOnly ?? false
       return {
         key: `branche:${branch.name}`,
         name: branch.name,
-        kind: branchKindOf({ merged: branch.merged, remoteOnly, pr }),
+        kind: branchKindOf({ merged: branch.merged, remoteOnly: branch.remoteOnly, pr }),
         merged: branch.merged,
-        remoteOnly,
-        lastCommitAt: null,
-        ahead: null,
-        behind: null,
-        commits: [],
+        remoteOnly: branch.remoteOnly,
+        lastCommitAt: branch.lastCommitAt,
+        ahead: branch.ahead,
+        behind: branch.behind,
+        commits: branch.recentCommits.map((commit) => ({ hash: commit.hash, shortHash: commit.shortHash, title: commit.subject, at: commit.ts })),
         pr,
         card: index.ofName(branch.name),
       }

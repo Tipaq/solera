@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import type { ConversationDto, GitSummaryDto, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
+import type { ConversationDto, GitSummaryDto, LooseBranchDto, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { ActivityRow } from '../../lib/activity-rows'
 import { WorktreeGroups } from './WorktreeGroups'
 
@@ -18,6 +18,13 @@ function tree(name: string, state: WorktreeStatusDto['state'], extra: Partial<Wo
     id: `wt-${name}`, name, path: `${ROOT}/${name.replace(/\//g, '__')}`, branch: name, external: false, state,
     ahead: 0, behind: 0, modified: 0, untracked: 0, conflicts: false, unmergedCommits: false, mergedPullRequest: null, head: null,
     lastCommitAt: null, lastEditAt: null, conversations: [], ...extra,
+  }
+}
+
+function loose(name: string, merged: boolean): LooseBranchDto {
+  return {
+    name, merged, remoteOnly: false, head: '0'.repeat(40), subject: null, lastCommitAt: null, ahead: null, behind: null,
+    recentCommits: [],
   }
 }
 
@@ -84,11 +91,8 @@ const STATUS: WorktreeStatusListDto = {
     tree('audit/bundle-web', 'unmerged', { ahead: 3, unmergedCommits: true, lastCommitAt: now - 7 * DAY }),
     tree('fix/tir-planifie', 'missing', { lastCommitAt: now - 4 * DAY }),
   ],
-  branches: [
-    { name: 'feat/vieux-panneau', merged: true },
-    { name: 'fix/coquille', merged: true },
-    { name: 'essai/abandonne', merged: false },
-  ],
+  branches: [loose('feat/vieux-panneau', true), loose('fix/coquille', true), loose('essai/abandonne', false)],
+  branchesPending: false,
 }
 
 const ROOT_GIT: GitSummaryDto = { branch: 'main', isDirty: true, changedFiles: 3, added: 12, removed: 4 }

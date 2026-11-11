@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
-import type { WorktreeState } from '@solera/protocol'
+import type { BranchCommitDto, WorktreeState } from '@solera/protocol'
 import type { LandedPullRequest } from './landed.js'
 
 /**
@@ -154,16 +154,20 @@ export async function defaultBase(repo: string): Promise<string | null> {
 let mergeBaseSupport: Promise<boolean> | null = null
 
 function supportsMergeBase(cwd: string): Promise<boolean> {
-  mergeBaseSupport ??= git(cwd, ['version']).then(
+  mergeBaseSupport ??= gitVersionAtLeast(cwd, 2, 40)
+  return mergeBaseSupport
+}
+
+function gitVersionAtLeast(cwd: string, major: number, minor: number): Promise<boolean> {
+  return git(cwd, ['version']).then(
     (result) => {
       const match = /(\d+)\.(\d+)/.exec(result.stdout)
       if (!match) return false
-      const [major, minor] = [Number(match[1]), Number(match[2])]
-      return major > 2 || (major === 2 && minor >= 40)
+      const [foundMajor, foundMinor] = [Number(match[1]), Number(match[2])]
+      return foundMajor > major || (foundMajor === major && foundMinor >= minor)
     },
     () => false,
   )
-  return mergeBaseSupport
 }
 
 export interface WorktreeAssessment {
@@ -407,21 +411,35 @@ export async function assessWorktree(
   }
 }
 
-/** Branche locale qu'aucun arbre n'a extraite. */
+/** Branche qu'aucun arbre n'a extraite : locale, ou seulement sur `origin`. */
 export interface LooseBranch {
+  /** Nom court, sans `origin/` pour une distante : celui qu'une PR ou une carte citent. */
   name: string
   /** Rien que la base n'ait déjà : fusionnée, squash et cherry-pick compris. */
   merged: boolean
+  /** N'existe que sur `origin`, sans branche locale du même nom. */
+  remoteOnly: boolean
+  /** Le commit de tête. */
+  head: string
+}
+
+/** Le remote dont on montre les branches qui n'ont pas de locale. */
+const REMOTE = 'origin'
+
+/** La ref complète d'une branche, locale ou distante. */
+function refOf(branch: Pick<LooseBranch, 'name' | 'remoteOnly'>): string {
+  return branch.remoteOnly ? `refs/remotes/${REMOTE}/${branch.name}` : `refs/heads/${branch.name}`
 }
 
 /** Au-delà, une branche n'est plus jugée sur son contenu : elle compte pour non fusionnée. */
 const MAX_BRANCHES_JUDGED = 100
 
 /**
- * Les branches locales qu'aucun arbre n'a extraites, la base exceptée, jugées comme un
- * arbre l'est : par leur contenu et non par leur ancestralité. L'ancestralité
- * d'abord, en une commande pour toutes ; `merge-tree` ensuite, pour les seules qui ne
- * sont pas déjà ancêtres de la base.
+ * Les branches qu'aucun arbre n'a extraites, la base exceptée, jugées comme un arbre
+ * l'est : par leur contenu et non par leur ancestralité. Les locales d'abord, puis
+ * celles d'`origin` qui n'ont pas de locale (son `HEAD` et la base exceptés).
+ * L'ancestralité d'abord, en une commande pour toutes ; `merge-tree` ensuite, pour les
+ * seules qui ne sont pas déjà ancêtres de la base.
  */
 export async function looseBranches(
   repo: string,
@@ -430,36 +448,128 @@ export async function looseBranches(
   /** Les PR fusionnées par branche ; une branche qu'elles contiennent est fusionnée. */
   landed: ReadonlyMap<string, readonly LandedPullRequest[]> = new Map(),
 ): Promise<LooseBranch[]> {
-  const listed = await git(repo, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/'])
+  const listed = await git(repo, ['for-each-ref', '--format=%(refname)%00%(objectname)', 'refs/heads/', `refs/remotes/${REMOTE}/`])
   if (listed.code !== 0) return []
-  const names = listed.stdout
-    .split('\n')
-    .map((name) => name.trim())
-    .filter((name) => name && name !== base && !checkedOut.has(name))
-  if (!base || names.length === 0) return names.map((name) => ({ name, merged: false }))
+  const locals: LooseBranch[] = []
+  const remotes: LooseBranch[] = []
+  const localNames = new Set<string>()
+  for (const row of listed.stdout.split('\n')) {
+    const [ref = '', head = ''] = row.split('\0')
+    if (ref.startsWith('refs/heads/')) {
+      const name = ref.slice('refs/heads/'.length)
+      localNames.add(name)
+      if (name !== base && !checkedOut.has(name)) locals.push({ name, merged: false, remoteOnly: false, head })
+    } else if (ref.startsWith(`refs/remotes/${REMOTE}/`)) {
+      const name = ref.slice(`refs/remotes/${REMOTE}/`.length)
+      if (name !== 'HEAD' && `${REMOTE}/${name}` !== base) remotes.push({ name, merged: false, remoteOnly: true, head })
+    }
+  }
+  const branches = [...locals, ...remotes.filter((branch) => !localNames.has(branch.name))]
+  if (!base || branches.length === 0) return branches
 
-  const ancestors = await git(repo, ['for-each-ref', '--format=%(refname:short)', `--merged=${base}`, 'refs/heads/'])
-  const merged = new Set(ancestors.code === 0 ? ancestors.stdout.split('\n').map((name) => name.trim()) : [])
+  const ancestors = await git(repo, ['for-each-ref', '--format=%(refname)', `--merged=${base}`, 'refs/heads/', `refs/remotes/${REMOTE}/`])
+  const merged = new Set(ancestors.code === 0 ? ancestors.stdout.split('\n').map((ref) => ref.trim()) : [])
   const baseTree = await line(repo, ['rev-parse', `${base}^{tree}`]).catch(() => null)
   let judged = 0
-  const result: LooseBranch[] = []
-  for (const name of names) {
-    if (merged.has(name)) {
-      result.push({ name, merged: true })
+  for (const branch of branches) {
+    const ref = refOf(branch)
+    if (merged.has(ref)) {
+      branch.merged = true
       continue
     }
-    const prs = landed.get(name)
-    if (prs?.length && (await landedVia(repo, `refs/heads/${name}`, prs)) !== null) {
-      result.push({ name, merged: true })
+    const prs = landed.get(branch.name)
+    if (prs?.length && (await landedVia(repo, ref, prs)) !== null) {
+      branch.merged = true
       continue
     }
-    if (!baseTree || judged >= MAX_BRANCHES_JUDGED) {
-      result.push({ name, merged: false })
-      continue
-    }
+    if (!baseTree || judged >= MAX_BRANCHES_JUDGED) continue
     judged += 1
-    const tree = await mergedTree(repo, base, `refs/heads/${name}`)
-    result.push({ name, merged: tree !== null && !tree.conflicts && tree.tree === baseTree })
+    const tree = await mergedTree(repo, base, ref)
+    branch.merged = tree !== null && !tree.conflicts && tree.tree === baseTree
   }
-  return result
+  return branches
+}
+
+/** Ce qu'on lit d'une branche sans arbre, une fois la liste rendue. */
+export interface BranchFacts {
+  /** Le sujet de son commit de tête. */
+  subject: string
+  lastCommitAt: number
+  /** Commits propres à la branche, et commits de la base qu'elle n'a pas. */
+  ahead: number
+  behind: number
+  /** Ses derniers commits que la base n'a pas, `RECENT_COMMITS` au plus. */
+  recentCommits: BranchCommitDto[]
+}
+
+/** Le commit que désigne `ref`, ou null. */
+export async function commitOf(repo: string, ref: string): Promise<string | null> {
+  const result = await git(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+  return result.code === 0 ? result.stdout.trim() || null : null
+}
+
+/** Commits propres montrés par branche. */
+const RECENT_COMMITS = 3
+
+/** `%(ahead-behind:…)` de `for-each-ref` n'existe qu'à partir de git 2.41. */
+let aheadBehindSupport: Promise<boolean> | null = null
+
+function supportsAheadBehind(cwd: string): Promise<boolean> {
+  aheadBehindSupport ??= gitVersionAtLeast(cwd, 2, 41)
+  return aheadBehindSupport
+}
+
+/**
+ * La date, l'avance, le retard et les derniers commits des branches sans arbre, par
+ * nom. Une commande pour toutes (une de plus par branche avant git 2.41), puis un
+ * `git log` par branche en avance sur la base, pour ses commits propres. Une branche que git ne sait pas lire n'y est pas.
+ */
+export async function branchFacts(
+  repo: string,
+  base: string,
+  branches: readonly LooseBranch[],
+  options: {
+    /** Force le chemin des git antérieurs à 2.41, pour les tests ; sinon lu sur la version. */
+    legacyGit?: boolean
+  } = {},
+): Promise<Map<string, BranchFacts>> {
+  const facts = new Map<string, BranchFacts>()
+  if (branches.length === 0) return facts
+  const modern = options.legacyGit === undefined ? await supportsAheadBehind(repo) : !options.legacyGit
+  const byRef = new Map(branches.map((branch) => [refOf(branch), branch]))
+
+  const listed = await git(repo, [
+    'for-each-ref',
+    `--format=%(refname)%00%(committerdate:unix)%00${modern ? `%(ahead-behind:${base})` : ''}%00%(subject)`,
+    'refs/heads/',
+    `refs/remotes/${REMOTE}/`,
+  ])
+  if (listed.code !== 0) return facts
+
+  for (const row of listed.stdout.split('\n')) {
+    const [ref = '', date = '', counts = '', subject = ''] = row.split('\0')
+    const branch = byRef.get(ref)
+    if (!branch) continue
+    let [ahead = 0, behind = 0] = counts.split(' ').map((n) => Number(n) || 0)
+    if (!modern) {
+      const result = await git(repo, ['rev-list', '--left-right', '--count', `${base}...${ref}`])
+      if (result.code !== 0) continue
+      ;[behind = 0, ahead = 0] = result.stdout.trim().split('\t').map((n) => Number(n) || 0)
+    }
+    // Rien en avance, rien à lister : les fusionnées par fast-forward n'en coûtent pas.
+    const log =
+      ahead === 0
+        ? { code: 0, stdout: '' }
+        : await git(repo, ['log', `-${RECENT_COMMITS}`, '--format=%H%x00%h%x00%ct%x00%s', `${base}..${ref}`, '--'])
+    if (log.code !== 0) continue
+    const recentCommits = log.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map((entry) => {
+        const [hash = '', shortHash = '', ts = '', commitSubject = ''] = entry.split('\0')
+        return { hash, shortHash, subject: commitSubject, ts: Number(ts) * 1000 }
+      })
+    facts.set(branch.name, { subject, lastCommitAt: Number(date) * 1000, ahead, behind, recentCommits })
+  }
+  return facts
 }
