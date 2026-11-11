@@ -776,6 +776,7 @@ test('le service rend la liste sans attendre les tailles, puis la complète ; le
 
   const heavy = addTree(repo, trees, 'feat/heavy')
   write(heavy, 'build/blob.bin', 'x'.repeat(300_000))
+  addTree(repo, trees, 'feat/vanished')
   db.insert(worktrees).values({ id: 'wt-ghost', projectId: 'project', name: 'feat/ghost', path: join(trees, 'ghost'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
 
   const disk = new DiskUsage()
@@ -802,6 +803,14 @@ test('le service rend la liste sans attendre les tailles, puis la complète ; le
   assert.ok(byName.get('feat/heavy')!.sizeBytes! >= 300_000)
   assert.equal(byName.get('feat/ghost')!.sizeBytes, null, 'un arbre introuvable ne se mesure pas')
   assert.ok(next.rootSizeBytes! > 0)
+
+  // Parti hors de Solera : la liste le voit introuvable, et sa taille est oubliée.
+  const vanished = byName.get('feat/vanished')!.path
+  assert.ok(disk.read(vanished).bytes! > 0)
+  rmSync(vanished, { recursive: true, force: true })
+  status.forget(projectRow.id)
+  assert.equal((await status.sized(projectRow)).worktrees.find((w) => w.path === vanished)?.state, 'missing')
+  assert.deepEqual(disk.read(vanished), { bytes: null, pending: true })
 
   const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
   const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => {}, releaseRunner: async () => true })

@@ -220,7 +220,13 @@ export class WorktreeStatusService {
       return size.bytes
     }
     const rootSizeBytes = read(project.workspacePath)
-    const trees = list.worktrees.map((tree) => (tree.state === 'missing' ? tree : { ...tree, sizeBytes: read(tree.path) }))
+    const trees = list.worktrees.map((tree) => {
+      if (tree.state !== 'missing') return { ...tree, sizeBytes: read(tree.path) }
+      // Parti hors d'un nettoyage (une PR fusionnée avec sa branche, un `git worktree
+      // remove`) : recréé au même chemin, il ne doit pas reprendre l'ancienne taille.
+      this.disk.forget(tree.path)
+      return tree
+    })
     return { ...list, worktrees: trees, rootSizeBytes, sizesPending: pending }
   }
 

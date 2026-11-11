@@ -756,7 +756,8 @@ export interface WorktreeStatusDto {
   /**
    * L'espace qu'occupe l'arbre sur le disque, en octets. Null tant qu'il n'est pas
    * mesuré, pour un arbre introuvable, et hors des routes de la liste : la mesure se
-   * fait en fond, et la liste ne l'attend jamais.
+   * fait en fond, et la liste ne l'attend jamais. Les fichiers liés en dur (le store de
+   * pnpm) comptent en entier : nettoyer l'arbre peut libérer moins.
    */
   sizeBytes: number | null
 }

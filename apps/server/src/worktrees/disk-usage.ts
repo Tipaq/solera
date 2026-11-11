@@ -66,12 +66,20 @@ export class DiskUsage {
     // Déjà en mesure : la file l'aurait mesuré deux fois de suite.
     if (this.measuring?.path === path && !this.measuring.forgotten) return
     this.queue.add(path)
-    this.running ??= this.drain().finally(() => {
-      this.running = null
-    })
+    this.running ??= this.drain()
   }
 
   private async drain(): Promise<void> {
+    // La file se vide et le drapeau tombe dans le même pas : un chemin ajouté entre les
+    // deux attendrait la lecture suivante sans que rien ne le mesure.
+    try {
+      await this.drainQueue()
+    } finally {
+      this.running = null
+    }
+  }
+
+  private async drainQueue(): Promise<void> {
     for (let path = first(this.queue); path !== undefined; path = first(this.queue)) {
       this.queue.delete(path)
       const measuring = (this.measuring = { path, forgotten: false })
@@ -99,7 +107,7 @@ let ioniceMissing = false
  * `du` connaissent.
  */
 export async function measureDisk(path: string, platform: NodeJS.Platform = process.platform): Promise<number | null> {
-  if (platform === 'win32') return walkSize(path).catch(() => null)
+  if (platform === 'win32') return withTimeout(walkSize(path)).catch(() => null)
   const ionice = platform === 'linux' && !ioniceMissing
   const args = ['-n', '19', ...(ionice ? ['ionice', '-c', '3'] : []), 'du', '-skx', path]
   const { code, stdout } = await run('nice', args)
@@ -111,6 +119,16 @@ export async function measureDisk(path: string, platform: NodeJS.Platform = proc
   // `du` sort en erreur sur un fichier illisible mais donne quand même son total.
   const kib = Number.parseInt(stdout.split(/\s/, 1)[0] ?? '', 10)
   return Number.isFinite(kib) && stdout.trim() ? kib * 1024 : null
+}
+
+/** Le parcours n'a pas de process à tuer : passé le délai, on cesse de l'attendre. */
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('mesure trop longue')), MEASURE_TIMEOUT_MS)
+    timer.unref()
+  })
+  return Promise.race([work, expired]).finally(() => clearTimeout(timer))
 }
 
 function run(command: string, args: string[]): Promise<{ code: number | null; stdout: string }> {
