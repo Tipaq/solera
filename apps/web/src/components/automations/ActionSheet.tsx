@@ -85,7 +85,7 @@ export function ActionHeader({
         <button
           type="button"
           onClick={chrome.onBack ?? onClose}
-          className={cx(panelGestureClass, '-ml-1 w-fit gap-0.5 px-1')}
+          className={cx(panelGestureClass, '-ml-2.5 w-fit gap-0.5')}
         >
           <ChevronLeft size={14} aria-hidden /> {chrome.backLabel ?? t('actionDrawer.back')}
         </button>
