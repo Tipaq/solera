@@ -353,13 +353,13 @@ test('ligne de base : la racine sur la base, ou sortie ailleurs', () => {
 const status = (over: Partial<WorktreeStatusDto>): WorktreeStatusDto => ({
   id: 'w1', name: 'feat/12-truc', path: '/w/feat', branch: 'feat/12-truc', external: false, state: 'unmerged',
   ahead: 1, behind: 2, modified: 1, untracked: 2, conflicts: false, unmergedCommits: true, mergedPullRequest: null,
-  head: 'abc', lastCommitAt: NOW - 3 * DAY, lastEditAt: NOW - 2 * DAY, conversations: [], ...over,
+  head: 'abc', lastCommitAt: NOW - 3 * DAY, lastEditAt: NOW - 2 * DAY, conversations: [], sizeBytes: null, ...over,
 })
 
 const card = (number: number, over: Partial<CardDto> = {}): CardDto =>
   ({ id: `k${number}`, number, title: `Carte ${number}`, parent: null, children: [], column: 'in_progress', ...over }) as CardDto
 
-test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de simulé', () => {
+test('assemblage : la racine sur sa vraie branche, les arbres jugés, les tailles mesurées, rien de simulé', () => {
   const cards = [card(164), card(12, { parent: { id: 'k164', number: 164, title: 'Carte 164', column: 'in_progress' } }), card(30)]
   const sessions: CodeSession[] = [
     { id: 's-root', title: 'r', agent: 'claude', worktreeId: null, cardId: null, tone: 'running', at: NOW - 1000 },
@@ -369,9 +369,9 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   const data = codeDataOf({
     project: { workspacePath: '/p', git: { branch: 'feat/repointage', changedFiles: 3 } },
     statuses: {
-      base: 'main', computedAt: NOW, fresh: true,
+      base: 'main', computedAt: NOW, fresh: true, rootSizeBytes: 2_000_000_000, sizesPending: true,
       worktrees: [
-        status({}),
+        status({ sizeBytes: 450_000_000 }),
         status({ id: null, name: 'jalon/164-x', path: '/w/j', branch: 'jalon/164-x', external: true, state: 'merged', mergedPullRequest: 9, unmergedCommits: false, modified: 0, untracked: 0 }),
       ],
       branches: [loose('feat/77-y', false)],
@@ -389,7 +389,7 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   assert.equal(root!.root, true)
   assert.equal(root!.branch, 'feat/repointage')
   assert.equal(root!.uncommitted, 3)
-  assert.equal(root!.sizeBytes, null)
+  assert.equal(root!.sizeBytes, 2_000_000_000)
   assert.deepEqual(root!.sessions.map((entry) => entry.id), ['s-root'])
 
   assert.equal(tree!.verdict, 'waiting')
@@ -399,12 +399,13 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   assert.deepEqual(tree!.pr, { number: 5, url: 'u5', state: 'ready' })
   assert.equal(tree!.uncommitted, 3)
   assert.equal(tree!.lastUsedAt, NOW - DAY)
-  assert.equal(tree!.sizeBytes, null)
+  assert.equal(tree!.sizeBytes, 450_000_000)
 
   assert.equal(jalon!.verdict, 'clean')
   assert.equal(jalon!.key, '/w/j')
   assert.deepEqual(jalon!.pr, { number: 9, url: null, state: 'merged' })
   assert.deepEqual(jalon!.card, { id: 'k164', number: 164, title: 'Carte 164', milestone: null, source: 'name' })
+  assert.equal(jalon!.sizeBytes, null, 'pas encore mesuré')
 
   assert.deepEqual(data.branches, [loose('feat/77-y', false)])
 })

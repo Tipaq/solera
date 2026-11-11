@@ -56,9 +56,9 @@ async function harness(t: TestContext) {
   project('broken')
 
   const worktreeStatus = {
-    async get(row: ProjectRow): Promise<WorktreeStatusListDto> {
+    async sized(row: ProjectRow): Promise<WorktreeStatusListDto> {
       if (row.id === 'broken') throw new Error('calcul en échec')
-      return { base: 'main', computedAt: 1, fresh: true, worktrees: [], branches: [] }
+      return { base: 'main', computedAt: 1, fresh: true, worktrees: [], branches: [], branchesPending: false, rootSizeBytes: 1024, sizesPending: false }
     },
   } as unknown as WorktreeStatusService
   const pullRequests = {
@@ -89,6 +89,7 @@ test('les arbres du portefeuille : les projets visibles et non archivés, sans c
   const { status, body } = await read<PortfolioWorktreeStatusDto>('/api/worktrees/status')
   assert.equal(status, 200)
   assert.deepEqual(Object.keys(body.projects).sort(), ['mine', 'shared'])
+  assert.equal(body.projects.mine?.rootSizeBytes, 1024, 'servie avec les tailles déjà mesurées')
 })
 
 test('les PR du portefeuille : le même tri, et un projet en échec ne fait pas tomber les autres', async (t) => {

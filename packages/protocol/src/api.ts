@@ -753,6 +753,12 @@ export interface WorktreeStatusDto {
   lastCommitAt: number | null
   lastEditAt: number | null
   conversations: { id: string; link: WorktreeLink }[]
+  /**
+   * L'espace qu'occupe l'arbre sur le disque, en octets. Null tant qu'il n'est pas
+   * mesuré, pour un arbre introuvable, et hors des routes de la liste : la mesure se
+   * fait en fond, et la liste ne l'attend jamais.
+   */
+  sizeBytes: number | null
 }
 
 export interface WorktreeStatusListDto {
@@ -773,6 +779,13 @@ export interface WorktreeStatusListDto {
    * part sans eux, et la lecture suivante les aura.
    */
   branchesPending: boolean
+  /** L'espace qu'occupe le dossier du projet, `.git` compris ; null comme `sizeBytes`. */
+  rootSizeBytes: number | null
+  /**
+   * Vrai tant qu'une taille de la liste attend sa première mesure : l'interface repasse
+   * pour la lire. Indépendant de `fresh`, qu'une taille complétée ne périme pas.
+   */
+  sizesPending: boolean
 }
 
 /** Un commit propre à une branche, que la base n'a pas. */

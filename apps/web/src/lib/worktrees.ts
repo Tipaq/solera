@@ -22,7 +22,8 @@ const statusKey = (projectId: string) => ['worktree-status', projectId]
  * Une seule requête par projet, partagée entre toutes les lignes de la barre latérale
  * qui la lisent : aucune commande git ne part d'un rendu. Le serveur peut répondre
  * d'une liste périmée pendant qu'il recalcule (`fresh: false`) : on repasse alors
- * peu après, une fois, pour avoir la suivante.
+ * peu après, une fois, pour avoir la suivante. Les tailles sur disque arrivent de la
+ * même façon, plus lentement : tant qu'il en manque (`sizesPending`), on repasse.
  */
 export function useWorktreeStatuses(projectId: string | undefined) {
   return useQuery({
@@ -32,23 +33,32 @@ export function useWorktreeStatuses(projectId: string | undefined) {
     staleTime: 15_000,
     // Périmée, ou complète sauf les faits de ses branches : la lecture suivante les aura.
     refetchInterval: (query) =>
-      query.state.data && (!query.state.data.fresh || query.state.data.branchesPending) ? 2_000 : false,
+      query.state.data ? (query.state.data.branchesPending ? 2_000 : relistDelay([query.state.data])) : false,
   })
 }
 
 /**
  * La même liste pour tous les projets visibles et non archivés, par projet : l'Activité
  * du portefeuille (#117) la lit d'une requête plutôt que d'une par projet. On repasse
- * tant qu'un des projets a répondu d'une liste périmée.
+ * tant qu'un des projets a répondu d'une liste périmée, ou sans toutes ses tailles.
  */
 export function usePortfolioWorktreeStatuses() {
   return useQuery({
     queryKey: ['worktree-status'],
     queryFn: () => api.get<PortfolioWorktreeStatusDto>('/api/worktrees/status'),
     staleTime: 15_000,
-    refetchInterval: (query) =>
-      query.state.data && Object.values(query.state.data.projects).some((list) => !list.fresh) ? 2_000 : false,
+    refetchInterval: (query) => (query.state.data ? relistDelay(Object.values(query.state.data.projects)) : false),
   })
+}
+
+/**
+ * Quand relire une liste : vite si elle est périmée, plus lentement si seules des tailles
+ * manquent (un `du` sur un `node_modules` prend des secondes), jamais sinon.
+ */
+function relistDelay(lists: WorktreeStatusListDto[]): number | false {
+  if (lists.some((list) => !list.fresh)) return 2_000
+  if (lists.some((list) => list.sizesPending)) return 5_000
+  return false
 }
 
 export function useWorktrees(projectId: string | undefined) {

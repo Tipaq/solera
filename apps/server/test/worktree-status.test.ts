@@ -13,6 +13,7 @@ import { touchedPaths } from '../src/events/touched-paths.js'
 import { assessWorktree, branchFacts, defaultBase, listWorktrees, looseBranches, parseWorktreeList } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
+import { DiskUsage, measureDisk, walkSize } from '../src/worktrees/disk-usage.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
 
 /**
@@ -687,4 +688,124 @@ test("le service rend les branches sans attendre leurs faits, puis les complète
   // La suppression en lot ne connaît que les locales : une distante ne se supprime pas.
   const judged = await service.looseBranches(project)
   assert.ok(judged.branches.every((b) => !b.remoteOnly))
+})
+
+test('la taille sur disque : du sous nice, ou le parcours des fichiers, voit les octets écrits', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'solera-disk-usage-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  write(dir, 'deep/blob.bin', 'x'.repeat(200_000))
+  write(dir, 'small.txt', 'y')
+
+  assert.ok((await measureDisk(dir))! >= 200_000)
+  assert.ok((await walkSize(dir)) >= 200_000)
+  assert.equal(await measureDisk(join(dir, 'nowhere')), null, 'un dossier absent ne se mesure pas')
+})
+
+test('la taille sur disque : mesurée en fond, une à la fois, gardée dix minutes, oubliée sur demande', async () => {
+  let now = 1_000
+  let running = 0
+  let peak = 0
+  const calls: string[] = []
+  const sizes = new Map([['/a', 10], ['/b', 20]])
+  let gate: Promise<void> = Promise.resolve()
+  const disk = new DiskUsage({
+    now: () => now,
+    measure: async (path) => {
+      calls.push(path)
+      running++
+      peak = Math.max(peak, running)
+      await gate
+      running--
+      if (path === '/broken') throw new Error('du a échoué')
+      return sizes.get(path) ?? null
+    },
+  })
+
+  // Rien n'attend la mesure : la première lecture rend null et la met en file.
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true })
+  assert.deepEqual(disk.read('/b'), { bytes: null, pending: true })
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true }, 'une seule mesure en file par chemin')
+  await disk.idle()
+  assert.deepEqual(calls, ['/a', '/b'])
+  assert.equal(peak, 1, 'une mesure à la fois, la machine est partagée')
+  assert.deepEqual(disk.read('/a'), { bytes: 10, pending: false })
+
+  // Dans les dix minutes, resservie sans remesurer.
+  now += 9 * 60_000
+  assert.deepEqual(disk.read('/b'), { bytes: 20, pending: false })
+  await disk.idle()
+  assert.equal(calls.length, 2)
+
+  // Au-delà, l'ancienne valeur reste servie le temps de la suivante.
+  now += 2 * 60_000
+  sizes.set('/b', 25)
+  assert.deepEqual(disk.read('/b'), { bytes: 20, pending: false })
+  await disk.idle()
+  assert.deepEqual(disk.read('/b'), { bytes: 25, pending: false })
+
+  // Une mesure en échec vaut null, sans que la liste attende pour toujours.
+  disk.read('/broken')
+  await disk.idle()
+  assert.deepEqual(disk.read('/broken'), { bytes: null, pending: false })
+
+  // Oubliée (un arbre nettoyé), la taille repart de rien ; une mesure en vol au moment
+  // de l'oubli ne la ramène pas.
+  let release!: () => void
+  gate = new Promise((done) => { release = done })
+  now += 11 * 60_000
+  disk.read('/a')
+  await new Promise((done) => setImmediate(done))
+  disk.forget('/a')
+  release()
+  await disk.idle()
+  assert.deepEqual(disk.read('/a'), { bytes: null, pending: true })
+  await disk.idle()
+  assert.deepEqual(disk.read('/a'), { bytes: 10, pending: false })
+})
+
+test('le service rend la liste sans attendre les tailles, puis la complète ; le nettoyage les oublie', async (t) => {
+  const { repo, trees } = repository(t)
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-size-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const projectRow = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+
+  const heavy = addTree(repo, trees, 'feat/heavy')
+  write(heavy, 'build/blob.bin', 'x'.repeat(300_000))
+  db.insert(worktrees).values({ id: 'wt-ghost', projectId: 'project', name: 'feat/ghost', path: join(trees, 'ghost'), baseRef: 'HEAD', createdBy: 'owner', createdAt: 1 }).run()
+
+  const disk = new DiskUsage()
+  const status = new WorktreeStatusService(db, new EventLog(db), undefined, disk)
+
+  // Le calcul git ne demande aucune taille : seule la lecture pour l'affichage en lance.
+  const bare = await status.get(projectRow)
+  assert.deepEqual([bare.rootSizeBytes, bare.sizesPending], [null, false])
+  assert.ok(bare.worktrees.every((w) => w.sizeBytes === null))
+  await disk.idle()
+  assert.equal(disk.read(heavy).pending, true, 'rien n\'a été mesuré')
+
+  const first = await status.sized(projectRow)
+  assert.equal(first.fresh, true)
+  assert.equal(first.sizesPending, true)
+  assert.equal(first.rootSizeBytes, null)
+  assert.ok(first.worktrees.every((w) => w.sizeBytes === null))
+
+  await disk.idle()
+  const next = await status.sized(projectRow)
+  const byName = new Map(next.worktrees.map((w) => [w.name, w]))
+  assert.equal(next.fresh, true, 'une taille complétée ne périme pas la liste')
+  assert.equal(next.sizesPending, false)
+  assert.ok(byName.get('feat/heavy')!.sizeBytes! >= 300_000)
+  assert.equal(byName.get('feat/ghost')!.sizeBytes, null, 'un arbre introuvable ne se mesure pas')
+  assert.ok(next.rootSizeBytes! > 0)
+
+  const terminals = { underCwd: () => [] as string[], close: () => {} } as unknown as TerminalManager
+  const cleanup = new WorktreeCleanup(db, dir, status, terminals, { dropCheckpoints: async () => {}, releaseRunner: async () => true })
+  await cleanup.run(projectRow, { path: heavy, deleteBranch: false, stopServices: false })
+  assert.deepEqual(disk.read(heavy), { bytes: null, pending: true }, 'un arbre nettoyé se remesure s\'il revient au même chemin')
+  await disk.idle()
 })
