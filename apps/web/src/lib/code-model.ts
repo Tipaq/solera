@@ -437,7 +437,7 @@ export interface CodeSources {
  * La carte que le serveur a rendue, complétée de son titre et de son jalon. Une carte que
  * la liste ne connaît pas encore n'est pas montrée, plutôt que montrée sans titre.
  */
-function cardIndex(cards: CardDto[]) {
+function cardResolver(cards: CardDto[]) {
   const byId = new Map(cards.map((card) => [card.id, card]))
   return ({ card: ref, cardSource }: TreeCardFields): CodeCard | null => {
     const card = ref ? byId.get(ref.id) : undefined
@@ -465,7 +465,7 @@ const latest = (values: (number | null)[]) =>
 
 /** Les arbres d'un projet, jugés et triés, à partir de ce que les requêtes rendent. */
 export function codeDataOf({ project, statuses, pullRequests, cards, sessions, now }: CodeSources): CodeData {
-  const cardOf = cardIndex(cards)
+  const cardOf = cardResolver(cards)
 
   const sessionsOf = (worktreeId: string | null) => {
     const mine = sessions.filter((entry) => entry.worktreeId === worktreeId).sort((a, b) => b.at - a.at)
@@ -552,7 +552,7 @@ export function branchInfosOf({
   pullRequests: ProjectPullRequestListDto | undefined
   cards: CardDto[]
 }): BranchInfo[] {
-  const cardOf = cardIndex(cards)
+  const cardOf = cardResolver(cards)
   return sortBranches(
     branches.map((branch) => {
       const found = pullRequestOf(pullRequests, branch.name)

@@ -369,14 +369,12 @@ export class WorktreeStatusService {
     const known = this.knownFacts.get(project.id)
     const reusable = known && base && known.base === base && known.baseHead === baseHead ? known.byHead : new Map<string, BranchFacts>()
     const missing = base && baseHead ? loose.filter((branch) => !reusable.has(branch.head)) : []
-    // Résolue une fois, pour la liste rendue tout de suite comme pour celle que les faits complètent.
-    const cards = new Map(loose.map((branch) => [branch.name, cardOf.ofBranch(branch.name)]))
     const value: WorktreeStatusListDto = {
       base,
       computedAt: Date.now(),
       fresh: true,
       worktrees: result,
-      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head), cards.get(branch.name)!)),
+      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head), cardOf.ofBranch(branch.name))),
       branchesPending: missing.length > 0,
       // Les tailles ne sont pas de ce calcul : `sized` les ajoute, depuis leur propre cache.
       rootSizeBytes: null,
@@ -395,7 +393,7 @@ export class WorktreeStatusService {
         if (facts) byHead.set(branch.head, facts)
       }
       this.knownFacts.set(project.id, { base, baseHead, byHead })
-      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head), cards.get(branch.name)!)), branchesPending: false }
+      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head), cardOf.ofBranch(branch.name))), branchesPending: false }
     }
     return { value, details }
   }
