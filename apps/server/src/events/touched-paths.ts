@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path'
 import type { SoleraEvent } from '@solera/protocol'
+import { bashCommand } from './bash-command.js'
 
 /**
  * Chemins absolus qu'un événement révèle hors du répertoire de travail.
@@ -15,9 +16,8 @@ export function touchedPaths(event: SoleraEvent): string[] {
   if (event.type === 'file.edited') {
     return isAbsolute(event.path) ? [event.path] : []
   }
-  if (event.type === 'tool.started' && event.name === 'Bash') {
-    const input = event.input as { command?: unknown } | null
-    const command = typeof input?.command === 'string' ? input.command : null
+  if (event.type === 'tool.started') {
+    const command = bashCommand(event)
     return command ? commandDirectories(command) : []
   }
   return []
