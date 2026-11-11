@@ -1,11 +1,11 @@
-import { Flag, FolderPlus, History, Layers, Plus, SquareKanban } from 'lucide-react'
+import { Flag, FolderPlus, History, Layers, SquareKanban } from 'lucide-react'
 import { useMemo } from 'react'
-import { useMatch, useNavigate } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS } from '@solera/protocol'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
 import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
+import { openLeafCount } from '../lib/place'
 import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
 import { openSettings } from '../lib/settings-dialog'
@@ -36,9 +36,7 @@ export function PortfolioLayout() {
   )
   const { cards } = useAllCards(visible)
   const asking = usePortfolioAskingCount()
-  const onProjects = useMatch('/projects') !== null
 
-  const openCards = cards.filter((card) => !CARD_CLOSED_COLUMNS.includes(card.column))
 
   const tabs: PlaceTab[] = [
     {
@@ -61,7 +59,7 @@ export function PortfolioLayout() {
       to: '/projects/board',
       label: t('project.board.title'),
       icon: <SquareKanban size={15} />,
-      count: openCards.length,
+      count: openLeafCount(cards),
     },
     {
       to: '/projects/timeline',
@@ -83,23 +81,11 @@ export function PortfolioLayout() {
       tabs={tabs}
       settings={{ onOpen: () => openSettings(), label: t('place.settings.instance') }}
       actions={
-        <>
-          {/* L'action de la vue Projets quitte la rangée pour la bande : la rangée ne
-              porte plus que des vues. */}
-          {onProjects ? (
-            <Button size="sm" variant="secondary" aria-label={t('portfolio.action.newProject')} icon={<FolderPlus size={15} />} onClick={() => navigate('/projects/new')}>
-              <span className="hidden sm:inline">{t('portfolio.action.newProject')}</span>
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            aria-label={t('shell.conversation.new')}
-            icon={<Plus size={16} />}
-            onClick={() => navigate('/c/new')}
-          >
-            <span className="hidden sm:inline">{t('board.newConversation.short')}</span>
-          </Button>
-        </>
+        /* Un seul geste, et le même sur toutes les vues : la bande ne dépend pas de la
+           vue. Une conversation se lance depuis la barre latérale. */
+        <Button size="sm" aria-label={t('portfolio.action.newProject')} icon={<FolderPlus size={15} />} onClick={() => navigate('/projects/new')}>
+          <span className="hidden sm:inline">{t('portfolio.action.newProject')}</span>
+        </Button>
       }
     />
   )

@@ -31,8 +31,8 @@ export type PlaceSettings = { to: string; label: string } | { onOpen: () => void
 /**
  * La bande d'un lieu : l'icône ou l'avatar, le titre, puis les gestes de la page.
  *
- * Seule, elle sert aux pages de lieu qui n'ont qu'une vue (`/sessions`, `/schedules`) ;
- * sous elle, `PlaceShell` pose la rangée. Les gestes sont des `Button size="sm"` ou à sa
+ * Sous elle, `PlaceShell` pose la rangée. Exportée seule pour les pages de lieu qui
+ * n'ont qu'une vue, `/sessions` et `/schedules` v2 (COQ-12), qui la prendront. Les gestes sont des `Button size="sm"` ou à sa
  * hauteur : plus de `⋯` ni de pastille de branche, qui disait la branche extraite à la
  * racine et pas celle sur laquelle on travaille.
  */

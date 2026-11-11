@@ -185,6 +185,10 @@ try {
   // Le Tableau porte son « + Carte » dans sa barre, plus dans la rangée.
   await row.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/board`)
+  // La barre d'outils part du même bord : le cadre de sa recherche sous l'avatar.
+  const search = await page.getByRole('searchbox', { name: /^Rechercher/ }).evaluate((input) => input.parentElement.getBoundingClientRect().left)
+  const { band: edge } = await gutter()
+  assert.ok(Math.abs(search - edge) <= 1, `La barre du Tableau suit la gouttière : ${search} / ${edge}`)
   await page.getByRole('button', { name: 'Carte', exact: true }).click()
   await page.waitForURL(/[?&]nouvelle=1/)
   await page.getByRole('dialog').waitFor()

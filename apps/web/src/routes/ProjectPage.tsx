@@ -22,6 +22,7 @@ import { ProjectMemory } from '../components/instructions/ProjectMemory'
 import { PathField } from '../components/PathField'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import {
+  Badge,
   Banner,
   Button,
   Card,
@@ -50,6 +51,7 @@ import {
 } from '../lib/projects'
 import { AutonomousConfinementSelect, EnvironmentIcon, EnvironmentSelect } from '../components/Environment'
 import { useIssueSource, usePollIssueSource, useSetIssueSource } from '../lib/issues'
+import { useCapability } from '../lib/instance'
 import { VisibilitySelect } from '../components/VisibilitySelect'
 
 export function ProjectPage() {
@@ -58,6 +60,7 @@ export function ProjectPage() {
   const { data: projects, isPending } = useProjects()
   const { data: conversations } = useAllConversations()
   const t = useTranslate()
+  const sharedProjects = useCapability('sharedProjects')
 
   const project = projects?.find((p) => p.id === projectId)
 
@@ -69,8 +72,27 @@ export function ProjectPage() {
   return (
     /* Dans la coque, sous la rangée : le nom et l'avatar du projet sont dans sa bande, la
        page commence donc à son contenu, sur la gouttière commune et sans couloir centré. */
-    <div className="h-full overflow-y-auto p-4 md:p-6">
-    <div className="flex flex-col gap-6">
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4 md:p-6">
+      {/* L'état du projet reste ; sa branche non : elle disait celle extraite à la racine,
+          pas celle sur laquelle on travaille. */}
+      <div className="flex flex-wrap items-center gap-2">
+        {sharedProjects ? (
+          <Badge tone={project.visibility === 'shared' ? 'accent' : 'neutral'}>
+            {project.visibility === 'shared'
+              ? t('project.visibility.shared')
+              : t('project.visibility.private')}
+          </Badge>
+        ) : null}
+        {project.git ? (
+          project.git.isDirty ? (
+            <Badge tone="caution">{t('project.git.dirty')}</Badge>
+          ) : (
+            <Badge tone="positive">{t('project.git.clean')}</Badge>
+          )
+        ) : (
+          <Badge>{t('project.git.none')}</Badge>
+        )}
+      </div>
       <Card>
         <CardHeader
           title={t('project.board.title')}
@@ -142,7 +164,6 @@ export function ProjectPage() {
           </CardBody>
         </Card>
       )}
-    </div>
     </div>
   )
 }

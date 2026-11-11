@@ -2350,7 +2350,7 @@ export const fr: Catalog = {
   'board.card.remove': 'Supprimer',
   'board.card.remove.notice': 'Les conversations rattachées sont conservées.',
   'board.card.remove.confirm': 'Supprimer la carte #{number} ? Ses conversations sont conservées.',
-  'shell.project.board': 'Board',
+  'shell.project.board': 'Tableau',
   'project.board.title': 'Tableau',
   'project.views': "Vues du projet",
   'project.view.overview': "Aperçu",
