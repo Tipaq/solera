@@ -113,6 +113,19 @@ export function milestoneChildConflict(): HttpError {
 }
 
 /**
+ * Vérifie qu'une personne peut cocher ou décocher « jalon », la carte ayant `parentAfter`
+ * pour parente une fois son geste appliqué : se détacher et devenir un jalon va d'un
+ * tenant. À appeler avant toute écriture, pour qu'un refus ne laisse rien derrière lui.
+ */
+export function assertMilestoneChoice(db: Db | Tx, cardId: string, milestone: boolean, parentAfter: string | null): void {
+  if (milestone && parentAfter !== null) throw milestoneChildConflict()
+  // Une carte de premier niveau qui a des enfants est un jalon d'office : rien à décocher.
+  if (!milestone && parentAfter === null && hasChildren(db, cardId)) {
+    throw conflict('card_milestone_has_children', 'A card with children is a milestone.')
+  }
+}
+
+/**
  * Tient le drapeau « jalon » d'une carte après un changement de son arbre.
  *
  * Levé quand elle a une parente : une carte rangée dans un jalon n'en est pas un. Posé
@@ -132,7 +145,7 @@ export function syncMilestoneFlag(db: Db | Tx, cardId: string | null): void {
   if (flagged !== card.milestone) db.update(cards).set({ milestone: flagged }).where(eq(cards.id, cardId)).run()
 }
 
-function hasChildren(db: Db | Tx, cardId: string): boolean {
+export function hasChildren(db: Db | Tx, cardId: string): boolean {
   return db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get() !== undefined
 }
 

@@ -15,7 +15,7 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerProjectRoutes } from '../src/http/routes/projects.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 
-/** Le cap d'un projet (jalons.md CAP-1..3) : une phrase, ou rien. */
+/** Le cap d'un projet (#183) : une phrase, ou rien. */
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-project-cap-'))
   t.after(() => rm(dir, { recursive: true, force: true }))

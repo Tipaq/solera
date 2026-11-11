@@ -46,7 +46,14 @@ import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
 import { queueIssueRefusal, toCardIssueDto } from '../../issues/links.js'
-import { milestoneChildConflict, resolveParent, setCardParent, setToClarify, syncParentColumn } from '../../cards/tree.js'
+import {
+  assertMilestoneChoice,
+  hasChildren,
+  resolveParent,
+  setCardParent,
+  setToClarify,
+  syncParentColumn,
+} from '../../cards/tree.js'
 import type { AppContext } from '../context.js'
 import { badRequest, conflict, forbidden, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
@@ -475,12 +482,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     // Le rattachement se vérifie avant toute écriture : un cycle refusé ne doit pas
     // laisser derrière lui un titre à moitié enregistré.
     if (body.parentId) resolveParent(ctx.db, card, body.parentId)
-    // La parente qu'elle aura après ce geste : se détacher et devenir un jalon va d'un tenant.
-    const parentAfter = body.parentId !== undefined ? body.parentId : card.parentId
-    if (body.milestone && parentAfter !== null) throw milestoneChildConflict()
-    // Une carte de premier niveau qui a des enfants est un jalon d'office : rien à décocher.
-    if (body.milestone === false && parentAfter === null && hasChildren(id)) {
-      throw conflict('card_milestone_has_children', 'A card with children is a milestone.')
+    if (body.milestone !== undefined) {
+      assertMilestoneChoice(ctx.db, id, body.milestone, body.parentId !== undefined ? body.parentId : card.parentId)
     }
 
     const patch: Partial<typeof cards.$inferInsert> = {}
@@ -521,12 +524,9 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
     return readCard(id, card.projectId)
   })
 
-  const hasChildren = (cardId: string): boolean =>
-    ctx.db.select({ id: cards.id }).from(cards).where(eq(cards.parentId, cardId)).get() !== undefined
-
   /** La colonne d'une carte qui a des enfants, recalculée depuis eux après un geste. */
   const syncOwnColumn = (cardId: string, userId: string): void => {
-    if (hasChildren(cardId)) syncParentColumn(ctx.db, cardId, { userId })
+    if (hasChildren(ctx.db, cardId)) syncParentColumn(ctx.db, cardId, { userId })
   }
 
   /**

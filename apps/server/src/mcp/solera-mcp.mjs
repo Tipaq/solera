@@ -2684,6 +2684,18 @@ function cardState(card) {
   return column
 }
 
+/**
+ * Ce qu'est une carte drapeautée : un jalon, ou, sans enfant, l'idée d'un jalon, un
+ * chantier à affiner avant de le découper en cartes.
+ */
+function milestoneLabel(hasChildren) {
+  return hasChildren ? 'jalon' : 'idée de jalon'
+}
+
+function capitalized(text) {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
 function renderCards(rows, column) {
   const truncated = rows.length > CARD_LIMIT
   const shown = truncated ? rows.slice(0, CARD_LIMIT) : rows
@@ -2705,7 +2717,7 @@ function renderCards(rows, column) {
     const due = row.dueAt ? `, échéance ${dueDate(row.dueAt)}` : ''
     const parent = row.parentNumber ? `, enfant de #${row.parentNumber} « ${row.parentTitle} »` : ''
     const children = row.children > 0 ? `, ${row.children} enfant(s)` : ''
-    const milestone = row.milestone ? (row.children > 0 ? ', jalon' : ', idée de jalon') : ''
+    const milestone = row.milestone ? `, ${milestoneLabel(row.children > 0)}` : ''
     return `- #${row.number} [${cardState(row)}] ${row.title}${milestone}${due}${parent}${children}${sessions}${self}${summary}`
   })
 
@@ -2738,12 +2750,10 @@ function renderCard(card) {
     head.push(`À préciser depuis ${ago(card.toClarifySince)} : des questions attendent une réponse avant le code.`)
   }
   if (card.milestone) {
-    // Le drapeau seul, sans enfant, fait une idée de jalon : un chantier à affiner avant
-    // de le découper en cartes.
     head.push(
       card.children.length > 0
-        ? 'Jalon : ses enfants livrent dans sa branche, et sa colonne se déduit de la leur.'
-        : "Idée de jalon : pas encore d'enfant, elle attend d'être affinée et découpée en cartes.",
+        ? `${capitalized(milestoneLabel(true))} : ses enfants livrent dans sa branche, et sa colonne se déduit de la leur.`
+        : `${capitalized(milestoneLabel(false))} : pas encore d'enfant, elle attend d'être affinée et découpée en cartes.`,
     )
   }
   if (card.dueAt) head.push(`Échéance : ${dueDate(card.dueAt)}.`)

@@ -19,7 +19,7 @@ import { registerErrorHandler } from '../src/http/errors.js'
 import { registerCardRoutes } from '../src/http/routes/cards.js'
 
 /**
- * Le drapeau « jalon » d'une carte (jalons.md §3, FLG-1) : cochable à la main sur une
+ * Le drapeau « jalon » d'une carte (#183) : cochable à la main sur une
  * carte sans parente, posé d'office au premier enfant, refusé sur une enfant et levé
  * quand une carte drapeautée se range sous une parente.
  */
@@ -130,6 +130,18 @@ test('le drapeau se pose seul au premier enfant, et reste quand on les détache'
   const idea = await read(attached.id)
   assert.equal(idea.children.length, 0)
   assert.equal(idea.milestone, true)
+})
+
+test('accepter en rattachant : la parente devient un jalon, la carte drapeautée cesse de l’être', async (t) => {
+  const { app, db, create, flagOf } = await harness(t)
+  const target = await create({ title: 'Cible' })
+  const incoming = await create({ title: 'Venue d’une issue', milestone: true })
+  db.update(cards).set({ acceptedAt: null }).where(eq(cards.id, incoming.id)).run()
+
+  const accepted = await app.inject({ method: 'POST', url: `/api/cards/${incoming.id}/accept`, payload: { parentId: target.id } })
+  assert.equal(accepted.statusCode, 200, accepted.body)
+  assert.equal(accepted.json().milestone, false)
+  assert.equal(flagOf(target.id), true)
 })
 
 test('se ranger sous une parente lève le drapeau ; en sortir avec des enfants le repose', async (t) => {
