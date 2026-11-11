@@ -50,8 +50,7 @@ const GROUP_MARKER: Record<ActivityGroup, SessionMarker> = {
  * chose — une question, une permission ou une erreur —, ce qui est prêt à relire, ce qui
  * travaille, ce qui est fini. Les terminées se plient après trois lignes.
  *
- * Les lignes viennent de `useActivityRows`, que le bloc « En ce moment » de l'Aperçu lit
- * aussi. Une ligne qui te demande quelque chose se déplie en place, avec de quoi
+ * Les lignes viennent de `useActivityRows`, que la vue d'un jalon lit aussi. Une ligne qui te demande quelque chose se déplie en place, avec de quoi
  * répondre sans ouvrir le fil (planche B2, #112).
  *
  * **Un jalon lancé** (planche C1, #116) pose son bandeau en tête de la liste, et les
