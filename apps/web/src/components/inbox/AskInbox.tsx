@@ -269,7 +269,7 @@ function HeavyRow({
             l'étiquette et le geste au bord de l'écran, loin de la ligne qu'ils servent. */}
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 items-center gap-2.5 text-left">
           {line.icon}
-          <span className="max-w-[18rem] shrink-0 truncate text-sm text-ink">{line.title}</span>
+          <span className="min-w-0 max-w-[18rem] truncate md:shrink-0 text-sm text-ink">{line.title}</span>
           <span className="hidden min-w-0 truncate text-sm text-ink-faint md:block">{line.hint}</span>
         </button>
         <MilestoneChip milestone={item.milestone} />
@@ -453,7 +453,7 @@ function LightRow({ item }: { item: LightInboxItem }) {
       ) : (
         <span aria-hidden className="mx-[3.5px] size-[7px] shrink-0 rounded-full bg-accent" />
       )}
-      <span className="max-w-[18rem] shrink-0 truncate text-sm text-ink">{withProject(t, item.project, item.title)}</span>
+      <span className="min-w-0 max-w-[18rem] truncate md:shrink-0 text-sm text-ink">{withProject(t, item.project, item.title)}</span>
       <span className="hidden min-w-0 truncate text-sm text-ink-faint md:block">
         {t(pr ? 'inbox.pr.ready' : 'inbox.card.review', { number: item.number })}
       </span>
