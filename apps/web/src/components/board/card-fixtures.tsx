@@ -19,6 +19,10 @@ function session(id: string, title: string, agent: CardConversationDto['agent'],
   return { id, title, agent, status, costUsd: 0, worktreeId: null, worktreeName: null, archivedAt: null, createdAt: now - ago }
 }
 
+/**
+ * Une carte complète, à compléter par `extra`. Les autres stories la prennent sous le nom
+ * de `fixtureCard` : un champ ajouté à `CardDto` ne se reporte qu'ici.
+ */
 function card(number: number, title: string, column: CardDto['column'], extra: Partial<CardDto> = {}): CardDto {
   return {
     id: `card-${number}`, projectId: PROJECT_ID, number, title, description: '', column, position: number,
@@ -27,6 +31,8 @@ function card(number: number, title: string, column: CardDto['column'], extra: P
     ...extra,
   }
 }
+
+export { card as fixtureCard }
 
 const parent = card(42, 'Gestion de projet', 'in_progress', { milestone: true })
 const fils = card(21, 'Cliquer « Fils » devrait ouvrir une conversation neuve', 'todo', { toClarifySince: now - DAY })
