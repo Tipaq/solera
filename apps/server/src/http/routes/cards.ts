@@ -2,6 +2,7 @@ import { basename } from 'node:path'
 import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
 import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance } from 'fastify'
 import {
   attachments,
@@ -37,6 +38,7 @@ import {
   type CardConversationDto,
   type CardDto,
   type CardLinkDto,
+  type MilestoneLinkDto,
   type CardNoteDto,
   type CardSearchDto,
 } from '@solera/protocol'
@@ -924,14 +926,30 @@ export function assertCardAccepted(ctx: AppContext, cardId: string): void {
   }
 }
 
-/** La carte d'une conversation, pour la puce qui ramène au board depuis le fil. */
-export function readCardLink(ctx: AppContext, cardId: string | null): CardLinkDto | null {
-  if (!cardId) return null
+/**
+ * La carte d'une conversation, pour la puce qui ramène au board depuis le fil, et son
+ * jalon, la parente de cette carte (#163).
+ */
+export function readConversationLinks(ctx: AppContext, cardId: string | null): ConversationLinks {
+  if (!cardId) return NO_LINKS
+  const milestones = alias(cards, 'milestone')
   const row = ctx.db
-    .select({ id: cards.id, number: cards.number, title: cards.title, column: cards.column })
+    .select({
+      card: { id: cards.id, number: cards.number, title: cards.title, column: cards.column },
+      milestone: { id: milestones.id, number: milestones.number, title: milestones.title },
+    })
     .from(cards)
+    .leftJoin(milestones, eq(milestones.id, cards.parentId))
     .where(eq(cards.id, cardId))
     .get()
-  return row ?? null
+  return row ? { card: row.card, milestone: row.milestone } : NO_LINKS
 }
+
+/** Ce qu'une conversation montre de son rattachement au board. */
+export interface ConversationLinks {
+  card: CardLinkDto | null
+  milestone: MilestoneLinkDto | null
+}
+
+export const NO_LINKS: ConversationLinks = { card: null, milestone: null }
 

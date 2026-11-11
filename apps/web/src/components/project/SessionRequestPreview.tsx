@@ -8,7 +8,7 @@ import { answerQuestion, decidePermission } from '../../lib/conversations'
 import { openDecision } from '../../lib/decisions'
 import { shortAge } from '../../lib/dates'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { permissionTarget, permissionTitle, type SessionRequest } from '../../lib/session-requests'
+import { permissionTarget, permissionTitle, type SessionRequest } from '../../lib/session-request-summary'
 
 const KIND_LABEL: Record<SessionRequest['kind'], MessageKey> = {
   question: 'projectActivity.preview.question',

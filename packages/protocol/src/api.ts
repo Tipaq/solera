@@ -551,6 +551,9 @@ export interface ConversationMetrics {
   model: string | null
 }
 
+/** Le jalon d'une conversation, de quoi rendre l'étiquette « Jalon #N » et son lien. */
+export type MilestoneLinkDto = Pick<CardLinkDto, 'id' | 'number' | 'title'>
+
 export interface ConversationDto {
   id: string
   /** Null pour un fil libre : une conversation n'appartient à un projet que si on l'y a rangée. */
@@ -570,6 +573,12 @@ export interface ConversationDto {
    * corrige, et le fil doit en montrer la version courante.
    */
   card: CardLinkDto | null
+  /**
+   * Le jalon de la conversation : la parente de sa carte, null sans carte ou sans
+   * parente (#163). Résolu à la lecture comme la carte, pour que « Ce qui t'attend »
+   * étiquette une demande sans charger les cartes de tous les projets.
+   */
+  milestone: MilestoneLinkDto | null
   userId: string
   title: string
   /** Vrai si l'utilisateur a renommé : le CLI ne proposera plus de titre. */

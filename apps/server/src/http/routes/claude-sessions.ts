@@ -28,6 +28,7 @@ import { badRequest, notFound } from '../errors.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
 import { conversationToDto } from './conversations.js'
+import { NO_LINKS } from './cards.js'
 
 /**
  * Reprise dans Solera de sessions commencées avec le CLI Claude Code.
@@ -230,7 +231,7 @@ export function registerClaudeSessionRoutes(
         opening,
         release: async () => true,
       })
-      return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, null, false))
+      return reply.status(201).send(conversationToDto({ ...row, lastSeq }, user.id, 0, NO_LINKS, false))
     } catch (error) {
       // Un import initial qui échoue ne doit pas réserver l'identifiant natif avec un
       // journal partiel.

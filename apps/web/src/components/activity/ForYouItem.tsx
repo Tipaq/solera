@@ -25,7 +25,7 @@ import { decisionDue, useAnswerDecision, useDecision } from '../../lib/decisions
 import type { ForYouRequest } from '../../lib/for-you'
 import { formatAgo } from '../../lib/loops'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { requestLine } from '../../lib/session-requests'
+import { requestSummary } from '../../lib/session-request-summary'
 import { CardDraftPrompt } from '../chat/CardDraftPrompt'
 import { CardFilingPrompt } from '../chat/CardFilingPrompt'
 import { FilingPrompt } from '../chat/FilingPrompt'
@@ -55,7 +55,7 @@ export function forYouIcon(entry: ForYouRequest): LucideIcon {
 
 /** Ce qui est demandé, en une phrase : la question, la commande, ou ce qu'il faut ranger. */
 export function forYouTitle(entry: ForYouRequest, t: Translate): string {
-  if (entry.tier === 'blocked') return entry.request ? requestLine(entry.request, t) : entry.conversationTitle
+  if (entry.tier === 'blocked') return entry.request ? requestSummary(entry.request, t) : entry.conversationTitle
   if (entry.tier === 'decision') return decisionQuestion(entry.awaiting.question, entry.awaiting.worktreeBranch, t)
   return accordText(entry.awaiting.kind, 'count' in entry.awaiting ? entry.awaiting.count : 1, 'title', t)
 }

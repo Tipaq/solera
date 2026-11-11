@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   agentRequests,
@@ -30,7 +31,6 @@ import {
   sendMessageBodySchema,
   steerBodySchema,
   updateConversationBodySchema,
-  type CardLinkDto,
   type ConversationDto,
   type ConversationPromptDto,
   type EditDiffDto,
@@ -65,7 +65,7 @@ import {
   workingDirectoryMissing,
 } from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { assertCardAccepted, assertCardInProject, readCardLink } from './cards.js'
+import { assertCardAccepted, assertCardInProject, NO_LINKS, readConversationLinks, type ConversationLinks } from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -100,8 +100,11 @@ import { environmentOf } from '../../environments/environments.js'
 const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
 
+/** Le jalon d'une conversation : la parente de sa carte, jointe une seconde fois. */
+const milestoneCards = alias(cards, 'milestone')
+
 /**
- * `lastReadSeq`, `card` et `worktreeGone` sont passés plutôt que relus ici : les routes
+ * `lastReadSeq`, `links` et `worktreeGone` sont passés plutôt que relus ici : les routes
  * de liste les ramènent en une jointure, et une lecture par ligne rendrait la sidebar
  * quadratique.
  */
@@ -109,7 +112,7 @@ export function conversationToDto(
   row: ConversationRow,
   userId: string,
   lastReadSeq: number,
-  card: CardLinkDto | null,
+  links: ConversationLinks,
   worktreeGone: boolean,
 ): ConversationDto {
   return {
@@ -117,7 +120,8 @@ export function conversationToDto(
     projectId: row.projectId,
     worktreeId: row.worktreeId,
     worktreeGone,
-    card,
+    card: links.card,
+    milestone: links.milestone,
     userId: row.userId,
     title: row.title,
     titleSetByUser: row.titleSetByUser,
@@ -250,10 +254,16 @@ export function registerConversationRoutes(
           title: cards.title,
           column: cards.column,
         },
+        milestone: {
+          id: milestoneCards.id,
+          number: milestoneCards.number,
+          title: milestoneCards.title,
+        },
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(projects, eq(projects.id, conversations.projectId))
       .leftJoin(
@@ -275,7 +285,7 @@ export function registerConversationRoutes(
         row.conversation,
         user.id,
         row.lastReadSeq ?? 0,
-        row.card,
+        { card: row.card, milestone: row.milestone },
         // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
         // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
         row.worktreeRemovedAt !== null,
@@ -304,10 +314,16 @@ export function registerConversationRoutes(
           title: cards.title,
           column: cards.column,
         },
+        milestone: {
+          id: milestoneCards.id,
+          number: milestoneCards.number,
+          title: milestoneCards.title,
+        },
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
       .leftJoin(cards, eq(cards.id, conversations.cardId))
+      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
       .leftJoin(worktrees, eq(worktrees.id, conversations.worktreeId))
       .leftJoin(
         conversationReads,
@@ -329,7 +345,7 @@ export function registerConversationRoutes(
         row.conversation,
         user.id,
         row.lastReadSeq ?? 0,
-        row.card,
+        { card: row.card, milestone: row.milestone },
         // Sans constat sur le disque : la liste ne fait pas un `stat` par fil. L'ouverture
         // du fil, l'envoi et la réconciliation des worktrees posent `removedAt`.
         row.worktreeRemovedAt !== null,
@@ -481,7 +497,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readCardLink(ctx, body.cardId),
+          readConversationLinks(ctx, body.cardId),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -525,7 +541,7 @@ export function registerConversationRoutes(
 
     if (firstMessage) attachments.claim(firstMessage.attachmentIds, row.id)
 
-    return reply.status(201).send(conversationToDto(row, user.id, 0, null, false))
+    return reply.status(201).send(conversationToDto(row, user.id, 0, NO_LINKS, false))
   })
 
 
@@ -612,7 +628,7 @@ export function registerConversationRoutes(
           { ...row, lastSeq: copied },
           user.id,
           0,
-          readCardLink(ctx, row.cardId),
+          readConversationLinks(ctx, row.cardId),
           false,
         ),
       )
@@ -683,7 +699,7 @@ export function registerConversationRoutes(
           row,
           user.id,
           0,
-          readCardLink(ctx, row.cardId),
+          readConversationLinks(ctx, row.cardId),
           checkWorktree(ctx.db, row.worktreeId).gone,
         ),
       )
@@ -722,7 +738,7 @@ export function registerConversationRoutes(
       conversation,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, conversation.cardId),
+      readConversationLinks(ctx, conversation.cardId),
       worktree.gone,
     )
   })
@@ -1021,7 +1037,7 @@ export function registerConversationRoutes(
       result.row,
       user.id,
       readCursor(id, user.id),
-      result.moved ? null : readCardLink(ctx, conversation.cardId),
+      result.moved ? NO_LINKS : readConversationLinks(ctx, conversation.cardId),
       checkWorktree(ctx.db, result.row.worktreeId).gone,
     )
   })
@@ -1040,7 +1056,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, row.cardId),
+      readConversationLinks(ctx, row.cardId),
       false,
     )
   })
@@ -1058,7 +1074,7 @@ export function registerConversationRoutes(
       row,
       user.id,
       readCursor(id, user.id),
-      readCardLink(ctx, row.cardId),
+      readConversationLinks(ctx, row.cardId),
       false,
     )
   })
