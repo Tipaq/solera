@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { cardIssues, cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
-import { sessionReference } from '@solera/protocol'
+import { sessionReference, type SplitMode } from '@solera/protocol'
 import { parentBranchOf } from '../cards/parent-branch.js'
 
 /**
@@ -221,7 +221,7 @@ function refineBriefing(
   db: Db,
   projectId: string,
   milestone: { number: number; title: string },
-  mode: 'questions' | 'direct',
+  mode: SplitMode,
 ): string {
   const cap = db.select({ cap: projects.cap }).from(projects).where(eq(projects.id, projectId)).get()?.cap
   return [

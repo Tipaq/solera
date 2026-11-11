@@ -185,6 +185,13 @@ test('une session split sans mode part « questions d’abord » ; une autre n�
 test('le premier message invoque le skill avec le numéro, le drapeau de découpage direct et le brief', () => {
   assert.equal(refinePrompt({ number: 7, mode: 'questions', brief: '' }), '/affiner-un-jalon #7')
   assert.equal(refinePrompt({ number: 7, mode: 'direct', brief: '  Le brief.  ' }), '/affiner-un-jalon #7 --decouper\n\nLe brief.')
+  assert.equal(
+    refinePrompt({
+      number: 7, mode: 'questions', brief: 'Le brief.',
+      cards: [{ number: 12, include: true }, { number: 13, include: false }], links: ['https://example.com/pr/1'],
+    }),
+    '/affiner-un-jalon #7\n\nLe brief.\n\nCartes jointes : #12 (à inclure dans le jalon), #13 (référence)\n\nLiens :\n- https://example.com/pr/1',
+  )
 })
 
 // --- Consigne -------------------------------------------------------------------------
@@ -389,4 +396,16 @@ test('le jalon d’une session d’affinage est la carte qu’elle affine, dans 
   const one = (await h.app.inject('/api/conversations/refine')).json() as ConversationDto
   assert.deepEqual(one.milestone, expected)
   assert.equal(one.card, null)
+})
+
+test('un découpage parti d’une carte qui n’est pas un jalon n’a pas de jalon', async (t) => {
+  const h = await harness(t)
+  h.card('plain', 8)
+  h.session('split', 'plain')
+
+  for (const url of ['/api/conversations', '/api/projects/project/conversations']) {
+    const listed = (await h.app.inject(url)).json() as ConversationDto[]
+    assert.equal(listed.find((dto) => dto.id === 'split')?.milestone, null, url)
+  }
+  assert.equal(((await h.app.inject('/api/conversations/split')).json() as ConversationDto).milestone, null)
 })

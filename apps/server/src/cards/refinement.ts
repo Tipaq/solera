@@ -48,7 +48,8 @@ export function readRefinements(db: Db, cardIds: string[]): Map<string, CardRefi
       conversationId: session.id,
       title: session.title,
       status: session.status,
-      // Une session d'avant le mode a posé ses questions d'abord : c'était la seule consigne.
+      // La migration a rempli le mode des découpages d'avant lui ; la colonne reste nulle
+      // hors découpage, d'où le repli pour le type.
       mode: session.splitMode ?? 'questions',
       createdAt: session.createdAt,
       draft: pending.get(`${session.id}:propose_cards`) ?? null,

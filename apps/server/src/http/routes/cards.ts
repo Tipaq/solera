@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance } from 'fastify'
 import {
@@ -972,7 +972,7 @@ export function readConversationLinks(
   const milestone = ctx.db
     .select({ id: cards.id, number: cards.number, title: cards.title })
     .from(cards)
-    .where(eq(cards.id, splitCardId))
+    .where(and(eq(cards.id, splitCardId), eq(cards.milestone, true)))
     .get()
   return { card: null, milestone: milestone ?? null }
 }
@@ -986,9 +986,13 @@ export const milestoneCards = alias(cards, 'milestone')
 
 /**
  * La condition de jointure du jalon d'une conversation, après `cards` sur sa carte : la
- * parente de sa carte, sinon la carte que sa session d'affinage découpe.
+ * parente de sa carte, ou pour une session sans carte le jalon que sa session
+ * d'affinage découpe. Un découpage parti d'une carte qui n'est pas un jalon n'en a pas.
  */
-export const MILESTONE_OF_CONVERSATION = sql`${milestoneCards.id} = coalesce(${cards.parentId}, ${conversations.splitCardId})`
+export const MILESTONE_OF_CONVERSATION = or(
+  eq(milestoneCards.id, cards.parentId),
+  and(isNull(conversations.cardId), eq(milestoneCards.id, conversations.splitCardId), eq(milestoneCards.milestone, true)),
+)!
 
 /** Les colonnes de `ConversationLinks`, pour une requête qui joint `cards` puis `milestoneCards`. */
 export const CONVERSATION_LINKS = {
