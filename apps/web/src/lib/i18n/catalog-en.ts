@@ -2371,6 +2371,7 @@ export const en = {
   'place.count.asking.many': '{count} waiting on you',
   'place.count.openCards.one': '{count} open card',
   'place.count.openCards.many': '{count} open cards',
+  'drawer.close': 'Close',
   'project.color.title': 'Color',
   'project.color.description': 'The project avatar’s color when it has no image.',
   'project.view.activity': "Activity",
