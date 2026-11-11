@@ -3630,6 +3630,7 @@ export const en = {
   'error.schedule_write_forbidden': "Only the task creator or the project owner can change it.",
   'error.schedule_already_running': "A run of this task is still in progress.",
   'error.schedule_never_fires': "This schedule has no upcoming run.",
+  'error.schedule_needs_trigger': "A task runs on demand, on a schedule, or both.",
   // Les pages de lieu : le tableau de bord d'un projet, Projets, Planifiées.
   'place.seeAll': "see all",
   'place.demand.awaiting': "waiting on you",
