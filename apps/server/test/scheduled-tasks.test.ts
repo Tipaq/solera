@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
+import Fastify from 'fastify'
 import { fileURLToPath } from 'node:url'
 import { asc, eq } from 'drizzle-orm'
 import {
@@ -22,12 +23,14 @@ import {
   DEFAULT_CLAUDE_CONFIG,
   checkScriptSchema,
   createScheduledTaskBodySchema,
+  createScopedScheduledTaskBodySchema,
   updateScheduledTaskBodySchema,
   nextScheduleRun,
   upcomingScheduleRuns,
   type AgentConfig,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
+  type ScheduledTaskDto,
 } from '@solera/protocol'
 import type { AgentRegistry } from '../src/agents/registry.js'
 import type { Config } from '../src/config.js'
@@ -36,7 +39,9 @@ import { TaskScheduler, buildRunPrompt } from '../src/scheduler/task-scheduler.j
 import { runCheck } from '../src/scheduler/check.js'
 import { approveScheduleCheck, createScheduledTask, deleteScheduledTask, tasksToDto, updateScheduledTask } from '../src/scheduler/tasks.js'
 import { instanceInfo } from '../src/instance/profile.js'
-import { HttpError } from '../src/http/errors.js'
+import { HttpError, registerErrorHandler } from '../src/http/errors.js'
+import { registerScheduleRoutes } from '../src/http/routes/schedules.js'
+import { agentCwd } from '../src/workspace.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { Environments } from '../src/environments/environments.js'
@@ -82,8 +87,9 @@ async function harness(t: TestContext) {
     }),
   } as unknown as AgentRegistry
   const config = {
-    paths: { worktrees: join(dir, 'worktrees'), data: join(dir, 'data') },
+    paths: { worktrees: join(dir, 'worktrees'), data: join(dir, 'data'), threads: join(dir, 'threads') },
     server: { publicUrl: 'https://solera.example/' },
+    vault: { path: '' },
   } as unknown as Config
   const log = new EventLog(db)
   const scheduler = new TaskScheduler({ db, config }, sessions, registry, log)
@@ -818,4 +824,208 @@ test('schedule_task creates an on-demand task, or one that runs in a new worktre
   assert.equal(badMode.isError, true)
 
   assert.equal(db.select().from(scheduledTasks).all().length, 2)
+})
+
+/* ------------------------------------------------------------- portée (#208, AC-09) */
+
+/** Le harnais, plus un vault sur le disque et les routes de l'interface. */
+async function scopedHarness(t: TestContext) {
+  const base = await harness(t)
+  const { db, dir, sessions, registry, config, scheduler } = base
+  const vault = join(dir, 'vault')
+  await mkdir(vault, { recursive: true })
+  await mkdir(config.paths.data, { recursive: true })
+  db.insert(users).values({ id: 'admin', username: 'admin', displayName: 'admin', passwordHash: '', isAdmin: true, createdAt: 1 }).run()
+  db.insert(users).values({ id: 'other', username: 'other', displayName: 'other', passwordHash: '', createdAt: 1 }).run()
+
+  let as = 'owner'
+  const app = Fastify()
+  app.addHook('preHandler', async (request) => {
+    request.user = db.select().from(users).where(eq(users.id, as)).get()
+  })
+  registerErrorHandler(app)
+  registerScheduleRoutes(app, { db, config } as never, sessions, registry, scheduler)
+  t.after(() => app.close())
+
+  const call = async (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: object, user = 'owner') => {
+    as = user
+    const response = await app.inject({ method, url, payload })
+    return { status: response.statusCode, body: response.json() as ScheduledTaskDto & { error?: { code: string } } & { stdout?: string } }
+  }
+  const body = (overrides: object = {}) => ({ name: 'Ménage', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, prompt: 'Range.', cadence: null, ...overrides })
+  const useVault = () => {
+    ;(config as { vault: { path: string } }).vault.path = vault
+  }
+  return { ...base, vault, call, body, useVault }
+}
+
+test('a task created in a project has the project scope; one without, « no project »', async (t) => {
+  const { db, task } = await harness(t)
+  const inProject = task({ kind: 'interval', minutes: 10 })
+  assert.equal(inProject.scope, 'project')
+  assert.equal(tasksToDto(db, [inProject])[0]!.scope, 'project')
+
+  const free = createScheduledTask(db, { projectId: null, userId: 'owner' }, onDemandInput())
+  assert.equal(free.scope, 'none')
+  assert.equal(free.projectId, null)
+  const vault = createScheduledTask(db, { projectId: null, scope: 'vault', userId: 'owner' }, onDemandInput())
+  assert.equal(tasksToDto(db, [vault])[0]!.scope, 'vault')
+})
+
+test('outside a project, a task runs neither in a new worktree nor confined', async (t) => {
+  const { db } = await harness(t)
+  const refused = (code: string) => (err: unknown) => err instanceof HttpError && err.code === code
+  assert.throws(
+    () => createScheduledTask(db, { projectId: null, scope: 'vault', userId: 'owner' }, onDemandInput({ worktreeMode: 'new' })),
+    refused('schedule_worktree_needs_project'),
+  )
+  assert.throws(
+    () => createScheduledTask(db, { projectId: null, scope: 'instance', userId: 'owner' }, onDemandInput({ confined: true })),
+    refused('schedule_confined_needs_project'),
+  )
+  const free = createScheduledTask(db, { projectId: null, userId: 'owner' }, onDemandInput({ confined: false }))
+  assert.throws(() => updateScheduledTask(db, free, { worktreeMode: 'new' }), refused('schedule_worktree_needs_project'))
+  assert.throws(() => updateScheduledTask(db, free, { confined: true }), refused('schedule_confined_needs_project'))
+})
+
+test('the scoped body wants a project for the project scope, and none for the others', () => {
+  const base = { name: 'x', agent: 'claude', config: DEFAULT_CLAUDE_CONFIG, prompt: 'x', cadence: null }
+  assert.equal(createScopedScheduledTaskBodySchema.safeParse({ ...base, scope: 'project', projectId: 'p' }).success, true)
+  assert.equal(createScopedScheduledTaskBodySchema.safeParse({ ...base, scope: 'project' }).success, false)
+  assert.equal(createScopedScheduledTaskBodySchema.safeParse({ ...base, scope: 'vault', projectId: 'p' }).success, false)
+  assert.equal(createScopedScheduledTaskBodySchema.safeParse({ ...base, scope: 'elsewhere' }).success, false)
+  assert.equal(createScopedScheduledTaskBodySchema.parse({ ...base, scope: 'none' }).worktreeMode, 'root')
+})
+
+test('POST /api/schedules creates a task in a project, in the vault, on the instance or nowhere', async (t) => {
+  const { call, body, useVault } = await scopedHarness(t)
+
+  const none = await call('POST', '/api/schedules', body({ scope: 'none' }))
+  assert.equal(none.status, 201)
+  assert.equal(none.body.scope, 'none')
+  assert.equal(none.body.projectId, null)
+
+  const inProject = await call('POST', '/api/schedules', body({ scope: 'project', projectId: 'project' }))
+  assert.equal(inProject.status, 201)
+  assert.equal(inProject.body.scope, 'project')
+  assert.equal(inProject.body.projectId, 'project')
+  // Un projet privé d'un autre ne se devine pas.
+  assert.equal((await call('POST', '/api/schedules', body({ scope: 'project', projectId: 'project' }), 'other')).status, 404)
+
+  // Sans vault configuré, une tâche Savoir n'aurait nulle part où tourner.
+  const unconfigured = await call('POST', '/api/schedules', body({ scope: 'vault' }))
+  assert.equal(unconfigured.status, 400)
+  assert.equal(unconfigured.body.error?.code, 'vault_unconfigured')
+  useVault()
+  const vault = await call('POST', '/api/schedules', body({ scope: 'vault' }))
+  assert.equal(vault.status, 201)
+  assert.equal(vault.body.scope, 'vault')
+
+  // Le dossier de données tient la base et les secrets de tous les comptes.
+  const notAdmin = await call('POST', '/api/schedules', body({ scope: 'instance' }))
+  assert.equal(notAdmin.status, 403)
+  const instance = await call('POST', '/api/schedules', body({ scope: 'instance' }), 'admin')
+  assert.equal(instance.status, 201)
+  assert.equal(instance.body.scope, 'instance')
+
+  const tree = await call('POST', '/api/schedules', body({ scope: 'vault', worktreeMode: 'new' }))
+  assert.equal(tree.status, 400)
+  assert.equal(tree.body.error?.code, 'schedule_worktree_needs_project')
+
+  // Hors projet, une tâche n'est visible que de son créateur.
+  const mine = await call('GET', '/api/schedules')
+  assert.deepEqual(
+    (mine.body as unknown as ScheduledTaskDto[]).map((task) => task.scope).sort(),
+    ['none', 'project', 'vault'],
+  )
+  const others = await call('GET', '/api/schedules', undefined, 'other')
+  assert.deepEqual(others.body, [])
+})
+
+test('a run opens its session where its scope lives: the vault, the data folder, a folder of its own', async (t) => {
+  const { db, config, scheduler, vault, useVault } = await scopedHarness(t)
+  useVault()
+  const cwdOf = async (scope: 'vault' | 'instance' | 'none') => {
+    // L'instance est réservée aux administrateurs, à chaque tir.
+    const userId = scope === 'instance' ? 'admin' : 'owner'
+    const created = createScheduledTask(db, { projectId: null, scope, userId }, onDemandInput({ name: scope }))
+    const run = await scheduler.runNow(created.id)
+    assert.equal(run.status, 'running', run.error ?? '')
+    const thread = db.select().from(conversations).where(eq(conversations.id, run.conversationId!)).get()!
+    assert.equal(thread.projectId, null)
+    return { thread, cwd: agentCwd(db, config, thread) }
+  }
+
+  const inVault = await cwdOf('vault')
+  assert.equal(inVault.thread.place, 'vault')
+  assert.equal(inVault.cwd, vault)
+  const onInstance = await cwdOf('instance')
+  assert.equal(onInstance.thread.place, 'instance')
+  assert.equal(onInstance.cwd, config.paths.data)
+  const nowhere = await cwdOf('none')
+  assert.equal(nowhere.thread.place, null)
+  assert.equal(nowhere.cwd, join(config.paths.threads, nowhere.thread.id))
+})
+
+test('a vault run whose vault is gone fails and says why, without opening a session', async (t) => {
+  const { db, scheduler, sent, useVault, config } = await scopedHarness(t)
+  useVault()
+  const created = createScheduledTask(db, { projectId: null, scope: 'vault', userId: 'owner' }, onDemandInput())
+  ;(config as { vault: { path: string } }).vault.path = ''
+  const run = await scheduler.runNow(created.id)
+  assert.equal(run.status, 'failed')
+  assert.match(run.error ?? '', /vault/i)
+  assert.equal(sent.length, 0)
+})
+
+test('a check script runs where its scope lives', async (t) => {
+  const { db, scheduler, settled, vault, useVault, config } = await scopedHarness(t)
+  useVault()
+  const where = async (scope: 'vault' | 'instance') => {
+    const created = createScheduledTask(
+      db,
+      { projectId: null, scope, userId: scope === 'instance' ? 'admin' : 'owner' },
+      onDemandInput({ name: scope, checkScript: `pwd\nexit ${CHECK_SKIP_EXIT_CODE}` }),
+    )
+    await scheduler.runNow(created.id)
+    const [run] = await settled(created.id)
+    return run!.checkOutput?.trim()
+  }
+  assert.equal(await where('vault'), await realpath(vault))
+  assert.equal(await where('instance'), await realpath(config.paths.data))
+})
+
+test('trying a check outside a project runs it where the scope lives', async (t) => {
+  const { call, vault, useVault } = await scopedHarness(t)
+  useVault()
+  const tried = await call('POST', '/api/schedules/check-test', { scope: 'vault', script: 'pwd' })
+  assert.equal(tried.status, 200)
+  assert.equal(tried.body.stdout?.trim(), await realpath(vault))
+  assert.equal((await call('POST', '/api/schedules/check-test', { scope: 'instance', script: 'pwd' })).status, 403)
+})
+
+test('the prompt of a run outside a project links the previous thread where it lives', () => {
+  const prompt = buildRunPrompt({
+    task: { name: 'Ménage', prompt: 'Range.', projectId: null, scope: 'vault', maxDurationMinutes: 30 },
+    trigger: 'schedule',
+    firedAt: Date.now(),
+    previous: { startedAt: Date.now() - MINUTE, status: 'succeeded', conversationId: 'prev', summary: 'Rangé.', error: null },
+    publicUrl: 'https://solera.example/',
+  })
+  assert.match(prompt, /https:\/\/solera\.example\/c\/prev /)
+  assert.doesNotMatch(prompt, /\/p\/null\//)
+  assert.match(prompt, /vault/)
+})
+
+test('an instance task stops running, and can no longer be changed, once its creator is no longer an administrator', async (t) => {
+  const { db, call, body, scheduler, sent } = await scopedHarness(t)
+  const created = await call('POST', '/api/schedules', body({ scope: 'instance' }), 'admin')
+  db.update(users).set({ isAdmin: false }).where(eq(users.id, 'admin')).run()
+
+  const patched = await call('PATCH', `/api/schedules/${created.body.id}`, { name: 'Autre' }, 'admin')
+  assert.equal(patched.status, 403)
+  const run = await scheduler.runNow(created.body.id)
+  assert.equal(run.status, 'failed')
+  assert.match(run.error ?? '', /administrat/)
+  assert.equal(sent.length, 0)
 })

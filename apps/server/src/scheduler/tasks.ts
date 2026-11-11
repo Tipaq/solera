@@ -17,6 +17,7 @@ import {
   type AgentKind,
   type ScheduleCadence,
   type ScheduleOverlapPolicy,
+  type ScheduleScope,
   type ScheduleWorktreeMode,
   type ScheduledRunDto,
   type ScheduledTaskDto,
@@ -92,6 +93,7 @@ export function tasksToDto(db: Db, rows: ScheduledTaskRow[]): ScheduledTaskDto[]
     return {
       id: row.id,
       projectId: row.projectId,
+      scope: row.scope,
       userId: row.userId,
       name: row.name,
       agent: row.agent,
@@ -153,6 +155,20 @@ function assertCoherent(agent: AgentKind, config: AgentConfig): void {
   }
 }
 
+/**
+ * Hors projet, ni worktree neuf ni confinement : pas de dépôt où ouvrir l'un, pas
+ * d'environnement de projet pour l'autre. Refusé à l'écriture plutôt qu'au premier tir.
+ */
+function assertPlaceable(scope: ScheduleScope, worktreeMode: ScheduleWorktreeMode, confined: boolean | null): void {
+  if (scope === 'project') return
+  if (worktreeMode === 'new') {
+    throw badRequest('schedule_worktree_needs_project', 'Only a task in a project can run in a new worktree.')
+  }
+  if (confined) {
+    throw badRequest('schedule_confined_needs_project', 'Only a task in a project can run confined.')
+  }
+}
+
 /** Ni bouton ni cadence : une tâche que rien ne lancerait jamais. */
 function assertTriggerable(cadence: ScheduleCadence | null, onDemand: boolean): void {
   if (cadence === null && !onDemand) {
@@ -175,18 +191,26 @@ function armedAt(cadence: ScheduleCadence | null, enabled: boolean, lastRunAt: n
   return next
 }
 
+/**
+ * Crée une tâche. Sans projet, `scope` dit où ses tirs s'ouvrent (`none` par défaut) ;
+ * avec un projet, la portée est `project` et `scope` est ignoré.
+ */
 export function createScheduledTask(
   db: Db,
-  owner: { projectId: string; userId: string; conversationId?: string },
+  owner: { projectId: string | null; scope?: Exclude<ScheduleScope, 'project'>; userId: string; conversationId?: string },
   input: ScheduledTaskInput,
 ): ScheduledTaskRow {
   assertCoherent(input.agent, input.config)
   const onDemand = input.onDemand ?? true
   assertTriggerable(input.cadence, onDemand)
+  const scope: ScheduleScope = owner.projectId !== null ? 'project' : (owner.scope ?? 'none')
+  const worktreeMode = input.worktreeMode ?? 'root'
+  assertPlaceable(scope, worktreeMode, input.confined ?? null)
   const now = Date.now()
   const row: ScheduledTaskRow = {
     id: randomUUID(),
     projectId: owner.projectId,
+    scope,
     userId: owner.userId,
     name: input.name,
     agent: input.agent,
@@ -194,7 +218,7 @@ export function createScheduledTask(
     prompt: input.prompt,
     cadence: writeCadence(input.cadence),
     onDemand,
-    worktreeMode: input.worktreeMode ?? 'root',
+    worktreeMode,
     executionMode: 'fresh',
     overlapPolicy: input.overlapPolicy,
     confined: input.confined ?? null,
@@ -234,6 +258,9 @@ export function updateScheduledTask(
   const cadence = patch.cadence !== undefined ? patch.cadence : readCadence(current.cadence)
   const onDemand = patch.onDemand ?? current.onDemand
   assertTriggerable(cadence, onDemand)
+  const worktreeMode = patch.worktreeMode ?? current.worktreeMode
+  const confined = patch.confined !== undefined ? patch.confined : current.confined
+  assertPlaceable(current.scope, worktreeMode, confined)
   const enabled = patch.enabled ?? current.enabled
   // Réarmée seulement si la cadence ou la pause ont bougé : renommer une tâche ne doit
   // pas repousser un tir par intervalle qui approchait.
@@ -246,9 +273,9 @@ export function updateScheduledTask(
     prompt: patch.prompt ?? current.prompt,
     cadence: writeCadence(cadence),
     onDemand,
-    worktreeMode: patch.worktreeMode ?? current.worktreeMode,
+    worktreeMode,
     overlapPolicy: patch.overlapPolicy ?? current.overlapPolicy,
-    confined: patch.confined !== undefined ? patch.confined : current.confined,
+    confined,
     maxDurationMinutes: patch.maxDurationMinutes ?? current.maxDurationMinutes,
     enabled,
     nextRunAt: rearm ? armedAt(cadence, enabled, current.lastRunAt) : current.nextRunAt,
