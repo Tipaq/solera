@@ -104,6 +104,11 @@ export interface TerminalCommand {
   actionId: string | null
   /** Variables propres à cette exécution, par-dessus celles du daemon et l'origine. */
   env?: Record<string, string>
+  /**
+   * Appelé quand la commande se termine, même dans un terminal fermé entre-temps :
+   * son code, sa date et ce qu'elle a écrit (l'écran retenu, sans l'en-tête `$ …`).
+   */
+  onExit?: (end: { exitCode: number; finishedAt: number; output: string }) => void
 }
 
 /**
@@ -183,6 +188,17 @@ export class TerminalManager {
     return found ? toDto(found) : null
   }
 
+  /**
+   * L'exécution de cette action qui tourne encore à cet endroit : celle qu'une autre
+   * session ou un autre dossier fait tourner n'empêche pas d'en lancer une ici.
+   */
+  liveForAction(projectId: string, actionId: string, conversationId: string | null, cwd: string): TerminalDto | null {
+    const found = this.of(projectId)
+      .filter((managed) => managed.actionId === actionId && !managed.exited && samePlace(managed, conversationId, cwd))
+      .at(-1)
+    return found ? toDto(found) : null
+  }
+
   /** Shells vivants du projet, pour l'indicateur d'activité de la liste de projets. */
   aliveCount(projectId: string): number {
     return [...this.terminals.values()].filter(
@@ -242,6 +258,9 @@ export class TerminalManager {
       ),
     })
 
+    // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois la
+    // sortie défilée hors de vue.
+    const header = run ? `\x1b[2m$ ${run.command.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n` : ''
     const managed: ManagedTerminal = {
       id,
       projectId,
@@ -251,9 +270,7 @@ export class TerminalManager {
       pty,
       environment: place.environment,
       cwd,
-      // La commande en tête, en gris : l'écran dit ce qui a été lancé, même une fois
-      // la sortie défilée hors de vue.
-      replay: run ? `\x1b[2m$ ${run.command.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n` : '',
+      replay: header,
       replayDirty: false,
       subscribers: new Set(),
       idleTimer: null,
@@ -292,6 +309,15 @@ export class TerminalManager {
       managed.idleTimer = null
       if (run) {
         managed.exitCode = exitCode
+        if (run.onExit) {
+          const output = managed.replay.startsWith(header) ? managed.replay.slice(header.length) : managed.replay
+          try {
+            run.onExit({ exitCode, finishedAt: managed.finishedAt, output })
+          } catch {
+            // À l'arrêt du daemon, la base peut être déjà fermée : le passage sera clos
+            // au prochain démarrage.
+          }
+        }
         const footer = `\r\n\x1b[2m[${exitCode === 0 ? 'exit 0' : `exit ${exitCode}`}]\x1b[0m\r\n`
         managed.replay = (managed.replay + footer).slice(-REPLAY_BYTES)
         managed.replayDirty = true

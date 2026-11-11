@@ -5,6 +5,8 @@ import { and, asc, count, eq, inArray } from 'drizzle-orm'
 import { conversations, projectActions, type Db, type ProjectActionRow } from '@solera/db'
 import {
   MAX_ACTIONS_PER_PROJECT,
+  type ActionRunDto,
+  type ActionRunTrigger,
   type CreateProjectActionBody,
   type ProjectActionDto,
   type ProjectActionRunResult,
@@ -25,6 +27,7 @@ import { processOrigins } from '../services/origins.js'
 import type { TerminalManager } from '../terminals/terminal-manager.js'
 import type { Environments } from '../environments/environments.js'
 import { hostEnvironment } from '../environments/host.js'
+import { closeOrphanRuns, finishRun, latestRuns, startRun } from './runs.js'
 
 /**
  * Actions de projet : stockage, et exécution dans un terminal ou une unité systemd.
@@ -58,6 +61,25 @@ export function loadAction(db: Db, actionId: string): ProjectActionRow {
   return row
 }
 
+/** Ce qu'une personne vient de relire : la relecture suivante s'y comparera. */
+function reviewed(row: Pick<ProjectActionRow, 'kind' | 'command' | 'subdir' | 'url'>, at: number) {
+  return {
+    approvedAt: at,
+    approvedKind: row.kind,
+    approvedCommand: row.command,
+    approvedSubdir: row.subdir,
+    approvedUrl: row.url,
+  }
+}
+
+const neverReviewed = {
+  approvedAt: null,
+  approvedKind: null,
+  approvedCommand: null,
+  approvedSubdir: null,
+  approvedUrl: null,
+}
+
 /** `agentConversationId` null : créée depuis l'interface, donc relue d'office. */
 export function createAction(
   db: Db,
@@ -76,16 +98,19 @@ export function createAction(
     })
   }
   const now = Date.now()
+  const fields = {
+    kind: body.kind,
+    command: body.command,
+    subdir: body.subdir || null,
+    url: body.url || null,
+  }
   const row: ProjectActionRow = {
     id: randomUUID(),
     projectId,
     label: body.label,
     description: body.description || null,
-    kind: body.kind,
-    command: body.command,
-    subdir: body.subdir || null,
-    url: body.url || null,
-    approvedAt: agentConversationId ? null : now,
+    ...fields,
+    ...(agentConversationId ? neverReviewed : reviewed(fields, now)),
     agentConversationId,
     createdAt: now,
     updatedAt: now,
@@ -97,7 +122,8 @@ export function createAction(
 /**
  * Une modification par l'interface vaut relecture. Par un agent, elle remet l'action
  * en `proposed` dès qu'elle touche à ce qui s'exécute : renommer un bouton ne change
- * rien au risque, changer sa commande si.
+ * rien au risque, changer sa commande si. Ce qui avait été relu reste noté, pour
+ * montrer l'écart et y revenir au refus.
  */
 export function updateAction(
   db: Db,
@@ -122,16 +148,44 @@ export function updateAction(
     next.agentConversationId = agentConversationId
     if (executionChanged) next.approvedAt = null
   } else {
-    next.approvedAt = next.updatedAt
+    Object.assign(next, reviewed(next, next.updatedAt))
   }
   db.update(projectActions).set(next).where(eq(projectActions.id, row.id)).run()
   return next
 }
 
+/** Valider sans lancer : la relecture et le lancement sont deux gestes. */
 export function approveAction(db: Db, row: ProjectActionRow): ProjectActionRow {
-  const next = { ...row, approvedAt: Date.now() }
+  const approval = reviewed(row, Date.now())
+  // Gardé par `updatedAt` : un agent qui réécrit la commande pendant qu'on la lit ne
+  // doit pas faire valider ce qu'on n'a pas vu.
   db.update(projectActions)
-    .set({ approvedAt: next.approvedAt })
+    .set(approval)
+    .where(and(eq(projectActions.id, row.id), eq(projectActions.updatedAt, row.updatedAt)))
+    .run()
+  return { ...row, ...approval }
+}
+
+/**
+ * Refuser ce qu'un agent propose : revenir à la commande relue en dernier. Une action
+ * qui n'a jamais été relue n'a rien où revenir, elle disparaît : c'est à l'appelant de
+ * la supprimer (null).
+ */
+export function rejectAction(db: Db, row: ProjectActionRow): ProjectActionRow | null {
+  if (row.approvedAt) throw conflict('action_not_proposed', 'This action has nothing to review.')
+  if (row.approvedCommand === null) return null
+  const now = Date.now()
+  const next: ProjectActionRow = {
+    ...row,
+    kind: row.approvedKind ?? row.kind,
+    command: row.approvedCommand,
+    subdir: row.approvedSubdir,
+    url: row.approvedUrl,
+    approvedAt: now,
+    updatedAt: now,
+  }
+  db.update(projectActions)
+    .set(next)
     .where(and(eq(projectActions.id, row.id), eq(projectActions.updatedAt, row.updatedAt)))
     .run()
   return next
@@ -146,6 +200,7 @@ function toDto(
   service: ProjectActionServiceState | null,
   terminal: TerminalDto | null,
   agentConversationTitle: string | null,
+  runs: ActionRunDto[],
 ): ProjectActionDto {
   return {
     id: row.id,
@@ -157,6 +212,10 @@ function toDto(
     subdir: row.subdir,
     url: row.url,
     status: row.approvedAt ? 'approved' : 'proposed',
+    approved:
+      row.approvedCommand === null
+        ? null
+        : { kind: row.approvedKind ?? row.kind, command: row.approvedCommand, subdir: row.approvedSubdir, url: row.approvedUrl },
     agentConversationId: row.agentConversationId,
     agentConversationTitle,
     createdAt: row.createdAt,
@@ -165,7 +224,16 @@ function toDto(
     lastRun: terminal
       ? { terminalId: terminal.id, alive: terminal.alive, exitCode: terminal.exitCode, startedAt: terminal.createdAt }
       : null,
+    runs,
   }
+}
+
+/** Ce qui décide d'un lancement, en plus de l'action et du dossier. */
+export interface ActionRunOptions {
+  /** Qui l'a lancée : un clic par défaut. */
+  trigger?: ActionRunTrigger
+  /** Ajoutés à la commande relue, chacun cité pour le shell. */
+  args?: string[]
 }
 
 export class ActionRunner {
@@ -174,7 +242,10 @@ export class ActionRunner {
     private readonly config: Config,
     private readonly terminals: TerminalManager,
     private readonly environments: Environments,
-  ) {}
+  ) {
+    // Construit après la relecture des terminaux : aucun ne tourne plus d'avant.
+    closeOrphanRuns(db, terminals.live().map((terminal) => terminal.id))
+  }
 
   private shell(): string {
     return process.env.SHELL || '/bin/sh'
@@ -214,12 +285,14 @@ export class ActionRunner {
             .all()
             .map((entry) => [entry.id, entry.title]),
     )
+    const runs = latestRuns(this.db, rows.map((row) => row.id))
     return rows.map((row) =>
       toDto(
         row,
         states.get(row.id) ?? null,
         this.terminals.latestForAction(row.projectId, row.id),
         row.agentConversationId ? (titles.get(row.agentConversationId) ?? null) : null,
+        runs.get(row.id) ?? [],
       ),
     )
   }
@@ -239,11 +312,21 @@ export class ActionRunner {
   }
 
   /**
-   * Lance l'action. Une exécution qui tourne encore est rendue telle quelle plutôt que
-   * doublée : deux serveurs de dev se disputeraient le port, deux suites de tests la base.
+   * Lance l'action. Une exécution qui tourne encore au même endroit est rendue telle
+   * quelle plutôt que doublée : deux serveurs de dev se disputeraient le port, deux
+   * suites de tests la base. Celle d'une autre session ou d'un autre worktree ne la
+   * bloque pas : chacun a son arbre.
+   *
+   * Lancée dans un terminal, elle écrit un passage, clos à la sortie du terminal.
    */
-  async run(row: ProjectActionRow, base: string, conversationId: string | null): Promise<ProjectActionRunResult> {
+  async run(
+    row: ProjectActionRow,
+    base: string,
+    conversationId: string | null,
+    { trigger = 'manual', args = [] }: ActionRunOptions = {},
+  ): Promise<ProjectActionRunResult> {
     const cwd = await this.cwdFor(row, base)
+    const command = args.length > 0 ? `${row.command} ${args.map(shellQuote).join(' ')}` : row.command
     const origin = processOrigins(this.config.paths.data).environment(row.projectId, conversationId)
 
     // Un service tourne sous systemd, sur l'hôte : lancé depuis un environnement confiné,
@@ -259,31 +342,38 @@ export class ActionRunner {
         description: row.label,
         cwd,
         shell: this.shell(),
-        command: row.command,
+        command,
         env: origin,
       })
       return { terminal: null, service: (await this.serviceStates([row])).get(row.id)!, alreadyRunning: false }
     }
 
-    const previous = this.terminals.latestForAction(row.projectId, row.id)
-    if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
+    const previous = this.terminals.liveForAction(row.projectId, row.id, conversationId, cwd)
+    if (previous) return { terminal: previous, service: null, alreadyRunning: true }
     // Dans l'environnement de la session qui la lance, et hors session dans celui du
     // projet : comme un terminal.
     await this.environments.prepare(this.environments.terminalEnvironment(row.projectId, conversationId), row.projectId, { cwd })
     const environment = await this.environments.forTerminal(row.projectId, conversationId, cwd)
     let terminal: ReturnType<TerminalManager['open']>
+    // Le passage est écrit juste après l'ouverture, dans le même tour de boucle : la
+    // sortie du terminal, même immédiate, arrive après.
+    let runId: string | null = null
     try {
       terminal = this.openTerminal(row.projectId, cwd, { environment, conversationId }, {
-        command: row.command,
+        command,
         title: row.label,
         actionId: row.id,
         env: origin,
+        onExit: (end) => {
+          if (runId) finishRun(this.db, runId, end)
+        },
       })
     } catch (err) {
       // Un conteneur éphémère démarré pour rien ne doit pas rester.
       await environment.close().catch(() => undefined)
       throw err
     }
+    runId = startRun(this.db, { actionId: row.id, projectId: row.projectId, trigger, conversationId, terminalId: terminal.id, cwd })
     return { terminal, service: null, alreadyRunning: false }
   }
 
@@ -339,4 +429,9 @@ export class ActionRunner {
       await controlServiceApp(actionUnit(row.id), 'stop').catch(() => undefined)
     }
   }
+}
+
+/** Un argument cité pour un shell POSIX : passé tel quel, espaces et `$` compris. */
+function shellQuote(arg: string): string {
+  return `'${arg.replaceAll("'", `'\\''`)}'`
 }

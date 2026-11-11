@@ -1349,12 +1349,59 @@ export const projectActions = sqliteTable(
      * l'interface, effacée quand un agent change ce qui s'exécute.
      */
     approvedAt: timestamp('approved_at'),
+    /**
+     * Ce qu'une personne a relu en dernier, recopié à chaque validation : la relecture
+     * montre ce qu'un agent a changé depuis, et le refus y revient. NULL tant que
+     * l'action n'a jamais été validée.
+     */
+    approvedKind: text('approved_kind').$type<'task' | 'service'>(),
+    approvedCommand: text('approved_command'),
+    approvedSubdir: text('approved_subdir'),
+    approvedUrl: text('approved_url'),
     /** Dernière conversation à l'avoir créée ou modifiée par MCP ; NULL depuis l'interface. */
     agentConversationId: text('agent_conversation_id'),
     createdAt: timestamp('created_at').notNull(),
     updatedAt: timestamp('updated_at').notNull(),
   },
   (t) => [index('idx_project_actions_project').on(t.projectId, t.createdAt)],
+)
+
+/**
+ * Les passages d'une action : chaque lancement dans un terminal, son déclencheur, sa
+ * fin et les dernières lignes de sa sortie. L'écran entier reste au terminal, qui
+ * disparaît quand on le ferme ou qu'on relance ; le passage, lui, reste.
+ *
+ * Un service porté par systemd n'en écrit pas : personne n'en voit la fin, et son
+ * histoire est dans son journal.
+ */
+export const actionRuns = sqliteTable(
+  'action_runs',
+  {
+    id: text('id').primaryKey(),
+    actionId: text('action_id')
+      .notNull()
+      .references(() => projectActions.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').$type<'manual' | 'agent' | 'schedule'>().notNull(),
+    /** La session d'où elle a été lancée ; NULL hors session. */
+    conversationId: text('conversation_id').references(() => conversations.id, { onDelete: 'set null' }),
+    /** Le terminal qui l'a jouée, tant qu'il existe. */
+    terminalId: text('terminal_id'),
+    cwd: text('cwd').notNull(),
+    status: text('status').$type<'running' | 'succeeded' | 'failed' | 'stopped'>().notNull(),
+    exitCode: integer('exit_code'),
+    startedAt: timestamp('started_at').notNull(),
+    /** NULL tant qu'elle tourne, ou quand l'arrêt du daemon l'a emportée. */
+    finishedAt: timestamp('finished_at'),
+    /** Les dernières lignes de sortie, sans couleurs ; NULL sans sortie. */
+    excerpt: text('excerpt'),
+  },
+  (t) => [
+    index('idx_action_runs_action').on(t.actionId, t.startedAt),
+    index('idx_action_runs_project').on(t.projectId, t.startedAt),
+  ],
 )
 
 /**
@@ -1968,6 +2015,7 @@ export type ConversationRow = typeof conversations.$inferSelect
 export type ScheduledTaskRow = typeof scheduledTasks.$inferSelect
 export type ScheduledRunRow = typeof scheduledRuns.$inferSelect
 export type ProjectActionRow = typeof projectActions.$inferSelect
+export type ActionRunRow = typeof actionRuns.$inferSelect
 export type ConversationReadRow = typeof conversationReads.$inferSelect
 export type EventRow = typeof events.$inferSelect
 export type WorktreeRow = typeof worktrees.$inferSelect
