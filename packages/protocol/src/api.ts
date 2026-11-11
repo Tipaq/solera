@@ -763,10 +763,46 @@ export interface WorktreeStatusListDto {
   fresh: boolean
   worktrees: WorktreeStatusDto[]
   /**
-   * Les branches locales qu'aucun arbre n'a extraites, la base exceptée. `merged` se
-   * juge comme l'état d'un arbre : sur le contenu, ou sur une PR fusionnée.
+   * Les branches qu'aucun arbre n'a extraites, la base exceptée : les locales, puis
+   * celles d'`origin` sans locale. `merged` se juge comme l'état d'un arbre : sur le
+   * contenu, ou sur une PR fusionnée.
    */
-  branches: { name: string; merged: boolean }[]
+  branches: LooseBranchDto[]
+  /**
+   * Vrai tant que la date, l'avance et les commits des branches se lisent : la liste
+   * part sans eux, et la lecture suivante les aura.
+   */
+  branchesPending: boolean
+}
+
+/** Un commit propre à une branche, que la base n'a pas. */
+export interface BranchCommitDto {
+  hash: string
+  shortHash: string
+  subject: string
+  /** Date du commit, en millisecondes. */
+  ts: number
+}
+
+/** Une branche qu'aucun arbre n'a extraite. */
+export interface LooseBranchDto {
+  /** Nom court, sans `origin/` pour une distante. */
+  name: string
+  merged: boolean
+  /** N'existe que sur `origin`, sans branche locale du même nom. */
+  remoteOnly: boolean
+  /** Le commit de tête. */
+  head: string
+  /**
+   * Le sujet du commit de tête, sa date, l'avance et le retard sur la base : null tant
+   * que `branchesPending`, ou quand git n'a pas su les lire.
+   */
+  subject: string | null
+  lastCommitAt: number | null
+  ahead: number | null
+  behind: number | null
+  /** Ses trois derniers commits que la base n'a pas, le plus récent d'abord. */
+  recentCommits: BranchCommitDto[]
 }
 
 /**

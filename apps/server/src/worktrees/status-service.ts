@@ -1,8 +1,18 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { conversationPaths, conversations, projects, worktrees, type Db, type ProjectRow } from '@solera/db'
-import type { WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
+import type { LooseBranchDto, WorktreeLink, WorktreeStatusDto, WorktreeStatusListDto } from '@solera/protocol'
 import type { EventLog } from '../events/event-log.js'
-import { UNREADABLE, assessWorktree, defaultBase, listWorktrees, looseBranches, type LooseBranch } from './assess.js'
+import {
+  UNREADABLE,
+  assessWorktree,
+  branchFacts,
+  commitOf,
+  defaultBase,
+  listWorktrees,
+  looseBranches,
+  type BranchFacts,
+  type LooseBranch,
+} from './assess.js'
 import { directoryGone, markWorktreeGone } from './gone.js'
 import { landedPullRequests, type MergedPullRequestSource } from './landed.js'
 
@@ -33,6 +43,22 @@ interface CacheEntry {
   pending: Promise<WorktreeStatusListDto> | null
 }
 
+/** Une liste, et la lecture des faits de ses branches qui reste à faire, s'il en reste. */
+interface Computed {
+  value: WorktreeStatusListDto
+  details: (() => Promise<WorktreeStatusListDto>) | null
+}
+
+/**
+ * Les faits des branches déjà lus, par commit de tête : ils ne dépendent que de lui et
+ * de la base, qu'on retient avec eux.
+ */
+interface KnownFacts {
+  base: string
+  baseHead: string
+  byHead: Map<string, BranchFacts>
+}
+
 /**
  * L'avancement des worktrees d'un projet, calculé par arbre et non par session, et
  * servi depuis un cache que la fin d'un tour, une action git ou une création de
@@ -46,6 +72,7 @@ export class WorktreeStatusService {
   private readonly cache = new Map<string, CacheEntry>()
   private readonly listeners: ComputedListener[] = []
   private readonly refreshTimers = new Map<string, NodeJS.Timeout>()
+  private readonly knownFacts = new Map<string, KnownFacts>()
 
   constructor(
     private readonly db: Db,
@@ -144,8 +171,16 @@ export class WorktreeStatusService {
       // tourne doit compter, elle vise un état qu'il n'a peut-être pas vu.
       entry.stale = false
       entry.pending = this.compute(project)
-        .then((value) => {
+        .then(({ value, details }) => {
           entry.value = value
+          // Les faits des branches se lisent après : la liste n'attend pas un `git log`
+          // par branche. Ils remplacent la liste qu'ils complètent, si rien ne l'a
+          // remplacée entre-temps.
+          if (details) {
+            void details().then((completed) => {
+              if (entry.value === value) entry.value = completed
+            })
+          }
           // Hors du chemin de la réponse : un abonné lent ne retarde pas la liste.
           for (const listener of this.listeners) {
             void Promise.resolve()
@@ -183,7 +218,9 @@ export class WorktreeStatusService {
   async looseBranches(project: ProjectRow): Promise<{ base: string | null; checkedOut: Set<string>; branches: LooseBranch[] }> {
     const { entries, base, landed } = await this.read(project)
     const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
-    return { base, checkedOut, branches: await looseBranches(project.workspacePath, base, checkedOut, landed) }
+    // Une distante seule n'a pas de locale à supprimer.
+    const branches = await looseBranches(project.workspacePath, base, checkedOut, landed)
+    return { base, checkedOut, branches: branches.filter((branch) => !branch.remoteOnly) }
   }
 
   /** Ce que git et la forge disent du dépôt, avant de juger quoi que ce soit. */
@@ -198,7 +235,7 @@ export class WorktreeStatusService {
     return { entries, base, landed }
   }
 
-  private async compute(project: ProjectRow): Promise<WorktreeStatusListDto> {
+  private async compute(project: ProjectRow): Promise<Computed> {
     const repo = project.workspacePath
     const { entries, base, landed } = await this.read(project)
     const rows = this.db
@@ -283,12 +320,43 @@ export class WorktreeStatusService {
     )
 
     const checkedOut = new Set(entries.flatMap((entry) => (entry.branch ? [entry.branch] : [])))
-    const branches = await looseBranches(repo, base, checkedOut, landed).catch((err: unknown) => {
-      console.warn('[worktrees] branches illisibles :', err)
-      return []
-    })
+    const [loose, baseHead] = await Promise.all([
+      looseBranches(repo, base, checkedOut, landed).catch((err: unknown) => {
+        console.warn('[worktrees] branches illisibles :', err)
+        return []
+      }),
+      base ? commitOf(repo, base) : null,
+    ])
 
-    return { base, computedAt: Date.now(), fresh: true, worktrees: result, branches }
+    // Les faits déjà lus resservent tant que ni la tête de la branche ni la base n'ont
+    // bougé : en régime établi, la liste part complète.
+    const known = this.knownFacts.get(project.id)
+    const reusable = known && base && known.base === base && known.baseHead === baseHead ? known.byHead : new Map<string, BranchFacts>()
+    const missing = base && baseHead ? loose.filter((branch) => !reusable.has(branch.head)) : []
+    const value: WorktreeStatusListDto = {
+      base,
+      computedAt: Date.now(),
+      fresh: true,
+      worktrees: result,
+      branches: loose.map((branch) => branchDto(branch, reusable.get(branch.head))),
+      branchesPending: missing.length > 0,
+    }
+    if (!base || !baseHead || missing.length === 0) return { value, details: null }
+
+    const details = async (): Promise<WorktreeStatusListDto> => {
+      const read = await branchFacts(repo, base, missing).catch((err: unknown) => {
+        console.warn('[worktrees] faits des branches illisibles :', err)
+        return new Map<string, BranchFacts>()
+      })
+      const byHead = new Map<string, BranchFacts>()
+      for (const branch of loose) {
+        const facts = reusable.get(branch.head) ?? read.get(branch.name)
+        if (facts) byHead.set(branch.head, facts)
+      }
+      this.knownFacts.set(project.id, { base, baseHead, byHead })
+      return { ...value, branches: loose.map((branch) => branchDto(branch, byHead.get(branch.head))), branchesPending: false }
+    }
+    return { value, details }
   }
 
   /**
@@ -331,6 +399,20 @@ export class WorktreeStatusService {
     }
 
     return [...linked].map(([id, link]) => ({ id, link }))
+  }
+}
+
+function branchDto(branch: LooseBranch, facts: BranchFacts | undefined): LooseBranchDto {
+  return {
+    name: branch.name,
+    merged: branch.merged,
+    remoteOnly: branch.remoteOnly,
+    head: branch.head,
+    subject: facts?.subject ?? null,
+    lastCommitAt: facts?.lastCommitAt ?? null,
+    ahead: facts?.ahead ?? null,
+    behind: facts?.behind ?? null,
+    recentCommits: facts?.recentCommits ?? [],
   }
 }
 

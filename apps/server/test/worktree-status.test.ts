@@ -10,7 +10,7 @@ import { cards, conversationPaths, conversations, openDatabase, projects, runMig
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { EventLog } from '../src/events/event-log.js'
 import { touchedPaths } from '../src/events/touched-paths.js'
-import { assessWorktree, defaultBase, listWorktrees, looseBranches, parseWorktreeList } from '../src/worktrees/assess.js'
+import { assessWorktree, branchFacts, defaultBase, listWorktrees, looseBranches, parseWorktreeList } from '../src/worktrees/assess.js'
 import { backfillCommandPaths } from '../src/worktrees/backfill.js'
 import { WorktreeCleanup } from '../src/worktrees/cleanup.js'
 import { WorktreeStatusService } from '../src/worktrees/status-service.js'
@@ -556,4 +556,135 @@ test('un arbre illisible est marqué tel, sans faire échouer la liste', async (
   const states = Object.fromEntries(list.worktrees.map((w) => [w.name, w.state]))
   assert.equal(states['feat/broken'], 'unreadable')
   assert.equal(states['feat/healthy'], 'empty')
+})
+
+/**
+ * Un dépôt avec son remote bare : `distante` et `distante-squashee` n'existent que sur
+ * `origin`, `poussee` des deux côtés. Les dates des commits sont fixées, à la seconde.
+ */
+function withRemote(t: TestContext): { repo: string; trees: string; remote: string } {
+  const { repo, trees } = repository(t)
+  const remote = join(dirname(repo), 'remote.git')
+  git(dirname(repo), 'init', '--bare', '-b', 'main', remote)
+  git(repo, 'remote', 'add', 'origin', remote)
+
+  const at = (seconds: number) => {
+    process.env.GIT_COMMITTER_DATE = `${seconds} +0000`
+    process.env.GIT_AUTHOR_DATE = `${seconds} +0000`
+  }
+  t.after(() => {
+    delete process.env.GIT_COMMITTER_DATE
+    delete process.env.GIT_AUTHOR_DATE
+  })
+
+  // Quatre commits propres, puis main avance de deux : ↑4 ↓2.
+  git(repo, 'switch', '-q', '-c', 'en-cours')
+  for (let i = 1; i <= 4; i += 1) {
+    at(1_700_000_000 + i * 60)
+    write(repo, `c${i}.ts`, `${i}\n`)
+    commitAll(repo, `c${i}`)
+  }
+  git(repo, 'switch', '-q', 'main')
+  at(1_700_000_600)
+  write(repo, 'm1.ts', 'm1\n')
+  commitAll(repo, 'm1')
+
+  // Distante seule, du travail que main n'a pas.
+  git(repo, 'switch', '-q', '-c', 'distante')
+  at(1_700_001_000)
+  write(repo, 'd.ts', 'd\n')
+  commitAll(repo, 'd')
+  // Distante seule, squashée dans main.
+  git(repo, 'switch', '-q', 'main')
+  git(repo, 'switch', '-q', '-c', 'distante-squashee')
+  at(1_700_002_000)
+  write(repo, 's.ts', 's\n')
+  commitAll(repo, 's')
+  git(repo, 'switch', '-q', 'main')
+  at(1_700_003_000)
+  write(repo, 's.ts', 's\n')
+  commitAll(repo, 's squash')
+  git(repo, 'branch', 'poussee', 'main')
+
+  git(repo, 'push', '-q', 'origin', 'main', 'distante', 'distante-squashee', 'poussee')
+  git(repo, 'remote', 'set-head', 'origin', 'main')
+  git(repo, 'branch', '-q', '-D', 'distante', 'distante-squashee')
+  delete process.env.GIT_COMMITTER_DATE
+  delete process.env.GIT_AUTHOR_DATE
+  return { repo, trees, remote }
+}
+
+test('les branches distantes seules : sans locale, HEAD et base exclues, fusion jugée comme les locales', async (t) => {
+  const { repo } = withRemote(t)
+  const branches = await looseBranches(repo, 'main', new Set(['main']))
+  assert.deepEqual(
+    branches.map((b) => `${b.name}:${b.remoteOnly ? 'distante' : 'locale'}:${b.merged}`).sort(),
+    ['distante-squashee:distante:true', 'distante:distante:false', 'en-cours:locale:false', 'poussee:locale:true'],
+  )
+  const remote = branches.find((b) => b.name === 'distante')!
+  assert.equal(remote.head, git(repo, 'rev-parse', 'origin/distante'))
+})
+
+for (const legacyGit of [false, true]) {
+  test(`les faits d'une branche sans arbre : date, avance, retard, trois derniers commits${legacyGit ? ' (git antérieur à 2.41)' : ''}`, async (t) => {
+    const { repo } = withRemote(t)
+    const branches = await looseBranches(repo, 'main', new Set(['main']))
+    const facts = await branchFacts(repo, 'main', branches, { legacyGit })
+
+    const local = facts.get('en-cours')!
+    assert.deepEqual(
+      { at: local.lastCommitAt, ahead: local.ahead, behind: local.behind, subject: local.subject },
+      { at: 1_700_000_240_000, ahead: 4, behind: 2, subject: 'c4' },
+    )
+    assert.deepEqual(local.recentCommits.map((c) => `${c.subject}@${c.ts}`), ['c4@1700000240000', 'c3@1700000180000', 'c2@1700000120000'])
+    const head = git(repo, 'rev-parse', 'en-cours')
+    assert.deepEqual([local.recentCommits[0]!.hash, local.recentCommits[0]!.shortHash], [head, git(repo, 'rev-parse', '--short', head)])
+
+    const remote = facts.get('distante')!
+    assert.deepEqual(
+      { at: remote.lastCommitAt, ahead: remote.ahead, behind: remote.behind, commits: remote.recentCommits.map((c) => c.subject) },
+      { at: 1_700_001_000_000, ahead: 1, behind: 1, commits: ['d'] },
+    )
+    // Fusionnée par fast-forward : rien en avance, aucun commit propre.
+    const pushed = facts.get('poussee')!
+    assert.deepEqual([pushed.ahead, pushed.behind, pushed.recentCommits], [0, 0, []])
+  })
+}
+
+test("le service rend les branches sans attendre leurs faits, puis les complète ; ils survivent à un recalcul", async (t) => {
+  const { repo } = withRemote(t)
+  const dir = mkdtempSync(join(tmpdir(), 'solera-worktree-db-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
+  runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
+  t.after(() => sqlite.close())
+  db.insert(users).values({ id: 'owner', username: 'owner', displayName: 'owner', passwordHash: '', createdAt: 1 }).run()
+  db.insert(projects).values({ id: 'project', name: 'project', workspacePath: repo, ownerId: 'owner', visibility: 'private', createdAt: 1 }).run()
+  const project = db.select().from(projects).where(sqlEq(projects.id, 'project')).get()!
+  const service = new WorktreeStatusService(db, new EventLog(db))
+
+  const first = await service.get(project)
+  assert.equal(first.branchesPending, true, 'les faits se lisent après la liste')
+  assert.ok(first.branches.every((b) => b.lastCommitAt === null && b.ahead === null && b.recentCommits.length === 0))
+  assert.deepEqual(first.branches.filter((b) => b.remoteOnly).map((b) => b.name).sort(), ['distante', 'distante-squashee'])
+
+  let list = first
+  for (let i = 0; i < 50 && list.branchesPending; i += 1) {
+    await new Promise((done) => setTimeout(done, 50))
+    list = await service.get(project)
+  }
+  assert.equal(list.branchesPending, false)
+  assert.equal(list.fresh, true)
+  const local = list.branches.find((b) => b.name === 'en-cours')!
+  assert.deepEqual([local.ahead, local.behind, local.lastCommitAt, local.subject, local.recentCommits.length], [4, 2, 1_700_000_240_000, 'c4', 3])
+
+  // Un recalcul garde les faits des branches dont ni la tête ni la base n'ont bougé.
+  service.forget(project.id)
+  const again = await service.get(project)
+  assert.equal(again.branchesPending, false)
+  assert.equal(again.branches.find((b) => b.name === 'en-cours')?.ahead, 4)
+
+  // La suppression en lot ne connaît que les locales : une distante ne se supprime pas.
+  const judged = await service.looseBranches(project)
+  assert.ok(judged.branches.every((b) => !b.remoteOnly))
 })

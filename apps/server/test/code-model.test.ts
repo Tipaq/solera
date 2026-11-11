@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import type { CardDto, ProjectPullRequestDto, WorktreeStatusDto } from '@solera/protocol'
+import type { CardDto, LooseBranchDto, ProjectPullRequestDto, WorktreeStatusDto } from '@solera/protocol'
 import type { TreeFields, TreeRow, BranchInfo, CodeSession } from '../../web/src/lib/code-model.js'
 
 const {
@@ -374,7 +374,8 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
         status({}),
         status({ id: null, name: 'jalon/164-x', path: '/w/j', branch: 'jalon/164-x', external: true, state: 'merged', mergedPullRequest: 9, unmergedCommits: false, modified: 0, untracked: 0 }),
       ],
-      branches: [{ name: 'feat/77-y', merged: false }],
+      branches: [loose('feat/77-y', false)],
+      branchesPending: false,
     },
     pullRequests: { available: true, fetchedAt: NOW, pullRequests: [{ number: 5, url: 'u5', title: 't', branch: 'feat/12-truc', base: 'main', state: 'ready', checks: { passed: 1, pending: 0, failed: [] }, review: null, updatedAt: NOW }] },
     cards,
@@ -405,7 +406,7 @@ test('assemblage : la racine sur sa vraie branche, les arbres jugés, rien de si
   assert.deepEqual(jalon!.pr, { number: 9, url: null, state: 'merged' })
   assert.deepEqual(jalon!.card, { id: 'k164', number: 164, title: 'Carte 164', milestone: null, source: 'name' })
 
-  assert.deepEqual(data.branches, [{ name: 'feat/77-y', merged: false }])
+  assert.deepEqual(data.branches, [loose('feat/77-y', false)])
 })
 
 test('assemblage : hors dépôt, ni racine ni arbres', () => {
@@ -415,13 +416,16 @@ test('assemblage : hors dépôt, ni racine ni arbres', () => {
   assert.equal(data.forge, false)
 })
 
+function loose(name: string, merged: boolean, extra: Partial<LooseBranchDto> = {}): LooseBranchDto {
+  return {
+    name, merged, remoteOnly: false, head: 'h', subject: null, lastCommitAt: null, ahead: null, behind: null, recentCommits: [],
+    ...extra,
+  }
+}
+
 test('branches sans arbre : PR, carte devinée, et ce que le serveur ne dit pas encore à null', () => {
   const infos = branchInfosOf({
-    branches: [
-      { name: 'feat/12-truc', merged: false },
-      { name: 'feat/old', merged: true },
-      { name: 'spike/z', merged: false },
-    ],
+    branches: [loose('feat/12-truc', false), loose('feat/old', true), loose('spike/z', false)],
     pullRequests: { available: true, fetchedAt: NOW, pullRequests: [{ number: 5, url: 'u5', title: 'Le titre', branch: 'feat/12-truc', base: 'main', state: 'draft', checks: { passed: 0, pending: 0, failed: [] }, review: null, updatedAt: NOW }] },
     cards: [card(12)],
   })
@@ -435,4 +439,25 @@ test('branches sans arbre : PR, carte devinée, et ce que le serveur ne dit pas 
   assert.deepEqual(first.commits, [])
   assert.equal(first.remoteOnly, false)
   assert.equal(first.key, 'branche:feat/12-truc')
+})
+
+test('branches sans arbre : la date, l\'avance et les commits lus par le serveur ; distantes ; abandonnée après 14 jours', () => {
+  const infos = branchInfosOf({
+    branches: [
+      loose('spike/vieille', false, { lastCommitAt: NOW - 20 * DAY, ahead: 2, behind: 7 }),
+      loose('fix/distante', false, {
+        remoteOnly: true, lastCommitAt: NOW - DAY, ahead: 1, behind: 0, subject: 'd',
+        recentCommits: [{ hash: 'abc123', shortHash: 'abc', subject: 'd', ts: NOW - DAY }],
+      }),
+      loose('spike/recente', false, { lastCommitAt: NOW - DAY, ahead: 1, behind: 0 }),
+    ],
+    pullRequests: undefined,
+    cards: [],
+  })
+  assert.deepEqual(infos.map((entry) => [entry.name, entry.kind]), [['spike/recente', 'unmerged'], ['spike/vieille', 'unmerged'], ['fix/distante', 'remote']])
+  const remote = infos[2]!
+  assert.deepEqual([remote.lastCommitAt, remote.ahead, remote.behind, remote.remoteOnly], [NOW - DAY, 1, 0, true])
+  assert.deepEqual(remote.commits, [{ hash: 'abc123', title: 'd', at: NOW - DAY }])
+  assert.deepEqual([...statesOfBranch(infos[1]!, NOW)], ['stale'])
+  assert.deepEqual([...statesOfBranch(infos[0]!, NOW)], [])
 })

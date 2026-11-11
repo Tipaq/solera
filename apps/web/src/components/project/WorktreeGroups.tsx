@@ -82,7 +82,8 @@ export function WorktreeGroups({
     : grouping.idle
   const merged = idle.filter((tree) => tree.state === 'merged')
   const missing = idle.filter((tree) => tree.state === 'missing').length
-  const branches = filtering ? [] : (status?.branches ?? [])
+  // Les locales seules : une distante n'a rien à nettoyer ici.
+  const branches = filtering ? [] : (status?.branches ?? []).filter((branch) => !branch.remoteOnly)
 
   const toggle = (key: string) =>
     setFolded((current) => {

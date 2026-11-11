@@ -30,7 +30,9 @@ export function useWorktreeStatuses(projectId: string | undefined) {
     queryFn: () => api.get<WorktreeStatusListDto>(`/api/projects/${projectId}/worktrees/status`),
     enabled: Boolean(projectId),
     staleTime: 15_000,
-    refetchInterval: (query) => (query.state.data && !query.state.data.fresh ? 2_000 : false),
+    // Périmée, ou complète sauf les faits de ses branches : la lecture suivante les aura.
+    refetchInterval: (query) =>
+      query.state.data && (!query.state.data.fresh || query.state.data.branchesPending) ? 2_000 : false,
   })
 }
 
