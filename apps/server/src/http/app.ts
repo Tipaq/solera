@@ -38,6 +38,7 @@ import { registerInstructionRoutes } from './routes/instructions.js'
 import { registerMemoryRoutes } from './routes/memory.js'
 import { registerSkillLibraryRoutes } from './routes/skill-library.js'
 import { registerSkillSourceRoutes } from './routes/skill-sources.js'
+import { installSoleraSkills } from '../skill-library/solera-skills.js'
 import { SkillSources } from '../skill-library/sources.js'
 import { SkillLibrary } from '../skill-library/store.js'
 import { registerSecretRoutes } from './routes/secrets.js'
@@ -202,6 +203,15 @@ export async function buildApp(
   registerInstructionRoutes(app, ctx)
   registerMemoryRoutes(app, ctx)
   registerSkillSourceRoutes(app, ctx, skillLibrary, skillSources)
+  // Les skills de Solera, installés d'office au premier démarrage qui connaît leur source.
+  // Sans l'attendre : le clone passe par le réseau.
+  if (ctx.config.skills.library) {
+    void installSoleraSkills(ctx.db, skillSources, skillLibrary)
+      .then((skills) => {
+        if (skills.length > 0) app.log.info({ skills }, 'skills de Solera installes')
+      })
+      .catch((err: unknown) => app.log.warn({ err }, 'skills de Solera non installes, nouvel essai au prochain demarrage'))
+  }
   registerSecretRoutes(app, ctx, secrets)
   registerGitCredentialRoutes(app, gitCredentials, new RepoCatalog(), new ForgeClient())
   registerClaudeAccountRoutes(app, claudeAccounts, claudeLogin, claudeIdentify)
