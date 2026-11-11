@@ -932,17 +932,25 @@ export function assertCardAccepted(ctx: AppContext, cardId: string): void {
  */
 export function readConversationLinks(ctx: AppContext, cardId: string | null): ConversationLinks {
   if (!cardId) return NO_LINKS
-  const milestones = alias(cards, 'milestone')
   const row = ctx.db
-    .select({
-      card: { id: cards.id, number: cards.number, title: cards.title, column: cards.column },
-      milestone: { id: milestones.id, number: milestones.number, title: milestones.title },
-    })
+    .select(CONVERSATION_LINKS)
     .from(cards)
-    .leftJoin(milestones, eq(milestones.id, cards.parentId))
+    .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
     .where(eq(cards.id, cardId))
     .get()
   return row ? { card: row.card, milestone: row.milestone } : NO_LINKS
+}
+
+/**
+ * La parente d'une carte, jointe une seconde fois : le jalon d'une conversation. Les
+ * routes de liste la joignent après la carte, `readConversationLinks` pour un fil.
+ */
+export const milestoneCards = alias(cards, 'milestone')
+
+/** Les colonnes de `ConversationLinks`, pour une requête qui joint `cards` puis `milestoneCards`. */
+export const CONVERSATION_LINKS = {
+  card: { id: cards.id, number: cards.number, title: cards.title, column: cards.column },
+  milestone: { id: milestoneCards.id, number: milestoneCards.number, title: milestoneCards.title },
 }
 
 /** Ce qu'une conversation montre de son rattachement au board. */

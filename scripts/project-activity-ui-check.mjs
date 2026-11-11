@@ -172,8 +172,9 @@ try {
     `Ce qui t’attend ${[`${waiting.length} demande${waiting.length > 1 ? 's' : ''}`, lightCount ? `${lightCount} à relire` : null].filter(Boolean).join(' · ')}`,
   )
   const lines = inbox.getByRole('listitem')
-  assert.equal(await lines.count(), Math.min(3, total), 'Trois lignes visibles')
-  if (total > 3) {
+  assert.ok(total > 3, 'Le jeu d’essai met plus de trois lignes dans la liste de Nimbus')
+  assert.equal(await lines.count(), 3, 'Trois lignes visibles')
+  {
     await inbox.getByRole('button', { name: `${total - 3} de plus`, exact: true }).click()
     assert.equal(await lines.count(), total)
     // Les lourdes (un bouton qui déplie) avant les légères (un lien).
@@ -202,7 +203,8 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'a2-ce-qui-t-attend-deplie.png') })
   // Une seule réponse dépliée : ouvrir une session arrêtée referme la première.
   const stopped = waiting.find((entry) => ['error', 'interrupted'].includes(entry.status))
-  if (stopped) {
+  assert.ok(stopped, 'Le jeu d’essai a une session arrêtée dans Nimbus')
+  {
     if (!(await lines.filter({ hasText: stopped.title }).count())) await inbox.getByRole('button', { name: /de plus$/ }).click()
     const stoppedLine = lines.filter({ hasText: stopped.title })
     await stoppedLine.getByRole('button', { name: 'Voir', exact: true }).click()
@@ -216,7 +218,7 @@ try {
   await header.click()
   assert.equal(await header.getAttribute('aria-expanded'), 'false')
   assert.equal(await lines.count(), 0)
-  const target = stopped ?? awaiting
+  const target = stopped
   await page.evaluate((key) => window.dispatchEvent(new CustomEvent('solera:inbox-open', { detail: key })), `s-${target.id}`)
   await lines.filter({ hasText: target.title }).getByRole('button', { name: 'Fermer', exact: true }).waitFor()
   assert.equal(await header.getAttribute('aria-expanded'), 'true')
@@ -238,6 +240,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'a1-apercu-en-ce-moment.png') })
   // Un projet où rien n'attend : une ligne calme, pas de bloc vide.
   const all = await (await context.request.get(`${base}/api/conversations`)).json()
+  let calm = false
   for (const other of projects.filter((entry) => entry.id !== nimbus.id && !entry.archivedAt)) {
     const asking = all.some((entry) => entry.projectId === other.id && ['awaiting_input', 'error', 'interrupted'].includes(entry.status))
     const { prompts: pending } = await (await context.request.get(`${base}/api/projects/${other.id}/prompts`)).json()
@@ -250,8 +253,10 @@ try {
     await page.goto(`${base}/p/${other.id}`)
     await inbox.getByText('Rien ne t’attend.', { exact: true }).waitFor()
     assert.equal(await inbox.getByRole('listitem').count(), 0)
+    calm = true
     break
   }
+  assert.ok(calm, 'Le jeu d’essai a un projet où rien n’attend')
   await page.goto(`${base}/p/${nimbus.id}`)
   await now.waitFor()
   await now.getByRole('link', { name: /^Toute l'activité/ }).click()

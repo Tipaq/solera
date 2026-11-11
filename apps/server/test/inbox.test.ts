@@ -88,11 +88,17 @@ test('boîte : une ligne de session porte sa demande, sa carte, son jalon et son
   assert.equal(item.project, null)
   assert.equal(item.cardNumber, 163)
   assert.deepEqual(item.milestone, { number: 157, title: 'Socle commun', to: '/p/p1/timeline/157' })
-  assert.equal(item.open, '/p/p1/c/w')
+  assert.equal(item.threadPath, '/p/p1/c/w')
   assert.equal(item.request, request)
   assert.equal(item.canDecide, false)
-  assert.equal(item.since, 42)
+  // L'âge est celui de la demande, pas de la dernière écriture du fil.
+  assert.equal(item.since, request.requestedAt)
   assert.equal(item.agent, 'claude')
+})
+
+test('boîte : sans demande lisible, l’âge est celui de la dernière écriture du fil', () => {
+  const [item] = buildInbox({ live: [live('w', 'error', { since: 42 })], requests: new Map(), projects, prefixProject: false })
+  assert.equal(item?.kind === 'session' && item.since, 42)
 })
 
 test('boîte : hors d’un projet, chaque ligne dit le sien ; un fil libre s’ouvre hors projet', () => {
@@ -107,9 +113,9 @@ test('boîte : hors d’un projet, chaque ligne dit le sien ; un fil libre s’o
   const free = byKey.get('s-free')
   assert.ok(a?.kind === 'session' && free?.kind === 'session')
   assert.equal(a.project, 'Cirrus')
-  assert.equal(a.open, '/p/p2/c/a')
+  assert.equal(a.threadPath, '/p/p2/c/a')
   assert.equal(free.project, null)
-  assert.equal(free.open, '/c/free')
+  assert.equal(free.threadPath, '/c/free')
 })
 
 test('boîte : les cartes feuilles à relire et les PR prêtes, en lignes légères', () => {

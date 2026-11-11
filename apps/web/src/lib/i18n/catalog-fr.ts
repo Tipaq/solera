@@ -4240,6 +4240,8 @@ export const fr: Catalog = {
   "inbox.summary.joiner": " · ",
   "inbox.more": "{count} de plus",
   "inbox.less": "Montrer moins",
+  "inbox.cardTitle": "#{number} {title}",
+  "inbox.merge.hint": "{branch} → {base}",
   "inbox.withProject": "{project} · {title}",
   "inbox.gesture.reply": "Répondre",
   "inbox.gesture.see": "Voir",

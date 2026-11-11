@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   agentRequests,
@@ -65,7 +64,15 @@ import {
   workingDirectoryMissing,
 } from '../../worktrees/gone.js'
 import { assertWorktreeBelongs } from '../v1/access.js'
-import { assertCardAccepted, assertCardInProject, NO_LINKS, readConversationLinks, type ConversationLinks } from './cards.js'
+import {
+  assertCardAccepted,
+  assertCardInProject,
+  CONVERSATION_LINKS,
+  milestoneCards,
+  NO_LINKS,
+  readConversationLinks,
+  type ConversationLinks,
+} from './cards.js'
 import { coalesceDeltas } from '../../events/coalesce.js'
 import type { EventLog } from '../../events/event-log.js'
 import { dropConversation } from '../../search/search-index.js'
@@ -99,9 +106,6 @@ import { environmentOf } from '../../environments/environments.js'
  */
 const PAGE_ROWS = 5000
 const PAGE_BYTES = 16_000_000
-
-/** Le jalon d'une conversation : la parente de sa carte, jointe une seconde fois. */
-const milestoneCards = alias(cards, 'milestone')
 
 /**
  * `lastReadSeq`, `links` et `worktreeGone` sont passés plutôt que relus ici : les routes
@@ -248,17 +252,7 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
-        card: {
-          id: cards.id,
-          number: cards.number,
-          title: cards.title,
-          column: cards.column,
-        },
-        milestone: {
-          id: milestoneCards.id,
-          number: milestoneCards.number,
-          title: milestoneCards.title,
-        },
+        ...CONVERSATION_LINKS,
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)
@@ -308,17 +302,7 @@ export function registerConversationRoutes(
       .select({
         conversation: conversations,
         lastReadSeq: conversationReads.lastReadSeq,
-        card: {
-          id: cards.id,
-          number: cards.number,
-          title: cards.title,
-          column: cards.column,
-        },
-        milestone: {
-          id: milestoneCards.id,
-          number: milestoneCards.number,
-          title: milestoneCards.title,
-        },
+        ...CONVERSATION_LINKS,
         worktreeRemovedAt: worktrees.removedAt,
       })
       .from(conversations)

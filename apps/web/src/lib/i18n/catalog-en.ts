@@ -4243,6 +4243,8 @@ export const en = {
   "inbox.summary.joiner": " · ",
   "inbox.more": "{count} more",
   "inbox.less": "Show less",
+  "inbox.cardTitle": "#{number} {title}",
+  "inbox.merge.hint": "{branch} → {base}",
   "inbox.withProject": "{project} · {title}",
   "inbox.gesture.reply": "Reply",
   "inbox.gesture.see": "View",

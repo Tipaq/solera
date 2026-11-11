@@ -37,8 +37,8 @@ export type InboxItem =
       since: number
       milestone: InboxMilestone | null
       cardNumber: number | null
-      /** Le fil de la session. */
-      open: string
+      /** Le chemin du fil de la session. */
+      threadPath: string
       /** La demande ouverte, null quand le journal n'en dit aucune de lisible. */
       request: SessionRequest | null
       /** Seul le propriétaire du fil y répond. */
@@ -48,6 +48,10 @@ export type InboxItem =
       kind: 'refine'
       key: string
       milestone: InboxMilestone
+      /**
+       * Les questions encore ouvertes : l'appelant retire celles qui sont répondues, et la
+       * dernière répondue referme la ligne.
+       */
       questions: { id: string; text: string }[]
       onAnswer: (id: string, text: string) => void
     }
@@ -125,7 +129,8 @@ export function buildInbox(input: InboxInput): InboxItem[] {
       project: projectName(projectId),
       agent: conversation.agent,
       tone: state === 'broken' ? 'broken' : 'awaiting',
-      since: entry.since,
+      // L'âge de la demande, comme dans l'Activité ; à défaut, la dernière écriture du fil.
+      since: request?.requestedAt ?? entry.since,
       milestone:
         conversation.milestone && projectId
           ? {
@@ -135,7 +140,7 @@ export function buildInbox(input: InboxInput): InboxItem[] {
             }
           : null,
       cardNumber: conversation.card?.number ?? null,
-      open: projectId ? `/p/${projectId}/c/${conversation.id}` : `/c/${conversation.id}`,
+      threadPath: projectId ? `/p/${projectId}/c/${conversation.id}` : `/c/${conversation.id}`,
       request,
       canDecide: conversation.isOwner,
     }]

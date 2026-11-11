@@ -62,7 +62,7 @@ function session(
     since: Date.now() - ago * MINUTE,
     milestone: null,
     cardNumber: null,
-    open: `/p/p1/c/${key}`,
+    threadPath: `/p/p1/c/${key}`,
     request: null,
     canDecide: true,
     ...rest,

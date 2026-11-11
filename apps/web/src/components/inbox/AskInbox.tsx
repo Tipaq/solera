@@ -94,9 +94,11 @@ export function AskInbox({ items, bare = false, className }: { items: InboxItem[
   ]
     .filter(Boolean)
     .join(t('inbox.summary.joiner'))
-  // Une ligne dépliée au-delà des trois premières reste visible.
+  // Une ligne dépliée au-delà des trois premières reste visible, sous les trois.
   const openIndex = ordered.findIndex((item) => item.key === open)
-  const visible = all || openIndex >= SHOWN ? ordered : ordered.slice(0, SHOWN)
+  const visible = all
+    ? ordered
+    : [...ordered.slice(0, SHOWN), ...(openIndex >= SHOWN ? [ordered[openIndex]!] : [])]
   const hidden = ordered.length - visible.length
 
   return (
@@ -142,7 +144,7 @@ export function AskInbox({ items, bare = false, className }: { items: InboxItem[
             <button
               type="button"
               onClick={() => setAll((value) => !value)}
-              className="self-start rounded px-2 text-xs text-ink-faint hover:text-ink"
+              className="self-start rounded px-2 text-xs text-ink-faint hover:text-ink pointer-coarse:min-h-11"
             >
               {all ? t('inbox.less') : t('inbox.more', { count: hidden })}
             </button>
@@ -194,7 +196,7 @@ function describe(
 ): { icon: ReactNode; title: string; hint: string; gesture: string; since: number | null } {
   switch (item.kind) {
     case 'session': {
-      const title = item.cardNumber !== null ? `#${item.cardNumber} ${item.title}` : item.title
+      const title = item.cardNumber !== null ? t('inbox.cardTitle', { number: item.cardNumber, title: item.title }) : item.title
       return {
         icon: (
           <span className="relative shrink-0">
@@ -234,7 +236,7 @@ function describe(
       return {
         icon: <ListTree size={14} aria-hidden className="shrink-0 text-accent" />,
         title: t('inbox.draft.title', { count: item.cards.length }),
-        hint: item.cards.map((card) => card.title).join(' · '),
+        hint: item.cards.map((card) => card.title).join(t('inbox.summary.joiner')),
         gesture: t('inbox.gesture.examine'),
         since: null,
       }
@@ -242,7 +244,7 @@ function describe(
       return {
         icon: <GitMerge size={14} aria-hidden className="shrink-0 text-positive" />,
         title: t('inbox.merge.title'),
-        hint: `${item.branch} → ${item.base}`,
+        hint: t('inbox.merge.hint', { branch: item.branch, base: item.base }),
         gesture: t('inbox.gesture.merge'),
         since: null,
       }
@@ -274,11 +276,13 @@ function HeavyRow({
         </button>
         <MilestoneChip milestone={item.milestone} />
         <Age at={line.since} />
+        {/* Nu, comme le titre : le geste déplie la même ligne, il n'est pas une action à
+            part. Au doigt, il garde la cible de 44 px. */}
         <button
           type="button"
           onClick={onToggle}
           className={cx(
-            'shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            'shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors pointer-coarse:min-h-11',
             open ? 'text-ink-faint hover:text-ink' : 'text-accent hover:bg-accent-wash/50',
           )}
         >
@@ -300,7 +304,7 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
   switch (item.kind) {
     case 'session': {
       const thread = (
-        <Link to={item.open} className="inline-flex items-center gap-1 self-start text-xs text-ink-faint hover:text-ink">
+        <Link to={item.threadPath} className="inline-flex items-center gap-1 self-start text-xs text-ink-faint hover:text-ink">
           {t('inbox.openThread')} <ArrowRight size={12} aria-hidden />
         </Link>
       )
@@ -332,11 +336,12 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
     case 'refine':
       return (
         <ul className="flex flex-col gap-3">
-          {item.questions.map((question) => (
+          {item.questions.map((question, index) => (
             <li key={question.id} className="flex flex-col gap-1.5">
               <p className="text-sm text-ink">{question.text}</p>
               <ReplyField
                 label={question.text}
+                autoFocus={index === 0}
                 onSend={(text) => {
                   item.onAnswer(question.id, text)
                   // La dernière question répondue referme la ligne ; avant, on enchaîne.
@@ -407,7 +412,7 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
 }
 
 /** Un champ d'une ligne qui s'agrandit, Entrée pour envoyer, Maj+Entrée pour aller à la ligne (INB-11). */
-export function ReplyField({ label, onSend }: { label: string; onSend: (text: string) => void }) {
+function ReplyField({ label, autoFocus, onSend }: { label: string; autoFocus: boolean; onSend: (text: string) => void }) {
   const t = useTranslate()
   const [text, setText] = useState('')
   const send = () => {
@@ -420,8 +425,8 @@ export function ReplyField({ label, onSend }: { label: string; onSend: (text: st
     <div className="flex items-end gap-2">
       <textarea
         rows={1}
-        // Le champ paraît au geste qui le demande : la saisie y va d'elle-même.
-        autoFocus
+        // Le champ paraît au geste qui le demande : la saisie va d'elle-même au premier.
+        autoFocus={autoFocus}
         value={text}
         aria-label={label}
         placeholder={t('inbox.reply.placeholder')}
