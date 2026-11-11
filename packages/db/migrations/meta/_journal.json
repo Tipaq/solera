@@ -554,13 +554,6 @@
       "when": 1794435584338,
       "tag": "0082_placement_des_services",
       "breakpoints": true
-    },
-    {
-      "idx": 84,
-      "version": "6",
-      "when": 1794439025753,
-      "tag": "0084_affinage_d_un_jalon",
-      "breakpoints": true
     }
   ]
 }
