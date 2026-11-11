@@ -111,14 +111,10 @@ export function usePanelOpen(): boolean {
 export const PANEL_TRANSITION_MS = 200
 
 /**
- * Présence du panneau dans le document, distincte de son état ouvert.
- *
- * Le panneau reste monté le temps de sortir de l'écran, puis disparaît : il tient des
- * terminaux vivants et des requêtes d'arborescence, qu'on ne veut pas garder derrière
- * un panneau fermé.
+ * Présence dans le document d'un élément qui glisse, distincte de son état ouvert : il
+ * reste monté le temps de sortir de l'écran, puis disparaît. Le panneau, le tiroir.
  */
-export function usePanelPresence(): { mounted: boolean; open: boolean } {
-  const open = usePanelOpen()
+export function usePresence(open: boolean): boolean {
   const [mounted, setMounted] = useState(open)
 
   useEffect(() => {
@@ -131,7 +127,16 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
     return () => clearTimeout(timer)
   }, [open])
 
-  return { mounted, open }
+  return mounted
+}
+
+/**
+ * Présence du panneau dans le document : il tient des terminaux vivants et des requêtes
+ * d'arborescence, qu'on ne veut pas garder derrière un panneau fermé.
+ */
+export function usePanelPresence(): { mounted: boolean; open: boolean } {
+  const open = usePanelOpen()
+  return { mounted: usePresence(open), open }
 }
 
 export function setPanelOpen(next: boolean): void {

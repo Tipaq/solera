@@ -1,5 +1,8 @@
 import {
+  actionRunStatusOf,
   resolveActionUrl,
+  type ActionRunDetailDto,
+  type ActionRunDto,
   type AgentKind,
   type CreateProjectActionBody,
   type ProjectActionDto,
@@ -99,21 +102,8 @@ export interface Automation {
 
 /* ------------------------------------------------------------------ lecture des deux tables */
 
-/** Un passage de commande, tel que le serveur le rend quand il les garde (AC-02). */
-export interface CommandRunInput {
-  id: string
-  status: 'running' | 'succeeded' | 'failed' | 'stopped'
-  exitCode: number | null
-  startedAt: number
-  finishedAt: number | null
-  conversationId?: string | null
-  terminalId?: string | null
-  excerpt?: string | null
-}
-
-/** Une action, avec les champs que le serveur ajoute carte après carte (AC-02, AC-03). */
+/** Une action, avec ce qu'AC-03 lui ajoute : une cadence, « à la demande ». */
 export type ActionInput = ProjectActionDto & {
-  runs?: readonly CommandRunInput[]
   schedule?: AutomationSchedule | null
   onDemand?: boolean
 }
@@ -123,35 +113,31 @@ export type TaskInput = Omit<ScheduledTaskDto, 'cadence'> & { cadence: ScheduleC
 
 const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
-/** 128 + n : tuée par le signal n. SIGHUP, SIGINT, SIGKILL, SIGTERM l'ont arrêtée ; les autres l'ont fait planter. */
-const STOP_SIGNALS = [1, 2, 9, 15]
-
-/** Le verdict d'un code de sortie, comme le serveur le donne à ses passages (AC-02). */
-function commandStatusOf(exitCode: number | null): 'succeeded' | 'failed' | 'stopped' {
-  // Sans code, le daemon a redémarré pendant qu'elle tournait : on ne sait rien.
-  if (exitCode === null) return 'stopped'
-  if (exitCode === 0) return 'succeeded'
-  return STOP_SIGNALS.includes(exitCode - 128) ? 'stopped' : 'failed'
-}
-
-export function fromAction(input: ProjectActionDto): Automation {
+/**
+ * `detailed` : les passages avec leur extrait (`useActionRuns`), pour le détail d'une
+ * action. La liste des actions ne les porte pas : sans eux, l'extrait vaut null.
+ */
+export function fromAction(input: ProjectActionDto, detailed?: readonly ActionRunDetailDto[]): Automation {
   const action = input as ActionInput
   const { service, lastRun } = action
-  const runs: UnifiedRun[] = action.runs
-    ? action.runs.map((run) => ({
+  const listed: readonly (ActionRunDto & { excerpt?: string | null })[] = detailed ?? action.runs
+  // Une action lancée avant que le serveur garde ses passages n'a que son dernier lancement.
+  const runs: UnifiedRun[] = listed.length
+    ? listed.map((run) => ({
         id: run.id,
         status: run.status,
         startedAt: run.startedAt,
         finishedAt: run.finishedAt,
         exitCode: run.exitCode,
         excerpt: run.excerpt ?? null,
-        conversationId: run.conversationId ?? null,
+        conversationId: run.conversationId,
       }))
     : lastRun && !lastRun.alive
       ? [
           {
             id: `${action.id}-last`,
-            status: commandStatusOf(lastRun.exitCode),
+            // Sans code, le daemon a redémarré pendant qu'elle tournait : on ne sait rien.
+            status: lastRun.exitCode === null ? 'stopped' : actionRunStatusOf(lastRun.exitCode),
             startedAt: lastRun.startedAt,
             finishedAt: null,
             exitCode: lastRun.exitCode,
@@ -233,7 +219,7 @@ export function automationsOf(
   scope: AutomationScope,
 ): Automation[] {
   const mine = <T extends { projectId: string | null }>(entry: T) => 'all' in scope || entry.projectId === scope.projectId
-  return [...actions.filter(mine).map(fromAction), ...tasks.filter(mine).map(fromTask)]
+  return [...actions.filter(mine).map((action) => fromAction(action)), ...tasks.filter(mine).map(fromTask)]
 }
 
 /* ------------------------------------------------------------------ verdicts */
@@ -320,8 +306,9 @@ export function formatCost(usd: number | null, t: Translate, locale: string): st
   return usd > 0 && usd < 0.01 ? t('automation.cost.under', { amount: format(0.01) }) : format(usd)
 }
 
-export function formatDateTime(ts: number, locale: string): string {
-  return new Date(ts).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+/** `timeZone` lit la date à l'heure du serveur, celle d'un motif cron ; absent, à celle du poste. */
+export function formatDateTime(ts: number, locale: string, timeZone?: string): string {
+  return new Date(ts).toLocaleString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone })
 }
 
 /* ------------------------------------------------------------------ nature, quand */

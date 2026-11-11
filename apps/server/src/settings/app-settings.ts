@@ -47,6 +47,16 @@ export function readAppSettings(db: Db, config: Config): AppSettings {
   }
 }
 
+/**
+ * Le dossier du vault, ou null quand aucun n'est configuré. Seule la clé du vault est
+ * lue : ceux qui n'ont besoin que d'elle (le lieu d'un tir) n'ont pas à porter tout le
+ * reste de la configuration.
+ */
+export function vaultRoot(db: Db, config: Pick<Config, 'vault'>): string | null {
+  const path = (readString(db, 'vaultPath') || config.vault.path).trim()
+  return path.length > 0 ? path : null
+}
+
 export function writeAppSettings(db: Db, patch: Partial<AppSettings>): void {
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue

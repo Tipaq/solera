@@ -26,7 +26,8 @@ import type { AttachmentStore } from '../src/attachments/store.js'
 import type { CloneJobs } from '../src/clone-jobs.js'
 import type { Config } from '../src/config.js'
 import { createConversation } from '../src/conversations/create.js'
-import { hasNativeConfinement, nativeConfinement } from '../src/environments/confined/native.js'
+import { hasNativeConfinement, nativeConfinement, type NativeConfinement } from '../src/environments/confined/native.js'
+import type { Backend } from '../src/environments/confined/backend.js'
 import { Environments } from '../src/environments/environments.js'
 import { hostEnvironment } from '../src/environments/host.js'
 import { EnvironmentUnavailableError } from '../src/environments/provider.js'
@@ -236,6 +237,31 @@ test('projet : lire ses environnements, régler le sien, refuser ce qui ne se la
   assert.equal(refused.statusCode, 409)
   assert.equal(refused.json<{ error: { code: string } }>().error.code, 'environment_unavailable')
   assert.equal(db.select().from(projects).get()?.environmentWhere, 'host')
+
+  // Le brouillon des réglages envoie l'environnement et le confinement des autonomes dans
+  // le même PATCH : le confinement se juge sur l'environnement que porte la requête, pas
+  // sur celui qu'elle remplace (ici un dev container, que ce serveur ne lance pas). La
+  // sonde est remplacée : le résultat ne dépend pas de bwrap sur la machine du test.
+  const draft = async (confinement: () => NativeConfinement) => {
+    const scoped = Fastify()
+    scoped.addHook('preHandler', async (request) => {
+      request.user = db.select().from(users).where(eq(users.id, 'owner')).get()
+    })
+    registerErrorHandler(scoped)
+    registerProjectRoutes(scoped, { db, config: { paths: { data: dir } } as Config }, {} as AttachmentStore, {} as CloneJobs, { aliveCount: () => 0 } as unknown as TerminalManager, undefined, new Environments(db, null, confinement))
+    t.after(() => scoped.close())
+    db.update(projects).set({ environmentWhere: 'devcontainer', autonomousConfined: false }).run()
+    return scoped.inject({ method: 'PATCH', url: '/api/projects/project', payload: { environment: HOST_ENVIRONMENT, autonomousConfined: true } })
+  }
+  if (hasNativeConfinement()) {
+    const confined = await draft(() => ({ backend: {} as Backend }))
+    assert.equal(confined.statusCode, 200, confined.body)
+    assert.deepEqual([db.select().from(projects).get()?.environmentWhere, db.select().from(projects).get()?.autonomousConfined], ['host', true])
+
+    const missing = await draft(() => ({ unavailable: { code: 'confinement_bwrap_missing', fix: 'bubblewrap' } }))
+    assert.equal(missing.statusCode, 409, missing.body)
+    assert.equal(missing.json<{ error: { code: string } }>().error.code, 'confinement_bwrap_missing', 'jugé sur l’hôte confiné, pas sur le dev container')
+  }
 })
 
 // Un faux `claude` : répond aux requêtes de contrôle, assez pour le SDK.

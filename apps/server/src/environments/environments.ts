@@ -14,7 +14,7 @@ import {
 } from '@solera/protocol'
 import type { Unavailable } from './confined/backend.js'
 import { ConfinedEnvironment } from './confined/confined.js'
-import { hasNativeConfinement, nativeConfinement } from './confined/native.js'
+import { hasNativeConfinement, nativeConfinement, type NativeConfinement } from './confined/native.js'
 import type { ConfinementScope } from './confined/plan.js'
 import { terminalScope } from './confined/scope.js'
 import type { ContainerNeed, Devcontainers } from './devcontainer/containers.js'
@@ -49,6 +49,8 @@ export class Environments {
     private readonly db: Db,
     /** Absent (tests, serveur sans dossier de données) : pas de dev container. */
     readonly devcontainers: Devcontainers | null = null,
+    /** La sonde du confinement natif ; un test la remplace pour ne pas dépendre de bwrap. */
+    private readonly confinement: () => NativeConfinement = nativeConfinement,
   ) {}
 
   /**
@@ -104,7 +106,7 @@ export class Environments {
       )
     }
     if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT)) {
-      const native = nativeConfinement()
+      const native = this.confinement()
       if ('unavailable' in native) refuseConfinement(native.unavailable)
     }
   }
@@ -126,7 +128,7 @@ export class Environments {
       return this.devcontainers.ephemeral(projectId, scope, this.confinedServicesOf(projectId))
     }
     if (sameEnvironment(environment, HOST_CONFINED_ENVIRONMENT) && scope) {
-      const native = nativeConfinement()
+      const native = this.confinement()
       if ('unavailable' in native) refuseConfinement(native.unavailable)
       return new ConfinedEnvironment(native.backend, scope)
     }

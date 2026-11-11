@@ -17,6 +17,8 @@ import {
 import { badRequest, conflict, notFound } from '../http/errors.js'
 import { compatNotes } from './compat.js'
 import { parseSkillMarkdown } from './frontmatter.js'
+import { CURRENT_VERSION } from '../update/version.js'
+import { SOLERA_SKILLS_SOURCE_ID, versionRef } from './solera-skills.js'
 import { contentHash, listFiles, readDirectory, type SkillLibrary, type SourceCatalogReader } from './store.js'
 
 /**
@@ -60,9 +62,11 @@ export class SkillSources implements SourceCatalogReader {
   /** Un rafraîchissement en cours par source : un second appel attend le premier. */
   private readonly refreshing = new Map<string, Promise<SkillSourceRow>>()
 
+  /** `version` est celle de Solera, que suit la source de ses propres skills. */
   constructor(
     private readonly db: Db,
     private readonly root: string,
+    private readonly version: string = CURRENT_VERSION,
   ) {}
 
   list(): SkillSourceRow[] {
@@ -80,7 +84,7 @@ export class SkillSources implements SourceCatalogReader {
       id: row.id,
       name: row.name,
       url: row.url,
-      ref: row.ref,
+      ref: this.refOf(row),
       subpath: row.subpath,
       builtin: row.builtin,
       enabled: row.enabled,
@@ -209,17 +213,28 @@ export class SkillSources implements SourceCatalogReader {
     }
   }
 
+  /**
+   * La ref à suivre. Celle de la ligne quand un admin l'a posée ; vide, la branche par
+   * défaut, sauf pour la source des skills de Solera, qui suit le tag de la version
+   * installée et change donc d'elle-même à chaque mise à jour de Solera.
+   */
+  private refOf(row: SkillSourceRow): string | null {
+    if (row.ref !== null || row.id !== SOLERA_SKILLS_SOURCE_ID) return row.ref
+    return versionRef(this.version)
+  }
+
   private async fetch(row: SkillSourceRow, env: NodeJS.ProcessEnv): Promise<SkillSourceRow> {
     const dir = this.cloneDir(row.id)
+    const ref = this.refOf(row)
     try {
       if (existsSync(join(dir, '.git'))) {
-        await git(['fetch', '--depth', '1', 'origin', row.ref ?? 'HEAD'], { cwd: dir, env })
+        await git(['fetch', '--depth', '1', 'origin', ref ?? 'HEAD'], { cwd: dir, env })
         await git(['reset', '--hard', 'FETCH_HEAD'], { cwd: dir })
         await git(['clean', '-fdx'], { cwd: dir })
       } else {
         rmSync(dir, { recursive: true, force: true })
         mkdirSync(this.root, { recursive: true })
-        const branch = row.ref ? ['--branch', row.ref] : []
+        const branch = ref ? ['--branch', ref] : []
         await git(['clone', '--depth', '1', '--single-branch', ...branch, '--', row.url, dir], { env })
       }
       const commit = await git(['rev-parse', 'HEAD'], { cwd: dir })

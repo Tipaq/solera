@@ -96,9 +96,9 @@ export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: 
       <button
         type="button"
         onClick={onSearch}
-        className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
+        className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
       >
-        <Search size={14} className="shrink-0" />
+        <span className="flex w-4 shrink-0 justify-center"><Search size={14} /></span>
         {t('shell.threads.all')}
       </button>
     </div>

@@ -24,11 +24,16 @@ function updateModalBackground() {
 }
 
 /** Même contenu en panneau libre ou plein écran, sans remonter l'éditeur au redimensionnement. */
-export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor = false, children }: {
+export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protectEditor = false, children }: {
   open: boolean
   modal: boolean
   onClose: () => void
   fallbackFocus?: string
+  /**
+   * Ce qui avait le focus avant l'ouverture, quand le contenu le prend dès son montage
+   * (un champ `autoFocus`) : à ce moment, le déclencheur est déjà oublié.
+   */
+  opener?: Element | null
   protectEditor?: boolean
   children: ReactElement<HTMLAttributes<HTMLElement>>
 }) {
@@ -36,11 +41,13 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, protectEditor 
   const returnTo = useRef<HTMLElement | null>(null)
   const fallback = useRef(fallbackFocus)
   fallback.current = fallbackFocus
+  const openerRef = useRef(opener)
+  openerRef.current = opener
 
   useEffect(() => {
     const node = container.current
     if (!node || !open) return
-    const previous = document.activeElement
+    const previous = openerRef.current ?? document.activeElement
     if (previous instanceof HTMLElement && previous !== document.body && !node.contains(previous)) returnTo.current = previous
     if (!node.contains(document.activeElement)) {
       node.querySelector<HTMLElement>('[data-panel-initial-focus]')?.focus({ preventScroll: true })

@@ -67,15 +67,14 @@ export function planSessionCarry(
   conversation: ConversationRow,
   projectId: string | null,
 ): SessionCarry {
-  const threads = ctx.config.paths.threads
   let from: string | null
   try {
-    from = resolve(agentCwd(ctx.db, threads, conversation))
+    from = resolve(agentCwd(ctx.db, ctx.config, conversation))
   } catch {
     from = null
   }
-  // Ce que `move` écrit : le projet de destination, sans worktree.
-  const to = resolve(agentCwd(ctx.db, threads, { ...conversation, projectId, worktreeId: null }))
+  // Ce que `move` écrit : le projet de destination, sans worktree ni lieu.
+  const to = resolve(agentCwd(ctx.db, ctx.config, { ...conversation, projectId, worktreeId: null, place: null }))
   if (!conversation.agentSessionId) return { carry: 'none', from, to }
   if (from === to) return { carry: 'same', from, to }
   return { carry: RESUMES_FROM_OTHER_DIRECTORY[conversation.agent] ? 'resume' : 'relay', from, to }
@@ -124,6 +123,8 @@ export async function moveConversation(
   const patch: Partial<ConversationRow> = {
     projectId,
     worktreeId: null,
+    // Le vault ou l'instance étaient le lieu de sa tâche : déplacé, le fil en sort.
+    place: null,
     cardId: null,
     agentSessionId: plan.carry === 'relay' ? null : conversation.agentSessionId,
     position: (lowest?.min ?? 0) - 1,

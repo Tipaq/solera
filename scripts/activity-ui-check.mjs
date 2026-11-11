@@ -66,7 +66,7 @@ try {
   assert.equal(seedCode, 0, seed.diagnostics)
 
   browser = await launchBrowser()
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', colorScheme: 'dark', serviceWorkers: 'block' })
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'fr-FR', colorScheme: 'dark', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
     if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
@@ -110,12 +110,14 @@ try {
   await header.waitFor()
   // L'en-tête porte les deux compteurs : ambre ce qui t'attend, accent ce qui tourne.
   await activity.getByRole('button', { name: 'Activité 2 pour toi 7 en cours', exact: true }).waitFor()
-  // Le bloc tient sous le quart de la colonne (#121) : à 900 px, quatre lignes, et le
-  // reste compté sur une ligne plutôt que listé.
+  // Le bloc tient sous le quart de la colonne (#121) — le bloc qui défile, sous le haut
+  // fixe : à 1100 px de fenêtre, quatre lignes, et le reste compté sur une ligne plutôt
+  // que listé.
   assert.equal(await activity.locator('li').count(), 4)
   await activity.getByRole('button', { name: '+ 5 sessions', exact: true }).waitFor()
   const blockBox = await activity.boundingBox()
-  assert.ok(blockBox.height < 900 / 4, `l'Activité fait ${blockBox.height} px`)
+  const columnHeight = await page.locator('[data-sidebar-scroll]').evaluate((node) => node.clientHeight)
+  assert.ok(blockBox.height < columnHeight / 4, `l'Activité fait ${blockBox.height} px sur ${columnHeight}`)
   // Ce qui t'attend précède le travail en cours : les deux fils bloqués d'abord.
   assert.match(await activity.locator('li').first().innerText(), /Valider les migrations|Attendre le choix utilisateur/)
   assert.equal(await activity.getByRole('link').count(), 2)
@@ -139,8 +141,8 @@ try {
   // Elle s'ouvre sur ce qui attend, et non sur l'inventaire.
   assert.match(await pressed(), /^Pour toi/)
   assert.equal(await requests.count(), 2)
-  // Ce qui a attendu se relit sur la page d'historique.
-  await overview.getByRole('link', { name: 'Historique de ce qui t’attend', exact: true }).waitFor()
+  // Plus de lien « Historique de ce qui t'attend » : la page et sa route ont été retirées
+  // avec le nettoyage de l'interface (#85).
   // Un clic déplie la demande sur place ; sans demande lisible dans le journal, elle
   // renvoie au fil.
   await requests.first().click()
@@ -246,7 +248,7 @@ try {
 
   // Au repos **et** tout relu, l'activité le dit explicitement : il faut les deux, une
   // session posée qui n'a pas été lue réclame encore un regard.
-  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.setViewportSize({ width: 1440, height: 1100 })
   for (const entry of fixtures) { entry.status = 'idle'; entry.lastReadSeq = 5 }
   await page.reload()
   await activity.getByText('Aucune session en cours', { exact: true }).waitFor()

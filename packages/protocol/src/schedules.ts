@@ -81,6 +81,50 @@ export const scheduleCadenceSchema = z.discriminatedUnion('kind', [
 export type ScheduleCadence = z.infer<typeof scheduleCadenceSchema>
 
 /**
+ * Où s'ouvre la session d'un tir : `root`, à la racine du projet ; `new`, dans un
+ * worktree neuf, sur une branche à lui. Le confinement est un réglage à part (`confined`) :
+ * on peut tourner confiné à la racine comme dans un worktree.
+ */
+export const scheduleWorktreeModeSchema = z.enum(['root', 'new'])
+export type ScheduleWorktreeMode = z.infer<typeof scheduleWorktreeModeSchema>
+
+/**
+ * Ce que vise une tâche, et donc où ses tirs s'ouvrent : `project`, à la racine de son
+ * projet (ou dans un worktree neuf) ; `vault`, dans le vault du Savoir ; `instance`,
+ * dans le dossier de données de Solera ; `none`, dans un dossier vide à chaque fil,
+ * comme un fil libre.
+ *
+ * `project` si et seulement si la tâche a un projet. Hors projet, ni worktree neuf ni
+ * confinement : il n'y a pas de dépôt où ouvrir l'un, ni d'environnement de projet
+ * pour l'autre.
+ */
+export const scheduleScopeSchema = z.enum(['project', 'vault', 'instance', 'none'])
+export type ScheduleScope = z.infer<typeof scheduleScopeSchema>
+
+/**
+ * Les portées qui ont un dossier à elles hors de tout projet : le vault, le dossier de
+ * données. C'est aussi le lieu d'un fil qu'elles ouvrent (`conversations.place`).
+ */
+export type SchedulePlace = Extract<ScheduleScope, 'vault' | 'instance'>
+
+/** Le lieu d'une portée, ou null : un projet a sa racine, `none` un dossier vide par fil. */
+export function schedulePlaceOf(scope: ScheduleScope): SchedulePlace | null {
+  return scope === 'vault' || scope === 'instance' ? scope : null
+}
+
+/** Où créer une tâche, ou essayer un script, depuis la page Planifiées : la portée, et son projet pour `project`. */
+const scheduleTargetShape = {
+  scope: scheduleScopeSchema,
+  projectId: z.string().min(1).optional(),
+}
+
+function refineTarget(target: { scope: ScheduleScope; projectId?: string }, ctx: z.RefinementCtx): void {
+  if ((target.scope === 'project') !== (target.projectId !== undefined)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['projectId'], message: 'A project is given for the project scope, and only for it.' })
+  }
+}
+
+/**
  * Sort d'un tir qui arrive pendant que le précédent tourne encore : `skip` le laisse
  * passer, `wait` le fait partir dès que la place est libre. Jamais deux en parallèle :
  * ils travailleraient le même arbre.
@@ -103,7 +147,11 @@ export const createScheduledTaskBodySchema = z.object({
   agent: agentKindSchema,
   config: agentConfigSchema,
   prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
-  cadence: scheduleCadenceSchema,
+  /** Null : la tâche ne part qu'à la demande, et `onDemand` doit alors être vrai. */
+  cadence: scheduleCadenceSchema.nullable(),
+  /** Un bouton la lance d'un clic. Au moins l'un des deux : à la demande, ou une cadence. */
+  onDemand: z.boolean().default(true),
+  worktreeMode: scheduleWorktreeModeSchema.default('root'),
   overlapPolicy: scheduleOverlapPolicySchema.default('skip'),
   /** Tirs confinés ou non (#146) ; null : le réglage du projet, relu à chaque tir. */
   confined: z.boolean().nullable().default(null),
@@ -118,6 +166,16 @@ export const createScheduledTaskBodySchema = z.object({
   checkTimeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
 })
 
+export type CreateScheduledTaskBody = z.infer<typeof createScheduledTaskBodySchema>
+
+/**
+ * Création depuis la page Planifiées (`POST /api/schedules`) : le même corps, plus la
+ * portée. La portée ne se modifie pas ensuite, comme la nature d'une action.
+ */
+export const createScopedScheduledTaskBodySchema = createScheduledTaskBodySchema
+  .extend(scheduleTargetShape)
+  .superRefine(refineTarget)
+
 /** Tout est facultatif : la pause n'envoie que `enabled`. */
 export const updateScheduledTaskBodySchema = z
   .object({
@@ -125,7 +183,9 @@ export const updateScheduledTaskBodySchema = z
     agent: agentKindSchema,
     config: agentConfigSchema,
     prompt: z.string().trim().min(1).max(MAX_SCHEDULE_PROMPT_CHARS),
-    cadence: scheduleCadenceSchema,
+    cadence: scheduleCadenceSchema.nullable(),
+    onDemand: z.boolean(),
+    worktreeMode: scheduleWorktreeModeSchema,
     overlapPolicy: scheduleOverlapPolicySchema,
     confined: z.boolean().nullable(),
     maxDurationMinutes: z
@@ -149,6 +209,11 @@ export const testScheduleCheckBodySchema = z.object({
   timeoutSeconds: checkTimeoutSchema.default(DEFAULT_CHECK_TIMEOUT_SECONDS),
   taskId: z.string().optional(),
 })
+
+/** L'essai depuis la page Planifiées (`POST /api/schedules/check-test`), joué où la portée tourne. */
+export const testScopedScheduleCheckBodySchema = testScheduleCheckBodySchema
+  .extend(scheduleTargetShape)
+  .superRefine(refineTarget)
 
 /**
  * Validation du script proposé par un agent. Le texte relu est renvoyé : s'il a changé
@@ -210,14 +275,23 @@ export interface ScheduledTaskCheckDto {
 
 export interface ScheduledTaskDto {
   id: string
-  /** Null quand la tâche ne vise aucun projet, comme un fil libre. */
+  /** Null quand la tâche ne vise aucun projet : portée `vault`, `instance` ou `none`. */
   projectId: string | null
+  /** Où ses tirs s'ouvrent ; `project` si et seulement si `projectId` est donné. */
+  scope: ScheduleScope
   userId: string
   name: string
   agent: AgentKind
   config: AgentConfig
   prompt: string
-  cadence: ScheduleCadence
+  /** Null : la tâche ne part qu'à la demande. */
+  cadence: ScheduleCadence | null
+  /**
+   * Un bouton la lance d'un clic ; vrai pour toute tâche sans cadence. Faux, la tâche
+   * n'a pas de bouton, mais « Lancer maintenant » reste permis : c'est un essai.
+   */
+  onDemand: boolean
+  worktreeMode: ScheduleWorktreeMode
   executionMode: ScheduleExecutionMode
   overlapPolicy: ScheduleOverlapPolicy
   /** Tirs confinés ou non (#146) ; null : le réglage du projet. */
@@ -225,7 +299,7 @@ export interface ScheduledTaskDto {
   maxDurationMinutes: number
   enabled: boolean
   lastRunAt: number | null
-  /** Null quand plus rien n'est prévu : en pause, ou ponctuelle déjà tirée. */
+  /** Null quand plus rien n'est prévu : en pause, sans cadence, ou ponctuelle déjà tirée. */
   nextRunAt: number | null
   createdAt: number
   updatedAt: number
@@ -244,11 +318,16 @@ export interface ScheduledTaskDto {
  * `lastRunAt` ne sert qu'à l'intervalle, qui se compte depuis le tir précédent. Sans
  * lui, le premier tir attend un intervalle entier : une tâche « toutes les 6 heures »
  * qui partirait à la création surprendrait, et « lancer maintenant » existe pour ça.
+ *
+ * `timeZone` ne sert qu'au motif cron. Le daemon l'omet : il lit le motif à son heure.
+ * L'interface passe celle du serveur (`InstanceInfo.timeZone`) : à l'heure du
+ * navigateur, l'aperçu annoncerait un 9 h qui n'est pas celui où la tâche partira.
  */
 export function nextScheduleRun(
   cadence: ScheduleCadence,
   after: number,
   lastRunAt: number | null = null,
+  timeZone?: string,
 ): number | null {
   if (cadence.kind === 'once') return cadence.at > after ? cadence.at : null
   if (cadence.kind === 'interval') {
@@ -258,8 +337,29 @@ export function nextScheduleRun(
     return next > after ? next : after + step
   }
   try {
-    return new Cron(cadence.expression, { paused: true }).nextRun(new Date(after))?.getTime() ?? null
+    return new Cron(cadence.expression, { paused: true, timezone: timeZone }).nextRun(new Date(after))?.getTime() ?? null
   } catch {
     return null
   }
+}
+
+/**
+ * Les `count` prochains tirs d'une cadence après `after`, du plus proche au plus loin :
+ * de quoi remplir l'aperçu « Prochains passages » et son mois, avec la même règle que
+ * le daemon.
+ */
+export function upcomingScheduleRuns(
+  cadence: ScheduleCadence,
+  after: number,
+  count: number,
+  options: { lastRunAt?: number | null; timeZone?: string } = {},
+): number[] {
+  const runs: number[] = []
+  let next = nextScheduleRun(cadence, after, options.lastRunAt ?? null, options.timeZone)
+  while (next !== null && runs.length < count) {
+    runs.push(next)
+    // Chaque tir compte comme le précédent du suivant : c'est ainsi que l'intervalle avance.
+    next = nextScheduleRun(cadence, next, next, options.timeZone)
+  }
+  return runs
 }
