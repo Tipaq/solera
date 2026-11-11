@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
+  BranchCleanupResultDto,
   GitHeadDto,
   PortfolioWorktreeStatusDto,
   WorktreeCleanupPlanDto,
@@ -8,6 +9,7 @@ import type {
   WorktreeStatusListDto,
 } from '@solera/protocol'
 import { api } from './api'
+import { projectScope } from './workspace-scope'
 
 const worktreesKey = (projectId: string) => ['worktrees', projectId]
 
@@ -120,6 +122,26 @@ export function useCleanWorktree(projectId: string) {
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['branches'] })
       void queryClient.invalidateQueries({ queryKey: ['services'] })
+    },
+  })
+}
+
+/**
+ * Supprime en lot des branches fusionnées (S8). Le serveur rejuge chacune et rend
+ * celles qui restent avec leur raison (`branchCleanup.refused.<raison>`), à dire une à
+ * une. Le geste s'annule depuis l'onglet Git du projet.
+ */
+export function useCleanBranches(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (names: string[]) =>
+      api.post<BranchCleanupResultDto>(`/api/projects/${projectId}/branches/cleanup`, { names }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: statusKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: ['worktree-status'], exact: true })
+      void queryClient.invalidateQueries({ queryKey: ['branches', projectId] })
+      // Le bandeau « Annuler » de l'onglet Git du projet.
+      void queryClient.invalidateQueries({ queryKey: ['git-state', projectScope(projectId)] })
     },
   })
 }

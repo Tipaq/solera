@@ -25,6 +25,7 @@ const UNDO_LABELS: Record<GitUndoKind, MessageKey> = {
   switch: 'git.undo.switch',
   'branch-create': 'git.undo.branchCreate',
   'branch-delete': 'git.undo.branchDelete',
+  'branches-delete': 'git.undo.branchesDelete',
   'branch-rename': 'git.undo.branchRename',
   tag: 'git.undo.tag',
   track: 'git.undo.track',

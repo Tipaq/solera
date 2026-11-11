@@ -815,6 +815,34 @@ export interface WorktreeCleanupResultDto {
   stopped: number
 }
 
+/**
+ * Supprimer en lot des branches fusionnées (S8). Le serveur rejuge chacune : rien ne
+ * part sur la seule foi de ce que l'interface a affiché.
+ */
+export const branchCleanupBodySchema = z.object({
+  names: z.array(z.string().trim().min(1).max(200)).min(1).max(100),
+})
+
+/**
+ * Pourquoi une branche est restée : la base, une branche sortie dans un arbre, du
+ * travail que la base n'a pas, une branche locale introuvable, ou git qui a refusé.
+ */
+export type BranchCleanupRefusal = 'base' | 'checked_out' | 'not_merged' | 'not_found' | 'failed'
+
+export interface BranchCleanupResultDto {
+  deleted: string[]
+  /** Dans l'ordre de la demande. `message` : ce que git a dit, pour `failed` seulement. */
+  refused: { name: string; reason: BranchCleanupRefusal; message?: string }[]
+}
+
+/** La PR que Solera vient de fusionner (S7). */
+export interface PullRequestMergeResultDto {
+  number: number
+  url: string
+  branch: string
+  base: string
+}
+
 export interface DiffFileDto {
   path: string
   added: number

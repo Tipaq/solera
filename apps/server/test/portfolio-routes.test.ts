@@ -74,7 +74,7 @@ async function harness(t: TestContext) {
   })
   registerErrorHandler(app)
   registerWorktreeRoutes(app, { db, config: {} } as never, {} as never, worktreeStatus, {} as never)
-  registerPullRequestRoutes(app, { db, config: {} } as never, pullRequests)
+  registerPullRequestRoutes(app, { db, config: {} } as never, pullRequests, { forge: {} as never, worktreeStatus, token: () => undefined })
   t.after(() => app.close())
 
   const read = async <T>(url: string) => {

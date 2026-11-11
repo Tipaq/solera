@@ -1,5 +1,10 @@
-import { useQuery } from '@tanstack/react-query'
-import type { PortfolioPullRequestsDto, ProjectPullRequestDto, ProjectPullRequestListDto } from '@solera/protocol'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type {
+  PortfolioPullRequestsDto,
+  ProjectPullRequestDto,
+  ProjectPullRequestListDto,
+  PullRequestMergeResultDto,
+} from '@solera/protocol'
 import { api } from './api'
 
 /**
@@ -26,6 +31,23 @@ export function usePortfolioPullRequests() {
     queryFn: () => api.get<PortfolioPullRequestsDto>('/api/pull-requests'),
     staleTime: 30_000,
     refetchInterval: 60_000,
+  })
+}
+
+/**
+ * Fusionne une PR prête, en squash, sans supprimer sa branche (S7). La confirmation est
+ * celle de l'appelant ; le serveur rejuge « prête » et rend sa raison en 409 sinon.
+ * Les PR et l'avancement des arbres sont relus après : la branche vient d'atterrir.
+ */
+export function useMergePullRequest(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (number: number) =>
+      api.post<PullRequestMergeResultDto>(`/api/projects/${projectId}/pull-requests/${number}/merge`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['pull-requests'] })
+      void queryClient.invalidateQueries({ queryKey: ['worktree-status'] })
+    },
   })
 }
 
