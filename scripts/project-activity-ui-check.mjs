@@ -26,6 +26,10 @@ import { launchBrowser } from './checks/browser.mjs'
  * Le jalon lancé (#116) : le pilotage est simulé de la même façon. La suite tient le
  * bandeau et le groupe du jalon, leur absence sans jalon lancé, la vue par vagues et sa
  * file, la pause, et la ligne de la frise qui mène à la vue.
+ *
+ * « Ce qui t'attend » (#163), sur l'Aperçu : le résumé de l'en-tête, trois lignes puis
+ * « N de plus », les lourdes avant les légères, une seule réponse dépliée, l'ouverture de
+ * loin (`openInboxItem`), la réponse par la route du fil, et le calme d'un projet vide.
  */
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
@@ -146,10 +150,115 @@ try {
   for (const entry of finished) {
     assert.equal(await now.getByRole('link', { name: entry.title, exact: true }).count(), 0, `${entry.title} est finie : elle reste à l’onglet`)
   }
-  // Le bloc vient après les tuiles.
-  const tileTop = (await page.getByRole('link', { name: /attend ta réponse/i }).boundingBox()).y
-  assert.ok((await now.boundingBox()).y > tileTop, 'Le bloc vient sous les tuiles')
+  // ─── « Ce qui t'attend » (#163) : une liste, une ligne par demande ─────────
+  const inbox = page.getByRole('region', { name: 'Ce qui t’attend', exact: true })
+  await inbox.waitFor()
+  assert.ok((await now.boundingBox()).y > (await inbox.boundingBox()).y, '« En ce moment » vient sous la liste')
+  // Les tuiles « attend ta réponse » et « à relire » s'y sont fondues : rien n'est dit deux fois.
+  assert.equal(await page.getByRole('link', { name: /attend ta réponse/i }).count(), 0)
+  // Ce qui doit y être : les sessions qui te demandent quelque chose, les cartes feuilles
+  // à relire, la PR prête — lourdes d'abord.
+  const { prompts: open } = await (await context.request.get(`${base}/api/projects/${nimbus.id}/prompts`)).json()
+  const waiting = conversations.filter(
+    (entry) => ['awaiting_input', 'error', 'interrupted'].includes(entry.status) || open.some((prompt) => prompt.conversationId === entry.id),
+  )
+  const boardCards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
+  const toReview = boardCards.filter((card) => card.column === 'review' && card.children.length === 0)
+  const lightCount = toReview.length + (withPr ? 1 : 0)
+  const total = waiting.length + lightCount
+  const header = inbox.getByRole('button', { name: /^Ce qui t’attend/ })
+  assert.equal(
+    (await header.innerText()).replace(/\s+/g, ' ').trim(),
+    `Ce qui t’attend ${[`${waiting.length} demande${waiting.length > 1 ? 's' : ''}`, lightCount ? `${lightCount} à relire` : null].filter(Boolean).join(' · ')}`,
+  )
+  const lines = inbox.getByRole('listitem')
+  assert.ok(total > 3, 'Le jeu d’essai met plus de trois lignes dans la liste de Nimbus')
+  assert.equal(await lines.count(), 3, 'Trois lignes visibles')
+  {
+    await inbox.getByRole('button', { name: `${total - 3} de plus`, exact: true }).click()
+    assert.equal(await lines.count(), total)
+    // Les lourdes (un bouton qui déplie) avant les légères (un lien).
+    const heavy = await lines.evaluateAll((items) => items.map((item) => item.querySelector('button[aria-expanded]') !== null))
+    assert.deepEqual(heavy, [...heavy].sort((a, b) => Number(b) - Number(a)), 'Les lourdes avant les légères')
+    assert.equal(heavy.filter(Boolean).length, waiting.length)
+    await inbox.getByRole('button', { name: 'Montrer moins', exact: true }).click()
+    assert.equal(await lines.count(), 3)
+  }
+  // Une session qui attend dit sa demande en gris, et se déplie au geste.
+  const asked = open.find((prompt) => prompt.conversationId === awaiting.id)
+  assert.ok(asked?.event.input.command, 'Le jeu d’essai fait attendre une permission')
+  const awaitingLine = lines.filter({ hasText: awaiting.title })
+  await awaitingLine.getByText(`Bash : ${asked.event.input.command}`, { exact: true }).waitFor()
+  if (awaiting.milestone) {
+    assert.equal(
+      await awaitingLine.getByRole('link', { name: `Jalon #${awaiting.milestone.number}` }).getAttribute('href'),
+      `/p/${nimbus.id}/timeline/${awaiting.milestone.number}`,
+    )
+  }
+  await awaitingLine.getByRole('button', { name: 'Répondre', exact: true }).click()
+  for (const name of ['Refuser', 'Autoriser pour la session', 'Autoriser', 'Fermer']) {
+    await awaitingLine.getByRole('button', { name, exact: true }).waitFor()
+  }
+  assert.equal(await awaitingLine.getByRole('link', { name: 'Ouvrir le fil' }).getAttribute('href'), `/p/${nimbus.id}/c/${awaiting.id}`)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'a2-ce-qui-t-attend-deplie.png') })
+  // Une seule réponse dépliée : ouvrir une session arrêtée referme la première.
+  const stopped = waiting.find((entry) => ['error', 'interrupted'].includes(entry.status))
+  assert.ok(stopped, 'Le jeu d’essai a une session arrêtée dans Nimbus')
+  {
+    if (!(await lines.filter({ hasText: stopped.title }).count())) await inbox.getByRole('button', { name: /de plus$/ }).click()
+    const stoppedLine = lines.filter({ hasText: stopped.title })
+    await stoppedLine.getByRole('button', { name: 'Voir', exact: true }).click()
+    await stoppedLine.getByText('La session s’est arrêtée. Ouvre-la pour la relancer.').waitFor()
+    assert.equal(await awaitingLine.getByRole('button', { name: 'Refuser', exact: true }).count(), 0, 'Une seule réponse dépliée')
+    await stoppedLine.getByRole('button', { name: 'Fermer', exact: true }).click()
+    if (await inbox.getByRole('button', { name: 'Montrer moins' }).count()) await inbox.getByRole('button', { name: 'Montrer moins' }).click()
+  }
+  // Replier la liste, puis la rouvrir de loin (`openInboxItem`, le repère d'un jalon) :
+  // elle se déplie, montre tout s'il le faut et ouvre la ligne.
+  await header.click()
+  assert.equal(await header.getAttribute('aria-expanded'), 'false')
+  assert.equal(await lines.count(), 0)
+  const target = stopped
+  await page.evaluate((key) => window.dispatchEvent(new CustomEvent('solera:inbox-open', { detail: key })), `s-${target.id}`)
+  await lines.filter({ hasText: target.title }).getByRole('button', { name: 'Fermer', exact: true }).waitFor()
+  assert.equal(await header.getAttribute('aria-expanded'), 'true')
+  await lines.filter({ hasText: target.title }).getByRole('button', { name: 'Fermer', exact: true }).click()
+  // La réponse part par la route du fil. Sans CLI derrière la demande, le serveur la dit
+  // expirée et la ligne reste ouverte pour le dire.
+  await awaitingLine.getByRole('button', { name: 'Répondre', exact: true }).click()
+  const [refusal] = await Promise.all([
+    page.waitForResponse((response) => response.request().method() === 'POST' && response.url().endsWith(`/api/conversations/${awaiting.id}/permissions/${asked.requestId}`)),
+    awaitingLine.getByRole('button', { name: 'Refuser', exact: true }).click(),
+  ])
+  assert.deepEqual(refusal.request().postDataJSON(), { decision: 'denied', scope: 'once' })
+  await awaitingLine.getByText('Cette demande a expiré, la session est terminée.').waitFor()
+  // Une réponse acceptée referme la ligne.
+  await page.route(`**/api/conversations/${awaiting.id}/permissions/*`, (route) => route.fulfill({ json: { ok: true } }))
+  await awaitingLine.getByRole('button', { name: 'Autoriser', exact: true }).click()
+  await awaitingLine.getByRole('button', { name: 'Répondre', exact: true }).waitFor()
+  await page.unroute(`**/api/conversations/${awaiting.id}/permissions/*`)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'a1-apercu-en-ce-moment.png') })
+  // Un projet où rien n'attend : une ligne calme, pas de bloc vide.
+  const all = await (await context.request.get(`${base}/api/conversations`)).json()
+  let calm = false
+  for (const other of projects.filter((entry) => entry.id !== nimbus.id && !entry.archivedAt)) {
+    const asking = all.some((entry) => entry.projectId === other.id && ['awaiting_input', 'error', 'interrupted'].includes(entry.status))
+    const { prompts: pending } = await (await context.request.get(`${base}/api/projects/${other.id}/prompts`)).json()
+    const reviewing = (await (await context.request.get(`${base}/api/projects/${other.id}/cards`)).json()).some((card) => card.column === 'review')
+    if (asking || pending.length || reviewing) continue
+    // Les PR simulées plus haut valent pour tous les projets : celui-ci n'en a pas.
+    await page.route(`**/api/projects/${other.id}/pull-requests`, (route) =>
+      route.fulfill({ json: { available: true, fetchedAt: Date.now(), pullRequests: [] } }),
+    )
+    await page.goto(`${base}/p/${other.id}`)
+    await inbox.getByText('Rien ne t’attend.', { exact: true }).waitFor()
+    assert.equal(await inbox.getByRole('listitem').count(), 0)
+    calm = true
+    break
+  }
+  assert.ok(calm, 'Le jeu d’essai a un projet où rien n’attend')
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await now.waitFor()
   await now.getByRole('link', { name: /^Toute l'activité/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/activity`)
   await page.goto(`${base}/p/${nimbus.id}`)
@@ -313,6 +422,10 @@ try {
   const cards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
   const parent = cards.find((card) => cards.some((child) => child.parent?.id === card.id))
   assert.ok(parent && running.card, 'Le jeu d’essai a un jalon, et la session qui tourne une carte')
+  // Le jalon d'une session est la parente de sa carte, joint à la liste (#163).
+  if (running.card && cards.find((card) => card.id === running.card.id)?.parent?.id === parent.id) {
+    assert.deepEqual(running.milestone, { id: parent.id, number: parent.number, title: parent.title })
+  }
   const children = cards.filter((card) => card.parent?.id === parent.id && card.id !== running.card.id)
   const runCard = (card, layer, status, extra = {}) => ({
     cardId: card.id, number: card.number, title: card.title, layer, status, blockReason: null, blockedBy: [],
@@ -391,7 +504,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : six vues, compteur de demandes, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone, jalon lancé ; captures dans ' + shots)
+  console.log('OK : six vues, compteur de demandes, ce qui t’attend, groupes dans l’ordre, branche par session, badge de PR, demande dépliée, filtre, pliage, téléphone, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

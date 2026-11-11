@@ -14,7 +14,8 @@ import { useAllConversations } from './conversations'
 import { shortAge } from './dates'
 import { useTranslate } from './i18n'
 import { isOpenPullRequest, pullRequestFor, usePullRequests } from './pull-requests'
-import { requestLine, useSessionRequests, type SessionRequest } from './session-requests'
+import { requestSummary, type SessionRequest } from './session-request-summary'
+import { useSessionRequests } from './session-requests'
 import { threadState } from './signals'
 import { useWorktreeStatuses } from './worktrees'
 
@@ -136,7 +137,7 @@ function summaryOf(
 ): SessionSummary | null {
   if (request) {
     return {
-      text: t('projectActivity.row.asking', { age: shortAge(request.requestedAt), request: requestLine(request, t) }),
+      text: t('projectActivity.row.asking', { age: shortAge(request.requestedAt), request: requestSummary(request, t) }),
       tone: 'caution',
     }
   }

@@ -25,10 +25,11 @@ export function usePullRequests(projectId: string | undefined) {
 }
 
 /** Les mêmes pour tous les projets visibles, d'une requête : l'Activité du portefeuille (#117). */
-export function usePortfolioPullRequests() {
+export function usePortfolioPullRequests(enabled = true) {
   return useQuery({
     queryKey: ['pull-requests'],
     queryFn: () => api.get<PortfolioPullRequestsDto>('/api/pull-requests'),
+    enabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
   })

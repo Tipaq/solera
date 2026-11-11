@@ -3,7 +3,7 @@ import { memo, useState } from 'react'
 import type { PermissionItem } from '../../lib/chat-fold'
 import { decidePermission } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
-import { permissionTarget } from '../../lib/session-requests'
+import { permissionTarget } from '../../lib/session-request-summary'
 import { Badge, Button, cx } from '@solera/ui'
 import { HighlightedCode } from './HighlightedCode'
 

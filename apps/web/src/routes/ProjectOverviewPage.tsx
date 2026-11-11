@@ -6,8 +6,6 @@ import {
   Flag,
   GitBranch,
   History,
-  MessageCircleQuestion,
-  Pencil,
   Plus,
   TriangleAlert,
 } from 'lucide-react'
@@ -16,6 +14,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { CardDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { DemandTile } from '../components/places/DemandTile'
+import { AskInbox } from '../components/inbox/AskInbox'
 import { SessionRow } from '../components/project/SessionRow'
 import { MilestoneBanner } from '../components/project/MilestoneBanner'
 import {
@@ -37,6 +36,7 @@ import { locale, useTranslate } from '../lib/i18n'
 import { openPanelOnArrival } from '../lib/panel'
 import { JOURNAL_KIND_LABELS, useJournal } from '../lib/journal'
 import { useProjects } from '../lib/projects'
+import { useInbox } from '../lib/use-inbox'
 import {
   RUN_LABELS,
   RUN_TONES,
@@ -103,6 +103,7 @@ export function ProjectOverviewPage() {
   )
   const live = useLiveConversations(mine)
   const demands = demandsOf(live, cards ?? [], project)
+  const inbox = useInbox({ projectId: projectId ?? '' })
   const tasks = useMemo(
     () => (schedules ?? []).filter((task) => task.projectId === projectId),
     [schedules, projectId],
@@ -163,14 +164,8 @@ export function ProjectOverviewPage() {
   if (isPending) return null
   if (!projectId || !project) return <EmptyState title={t('project.notFound')} />
 
-  const awaitingSince = oldest(demands.awaiting)
   const runningSince = oldest(demands.running)
-  const reviewCard = demands.review[0]
-  const quiet =
-    demands.awaiting.length === 0 &&
-    demands.running.length === 0 &&
-    demands.review.length === 0 &&
-    demands.uncommitted === 0
+  const tiles = demands.running.length > 0 || (demands.uncommitted > 0 && project.git)
 
   return (
     /* Pleine largeur, marge de 1 rem : pas de couloir centré. C'est la **grille** qui
@@ -179,34 +174,12 @@ export function ProjectOverviewPage() {
        board (décision 3 de l'audit). */
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="flex flex-col gap-5">
-        {quiet ? (
-          /* Une ligne nue, et non une tuile vide : le silence n'a pas à prendre la
-             hauteur de ce qu'il remplace. La maquette ne montrait cette zone qu'avec
-             ses trois demandes, et l'encadré pleine largeur donnait à « rien » le même
-             poids qu'à « une session attend depuis une heure ». */
-          <p className="-mt-1 text-sm text-ink-faint">{t('place.quiet')}</p>
-        ) : (
+        {/* Ce qui réclame, en tête : la liste unique (#163), qui dit aussi le calme. Les
+            tuiles « attend ta réponse » et « à relire » s'y sont fondues — une demande ne
+            se dit qu'à un endroit. */}
+        <AskInbox items={inbox} />
+        {tiles ? (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {awaitingSince !== null ? (
-              <DemandTile
-                to={`/p/${projectId}/c/${demands.awaiting[0]!.conversation.id}`}
-                tone="caution"
-                icon={<MessageCircleQuestion size={14} />}
-                label={t('place.demand.awaiting')}
-                count={demands.awaiting.length}
-                detail={t('place.demand.since', { age: elapsed(awaitingSince) })}
-              />
-            ) : null}
-            {reviewCard ? (
-              <DemandTile
-                to={`/p/${projectId}/board?carte=${reviewCard.number}`}
-                tone="caution"
-                icon={<Pencil size={14} />}
-                label={t('place.demand.review')}
-                count={demands.review.length}
-                detail={t('place.demand.card', { number: reviewCard.number })}
-              />
-            ) : null}
             {demands.uncommitted > 0 && project.git ? (
               <DemandTile
                 to={`/p/${projectId}/board`}
@@ -231,7 +204,7 @@ export function ProjectOverviewPage() {
               />
             ) : null}
           </div>
-        )}
+        ) : null}
 
         {/* Le bandeau du jalon lancé (#116), entre les tuiles et « En ce moment » : le
             même que celui de l'Activité. */}
