@@ -68,7 +68,7 @@ export function KindChip({ item }: { item: Automation }) {
       <span className="shrink-0 rounded border border-line px-1.5 py-px text-meta whitespace-nowrap text-ink-soft">
         {natureWord(natureOf(item), t)}
       </span>
-      <span className="truncate text-meta text-ink-faint">{t(`automation.kindChip.${whenKind(item)}`)}</span>
+      <span className="truncate text-meta text-ink-faint">{t(`automation.kindChip.when.${whenKind(item)}`)}</span>
     </span>
   )
 }

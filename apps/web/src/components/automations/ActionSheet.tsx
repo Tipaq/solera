@@ -1,6 +1,6 @@
 import { ChevronLeft, SquareTerminal, X } from 'lucide-react'
 import { createContext, useContext, type ReactNode } from 'react'
-import { IconButton, cx } from '@solera/ui'
+import { IconButton, cx, panelGestureClass } from '@solera/ui'
 import { natureWord, type Nature } from '../../lib/automations'
 import { useTranslate } from '../../lib/i18n'
 import { NatureIcon } from './ActionMarks'
@@ -85,7 +85,7 @@ export function ActionHeader({
         <button
           type="button"
           onClick={chrome.onBack ?? onClose}
-          className="-ml-1 inline-flex h-8 w-fit items-center gap-0.5 rounded-md px-1 text-xs text-ink-soft transition-colors hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11"
+          className={cx(panelGestureClass, '-ml-1 w-fit gap-0.5 px-1')}
         >
           <ChevronLeft size={14} aria-hidden /> {chrome.backLabel ?? t('actionDrawer.back')}
         </button>

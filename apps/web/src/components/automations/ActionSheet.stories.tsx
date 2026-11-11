@@ -1,5 +1,4 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Pencil } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { cx } from '@solera/ui'
 import { natureOf, stateSentence, whenWords, type Automation } from '../../lib/automations'
@@ -20,20 +19,20 @@ function Sheet({ item, review = false }: { item: Automation; review?: boolean })
         nature={natureOf(item)}
         title={item.label}
         when={whenWords(item, t, locale())}
-        extra={review ? <Chip tone="caution">{t('launcher.review.button')}</Chip> : null}
+        extra={review ? <Chip tone="caution">{t('actionDrawer.toReview')}</Chip> : null}
         onClose={ignore}
       />
       <ActionBody>
         <p className="text-sm text-ink-soft">{sentence.text}</p>
         <ActionBlock
-          title={t('automation.nature.task')}
-          aside={<button type="button" className={quietGestureClass('row')}><Pencil size={12} aria-hidden /></button>}
+          title={t('actionDetail.block.what')}
+          aside={<button type="button" className={quietGestureClass('row')}>{t('launcher.gesture.terminal')}</button>}
         >
           <code className="rounded-md bg-surface-high/60 px-2.5 py-2 font-mono text-xs text-ink">
             {item.what === 'agent' ? item.prompt : `$ ${item.command}`}
           </code>
         </ActionBlock>
-        <ActionBlock title={t('automation.when.demand')}>
+        <ActionBlock title={t('actionDetail.block.when')}>
           <p className="text-sm text-ink-soft">{whenWords(item, t, locale()).join(' · ')}</p>
         </ActionBlock>
       </ActionBody>
