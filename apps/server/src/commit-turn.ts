@@ -29,8 +29,9 @@ import { readTurnHeads, type TurnHeads } from './checkpoints.js'
  * dates. Une branche de conversation hérite des captures de sa source sous les mêmes
  * clés ; le commit reste à l'originale, la plus ancienne des deux.
  *
- * Limite : un tour encore ouvert n'a pas de capture d'après, ses commits ne sont
- * rattachés qu'à sa fin.
+ * Limites : un tour encore ouvert n'a pas de capture d'après, ses commits ne sont
+ * rattachés qu'à sa fin ; un commit qu'un tour pose sur une branche à côté puis fusionne
+ * en `--no-ff` est sur le second parent, et le tour ne le revendique pas.
  */
 
 const run = promisify(execFile)
@@ -63,15 +64,23 @@ async function git(cwd: string, args: string[]): Promise<string> {
   return stdout
 }
 
-/** Le hash complet et la date de commit, en millisecondes ; null si git ne le connaît pas. */
-export async function resolveCommit(cwd: string, hash: string): Promise<{ hash: string; ts: number } | null> {
-  try {
-    const out = (await git(cwd, ['show', '-s', '--format=%H %ct', `${hash}^{commit}`, '--'])).trim()
-    const [full, seconds] = out.split(' ')
-    return full && seconds ? { hash: full, ts: Number(seconds) * 1000 } : null
-  } catch {
-    return null
-  }
+/** Un commit tel que la règle le lit : son hash complet et sa date de commit, en ms. */
+export interface ResolvedCommit {
+  hash: string
+  ts: number
+}
+
+/**
+ * Le commit que désigne `hash`, abrégé ou non ; null si le dépôt ne le connaît pas.
+ * Une autre panne de git — dépôt absent, délai dépassé — lève : ce n'est pas un hash
+ * inconnu.
+ */
+export async function resolveCommit(cwd: string, hash: string): Promise<ResolvedCommit | null> {
+  if ((await exitCode(cwd, ['rev-parse', '--verify', '-q', `${hash}^{commit}`])) === 1) return null
+  const out = (await git(cwd, ['show', '-s', '--format=%H %ct', `${hash}^{commit}`, '--'])).trim()
+  const [full, seconds] = out.split(' ')
+  if (!full || !seconds) return null
+  return { hash: full, ts: Number(seconds) * 1000 }
 }
 
 /** Le tour a-t-il, lui, fait entrer ce commit dans HEAD par sa ligne de premiers parents ? */
@@ -81,8 +90,8 @@ async function producedBy(cwd: string, hash: string, turn: TurnHeads): Promise<b
   if ((await exitCode(cwd, ['merge-base', '--is-ancestor', hash, after.head])) !== 0) return false
   if (before.head && (await exitCode(cwd, ['merge-base', '--is-ancestor', hash, before.head])) === 0) return false
   try {
-    const line = await git(cwd, ['rev-list', '--first-parent', after.head, ...(before.head ? [`^${before.head}`] : [])])
-    return line.split('\n').includes(hash)
+    const firstParents = await git(cwd, ['rev-list', '--first-parent', after.head, ...(before.head ? [`^${before.head}`] : [])])
+    return firstParents.split('\n').includes(hash)
   } catch {
     // Un HEAD réécrit depuis et ramassé par le gc : ce tour ne dit plus rien.
     return false
@@ -90,7 +99,7 @@ async function producedBy(cwd: string, hash: string, turn: TurnHeads): Promise<b
 }
 
 /** Le tour d'une conversation dont `key` est la capture : son rang et le message qui l'a ouvert. */
-export function readTurnOpening(db: Db, conversationId: string, key: string): { turn: number; message: string } | null {
+function readTurnOpening(db: Db, conversationId: string, key: string): { turn: number; message: string } | null {
   const started = db
     .select({ seq: events.seq })
     .from(events)
@@ -150,7 +159,7 @@ export async function findCommitTurn(
   db: Db,
   cwd: string,
   projectId: string,
-  commit: { hash: string; ts: number },
+  commit: ResolvedCommit,
 ): Promise<CommitTurnDto | null> {
   const owned = new Map(
     db

@@ -528,7 +528,7 @@ export interface TurnHeads {
 export async function readTurnHeads(cwd: string): Promise<TurnHeads[]> {
   const repo = await locate(cwd)
   if (!repo) return []
-  const prefix = 'refs/solera/checkpoints/'
+  const prefix = refBase('')
   const refs = (await read(repo.top, ['for-each-ref', '--format=%(objectname) %(refname)', prefix]))
     .split('\n')
     .map((line) => line.trim())

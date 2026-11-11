@@ -302,6 +302,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
           .map((name) => name.slice('refs/heads/'.length))
         const only = locals.length === 1 ? worktrees.get(locals[0] as string) : undefined
         const thread = (only ? byPath.get(only) ?? null : null) ?? threadAt(threads, rootPath, facts.entry.ts)
+        // `threadAt` se tait quand ils sont zéro ou plusieurs : ce sont alors les candidats.
         const candidates = thread ? [] : threadsAt(threads, rootPath, facts.entry.ts)
 
         return {
@@ -322,7 +323,7 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
             name.replace(/^refs\/(heads|remotes|tags)\//, ''),
           ),
           thread,
-          threadCandidates: candidates.length > 1 ? candidates : [],
+          threadCandidates: candidates,
           files: diff.files,
           patch: diff.patch,
           truncated: diff.truncated,
@@ -349,15 +350,15 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
       const parsed = commitHashSchema.safeParse(hash)
       if (!parsed.success) throw badRequest('bad_commit', 'This is not a commit hash.')
 
-      const commit = await resolveCommit(cwd, parsed.data)
-      if (!commit) throw badRequest('bad_commit', 'This commit does not exist.')
-      if (!projectId) return null
-
+      let commit
       try {
-        return await findCommitTurn(ctx.db, cwd, projectId, commit)
+        commit = await resolveCommit(cwd, parsed.data)
+        if (commit && projectId) return await findCommitTurn(ctx.db, cwd, projectId, commit)
       } catch (err) {
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
+      if (!commit) throw badRequest('bad_commit', 'This commit does not exist.')
+      return null
     })
 
     /**
