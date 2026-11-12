@@ -39,7 +39,8 @@ export function WorktreeCleanupDialog({
   onClose,
 }: {
   projectId: string
-  tree: WorktreeStatusDto
+  /** Le plan se relit par le chemin ; le nom fait le titre. */
+  tree: Pick<WorktreeStatusDto, 'path' | 'name'>
   base: string | null
   onClose: () => void
 }) {

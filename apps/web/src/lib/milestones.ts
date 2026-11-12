@@ -2,6 +2,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  CardDraft,
   CardDto,
   CardRefinementDetailDto,
   ConversationStatus,
@@ -16,7 +17,7 @@ import { api } from './api'
 import type { StatusOf } from './card-state'
 import { useCards } from './cards'
 import { liveStatus, subscribeStatus } from './conversation-status'
-import { useAllConversations } from './conversations'
+import { answerQuestion, decideCardDraft, useAllConversations } from './conversations'
 import { horizonOf, type MilestoneEntry } from './milestone-model'
 import { useSessionRequests } from './session-requests'
 
@@ -80,6 +81,39 @@ export function useCardRefinement(cardId: string, enabled: boolean) {
   })
 }
 
+/**
+ * Ce qu'un geste sur l'affinage d'un jalon fait relire : son détail, les cartes (le
+ * brouillon validé y entre, le compte du brouillon en sort) et les demandes ouvertes.
+ * Rendu, pour que le geste reste en cours jusqu'à ce que la page ait changé.
+ */
+function refreshRefinement(queryClient: ReturnType<typeof useQueryClient>, projectId: string, cardId: string) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['card-refinement', cardId] }),
+    queryClient.invalidateQueries({ queryKey: ['cards', projectId] }),
+    queryClient.invalidateQueries({ queryKey: ['prompts'] }),
+  ])
+}
+
+/** Répond d'un coup à toutes les questions d'une demande de la session d'affinage (#195). */
+export function useAnswerRefinement(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationId, requestId, answers }: { conversationId: string; requestId: string; answers: Record<string, string[]> }) =>
+      answerQuestion(conversationId, requestId, 'answered', answers),
+    onSuccess: () => refreshRefinement(queryClient, projectId, cardId),
+  })
+}
+
+/** Valide le brouillon de découpage tel que corrigé sur la page du jalon (#195). */
+export function useValidateRefinementDraft(projectId: string, cardId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ conversationId, requestId, draft }: { conversationId: string; requestId: string; draft: CardDraft }) =>
+      decideCardDraft(conversationId, requestId, { decision: 'created', draft }),
+    onSuccess: () => refreshRefinement(queryClient, projectId, cardId),
+  })
+}
+
 /** Ce que ferait le lancement, lu à l'ouverture de l'aperçu et jamais mis en cache. */
 export function useMilestonePlan(cardId: string, enabled: boolean) {
   return useQuery({
@@ -94,11 +128,12 @@ export function useMilestonePlan(cardId: string, enabled: boolean) {
 export function useLaunchMilestone(projectId: string, cardId: string) {
   const queryClient = useQueryClient()
   return useMutation({
+    // Sans `config`, le CLI d'une session neuve du projet (#197, « comme une session neuve »).
     mutationFn: (body: {
       mode?: MilestoneRunMode
       concurrency: number
-      config: AgentConfig
-      cards: Record<string, AgentConfig>
+      config?: AgentConfig
+      cards?: Record<string, AgentConfig>
       confined: boolean | null
     }) =>
       api.post<MilestoneRunDto>(`/api/cards/${cardId}/milestone`, body),

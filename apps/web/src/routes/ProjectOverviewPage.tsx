@@ -2,6 +2,7 @@ import { useParams } from 'react-router-dom'
 import { EmptyState } from '@solera/ui'
 import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { AskInbox } from '../components/inbox/AskInbox'
+import { CodeInProgress } from '../components/overview/CodeInProgress'
 import { MilestoneBeacon } from '../components/overview/MilestoneBeacon'
 import { OverviewActions } from '../components/overview/OverviewActions'
 import { RecentEvents } from '../components/overview/RecentEvents'
@@ -41,15 +42,18 @@ export function ProjectOverviewPage() {
         <AskInbox items={inbox} />
         <MilestoneBeacon projectId={projectId} inbox={inbox} />
         <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_24rem]">
-          {/* La place du « Code en cours » (#173) ; en une colonne, rien ne la réserve. */}
-          <div className="hidden min-w-0 xl:block" />
+          {/* Une case à lui, même vide le temps qu'il charge : la pile reste à droite. */}
+          <div className="min-w-0">
+            <CodeInProgress projectId={projectId} project={project} />
+          </div>
           <div className="flex min-w-0 flex-col gap-10">
             <OverviewActions projectId={projectId} />
             <RecentEvents projectId={projectId} />
           </div>
         </div>
       </div>
-      {/* Une carte du phare qui t'attend ouvre sa fiche sur place (`?fiche=N`). */}
+      {/* La fiche d'une carte sur place (`?fiche=N`) : une carte du phare qui t'attend,
+          ou « #n titre » d'une branche du code en cours. */}
       <CardSheetHost projectId={projectId} />
     </div>
   )

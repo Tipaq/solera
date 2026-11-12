@@ -34,8 +34,10 @@ import {
   NO_FILTERS,
   PERIODS,
   STATE_KEYS,
+  STATE_PARAM,
   WHAT_KEYS,
   agentOptions,
+  arrivalFilters,
   branchPasses,
   entryMatches,
   entryPasses,
@@ -154,6 +156,22 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
       { replace: true },
     )
   const toggleTarget = (key: string) => setTarget(key === targetKey ? null : key)
+  // Une arrivée filtrée (`?etat=`, depuis l'Aperçu) remplace les filtres retenus, puis
+  // quitte l'adresse : ensuite, ce sont des filtres comme les autres.
+  const arrival = params.get(STATE_PARAM)
+  useEffect(() => {
+    if (arrival === null) return
+    const imposed = arrivalFilters(arrival)
+    if (imposed) setFilters(imposed)
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete(STATE_PARAM)
+        return next
+      },
+      { replace: true },
+    )
+  }, [arrival, setFilters, setParams])
   const set = (patch: Partial<TravailFilters>) => setFilters({ ...filters, ...patch })
   const clearAll = () => {
     setFilters(NO_FILTERS)

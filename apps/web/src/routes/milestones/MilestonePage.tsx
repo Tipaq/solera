@@ -1,12 +1,15 @@
 import { ArrowLeft, Flag } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DEFAULT_MILESTONE_CONCURRENCY } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { CardMilestone } from '../../components/board/CardMilestone'
 import { CardInfoButton } from '../../components/cards/CardInfoButton'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
+import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
+import { RefinementPanel } from '../../components/milestones/RefinementPanel'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
 import { withSheet } from '../../lib/card-sheet'
 import type { StatusOf } from '../../lib/card-state'
@@ -21,17 +24,20 @@ import {
   refinePending,
   type MilestoneEntry,
 } from '../../lib/milestone-model'
+import { launchStage } from '../../lib/milestone-launch'
 import { useMilestones } from '../../lib/milestones'
 import { useMergeBranchPullRequest } from '../../lib/pull-requests'
+import { refineHref } from '../../lib/refinement'
 
 /**
  * **La page d'un jalon** (spec jalons JAL-1..8), sous l'onglet Jalons : où il en est et
  * pourquoi, ce qu'il attend de toi, et ses cartes en vagues. Une idée a la sienne aussi :
  * c'est d'ici qu'on l'affine.
  *
- * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler. En
- * attendant le résumé d'affinage (#195) et le panneau Lancer (#197), ils portent ce que
- * `main` savait déjà faire : les raisons et la session d'affinage, le lancement et le
+ * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
+ * `#affinage` porte la session d'affinage résumée (#195), `#lancer` le panneau Lancer
+ * (#197). En attendant « À régler avant de partir » (#196) et le suivi d'un jalon lancé
+ * (#198), ils portent aussi ce que `main` savait déjà faire : les raisons à régler, le
  * suivi du pilotage (`CardMilestone`).
  */
 export function MilestonePage() {
@@ -68,6 +74,8 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
   const navigate = useNavigate()
   const [, setParams] = useSearchParams()
   const merge = useMergeBranchPullRequest(projectId, entry.card.id)
+  // Choisie dans Lancer, montrée par les vagues (VAG-1) ; celle du pilotage, une fois lancé.
+  const [concurrency, setConcurrency] = useState(DEFAULT_MILESTONE_CONCURRENCY)
   const { card } = entry
 
   const action = nextActionText(nextAction(entry), t)
@@ -76,10 +84,8 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     ? () => {
         switch (gesture.kind) {
           case 'refine':
-            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte.
-            return navigate(
-              card.refinement ? `/p/${projectId}/c/${card.refinement.conversationId}` : `/p/${projectId}/c/new?split=${card.id}`,
-            )
+            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte (AFF-2).
+            return navigate(refineHref(projectId, card, 'questions'))
           case 'scroll':
             return document.getElementById(gesture.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           case 'merge':
@@ -91,8 +97,9 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     : null
   const pending = refinePending(entry)
   const refine = (
-    <div id="affinage" className="min-w-0 scroll-mt-4 xl:col-start-1">
-      <RefineSlot projectId={projectId} entry={entry} pending={pending} />
+    <div id="affinage" className="flex min-w-0 scroll-mt-4 flex-col gap-5 xl:col-start-1">
+      <RefinementPanel projectId={projectId} entry={entry} />
+      <SettleSlot entry={entry} />
     </div>
   )
 
@@ -153,10 +160,14 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
         <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           {pending ? refine : null}
           <div className="min-w-0 xl:col-start-1">
-            <Waves projectId={projectId} entry={entry} statusOf={statusOf} />
+            <Waves projectId={projectId} entry={entry} statusOf={statusOf} concurrency={entry.run?.concurrency ?? concurrency} />
           </div>
           <div id="lancer" className="min-w-0 scroll-mt-4 xl:sticky xl:top-0 xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            <LaunchSlot projectId={projectId} entry={entry} />
+            {launchStage(entry) === 'launched' ? (
+              <RunSlot projectId={projectId} entry={entry} />
+            ) : (
+              <LaunchPanel projectId={projectId} entry={entry} concurrency={concurrency} onConcurrency={setConcurrency} statusOf={statusOf} />
+            )}
           </div>
           {pending ? null : refine}
         </div>
@@ -167,10 +178,18 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
 }
 
 /** Le graphe, surmonté de ce qu'il dit : ce qui part ensemble, et combien à la fois (VAG-1, VAG-2). */
-function Waves({ projectId, entry, statusOf }: { projectId: string; entry: MilestoneEntry; statusOf: StatusOf }) {
+function Waves({
+  projectId,
+  entry,
+  statusOf,
+  concurrency,
+}: {
+  projectId: string
+  entry: MilestoneEntry
+  statusOf: StatusOf
+  concurrency: number
+}) {
   const t = useTranslate()
-  // Le panneau Lancer (#197) fera choisir la concurrence ; d'ici là, celle du pilotage.
-  const concurrency = entry.run?.concurrency ?? DEFAULT_MILESTONE_CONCURRENCY
   const empty = entry.children.every((child) => child.column === 'abandoned')
   return (
     <section aria-label={t('milestone.waves.title')} className="flex min-w-0 flex-col gap-2">
@@ -196,43 +215,33 @@ function Waves({ projectId, entry, statusOf }: { projectId: string; entry: Miles
 }
 
 /**
- * L'emplacement de l'affinage, en attendant son résumé (#195) et « À régler avant de
- * partir » (#196) : pourquoi le jalon attend, et sa session d'affinage.
+ * L'emplacement de « À régler avant de partir », en attendant son bloc (#196) : ce qui
+ * retient un jalon découpé — cartes à préciser, pas acceptées, cycle —, en raisons. Les
+ * questions et le brouillon sont dans la session d'affinage, au-dessus.
  */
-function RefineSlot({ projectId, entry, pending }: { projectId: string; entry: MilestoneEntry; pending: boolean }) {
+function SettleSlot({ entry }: { entry: MilestoneEntry }) {
   const t = useTranslate()
-  const session = entry.card.refinement
-  if (!pending && !session) return null
+  const reasons = entry.maturity === 'split' ? maturityReasons(entry) : []
+  if (reasons.length === 0) return null
   return (
-    <section aria-label={t('milestone.page.refine')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-ink">{t('milestone.page.refine')}</h3>
-        {session ? (
-          <Link to={`/p/${projectId}/c/${session.conversationId}`} className="ml-auto text-xs text-accent hover:underline">
-            {t('milestone.page.refineOpen')}
-          </Link>
-        ) : null}
-      </div>
-      {pending ? (
-        <ul className="flex flex-col gap-1 text-sm text-ink-soft">
-          {maturityReasons(entry).map((reason) => (
-            <li key={reason.kind}>{reasonText(reason, t)}</li>
-          ))}
-        </ul>
-      ) : null}
+    <section aria-label={t('milestone.settle.title')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
+      <h3 className="text-sm font-semibold text-ink">{t('milestone.settle.title')}</h3>
+      <ul className="flex flex-col gap-1 text-sm text-ink-soft">
+        {reasons.map((reason) => (
+          <li key={reason.kind}>{reasonText(reason, t)}</li>
+        ))}
+      </ul>
     </section>
   )
 }
 
 /**
- * L'emplacement de Lancer, en attendant son panneau (#197) et le suivi (#198) : le
- * lancement et le pilotage tels que la fiche du board les offre. Rien pour une idée sans
- * cartes, ni pour un jalon livré qu'aucun pilotage ne suit plus.
+ * Le suivi d'un jalon lancé, en attendant son panneau (#198) : le pilotage tel que la
+ * fiche du board l'offre.
  */
-function LaunchSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
+function RunSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
   const t = useTranslate()
   const [, setParams] = useSearchParams()
-  if (entry.children.length === 0 || (entry.maturity === 'delivered' && entry.run === null)) return null
   return (
     <section aria-label={t('milestone.page.launch')} className="rounded-xl border border-line p-3.5">
       <CardMilestone
