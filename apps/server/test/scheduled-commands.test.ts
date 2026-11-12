@@ -647,3 +647,15 @@ test('a scheduled service in a confined project fails without starting on the ho
   assert.equal(run!.status, 'failed')
   assert.match(run!.excerpt!, /confin/)
 })
+
+test('a scheduled service whose folder is gone fails, said in the passage', async (t) => {
+  const { db, sweep, systemd, runsOf, notified } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', subdir: 'absent', schedule: WINDOW }, null)
+
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.deepEqual(systemd.calls, [])
+  const [run] = runsOf(row.id)
+  assert.equal(run!.status, 'failed')
+  assert.match(run!.excerpt!, /^Service planifié non démarré : le dossier .*absent n’existe pas\.$/)
+  assert.equal(notified.length, 1)
+})

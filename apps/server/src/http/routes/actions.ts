@@ -129,7 +129,8 @@ export function registerActionRoutes(
     const next = updateAction(ctx.db, action, patch, null)
     // Un service qui devient une tâche, ou change de nombre d'instances, laisserait ses
     // unités tourner sans bouton.
-    if (unitsOrphanedBy(action, next)) await runner.forget(action)
+    // L'écriture est faite : un systemd qui ne répond pas ne doit pas la faire passer pour ratée.
+    if (unitsOrphanedBy(action, next)) await runner.forget(action).catch(() => undefined)
     return runner.toDto(next)
   })
 

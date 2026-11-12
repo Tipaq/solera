@@ -6,7 +6,7 @@ import { actionRuns, projectActions, projects, type Db, type ProjectActionRow } 
 import { actionRunStatusOf, nextScheduleRun } from '@solera/protocol'
 import type { Config } from '../config.js'
 import type { Environments } from '../environments/environments.js'
-import { describeHttpError } from '../http/errors.js'
+import { HttpError, describeHttpError } from '../http/errors.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import { processOrigins } from '../services/origins.js'
 import { runDetached, type CommandExecutor, type DetachedResult } from '../scheduler/detached.js'
@@ -123,7 +123,9 @@ export class CommandScheduler {
 
   /**
    * Les services dont l'heure d'arrêt est venue. Même proposés par un agent : arrêter ne
-   * lance rien. En pause, rien n'est armé.
+   * lance rien. En pause, rien n'est armé. La fenêtre se ferme pour toutes les unités de
+   * l'action : une instance par worktree lancée à la main dans un arbre s'arrête aussi,
+   * comme le serveur de dev qu'on veut éteint le soir.
    */
   private async stopServices(now: number): Promise<void> {
     const due = this.db
@@ -200,13 +202,15 @@ export class CommandScheduler {
     let end: DetachedResult
     if (refused) {
       end = refused
+    } else if (!this.services) {
+      end = { exitCode: null, timedOut: false, output: 'Service planifié non démarré : systemd n’est pas disponible.' }
     } else {
       try {
-        cwd = await this.services!.startOnSchedule(action, workspacePath)
+        cwd = await this.services.startOnSchedule(action, workspacePath)
         if (cwd === null) return
         end = { exitCode: 0, timedOut: false, output: `Service démarré dans ${cwd}.` }
       } catch (err) {
-        end = { exitCode: null, timedOut: false, output: `Service planifié non démarré : ${describeHttpError(err)}` }
+        end = { exitCode: null, timedOut: false, output: `Service planifié non démarré : ${whyNotStarted(err)}` }
       }
     }
     const runId = startRun(this.db, {
@@ -296,4 +300,17 @@ export class CommandScheduler {
       })
       .catch((err: unknown) => this.logger?.warn({ err, action: action.id }, "notification d'échec planifié non émise"))
   }
+}
+
+/**
+ * Pourquoi un service planifié n'a pas démarré, en français comme le reste du passage ;
+ * le message anglais de l'erreur pour ce qui n'a pas de phrase ici.
+ */
+function whyNotStarted(err: unknown): string {
+  if (err instanceof HttpError) {
+    if (err.code === 'action_no_systemd') return 'systemd n’est pas disponible.'
+    if (err.code === 'action_cwd_missing') return `le dossier ${err.params?.path ?? ''} n’existe pas.`
+    if (err.code === 'action_branch_needs_worktree') return `la racine du projet n’est pas sur ${err.params?.branch ?? ''}.`
+  }
+  return describeHttpError(err)
 }

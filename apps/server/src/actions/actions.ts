@@ -48,11 +48,20 @@ import { ServedReader, treeOf, type ProjectTree } from './served.js'
  * tourne. Une instance par worktree ajoute la clé de son arbre (`treeKey`).
  */
 export function actionUnit(actionId: string, treeKey?: string): string {
-  return `solera-app-action-${actionId.slice(0, 8)}${treeKey ? `-${treeKey}` : ''}.service`
+  return treeKey ? `${instancePrefix(actionId)}${treeKey}.service` : `solera-app-action-${actionId.slice(0, 8)}.service`
 }
 
 /** Le début du nom des instances d'une action, une par arbre. */
 const instancePrefix = (actionId: string) => `solera-app-action-${actionId.slice(0, 8)}-`
+
+/** La clé d'arbre d'une instance de l'action, relue dans son nom ; null pour une autre unité. */
+function instanceKey(actionId: string, unit: string): string | null {
+  const prefix = instancePrefix(actionId)
+  return unit.startsWith(prefix) && unit.endsWith('.service') ? unit.slice(prefix.length, -'.service'.length) : null
+}
+
+/** La clé d'un worktree Solera dans le nom d'une instance. */
+const worktreeKey = (worktreeId: string) => worktreeId.slice(0, 8)
 
 /**
  * La clé d'un arbre dans le nom d'une instance : `root`, le début de l'id d'un worktree
@@ -60,7 +69,7 @@ const instancePrefix = (actionId: string) => `solera-app-action-${actionId.slice
  */
 function treeKey(base: string, tree: ProjectTree | null): string {
   if (tree?.root) return 'root'
-  if (tree?.worktreeId) return tree.worktreeId.slice(0, 8)
+  if (tree?.worktreeId) return worktreeKey(tree.worktreeId)
   // `p` : hors de l'hexadécimal d'un id de worktree, pour ne pas s'y confondre.
   return `p${createHash('sha1').update(base).digest('hex').slice(0, 8)}`
 }
@@ -89,7 +98,7 @@ async function freePort(taken: ReadonlySet<number>): Promise<number> {
  * Le terminal de lecture du journal d'un service se range sous cette clé, à part de
  * l'action ; une instance par worktree a le sien.
  */
-const logsKey = (actionId: string, instance?: string) => `${actionId}:logs${instance ? `:${instance}` : ''}`
+const logsKey = (actionId: string, instance: string | null = null) => `${actionId}:logs${instance ? `:${instance}` : ''}`
 
 export function listActionRows(db: Db, projectIds: string[]): ProjectActionRow[] {
   if (projectIds.length === 0) return []
@@ -260,13 +269,7 @@ export function updateAction(
           ? JSON.stringify(patch.schedule.cadence)
           : row.cadence
   // L'arrêt suit la cadence : sans elle, plus rien ne démarre ni n'arrête le service.
-  // Un service devenu tâche la perd : une tâche finit seule.
-  const stopCadence =
-    cadence === null
-      ? null
-      : patch.schedule?.stopCadence === undefined
-        ? (patch.kind ?? row.kind) === 'task' ? null : row.stopCadence
-        : patch.schedule.stopCadence && JSON.stringify(patch.schedule.stopCadence)
+  const stopCadence = stopCadenceAfter(row, patch, cadence)
   // Planifier une commande qui ne l'était pas la met en marche, sauf pause demandée.
   const scheduleEnabled =
     cadence === null ? false : (patch.schedule?.enabled ?? (row.cadence === null ? true : row.scheduleEnabled))
@@ -316,6 +319,18 @@ export function updateAction(
   }
   db.update(projectActions).set(next).where(eq(projectActions.id, row.id)).run()
   return next
+}
+
+/**
+ * L'arrêt d'un service planifié après une modification. Il suit la cadence : sans elle,
+ * plus rien ne démarre ni n'arrête le service. Un service devenu tâche le perd, une tâche
+ * finit seule ; sinon, celui qu'on envoie, ou celui d'avant.
+ */
+function stopCadenceAfter(row: ProjectActionRow, patch: UpdateProjectActionBody, cadence: string | null): string | null {
+  if (cadence === null) return null
+  const sent = patch.schedule?.stopCadence
+  if (sent !== undefined) return sent && JSON.stringify(sent)
+  return (patch.kind ?? row.kind) === 'task' ? null : row.stopCadence
 }
 
 /**
@@ -528,9 +543,8 @@ export class ActionRunner {
         states.set(row.id, { service: await this.stateOf(unit, byUnit.get(unit), projectTrees), instances: [] })
         return
       }
-      const prefix = instancePrefix(row.id)
       const instances = await Promise.all(
-        apps.filter((app) => app.unit.startsWith(prefix)).map((app) => this.stateOf(app.unit, app, projectTrees)),
+        apps.filter((app) => instanceKey(row.id, app.unit) !== null).map((app) => this.stateOf(app.unit, app, projectTrees)),
       )
       instances.sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
       states.set(row.id, {
@@ -866,7 +880,7 @@ export class ActionRunner {
       throw conflict('action_no_logs', 'Only services run by systemd have a journal.')
     }
     const instance = row.placement === 'per-worktree' ? this.instanceUnit(row, base) : null
-    const key = logsKey(row.id, instance ?? undefined)
+    const key = logsKey(row.id, instance)
     const previous = this.terminals.latestForAction(row.projectId, key)
     if (previous?.alive) return { terminal: previous, service: null, alreadyRunning: true }
     // Le journal d'une unité de l'hôte se lit sur l'hôte, quel que soit l'environnement.
@@ -885,9 +899,8 @@ export class ActionRunner {
    */
   async forget(row: ProjectActionRow): Promise<void> {
     if (row.kind !== 'service' || !(await this.units.available())) return
-    const prefix = instancePrefix(row.id)
     const instances = (await this.units.scan(processOrigins(this.config.paths.data)))
-      .filter((app) => app.unit.startsWith(prefix))
+      .filter((app) => instanceKey(row.id, app.unit) !== null)
       .map((app) => app.unit)
     await Promise.all(
       [actionUnit(row.id), ...instances].map((unit) => this.units.control(unit, 'stop').catch(() => undefined)),
@@ -909,12 +922,12 @@ export class ActionRunner {
     const apps = (await this.units.scan(processOrigins(this.config.paths.data))).filter((app) => SERVICE_RUNNING.includes(app.state))
     const trees = this.projectTrees([...new Set(rows.map((row) => row.projectId))])
     for (const row of rows) {
-      const prefix = instancePrefix(row.id)
       const worktreeKeys = new Set(
-        (trees.get(row.projectId) ?? []).flatMap((tree) => (tree.worktreeId ? [tree.worktreeId.slice(0, 8)] : [])),
+        (trees.get(row.projectId) ?? []).flatMap((tree) => (tree.worktreeId ? [worktreeKey(tree.worktreeId)] : [])),
       )
-      for (const app of apps.filter((entry) => entry.unit.startsWith(prefix))) {
-        const key = app.unit.slice(prefix.length, -'.service'.length)
+      for (const app of apps) {
+        const key = instanceKey(row.id, app.unit)
+        if (key === null) continue
         const present = app.cwd !== null && (await stat(app.cwd).then((s) => s.isDirectory(), () => false))
         // Un worktree se reconnaît à sa clé, même rangé sous la racine ; la racine et un
         // dossier hors des arbres connus, à leur dossier.

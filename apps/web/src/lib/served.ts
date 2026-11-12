@@ -1,5 +1,5 @@
 import { resolveActionUrl, type ProjectActionDto, type ProjectActionServiceState, type WorktreeState } from '@solera/protocol'
-import type { Automation, Translate } from './automations'
+import { SERVICE_RUNNING, type Automation, type Translate } from './automations'
 
 /**
  * « Ce qu'il sert » (`actions.md` §1.H) : la version qu'un service en marche sert, et
@@ -145,8 +145,6 @@ export interface ServedInstance<T extends TreeRef = TreeRef> {
   served: ServedVersion<T> | null
 }
 
-const RUNNING = ['active', 'activating', 'reloading']
-
 /**
  * Les instances d'un service « une par worktree », chacune avec son port et son lien,
  * pour le détail (SRV-6) ; vide pour un autre placement.
@@ -156,7 +154,7 @@ export function servedInstances<T extends TreeRef>(item: Automation, trees: read
   const { action } = item.source
   if (action.placement !== 'per-worktree') return []
   return (action.instances ?? []).map((state) => {
-    const running = RUNNING.includes(state.state)
+    const running = SERVICE_RUNNING.includes(state.state)
     return {
       unit: state.unit,
       running,

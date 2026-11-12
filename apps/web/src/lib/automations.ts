@@ -117,7 +117,8 @@ export type ActionInput = ProjectActionDto & {
 /** Une tâche, avec ce qu'AC-04 lui ajoute : une cadence facultative, « à la demande ». */
 export type TaskInput = Omit<ScheduledTaskDto, 'cadence'> & { cadence: ScheduleCadence | null; onDemand?: boolean }
 
-const SERVICE_RUNNING = ['active', 'activating', 'reloading']
+/** Les `ActiveState` de systemd d'un service en marche. */
+export const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
 /** L'identifiant d'une action dans l'onglet Actions : les deux tables ont leurs ids. */
 export const actionAutomationId = (actionId: string): string => `a-${actionId}`
