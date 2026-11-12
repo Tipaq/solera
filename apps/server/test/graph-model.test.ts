@@ -154,10 +154,11 @@ test('T-7.7 : celle qui l’a écrit, puis l’arbre, puis la carte, sans doublo
   assert.equal(sessions[0]!.title, 'Écrit')
 })
 
-test('T-7.7 : le tour l’emporte sur le fil ; sans lui, le fil déduit des dates, puis les candidats', () => {
+test('T-7.7 : le tour remplace le fil ; sans lui, le fil déduit des dates, puis les candidats', () => {
   const turn = { conversationId: 's9', title: 'Le tour', turn: 4, message: 'Corrige le test', key: 'k' }
   const withTurn = linkedSessions({ turn, thread: { id: 's1', title: 'Fil', sure: false }, candidates: [], tree: [], card: [] })
-  assert.deepEqual(withTurn.map((entry) => [entry.id, entry.provenance]), [['s9', 'turn'], ['s1', 'dates']])
+  // Un seul « a écrit ce commit » : le fil n'est qu'un repli du tour.
+  assert.deepEqual(withTurn.map((entry) => [entry.id, entry.provenance]), [['s9', 'turn']])
   assert.deepEqual(withTurn[0]!.turn, { number: 4, message: 'Corrige le test' })
 
   const guessed = linkedSessions({ turn: null, thread: { id: 's1', title: 'Fil', sure: false }, candidates: [], tree: [], card: [] })

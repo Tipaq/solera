@@ -363,8 +363,8 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
                 from={from}
                 showMerged={forceCleanup}
                 onSelect={setTarget}
-                // Le tiroir d'un arbre arrive avec « Par arbre » (#176) ; d'ici là, l'arbre se choisit.
-                onOpenTree={setTarget}
+                // Le tiroir d'un arbre arrive avec « Par arbre » (#176) ; d'ici là, l'arbre se choisit ou se relâche.
+                onOpenTree={toggleTarget}
                 sources={{
                   conversations: travail.conversations,
                   live: travail.rows.map((row) => row.entry),

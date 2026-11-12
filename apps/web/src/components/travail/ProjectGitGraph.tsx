@@ -2,8 +2,8 @@ import { Loader } from 'lucide-react'
 import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Banner, cx } from '@solera/ui'
-import { AgentIcon } from '../AgentIcon'
 import { PrTag } from '../code/PrTag'
+import { SessionStack } from '../code/SessionStack'
 import { BranchDot, VerdictDot, verdictLabel } from '../code/VerdictDot'
 import { GitActionsProvider } from '../panel/git/actions'
 import { CommitDetail } from '../panel/git/CommitDetail'
@@ -100,7 +100,7 @@ export function ProjectGitGraph({
   if (isPending) {
     return (
       <p className="flex items-center gap-1.5 text-sm text-ink-faint">
-        <Loader size={13} className="animate-spin" /> {t('git.graph.loading')}
+        <Loader size={13} className="animate-spin" /> {t('travail.graph.loading')}
       </p>
     )
   }
@@ -148,7 +148,7 @@ export function ProjectGitGraph({
                   <span className="truncate text-xs text-ink-faint">{t('travail.graph.working')}</span>
                 ) : first ? (
                   <>
-                    <Annotation entry={first} active={target !== null && knownName(first) === target} onOpenTree={onOpenTree} onSelect={onSelect} />
+                    <Annotation projectId={projectId} entry={first} active={target !== null && knownName(first) === target} onOpenTree={onOpenTree} onSelect={onSelect} />
                     {entries.length > 1 ? (
                       <span className="shrink-0 text-micro text-ink-faint" title={entries.slice(1).map(knownName).join(', ')}>
                         {t('travail.graph.others', { count: entries.length - 1 })}
@@ -212,7 +212,8 @@ const PILL = 'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-1.5
  * vivantes, la carte et le jalon, la PR. Une branche sans arbre : une pastille pointillée
  * qui la choisit comme filtre, ou retire le filtre, la carte, la PR.
  */
-function Annotation({ entry, active, onOpenTree, onSelect }: {
+function Annotation({ projectId, entry, active, onOpenTree, onSelect }: {
+  projectId: string
   entry: GraphKnown
   active: boolean
   onOpenTree: (key: string) => void
@@ -233,13 +234,7 @@ function Annotation({ entry, active, onOpenTree, onSelect }: {
           <VerdictDot verdict={tree.verdict} className="size-1.5" />
           {verdictLabel(t, tree.verdict)}
         </button>
-        {tree.sessions.length > 0 ? (
-          <span className="flex shrink-0 items-center gap-0.5" title={t('travail.graph.sessions', { titles: tree.sessions.map((session) => session.title).join(' · ') })}>
-            {tree.sessions.slice(0, 3).map((session) => (
-              <AgentIcon key={session.id} agent={session.agent} size={13} decorative />
-            ))}
-          </span>
-        ) : null}
+        <SessionStack projectId={projectId} sessions={tree.sessions} />
         <CardMark card={tree.card} />
         {tree.pr ? <PrTag pr={tree.pr} /> : null}
       </>
@@ -269,7 +264,9 @@ function CardMark({ card }: { card: CodeCard | null }) {
   const t = useTranslate()
   const [, setParams] = useSearchParams()
   if (!card) return null
-  const title = card.source === 'name' ? `#${card.number} ${card.title} — ${t('travail.commit.cardDeduced')}` : `#${card.number} ${card.title}`
+  const title = card.source === 'name'
+    ? t('travail.graph.cardDeduced', { number: card.number, title: card.title, deduced: t('travail.commit.cardDeduced') })
+    : t('travail.graph.card', { number: card.number, title: card.title })
   return (
     <span className="flex min-w-0 items-center gap-1 text-xs text-ink-faint">
       <button

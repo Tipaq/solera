@@ -1,5 +1,5 @@
 import type { CommitTurnDto, ConversationStatus, GraphNodeDto, GraphRefDto, ThreadRefDto } from '@solera/protocol'
-import { statesOfTree, type BranchInfo, type TreeRow } from './code-model'
+import { statesOfTree, type BranchInfo, type CodeCard, type CodePr, type TreeRow } from './code-model'
 
 /**
  * La vue **Graphe** de Travail (`projet.md` T-7) : le graphe du panneau git sur tout le
@@ -25,6 +25,14 @@ export function knownBranches(trees: TreeRow[], branches: BranchInfo[]): Map<str
 
 export const knownKey = (entry: GraphKnown): string => (entry.kind === 'tree' ? entry.tree.key : entry.branch.key)
 export const knownName = (entry: GraphKnown): string => (entry.kind === 'tree' ? (entry.tree.branch ?? entry.tree.name) : entry.branch.name)
+export const knownCard = (entry: GraphKnown): CodeCard | null => (entry.kind === 'tree' ? entry.tree.card : entry.branch.card)
+export const knownPr = (entry: GraphKnown): CodePr | null => (entry.kind === 'tree' ? entry.tree.pr : entry.branch.pr)
+
+/** Le nom sans son premier segment, celui d'un remote possible ; null s'il n'y en a pas. */
+function withoutRemote(name: string): string | null {
+  const slash = name.indexOf('/')
+  return slash > 0 ? name.slice(slash + 1) : null
+}
 
 /**
  * `name` désigne-t-il la branche `branch` ? Elle-même, ou sa distante : un seul segment
@@ -32,17 +40,13 @@ export const knownName = (entry: GraphKnown): string => (entry.kind === 'tree' ?
  * range toute ref à `/` parmi elles ; le remote ne se reconnaît donc qu'à sa place.
  */
 export function namesBranch(name: string, branch: string): boolean {
-  if (name === branch) return true
-  const slash = name.indexOf('/')
-  return slash > 0 && name.slice(slash + 1) === branch
+  return name === branch || withoutRemote(name) === branch
 }
 
 /** La branche connue que nomme une ref : elle-même d'abord, sinon sans son remote. */
 function knownOfName(name: string, known: Map<string, GraphKnown>): GraphKnown | undefined {
-  const exact = known.get(name)
-  if (exact) return exact
-  const slash = name.indexOf('/')
-  return slash > 0 ? known.get(name.slice(slash + 1)) : undefined
+  const stripped = withoutRemote(name)
+  return known.get(name) ?? (stripped === null ? undefined : known.get(stripped))
 }
 
 const BRANCH_REFS: ReadonlySet<GraphRefDto['kind']> = new Set(['local', 'remote', 'worktree'])
@@ -135,7 +139,8 @@ export interface LinkedInput {
 /**
  * Les sessions d'un commit, dédoublonnées, dans l'ordre de T-7.7 : celle qui l'a écrit
  * (au tour près si on le sait, sinon le fil, sinon chaque candidat), puis celles de
- * l'arbre, puis celles de la carte, les plus récentes d'abord.
+ * l'arbre, puis celles de la carte, les plus récentes d'abord. Le tour tranche : le fil
+ * et les candidats ne sont qu'un repli, et deux sessions ne disent pas « a écrit ce commit ».
  */
 export function linkedSessions({ turn, thread, candidates, tree, card }: LinkedInput): LinkedSession[] {
   const out: LinkedSession[] = []
@@ -146,7 +151,7 @@ export function linkedSessions({ turn, thread, candidates, tree, card }: LinkedI
     out.push({ id, provenance, title, turn: at })
   }
   if (turn) push(turn.conversationId, 'turn', turn.title, { number: turn.turn, message: turn.message })
-  if (thread) push(thread.id, thread.sure ? 'sure' : 'dates', thread.title)
+  else if (thread) push(thread.id, thread.sure ? 'sure' : 'dates', thread.title)
   else for (const candidate of candidates) push(candidate.id, 'dates', candidate.title)
   const recent = (list: { id: string; at: number }[]) => [...list].sort((a, b) => b.at - a.at)
   for (const entry of recent(tree)) push(entry.id, 'branch')

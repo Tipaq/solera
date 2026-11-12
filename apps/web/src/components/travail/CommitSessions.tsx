@@ -10,7 +10,7 @@ import type { LiveConversation } from '../../lib/activity'
 import { withSheet } from '../../lib/card-sheet'
 import type { TreeScope } from '../../lib/code-model'
 import { relativeDate } from '../../lib/dates'
-import { commitHome, knownName, linkedSessions, sessionStateOf, type GraphKnown, type LinkedSession, type SessionState } from '../../lib/graph-model'
+import { commitHome, knownCard, knownName, knownPr, linkedSessions, sessionStateOf, type GraphKnown, type LinkedSession, type SessionState } from '../../lib/graph-model'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import type { InboxItem } from '../../lib/inbox'
 import type { WorkspaceScope } from '../../lib/workspace-scope'
@@ -66,13 +66,13 @@ export function CommitSessions({
   const t = useTranslate()
   const [, setParams] = useSearchParams()
   const { data: detail, isPending } = useCommitDetail(scope, hash)
-  const { data: turn } = useCommitTurn(scope, hash)
+  const { data: turn, isPending: turnPending } = useCommitTurn(scope, hash)
 
   const home = useMemo(() => commitHome([runName, ...(detail?.containedIn ?? [])], known), [runName, detail, known])
   const tree = home?.kind === 'tree' ? home.tree : null
-  const codeCard = home?.kind === 'tree' ? home.tree.card : (home?.branch.card ?? null)
+  const codeCard = home ? knownCard(home) : null
   const card = codeCard ? sources.cards.find((entry) => entry.number === codeCard.number) : undefined
-  const pr = home?.kind === 'tree' ? home.tree.pr : (home?.branch.pr ?? null)
+  const pr = home ? knownPr(home) : null
 
   const byId = useMemo(() => new Map(sources.conversations.map((entry) => [entry.id, entry])), [sources.conversations])
   const statusOf = useMemo(() => new Map(sources.live.map((entry) => [entry.conversation.id, entry.status])), [sources.live])
@@ -95,10 +95,10 @@ export function CommitSessions({
     <div className="flex flex-col gap-4 border-b border-line px-4 py-4">
       <section className="flex flex-col gap-2">
         <h3 className="text-micro font-semibold tracking-wide text-ink-faint uppercase">{t('travail.commit.sessions')}</h3>
-        {/* Attendre le détail : il dit qui a écrit le commit, et la liste ne se réordonne pas sous les yeux. */}
-        {isPending ? (
+        {/* Attendre le détail et le tour : ils disent qui a écrit le commit, et la liste ne se réordonne pas sous les yeux. */}
+        {isPending || turnPending ? (
           <p className="flex items-center gap-1.5 text-sm text-ink-faint">
-            <Loader size={13} className="animate-spin" /> {t('changes.commits.diffLoading')}
+            <Loader size={13} className="animate-spin" /> {t('travail.commit.loading')}
           </p>
         ) : sessions.length === 0 ? (
           <p className="text-sm text-ink-faint">{t('travail.commit.none')}</p>
@@ -193,14 +193,14 @@ function SessionLine({
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-sm text-ink">{title}</span>
           <span className="truncate text-xs text-ink-faint">
-            <span className={STATE_TONE[state]}>{t(`travail.commit.state.${state}`)}</span> · {provenance}
-            {at ? ` · ${relativeDate(at)}` : ''}
+            <span className={STATE_TONE[state]}>{t(`travail.commit.state.${state}`)}</span>{' '}
+            {at ? t('travail.commit.meta', { provenance, age: relativeDate(at) }) : t('travail.commit.metaNoDate', { provenance })}
           </span>
           {session.turn?.message ? <span className="truncate text-xs text-ink-soft">{t('travail.commit.message', { message: session.turn.message })}</span> : null}
         </div>
         <Link
           to={href}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-surface-high hover:text-ink"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-ink-soft transition-colors hover:bg-surface-high hover:text-ink pointer-coarse:min-h-11"
         >
           {t('travail.commit.open')} <ArrowUpRight size={12} />
         </Link>
@@ -211,7 +211,7 @@ function SessionLine({
 }
 
 const CHIP =
-  'inline-flex max-w-full items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:border-line-strong hover:text-ink'
+  'inline-flex max-w-full items-center gap-1.5 rounded-md border border-line px-2 py-1 text-xs text-ink-soft transition-colors hover:border-line-strong hover:text-ink pointer-coarse:min-h-11'
 
 function Chip({ onClick, title, children }: { onClick: () => void; title?: string; children: ReactNode }) {
   return (
