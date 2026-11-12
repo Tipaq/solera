@@ -1,20 +1,72 @@
-import { ArrowLeft, ChevronRight, Circle, CircleCheck, CircleDot, Eye, Link2, Loader, Plus, RotateCw, SquareKanban, Unlink } from 'lucide-react'
-import { memo, useMemo, useState, type ReactNode } from 'react'
+import {
+  ArrowUpRight,
+  Check,
+  ChevronDown,
+  Circle,
+  CircleCheck,
+  CircleDot,
+  FileDiff,
+  Flag,
+  GitBranch,
+  GitPullRequest,
+  Layers,
+  Link2,
+  Loader,
+  MessageSquareText,
+  Play,
+  Plus,
+  RotateCw,
+  SquareKanban,
+  Unlink,
+} from 'lucide-react'
+import { memo, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { CardDto, CardLinkDto } from '@solera/protocol'
-import { useCards, useCreateCard } from '../../lib/cards'
+import { CARD_COLUMNS, parseSubtasks, type CardDto, type CardLinkDto, type ConversationStatus } from '@solera/protocol'
+import {
+  Menu,
+  MenuItem,
+  PanelEmpty,
+  PanelGroup,
+  PanelNotice,
+  PanelStatusIcon,
+  PanelToolbar,
+  cx,
+  panelGestureClass,
+  panelRowClass,
+  panelToolClass,
+  type StatusTone,
+} from '@solera/ui'
+import { useLiveConversations } from '../../lib/activity'
+import { recentNotes } from '../../lib/card-sheet'
+import { isLate, isOpen, type StatusOf } from '../../lib/card-state'
+import { useCardNotes, useCards, useCreateCard, useMoveCard, useToggleSubtask } from '../../lib/cards'
 import type { ChatItem } from '../../lib/chat-fold'
-import { useAttachCard } from '../../lib/conversations'
+import { useAllConversations, useAttachCard } from '../../lib/conversations'
+import { elapsed, relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
-import { isLiveSession, projectOverview, suggestCard, toReviewCount, visibleAgentPlan, type AgentPlan as AgentPlanData } from '../../lib/project-pane'
+import { beaconOf, beaconProgress, beaconWaves, currentWave } from '../../lib/milestone-beacon'
+import { useLiveCardStatuses, useMilestones } from '../../lib/milestones'
+import { setPanelTab } from '../../lib/panel'
+import {
+  otherActiveSessions,
+  pullRequestChecks,
+  readyCards,
+  sessionInMilestone,
+  sessionWorktree,
+  suggestCard,
+  visibleAgentPlan,
+  type AgentPlan as AgentPlanData,
+} from '../../lib/project-pane'
 import { useProjects } from '../../lib/projects'
+import { pullRequestFor, usePullRequests } from '../../lib/pull-requests'
+import { useInbox } from '../../lib/use-inbox'
+import { useWorktreeStatuses } from '../../lib/worktrees'
 import { AgentIcon } from '../AgentIcon'
 import { CardChooser } from '../board/CardChooser'
-import { CardDetail } from '../board/CardDetail'
 import { ColumnDot } from '../board/ColumnDot'
 import { columnLabel } from '../board/columns'
-import { NewCardDialog } from '../board/NewCardDialog'
-import { Button, EmptyState, IconButton, SegmentedControl, cx } from '@solera/ui'
+import { CardSheet } from '../cards/CardSheet'
+import { AskInbox } from '../inbox/AskInbox'
 
 /** Ce que la vue lit de la session, tenu par la page de la conversation. */
 export interface ProjectPaneSession {
@@ -30,20 +82,21 @@ export interface ProjectPaneSession {
   contextRatio: number | null
 }
 
+/** Ce que l'onglet dit dans sa bande de retour : l'échec d'un geste. */
+type Fail = (message: string) => void
+
 /**
- * La vue *Projet* du panneau : la session et sa carte, puis le projet autour.
+ * L'onglet *Projet* du panneau d'une conversation (#229, PPR-1 à PPR-5), sur le cadre
+ * commun : pas de carte bordée, des groupes en petites capitales, des lignes de 36 px.
  *
- * Arrêtée avec Tim le 2026-10-17 (`docs/audits/2026-10-17-onglet-projet`) : deux
- * segments, parce qu'il voulait y lire **aussi ce que la session est en train de
- * faire**, et pas seulement le travail qu'elle sert.
+ * - *Cette session* : ce qu'elle fait, sa carte à plat (faits, gestes, sous-tâches,
+ *   dépendances, sessions, notes), le plan de l'agent, sa branche et sa PR. Sans carte :
+ *   une ligne, la suggestion, Rattacher / Créer.
+ * - *Projet* : ce qui t'attend, le jalon en cours, les autres sessions actives, les
+ *   cartes prêtes à partir, et les vues du projet.
  *
- * - *Cette session* : l'activité en une bande, puis la fiche de la carte en entier, le
- *   plan de l'agent juste après ses cases — on voit d'un coup si les deux listes
- *   racontent la même chose. Sans carte, une proposition et de quoi en choisir une.
- * - *Le projet* : ce qui touche la carte, ce qui bouge maintenant, et le reste replié.
- *
- * Une carte ouverte depuis l'un ou l'autre s'empile par-dessus, avec un retour : on ne
- * quitte pas la session pour lire la voisine.
+ * Une carte ouverte s'empile dans le panneau (« ‹ Projet ») : c'est la fiche sur place
+ * (#199), jamais un second tiroir.
  */
 export const ProjectPane = memo(function ProjectPane({
   projectId,
@@ -56,30 +109,26 @@ export const ProjectPane = memo(function ProjectPane({
 }) {
   const t = useTranslate()
   const [segment, setSegment] = useState<'session' | 'project'>('session')
-  const [opened, setOpened] = useState<number | null>(null)
+  const [stack, setStack] = useState<number | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const board = useCards(projectId)
-  const cards = board.data
-  const current = session.card ? cards?.find((card) => card.id === session.card?.id) ?? null : null
-  const reviewCount = toReviewCount(cards)
-  const openedCard = opened !== null ? cards?.find((card) => card.number === opened) : undefined
+  const cards = board.data ?? NO_CARDS
+  const statusOf = useLiveCardStatuses(board.data)
+  const current = session.card ? cards.find((card) => card.id === session.card?.id) ?? null : null
+  const stacked = stack !== null ? cards.find((card) => card.number === stack) ?? null : null
 
-  if (openedCard) {
+  if (stacked) {
     return (
       <div className="flex min-h-0 flex-1 flex-col pb-safe">
-        {/* Une fiche par carte : passer d'une carte à sa voisine ne doit pas y
-            emporter l'édition en cours ni les erreurs de la précédente. */}
-        <CardDetail
-          key={openedCard.id}
-          card={openedCard}
+        {/* Une fiche par carte : passer d'une carte à sa voisine n'y emporte rien. */}
+        <CardSheet
+          key={stacked.id}
+          open
           projectId={projectId}
-          currentConversationId={conversationId}
-          onSelectCard={setOpened}
-          onDeleted={() => setOpened(null)}
-          lead={
-            <IconButton label={t('project.pane.back')} size="sm" onClick={() => setOpened(null)}>
-              <ArrowLeft size={15} />
-            </IconButton>
-          }
+          card={stacked}
+          back={t('panel.project.title')}
+          onClose={() => setStack(null)}
+          onSelect={setStack}
         />
       </div>
     )
@@ -87,41 +136,42 @@ export const ProjectPane = memo(function ProjectPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-safe">
-      <div className="shrink-0 px-2.5 pt-2.5">
-        <SegmentedControl
-          label={t('project.pane.segments')}
-          value={segment}
-          onChange={setSegment}
-          className="flex w-full"
-          segments={[
-            {
-              value: 'session',
-              label: session.card ? t('project.pane.sessionCard', { number: session.card.number }) : t('project.pane.session'),
-              icon: session.running ? <Live /> : undefined,
-            },
-            {
-              value: 'project',
-              label: reviewCount > 0 ? t('project.pane.projectCount', { count: reviewCount }) : t('project.pane.project'),
-            },
-          ]}
-        />
+      <PanelToolbar title={t('panel.project.title')} meta={current ? `#${current.number}` : undefined}>
+        <span role="radiogroup" aria-label={t('panel.project.segments')} className="flex items-center gap-1">
+          <button type="button" role="radio" aria-checked={segment === 'session'} onClick={() => setSegment('session')} className={panelToolClass(segment === 'session')}>
+            {session.running ? <Live /> : null}
+            {t('panel.project.session')}
+          </button>
+          <button type="button" role="radio" aria-checked={segment === 'project'} onClick={() => setSegment('project')} className={panelToolClass(segment === 'project')}>
+            {t('panel.project.project')}
+          </button>
+        </span>
+      </PanelToolbar>
+      {notice ? <PanelNotice tone="critical" onClose={() => setNotice(null)}>{notice}</PanelNotice> : null}
+      <div className="@container min-h-0 flex-1 overflow-y-auto pb-3">
+        {segment === 'session' ? (
+          <SessionView
+            projectId={projectId}
+            conversationId={conversationId}
+            session={session}
+            cards={cards}
+            current={current}
+            statusOf={statusOf}
+            loading={board.isPending}
+            failed={board.isError}
+            retry={() => void board.refetch()}
+            onOpen={setStack}
+            fail={setNotice}
+          />
+        ) : (
+          <ProjectView projectId={projectId} conversationId={conversationId} cards={cards} current={current} statusOf={statusOf} onOpen={setStack} />
+        )}
       </div>
-      {segment === 'session' ? (
-        <SessionSegment
-          projectId={projectId}
-          conversationId={conversationId}
-          session={session}
-          cards={cards}
-          current={current}
-          board={board}
-          onOpen={setOpened}
-        />
-      ) : (
-        <ProjectSegment projectId={projectId} cards={cards} current={current} board={board} onOpen={setOpened} />
-      )}
     </div>
   )
 })
+
+const NO_CARDS: CardDto[] = []
 
 function Live() {
   return (
@@ -132,134 +182,169 @@ function Live() {
   )
 }
 
-/** Où en est la lecture du board : les trois états qu'on ne doit pas confondre. */
-interface BoardState {
-  isPending: boolean
-  isError: boolean
-  refetch: () => unknown
+/** L'état d'une session en mots et en point, dans une ligne. */
+const SESSION_DOT: Partial<Record<ConversationStatus, StatusTone>> = {
+  running: 'accent',
+  awaiting_input: 'caution',
+  error: 'critical',
 }
 
-/** Deux lignes qui pulsent, le temps que le board arrive : la place est déjà tenue. */
-function BoardSkeleton() {
-  const t = useTranslate()
-  return (
-    <div className="flex animate-pulse flex-col gap-2.5 px-3.5 py-3 motion-reduce:animate-none" role="status">
-      <span className="sr-only">{t('project.pane.loading')}</span>
-      {[0, 1].map((row) => (
-        <div key={row} aria-hidden className="flex items-center gap-2">
-          <div className="size-2 rounded-full bg-surface-high" />
-          <div className="h-3.5 flex-1 rounded bg-surface-high" />
-        </div>
-      ))}
-    </div>
-  )
-}
+/* -------------------------------------------------------------- la session ---- */
 
-/**
- * Le board n'a pas pu être lu. Dit tel quel, et surtout pas « carte supprimée » : ce
- * second message proposerait de détacher une carte qui existe toujours.
- */
-function BoardError({ board }: { board: BoardState }) {
-  const t = useTranslate()
-  return (
-    <div role="alert" className="flex items-center gap-2 px-3.5 py-3">
-      <p className="min-w-0 flex-1 text-sm text-critical">{t('project.pane.loadError')}</p>
-      <Button size="sm" variant="ghost" icon={<RotateCw size={14} />} onClick={() => void board.refetch()}>
-        {t('agent.install.retry')}
-      </Button>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------ la session ---- */
-
-function SessionSegment({
-  projectId,
-  conversationId,
-  session,
-  cards,
-  current,
-  board,
-  onOpen,
-}: {
+function SessionView({ projectId, conversationId, session, cards, current, statusOf, loading, failed, retry, onOpen, fail }: {
   projectId: string
   conversationId: string
   session: ProjectPaneSession
-  cards: CardDto[] | undefined
+  cards: CardDto[]
   current: CardDto | null
-  board: BoardState
+  statusOf: StatusOf
+  loading: boolean
+  failed: boolean
+  retry: () => void
   onOpen: (number: number) => void
+  fail: Fail
 }) {
   const t = useTranslate()
   // Relu seulement quand le fil bouge : le panneau se redessine pour bien d'autres raisons.
   const plan = useMemo(() => visibleAgentPlan(session.items), [session.items])
-  const attach = useAttachCard(projectId)
-
-  if (session.card && current) {
-    return (
-      <>
-        <ActivityBand session={session} />
-        <div className="mt-2 flex min-h-0 flex-1 flex-col border-t border-line">
-          <CardDetail
-            card={current}
-            projectId={projectId}
-            currentConversationId={conversationId}
-            onSelectCard={onOpen}
-            afterSubtasks={plan ? <AgentPlan plan={plan} /> : null}
-          />
-        </div>
-      </>
-    )
-  }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <ActivityBand session={session} />
-      <div className="flex flex-col gap-4 px-2.5 py-3">
-        {session.card ? (
-          // Rattachée mais introuvable : le board n'est pas encore là, n'a pas pu être
-          // lu, ou la carte a été supprimée depuis, la conversation lui survivant. Seul
-          // le dernier cas propose de détacher.
-          board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : (
-            <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2.5">
-              <p className="min-w-0 flex-1 text-sm text-ink-soft">{t('project.pane.cardGone')}</p>
-              <Button size="sm" variant="ghost" icon={<Unlink size={14} />} disabled={attach.isPending}
-                onClick={() => attach.mutate({ id: conversationId, cardId: null })}>
-                {t('project.pane.detach')}
-              </Button>
-            </div>
-          )
-        ) : (
-          // Pas de proposition tant que le board n'est pas là : elle arriverait après
-          // coup et déplacerait les boutons sous le pointeur.
-          board.isPending ? <BoardSkeleton /> : board.isError ? <BoardError board={board} /> : (
-            <NoCard projectId={projectId} conversationId={conversationId} session={session} cards={cards ?? []} />
-          )
-        )}
-        {plan ? <AgentPlan plan={plan} /> : null}
-      </div>
-    </div>
+    <>
+      <ActivityRow session={session} />
+
+      {loading ? (
+        <PanelEmpty>{t('panel.project.loading')}</PanelEmpty>
+      ) : failed ? (
+        // Dit tel quel, et surtout pas « carte supprimée » : ce second message proposerait
+        // de détacher une carte qui existe toujours.
+        <PanelEmpty action={<button type="button" onClick={retry} className={panelGestureClass}><RotateCw size={13} aria-hidden /> {t('panel.project.retry')}</button>}>
+          {t('panel.project.loadError')}
+        </PanelEmpty>
+      ) : current ? (
+        <SessionCard card={current} projectId={projectId} conversationId={conversationId} statusOf={statusOf} onOpen={onOpen} fail={fail} />
+      ) : session.card ? (
+        <CardGone projectId={projectId} conversationId={conversationId} fail={fail} />
+      ) : (
+        <NoCard projectId={projectId} conversationId={conversationId} session={session} cards={cards} fail={fail} />
+      )}
+
+      {plan ? <AgentPlan plan={plan} /> : null}
+
+      <BranchBlock projectId={projectId} conversationId={conversationId} />
+    </>
   )
 }
 
 /** Ce que fait la session, en une ligne : l'état, le geste, le modèle et sa fenêtre. */
-function ActivityBand({ session }: { session: ProjectPaneSession }) {
+function ActivityRow({ session }: { session: ProjectPaneSession }) {
   const t = useTranslate()
   const details = [
     session.model,
-    session.contextRatio !== null ? t('project.pane.context', { percent: Math.round(session.contextRatio * 100) }) : null,
+    session.contextRatio !== null ? t('panel.project.context', { percent: Math.round(session.contextRatio * 100) }) : null,
   ].filter(Boolean).join(' · ')
   return (
-    <div className="mx-2.5 mt-2.5 flex shrink-0 items-center gap-2 rounded-md bg-surface-high/70 px-2.5 py-1.5" role="status">
+    <div className="flex h-11 items-center gap-2.5 border-b border-line px-3 md:h-9" role="status">
       {session.running
         ? <Loader size={13} className="shrink-0 animate-spin text-accent motion-reduce:animate-none" aria-hidden />
-        : <span aria-hidden className="size-2 shrink-0 rounded-full bg-line-strong" />}
+        : <span aria-hidden className="ml-1 size-2 shrink-0 rounded-full bg-line-strong" />}
       <span className="min-w-0 flex-1 truncate text-xs text-ink-soft">
-        <span className="font-medium text-ink">{session.running ? t('project.pane.running') : t('project.pane.idle')}</span>
+        <span className="font-medium text-ink">{session.running ? t('panel.project.running') : t('panel.project.idle')}</span>
         {session.running && session.activity ? <> · {session.activity}</> : null}
       </span>
-      {details ? <span className="shrink-0 text-micro tabular-nums text-ink-faint">{details}</span> : null}
+      {details ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{details}</span> : null}
     </div>
+  )
+}
+
+/** Rattachée, mais la carte n'existe plus : la conversation lui a survécu. */
+function CardGone({ projectId, conversationId, fail }: { projectId: string; conversationId: string; fail: Fail }) {
+  const t = useTranslate()
+  const attach = useAttachCard(projectId)
+  return (
+    <section aria-label={t('panel.project.card')}>
+      <PanelGroup title={t('panel.project.card')} />
+      <PanelEmpty
+        action={
+          <button type="button" disabled={attach.isPending} className={panelGestureClass}
+            onClick={() => attach.mutate({ id: conversationId, cardId: null }, { onError: () => fail(t('panel.project.detachError')) })}>
+            <Unlink size={13} aria-hidden /> {t('panel.project.detach')}
+          </button>
+        }
+      >
+        {t('panel.project.cardGone')}
+      </PanelEmpty>
+    </section>
+  )
+}
+
+/**
+ * Sans carte : une ligne, de quoi en rattacher ou en créer une, et la suggestion — la
+ * carte la plus citée dans le fil. Créer prend le titre de la session et pose la carte
+ * en cours, puisque quelqu'un y travaille déjà.
+ */
+function NoCard({ projectId, conversationId, session, cards, fail }: {
+  projectId: string
+  conversationId: string
+  session: ProjectPaneSession
+  cards: CardDto[]
+  fail: Fail
+}) {
+  const t = useTranslate()
+  const attach = useAttachCard(projectId)
+  const create = useCreateCard(projectId)
+  const suggestion = useMemo(() => suggestCard(session.items, cards), [session.items, cards])
+  const busy = attach.isPending || create.isPending
+  /**
+   * La carte déjà créée par « Créer », si son rattachement a échoué. Recliquer la
+   * rattache au lieu d'en créer une seconde : sans cette mémoire, chaque essai laisse
+   * une carte orpheline de plus sur le tableau.
+   */
+  const [created, setCreated] = useState<CardDto | null>(null)
+  const attachTo = (cardId: string, number?: number) =>
+    attach.mutate({ id: conversationId, cardId }, {
+      onError: () => fail(number !== undefined ? t('panel.project.attachCreatedError', { number }) : t('panel.project.attachError')),
+    })
+  const createAndAttach = () => {
+    if (created) return attachTo(created.id, created.number)
+    create.mutate({ title: session.title, column: 'in_progress' }, {
+      onSuccess: (card) => { setCreated(card); attachTo(card.id, card.number) },
+      onError: () => fail(t('panel.project.createError')),
+    })
+  }
+
+  return (
+    <section aria-label={t('panel.project.card')}>
+      <PanelGroup title={t('panel.project.card')} />
+      <PanelEmpty
+        action={
+          <span className="flex flex-wrap items-center gap-1">
+            <CardChooser
+              projectId={projectId}
+              label={t('panel.project.attachCard')}
+              excludeIds={suggestion ? [suggestion.card.id] : []}
+              onPick={(picked) => attachTo(picked.id)}
+              trigger={<button type="button" disabled={busy} className={panelToolClass()}><Link2 size={13} aria-hidden /> {t('panel.project.attach')}</button>}
+            />
+            <button type="button" disabled={busy} onClick={createAndAttach} title={t('panel.project.create.title')} className={panelToolClass()}>
+              <Plus size={13} aria-hidden /> {t('panel.project.create')}
+            </button>
+          </span>
+        }
+      >
+        {t('panel.project.noCard')}
+      </PanelEmpty>
+      {suggestion ? (
+        <div className={panelRowClass}>
+          <PanelStatusIcon icon={<SquareKanban size={14} aria-hidden />} dot="accent" />
+          <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{suggestion.card.number}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-ink">{suggestion.card.title}</span>
+          <span className="hidden shrink-0 text-xs text-ink-faint @min-[22rem]:inline">{t('panel.project.cited', { count: suggestion.mentions })}</span>
+          <button type="button" disabled={busy} onClick={() => attachTo(suggestion.card.id)} className={cx(panelGestureClass, 'shrink-0 text-accent')}>
+            {t('panel.project.attachNumber', { number: suggestion.card.number })}
+          </button>
+        </div>
+      ) : null}
+    </section>
   )
 }
 
@@ -269,23 +354,25 @@ function ActivityBand({ session }: { session: ProjectPaneSession }) {
  */
 function AgentPlan({ plan }: { plan: AgentPlanData }) {
   const t = useTranslate()
-  const { steps } = plan
-  const done = steps.filter((step) => step.status === 'completed').length
+  const done = plan.steps.filter((step) => step.status === 'completed').length
   return (
-    <section aria-label={t('project.pane.plan')} className="flex flex-col gap-1">
-      <h3 className="flex items-center gap-2 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-        <span className="flex-1">{t('project.pane.plan')}</span>
-        {plan.previousTurn ? <span className="font-normal normal-case tracking-normal">{t('project.pane.plan.previousTurn')}</span> : null}
-        <span className="font-normal tabular-nums">{done}/{steps.length}</span>
-      </h3>
-      <ul className="flex flex-col gap-px">
-        {steps.map((step, index) => {
+    <section aria-label={t('panel.project.plan')}>
+      <PanelGroup
+        title={t('panel.project.plan')}
+        aside={
+          <span className="tabular-nums text-ink-faint">
+            {plan.previousTurn ? `${t('panel.project.plan.previousTurn')} · ` : ''}{done}/{plan.steps.length}
+          </span>
+        }
+      />
+      <ul>
+        {plan.steps.map((step, index) => {
           const Icon = step.status === 'completed' ? CircleCheck : step.status === 'in_progress' ? CircleDot : Circle
           return (
-            <li key={index} className={cx('flex items-start gap-2 rounded-md px-1.5 py-1 text-sm', step.status === 'in_progress' && 'bg-accent-wash/60')}>
+            <li key={index} className="flex min-h-9 items-start gap-2.5 px-3 py-1.5">
               <Icon size={14} aria-label={t(`plan.progress.${step.status}`)}
                 className={cx('mt-0.5 shrink-0', step.status === 'completed' ? 'text-positive' : step.status === 'in_progress' ? 'text-accent' : 'text-ink-faint')} />
-              <span className={cx('min-w-0 break-words', step.status === 'completed' ? 'text-ink-faint line-through' : 'text-ink')}>{step.text}</span>
+              <span className={cx('min-w-0 break-words text-sm', step.status === 'completed' ? 'text-ink-faint line-through' : 'text-ink')}>{step.text}</span>
             </li>
           )
         })}
@@ -294,224 +381,443 @@ function AgentPlan({ plan }: { plan: AgentPlanData }) {
   )
 }
 
-/**
- * Sans carte : une proposition, et le reste à la demande (maquette K2).
- *
- * Une seule devinette, avec sa raison écrite, plutôt qu'une liste : la liste est derrière
- * « Autre… ». Créer prend le titre de la session et pose la carte en cours, puisque
- * quelqu'un y travaille déjà.
- */
-function NoCard({ projectId, conversationId, session, cards }: {
-  projectId: string
-  conversationId: string
-  session: ProjectPaneSession
-  cards: CardDto[]
-}) {
-  const t = useTranslate()
-  const attach = useAttachCard(projectId)
-  const create = useCreateCard(projectId)
-  const suggestion = useMemo(() => suggestCard(session.items, cards), [session.items, cards])
-  const busy = attach.isPending || create.isPending
-  const attachTo = (cardId: string) => attach.mutate({ id: conversationId, cardId })
-  /**
-   * La carte déjà créée par « Créer », si son rattachement a échoué. Recliquer la
-   * rattache au lieu d'en créer une seconde : sans cette mémoire, chaque essai laisse
-   * une carte orpheline de plus sur le board.
-   */
-  const [created, setCreated] = useState<CardDto | null>(null)
-  const createAndAttach = () => {
-    if (created) return attachTo(created.id)
-    create.mutate({ title: session.title, column: 'in_progress' }, {
-      onSuccess: (card) => { setCreated(card); attachTo(card.id) },
-    })
-  }
-
-  return (
-    <div className="rounded-lg border border-dashed border-line-strong p-3">
-      <p className="mb-1 flex items-center gap-1.5 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-        <Unlink size={12} aria-hidden />{t('project.pane.noCard')}
-      </p>
-      <p className="mb-3 text-xs leading-relaxed text-ink-soft">{t('project.pane.noCard.hint')}</p>
-      {suggestion ? (
-        <div className="mb-3 flex items-center gap-2 rounded-md bg-accent-wash/50 px-2 py-1.5">
-          <ColumnDot column={suggestion.card.column} />
-          <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{suggestion.card.number}</span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm text-ink">{suggestion.card.title}</span>
-            <span className="block text-micro text-ink-faint">{t('project.pane.suggestion', { count: suggestion.mentions })}</span>
-          </span>
-        </div>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-1.5">
-        {suggestion ? (
-          <Button size="sm" icon={<Link2 size={14} />} disabled={busy} onClick={() => attachTo(suggestion.card.id)}>
-            {t('project.pane.attach')}
-          </Button>
-        ) : null}
-        <CardChooser
-          projectId={projectId}
-          label={t('project.pane.other')}
-          excludeIds={suggestion ? [suggestion.card.id] : []}
-          onPick={(picked) => attachTo(picked.id)}
-          trigger={
-            <Button size="sm" variant={suggestion ? 'secondary' : 'primary'} icon={suggestion ? undefined : <Link2 size={14} />} disabled={busy}>
-              {suggestion ? t('project.pane.other') : t('project.pane.attach')}
-            </Button>
-          }
-        />
-        <Button size="sm" variant="ghost" icon={<Plus size={14} />} disabled={busy} title={t('project.pane.create.title')}
-          onClick={createAndAttach}>
-          {t('project.pane.create')}
-        </Button>
-      </div>
-      {attach.isError || create.isError ? (
-        <p role="alert" className="mt-2 text-sm text-critical">
-          {created ? t('project.pane.attachCreatedError', { number: created.number }) : t('project.pane.attachError')}
-        </p>
-      ) : null}
-    </div>
-  )
+const PR_DOT: Record<string, StatusTone> = {
+  draft: 'neutral',
+  checks: 'accent',
+  failing: 'critical',
+  ready: 'positive',
+  merged: 'neutral',
 }
 
-/* ------------------------------------------------------------- le projet ---- */
-
-function ProjectSegment({ projectId, cards, current, board, onOpen }: {
-  projectId: string
-  /** Absent tant que le board n'est pas lu, ou s'il n'a pas pu l'être. */
-  cards: CardDto[] | undefined
-  current: CardDto | null
-  board: BoardState
-  onOpen: (number: number) => void
-}) {
+/** La branche de la session : son worktree, son écart à la base, et sa PR. */
+function BranchBlock({ projectId, conversationId }: { projectId: string; conversationId: string }) {
   const t = useTranslate()
-  const navigate = useNavigate()
-  const [creating, setCreating] = useState(false)
   const { data: projects } = useProjects()
-  const project = projects?.find((entry) => entry.id === projectId)
-  const view = cards ? projectOverview(cards, current) : null
-  // Sur un board vide, l'état vide porte le seul bouton de création : deux « + Carte »
-  // l'un sous l'autre ne disent rien de plus.
-  const empty = cards?.length === 0
+  const git = projects?.find((entry) => entry.id === projectId)?.git ?? false
+  const { data: statuses } = useWorktreeStatuses(git ? projectId : undefined)
+  const { data: prs } = usePullRequests(git ? projectId : undefined)
+  const tree = sessionWorktree(statuses, conversationId)
+  if (!git) return null
 
+  if (!tree) {
+    return (
+      <section aria-label={t('panel.project.branch')}>
+        <PanelGroup title={t('panel.project.branch')} />
+        <PanelEmpty action={<button type="button" onClick={() => setPanelTab('git')} className={panelGestureClass}><FileDiff size={13} aria-hidden /> {t('panel.project.git')}</button>}>
+          {t('panel.project.atRoot')}
+        </PanelEmpty>
+      </section>
+    )
+  }
+  const pr = pullRequestFor(prs, tree.branch)
+  const dirty = tree.modified + tree.untracked
+  const checks = pr ? pullRequestChecks(pr) : null
+  const facts = [
+    [tree.ahead > 0 ? `↑${tree.ahead}` : '', tree.behind > 0 ? `↓${tree.behind}` : ''].filter(Boolean).join(' '),
+    dirty > 0 ? t(dirty > 1 ? 'panel.project.dirty.many' : 'panel.project.dirty.one', { count: dirty }) : '',
+    tree.conflicts ? t('panel.project.conflict') : '',
+  ].filter(Boolean).join(' · ')
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex shrink-0 items-center gap-1.5 px-3.5 pt-3">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
-          {project?.name}
-          {/* Le compte attend le board : « 0 carte » pendant un chargement ou après une
-              erreur affirmerait un board vide qu'on n'a pas lu. */}
-          {cards ? <span className="font-normal text-ink-faint"> · {t('project.pane.cards', { count: cards.length })}</span> : null}
-        </span>
-        {empty ? null : (
-          <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>
-        )}
-        <Button size="sm" variant="secondary" icon={<SquareKanban size={14} />} onClick={() => navigate(`/p/${projectId}/board`)}>
-          {t('project.pane.board')}
-        </Button>
-      </div>
-
-      {board.isError ? <BoardError board={board} /> : !view ? <BoardSkeleton /> : empty ? (
-        <EmptyState
-          icon={<SquareKanban size={22} />}
-          title={t('project.pane.empty')}
-          description={t('project.pane.empty.hint')}
-          action={<Button size="sm" icon={<Plus size={14} />} onClick={() => setCreating(true)}>{t('project.pane.newCard')}</Button>}
-        />
+    <section aria-label={t('panel.project.branch')}>
+      <PanelGroup title={t('panel.project.branch')} />
+      <button type="button" onClick={() => setPanelTab('git')} className={panelRowClass} title={t('panel.project.toGit')}>
+        <PanelStatusIcon icon={<GitBranch size={14} aria-hidden />} dot={tree.conflicts ? 'critical' : dirty > 0 ? 'caution' : undefined} />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-ink">{tree.branch ?? tree.name}</span>
+        {facts ? <span className={cx('shrink-0 text-xs tabular-nums', tree.conflicts ? 'text-critical' : 'text-ink-faint')}>{facts}</span> : null}
+        <span className="hidden shrink-0 text-xs text-ink-faint group-hover:inline group-focus-visible:inline">{t('panel.project.gitArrow')}</span>
+      </button>
+      {pr ? (
+        <a href={pr.url} target="_blank" rel="noreferrer" className={panelRowClass}>
+          <PanelStatusIcon icon={<GitPullRequest size={14} aria-hidden />} dot={PR_DOT[pr.state]} />
+          <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{pr.number}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-ink">{pr.title}</span>
+          <span className={cx('shrink-0 text-xs', pr.state === 'failing' ? 'text-critical' : 'text-ink-faint')}>
+            {t(`panel.project.pr.${pr.state}`)}
+            {checks ? ` · ${checks.passed}/${checks.total}` : ''}
+          </span>
+          <ArrowUpRight size={13} aria-hidden className="shrink-0 text-ink-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+        </a>
       ) : (
-        <div className="flex flex-col gap-4 px-2 py-3">
-          {current && view.around.length > 0 ? (
-            <Group title={t('project.pane.around', { number: current.number })}>
-              {view.around.map(({ relation, card }) => (
-                <CardRow key={card.id} card={card} onOpen={onOpen}
-                  lead={<span className="w-20 shrink-0 truncate text-micro text-ink-faint">{t(`project.pane.relation.${relation}`)}</span>} />
-              ))}
-            </Group>
-          ) : null}
-
-          <Group title={t('project.pane.now')}>
-            {view.review.length === 0 && view.active.length === 0 ? (
-              <p className="px-1.5 py-1 text-sm text-ink-faint">{t('project.pane.quiet')}</p>
-            ) : null}
-            {view.review.map((card) => (
-              <CardRow key={card.id} card={card} onOpen={onOpen} tone="caution" dot={false}
-                lead={<Eye size={13} className="shrink-0 text-caution" aria-hidden />}
-                trail={<span className="shrink-0 text-micro text-caution">{t('project.pane.toReview')}</span>} />
-            ))}
-            {view.active.map((card) => {
-              const live = card.conversations.find(isLiveSession)
-              return (
-                <CardRow key={card.id} card={card} onOpen={onOpen} dot={false}
-                  lead={<Live />}
-                  trail={live ? <AgentIcon agent={live.agent} size={12} decorative /> : null} />
-              )
-            })}
-          </Group>
-
-          <Group title={t('project.pane.rest')}>
-            <Fold label={columnLabel('todo')} cards={view.todo} onOpen={onOpen} />
-            <Fold label={columnLabel('in_progress')} cards={view.inProgress} onOpen={onOpen} />
-            <Fold label={t('project.pane.doneThisWeek')} cards={view.doneThisWeek} onOpen={onOpen} />
-          </Group>
-        </div>
+        <PanelEmpty>{t('panel.project.noPr')}</PanelEmpty>
       )}
-
-      {creating ? (
-        <NewCardDialog projectId={projectId} open onClose={() => setCreating(false)}
-          onCreated={(card) => { setCreating(false); onOpen(card.number) }} />
-      ) : null}
-    </div>
-  )
-}
-
-function Group({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section aria-label={title} className="flex flex-col gap-px">
-      <h3 className="px-1.5 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">{title}</h3>
-      {children}
     </section>
   )
 }
 
-/** Une colonne repliée : on l'ouvre pour chercher une carte, pas pour la surveiller. */
-function Fold({ label, cards, onOpen }: { label: string; cards: CardDto[]; onOpen: (number: number) => void }) {
-  if (cards.length === 0) return null
+/* ------------------------------------------------------- la carte de la session ---- */
+
+/**
+ * La carte de la session, à plat (PPR-4) : ses faits et ses gestes, puis ses sous-tâches,
+ * ses dépendances, ses sessions, ses notes. Le détail complet est la fiche, en pile.
+ */
+function SessionCard({ card, projectId, conversationId, statusOf, onOpen, fail }: {
+  card: CardDto
+  projectId: string
+  conversationId: string
+  statusOf: StatusOf
+  onOpen: (number: number) => void
+  fail: Fail
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const move = useMoveCard()
+  const attach = useAttachCard(projectId)
+  const late = isLate(card)
+
   return (
-    <details className="group/fold">
-      <summary className="flex min-h-9 md:min-h-8 pointer-coarse:min-h-11 cursor-pointer list-none items-center gap-2 rounded-md px-1.5 text-sm text-ink-soft hover:bg-surface-high [&::-webkit-details-marker]:hidden">
-        <ChevronRight size={13} className="shrink-0 text-ink-faint transition-transform group-open/fold:rotate-90" aria-hidden />
-        <span className="flex-1">{label}</span>
-        <span className="text-micro tabular-nums text-ink-faint">{cards.length}</span>
-      </summary>
-      <div className="flex flex-col gap-px pl-4">
-        {cards.map((card) => <CardRow key={card.id} card={card} onOpen={onOpen} />)}
-      </div>
-    </details>
+    <>
+      <section aria-label={t('panel.project.card')} className="flex flex-col gap-1.5 border-b border-line px-3 py-2.5">
+        <button type="button" onClick={() => onOpen(card.number)} className="flex min-w-0 items-baseline gap-1.5 text-left hover:text-accent">
+          <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{card.number}</span>
+          <span className="min-w-0 text-sm font-medium text-ink">{card.title}</span>
+        </button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-soft">
+          <span className="inline-flex items-center gap-1.5"><ColumnDot column={card.column} />{columnLabel(card.column)}</span>
+          {card.parent ? (
+            <button type="button" onClick={() => navigate(`/p/${projectId}/timeline/${card.parent!.number}`)} className="inline-flex min-w-0 items-center gap-1 hover:text-ink hover:underline">
+              <Flag size={12} aria-hidden className="shrink-0 text-ink-faint" />
+              <span className="truncate">#{card.parent.number} {card.parent.title}</span>
+            </button>
+          ) : null}
+          {card.dueAt !== null ? (
+            <span className={late ? 'text-critical' : 'text-ink-faint'}>{t('panel.project.due', { when: relativeDate(card.dueAt) })}</span>
+          ) : null}
+          {card.toClarifySince !== null ? <span className="text-caution">{t('panel.project.toClarify')}</span> : null}
+        </div>
+        <div className="-ml-2.5 flex flex-wrap items-center gap-0.5">
+          <button type="button" onClick={() => onOpen(card.number)} className={panelGestureClass}><SquareKanban size={13} aria-hidden /> {t('panel.project.openSheet')}</button>
+          {/* La colonne d'un regroupement se déduit de ses enfants : elle ne se choisit pas. */}
+          {card.children.length === 0 ? (
+            <Menu trigger={<button type="button" disabled={move.isPending} className={panelGestureClass}>{t('panel.project.column')} <ChevronDown size={12} aria-hidden /></button>}>
+              {CARD_COLUMNS.map((column) => (
+                <MenuItem
+                  key={column}
+                  icon={card.column === column ? <Check size={13} /> : <span className="block size-[13px]" />}
+                  onSelect={() => {
+                    if (column !== card.column) move.mutate({ id: card.id, projectId, column }, { onError: () => fail(t('panel.project.moveError')) })
+                  }}
+                >
+                  {columnLabel(column)}
+                </MenuItem>
+              ))}
+            </Menu>
+          ) : null}
+          <button type="button" disabled={attach.isPending} className={panelGestureClass}
+            onClick={() => attach.mutate({ id: conversationId, cardId: null }, { onError: () => fail(t('panel.project.detachError')) })}>
+            <Unlink size={13} aria-hidden /> {t('panel.project.detach')}
+          </button>
+        </div>
+      </section>
+
+      <Subtasks card={card} projectId={projectId} fail={fail} />
+      <Dependencies card={card} onOpen={onOpen} />
+      <CardSessions card={card} projectId={projectId} conversationId={conversationId} statusOf={statusOf} />
+      <Notes card={card} onOpen={() => onOpen(card.number)} />
+    </>
   )
 }
 
-function CardRow({ card, onOpen, lead, trail, tone, dot = true }: {
-  card: CardDto
-  onOpen: (number: number) => void
-  lead?: ReactNode
-  trail?: ReactNode
-  tone?: 'caution'
-  /** La pastille de colonne, retirée quand la ligne dit déjà où en est la carte. */
-  dot?: boolean
-}) {
+/** Les cases de la description, cochables d'ici, avec leur barre. */
+function Subtasks({ card, projectId, fail }: { card: CardDto; projectId: string; fail: Fail }) {
+  const t = useTranslate()
+  const toggle = useToggleSubtask(projectId, card.id)
+  /* Pendant l'écriture, la case dit déjà ce qu'on a demandé : une case contrôlée
+     reviendrait sinon le temps que la liste soit relue. */
+  const [asked, setAsked] = useState<{ index: number; checked: boolean } | null>(null)
+  const subtasks = parseSubtasks(card.description).map((task) =>
+    asked?.index === task.index ? { ...task, checked: asked.checked } : task,
+  )
+  if (subtasks.length === 0) return null
+  const done = subtasks.filter((task) => task.checked).length
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(card.number)}
-      className={cx(
-        'flex min-h-9 w-full items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-high md:min-h-8 pointer-coarse:min-h-11',
-        tone === 'caution' && 'bg-caution/5',
+    <section aria-label={t('panel.project.subtasks')}>
+      <PanelGroup title={t('panel.project.subtasks')} aside={<span className="tabular-nums text-ink-faint">{done}/{subtasks.length}</span>} />
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={subtasks.length}
+        aria-valuenow={done}
+        aria-label={t('panel.project.subtasks')}
+        className="mx-3 mb-1 h-1 overflow-hidden rounded-full bg-surface-high"
+      >
+        <div className="h-full rounded-full bg-positive transition-[width]" style={{ width: `${(done / subtasks.length) * 100}%` }} />
+      </div>
+      <ul>
+        {subtasks.map((task) => (
+          <li key={task.index}>
+            <label className="flex min-h-9 cursor-pointer items-start gap-2.5 px-3 py-1.5 hover:bg-surface-high/50 pointer-coarse:min-h-11">
+              <input
+                type="checkbox"
+                checked={task.checked}
+                disabled={toggle.isPending}
+                onChange={(event) => {
+                  const checked = event.target.checked
+                  setAsked({ index: task.index, checked })
+                  toggle.mutate({ index: task.index, checked, label: task.label }, {
+                    onSettled: () => setAsked(null),
+                    onError: () => fail(t('panel.project.subtaskError')),
+                  })
+                }}
+                className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
+              />
+              <span className={cx('min-w-0 text-sm', task.checked ? 'text-ink-faint line-through' : 'text-ink')}>{task.label}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Ce qui bloque la carte et ce qu'elle bloque ; un clic ouvre la fiche de la voisine. */
+function Dependencies({ card, onOpen }: { card: CardDto; onOpen: (number: number) => void }) {
+  const t = useTranslate()
+  const rows = [
+    ...card.blockedBy.map((link) => ({ link, relation: 'blockedBy' as const })),
+    ...card.blocks.map((link) => ({ link, relation: 'blocks' as const })),
+  ]
+  if (rows.length === 0) return null
+  return (
+    <section aria-label={t('panel.project.dependencies')}>
+      <PanelGroup title={t('panel.project.dependencies')} count={rows.length} />
+      <ul>
+        {rows.map(({ link, relation }) => (
+          <li key={`${relation}-${link.id}`}>
+            <button type="button" onClick={() => onOpen(link.number)} className={panelRowClass}>
+              <span className="w-20 shrink-0 truncate text-xs text-ink-faint">{t(`panel.project.relation.${relation}`)}</span>
+              <ColumnDot column={link.column} />
+              <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{link.number}</span>
+              <span className={cx('min-w-0 flex-1 truncate text-sm', isOpen(link) ? 'text-ink' : 'text-ink-faint line-through')}>{link.title}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Les autres sessions de la carte : une ligne chacune, clic → la session. */
+function CardSessions({ card, projectId, conversationId, statusOf }: {
+  card: CardDto
+  projectId: string
+  conversationId: string
+  statusOf: StatusOf
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const sessions = card.conversations.filter((entry) => entry.archivedAt === null && entry.id !== conversationId)
+  if (sessions.length === 0) return null
+  return (
+    <section aria-label={t('panel.project.sessions')}>
+      <PanelGroup title={t('panel.project.sessions')} count={sessions.length} />
+      <ul>
+        {sessions.map((entry) => {
+          const status = statusOf(entry)
+          return (
+            <li key={entry.id}>
+              <button type="button" onClick={() => navigate(`/p/${projectId}/c/${entry.id}`)} className={panelRowClass}>
+                <PanelStatusIcon icon={<AgentIcon agent={entry.agent} size={14} decorative />} dot={SESSION_DOT[status]} pulse={status === 'running'} />
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{entry.title}</span>
+                <span className={cx('shrink-0 text-xs', status === 'awaiting_input' ? 'text-caution' : status === 'error' ? 'text-critical' : 'text-ink-faint')}>
+                  {t(`panel.project.status.${status}`)}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+/** Les trois notes les plus récentes ; « Tout voir » ouvre la fiche. */
+function Notes({ card, onOpen }: { card: CardDto; onOpen: () => void }) {
+  const t = useTranslate()
+  const { data } = useCardNotes(card.id)
+  const { shown, total } = recentNotes(data)
+  if (shown.length === 0) return null
+  return (
+    <section aria-label={t('panel.project.notes')}>
+      <PanelGroup
+        title={t('panel.project.notes')}
+        count={total}
+        aside={total > shown.length ? (
+          <button type="button" onClick={onOpen} className="text-xs text-ink-faint hover:text-ink">{t('panel.project.seeAll')}</button>
+        ) : undefined}
+      />
+      <ul>
+        {shown.map((note) => (
+          <li key={note.id} className="flex items-start gap-2.5 px-3 py-1.5">
+            <span className="mt-0.5 grid size-5 shrink-0 place-items-center text-ink-faint">
+              {note.author.kind === 'agent' ? <AgentIcon agent={note.author.agent} size={14} decorative /> : <MessageSquareText size={14} aria-hidden />}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="line-clamp-2 text-sm text-ink">{note.body}</span>
+              <span className="text-xs text-ink-faint">
+                {note.author.kind === 'agent' ? note.author.conversationTitle || t('panel.project.agent') : note.author.name} · {elapsed(note.createdAt)}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/* ---------------------------------------------------------------- le projet ---- */
+
+function ProjectView({ projectId, conversationId, cards, current, statusOf, onOpen }: {
+  projectId: string
+  conversationId: string
+  cards: CardDto[]
+  current: CardDto | null
+  statusOf: StatusOf
+  onOpen: (number: number) => void
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const inbox = useInbox({ projectId })
+
+  return (
+    <>
+      {/* AskInbox porte déjà le nom de la région : la section ne le redit pas. */}
+      <section>
+        <PanelGroup title={t('panel.project.inbox')} count={inbox.length} />
+        {inbox.length === 0 ? (
+          <PanelEmpty>{t('panel.project.inbox.empty')}</PanelEmpty>
+        ) : (
+          <div className="px-1.5">
+            <AskInbox items={inbox} bare />
+          </div>
+        )}
+      </section>
+      <CurrentMilestone projectId={projectId} current={current} />
+      <OtherSessions projectId={projectId} conversationId={conversationId} />
+      <ReadyCards projectId={projectId} cards={cards} statusOf={statusOf} onOpen={onOpen} />
+
+      <nav aria-label={t('panel.project.views')} className="mt-2 flex flex-wrap items-center gap-0.5 border-t border-line px-1.5 pt-1.5">
+        <button type="button" onClick={() => navigate(`/p/${projectId}/board`)} className={panelGestureClass}><SquareKanban size={13} aria-hidden /> {t('panel.project.view.board')}</button>
+        <button type="button" onClick={() => navigate(`/p/${projectId}/timeline`)} className={panelGestureClass}><Flag size={13} aria-hidden /> {t('panel.project.view.milestones')}</button>
+        <button type="button" onClick={() => navigate(`/p/${projectId}/travail`)} className={panelGestureClass}><Layers size={13} aria-hidden /> {t('panel.project.view.work')}</button>
+      </nav>
+    </>
+  )
+}
+
+/** Le jalon en cours, lu comme le phare de l'Aperçu (#174) : avancement, vague, et la session. */
+function CurrentMilestone({ projectId, current }: { projectId: string; current: CardDto | null }) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const { entries } = useMilestones(projectId)
+  const milestone = useMemo(() => beaconOf(entries).current, [entries])
+  if (!milestone) {
+    return (
+      <section aria-label={t('panel.project.milestone')}>
+        <PanelGroup title={t('panel.project.milestone')} />
+        <PanelEmpty>{t('panel.project.milestone.none')}</PanelEmpty>
+      </section>
+    )
+  }
+  const progress = beaconProgress(milestone)
+  const waves = beaconWaves(milestone)
+  const index = currentWave(waves)
+  const wave = index >= 0 ? waves[index]! : null
+  const inIt = sessionInMilestone(milestone, current)
+  const facts = [
+    wave ? t('panel.project.milestone.wave', { number: index + 1, done: wave.done, total: wave.cards.length }) : t('panel.project.milestone.wavesDone'),
+    inIt === true ? t('panel.project.milestone.in', { number: current!.number }) : inIt === false ? t('panel.project.milestone.out') : null,
+  ].filter(Boolean).join(' · ')
+  return (
+    <section aria-label={t('panel.project.milestone')}>
+      <PanelGroup title={t('panel.project.milestone')} aside={<span className="tabular-nums text-ink-faint">{progress.done}/{progress.total}</span>} />
+      <button type="button" onClick={() => navigate(`/p/${projectId}/timeline/${milestone.card.number}`)} className={panelRowClass}>
+        <PanelStatusIcon icon={<Flag size={14} aria-hidden />} dot={milestone.maturity === 'launched' ? 'accent' : undefined} />
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{milestone.card.title}</span>
+        <ArrowUpRight size={13} aria-hidden className="shrink-0 text-ink-faint opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100" />
+      </button>
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={progress.total}
+        aria-valuenow={progress.done}
+        aria-label={t('panel.project.milestone')}
+        className="mx-3 mb-1 h-1 overflow-hidden rounded-full bg-surface-high"
+      >
+        <div className="h-full rounded-full bg-accent" style={{ width: `${progress.share * 100}%` }} />
+      </div>
+      <p className="px-3 pb-1.5 text-xs text-ink-faint">{facts}</p>
+    </section>
+  )
+}
+
+/** Les autres sessions actives du projet : celles qui attendent d'abord, six au plus. */
+function OtherSessions({ projectId, conversationId }: { projectId: string; conversationId: string }) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const { data: conversations } = useAllConversations()
+  const mine = useMemo(() => (conversations ?? []).filter((entry) => entry.projectId === projectId), [conversations, projectId])
+  const live = useLiveConversations(mine)
+  const rows = useMemo(() => otherActiveSessions(live, conversationId), [live, conversationId])
+  return (
+    <section aria-label={t('panel.project.others')}>
+      <PanelGroup title={t('panel.project.others')} count={rows.length} />
+      {rows.length === 0 ? (
+        <PanelEmpty>{t('panel.project.others.none')}</PanelEmpty>
+      ) : (
+        <ul>
+          {rows.slice(0, 6).map((row) => (
+            <li key={row.id}>
+              <button type="button" onClick={() => navigate(`/p/${projectId}/c/${row.id}`)} className={panelRowClass}>
+                <PanelStatusIcon icon={<AgentIcon agent={row.agent} size={14} decorative />} dot={row.awaiting ? 'caution' : 'accent'} pulse={!row.awaiting} />
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{row.title}</span>
+                {row.card !== null ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{row.card}</span> : null}
+                <span className={cx('shrink-0 text-xs', row.awaiting ? 'text-caution' : 'text-ink-faint')}>
+                  {t(row.awaiting ? 'panel.project.status.awaiting_input' : 'panel.project.status.running')}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-    >
-      {lead}
-      {dot ? <ColumnDot column={card.column} /> : null}
-      <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{card.number}</span>
-      <span className="min-w-0 flex-1 truncate text-sm text-ink">{card.title}</span>
-      {trail}
-    </button>
+    </section>
+  )
+}
+
+/** Trois cartes prêtes à partir, dans l'ordre du tableau, et de quoi en lancer une. */
+function ReadyCards({ projectId, cards, statusOf, onOpen }: {
+  projectId: string
+  cards: CardDto[]
+  statusOf: StatusOf
+  onOpen: (number: number) => void
+}) {
+  const t = useTranslate()
+  const navigate = useNavigate()
+  const ready = useMemo(() => readyCards(cards, statusOf), [cards, statusOf])
+  return (
+    <section aria-label={t('panel.project.ready')}>
+      <PanelGroup title={t('panel.project.ready')} count={ready.length} />
+      {ready.length === 0 ? (
+        <PanelEmpty>{t('panel.project.ready.none')}</PanelEmpty>
+      ) : (
+        <ul>
+          {ready.slice(0, 3).map((card) => (
+            <li key={card.id} className={panelRowClass}>
+              <button type="button" onClick={() => onOpen(card.number)} className="flex h-full min-w-0 flex-1 items-center gap-2.5 text-left">
+                <ColumnDot column={card.column} />
+                <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{card.number}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-ink">{card.title}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/p/${projectId}/c/new?card=${card.id}`)}
+                className={cx(panelGestureClass, 'shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100')}
+              >
+                <Play size={12} aria-hidden /> {t('panel.project.launch')}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
