@@ -1,5 +1,5 @@
 import { ArrowUpRight, ChevronRight, Cloud, FileDiff, FolderPlus, GitBranch, GitCommitHorizontal, MessageSquarePlus, Trash2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Badge, Button, cx } from '@solera/ui'
 import { BranchDiffDrawer } from '../code/BranchDiffDrawer'
@@ -9,6 +9,7 @@ import { PR_TONE, pluralOf, type BranchInfo } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { useCreateWorktree } from '../../lib/worktrees'
+import type { Gesture } from './GestureMenu'
 import { laneFrame } from './Lane'
 import { useTravailActions } from './TravailActions'
 import { errorText, useTravailNotice } from './TravailNotice'
@@ -22,14 +23,7 @@ export function branchLabel(branch: BranchInfo): string {
 }
 
 /** Un geste sur une branche sans arbre : un bouton de son couloir, une entrée du menu de sa ligne. */
-export interface BranchAction {
-  key: 'openTree' | 'launch' | 'compare' | 'pr' | 'delete'
-  label: string
-  icon: ReactNode
-  run: () => void
-  tone?: 'critical'
-  disabled?: boolean
-}
+type BranchAction = Gesture<'openTree' | 'launch' | 'compare' | 'pr' | 'delete'>
 
 /**
  * Les gestes d'une branche sans arbre (`projet.md` T-13.2) : l'ouvrir dans un worktree,

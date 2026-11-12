@@ -1,23 +1,15 @@
 import { FileDiff, GitMerge, GitPullRequest, MessageCircleQuestion, Play, RefreshCw, Trash2 } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { TreeRow } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
 import { primaryGesture, treeGestures, treeSessionId, liveSessionId, type TreeGestureKey } from '../../lib/tree-actions'
 import { useRebaseTree, useTreeDiff } from '../../lib/tree-gestures'
+import type { Gesture } from './GestureMenu'
 import { useTravailActions } from './TravailActions'
 import { errorText, useTravailNotice } from './TravailNotice'
 
 /** Un geste sur un arbre : un bouton du tiroir, une entrée du menu `⋯` d'un couloir ou d'une ligne. */
-export interface TreeAction {
-  key: TreeGestureKey | 'reply' | 'review'
-  label: string
-  icon: ReactNode
-  run: () => void
-  /** Le geste qui retire : séparé des autres, en rouge. */
-  tone?: 'critical'
-  disabled?: boolean
-}
+export type TreeAction = Gesture<TreeGestureKey | 'reply' | 'review'>
 
 /**
  * Les gestes d'un arbre (`projet.md` T-13.1), dans l'ordre de `treeGestures` : la session
@@ -38,28 +30,29 @@ export function useTreeActions(projectId: string, tree: TreeRow, { long = false 
   const name = tree.branch ?? tree.name
   const sessionId = treeSessionId(tree)
   const prUrl = tree.pr?.url ?? null
+  const label = (key: 'session' | 'launch' | 'diff' | 'pr' | 'rebase' | 'clean') => (long ? (`travail.gesture.long.${key}` as const) : (`travail.gesture.${key}` as const))
 
   const action = (key: TreeGestureKey, launch: boolean): Omit<TreeAction, 'disabled'> => {
     switch (key) {
       case 'session':
         return {
           key,
-          label: t(launch ? (long ? 'travail.gesture.long.launch' : 'travail.gesture.launch') : long ? 'travail.gesture.long.session' : 'travail.gesture.session'),
+          label: t(label(launch ? 'launch' : 'session')),
           icon: <Play size={14} />,
           run: () => navigate(sessionId ? `/p/${projectId}/c/${sessionId}` : tree.root || !tree.id ? `/p/${projectId}/c/new` : `/p/${projectId}/c/new?worktree=${tree.id}`),
         }
       case 'diff':
-        return { key, label: t(long ? 'travail.gesture.long.diff' : 'travail.gesture.diff'), icon: <FileDiff size={14} />, run: () => diff(tree) }
+        return { key, label: t(label('diff')), icon: <FileDiff size={14} />, run: () => diff(tree) }
       case 'pr':
-        return { key, label: t(long ? 'travail.gesture.long.pr' : 'travail.gesture.pr', { number: tree.pr?.number ?? 0 }), icon: <GitPullRequest size={14} />, run: () => prUrl && window.open(prUrl, '_blank', 'noopener') }
+        return { key, label: t(label('pr'), { number: tree.pr?.number ?? 0 }), icon: <GitPullRequest size={14} />, run: () => prUrl && window.open(prUrl, '_blank', 'noopener') }
       case 'rebase':
         return {
           key,
-          label: t(long ? 'travail.gesture.long.rebase' : 'travail.gesture.rebase'),
+          label: t(label('rebase')),
           icon: <RefreshCw size={14} />,
           run: () => {
-            if (!page.base) return
             const base = page.base
+            if (!base) return
             rebase.mutate(
               { tree, base },
               {
@@ -72,11 +65,12 @@ export function useTreeActions(projectId: string, tree: TreeRow, { long = false 
       case 'merge':
         return { key, label: t('travail.gesture.merge'), icon: <GitMerge size={14} />, run: () => page.merge(tree) }
       case 'clean':
-        return { key, label: t(long ? 'travail.gesture.long.clean' : 'travail.gesture.clean'), icon: <Trash2 size={14} />, run: () => page.clean({ trees: [tree], branches: [] }), tone: 'critical' }
+        return { key, label: t(label('clean')), icon: <Trash2 size={14} />, run: () => page.clean({ trees: [tree], branches: [] }), tone: 'critical' }
     }
   }
 
-  return treeGestures(tree).map((gesture) => ({
+  // Sans base (un dépôt sans branche), il n'y a rien sur quoi rebaser : le geste ne se montre pas.
+  return treeGestures(tree).filter((gesture) => gesture.key !== 'rebase' || page.base !== null).map((gesture) => ({
     ...action(gesture.key, gesture.launch ?? false),
     // Un rebase en cours ne se relance pas.
     disabled: gesture.disabled || (gesture.key === 'rebase' && rebase.isPending) || undefined,

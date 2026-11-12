@@ -1,10 +1,10 @@
 import { GitBranch, TriangleAlert } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { ConfirmDialog, cx } from '@solera/ui'
+import { Button, ConfirmDialog, cx } from '@solera/ui'
 import { formatBytes, pluralOf } from '../../lib/code-model'
 import { useUpdateCard } from '../../lib/cards'
 import { useLocale, useTranslate } from '../../lib/i18n'
-import { cleanSummary, type CleanRequest } from '../../lib/travail-clean'
+import { cleanSummary, sizeOf, type CleanRequest } from '../../lib/travail-clean'
 import { useCleanBranches, useCleanWorktree, useWorktreeCleanupPlans } from '../../lib/worktrees'
 import { errorText, useTravailNotice } from './TravailNotice'
 
@@ -86,10 +86,9 @@ export function CleanDialog({
     const failures: string[] = []
     const removed: string[] = []
     let removedBytes: number | null = 0
-    for (const [index, job] of summary.jobs.entries()) {
-      const tree = summary.removed[index]!
+    for (const { tree, body } of summary.jobs) {
       try {
-        await cleanTree.mutateAsync(job)
+        await cleanTree.mutateAsync(body)
         removed.push(tree.key)
         removedBytes = removedBytes === null || tree.sizeBytes === null ? null : removedBytes + tree.sizeBytes
       } catch (error) {
@@ -128,7 +127,7 @@ export function CleanDialog({
   }
   if (summary.terminals > 0) facts.push(t(`travail.clean.terminals.${pluralOf(summary.terminals)}`, { count: summary.terminals }))
   if (summary.restarted.length > 0) {
-    const titles = names(summary.restarted.map((entry) => (entry.running ? t('worktrees.clean.restarted.running', { title: entry.title }) : entry.title)))
+    const titles = names(summary.restarted.map((entry) => (entry.running ? t('travail.clean.restartedRunning', { title: entry.title }) : entry.title)))
     facts.push(t(`travail.clean.restarted.${pluralOf(summary.restarted.length)}`, { titles }))
   }
 
@@ -148,7 +147,7 @@ export function CleanDialog({
             checked={withTrees}
             onChange={setWithTrees}
             title={t(allMerged ? 'travail.clean.trees.merged' : 'travail.clean.trees.any', { count: trees.length })}
-            aside={<UpTo bytes={sumOf(trees.map((tree) => tree.sizeBytes))} />}
+            aside={<UpTo bytes={sizeOf(trees)} />}
             items={trees.map((tree) => ({ key: tree.key, label: tree.branch ?? tree.name, aside: tree.sizeBytes !== null ? size(tree.sizeBytes) : undefined }))}
           />
         ) : null}
@@ -175,6 +174,7 @@ export function CleanDialog({
               <p className="text-xs text-ink-soft">{t('travail.clean.nothingLost', { base: base ?? '' })}</p>
             ) : null}
             {summary.keptBranches.length > 0 ? <p className="text-xs text-ink-soft">{t('travail.clean.kept', { names: names(summary.keptBranches), base: base ?? '' })}</p> : null}
+            {summary.unread.length > 0 ? <p className="text-xs text-caution">{t('travail.clean.unread', { names: names(summary.unread) })}</p> : null}
             {summary.held.map((entry) => (
               <p key={entry.tree.key} className="text-xs text-caution">
                 {t('travail.clean.held', { names: entry.tree.branch ?? entry.tree.name, sessions: names(entry.busy) })}
@@ -203,11 +203,6 @@ export function CleanDialog({
       </div>
     </ConfirmDialog>
   )
-}
-
-/** La somme des tailles, null tant qu'une manque : une somme partielle mentirait. */
-function sumOf(sizes: (number | null)[]): number | null {
-  return sizes.some((value) => value === null) ? null : sizes.reduce<number>((sum, value) => sum + (value ?? 0), 0)
 }
 
 /** « jusqu'à X », et pourquoi dans l'infobulle. */
@@ -253,9 +248,9 @@ function CleanSection({
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setAll(true)} className="self-start rounded pl-6 text-xs text-ink-faint underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-accent">
+        <Button variant="ghost" size="sm" onClick={() => setAll(true)} className="ml-4 self-start">
           {t(`travail.clean.more.${pluralOf(rest)}`, { count: rest })}
-        </button>
+        </Button>
       ) : null}
     </section>
   )

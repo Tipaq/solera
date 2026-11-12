@@ -1,7 +1,6 @@
-import { ArrowDown, ArrowUp, Cloud, FolderGit2, GitBranch, MoreHorizontal, TriangleAlert } from 'lucide-react'
-import { Fragment } from 'react'
+import { ArrowDown, ArrowUp, Cloud, FolderGit2, GitBranch, TriangleAlert } from 'lucide-react'
 import type { JournalEntryDto } from '@solera/protocol'
-import { Badge, Button, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import { Badge, Button, cx } from '@solera/ui'
 import { BranchDiffDrawer } from '../code/BranchDiffDrawer'
 import { CardRef } from '../code/CardRef'
 import { SessionStack } from '../code/SessionStack'
@@ -12,9 +11,10 @@ import { shortAge } from '../../lib/dates'
 import { useLocale, useTranslate } from '../../lib/i18n'
 import { isHeavy } from '../../lib/tree-actions'
 import { laneAnchor, type LaneItem, type LaneLayout } from '../../lib/travail-lanes'
-import { branchLabel, MergedBranches, useBranchActions, type BranchAction } from './BranchLane'
+import { branchLabel, MergedBranches, useBranchActions } from './BranchLane'
 import { CleanupSection, GroupHeading, MERGED_KEY, groupTitle } from './CouloirsView'
-import { usePrimaryAction, useTreeActions, type TreeAction } from './useTreeActions'
+import { GestureMenu } from './GestureMenu'
+import { usePrimaryAction, useTreeActions } from './useTreeActions'
 
 type Layout = LaneLayout<ActivityRow, JournalEntryDto>
 type Item = LaneItem<ActivityRow, JournalEntryDto>
@@ -81,37 +81,6 @@ export function TableView({ projectId, layout, onOpen }: { projectId: string; la
 
       {layout.merged ? <MergedBranches branches={layout.merged.branches} open={layout.merged.open} anchorId={laneAnchor(MERGED_KEY)} /> : null}
     </div>
-  )
-}
-
-/** Le menu `⋯` d'une ligne : les gestes, un filet avant celui qui retire. */
-function GestureMenu({ label, lead, actions }: { label: string; lead?: TreeAction | null; actions: (TreeAction | BranchAction)[] }) {
-  return (
-    <Menu
-      align="end"
-      trigger={
-        <IconButton label={label} size="sm">
-          <MoreHorizontal size={15} />
-        </IconButton>
-      }
-    >
-      {lead ? (
-        <>
-          <MenuItem icon={lead.icon} onSelect={lead.run}>
-            {lead.label}
-          </MenuItem>
-          <MenuSeparator />
-        </>
-      ) : null}
-      {actions.map((action, index) => (
-        <Fragment key={action.key}>
-          {action.tone === 'critical' && index > 0 ? <MenuSeparator /> : null}
-          <MenuItem icon={action.icon} onSelect={action.run} tone={action.tone} disabled={action.disabled}>
-            {action.label}
-          </MenuItem>
-        </Fragment>
-      ))}
-    </Menu>
   )
 }
 
@@ -197,7 +166,13 @@ export function TreeLine({ projectId, tree, onOpen }: { projectId: string; tree:
               {primary.label}
             </Button>
           ) : null}
-          <GestureMenu label={t('travail.lane.gestures', { branch: name })} lead={primary} actions={actions} />
+          <GestureMenu
+            label={t('travail.lane.gestures', { branch: name })}
+            lead={primary}
+            // Le geste principal n'est pas répété plus bas : « Relire » ouvre la PR, « Nettoyer » nettoie l'arbre.
+            gestures={actions.filter((action) => !(primary?.key === 'clean' && action.key === 'clean') && !(primary?.key === 'review' && action.key === 'pr'))}
+            align="end"
+          />
         </div>
       </div>
     </li>
@@ -272,7 +247,7 @@ export function BranchRowLine({ projectId, branch }: { projectId: string; branch
         <span className="hidden text-ink-faint md:block md:text-right">—</span>
         <span className="tabular-nums text-ink-faint md:text-right">{branch.lastCommitAt !== null ? shortAge(branch.lastCommitAt) : '—'}</span>
         <div className="ml-auto flex items-center justify-end md:ml-0">
-          <GestureMenu label={t('travail.lane.gestures', { branch: label })} actions={actions} />
+          <GestureMenu label={t('travail.lane.gestures', { branch: label })} gestures={actions} align="end" />
         </div>
       </div>
       <BranchDiffDrawer projectId={projectId} base={base} branch={branch.name} open={compare} onClose={closeCompare} />

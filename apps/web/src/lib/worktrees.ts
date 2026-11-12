@@ -142,21 +142,17 @@ const cleanupPlanQuery = (projectId: string, path: string | null) => ({
   gcTime: 0,
 })
 
-/** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
-export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
-  return useQuery(cleanupPlanQuery(projectId, path))
-}
-
 /**
  * Les plans de plusieurs arbres, pour le dialogue « Nettoyer » de Travail : la fonction
- * rend celui d'un chemin, ou `undefined` tant qu'il n'est pas lu.
+ * rend celui d'un chemin, `undefined` tant qu'il se lit, `null` s'il n'a pas pu l'être.
  */
-export function useWorktreeCleanupPlans(projectId: string, paths: string[]): (path: string) => WorktreeCleanupPlanDto | undefined {
+export function useWorktreeCleanupPlans(projectId: string, paths: string[]): (path: string) => WorktreeCleanupPlanDto | null | undefined {
   return useQueries({
-    queries: paths.map((path) => cleanupPlanQuery(projectId, path)),
+    // Un plan qui échoue le dit tout de suite : le dialogue n'attend pas trois essais.
+    queries: paths.map((path) => ({ ...cleanupPlanQuery(projectId, path), retry: false })),
     combine: (results) => {
       // Par le chemin demandé : celui que le serveur rend peut être normalisé.
-      const byPath = new Map(results.flatMap((result, index) => (result.data ? [[paths[index]!, result.data] as const] : [])))
+      const byPath = new Map(results.map((result, index) => [paths[index]!, result.data ?? (result.isError ? null : undefined)] as const))
       return (path: string) => byPath.get(path)
     },
   })

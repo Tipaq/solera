@@ -4,7 +4,7 @@ import type { WorktreeCleanupPlanDto } from '@solera/protocol'
 import type { BranchInfo, TreeFields, TreeRow } from '../../web/src/lib/code-model.js'
 
 const { verdictOf } = await import('../../web/src/lib/code-model.js')
-const { cleanOffer, cleanSummary } = await import('../../web/src/lib/travail-clean.js')
+const { cleanOffer, cleanSummary, sizeOf } = await import('../../web/src/lib/travail-clean.js')
 
 const DAY = 86_400_000
 const NOW = 1_800_000_000_000
@@ -45,6 +45,7 @@ const plan = (path: string, over: Partial<WorktreeCleanupPlanDto> = {}): Worktre
   unmergedCommits: false, branchDeletable: true, conversations: [], busy: [], restarted: [], services: [], terminals: 0, card: null, ...over,
 })
 const plansOf = (...list: WorktreeCleanupPlanDto[]) => (path: string) => list.find((entry) => entry.path === path)
+const bodies = (summary: { jobs: { body: unknown }[] }) => summary.jobs.map((job) => job.body)
 
 /* ------------------------------------------------------------------ T-1.5 ce que « Nettoyer · N » propose */
 
@@ -87,7 +88,7 @@ test('dialogue : tout coché, ce qui part, ce qui se libère, rien ne se perd', 
   })
   assert.equal(summary.ready, true)
   assert.deepEqual(summary.removed.map((entry) => entry.key), ['/w/a', '/w/b'])
-  assert.deepEqual(summary.jobs, [
+  assert.deepEqual(bodies(summary), [
     { path: '/w/a', deleteBranch: true, stopServices: true },
     { path: '/w/b', deleteBranch: true, stopServices: true },
   ])
@@ -141,14 +142,14 @@ test('dialogue : une branche qui a des commits que la base n’a pas reste, et s
     withBranches: true,
     plans: plansOf(plan('/w/a', { unmergedCommits: true, ahead: 2 })),
   })
-  assert.deepEqual(summary.jobs, [{ path: '/w/a', deleteBranch: false, stopServices: true }])
+  assert.deepEqual(bodies(summary), [{ path: '/w/a', deleteBranch: false, stopServices: true }])
   assert.deepEqual(summary.keptBranches, ['feat/w/a'])
   assert.deepEqual(summary.losing, [])
 })
 
 test('dialogue : la branche de base ne part jamais avec son arbre', () => {
   const summary = cleanSummary({ trees: [at('/w/a')], branches: [], withTrees: true, withBranches: true, plans: plansOf(plan('/w/a', { branchDeletable: false })) })
-  assert.deepEqual(summary.jobs, [{ path: '/w/a', deleteBranch: false, stopServices: true }])
+  assert.deepEqual(bodies(summary), [{ path: '/w/a', deleteBranch: false, stopServices: true }])
   assert.deepEqual(summary.keptBranches, [])
 })
 
@@ -176,4 +177,29 @@ test('dialogue : une carte rattachée à deux arbres ne se propose qu’une fois
   const card = { id: 'k', number: 12, title: 'Carte' }
   const summary = cleanSummary({ trees: [at('/w/a'), at('/w/b')], branches: [], withTrees: true, withBranches: true, plans: plansOf(plan('/w/a', { card }), plan('/w/b', { card })) })
   assert.deepEqual(summary.cards.map((entry) => entry.number), [12])
+})
+
+test('dialogue : chaque geste porte son arbre', () => {
+  const trees = [at('/w/a'), at('/w/b')]
+  const summary = cleanSummary({ trees, branches: [], withTrees: true, withBranches: true, plans: plansOf(plan('/w/a', { busy: [{ id: 's', title: 'x' }] }), plan('/w/b')) })
+  assert.deepEqual(summary.jobs.map((job) => job.tree.key), ['/w/b'])
+})
+
+test('dialogue : un plan illisible écarte son arbre, et se dit', () => {
+  const summary = cleanSummary({
+    trees: [at('/w/a'), at('/w/b')],
+    branches: [],
+    withTrees: true,
+    withBranches: true,
+    plans: (path) => (path === '/w/a' ? null : plan(path)),
+  })
+  assert.equal(summary.ready, true)
+  assert.deepEqual(summary.unread, ['feat/w/a'])
+  assert.deepEqual(summary.removed.map((entry) => entry.key), ['/w/b'])
+})
+
+test('taille : la somme, nulle tant qu’une manque', () => {
+  assert.equal(sizeOf([at('/w/a'), at('/w/b', { sizeBytes: 30 * MB })]), 40 * MB)
+  assert.equal(sizeOf([at('/w/a'), at('/w/b', { sizeBytes: null })]), null)
+  assert.equal(sizeOf([]), 0)
 })

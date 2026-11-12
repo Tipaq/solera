@@ -24,16 +24,22 @@ export function cleanOffer(trees: TreeRow[], branches: BranchInfo[]): CleanReque
   return { trees: offered, branches: names, count: offered.length + names.length }
 }
 
-/** Le corps d'un `POST …/worktrees/cleanup`. */
+/** Le retrait d'un arbre : l'arbre, et le corps de son `POST …/worktrees/cleanup`. */
 export interface CleanJob {
-  path: string
-  deleteBranch: boolean
-  stopServices: boolean
+  tree: TreeRow
+  body: { path: string; deleteBranch: boolean; stopServices: boolean }
+}
+
+/** La place que des arbres occupent ; null tant qu'une taille n'est pas mesurée : une somme partielle mentirait. */
+export function sizeOf(trees: TreeRow[]): number | null {
+  return trees.some((tree) => tree.sizeBytes === null) ? null : trees.reduce((sum, tree) => sum + (tree.sizeBytes ?? 0), 0)
 }
 
 export interface CleanSummary {
-  /** Tous les plans des arbres cochés sont lus. */
+  /** Tous les plans des arbres cochés sont lus, ou ont échoué. */
   ready: boolean
+  /** Les arbres dont le plan n'a pas pu être lu : ils restent. */
+  unread: string[]
   /** Les arbres qui partent. */
   removed: TreeRow[]
   /** Ceux où une session travaille : ils attendent la fin de son tour, et restent. */
@@ -73,12 +79,14 @@ export function cleanSummary({
 }: CleanRequest & {
   withTrees: boolean
   withBranches: boolean
-  plans: (path: string) => WorktreeCleanupPlanDto | undefined
+  /** Le plan d'un chemin ; `undefined` tant qu'il se lit, `null` s'il n'a pas pu l'être. */
+  plans: (path: string) => WorktreeCleanupPlanDto | null | undefined
 }): CleanSummary {
   const checked = withTrees ? trees : []
   const read = checked.map((tree) => ({ tree, plan: plans(tree.path) }))
   const ready = read.every((entry) => entry.plan !== undefined)
   const loaded = read.flatMap((entry) => (entry.plan ? [{ tree: entry.tree, plan: entry.plan }] : []))
+  const unread = read.filter((entry) => entry.plan === null).map((entry) => nameOf(entry.tree))
   const going = loaded.filter((entry) => entry.plan.busy.length === 0)
   const removed = going.map((entry) => entry.tree)
   const shownBranches = withBranches ? branches : []
@@ -87,12 +95,13 @@ export function cleanSummary({
 
   return {
     ready,
+    unread,
     removed,
     held: loaded.filter((entry) => entry.plan.busy.length > 0).map((entry) => ({ tree: entry.tree, busy: entry.plan.busy.map((session) => session.title) })),
-    jobs: going.map(({ plan }) => ({ path: plan.path, deleteBranch: plan.branchDeletable && !plan.unmergedCommits, stopServices: true })),
+    jobs: going.map(({ tree, plan }) => ({ tree, body: { path: plan.path, deleteBranch: plan.branchDeletable && !plan.unmergedCommits, stopServices: true } })),
     branches: shownBranches,
     count: removed.length + shownBranches.length,
-    bytes: removed.some((tree) => tree.sizeBytes === null) ? null : removed.reduce((sum, tree) => sum + (tree.sizeBytes ?? 0), 0),
+    bytes: sizeOf(removed),
     losing: going.filter(({ plan }) => plan.modified + plan.untracked > 0 || plan.state === 'unreadable').map(({ tree }) => nameOf(tree)),
     keptBranches: going.filter(({ plan }) => plan.branchDeletable && plan.unmergedCommits).map(({ tree }) => nameOf(tree)),
     archived: going.flatMap(({ plan }) => plan.conversations),
