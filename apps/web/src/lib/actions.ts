@@ -248,8 +248,8 @@ export function suggestionWhy(
 const RUNNING_STATES = ['active', 'activating', 'reloading']
 
 /**
- * Ce qu'une action est en ce moment, lu de la même façon par le panneau, le lanceur
- * de l'en-tête et la palette : sans ce calcul commun, l'un proposerait « Lancer » pendant
+ * Ce qu'une action est en ce moment, lu de la même façon par le panneau et la palette :
+ * sans ce calcul commun, l'un proposerait « Lancer » pendant
  * que l'autre montre le service en marche.
  */
 export interface ActionView {
