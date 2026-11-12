@@ -5138,6 +5138,21 @@ export const en = {
   "sessionsPage.pinned": "pinned",
   "sessionsPage.group.fold": "Collapse {name}",
   "sessionsPage.group.unfold": "Expand {name}",
+  "sessionsPage.select": "Select",
+  "sessionsPage.select.done": "Done",
+  "sessionsPage.selected.one": "{count} selected",
+  "sessionsPage.selected.other": "{count} selected",
+  "sessionsPage.select.all": "All",
+  "sessionsPage.bulk.pin": "Pin",
+  "sessionsPage.bulk.unpin": "Unpin",
+  "sessionsPage.bulk.archive": "Archive",
+  "sessionsPage.bulk.unarchive": "Unarchive",
+  "sessionsPage.bulk.delete": "Delete",
+  "sessionsPage.bulk.delete.confirm.one": "Delete {count} session?",
+  "sessionsPage.bulk.delete.confirm.other": "Delete {count} sessions?",
+  "sessionsPage.bulk.delete.note": "Their messages and attachments go with them. This cannot be undone.",
+  "sessionsPage.bulk.failed.one": "One session did not follow: {error}",
+  "sessionsPage.bulk.failed.other": "{count} sessions did not follow: {error}",
 } as const
 
 /**
