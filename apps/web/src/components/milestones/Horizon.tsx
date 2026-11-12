@@ -24,11 +24,14 @@ export function Horizon({
   entries,
   zoom,
   statusOf,
+  notice,
 }: {
   project: Pick<ProjectDto, 'id' | 'cap'>
   entries: MilestoneEntry[]
   zoom: Zoom
   statusOf?: StatusOf
+  /** Le retour d'un geste de la page (un jalon noté), sous le cap. */
+  notice?: ReactNode
 }) {
   const t = useTranslate()
   const { now, next, later } = horizonSections(entries)
@@ -36,6 +39,7 @@ export function Horizon({
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
       <CapBlock project={project} />
+      {notice}
 
       <ol aria-label={t('milestones.horizon.chain')} className="grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-6">
         {MATURITIES.map((maturity, index) => (

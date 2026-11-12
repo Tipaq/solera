@@ -53,11 +53,24 @@ export function refineHref(
   card: Pick<CardDto, 'id' | 'number' | 'title' | 'description' | 'refinement'>,
   mode: SplitMode,
 ): string {
+  const brief = [card.title.trim(), card.description.trim()].filter(Boolean).join('\n\n')
+  return refineSessionHref(projectId, card, mode, refinePrompt({ number: card.number, mode, brief }))
+}
+
+/**
+ * La session d'affinage d'une carte si elle en a une, sinon un brouillon de découpage
+ * rattaché à elle, son premier message pré-rempli de `prompt`.
+ */
+export function refineSessionHref(
+  projectId: string,
+  card: { id: string; refinement: Pick<CardRefinementDto, 'conversationId'> | null },
+  mode: SplitMode,
+  prompt: string,
+): string {
   if (card.refinement) return `/p/${projectId}/c/${card.refinement.conversationId}`
   const params = new URLSearchParams({ split: card.id })
   if (mode === 'direct') params.set('mode', mode)
-  const brief = [card.title.trim(), card.description.trim()].filter(Boolean).join('\n\n')
-  params.set('prompt', refinePrompt({ number: card.number, mode, brief }))
+  params.set('prompt', prompt)
   return `/p/${projectId}/c/new?${params.toString()}`
 }
 

@@ -16,6 +16,13 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // (ordre du tableau, prochaine action, lien) ; « + Jalon » et une carte cochée « C'est un
 // jalon » arrivent comme idées sous Plus tard.
 //
+// Étape « composer » (#193, CMP-1..16, BAR-7) : le tiroir « Nouveau jalon » de la page —
+// titre tiré du texte, gestes et leurs désactivations, pied (étape d'arrivée, phrase de
+// l'agent, repéré, aperçu au survol), brouillon gardé à la fermeture, échéance, Réf. et
+// Inclure, lien et fichier ; la création réelle (carte drapeautée et datée, relation,
+// enfant, pièce jointe), `Ctrl+Entrée` vers le brouillon d'affinage pré-rempli, l'idée
+// notée, et une pièce qui ne suit pas. Aucune session ne part : l'API est simulée.
+//
 // Étape « page » (#194, JAL-1..8, VAG-1..10) : l'en-tête, la prochaine action et son geste,
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
@@ -433,7 +440,7 @@ async function horizonStep(width) {
   console.log(width, 'BAR-7 : « + Jalon » note une idée, qui arrive sous Plus tard')
   await page.getByRole('button', { name: 'Jalon', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouveau jalon' })
-  await dialog.getByRole('textbox').first().fill('Tableau de bord des coûts')
+  await dialog.getByRole('textbox', { name: 'Le jalon, en une phrase ou en brief' }).fill('Tableau de bord des coûts')
   await dialog.getByRole('button', { name: 'Noter l’idée' }).click()
   await dialog.waitFor({ state: 'detached' })
   assert.equal(writes.at(-1).milestone, true)
@@ -458,6 +465,229 @@ async function horizonStep(width) {
     const columns = await page.getByRole('list', { name: 'Jalons par étape' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
     assert.equal(columns, 3)
   }
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
+const COMPOSER_BRIEF = `# Mode hors-ligne complet
+
+## Objectif
+Pouvoir relire et répondre aux sessions sans réseau.
+## Étapes
+- Cache local des fils, voir #931
+- File d'envoi des réponses, avec #960
+- Resynchronisation au retour du réseau
+## Hors champ
+- Lancer une session hors ligne`
+
+async function composerStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  let cards = horizonBoard()
+  let next = 970
+  const writes = []
+  /** Les chemins qui échouent une fois, pour la pièce qui ne suit pas. */
+  const failing = new Set()
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const method = request.method()
+    if (failing.delete(`${method} ${path}`)) return route.fulfill({ status: 409, json: { error: { code: 'refused', message: 'Lien refusé' } } })
+    if (path === '/api/projects') return route.fulfill({ json: [projectOf(null)] })
+    if (path === `/api/projects/${PROJECT}/cards` && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'create', ...body })
+      const created = card(next++, body.title, 'todo', { description: body.description, dueAt: body.dueAt, milestone: body.milestone, position: 970, createdAt: Date.now() })
+      cards = [...cards, created]
+      return route.fulfill({ json: created })
+    }
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [RUN] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', name: 'Tim', email: 'tim@example.com' } })
+    const relation = /^\/api\/cards\/([^/]+)\/relations$/.exec(path)
+    if (relation && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'relation', id: relation[1], relation: body.kind, targetId: body.targetId })
+      return route.fulfill({ json: cards.find((entry) => entry.id === relation[1]) })
+    }
+    const attachment = /^\/api\/cards\/([^/]+)\/attachments$/.exec(path)
+    if (attachment && method === 'POST') {
+      const name = /filename="([^"]+)"/.exec(request.postDataBuffer()?.toString('latin1') ?? '')?.[1]
+      writes.push({ kind: 'attachment', id: attachment[1], name })
+      return route.fulfill({ json: { id: 'att-1', name, size: 1, mimeType: 'application/pdf', createdAt: Date.now() } })
+    }
+    const patch = /^\/api\/cards\/([^/]+)$/.exec(path)
+    if (patch && method === 'PATCH') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'patch', id: patch[1], ...body })
+      const target = cards.find((entry) => entry.id === patch[1])
+      Object.assign(target, body)
+      return route.fulfill({ json: target })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+
+  const where = () => page.evaluate(() => window.where)
+  const drawer = page.getByRole('dialog', { name: 'Nouveau jalon' })
+  const field = drawer.getByRole('textbox', { name: 'Le jalon, en une phrase ou en brief' })
+  const title = drawer.getByRole('textbox', { name: 'Titre du jalon' })
+  const footer = drawer.locator('footer')
+  const gesture = (name) => footer.getByRole('button', { name, exact: true })
+  const shot = (locator, name) => locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-composer-${name}-${width}.png` })
+  const open = async () => {
+    await page.getByRole('button', { name: 'Jalon', exact: true }).click()
+    await field.waitFor()
+  }
+
+  console.log(width, 'CMP-1, CMP-2 : le tiroir large, son en-tête, vide')
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await open()
+  assert.equal(await field.evaluate((element) => element === document.activeElement), true, 'le champ prend le focus')
+  assert.equal(await title.getAttribute('placeholder'), 'Sans titre')
+  assert.equal(await drawer.getByText('Une phrase suffit, ou colle ton brief : l’agent s’adapte.').isVisible(), true)
+  if (!phone) assert.ok((await drawer.boundingBox()).width > 700, 'tiroir large')
+
+  console.log(width, 'CMP-8 : texte vide, les trois gestes retenus, et pourquoi')
+  for (const name of ['Noter l’idée', 'Affiner avec un agent', 'Découper directement']) assert.equal(await gesture(name).isDisabled(), true, name)
+  assert.equal(await footer.getByText('Écris une phrase, ou colle ton brief.').isVisible(), true, 'CMP-10 : vide')
+  assert.equal(await footer.getByText('À affiner', { exact: true }).isVisible(), true, 'CMP-6 : entre en À affiner')
+  if (!phone) {
+    await gesture('Noter l’idée').locator('xpath=..').hover()
+    await page.getByRole('tooltip').filter({ hasText: 'Écris d’abord le jalon.' }).first().waitFor()
+    await page.mouse.move(0, 0, { steps: 4 })
+  }
+  await shot(drawer, 'vide')
+
+  console.log(width, 'CMP-2, CMP-7 : une phrase — titre tiré du texte, Affiner en geste principal')
+  await field.fill('Un mode hors-ligne pour relire les sessions dans le train')
+  assert.equal(await title.getAttribute('placeholder'), 'Un mode hors-ligne pour relire les sessions dans le train')
+  assert.equal(await drawer.getByText('Titre tiré de ton texte, modifiable.').isVisible(), true)
+  assert.equal(await gesture('Affiner avec un agent').isEnabled(), true)
+  assert.equal(await gesture('Noter l’idée').isEnabled(), true)
+  assert.equal(await gesture('Découper directement').isDisabled(), true, 'une phrase ne suffit pas à découper')
+  assert.equal(await footer.getByText('l’agent lira le projet, puis te posera d’abord quelques questions.').isVisible(), true, 'CMP-10 : phrase')
+  if (!phone) {
+    assert.equal(await gesture('Affiner avec un agent').getByText('Ctrl').isVisible(), true, 'le raccourci sur le geste principal')
+    await gesture('Découper directement').locator('xpath=..').hover()
+    await page.getByRole('tooltip').filter({ hasText: 'Il faut au moins deux étapes, ou un objectif et un peu de matière.' }).first().waitFor()
+    await page.mouse.move(0, 0, { steps: 4 })
+  }
+
+  console.log(width, 'CMP-9 : survoler ou focaliser un geste montre son étape et sa phrase')
+  await gesture('Noter l’idée').focus()
+  await footer.getByText('Idée', { exact: true }).waitFor()
+  await page.waitForFunction(() => !document.querySelector('[role=tooltip]'))
+  assert.equal(await footer.getByText('Aucune session ne part : tu l’affineras plus tard.').isVisible(), true)
+  await shot(footer, 'apercu-noter')
+  await gesture('Affiner avec un agent').focus()
+  await footer.getByText('À affiner', { exact: true }).waitFor()
+
+  console.log(width, 'CMP-16 : fermé sans envoi, le brouillon reste')
+  await page.keyboard.press('Escape')
+  await drawer.waitFor({ state: 'detached' })
+  await open()
+  assert.equal(await field.inputValue(), 'Un mode hors-ligne pour relire les sessions dans le train')
+
+  console.log(width, 'CMP-7, CMP-10 : un brief qui suffit — Découper en geste principal, repéré')
+  await field.fill(COMPOSER_BRIEF)
+  assert.equal(await title.getAttribute('placeholder'), 'Mode hors-ligne complet')
+  assert.equal(await gesture('Découper directement').isEnabled(), true)
+  if (!phone) assert.equal(await gesture('Découper directement').getByText('Ctrl').isVisible(), true)
+  assert.equal(await footer.getByText('l’agent proposera directement un découpage.').isVisible(), true)
+  const spotted = footer.getByText('Repéré').locator('xpath=..')
+  assert.match(await spotted.textContent(), /objectif.*3 étapes.*1 hors champ.*2 cartes/)
+
+  console.log(width, 'CMP-5 : l’échéance')
+  await drawer.getByLabel('Échéance', { exact: true }).fill('2026-12-12')
+  await drawer.getByText('12 déc. 2026').waitFor()
+
+  console.log(width, 'CMP-12 : Réf. par défaut, Inclure fait de la carte une carte du jalon')
+  const joined = drawer.getByRole('region', { name: 'Pièces jointes' })
+  const include960 = joined.getByRole('radiogroup', { name: /#960/ })
+  assert.equal(await joined.getByRole('radiogroup', { name: /#931/ }).getByRole('radio', { name: 'Réf.' }).getAttribute('aria-checked'), 'true')
+  await include960.getByRole('radio', { name: 'Inclure' }).click()
+  assert.equal(await include960.getByRole('radio', { name: 'Inclure' }).getAttribute('aria-checked'), 'true')
+
+  console.log(width, 'CMP-4 : un lien et un fichier')
+  await drawer.getByRole('button', { name: 'Joindre un lien' }).click()
+  const linkInput = drawer.getByRole('textbox', { name: 'Adresse du lien' })
+  await linkInput.fill('https://github.com/Tipaq/solera/pull/212')
+  await linkInput.press('Enter')
+  await joined.getByText('PR #212').waitFor()
+  await drawer.locator('input[type=file]').setInputFiles([{ name: 'maquette.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(2048) }])
+  await joined.getByText('maquette.pdf').waitFor()
+  await shot(drawer, 'brief')
+  await shot(joined, 'joint')
+
+  console.log(width, 'CMP-11, CMP-14, CMP-15 : Ctrl+Entrée découpe — carte drapeautée et datée, relation, enfant, fichier, brouillon pré-rempli')
+  await field.focus()
+  await page.keyboard.press('Control+Enter')
+  await page.getByText('ailleurs').waitFor()
+  const created = writes.find((entry) => entry.kind === 'create')
+  assert.equal(created.title, 'Mode hors-ligne complet')
+  assert.equal(created.milestone, true)
+  assert.equal(created.dueAt, new Date(2026, 11, 12).getTime(), 'minuit local du jour')
+  assert.ok(!created.description.startsWith('# '), 'le titre quitte la description')
+  assert.match(created.description, /^## Objectif/)
+  assert.match(created.description, /\*\*Liens\*\*\n- https:\/\/github\.com\/Tipaq\/solera\/pull\/212$/)
+  assert.deepEqual(writes.filter((entry) => entry.kind !== 'create'), [
+    { kind: 'relation', id: 'card-970', relation: 'related', targetId: 'card-931' },
+    { kind: 'patch', id: 'card-960', parentId: 'card-970' },
+    { kind: 'attachment', id: 'card-970', name: 'maquette.pdf' },
+  ])
+  const draft = new URL(await where(), origin)
+  assert.equal(draft.pathname, `/p/${PROJECT}/c/new`)
+  assert.equal(draft.searchParams.get('split'), 'card-970')
+  assert.equal(draft.searchParams.get('mode'), 'direct')
+  const prompt = draft.searchParams.get('prompt')
+  assert.ok(prompt.startsWith('/affiner-un-jalon #970 --decouper\n\n# Mode hors-ligne complet'), prompt)
+  assert.match(prompt, /Cartes jointes : #931 \(référence\), #960 \(à inclure dans le jalon\)/)
+  assert.match(prompt, /Liens :\n- https:\/\/github\.com\/Tipaq\/solera\/pull\/212$/)
+
+  console.log(width, 'CMP-13, CMP-16 : envoyé, le brouillon part ; Noter l’idée reste sur l’horizon et le dit')
+  writes.length = 0
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await open()
+  assert.equal(await field.inputValue(), '', 'le brouillon envoyé ne revient pas')
+  assert.equal(await joined.count(), 0)
+  await field.fill('Tableau de bord des coûts')
+  await title.fill('Coûts par projet')
+  await gesture('Noter l’idée').click()
+  await drawer.waitFor({ state: 'detached' })
+  const noted = page.getByRole('status').filter({ hasText: 'Idée notée : #971, dans « Plus tard ». Tu l’affineras quand tu voudras.' })
+  await noted.waitFor()
+  assert.deepEqual(writes, [{ kind: 'create', title: 'Coûts par projet', description: 'Tableau de bord des coûts', dueAt: null, milestone: true }])
+  assert.match(await where(), /\/timeline/, 'on reste sur l’horizon')
+  await page.getByRole('region', { name: 'Plus tard', exact: true }).getByText('Coûts par projet').waitFor()
+  await shot(noted, 'notee')
+  await noted.getByRole('button', { name: 'Fermer' }).click()
+  await noted.waitFor({ state: 'detached' })
+
+  console.log(width, 'CMP-15 : une pièce qui ne suit pas — la carte existe, le message le dit et mène à la session')
+  failing.add('POST /api/cards/card-972/relations')
+  await open()
+  await field.fill('Relire le module de paiement, voir #931')
+  await gesture('Affiner avec un agent').click()
+  await drawer.waitFor({ state: 'detached' })
+  const partial = page.getByRole('status').filter({ hasText: '#972 est créé, mais une pièce n’a pas suivi : Lien refusé' })
+  await partial.waitFor()
+  await shot(partial, 'partielle')
+  await partial.getByRole('link', { name: 'Ouvrir la session d’affinage' }).click()
+  await page.getByText('ailleurs').waitFor()
+  const session = new URL(await where(), origin)
+  assert.equal(session.searchParams.get('split'), 'card-972')
+  assert.equal(session.searchParams.get('mode'), null, 'Affiner : questions d’abord')
+  assert.ok(session.searchParams.get('prompt').startsWith('/affiner-un-jalon #972\n\nRelire le module de paiement'))
 
   assert.deepEqual(errors, [])
   await context.close()
@@ -1086,6 +1316,7 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1280, 390]) await horizonStep(width)
+  for (const width of [1280, 390]) await composerStep(width)
   for (const width of [1280, 390]) await pageStep(width)
   for (const width of [1280, 390]) await refineStep(width)
   for (const width of [1280, 390]) await launchStep(width)
@@ -1249,6 +1480,7 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
+  console.log('OK : composer — tiroir large, titre tiré du texte, gestes retenus et pourquoi, pied (étape, phrase, repéré, aperçu au survol), brouillon gardé, échéance, Réf./Inclure, lien, fichier, Ctrl+Entrée (carte drapeautée et datée, relation, enfant, fichier, brouillon d’affinage pré-rempli), idée notée, pièce qui ne suit pas ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
