@@ -6,9 +6,8 @@ import type { MouseEvent } from 'react'
  *
  * Le menu du bouton lui-même, et non un menu contextuel au curseur : celui des
  * conversations a un sous-menu (*Ranger*), que le `ContextMenu` du design system ne sait
- * pas rendre. Un second menu aux entrées
- * amputées ferait deux menus différents selon la main qui ouvre. Le prix : il s'ouvre
- * sous le bouton, pas sous le curseur.
+ * pas rendre. Un second menu aux entrées amputées ferait deux menus différents selon la
+ * main qui ouvre. Le prix : il s'ouvre sous le bouton, pas sous le curseur.
  *
  * Au doigt, rien : l'appui long y sert déjà au glissement, et le `⋯` y est toujours
  * visible. Dans un champ de renommage, le menu du navigateur garde son coller.

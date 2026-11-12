@@ -53,7 +53,7 @@ export function ProjectLayout() {
      « à relire ») arrive avec sa vue. */
   const asking = askingCount(live, requests)
   const open = openLeafCount(cards)
-  const counts: Partial<Record<ProjectTabKey, Partial<PlaceTab>>> = {
+  const badges: Partial<Record<ProjectTabKey, Pick<PlaceTab, 'count' | 'tone' | 'countTitle'>>> = {
     travail: {
       count: asking,
       tone: 'caution',
@@ -69,7 +69,7 @@ export function ProjectLayout() {
     end: tab.path === '',
     label: t(tab.label),
     icon: <tab.icon size={15} />,
-    ...counts[tab.key],
+    ...badges[tab.key],
   }))
 
   return (
