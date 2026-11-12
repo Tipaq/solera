@@ -149,6 +149,8 @@ try {
   await looseTile.getByRole('button', { name: /^Veille sans projet/ }).click()
   const looseDetail = page.getByRole('dialog', { name: 'Veille sans projet', exact: true })
   await looseDetail.getByText('Claude Code reçoit ce prompt, dans une session neuve :').waitFor()
+  // PLF-9 : le détail dit où part un lancement à la main, selon la portée.
+  await looseDetail.locator('[data-launch-where]').getByText('hors projet', { exact: true }).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-detail-desktop.png') })
   await looseDetail.getByRole('button', { name: 'Fermer', exact: true }).click()
   await looseDetail.waitFor({ state: 'hidden' })

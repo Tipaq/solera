@@ -1,6 +1,6 @@
-import { AlarmClock, Bot, CalendarClock, CalendarDays, Hand, LayoutGrid, List, Pause, Plus, SquareTerminal } from 'lucide-react'
+import { AlarmClock, Bot, CalendarClock, CalendarDays, Hand, LayoutGrid, List, Pause, SquareTerminal } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { Banner, Button, EmptyState } from '@solera/ui'
+import { Banner, EmptyState } from '@solera/ui'
 import { ActionDrawer } from '../components/automations/ActionDrawer'
 import { ActionsAgenda } from '../components/automations/ActionsAgenda'
 import { LauncherGroup } from '../components/automations/LauncherGroup'
@@ -15,7 +15,7 @@ import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type View
 import type { EditorSeed } from '../lib/action-editor'
 import type { ActionPanel } from '../lib/action-panel'
 import type { AgendaScope } from '../lib/agenda-layout'
-import type { What } from '../lib/automations'
+import { scheduleTargetOf, type What } from '../lib/automations'
 import { useAutomations } from '../lib/automations-query'
 import { useTranslate, type MessageKey } from '../lib/i18n'
 import {
@@ -26,12 +26,14 @@ import {
   defaultTarget,
   groupByDue,
   groupByScope,
+  launchWhere,
   matchesPlanned,
   matchesPlannedQuery,
   plannedFilterCount,
   plannedOf,
   plannedTally,
   scopeLabel,
+  scopeOfTarget,
   scopeOptions,
   targetOf,
   togglePlanned,
@@ -45,6 +47,7 @@ import {
 import { useProjects } from '../lib/projects'
 import type { ScheduleTarget } from '../lib/schedules'
 import { useStoredPref, useView } from '../lib/use-view'
+import { viewStorageKey } from '../lib/view-pref'
 import { useVaultState } from '../lib/vault'
 
 const VIEWS = ['lanceur', 'agenda', 'liste'] as const
@@ -94,8 +97,8 @@ export function SchedulesPage() {
   const data = useAutomations({ all: true })
   const { data: projects } = useProjects()
   const { data: vault } = useVaultState()
-  const [view, setView] = useView<View>('planifiees', null, VIEWS)
-  const [grouping, setGrouping] = useStoredPref<Grouping>('solera.planned.group', readGrouping)
+  const [view, setView] = useView<View>('planifiees-v2', 'all', VIEWS)
+  const [grouping, setGrouping] = useStoredPref<Grouping>(viewStorageKey('planifiees-v2-groupe', 'all'), readGrouping)
   const [agendaScope, setAgendaScope] = useState<AgendaScope>('week')
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<PlannedFilters>(NO_PLANNED_FILTERS)
@@ -103,6 +106,7 @@ export function SchedulesPage() {
   const gestures = usePlannedGestures(setPanel)
 
   const open = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
+  const projectOf = (id: string) => projects?.find((project) => project.id === id) ?? null
   const planned = useMemo(() => plannedOf(data.items, projects ?? []), [data.items, projects])
   const scopes = useMemo(() => scopeOptions(planned, t), [planned, t])
   const now = Date.now()
@@ -241,11 +245,7 @@ export function SchedulesPage() {
               icon={<CalendarClock size={22} />}
               title={t('planned.empty.title')}
               description={t('planned.empty.body')}
-              action={
-                <Button size="sm" icon={<Plus size={14} />} onClick={() => create({ preset: { what: 'agent' } })}>
-                  {t('planned.new.button')}
-                </Button>
-              }
+              action={<NewActionMenu onPick={onNew} entries={NEW_ENTRIES} label="planned.new.label" button="planned.new.button" />}
             />
           ) : view === 'agenda' ? (
             <ActionsAgenda items={shown} scope={agendaScope} onScope={setAgendaScope} onOpen={(item) => gestures.handlers.onOpen(item)} />
@@ -259,7 +259,14 @@ export function SchedulesPage() {
         </div>
       </div>
 
-      <ActionDrawer projectId={null} items={data.items} panel={panel} onPanel={setPanel} onClose={() => setPanel(null)} />
+      <ActionDrawer
+        projectId={null}
+        items={data.items}
+        panel={panel}
+        onPanel={setPanel}
+        onClose={() => setPanel(null)}
+        launchWhere={(item) => launchWhere(scopeOfTarget(scheduleTargetOf(item), projectOf), t)}
+      />
       {gestures.dialogs}
     </div>
   )

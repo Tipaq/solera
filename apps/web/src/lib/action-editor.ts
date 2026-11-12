@@ -17,6 +17,7 @@ import {
 } from '@solera/protocol'
 import {
   draftOf,
+  scheduleTargetOf,
   natureWord,
   type Automation,
   type AutomationDraft,
@@ -25,7 +26,6 @@ import {
   type What,
 } from './automations'
 import type { MessageKey } from './i18n'
-import { targetOfItem } from './planned'
 import type { ScheduleTarget } from './schedules'
 
 /**
@@ -174,7 +174,7 @@ function stateOfDraft(draft: AutomationDraft): EditorState {
 export function editorStateOf(seed: EditorSeed): EditorState {
   if (seed.from) {
     // Une tâche hors projet se relit dans sa portée, qui ne change pas : l'essai du script y joue.
-    const target = seed.from.projectId === null ? targetOfItem(seed.from) : null
+    const target = seed.from.projectId === null ? scheduleTargetOf(seed.from) : null
     const state = { ...stateOfDraft(draftOf(seed.from)), checkEdited: false, target }
     return seed.schedule ? { ...state, scheduled: true } : state
   }

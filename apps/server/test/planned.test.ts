@@ -28,10 +28,10 @@ const {
   scopeOptions,
   targetFromValue,
   targetOf,
-  targetOfItem,
   targetValue,
   togglePlanned,
 } = await import('../../web/src/lib/planned.js')
+const { scheduleTargetOf } = await import('../../web/src/lib/automations.js')
 const { en } = await import('../../web/src/lib/i18n/catalog-en.js')
 const { fr } = await import('../../web/src/lib/i18n/catalog-fr.js')
 
@@ -199,6 +199,8 @@ test('matchesPlannedQuery : libellé, prompt, commande et nom de la portée', ()
   assert.deepEqual(find('  '), ids(PLANNED))
   assert.deepEqual(find('BACKUP.sh'), ['a-backup'])
   assert.deepEqual(find('prompt de notes'), ['t-notes'])
+  // La description n'en fait pas partie (PLF-2).
+  assert.deepEqual(ids(PLANNED.filter((item) => matchesPlannedQuery({ ...item, description: 'zébu' }, 'zébu', t))), [])
   assert.deepEqual(find('savoir'), ['t-notes'])
   assert.deepEqual(find('nimbus'), ['a-backup', 't-script'])
 })
@@ -340,7 +342,7 @@ test('targetOf, targetValue, targetFromValue : aller et retour', () => {
   assert.deepEqual(targets, [{ scope: 'project', projectId: ATLAS.id }, { scope: 'vault' }, { scope: 'instance' }, { scope: 'none' }])
   for (const target of targets) assert.deepEqual(targetFromValue(targetValue(target)), target)
   assert.equal(targetFromValue('n’importe quoi'), null)
-  assert.deepEqual([REVIEW, BACKUP, NOTES, CLEAN, LOOSE].map(targetOfItem), [
+  assert.deepEqual([REVIEW, BACKUP, NOTES, CLEAN, LOOSE].map(scheduleTargetOf), [
     { scope: 'project', projectId: ATLAS.id },
     { scope: 'project', projectId: NIMBUS.id },
     { scope: 'vault' },

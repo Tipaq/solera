@@ -35,6 +35,14 @@ export const quietGestureClass = (size: GestureSize = 'tile') =>
     HEIGHT[size],
   )
 
+/** Un geste principal à bordure, de la forme de « Lancer » : Reprendre, Lancer maintenant. */
+export const outlineGestureClass = (size: GestureSize = 'tile') =>
+  cx(
+    'inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-high',
+    FOCUS,
+    HEIGHT[size],
+  )
+
 /** Où part le lancement direct, quand ce n'est pas la racine : l'arbre de la conversation. */
 export interface LaunchHere {
   worktreeId: string

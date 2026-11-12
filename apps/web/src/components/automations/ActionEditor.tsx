@@ -62,7 +62,7 @@ import { useAutomationMutations } from '../../lib/automations-query'
 import type { CommandKind, What } from '../../lib/automations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { setPanelExpanded } from '../../lib/panel'
-import { editorTargets, fitTarget, launchWhere, projectOfTarget, targetFromValue, targetValue, type PlannedScope, type ScopeProject } from '../../lib/planned'
+import { editorTargets, fitTarget, launchWhere, projectOfTarget, scopeLabel, scopeOfTarget, targetFromValue, targetValue, type ScopeProject } from '../../lib/planned'
 import type { ScheduleTarget } from '../../lib/schedules'
 import { useCurrentUser } from '../../lib/session'
 import { useVaultState } from '../../lib/vault'
@@ -605,12 +605,6 @@ function WhatCards({ value, frozen, onChange }: { value: What; frozen: boolean; 
   )
 }
 
-/** La portée d'une cible, pour la nommer et dire où part un lancement. */
-function scopeOfTarget(target: ScheduleTarget, projects: readonly ScopeProject[]): PlannedScope {
-  if (target.scope !== 'project') return { kind: target.scope }
-  return { kind: 'project', projectId: target.projectId, project: projects.find((entry) => entry.id === target.projectId) ?? null }
-}
-
 /**
  * Portée (PLF-10), sur la page Planifiées seulement : un projet, le Savoir, l'instance
  * (administrateurs) ou rien. Une commande appartient à un projet : le reste lui est fermé.
@@ -631,11 +625,12 @@ function ScopeField({
   const t = useTranslate()
   const { data: user } = useCurrentUser()
   const { data: vault } = useVaultState()
+  const projectOf = (id: string) => projects.find((entry) => entry.id === id) ?? null
   const options = editorTargets(projects, { admin: user?.isAdmin === true, what, vault: vault?.configured === true }).map((option) => {
-    const scope = scopeOfTarget(option.target, projects)
+    const scope = scopeOfTarget(option.target, projectOf)
     return {
       value: option.value,
-      label: scope.kind === 'project' ? (scope.project?.name ?? t('planned.scope.unknown')) : t(`planned.scope.${scope.kind}`),
+      label: scopeLabel(scope, t),
       icon: <ScopeMark scope={scope} />,
       hint: option.closed ? t(`planned.scopeField.${option.closed}`) : undefined,
       disabled: option.closed !== null,
@@ -645,7 +640,7 @@ function ScopeField({
     <FieldRow
       label={t('planned.scopeField.label')}
       error={error}
-      hint={t('planned.scopeField.hint', { where: launchWhere(scopeOfTarget(target, projects), t) })}
+      hint={t('planned.scopeField.hint', { where: launchWhere(scopeOfTarget(target, projectOf), t) })}
     >
       <div data-scope-field>
         <Select<string>

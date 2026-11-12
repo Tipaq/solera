@@ -8,6 +8,7 @@ import {
   healthOf,
   inShort,
   reviewReason,
+  scheduleTargetOf,
   verdictRuns,
   type Automation,
   type Due,
@@ -41,11 +42,9 @@ export type PlannedScope =
 
 export type PlannedItem = Automation & { scope: PlannedScope }
 
-function scopeOf(item: Automation, projects: ReadonlyMap<string, ScopeProject>): PlannedScope {
-  if (item.projectId) return { kind: 'project', projectId: item.projectId, project: projects.get(item.projectId) ?? null }
-  // Seule une tâche d'agent vit hors projet : une commande appartient toujours au sien.
-  const scope = item.source.kind === 'task' ? item.source.task.scope : 'none'
-  return scope === 'vault' || scope === 'instance' ? { kind: scope } : { kind: 'none' }
+/** La portée d'une cible ; `projectOf` donne le projet quand on le voit. */
+export function scopeOfTarget(target: ScheduleTarget, projectOf: (id: string) => ScopeProject | null): PlannedScope {
+  return target.scope === 'project' ? { kind: 'project', projectId: target.projectId, project: projectOf(target.projectId) } : { kind: target.scope }
 }
 
 /**
@@ -57,7 +56,7 @@ export function plannedOf(items: readonly Automation[], projects: readonly Scope
   const byId = new Map(projects.map((project) => [project.id, project]))
   return items
     .filter((item) => item.schedule !== null || item.projectId === null)
-    .map((item) => ({ ...item, scope: scopeOf(item, byId) }))
+    .map((item) => ({ ...item, scope: scopeOfTarget(scheduleTargetOf(item), (id) => byId.get(id) ?? null) }))
 }
 
 export const scopeKey = (scope: PlannedScope): string => (scope.kind === 'project' ? scope.projectId : scope.kind)
@@ -160,11 +159,11 @@ export function togglePlanned<G extends ListGroup>(filters: PlannedFilters, grou
   return { ...filters, [group]: next }
 }
 
-/** « Chercher une tâche » : libellé, prompt, commande, description et nom de la portée. */
+/** « Chercher une tâche » : libellé, prompt, commande et nom de la portée (PLF-2). */
 export function matchesPlannedQuery(item: PlannedItem, query: string, t: Translate): boolean {
   const needle = query.trim().toLocaleLowerCase()
   if (!needle) return true
-  return [item.label, item.prompt, item.command, item.description, scopeLabel(item.scope, t)].some((text) =>
+  return [item.label, item.prompt, item.command, scopeLabel(item.scope, t)].some((text) =>
     text?.toLocaleLowerCase().includes(needle),
   )
 }
@@ -287,13 +286,6 @@ export function healthMotive(item: Automation, now: number, t: Translate): strin
 /** La portée où créer une tâche, ou dupliquer celle-ci. */
 export function targetOf(scope: PlannedScope): ScheduleTarget {
   return scope.kind === 'project' ? { scope: 'project', projectId: scope.projectId } : { scope: scope.kind }
-}
-
-/** La portée d'une action, sans la liste des projets : là où dupliquer une tâche. */
-export function targetOfItem(item: Automation): ScheduleTarget {
-  if (item.projectId) return { scope: 'project', projectId: item.projectId }
-  const scope = item.source.kind === 'task' ? item.source.task.scope : 'none'
-  return scope === 'vault' || scope === 'instance' ? { scope } : { scope: 'none' }
 }
 
 /** La valeur d'une option du champ Portée : `project:<id>`, `vault`, `instance`, `none`. */

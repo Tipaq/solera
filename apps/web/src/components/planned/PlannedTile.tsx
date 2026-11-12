@@ -5,7 +5,7 @@ import { cadenceWords, natureOf, type Automation } from '../../lib/automations'
 import { conversationPath } from '../../lib/conversation-route'
 import { locale, useTranslate } from '../../lib/i18n'
 import { launchWhere, plannedGestureOf, plannedState, type PlannedItem } from '../../lib/planned'
-import { quietGestureClass, ReviewButton } from '../automations/ActionGestures'
+import { outlineGestureClass, quietGestureClass, ReviewButton } from '../automations/ActionGestures'
 import { STATE_TEXT, StateIcon } from '../automations/ActionMarks'
 import { TILE_BOX } from '../automations/LauncherGroup'
 import { ScopePip } from './ScopeMarks'
@@ -19,10 +19,6 @@ export interface PlannedHandlers {
   onDuplicate: (item: PlannedItem) => void
   onDelete: (item: PlannedItem) => void
 }
-
-/** Le geste d'une tuile, de la forme de « Lancer » de l'onglet Actions. */
-const TILE_ACTION =
-  'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent md:h-9 pointer-coarse:h-11'
 
 /**
  * La tuile d'une tâche planifiée (PLF-5), au gabarit du Lanceur de l'onglet Actions : la
@@ -88,14 +84,14 @@ function PlannedGesture({ item, handlers }: { item: PlannedItem; handlers: Plann
       ) : null
     case 'resume':
       return (
-        <button type="button" aria-label={t('planned.tile.resumeNamed', { label: item.label })} onClick={() => handlers.onPause(item, false)} className={TILE_ACTION}>
+        <button type="button" aria-label={t('planned.tile.resumeNamed', { label: item.label })} onClick={() => handlers.onPause(item, false)} className={outlineGestureClass()}>
           <Play size={12} aria-hidden /> {t('planned.tile.resume')}
         </button>
       )
     case 'launch': {
       const named = t('planned.tile.launchNamed', { label: item.label, where: launchWhere(item.scope, t) })
       return (
-        <button type="button" aria-label={named} title={named} onClick={() => handlers.onLaunch(item)} className={TILE_ACTION}>
+        <button type="button" aria-label={named} title={named} onClick={() => handlers.onLaunch(item)} className={outlineGestureClass()}>
           <Play size={12} aria-hidden /> {t('planned.tile.launch')}
         </button>
       )
