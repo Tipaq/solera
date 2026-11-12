@@ -538,16 +538,16 @@ try {
   assert.ok((await banner.boundingBox()).y < (await runningRow.boundingBox()).y, 'Le bandeau vient avant les sessions au travail')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-du-fil.png') })
 
-  // C2 : la vue du jalon, par vagues, avec la file en pied.
+  // C2 : la page du jalon (#194) — lancé, ses cartes en vagues, le pilotage à côté.
   await banner.getByRole('link', { name: 'Voir le jalon' }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
-  await page.getByRole('region', { name: 'Vague 1 · sans dépendance' }).waitFor()
-  await page.getByRole('region', { name: 'Vague 2' }).getByText(`#${second.number}`).waitFor()
-  if (rest.length > 0) await page.getByRole('region', { name: 'Vague 3' }).getByText(`après #${second.number}`).first().waitFor()
-  await page.getByText(new RegExp(`^File : #${second.number} — la prochaine place libre part sur #${second.number}`)).waitFor()
-  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).getAttribute('aria-current'), 'page', 'La vue vit sous l’onglet Jalons')
+  await page.getByRole('region', { name: 'Prochaine action' }).waitFor()
+  await page.getByRole('heading', { name: `#${parent.number} ${parent.title}` }).waitFor()
+  const waves = page.getByRole('region', { name: 'Vagues' })
+  for (const card of [first, second]) await waves.getByRole('link', { name: new RegExp(`#${card.number} `) }).waitFor()
+  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).getAttribute('aria-current'), 'page', 'La page vit sous l’onglet Jalons')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'c2-la-vue-du-jalon.png') })
-  await page.getByRole('button', { name: 'Mettre en pause' }).click()
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
   await page.getByRole('button', { name: 'Reprendre' }).waitFor()
   assert.equal(pauses, 1)
   // Une carte sans enfant n'est pas un jalon : la vue ne promet pas de la lancer.
