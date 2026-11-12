@@ -5,6 +5,8 @@ import type { TreeFields, TreeRow } from '../../web/src/lib/code-model.js'
 
 const { verdictOf } = await import('../../web/src/lib/code-model.js')
 const { projectSummaries, activeTrees, recentEvents } = await import('../../web/src/lib/portfolio-overview.js')
+const { portfolioMilestones, keepPortfolioMilestone, milestoneGroups, openMilestoneCounts, milestoneAnchors, NO_PORTFOLIO_MILESTONE_FILTERS } =
+  await import('../../web/src/lib/portfolio-milestones.js')
 
 /*
  * L'Aperçu du portefeuille (#237, `coque.md` PF-8 à PF-13) : ce que chaque projet
@@ -210,4 +212,98 @@ test('les derniers événements : un projet inconnu est écarté avant de compte
     2,
   )
   assert.deepEqual(rows.map((row) => row.projectId), ['a', 'b'])
+})
+
+/* ------------------------------------------------------------------ PF-28 à PF-31 */
+
+const projects = [project('a', 'Solera'), project('b', 'Atelier')]
+
+test('les jalons du portefeuille : ceux de chaque projet, sur le modèle de maturité, avec ses pilotages', () => {
+  const cards = [
+    ...milestone('a', 1, [card('a', 2)]),
+    ...milestone('b', 1, [card('b', 2)]),
+    // Une idée : drapeautée, sans enfant.
+    card('b', 5, { milestone: true }),
+    // Le jalon d'un projet que le portefeuille ne montre pas.
+    ...milestone('c', 1, [card('c', 2)]),
+  ]
+  const runs = new Map([['b', [{ cardId: 'b-1', state: 'running', concurrency: 1, createdAt: NOW - DAY } as MilestoneRunDto]]])
+  const rows = portfolioMilestones({ projects, cards, runs })
+  assert.deepEqual(
+    rows.map((row) => [row.project.id, row.entry.card.number, row.entry.maturity]),
+    [
+      ['a', 1, 'ready'],
+      ['b', 1, 'launched'],
+      ['b', 5, 'idea'],
+    ],
+  )
+})
+
+test('la barre : les livrés masqués par défaut, le retard, le projet et la recherche sur le nom du projet', () => {
+  const late = NOW - 3 * DAY
+  const cards = [
+    ...milestone('a', 1, [card('a', 2, { column: 'done' })]),
+    ...milestone('a', 3, [card('a', 4)], { dueAt: late, title: 'Portefeuille' }),
+    ...milestone('b', 7, [card('b', 8)]),
+  ]
+  const rows = portfolioMilestones({ projects, cards, runs: new Map() })
+  const shown = (query: string, filters = NO_PORTFOLIO_MILESTONE_FILTERS) =>
+    rows.filter((row) => keepPortfolioMilestone(row, query, filters, NOW)).map((row) => `${row.project.id}-${row.entry.card.number}`)
+  assert.deepEqual(shown(''), ['a-3', 'b-7'], 'un jalon livré ne se montre que sur demande')
+  assert.deepEqual(shown('', { ...NO_PORTFOLIO_MILESTONE_FILTERS, delivered: true }), ['a-3', 'a-1', 'b-7'], 'dans l’ordre du projet : les datés d’abord')
+  assert.deepEqual(shown('', { ...NO_PORTFOLIO_MILESTONE_FILTERS, maturities: new Set(['delivered'] as const) }), ['a-1'], 'le filtre de maturité les demande aussi')
+  assert.deepEqual(shown('', { ...NO_PORTFOLIO_MILESTONE_FILTERS, late: true }), ['a-3'])
+  assert.deepEqual(shown('', { ...NO_PORTFOLIO_MILESTONE_FILTERS, projects: new Set(['b']) }), ['b-7'])
+  assert.deepEqual(shown('atelier'), ['b-7'], 'le nom du projet se cherche')
+  assert.deepEqual(shown('#3'), ['a-3'])
+  assert.deepEqual(shown('portefeuille'), ['a-3'])
+})
+
+test('le compte des jalons ouverts, par projet : sans les livrés', () => {
+  const cards = [
+    ...milestone('a', 1, [card('a', 2, { column: 'done' })]),
+    ...milestone('a', 3, [card('a', 4)]),
+    card('b', 5, { milestone: true }),
+  ]
+  const counts = openMilestoneCounts(portfolioMilestones({ projects, cards, runs: new Map() }))
+  assert.deepEqual([...counts], [['a', 1], ['b', 1]])
+})
+
+test('l’horizon : une bande par projet qui a des jalons, dans l’ordre des projets, triée par maturité puis échéance', () => {
+  const run = { cardId: 'b-20', state: 'running', concurrency: 1, createdAt: NOW - DAY } as MilestoneRunDto
+  const cards = [
+    // Prêts, l'un daté plus tôt.
+    ...milestone('b', 10, [card('b', 11)], { dueAt: NOW + 9 * DAY }),
+    ...milestone('b', 12, [card('b', 13)], { dueAt: NOW + 2 * DAY }),
+    // À régler : une enfant à préciser.
+    ...milestone('b', 14, [card('b', 15, { toClarifySince: NOW })]),
+    card('b', 16, { milestone: true }),
+    ...milestone('b', 17, [card('b', 18, { column: 'done' })]),
+    ...milestone('b', 20, [card('b', 21)]),
+  ]
+  const rows = portfolioMilestones({ projects: [project('a'), project('b')], cards, runs: new Map([['b', [run]]]) })
+  const groups = milestoneGroups(rows, [project('a'), project('b')])
+  assert.deepEqual(groups.map((group) => group.project.id), ['b'], 'un projet sans jalon montré n’a pas de bande')
+  assert.deepEqual(
+    groups[0]?.rows.map((row) => row.entry.card.number),
+    [20, 12, 10, 14, 16, 17],
+    'lancé, prêt (par échéance), à régler, idée, livré',
+  )
+})
+
+test('les dépendances du Gantt : de la fin du jalon qui bloque au début de celui qui attend, entre projets aussi', () => {
+  const blocker = milestone('a', 1, [card('a', 2, { createdAt: NOW - 8 * DAY })], { dueAt: NOW + 2 * DAY })
+  const waiting = milestone('b', 1, [card('b', 2, { createdAt: NOW - 4 * DAY })], {
+    dueAt: NOW + 6 * DAY,
+    blockedBy: [link(blocker[0]!)],
+  })
+  // Bloqué par un jalon qui n'est pas montré : pas de flèche dans le vide.
+  const orphan = milestone('b', 3, [card('b', 4)], { blockedBy: [{ id: 'z-1', number: 1, title: 'ailleurs', column: 'todo' }] })
+  const rows = portfolioMilestones({ projects, cards: [...blocker, ...waiting, ...orphan], runs: new Map() })
+  const entries = rows.map((row) => row.entry)
+  const centerY = new Map(entries.map((entry, index) => [entry.card.id, index * 40 + 20]))
+  const scale = { x: (at: number) => (at - NOW) / DAY }
+  const anchors = milestoneAnchors(entries, centerY, scale, NOW)
+  assert.equal(anchors.length, 1)
+  assert.deepEqual(anchors[0], { x1: 2, y1: 20, x2: -10, y2: 60, from: 'a-1', to: 'b-1' })
 })

@@ -23,7 +23,7 @@ import { openSettings } from '../lib/settings-dialog'
  * Travail et Actions n'ont pas encore leur vue du portefeuille (#238, #241) : leurs
  * onglets sont masqués jusque-là, plutôt que de mener hors de la coque. Le compte ambre
  * de Travail (`usePortfolioAskingCount`) revient avec eux ; d'ici là, « Ce qui t'attend »
- * de l'Aperçu dit la même chose. Jalons mène à la vue actuelle.
+ * de l'Aperçu dit la même chose. Tableau et Jalons ont leur vue (#239, #240).
  *
  * La fiche d'une carte s'ouvre sur place, par-dessus la vue (`?fiche=<projet>:<N>`) :
  * son hôte est posé ici, une fois pour toutes les vues.
