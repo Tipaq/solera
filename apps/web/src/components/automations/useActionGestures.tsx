@@ -7,6 +7,7 @@ import { useAutomationMutations } from '../../lib/automations-query'
 import { useTranslate } from '../../lib/i18n'
 import { useServedIndex } from '../../lib/served-query'
 import { switchTargets, unlessElsewhere } from '../../lib/served'
+import type { TileServing } from './ActionTile'
 import { useTargetName } from './served/ServeMenu'
 import { switchToTree, useLaunchHere, useServiceSwitch } from './served/SwitchServiceDialog'
 
@@ -69,15 +70,13 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
   }
 
   /** « Servir… » (SRV-5) : les arbres où basculer un service en marche, et la demande. */
-  const serving = (item: Automation) => {
+  const serving = (item: Automation): TileServing | null => {
     const action = actionOf(item)
     const row = served.byAutomation.get(item.id) ?? null
     if (!action || !row?.switchable) return null
     return {
-      served: row,
       targets: switchTargets(served.trees, row),
-      onSwitch: (target: (typeof served.trees)[number]) =>
-        switching.ask({ action, from: row, to: switchToTree(target, nameOf(target)) }),
+      onSwitch: (target) => switching.ask({ action, from: row, to: switchToTree(target, nameOf(target)) }),
     }
   }
 

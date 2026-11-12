@@ -592,6 +592,199 @@ async function checkServed(base) {
   }
 }
 
+/**
+ * L'onglet Actions d'un projet (AC-19), de bout en bout sur la vraie API, à 1280 puis à
+ * 390 px : le Lanceur (groupes, tuiles de taille égale, un seul geste), la barre (recherche,
+ * Filtrer ▾, puces, méta, Affichage ▾, + Action ▾), la Liste par état, l'Agenda, et le
+ * tiroir que `?action=` et `?nouvelle=` ouvrent et suivent. Sur Atlas API, que la démo
+ * laisse sans action : rien d'autre ne s'y mêle.
+ */
+async function checkProjectTab(base, env, api) {
+  const project = (await api('/api/projects')).find((entry) => entry.name === 'Atlas API')
+  const conversation = (await api(`/api/projects/${project.id}/conversations`))[0]
+  assert.ok(conversation, 'Atlas API a une conversation de démo')
+  const request = await browser.newContext()
+  await request.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
+  const create = async (data) => {
+    const response = await request.request.post(`${base}/api/projects/${project.id}/actions`, { data })
+    assert.equal(response.status(), 201, await response.text())
+    return response.json()
+  }
+  const hello = await create({ label: 'Bonjour', kind: 'task', command: 'echo hello-from-tab' })
+  const backup = await create({
+    label: 'Sauvegarde', kind: 'task', command: 'echo sauvegarde',
+    schedule: { cadence: { kind: 'cron', expression: '0 3 * * *' }, maxDurationMinutes: 30 },
+  })
+  const doomed = await create({ label: 'À supprimer', kind: 'task', command: 'true' })
+  const proposed = await mcp(env, conversation.id, project.id, 'register_action', {
+    label: 'Statique', kind: 'service', command: 'python3 -m http.server --bind 127.0.0.1 0', description: 'Proposé par un agent',
+  })
+  assert.ok(!proposed.isError, proposed.content[0].text)
+  const tab = `${base}/p/${project.id}/actions`
+  const idOf = (action) => `a-${action.id}`
+
+  for (const width of [1280, 390]) {
+    const phone = width < 500
+    const context = await browser.newContext({
+      viewport: { width, height: phone ? 844 : 900 }, isMobile: phone, hasTouch: phone, locale: 'fr-FR', serviceWorkers: 'block',
+    })
+    await context.addInitScript((origin) => {
+      if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    }, new URL(base).origin)
+    await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
+    const page = await context.newPage()
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const search = () => new URL(page.url()).searchParams
+    const tile = (label) => page.locator('[data-action-tile]', { has: page.getByText(label, { exact: true }) })
+
+    // Le Lanceur par défaut : Services, Commandes, Agents, chacun avec sa tuile d'ajout.
+    await page.goto(tab)
+    for (const group of ['Services', 'Commandes', 'Agents']) await page.getByRole('heading', { name: group, exact: true }).waitFor()
+    for (const add of ['Nouveau service', 'Nouvelle commande', 'Nouvelle tâche d’agent']) await page.getByRole('button', { name: add, exact: true }).waitFor()
+    // À 1280, rien n'a encore tourné ; à 390, « Bonjour » a été lancée et « À supprimer » n'est plus.
+    await tile('Bonjour').getByText(phone ? /^Réussie/ : 'Jamais lancée').waitFor()
+    await tile('Sauvegarde').getByText('À 03:00').waitFor()
+    await tile('Statique').getByRole('button', { name: 'Relire « Statique »', exact: true }).waitFor()
+    // Des tuiles de taille égale, une colonne au téléphone ; rien ne déborde de la page.
+    const boxes = await page.locator('[data-action-tile]').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))
+    assert.equal(boxes.length, phone ? 3 : 4)
+    assert.ok(boxes.every((box) => Math.abs(box.height - 152) < 1), `tuiles de 9,5 rem : ${boxes.map((box) => box.height)}`)
+    assert.ok(boxes.every((box) => Math.abs(box.width - boxes[0].width) < 1), 'tuiles de même largeur')
+    if (phone) assert.ok(boxes.every((box) => Math.abs(box.x - boxes[0].x) < 1), 'une colonne au téléphone')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.screenshot({ path: join(shots, `tab-launcher-${width}.png`) })
+
+    // La méta et Filtrer ▾ : un filtre pose sa puce, la puce l'efface.
+    const chips = page.locator('[data-filter-chip]')
+    if (!phone) {
+      await page.getByRole('button', { name: '1 à relire', exact: true }).click()
+      await chips.getByText('À relire').waitFor()
+      await tile('Bonjour').waitFor({ state: 'detached' })
+      assert.equal(await page.locator('[data-action-tile]').count(), 1)
+      await chips.getByRole('button', { name: 'Retirer ce filtre' }).click()
+      await tile('Bonjour').waitFor()
+    }
+    await page.getByRole('button', { name: 'Filtrer', exact: true }).click()
+    const filters = page.getByRole('dialog', { name: 'Filtrer' })
+    await filters.getByRole('checkbox', { name: /^Planifiées/ }).click()
+    await filters.getByRole('checkbox', { name: /^Planifiées/ }).getByText('1').waitFor()
+    await page.keyboard.press('Escape')
+    await chips.getByText('Planifiées').waitFor()
+    assert.equal(await page.locator('[data-action-tile]').count(), 1)
+    await chips.getByRole('button', { name: 'Retirer ce filtre' }).click()
+    // La recherche lit le libellé et la commande.
+    await page.getByRole('searchbox', { name: 'Chercher une action' }).fill('hello-from')
+    await tile('Sauvegarde').waitFor({ state: 'detached' })
+    assert.equal(await page.locator('[data-action-tile]').count(), 1)
+    await page.getByRole('searchbox', { name: 'Chercher une action' }).fill('')
+    await tile('Sauvegarde').waitFor()
+
+    // Le libellé ouvre le détail, l'adresse le dit ; Échap le ferme et l'adresse l'oublie.
+    await tile('Bonjour').getByRole('button', { name: /^Bonjour/ }).click()
+    const detail = page.getByRole('dialog', { name: 'Bonjour', exact: true })
+    await detail.waitFor()
+    assert.equal(search().get('action'), idOf(hello))
+    await page.keyboard.press('Escape')
+    await detail.waitFor({ state: 'hidden' })
+    assert.equal(search().get('action'), null)
+
+    // « Relire » ouvre le détail sur la relecture.
+    await tile('Statique').getByRole('button', { name: 'Relire « Statique »', exact: true }).click()
+    const review = page.getByRole('dialog', { name: 'Statique', exact: true })
+    await review.getByText('python3 -m http.server --bind 127.0.0.1 0').first().waitFor()
+    await page.screenshot({ path: join(shots, `tab-review-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await review.waitFor({ state: 'hidden' })
+
+    // Lancer : la commande part à la racine, son passage s'ouvre dans le tiroir.
+    if (!phone) {
+      await tile('Bonjour').getByRole('button', { name: 'Lancer « Bonjour »', exact: true }).click()
+      const run = page.getByRole('dialog', { name: 'Passage de « Bonjour »' })
+      await run.getByText('hello-from-tab').first().waitFor({ timeout: 15000 })
+      assert.equal(search().get('action'), idOf(hello))
+      await page.screenshot({ path: join(shots, `tab-run-${width}.png`) })
+      // Dans le tiroir commun, Échap le ferme d'un coup ; l'adresse l'oublie.
+      await page.keyboard.press('Escape')
+      await run.waitFor({ state: 'hidden' })
+      assert.equal(search().get('action'), null)
+      await tile('Bonjour').getByText(/^Réussie/).waitFor({ timeout: 15000 })
+    }
+
+    // ⋯ : Dupliquer ouvre l'éditeur sur une copie.
+    await tile('Bonjour').getByRole('button', { name: 'Plus pour « Bonjour »', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Dupliquer' }).click()
+    const copy = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
+    assert.equal(await copy.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Bonjour (copie)')
+    await copy.getByRole('button', { name: 'Annuler', exact: true }).click()
+    await copy.waitFor({ state: 'hidden' })
+
+    // + Action ▾ : planifier une action existante.
+    await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+    await page.getByRole('button', { name: /^Planifier une action existante…/ }).click()
+    const pick = page.getByRole('dialog', { name: 'Planifier une action existante', exact: true })
+    await pick.getByRole('button', { name: 'Planifier « Bonjour »', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await pick.waitFor({ state: 'hidden' })
+
+    // L'adresse ouvre le tiroir : ?nouvelle= l'éditeur pré-réglé, ?action= le détail.
+    await page.goto(`${tab}?nouvelle=service`)
+    const fresh = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
+    assert.equal(await fresh.getByRole('radio', { name: /^Service/ }).getAttribute('aria-checked'), 'true')
+    await fresh.getByRole('button', { name: 'Annuler', exact: true }).click()
+    await fresh.waitFor({ state: 'hidden' })
+    assert.equal(search().get('nouvelle'), null)
+    await page.goto(`${tab}?action=${idOf(backup)}`)
+    await page.getByRole('dialog', { name: 'Sauvegarde', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+
+    // Affichage ▾ : la Liste, par état.
+    await page.getByRole('button', { name: 'Affichage : Lanceur' }).click()
+    await page.getByRole('radio', { name: 'Liste' }).click()
+    await page.keyboard.press('Escape')
+    for (const section of ['À relire', 'Planifiées', 'À la demande']) await page.getByRole('heading', { name: section, exact: true }).waitFor()
+    const row = (label) => page.locator('[data-action-row]', { has: page.getByText(label, { exact: true }) })
+    await row('Statique').getByRole('button', { name: 'Relire « Statique »', exact: true }).waitFor()
+    await row('Bonjour').getByRole('button', { name: 'Lancer « Bonjour »', exact: true }).waitFor()
+    await row('Sauvegarde').getByText('dans', { exact: false }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.screenshot({ path: join(shots, `tab-list-${width}.png`) })
+    // « Planifier » d'une action à la demande ouvre l'éditeur sur Quand.
+    await row('Bonjour').getByRole('button', { name: /Planifier/ }).click()
+    const when = page.getByRole('dialog', { name: 'Modifier « Bonjour »', exact: true })
+    assert.equal(await when.getByRole('checkbox', { name: /^Planifiée/ }).getAttribute('aria-checked'), 'true')
+    await when.getByRole('button', { name: 'Annuler', exact: true }).click()
+
+    // L'Agenda ; la vue choisie se retient pour le projet.
+    await page.getByRole('button', { name: 'Affichage : Liste' }).click()
+    await page.getByRole('radio', { name: 'Agenda' }).click()
+    await page.keyboard.press('Escape')
+    await page.getByText(phone ? 'Sauvegarde' : 'Sauvegarde', { exact: false }).first().waitFor()
+    await page.screenshot({ path: join(shots, `tab-agenda-${width}.png`) })
+    await page.goto(tab)
+    await page.getByRole('button', { name: 'Affichage : Agenda' }).waitFor()
+    await page.getByRole('button', { name: 'Affichage : Agenda' }).click()
+    await page.getByRole('radio', { name: 'Lanceur' }).click()
+    await page.keyboard.press('Escape')
+
+    // ⋯ Supprimer, confirmé.
+    if (!phone) {
+      await tile('À supprimer').getByRole('button', { name: 'Plus pour « À supprimer »' }).click()
+      await page.getByRole('menuitem', { name: 'Supprimer' }).click()
+      await page.getByRole('dialog', { name: 'Supprimer « À supprimer » ?' }).getByRole('button', { name: 'Supprimer', exact: true }).click()
+      await tile('À supprimer').waitFor({ state: 'detached' })
+      assert.equal((await api('/api/actions')).some((entry) => entry.id === doomed.id), false)
+    }
+
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  for (const action of await api('/api/actions')) {
+    if (action.projectId === project.id) await request.request.delete(`${base}/api/actions/${action.id}`)
+  }
+  await request.close()
+}
+
 const linuxServices = process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
@@ -635,6 +828,9 @@ try {
   const project = (await api('/api/projects')).find((entry) => entry.name === 'Nimbus')
   const conversation = (await api(`/api/projects/${project.id}/conversations`))[0]
   assert.ok(conversation, 'Nimbus a une conversation de démo')
+
+  console.log('actions-ui-check : onglet Actions du projet')
+  await checkProjectTab(base, env, api)
 
   // Une tâche créée depuis l'API, donc validée d'office.
   const created = await context.request.post(`${base}/api/projects/${project.id}/actions`, {
@@ -792,12 +988,18 @@ try {
     let stale = true
     const actionsList = `${base}/api/actions`
     await page.route(actionsList, async (route) => {
-      const response = await route.fetch()
-      const list = await response.json()
-      for (const entry of stale ? list : []) {
-        if (entry.id === service.id) entry.service = { ...entry.service, state: 'inactive', cwd: null, ports: [], startedAt: null, served: null }
+      // La page peut abandonner la requête pendant qu'on la relit (rechargement, relecture
+      // de React Query) : la route est alors déjà réglée, et il n'y a rien à rendre.
+      try {
+        const response = await route.fetch()
+        const list = await response.json()
+        for (const entry of stale ? list : []) {
+          if (entry.id === service.id) entry.service = { ...entry.service, state: 'inactive', cwd: null, ports: [], startedAt: null, served: null }
+        }
+        await route.fulfill({ response, json: list })
+      } catch (error) {
+        if (!/already handled|closed/i.test(error.message)) throw error
       }
-      await route.fulfill({ response, json: list })
     })
     await page.reload()
     // Le panneau peut rester ouvert d'un chargement à l'autre.

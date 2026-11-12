@@ -122,8 +122,7 @@ try {
   await mkdir(shots, { recursive: true })
 
   // --- Création, avec un script qui ne trouve rien ---------------------------------
-  await page.goto(`${base}/p/${project.id}/schedules`)
-  await page.getByRole('button', { name: 'Tâche', exact: true }).click()
+  await page.goto(`${base}/p/${project.id}/actions?nouvelle=agent`)
   const dialog = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
   await dialog.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Veille avec vérification')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
@@ -138,27 +137,45 @@ try {
   await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })
 
-  const card = page.locator('[data-schedule="Veille avec vérification"]')
-  await card.getByText('script avant chaque tour, 120 s au plus').waitFor()
+  // La tuile, et son détail qui montre le script validé.
+  const card = page.locator('[data-action-tile]', { has: page.getByText('Veille avec vérification', { exact: true }) })
+  const detail = page.getByRole('dialog', { name: 'Veille avec vérification', exact: true })
+  const openDetail = async () => {
+    await card.getByRole('button', { name: /^Veille avec vérification/ }).click()
+    await detail.waitFor()
+  }
+  const closeDetail = async () => {
+    await detail.getByRole('button', { name: 'Fermer', exact: true }).click()
+    await detail.waitFor({ state: 'hidden' })
+  }
+  await card.waitFor()
   let task = await mine()
   assert.equal(task.check.approved, true)
+  await openDetail()
+  await detail.getByText('echo "Rien de neuf"; exit 10').waitFor()
+  await closeDetail()
 
-  // --- « Lancer maintenant » : le script écarte le tir, sans session ----------------
-  await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
+  // --- « Lancer » : le script écarte le tir, sans session --------------------------
+  await card.getByRole('button', { name: 'Lancer « Veille avec vérification »', exact: true }).click()
   task = await until('tir écarté', (entry) => entry.runs[0]?.status === 'skipped', 30_000)
   assert.equal(task.runs[0].error, 'Rien de neuf')
   assert.equal(task.runs[0].conversationId, null)
   assert.equal(task.runs[0].check.exitCode, 10)
-  await card.getByRole('button', { name: /Historique des tirs/ }).click()
-  await card.getByText('· rien à faire').waitFor()
+  // Le passage écarté se lit dans le détail, avec la raison que le script a donnée.
+  await openDetail()
+  const skipped = detail.locator(`[data-run="${task.runs[0].id}"]`)
+  await skipped.getByText('sauté', { exact: true }).waitFor()
+  // Le premier passage qui a quelque chose à dire est déplié d'office.
+  await skipped.getByText('Rien de neuf').waitFor()
 
   // --- Le script trouve quelque chose : le tour part avec sa sortie -----------------
-  await card.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const editor = page.getByRole('dialog')
+  await detail.getByRole('button', { name: 'Modifier', exact: true }).click()
+  const editor = page.getByRole('dialog', { name: 'Modifier « Veille avec vérification »', exact: true })
   await typeScript(editor, 'echo "Version 9.9 publiée"')
   await editor.getByRole('button', { name: 'Enregistrer', exact: true }).click()
-  await editor.waitFor({ state: 'hidden' })
-  await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
+  await detail.waitFor()
+  await closeDetail()
+  await card.getByRole('button', { name: 'Lancer « Veille avec vérification »', exact: true }).click()
   task = await until('tour lancé', (entry) => entry.runs[0]?.conversationId, 90_000)
   const conversationId = task.runs[0].conversationId
   const events = await api(`/api/conversations/${conversationId}/events?after=0`)
@@ -188,27 +205,32 @@ try {
   const insertEvent = db.prepare('INSERT INTO events (conversation_id, seq, ts, type, payload) VALUES (?, ?, ?, ?, ?)')
   threadEvents.forEach((event, index) => insertEvent.run('agent-thread', index + 1, now + index, event.type, JSON.stringify(event)))
 
-  // La tâche se signale « À valider » sur sa carte, avant même qu'on l'ouvre.
+  // La tâche se signale « à relire » sur sa tuile, avant même qu'on l'ouvre.
   await page.reload()
-  await card.getByText('À valider', { exact: true }).waitFor()
-  await card.getByText('Script de vérification à valider').waitFor()
+  await card.getByText('À relire — script de vérification à valider').waitFor()
+  await card.getByRole('button', { name: 'Relire « Veille avec vérification »', exact: true }).waitFor()
 
   // Enregistrer la tâche sans toucher au script ne le valide pas, même quand l'éditeur
   // en a converti les fins de ligne à l'affichage. Un `\r` ne passe plus par l'API :
   // on le pose en base, comme une ligne écrite avant la normalisation.
   const crlf = script.replace('; ', '\r\n')
   db.prepare('UPDATE scheduled_tasks SET check_script = ? WHERE id = ?').run(crlf, task.id)
-  await card.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const untouched = page.getByRole('dialog')
+  await openDetail()
+  await detail.getByRole('button', { name: 'Modifier', exact: true }).click()
+  const untouched = page.getByRole('dialog', { name: 'Modifier « Veille avec vérification »', exact: true })
   await untouched.locator('[data-check-section] .cm-content').getByText('proposé par un agent').waitFor()
   await untouched.getByRole('button', { name: 'Enregistrer', exact: true }).click()
-  await untouched.waitFor({ state: 'hidden' })
+  await detail.waitFor()
+  await closeDetail()
   task = await mine()
   assert.equal(task.check.approved, false, 'Saving the task must not approve a script nobody touched')
   assert.equal(task.check.script, crlf)
   db.prepare('UPDATE scheduled_tasks SET check_script = ? WHERE id = ?').run(script, task.id)
   db.close()
-  await card.getByRole('button', { name: 'Lancer maintenant', exact: true }).click()
+  // À relire, la tuile ne propose que « Relire » : le lancement passe par l'API, que le
+  // serveur doit refuser de jouer tant que le script n'est pas validé.
+  const blocked = await context.request.post(`${base}/api/schedules/${task.id}/run`, { data: {} })
+  assert.ok(blocked.ok(), await blocked.text())
   task = await until('tir bloqué', (entry) => /en attente de validation/.test(entry.runs[0]?.error ?? ''), 15_000)
   assert.equal(task.runs[0].check, null, 'Un script non validé ne tourne pas')
 
@@ -232,13 +254,14 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'check-inline-approved-desktop.png') })
 
-  await page.goto(`${base}/p/${project.id}/schedules`)
-  await card.getByText('Script de vérification à valider').waitFor({ state: 'hidden' })
+  await page.goto(`${base}/p/${project.id}/actions`)
+  await card.getByRole('button', { name: 'Lancer « Veille avec vérification »', exact: true }).waitFor()
   await page.setViewportSize({ width: 390, height: 844 })
 
   // --- Le formulaire au téléphone -------------------------------------------------
-  await card.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const mobileForm = page.getByRole('dialog')
+  await card.getByRole('button', { name: 'Plus pour « Veille avec vérification »', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Modifier', exact: true }).click()
+  const mobileForm = page.getByRole('dialog', { name: 'Modifier « Veille avec vérification »', exact: true })
   await mobileForm.locator('[data-check-section]').scrollIntoViewIfNeeded()
   assert.equal(await mobileForm.evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'check-form-mobile.png') })

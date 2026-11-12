@@ -1,4 +1,4 @@
-import { AlarmClock, ArrowUpRight, Square, SquareTerminal, TriangleAlert } from 'lucide-react'
+import { AlarmClock, ArrowUpRight, ShieldQuestion, Square, SquareTerminal, TriangleAlert } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, RunStrip, cx } from '@solera/ui'
@@ -9,10 +9,14 @@ import { locale, useTranslate } from '../../lib/i18n'
 import type { ServedVersion } from '../../lib/served'
 import { useServerTimeZone } from '../../lib/schedules'
 import { WebLink } from '../WebLink'
-import { LaunchButton, ReviewButton, quietGestureClass } from './ActionGestures'
+import { LaunchButton } from './ActionGestures'
 import { KindChip, NatureIcon } from './ActionMarks'
 import type { TileHandlers } from './ActionTile'
 import { ServedLine } from './served/ServedLine'
+
+/** Un lien vers ce qui tourne : « Ouvrir ↗ », « Session ↗ ». */
+const LINK =
+  'inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs text-accent transition-colors hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11'
 
 /** Les passages qu'une ligne montre en pastilles (LST-4). */
 const ROW_RUNS = 10
@@ -99,7 +103,11 @@ function RowGestures({ item, section, handlers }: { item: Automation; section: S
     case 'live':
       return <LiveGestures item={item} handlers={handlers} />
     case 'review':
-      return <ReviewButton label={item.label} onReview={() => handlers.onOpen(item, true)} size="row" />
+      return (
+        <Button size="sm" variant="secondary" icon={<ShieldQuestion size={13} />} aria-label={t('launcher.review.named', { label: item.label })} onClick={() => handlers.onOpen(item, true)}>
+          {t('launcher.review.button')}
+        </Button>
+      )
     case 'scheduled':
       return <ScheduleFacts item={item} />
     case 'demand':
@@ -109,7 +117,7 @@ function RowGestures({ item, section, handlers }: { item: Automation; section: S
             <span className="hidden sm:inline">{t('actionsTab.row.schedule')}</span>
             <span className="sr-only sm:hidden">{t('actionsTab.row.scheduleNamed', { label: item.label })}</span>
           </Button>
-          <LaunchButton item={item} onLaunch={(worktreeId) => handlers.onLaunch(item, worktreeId)} size="row" />
+          <LaunchButton item={item} onLaunch={(worktreeId) => handlers.onLaunch(item, worktreeId)} />
         </span>
       )
   }
@@ -123,31 +131,32 @@ function LiveGestures({ item, handlers }: { item: Automation; handlers: TileHand
     return (
       <span className="flex items-center gap-1">
         {live.href ? (
-          <WebLink href={live.href} className={quietGestureClass('row')}>
+          <WebLink href={live.href} className={LINK}>
             {t('launcher.gesture.open')} <ArrowUpRight size={12} aria-hidden />
           </WebLink>
         ) : null}
-        <button
-          type="button"
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={<Square size={12} />}
           aria-label={t('launcher.switch.stop', { label: item.label })}
           onClick={() => handlers.onToggle(item, false)}
-          className={quietGestureClass('row')}
         >
-          <Square size={12} aria-hidden /> {t('actionsTab.row.stop')}
-        </button>
+          {t('actionsTab.row.stop')}
+        </Button>
       </span>
     )
   }
   if (live?.kind === 'terminal') {
     return (
-      <button type="button" onClick={() => handlers.onTerminal(item, live.terminalId)} className={quietGestureClass('row')}>
-        <SquareTerminal size={12} aria-hidden /> {t('launcher.gesture.terminal')}
-      </button>
+      <Button size="sm" variant="ghost" icon={<SquareTerminal size={13} />} onClick={() => handlers.onTerminal(item, live.terminalId)}>
+        {t('launcher.gesture.terminal')}
+      </Button>
     )
   }
   if (live?.kind === 'run' && live.conversationId) {
     return (
-      <Link to={conversationPath({ id: live.conversationId, projectId: item.projectId })} className={quietGestureClass('row')}>
+      <Link to={conversationPath({ id: live.conversationId, projectId: item.projectId })} className={LINK}>
         {t('launcher.gesture.session')} <ArrowUpRight size={12} aria-hidden />
       </Link>
     )

@@ -1,5 +1,5 @@
 import { Bot, CalendarDays, LayoutGrid, List, Server, SquareTerminal } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Banner } from '@solera/ui'
 import { ActionDrawer } from '../components/automations/ActionDrawer'
@@ -318,18 +318,32 @@ function usePanelAddress(): [ActionPanel | null, (next: ActionPanel | null) => v
   const written = useRef(keyOf({ action, nouvelle }))
   useEffect(() => {
     const key = keyOf({ action, nouvelle })
-    if (key === written.current) return
+    // Un rendu en retard sur `location` montre une adresse déjà dépassée.
+    if (key === written.current || key !== keyOf(addressNow())) return
     written.current = key
     setPanelState(panelFromAddress({ action, nouvelle }))
   }, [action, nouvelle])
 
-  const setPanel = (next: ActionPanel | null) => {
+  /*
+    L'adresse se lit au moment du geste, dans `location` : celle que rend le routeur
+    retarde d'une transition sur le tiroir, et la fermeture que garde le tiroir date
+    parfois d'un rendu où `?action=` n'était pas encore posé.
+  */
+  const write = useRef(setParams)
+  write.current = setParams
+  const setPanel = useCallback((next: ActionPanel | null) => {
     setPanelState(next)
-    const target = panelAddress(next, nouvelle)
+    const target = panelAddress(next, addressNow().nouvelle)
     written.current = keyOf(target)
-    if (keyOf(target) !== keyOf({ action, nouvelle })) setParams((current) => withAddress(current, target), { replace: true })
-  }
+    if (written.current !== keyOf(addressNow())) write.current(withAddress(new URLSearchParams(window.location.search), target), { replace: true })
+  }, [])
   return [panel, setPanel]
 }
 
 const keyOf = (address: PanelAddress) => `${address.action ?? ''}|${address.nouvelle ?? ''}`
+
+/** L'adresse du moment, celle que le routeur vient d'écrire même s'il ne l'a pas encore rendue. */
+function addressNow(): PanelAddress {
+  const params = new URLSearchParams(window.location.search)
+  return { action: params.get(ACTION_PARAM), nouvelle: params.get(NEW_PARAM) }
+}
