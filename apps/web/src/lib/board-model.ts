@@ -17,7 +17,7 @@ const ALL_COLUMNS: readonly CardColumn[] = [...OPEN_COLUMNS, 'done', 'abandoned'
 export const TINT_COUNT = 6
 
 /** Les fermées montrées dans Fait en « Les 5 récentes ». */
-const DONE_SHOWN = 5
+export const DONE_SHOWN = 5
 /** Les fermées montrées dans la cellule Fait d'un couloir, avant « N de plus ». */
 export const LANE_DONE_SHOWN = 2
 
@@ -212,7 +212,7 @@ const COMPARE: Record<BoardSort, (a: BoardCard, b: BoardCard) => number> = {
   number: (a, b) => b.card.number - a.card.number,
 }
 
-export function sortEntries(entries: readonly BoardCard[], sort: BoardSort): BoardCard[] {
+export function sortEntries<T extends BoardCard>(entries: readonly T[], sort: BoardSort): T[] {
   // Le tri est stable : des ex aequo gardent l'ordre du serveur.
   return [...entries].sort(COMPARE[sort])
 }
@@ -224,12 +224,12 @@ const byArrival = (a: BoardCard, b: BoardCard) => b.card.columnSince - a.card.co
  * Les tuiles d'une colonne, triées, et combien elle en a en tout. Fait est limitée en
  * « Les 5 récentes », ou à `cap` quand on en donne un (une cellule de couloir).
  */
-export function columnSlice(
-  entries: readonly BoardCard[],
+export function columnSlice<T extends BoardCard>(
+  entries: readonly T[],
   column: CardColumn,
   display: BoardDisplay,
   cap?: number,
-): { shown: BoardCard[]; total: number } {
+): { shown: T[]; total: number } {
   const own = entries.filter((entry) => entry.card.column === column)
   const sorted = column === 'done' ? [...own].sort(byArrival) : sortEntries(own, display.sort)
   const limit = column !== 'done' ? Infinity : (cap ?? (display.done === 'recent' ? DONE_SHOWN : Infinity))
@@ -297,6 +297,11 @@ function listCompare({ key, desc }: ListSort): (a: BoardCard, b: BoardCard) => n
     if (key === 'due' && (a.card.dueAt === null) !== (b.card.dueAt === null)) return a.card.dueAt === null ? 1 : -1
     return sign * LIST_COMPARE[key](a, b)
   }
+}
+
+/** Des lignes triées comme la Liste les trie sous l'en-tête choisi. */
+export function sortList<T extends BoardCard>(entries: readonly T[], sort: ListSort): T[] {
+  return [...entries].sort(listCompare(sort))
 }
 
 /**
