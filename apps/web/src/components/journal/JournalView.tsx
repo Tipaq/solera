@@ -171,8 +171,8 @@ function FilterPill({ label, selected, empty, onSelect }: {
 /**
  * L'icône de chaque nature, reprise du libellé qu'elle précède.
  *
- * Exportée pour la troisième colonne de l'Aperçu, qui est ce journal en miniature : une
- * seconde table d'icônes aurait divergé au premier ajout de nature.
+ * Exportée pour les « Derniers événements » de l'Aperçu, qui sont ce journal en miniature :
+ * une seconde table d'icônes aurait divergé au premier ajout de nature.
  */
 export const JOURNAL_KIND_ICONS: Record<JournalKind, ReactNode> = {
   note: <StickyNote size={15} />,

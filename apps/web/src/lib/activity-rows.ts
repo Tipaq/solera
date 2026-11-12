@@ -34,9 +34,8 @@ export interface ActivityRow {
 
 /**
  * Les lignes de l'Activité d'un projet, la plus récente d'abord : l'onglet les groupe,
- * le bloc « En ce moment » de l'Aperçu en garde les vivantes. Les deux lisent donc les
- * mêmes requêtes, et une session n'y change pas de point ni de résumé d'une vue à
- * l'autre.
+ * la vue d'un jalon en garde les siennes. Les deux lisent donc les mêmes requêtes, et
+ * une session n'y change pas de point ni de résumé d'une vue à l'autre.
  *
  * Rien n'est lu par fil. Les sessions viennent de la liste partagée avec la colonne, leur
  * état du socket, leur branche de **la** liste d'état des worktrees du projet (#78), la
