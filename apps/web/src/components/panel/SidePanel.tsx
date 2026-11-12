@@ -18,8 +18,9 @@ import {
   usePanelTree,
   useSelectedSubAgent,
   type PanelTab,
+  type PanelWorktree,
 } from '../../lib/panel'
-import { projectScope } from '../../lib/workspace-scope'
+import { projectScope, worktreeScope } from '../../lib/workspace-scope'
 import { resizeHandle } from '../../lib/resize-handle'
 import { useMediaQuery } from '../../lib/viewport'
 import { PanelFocus } from '../PanelFocus'
@@ -82,6 +83,7 @@ export const SidePanel = memo(function SidePanel({
   docked = false,
   canDock = false,
   workspaceName,
+  worktree,
   session,
   environment,
 }: {
@@ -109,6 +111,12 @@ export const SidePanel = memo(function SidePanel({
   docked?: boolean
   canDock?: boolean
   workspaceName?: string
+  /**
+   * En vue de lieu, l'arbre sans session que le geste « Diff » a désigné (carte #169) :
+   * Fichiers, Recherche et Git le parcourent à la place du dossier du projet. Terminaux
+   * et Actions, qui s'ouvrent à la racine, n'y sont pas proposés.
+   */
+  worktree?: PanelWorktree
   /** Ce que la vue *Projet* lit de la session : sa carte, son fil, son activité. */
   session?: ProjectPaneSession
   /** Où tourne la session ; en vue projet, l'environnement par défaut du projet. */
@@ -119,11 +127,12 @@ export const SidePanel = memo(function SidePanel({
   const t = useTranslate()
   // Un fil libre n'a pas de dossier : les cinq vues de répertoire n'ont pas d'objet.
   const hasWorkspace = projectId !== null
-  const scope = conversationId ?? projectScope(projectId ?? '')
+  const onWorktree = !conversationId && worktree !== undefined
+  const scope = conversationId ?? (onWorktree ? worktreeScope(worktree.id) : projectScope(projectId ?? ''))
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
   const workspaceLabel = hasWorkspace
-    ? [projectName, workspaceName ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+    ? [projectName, (onWorktree ? worktree.name : workspaceName) ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
     : t('panel.noWorkspace')
   const chosenTab = usePanelTab()
   // La vue *Web* n'existe que tant qu'une page y est ouverte. Elle ne dépend d'aucun
@@ -144,13 +153,17 @@ export const SidePanel = memo(function SidePanel({
   // retombe sur les fichiers plutôt que d'afficher un panneau vide. Sans dossier, c'est
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
   const sessionTab = chosenTab === 'agents' || chosenTab === 'project'
+  // Sur un arbre, les vues qui s'ouvriraient à la racine retombent sur Git.
+  const rootTab = onWorktree && (chosenTab === 'terminals' || chosenTab === 'actions')
   const tab: PanelTab = chosenTab === 'web'
     ? hasWeb ? 'web' : hasWorkspace ? 'files' : 'agents'
     : !hasWorkspace
       ? 'agents'
-      : conversationId || !sessionTab
-        ? chosenTab
-        : 'files'
+      : rootTab
+        ? 'git'
+        : conversationId || !sessionTab
+          ? chosenTab
+          : 'files'
   // Le badge de *Projet* compte ce qui attend une relecture : c'est la seule chose du
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
@@ -353,6 +366,7 @@ export const SidePanel = memo(function SidePanel({
         closable={!modal && !docked}
         tab={tab}
         hasWorkspace={hasWorkspace}
+        rootViews={!onWorktree}
         hasConversation={Boolean(conversationId)}
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
@@ -518,7 +532,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, rootViews, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -526,6 +540,8 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
   tab: PanelTab
   /** Faux sur un fil libre : les cinq vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
+  /** Faux sur un arbre sans session : Terminaux et Actions s'ouvriraient à la racine. */
+  rootViews: boolean
   hasConversation: boolean
   /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
   hasWeb: boolean
@@ -546,11 +562,15 @@ function ViewBar({ band, closable, tab, hasWorkspace, hasConversation, hasWeb, a
             active={tab === 'search'} onSelect={() => setPanelTab('search')} />
           <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
             active={tab === 'git'} onSelect={() => setPanelTab('git')} />
-          <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
-            active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
-          <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
-            badge={actionsBadge} badgeLabel={(label, count) => t('panel.tab.actions.badge', { label, count })}
-            badgeTone="caution" active={tab === 'actions'} onSelect={() => setPanelTab('actions')} />
+          {rootViews ? (
+            <>
+              <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
+                active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
+              <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
+                badge={actionsBadge} badgeLabel={(label, count) => t('panel.tab.actions.badge', { label, count })}
+                badgeTone="caution" active={tab === 'actions'} onSelect={() => setPanelTab('actions')} />
+            </>
+          ) : null}
         </>
       ) : null}
       {hasConversation ? (

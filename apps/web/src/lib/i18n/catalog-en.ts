@@ -2953,6 +2953,16 @@ export const en = {
   'code.base.rootOffDirty.other': ', {count} uncommitted files',
   'code.milestone': 'Milestone #{number}',
   'code.chip.filter': 'Filter the thread on {branch}',
+  'code.compare.title': 'Diff with base',
+  'code.compare.label': 'Diff of {branch} with the base',
+  'code.compare.against': 'since {base}',
+  'code.compare.loading': 'Reading the diff',
+  'code.compare.error': 'The diff could not be read.',
+  'code.compare.empty': 'This branch brings nothing compared to {base}.',
+  'code.compare.files.one': '{count} file · +{added} −{removed}',
+  'code.compare.files.other': '{count} files · +{added} −{removed}',
+  'code.gesture.rebaseRequest': 'Rebase branch {branch} onto {base}, then tell me if any conflicts are left to resolve.',
+  'code.gesture.unknownTree': 'Solera does not know this worktree.',
 
   // Recherche dans le fil et navigation par tours
   'thread.search.placeholder': 'Search in the conversation...',

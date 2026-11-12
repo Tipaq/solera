@@ -2949,6 +2949,16 @@ export const fr: Catalog = {
   'code.base.rootOffDirty.other': ', {count} fichiers non commités',
   'code.milestone': 'Jalon #{number}',
   'code.chip.filter': 'Filtrer le fil sur {branch}',
+  'code.compare.title': 'Diff avec la base',
+  'code.compare.label': 'Diff de {branch} avec la base',
+  'code.compare.against': 'depuis {base}',
+  'code.compare.loading': 'Lecture du diff',
+  'code.compare.error': 'Le diff n’a pas pu être lu.',
+  'code.compare.empty': 'Cette branche n’apporte rien par rapport à {base}.',
+  'code.compare.files.one': '{count} fichier · +{added} −{removed}',
+  'code.compare.files.other': '{count} fichiers · +{added} −{removed}',
+  'code.gesture.rebaseRequest': 'Rebase la branche {branch} sur {base}, puis dis-moi si des conflits restent à trancher.',
+  'code.gesture.unknownTree': 'Solera ne connaît pas cet arbre.',
 
   // Recherche dans le fil et navigation par tours
   'thread.search.placeholder': 'Rechercher dans la conversation...',

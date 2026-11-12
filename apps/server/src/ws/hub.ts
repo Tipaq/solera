@@ -9,11 +9,12 @@ import {
 import type { EventLog } from '../events/event-log.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'
+import type { Db } from '@solera/db'
 import type { AppContext } from '../http/context.js'
 import { canReadConversation } from '../conversations/scope.js'
 import { readConversationState } from '../conversations/state.js'
 import { watchDirectory } from '../tree-watch.js'
-import { conversationWorkspace, projectWorkspace, resolveInside } from '../workspace.js'
+import { conversationWorkspace, projectWorkspace, resolveInside, worktreeWorkspace } from '../workspace.js'
 
 /**
  * Routes dont le succès change ce que la sidebar des autres onglets affiche.
@@ -70,6 +71,21 @@ export const AWAITING_ROUTES = new Set([
   'POST /api/conversations/:id/filings/:requestId',
   'POST /api/conversations/:id/card-filings/:requestId',
 ])
+
+type TreeScope = 'conversation' | 'project' | 'worktree'
+
+/** Le dossier suivi par l'explorateur, par portée : les résolveurs des routes du panneau. */
+const WORKSPACE_OF: Record<TreeScope, (db: Db, id: string, userId: string) => string> = {
+  conversation: conversationWorkspace,
+  project: projectWorkspace,
+  worktree: worktreeWorkspace,
+}
+
+const NOT_FOUND: Record<TreeScope, { code: string; message: string }> = {
+  conversation: { code: 'conversation_not_found', message: 'Conversation not found.' },
+  project: { code: 'project_not_found', message: 'Project not found.' },
+  worktree: { code: 'worktree_not_found', message: 'Worktree not found.' },
+}
 
 /**
  * Un socket par onglet, multiplexé sur plusieurs conversations : la sidebar suit les
@@ -217,25 +233,18 @@ class Connection {
    * d'une conversation dont aucune session ne tourne. Le droit de lecture est revérifié
    * à chaque déclaration, comme pour le statut, plutôt que retenu du premier appel.
    */
-  watchTree(scope: 'conversation' | 'project', id: string, paths: string[]): void {
-    // Les deux portées partagent la même table : un identifiant de conversation et un
-    // identifiant de projet ne peuvent pas se confondre, mais la clé le dit quand même.
+  watchTree(scope: TreeScope, id: string, paths: string[]): void {
+    // Les trois portées partagent la même table : leurs identifiants ne peuvent pas se
+    // confondre, mais la clé le dit quand même.
     const key = `${scope}:${id}`
     const current = this.treeWatches.get(key) ?? new Map<string, () => void>()
 
     let cwd: string | null = null
     if (paths.length > 0) {
       try {
-        cwd =
-          scope === 'conversation'
-            ? conversationWorkspace(this.ctx.db, id, this.userId)
-            : projectWorkspace(this.ctx.db, id, this.userId)
+        cwd = WORKSPACE_OF[scope](this.ctx.db, id, this.userId)
       } catch {
-        this.send({
-          t: 'error',
-          code: scope === 'conversation' ? 'conversation_not_found' : 'project_not_found',
-          message: scope === 'conversation' ? 'Conversation not found.' : 'Project not found.',
-        })
+        this.send({ t: 'error', ...NOT_FOUND[scope] })
       }
     }
 
