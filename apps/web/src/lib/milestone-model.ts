@@ -315,6 +315,109 @@ export function maturityReasons(entry: MilestoneEntry): MaturityReason[] {
   }
 }
 
+/* ------------------------------------------------------------------ page d'un jalon */
+
+/**
+ * Ce que fait le bouton de la prochaine action sur la page d'un jalon (JAL-6). Une
+ * session bloquée ouvre la fiche de sa carte, où l'on répond sur place : sa demande n'est
+ * pas recopiée dans l'affinage (spec §2.6-1, « une seule liste »).
+ */
+export type MilestoneGesture =
+  | { kind: 'refine' }
+  | { kind: 'scroll'; target: 'affinage' | 'lancer' }
+  | { kind: 'merge' }
+  | { kind: 'sheet'; number: number }
+
+export function gestureOf(entry: MilestoneEntry): MilestoneGesture | null {
+  const action = nextAction(entry)
+  switch (action.kind) {
+    case 'refine':
+      return { kind: 'refine' }
+    case 'validateDraft':
+    case 'answer':
+    case 'refining':
+    case 'openRefine':
+    case 'settle':
+    case 'undoCycle':
+    case 'reviewDeps':
+      return { kind: 'scroll', target: 'affinage' }
+    case 'launch':
+    case 'follow':
+      return { kind: 'scroll', target: 'lancer' }
+    case 'merge':
+      return { kind: 'merge' }
+    case 'answerBlock':
+      return { kind: 'sheet', number: action.card }
+    case 'review':
+      return null
+  }
+}
+
+/**
+ * L'affinage attend quelque chose de toi (JAL-8) : il passe alors en tête de la page,
+ * avant les vagues. Une idée sans cartes aussi : c'est d'ici qu'on la lance.
+ */
+export function refinePending(entry: MilestoneEntry): boolean {
+  return (
+    entry.questions !== null ||
+    entry.draft !== null ||
+    entry.card.refinement?.change != null ||
+    entry.refining === 'waiting' ||
+    entry.toClarify.length > 0 ||
+    entry.notAccepted.length > 0 ||
+    entry.cycle.length > 0 ||
+    (entry.maturity === 'idea' && entry.children.length === 0)
+  )
+}
+
+/**
+ * L'étage d'une carte dans le jeu (VAG-3) : 0 sans bloqueur dedans, sinon un de plus que
+ * le plus haut de ses bloqueurs. Un cycle est coupé là où le parcours le referme, pour
+ * que chaque carte ait sa colonne : son arête qui remonte le montre.
+ */
+export function layersOf<T extends Pick<CardDto, 'id' | 'blockedBy'>>(cards: readonly T[]): Map<string, number> {
+  const byId = new Map(cards.map((card) => [card.id, card]))
+  const layers = new Map<string, number>()
+  const visiting = new Set<string>()
+  const visit = (card: T): number => {
+    const known = layers.get(card.id)
+    if (known !== undefined) return known
+    if (visiting.has(card.id)) return 0
+    visiting.add(card.id)
+    const blockers = card.blockedBy.flatMap((blocker) => byId.get(blocker.id) ?? [])
+    const layer = blockers.length === 0 ? 0 : 1 + Math.max(...blockers.map(visit))
+    visiting.delete(card.id)
+    layers.set(card.id, layer)
+    return layer
+  }
+  for (const card of cards) visit(card)
+  // Coupé, un cycle peut laisser un étage vide (la carte qui le referme compte 0 pour
+  // celle qui l'attend) : les étages se resserrent, dans le même ordre.
+  const rank = new Map([...new Set(layers.values())].sort((a, b) => a - b).map((layer, index) => [layer, index]))
+  return new Map([...layers].map(([id, layer]) => [id, rank.get(layer)!]))
+}
+
+/**
+ * Les vagues d'un jalon (VAG-3, VAG-4) : une liste par étage, de gauche à droite, sans
+ * les abandonnées ; dans une vague, ce qui reste à faire en haut, puis par numéro.
+ */
+export function wavesOf(cards: readonly CardDto[]): CardDto[][] {
+  const shown = cards.filter((card) => card.column !== 'abandoned')
+  const layers = layersOf(shown)
+  const waves: CardDto[][] = []
+  for (const card of shown) (waves[layers.get(card.id)!] ??= []).push(card)
+  return waves.map((wave) => wave.sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || byNumber(a, b)))
+}
+
+/** Où en est une vague (VAG-5) : terminée, ou ses ouvertes et en combien de passes. */
+export function waveProgress(
+  wave: readonly CardDto[],
+  concurrency: number,
+): { kind: 'finished' } | { kind: 'open'; open: number; passes: number } {
+  const open = wave.filter(isOpen).length
+  return open === 0 ? { kind: 'finished' } : { kind: 'open', open, passes: Math.ceil(open / Math.max(1, concurrency)) }
+}
+
 /* ------------------------------------------------------------------ « Ce qui t'attend » */
 
 /**

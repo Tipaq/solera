@@ -31,9 +31,10 @@ export const clientMessageSchema = z.discriminatedUnion('t', [
     t: z.literal('watch-tree'),
     /**
      * L'explorateur vit aussi en vue projet, où aucune conversation n'existe : le
-     * répertoire suivi est alors le workspace du projet plutôt que celui d'un fil.
+     * répertoire suivi est alors le workspace du projet plutôt que celui d'un fil ; et
+     * sur un arbre sans session (portée `worktree`, carte #169), son dossier.
      */
-    scope: z.enum(['conversation', 'project']),
+    scope: z.enum(['conversation', 'project', 'worktree']),
     id: z.string(),
     // Borné parce que chaque dossier coûte une veille inotify, ressource comptée par
     // utilisateur sur la machine hôte.
@@ -148,7 +149,7 @@ export type ServerMessage =
    * du panneau, un éditeur hors de Solera, une autre conversation sur le même
    * worktree.
    */
-  | { t: 'tree-changed'; scope: 'conversation' | 'project'; id: string; path: string }
+  | { t: 'tree-changed'; scope: 'conversation' | 'project' | 'worktree'; id: string; path: string }
   /**
    * Le retard dépasse CATCHUP_THRESHOLD : le client doit recharger par la route REST
    * paginée plutôt que de recevoir le delta sur le socket.

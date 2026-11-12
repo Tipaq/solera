@@ -9,7 +9,7 @@ import {
   type ServerMessage,
   type SoleraEvent,
 } from '@solera/protocol'
-import { decodeScope, projectScope, type WorkspaceScope } from './workspace-scope'
+import { decodeScope, encodeScope, type WorkspaceScope } from './workspace-scope'
 
 export interface StreamListener {
   onEvent(seq: number, ts: number, event: SoleraEvent): void
@@ -388,7 +388,7 @@ class WsClient {
     // Avant le filtre par abonné : l'explorateur suit une conversation dont le fil n'a
     // pas d'abonnement au journal, le panneau se lisant sans session démarrée.
     if (message.t === 'tree-changed') {
-      const scope = message.scope === 'project' ? projectScope(message.id) : message.id
+      const scope = encodeScope(message.scope, message.id)
       for (const listener of this.treeListeners) listener(scope, message.path)
       return
     }

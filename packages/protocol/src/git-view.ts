@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { DiffFileDto } from './api.js'
+import { refNameSchema } from './git-write.js'
 
 /**
  * Ce que la vue Git du panneau lit du dépôt : le graphe, les références, un commit.
@@ -212,6 +213,33 @@ export interface CommitDetailDto {
   files: DiffFileDto[]
   patch: string
   truncated: boolean
+}
+
+/**
+ * Le diff d'une branche avec la base (S6, carte #169) :
+ * `GET /api/projects/:id/compare?base=<ref>&head=<ref>`. Deux noms de référence, pas
+ * de plage : la route compose elle-même `base...head`, et rien de ce que l'appelant
+ * écrit n'arrive à git comme une option.
+ */
+export const compareQuerySchema = z.object({
+  base: refNameSchema,
+  head: refNameSchema,
+})
+export type CompareQuery = z.infer<typeof compareQuerySchema>
+
+/**
+ * Ce que la branche apporte depuis qu'elle a quitté la base (`base...head`, depuis leur
+ * ancêtre commun) : ce qu'une PR montrerait. Ce que la base a reçu depuis n'y figure
+ * pas, il se compte dans `behind`.
+ */
+export interface CompareDto {
+  files: DiffFileDto[]
+  patch: string
+  truncated: boolean
+  /** Commits de la branche que la base n'a pas. */
+  ahead: number
+  /** Commits de la base que la branche n'a pas. */
+  behind: number
 }
 
 /**
