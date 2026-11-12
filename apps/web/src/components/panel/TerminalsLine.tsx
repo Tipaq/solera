@@ -9,7 +9,7 @@ const DOTS: Record<StatusTone, string> = {
   caution: 'bg-caution',
   critical: 'bg-critical',
   accent: 'bg-accent',
-  neutral: 'bg-ink-faint/50',
+  neutral: 'bg-line-strong',
 }
 
 /**
@@ -41,6 +41,13 @@ export function TerminalsLine({
 }) {
   const t = useTranslate()
   const full = terminals.length >= MAX_TERMINALS_PER_PROJECT
+  const blocked = full || opening
+  const stateLabel = (terminal: TerminalDto) =>
+    terminal.alive
+      ? t('terminal.tab.shellAlive')
+      : terminal.exitCode
+        ? t('terminal.tab.shellFailed', { code: terminal.exitCode })
+        : t('terminal.tab.shellDone')
 
   return (
     // Le repère sert aux suites : la ligne doit tenir sur 48 px sans déborder.
@@ -68,15 +75,15 @@ export function TerminalsLine({
                 >
                   <span className="max-w-[8rem] truncate">{terminal.title}</span>
                   <span className="text-micro text-ink-faint">{dir ?? t('terminal.dir.workspace')}</span>
-                  <span className="sr-only">
-                    {terminal.alive ? t('terminal.tab.shellAlive') : t('terminal.tab.shellDone')}
-                  </span>
+                  {/* Le point est muet : l'état se dit aussi en toutes lettres. */}
+                  <span className="sr-only">{stateLabel(terminal)}</span>
                 </button>
                 <TooltipButton
                   type="button"
                   onClick={() => onClose(terminal.id)}
                   aria-label={t('terminal.tab.close', { title: terminal.title })}
-                  className="rounded p-0.5 text-ink-faint opacity-0 group-hover/term:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:opacity-100"
+                  // Au doigt, toujours là, et toute la hauteur de la pastille pour cible.
+                  className="rounded p-0.5 text-ink-faint opacity-0 group-hover/term:opacity-100 hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:self-stretch pointer-coarse:px-2.5 pointer-coarse:opacity-100"
                 >
                   <X size={13} />
                 </TooltipButton>
@@ -86,13 +93,13 @@ export function TerminalsLine({
         </span>
         <TooltipButton
           type="button"
-          // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir
-          // changer donne l'impression que rien ne s'est passé.
-          onClick={onNew}
-          disabled={full || opening}
+          // Désarmé plutôt que `disabled` : un bouton désactivé ne reçoit pas le pointeur,
+          // et l'infobulle qui dit pourquoi « + » ne répond plus ne paraîtrait jamais.
+          onClick={blocked ? undefined : onNew}
+          aria-disabled={blocked}
           aria-label={t('terminal.new')}
           title={full ? t('terminal.max', { max: MAX_TERMINALS_PER_PROJECT }) : t('terminal.new')}
-          className={cx(panelToolClass(), 'disabled:opacity-40')}
+          className={cx(panelToolClass(), 'aria-disabled:cursor-default aria-disabled:opacity-40')}
         >
           {opening ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
         </TooltipButton>

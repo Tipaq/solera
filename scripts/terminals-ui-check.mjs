@@ -199,7 +199,14 @@ try {
   }
   await openTerminals(inWorktree)
   await line().getByText('6', { exact: true }).waitFor()
-  assert.equal(await line().getByRole('button', { name: 'Nouveau terminal', exact: true }).isDisabled(), true, 'au plafond, « + » est désactivé')
+  const plus = line().getByRole('button', { name: 'Nouveau terminal', exact: true })
+  assert.equal(await plus.getAttribute('aria-disabled'), 'true', 'au plafond, « + » est désarmé')
+  // Et il dit pourquoi : désarmé, pas `disabled`, sinon l'infobulle ne paraîtrait jamais.
+  await plus.hover()
+  await page.getByRole('tooltip').filter({ hasText: 'Maximum 6 terminaux par projet' }).waitFor()
+  await plus.click()
+  await delay(500)
+  assert.equal(await line().locator('[data-terminal-pill]').count(), 6, 'un clic au plafond n’ouvre rien')
   await oneLine('six shells, 40 rem')
   await openTerminals(inWorktree, 352)
   await oneLine('six shells, 22 rem')

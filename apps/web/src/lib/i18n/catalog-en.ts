@@ -2257,6 +2257,7 @@ export const en = {
   // Terminal
   'terminal.tab.shellAlive': 'Shell running',
   'terminal.tab.shellDone': 'Shell finished',
+  'terminal.tab.shellFailed': 'Exited with an error (code {code})',
   'terminal.tab.close': 'Close {title}',
   'terminal.new': 'New terminal',
   'terminal.max': 'Maximum {max} terminals per project',

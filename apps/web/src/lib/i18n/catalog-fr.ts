@@ -2253,6 +2253,7 @@ export const fr: Catalog = {
   // Terminal
   'terminal.tab.shellAlive': 'Shell actif',
   'terminal.tab.shellDone': 'Shell terminé',
+  'terminal.tab.shellFailed': 'Sorti en erreur (code {code})',
   'terminal.tab.close': 'Fermer {title}',
   'terminal.new': 'Nouveau terminal',
   'terminal.max': 'Maximum {max} terminaux par projet',

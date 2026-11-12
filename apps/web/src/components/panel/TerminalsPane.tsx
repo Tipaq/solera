@@ -64,12 +64,15 @@ export const TerminalsPane = memo(function TerminalsPane({
   const full = (terminals?.length ?? 0) >= MAX_TERMINALS_PER_PROJECT
   // Une relance repart là où le shell tournait, et dans l'environnement de la session
   // qui l'avait ouvert : c'est elle qui le porte, pas la session affichée.
+  // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir changer
+  // donne l'impression que rien ne s'est passé.
   const openNew = (relaunched?: TerminalDto) =>
     open.mutate(relaunched ? { cwd: relaunched.cwd, ...(relaunched.conversationId ? { conversationId: relaunched.conversationId } : {}) } : { conversationId }, {
       onSuccess: (created) => setActive(created.id),
     })
 
   const activeTerminal = terminals?.find((terminal) => terminal.id === active)
+  const failure = error ?? open.error ?? close.error
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
@@ -83,11 +86,9 @@ export const TerminalsPane = memo(function TerminalsPane({
         onNew={() => openNew()}
       />
 
-      {error || open.error || close.error ? (
+      {failure ? (
         <PanelNotice tone="critical">
-          {(error ?? open.error ?? close.error) instanceof Error
-            ? (error ?? open.error ?? close.error)?.message
-            : t('terminal.unavailable')}
+          {failure instanceof Error ? failure.message : t('terminal.unavailable')}
         </PanelNotice>
       ) : null}
 
