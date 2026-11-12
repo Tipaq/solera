@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { CardDto } from '@solera/protocol'
 import { boardModel, type BoardModel } from './board-model'
+import type { StatusOf } from './card-state'
 import { useCards } from './cards'
 import { useLiveCardStatuses } from './milestones'
 
@@ -11,6 +12,8 @@ import { useLiveCardStatuses } from './milestones'
 export function useBoardData(projectId: string | undefined): BoardModel & {
   /** Toutes les cartes du projet, parentes comprises. */
   all: CardDto[]
+  /** Le statut vivant d'une session, pour qui doit savoir où mène une carte. */
+  statusOf: StatusOf
   isPending: boolean
   isError: boolean
   refetch: () => void
@@ -18,7 +21,7 @@ export function useBoardData(projectId: string | undefined): BoardModel & {
   const { data: cards, isPending, isError, refetch } = useCards(projectId)
   const statusOf = useLiveCardStatuses(cards)
   const model = useMemo(() => boardModel(cards ?? [], { statusOf }), [cards, statusOf])
-  return { ...model, all: cards ?? NO_CARDS, isPending, isError, refetch: () => void refetch() }
+  return { ...model, all: cards ?? NO_CARDS, statusOf, isPending, isError, refetch: () => void refetch() }
 }
 
 const NO_CARDS: CardDto[] = []

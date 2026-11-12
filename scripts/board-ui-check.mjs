@@ -276,7 +276,7 @@ try {
   const firstInTodo = () => todo.locator('[data-card-tile]').first().getAttribute('data-card-tile')
   const display = page.getByRole('dialog', { name: 'Affichage', exact: true })
   const sortBy = async (name) => {
-    await page.getByRole('button', { name: 'Affichage', exact: true }).click()
+    await page.getByRole('button', { name: /^Affichage/ }).click()
     await display.getByRole('radiogroup', { name: 'Tri dans les colonnes', exact: true }).getByRole('radio', { name, exact: true }).click()
     await page.keyboard.press('Escape')
     await display.waitFor({ state: 'detached' })
@@ -374,7 +374,7 @@ try {
 
   // Les couloirs par jalon (B-4.7) : une section par jalon qui a des feuilles ouvertes,
   // puis « Sans jalon » ; les tuiles n'y portent pas l'étiquette de leur jalon.
-  await page.getByRole('button', { name: 'Affichage', exact: true }).click()
+  await page.getByRole('button', { name: /^Affichage/ }).click()
   await display.getByRole('radio', { name: 'Couloirs par jalon', exact: true }).click()
   await page.keyboard.press('Escape')
   const lane = page.getByRole('region', { name: 'v1.2 — offline et radar', exact: true })
@@ -385,7 +385,7 @@ try {
   assert.equal(await lane.locator('[title^="Jalon #"]').count(), 0)
   assert.equal(await lane.getByRole('link', { name: 'Ouvrir le jalon', exact: true }).getAttribute('href'), `/p/${project.id}/timeline/11`)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-lanes.png') })
-  await page.getByRole('button', { name: 'Affichage', exact: true }).click()
+  await page.getByRole('button', { name: /^Affichage/ }).click()
   await display.getByRole('radio', { name: 'Aucun', exact: true }).click()
   await page.keyboard.press('Escape')
 
@@ -396,6 +396,106 @@ try {
   await page.getByRole('button', { name: /^Terminé/ }).click()
   await page.getByRole('region', { name: 'Terminé', exact: true }).locator('[data-card-tile]').first().waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-desktop.png') })
+
+  // La Liste (B-5) : choisie dans « Affichage ▾ », retenue dans `?vue=`.
+  const listCards = async () => (await (await context.request.get(`${base}/api/projects/${project.id}/cards`)).json())
+  const chooseView = async (name) => {
+    await page.getByRole('button', { name: /^Affichage/ }).click()
+    await display.getByRole('radiogroup', { name: 'Vues', exact: true }).getByRole('radio', { name, exact: true }).click()
+    await page.keyboard.press('Escape')
+    await display.waitFor({ state: 'detached' })
+  }
+  await chooseView('Liste')
+  assert.equal(new URL(page.url()).searchParams.get('vue'), 'liste')
+  const list = page.locator('[data-board-list]')
+  await list.getByRole('region', { name: 'v1.2 — offline et radar', exact: true }).waitFor()
+  await list.getByRole('region', { name: 'Sans jalon', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-list.png') })
+
+  // Le clavier (B-5.4) : j/k et ↑↓ déplacent la sélection, 1–4 rangent pour de bon, Entrée ouvre la fiche.
+  const rowNumbers = () => list.locator('li[data-card-tile]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-card-tile')))
+  const selectedRow = () => list.locator('li[aria-current]').getAttribute('data-card-tile')
+  await list.focus()
+  await page.keyboard.press('j')
+  const rows = await rowNumbers()
+  assert.equal(await selectedRow(), rows[0])
+  await page.keyboard.press('ArrowDown')
+  assert.equal(await selectedRow(), rows[1])
+  await page.keyboard.press('k')
+  assert.equal(await selectedRow(), rows[0])
+  const keyed = (await listCards()).find((entry) => String(entry.number) === rows[0])
+  const [key, target] = keyed.column === 'in_progress' ? ['3', 'review'] : ['2', 'in_progress']
+  const filed = page.waitForResponse((response) => response.url().endsWith(`/api/cards/${keyed.id}`) && response.request().method() === 'PATCH')
+  await page.keyboard.press(key)
+  assert.ok((await filed).ok())
+  assert.equal((await listCards()).find((entry) => entry.id === keyed.id).column, target, `la touche ${key} range #${keyed.number}`)
+  // La sélection suit la carte où le tri la range.
+  assert.equal(await selectedRow(), rows[0])
+  await page.keyboard.press('Enter')
+  await page.getByRole('dialog', { name: `Carte #${keyed.number}`, exact: true }).waitFor()
+  assert.equal(new URL(page.url()).searchParams.get('fiche'), rows[0])
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog', { name: `Carte #${keyed.number}`, exact: true }).waitFor({ state: 'hidden' })
+  await context.request.patch(`${base}/api/cards/${keyed.id}`, { data: { column: keyed.column } })
+
+  // Le tri par en-tête (B-5.1) : un clic trie, le second inverse.
+  await page.reload()
+  await list.waitFor()
+  const loose = list.getByRole('region', { name: 'Sans jalon', exact: true })
+  const looseTitles = () => loose.locator('li[data-card-tile] [data-row-title]').allTextContents()
+  await list.getByRole('button', { name: 'Titre', exact: true }).click()
+  const ascending = await looseTitles()
+  assert.deepEqual(ascending, [...ascending].sort((a, b) => a.localeCompare(b)))
+  await list.getByRole('button', { name: 'Titre', exact: true }).click()
+  assert.deepEqual(await looseTitles(), [...ascending].reverse())
+
+  // « Tout voir (N) » de Terminé (B-4.4) : le filtre « colonne : Terminé », en Liste.
+  const spare = (await listCards())
+    .filter((entry) => entry.column === 'todo' && entry.children.length === 0 && !entry.milestone && ![2, 13, number, sister.number].includes(entry.number))
+    .slice(0, 4)
+  for (const entry of spare) await context.request.patch(`${base}/api/cards/${entry.id}`, { data: { column: 'done' } })
+  const doneCount = (await listCards()).filter((entry) => entry.column === 'done' && entry.children.length === 0).length
+  assert.ok(doneCount > 5, `plus de cinq faites : ${doneCount}`)
+  await chooseView('Kanban')
+  await page.reload()
+  await page.getByRole('button', { name: `Tout voir (${doneCount})`, exact: true }).click()
+  await list.waitFor()
+  assert.equal(new URL(page.url()).searchParams.get('vue'), 'liste')
+  await page.getByText('colonne : Terminé', { exact: true }).waitFor()
+  assert.equal(await list.locator('li[data-card-tile]').count(), doneCount)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-list-done.png') })
+  await page.getByRole('button', { name: 'Retirer ce filtre', exact: true }).click()
+  for (const entry of spare) await context.request.patch(`${base}/api/cards/${entry.id}`, { data: { column: 'todo' } })
+
+  // Par geste (B-6) : cinq sections, une carte une fois, « Lancer » mène à sa destination.
+  await chooseView('Par geste')
+  await page.reload()
+  const gestures = page.locator('[data-board-gestures]')
+  const section = (name) => gestures.getByRole('region', { name, exact: true })
+  for (const name of ['À toi', 'Les agents travaillent', 'Prêtes à partir', 'Attendent une autre carte', 'Fait cette semaine']) await section(name).waitFor()
+  await section('À toi').locator(`[data-card-tile="${number}"]`).waitFor()
+  assert.equal(await section('Fait cette semaine').locator('[data-card-tile]').count(), 0, 'Fait cette semaine est repliée')
+  const tiles = await gestures.locator('[data-card-tile]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-card-tile')))
+  assert.equal(new Set(tiles).size, tiles.length, 'une carte n’apparaît qu’une fois')
+  const launch = section('Prêtes à partir').getByRole('link', { name: 'Lancer', exact: true }).first()
+  assert.match(await launch.getAttribute('href'), new RegExp(`^(/p/${project.id}/c/|\\?)`))
+  const first = (await listCards()).find((entry) => entry.number === 1)
+  if (first.column === 'todo' && first.acceptedAt !== null && first.toClarifySince === null) {
+    await section('Attendent une autre carte').getByText(`après #${number}`, { exact: true }).waitFor()
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-gestures.png') })
+
+  // Au téléphone (B-8) : la Liste défile dans sa largeur, Par geste tient en une colonne.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(300)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-gestures-mobile.png') })
+  await chooseView('Liste')
+  assert.ok(await list.evaluate((node) => node.scrollWidth > node.clientWidth), 'la Liste défile de côté')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'board-list-mobile.png') })
+  await chooseView('Kanban')
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   await page.goto(`${board}?carte=${number}`)
   await editCard(page, panel)
@@ -431,7 +531,7 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, promotion d’une sous-tâche, lien « bloque », référence #n et aperçu, éditeur refermé à côté, glisser persisté, tri retenu, recherche, drapeaux et « Ce qui t’attend », fiche sur place, filtre par jalon, couloirs, Terminé repliée, mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, promotion d’une sous-tâche, lien « bloque », référence #n et aperçu, éditeur refermé à côté, glisser persisté, tri retenu, recherche, drapeaux et « Ce qui t’attend », fiche sur place, filtre par jalon, couloirs, Terminé repliée, Liste (clavier, 1–4 persisté, tri, « Tout voir »), Par geste, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

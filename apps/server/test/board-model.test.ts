@@ -8,8 +8,13 @@ const {
   TINT_COUNT,
   activeFilters,
   boardModel,
+  DEFAULT_LIST_SORT,
   columnSlice,
+  gestureSections,
   laneGroups,
+  listGroups,
+  nextListSort,
+  openBlockers,
   matches,
   passes,
   readDisplay,
@@ -262,6 +267,109 @@ test('couloirs : un par jalon ayant des feuilles ouvertes, dans l’ordre des ja
   assert.deepEqual(groups[2]!.entries.map((item) => item.card.number), [20])
   // Sans feuille ouverte hors jalon, pas de couloir « Sans jalon ».
   assert.deepEqual(laneGroups(cards.filter((item) => item.milestone !== null), milestones).map((group) => group.milestone?.card.number ?? null), [1, 3])
+})
+
+/* ------------------------------------------------------------------ B-5 Liste */
+
+const numbers = (entries: { card: CardDto }[]) => entries.map((item) => item.card.number)
+
+test('liste : un groupe par jalon dans l’ordre des jalons, puis « Sans jalon », les groupes vides omis', () => {
+  const first = card(1, { dueAt: NOW + DAY })
+  const finished = card(2)
+  const second = card(3)
+  const a = card(10)
+  const b = card(11, { column: 'done' })
+  const c = card(12)
+  const loose = card(20)
+  adopt(first, a)
+  adopt(finished, b)
+  adopt(second, c)
+  const { cards, milestones } = model([first, finished, second, a, b, c, loose])
+  // Un jalon fini garde son groupe tant que ses closes se montrent, à l’inverse des couloirs.
+  const groups = listGroups(cards, milestones, DEFAULT_DISPLAY, null, DEFAULT_LIST_SORT)
+  assert.deepEqual(groups.map((group) => group.milestone?.card.number ?? null), [1, 2, 3, null])
+  assert.deepEqual(numbers(groups[3]!.entries), [20])
+  const hidden = listGroups(cards, milestones, { ...DEFAULT_DISPLAY, done: 'hidden' }, null, DEFAULT_LIST_SORT)
+  assert.deepEqual(hidden.map((group) => group.milestone?.card.number ?? null), [1, 3, null])
+})
+
+test('liste : les closes selon l’affichage, le filtre « colonne : Fait » les montre toutes', () => {
+  const done = Array.from({ length: 7 }, (_, index) => card(index + 1, { column: 'done', columnSince: NOW - index * DAY }))
+  const cards = model([...done, card(20), card(30, { column: 'abandoned' })]).cards
+  const shown = (display: typeof DEFAULT_DISPLAY, column: 'done' | null = null) =>
+    numbers(listGroups(cards, [], display, column, { key: 'state', desc: false }).flatMap((group) => group.entries)).sort((a, b) => a - b)
+  // « Les 5 récentes » : les cinq dernières arrivées en Fait, pas toutes.
+  assert.deepEqual(shown(DEFAULT_DISPLAY), [1, 2, 3, 4, 5, 20])
+  assert.deepEqual(shown({ ...DEFAULT_DISPLAY, done: 'all' }), [1, 2, 3, 4, 5, 6, 7, 20])
+  assert.deepEqual(shown({ ...DEFAULT_DISPLAY, done: 'hidden' }), [20])
+  assert.deepEqual(shown({ ...DEFAULT_DISPLAY, done: 'hidden', abandoned: true }), [20, 30])
+  // « Tout voir » de Fait : la colonne filtrée montre toutes ses cartes, même masquées.
+  const onlyDone = model([...done]).cards
+  assert.equal(listGroups(onlyDone, [], { ...DEFAULT_DISPLAY, done: 'hidden' }, 'done', DEFAULT_LIST_SORT)[0]!.entries.length, 7)
+})
+
+test('liste : tri par état, titre, échéance et vu, le second clic inverse', () => {
+  const cards = model([
+    card(1, { column: 'todo', title: 'b', dueAt: NOW + 3 * DAY, updatedAt: NOW - 3 * DAY, columnSince: NOW - 3 * DAY }),
+    card(2, { column: 'review', title: 'd', updatedAt: NOW - 1 * DAY }),
+    card(3, { column: 'in_progress', title: 'a', dueAt: NOW + 1 * DAY, updatedAt: NOW - 2 * DAY }),
+    card(4, { column: 'todo', title: 'c', conversations: [session('w', 'awaiting_input')], updatedAt: NOW - 4 * DAY }),
+    card(5, { column: 'todo', title: 'e', columnSince: NOW - 1 * DAY, updatedAt: NOW - 5 * DAY }),
+  ]).cards
+  const order = (sort: typeof DEFAULT_LIST_SORT) => numbers(listGroups(cards, [], DEFAULT_DISPLAY, null, sort)[0]!.entries)
+  // État : ce qui t’attend, puis à relire, en cours, à faire ; dans une colonne, les entrées récentes d’abord.
+  assert.deepEqual(order({ key: 'state', desc: false }), [4, 2, 3, 5, 1])
+  assert.deepEqual(order({ key: 'state', desc: true }), [1, 5, 3, 2, 4])
+  assert.deepEqual(order({ key: 'title', desc: false }), [3, 1, 4, 2, 5])
+  // Sans échéance en dernier, dans un sens comme dans l’autre.
+  assert.deepEqual(order({ key: 'due', desc: false }).slice(0, 2), [3, 1])
+  assert.deepEqual(order({ key: 'due', desc: true }).slice(0, 2), [1, 3])
+  assert.deepEqual(order({ key: 'seen', desc: false }), [2, 3, 1, 4, 5])
+})
+
+test('liste : un clic sur l’en-tête du tri courant l’inverse, un autre en-tête repart dans l’ordre', () => {
+  assert.deepEqual(nextListSort({ key: 'state', desc: false }, 'state'), { key: 'state', desc: true })
+  assert.deepEqual(nextListSort({ key: 'state', desc: true }, 'state'), { key: 'state', desc: false })
+  assert.deepEqual(nextListSort({ key: 'state', desc: true }, 'due'), { key: 'due', desc: false })
+})
+
+/* ------------------------------------------------------------------ B-6 Par geste */
+
+test('par geste : cinq sections, une carte une fois, « À toi » prime', () => {
+  const blocker = card(50, { column: 'in_progress' })
+  const closedBlocker = card(51, { column: 'done', columnSince: NOW - 30 * DAY })
+  const cards = model([
+    card(1, { column: 'in_progress', conversations: [session('w', 'awaiting_input')] }),
+    card(2, { column: 'review' }),
+    card(3, { acceptedAt: null }),
+    card(4, { toClarifySince: NOW - DAY }),
+    card(5, { column: 'in_progress', conversations: [session('r', 'running')] }),
+    card(6),
+    card(7, { blockedBy: [link(blocker)] }),
+    card(8, { blockedBy: [link(closedBlocker)] }),
+    card(9, { column: 'done', columnSince: NOW - 2 * DAY }),
+    card(10, { column: 'done', columnSince: NOW - 8 * DAY }),
+    card(11, { column: 'done', columnSince: NOW - 1 * DAY }),
+    card(12, { column: 'abandoned', columnSince: NOW - DAY, acceptedAt: null }),
+    blocker,
+    closedBlocker,
+  ]).cards
+  const sections = gestureSections(cards, NOW)
+  assert.deepEqual(numbers(sections.forYou).sort((a, b) => a - b), [1, 2, 3, 4])
+  assert.deepEqual(numbers(sections.agents).sort((a, b) => a - b), [5, 50])
+  assert.deepEqual(numbers(sections.ready).sort((a, b) => a - b), [6, 8])
+  assert.deepEqual(numbers(sections.blocked), [7])
+  // Fait cette semaine : les plus récentes d’abord, au-delà de sept jours rien.
+  assert.deepEqual(numbers(sections.doneWeek), [11, 9])
+  const all = Object.values(sections).flatMap(numbers)
+  assert.equal(new Set(all).size, all.length, 'une carte n’apparaît qu’une fois')
+})
+
+test('par geste : les bloqueuses ouvertes d’une carte, les closes écartées', () => {
+  const open = card(50, { column: 'review' })
+  const done = card(51, { column: 'done' })
+  const gone = card(52, { column: 'abandoned' })
+  assert.deepEqual(openBlockers(card(1, { blockedBy: [link(open), link(done), link(gone)] })).map((item) => item.number), [50])
 })
 
 /* ------------------------------------------------------------------ divers */
