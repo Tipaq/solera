@@ -46,7 +46,7 @@ export interface ActionHandlers {
  * ouvre son passage dans le tiroir (`onPanel`, mode `run`). Un service qui tourne déjà
  * ailleurs ouvre le dialogue de bascule au lieu de se taire (SRV-4).
  *
- * Les gestes sont rendus en `handlers`, prêts pour `ActionTile` et `ActionRow`. L'hôte rend
+ * Les gestes sont rendus en `handlers`, prêts pour `ActionTile`, `ActionRow` et `ActionLine`. L'hôte rend
  * `dialogs` (la bascule, la confirmation de suppression) hors des menus qui les ont
  * ouverts, et `error` en tête de sa vue.
  */

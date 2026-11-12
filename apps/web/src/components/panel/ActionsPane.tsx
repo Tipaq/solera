@@ -7,7 +7,6 @@ import type { EditorSeed } from '../../lib/action-editor'
 import { newActionPanel, type ActionPanel } from '../../lib/action-panel'
 import { suggestionDraft, suggestionWhy, useActionSuggestions } from '../../lib/actions'
 import {
-  PANE_SECTIONS,
   paneOffersExpand,
   paneSectionsOf,
   paneShowsSearch,
@@ -138,22 +137,38 @@ export const ActionsPane = memo(function ActionsPane({
     />
   )
 
+  // Le retour d'un geste : sous la ligne d'outils, ou en tête de la pile (PAN-4).
+  const notices = (
+    <>
+      {gestures.error ? <PanelNotice tone="critical">{gestures.error}</PanelNotice> : null}
+      {runError ? (
+        <PanelNotice tone="critical" onClose={() => setRunError(null)}>
+          {runError}
+        </PanelNotice>
+      ) : null}
+    </>
+  )
+
   let body: ReactNode
   if (shownRun) {
     body = (
-      <CommandRunDetail
-        key={shownRun.terminalId}
-        projectId={projectId}
-        conversationId={conversationId}
-        run={shownRun}
-        onBack={() => setOpenRun(null)}
-        onRelaunched={setOpenRun}
-      />
+      <>
+        {notices}
+        <CommandRunDetail
+          key={shownRun.terminalId}
+          projectId={projectId}
+          conversationId={conversationId}
+          run={shownRun}
+          onBack={() => setOpenRun(null)}
+          onRelaunched={setOpenRun}
+        />
+      </>
     )
   } else if (panelShows(panel, data.items)) {
     body = (
       <>
-        {onExpand && paneOffersExpand(panel, width, onExpand !== undefined) ? (
+        {notices}
+        {onExpand && paneOffersExpand(panel, width) ? (
           <PanelNotice>
             <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               {t('panel.actions.narrow')}
@@ -193,7 +208,7 @@ export const ActionsPane = memo(function ActionsPane({
             <ToolbarSearch value={query} onChange={setQuery} placeholder={t('panel.actions.search')} widthClass={query ? 'w-40' : 'w-28 focus-within:w-40'} />
           ) : null}
           <DisplayMenu compact views={views} value={view} onChange={setView}>
-            {view === 'agenda' ? (
+            {view === 'agenda' && !empty ? (
               <>
                 <MenuHeading>{t('actionsTab.display.period')}</MenuHeading>
                 <MenuSegment<AgendaScope>
@@ -215,6 +230,7 @@ export const ActionsPane = memo(function ActionsPane({
             <ArrowUpRight size={14} aria-hidden />
           </Link>
         </PanelToolbar>
+        {notices}
 
         <div data-panel-actions-view={view} className="min-h-0 flex-1 overflow-y-auto pb-2">
           {data.isPending ? (
@@ -224,12 +240,12 @@ export const ActionsPane = memo(function ActionsPane({
             </p>
           ) : null}
           {empty ? <EmptyPane projectId={projectId} onSeed={(seed) => setPanel({ mode: 'edit', seed, back: null })} /> : null}
-          {view === 'agenda' ? (
+          {view === 'agenda' && !empty ? (
             <div className="p-3">
               <ActionsAgenda items={items} scope={agendaScope} onScope={setAgendaScope} onOpen={(item) => handlers.onOpen(item)} />
             </div>
           ) : view === 'liste' ? (
-            <ListView items={items} line={line} runs={runsGroup} works={worksGroup} />
+            <ListView items={items} shownTerminals={new Set(runs.map((run) => run.terminalId))} line={line} runs={runsGroup} works={worksGroup} />
           ) : (
             <>
               {runsGroup}
@@ -245,12 +261,6 @@ export const ActionsPane = memo(function ActionsPane({
   return (
     // Les repères servent aux suites : l'onglet, et la vue qu'il montre.
     <div ref={root} data-panel-actions className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {gestures.error ? <PanelNotice tone="critical">{gestures.error}</PanelNotice> : null}
-      {runError ? (
-        <PanelNotice tone="critical" onClose={() => setRunError(null)}>
-          {runError}
-        </PanelNotice>
-      ) : null}
       {body}
       {gestures.dialogs}
     </div>
@@ -274,9 +284,22 @@ function Launcher({ items, line }: { items: Automation[]; line: (item: Automatio
  * La Liste du panneau (PACT-4) : ce qui tourne — les commandes lancées ici, les actions
  * en marche, les processus des sessions —, puis à relire, planifiées, à la demande.
  */
-function ListView({ items, line, runs, works }: { items: Automation[]; line: (item: Automation) => ReactNode; runs: ReactNode; works: ReactNode }) {
+function ListView({
+  items,
+  shownTerminals,
+  line,
+  runs,
+  works,
+}: {
+  items: Automation[]
+  /** Les terminaux des commandes lancées ici, déjà montrés en tête. */
+  shownTerminals: ReadonlySet<string>
+  line: (item: Automation) => ReactNode
+  runs: ReactNode
+  works: ReactNode
+}) {
   const t = useTranslate()
-  const sections = paneSectionsOf(items)
+  const sections = paneSectionsOf(items, shownTerminals)
   const group = (key: Section) => <Group key={key} title={t(SECTION_TITLE[key])} items={sections[key]} line={line} />
   return (
     <>
@@ -288,7 +311,8 @@ function ListView({ items, line, runs, works }: { items: Automation[]; line: (it
       <div id={REVIEW_ANCHOR} className="scroll-mt-2">
         {group('review')}
       </div>
-      {PANE_SECTIONS.filter((key) => key === 'scheduled' || key === 'demand').map(group)}
+      {group('scheduled')}
+      {group('demand')}
     </>
   )
 }

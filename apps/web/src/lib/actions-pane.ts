@@ -2,7 +2,8 @@ import type { ActionSuggestion } from '@solera/protocol'
 import type { EditorSeed } from './action-editor'
 import type { ActionPanel } from './action-panel'
 import { ACTIONS_VIEWS, type ActionsView } from './actions-tab'
-import type { Automation, CommandKind, Section } from './automations'
+import type { suggestionDraft } from './actions'
+import type { Automation, Section } from './automations'
 import type { PanelTab } from './panel'
 import type { SignalKind } from './signals'
 
@@ -32,19 +33,18 @@ export function readPaneView(raw: string | null): ActionsView {
 export const PANE_SECTIONS: readonly Section[] = ['live', 'review', 'scheduled', 'demand']
 
 /**
- * La seule section d'une action dans la Liste du panneau. Une commande qui tourne dans un
- * terminal n'est pas redite « en marche » : les commandes lancées ici la montrent déjà en
- * tête, et lancée ailleurs, elle reste à sa place, sa phrase d'état disant qu'elle tourne.
+ * La seule section de chaque action dans la Liste du panneau. Une commande qui tourne
+ * dans un terminal de `shownTerminals` — les commandes lancées ici, en tête de la Liste —
+ * n'est pas redite « en marche » : elle reste à sa place, sa phrase d'état disant qu'elle
+ * tourne. Lancée ailleurs, elle est en marche, là où mène le compte « N en marche ».
  */
-export function paneSectionOf(item: Automation): Section {
-  if (item.live && item.live.kind !== 'terminal') return 'live'
-  if (item.review) return 'review'
-  return item.schedule ? 'scheduled' : 'demand'
-}
-
-export function paneSectionsOf(items: readonly Automation[]): Record<Section, Automation[]> {
+export function paneSectionsOf(items: readonly Automation[], shownTerminals: ReadonlySet<string>): Record<Section, Automation[]> {
   const sections = Object.fromEntries(PANE_SECTIONS.map((key) => [key, [] as Automation[]])) as Record<Section, Automation[]>
-  for (const item of items) sections[paneSectionOf(item)].push(item)
+  for (const item of items) {
+    const { live } = item
+    const running = live !== null && !(live.kind === 'terminal' && shownTerminals.has(live.terminalId))
+    sections[running ? 'live' : item.review ? 'review' : item.schedule ? 'scheduled' : 'demand'].push(item)
+  }
   return sections
 }
 
@@ -58,11 +58,11 @@ export const PANE_EDIT_MIN_WIDTH = 360
 
 /**
  * « Agrandir le panneau » (PACT-9) : pendant une édition ou un choix, quand le panneau,
- * mesuré, fait moins de 360 px, et seulement s'il peut encore s'agrandir.
+ * mesuré, fait moins de 360 px. L'hôte ne le propose que si le panneau peut s'agrandir.
  */
-export function paneOffersExpand(panel: ActionPanel | null, width: number, canExpand: boolean): boolean {
+export function paneOffersExpand(panel: ActionPanel | null, width: number): boolean {
   if (!panel || panel.mode === 'detail' || panel.mode === 'run') return false
-  return canExpand && width > 0 && width < PANE_EDIT_MIN_WIDTH
+  return width > 0 && width < PANE_EDIT_MIN_WIDTH
 }
 
 /** L'état vide (PACT-6) : trois suggestions du dépôt, pas une de plus. */
@@ -71,14 +71,8 @@ export const PANE_SUGGESTIONS = 3
 export const paneSuggestions = (suggestions: readonly ActionSuggestion[] | undefined): ActionSuggestion[] =>
   (suggestions ?? []).slice(0, PANE_SUGGESTIONS)
 
-/** Ce qu'une suggestion remplit, tel que `suggestionDraft` (`lib/actions.ts`) le traduit. */
-export interface SuggestionDraft {
-  label: string
-  kind: CommandKind
-  command: string
-  subdir: string
-  url: string
-}
+/** Ce qu'une suggestion remplit, tel que `suggestionDraft` le traduit. */
+export type SuggestionDraft = ReturnType<typeof suggestionDraft>
 
 /** L'éditeur pré-rempli par une suggestion : sa nature, son libellé, sa commande, son dossier, son lien. */
 export function suggestionSeed(draft: SuggestionDraft): EditorSeed {

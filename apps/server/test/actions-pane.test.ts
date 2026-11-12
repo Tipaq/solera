@@ -52,28 +52,34 @@ test('PANE_SECTIONS : en marche, à relire, planifiées, à la demande', () => {
 })
 
 test('paneSectionsOf : un service et un agent qui tournent sont « en marche »', () => {
-  const sections = paneSectionsOf([DEV, TRIAGE, SEED])
+  const sections = paneSectionsOf([DEV, TRIAGE, SEED], new Set())
   assert.deepEqual(ids(sections.live), ['dev', 'triage'])
   assert.deepEqual(ids(sections.demand), ['seed'])
 })
 
-test('paneSectionsOf : une commande dans un terminal n’est pas redite en marche, elle reste à sa place', () => {
-  // Les commandes lancées ici la montrent déjà en tête ; lancée ailleurs, elle ne doit pas
-  // disparaître de la liste pour autant.
-  const sections = paneSectionsOf([LINT, NIGHTLY])
+test('paneSectionsOf : une commande lancée ici n’est pas redite en marche, elle reste à sa place', () => {
+  // Les commandes lancées ici la montrent déjà en tête de la Liste.
+  const sections = paneSectionsOf([LINT, NIGHTLY], new Set(['term-1', 'term-2']))
   assert.deepEqual(ids(sections.live), [])
   assert.deepEqual(ids(sections.demand), ['lint'])
   assert.deepEqual(ids(sections.scheduled), ['nightly'])
 })
 
+test('paneSectionsOf : une commande qui tourne dans un terminal d’ailleurs est en marche', () => {
+  // Elle est comptée « en marche » : le clic sur le compte doit la trouver sous l'ancre.
+  const sections = paneSectionsOf([LINT, NIGHTLY], new Set(['term-2']))
+  assert.deepEqual(ids(sections.live), ['lint'])
+  assert.deepEqual(ids(sections.scheduled), ['nightly'])
+})
+
 test('paneSectionsOf : chaque action dans une seule section, chaque section présente même vide', () => {
   const all = [DEV, LINT, NIGHTLY, TRIAGE, MIGRATE, BACKUP, SEED]
-  const sections = paneSectionsOf(all)
+  const sections = paneSectionsOf(all, new Set(['term-1', 'term-2']))
   assert.deepEqual(Object.keys(sections), [...PANE_SECTIONS])
   assert.deepEqual(ids(sections.review), ['migrate'])
   assert.deepEqual(ids(sections.scheduled), ['nightly', 'backup'])
   assert.equal(Object.values(sections).flat().length, all.length)
-  assert.deepEqual(paneSectionsOf([]), { live: [], review: [], scheduled: [], demand: [] })
+  assert.deepEqual(paneSectionsOf([], new Set()), { live: [], review: [], scheduled: [], demand: [] })
 })
 
 test('readPaneView : la vue retenue, le Lanceur faute de mieux', () => {
@@ -91,18 +97,17 @@ test('paneShowsSearch : la recherche seulement au-delà de huit actions', () => 
   assert.equal(paneShowsSearch(0), false)
 })
 
-test('paneOffersExpand : « Agrandir le panneau » en édition ou en choix, sous 360 px, s’il peut s’agrandir', () => {
+test('paneOffersExpand : « Agrandir le panneau » en édition ou en choix, sous 360 px', () => {
   assert.equal(PANE_EDIT_MIN_WIDTH, 360)
   const edit = { mode: 'edit', seed: {}, back: null } as const
   const pick = { mode: 'pick' } as const
   const detail = { mode: 'detail', id: 'a-1', review: false } as const
-  assert.equal(paneOffersExpand(edit, 320, true), true)
-  assert.equal(paneOffersExpand(pick, 359, true), true)
-  assert.equal(paneOffersExpand(edit, 360, true), false)
-  assert.equal(paneOffersExpand(detail, 320, true), false, 'un détail se lit à l’étroit')
-  assert.equal(paneOffersExpand(edit, 320, false), false, 'déjà plein écran')
-  assert.equal(paneOffersExpand(edit, 0, true), false, 'largeur pas encore mesurée')
-  assert.equal(paneOffersExpand(null, 320, true), false)
+  assert.equal(paneOffersExpand(edit, 320), true)
+  assert.equal(paneOffersExpand(pick, 359), true)
+  assert.equal(paneOffersExpand(edit, 360), false)
+  assert.equal(paneOffersExpand(detail, 320), false, 'un détail se lit à l’étroit')
+  assert.equal(paneOffersExpand(edit, 0), false, 'largeur pas encore mesurée')
+  assert.equal(paneOffersExpand(null, 320), false)
 })
 
 const suggestion = (name: string, over: Partial<ActionSuggestion> = {}): ActionSuggestion => ({
