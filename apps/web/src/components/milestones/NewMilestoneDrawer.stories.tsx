@@ -81,7 +81,7 @@ export const BriefSuffisant: Story = { args: { text: BRIEF } }
 export const IdeeNotee: Story = {
   render: () => (
     <div className="max-w-xl p-6">
-      <MilestoneCreatedNotice outcome={{ card: CARDS[0]!, failed: null, intent: 'note', href: null }} onDismiss={() => {}} />
+      <MilestoneCreatedNotice outcome={{ card: CARDS[0]!, failed: null, href: null }} onDismiss={() => {}} />
     </div>
   ),
 }
@@ -91,7 +91,7 @@ export const PieceNonSuivie: Story = {
   render: () => (
     <div className="max-w-xl p-6">
       <MilestoneCreatedNotice
-        outcome={{ card: CARDS[0]!, failed: { count: 1, message: 'Le fichier dépasse 25 Mo.' }, intent: 'refine', href: '/p/x/c/new' }}
+        outcome={{ card: CARDS[0]!, failed: { count: 1, message: 'Le fichier dépasse 25 Mo.' }, href: '/p/x/c/new' }}
         onDismiss={() => {}}
       />
     </div>

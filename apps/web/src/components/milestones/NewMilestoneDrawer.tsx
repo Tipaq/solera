@@ -31,7 +31,6 @@ const INTENTS: readonly MilestoneIntent[] = ['note', 'refine', 'split']
 
 /** Ce qu'a donné un envoi : le jalon, ce qui n'a pas suivi, et — pour un affinage — où aller. */
 export interface MilestoneOutcome extends CreatedMilestone {
-  intent: MilestoneIntent
   /** La session d'affinage à ouvrir ; `null` pour une idée notée. */
   href: string | null
 }
@@ -58,14 +57,31 @@ export function NewMilestoneDrawer({
   onDone: (outcome: MilestoneOutcome) => void
 }) {
   const t = useTranslate()
+  // Ici et non dans le contenu, démonté à la fermeture : la suite d'un envoi (ouvrir la
+  // session, dire l'idée notée) ne doit pas se perdre. Et on ne ferme pas pendant l'envoi,
+  // sinon un second envoi créerait le jalon deux fois.
+  const create = useCreateMilestone(projectId)
+  const close = () => {
+    if (!create.isPending) onClose()
+  }
   return (
-    <Drawer open={open} onClose={onClose} label={t('milestones.composer.eyebrow')} width="wide">
-      <Composer projectId={projectId} onClose={onClose} onDone={onDone} />
+    <Drawer open={open} onClose={close} label={t('milestones.composer.eyebrow')} width="wide">
+      <Composer projectId={projectId} create={create} onClose={close} onDone={onDone} />
     </Drawer>
   )
 }
 
-function Composer({ projectId, onClose, onDone }: { projectId: string; onClose: () => void; onDone: (outcome: MilestoneOutcome) => void }) {
+function Composer({
+  projectId,
+  create,
+  onClose,
+  onDone,
+}: {
+  projectId: string
+  create: ReturnType<typeof useCreateMilestone>
+  onClose: () => void
+  onDone: (outcome: MilestoneOutcome) => void
+}) {
   const t = useTranslate()
   const { data: cards = [] } = useCards(projectId)
   const { data: user } = useCurrentUser()
@@ -79,7 +95,6 @@ function Composer({ projectId, onClose, onDone }: { projectId: string; onClose: 
   const textRef = useRef<HTMLTextAreaElement>(null)
   const attachments = useBriefAttachments(cards, draft.text, setText)
   const reading = useMemo(() => readBrief(draft.text), [draft.text])
-  const create = useCreateMilestone(projectId)
   const [hovered, setHovered] = useState<MilestoneIntent | null>(null)
   const derived = reading.words === 0 ? '' : titleFromBrief(draft.text)
   const primary = primaryIntent(reading)
@@ -105,7 +120,6 @@ function Composer({ projectId, onClose, onDone }: { projectId: string; onClose: 
           onClose()
           onDone({
             ...created,
-            intent,
             href:
               intent === 'note'
                 ? null

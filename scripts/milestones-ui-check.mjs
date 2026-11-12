@@ -499,6 +499,8 @@ async function composerStep(width) {
   const writes = []
   /** Les chemins qui échouent une fois, pour la pièce qui ne suit pas. */
   const failing = new Set()
+  /** Une création lente, pour fermer pendant l'envoi. */
+  let slow = false
   await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
   await page.route('**/api/**', async (route) => {
     const request = route.request()
@@ -509,6 +511,7 @@ async function composerStep(width) {
     if (path === `/api/projects/${PROJECT}/cards` && method === 'POST') {
       const body = request.postDataJSON()
       writes.push({ kind: 'create', ...body })
+      if (slow) await delay(800)
       const created = card(next++, body.title, 'todo', { description: body.description, dueAt: body.dueAt, milestone: body.milestone, position: 970, createdAt: Date.now() })
       cards = [...cards, created]
       return route.fulfill({ json: created })
@@ -659,7 +662,7 @@ async function composerStep(width) {
   assert.match(prompt, /Cartes jointes : #931 \(référence\), #960 \(à inclure dans le jalon\)/)
   assert.match(prompt, /Liens :\n- https:\/\/github\.com\/Tipaq\/solera\/pull\/212$/)
 
-  console.log(width, 'CMP-13, CMP-16 : envoyé, le brouillon part ; Noter l’idée reste sur l’horizon et le dit')
+  console.log(width, 'CMP-13, CMP-16 : envoyé, le brouillon part ; pas de fermeture pendant l’envoi ; Noter l’idée reste sur l’horizon et le dit')
   writes.length = 0
   await mountHorizon(page, `/p/${PROJECT}/timeline`)
   await open()
@@ -667,8 +670,14 @@ async function composerStep(width) {
   assert.equal(await joined.count(), 0)
   await field.fill('Tableau de bord des coûts')
   await title.fill('Coûts par projet')
+  slow = true
   await gesture('Noter l’idée').click()
+  await page.waitForFunction(() => [...document.querySelectorAll('footer button')].some((button) => button.textContent === 'Noter l’idée' && button.disabled))
+  await page.keyboard.press('Escape')
+  await delay(200)
+  assert.equal(await drawer.isVisible(), true, 'on ne ferme pas pendant l’envoi : la suite se perdrait')
   await drawer.waitFor({ state: 'detached' })
+  slow = false
   const noted = page.getByRole('status').filter({ hasText: 'Idée notée : #971, dans « Plus tard ». Tu l’affineras quand tu voudras.' })
   await noted.waitFor()
   assert.deepEqual(writes, [{ kind: 'create', title: 'Coûts par projet', description: 'Tableau de bord des coûts', dueAt: null, milestone: true }])
@@ -1698,7 +1707,7 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
-  console.log('OK : composer — tiroir large, titre tiré du texte, gestes retenus et pourquoi, pied (étape, phrase, repéré, aperçu au survol), brouillon gardé, échéance, Réf./Inclure, lien, fichier, Ctrl+Entrée (carte drapeautée et datée, relation, enfant, fichier, brouillon d’affinage pré-rempli), idée notée, pièce qui ne suit pas ; ordinateur et téléphone.')
+  console.log('OK : composer — tiroir large, titre tiré du texte, gestes retenus et pourquoi, pied (étape, phrase, repéré, aperçu au survol), brouillon gardé, échéance, Réf./Inclure, lien, fichier, pas de fermeture pendant l’envoi, Ctrl+Entrée (carte drapeautée et datée, relation, enfant, fichier, brouillon d’affinage pré-rempli), idée notée, pièce qui ne suit pas ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')
