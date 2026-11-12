@@ -42,6 +42,8 @@ export interface ServiceApp {
   result: string
   mainPid: number | null
   ports: number[]
+  /** Le `PORT` qu'on lui a donné, une instance par worktree (AC-06) ; null sans lui. */
+  port: number | null
   cwd: string | null
   startedAt: number | null
   memoryBytes: number | null
@@ -70,6 +72,12 @@ export function parseShow(output: string): Record<string, string>[] {
 /** Le jeton d'origine posé par `--setenv` ou `Environment=`, lisible même unité arrêtée. */
 export function originToken(environment: string): string | null {
   return /(?:^|\s)"?SOLERA_PROCESS_ORIGIN=([0-9a-f-]{36})/.exec(environment)?.[1] ?? null
+}
+
+/** Le `PORT` posé par `--setenv`, lisible même unité arrêtée ; null sans lui. */
+export function assignedPort(environment: string): number | null {
+  const port = Number(/(?:^|\s)"?PORT=(\d{1,5})(?=["\s]|$)/.exec(environment)?.[1])
+  return Number.isInteger(port) && port > 0 && port < 65536 ? port : null
 }
 
 /** Le nom de l'exécutable d'`ExecStart`. */
@@ -157,6 +165,7 @@ export async function scanServiceApps(origins: ProcessOrigins): Promise<ServiceA
       result: unit.Result ?? '',
       mainPid,
       ports: running ? await cgroupPorts(unit.ControlGroup ?? '', sockets) : [],
+      port: assignedPort(unit.Environment ?? ''),
       // `!` ou `-` en tête sont des modificateurs de systemd, pas une partie du chemin.
       cwd: unit.WorkingDirectory?.replace(/^[!-]+/, '') || null,
       startedAt: running && monotonic ? Math.round(bootTime + monotonic / 1000) : null,
@@ -245,7 +254,7 @@ export async function stopServiceApp(unit: string): Promise<void> {
 }
 
 /** Ce qu'une action `service` lit de son unité. */
-export type ServiceUnitState = Pick<ServiceApp, 'unit' | 'state' | 'cwd' | 'ports' | 'startedAt'>
+export type ServiceUnitState = Pick<ServiceApp, 'unit' | 'state' | 'cwd' | 'ports' | 'port' | 'startedAt'>
 
 /** Les unités des actions `service`, derrière une couture : les tests simulent systemd. */
 export interface ServiceUnits {

@@ -22,7 +22,7 @@ import { isShellCommand, redactSecrets, summarizeCommand } from '../src/services
 import { executionLink, readProcessHost, type ProcessNode, type ProcessHost } from '../src/services/ownership.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import type { TerminalManager } from '../src/terminals/terminal-manager.js'
-import { authoredDescription, execStartArgv, executableName, originToken, parseShow, scanServiceApps } from '../src/services/apps.js'
+import { assignedPort, authoredDescription, execStartArgv, executableName, originToken, parseShow, scanServiceApps } from '../src/services/apps.js'
 
 /** Ni session ni terminal vivants, ni dev container : la liste Environnements reste vide. */
 const noSessions = {
@@ -327,6 +327,14 @@ test('apps : lecture de systemctl show, jeton d’origine, exécutable sans argu
   assert.deepEqual(execStartArgv(''), [])
   assert.equal(authoredDescription('[systemd-run] /usr/bin/npm run dev --token=secret'), '', 'La description générée recopie les arguments')
   assert.equal(authoredDescription('Démo météo'), 'Démo météo')
+})
+
+test('apps : le PORT donné à une instance par worktree se relit dans son environnement', () => {
+  assert.equal(assignedPort('PATH=/bin PORT=41234 SOLERA_PROCESS_ORIGIN=124e227b-65ce-43d8-8be0-5030d10e4481'), 41234)
+  assert.equal(assignedPort('"PORT=5173"'), 5173)
+  assert.equal(assignedPort('PATH=/bin VITE_PORT=5173'), null)
+  assert.equal(assignedPort('PORT=99999'), null)
+  assert.equal(assignedPort(''), null)
 })
 
 test('apps : masquer aussi les descriptions générées sans préfixe sur les anciens systemd', () => {

@@ -20,6 +20,7 @@ const tEn = translator(en)
 
 const NOW = 1_800_000_000_000
 const NIGHTLY = { kind: 'cron', expression: '0 3 * * *' } as const
+const EVENING = { kind: 'cron', expression: '0 19 * * 1-5' } as const
 
 const action = (over: Partial<ProjectActionDto> = {}): ProjectActionDto => ({
   id: 'a1',
@@ -41,6 +42,7 @@ const action = (over: Partial<ProjectActionDto> = {}): ProjectActionDto => ({
   onDemand: true,
   schedule: null,
   service: null,
+  instances: [],
   lastRun: null,
   runs: [],
   ...over,
@@ -128,6 +130,13 @@ test('editorStateOf : from relit une commande planifiée, son placement et sa br
   assert.equal(scheduled.onDemand, false)
   assert.equal(scheduled.scheduled, true)
   assert.deepEqual(scheduled.cadence, NIGHTLY)
+  assert.equal(scheduled.stopCadence, null)
+})
+
+test('editorStateOf : from relit l’arrêt d’un service planifié', () => {
+  const schedule = { cadence: NIGHTLY, enabled: true, nextRunAt: null, lastRunAt: null, maxDurationMinutes: 30, stopCadence: EVENING, nextStopAt: null }
+  const state = editorStateOf({ from: fromAction(action({ kind: 'service', schedule })) })
+  assert.deepEqual(state.stopCadence, EVENING)
 })
 
 test('editorStateOf : from relit une tâche d’agent entière, script compris', () => {
@@ -184,9 +193,20 @@ test('problemsOf : au moins un Quand, une cadence complète', () => {
   assert.deepEqual(problemsOf({ ...ok, onDemand: false, scheduled: true, cadence: NIGHTLY }), {})
 })
 
-test('problemsOf : un service ne se planifie pas encore (EDI-18, AC-06)', () => {
-  const service = fresh({ label: 'Dev', command: 'pnpm dev', kind: 'service', scheduled: true, cadence: NIGHTLY })
-  assert.equal(problemsOf(service).serviceSchedule, 'actionEditor.error.serviceSchedule')
+test('problemsOf : un service planifié demande son heure d’arrêt complète (EDI-18, AC-06)', () => {
+  const service = fresh({ label: 'Dev', command: 'pnpm dev', kind: 'service', scheduled: true, cadence: NIGHTLY, stopCadence: null })
+  assert.equal(problemsOf(service).stopCadence, 'actionEditor.error.stopCadence')
+  assert.deepEqual(problemsOf({ ...service, stopCadence: EVENING }), {})
+  // Une tâche finit seule : son arrêt ne compte pas.
+  assert.equal(problemsOf({ ...service, kind: 'task' }).stopCadence, undefined)
+})
+
+test('problemsOf : une instance par worktree demande {port} dans son lien (SRV-6)', () => {
+  const service = fresh({ label: 'Dev', command: 'pnpm dev', kind: 'service', placement: 'per-worktree' })
+  assert.equal(problemsOf({ ...service, url: 'http://h:5173/' }).url, 'actionEditor.error.urlNeedsPort')
+  assert.deepEqual(problemsOf({ ...service, url: 'http://h:{port}/' }), {})
+  assert.deepEqual(problemsOf({ ...service, url: '' }), {})
+  assert.deepEqual(problemsOf({ ...service, placement: 'follow', url: 'http://h:5173/' }), {})
 })
 
 test('problemsOf : « Toujours une branche » demande sa branche', () => {
@@ -250,11 +270,17 @@ test('draftFrom : un service garde son lien et son placement ; une tâche les pe
 })
 
 test('draftFrom : une commande planifiée porte sa cadence ; décochée, null pour la retirer', () => {
-  const planned = draftFrom(fresh({ label: 'Purge', command: 'make purge', onDemand: false, scheduled: true, cadence: NIGHTLY }), null)
+  const planned = draftFrom(fresh({ label: 'Purge', command: 'make purge', onDemand: false, scheduled: true, cadence: NIGHTLY, stopCadence: EVENING }), null)
+  // Une tâche finit seule : son arrêt n'est pas envoyé.
   assert.deepEqual(planned.what === 'command' && planned.body.schedule, { cadence: NIGHTLY })
   assert.equal(planned.what === 'command' && planned.body.onDemand, false)
   const unplanned = draftFrom(fresh({ label: 'Purge', command: 'make purge', scheduled: false, cadence: NIGHTLY }), null)
   assert.equal(unplanned.what === 'command' && unplanned.body.schedule, null)
+})
+
+test('draftFrom : un service planifié porte son démarrage et son arrêt', () => {
+  const draft = draftFrom(fresh({ label: 'Dev', command: 'pnpm dev', kind: 'service', scheduled: true, cadence: NIGHTLY, stopCadence: EVENING }), null)
+  assert.deepEqual(draft.what === 'command' && draft.body.schedule, { cadence: NIGHTLY, stopCadence: EVENING })
 })
 
 test('draftFrom : un agent, sa cadence ou null, où il tourne, ses options', () => {

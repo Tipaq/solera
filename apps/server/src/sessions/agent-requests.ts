@@ -64,6 +64,7 @@ import {
   deleteAction,
   loadAction,
   readActionCadence,
+  unitsOrphanedBy,
   updateAction,
   type ActionRunner,
 } from '../actions/actions.js'
@@ -2418,6 +2419,8 @@ export class AgentRequests {
       const parsed = updateProjectActionBodySchema.safeParse(fields)
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
       const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
+      // Ses unités tourneraient sans plus de bouton ; l'arrêt n'attend pas la réponse.
+      if (unitsOrphanedBy(row, next)) void this.actions?.forget(row).catch(() => undefined)
       return next.approvedAt
         ? `Action « ${next.label} » mise à jour ; elle reste validée.${when(next)}`
         : `Action « ${next.label} » mise à jour. Ce qu'elle exécute a changé : l'utilisateur doit la valider avant qu'elle parte d'un clic ou à sa cadence.${when(next)}`

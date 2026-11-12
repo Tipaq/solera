@@ -116,7 +116,8 @@ async function main(): Promise<void> {
   const tasks = new TaskScheduler({ db, config }, sessions, registry, log)
   // Les commandes planifiées, tirées dans la même passe, détachées de tout terminal.
   // Après l'`ActionRunner`, qui clôt au démarrage les passages qu'un arrêt a emportés.
-  const scheduledCommands = new CommandScheduler(db, config, sessions.environments)
+  // Un service planifié démarre et s'arrête par l'`ActionRunner`, comme d'un clic.
+  const scheduledCommands = new CommandScheduler(db, config, sessions.environments, { services: actions })
   tasks.setCommands(scheduledCommands)
 
   // Les fichiers téléversés puis jamais envoyés s'accumuleraient sinon sans limite.

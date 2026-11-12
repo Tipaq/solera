@@ -18,7 +18,7 @@ function action(id: string, extra: Partial<ProjectActionDto>): Automation {
   const shown = {
     id, projectId: PROJECT_ID, label: id, description: null, kind: 'task' as const, command: 'pnpm test', subdir: null,
     url: null, placement: 'follow' as const, pinnedBranch: null, status: 'approved' as const, agentConversationId: null, agentConversationTitle: null, createdAt: NOW,
-    updatedAt: NOW, service: null, lastRun: null, runs: [], onDemand: true, schedule: null, ...extra,
+    updatedAt: NOW, service: null, instances: [], lastRun: null, runs: [], onDemand: true, schedule: null, ...extra,
   }
   const { kind, command, subdir, url, schedule } = shown
   const cadence = schedule?.cadence ?? null
@@ -58,6 +58,29 @@ export const SERVICE_TREE = action('a-api', {
   service: { unit: 'solera-app-action-a-api.service', state: 'active', cwd: '/srv/nimbus/.worktrees/w1/apps/api', ports: [8080], startedAt: NOW - HOUR,
     served: { path: '/srv/nimbus/.worktrees/w1', worktreeId: 'w1', root: false, branch: 'feat/905-vue-horizon-et-ses-jalons', head: 'e4f5a6b', ahead: 4, behind: 3, dirtyFiles: 2 },
   },
+})
+/** Une instance par worktree (AC-06) : la racine et un worktree, chacun sur son port ; une troisième en échec. */
+export const SERVICE_PER_TREE = action('a-web', {
+  label: 'Front', kind: 'service', command: 'pnpm dev --port $PORT', url: 'http://127.0.0.1:{port}', placement: 'per-worktree',
+  service: { unit: 'solera-app-action-a-web-w1.service', state: 'active', cwd: '/srv/nimbus/.worktrees/w1', ports: [41873], startedAt: NOW - HOUR,
+    served: { path: '/srv/nimbus/.worktrees/w1', worktreeId: 'w1', root: false, branch: 'feat/905-vue-horizon-et-ses-jalons', head: 'e4f5a6b', ahead: 4, behind: 3, dirtyFiles: 2 },
+  },
+  instances: [
+    { unit: 'solera-app-action-a-web-w1.service', state: 'active', cwd: '/srv/nimbus/.worktrees/w1', ports: [41873], startedAt: NOW - HOUR,
+      served: { path: '/srv/nimbus/.worktrees/w1', worktreeId: 'w1', root: false, branch: 'feat/905-vue-horizon-et-ses-jalons', head: 'e4f5a6b', ahead: 4, behind: 3, dirtyFiles: 2 } },
+    { unit: 'solera-app-action-a-web-root.service', state: 'active', cwd: '/srv/nimbus', ports: [41207], startedAt: NOW - 3 * HOUR,
+      served: { path: '/srv/nimbus', worktreeId: null, root: true, branch: 'main', head: 'a1b2c3d', ahead: 0, behind: 0, dirtyFiles: 0 } },
+    { unit: 'solera-app-action-a-web-w2.service', state: 'failed', cwd: '/srv/nimbus/.worktrees/w2', ports: [], startedAt: null, served: null },
+  ],
+})
+/** Un service planifié (AC-06) : il démarre à 8 h en semaine et s'arrête à 19 h. */
+export const SERVICE_SCHEDULED = action('a-demo', {
+  label: 'Démo client', kind: 'service', command: 'pnpm preview', url: 'http://127.0.0.1:{port}', onDemand: true,
+  schedule: {
+    cadence: { kind: 'cron', expression: '0 8 * * 1-5' }, enabled: true, nextRunAt: NOW + 10 * HOUR, lastRunAt: null, maxDurationMinutes: 30,
+    stopCadence: { kind: 'cron', expression: '0 19 * * 1-5' }, nextStopAt: NOW + HOUR,
+  },
+  service: { unit: 'solera-app-action-a-demo.service', state: 'inactive', cwd: null, ports: [], startedAt: null, served: null },
 })
 export const SERVICE_OFF = action('a-storybook', {
   label: 'Storybook', kind: 'service', command: 'pnpm storybook',
