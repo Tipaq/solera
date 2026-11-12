@@ -109,10 +109,3 @@ export function dayFromInput(value: string): number | null {
 export function formatDay(ts: number): string {
   return new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(ts)
 }
-
-/** Jours restants avant une échéance, négatifs quand elle est dépassée. */
-export function daysUntil(ts: number): number {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.round((ts - today.getTime()) / 86_400_000)
-}

@@ -72,18 +72,6 @@ export function useApproveAction() {
 }
 
 /**
- * Refuser ce qu'un agent propose : la commande relue en dernier revient, ou l'action
- * disparaît si elle n'a jamais été relue (rien n'est alors rendu).
- */
-export function useRejectAction() {
-  const invalidate = useInvalidate()
-  return useMutation({
-    mutationFn: (id: string) => api.post<ProjectActionDto | undefined>(`/api/actions/${id}/reject`),
-    onSuccess: () => invalidate(),
-  })
-}
-
-/**
  * Les derniers passages d'une action avec l'extrait de leur sortie, pour son détail : la
  * liste des actions ne les porte pas, relue trop souvent pour charger vingt extraits par
  * action. Relue avec elle, pour qu'un passage en cours se close sous les yeux.

@@ -18,8 +18,8 @@ export function PermissionsStep({ nav }: StepProps) {
   return (
     <>
       <StepTitle title={t('onboarding.permissions.title')} lead={t('onboarding.permissions.lead')} />
-      <AgentRequestsCard level={{ kind: 'account' }} />
-      <CliReflexCard level={{ kind: 'account' }} />
+      <AgentRequestsCard />
+      <CliReflexCard />
     </>
   )
 }

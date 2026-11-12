@@ -82,10 +82,3 @@ function waveRank(layer: number): number {
 export function milestoneOrder(cards: MilestoneRunCardDto[]): MilestoneRunCardDto[] {
   return [...cards].sort((a, b) => waveRank(a.layer) - waveRank(b.layer) || a.number - b.number)
 }
-
-/** Les cartes d'un jalon, par identifiant : la frise et l'Activité y cherchent les leurs. */
-export function milestoneCardIndex(runs: MilestoneRunDto[] | undefined): Map<string, { run: MilestoneRunDto; card: MilestoneRunCardDto }> {
-  const index = new Map<string, { run: MilestoneRunDto; card: MilestoneRunCardDto }>()
-  for (const run of runs ?? []) for (const card of run.cards) index.set(card.cardId, { run, card })
-  return index
-}

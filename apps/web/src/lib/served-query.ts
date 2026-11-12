@@ -3,9 +3,7 @@ import { useAutomations } from './automations-query'
 import { useCodeData } from './code-data'
 import type { TreeRow } from './code-model'
 import { useProjects } from './projects'
-import { servedIndex, type ServedIndex, type ServedVersion } from './served'
-
-export type ServedRow = ServedVersion<TreeRow>
+import { servedIndex, type ServedIndex } from './served'
 
 export interface ServedData extends ServedIndex<TreeRow> {
   /** La branche de base du projet, pour dire l'avance et le retard. */
