@@ -499,6 +499,13 @@ async function launchStep(width) {
   console.log(width, 'concurrence : 1 à 6, remontée aux vagues, avertissement de quota au-delà de 3')
   const concurrency = panel.getByRole('radiogroup', { name: 'Concurrence' })
   assert.equal(await concurrency.getByRole('radio').count(), 6)
+  const target = await concurrency.getByRole('radio', { name: '1', exact: true }).boundingBox()
+  assert.equal(Math.round(target.height), phone ? 44 : 28, 'Au doigt, 44 px')
+  if (phone) assert.equal(Math.round(target.width), 44)
+  const label = await panel.getByText('Concurrence', { exact: true }).boundingBox()
+  assert.equal(target.y > label.y + label.height, phone, phone ? 'Au doigt, dessous le libellé' : 'À la souris, à côté du libellé')
+  const [six, box] = [await concurrency.getByRole('radio', { name: '6', exact: true }).boundingBox(), await panel.boundingBox()]
+  assert.ok(six.x + six.width <= box.x + box.width, 'Les six tiennent dans le panneau')
   assert.equal(await concurrency.getByRole('radio', { name: '3' }).getAttribute('aria-checked'), 'true')
   assert.equal(await panel.getByText(/consomment ton quota/).count(), 0)
   await concurrency.getByRole('radio', { name: '5' }).click()

@@ -6,9 +6,8 @@ import {
   environmentKey,
   type ExecutionEnvironment,
   type MilestoneRunMode,
-  type ProjectEnvironmentsDto,
 } from '@solera/protocol'
-import { Button, ChoiceCards, Tooltip, cx } from '@solera/ui'
+import { Banner, Button, ChoiceCards, Tooltip, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { CardInfoButton } from '../cards/CardInfoButton'
 import { STATE_DOT } from '../gantt/tones'
@@ -105,10 +104,12 @@ function Launcher({
   const launch = useLaunchMilestone(projectId, entry.card.id)
   const launchCard = useLaunchMilestoneCard(projectId, entry.card.id)
   const [mode, setMode] = useState<MilestoneRunMode>('manual')
-  // Choisi à la main ; tant que rien ne l'est, le réglage du projet.
+  // Choisi à la main ; tant que rien ne l'est, le réglage du projet, confiné d'office en
+  // autonome. Déduit plutôt que posé au clic : les environnements peuvent arriver après.
   const [picked, setPicked] = useState<ExecutionEnvironment | null>(null)
   const choices = environments ? launchEnvironments(environments) : []
-  const environment = picked ?? (environments ? initialLaunchEnvironment(environments) : null)
+  const environment = picked ?? (environments ? environmentForMode(mode, initialLaunchEnvironment(environments), choices) : null)
+  // `null` tant que les environnements ne sont pas lus : rien ne part avant.
   const confined = environment?.confined ?? null
 
   const pickMode = (next: MilestoneRunMode) => {
@@ -116,7 +117,7 @@ function Launcher({
     // Le refus d'un geste de l'autre mode ne concerne plus celui-ci.
     launch.reset()
     launchCard.reset()
-    if (environment) setPicked(environmentForMode(next, environment, choices))
+    if (picked) setPicked(environmentForMode(next, picked, choices))
   }
 
   const checks = launchChecks(entry, concurrency)
@@ -126,7 +127,7 @@ function Launcher({
   const error = launch.error ?? launchCard.error
   const picker =
     environments && environment ? (
-      <EnvironmentPicker projectId={projectId} environments={environments} choices={choices} value={environment} onChange={setPicked} />
+      <EnvironmentPicker projectId={projectId} choices={choices} value={environment} onChange={setPicked} />
     ) : null
 
   return (
@@ -194,13 +195,11 @@ function Launcher({
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-xs text-ink-faint">{t('milestone.launch.autoIntro')}</p>
-          <Row label={t('milestone.launch.concurrency')}>
+          <Row label={t('milestone.launch.concurrency')} wrap>
             <ConcurrencyPicker label={t('milestone.launch.concurrency')} value={concurrency} onChange={onConcurrency} />
           </Row>
           {quotaWarning(concurrency) ? (
-            <p role="status" className="rounded-md bg-caution/10 px-2.5 py-2 text-xs text-caution">
-              {t('milestone.launch.quota', { count: concurrency })}
-            </p>
+            <Banner tone="caution">{t('milestone.launch.quota', { count: concurrency })}</Banner>
           ) : null}
           <Row label={t('milestone.launch.branch')}>
             <code className="block truncate text-xs">{plan?.branch ?? entry.card.branch ?? '…'}</code>
@@ -211,9 +210,7 @@ function Launcher({
           {picker}
           {environment?.where === 'devcontainer' && environment.confined ? <ServicesRow projectId={projectId} /> : null}
           {environment && !environment.confined ? (
-            <p role="status" className="rounded-md bg-caution/10 px-2.5 py-2 text-xs text-caution">
-              {t('milestone.launch.notConfined')}
-            </p>
+            <Banner tone="caution">{t('milestone.launch.notConfined')}</Banner>
           ) : null}
 
           <div
@@ -278,13 +275,11 @@ function CardLink({ projectId, card, statusOf }: { projectId: string; card: Mile
  */
 function EnvironmentPicker({
   projectId,
-  environments,
   choices,
   value,
   onChange,
 }: {
   projectId: string
-  environments: ProjectEnvironmentsDto
   choices: ExecutionEnvironment[]
   value: ExecutionEnvironment
   onChange: (value: ExecutionEnvironment) => void
@@ -297,17 +292,14 @@ function EnvironmentPicker({
         <ChoiceCards
           label={t('milestone.launch.environment')}
           value={key}
-          onChange={(next) => onChange(choices.find((choice) => environmentKey(choice) === next) ?? environments.default)}
+          onChange={(next) => onChange(choices.find((choice) => environmentKey(choice) === next) ?? value)}
           options={choices.map((choice) => {
-            const value = environmentKey(choice)
-            return { value, label: t(`environment.${value}`), hint: t(`milestone.launch.environment.hint.${value}`) }
+            const option = environmentKey(choice)
+            return { value: option, label: t(`environment.${option}`), hint: t(`milestone.launch.environment.hint.${option}`) }
           })}
         />
         <p className="text-xs text-ink-faint">
-          {t('milestone.launch.whereFromProject')}{' '}
-          <Link to={`/p/${projectId}/settings`} className="text-accent hover:underline">
-            {t('milestone.launch.settings')}
-          </Link>
+          {t('milestone.launch.whereFromProject')} <SettingsLink projectId={projectId} />
         </p>
       </div>
     </Row>
@@ -322,12 +314,19 @@ function ServicesRow({ projectId }: { projectId: string }) {
   return (
     <Row label={t('milestone.launch.services')}>
       <span className="text-xs text-ink-soft">
-        {t(`milestone.launch.servicesValue.${devcontainer.confinedServices}`)} ·{' '}
-        <Link to={`/p/${projectId}/settings`} className="text-accent hover:underline">
-          {t('milestone.launch.settings')}
-        </Link>
+        {t(`milestone.launch.servicesValue.${devcontainer.confinedServices}`)} · <SettingsLink projectId={projectId} />
       </span>
     </Row>
+  )
+}
+
+/** Les réglages du projet : l'emplacement et les services s'y changent, pas au lancement. */
+function SettingsLink({ projectId }: { projectId: string }) {
+  const t = useTranslate()
+  return (
+    <Link to={`/p/${projectId}/settings`} className="text-accent hover:underline">
+      {t('milestone.launch.settings')}
+    </Link>
   )
 }
 
@@ -343,7 +342,8 @@ function ConcurrencyPicker({ label, value, onChange }: { label: string; value: n
           aria-checked={option === value}
           onClick={() => onChange(option)}
           className={cx(
-            'size-7 rounded-md text-xs tabular-nums transition-colors',
+            // 44 px au doigt (Gabarits/Tactile), 28 à la souris.
+            'size-11 shrink-0 rounded-md text-xs tabular-nums transition-colors md:size-7 md:shrink pointer-coarse:size-11 pointer-coarse:shrink-0',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
             option === value ? 'bg-accent text-accent-ink' : 'border border-line text-ink-soft hover:border-line-strong',
           )}
@@ -355,12 +355,17 @@ function ConcurrencyPicker({ label, value, onChange }: { label: string; value: n
   )
 }
 
-/** Un champ du panneau : le libellé à gauche, sur 112 px, la valeur à droite. */
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * Un champ du panneau : le libellé à gauche, sur 112 px, la valeur à droite. `wrap` : au
+ * doigt, une valeur faite de cibles de 44 px qui n'y tiennent pas passe dessous ; à la
+ * souris, elle reste à côté et se resserre, comme au prototype.
+ */
+function Row({ label, wrap = false, children }: { label: string; wrap?: boolean; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className={cx('flex items-center gap-x-3', wrap && 'flex-wrap gap-y-1.5 md:flex-nowrap pointer-coarse:flex-wrap')}>
       <span className="w-28 shrink-0 text-xs text-ink-faint">{label}</span>
-      <div className="min-w-0 flex-1">{children}</div>
+      {/* Sa largeur propre, pour que la ligne sache quand la passer dessous. */}
+      <div className={wrap ? 'shrink-0 md:min-w-0 md:flex-1 pointer-coarse:flex-none' : 'min-w-0 flex-1'}>{children}</div>
     </div>
   )
 }

@@ -23,6 +23,7 @@ import {
   refinePending,
   type MilestoneEntry,
 } from '../../lib/milestone-model'
+import { launchStage } from '../../lib/milestone-launch'
 import { useMilestones } from '../../lib/milestones'
 import { useMergeBranchPullRequest } from '../../lib/pull-requests'
 
@@ -160,7 +161,7 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
             <Waves projectId={projectId} entry={entry} statusOf={statusOf} concurrency={entry.run?.concurrency ?? concurrency} />
           </div>
           <div id="lancer" className="min-w-0 scroll-mt-4 xl:sticky xl:top-0 xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            {entry.maturity === 'launched' ? (
+            {launchStage(entry) === 'launched' ? (
               <RunSlot projectId={projectId} entry={entry} />
             ) : (
               <LaunchPanel projectId={projectId} entry={entry} concurrency={concurrency} onConcurrency={setConcurrency} statusOf={statusOf} />
