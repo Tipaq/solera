@@ -16,7 +16,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Archive,
   CalendarClock,
   ChevronRight,
   ChevronsUpDown,
@@ -40,6 +39,8 @@ import type { ConversationDto, ProjectDto } from '@solera/protocol'
 import { useOpenConversationId } from '../../lib/conversation-route'
 import { currentProjectFocus, setProjectFocus, useProjectFocus } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
+import { NO_PROJECT } from '../../lib/sessions-view'
+import { cutToBudget } from '../../lib/sidebar-budget'
 import { PROJECT_COLORS } from '../../lib/project-colors'
 import { useUpdateProject } from '../../lib/projects'
 import { useLiveConversations } from '../../lib/activity'
@@ -48,7 +49,9 @@ import { mostUrgent, threadState } from '../../lib/signals'
 import { useUpdateCollapsedProjects, useUserSettings } from '../../lib/user-settings'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { StateDot } from '../chat/Signals'
+import { AllSessionsLine } from './AllSessionsLine'
 import { ConversationLine } from './ConversationLine'
+import { useSessionBudget } from './fit-budget'
 import { RenameInput } from './RenameInput'
 import { openRowMenu } from './row-menu'
 import {
@@ -63,9 +66,6 @@ import {
   Tooltip,
   TooltipButton,
 } from '@solera/ui'
-
-/** Au-delà, le reste est compté sur une ligne : « 26 autres sessions… ». */
-const SESSIONS_SHOWN = 10
 
 /**
  * Neutralise le clic qui suit immédiatement un glisser-déposer.
@@ -256,8 +256,12 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
     () => conversations.filter((entry) => !entry.archivedAt),
     [conversations],
   )
-  const archived = useMemo(() => conversations.filter((entry) => entry.archivedAt), [conversations])
+  // Ce que compte la page des sessions : archivées comprises, tirs planifiés exclus.
+  const total = useMemo(() => conversations.filter((entry) => !entry.scheduleId).length, [conversations])
+  const archived = useMemo(() => conversations.some((entry) => entry.archivedAt && !entry.scheduleId), [conversations])
   const hasUnread = useHasUnread(conversations, openConversationId)
+  // Même règle que sous un projet : le réglage « Sessions dans la sidebar ».
+  const visible = cutToBudget(sessions, useSessionBudget(), openConversationId)
 
   return (
     <li>
@@ -308,8 +312,8 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
           {sessions.length === 0 ? (
             <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
           ) : (
-            <ul>
-              {sessions.map((conversation) => (
+            <ul data-session-list data-cut={visible.length < sessions.length}>
+              {visible.map((conversation) => (
                 <ConversationLine
                   key={conversation.id}
                   conversation={conversation}
@@ -319,8 +323,14 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
               ))}
             </ul>
           )}
-          {archived.length > 0 ? (
-            <ArchivedSection conversations={archived} onNavigate={onNavigate} />
+          {/* Les archivées et ce que le budget coupe se lisent sur la page des sessions. */}
+          {archived || visible.length < sessions.length ? (
+            <AllSessionsLine
+              to={`/sessions?projet=${NO_PROJECT}`}
+              label={t('shell.sessions.all.loose')}
+              count={total}
+              onNavigate={onNavigate}
+            />
           ) : null}
         </div>
       ) : null}
@@ -543,7 +553,7 @@ function ProjectGroup({
           {/* Plus aucun sous-lien de vue, et plus d'en-tête « Sessions » : les onglets
               portent les vues, et sous un projet déplié il n'y a que des sessions, ce que
               le filet de couleur dit déjà. */}
-          <ProjectSessions conversations={conversations} onNavigate={onNavigate} />
+          <ProjectSessions conversations={conversations} projectId={project.id} onNavigate={onNavigate} />
         </div>
       ) : null}
     </li>
@@ -554,8 +564,10 @@ function ProjectGroup({
  * Les sessions d'un projet, ou des fils libres : ce qu'un groupe de l'arbre montre une
  * fois déplié, et ce que montre le mode projet sous sa ligne.
  */
-function ProjectSessions({ conversations, onNavigate }: {
+function ProjectSessions({ conversations, projectId, onNavigate }: {
   conversations: ConversationDto[]
+  /** `null` : les fils libres. */
+  projectId: string | null
   onNavigate: () => void
 }) {
   const t = useTranslate()
@@ -579,14 +591,10 @@ function ProjectSessions({ conversations, onNavigate }: {
     () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),
     [conversations],
   )
-  const archived = useMemo(
-    () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),
-    [conversations],
-  )
-  const [showAll, setShowAll] = useState(false)
-  const visible = showAll
-    ? sessions
-    : sessions.filter((entry, index) => index < SESSIONS_SHOWN || entry.id === openConversationId)
+  // Le total que compte la ligne de fin, archivées comprises : c'est ce que montre la page.
+  const total = useMemo(() => conversations.filter((entry) => !entry.scheduleId).length, [conversations])
+  // Le réglage « Sessions dans la sidebar » : ajusté à la hauteur, ou 10 / 20 / 50.
+  const visible = cutToBudget(sessions, useSessionBudget(), openConversationId)
 
   return (
     <>
@@ -598,30 +606,22 @@ function ProjectSessions({ conversations, onNavigate }: {
       {sessions.length === 0 ? (
         <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
       ) : (
-        <ul>
+        <ul data-session-list data-cut={visible.length < sessions.length}>
           {visible.map((conversation) => (
             <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
           ))}
         </ul>
       )}
 
-      {/* « 26 autres sessions… » plutôt que « Voir les 26 sessions » : le reste est
-          compté, et le libellé ne promet pas une page qui n'existe pas. */}
-      {sessions.length > visible.length || showAll ? (
-        <button
-          type="button"
-          onClick={() => setShowAll((value) => !value)}
-          className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
-        >
-          <span className="flex w-4 shrink-0 justify-center"><MessagesSquare size={14} /></span>
-          {showAll
-            ? t('shell.sessions.less')
-            : t('shell.sessions.more', { count: sessions.length - visible.length })}
-        </button>
-      ) : null}
-
-      {archived.length > 0 ? (
-        <ArchivedSection conversations={archived} onNavigate={onNavigate} />
+      {/* Une seule ligne de fin : « N autres sessions… » et la section des archivées
+          disaient la même chose que la page des sessions, qui montre aussi les archivées. */}
+      {total > visible.length ? (
+        <AllSessionsLine
+          to={`/sessions?projet=${projectId ?? NO_PROJECT}`}
+          label={t(projectId === null ? 'shell.sessions.all.loose' : 'shell.sessions.all.project')}
+          count={total}
+          onNavigate={onNavigate}
+        />
       ) : null}
     </>
   )
@@ -839,7 +839,7 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
         ) : null}
       </div>
 
-      <ProjectSessions conversations={mine} onNavigate={onNavigate} />
+      <ProjectSessions conversations={mine} projectId={projectId} onNavigate={onNavigate} />
     </div>
   )
 }
@@ -862,44 +862,5 @@ function FocusChoice({ label, icon, current, conversations, onSelect }: {
         {fresh ? <span title={t('shell.project.unread')}><StateDot state="unread" labelled={false} /></span> : null}
       </span>
     </MenuItem>
-  )
-}
-
-/**
- * Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans revenir
- * peser sur ce qu'on a sous les yeux. Hors de tout contexte de glissement, les archivées
- * n'ayant pas d'ordre à défendre.
- */
-function ArchivedSection({ conversations, onNavigate }: {
-  conversations: ConversationDto[]
-  onNavigate: () => void
-}) {
-  const t = useTranslate()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft md:h-8 pointer-coarse:h-11"
-      >
-        <span className="flex w-4 shrink-0 justify-center"><Archive size={14} /></span>
-        <span className="flex-1">{t('shell.conversations.archived', { count: String(conversations.length) })}</span>
-        <ChevronRight size={11} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open ? (
-        <ul>
-          {conversations.map((conversation) => (
-            <ConversationLine
-              key={conversation.id}
-              conversation={conversation}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </div>
   )
 }
