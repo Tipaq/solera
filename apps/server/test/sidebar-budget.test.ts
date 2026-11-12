@@ -3,9 +3,11 @@ import { test } from 'node:test'
 import type { ConversationDto } from '@solera/protocol'
 
 const {
+  FIT_MEMORY,
   MIN_SESSIONS,
   activityFold,
   cutToBudget,
+  fitNext,
   fitStep,
   mustShow,
   parseSessionLimit,
@@ -125,4 +127,128 @@ test('activityFold : pas de clignotement sur une suite de mesures', () => {
     states.push(collapsed)
   }
   assert.deepEqual(states, [true, true, true, true, true, true])
+})
+
+/**
+ * Une colonne simulée comme la rend le lieu *Fils* : chaque tranche de jour montrée
+ * ajoute son en-tête (28 px) au-dessus de ses lignes (36 px). `buckets` dit la tranche
+ * de chaque session, dans l'ordre ; `kept` sessions attendent une réponse et restent
+ * affichées quel que soit le budget. L'Activité prend 144 px dépliée, 36 repliée.
+ * Quand le budget a tout coupé, une liste vide reste là, marquée coupée.
+ */
+function threadsColumn({ height, buckets, kept = 0 }: { height: number; buckets: number[]; kept?: number }) {
+  return (budget: number, collapsed: boolean) => {
+    const shown = buckets.slice(0, Math.max(0, budget - kept))
+    const headers = new Set(kept > 0 ? [0, ...shown] : shown).size
+    const content = (collapsed ? 36 : 144) + headers * 28 + (kept + shown.length) * 36 + 40
+    return {
+      budget,
+      collapsed,
+      overflow: content - height,
+      rowHeight: 36,
+      // Tout coupé, une liste vide reste, marquée coupée.
+      lists: Math.max(headers, 1),
+      cutLists: shown.length < buckets.length ? 1 : 0,
+      column: height,
+      activity: collapsed ? 36 : 144,
+    }
+  }
+}
+
+/** Rejoue le hook : mesurer, décider, rendre, jusqu'à ce que rien ne change. */
+function settleColumn(
+  measure: ReturnType<typeof threadsColumn>,
+  start = { budget: 10, collapsed: false, memory: FIT_MEMORY },
+) {
+  let { budget, collapsed, memory } = start
+  for (let pass = 1; pass <= 50; pass += 1) {
+    const next = fitNext(memory, measure(budget, collapsed))
+    memory = next.memory
+    if (next.budget === budget && next.collapsed === collapsed) return { budget, collapsed, memory, passes: pass }
+    budget = next.budget
+    collapsed = next.collapsed
+  }
+  return { budget, collapsed, memory, passes: Infinity }
+}
+
+// Cinq sessions aujourd'hui, puis hier : la sixième ouvre la tranche « Hier » et coûte
+// 64 px au lieu de 36. À 432 px, cinq tiennent avec 40 px de reste, six débordent de 24.
+const yesterdayOpens = { height: 432, buckets: [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] }
+
+test('fitStep seul oscille quand un cran ouvre une tranche de jour (#262)', () => {
+  const measure = threadsColumn(yesterdayOpens)
+  let budget = 5
+  const seen: number[] = []
+  for (let pass = 0; pass < 6; pass += 1) {
+    budget = fitStep(measure(budget, false))
+    seen.push(budget)
+  }
+  assert.deepEqual(seen, [6, 5, 6, 5, 6, 5])
+})
+
+test('fitNext : un cran qui ouvre une tranche ne fait pas osciller le budget (#262)', () => {
+  const settled = settleColumn(threadsColumn(yesterdayOpens))
+  assert.equal(settled.budget, 5)
+  assert.equal(settled.collapsed, false)
+  assert.ok(settled.passes <= 4, `${settled.passes} passes`)
+})
+
+test('fitNext : la colonne redimensionnée relance la recherche, dans les deux sens', () => {
+  const first = settleColumn(threadsColumn(yesterdayOpens))
+  // Plus haute de 200 px : la recherche oublie que 6 débordait.
+  const taller = settleColumn(threadsColumn({ ...yesterdayOpens, height: 632 }), first)
+  assert.equal(taller.budget, 10)
+  assert.ok(taller.passes < Infinity)
+  // Puis plus basse : elle redescend.
+  const shorter = settleColumn(threadsColumn({ ...yesterdayOpens, height: 400 }), taller)
+  assert.ok(shorter.passes < Infinity)
+  assert.ok(threadsColumn({ ...yesterdayOpens, height: 400 })(shorter.budget, shorter.collapsed).overflow <= 0)
+})
+
+test('fitNext : un budget stable qui ne mesure plus pareil relance la recherche', () => {
+  const first = settleColumn(threadsColumn(yesterdayOpens))
+  // Des sessions d'autres jours arrivent en tête : à 5, quatre tranches débordent.
+  const measure = threadsColumn({ ...yesterdayOpens, buckets: [0, 1, 2, ...Array(12).fill(3)] })
+  const settled = settleColumn(measure, first)
+  assert.ok(settled.passes < Infinity)
+  assert.ok(measure(settled.budget, settled.collapsed).overflow <= 0)
+  assert.ok(measure(settled.budget + 1, settled.collapsed).overflow > 0)
+})
+
+test('fitNext : l’Activité redépliée qui doit se replier aussitôt reste repliée à cette hauteur', () => {
+  // Huit sessions attendent : baisser le budget ne retire aucune ligne, et l'Activité
+  // dépliée ne tient jamais. Repliée, le budget monte à 9, et 9 − 3 lignes d'Activité
+  // laisseraient 6 sessions : sans mémoire, elle se redéplierait, puis se replierait.
+  const measure = threadsColumn({ height: 480, buckets: Array(20).fill(1), kept: 8 })
+  const settled = settleColumn(measure)
+  assert.ok(settled.passes < Infinity, 'la colonne ne converge pas')
+  assert.equal(settled.collapsed, true)
+  assert.ok(measure(settled.budget, true).overflow <= 0)
+  // Une autre hauteur la laisse réessayer.
+  const taller = settleColumn(threadsColumn({ height: 700, buckets: Array(20).fill(1), kept: 8 }), settled)
+  assert.equal(taller.collapsed, false)
+})
+
+test('fitNext : converge à toute hauteur, sur le plus grand budget qui tient', () => {
+  const shapes = [
+    yesterdayOpens.buckets,
+    [0, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+    [0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+    Array(30).fill(3),
+  ]
+  for (const buckets of shapes) {
+    for (const kept of [0, 3]) {
+      for (let height = 200; height <= 1100; height += 1) {
+        const measure = threadsColumn({ height, buckets, kept })
+        const settled = settleColumn(measure)
+        const where = `hauteur ${height}, ${kept} gardées, tranches ${buckets.join('')}`
+        assert.ok(settled.passes < Infinity, `boucle : ${where}`)
+        const { overflow } = measure(settled.budget, settled.collapsed)
+        assert.ok(overflow <= 0 || settled.budget === 0, `déborde de ${overflow} px : ${where}`)
+        // Sans session gardée, chaque cran ajoute une ligne : un de plus déborderait.
+        const more = measure(settled.budget + 1, settled.collapsed)
+        if (kept === 0) assert.ok(more.overflow > 0 || settled.budget >= buckets.length, `en laisse : ${where}`)
+      }
+    }
+  }
 })

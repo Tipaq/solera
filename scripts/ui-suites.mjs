@@ -33,6 +33,7 @@ const BATCHES = [
   ],
   [
     'milestones', // 108
+    'sessions', // ~90, estimée : 185 en local, où places en prend 114
     'claude-login', // 35
     'claude-accounts', // 26
     'windows-feedback', // 21
@@ -80,7 +81,6 @@ const BATCHES = [
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
-  sessions: 'boucle de rendu de la sidebar à 1280×800 (#262)',
   onboarding: 'page.goto bloque par intermittence (#263)',
   'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
   'draft-account': 'sonde les vrais codex et claude (#264)',

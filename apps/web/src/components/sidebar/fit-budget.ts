@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useSessionLimit } from '../../lib/display-settings'
-import { activityFold, DEFAULT_BUDGET, fitStep } from '../../lib/sidebar-budget'
+import { DEFAULT_BUDGET, FIT_MEMORY, fitNext } from '../../lib/sidebar-budget'
 
 /** Le budget mesuré par la colonne en « Ajuster à la hauteur », `null` hors de ce mode. */
 export const SidebarFitBudget = createContext<number | null>(null)
@@ -18,8 +18,9 @@ export function useSessionBudget(): number {
  * « Ajuster à la hauteur » : le nombre de lignes de session par liste qui tient dans la
  * colonne sans la faire défiler, et le repli de l'Activité qui leur rend la place.
  *
- * La colonne dit ce qui déborde (ou ce qui reste) et `fitStep` en tire le budget suivant ;
- * chaque rendu remesure, deux ou trois passes suffisent. Un `ResizeObserver` sur la colonne
+ * La colonne dit ce qui déborde (ou ce qui reste) et `fitNext` en tire le budget suivant,
+ * borné par ceux déjà essayés ; chaque rendu remesure, quelques passes suffisent et la
+ * recherche finit toujours (#262). Un `ResizeObserver` sur la colonne
  * et sur son contenu relance la mesure à chaque redimensionnement ou changement de
  * contenu. Les lignes comptées sont celles des listes marquées `data-session-list`, et
  * leur hauteur se lit sur la première (36 px, 44 au doigt). L'Activité se reconnaît à
@@ -33,8 +34,8 @@ export function useFitBudget(
   const [budget, setBudget] = useState(DEFAULT_BUDGET)
   const [tick, setTick] = useState(0)
   const [collapsed, setCollapsed] = useState(false)
-  /** La hauteur de l'Activité dépliée, mesurée la dernière fois qu'elle l'était. */
-  const fullActivity = useRef(0)
+  /** Ce que la recherche a appris de la colonne : les budgets essayés, l'Activité. */
+  const memory = useRef(FIT_MEMORY)
 
   useEffect(() => {
     const column = scroller.current
@@ -54,18 +55,13 @@ export function useFitBudget(
     const overflow = inner.offsetHeight - column.clientHeight
     const lists = inner.querySelectorAll('[data-session-list]').length
     const cutLists = inner.querySelectorAll('[data-session-list][data-cut="true"]').length
-    const next = fitStep({ budget, overflow, rowHeight, lists, cutLists })
-    if (next !== budget) {
-      setBudget(next)
-      return
-    }
-
-    // Le budget est stable : l'Activité se décide sur cette mesure.
-    const activity = inner.querySelector<HTMLElement>('[data-sidebar-activity]')
-    if (!activity) return
-    if (!collapsed) fullActivity.current = activity.offsetHeight
-    const gain = collapsed ? fullActivity.current - activity.offsetHeight : 0
-    setCollapsed(activityFold({ collapsed, budget, cutLists, overflow, rowHeight, gain }))
+    const activity = inner.querySelector<HTMLElement>('[data-sidebar-activity]')?.offsetHeight ?? null
+    const next = fitNext(memory.current, {
+      budget, overflow, rowHeight, lists, cutLists, collapsed, column: column.clientHeight, activity,
+    })
+    memory.current = next.memory
+    if (next.budget !== budget) setBudget(next.budget)
+    if (next.collapsed !== collapsed) setCollapsed(next.collapsed)
   }, [enabled, budget, tick, collapsed, scroller, content])
 
   return { budget, activityCollapsed: enabled && collapsed }
