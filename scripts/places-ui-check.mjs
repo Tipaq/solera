@@ -839,7 +839,8 @@ try {
   }
   await page.goto(`${base}/projects`)
   await page.getByText('Aucun projet', { exact: true }).waitFor()
-  assert.equal(await page.getByRole('link', { name: 'Créer un projet' }).getAttribute('href'), '/projects/new')
+  // Celui de la page : la ligne Projets de la sidebar porte aussi un raccourci du même nom.
+  assert.equal(await page.getByRole('main').getByRole('link', { name: 'Créer un projet' }).getAttribute('href'), '/projects/new')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
 
   assert.deepEqual(errors, [])
