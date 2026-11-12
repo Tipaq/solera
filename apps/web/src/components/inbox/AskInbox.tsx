@@ -47,6 +47,9 @@ export function openInboxItem(key: string): void {
  * Une seule réponse dépliée à la fois, trois lignes visibles avant « N de plus ». Le bloc
  * ne se teinte pas : un point ambre par ligne suffit. `bare` la pose sans en-tête, pour
  * une tuile qui porte déjà son titre.
+ *
+ * Une ligne se replie selon la largeur de la liste, pas de l'écran : posée dans une
+ * colonne étroite (la vue « Par état »), elle ne garde que son titre et son geste.
  */
 export function AskInbox({ items, bare = false, className }: { items: InboxItem[]; bare?: boolean; className?: string }) {
   const t = useTranslate()
@@ -102,7 +105,7 @@ export function AskInbox({ items, bare = false, className }: { items: InboxItem[
   const hidden = ordered.length - visible.length
 
   return (
-    <section aria-label={t('inbox.title')} className={cx('flex flex-col gap-1.5', className)}>
+    <section aria-label={t('inbox.title')} className={cx('@container flex flex-col gap-1.5', className)}>
       {bare ? null : (
         <button
           type="button"
@@ -172,7 +175,7 @@ function MilestoneChip({ milestone }: { milestone: InboxMilestone | null }) {
       title={milestone.title}
       // L'étiquette mène au jalon : elle n'ouvre pas la ligne.
       onClick={(event) => event.stopPropagation()}
-      className="hidden shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-soft hover:bg-line hover:text-ink sm:inline-flex"
+      className="hidden shrink-0 items-center gap-1 rounded-full bg-surface-high px-1.5 py-0.5 text-meta text-ink-soft hover:bg-line hover:text-ink @sm:inline-flex"
     >
       <Flag size={10} aria-hidden />
       {t('inbox.milestone', { number: milestone.number })}
@@ -182,7 +185,7 @@ function MilestoneChip({ milestone }: { milestone: InboxMilestone | null }) {
 
 function Age({ at }: { at: number | null }) {
   if (!at) return null
-  return <span className="hidden shrink-0 text-xs text-ink-faint tabular-nums sm:inline">{elapsed(at)}</span>
+  return <span className="hidden shrink-0 text-xs text-ink-faint tabular-nums @sm:inline">{elapsed(at)}</span>
 }
 
 function withProject(t: ReturnType<typeof useTranslate>, project: string | null, title: string): string {
@@ -271,8 +274,8 @@ function HeavyRow({
             l'étiquette et le geste au bord de l'écran, loin de la ligne qu'ils servent. */}
         <button type="button" onClick={onToggle} aria-expanded={open} className="flex min-w-0 items-center gap-2.5 text-left">
           {line.icon}
-          <span className="min-w-0 max-w-[18rem] truncate md:shrink-0 text-sm text-ink">{line.title}</span>
-          <span className="hidden min-w-0 truncate text-sm text-ink-faint md:block">{line.hint}</span>
+          <span className="min-w-0 max-w-[18rem] truncate @xl:shrink-0 text-sm text-ink">{line.title}</span>
+          <span className="hidden min-w-0 truncate text-sm text-ink-faint @xl:block">{line.hint}</span>
         </button>
         <MilestoneChip milestone={item.milestone} />
         <Age at={line.since} />
@@ -290,7 +293,7 @@ function HeavyRow({
         </button>
       </div>
       {open ? (
-        <div className="flex flex-col gap-3 px-2 pt-1 pb-3 sm:pl-8">
+        <div className="flex flex-col gap-3 px-2 pt-1 pb-3 @sm:pl-8">
           <Reply item={item} onDone={onDone} />
         </div>
       ) : null}
@@ -458,8 +461,8 @@ function LightRow({ item }: { item: LightInboxItem }) {
       ) : (
         <span aria-hidden className="mx-[3.5px] size-[7px] shrink-0 rounded-full bg-accent" />
       )}
-      <span className="min-w-0 max-w-[18rem] truncate md:shrink-0 text-sm text-ink">{withProject(t, item.project, item.title)}</span>
-      <span className="hidden min-w-0 truncate text-sm text-ink-faint md:block">
+      <span className="min-w-0 max-w-[18rem] truncate @xl:shrink-0 text-sm text-ink">{withProject(t, item.project, item.title)}</span>
+      <span className="hidden min-w-0 truncate text-sm text-ink-faint @xl:block">
         {t(pr ? 'inbox.pr.ready' : 'inbox.card.review', { number: item.number })}
       </span>
       <span className="flex shrink-0 items-center gap-3">

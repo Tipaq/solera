@@ -1,7 +1,7 @@
-import { Activity, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
+import { Activity, ChartGantt, Columns3, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import type { ProjectDto } from '@solera/protocol'
+import type { JournalEntryDto, ProjectDto } from '@solera/protocol'
 import { Button, EmptyState, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
 import { AgentIcon, AGENT_LABELS } from '../components/AgentIcon'
 import { ActivityRail, type RailModel } from '../components/activity/ActivityRail'
@@ -13,18 +13,23 @@ import { journalDestination } from '../components/journal/JournalView'
 import { WorktreeGroups } from '../components/project/WorktreeGroups'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { ActivityTimeline, type TimelineTree } from '../components/travail/ActivityTimeline'
+import { StateBoard } from '../components/travail/StateBoard'
 import { TravailIndex } from '../components/travail/TravailIndex'
 import { isActiveFilter, matchesActivity, parseActivityFilter } from '../lib/activity-groups'
+import { sessionBars, timelineWindow, type TimelineWindow } from '../lib/activity-timeline'
 import type { ActivityRow } from '../lib/activity-rows'
 import { formatBytes, isCleanable, pluralOf, shortBranch, type TreeRow } from '../lib/code-model'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import type { InboxItem } from '../lib/inbox'
 import { useJournalDays } from '../lib/journal'
 import { useProjects } from '../lib/projects'
+import { stateColumns } from '../lib/state-board'
 import {
   NO_FILTERS,
   PERIODS,
   STATE_KEYS,
+  TRAVAIL_VIEWS,
   WHAT_KEYS,
   agentOptions,
   branchPasses,
@@ -54,8 +59,8 @@ import { useWorktreeStatuses } from '../lib/worktrees'
 const TARGET_PARAM = 'arbre'
 
 /**
- * Les vues livrées, dans l'ordre de leurs tuiles. Les quatre autres de `TRAVAIL_VIEWS`
- * (Tableau, Graphe, Par état, Frise) arrivent avec leurs cartes (#177 à #179).
+ * Les vues livrées, dans l'ordre de leurs tuiles. Tableau et Graphe arrivent avec leurs
+ * cartes (#177, #178).
  *
  * « Par arbre » montre, en attendant ses couloirs (#176), le regroupement par worktree
  * de l'ancienne Activité, qui porte le nettoyage des arbres.
@@ -63,7 +68,11 @@ const TARGET_PARAM = 'arbre'
 const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
   couloirs: <Rows3 size={16} />,
   fil: <Activity size={16} />,
+  etat: <Columns3 size={16} />,
+  frise: <ChartGantt size={16} />,
 }
+/** Sans git, ni arbre ni branche : il reste le fil et les sessions par état. */
+const WITHOUT_GIT: TravailView[] = ['fil', 'etat']
 /** Les vues où l'index des arbres a un sens. Les couloirs le prendront avec #176. */
 const WITH_INDEX: TravailView[] = ['fil']
 
@@ -109,7 +118,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const [params, setParams] = useSearchParams()
   const hasGit = Boolean(project.git)
 
-  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil'] as const) : (['fil'] as const)).map((key) => ({
+  const views: ViewOption<TravailView>[] = TRAVAIL_VIEWS.filter((key) => VIEW_ICONS[key] && (hasGit || WITHOUT_GIT.includes(key))).map((key) => ({
     key,
     label: t(`travail.view.${key}`),
     icon: VIEW_ICONS[key]!,
@@ -170,7 +179,23 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   // « Par arbre » montre toutes les sessions, terminées comprises ; « Par moment », le
   // vivant et l'historique.
   const treeRows = view === 'couloirs' ? travail.rows.filter(keepsRow) : []
-  const shown = view === 'couloirs' ? treeRows.length : live.length + entries.length
+  const forceCleanup = filters.states.includes('cleanup') || filters.states.includes('merged')
+
+  // « Par état » et la Frise : toutes les sessions non archivées, terminées comprises.
+  const sessionRows = view === 'etat' || view === 'frise' ? travail.rows.filter((row) => row.entry.conversation.archivedAt === null && keepsRow(row)) : []
+  const columns = view === 'etat' ? stateColumns(sessionRows, now) : null
+  const frame = timelineWindow(from, now)
+  const timeline = view === 'frise' ? timelineOf(travail, sessionRows, entries, frame, now, (tree) => treePasses(tree, filters, target), forceCleanup) : null
+  const timelineBranches = view === 'frise' ? branches.filter((branch) => (forceCleanup || branch.kind !== 'merged') && branchPasses(branch, filters, target, now)) : []
+
+  const shown =
+    view === 'couloirs'
+      ? treeRows.length
+      : columns
+        ? columns.working.length + columns.review.length + columns.done.length
+        : timeline
+          ? timeline.length + timelineBranches.length
+          : live.length + entries.length
   const nothing = active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
@@ -302,7 +327,6 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   /* ---------------------------------------------------------------- le rendu */
 
   const index = hasGit && display.index && WITH_INDEX.includes(view)
-  const forceCleanup = filters.states.includes('cleanup') || filters.states.includes('merged')
   const indexed = indexTrees(code.trees.filter((tree) => treePasses(tree, filters, null)), forceCleanup)
   const indexedBranches = branches.filter((branch) => branch.kind !== 'merged' && branchPasses(branch, filters, null, now))
   const base = hasGit && !target ? <BaseLine code={code} /> : null
@@ -354,6 +378,27 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               entryAside={(entry) => chipOf(travail.treeOfEntry(entry))}
               rowAside={(row) => chipOf(travail.treeOfRow(row))}
             />
+          ) : columns ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              <StateBoard
+                model={{
+                  projectId,
+                  inbox,
+                  ...columns,
+                  treeOf: travail.treeOfRow,
+                  milestoneOf: milestoneOfRow,
+                  targetKey,
+                  onSelectTree: toggleTarget,
+                }}
+              />
+            </div>
+          ) : timeline ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <ActivityTimeline projectId={projectId} frame={frame} trees={timeline} branches={timelineBranches} targetKey={targetKey} onSelect={setTarget} />
+            </div>
           ) : (
             <TreesInterim travail={travail} projectId={projectId} project={project} base={base} inbox={inbox} rows={treeRows} search={search} />
           )}
@@ -361,6 +406,54 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
       </div>
     </div>
   )
+}
+
+/**
+ * Les rangées d'arbres de la Frise, dans l'ordre de l'index : chaque arbre que les filtres
+ * gardent, avec les barres de ses sessions et les points de ses événements dans la fenêtre.
+ */
+function timelineOf(
+  travail: Travail,
+  rows: ActivityRow[],
+  entries: JournalEntryDto[],
+  frame: TimelineWindow,
+  now: number,
+  passes: (tree: TreeRow) => boolean,
+  withCleanup: boolean,
+): TimelineTree[] {
+  const rowsOf = groupBy(rows, (row) => travail.treeOfRow(row)?.key ?? null)
+  const eventsOf = groupBy(
+    entries.filter((entry) => entry.at >= frame.from),
+    (entry) => travail.treeOfEntry(entry)?.key ?? null,
+  )
+  return indexTrees(travail.code.trees.filter(passes), withCleanup).map((tree) => ({
+    tree,
+    bars: sessionBars(
+      (rowsOf.get(tree.key) ?? []).map(({ entry, group }) => ({
+        id: entry.conversation.id,
+        title: entry.conversation.title,
+        agent: entry.conversation.agent,
+        group,
+        createdAt: entry.conversation.createdAt,
+        updatedAt: entry.conversation.updatedAt,
+      })),
+      frame,
+      now,
+    ),
+    events: eventsOf.get(tree.key) ?? [],
+  }))
+}
+
+function groupBy<T>(items: T[], keyOf: (item: T) => string | null): Map<string, T[]> {
+  const out = new Map<string, T[]>()
+  for (const item of items) {
+    const key = keyOf(item)
+    if (key === null) continue
+    const list = out.get(key)
+    if (list) list.push(item)
+    else out.set(key, [item])
+  }
+  return out
 }
 
 /** La recherche sur une demande : son titre, sa carte ; `s:attend` la garde. */
