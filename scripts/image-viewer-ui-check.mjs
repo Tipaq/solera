@@ -136,7 +136,8 @@ try {
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'hidden' })
     // Radix rend le focus à la vignette qui a ouvert la visionneuse.
-    assert.equal(await opener.evaluate((element) => element === document.activeElement), true)
+    // Il le rend à la fin de l'animation de sortie : l'attendre, pas le lire.
+    await page.waitForFunction((element) => element === document.activeElement, await opener.elementHandle())
     await page.getByRole('button', { name: 'shots/view.png', exact: true }).click()
     const view = page.getByRole('dialog', { name: 'view.png en plein écran' })
     await view.waitFor()

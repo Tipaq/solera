@@ -37,12 +37,18 @@ jobs:
       # qu'au prochain `dev` de quelqu'un.
       - run: pnpm build:catalog
 
-  ui:
-    # Quelques suites d'interface de bout en bout : vrai serveur, Vite et Chromium. Hors
-    # CI, elles ont pourri en silence après la refonte du brouillon (#85, carte #132).
+  ui-batch:
+    # Les suites d'interface de bout en bout : vrai serveur, Vite et Chromium. Hors CI,
+    # elles pourrissent en silence (#85, cartes #132 et #258) : `scripts/ui-suites.mjs`
+    # les range toutes, en lots, et refuse une suite rangée nulle part.
     # Aucune n'a besoin d'un vrai CLI : chacune les coupe par sa configuration, les
     # déclare sur un binaire introuvable ou pose son faux binaire (claude-login).
+    name: ui (${{ matrix.batch }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        batch: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -55,12 +61,15 @@ jobs:
       # Les suites lancent Chromium avec son bac à sable, que l'AppArmor d'Ubuntu 24.04
       # refuse aux espaces de noms non privilégiés.
       - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: pnpm test:ui
-      - run: pnpm test:settings-ui
-      - run: node scripts/claude-login-ui-check.mjs
-      - run: pnpm test:windows-feedback-ui
-      - run: pnpm test:brief-field-ui
-      - run: pnpm test:card-draft-ui
+      - run: node scripts/ui-suites.mjs ${{ matrix.batch }}/${{ strategy.job-total }}
+
+  ui:
+    # Un seul statut pour tous les lots, celui qu'on attend avant de fusionner.
+    if: always()
+    needs: ui-batch
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.ui-batch.result }}" = success
 
   macos:
     # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :
