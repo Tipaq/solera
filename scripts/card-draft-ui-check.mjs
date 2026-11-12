@@ -140,13 +140,16 @@ try {
   await page.goto(`${base}/p/${project.id}/c/${session}`)
   const block = page.getByRole('region', { name: 'Brouillon de cartes', exact: true })
   await block.getByText('Brouillon : 4 carte(s) à créer').waitFor({ timeout: 15000 })
-  // « À décider » a laissé sa place à l'Activité de la colonne (#160, #163). À cette
-  // hauteur elle se replie en son en-tête : la demande se lit dans la modale qu'il ouvre.
-  await page.getByRole('group', { name: 'Suivi des conversations', exact: true }).getByRole('button', { name: /^Activité/ }).click()
-  const activity = page.getByRole('dialog')
-  await activity.getByText('4 cartes à créer', { exact: true }).waitFor()
+  // « À décider » a laissé sa place à l'Activité de la colonne (#121). À cette hauteur
+  // elle se replie en son en-tête (#234), dont le badge signale l'attente sans un clic ;
+  // la demande se lit dans la modale qu'il ouvre.
+  const header = page.getByRole('group', { name: 'Suivi des conversations', exact: true }).getByRole('button', { name: /^Activité/ })
+  await header.getByText(/^\d+ pour toi$/).waitFor({ state: 'attached' })
+  await header.click()
+  const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
+  await overview.getByText('4 cartes à créer', { exact: true }).waitFor()
   await page.keyboard.press('Escape')
-  await activity.waitFor({ state: 'hidden' })
+  await overview.waitFor({ state: 'hidden' })
   await block.scrollIntoViewIfNeeded()
   await block.screenshot({ animations: 'disabled', path: join(shots, 'card-draft-pending.png') })
 
