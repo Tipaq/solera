@@ -111,7 +111,8 @@ export function ViewTiles<K extends string>({ options, value, onChange }: { opti
       role="radiogroup"
       aria-label={t('toolbar.display.views')}
       className="grid gap-1.5 px-3 pt-3 pb-2"
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      // Trois par rangée au plus : six vues tiennent en deux rangées lisibles.
+      style={{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }}
     >
       {options.map((option) => {
         const active = option.key === value

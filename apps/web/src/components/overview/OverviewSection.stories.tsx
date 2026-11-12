@@ -19,7 +19,7 @@ const meta = {
   },
   args: {
     title: 'Derniers événements',
-    more: <MoreLink to="/p/p-nimbus/travail?vue=moment">Par moment</MoreLink>,
+    more: <MoreLink to="/p/p-nimbus/travail?vue=fil">Par moment</MoreLink>,
     children: <p className="text-sm text-ink-faint">Rien ces 14 derniers jours.</p>,
   },
 } satisfies Meta<typeof OverviewSection>
