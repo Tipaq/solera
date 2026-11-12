@@ -81,7 +81,7 @@ export function RecentEventsView({
                     <span className="hidden shrink-0 text-xs text-ink-faint sm:inline">{t(JOURNAL_KIND_LABELS[entry.kind])}</span>
                   )}
                 </span>
-                <span className="text-xs text-ink-faint tabular-nums">{elapsed(entry.at)}</span>
+                <span className="min-w-10 text-right text-xs text-ink-faint tabular-nums">{elapsed(entry.at)}</span>
               </>
             )
             return (
