@@ -26,6 +26,32 @@ export function withSheet(params: URLSearchParams, number: number | null): URLSe
   return next
 }
 
+/**
+ * La fiche **au portefeuille**, où les cartes de plusieurs projets se côtoient : le
+ * numéro n'y suffit plus, `?fiche=<projet>:<N>` dit aussi d'où sort la carte.
+ */
+export interface PortfolioSheet {
+  projectId: string
+  number: number
+}
+
+/** La carte dont la fiche est ouverte au portefeuille, ou `null`. */
+export function portfolioSheet(params: URLSearchParams): PortfolioSheet | null {
+  const raw = params.get(CARD_SHEET_PARAM)
+  const match = raw ? /^(.+):(\d+)$/.exec(raw) : null
+  if (!match) return null
+  const number = Number(match[2])
+  return Number.isSafeInteger(number) && number > 0 ? { projectId: match[1]!, number } : null
+}
+
+/** Ouvre au portefeuille la fiche de `sheet`, ou la ferme avec `null`, sans toucher aux autres paramètres. */
+export function withPortfolioSheet(params: URLSearchParams, sheet: PortfolioSheet | null): URLSearchParams {
+  const next = new URLSearchParams(params)
+  if (sheet === null) next.delete(CARD_SHEET_PARAM)
+  else next.set(CARD_SHEET_PARAM, `${sheet.projectId}:${sheet.number}`)
+  return next
+}
+
 /** Les sessions que la fiche montre : les archivées n'y sont pas, la plus récente vient d'abord. */
 export function sheetSessions(card: Pick<CardDto, 'conversations'>): CardConversationDto[] {
   return card.conversations.filter((entry) => entry.archivedAt === null).sort((a, b) => b.createdAt - a.createdAt)

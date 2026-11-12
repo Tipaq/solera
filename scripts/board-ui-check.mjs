@@ -534,10 +534,14 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'create-mobile.png') })
   await dialog.getByRole('button', { name: 'Annuler', exact: true }).click()
   await page.setViewportSize({ width: 1440, height: 900 })
+  await portfolioBoard(page, context, base, projects, shots)
+
+  await page.goto(board)
+  await page.locator('[data-kanban]').waitFor()
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'board-dark.png') })
   assert.deepEqual(errors, [])
-  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, promotion d’une sous-tâche, lien « bloque », référence #n et aperçu, éditeur refermé à côté, glisser persisté, tri retenu, recherche, drapeaux et « Ce qui t’attend », fiche sur place, filtre par jalon, couloirs, Terminé repliée, Liste (clavier, 1–4 persisté, tri, « Tout voir »), Par geste, mobile ; captures dans ' + shots)
+  console.log('OK : création et brouillon, aperçu Markdown, pièces multiples, téléchargement, erreur/réessai, retrait, notes, échéance, parente, sous-tâches, promotion d’une sous-tâche, lien « bloque », référence #n et aperçu, éditeur refermé à côté, glisser persisté, tri retenu, recherche, drapeaux et « Ce qui t’attend », fiche sur place, filtre par jalon, couloirs, Terminé repliée, Liste (clavier, 1–4 persisté, tri, « Tout voir »), Par geste, mobile, Tableau du portefeuille (couloirs, filtres, Liste, fiche, « + Carte ») ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
@@ -555,4 +559,129 @@ try {
 async function editCard(page, panel) {
   await panel.getByRole('button', { name: 'Plus d’actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Modifier la carte', exact: true }).click()
+}
+
+/**
+ * Le Tableau du portefeuille (#239, `coque.md` PF-22 à PF-27) : les feuilles de tous les
+ * projets, un couloir par projet qui a du travail ouvert, la pastille du projet hors de
+ * ces couloirs, et un clic qui mène où la carte se pilote — sa fiche si elle t'attend.
+ */
+async function portfolioBoard(page, context, base, everyProject, shots) {
+  const projects = everyProject.filter((owner) => !owner.archivedAt)
+  /* Une carte qui t'attend : la session du jeu d'essai qui attend une réponse, rattachée
+     à une feuille ouverte de son projet qui n'a pas encore de session. */
+  const asking = (await (await context.request.get(`${base}/api/conversations`)).json()).find((entry) => entry.status === 'awaiting_input' && entry.projectId)
+  assert.ok(asking, 'le jeu d’essai a une session qui attend')
+  const target = (await (await context.request.get(`${base}/api/projects/${asking.projectId}/cards`)).json())
+    .find((entry) => entry.children.length === 0 && entry.parent !== null && entry.column === 'todo' && entry.acceptedAt !== null && entry.conversations.length === 0)
+  assert.ok(target, 'une feuille ouverte sans session')
+  assert.ok((await context.request.patch(`${base}/api/conversations/${asking.id}`, { data: { cardId: target.id } })).ok())
+  const all = (
+    await Promise.all(
+      projects.map(async (owner) => (await (await context.request.get(`${base}/api/projects/${owner.id}/cards`)).json()).map((entry) => ({ ...entry, owner }))),
+    )
+  ).flat()
+  const leaves = all.filter((entry) => entry.children.length === 0 && !(entry.parent === null && entry.milestone) && entry.column !== 'abandoned')
+  const open = (entry) => entry.column !== 'done' && entry.column !== 'abandoned'
+  const busy = projects.filter((owner) => leaves.some((entry) => entry.owner.id === owner.id && open(entry)))
+  assert.ok(busy.length >= 2, 'le jeu d’essai a du travail ouvert dans deux projets')
+
+  await page.goto(`${base}/projects/board`)
+  const board = page.locator('[data-portfolio-board]')
+  const lanes = board.locator('[data-lane]')
+  await lanes.first().waitFor()
+  // Par projet, par défaut : un couloir par projet qui a du travail ouvert, dans l'ordre des projets.
+  assert.deepEqual(await lanes.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-lane'))), busy.map((owner) => owner.id))
+  assert.equal(await board.locator('[data-card-tile]').count(), await board.locator('[data-column]').evaluateAll((nodes) => nodes.reduce((sum, node) => sum + node.querySelectorAll('[data-card-tile]').length, 0)))
+  assert.equal(await board.locator('[data-column="abandoned"]').count(), 0, 'pas de colonne Abandonné')
+  for (const owner of busy) {
+    const lane = board.locator(`[data-lane="${owner.id}"]`)
+    const shownOpen = await lane.locator('[data-column]:not([data-column="done"]) [data-card-tile]').count()
+    assert.equal(shownOpen, leaves.filter((entry) => entry.owner.id === owner.id && open(entry)).length, `toutes les ouvertes de « ${owner.name} »`)
+    assert.ok((await lane.locator('[data-column="done"] [data-card-tile]').count()) <= 5, 'Fait : cinq au plus par couloir')
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board.png') })
+
+  // Filtrer ▾ : la section Projet en tête, un compte de cartes non livrées en regard.
+  const filters = page.getByRole('dialog', { name: 'Filtrer', exact: true })
+  await page.getByRole('button', { name: /^Filtrer/ }).click()
+  const [first, second] = busy
+  await filters.getByRole('checkbox', { name: new RegExp(first.name) }).click()
+  await page.keyboard.press('Escape')
+  await filters.waitFor({ state: 'detached' })
+  await page.waitForFunction((id) => [...document.querySelectorAll('[data-lane]')].every((node) => node.getAttribute('data-lane') === id), first.id)
+  assert.equal(await board.locator(`[data-lane="${second.id}"]`).count(), 0)
+  await page.getByRole('button', { name: 'Retirer ce filtre', exact: true }).click()
+  await board.locator(`[data-lane="${second.id}"]`).waitFor()
+
+  // La recherche lit aussi le nom du projet.
+  const search = page.getByRole('searchbox')
+  await search.fill(second.name)
+  await page.waitForFunction((id) => [...document.querySelectorAll('[data-lane]')].every((node) => node.getAttribute('data-lane') === id), second.id)
+  await search.fill('')
+
+  // Couloirs : sans couloir, chaque tuile porte la pastille de son projet ; par jalon, « Sans jalon » ferme la marche.
+  const display = page.getByRole('dialog', { name: 'Affichage', exact: true })
+  const chooseLanes = async (name) => {
+    await page.getByRole('button', { name: /^Affichage/ }).click()
+    await display.getByRole('radio', { name, exact: true }).click()
+    await page.keyboard.press('Escape')
+    await display.waitFor({ state: 'detached' })
+  }
+  await chooseLanes('Aucun')
+  await page.waitForFunction(() => document.querySelectorAll('[data-lane]').length === 1)
+  const pips = await board.locator('[data-column="todo"] > div > a[href^="/p/"]').count()
+  assert.equal(pips, await board.locator('[data-column="todo"] [data-card-tile]').count(), 'une pastille de projet par tuile')
+  await chooseLanes('Par jalon')
+  await page.waitForFunction(() => document.querySelector('[data-lane]:last-child')?.getAttribute('data-lane') === 'none')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board-milestones.png') })
+  await chooseLanes('Par projet')
+
+  // La Liste, sans les faites.
+  await page.getByRole('button', { name: /^Affichage/ }).click()
+  await display.getByRole('radiogroup', { name: 'Vues', exact: true }).getByRole('radio', { name: 'Liste', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForURL(/vue=liste/)
+  await board.locator('li [data-card-tile]').first().waitFor()
+  assert.equal(await board.locator('li [data-card-tile]').count(), leaves.filter(open).length)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board-list.png') })
+
+  // Une carte qui t'attend ouvre la fiche du portefeuille, projet et numéro dans l'adresse.
+  const waiting = leaves.find((entry) => open(entry) && entry.conversations.some((session) => !session.archivedAt && session.status === 'awaiting_input'))
+  assert.ok(waiting, 'le jeu d’essai a une carte qui t’attend')
+  await board.locator(`[data-lane="${waiting.owner.id}"] [data-card-tile="${waiting.number}"]`).click()
+  const sheet = page.getByRole('dialog', { name: `Carte #${waiting.number}`, exact: true })
+  await sheet.waitFor()
+  assert.equal(new URL(page.url()).searchParams.get('fiche'), `${waiting.owner.id}:${waiting.number}`)
+  assert.match(new URL(page.url()).pathname, /\/projects\/board$/)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board-fiche.png') })
+  await page.keyboard.press('Escape')
+  await sheet.waitFor({ state: 'hidden' })
+  assert.ok(!page.url().includes('fiche='))
+
+  // Une carte sans session qui t'attende mène à sa session, ou à un brouillon rattaché.
+  const quiet = leaves.find((entry) => open(entry) && !entry.conversations.some((session) => !session.archivedAt && ['awaiting_input'].includes(session.status)) && !entry.refinement)
+  await board.locator(`[data-lane="${quiet.owner.id}"] [data-card-tile="${quiet.number}"]`).click()
+  await page.waitForURL(new RegExp(`/p/${quiet.owner.id}/c/`))
+  await page.goBack()
+  await board.locator('li [data-card-tile]').first().waitFor()
+
+  // « + Carte » : dans quel projet ? puis la création chez lui.
+  await page.getByRole('button', { name: 'Carte', exact: true }).click()
+  await page.getByRole('menuitem', { name: second.name }).click()
+  await page.waitForURL(`**/p/${second.id}/board?nouvelle=1`)
+  await page.getByRole('dialog', { name: 'Nouvelle carte', exact: true }).waitFor()
+
+  // Au téléphone : le Kanban défile dans son couloir, la page jamais.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${base}/projects/board?vue=kanban`)
+  await lanes.first().waitFor()
+  await page.waitForTimeout(300)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board-mobile.png') })
+  await page.goto(`${base}/projects/board?vue=liste`)
+  await board.locator('li [data-card-tile]').first().waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portfolio-board-list-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
 }

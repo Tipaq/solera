@@ -89,8 +89,8 @@ const MilestonePage = lazy(() =>
  * d'arrivée : l'accueil, le portefeuille, la vue d'ensemble d'un projet, la conversation.
  */
 const NewProjectPage = lazy(() => import('./routes/NewProjectPage').then((m) => ({ default: m.NewProjectPage })))
-const PortfolioBoardPage = lazy(() =>
-  import('./routes/PortfolioBoardPage').then((m) => ({ default: m.PortfolioBoardPage })),
+const PortfolioTableauPage = lazy(() =>
+  import('./routes/PortfolioTableauPage').then((m) => ({ default: m.PortfolioTableauPage })),
 )
 const PortfolioTimelinePage = lazy(() =>
   import('./routes/PortfolioTimelinePage').then((m) => ({ default: m.PortfolioTimelinePage })),
@@ -256,7 +256,7 @@ export function App() {
           <Route path="/projects/new" element={<Deferred><NewProjectPage /></Deferred>} />
           <Route path="/projects" element={<PortfolioLayout />}>
             <Route index element={<PortfolioOverviewPage />} />
-            <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
+            <Route path="board" element={<Deferred><PortfolioTableauPage /></Deferred>} />
             <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
             {/* Les anciennes vues (Activité, Travail d'avant #117, Journal) mènent à l'Aperçu,
                 qui porte « Ce qui t'attend » et les derniers événements, jusqu'à ce que

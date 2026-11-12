@@ -161,11 +161,14 @@ export function BoardTile({
   )
 }
 
-/** Une tuile qui ne se saisit pas : Par geste range par geste, pas par colonne. */
-export function StillTile({ entry, onOpen }: { entry: BoardCard; onOpen?: () => void }) {
+/**
+ * Une tuile qui ne se saisit pas : Par geste range par geste, pas par colonne, et le
+ * portefeuille mêle des projets dont chacun range ses cartes chez lui.
+ */
+export function StillTile({ entry, onOpen, showMilestone = true }: { entry: BoardCard; onOpen?: () => void; showMilestone?: boolean }) {
   return (
     <button type="button" data-card-tile={entry.card.number} onClick={onOpen} className={cx(tileClass(entry), 'hover:border-line-strong')}>
-      <TileBody entry={entry} showMilestone />
+      <TileBody entry={entry} showMilestone={showMilestone} />
     </button>
   )
 }
