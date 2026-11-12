@@ -2,8 +2,8 @@ import { ArrowLeft, ArrowRight, BookOpen, Container, ExternalLink, Globe, Loader
 import { memo, Component, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { sanitizeReaderTree, type ReaderElement } from '@solera/protocol'
-import { Banner, Button, IconButton, SegmentedControl } from '@solera/ui'
-import { useTranslate } from '../../lib/i18n'
+import { Banner, Button, PanelToolbar, cx, panelGestureClass, panelToolClass } from '@solera/ui'
+import { useTranslate, type MessageKey } from '../../lib/i18n'
 import {
   closeWeb,
   containerPortOf,
@@ -16,7 +16,10 @@ import {
   useWebPage,
   useWebPane,
 } from '../../lib/web-pane'
+import { toolbarFieldClass } from '../toolbar/OneLineToolbar'
 import { ImageLightbox } from './ImageView'
+
+const MODE_LABELS = { reader: 'web.mode.reader', live: 'web.mode.live' } as const satisfies Record<string, MessageKey>
 
 /**
  * La vue *Web* : une page ouverte depuis le fil, sans quitter Solera.
@@ -92,61 +95,67 @@ export const WebPane = memo(function WebPane({ scope, ports: portsFrom = null }:
   // Une adresse de Solera elle-même : le cadre la refuserait de toute façon, mais sans
   // `allow-same-origin`, rien n'y toucherait la session même si ce refus manquait.
   const sameOrigin = new URL(url).origin === window.location.origin
+  const next = pane.mode === 'reader' ? 'live' : 'reader'
+  const modeLabel = t('web.mode.switch', { mode: t(MODE_LABELS[pane.mode]), next: t(MODE_LABELS[next]) })
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="@container flex shrink-0 items-center gap-1 border-b border-line px-2 py-1.5">
-        <IconButton size="sm" label={t('web.back')} disabled={pane.index === 0} onClick={() => stepWeb(scope, -1)}>
+      {/* La barre d'adresse est la ligne d'outils commune : l'adresse y tient la place du
+          titre, au format de la recherche ; les gestes à la hauteur des autres outils. */}
+      <PanelToolbar>
+        <Gesture label={t('web.back')} disabled={pane.index === 0} onClick={() => stepWeb(scope, -1)}>
           <ArrowLeft size={15} />
-        </IconButton>
-        <IconButton
-          size="sm"
-          label={t('web.forward')}
-          disabled={pane.index >= pane.history.length - 1}
-          onClick={() => stepWeb(scope, 1)}
-        >
-          <ArrowRight size={15} />
-        </IconButton>
-        <IconButton size="sm" label={t('web.reload')} onClick={reload}>
+        </Gesture>
+        <span className="hidden @min-[24rem]:flex">
+          <Gesture label={t('web.forward')} disabled={pane.index >= pane.history.length - 1} onClick={() => stepWeb(scope, 1)}>
+            <ArrowRight size={15} />
+          </Gesture>
+        </span>
+        <Gesture label={t('web.reload')} onClick={reload}>
           {page.isFetching ? <Loader size={14} className="animate-spin" /> : <RotateCw size={14} />}
-        </IconButton>
+        </Gesture>
         <form onSubmit={submit} className="min-w-0 flex-1">
-          <input
-            value={address}
-            onChange={(event) => setAddress(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()}
-            aria-label={t('web.address')}
-            spellCheck={false}
-            className="h-8 w-full min-w-0 rounded-md border border-line bg-sunken px-2 font-mono text-xs text-ink outline-none focus:border-accent"
-          />
+          <label className={cx(toolbarFieldClass(), 'transition-colors')}>
+            <Globe size={14} className="shrink-0" />
+            <input
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+              aria-label={t('web.address')}
+              spellCheck={false}
+              className="min-w-0 flex-1 bg-transparent font-mono text-xs text-ink outline-none"
+            />
+          </label>
         </form>
-        <SegmentedControl
-          label={t('web.mode')}
-          value={pane.mode}
-          onChange={(mode) => setWebMode(scope, mode)}
-          className="shrink-0 [&_button]:px-2"
-          segments={[
-            { value: 'reader', label: t('web.mode.reader'), icon: <BookOpen size={13} /> },
-            { value: 'live', label: t('web.mode.live'), icon: <MonitorPlay size={13} /> },
-          ]}
-        />
+        {/* Lecture / Direct : un seul bouton qui bascule ; l'icône et le libellé disent le
+            mode affiché, le nom accessible ajoute celui où l'on passe. */}
+        <button
+          type="button"
+          onClick={() => setWebMode(scope, next)}
+          className={panelToolClass()}
+          title={modeLabel}
+          aria-label={modeLabel}
+        >
+          {pane.mode === 'reader' ? <BookOpen size={14} /> : <MonitorPlay size={14} />}
+          <span className="hidden @min-[30rem]:inline">{t(MODE_LABELS[pane.mode])}</span>
+        </button>
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
           title={t('web.external')}
           aria-label={t('web.external')}
-          className="flex size-8 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
+          className={cx(panelGestureClass, 'shrink-0')}
         >
           <ExternalLink size={14} />
         </a>
-        <IconButton size="sm" label={t('web.close')} onClick={() => closeWeb(scope)}>
+        <Gesture label={t('web.close')} onClick={() => closeWeb(scope)}>
           <X size={15} />
-        </IconButton>
-      </div>
+        </Gesture>
+      </PanelToolbar>
 
       {forwarded ? (
-        <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1 text-xs text-ink-faint">
+        <p className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-2 text-xs text-ink-soft">
           <Container size={11} />
           {forwarded.port.error
             ? t(`web.port.error.${forwarded.port.error.code}`, {
@@ -244,6 +253,27 @@ export const WebPane = memo(function WebPane({ scope, ports: portsFrom = null }:
     </div>
   )
 })
+
+/** Un geste de la ligne d'adresse, à la hauteur des autres outils (`Button size="sm"`). */
+function Gesture({ label, disabled, onClick, children }: {
+  label: string
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className={cx(panelGestureClass, 'shrink-0')}
+    >
+      {children}
+    </button>
+  )
+}
 
 /**
  * Le texte lu, inséré nœud par nœud.

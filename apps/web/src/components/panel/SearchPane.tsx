@@ -1,6 +1,17 @@
-import { CaseSensitive, ChevronRight, Loader, Regex, Search, WholeWord, X } from 'lucide-react'
+import { ChevronRight, Loader, Replace, Search, X } from 'lucide-react'
 import { memo, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Button, ConfirmDialog, IconButton, TooltipButton, cx } from '@solera/ui'
+import {
+  ConfirmDialog,
+  IconButton,
+  PanelGroup,
+  PanelNotice,
+  PanelToolbar,
+  TooltipButton,
+  cx,
+  panelGestureClass,
+  panelRowClass,
+  panelToolClass,
+} from '@solera/ui'
 import type { ContentFileDto } from '@solera/protocol'
 import { ApiRequestError } from '../../lib/api'
 import { revealLine } from '../../lib/editor-reveal'
@@ -8,6 +19,8 @@ import { fileIconUrl } from '../../lib/file-icons'
 import { useTranslate } from '../../lib/i18n'
 import { useDebounced } from '../../lib/search'
 import { useFileSearch } from '../../lib/tree'
+import { toolbarFieldClass } from '../toolbar/OneLineToolbar'
+import { FilterMenu, MenuCheck, MenuHeading } from '../toolbar/ToolbarMenus'
 import {
   EMPTY_CRITERIA,
   replaceAll,
@@ -61,8 +74,19 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
       ? content.error.message
       : null
 
+  /** Une panne, elle : dans la bande commune, avec de quoi réessayer. */
+  const failed = ready && !pending && content.isError && !invalidRegex
+
   // Ce qui est affiché montre l'avant : changer le critère périme le compte rendu.
   useEffect(() => setDone(null), [criteria])
+
+  const activeFilters = [
+    criteria.caseSensitive,
+    criteria.wholeWord,
+    criteria.regex,
+    criteria.include.trim() !== '',
+    criteria.exclude.trim() !== '',
+  ].filter(Boolean).length
 
   const set = (patch: Partial<SearchCriteria>) =>
     setCriteria((current) => ({ ...current, ...patch }))
@@ -83,89 +107,99 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col pb-safe">
-      <div className="flex shrink-0 gap-1 p-2">
-        <TooltipButton
-          type="button"
-          aria-label={t(replaceOpen ? 'panel.search.replace.hide' : 'panel.search.replace.show')}
-          aria-expanded={replaceOpen}
-          onClick={() => setReplaceOpen((value) => !value)}
-          className="mt-1 flex size-6 shrink-0 items-center justify-center rounded text-ink-faint hover:text-ink"
+      {/* Une seule ligne, comme les autres onglets : le champ tient lieu de titre — c'est
+          tout l'objet de la vue —, les drapeaux et les motifs de fichiers passent dans
+          « Filtrer ▾ », et Remplacer reste un geste à part qui déplie sa propre ligne. */}
+      <PanelToolbar>
+        <label className={cx(toolbarFieldClass(Boolean(invalidRegex)), 'flex-1 transition-colors')}>
+          <Search size={16} className="shrink-0" />
+          <input
+            type="search"
+            value={criteria.query}
+            onChange={(event) => set({ query: event.target.value })}
+            onKeyDown={(event) => { if (event.key === 'Escape') set({ query: '' }) }}
+            placeholder={t('panel.search.placeholder')}
+            aria-label={t('panel.search.label')}
+            aria-invalid={invalidRegex ? true : undefined}
+            maxLength={500}
+            className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-soft"
+          />
+        </label>
+        <FilterMenu
+          compact
+          active={activeFilters}
+          onClearAll={() => set({ caseSensitive: false, wholeWord: false, regex: false, include: '', exclude: '' })}
         >
-          <ChevronRight size={14} className={cx('transition-transform', replaceOpen && 'rotate-90')} />
-        </TooltipButton>
-
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className={cx(
-            'flex items-center gap-1 rounded-md border bg-sunken pr-1 pl-2',
-            invalidRegex ? 'border-critical' : 'border-line focus-within:border-accent',
-          )}>
-            <Search size={14} className="shrink-0 text-ink-faint" />
-            <input
-              type="search"
-              value={criteria.query}
-              onChange={(event) => set({ query: event.target.value })}
-              onKeyDown={(event) => { if (event.key === 'Escape') set({ query: '' }) }}
-              placeholder={t('panel.search.placeholder')}
-              aria-label={t('panel.search.label')}
-              aria-invalid={invalidRegex ? true : undefined}
-              maxLength={500}
-              className="h-9 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
-            />
-            <Flag label={t('panel.search.caseSensitive')} on={criteria.caseSensitive}
-              onToggle={() => set({ caseSensitive: !criteria.caseSensitive })}>
-              <CaseSensitive size={14} />
-            </Flag>
-            <Flag label={t('panel.search.wholeWord')} on={criteria.wholeWord}
-              onToggle={() => set({ wholeWord: !criteria.wholeWord })}>
-              <WholeWord size={14} />
-            </Flag>
-            <Flag label={t('panel.search.regex')} on={criteria.regex}
-              onToggle={() => set({ regex: !criteria.regex })}>
-              <Regex size={14} />
-            </Flag>
-          </div>
-
-          {replaceOpen ? (
-            <div className="flex gap-1.5">
-              <input
-                value={replacement}
-                onChange={(event) => setReplacement(event.target.value)}
-                placeholder={t('panel.search.replace.placeholder')}
-                aria-label={t('panel.search.replace.placeholder')}
-                maxLength={500}
-                className="h-9 min-w-0 flex-1 rounded-md border border-line bg-sunken px-2 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent"
-              />
-              {/* Désarmé tant qu'il n'y a rien à remplacer : un bouton cliquable sur
-                  zéro résultat se lirait comme une panne. */}
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!ready || replacing || files.length === 0 || Boolean(invalidRegex)}
-                onClick={() => setConfirming(true)}
-              >
-                {replacing ? <Loader size={14} className="animate-spin" /> : null}
-                {t('panel.search.replace.all')}
-              </Button>
-            </div>
-          ) : null}
-
-          <div className="flex gap-1.5">
+          <MenuHeading>{t('panel.search.filter.match')}</MenuHeading>
+          <MenuCheck checked={criteria.caseSensitive} onChange={(next) => set({ caseSensitive: next })}>
+            {t('panel.search.caseSensitive')}
+          </MenuCheck>
+          <MenuCheck checked={criteria.wholeWord} onChange={(next) => set({ wholeWord: next })}>
+            {t('panel.search.wholeWord')}
+          </MenuCheck>
+          <MenuCheck checked={criteria.regex} onChange={(next) => set({ regex: next })}>
+            {t('panel.search.regex')}
+          </MenuCheck>
+          <MenuHeading>{t('panel.search.filter.files')}</MenuHeading>
+          <div className="flex flex-col gap-1.5 px-3 pb-1">
             <Filter value={criteria.include} onChange={(value) => set({ include: value })}
               placeholder={t('panel.search.include')} clearLabel={t('panel.search.clear')} />
             <Filter value={criteria.exclude} onChange={(value) => set({ exclude: value })}
               placeholder={t('panel.search.exclude')} clearLabel={t('panel.search.clear')} />
           </div>
-        </div>
-      </div>
+        </FilterMenu>
+        <TooltipButton
+          type="button"
+          aria-label={t(replaceOpen ? 'panel.search.replace.hide' : 'panel.search.replace.show')}
+          aria-expanded={replaceOpen}
+          onClick={() => setReplaceOpen((value) => !value)}
+          className={panelToolClass(replaceOpen)}
+        >
+          <Replace size={14} />
+        </TooltipButton>
+      </PanelToolbar>
 
-      {invalidRegex ? (
-        <p role="alert" className="shrink-0 px-3 pb-2 text-xs text-critical">{invalidRegex}</p>
+      {replaceOpen ? (
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-line px-3 py-1.5">
+          <input
+            value={replacement}
+            onChange={(event) => setReplacement(event.target.value)}
+            placeholder={t('panel.search.replace.placeholder')}
+            aria-label={t('panel.search.replace.placeholder')}
+            maxLength={500}
+            className="h-11 min-w-0 flex-1 rounded-md border border-line bg-transparent px-2.5 text-sm text-ink outline-none placeholder:text-ink-soft focus:border-line-strong md:h-9 pointer-coarse:h-11"
+          />
+          {/* Désarmé tant qu'il n'y a rien à remplacer : un bouton cliquable sur
+              zéro résultat se lirait comme une panne. */}
+          <button
+            type="button"
+            disabled={!ready || replacing || files.length === 0 || Boolean(invalidRegex)}
+            onClick={() => setConfirming(true)}
+            className={cx(panelToolClass(), 'disabled:pointer-events-none disabled:opacity-45')}
+          >
+            {replacing ? <Loader size={14} className="animate-spin" /> : null}
+            {t('panel.search.replace.all')}
+          </button>
+        </div>
+      ) : null}
+
+      {invalidRegex ? <PanelNotice tone="critical">{invalidRegex}</PanelNotice> : null}
+
+      {failed ? (
+        <PanelNotice tone="critical">
+          <span className="flex flex-wrap items-center gap-x-2">
+            <span className="min-w-0 flex-1">
+              {content.error instanceof Error ? content.error.message : t('panel.search.error')}
+            </span>
+            <button type="button" onClick={() => void content.refetch()} className={cx(panelGestureClass, 'shrink-0')}>
+              {t('editor.retry')}
+            </button>
+          </span>
+        </PanelNotice>
       ) : null}
 
       {done ? (
-        <p role="status" className="shrink-0 border-y border-line bg-accent-wash px-3 py-1.5 text-xs text-ink-soft">
-          {t('panel.search.replace.done', done)}
-        </p>
+        <PanelNotice onClose={() => setDone(null)}>{t('panel.search.replace.done', done)}</PanelNotice>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -176,12 +210,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
             <Loader size={11} className="animate-spin" />
             {t('panel.search.loading')}
           </p>
-        ) : content.isError && !invalidRegex ? (
-          <div role="alert" className="flex items-center gap-2 px-3 py-2 text-xs text-critical">
-            {content.error instanceof Error ? content.error.message : t('panel.search.error')}
-            <Button size="sm" variant="ghost" onClick={() => void content.refetch()}>{t('editor.retry')}</Button>
-          </div>
-        ) : nameEntries.length === 0 && files.length === 0 ? (
+        ) : failed ? null : nameEntries.length === 0 && files.length === 0 ? (
           <p role="status" className="px-3 py-2 text-xs text-ink-faint">{t('panel.search.empty')}</p>
         ) : (
           <>
@@ -203,14 +232,14 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
             {nameEntries.length > 0 ? (
               <>
-                <Section>{t('panel.search.section.names')}</Section>
+                <PanelGroup title={t('panel.search.section.names')} />
                 <ul data-search-results>
                   {nameEntries.map((entry) => (
                     <li key={entry.path}>
                       <button
                         type="button"
                         onClick={() => onOpenFile(entry.path)}
-                        className="flex min-h-8 w-full items-center gap-2 px-3 py-1 text-left hover:bg-surface-high"
+                        className={panelRowClass}
                       >
                         <img src={fileIconUrl(entry.name, false)} alt="" className="size-4 shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">{entry.name}</span>
@@ -226,7 +255,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
             {files.length > 0 ? (
               <>
-                <Section>{t('panel.search.section.content')}</Section>
+                <PanelGroup title={t('panel.search.section.content')} />
                 <ul data-search-content>
                   {files.map((file) => (
                     <li key={file.path}>
@@ -262,37 +291,6 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
     </div>
   )
 })
-
-function Section({ children }: { children: string }) {
-  return (
-    <p className="px-3 pt-2 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-      {children}
-    </p>
-  )
-}
-
-/** Un des trois drapeaux du champ, dans l'ordre de VS Code. */
-function Flag({ label, on, onToggle, children }: {
-  label: string
-  on: boolean
-  onToggle: () => void
-  children: ReactNode
-}) {
-  return (
-    <TooltipButton
-      type="button"
-      aria-label={label}
-      aria-pressed={on}
-      onClick={onToggle}
-      className={cx(
-        'flex size-7 shrink-0 items-center justify-center rounded',
-        on ? 'bg-accent-wash text-accent' : 'text-ink-faint hover:text-ink',
-      )}
-    >
-      {children}
-    </TooltipButton>
-  )
-}
 
 /** Inclure ou exclure : une liste de motifs séparés par des virgules. */
 function Filter({ value, onChange, placeholder, clearLabel }: {
@@ -343,7 +341,7 @@ function FileMatches({ file, scope, onOpen }: {
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex min-h-8 w-full items-center gap-1.5 px-2 py-1 text-left hover:bg-surface-high"
+        className={panelRowClass}
       >
         <ChevronRight size={13} className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')} />
         <img src={fileIconUrl(name, false)} alt="" className="size-4 shrink-0" />
