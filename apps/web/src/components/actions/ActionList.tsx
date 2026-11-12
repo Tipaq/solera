@@ -4,6 +4,7 @@ import {
   MoreHorizontal,
   Pencil,
   Play,
+  Repeat,
   RotateCw,
   ScrollText,
   Server,
@@ -22,9 +23,15 @@ import {
   useDeleteAction,
   useRunAction,
 } from '../../lib/actions'
+import { useConversation } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import { showTerminal } from '../../lib/panel'
-import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import { runningElsewhereOf, switchTargets } from '../../lib/served'
+import { useServedIndex, type ServedData, type ServedRow } from '../../lib/served-query'
+import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
+import { ServedLine } from '../automations/served/ServedLine'
+import { useTargetName } from '../automations/served/ServeMenu'
+import { useServiceSwitch, type SwitchRequest, type SwitchTo } from '../automations/served/SwitchServiceDialog'
 
 /** L'édition d'une action, chargée à son ouverture (#128) : hors du paquet d'entrée. */
 const ActionDialog = lazy(() => import('./ActionDialog').then((m) => ({ default: m.ActionDialog })))
@@ -42,14 +49,32 @@ export interface ActionHandlers {
   onReview: (action: ProjectActionDto) => void
   onEdit: (action: ProjectActionDto) => void
   onDelete: (action: ProjectActionDto) => void
+  /** « Basculer sur » : le dialogue qui dit ce que la bascule redémarre. */
+  onSwitch: (request: SwitchRequest) => void
+  /** Un lancement refusé parce que le service tourne ailleurs : vrai si le dialogue s'ouvre. */
+  onElsewhere: (action: ProjectActionDto, error: unknown) => boolean
+}
+
+/**
+ * Où un lancement d'ici partirait : le worktree de la conversation, sinon la racine,
+ * nommé comme « Basculer sur » le nomme.
+ */
+export function useLaunchHere(served: ServedData, conversationId?: string): SwitchTo {
+  const { data: conversation } = useConversation(conversationId)
+  const nameOf = useTargetName()
+  const worktreeId = conversation?.worktreeId ?? null
+  const tree = served.trees.find((entry) => (worktreeId ? entry.id === worktreeId : entry.root))
+  return { name: tree ? nameOf(tree) : null, ...(conversationId ? { conversationId } : {}) }
 }
 
 export function ActionList({
+  projectId,
   actions,
   conversationId,
   handlers,
   compact = false,
 }: {
+  projectId: string
   actions: ProjectActionDto[]
   /** Dans le lanceur, plus étroit : marges resserrées et geste réduit à son icône. */
   compact?: boolean
@@ -58,19 +83,27 @@ export function ActionList({
   handlers: ActionHandlers
 }) {
   const run = useRunAction()
+  const served = useServedIndex(projectId)
+  // Le refus d'un service qui tourne ailleurs n'est pas une erreur : il ouvre le dialogue.
+  const failure = run.error && !runningElsewhereOf(run.error) ? run.error : null
 
   const primary = (action: ProjectActionDto) => {
     const view = actionView(action)
     if (view.primary === 'review') handlers.onReview(action)
     else if (view.primary === 'output' && action.lastRun) showTerminal(action.lastRun.terminalId)
-    else run.mutate({ action, op: view.primary === 'stop' ? 'stop' : 'run', conversationId })
+    else {
+      run.mutate(
+        { action, op: view.primary === 'stop' ? 'stop' : 'run', conversationId },
+        { onError: (error) => handlers.onElsewhere(action, error) },
+      )
+    }
   }
 
   return (
     <>
-      {run.error ? (
+      {failure ? (
         <div className="px-3 pt-2">
-          <Banner>{run.error.message}</Banner>
+          <Banner>{failure.message}</Banner>
         </div>
       ) : null}
 
@@ -81,6 +114,9 @@ export function ActionList({
             action={action}
             busy={run.isPending && run.variables?.action.id === action.id}
             compact={compact}
+            served={served.byAutomation.get(`a-${action.id}`) ?? null}
+            targets={served.trees}
+            onSwitch={handlers.onSwitch}
             onPrimary={() => primary(action)}
             onRun={(op) => run.mutate({ action, op, conversationId })}
             onEdit={() => handlers.onEdit(action)}
@@ -105,16 +141,21 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
   const [reviewing, setReviewing] = useState<ProjectActionDto | null>(null)
   const [deleting, setDeleting] = useState<ProjectActionDto | null>(null)
   const [editing, setEditing] = useState<ProjectActionDto | 'new' | null>(null)
-  const failure = approve.error ?? remove.error ?? run.error
+  const switching = useServiceSwitch()
+  const here = useLaunchHere(useServedIndex(projectId), conversationId)
+  const failure = approve.error ?? remove.error ?? (run.error && !runningElsewhereOf(run.error) ? run.error : null)
 
   const handlers: ActionHandlers = {
     onReview: setReviewing,
     onEdit: setEditing,
     onDelete: setDeleting,
+    onSwitch: switching.ask,
+    onElsewhere: (action, error) => switching.askIfElsewhere(action, error, here),
   }
 
   const dialogs = (
     <>
+      {switching.dialog}
       {editing ? (
         <Suspense fallback={null}>
           <ActionDialog
@@ -136,7 +177,8 @@ export function useActionDialogs(projectId: string, conversationId?: string) {
           setReviewing(null)
           if (!action) return
           approve.mutate(action.id, {
-            onSuccess: (approved) => run.mutate({ action: approved, conversationId }),
+            onSuccess: (approved) =>
+              run.mutate({ action: approved, conversationId }, { onError: (error) => handlers.onElsewhere(approved, error) }),
           })
         }}
       >
@@ -191,6 +233,9 @@ function ActionRow({
   action,
   busy,
   compact,
+  served,
+  targets,
+  onSwitch,
   onPrimary,
   onRun,
   onEdit,
@@ -199,6 +244,11 @@ function ActionRow({
   action: ProjectActionDto
   busy: boolean
   compact: boolean
+  /** Ce qu'il sert, s'il tourne. */
+  served: ServedRow | null
+  /** Les arbres du projet, d'où tirer ceux où le basculer. */
+  targets: ServedData['trees']
+  onSwitch: (request: SwitchRequest) => void
   onPrimary: () => void
   onRun: (op: RunOp) => void
   onEdit: () => void
@@ -208,6 +258,8 @@ function ActionRow({
   const view = actionView(action)
   const isService = action.kind === 'service'
   const primary = PRIMARY[view.primary]
+  const nameOf = useTargetName()
+  const switchable = served?.switchable ? switchTargets(targets, served) : []
 
   const body = (
         <div className={cx('flex items-start gap-3', compact ? 'px-3 py-2.5' : 'px-5 py-4')}>
@@ -245,6 +297,7 @@ function ActionRow({
               </a>
             ) : null}
             <p className="text-xs text-ink-faint">{describeActionState(action, t)}</p>
+            {served ? <ServedLine served={served} className="max-w-full" /> : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
@@ -263,6 +316,23 @@ function ActionRow({
                 <MenuItem icon={<RotateCw size={15} />} onSelect={() => onRun('restart')}>
                   {t('actions.restart')}
                 </MenuItem>
+              ) : null}
+              {served && switchable.length > 0 ? (
+                <>
+                  <MenuLabel>{t('served.switchTo')}</MenuLabel>
+                  {switchable.map((tree) => (
+                    <MenuItem
+                      key={tree.key}
+                      icon={<Repeat size={15} />}
+                      onSelect={() =>
+                        onSwitch({ action, from: served, to: { name: nameOf(tree), ...(tree.id ? { worktreeId: tree.id } : {}) } })
+                      }
+                    >
+                      <span className="block truncate font-mono text-xs">{nameOf(tree)}</span>
+                    </MenuItem>
+                  ))}
+                  <MenuSeparator />
+                </>
               ) : null}
               {isService && (view.live || view.failed) ? (
                 <MenuItem icon={<ScrollText size={15} />} onSelect={() => onRun('logs')}>
