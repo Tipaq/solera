@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { cx } from '@solera/ui'
 import { locale, useTranslate } from '../../lib/i18n'
-import { daysOf, isoWeek, isWeekend, monthsOf, startOfDay, type Scale, type Zoom } from './scale'
+import { daysOf, isoWeek, isWeekend, monthsOf, startOfDay, weekLabelStep, type Scale, type Zoom } from './scale'
 
 export const AXIS_H = 48
 const AXIS_TOP = 22
@@ -31,6 +31,7 @@ export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale:
   )
   const days = daysOf(scale)
   const today = startOfDay(now)
+  const weekStep = weekLabelStep(scale.ppd)
 
   return (
     <div className="relative border-b border-line bg-canvas select-none" style={{ width: scale.width, height: AXIS_H }}>
@@ -71,11 +72,14 @@ export function GanttAxis({ scale, zoom, now = Date.now(), inset = 0 }: { scale:
           ))
         : days
             .filter((at) => new Date(at).getDay() === 1)
+            // Trop serrées, une sur n : chacune prend la place des semaines qu'elle saute.
+            .filter((_, index) => index % weekStep === 0)
             .map((at) => (
               <span
                 key={at}
+                data-week-label
                 className="absolute flex items-center gap-1 border-l border-line/50 pl-1 text-meta whitespace-nowrap text-ink-faint tabular-nums"
-                style={{ left: scale.x(at), width: scale.ppd * 7, top: AXIS_TOP, height: AXIS_H - AXIS_TOP }}
+                style={{ left: scale.x(at), width: scale.ppd * 7 * weekStep, top: AXIS_TOP, height: AXIS_H - AXIS_TOP }}
               >
                 <span className="opacity-60">{t('gantt.weekShort', { n: isoWeek(at) })}</span>
                 <span>{new Date(at).getDate()}</span>

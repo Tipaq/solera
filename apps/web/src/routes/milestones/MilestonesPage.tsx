@@ -1,4 +1,4 @@
-import { Compass, Plus } from 'lucide-react'
+import { ChartGantt, Compass, Plus } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
@@ -6,6 +6,7 @@ import { Button, EmptyState } from '@solera/ui'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
 import type { Zoom } from '../../components/gantt/scale'
 import { Horizon } from '../../components/milestones/Horizon'
+import { MilestoneGantt } from '../../components/milestones/MilestoneGantt'
 import { MilestoneCreatedNotice, NewMilestoneDrawer, type MilestoneOutcome } from '../../components/milestones/NewMilestoneDrawer'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../../components/toolbar/ToolbarMenus'
@@ -16,20 +17,18 @@ import { useMilestones } from '../../lib/milestones'
 import { useProjects } from '../../lib/projects'
 import { useView } from '../../lib/use-view'
 
-/**
- * Les vues livrées, dans l'ordre de leurs tuiles. Le Gantt détaillé (#191) s'y ajoute :
- * `useView` retient déjà la dernière vue du projet.
- */
-const VIEWS = ['horizon'] as const
+/** Les vues, dans l'ordre de leurs tuiles ; `useView` retient la dernière du projet. */
+const VIEWS = ['horizon', 'gantt'] as const
 type MilestonesView = (typeof VIEWS)[number]
-const VIEW_ICONS: Record<MilestonesView, ReactNode> = { horizon: <Compass size={16} /> }
+const VIEW_ICONS: Record<MilestonesView, ReactNode> = { horizon: <Compass size={16} />, gantt: <ChartGantt size={16} /> }
 
 /**
  * L'onglet **Jalons** d'un projet (spec jalons BAR, CAP, HOR). L'adresse est restée
  * `timeline`.
  *
  * La barre tient sur une ligne : « Chercher un jalon », « Filtrer ▾ » (maturité, retard)
- * et ses puces, « Affichage ▾ » (l'échelle du temps), « + Jalon » au bout. Les jalons se
+ * et ses puces, « Affichage ▾ » (Horizon ou Gantt, l'échelle du temps), « + Jalon » au
+ * bout. Le filtre et l'échelle valent pour les deux vues (BAR-8). Les jalons se
  * déduisent des cartes (`useMilestones`) : rien n'est lu de plus que le board, sinon les
  * pilotages actifs et les demandes ouvertes.
  */
@@ -45,7 +44,7 @@ export function MilestonesPage() {
 
 function Milestones({ project }: { project: ProjectDto }) {
   const t = useTranslate()
-  const { entries, statusOf, isPending } = useMilestones(project.id)
+  const { entries, cards, statusOf, isPending } = useMilestones(project.id)
   const [view, setView] = useView('jalons', project.id, VIEWS)
   const views: ViewOption<MilestonesView>[] = VIEWS.map((key) => ({ key, label: t(`milestones.view.${key}`), icon: VIEW_ICONS[key] }))
   const [query, setQuery] = useState('')
@@ -130,8 +129,20 @@ function Milestones({ project }: { project: ProjectDto }) {
           </Button>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {view === 'horizon' ? (
+      {view === 'gantt' ? (
+        // Le Gantt défile seul, dans les deux sens : l'axe et la liste y restent collés.
+        <div className="min-h-0 flex-1">
+          <MilestoneGantt
+            projectId={project.id}
+            entries={entries}
+            keep={(entry) => keepMilestone(entry, query, filters, now)}
+            cards={cards}
+            zoom={zoom}
+            statusOf={statusOf}
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <Horizon
             project={project}
             entries={shown}
@@ -139,8 +150,8 @@ function Milestones({ project }: { project: ProjectDto }) {
             statusOf={statusOf}
             notice={created ? <MilestoneCreatedNotice outcome={created} onDismiss={() => setCreated(null)} /> : null}
           />
-        ) : null}
-      </div>
+        </div>
+      )}
       <NewMilestoneDrawer
         open={adding}
         onClose={() => setAdding(false)}

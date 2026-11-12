@@ -30,3 +30,13 @@ export const STATE_NODE: Record<CardState, string> = {
   done: 'border-positive/40 bg-positive/5',
   abandoned: 'border-dashed border-line opacity-50',
 }
+
+/** La jauge d'un jalon dans le Gantt (GNT-8) : son remplissage, par état de ses cartes. */
+export const STATE_MIX: Record<CardState, string> = {
+  done: 'bg-positive/70',
+  review: 'bg-positive/35',
+  running: 'bg-accent/60',
+  blocked: 'bg-caution/60',
+  todo: 'bg-ink-faint/25',
+  abandoned: 'bg-transparent',
+}
