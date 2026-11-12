@@ -13,7 +13,7 @@ import {
 import { useTranslate } from '../../lib/i18n'
 import { BaseLine } from './BaseLine'
 import { Drift } from './Drift'
-import { MilestoneChip } from './MilestoneChip'
+import { MilestoneChip, MilestoneTag } from './MilestoneChip'
 import { PrTag } from './PrTag'
 import { SessionStack } from './SessionStack'
 import { TreeChip } from './TreeChip'
@@ -223,6 +223,16 @@ export const Jalon: Story = {
     <div className="flex items-center gap-3">
       <MilestoneChip milestone={{ number: 901, title: 'Page projet v2' }} to="/p/p1/timeline" />
       <MilestoneChip milestone={{ number: 901, title: 'Page projet v2' }} />
+    </div>
+  ),
+}
+
+/** « ⚑ Jalon #n titre » : le jalon d'une ligne du fil « Par moment », en accent. */
+export const JalonDuFil: Story = {
+  name: 'MilestoneTag',
+  render: () => (
+    <div className="w-72">
+      <MilestoneTag milestone={{ number: 164, title: 'Page projet v2 · 2 — Aperçu, Travail, Tableau' }} to="/p/p1/timeline/164" />
     </div>
   ),
 }
