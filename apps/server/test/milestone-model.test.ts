@@ -7,15 +7,20 @@ const {
   ENTRY_STAGE,
   MATURITIES,
   cycleOf,
+  gestureOf,
   horizonOf,
   isIdea,
   isMilestone,
+  layersOf,
   maturityReasons,
   maturityTooltip,
   milestoneAsks,
   nextAction,
   nextActionText,
   reasonText,
+  refinePending,
+  waveProgress,
+  wavesOf,
 } = await import('../../web/src/lib/milestone-model.js')
 const { cardDestination, cardDestinationHref } = await import('../../web/src/lib/card-destination.js')
 
@@ -476,6 +481,106 @@ test('MAT-12 : une session bloquée n’en est pas une demande de jalon — elle
 
 test('composer : l’étape où entre un jalon selon le geste', () => {
   assert.deepEqual(ENTRY_STAGE, { note: 'idea', refine: 'refine', split: 'refine' })
+})
+
+/* ------------------------------------------------------------------ JAL-6, JAL-8 */
+
+test('JAL-6 : le geste de chaque prochaine action', () => {
+  const idea = only([card(1, { milestone: true })])
+  assert.deepEqual(gestureOf(idea), { kind: 'refine' }, 'une idée ouvre sa session d’affinage')
+
+  const draft = only(milestone(1, [card(2)], { refinement: refinement({ draft: { requestId: 'd-1', count: 2 } }) }))
+  assert.deepEqual(gestureOf(draft), { kind: 'scroll', target: 'affinage' })
+  const settle = only(milestone(1, [card(2, { toClarifySince: NOW })]))
+  assert.deepEqual(gestureOf(settle), { kind: 'scroll', target: 'affinage' }, 'À régler défile jusqu’à l’affinage')
+  assert.deepEqual(gestureOf(only(milestone(1, [card(2)]))), { kind: 'scroll', target: 'lancer' }, 'Prêt défile jusqu’à Lancer')
+
+  const pr = { number: 7, url: 'https://forge/pr/7', mergedAt: null }
+  assert.deepEqual(gestureOf(only(milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: pr }))), { kind: 'merge' })
+
+  const waiting = card(2, { conversations: [session('s2', 'awaiting_input')] })
+  assert.deepEqual(
+    gestureOf(only(milestone(1, [waiting]), { runs: [run('c-1')] })),
+    { kind: 'sheet', number: 2 },
+    'une session bloquée ouvre la fiche de sa carte, où l’on répond sur place',
+  )
+  assert.deepEqual(gestureOf(only(milestone(1, [card(2)]), { runs: [run('c-1')] })), { kind: 'scroll', target: 'lancer' }, 'sinon on suit')
+  assert.equal(gestureOf(only(milestone(1, [card(2, { column: 'done' })]))), null, 'livré, rien à faire')
+})
+
+test('JAL-8 : l’affinage passe en tête quand il attend quelque chose', () => {
+  assert.equal(refinePending(only([card(1, { milestone: true })])), true, 'une idée sans cartes')
+  assert.equal(refinePending(only(milestone(1, [card(2)]))), false, 'un jalon prêt n’attend rien')
+  assert.equal(refinePending(only(milestone(1, [card(2, { toClarifySince: NOW })]))), true, 'une carte à préciser')
+  assert.equal(refinePending(only(milestone(1, [card(2, { acceptedAt: null })]))), true, 'une carte à accepter')
+  const c = card(2)
+  const d = card(3)
+  depend(c, d)
+  depend(d, c)
+  assert.equal(refinePending(only(milestone(1, [c, d]))), true, 'un cycle')
+  const draft = milestone(1, [card(2)], { refinement: refinement({ draft: { requestId: 'd-1', count: 2 } }) })
+  assert.equal(refinePending(only(draft)), true, 'un brouillon')
+  const asked = milestone(1, [card(2)], { refinement: refinement() })
+  assert.equal(refinePending(only(asked, { requests: new Map([['split-1', questionRequest('Pour qui ?')]]) })), true, 'des questions')
+  const change = milestone(1, [card(2)], { refinement: refinement({ change: { requestId: 'r-1', count: 2 } }) })
+  assert.equal(refinePending(only(change)), true, 'un ajout proposé')
+  const working = milestone(1, [card(2)], { refinement: refinement({ status: 'running' }) })
+  assert.equal(refinePending(only(working)), false, 'une session qui travaille n’attend rien de toi')
+  const waiting = card(2, { conversations: [session('s2', 'awaiting_input')] })
+  assert.equal(
+    refinePending(only(milestone(1, [waiting]), { runs: [run('c-1')] })),
+    false,
+    'une session bloquée se lit dans « Ce qui t’attend », pas dans l’affinage (§2.6-1)',
+  )
+})
+
+/* ------------------------------------------------------------------ VAG-3..5 */
+
+test('VAG-3 : l’étage d’une carte, 0 sans bloqueur dans le jeu, sinon un de plus que le plus haut', () => {
+  const a = card(1)
+  const b = card(2)
+  const c = card(3)
+  const outside = card(9)
+  depend(b, a)
+  depend(c, a, b)
+  depend(a, outside)
+  const layers = layersOf([a, b, c])
+  assert.deepEqual([...layers.entries()].sort(), [['c-1', 0], ['c-2', 1], ['c-3', 2]], 'un bloqueur hors du jeu ne compte pas')
+})
+
+test('VAG-3 : un cycle est coupé, chaque carte garde un étage', () => {
+  const a = card(1)
+  const b = card(2)
+  const c = card(3)
+  depend(a, c)
+  depend(b, a)
+  depend(c, b)
+  const layers = layersOf([a, b, c])
+  assert.equal(layers.size, 3)
+  assert.deepEqual([...layers.values()].sort(), [0, 1, 2])
+})
+
+test('VAG-3, VAG-4 : les vagues sans les abandonnées, les ouvertes d’abord puis par numéro', () => {
+  const a = card(1, { column: 'done' })
+  const b = card(2)
+  const c = card(4)
+  const d = card(3, { column: 'done' })
+  const gone = card(5, { column: 'abandoned' })
+  depend(c, a)
+  depend(d, a)
+  depend(gone, a)
+  assert.deepEqual(
+    wavesOf([gone, d, c, b, a]).map((wave) => wave.map((entry) => entry.number)),
+    [[2, 1], [4, 3]],
+  )
+  assert.deepEqual(wavesOf([]), [])
+})
+
+test('VAG-5 : une vague terminée, en parallèle, ou en plusieurs passes à la concurrence', () => {
+  const done = card(1, { column: 'done' })
+  assert.deepEqual(waveProgress([done], 3), { kind: 'finished' })
+  assert.deepEqual(waveProgress([done, card(2), card(3)], 3), { kind: 'open', open: 2, passes: 1 })
+  assert.deepEqual(waveProgress([card(2), card(3), card(4), card(5)], 3), { kind: 'open', open: 4, passes: 2 })
 })
 
 /* ------------------------------------------------------------------ FCH-10 */
