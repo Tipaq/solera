@@ -389,8 +389,15 @@ test('la dernière activité d’une session qui travaille est son outil en cour
   h.session('refine', 'milestone', { status: 'running' })
   h.log.append('refine', { type: 'tool.started', toolCallId: 't1', name: 'Read', input: { file_path: 'AGENTS.md' }, parentToolCallId: null })
 
-  const detail = await h.detail('milestone')
+  let detail = await h.detail('milestone')
   assert.equal(detail.activity?.toolName, 'Read')
+  // Ses arguments, lus au journal : la page en tire sa ligne (`toolSummary`).
+  assert.deepEqual(detail.activity?.input, { file_path: 'AGENTS.md' })
+
+  // Le dernier `tool.input_updated` l'emporte, comme dans le fil.
+  h.log.append('refine', { type: 'tool.input_updated', toolCallId: 't1', input: { file_path: 'docs/SPEC.md' } })
+  detail = await h.detail('milestone')
+  assert.deepEqual(detail.activity?.input, { file_path: 'docs/SPEC.md' })
 })
 
 test('la route refuse une carte d’un projet qu’on ne voit pas, et une carte qui n’existe pas', async (t) => {
