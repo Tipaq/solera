@@ -48,6 +48,7 @@ export interface MemoryState {
 }
 
 const HEADER = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
+const LINK = /\[\[([^\]]+)\]\]/g
 
 /**
  * Une note : son en-tête (`name`, `description`, `type`, au premier niveau ou sous
@@ -67,14 +68,21 @@ export function parseNote(file: string, content: string, updatedAt: number): Mem
   const type = (NOTE_TYPES as readonly string[]).includes(rawType ?? '') ? (rawType as NoteType) : 'none'
   const body = header ? content.slice(header[0].length) : content
   const slug = file.replace(/\.md$/, '')
-  const links = [...new Set([...body.matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => match[1]!.trim()))]
+  const links = [...new Set([...body.matchAll(LINK)].map((match) => match[1]!.trim()))]
   return { file, slug, name: field('name') ?? slug, description: field('description'), type, body, links, content, updatedAt }
 }
 
-/** Les lignes de `MEMORY.md` qui pointent vers une note : `- [Titre](fichier.md) — accroche`. */
+/** Le corps à afficher : un `[[lien]]` devient du code, la page le rend à part. */
+export const linksAsCode = (body: string) => body.replace(LINK, '`$1`')
+
+/**
+ * Les lignes de `MEMORY.md` qui pointent vers une note : `- [Titre](fichier.md) — accroche`.
+ * La même règle que le serveur quand il retire la ligne d'une note supprimée
+ * (`](fichier.md)`) : un chemin, même `./fichier.md`, ne désigne pas une note.
+ */
 export function indexEntries(index: string): IndexEntry[] {
   return index.split('\n').flatMap((line) => {
-    const file = /\]\((?:\.\/)?([^)/]+\.md)\)/.exec(line)?.[1]
+    const file = /\]\(([^)/]+\.md)\)/.exec(line)?.[1]
     return file ? [{ file, line }] : []
   })
 }

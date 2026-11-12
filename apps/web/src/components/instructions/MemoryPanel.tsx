@@ -1,15 +1,17 @@
 import { Check, ChevronRight, FilePlus2, Pencil, Trash2, Wrench } from 'lucide-react'
 import { useState } from 'react'
 import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type ProjectMemoryDto } from '@solera/protocol'
-import { Badge, Banner, Button, cx } from '@solera/ui'
+import { Badge, Banner, Button, Field, cx } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
 import { relativeDate, shortAge } from '../../lib/dates'
-import { useTranslate, type MessageKey } from '../../lib/i18n'
+import { useLocale, useTranslate } from '../../lib/i18n'
 import { useDeleteMemoryFile, useProjectMemory, useWriteMemoryFile } from '../../lib/memory'
+import { pluralKey } from '../../lib/schedule-rule'
 import {
   NOTE_TYPES,
   filterNotes,
   isNoteFileName,
+  linksAsCode,
   memoryState,
   parseNote,
   repairIndex,
@@ -33,8 +35,6 @@ const TYPE_TONE: Record<NoteType, 'accent' | 'caution' | 'positive' | 'neutral'>
   reference: 'neutral',
   none: 'neutral',
 }
-
-const plural = (count: number, key: string) => `${key}.${count > 1 ? 'other' : 'one'}` as MessageKey
 
 /** Ce que le panneau écrit : une note, l'index, ou une suppression qui garde ou non sa ligne. */
 export interface MemoryWrites {
@@ -109,7 +109,7 @@ export function MemoryNotes({ data, writes }: { data: ProjectMemoryDto; writes: 
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <ToolbarSearch value={query} onChange={setQuery} placeholder={t('memory.search')} width="min-w-48 flex-1 md:max-w-64" />
+        <ToolbarSearch value={query} onChange={setQuery} placeholder={t('memory.search')} widthClass="min-w-48 flex-1 md:max-w-64" />
         <div role="group" aria-label={t('memory.type.label')} className="flex flex-wrap gap-1">
           {FILTERS.map((key) =>
             key !== 'all' && counts[key] === 0 ? null : (
@@ -143,8 +143,8 @@ export function MemoryNotes({ data, writes }: { data: ProjectMemoryDto; writes: 
       {creating ? (
         <NoteEditor
           creating
-          initial={t('memory.template', { name: 'nouvelle-note' })}
-          fileName="nouvelle-note.md"
+          initial={t('memory.template', { name: t('memory.editor.defaultName') })}
+          fileName={`${t('memory.editor.defaultName')}.md`}
           taken={(name) => data.files.some((file) => file.file === name)}
           busy={writes.busy}
           onCancel={() => setCreating(false)}
@@ -195,17 +195,18 @@ const noteAnchor = (file: string) => `note-${file}`
 /** `MEMORY.md` · indexées · absentes · orphelines · Réparer l'index ou « à jour ». */
 function IndexLine({ state, canEdit, busy, onRepair }: { state: MemoryState; canEdit: boolean; busy: boolean; onRepair: () => void }) {
   const t = useTranslate()
+  const locale = useLocale()
   const { indexed, unindexed, orphans } = state
   const broken = unindexed.length > 0 || orphans.length > 0
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" aria-label={MEMORY_INDEX_FILE} role="group">
       <span className="font-mono text-ink-soft">{MEMORY_INDEX_FILE}</span>
-      <span className="text-ink-faint">{t(plural(indexed.size, 'memory.index.indexed'), { count: indexed.size })}</span>
+      <span className="text-ink-faint">{t(`memory.index.indexed.${pluralKey(indexed.size, locale)}`, { count: indexed.size })}</span>
       {unindexed.length > 0 ? (
-        <span className="text-caution">{t(plural(unindexed.length, 'memory.index.unindexed'), { count: unindexed.length })}</span>
+        <span className="text-caution">{t(`memory.index.unindexed.${pluralKey(unindexed.length, locale)}`, { count: unindexed.length })}</span>
       ) : null}
       {orphans.length > 0 ? (
-        <span className="text-caution">{t(plural(orphans.length, 'memory.index.orphans'), { count: orphans.length })}</span>
+        <span className="text-caution">{t(`memory.index.orphans.${pluralKey(orphans.length, locale)}`, { count: orphans.length })}</span>
       ) : null}
       {broken ? (
         canEdit ? (
@@ -282,7 +283,7 @@ function NoteLine({
             <>
               {note.description ? <p className="text-xs text-ink-faint sm:hidden">{note.description}</p> : null}
               <div className="text-sm">
-                <Markdown text={note.body.replace(/\[\[([^\]]+)\]\]/g, '`$1`')} />
+                <Markdown text={linksAsCode(note.body)} />
               </div>
               {note.links.length > 0 ? <NoteLinks links={note.links} notes={notes} onReveal={onReveal} /> : null}
               {canEdit ? <NoteActions note={note} indexed={indexed} busy={busy} onEdit={() => onEdit(true)} onDelete={onDelete} /> : null}
@@ -307,7 +308,7 @@ function NoteLinks({ links, notes, onReveal }: { links: string[]; notes: MemoryN
             key={link}
             type="button"
             onClick={() => onReveal(target)}
-            className="rounded bg-surface-high px-1.5 py-0.5 font-mono text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
+            className="rounded bg-surface-high px-1.5 py-0.5 font-mono text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
           >
             {link}
           </button>
@@ -339,10 +340,10 @@ function NoteActions({
   const [alsoIndex, setAlsoIndex] = useState(true)
   if (confirming) {
     return (
-      <div role="alertdialog" aria-label={t('memory.delete.title', { file: note.file })} className="flex flex-wrap items-center gap-3 rounded-md bg-critical/10 px-3 py-2 text-sm">
+      <div role="group" aria-label={t('memory.delete.title', { file: note.file })} className="flex flex-wrap items-center gap-3 rounded-md bg-critical/10 px-3 py-2 text-sm">
         <span className="text-critical">{t('memory.delete.title', { file: note.file })}</span>
         {indexed ? (
-          <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
+          <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft pointer-coarse:min-h-11">
             <input type="checkbox" checked={alsoIndex} onChange={(event) => setAlsoIndex(event.target.checked)} className="accent-accent" />
             {t('memory.delete.alsoIndex')}
           </label>
@@ -396,24 +397,31 @@ function NoteEditor({
   const [name, setName] = useState(fileName)
   const [addToIndex, setAddToIndex] = useState(true)
   const problem = !creating ? null : !isNoteFileName(name) ? 'memory.editor.invalidName' : taken?.(name) ? 'memory.editor.taken' : null
+  const rename = (next: string) => {
+    // Tant que le gabarit n'a pas été touché, son `name` suit le nom du fichier.
+    const slug = (file: string) => file.replace(/\.md$/, '')
+    if (text === initial.replace(`name: ${slug(fileName)}\n`, `name: ${slug(name)}\n`)) {
+      setText(initial.replace(`name: ${slug(fileName)}\n`, `name: ${slug(next)}\n`))
+    }
+    setName(next)
+  }
   return (
     <div className={cx('flex flex-col gap-2', creating && 'rounded-lg border border-line p-3')}>
       {creating ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-ink">{t('memory.editor.newTitle')}</span>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            aria-label={t('memory.editor.fileName')}
-            aria-invalid={problem !== null}
-            spellCheck={false}
-            autoComplete="off"
-            className={cx(
-              'h-8 w-64 max-w-full rounded-md border bg-sunken px-2 font-mono text-xs text-ink outline-none pointer-coarse:h-11',
-              problem ? 'border-critical' : 'border-line hover:border-line-strong focus:border-accent',
-            )}
-          />
-          {problem ? <span className="text-xs text-critical">{t(problem)}</span> : null}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+          <span className="text-sm leading-(--tap) font-medium text-ink">{t('memory.editor.newTitle')}</span>
+          <div className="w-64 max-w-full">
+            <Field
+              label={t('memory.editor.fileName')}
+              hideLabel
+              value={name}
+              onChange={(event) => rename(event.target.value)}
+              error={problem ? t(problem) : undefined}
+              spellCheck={false}
+              autoComplete="off"
+              className="font-mono text-xs"
+            />
+          </div>
         </div>
       ) : null}
       <textarea
@@ -437,7 +445,7 @@ function NoteEditor({
           {t('dialog.cancel')}
         </Button>
         {creating ? (
-          <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft">
+          <label className="inline-flex items-center gap-1.5 text-xs text-ink-soft pointer-coarse:min-h-11">
             <input type="checkbox" checked={addToIndex} onChange={(event) => setAddToIndex(event.target.checked)} className="accent-accent" />
             {t('memory.editor.addToIndex')}
           </label>

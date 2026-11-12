@@ -452,7 +452,7 @@ try {
   // Supprimer en gardant sa ligne : elle devient orpheline. Puis en la retirant.
   await noteButton('hors').click()
   await memory.getByRole('button', { name: 'Supprimer', exact: true }).click()
-  const confirmDelete = memory.getByRole('alertdialog', { name: 'Supprimer hors.md ?' })
+  const confirmDelete = memory.getByRole('group', { name: 'Supprimer hors.md ?' })
   await shot(noteItem('hors'), '1280-memoire-supprimer')
   await confirmDelete.getByRole('checkbox', { name: 'retirer aussi sa ligne de MEMORY.md' }).uncheck()
   await confirmDelete.getByRole('button', { name: 'Supprimer', exact: true }).click()
@@ -460,7 +460,7 @@ try {
   assert.ok(!('hors.md' in (await memoryFiles())) && (await memoryFiles())['MEMORY.md'].includes('(hors.md)'), 'la ligne gardée')
   await noteButton('pas-de-jq').click()
   await memory.getByRole('button', { name: 'Supprimer', exact: true }).click()
-  await memory.getByRole('alertdialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await memory.getByRole('group', { name: 'Supprimer pas-de-jq.md ?' }).getByRole('button', { name: 'Supprimer', exact: true }).click()
   await noteButton('pas-de-jq').waitFor({ state: 'detached' })
   assert.ok(!(await memoryFiles())['MEMORY.md'].includes('(pas-de-jq.md)'), 'la ligne retirée avec la note')
   // Nouvelle note : un nom refusé, puis créée et indexée.
@@ -474,7 +474,7 @@ try {
   await fileName.fill('nouvelle.md')
   await shot(memory.getByRole('button', { name: 'Créer', exact: true }).locator('xpath=../..'), '1280-memoire-nouvelle')
   await memory.getByRole('button', { name: 'Créer', exact: true }).click()
-  await until(memoryFiles, (files) => files['nouvelle.md']?.startsWith('---\nname: nouvelle-note\n') && files['MEMORY.md'].includes('(nouvelle.md)'), 'la note créée et indexée')
+  await until(memoryFiles, (files) => files['nouvelle.md']?.startsWith('---\nname: nouvelle\n') && files['MEMORY.md'].includes('(nouvelle.md)'), 'la note créée et indexée')
   await until(() => noteButton('nouvelle').getAttribute('aria-expanded'), (value) => value === 'true', 'la note créée est ouverte')
   assert.equal(await bar.count(), 0, 'La mémoire ne passe pas par la barre')
 

@@ -3835,6 +3835,7 @@ export const en = {
   "memory.delete.title": "Delete {file}?",
   "memory.delete.alsoIndex": "also remove its line from MEMORY.md",
   "memory.editor.newTitle": "New note",
+  "memory.editor.defaultName": "new-note",
   "memory.editor.fileName": "Note file name",
   "memory.editor.content": "Contents of {file}",
   "memory.editor.invalidName": "a .md file name, no folder",

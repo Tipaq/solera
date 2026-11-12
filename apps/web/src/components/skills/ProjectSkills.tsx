@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { LibrarySkillDto } from '@solera/protocol'
 import { Banner, FoldLine } from '@solera/ui'
-import { useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate } from '../../lib/i18n'
+import { pluralKey } from '../../lib/schedule-rule'
 import { openSettings } from '../../lib/settings-dialog'
 import { useSkillLibrary } from '../../lib/skill-library'
 import { AddSkillMenu } from './AddSkillMenu'
@@ -42,6 +43,7 @@ export function ProjectSkillList({
   add: ReactNode
 }) {
   const t = useTranslate()
+  const locale = useLocale()
   return (
     <div className="flex flex-col gap-2">
       {libraryOff ? <Banner tone="caution">{t('skills.instanceDisabled')}</Banner> : null}
@@ -75,7 +77,7 @@ export function ProjectSkillList({
         </ul>
       )}
       <p className="text-xs text-ink-faint">
-        {t(instanceCount > 1 ? 'projectSettings.skills.instance.other' : 'projectSettings.skills.instance.one', { count: instanceCount })}{' '}
+        {t(`projectSettings.skills.instance.${pluralKey(instanceCount, locale)}`, { count: instanceCount })}{' '}
         <button type="button" onClick={() => openSettings('skills')} className="text-accent hover:underline">
           {t('skills.project.globals.link')}
         </button>

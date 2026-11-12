@@ -11,6 +11,7 @@ const {
   filterNotes,
   typeCounts,
   resolveLink,
+  linksAsCode,
 } = await import('../../web/src/lib/memory-index.js')
 
 const NOTE = `---
@@ -51,11 +52,10 @@ test('parseNote : fins de ligne Windows', () => {
   assert.equal(note.body, 'corps')
 })
 
-test('indexEntries : les lignes qui pointent vers une note, chemin relatif normalisé', () => {
+test('indexEntries : les lignes qui pointent vers une note, à plat comme le serveur les lit', () => {
   const index = '# Mémoire\n\n- [Port](port.md) — 7417\n- [Vieux](./vieux.md)\ntexte libre\n'
   assert.deepEqual(indexEntries(index), [
     { file: 'port.md', line: '- [Port](port.md) — 7417' },
-    { file: 'vieux.md', line: '- [Vieux](./vieux.md)' },
   ])
 })
 
@@ -113,6 +113,10 @@ test('filterNotes et typeCounts : type, recherche sans casse ni accents dans nom
   assert.deepEqual(filterNotes(notes, 'all', 'ECOUTE').map((note) => note.file), ['port.md'])
   assert.deepEqual(filterNotes(notes, 'all', 'corps').map((note) => note.file), ['hors.md'])
   assert.deepEqual(filterNotes(notes, 'user', '7417'), [])
+})
+
+test('linksAsCode : un [[lien]] devient du code', () => {
+  assert.equal(linksAsCode('Voir [[a]] et [[b c]].'), 'Voir `a` et `b c`.')
 })
 
 test('resolveLink : par nom de fichier ou par nom de note', () => {

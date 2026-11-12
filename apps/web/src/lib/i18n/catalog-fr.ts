@@ -3829,6 +3829,7 @@ export const fr: Catalog = {
   "memory.delete.title": "Supprimer {file} ?",
   "memory.delete.alsoIndex": "retirer aussi sa ligne de MEMORY.md",
   "memory.editor.newTitle": "Nouvelle note",
+  "memory.editor.defaultName": "nouvelle-note",
   "memory.editor.fileName": "Nom du fichier de la note",
   "memory.editor.content": "Contenu de {file}",
   "memory.editor.invalidName": "un nom de fichier .md, sans dossier",
