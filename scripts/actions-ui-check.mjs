@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -246,7 +246,8 @@ try {
   const actionsTab = page.locator('button[aria-pressed][aria-label^="Actions"]')
   await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
   await actionsTab.click()
-  const panel = page.locator('ul', { hasText: 'Dire bonjour' }).first()
+  // La liste des actions, pas le groupe des commandes lancées ici qui la précède.
+  const panel = page.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first()
   await panel.getByText('À relire').waitFor()
   await page.screenshot({ path: join(shots, 'actions-desktop.png') })
 
@@ -312,6 +313,82 @@ try {
     await page.locator('.xterm-rows', { hasText: 'python3 -m http.server' }).waitFor({ timeout: 10000 })
   }
 
+
+  // Les commandes lancées ici (RUN-*) : une vraie suite node:test qui échoue, lancée
+  // depuis la conversation, se lit dans l'onglet Actions — verdict, test en échec, lien
+  // vers le fichier, relance des seuls échecs ; puis une commande qui tourne, arrêtée.
+  console.log('actions-ui-check : commandes lancées ici')
+  const here = (await api(`/api/projects/${project.id}/terminals`)).find((entry) => entry.actionId === task.id)
+  await mkdir(join(here.cwd, 'check'), { recursive: true })
+  await writeFile(join(here.cwd, 'check/cart.test.mjs'), [
+    "import { describe, it } from 'node:test'",
+    "import assert from 'node:assert/strict'",
+    "describe('panier', () => {",
+    "  it('additionne les lignes', () => { assert.equal(1 + 1, 3) })",
+    "  it('garde la remise', () => {})",
+    '})',
+    '',
+  ].join('\n'))
+  const createTask = async (label, command) => {
+    const response = await context.request.post(`${base}/api/projects/${project.id}/actions`, { data: { label, kind: 'task', command } })
+    assert.equal(response.status(), 201)
+    return response.json()
+  }
+  const suite = await createTask('Tests du panier', 'node --test check/cart.test.mjs')
+  const launched = await context.request.post(`${base}/api/actions/${suite.id}/run`, { data: { conversationId: conversation.id } })
+  assert.ok(launched.ok(), await launched.text())
+  await actionsTab.click()
+  const runs = page.locator('[data-command-runs]')
+  const suiteRow = runs.locator('li', { hasText: 'Tests du panier' })
+  await suiteRow.getByText(/Échec \(code 1\) · \d+ s · 1 test en échec/).waitFor({ timeout: 20000 })
+  await page.screenshot({ path: join(shots, 'runs-list-1280.png') })
+  await suiteRow.getByRole('button', { name: /^Tests du panier/ }).click()
+  const detail = page.locator('[data-command-run]')
+  await detail.getByText('Tests en échec · 1').waitFor()
+  await detail.getByText(/Échec \(code 1\) en \d+ s · tests 2 · pass 1 · fail 1/).waitFor()
+  await detail.getByText('$ node --test check/cart.test.mjs', { exact: true }).waitFor()
+  await detail.getByText('panier › additionne les lignes', { exact: true }).waitFor()
+  assert.equal(await detail.getByText('attendu').count(), 1)
+  const rerunFailed = detail.getByRole('button', { name: 'Relancer seulement les échecs' })
+  assert.equal(await rerunFailed.getAttribute('title'), "node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'")
+  await page.screenshot({ path: join(shots, 'runs-detail-1280.png') })
+  // Le lien fichier:ligne ouvre le fichier dans Fichiers.
+  await detail.getByRole('button', { name: 'check/cart.test.mjs:4' }).click()
+  await page.locator('[data-editor-file="check/cart.test.mjs"]').waitFor()
+  // Relancer seulement les échecs : le détail suit la relance, sans quitter l'onglet.
+  await actionsTab.click()
+  await suiteRow.getByRole('button', { name: /^Tests du panier/ }).click()
+  await rerunFailed.click()
+  // L'en-tête dit ce qui a tourné, arguments de relance compris.
+  await detail.getByText("$ node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'", { exact: true }).waitFor({ timeout: 20000 })
+  await detail.getByText(/Échec \(code 1\)/).waitFor({ timeout: 20000 })
+  assert.equal(await detail.getByText('Tests en échec · 1').count(), 1)
+  // Échap remonte à la liste.
+  await page.keyboard.press('Escape')
+  await runs.waitFor()
+  assert.equal(await detail.count(), 0)
+
+  // Une commande qui tourne : la durée avance, « Arrêter » l'arrête pour de vrai, et elle
+  // se lit « Arrêtée », pas « Échec ».
+  const waiting = await createTask('Attendre', 'echo en-attente; sleep 60')
+  await context.request.post(`${base}/api/actions/${waiting.id}/run`, { data: { conversationId: conversation.id } })
+  await actionsTab.click()
+  const waitingRow = runs.locator('li', { hasText: 'Attendre' })
+  await runs.getByText(/^En cours/).waitFor()
+  await waitingRow.getByText('en-attente').waitFor({ timeout: 10000 })
+  const first = await waitingRow.getByText(/^\d+ s/).textContent()
+  await page.waitForTimeout(1500)
+  assert.notEqual(await waitingRow.getByText(/^\d+ s/).textContent(), first, 'la durée avance')
+  await page.screenshot({ path: join(shots, 'runs-running-1280.png') })
+  await waitingRow.getByRole('button', { name: 'Arrêter « Attendre »' }).click()
+  await waitingRow.getByText(/^Arrêtée · \d+ s$/).waitFor({ timeout: 10000 })
+  await runs.getByText(/^Dernières commandes/).waitFor()
+  // Écarter ferme son terminal.
+  await waitingRow.hover()
+  await waitingRow.getByRole('button', { name: 'Écarter « Attendre » et fermer son terminal' }).click()
+  await waitingRow.waitFor({ state: 'detached' })
+  assert.equal((await api(`/api/projects/${project.id}/terminals`)).some((entry) => entry.actionId === waiting.id), false)
+
   // Au téléphone.
   const phone = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'fr-FR', serviceWorkers: 'block' })
   await phone.addInitScript((origin) => {
@@ -327,8 +404,12 @@ try {
   await mobile.keyboard.press('Escape')
   await mobile.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
   await mobile.locator('button[aria-pressed][aria-label^="Actions"]').click()
-  await mobile.getByText('Dire bonjour').waitFor()
+  await mobile.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first().waitFor()
+  await mobile.locator('[data-command-runs]').getByText('Tests du panier').waitFor()
   await mobile.screenshot({ path: join(shots, 'actions-phone.png') })
+  await mobile.locator('[data-command-runs] li', { hasText: 'Tests du panier' }).getByRole('button', { name: /^Tests du panier/ }).click()
+  await mobile.locator('[data-command-run]').getByText('Tests en échec · 1').waitFor()
+  await mobile.screenshot({ path: join(shots, 'runs-detail-390.png') })
 
   // Supprimer le service arrête et retire son unité.
   for (const action of await api('/api/actions')) {
