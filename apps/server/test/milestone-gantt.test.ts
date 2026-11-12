@@ -142,6 +142,13 @@ test('lignes : un en-tête de 40 px par groupe, une ligne de 32 px par carte, au
   assert.equal(height, 40 + 32 * 2 + 40)
 })
 
+test('lignes : au téléphone, une ligne de carte plus haute pour tenir sur deux lignes', () => {
+  const cards = milestone(10, [card(11), card(12)])
+  const { centers, height } = ganttRows(ganttGroups(entriesOf(cards), cards, new Set(), NOW), 44)
+  assert.equal(centers.get('c-12'), 40 + 44 + 22)
+  assert.equal(height, 40 + 44 * 2)
+})
+
 test('échelle : les jalons, leurs cartes (repliées comprises) et les cartes libres ; pas les abandonnées', () => {
   const cards = [
     ...milestone(10, [card(11), card(12, { column: 'abandoned' })]),

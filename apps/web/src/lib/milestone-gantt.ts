@@ -13,6 +13,8 @@ import { isMilestone, type MilestoneEntry } from './milestone-model'
 export const GANTT_HEAD = 40
 /** La ligne d'une carte (GNT-9). */
 export const GANTT_ROW = 32
+/** Au téléphone, la ligne tient sur deux lignes : le titre, puis le numéro et l'échéance. */
+export const GANTT_ROW_NARROW = 44
 
 /** Un groupe : un jalon, ou « Hors jalon » (`entry` nul). */
 export interface GanttGroup {
@@ -65,14 +67,14 @@ export function ganttGroups(
  * Le centre de chaque ligne de carte et la hauteur totale : la liste collée et l'axe se
  * lisent sur cette même grille, et les flèches s'y accrochent.
  */
-export function ganttRows(groups: readonly GanttGroup[]): { centers: Map<string, number>; height: number } {
+export function ganttRows(groups: readonly GanttGroup[], row = GANTT_ROW): { centers: Map<string, number>; height: number } {
   const centers = new Map<string, number>()
   let y = 0
   for (const group of groups) {
     y += GANTT_HEAD
     for (const card of group.cards) {
-      centers.set(card.id, y + GANTT_ROW / 2)
-      y += GANTT_ROW
+      centers.set(card.id, y + row / 2)
+      y += row
     }
   }
   return { centers, height: y }

@@ -10,6 +10,7 @@ import { useTranslate } from '../../lib/i18n'
 import {
   GANTT_HEAD,
   GANTT_ROW,
+  GANTT_ROW_NARROW,
   LOOSE_GROUP,
   deliveredIds,
   ganttGroups,
@@ -36,8 +37,9 @@ const LIST_NARROW = 170
 /** La gouttière de la page : la colonne part du même bord que la barre d'outils. */
 const GUTTER = 16
 const GUTTER_MD = 24
-/** Le retrait d'une carte sous son jalon. */
+/** Le retrait d'une carte sous son jalon ; moindre au téléphone, où la colonne est étroite. */
 const INDENT = 20
+const INDENT_NARROW = 12
 const GAUGE_H = 12
 const NOTHING_FOLDED: ReadonlySet<string> = new Set()
 
@@ -92,7 +94,8 @@ export function MilestoneGantt({
   const scale = scaleOf(plotted, zoom, now, axisWidth)
   useScrollToNow(scroller, scale, listWidth, now)
   const chain = chainOf(plotted, hovered)
-  const { centers, height } = ganttRows(groups)
+  const row = narrow ? GANTT_ROW_NARROW : GANTT_ROW
+  const { centers, height } = ganttRows(groups, row)
   const anchors = anchorsOf(plotted, centers, scale, now)
 
   if (groups.length === 0) {
@@ -112,44 +115,42 @@ export function MilestoneGantt({
   return (
     <div ref={scroller} data-gantt className="h-full min-h-0 overflow-auto overscroll-contain">
       <div className="relative" style={{ width: listWidth + scale.width, minHeight: '100%' }}>
-        {/* l'axe, collé en haut */}
-        <div className="sticky top-0 z-20 flex">
+        {/* L'axe, collé en haut, au-dessus de tout ce qui défile dessous. */}
+        <div className="sticky top-0 z-10 flex">
           <div
-            className="sticky left-0 z-30 flex shrink-0 items-end justify-between border-r border-b border-line bg-canvas pr-3 pb-1.5 text-xs font-medium text-ink-faint"
+            className="sticky left-0 z-10 flex shrink-0 items-end justify-between border-r border-b border-line bg-canvas pr-3 pb-1.5 text-xs font-medium text-ink-faint"
             style={{ width: listWidth, height: AXIS_H, paddingLeft: gutter }}
           >
             <span>{t('gantt.headList')}</span>
-            <span>{t('gantt.headDue')}</span>
+            {narrow ? null : <span>{t('gantt.headDue')}</span>}
           </div>
           <GanttAxis scale={scale} zoom={zoom} now={now} inset={listWidth} />
         </div>
 
-        <div className="relative" onMouseLeave={() => setHovered(null)}>
-          <div className="absolute top-0" style={{ left: listWidth }}>
-            <GanttGrid scale={scale} zoom={zoom} height={height} now={now} today={false} />
-          </div>
-
-          {groups.map((group) => {
-            const entry = group.entry
-            const open = entry ? !foldedSet.has(entry.card.id) : true
-            const bar = entry ? milestoneBar(entry, now) : null
-            // Lancé : un pilotage en marche ou en pause, ou sa PR finale ouverte (MAT-2).
-            const launched = entry?.maturity === 'launched'
-            return (
-              <section
-                key={group.key}
-                data-gantt-group={entry ? entry.card.number : LOOSE_GROUP}
-                aria-label={entry ? `#${entry.card.number} ${entry.card.title}` : t('gantt.outside')}
-                className={cx('relative', entry && 'bg-surface-high/20')}
-              >
-                {/* l'en-tête du groupe, collé sous l'axe tant qu'on lit ses cartes */}
-                <div
-                  className="sticky z-[12] flex border-t border-b border-t-line border-b-line/60 bg-surface"
-                  style={{ top: AXIS_H, height: GANTT_HEAD }}
+        {/*
+          Deux colonnes sur la même grille : la liste, collée à gauche, et le tracé. Les couches
+          s'empilent par l'ordre du document et par `isolate`, avec le seul `z-10` des couches
+          locales du DS : le tracé (grille, barres, puis aujourd'hui et les flèches) sous la
+          liste ; dans chacun, l'en-tête de groupe au-dessus des lignes qui passent dessous.
+        */}
+        <div className="relative isolate flex" onMouseLeave={() => setHovered(null)}>
+          <div data-gantt-list className="sticky left-0 z-10 shrink-0 border-r border-line bg-canvas" style={{ width: listWidth }}>
+            {groups.map((group) => {
+              const entry = group.entry
+              const open = entry ? !foldedSet.has(entry.card.id) : true
+              const bar = entry ? milestoneBar(entry, now) : null
+              // Lancé : un pilotage en marche ou en pause, ou sa PR finale ouverte (MAT-2).
+              const launched = entry?.maturity === 'launched'
+              return (
+                <section
+                  key={group.key}
+                  data-gantt-group={entry ? entry.card.number : LOOSE_GROUP}
+                  aria-label={entry ? `#${entry.card.number} ${entry.card.title}` : t('gantt.outside')}
                 >
                   <div
-                    className="sticky left-0 z-10 flex shrink-0 items-center gap-1.5 border-r border-line bg-surface pr-2"
-                    style={{ width: listWidth, paddingLeft: gutter - 2 }}
+                    data-gantt-head
+                    className="sticky z-10 flex items-center gap-1.5 border-t border-b border-t-line border-b-line/60 bg-surface pr-2"
+                    style={{ top: AXIS_H, height: GANTT_HEAD, paddingLeft: gutter - 2 }}
                   >
                     {entry && bar ? (
                       <>
@@ -175,12 +176,42 @@ export function MilestoneGantt({
                       <span className="pl-0.5 text-sm font-semibold text-ink-soft">{t('gantt.outside')}</span>
                     )}
                   </div>
-                  <div className="relative flex-1">
-                    {entry && bar ? (
+                  {group.cards.map((card) => (
+                    <CardLabel
+                      key={card.id}
+                      card={card}
+                      href={hrefOf(card)}
+                      narrow={narrow}
+                      height={row}
+                      indent={gutter + (entry ? (narrow ? INDENT_NARROW : INDENT) : 0)}
+                      lit={hovered === card.id}
+                      dim={chain !== null && !chain.has(card.id)}
+                      onHover={setHovered}
+                      statusOf={statusOf}
+                      now={now}
+                    />
+                  ))}
+                </section>
+              )
+            })}
+          </div>
+
+          <div className="relative isolate shrink-0" style={{ width: scale.width }}>
+            <GanttGrid scale={scale} zoom={zoom} height={height} now={now} today={false} />
+            {groups.map((group) => {
+              const entry = group.entry
+              return (
+                <div key={group.key} data-gantt-plot={entry ? entry.card.number : LOOSE_GROUP} className={cx('relative', entry && 'bg-surface-high/20')}>
+                  <div
+                    data-gantt-head
+                    className="sticky z-10 border-t border-b border-t-line border-b-line/60 bg-surface"
+                    style={{ top: AXIS_H, height: GANTT_HEAD }}
+                  >
+                    {entry ? (
                       <MilestoneGauge
                         entry={entry}
-                        bar={bar}
-                        launched={launched}
+                        bar={milestoneBar(entry, now)}
+                        launched={entry.maturity === 'launched'}
                         members={group.members}
                         scale={scale}
                         now={now}
@@ -188,80 +219,136 @@ export function MilestoneGantt({
                       />
                     ) : null}
                   </div>
-                </div>
-
-                {group.cards.map((card) => {
-                  const late = isLate(card, now)
-                  const lit = hovered === card.id
-                  const dim = chain !== null && !chain.has(card.id)
-                  return (
-                    <div
-                      key={card.id}
-                      data-gantt-row={card.number}
-                      className={cx('flex transition-colors', lit && 'bg-accent/[0.07]')}
-                      style={{ height: GANTT_ROW }}
-                      onMouseOver={() => setHovered(card.id)}
-                    >
-                      <Link
-                        to={hrefOf(card)}
-                        className={cx(
-                          'sticky left-0 z-10 flex shrink-0 items-center gap-1.5 border-r border-line pr-3 text-left text-sm transition-colors',
-                          lit ? 'bg-surface-high' : 'bg-canvas',
-                          dim && 'text-ink-faint',
-                        )}
-                        style={{ width: listWidth, paddingLeft: gutter + (entry ? INDENT : 0) }}
+                  {/* Ses lignes, à part : l'en-tête collé passe au-dessus quand elles défilent. */}
+                  <div className="relative isolate">
+                    {group.cards.map((card) => (
+                      <div
+                        key={card.id}
+                        data-gantt-bar={card.number}
+                        className={cx('relative transition-colors', hovered === card.id && 'bg-accent/[0.07]')}
+                        style={{ height: row }}
+                        onMouseOver={() => setHovered(card.id)}
                       >
-                        <span aria-hidden className={cx('size-2 shrink-0 rounded-full', STATE_DOT[cardState(card)])} />
-                        <span className="shrink-0 text-xs text-ink-faint tabular-nums">#{card.number}</span>
-                        <span className="min-w-0 flex-1 truncate">{card.title}</span>
-                        <CardInfoButton card={card} />
-                        {awaitsMe(card, statusOf) ? (
-                          <span
-                            title={t('gantt.tip.awaiting')}
-                            aria-label={t('gantt.tip.awaiting')}
-                            className="size-2 shrink-0 rounded-full bg-caution ring-2 ring-caution/25"
-                          />
-                        ) : liveSessions(card, statusOf).length > 0 ? (
-                          <span
-                            title={t('gantt.tip.running')}
-                            aria-label={t('gantt.tip.running')}
-                            className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent"
-                          />
-                        ) : null}
-                        <span data-row-due className={cx('w-12 shrink-0 text-right text-xs tabular-nums', late ? 'font-medium text-critical' : 'text-ink-faint')}>
-                          {card.dueAt === null ? '—' : formatDay(card.dueAt)}
-                        </span>
-                      </Link>
-                      <div className="relative flex-1">
                         <CardBar
                           card={card}
                           scale={scale}
-                          top={(GANTT_ROW - BAR_H) / 2}
+                          top={(row - BAR_H) / 2}
                           onOpen={() => navigate(hrefOf(card))}
                           now={now}
-                          hovered={lit}
-                          dimmed={dim}
+                          hovered={hovered === card.id}
+                          dimmed={chain !== null && !chain.has(card.id)}
                           onHover={setHovered}
                           statusOf={statusOf}
                         />
                       </div>
-                    </div>
-                  )
-                })}
-              </section>
-            )
-          })}
-
-          {/* surcouches : aujourd'hui, puis les flèches — sous la liste collée (z-10) */}
-          <div className="pointer-events-none absolute top-0 z-[4]" style={{ left: listWidth, height }}>
-            <TodayLine scale={scale} height={height} now={now} />
-          </div>
-          <div className="pointer-events-none absolute top-0 z-[5]" style={{ left: listWidth }}>
-            <GanttArrows anchors={anchors} width={scale.width} height={height} chain={chain} />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+            {/* Les surcouches, après les lignes : au-dessus des barres, sous les en-têtes collés. */}
+            <div className="pointer-events-none absolute top-0 left-0" style={{ height }}>
+              <TodayLine scale={scale} height={height} now={now} />
+            </div>
+            <div className="pointer-events-none absolute top-0 left-0">
+              <GanttArrows anchors={anchors} width={scale.width} height={height} chain={chain} />
+            </div>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Une carte dans la liste collée (GNT-9) : un lien vers sa destination. Pastille d'état,
+ * `#N`, titre, `ℹ`, repère de session et échéance sur une ligne ; au téléphone, où la
+ * colonne n'a que 170 px, le titre garde la première ligne pour lui (une quinzaine de
+ * signes) et le reste passe dessous.
+ */
+function CardLabel({
+  card,
+  href,
+  narrow,
+  height,
+  indent,
+  lit,
+  dim,
+  onHover,
+  statusOf,
+  now,
+}: {
+  card: CardDto
+  href: string
+  narrow: boolean
+  height: number
+  indent: number
+  lit: boolean
+  dim: boolean
+  onHover: (id: string) => void
+  statusOf: StatusOf
+  now: number
+}) {
+  const t = useTranslate()
+  const late = isLate(card, now)
+  const dot = <span aria-hidden className={cx('size-2 shrink-0 rounded-full', STATE_DOT[cardState(card)])} />
+  const number = <span className="shrink-0 text-xs text-ink-faint tabular-nums">#{card.number}</span>
+  const title = (
+    <span data-row-title className="min-w-0 flex-1 truncate">
+      {card.title}
+    </span>
+  )
+  const marker = awaitsMe(card, statusOf) ? (
+    <span title={t('gantt.tip.awaiting')} aria-label={t('gantt.tip.awaiting')} className="size-2 shrink-0 rounded-full bg-caution ring-2 ring-caution/25" />
+  ) : liveSessions(card, statusOf).length > 0 ? (
+    <span title={t('gantt.tip.running')} aria-label={t('gantt.tip.running')} className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
+  ) : null
+  const due = (
+    <span
+      data-row-due
+      className={cx('shrink-0 text-xs tabular-nums', !narrow && 'w-12 text-right', late ? 'font-medium text-critical' : 'text-ink-faint')}
+    >
+      {card.dueAt === null ? '—' : formatDay(card.dueAt)}
+    </span>
+  )
+  return (
+    <Link
+      data-gantt-row={card.number}
+      to={href}
+      onMouseOver={() => onHover(card.id)}
+      className={cx(
+        'flex pr-3 text-left text-sm transition-colors',
+        narrow ? 'flex-col justify-center gap-0.5' : 'items-center gap-1.5',
+        lit ? 'bg-surface-high' : 'bg-canvas',
+        dim && 'text-ink-faint',
+      )}
+      style={{ height, paddingLeft: indent }}
+    >
+      {narrow ? (
+        <>
+          <span className="flex min-w-0 items-center gap-1.5">
+            {dot}
+            {title}
+          </span>
+          {/* Sous le titre, aligné sur lui : la pastille fait 8 px, l'écart 6. */}
+          <span className="flex items-center gap-1.5 pl-3.5">
+            {number}
+            {due}
+            {marker}
+            <CardInfoButton card={card} className="ml-auto" />
+          </span>
+        </>
+      ) : (
+        <>
+          {dot}
+          {number}
+          {title}
+          <CardInfoButton card={card} />
+          {marker}
+          {due}
+        </>
+      )}
+    </Link>
   )
 }
 

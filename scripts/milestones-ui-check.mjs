@@ -18,7 +18,8 @@ import { viteDependency } from './checks/vite-deps.mjs'
 //
 // Étape « gantt » (#191, BAR-8, GNT-1..13) : la vue Gantt détaillé — groupes et leur
 // ordre, « Hors jalon », repli, en-tête collé, jauge du jalon, lignes alignées au pixel et
-// leur destination, survol et chaîne, ℹ, filtre et échelle de la barre, vide.
+// leur destination, titre lisible au téléphone, couches dans l'échelle du DS, étiquettes de
+// semaine qui tiennent sur l'axe, survol et chaîne, ℹ, filtre et échelle de la barre, vide.
 //
 // Étape « page » (#194, JAL-1..8, VAG-1..10) : l'en-tête, la prochaine action et son geste,
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
@@ -1348,7 +1349,10 @@ async function ganttStep(width) {
   const where = () => page.evaluate(() => window.where)
   const gantt = page.locator('[data-gantt]')
   const group = (key) => page.locator(`[data-gantt-group="${key}"]`)
+  /** La ligne d'une carte dans la liste collée, et sa ligne dans le tracé. */
   const row = (number) => page.locator(`[data-gantt-row="${number}"]`)
+  const track = (number) => page.locator(`[data-gantt-bar="${number}"]`)
+  const plot = (key) => page.locator(`[data-gantt-plot="${key}"]`)
   const rows = () => page.locator('[data-gantt-row]').evaluateAll((list) => list.map((entry) => Number(entry.dataset.ganttRow)))
   const gauge = (number) => page.locator(`[data-milestone-gauge="${number}"]`)
   const shot = (locator, name) => locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-gantt-${name}-${width}.png` })
@@ -1390,15 +1394,20 @@ async function ganttStep(width) {
   assert.deepEqual(await gauge(910).locator('[data-state]').evaluateAll((list) => list.map((entry) => entry.dataset.state)), ['done', 'running', 'blocked'])
   assert.match(await gauge(910).getAttribute('class'), /shadow-/, 'halo du jalon lancé')
   assert.equal(await gauge(910).getAttribute('title'), 'Page projet v2 — 1/3')
-  assert.equal(await group(910).getByText('33 %', { exact: true }).isVisible(), true)
+  assert.equal(await plot(910).getByText('33 %', { exact: true }).isVisible(), true)
   assert.match(await gauge(920).getAttribute('class'), /border-critical/, 'bord rouge en retard')
-  assert.match(await group(920).locator('[data-due]').getAttribute('class'), /border-critical/, 'losange rouge')
+  assert.match(await plot(920).locator('[data-due]').getAttribute('class'), /border-critical/, 'losange rouge')
   assert.match(await gauge(950).getAttribute('class'), /border-dashed/, 'pointillé sans échéance')
-  assert.equal(await group(950).locator('[data-due]').count(), 0)
-  await shot(group(910), 'groupe')
+  assert.equal(await plot(950).locator('[data-due]').count(), 0)
+  {
+    // Un bloc : le groupe, liste et tracé, sur la largeur visible du Gantt.
+    const area = await gantt.boundingBox()
+    const left = await group(910).boundingBox()
+    await page.screenshot({ animations: 'disabled', path: `/tmp/milestones-gantt-groupe-${width}.png`, clip: { x: area.x, y: left.y, width: area.width, height: left.height } })
+  }
 
   console.log(width, 'GNT-9 : les lignes mènent à leur destination, échéance en retard en rouge')
-  const label = (number) => row(number).getByRole('link').first()
+  const label = (number) => row(number)
   assert.equal(await label(912).getAttribute('href'), `/p/${PROJECT}/timeline?vue=gantt&fiche=912`, 'qui t’attend : sa fiche')
   assert.equal(await label(921).getAttribute('href'), `/p/${PROJECT}/c/s-921`, 'sa session')
   assert.equal(await label(913).getAttribute('href'), `/p/${PROJECT}/c/new?card=card-913`, 'sans session : un brouillon')
@@ -1410,20 +1419,58 @@ async function ganttStep(width) {
   console.log(width, 'alignement : la ligne de la liste et sa barre au même pixel')
   for (const number of [911, 913, 970]) {
     const list = await label(number).boundingBox()
-    const bar = await row(number).locator('button').first().boundingBox()
+    const bar = await track(number).locator('button').first().boundingBox()
     assert.equal(Math.round(list.y + list.height / 2), Math.round(bar.y + bar.height / 2), `#${number}`)
   }
-  const listWidth = (await label(913).boundingBox()).width
+  const listWidth = (await page.locator('[data-gantt-list]').boundingBox()).width
   assert.equal(Math.round(listWidth), phone ? 170 : 296, 'GNT-1 : colonne des libellés')
+  const titleWidth = await row(913).locator('[data-row-title]').evaluate((element) => element.getBoundingClientRect().width)
+  assert.ok(titleWidth >= 100, `le titre d’une carte se lit (${Math.round(titleWidth)} px)`)
+  if (phone) {
+    const [title, meta] = await Promise.all([row(913).locator('[data-row-title]').boundingBox(), row(913).locator('[data-row-due]').boundingBox()])
+    assert.ok(meta.y >= title.y + title.height - 1, 'au téléphone, l’échéance passe sous le titre')
+  }
   const padding = await label(970).evaluate((element) => getComputedStyle(element).paddingLeft)
   assert.equal(padding, phone ? '16px' : '24px', 'la colonne part de la gouttière')
+
+  console.log(width, 'couches : l’échelle du DS, la liste sur les barres, l’en-tête sur les lignes')
+  const layers = await gantt.evaluate((root) => [...new Set([root, ...root.querySelectorAll('*')].map((element) => getComputedStyle(element).zIndex))])
+  assert.deepEqual(layers.filter((value) => !['auto', '10', '20', '30', '40', '50', '100'].includes(value)), [], 'Couches.mdx : six niveaux, aucune autre valeur')
+  {
+    // Une fenêtre étroite et basse, en zoom Semaine : le Gantt défile dans les deux sens,
+    // assez pour qu'une barre passe sous la liste et une ligne sous l'en-tête de son groupe.
+    await page.setViewportSize({ width: Math.min(width, 700), height: 360 })
+    await page.getByRole('button', { name: 'Affichage : Gantt' }).click()
+    await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Semaine' }).click()
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog', { name: 'Affichage' }).waitFor({ state: 'detached' })
+    await row(911).evaluate((element) => element.scrollIntoView({ block: 'end', inline: 'nearest' }))
+    const list = await row(911).boundingBox()
+    const start = await track(911).locator('button').first().boundingBox()
+    // La barre passe sous la liste collée : on défile jusqu'à ce qu'elle y entre de 12 px.
+    await gantt.evaluate((element, by) => { element.scrollLeft += by }, start.x - (list.x + list.width) + 12)
+    const bar = await track(911).locator('button').first().boundingBox()
+    const top = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-gantt-row], [data-gantt-bar]')?.getAttribute('data-gantt-row'), { x: bar.x + 4, y: bar.y + bar.height / 2 })
+    assert.ok(bar.x < list.x + list.width, 'la barre est passée sous la liste')
+    assert.equal(top, '911', 'la liste collée recouvre la barre')
+    // L'en-tête de #920 colle sous l'axe, la ligne de #921 passe dessous.
+    await gantt.evaluate((element) => { element.scrollTop = 20 })
+    const head = await group(920).locator('[data-gantt-head]').boundingBox()
+    const hit = (x) => page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('[data-gantt-head]')), { x, y: head.y + head.height - 4 })
+    assert.equal(await hit(head.x + 8), true, 'l’en-tête collé recouvre la liste qui défile dessous')
+    const area = await gantt.boundingBox()
+    assert.equal(await hit(area.x + area.width - 20), true, 'et le tracé')
+    await page.setViewportSize({ width, height: 900 })
+    await open()
+  }
 
   if (!phone) {
     console.log(width, 'GNT-11 : survol, la chaîne s’éclaire, le reste pâlit, infobulle')
     await label(913).hover()
     await page.getByRole('tooltip').filter({ hasText: '#913' }).waitFor()
-    assert.match(await row(913).getAttribute('class'), /bg-accent/)
-    const barOf = (number) => row(number).locator('button').first().locator('..')
+    assert.match(await track(913).getAttribute('class'), /bg-accent/, 'la ligne s’éclaire sur toute la largeur')
+    assert.match(await row(913).getAttribute('class'), /bg-surface-high/)
+    const barOf = (number) => track(number).locator('button').first().locator('..')
     assert.doesNotMatch(await barOf(912).getAttribute('class'), /opacity-30/, 'sa bloquante reste éclairée')
     assert.match(await barOf(911).getAttribute('class'), /opacity-30/, 'hors chaîne : pâlie')
     await shot(gantt, 'survol')
@@ -1445,6 +1492,12 @@ async function ganttStep(width) {
   assert.deepEqual(await gantt.evaluate((element) => [element.scrollWidth, element.scrollLeft]), axisBefore, 'l’échelle englobe tous les jalons')
   await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('')
   await page.waitForFunction(() => document.querySelectorAll('[data-gantt-group]').length === 6)
+
+  console.log(width, 'axe : en zoom Mois, chaque étiquette de semaine tient dans sa place')
+  const weeks = page.locator('[data-week-label]')
+  assert.ok((await weeks.count()) > 0)
+  const crowded = await weeks.evaluateAll((list) => list.filter((element) => element.scrollWidth > element.clientWidth + 1).map((element) => element.textContent))
+  assert.deepEqual(crowded, [], 'aucune ne déborde sur la suivante')
 
   console.log(width, 'BAR-8 : l’échelle de la barre pilote le Gantt')
   const before = await gantt.evaluate((element) => element.scrollWidth)
@@ -1659,7 +1712,7 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
-  console.log('OK : gantt — bascule et mémoire de vue, groupes par échéance et « Hors jalon », livrés repliés, déplier et replier, en-tête collé, jauge (états, retard, pointillé, halo, losange, %), destinations des lignes, repères de session, alignement au pixel, gouttière, survol et chaîne, ℹ, recherche (axe fixe), échelle, titre et jauge vers la page, vide, rien ne correspond ; ordinateur et téléphone.')
+  console.log('OK : gantt — bascule et mémoire de vue, groupes par échéance et « Hors jalon », livrés repliés, déplier et replier, en-tête collé, jauge (états, retard, pointillé, halo, losange, %), destinations des lignes, repères de session, alignement au pixel, gouttière, titre lisible au téléphone (deux lignes), couches dans l’échelle du DS (liste sur les barres, en-tête sur les lignes), étiquettes de semaine qui tiennent, survol et chaîne, ℹ, recherche (axe fixe), échelle, titre et jauge vers la page, vide, rien ne correspond ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')
