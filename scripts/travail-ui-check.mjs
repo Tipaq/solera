@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { checkTravailGraph } from './checks/travail-graph.mjs'
+import { checkTravailTable } from './checks/travail-table.mjs'
 
 /*
  * L'onglet Travail d'un projet (carte #175, `projet.md` T-1 à T-5, T-14), qui remplace
@@ -21,7 +22,8 @@ import { checkTravailGraph } from './checks/travail-graph.mjs'
  * « Par moment » (Maintenant, En cours, Ce qui t'attend, la ligne de base, les jours),
  * l'index et la puce d'arbre qui filtrent, la recherche, le téléphone sans
  * débordement, et la vue « Graphe » avec le tiroir d'un commit (#178,
- * `checks/travail-graph.mjs`). Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * `checks/travail-graph.mjs`), et la vue « Tableau » avec les gestes d'un arbre et d'une
+ * branche (#177, `checks/travail-table.mjs`). Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
  * Les PR sont simulées au niveau de la page (le projet de démo n'a pas de forge), le
  * pilotage d'un jalon aussi (#116) : la suite tient son bandeau en tête du fil, la vue
@@ -460,6 +462,9 @@ try {
   const runningTree = trees.worktrees.find((entry) => entry.id === running.worktreeId)
   await checkTravailGraph({ page, base, project: nimbus, running, runningTree, runningBranch, shots })
 
+  // ─── La vue Tableau et les gestes d'un arbre et d'une branche (#177) ───────
+  await checkTravailTable({ page, base, project: nimbus, runningBranch, readyBranch: withPr ? branchOf(withPr) : null, shots })
+
   // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
@@ -570,7 +575,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, Tableau et gestes, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

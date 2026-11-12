@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   BranchCleanupResultDto,
   CompareDto,
@@ -130,16 +130,35 @@ export function useCompare(projectId: string | undefined, base: string | null, h
   })
 }
 
+export const cleanupPlanKey = (projectId: string, path: string | null) => ['worktree-cleanup', projectId, path]
+
+const cleanupPlanQuery = (projectId: string, path: string | null) => ({
+  queryKey: cleanupPlanKey(projectId, path),
+  queryFn: () =>
+    api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
+  enabled: path !== null,
+  // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
+  staleTime: 0,
+  gcTime: 0,
+})
+
 /** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
 export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
-  return useQuery({
-    queryKey: ['worktree-cleanup', projectId, path],
-    queryFn: () =>
-      api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
-    enabled: path !== null,
-    // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
-    staleTime: 0,
-    gcTime: 0,
+  return useQuery(cleanupPlanQuery(projectId, path))
+}
+
+/**
+ * Les plans de plusieurs arbres, pour le dialogue « Nettoyer » de Travail : la fonction
+ * rend celui d'un chemin, ou `undefined` tant qu'il n'est pas lu.
+ */
+export function useWorktreeCleanupPlans(projectId: string, paths: string[]): (path: string) => WorktreeCleanupPlanDto | undefined {
+  return useQueries({
+    queries: paths.map((path) => cleanupPlanQuery(projectId, path)),
+    combine: (results) => {
+      // Par le chemin demandé : celui que le serveur rend peut être normalisé.
+      const byPath = new Map(results.flatMap((result, index) => (result.data ? [[paths[index]!, result.data] as const] : [])))
+      return (path: string) => byPath.get(path)
+    },
   })
 }
 

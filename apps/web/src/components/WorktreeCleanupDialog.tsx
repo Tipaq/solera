@@ -17,7 +17,6 @@ type PluralPrefix =
   | 'projectActivity.idle.trees'
   | 'projectActivity.idle.merged'
   | 'projectActivity.idle.missing'
-  | 'projectActivity.idle.cleanMerged'
   | 'projectActivity.branches'
 
 export function plural(prefix: PluralPrefix, count: number): string {

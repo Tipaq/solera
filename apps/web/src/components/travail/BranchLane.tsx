@@ -1,14 +1,16 @@
-import { ArrowUpRight, ChevronRight, Cloud, FolderPlus, GitBranch, GitCommitHorizontal, MessageSquarePlus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { ArrowUpRight, ChevronRight, Cloud, FileDiff, FolderPlus, GitBranch, GitCommitHorizontal, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, Button, ConfirmDialog, cx } from '@solera/ui'
+import { Badge, Button, cx } from '@solera/ui'
+import { BranchDiffDrawer } from '../code/BranchDiffDrawer'
 import { CardRef } from '../code/CardRef'
 import { BranchDot } from '../code/VerdictDot'
 import { PR_TONE, pluralOf, type BranchInfo } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
-import { useCleanBranches, useCreateWorktree } from '../../lib/worktrees'
+import { useCreateWorktree } from '../../lib/worktrees'
 import { laneFrame } from './Lane'
+import { useTravailActions } from './TravailActions'
 import { errorText, useTravailNotice } from './TravailNotice'
 
 /** Le dépôt distant d'une branche qui n'existe que là-bas. */
@@ -19,16 +21,32 @@ export function branchLabel(branch: BranchInfo): string {
   return branch.remoteOnly ? `${REMOTE}/${branch.name}` : branch.name
 }
 
+/** Un geste sur une branche sans arbre : un bouton de son couloir, une entrée du menu de sa ligne. */
+export interface BranchAction {
+  key: 'openTree' | 'launch' | 'compare' | 'pr' | 'delete'
+  label: string
+  icon: ReactNode
+  run: () => void
+  tone?: 'critical'
+  disabled?: boolean
+}
+
 /**
- * Les gestes de création d'une branche sans arbre : l'ouvrir dans un worktree, ou y
- * lancer une session (le worktree d'abord, puis la session dedans). Une distante devient
- * une branche locale qui la suit.
+ * Les gestes d'une branche sans arbre (`projet.md` T-13.2) : l'ouvrir dans un worktree,
+ * y lancer une session (le worktree d'abord, puis la session dedans), voir son diff avec
+ * la base, ouvrir sa PR, la supprimer si elle est fusionnée (le dialogue « Nettoyer »).
+ * Une distante devient une branche locale qui la suit ; une distante fusionnée reste à
+ * la forge.
+ *
+ * `compare` dit si le tiroir « Diff avec la base » est ouvert : l'appelant le monte.
  */
-function useOpenBranch(projectId: string, branch: BranchInfo) {
+export function useBranchActions(projectId: string, branch: BranchInfo) {
   const t = useTranslate()
   const navigate = useNavigate()
   const say = useTravailNotice()
+  const page = useTravailActions()
   const create = useCreateWorktree(projectId)
+  const [compare, setCompare] = useState(false)
   const open = async (then: 'stay' | 'session') => {
     try {
       const tree = await create.mutateAsync({ name: branch.name, baseRef: branch.remoteOnly ? `${REMOTE}/${branch.name}` : 'HEAD' })
@@ -38,28 +56,18 @@ function useOpenBranch(projectId: string, branch: BranchInfo) {
       say(errorText(error), 'critical')
     }
   }
-  return { open, busy: create.isPending }
-}
-
-/**
- * Supprimer des branches fusionnées (S8), après confirmation. Le serveur rejuge chacune :
- * celles qu'il garde sont dites une à une, avec leur raison.
- */
-export function useDeleteBranches(projectId: string) {
-  const t = useTranslate()
-  const say = useTravailNotice()
-  const clean = useCleanBranches(projectId)
-  const run = async (names: string[]) => {
-    try {
-      const result = await clean.mutateAsync(names)
-      const refused = result.refused.map((entry) => t(`branchCleanup.refused.${entry.reason}`, { name: entry.name, message: entry.message ?? '' }))
-      if (refused.length > 0) say(refused.join(' '), 'critical')
-      else say(t(`travail.mergedBranches.deleted.${pluralOf(result.deleted.length)}`, { count: result.deleted.length }))
-    } catch (error) {
-      say(errorText(error), 'critical')
-    }
+  const prUrl = branch.pr?.url
+  const actions: BranchAction[] = [
+    { key: 'openTree', label: t('travail.branchLane.openTree'), icon: <FolderPlus size={13} />, run: () => void open('stay'), disabled: create.isPending },
+    { key: 'launch', label: t('travail.branchLane.launch'), icon: <MessageSquarePlus size={13} />, run: () => void open('session'), disabled: create.isPending },
+  ]
+  // Une distante n'a rien de local à comparer, et une fusionnée n'apporte plus rien.
+  if (!branch.remoteOnly && !branch.merged && page.base) actions.push({ key: 'compare', label: t('code.compare.title'), icon: <FileDiff size={13} />, run: () => setCompare(true) })
+  if (prUrl) actions.push({ key: 'pr', label: t('travail.gesture.pr', { number: branch.pr!.number }), icon: <ArrowUpRight size={13} />, run: () => window.open(prUrl, '_blank', 'noopener') })
+  if (branch.kind === 'merged' && !branch.remoteOnly) {
+    actions.push({ key: 'delete', label: t('travail.branchLane.delete'), icon: <Trash2 size={13} />, run: () => page.clean({ trees: [], branches: [branch.name] }), tone: 'critical' })
   }
-  return { run, busy: clean.isPending }
+  return { actions, compare, closeCompare: () => setCompare(false), base: page.base }
 }
 
 /**
@@ -70,7 +78,7 @@ export function useDeleteBranches(projectId: string) {
  */
 export function BranchLane({ projectId, branch, anchorId, highlight = false }: { projectId: string; branch: BranchInfo; anchorId: string; highlight?: boolean }) {
   const t = useTranslate()
-  const { open, busy } = useOpenBranch(projectId, branch)
+  const { actions, compare, closeCompare, base } = useBranchActions(projectId, branch)
   const label = branchLabel(branch)
 
   return (
@@ -121,47 +129,15 @@ export function BranchLane({ projectId, branch, anchorId, highlight = false }: {
           </ol>
         ) : null}
         <div className="flex flex-wrap items-center gap-1">
-          <Button size="sm" variant="ghost" icon={<FolderPlus size={13} />} onClick={() => void open('stay')} disabled={busy}>
-            {t('travail.branchLane.openTree')}
-          </Button>
-          <Button size="sm" variant="ghost" icon={<MessageSquarePlus size={13} />} onClick={() => void open('session')} disabled={busy}>
-            {t('travail.branchLane.launch')}
-          </Button>
-          {branch.pr ? (
-            <a href={branch.pr.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1 rounded-md px-3 text-sm text-ink-soft hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11">
-              {t('travail.gesture.pr', { number: branch.pr.number })}
-              <ArrowUpRight size={12} aria-hidden />
-            </a>
-          ) : null}
+          {actions.map((action) => (
+            <Button key={action.key} size="sm" variant="ghost" icon={action.icon} onClick={action.run} disabled={action.disabled} className={action.tone === 'critical' ? 'text-critical' : undefined}>
+              {action.label}
+            </Button>
+          ))}
         </div>
       </div>
+      <BranchDiffDrawer projectId={projectId} base={base} branch={branch.name} open={compare} onClose={closeCompare} />
     </section>
-  )
-}
-
-/** La confirmation d'une suppression de branches fusionnées. */
-function DeleteBranchesDialog({ names, busy, onClose, onConfirm }: { names: string[] | null; busy: boolean; onClose: () => void; onConfirm: (names: string[]) => void }) {
-  const t = useTranslate()
-  const count = names?.length ?? 0
-  return (
-    <ConfirmDialog
-      open={names !== null}
-      onOpenChange={(open) => (open ? null : onClose())}
-      title={t(`travail.mergedBranches.confirm.${pluralOf(count)}`, { count })}
-      confirmLabel={t('travail.branchLane.delete')}
-      tone="critical"
-      busy={busy}
-      onConfirm={() => (names ? onConfirm(names) : onClose())}
-    >
-      <p className="text-sm text-ink-soft">{t('travail.mergedBranches.intro')}</p>
-      <ul className="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
-        {(names ?? []).map((name) => (
-          <li key={name} className="truncate font-mono text-xs text-ink-soft">
-            {name}
-          </li>
-        ))}
-      </ul>
-    </ConfirmDialog>
   )
 }
 
@@ -169,11 +145,10 @@ function DeleteBranchesDialog({ names, busy, onClose, onConfirm }: { names: stri
  * Les branches fusionnées sans arbre (`projet.md` T-4.8), repliées : « › N branches
  * fusionnées · sans arbre, rien à perdre » et « Supprimer » ; dépliées, leur liste.
  */
-export function MergedBranches({ projectId, branches, open: forced, anchorId }: { projectId: string; branches: BranchInfo[]; open: boolean; anchorId: string }) {
+export function MergedBranches({ branches, open: forced, anchorId }: { branches: BranchInfo[]; open: boolean; anchorId: string }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const remove = useDeleteBranches(projectId)
+  const page = useTravailActions()
   const shown = open || forced
   const count = branches.length
   // Seules les branches locales se suppriment ; une distante fusionnée reste à la forge.
@@ -194,7 +169,7 @@ export function MergedBranches({ projectId, branches, open: forced, anchorId }: 
           <span className="text-xs text-ink-faint">{t('travail.mergedBranches.hint')}</span>
         </button>
         {local.length > 0 ? (
-          <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => setConfirming(true)} disabled={remove.busy} className="ml-auto">
+          <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => page.clean({ trees: [], branches: local })} className="ml-auto">
             {t('travail.branchLane.delete')}
           </Button>
         ) : null}
@@ -211,15 +186,6 @@ export function MergedBranches({ projectId, branches, open: forced, anchorId }: 
           ))}
         </ul>
       ) : null}
-      <DeleteBranchesDialog
-        names={confirming ? local : null}
-        busy={remove.busy}
-        onClose={() => setConfirming(false)}
-        onConfirm={(names) => {
-          setConfirming(false)
-          void remove.run(names)
-        }}
-      />
     </section>
   )
 }

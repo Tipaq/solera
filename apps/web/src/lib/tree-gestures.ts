@@ -6,6 +6,7 @@ import type { TreeFields } from './code-model'
 import { sendMessage } from './conversations'
 import { useTranslate } from './i18n'
 import { openGitPanel, openPanelOnArrival } from './panel'
+import { liveSessionId, treeSessionId } from './tree-actions'
 import { worktreeScope } from './workspace-scope'
 import { worktreeStatusKey } from './worktrees'
 
@@ -19,32 +20,6 @@ import { worktreeStatusKey } from './worktrees'
  */
 
 type TreeTarget = Pick<TreeFields, 'id' | 'root' | 'name' | 'branch' | 'sessions' | 'anySessionId'>
-
-/** La session vivante d'un arbre : celle qui attend, sinon la première. */
-export function liveSessionId(tree: Pick<TreeFields, 'sessions'>): string | null {
-  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? null
-}
-
-/**
- * La session où s'ouvre le diff d'un arbre (T-13.1) : la vivante, sinon la plus récente.
- * Rouvrir une session close ne relance rien.
- */
-export function treeSessionId(tree: Pick<TreeFields, 'sessions' | 'anySessionId'>): string | null {
-  return liveSessionId(tree) ?? tree.anySessionId
-}
-
-/**
- * Faux pour un arbre créé au shell et sans session : Solera n'en a pas l'identifiant, et
- * n'a donc aucune portée par laquelle l'ouvrir. Le geste ne se montre pas.
- */
-export function canDiffTree(tree: TreeTarget): boolean {
-  return tree.root || tree.id !== null || treeSessionId(tree) !== null
-}
-
-/** Faux pour la racine (on ne rebase pas la base sur elle-même), et comme `canDiffTree`. */
-export function canRebaseTree(tree: TreeTarget): boolean {
-  return !tree.root && (tree.id !== null || liveSessionId(tree) !== null)
-}
 
 /** Le geste « Diff » : l'onglet Git du panneau, dans la session de l'arbre ou sur lui. */
 export function useTreeDiff(projectId: string): (tree: TreeTarget) => void {

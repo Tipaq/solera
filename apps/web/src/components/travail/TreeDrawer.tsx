@@ -44,7 +44,6 @@ export function TreeDrawer({
   rail,
   served,
   onClose,
-  onClean,
 }: {
   projectId: string
   /** Null : fermé. */
@@ -57,7 +56,6 @@ export function TreeDrawer({
   rail: LaneRail
   served?: ServedMark[]
   onClose: () => void
-  onClean: (tree: TreeRow) => void
 }) {
   const t = useTranslate()
   const name = tree ? (tree.branch ?? tree.name) : ''
@@ -78,7 +76,7 @@ export function TreeDrawer({
         ) : null
       }
     >
-      {tree ? <TreeBody projectId={projectId} tree={tree} sessions={sessions} entries={entries} journalDays={journalDays} rail={rail} onClean={onClean} /> : null}
+      {tree ? <TreeBody projectId={projectId} tree={tree} sessions={sessions} entries={entries} journalDays={journalDays} rail={rail} /> : null}
     </Detail>
   )
 }
@@ -90,7 +88,6 @@ function TreeBody({
   entries,
   journalDays,
   rail,
-  onClean,
 }: {
   projectId: string
   tree: TreeRow
@@ -98,11 +95,10 @@ function TreeBody({
   entries: JournalEntryDto[]
   journalDays: number
   rail: LaneRail
-  onClean: (tree: TreeRow) => void
 }) {
   const t = useTranslate()
   const locale = useLocale()
-  const actions = useTreeActions(projectId, tree, { onClean })
+  const actions = useTreeActions(projectId, tree)
   const alarming = tree.verdict === 'merged-dirty' || tree.verdict === 'missing'
   const live = new Map(tree.sessions.map((session) => [session.id, session]))
   const ordered = [...sessions].sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)) || b.updatedAt - a.updatedAt).slice(0, DRAWER_ROWS)
@@ -113,7 +109,7 @@ function TreeBody({
 
       <div className="flex flex-wrap gap-1.5">
         {actions.map((action) => (
-          <Button key={action.key} size="sm" variant={action.tone === 'critical' ? 'danger' : 'secondary'} icon={action.icon} onClick={action.run}>
+          <Button key={action.key} size="sm" variant={action.tone === 'critical' ? 'danger' : 'secondary'} icon={action.icon} onClick={action.run} disabled={action.disabled}>
             {action.label}
           </Button>
         ))}

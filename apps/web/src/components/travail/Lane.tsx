@@ -11,7 +11,7 @@ import { TreeFacts } from '../code/TreeFacts'
 import { REASON_TONE, VerdictDot, verdictReason } from '../code/VerdictDot'
 import { SessionRow } from '../project/SessionRow'
 import type { ActivityRow } from '../../lib/activity-rows'
-import { pluralOf, type TreeRow } from '../../lib/code-model'
+import { pluralOf } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { JOURNAL_KIND_LABELS } from '../../lib/journal'
@@ -51,7 +51,6 @@ export function Lane({
   highlight = false,
   dim = false,
   onOpen,
-  onClean,
 }: {
   projectId: string
   lane: LaneData<ActivityRow, JournalEntryDto>
@@ -63,12 +62,11 @@ export function Lane({
   /** Dans « À nettoyer ». */
   dim?: boolean
   onOpen: (key: string) => void
-  onClean: (tree: TreeRow) => void
 }) {
   const t = useTranslate()
   const { tree, live, entries } = lane
   const [more, setMore] = useState(false)
-  const actions = useTreeActions(projectId, tree, { onClean })
+  const actions = useTreeActions(projectId, tree)
   const name = tree.branch ?? tree.name
   const empty = live.length === 0 && entries.length === 0
 
@@ -120,7 +118,7 @@ export function Lane({
             {actions.map((action, index) => (
               <Fragment key={action.key}>
                 {action.tone === 'critical' && index > 0 ? <MenuSeparator /> : null}
-                <MenuItem icon={action.icon} onSelect={action.run} tone={action.tone}>
+                <MenuItem icon={action.icon} onSelect={action.run} tone={action.tone} disabled={action.disabled}>
                   {action.label}
                 </MenuItem>
               </Fragment>
