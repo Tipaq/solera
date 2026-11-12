@@ -162,12 +162,12 @@ export function writeSessionQuery(params: URLSearchParams, query: SessionQuery):
 }
 
 /** Le lien qui ouvre la page sur un projet ou une recherche, comme la palette le pose. */
-export function sessionsHref(seed: { project?: string; search?: string } = {}): string {
+export function sessionsHref({ project, search = '' }: { project?: string; search?: string } = {}): string {
+  const bare = readSessionQuery(new URLSearchParams())
   const query = writeSessionQuery(new URLSearchParams(), {
-    search: seed.search ?? '',
-    scope: 'actives',
-    sort: 'recent',
-    filters: { ...NO_FILTERS, projects: new Set(seed.project ? [seed.project] : []) },
+    ...bare,
+    search,
+    filters: { ...bare.filters, projects: new Set(project ? [project] : []) },
   }).toString()
   return query ? `/sessions?${query}` : '/sessions'
 }

@@ -37,6 +37,7 @@ import { fileFields, rankByFields, usePaletteCatalog, usePaletteFiles } from '..
 import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useSchedules } from '../lib/schedules'
 import { sessionsHref } from '../lib/sessions-view'
+import { NEW_PARAM } from '../lib/place'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
@@ -240,21 +241,24 @@ export function CommandPalette({
       },
     ]
 
-    // Une tâche se planifie dans un projet : sans projet sous les yeux, le geste n'a
-    // pas de destination et proposer une page vide serait un cul-de-sac.
-    if (projectId) {
+    const projectName = projectId ? projectNames.get(projectId) : undefined
+    if (projectId && projectName !== undefined) {
       entries.push({
         key: 'cmd-project-sessions',
         icon: <MessagesSquare size={14} />,
-        label: t('palette.sessions.project', { name: projectNames.get(projectId) ?? '' }),
+        label: t('palette.sessions.project', { name: projectName }),
         run: () => go(sessionsHref({ project: projectId })),
       })
+    }
+    // Une tâche se planifie dans un projet : sans projet sous les yeux, le geste n'a
+    // pas de destination et proposer une page vide serait un cul-de-sac.
+    if (projectId) {
       entries.push({
         key: 'cmd-schedule',
         icon: <CalendarPlus size={14} />,
         label: t('palette.action.schedule'),
         // L'onglet Actions s'ouvre sur le choix de ce qu'on planifie.
-        run: () => go(`/p/${projectId}/actions?nouvelle=planifier`),
+        run: () => go(`/p/${projectId}/actions?${NEW_PARAM}=planifier`),
       })
       entries.push({
         key: 'cmd-board',
@@ -356,12 +360,14 @@ export function CommandPalette({
     /**
      * Quand la recherche trouve plus de sessions que la palette n'en montre, une
      * dernière ligne mène à la page Sessions, la recherche déjà posée : la palette
-     * n'est pas une page de résultats, celle-là l'est.
+     * n'est pas une page de résultats, celle-là l'est. Elle compte dans le total, sans
+     * quoi « N de plus » oublierait la session qu'elle pousse hors de la liste.
      */
     const withSessionsPage = (group: Group): Group =>
       group.total > group.items.length
         ? {
             ...group,
+            total: group.total + 1,
             items: [
               ...group.items,
               {

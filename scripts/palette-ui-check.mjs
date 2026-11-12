@@ -179,6 +179,7 @@ try {
   // Hors d'un projet, il n'y a que toutes.
   await open()
   await search('>sessions')
+  assert.equal(await row(/^Sessions de/).count(), 0)
   await row('Toutes les sessions').click()
   await page.waitForURL((url) => url.pathname === '/sessions' && url.search === '')
 
@@ -189,6 +190,11 @@ try {
   await search(hero.title)
   assert.equal(await allResults.count(), 0)
   await search(SESSIONS_TERM)
+  // La ligne de renvoi ne cache pas une session de plus au compte de « N de plus ».
+  const shown = await palette.locator('div', { has: page.getByText('Conversations', { exact: true }) }).last().getByRole('button', { name: /^\d+ de plus$/ }).innerText()
+  const total = Number((await allResults.innerText()).match(/\d+/)[0])
+  assert.ok(total > 3, `« ${SESSIONS_TERM} » ne trouve que ${total} sessions dans la démo`)
+  assert.equal(shown, `${total - 3} de plus`)
   await allResults.click()
   await page.waitForURL((url) => url.pathname === '/sessions' && url.searchParams.get('q') === SESSIONS_TERM)
 
