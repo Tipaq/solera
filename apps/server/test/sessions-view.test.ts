@@ -9,13 +9,18 @@ const {
   byDay,
   byProject,
   byState,
+  bulkGestures,
+  displayedRows,
   filterSessions,
+  pinTarget,
   readSessionQuery,
+  selectedRows,
   sessionRows,
   sessionState,
   sortSessions,
   writeSessionQuery,
 } = await import('../../web/src/lib/sessions-view.js')
+const { inTurn } = await import('../../web/src/lib/bulk.js')
 
 const project = (id: string, name = id) => ({ id, name, git: { branch: 'main' } }) as ProjectDto
 const nimbus = project('p1', 'Nimbus')
@@ -328,4 +333,40 @@ test("Par état : quatre colonnes, l'erreur rangée avec ce qui t'attend", () =>
       ['done', ['d']],
     ],
   )
+})
+
+test('Sélection : seules comptent les lignes affichées, dans leur ordre', () => {
+  const shown = [row('a'), row('b'), row('c')]
+  assert.deepEqual(ids(selectedRows(new Set(['c', 'gone', 'a']), shown)), ['a', 'c'], 'Une ligne masquée par un filtre ou partie de la portée ne subit pas le geste')
+  assert.deepEqual(selectedRows(new Set(), shown), [])
+})
+
+test('Gestes en masse : épingler et archiver dans les actives, désarchiver dans les archivées, supprimer partout', () => {
+  assert.deepEqual(bulkGestures('actives'), ['pin', 'archive', 'delete'])
+  assert.deepEqual(bulkGestures('archivees'), ['unarchive', 'delete'])
+})
+
+test('Épingler : désépingle quand toute la sélection l’est déjà', () => {
+  assert.equal(pinTarget([row('a', { pinned: true }), row('b')]), true)
+  assert.equal(pinTarget([row('a', { pinned: true }), row('b', { pinned: true })]), false)
+  assert.equal(pinTarget([]), true)
+})
+
+test('Un geste en masse va au bout et rend les échecs, sans s’arrêter au premier', async () => {
+  const seen: string[] = []
+  const failed = await inTurn(['a', 'b', 'c'], async (id) => {
+    seen.push(id)
+    if (id === 'b') throw new Error('refusé')
+  })
+  assert.deepEqual(seen, ['a', 'b', 'c'], 'Un appel après l’autre, tous')
+  assert.deepEqual(failed.map((failure) => [failure.id, (failure.error as Error).message]), [['b', 'refusé']])
+  assert.deepEqual(await inTurn([], async () => {}), [])
+})
+
+test('Lignes affichées : ni les groupes repliés de « Par projet », ni le reste d’une colonne coupée de « Par état »', () => {
+  const rows = [row('a1', { project: atlas }), row('n1'), row('n2'), row('w1', { state: 'awaiting' }), row('w2', { state: 'error' })]
+  assert.deepEqual(ids(displayedRows(rows, { view: 'liste', folded: new Set(['p1']), unfolded: new Set(), limit: 1 })), ids(rows), 'La Liste montre tout')
+  assert.deepEqual(ids(displayedRows(rows, { view: 'projet', folded: new Set(['p1']), unfolded: new Set(), limit: 1 })), ['a1'])
+  assert.deepEqual(ids(displayedRows(rows, { view: 'etat', folded: new Set(), unfolded: new Set(), limit: 1 })), ['w1', 'a1'])
+  assert.deepEqual(ids(displayedRows(rows, { view: 'etat', folded: new Set(), unfolded: new Set(['waiting']), limit: 1 })), ['w1', 'w2', 'a1'])
 })
