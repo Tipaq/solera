@@ -1,7 +1,8 @@
-import { Check, Filter, SlidersHorizontal } from 'lucide-react'
+import { Filter, SlidersHorizontal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button, Popover, SegmentedControl, TooltipButton, cx, type Segment } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
+import { CheckBox } from '../CheckBox'
 import { toolbarButtonClass } from './OneLineToolbar'
 
 /*
@@ -182,16 +183,7 @@ export function MenuCheck({
       onClick={() => onChange(exclusive || !checked)}
       className="flex min-h-11 w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-high md:min-h-8 pointer-coarse:min-h-11"
     >
-      <span
-        aria-hidden
-        className={cx(
-          'grid size-4 shrink-0 place-items-center border',
-          exclusive ? 'rounded-full' : 'rounded',
-          checked ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong',
-        )}
-      >
-        {checked ? exclusive ? <span className="size-1.5 rounded-full bg-accent-ink" /> : <Check size={11} strokeWidth={3} /> : null}
-      </span>
+      <CheckBox checked={checked} round={exclusive} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {aside !== undefined ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{aside}</span> : null}
     </button>

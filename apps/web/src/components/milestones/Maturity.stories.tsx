@@ -5,6 +5,7 @@ import { horizonOf, MATURITIES, nextAction, nextActionText, type MilestoneEntry 
 import { fixtureCard } from '../board/card-fixtures'
 import { MaturityPill } from './MaturityPill'
 import { ExplainedSteps, MaturitySteps } from './MaturitySteps'
+import { MaturityTag } from './MaturityTag'
 
 const link = ({ id, number, title, column }: CardDto): CardLinkDto => ({ id, number, title, column })
 
@@ -125,4 +126,16 @@ function Explained() {
 /** Les étapes expliquées de la page d'un jalon : cliquer une étape ouvre sa fiche. */
 export const Expliquees: Story = {
   render: () => <Explained />,
+}
+
+/** L'étape en texte, précédée de son point : là où une pastille serait trop lourde (le phare de l'Aperçu). */
+export const Etiquettes: Story = {
+  name: 'Étiquettes',
+  render: () => (
+    <div className="flex flex-wrap gap-4">
+      {MATURITIES.map((maturity) => (
+        <MaturityTag key={maturity} maturity={maturity} />
+      ))}
+    </div>
+  ),
 }

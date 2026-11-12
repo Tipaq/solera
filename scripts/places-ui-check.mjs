@@ -13,10 +13,11 @@ import { launchBrowser } from './checks/browser.mjs'
  * Les pages de lieu : l'Aperçu d'un projet, Projets, Planifiées, et les deux Journaux.
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : l'ordre des blocs de
- * l'Aperçu (« Ce qui t'attend », puis la pile Actions et Derniers événements dans la
- * colonne de droite) et leurs renvois vers les onglets Actions et Travail, que le board
- * global est bien celui de l'application — mêmes colonnes, mêmes tuiles — et que les
- * réglages du projet sont toujours joignables, dans la coque.
+ * l'Aperçu (« Ce qui t'attend », puis le phare des jalons, puis la pile Actions et
+ * Derniers événements dans la colonne de droite) et leurs renvois vers les onglets
+ * Actions, Travail et Jalons, que le board global est bien celui de l'application —
+ * mêmes colonnes, mêmes tuiles — et que les réglages du projet sont toujours
+ * joignables, dans la coque.
  *
  * La vue d'un projet est logée dans une coque (`PlaceShell`, page projet v2) : la bande
  * porte l'avatar, le nom et « + Conversation », la rangée porte les cinq vues puis
@@ -239,8 +240,8 @@ try {
 
   // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
   /*
-    La mise en page `combo` (`projet.md` A-1) : « Ce qui t'attend » en tête, puis la
-    place du phare, puis une grille — à gauche la place du « Code en cours », à droite
+    La mise en page `combo` (`projet.md` A-1) : « Ce qui t'attend » en tête, puis le
+    phare des jalons, puis une grille — à gauche la place du « Code en cours », à droite
     la pile « Actions » puis « Derniers événements ».
 
     Le jeu d'essai n'a pas d'action, et un service ne tournerait pas sans systemd : la
@@ -342,6 +343,65 @@ try {
   // Ce qui réclame est dans « Ce qui t'attend » depuis #163, et rien d'autre ne compte.
   await inbox.getByText(/à relire/).first().waitFor()
   assert.equal(await page.getByText(/cartes$/).count(), 0, 'L’Aperçu ne porte aucun inventaire')
+
+  /*
+    Le phare des jalons (A-3), entre « Ce qui t'attend » et la grille : le jalon courant
+    en grand, la file à sa droite. Dans le jeu d'essai, v1.2 a trois enfants ouverts et
+    v1.1 est livrée ; il n'y a pas d'autre jalon, donc les deux files sont vides — la
+    suite en pose deux plus bas.
+  */
+  const beacon = page.getByRole('region', { name: 'Jalons', exact: true })
+  await beacon.waitFor()
+  const beaconBox = await beacon.boundingBox()
+  assert.ok(beaconBox.y > inboxBox.y + inboxBox.height && beaconBox.y + beaconBox.height < actionsBlock.y, 'Le phare est entre « Ce qui t’attend » et la grille')
+  await beacon.getByText('Jalon en cours', { exact: true }).waitFor()
+  assert.equal(
+    await beacon.getByRole('link', { name: milestone.title, exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline/${milestone.number}`,
+    'Le titre du jalon mène à sa page',
+  )
+  await beacon.getByRole('img', { name: /^\d+ cartes faites sur 3$/ }).waitFor()
+  await beacon.getByText(`#${milestone.number} · échéance dans 9 jours`, { exact: true }).waitFor()
+  await beacon.getByText(/^1 vague · 3 cartes à la fois au plus$|^\d vagues · 3 cartes à la fois au plus$/).waitFor()
+  await beacon.getByText(/^Vague 1 ?· \d\/\d/).first().waitFor()
+  // Une pastille par enfant non abandonnée, nommée au survol, qui mène à sa carte.
+  assert.equal(await beacon.getByRole('link', { name: /^#\d+ .+ — / }).count(), 3, 'Une pastille par carte du jalon')
+  for (const queue of ['Ensuite · 0', 'Plus tard · 0']) {
+    await beacon.getByRole('heading', { name: queue, exact: true }).waitFor()
+  }
+  assert.equal(await beacon.getByText('Rien pour l’instant.', { exact: true }).count(), 2)
+  assert.equal(
+    await beacon.getByRole('link', { name: 'Tous les jalons · 1 livré', exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline`,
+  )
+  /* Le geste suivant : le repère « N t'attend » quand une demande du jalon est dans la
+     liste — il la déplie là-haut sans la redire (A-3.8) —, sinon un bouton vers le jalon. */
+  const mark = beacon.getByRole('button', { name: /^\d+ t’attend(ent)?$/ })
+  if (await mark.count()) {
+    await beacon.getByText('Le jalon reprend dès ta réponse.', { exact: true }).waitFor()
+    await mark.click()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).waitFor()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).click()
+  } else {
+    await beacon.getByRole('button', { name: /./ }).first().click()
+    await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
+    await page.goBack()
+    await beacon.waitFor()
+  }
+  /* La file : un jalon prêt part dans « Ensuite », une idée dans « Plus tard » (A-3.9).
+     Posés ici et retirés après le téléphone, pour ne rien changer aux vues suivantes. */
+  const createCard = async (data) => (await context.request.post(`${base}/api/projects/${nimbus.id}/cards`, { data })).json()
+  const readyMilestone = await createCard({ title: 'Accès distant fiable', milestone: true })
+  const readyChild = await createCard({ title: 'Adresse de secours', parentId: readyMilestone.id })
+  const idea = await createCard({ title: 'Mode hors ligne complet', milestone: true })
+  await page.reload()
+  await beacon.getByRole('heading', { name: 'Ensuite · 1', exact: true }).waitFor()
+  await beacon.getByRole('heading', { name: 'Plus tard · 1', exact: true }).waitFor()
+  const queued = (title) => beacon.getByRole('link').filter({ hasText: title })
+  assert.equal(await queued('Accès distant fiable').getAttribute('href'), `/p/${nimbus.id}/timeline/${readyMilestone.number}`)
+  await queued('Accès distant fiable').getByText('Prêt', { exact: true }).waitFor()
+  await queued('Mode hors ligne complet').getByText('Idée', { exact: true }).waitFor()
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare.png') })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions.png') })
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements.png') })
@@ -355,6 +415,15 @@ try {
     'Au téléphone, les blocs sont empilés sur la gouttière',
   )
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
+  const narrowBeacon = await beacon.boundingBox()
+  assert.ok(Math.abs(narrowBeacon.x - narrowInbox.x) <= 1, 'Au téléphone, le phare est sur la gouttière')
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare-mobile.png') })
+  for (const card of [readyChild, readyMilestone, idea]) {
+    assert.ok((await context.request.delete(`${base}/api/cards/${card.id}`)).ok())
+  }
+  // La liste des cartes en cache les porte encore : la page la relit.
+  await page.reload()
+  await beacon.waitFor()
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions-mobile.png') })
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
