@@ -87,6 +87,14 @@ test('editorStateOf : une nouvelle action est une commande, tâche, à la demand
   assert.equal(state.label, '')
   assert.equal(state.placement, 'follow')
   assert.equal(state.worktreeMode, 'root')
+  // La portée vient de l'hôte : le projet de l'onglet, sauf sur la page Planifiées.
+  assert.equal(state.target, null)
+})
+
+test('editorStateOf : target, la portée choisie d’office hors d’un projet (PLF-10)', () => {
+  const state = editorStateOf({ preset: { what: 'agent' }, schedule: true, target: { scope: 'vault' } })
+  assert.deepEqual(state.target, { scope: 'vault' })
+  assert.equal(state.scheduled, true)
 })
 
 test('editorStateOf : preset choisit la nature, schedule coche « Planifiée »', () => {
@@ -226,8 +234,14 @@ test('problemsOf : options d’un agent — durée et délai du script', () => {
   assert.deepEqual(problemsOf({ ...agent, checkScript: '  ', checkTimeout: '0' }), {})
 })
 
+test('problemsOf : une commande tourne dans un projet (PLF-10)', () => {
+  assert.equal(problemsOf(fresh({ command: 'x', target: { scope: 'vault' } })).scope, 'actionEditor.error.scope')
+  assert.equal(problemsOf(fresh({ command: 'x', target: { scope: 'project', projectId: 'p1' } })).scope, undefined)
+  assert.equal(problemsOf(fresh({ what: 'agent', prompt: 'x', target: { scope: 'none' } })).scope, undefined)
+})
+
 test('ALL_FIELDS couvre chaque problème possible', () => {
-  const worst = fresh({ label: '', command: '', subdir: '/x', kind: 'service', url: 'x', onDemand: false, scheduled: true, cadence: null, placement: 'branch', pinnedBranch: '' })
+  const worst = fresh({ target: { scope: 'instance' }, label: '', command: '', subdir: '/x', kind: 'service', url: 'x', onDemand: false, scheduled: true, cadence: null, placement: 'branch', pinnedBranch: '' })
   for (const field of Object.keys(problemsOf(worst))) assert.ok(ALL_FIELDS.includes(field as never), field)
   const agent = fresh({ what: 'agent', maxDuration: '0', checkScript: 'x', checkTimeout: '0' })
   for (const field of Object.keys(problemsOf(agent))) assert.ok(ALL_FIELDS.includes(field as never), field)
@@ -315,6 +329,12 @@ test('draftFrom : un agent, sa cadence ou null, où il tourne, ses options', () 
   })
   const onDemand = draftFrom({ ...state, scheduled: false }, config)
   assert.equal(onDemand.what === 'agent' && onDemand.body.cadence, null)
+  // Hors projet, ni worktree neuf ni confinement : il n'y a ni dépôt ni environnement.
+  const outside = draftFrom({ ...state, target: { scope: 'vault' } }, config)
+  assert.equal(outside.what === 'agent' && outside.body.worktreeMode, 'root')
+  assert.equal(outside.what === 'agent' && outside.body.confined, null)
+  const inside = draftFrom({ ...state, target: { scope: 'project', projectId: 'p1' } }, config)
+  assert.equal(inside.what === 'agent' && inside.body.worktreeMode, 'new')
 })
 
 test('draftFrom : le script d’une tâche existante ne repart que s’il a été touché', () => {

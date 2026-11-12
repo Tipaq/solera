@@ -5,6 +5,8 @@ import { editorKey, panelBack, panelItem, panelLabel, pickable, type ActionPanel
 import { actionOf, natureOf, type Automation } from '../../lib/automations'
 import { commandRunOf } from '../../lib/command-runs'
 import { useDetailSurface } from '../../lib/detail-surface'
+import type { EditorSeed } from '../../lib/action-editor'
+import { targetOfItem } from '../../lib/planned'
 import { useEscapeLayer } from '../../lib/escape-layers'
 import { useTranslate } from '../../lib/i18n'
 import { useTerminals } from '../../lib/terminals'
@@ -43,6 +45,10 @@ export function panelShows(panel: ActionPanel | null, items: readonly Automation
  *
  * Les mises en page suivent la largeur du conteneur (`@container/action`), pas celle de
  * l'écran (TIRA-4).
+ *
+ * `projectId` null : la page Planifiées, qui mêle les projets. Chaque action s'ouvre dans
+ * le sien ; une création porte sa portée (`seed.target`), qu'un duplicata reprend de
+ * l'action d'où il vient.
  */
 export function ActionDrawer({
   projectId,
@@ -53,7 +59,7 @@ export function ActionDrawer({
   conversationId,
   backLabel,
 }: {
-  projectId: string
+  projectId: string | null
   items: readonly Automation[]
   panel: ActionPanel | null
   onPanel: (panel: ActionPanel) => void
@@ -133,19 +139,21 @@ function Mode({
   panel: ActionPanel
   item: Automation | null
   items: readonly Automation[]
-  projectId: string
+  projectId: string | null
   conversationId?: string
   onPanel: (panel: ActionPanel) => void
   onBack: () => void
   onClose: () => void
 }) {
+  // Hors d'un projet, le détail et le passage s'ouvrent dans celui de l'action.
+  const home = projectId ?? item?.projectId ?? ''
   switch (panel.mode) {
     case 'detail':
       return item ? (
         <ActionDetail
           key={item.id}
           item={item}
-          projectId={projectId}
+          projectId={home}
           conversationId={conversationId}
           focusReview={panel.review}
           onPanel={onPanel}
@@ -158,7 +166,7 @@ function Mode({
           <ActionEditor
             key={editorKey(panel.seed)}
             projectId={projectId}
-            seed={panel.seed}
+            seed={projectId === null ? scopedSeed(panel.seed, panel.back, items) : panel.seed}
             conversationId={conversationId}
             onClose={onClose}
             onBack={panel.back ? onBack : undefined}
@@ -169,9 +177,19 @@ function Mode({
       return <Pick items={items} onPanel={onPanel} onClose={onClose} />
     case 'run':
       return item ? (
-        <RunPane item={item} terminalId={panel.terminalId} projectId={projectId} conversationId={conversationId} onPanel={onPanel} onBack={onBack} />
+        <RunPane item={item} terminalId={panel.terminalId} projectId={home} conversationId={conversationId} onPanel={onPanel} onBack={onBack} />
       ) : null
   }
+}
+
+/**
+ * Hors d'un projet, une création sans portée — « Dupliquer » du détail — prend celle de
+ * l'action d'où elle vient. Modifier garde la sienne, qui ne change pas.
+ */
+function scopedSeed(seed: EditorSeed, back: string | null, items: readonly Automation[]): EditorSeed {
+  if (seed.from || seed.target) return seed
+  const origin = back ? items.find((entry) => entry.id === back) : undefined
+  return origin ? { ...seed, target: targetOfItem(origin) } : seed
 }
 
 /** « Planifier une action existante » : celles qui ne le sont pas encore, puis l'éditeur sur Quand (TIRA-7). */

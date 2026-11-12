@@ -1,13 +1,14 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import type { ActionSuggestion } from '@solera/protocol'
+import type { ActionSuggestion, ProjectDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import type { EditorSeed } from '../../lib/action-editor'
 import { ACTIONS_KEY } from '../../lib/actions'
 import { ActionEditor } from './ActionEditor'
 import { ActionChromeProvider } from './ActionSheet'
 import { AGENT, PROJECT_ID, SERVICE_ON, SERVICE_SCHEDULED, SeededWorktrees } from './automation-fixtures'
+import { PROJECTS } from '../planned/planned-fixtures'
 
 const ignore = () => {}
 
@@ -24,17 +25,20 @@ function Seeded({ children }: { children: ReactNode }) {
   useState(() => {
     client.setQueryData([...ACTIONS_KEY, 'suggestions', PROJECT_ID], SUGGESTIONS)
     client.setQueryData(['branches', PROJECT_ID], { branches: ['main', 'dev', 'feat/factures'], current: 'main' })
+    // Le champ Portée de la page Planifiées : les projets, et un administrateur, qui voit l'instance.
+    if (!client.getQueryData(['projects'])) client.setQueryData(['projects'], PROJECTS.map((project) => ({ ...project, archivedAt: null }) as ProjectDto))
+    if (!client.getQueryData(['auth', 'me'])) client.setQueryData(['auth', 'me'], { id: 'u1', username: 'alex', isAdmin: true })
     return null
   })
   return <SeededWorktrees>{children}</SeededWorktrees>
 }
 
-function Harness({ seed, inline = false }: { seed: EditorSeed; inline?: boolean }) {
+function Harness({ seed, inline = false, outside = false }: { seed: EditorSeed; inline?: boolean; outside?: boolean }) {
   return (
     <Seeded>
       <ActionChromeProvider value={inline ? { inline: true, backLabel: 'Actions', onBack: ignore } : { inline: false }}>
         <div className={cx('flex h-[46rem] flex-col overflow-hidden rounded-lg border border-line bg-canvas', inline ? 'w-[21rem]' : 'w-[48rem] max-w-full')}>
-          <ActionEditor projectId={PROJECT_ID} seed={seed} onClose={ignore} />
+          <ActionEditor projectId={outside ? null : PROJECT_ID} seed={seed} onClose={ignore} />
         </div>
       </ActionChromeProvider>
     </Seeded>
@@ -75,3 +79,9 @@ export const ServicePlanifie: Story = { name: 'Service planifié', args: { seed:
 export const ModificationAgent: Story = { name: 'Modifier une tâche d’agent', args: { seed: { from: AGENT } } }
 
 export const Etroit: Story = { name: 'Panneau étroit', args: { seed: { preset: { what: 'command' } }, inline: true } }
+
+/** La page Planifiées (PLF-10) : hors d'un projet, la portée se choisit ; ici le Savoir. */
+export const HorsProjet: Story = {
+  name: 'Planifiées : agent dans le Savoir',
+  args: { seed: { preset: { what: 'agent' }, schedule: true, target: { scope: 'vault' } }, outside: true },
+}

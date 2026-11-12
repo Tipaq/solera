@@ -49,6 +49,7 @@ import {
   headerWhen,
   isService as isServiceState,
   labelMax,
+  outsideProject,
   linkIsLocalOnly,
   problemsOf,
   summaryOf,
@@ -61,6 +62,9 @@ import { useAutomationMutations } from '../../lib/automations-query'
 import type { CommandKind, What } from '../../lib/automations'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { setPanelExpanded } from '../../lib/panel'
+import { editorTargets, fitTarget, launchWhere, projectOfTarget, targetFromValue, targetValue, type PlannedScope, type ScopeProject } from '../../lib/planned'
+import type { ScheduleTarget } from '../../lib/schedules'
+import { useCurrentUser } from '../../lib/session'
 import { useProjectEnvironments, useProjects } from '../../lib/projects'
 import { screenText } from '../../lib/command-output'
 import { useTerminalOutput } from '../../lib/terminal-output'
@@ -73,6 +77,7 @@ import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { AutonomousConfinementSelect } from '../Environment'
 import { useAgentSettings } from '../chat/agent-settings'
 import { CheckSection } from '../schedule/CheckSection'
+import { ScopeMark } from '../planned/ScopeMarks'
 import { NatureIcon } from './ActionMarks'
 import { ActionFooter, ActionHeader, Chip, useActionChrome, useActionPad } from './ActionSheet'
 import { ScheduleBuilder } from './ScheduleBuilder'
@@ -129,7 +134,11 @@ export function ActionEditor({
   onBack,
   onSaved,
 }: {
-  projectId: string
+  /**
+   * Le projet de l'onglet ; null sur la page Planifiées, où la portée se choisit dans
+   * l'éditeur (`seed.target`, PLF-10) ou vient de l'action modifiée.
+   */
+  projectId: string | null
   seed: EditorSeed
   /** Depuis une conversation : « Essayer » tourne dans son worktree. */
   conversationId?: string
@@ -153,19 +162,21 @@ export function ActionEditor({
   const [optionsOpen, setOptionsOpen] = useState(false)
 
   const { data: projects } = useProjects()
-  const project = projects?.find((entry) => entry.id === projectId) ?? null
+  // Le projet où l'on travaille : celui de l'onglet, ou celui de la portée choisie ; null hors projet.
+  const here = state.target ? projectOfTarget(state.target) : (projectId ?? from?.projectId ?? null)
+  const project = projects?.find((entry) => entry.id === here) ?? null
   const { data: userSettings } = useUserSettings()
-  const { data: environments } = useProjectEnvironments(state.what === 'agent' ? projectId : undefined)
+  const { data: environments } = useProjectEnvironments(state.what === 'agent' && here ? here : undefined)
   // Ce qu'une session neuve du projet prendrait ; une configuration d'un autre CLI est
   // abandonnée, pas convertie.
   const config = state.config?.agent === state.agent ? state.config : inheritedConfigFor(state.agent, userSettings, project)
   const { groups, catalogError } = useAgentSettings({ config, onConfigChange: (next) => set({ config: next }) })
-  const mutations = useAutomationMutations(projectId)
+  const mutations = useAutomationMutations(here)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const isService = isServiceState(state)
-  const { data: repo } = useBranches(isService ? projectId : undefined)
+  const { data: repo } = useBranches(isService && here ? here : undefined)
   const problems = problemsOf(state)
   const blocking = Object.values(problems).map((key) => problemText(key, state, t))
   const shown = (field: EditorField) => {
@@ -196,7 +207,7 @@ export function ActionEditor({
     setSaving(true)
     setSaveError(null)
     try {
-      await mutations.save(draftFrom(state, config), from)
+      await mutations.save(draftFrom(state, config), from, outsideProject(state) ? state.target : null)
       ;(onSaved ?? onBack ?? onClose)()
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error))
@@ -230,13 +241,29 @@ export function ActionEditor({
         <div className={cx('@container/action flex flex-col gap-8 py-5', pad)}>
           {/* ------------------------------------------------------------ 1 · Quoi */}
           <Step number={1} title={t('actionEditor.step.what')} hint={t('actionEditor.step.whatHint')}>
-            <WhatCards value={state.what} frozen={Boolean(from)} onChange={(what) => set({ what })} />
+            <WhatCards
+              value={state.what}
+              frozen={Boolean(from)}
+              // Une commande quitte le vault ou l'instance pour un projet (PLF-10).
+              onChange={(what) => set({ what, target: state.target ? fitTarget(state.target, what, projects ?? []) : null })}
+            />
+
+            {state.target && !from ? (
+              <ScopeField
+                target={state.target}
+                what={state.what}
+                projects={(projects ?? []).filter((entry) => !entry.archivedAt)}
+                error={problems.scope ? t(problems.scope) : undefined}
+                onChange={(target) => set({ target })}
+              />
+            ) : null}
 
             {state.what === 'command' ? (
+              here === null ? null : (
               <>
                 {from ? null : (
                   <Suggestions
-                    projectId={projectId}
+                    projectId={here}
                     picked={picked}
                     onPick={(suggestion) => {
                       const draft = suggestionDraft(suggestion, t)
@@ -272,7 +299,7 @@ export function ActionEditor({
                   error={shown('subdir')}
                   hint={t('actionEditor.field.folderHint', { path: `${t('actionEditor.field.worktree')}${state.subdir.trim() ? `/${state.subdir.trim()}` : ''}` })}
                 >
-                  <FolderPicker projectId={projectId} value={state.subdir} onChange={(subdir) => { set({ subdir }); touch('subdir') }} />
+                  <FolderPicker projectId={here} value={state.subdir} onChange={(subdir) => { set({ subdir }); touch('subdir') }} />
                 </FieldRow>
 
                 {isService ? (
@@ -295,8 +322,9 @@ export function ActionEditor({
 
                 {isService ? <LinkField value={state.url} error={shown('url')} onChange={(url) => set({ url })} onBlur={() => touch('url')} /> : null}
 
-                <TryCommand projectId={projectId} conversationId={conversationId} state={state} subdirOk={!problems.subdir} />
+                <TryCommand projectId={here} conversationId={conversationId} state={state} subdirOk={!problems.subdir} />
               </>
+              )
             ) : (
               <>
                 <FieldRow label={t('actionEditor.field.cli')}>
@@ -350,6 +378,8 @@ export function ActionEditor({
                     className={cx(INPUT, 'leading-relaxed', shown('prompt') && INPUT_BAD)}
                   />
                 </FieldRow>
+                {/* Hors projet, ni dépôt où ouvrir un worktree, ni environnement à confiner. */}
+                {here === null ? null : (
                 <FieldRow label={t('actionEditor.field.where')}>
                   <ChoiceCards
                     label={t('actionEditor.field.where')}
@@ -372,6 +402,7 @@ export function ActionEditor({
                     </div>
                   ) : null}
                 </FieldRow>
+                )}
                 <AgentOptions
                   open={optionsOpen}
                   onOpen={setOptionsOpen}
@@ -383,7 +414,8 @@ export function ActionEditor({
                   onBlurDuration={() => touch('duration')}
                 />
                 <CheckSection
-                  projectId={projectId}
+                  projectId={here ?? ''}
+                  target={state.target}
                   taskId={from?.source.kind === 'task' ? from.source.task.id : undefined}
                   script={state.checkScript}
                   timeout={state.checkTimeout}
@@ -569,6 +601,62 @@ function WhatCards({ value, frozen, onChange }: { value: What; frozen: boolean; 
       />
       {frozen ? <span className="text-xs text-ink-faint">{t('actionEditor.what.frozen')}</span> : null}
     </div>
+  )
+}
+
+/** La portée d'une cible, pour la nommer et dire où part un lancement. */
+function scopeOfTarget(target: ScheduleTarget, projects: readonly ScopeProject[]): PlannedScope {
+  if (target.scope !== 'project') return { kind: target.scope }
+  return { kind: 'project', projectId: target.projectId, project: projects.find((entry) => entry.id === target.projectId) ?? null }
+}
+
+/**
+ * Portée (PLF-10), sur la page Planifiées seulement : un projet, le Savoir, l'instance
+ * (administrateurs) ou rien. Une commande appartient à un projet : le reste lui est fermé.
+ */
+function ScopeField({
+  target,
+  what,
+  projects,
+  error,
+  onChange,
+}: {
+  target: ScheduleTarget
+  what: What
+  projects: readonly ScopeProject[]
+  error?: string
+  onChange: (target: ScheduleTarget) => void
+}) {
+  const t = useTranslate()
+  const { data: user } = useCurrentUser()
+  const options = editorTargets(projects, { admin: user?.isAdmin === true, what }).map((option) => {
+    const scope = scopeOfTarget(option.target, projects)
+    return {
+      value: option.value,
+      label: scope.kind === 'project' ? (scope.project?.name ?? t('planned.scope.unknown')) : t(`planned.scope.${scope.kind}`),
+      icon: <ScopeMark scope={scope} />,
+      hint: option.disabled ? t('planned.scopeField.commandOnly') : undefined,
+      disabled: option.disabled,
+    }
+  })
+  return (
+    <FieldRow
+      label={t('planned.scopeField.label')}
+      error={error}
+      hint={t('planned.scopeField.hint', { where: launchWhere(scopeOfTarget(target, projects), t) })}
+    >
+      <div data-scope-field>
+        <Select<string>
+          value={targetValue(target)}
+          options={options}
+          placeholder={t('planned.scopeField.label')}
+          onChange={(value) => {
+            const next = targetFromValue(value)
+            if (next) onChange(next)
+          }}
+        />
+      </div>
+    </FieldRow>
   )
 }
 
