@@ -184,6 +184,8 @@ export function CardSheet({ open, projectId, card, back, onClose, onSelect }: Ca
             {t('cardSheet.launchSession')}
           </Link>
         )}
+        {/* `?carte=` et non `?fiche=` (#180, #246) : au tableau, cette fiche-ci se rouvrirait
+            telle quelle ; on y va pour l'éditeur complet, comme le prototype. */}
         <Link
           to={`/p/${projectId}/board?carte=${card.number}`}
           className={cx(FOOT_LINK, 'border border-line text-ink-soft hover:border-line-strong hover:text-ink')}

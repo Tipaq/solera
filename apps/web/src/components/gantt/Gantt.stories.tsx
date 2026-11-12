@@ -91,10 +91,10 @@ function Assembled({ zoom, cards, hover = null }: { zoom: Zoom; cards: CardDto[]
               </div>
             )
           })}
-          <div className="pointer-events-none absolute top-0 z-[4]" style={{ left: listWidth, height }}>
+          <div className="pointer-events-none absolute top-0" style={{ left: listWidth, height }}>
             <TodayLine scale={scale} height={height} now={NOW} />
           </div>
-          <div className="pointer-events-none absolute top-0 z-[5]" style={{ left: listWidth }}>
+          <div className="pointer-events-none absolute top-0" style={{ left: listWidth }}>
             <GanttArrows anchors={anchorsOf(cards, centers, scale, NOW)} width={scale.width} height={height} chain={chain} />
           </div>
         </div>
