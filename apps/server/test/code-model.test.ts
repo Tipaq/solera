@@ -12,6 +12,7 @@ const {
   statusOfLine,
   liveTrees,
   orderLines,
+  lineGestures,
   statesOfTree,
   statesOfBranch,
   statesOfRow,
@@ -202,6 +203,68 @@ test('lignes : la racine, puis les arbres avec session, puis le plus récent', (
     row({ key: 'never', lastUsedAt: null }),
   ]
   assert.deepEqual(orderLines(lines).map((line) => line.key), ['root', 'busy-old', 'new', 'old', 'never'])
+})
+
+/* ------------------------------------------------------------------ A-4.7 */
+
+test('gestes d’une ligne : la session, le diff, la PR, le rebase, le nettoyage, dans cet ordre', () => {
+  const kinds = (over: Partial<TreeFields>) => lineGestures(row(over)).map((gesture) => gesture.kind)
+  assert.deepEqual(kinds({ sessions: [session('running')], pr: pr('checks'), behind: 3 }), ['session', 'diff', 'pr', 'rebase'])
+  assert.deepEqual(kinds({ pr: pr('merged'), sessions: [session('running')] }), ['session', 'diff', 'pr', 'clean'])
+  assert.deepEqual(kinds({}), ['launch', 'diff', 'clean'])
+})
+
+test('gestes : répondre à la session qui attend, ouvrir sinon, lancer ici sans session', () => {
+  const first = (over: Partial<TreeFields>) => lineGestures(row(over))[0]
+  assert.deepEqual(first({ sessions: [session('running'), session('awaiting')] }), { kind: 'session', sessionId: 's-awaiting', reply: true })
+  assert.deepEqual(first({ sessions: [session('broken')] }), { kind: 'session', sessionId: 's-broken', reply: false })
+  // Celle qui attend passe avant celle en erreur, quel que soit leur ordre.
+  assert.deepEqual(first({ sessions: [session('broken'), session('awaiting')] }), { kind: 'session', sessionId: 's-awaiting', reply: true })
+  assert.deepEqual(first({ sessions: [session('running')] }), { kind: 'session', sessionId: 's-running', reply: false })
+  // Une session close se rouvre : rien ne tourne, mais l'arbre a son fil.
+  assert.deepEqual(first({ anySessionId: 'old' }), { kind: 'session', sessionId: 'old', reply: false })
+  assert.deepEqual(first({ id: 'w9' }), { kind: 'launch', treeId: 'w9' })
+})
+
+test('gestes de la racine : sa session et son diff, rien d’autre', () => {
+  const root = { root: true, state: 'root' as const, id: null, behind: 4, pr: pr('ready') }
+  assert.deepEqual(lineGestures(row(root)).map((gesture) => gesture.kind), ['diff'])
+  assert.deepEqual(lineGestures(row({ ...root, anySessionId: 'r1' })).map((gesture) => gesture.kind), ['session', 'diff'])
+})
+
+test('gestes : le diff compte les fichiers non commités', () => {
+  const diff = lineGestures(row({ uncommitted: 4 })).find((gesture) => gesture.kind === 'diff')
+  assert.deepEqual(diff, { kind: 'diff', count: 4 })
+})
+
+test('gestes : la PR se fusionne prête, montre sa CI rouge, s’ouvre sinon', () => {
+  const prOf = (state: ProjectPullRequestDto['state']) => lineGestures(row({ pr: pr(state, 12) })).find((gesture) => gesture.kind === 'pr')
+  assert.deepEqual(prOf('ready'), { kind: 'pr', action: 'merge', number: 12, url: 'https://forge/pr/12' })
+  assert.deepEqual(prOf('failing'), { kind: 'pr', action: 'ci', number: 12, url: 'https://forge/pr/12' })
+  assert.deepEqual(prOf('draft'), { kind: 'pr', action: 'open', number: 12, url: 'https://forge/pr/12' })
+  assert.deepEqual(prOf('checks'), { kind: 'pr', action: 'open', number: 12, url: 'https://forge/pr/12' })
+  // Une PR fusionnée que seul le statut de l'arbre connaît n'a pas d'adresse : pas de geste.
+  const known = lineGestures(row({ pr: { number: 3, url: null, state: 'merged' } }))
+  assert.equal(known.some((gesture) => gesture.kind === 'pr'), false)
+})
+
+test('gestes : rebaser seulement en retard, et sur un arbre que Solera sait atteindre', () => {
+  const rebase = (over: Partial<TreeFields>) => lineGestures(row(over)).find((gesture) => gesture.kind === 'rebase')
+  assert.deepEqual(rebase({ behind: 5 }), { kind: 'rebase', behind: 5 })
+  assert.equal(rebase({ behind: 0 }), undefined)
+  // Créé au shell, sans session : ni identifiant ni session à qui demander.
+  assert.equal(rebase({ behind: 5, id: null }), undefined)
+  assert.deepEqual(rebase({ behind: 5, id: null, sessions: [session('running')] }), { kind: 'rebase', behind: 5 })
+})
+
+test('gestes : nettoyer un arbre fusionné ou sans session, connu de Solera', () => {
+  const cleans = (over: Partial<TreeFields>) => lineGestures(row(over)).some((gesture) => gesture.kind === 'clean')
+  assert.equal(cleans({}), true)
+  assert.equal(cleans({ sessions: [session('running')] }), false)
+  assert.equal(cleans({ sessions: [session('awaiting')], pr: pr('merged') }), true)
+  assert.equal(cleans({ id: null }), false)
+  // Un arbre créé au shell, sans session : ni diff ni nettoyage, seulement rien.
+  assert.deepEqual(lineGestures(row({ id: null })).map((gesture) => gesture.kind), [])
 })
 
 /* ------------------------------------------------------------------ T-1.2 */

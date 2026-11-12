@@ -1,4 +1,4 @@
-import { Flag, Layers, Plus, SquareKanban, Target, Zap } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState } from '@solera/ui'
@@ -10,6 +10,7 @@ import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
 import { useTranslate } from '../lib/i18n'
 import { openLeafCount } from '../lib/place'
+import { PROJECT_TABS, type ProjectTabKey } from '../lib/project-tabs'
 import { useProjects } from '../lib/projects'
 
 /**
@@ -52,26 +53,24 @@ export function ProjectLayout() {
      « à relire ») arrive avec sa vue. */
   const asking = askingCount(live, requests)
   const open = openLeafCount(cards)
-  const tabs: PlaceTab[] = [
-    { to: `/p/${projectId}`, end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
-    {
-      to: `/p/${projectId}/travail`,
-      label: t('project.view.travail'),
-      icon: <Layers size={15} />,
+  const badges: Partial<Record<ProjectTabKey, Pick<PlaceTab, 'count' | 'tone' | 'countTitle'>>> = {
+    travail: {
       count: asking,
       tone: 'caution',
       countTitle: t(asking === 1 ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
     },
-    {
-      to: `/p/${projectId}/board`,
-      label: t('project.board.title'),
-      icon: <SquareKanban size={15} />,
+    board: {
       count: open,
       countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
-    { to: `/p/${projectId}/timeline`, label: t('project.view.timeline'), icon: <Flag size={15} /> },
-    { to: `/p/${projectId}/actions`, label: t('project.view.actions'), icon: <Zap size={15} /> },
-  ]
+  }
+  const tabs: PlaceTab[] = PROJECT_TABS.map((tab) => ({
+    to: `/p/${projectId}${tab.path}`,
+    end: tab.path === '',
+    label: t(tab.label),
+    icon: <tab.icon size={15} />,
+    ...badges[tab.key],
+  }))
 
   return (
     <PlaceShell

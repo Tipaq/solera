@@ -1,8 +1,14 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { cards, projects, type CardRow, type ProjectRow } from '@solera/db'
-import { launchMilestoneCardBodySchema, startMilestoneBodySchema, updateMilestoneRunBodySchema } from '@solera/protocol'
+import {
+  launchMilestoneCardBodySchema,
+  startMilestoneBodySchema,
+  updateMilestoneRunBodySchema,
+  type PortfolioMilestoneRunsDto,
+} from '@solera/protocol'
 import type { MilestoneRuns } from '../../milestones/milestone-runs.js'
+import { visibilityFilter } from '../../projects/scope.js'
 import { requireUser } from '../require-user.js'
 import type { AppContext } from '../context.js'
 import { badRequest, notFound } from '../errors.js'
@@ -38,6 +44,24 @@ export function registerMilestoneRoutes(app: FastifyInstance, ctx: AppContext, m
       throw notFound('project_not_found', 'Project not found.')
     }
     return milestones.activeRuns(project.id).map((run) => milestones.read(run))
+  })
+
+  /**
+   * Les mêmes pour tous les projets visibles et non archivés (#240) : les Jalons et
+   * l'Aperçu du portefeuille les lisent d'une requête plutôt que d'une par projet.
+   */
+  app.get('/api/milestones/active', async (request): Promise<PortfolioMilestoneRunsDto> => {
+    const user = requireUser(request)
+    const rows = ctx.db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(visibilityFilter(user.id), isNull(projects.archivedAt)))
+      .all()
+    const entries = rows.flatMap(({ id }) => {
+      const runs = milestones.activeRuns(id)
+      return runs.length ? [[id, runs.map((run) => milestones.read(run))] as const] : []
+    })
+    return { projects: Object.fromEntries(entries) }
   })
 
   app.get('/api/cards/:id/milestone/plan', async (request) => {

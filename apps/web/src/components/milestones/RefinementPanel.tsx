@@ -7,9 +7,19 @@ import { useLiveStatus } from '../../lib/conversation-status'
 import { useAllConversations } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import type { MilestoneEntry } from '../../lib/milestone-model'
-import { useAnswerRefinement, useCardRefinement, useValidateRefinementDraft } from '../../lib/milestones'
-import { activityTool, collectAnswer, draftUnderMilestone, refineHref, refinePanelState } from '../../lib/refinement'
+import { useCards } from '../../lib/cards'
+import { useAnswerRefinement, useCardRefinement, useDecideAddition, useValidateRefinementDraft } from '../../lib/milestones'
+import {
+  activityTool,
+  collectAnswer,
+  draftUnderMilestone,
+  proposedAdditions,
+  refineHref,
+  refinePanelState,
+  type ProposedAddition,
+} from '../../lib/refinement'
 import { toolSummary } from '../../lib/tool-summary'
+import { AdditionProposal } from './AdditionProposal'
 import { DraftEditor } from './DraftEditor'
 
 const DOT: Record<RefinementState, string> = {
@@ -32,9 +42,11 @@ interface OpenQuestions {
  * brouillon de découpage à corriger puis valider, et la session elle-même en geste
  * principal. Le fil complet vit dans la session.
  *
- * L'ajout proposé (AFF-7) et « À régler avant de partir » sont ailleurs (#196). Une
- * session d'enfant bloquée n'y est pas recopiée (spec §2.6-1) : son repère ambre et
- * « Ce qui t'attend » la portent.
+ * Ce qu'un ajout au jalon devient (AFF-7, #196) s'y propose aussi : des sous-tâches dans
+ * une carte, ou de nouvelles cartes dans un jalon déjà découpé — un brouillon, mais lu
+ * comme un ajout. « À régler avant de partir » est à part (`SettleList`). Une session
+ * d'enfant bloquée n'y est pas recopiée (spec §2.6-1) : son repère ambre et « Ce qui
+ * t'attend » la portent.
  */
 export function RefinementPanel({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
   const t = useTranslate()
@@ -58,9 +70,16 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
     void refetch()
   }, [signal, refetch])
 
+  const { data: cards } = useCards(projectId)
   const questions = openQuestions(detail, entry)
   const state = refinePanelState(session, entry.children.length > 0, live, questions !== null)
-  const draft = detail?.draft ?? null
+  const additions = proposedAdditions(detail, entry.children.length > 0, cards ?? entry.children)
+  // De nouvelles cartes dans un jalon découpé se lisent en ajout, pas en découpage à refaire.
+  const draft = additions.some((addition) => addition.kind === 'cards') ? null : (detail?.draft ?? null)
+  // Ce que la session attend sans le proposer ici : une réponse dans le fil, ou un
+  // changement de cartes qui n'est pas un ajout.
+  const waitingThere = state === 'waiting' && !questions && !draft && additions.length === 0
+  const listed = state === 'working' || questions !== null || draft !== null || waitingThere
 
   return (
     <section aria-label={t('milestone.refine.title')} className="flex flex-col gap-3">
@@ -99,7 +118,7 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
         </p>
       ) : state === 'done' && !draft ? (
         <p className="text-sm text-ink-faint">{t('milestone.refine.doneText')}</p>
-      ) : (
+      ) : listed ? (
         <ul className="flex flex-col divide-y divide-line rounded-lg border border-line">
           {state === 'working' ? <ActivityLine detail={detail} /> : null}
           {questions ? (
@@ -111,14 +130,14 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
               {t('milestone.refine.draftWaiting')}
             </li>
           ) : null}
-          {state === 'waiting' && !questions && !draft ? (
+          {waitingThere ? (
             <li className="flex min-h-9 items-center gap-2 px-3 py-1.5 text-sm text-ink-soft">
               <Bot size={15} aria-hidden className="shrink-0 text-caution" />
               {t(session?.change ? 'milestone.refine.changeWaiting' : 'milestone.refine.waitingThere')}
             </li>
           ) : null}
         </ul>
-      )}
+      ) : null}
 
       {draft ? (
         <EditableDraft
@@ -131,7 +150,35 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
           canDecide={canDecide}
         />
       ) : null}
+
+      {additions.map((addition) => (
+        <DecidedAddition key={addition.requestId} projectId={projectId} milestone={card} addition={addition} canDecide={canDecide} />
+      ))}
     </section>
+  )
+}
+
+/** L'ajout proposé et son clic : accepté, il s'écrit ; laissé, la demande est refusée. */
+function DecidedAddition({
+  projectId,
+  milestone,
+  addition,
+  canDecide,
+}: {
+  projectId: string
+  milestone: Pick<CardDto, 'id' | 'number' | 'title'>
+  addition: ProposedAddition
+  canDecide: boolean
+}) {
+  const decide = useDecideAddition(projectId, milestone)
+  return (
+    <AdditionProposal
+      addition={addition}
+      canDecide={canDecide}
+      busy={decide.isPending}
+      error={decide.isError ? decide.error.message : null}
+      onDecide={(accept) => decide.mutate({ addition, accept })}
+    />
   )
 }
 

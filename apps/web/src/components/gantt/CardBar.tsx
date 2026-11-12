@@ -93,9 +93,9 @@ export function CardBar({
   return (
     <div
       ref={anchor}
-      // Survolée, au-dessus des barres voisines et de leurs titres, mais sous la liste
-      // collée à gauche (z-10) : à z-30, elle passait par-dessus en défilant.
-      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30', hovered && 'z-[3]')}
+      // Pas de z-index : chaque barre tient dans sa ligne, rien ne la chevauche, et une valeur
+      // à part sortait de l'échelle des couches du DS (Couches.mdx).
+      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30')}
       style={{ left, top, height, width }}
       onMouseEnter={() => onHover?.(card.id)}
       onMouseLeave={() => onHover?.(null)}

@@ -1,8 +1,8 @@
-import { FolderGit2, GitBranch, Layers, MoreHorizontal } from 'lucide-react'
-import { Fragment, useState } from 'react'
+import { FolderGit2, GitBranch, Layers } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { JournalEntryDto } from '@solera/protocol'
-import { IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import { cx } from '@solera/ui'
 import { Pip, type RailModel } from '../activity/ActivityRail'
 import { CardRef } from '../code/CardRef'
 import { ServiceMark } from '../code/ServiceMark'
@@ -11,12 +11,13 @@ import { TreeFacts } from '../code/TreeFacts'
 import { REASON_TONE, VerdictDot, verdictReason } from '../code/VerdictDot'
 import { SessionRow } from '../project/SessionRow'
 import type { ActivityRow } from '../../lib/activity-rows'
-import { pluralOf, type TreeRow } from '../../lib/code-model'
+import { pluralOf } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { JOURNAL_KIND_LABELS } from '../../lib/journal'
 import type { ServedMark } from '../../lib/served'
 import { LANE_ENTRIES, LANE_ENTRIES_MAX, PROJECT_ENTRIES, shownEntries, type LaneData } from '../../lib/travail-lanes'
+import { GestureMenu } from './GestureMenu'
 import { useTreeActions } from './useTreeActions'
 
 /** Ce qu'un couloir lit du fil pour dessiner une ligne d'historique. */
@@ -51,7 +52,6 @@ export function Lane({
   highlight = false,
   dim = false,
   onOpen,
-  onClean,
 }: {
   projectId: string
   lane: LaneData<ActivityRow, JournalEntryDto>
@@ -63,12 +63,11 @@ export function Lane({
   /** Dans « À nettoyer ». */
   dim?: boolean
   onOpen: (key: string) => void
-  onClean: (tree: TreeRow) => void
 }) {
   const t = useTranslate()
   const { tree, live, entries } = lane
   const [more, setMore] = useState(false)
-  const actions = useTreeActions(projectId, tree, { onClean })
+  const actions = useTreeActions(projectId, tree)
   const name = tree.branch ?? tree.name
   const empty = live.length === 0 && entries.length === 0
 
@@ -110,22 +109,7 @@ export function Lane({
           <SessionStack projectId={projectId} sessions={tree.sessions} />
         </span>
         <span className={cx(ABOVE, 'shrink-0')}>
-          <Menu
-            trigger={
-              <IconButton label={t('travail.lane.gestures', { branch: name })} size="sm">
-                <MoreHorizontal size={15} />
-              </IconButton>
-            }
-          >
-            {actions.map((action, index) => (
-              <Fragment key={action.key}>
-                {action.tone === 'critical' && index > 0 ? <MenuSeparator /> : null}
-                <MenuItem icon={action.icon} onSelect={action.run} tone={action.tone}>
-                  {action.label}
-                </MenuItem>
-              </Fragment>
-            ))}
-          </Menu>
+          <GestureMenu label={t('travail.lane.gestures', { branch: name })} gestures={actions} />
         </span>
       </header>
 

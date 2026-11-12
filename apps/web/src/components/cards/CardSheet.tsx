@@ -1,7 +1,7 @@
 import { ArrowRight, CalendarClock, Flag, Play, SquareKanban } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { parseSubtasks, type CardDto, type CardLinkDto, type ConversationStatus } from '@solera/protocol'
+import type { CardDto, CardLinkDto, ConversationStatus } from '@solera/protocol'
 import { Tooltip, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { Markdown } from '../chat/Markdown'
@@ -19,7 +19,7 @@ import {
   type StatusOf,
 } from '../../lib/card-sheet'
 import { cardState, isLate, isOpen } from '../../lib/card-state'
-import { useCardNotes, useToggleSubtask, useUpdateCard } from '../../lib/cards'
+import { useCardNotes, useCardSubtasks, useUpdateCard } from '../../lib/cards'
 import { useAllConversations } from '../../lib/conversations'
 import { elapsed, relativeDate } from '../../lib/dates'
 import { buildInbox } from '../../lib/inbox'
@@ -212,16 +212,8 @@ function Section({ title, aside, children }: { title: string; aside?: string; ch
 /** Les cases de la description, cochables d'ici (FCH-6), par la route du board. */
 function Subtasks({ projectId, card }: { projectId: string; card: CardDto }) {
   const t = useTranslate()
-  const toggle = useToggleSubtask(projectId, card.id)
-  /* Pendant l'écriture, la case dit déjà ce qu'on a demandé, posé dans le même rendu que
-     le clic : la mutation n'est en cours qu'un tour plus tard, et une case contrôlée
-     reviendrait d'ici là. Oublié une fois la liste relue, réussite ou échec. */
-  const [asked, setAsked] = useState<{ index: number; checked: boolean } | null>(null)
-  const subtasks = parseSubtasks(card.description).map((task) =>
-    asked?.index === task.index ? { ...task, checked: asked.checked } : task,
-  )
+  const { subtasks, done, check, pending, failed } = useCardSubtasks(projectId, card)
   if (subtasks.length === 0) return null
-  const done = subtasks.filter((task) => task.checked).length
   return (
     <Section title={t('board.card.subtasks')} aside={t('cardSheet.subtasks.count', { done, total: subtasks.length })}>
       <div
@@ -242,19 +234,15 @@ function Subtasks({ projectId, card }: { projectId: string; card: CardDto }) {
                 type="checkbox"
                 className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
                 checked={task.checked}
-                disabled={toggle.isPending}
-                onChange={(event) => {
-                  const checked = event.target.checked
-                  setAsked({ index: task.index, checked })
-                  toggle.mutate({ index: task.index, checked, label: task.label }, { onSettled: () => setAsked(null) })
-                }}
+                disabled={pending}
+                onChange={(event) => check(task, event.target.checked)}
               />
               <span className={cx('text-sm', task.checked ? 'text-ink-faint line-through' : 'text-ink')}>{task.label}</span>
             </label>
           </li>
         ))}
       </ul>
-      {toggle.isError ? (
+      {failed ? (
         <p role="alert" className="text-sm text-critical">
           {t('board.card.subtasks.error')}
         </p>

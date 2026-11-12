@@ -119,11 +119,15 @@ export async function writeMemoryFile(dir: string, file: string, content: string
   await writeFile(join(dir, file), content, 'utf8')
 }
 
-/** Retire une note et sa ligne d'index : un pointeur vers un fichier absent tromperait. */
-export async function deleteMemoryFile(dir: string, file: string): Promise<void> {
+/**
+ * Retire une note et sa ligne d'index : un pointeur vers un fichier absent tromperait.
+ * `keepIndexLine` la garde, quand on le demande depuis l'interface : la page la montre
+ * alors comme orpheline, et « Réparer l'index » la retire.
+ */
+export async function deleteMemoryFile(dir: string, file: string, keepIndexLine = false): Promise<void> {
   memoryFileSchema.parse(file)
   await rm(join(dir, file), { force: true })
-  if (file === MEMORY_INDEX_FILE) return
+  if (file === MEMORY_INDEX_FILE || keepIndexLine) return
   const indexPath = join(dir, MEMORY_INDEX_FILE)
   const index = await readFile(indexPath, 'utf8').catch(() => null)
   if (index === null) return
