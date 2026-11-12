@@ -55,7 +55,7 @@ function StepCard({
   return (
     <div className="flex w-80 max-w-full flex-col gap-3 p-3.5 text-sm">
       <div className="flex items-baseline gap-2">
-        <span className="text-xs text-ink-faint tabular-nums">{t('milestones.maturity.step.position', { index: index + 1 })}</span>
+        <span className="text-xs text-ink-faint tabular-nums">{t('milestones.maturity.step.position', { index: index + 1, total: MATURITIES.length })}</span>
         <span className="font-semibold text-ink">{t(`milestones.maturity.label.${step}`)}</span>
         <span className="ml-auto text-xs text-ink-faint">
           {t(current ? 'milestones.maturity.step.now' : index < at ? 'milestones.maturity.step.passed' : 'milestones.maturity.step.coming')}
@@ -120,19 +120,21 @@ export function ExplainedSteps({
   return (
     <div className="flex flex-col gap-1.5">
       <ol className="grid grid-cols-6 gap-1">
-        {MATURITIES.map((step, index) => (
+        {MATURITIES.map((step, index) => {
+          const label = t('milestones.maturity.step.label', { step: t(`milestones.maturity.label.${step}`) })
+          return (
           <li key={step} className="min-w-0">
             <Popover
               open={open === step}
               onOpenChange={(next) => setOpen(next ? step : null)}
-              label={t('milestones.maturity.step.label', { step: t(`milestones.maturity.label.${step}`) })}
+              label={label}
               side="bottom"
               align={index > 3 ? 'end' : 'start'}
               className="p-0"
               trigger={
                 <TooltipButton
                   type="button"
-                  aria-label={t('milestones.maturity.step.label', { step: t(`milestones.maturity.label.${step}`) })}
+                  aria-label={label}
                   title={t('milestones.maturity.step.why')}
                   className="group flex w-full min-w-0 flex-col gap-1.5 rounded-md pt-1 pb-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >
@@ -157,17 +159,17 @@ export function ExplainedSteps({
               <StepCard step={step} entry={entry} action={action} onAct={onAct} close={() => setOpen(null)} />
             </Popover>
           </li>
-        ))}
+          )
+        })}
       </ol>
-      <button
-        type="button"
-        onClick={() => setOpen(entry.maturity)}
-        className="self-start rounded text-xs text-ink-soft outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-accent sm:hidden"
-      >
-        {t('milestones.maturity.step.mobile', { index: at + 1 })} ·{' '}
-        <span className="font-semibold text-ink">{t(`milestones.maturity.label.${entry.maturity}`)}</span> ·{' '}
-        {t('milestones.maturity.step.mobileWhy')}
-      </button>
+      {/* Le libellé de l'étape en gras, au milieu de la phrase : la clé porte les séparateurs. */}
+      <Button variant="ghost" size="sm" onClick={() => setOpen(entry.maturity)} className="-mx-3 self-start text-xs font-normal sm:hidden">
+        <span>
+          {t('milestones.maturity.step.mobile', { index: at + 1, total: MATURITIES.length })}
+          <span className="font-semibold text-ink">{t(`milestones.maturity.label.${entry.maturity}`)}</span>
+          {t('milestones.maturity.step.mobileWhy')}
+        </span>
+      </Button>
     </div>
   )
 }

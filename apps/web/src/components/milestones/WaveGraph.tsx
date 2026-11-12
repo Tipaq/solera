@@ -68,6 +68,7 @@ export function WaveGraph({
   const inMilestone = useMemo(() => layersOf(shown), [shown])
   const chain = useMemo(() => chainOf(shown, hovered), [shown, hovered])
   const added = launchedAt === null ? [] : shown.filter((card) => card.createdAt > launchedAt)
+  const addedIds = new Set(added.map((card) => card.id))
   const stacked = width > 0 && width < STACK_BELOW
 
   const count = Math.max(1, waves.length)
@@ -79,12 +80,12 @@ export function WaveGraph({
   const height = HEAD_H + Math.max(0, ...waves.map((wave) => wave.length)) * (NODE_H + NODE_GAP) - NODE_GAP
   const total = count * column + (count - 1) * GAP
 
-  const node = (card: CardDto, style?: CSSProperties) => (
+  const node = (card: CardDto, style: CSSProperties = { minHeight: NODE_H }) => (
     <WaveNode
       key={card.id}
       projectId={projectId}
       card={card}
-      added={launchedAt !== null && card.createdAt > launchedAt}
+      added={addedIds.has(card.id)}
       dimmed={chain !== null && !chain.has(card.id)}
       lit={chain !== null && chain.has(card.id)}
       onHover={setHovered}
@@ -140,9 +141,10 @@ function WaveHead({ index, wave, concurrency }: { index: number; wave: readonly 
         <span className="truncate text-xs text-ink-faint">
           {progress.kind === 'finished'
             ? t('milestone.waves.finished')
-            : `${t(`milestone.waves.open.${pluralOf(progress.open)}`, { count: progress.open })} · ${
-                progress.passes > 1 ? t('milestone.waves.passes', { count: progress.passes }) : t('milestone.waves.parallel')
-              }`}
+            : t('milestone.waves.progress', {
+                open: t(`milestone.waves.open.${pluralOf(progress.open)}`, { count: progress.open }),
+                rhythm: progress.passes > 1 ? t('milestone.waves.passes', { count: progress.passes }) : t('milestone.waves.parallel'),
+              })}
         </span>
       </div>
       <span aria-hidden className="flex gap-0.5">
@@ -177,7 +179,7 @@ function WaveNode({
   dimmed: boolean
   lit: boolean
   onHover: (id: string | null) => void
-  style?: CSSProperties
+  style: CSSProperties
   showAfter: boolean
   inMilestone: ReadonlyMap<string, number>
   statusOf: StatusOf
@@ -200,12 +202,13 @@ function WaveNode({
       onFocus={() => onHover(card.id)}
       onBlur={() => onHover(null)}
       className={cx(
-        'flex min-h-[76px] flex-col justify-between gap-1 rounded-xl border px-2.5 py-2 transition-[opacity,box-shadow,border-color] duration-150',
+        'flex flex-col justify-between gap-1 rounded-xl border px-2.5 py-2 transition-[opacity,box-shadow,border-color] duration-150',
         'hover:border-accent focus-visible:outline-2 focus-visible:outline-accent',
         STATE_NODE[state],
         done && 'opacity-70',
         dimmed && 'opacity-30',
-        lit && 'shadow-[0_0_0_2px_var(--color-accent)]',
+        // Un contour et non une ombre : le thème contrasté annule les ombres.
+        lit && 'outline-2 outline-offset-0 outline-accent',
         late && 'ring-1 ring-critical/70',
         asking && 'border-caution bg-caution/10 ring-2 ring-caution/30',
       )}
