@@ -17,6 +17,10 @@ import { launchBrowser } from './checks/browser.mjs'
  * la liste, sans recharger —, que les fils des tâches planifiées n'y sont pas, que l'état
  * d'une session se lit de son statut vivant et de sa carte, que la portée reste
  * atteignable au téléphone, et qu'un en-tête de groupe ne met pas un lien dans un bouton.
+ *
+ * Puis la sélection (#233) : chaque geste en masse est vérifié **par l'API** — épinglée,
+ * archivée, désarchivée, supprimée —, l'archivage passe par la fenêtre des demandes en
+ * attente, un refus du serveur n'arrête pas les autres et se dit dans un bandeau.
  */
 
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -319,8 +323,150 @@ try {
   await line('Migrate icons to Lucide').waitFor()
   await expectParam('portee', 'archivees')
 
+  // ─── SES-13 : la sélection et les gestes en masse, vérifiés par l'API ────
+  // Sur la base jetable de la suite, jamais sur celle de Solera.
+  await page.setViewportSize({ width: 1280, height: 800 })
+  const record = async (title) => (await (await context.request.get(`${base}/api/conversations`)).json()).find((entry) => entry.title === title)
+  /** Attend que le serveur dise ce que le geste devait faire. */
+  const until = async (check, message) => {
+    for (let i = 0; i < 50; i++) {
+      if (await check()) return
+      await delay(100)
+    }
+    assert.fail(message)
+  }
+  const flaky = 'Fix the flaky retry test'
+  const limit = 'Rate-limit the places endpoint'
+  const flakyId = (await record(flaky)).id
+  await page.goto(`${base}/sessions?vue=liste&tri=nom`)
+  await line(flaky).waitFor()
+  const selectToggle = toolbar.getByRole('button', { name: 'Sélectionner' })
+  await selectToggle.click()
+  const bar = page.locator('[data-selection-bar]')
+  await bar.waitFor()
+  assert.equal(await toolbar.getByRole('button', { name: 'Terminer' }).getAttribute('aria-pressed'), 'true')
+  assert.match(await bar.innerText(), /0 sélectionnée\b/)
+  for (const name of ['Épingler', 'Archiver', 'Supprimer']) {
+    assert.equal(await bar.getByRole('button', { name, exact: true }).isDisabled(), true, `« ${name} » désactivé à 0`)
+  }
+  assert.equal(await bar.getByRole('button', { name: 'Désarchiver' }).count(), 0, 'On ne désarchive pas une active')
+  assert.equal(await content.getByText('Ce qui t’attend', { exact: true }).count(), 0, 'Pas de « Ce qui t’attend » en sélection')
+
+  // Un clic coche la ligne, il n'ouvre plus le fil.
+  await line(flaky).click()
+  await line(limit).click()
+  assert.equal(new URL(page.url()).pathname, '/sessions')
+  assert.equal(await line(flaky).getAttribute('aria-checked'), 'true')
+  assert.equal(await line('Refactor settings storage').getAttribute('aria-checked'), 'false')
+  assert.match(await bar.innerText(), /2 sélectionnées/)
+  await shot('1280-selection')
+  await shot('1280-barre-selection', bar)
+
+  // Épingler, puis désépingler : le même bouton défait quand tout est déjà épinglé.
+  await bar.getByRole('button', { name: 'Épingler', exact: true }).click()
+  await until(async () => (await record(flaky)).pinned && (await record(limit)).pinned, 'Les deux sont épinglées')
+  await selectToggle.waitFor()
+  assert.equal(await bar.count(), 0, 'Le geste fait, la sélection se referme')
+  await selectToggle.click()
+  await line(flaky).click()
+  await line(limit).click()
+  await bar.getByRole('button', { name: 'Désépingler', exact: true }).click()
+  await until(async () => !(await record(flaky)).pinned && !(await record(limit)).pinned, 'Les deux sont désépinglées')
+
+  // Un refus du serveur : les autres suivent, le refus se dit, sa ligne reste cochée.
+  await page.route(`**/api/conversations/${flakyId}`, (route) =>
+    route.request().method() === 'PATCH'
+      ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'test', message: 'Refusé par la suite' } }) })
+      : route.continue(),
+  )
+  await selectToggle.click()
+  await line(flaky).click()
+  await line(limit).click()
+  await bar.getByRole('button', { name: 'Épingler', exact: true }).click()
+  await until(async () => (await record(limit)).pinned, 'La seconde est épinglée malgré le refus de la première')
+  const failure = page.getByRole('alert').filter({ hasText: 'Refusé par la suite' })
+  await failure.waitFor()
+  assert.match(await failure.innerText(), /Une session n’a pas suivi/)
+  assert.equal((await record(flaky)).pinned, false)
+  assert.equal(await line(flaky).getAttribute('aria-checked'), 'true', 'Le refus reste coché, pour réessayer')
+  assert.equal(await line(limit).getAttribute('aria-checked'), 'false')
+  await shot('1280-refus')
+  await page.unroute(`**/api/conversations/${flakyId}`)
+  assert.ok((await context.request.patch(`${base}/api/conversations/${(await record(limit)).id}`, { data: { pinned: false } })).ok())
+
+  // Archiver passe par la fenêtre des demandes en attente (#119).
+  await page.route('**/api/conversations/pending-requests*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ conversations: [{ id: flakyId, projectId: atlas.id, decision: 1, cardChange: 0, cardDraft: 0, move: 0 }] }),
+    }),
+  )
+  await line(limit).click()
+  assert.match(await bar.innerText(), /2 sélectionnées/)
+  await bar.getByRole('button', { name: 'Archiver', exact: true }).click()
+  const guard = page.getByRole('dialog', { name: 'Archiver avec des demandes en attente ?' })
+  await guard.waitFor()
+  assert.equal((await record(flaky)).archivedAt, null, 'Rien ne part avant la confirmation')
+  await guard.getByRole('button', { name: 'Archiver quand même' }).click()
+  await until(async () => (await record(flaky)).archivedAt !== null && (await record(limit)).archivedAt !== null, 'Les deux sont archivées')
+  await page.unroute('**/api/conversations/pending-requests*')
+  assert.equal(await page.getByRole('alert').count(), 0, 'Le refus d’avant s’efface au geste suivant')
+  await line(flaky).waitFor({ state: 'detached' })
+
+  // Changer de portée vide la sélection ; « Tout » coche les lignes affichées.
+  await selectToggle.click()
+  await line('Refactor settings storage').click()
+  assert.match(await bar.innerText(), /1 sélectionnée\b/)
+  await scope.getByRole('radio', { name: /Archivées/ }).click()
+  await expectParam('portee', 'archivees')
+  await line(flaky).waitFor()
+  assert.match(await bar.innerText(), /0 sélectionnée\b/, 'La portée change, la sélection se vide')
+  assert.equal(await bar.getByRole('button', { name: 'Épingler', exact: true }).count(), 0, 'Ni épingler ni archiver une archivée')
+  await bar.getByRole('button', { name: 'Tout', exact: true }).click()
+  await expectTitles(['Fix the flaky retry test', 'Migrate icons to Lucide', 'Rate-limit the places endpoint'])
+  assert.match(await bar.innerText(), /3 sélectionnées/)
+  await shot('1280-archivees-tout')
+  await bar.getByRole('button', { name: 'Désarchiver', exact: true }).click()
+  await until(async () => {
+    const all = await (await context.request.get(`${base}/api/conversations`)).json()
+    return all.every((entry) => entry.archivedAt === null)
+  }, 'Toutes désarchivées')
+  await content.getByText('Aucune session archivée.').waitFor()
+  await scope.getByRole('radio', { name: /Actives/ }).click()
+
+  // Supprimer : une confirmation, au pluriel, qui dit que c'est sans retour.
+  await line(flaky).waitFor()
+  await selectToggle.click()
+  await line(flaky).click()
+  await line(limit).click()
+  await bar.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  const confirmDelete = page.getByRole('dialog', { name: 'Supprimer 2 sessions ?' })
+  await confirmDelete.waitFor()
+  assert.match(await confirmDelete.innerText(), /ne se défait pas/)
+  await shot('1280-supprimer', confirmDelete)
+  await confirmDelete.getByRole('button', { name: 'Annuler' }).click()
+  await confirmDelete.waitFor({ state: 'detached' })
+  assert.ok(await record(flaky), 'Annuler ne supprime rien')
+  await line(limit).click()
+  await bar.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  const confirmOne = page.getByRole('dialog', { name: 'Supprimer 1 session ?' })
+  await confirmOne.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await until(async () => (await record(flaky)) === undefined, 'Supprimée côté serveur')
+  assert.ok(await record(limit), 'Seule la session cochée part')
+  await line(flaky).waitFor({ state: 'detached' })
+
+  // Au téléphone : la barre tient, les libellés de la barre d'outils se replient.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await selectToggle.click()
+  await line(limit).click()
+  assert.equal(Math.round((await bar.boundingBox()).height), 44, 'La barre de sélection fait h-11')
+  await shot('390-selection')
+  await toolbar.getByRole('button', { name: 'Terminer' }).click()
+  await bar.waitFor({ state: 'detached' })
+
   assert.deepEqual(errors, [])
-  console.log('OK : /sessions — bande, lieu Fils, contenu sans planifiées, états, ligne, Ce qui t’attend, tranches, recherche, filtres, adresse source, portée, vues, tri, ouverture, états vides, téléphone ; captures dans ' + shots)
+  console.log('OK : /sessions — bande, lieu Fils, contenu sans planifiées, états, ligne, Ce qui t’attend, tranches, recherche, filtres, adresse source, portée, vues, tri, ouverture, états vides, téléphone, sélection et gestes en masse ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

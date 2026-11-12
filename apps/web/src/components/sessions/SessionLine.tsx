@@ -1,11 +1,13 @@
 import { Pin } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cx } from '@solera/ui'
+import type { ReactNode } from 'react'
 import { relativeDate, shortAge } from '../../lib/dates'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import type { SessionRow, SessionState } from '../../lib/sessions-view'
 import { AgentIcon } from '../AgentIcon'
 import { ProjectPip } from '../places/ProjectPip'
+import { CheckBox } from '../toolbar/ToolbarMenus'
 
 export const STATE_WORD: Record<SessionState, MessageKey> = {
   awaiting: 'sessionsPage.state.awaiting',
@@ -35,18 +37,51 @@ export function SessionStateDot({ state, className }: { state: SessionState; cla
  *
  * `compact` pour les colonnes de « Par état », où la colonne dit déjà l'état et où la
  * place manque pour la méta et pour une date en toutes lettres ; `hideProject` quand le groupe nomme déjà le projet.
+ *
+ * En mode sélection (`onToggle`), la ligne devient une case à cocher : la case en tête,
+ * le fond accent pâle quand elle est cochée, et le clic coche au lieu d'ouvrir le fil.
  */
-export function SessionLine({ row, compact = false, hideProject = false }: { row: SessionRow; compact?: boolean; hideProject?: boolean }) {
+export function SessionLine({
+  row,
+  compact = false,
+  hideProject = false,
+  selected = false,
+  onToggle,
+}: {
+  row: SessionRow
+  compact?: boolean
+  hideProject?: boolean
+  selected?: boolean
+  /** Le mode sélection : la ligne coche au lieu de mener au fil. */
+  onToggle?: (id: string) => void
+}) {
+  const className = cx(
+    'flex min-h-11 w-full min-w-0 items-center gap-3 px-1 text-left text-sm transition-colors hover:bg-surface-high/50 md:min-h-10 pointer-coarse:min-h-11',
+    selected && 'bg-accent/10 hover:bg-accent/15',
+  )
+  return (
+    <li>
+      {onToggle ? (
+        <button type="button" role="checkbox" aria-checked={selected} data-session={row.id} className={className} onClick={() => onToggle(row.id)}>
+          <CheckBox checked={selected} />
+          <LineBody row={row} compact={compact} hideProject={hideProject} />
+        </button>
+      ) : (
+        <Link to={row.path} data-session={row.id} className={className}>
+          <LineBody row={row} compact={compact} hideProject={hideProject} />
+        </Link>
+      )}
+    </li>
+  )
+}
+
+/** Ce que la ligne montre, qu'elle mène au fil ou qu'elle se coche. */
+function LineBody({ row, compact, hideProject }: { row: SessionRow; compact: boolean; hideProject: boolean }): ReactNode {
   const t = useTranslate()
   const word = t(STATE_WORD[row.state])
   const calls = row.state === 'awaiting' || row.state === 'error'
   return (
-    <li>
-      <Link
-        to={row.path}
-        data-session={row.id}
-        className="flex min-h-11 w-full min-w-0 items-center gap-3 px-1 text-left text-sm transition-colors hover:bg-surface-high/50 md:min-h-10 pointer-coarse:min-h-11"
-      >
+    <>
         <span className="relative shrink-0 text-ink-soft" title={word}>
           <AgentIcon agent={row.agent} size={15} />
           <SessionStateDot state={row.state} className="absolute -right-0.5 -bottom-0.5 ring-2 ring-canvas" />
@@ -80,7 +115,6 @@ export function SessionLine({ row, compact = false, hideProject = false }: { row
             </>
           )}
         </span>
-      </Link>
-    </li>
+    </>
   )
 }

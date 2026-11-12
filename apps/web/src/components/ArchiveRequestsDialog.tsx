@@ -93,32 +93,34 @@ function sum(pending: PendingRequestsDto['conversations']): PendingRequestCounts
  * laisse en attente, quel que soit le chemin qui l'a archivé.
  */
 export function useGuardedArchive(): {
-  archive: (ids: string[]) => void
+  /** `onDone` une fois tout archivé — pas sur un refus, ni quand la fenêtre est fermée. */
+  archive: (ids: string[], onDone?: () => void) => void
   dialog: ReactNode
   pending: boolean
   error: unknown
 } {
   const archive = useArchiveConversation()
   const navigate = useNavigate()
-  const [ask, setAsk] = useState<{ ids: string[]; pending: PendingRequestsDto['conversations'] } | null>(null)
+  const [ask, setAsk] = useState<{ ids: string[]; pending: PendingRequestsDto['conversations']; onDone?: () => void } | null>(null)
   const [error, setError] = useState<unknown>(null)
 
-  const commit = async (ids: string[]) => {
+  const commit = async (ids: string[], onDone?: () => void) => {
     try {
       for (const id of ids) await archive.mutateAsync({ id, archived: true })
       setAsk(null)
+      onDone?.()
     } catch (err) {
       setError(err)
     }
   }
 
-  const start = (ids: string[]) => {
+  const start = (ids: string[], onDone?: () => void) => {
     setError(null)
     void api
       .get<PendingRequestsDto>(`/api/conversations/pending-requests?ids=${ids.map(encodeURIComponent).join(',')}`)
       .then(({ conversations }) => {
-        if (conversations.length === 0) void commit(ids)
-        else setAsk({ ids, pending: conversations })
+        if (conversations.length === 0) void commit(ids, onDone)
+        else setAsk({ ids, pending: conversations, onDone })
       })
       .catch(setError)
   }
@@ -132,7 +134,7 @@ export function useGuardedArchive(): {
         setAsk(null)
         navigate(conversationPath(first))
       }}
-      onConfirm={() => void commit(ask.ids)}
+      onConfirm={() => void commit(ask.ids, ask.onDone)}
       onClose={() => setAsk(null)}
     />
   ) : null

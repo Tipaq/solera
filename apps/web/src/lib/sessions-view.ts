@@ -285,3 +285,44 @@ export function byState(rows: readonly SessionRow[]): { key: StateColumn; rows: 
   for (const row of rows) columns.find((column) => column.key === COLUMN_OF[row.state])!.rows.push(row)
   return columns
 }
+
+/* ------------------------------------------------------------------ la sélection */
+
+/**
+ * Les lignes sélectionnées **parmi celles affichées**, dans leur ordre : une session
+ * cochée puis masquée par un filtre, ou partie de la portée après un geste, ne compte
+ * plus et ne subit pas le suivant.
+ */
+export function selectedRows(selected: ReadonlySet<string>, shown: readonly SessionRow[]): SessionRow[] {
+  return shown.filter((row) => selected.has(row.id))
+}
+
+export type BulkGesture = 'pin' | 'archive' | 'unarchive' | 'delete'
+
+/** Les gestes de la barre de sélection : on n'épingle ni n'archive une archivée. */
+export function bulkGestures(scope: SessionScope): BulkGesture[] {
+  return scope === 'actives' ? ['pin', 'archive', 'delete'] : ['unarchive', 'delete']
+}
+
+/** Épingler, ou désépingler quand toute la sélection l'est déjà : le même bouton défait. */
+export function pinTarget(rows: readonly SessionRow[]): boolean {
+  return rows.length === 0 || rows.some((row) => !row.pinned)
+}
+
+/**
+ * Un geste sur chaque session, l'une après l'autre, jusqu'au bout : un refus n'arrête
+ * pas les suivantes. Rend les échecs, avec leur erreur, dans l'ordre.
+ *
+ * Pas de route en masse côté serveur : la boucle reprend celles d'une session.
+ */
+export async function inTurn(ids: readonly string[], step: (id: string) => Promise<unknown>): Promise<{ id: string; error: unknown }[]> {
+  const failed: { id: string; error: unknown }[] = []
+  for (const id of ids) {
+    try {
+      await step(id)
+    } catch (error) {
+      failed.push({ id, error })
+    }
+  }
+  return failed
+}

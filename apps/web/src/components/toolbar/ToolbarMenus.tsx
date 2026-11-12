@@ -154,6 +154,25 @@ export function MenuHeading({ children }: { children: ReactNode }) {
 }
 
 /**
+ * La case d'une coche, seule et muette : celui qui la porte dit son rôle (`checkbox`,
+ * `radio`) et son état. `round` pour un choix unique.
+ */
+export function CheckBox({ checked, round = false }: { checked: boolean; round?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cx(
+        'grid size-4 shrink-0 place-items-center border',
+        round ? 'rounded-full' : 'rounded',
+        checked ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong',
+      )}
+    >
+      {checked ? round ? <span className="size-1.5 rounded-full bg-accent-ink" /> : <Check size={11} strokeWidth={3} /> : null}
+    </span>
+  )
+}
+
+/**
  * Une ligne cochable d'un popover, son compte en regard. Une case à cocher et non un
  * `menuitemcheckbox` : le popover n'est pas un menu, et ce rôle n'y aurait pas de sens.
  *
@@ -182,16 +201,7 @@ export function MenuCheck({
       onClick={() => onChange(exclusive || !checked)}
       className="flex min-h-11 w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-high md:min-h-8 pointer-coarse:min-h-11"
     >
-      <span
-        aria-hidden
-        className={cx(
-          'grid size-4 shrink-0 place-items-center border',
-          exclusive ? 'rounded-full' : 'rounded',
-          checked ? 'border-accent bg-accent text-accent-ink' : 'border-line-strong',
-        )}
-      >
-        {checked ? exclusive ? <span className="size-1.5 rounded-full bg-accent-ink" /> : <Check size={11} strokeWidth={3} /> : null}
-      </span>
+      <CheckBox checked={checked} round={exclusive} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {aside !== undefined ? <span className="shrink-0 text-xs tabular-nums text-ink-faint">{aside}</span> : null}
     </button>

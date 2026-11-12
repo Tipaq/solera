@@ -9,8 +9,12 @@ const {
   byDay,
   byProject,
   byState,
+  bulkGestures,
   filterSessions,
+  inTurn,
+  pinTarget,
   readSessionQuery,
+  selectedRows,
   sessionRows,
   sessionState,
   sortSessions,
@@ -328,4 +332,32 @@ test("Par état : quatre colonnes, l'erreur rangée avec ce qui t'attend", () =>
       ['done', ['d']],
     ],
   )
+})
+
+test('Sélection : seules comptent les lignes affichées, dans leur ordre', () => {
+  const shown = [row('a'), row('b'), row('c')]
+  assert.deepEqual(ids(selectedRows(new Set(['c', 'gone', 'a']), shown)), ['a', 'c'], 'Une ligne masquée par un filtre ou partie de la portée ne subit pas le geste')
+  assert.deepEqual(selectedRows(new Set(), shown), [])
+})
+
+test('Gestes en masse : épingler et archiver dans les actives, désarchiver dans les archivées, supprimer partout', () => {
+  assert.deepEqual(bulkGestures('actives'), ['pin', 'archive', 'delete'])
+  assert.deepEqual(bulkGestures('archivees'), ['unarchive', 'delete'])
+})
+
+test('Épingler : désépingle quand toute la sélection l’est déjà', () => {
+  assert.equal(pinTarget([row('a', { pinned: true }), row('b')]), true)
+  assert.equal(pinTarget([row('a', { pinned: true }), row('b', { pinned: true })]), false)
+  assert.equal(pinTarget([]), true)
+})
+
+test('Un geste en masse va au bout et rend les échecs, sans s’arrêter au premier', async () => {
+  const seen: string[] = []
+  const failed = await inTurn(['a', 'b', 'c'], async (id) => {
+    seen.push(id)
+    if (id === 'b') throw new Error('refusé')
+  })
+  assert.deepEqual(seen, ['a', 'b', 'c'], 'Un appel après l’autre, tous')
+  assert.deepEqual(failed.map((failure) => [failure.id, (failure.error as Error).message]), [['b', 'refusé']])
+  assert.deepEqual(await inTurn([], async () => {}), [])
 })
