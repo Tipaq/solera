@@ -16,6 +16,10 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // (ordre du tableau, prochaine action, lien) ; « + Jalon » et une carte cochée « C'est un
 // jalon » arrivent comme idées sous Plus tard.
 //
+// Étape « gantt » (#191, BAR-8, GNT-1..13) : la vue Gantt détaillé — groupes et leur
+// ordre, « Hors jalon », repli, en-tête collé, jauge du jalon, lignes alignées au pixel et
+// leur destination, survol et chaîne, ℹ, filtre et échelle de la barre, vide.
+//
 // Étape « page » (#194, JAL-1..8, VAG-1..10) : l'en-tête, la prochaine action et son geste,
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
@@ -1078,6 +1082,185 @@ async function launchStep(width) {
   await context.close()
 }
 
+/* ------------------------------------------------------------------ gantt */
+
+/**
+ * Le board de l'horizon, daté et lié pour le Gantt : #913 attend #912, deux cartes
+ * libres datées (dont une abandonnée), une libre sans date, une idée datée.
+ */
+function ganttBoard() {
+  const cards = horizonBoard()
+  const byNumber = (number) => cards.find((entry) => entry.number === number)
+  Object.assign(byNumber(911), { dueAt: now - 4 * DAY })
+  Object.assign(byNumber(912), { createdAt: now - 6 * DAY, dueAt: now + DAY })
+  Object.assign(byNumber(913), { dueAt: now + 4 * DAY })
+  Object.assign(byNumber(921), { dueAt: now - DAY })
+  Object.assign(byNumber(951), { dueAt: now + 8 * DAY })
+  Object.assign(byNumber(901), { dueAt: now + 6 * DAY })
+  byNumber(913).blockedBy = [link(byNumber(912))]
+  byNumber(912).blocks = [link(byNumber(913))]
+  return [
+    ...cards,
+    card(970, 'Renouveler le certificat', 'todo', { createdAt: now - 3 * DAY, dueAt: now + 3 * DAY }),
+    card(971, 'Piste écartée', 'abandoned', { dueAt: now + 3 * DAY }),
+  ]
+}
+
+async function ganttStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let cards = ganttBoard()
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    if (path === '/api/projects') return route.fulfill({ json: [projectOf(null)] })
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [RUN] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', name: 'Tim', email: 'tim@example.com' } })
+    if (/^\/api\/cards\/[^/]+\/notes$/.test(path)) return route.fulfill({ json: [] })
+    return route.fulfill({ status: 404, json: {} })
+  })
+
+  const where = () => page.evaluate(() => window.where)
+  const gantt = page.locator('[data-gantt]')
+  const group = (key) => page.locator(`[data-gantt-group="${key}"]`)
+  const row = (number) => page.locator(`[data-gantt-row="${number}"]`)
+  const rows = () => page.locator('[data-gantt-row]').evaluateAll((list) => list.map((entry) => Number(entry.dataset.ganttRow)))
+  const gauge = (number) => page.locator(`[data-milestone-gauge="${number}"]`)
+  const shot = (locator, name) => locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-gantt-${name}-${width}.png` })
+  const open = async (entry = `/p/${PROJECT}/timeline?vue=gantt`) => {
+    await mountHorizon(page, entry)
+    await gantt.waitFor()
+  }
+
+  console.log(width, 'BAR-5 : Affichage bascule vers le Gantt, l’adresse le retient')
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await page.getByRole('button', { name: 'Affichage : Horizon' }).click()
+  await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Gantt' }).click()
+  await page.keyboard.press('Escape')
+  await gantt.waitFor()
+  assert.match(await where(), /vue=gantt/)
+  assert.equal(await page.getByRole('button', { name: 'Affichage : Gantt' }).isVisible(), true)
+
+  console.log(width, 'GNT-5 : un groupe par jalon découpé, par échéance, puis « Hors jalon »')
+  const keys = await page.locator('[data-gantt-group]').evaluateAll((list) => list.map((entry) => entry.dataset.ganttGroup))
+  assert.deepEqual(keys, ['940', '920', '910', '930', '950', 'loose'], 'les idées #901, #902 n’y sont pas')
+  assert.equal(await group('loose').getByText('Hors jalon', { exact: true }).isVisible(), true)
+  assert.deepEqual(await group('loose').locator('[data-gantt-row]').evaluateAll((list) => list.map((entry) => entry.dataset.ganttRow)), ['970'], 'ni la libre sans date, ni l’abandonnée')
+
+  console.log(width, 'GNT-7 : le livré replié, déplier et replier')
+  assert.deepEqual(await rows(), [921, 911, 912, 913, 931, 951, 970], 'GNT-9 : par début de barre ; #940 replié')
+  await group(940).getByRole('button', { name: 'Déplier' }).click()
+  await row(941).waitFor()
+  await group(910).getByRole('button', { name: 'Replier' }).click()
+  await row(911).waitFor({ state: 'detached' })
+  assert.deepEqual(await rows(), [941, 942, 921, 931, 951, 970])
+  await group(910).getByRole('button', { name: 'Déplier' }).click()
+  await row(911).waitFor()
+  assert.equal(await group(910).getByText('lancé', { exact: true }).isVisible(), true, 'badge du jalon lancé')
+  assert.equal(await group(910).getByText('1/3', { exact: true }).isVisible(), true)
+  const header = group(910).locator('> div').first()
+  assert.deepEqual(await header.evaluate((element) => [getComputedStyle(element).position, getComputedStyle(element).top]), ['sticky', '48px'], 'collé sous l’axe')
+
+  console.log(width, 'GNT-8 : jauge par état, retard, pointillé, halo, losange, pourcentage')
+  assert.deepEqual(await gauge(910).locator('[data-state]').evaluateAll((list) => list.map((entry) => entry.dataset.state)), ['done', 'running', 'blocked'])
+  assert.match(await gauge(910).getAttribute('class'), /shadow-/, 'halo du jalon lancé')
+  assert.equal(await gauge(910).getAttribute('title'), 'Page projet v2 — 1/3')
+  assert.equal(await group(910).getByText('33 %', { exact: true }).isVisible(), true)
+  assert.match(await gauge(920).getAttribute('class'), /border-critical/, 'bord rouge en retard')
+  assert.match(await group(920).locator('[data-due]').getAttribute('class'), /border-critical/, 'losange rouge')
+  assert.match(await gauge(950).getAttribute('class'), /border-dashed/, 'pointillé sans échéance')
+  assert.equal(await group(950).locator('[data-due]').count(), 0)
+  await shot(group(910), 'groupe')
+
+  console.log(width, 'GNT-9 : les lignes mènent à leur destination, échéance en retard en rouge')
+  const label = (number) => row(number).getByRole('link').first()
+  assert.equal(await label(912).getAttribute('href'), `/p/${PROJECT}/timeline?vue=gantt&fiche=912`, 'qui t’attend : sa fiche')
+  assert.equal(await label(921).getAttribute('href'), `/p/${PROJECT}/c/s-921`, 'sa session')
+  assert.equal(await label(913).getAttribute('href'), `/p/${PROJECT}/c/new?card=card-913`, 'sans session : un brouillon')
+  assert.equal(await row(912).getByLabel('t’attend').count(), 1, 'point ambre')
+  assert.equal(await row(921).getByLabel('tourne').count(), 1, 'point pulsant')
+  assert.match(await row(921).locator('[data-row-due]').getAttribute('class'), /text-critical/)
+  assert.equal(await row(931).locator('[data-row-due]').textContent(), '—')
+
+  console.log(width, 'alignement : la ligne de la liste et sa barre au même pixel')
+  for (const number of [911, 913, 970]) {
+    const list = await label(number).boundingBox()
+    const bar = await row(number).locator('button').first().boundingBox()
+    assert.equal(Math.round(list.y + list.height / 2), Math.round(bar.y + bar.height / 2), `#${number}`)
+  }
+  const listWidth = (await label(913).boundingBox()).width
+  assert.equal(Math.round(listWidth), phone ? 170 : 296, 'GNT-1 : colonne des libellés')
+  const padding = await label(970).evaluate((element) => getComputedStyle(element).paddingLeft)
+  assert.equal(padding, phone ? '16px' : '24px', 'la colonne part de la gouttière')
+
+  if (!phone) {
+    console.log(width, 'GNT-11 : survol, la chaîne s’éclaire, le reste pâlit, infobulle')
+    await label(913).hover()
+    await page.getByRole('tooltip').filter({ hasText: '#913' }).waitFor()
+    assert.match(await row(913).getAttribute('class'), /bg-accent/)
+    const barOf = (number) => row(number).locator('button').first().locator('..')
+    assert.doesNotMatch(await barOf(912).getAttribute('class'), /opacity-30/, 'sa bloquante reste éclairée')
+    assert.match(await barOf(911).getAttribute('class'), /opacity-30/, 'hors chaîne : pâlie')
+    await shot(gantt, 'survol')
+    await page.mouse.move(5, 5)
+  }
+
+  console.log(width, 'FCH-1 : ℹ ouvre la fiche sur place, sans suivre la ligne')
+  await row(913).getByRole('button', { name: 'Détail de la carte #913' }).click()
+  await page.getByRole('dialog', { name: 'Carte #913' }).waitFor()
+  assert.equal(await where(), `/p/${PROJECT}/timeline?vue=gantt&fiche=913`)
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  console.log(width, 'BAR-8 : la recherche filtre les jalons, « Hors jalon » reste')
+  await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('#920')
+  await page.waitForFunction(() => document.querySelectorAll('[data-gantt-group]').length === 2)
+  assert.equal(await group(920).count(), 1)
+  await page.getByRole('searchbox', { name: 'Chercher un jalon' }).fill('')
+  await page.waitForFunction(() => document.querySelectorAll('[data-gantt-group]').length === 6)
+
+  console.log(width, 'BAR-8 : l’échelle de la barre pilote le Gantt')
+  const before = await gantt.evaluate((element) => element.scrollWidth)
+  await page.getByRole('button', { name: 'Affichage : Gantt' }).click()
+  await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Semaine' }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForFunction((before) => document.querySelector('[data-gantt]').scrollWidth > before, before)
+  await shot(gantt, 'semaine')
+
+  console.log(width, 'GNT-7 : le titre et la jauge mènent à la page du jalon')
+  await open()
+  await shot(gantt, 'complet')
+  const lands = (target) => page.waitForFunction((target) => window.where === target, target)
+  await group(920).getByRole('link', { name: 'Accès distant fiable' }).click()
+  await lands(`/p/${PROJECT}/timeline/920`)
+  await open()
+  await gauge(950).click()
+  await lands(`/p/${PROJECT}/timeline/950`)
+
+  if (phone) {
+    console.log(width, 'téléphone : seul le Gantt défile en largeur')
+    await open()
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'rien ne déborde')
+  }
+
+  console.log(width, 'GNT-13 : sans jalon découpé ni carte datée, l’état vide')
+  cards = [card(901, 'Mode hors ligne', 'todo', { milestone: true }), card(960, 'Libre', 'todo')]
+  await mountHorizon(page, `/p/${PROJECT}/timeline?vue=gantt`)
+  await page.getByText('Aucun jalon ni carte datée').waitFor()
+  await shot(page.locator('[data-place-content]'), 'vide')
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
 try {
   for (let i = 0; i < 150; i++) {
     if (await fetch(origin).then((r) => r.ok).catch(() => false)) break
@@ -1086,6 +1269,7 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1280, 390]) await horizonStep(width)
+  for (const width of [1280, 390]) await ganttStep(width)
   for (const width of [1280, 390]) await pageStep(width)
   for (const width of [1280, 390]) await refineStep(width)
   for (const width of [1280, 390]) await launchStep(width)
@@ -1249,6 +1433,7 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
+  console.log('OK : gantt — bascule et mémoire de vue, groupes par échéance et « Hors jalon », livrés repliés, déplier et replier, en-tête collé, jauge (états, retard, pointillé, halo, losange, %), destinations des lignes, repères de session, alignement au pixel, gouttière, survol et chaîne, ℹ, recherche, échelle, titre et jauge vers la page, vide ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
