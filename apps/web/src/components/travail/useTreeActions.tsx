@@ -24,8 +24,11 @@ export interface TreeAction {
  * (ou en lancer une ici), le diff, la PR, le rebase, la fusion d'une PR prête, le
  * nettoyage. Leur retour se dit au même endroit, sous la barre (T-13.3) ; le nettoyage
  * et la fusion passent par les confirmations de la page.
+ *
+ * `long` : les libellés du menu d'une ligne du tableau (T-6.2), qui se lisent seuls,
+ * loin du nom de l'arbre ; le tiroir et les couloirs gardent les courts.
  */
-export function useTreeActions(projectId: string, tree: TreeRow): TreeAction[] {
+export function useTreeActions(projectId: string, tree: TreeRow, { long = false }: { long?: boolean } = {}): TreeAction[] {
   const t = useTranslate()
   const navigate = useNavigate()
   const say = useTravailNotice()
@@ -41,18 +44,18 @@ export function useTreeActions(projectId: string, tree: TreeRow): TreeAction[] {
       case 'session':
         return {
           key,
-          label: t(launch ? 'travail.gesture.launch' : 'travail.gesture.session'),
+          label: t(launch ? (long ? 'travail.gesture.long.launch' : 'travail.gesture.launch') : long ? 'travail.gesture.long.session' : 'travail.gesture.session'),
           icon: <Play size={14} />,
           run: () => navigate(sessionId ? `/p/${projectId}/c/${sessionId}` : tree.root || !tree.id ? `/p/${projectId}/c/new` : `/p/${projectId}/c/new?worktree=${tree.id}`),
         }
       case 'diff':
-        return { key, label: t('travail.gesture.diff'), icon: <FileDiff size={14} />, run: () => diff(tree) }
+        return { key, label: t(long ? 'travail.gesture.long.diff' : 'travail.gesture.diff'), icon: <FileDiff size={14} />, run: () => diff(tree) }
       case 'pr':
-        return { key, label: t('travail.gesture.pr', { number: tree.pr?.number ?? 0 }), icon: <GitPullRequest size={14} />, run: () => prUrl && window.open(prUrl, '_blank', 'noopener') }
+        return { key, label: t(long ? 'travail.gesture.long.pr' : 'travail.gesture.pr', { number: tree.pr?.number ?? 0 }), icon: <GitPullRequest size={14} />, run: () => prUrl && window.open(prUrl, '_blank', 'noopener') }
       case 'rebase':
         return {
           key,
-          label: t('travail.gesture.rebase'),
+          label: t(long ? 'travail.gesture.long.rebase' : 'travail.gesture.rebase'),
           icon: <RefreshCw size={14} />,
           run: () => {
             if (!page.base) return
@@ -69,7 +72,7 @@ export function useTreeActions(projectId: string, tree: TreeRow): TreeAction[] {
       case 'merge':
         return { key, label: t('travail.gesture.merge'), icon: <GitMerge size={14} />, run: () => page.merge(tree) }
       case 'clean':
-        return { key, label: t('travail.gesture.clean'), icon: <Trash2 size={14} />, run: () => page.clean({ trees: [tree], branches: [] }), tone: 'critical' }
+        return { key, label: t(long ? 'travail.gesture.long.clean' : 'travail.gesture.clean'), icon: <Trash2 size={14} />, run: () => page.clean({ trees: [tree], branches: [] }), tone: 'critical' }
     }
   }
 

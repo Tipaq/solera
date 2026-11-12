@@ -124,7 +124,7 @@ function GestureMenu({ label, lead, actions }: { label: string; lead?: TreeActio
 export function TreeLine({ projectId, tree, onOpen }: { projectId: string; tree: TreeRow; onOpen: (key: string) => void }) {
   const t = useTranslate()
   const locale = useLocale()
-  const actions = useTreeActions(projectId, tree)
+  const actions = useTreeActions(projectId, tree, { long: true })
   const primary = usePrimaryAction(projectId, tree)
   const name = tree.branch ?? tree.name
 
@@ -171,11 +171,12 @@ export function TreeLine({ projectId, tree, onOpen }: { projectId: string; tree:
           )}
         </div>
 
-        <div className="flex min-w-0 items-center">
-          {tree.pr ? <PrCell pr={tree.pr} /> : <span className="text-ink-faint">{tree.root ? '' : t('code.pr.none')}</span>}
+        {/* La racine n'a ni PR ni avance : ses cellules restent dans la grille, pas dans la carte. */}
+        <div className={cx('min-w-0 items-center', tree.root && !tree.pr ? 'hidden md:flex' : 'flex')}>
+          {tree.pr ? <PrCell pr={tree.pr} /> : tree.root ? null : <span className="text-ink-faint">{t('code.pr.none')}</span>}
         </div>
 
-        <div className="flex items-center gap-2 tabular-nums md:justify-end">
+        <div className={cx('items-center gap-2 tabular-nums md:justify-end', tree.root && tree.uncommitted === 0 ? 'hidden md:flex' : 'flex')}>
           {tree.root ? null : <AheadBehind ahead={tree.ahead} behind={tree.behind} />}
           {tree.uncommitted > 0 ? (
             <span title={t(`code.drift.dirty.${pluralOf(tree.uncommitted)}`, { count: tree.uncommitted })} className="text-caution">

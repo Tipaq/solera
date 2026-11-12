@@ -22,7 +22,8 @@ const PREVIEW = 4
  * travaillent (l'arbre attend), les services arrêtés, les terminaux fermés. Une branche
  * qui a des commits que la base n'a pas reste.
  *
- * La place libérée se dit « jusqu'à » : la taille mesurée compte les fichiers de
+ * La place libérée se dit « jusqu'à », sous les sections et non dans le bouton, qui
+ * n'aurait plus tenu dans le dialogue : la taille mesurée compte les fichiers de
  * `node_modules` que le store de pnpm partage, et que le nettoyage ne rend pas.
  */
 export function CleanDialog({
@@ -77,9 +78,7 @@ export function CleanDialog({
   const confirmLabel =
     summary.count === 0
       ? t(waiting ? 'travail.clean.waiting' : 'travail.clean.nothing')
-      : freed
-        ? t('travail.clean.confirmFreed', { what: what('what', summary.removed.length, summary.branches.length), size: size(freed) })
-        : t('travail.clean.confirm', { what: what('what', summary.removed.length, summary.branches.length) })
+      : t('travail.clean.confirm', { what: what('what', summary.removed.length, summary.branches.length) })
 
   const run = async () => {
     if (summary.count === 0) return onClose()
@@ -181,6 +180,11 @@ export function CleanDialog({
                 {t('travail.clean.held', { names: entry.tree.branch ?? entry.tree.name, sessions: names(entry.busy) })}
               </p>
             ))}
+            {freed ? (
+              <p className="text-xs text-ink-soft" title={t('travail.clean.upToHint')}>
+                {t('travail.clean.freed', { size: size(freed) })}
+              </p>
+            ) : null}
             {facts.length > 0 ? (
               <ul className="flex flex-col gap-0.5 text-xs text-ink-faint">
                 {facts.map((fact) => (

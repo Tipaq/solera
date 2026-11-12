@@ -593,10 +593,13 @@ function CleanButton({ trees, branches }: { trees: TreeRow[]; branches: BranchIn
   const page = useTravailActions()
   const offer = cleanOffer(trees, branches)
   if (offer.count === 0) return null
+  const label = t('travail.clean.button', { count: offer.count })
   return (
-    <button type="button" onClick={() => page.clean(offer)} title={t('travail.clean.hint')} className={toolbarButtonClass(false)}>
+    <button type="button" onClick={() => page.clean(offer)} title={t('travail.clean.hint')} aria-label={label} className={toolbarButtonClass(false)}>
       <Trash2 size={13} aria-hidden />
-      <span className="tabular-nums">{t('travail.clean.button', { count: offer.count })}</span>
+      {/* Au téléphone, la barre n'a la place que du compte. */}
+      <span aria-hidden className="tabular-nums sm:hidden">{offer.count}</span>
+      <span aria-hidden className="hidden tabular-nums sm:inline">{label}</span>
     </button>
   )
 }

@@ -40,19 +40,19 @@ export async function checkTravailTable({ page, base, project, runningBranch, re
   const items = await page.getByRole('menuitem').allInnerTexts()
   assert.deepEqual(
     items.map((text) => text.trim()),
-    ['Session', 'Diff', 'PR #18', 'Rebaser', 'Nettoyer'],
+    ['Ouvrir la session', 'Voir le diff', 'Ouvrir la PR #18', 'Rebaser sur la base', 'Nettoyer l’arbre'],
     `gestes : ${items}`,
   )
   // « Rebaser » d'un arbre où une session tourne : la demande lui est envoyée, le retour se dit sous la barre.
   await page.route('**/api/conversations/*/messages', (route) => route.fulfill({ json: { ok: true } }))
-  await page.getByRole('menuitem', { name: 'Rebaser', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Rebaser sur la base', exact: true }).click()
   await page.getByRole('status').getByText(`Rebase de ${runningBranch} demandé à sa session.`, { exact: true }).waitFor()
   await page.unroute('**/api/conversations/*/messages')
   assert.equal(await page.getByRole('dialog', { name: `Arbre ${runningBranch}` }).count(), 0, 'Le menu n’ouvre pas le tiroir')
 
   // « Nettoyer » d'un arbre au travail : le dialogue unique, sur le plan réel ; on annule.
   await line.getByRole('button', { name: `Gestes sur ${runningBranch}`, exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Nettoyer', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nettoyer l’arbre', exact: true }).click()
   const clean = page.getByRole('dialog', { name: 'Nettoyer', exact: true })
   await clean.getByText('Worktrees · 1', { exact: true }).waitFor()
   await clean.getByText(/y travaille, l’arbre reste/).waitFor()
