@@ -270,11 +270,12 @@ try {
       await deps.getByText('bloque', { exact: true }).waitFor()
       await shot(deps, 'dependances')
 
-      // Sessions de la carte : l'autre, au repos ; celle du panneau n'y est pas.
+      // Sessions de la carte, celle du panneau comprise : leur état, en mots.
       const sessions = section(pane, 'Sessions')
       await sessions.getByText('Première approche').waitFor()
       await sessions.getByText('au repos').waitFor()
-      assert.equal(await sessions.getByRole('button').count(), 1)
+      await sessions.getByText('travaille').waitFor()
+      assert.equal(await sessions.getByRole('button').count(), 2)
       await shot(sessions, 'sessions')
 
       // Notes : trois sur quatre, « Tout voir ».
