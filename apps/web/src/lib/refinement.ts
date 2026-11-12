@@ -1,8 +1,11 @@
 import type { ToolItem } from '@solera/protocol/chat-state'
 import {
+  changesBesidesSubtasks,
+  parseSubtasks,
   refinementState,
   type CardDraft,
   type CardDto,
+  type CardRefinementDetailDto,
   type CardRefinementDto,
   type ConversationStatus,
   type RefinementActivityDto,
@@ -134,4 +137,105 @@ export function activityTool(activity: RefinementActivityDto): ToolItem {
     durationMs: null,
     parentToolCallId: null,
   }
+}
+
+/**
+ * Le message d'un ajout au jalon (#196, ADD-4), écrit pour l'agent et non traduit comme
+ * `refinePrompt` : « Ajout au jalon : … » est ce que le skill reconnaît. À la session qui
+ * vit, l'ajout part seul, ses fichiers en pièces jointes du message ; sans session, il
+ * invoque d'abord le skill sur le jalon, et nomme les fichiers joints au jalon.
+ */
+export function additionPrompt({
+  number,
+  text,
+  links = [],
+  files = [],
+  session,
+}: {
+  number: number
+  text: string
+  links?: string[]
+  files?: string[]
+  session: boolean
+}): string {
+  const parts = session ? [] : [`/affiner-un-jalon #${number}`]
+  parts.push(`Ajout au jalon : ${text.trim()}`)
+  if (links.length > 0) parts.push(`Liens :\n${links.map((link) => `- ${link}`).join('\n')}`)
+  if (files.length > 0 && !session) parts.push(`Fichiers joints au jalon : ${files.join(', ')}`)
+  return parts.join('\n\n')
+}
+
+/** Sans session d'affinage, l'ajout ouvre un brouillon de découpage du jalon, son message pré-rempli. */
+export function additionHref(projectId: string, cardId: string, prompt: string): string {
+  return `/p/${projectId}/c/new?${new URLSearchParams({ split: cardId, prompt }).toString()}`
+}
+
+/**
+ * Ce que la session d'affinage propose de faire d'un ajout au jalon (AFF-7) :
+ *
+ * - `subtasks`, le ranger en sous-tâches de cartes qui existent (`request_card_change` et
+ *   `add_subtasks`, #185) ; chacune dit si la carte la porte déjà, puisque le clic la
+ *   sautera ;
+ * - `cards`, de nouvelles cartes (`propose_cards`) dans un jalon déjà découpé, chacune
+ *   avec ce après quoi elle part.
+ *
+ * Un changement qui fait autre chose que des sous-tâches n'en est pas : il se décide dans
+ * la session. Un brouillon sur un jalon sans cartes est son premier découpage, et reste
+ * au brouillon éditable.
+ */
+export type ProposedAddition =
+  | {
+      kind: 'subtasks'
+      conversationId: string
+      requestId: string
+      targets: { cardId: string; number: number; title: string; subtasks: { label: string; present: boolean }[] }[]
+    }
+  | {
+      kind: 'cards'
+      conversationId: string
+      requestId: string
+      draft: CardDraft
+      cards: { key: string; title: string; after: { number: number } | { title: string } | null }[]
+    }
+
+export function proposedAdditions(
+  detail: Pick<CardRefinementDetailDto, 'draft' | 'change'> | undefined,
+  hasChildren: boolean,
+  cards: readonly Pick<CardDto, 'id' | 'description'>[],
+): ProposedAddition[] {
+  const additions: ProposedAddition[] = []
+  const change = detail?.change
+  if (change && change.changes.length > 0 && change.changes.every((line) => line.addSubtasks?.length && !changesBesidesSubtasks(line))) {
+    const descriptions = new Map(cards.map((card) => [card.id, card.description]))
+    additions.push({
+      kind: 'subtasks',
+      conversationId: change.conversationId,
+      requestId: change.requestId,
+      targets: change.changes.map((line) => {
+        const present = new Set(parseSubtasks(descriptions.get(line.cardId) ?? '').map((subtask) => subtask.label))
+        return {
+          cardId: line.cardId,
+          number: line.number,
+          title: line.title,
+          subtasks: (line.addSubtasks ?? []).map((label) => ({ label, present: present.has(label) })),
+        }
+      }),
+    })
+  }
+  const draft = detail?.draft
+  if (draft && hasChildren) {
+    const titles = new Map(draft.draft.cards.map((card) => [card.key, card.title]))
+    additions.push({
+      kind: 'cards',
+      conversationId: draft.conversationId,
+      requestId: draft.requestId,
+      draft: draft.draft,
+      cards: draft.draft.cards.map((card) => {
+        const blocker = card.blockedBy[0]
+        const before = card.after.map((key) => titles.get(key)).find((title) => title !== undefined)
+        return { key: card.key, title: card.title, after: blocker ? { number: blocker.number } : before ? { title: before } : null }
+      }),
+    })
+  }
+  return additions
 }

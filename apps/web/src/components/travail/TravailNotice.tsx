@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { cx } from '@solera/ui'
-import { ApiRequestError } from '../../lib/api'
-import { translateError } from '../../lib/i18n'
 
 type Tone = 'neutral' | 'critical'
 type Say = (text: string, tone?: Tone) => void
@@ -13,9 +11,11 @@ export function useTravailNotice(): Say {
   return useContext(NoticeContext)
 }
 
-/** Une erreur d'API dans la langue de l'interface, ou son message brut. */
+/**
+ * Le message d'une erreur. Celui d'une erreur d'API est déjà dans la langue de
+ * l'interface, ses paramètres posés (`api.ts`) : le retraduire les perdrait.
+ */
 export function errorText(error: unknown): string {
-  if (error instanceof ApiRequestError) return translateError(error.code, error.message)
   return error instanceof Error ? error.message : String(error)
 }
 

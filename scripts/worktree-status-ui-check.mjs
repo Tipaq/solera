@@ -131,7 +131,7 @@ try {
   console.log('OK : états calculés sur la démo.')
 
   // « À décider » est réservé à ce qu'un agent demande : une fusion n'y propose plus de
-  // nettoyer l'arbre, qui reste dans l'Activité, sans session.
+  // nettoyer l'arbre, qui reste dans Travail.
   const { page, errors, project } = desktop
   await page.goto(`${base}/p/${project.id}/board`)
   await page.getByRole('heading', { level: 1 }).first().waitFor()
@@ -140,96 +140,120 @@ try {
   assert.ok(existsSync(docs), "L'arbre fusionné reste en place")
   console.log('OK : une fusion ne propose rien dans « À décider ».')
 
-  // Les réglages ne gardent qu'un renvoi vers l'Activité groupée par worktree (#111).
-  await page.goto(`${base}/p/${project.id}/settings#worktrees`)
-  await page.getByRole('button', { name: "Ouvrir l'Activité par worktree" }).click()
-  await page.waitForURL(`**/p/${project.id}/activity?groupe=worktree`)
-  await page.getByRole('radio', { name: 'Worktree', checked: true }).waitFor()
+  // Le nettoyage de Travail (#177, `projet.md` T-1.5, T-12) : un arbre créé par Solera et
+  // fusionné, et une branche fusionnée sans arbre, partent d'un seul dialogue. Les arbres
+  // créés au shell ne se nettoient pas d'ici (T-6.2 : « désactivé pour un arbre externe »).
+  const created = await (await page.request.post(`${base}/api/projects/${project.id}/worktrees`, { data: { name: 'fix/solera-merged', baseRef: 'main' } })).json()
+  assert.ok(created.path, JSON.stringify(created))
+  await writeFile(join(created.path, 'MERGED.md'), 'merged\n')
+  git(created.path, 'add', '-A')
+  git(created.path, 'commit', '-m', 'Merged from a Solera tree')
+  git(repoRoot, 'merge', '--no-ff', 'fix/solera-merged', '-m', 'Merge fix/solera-merged')
+  git(repoRoot, 'branch', 'chore/old-merged', 'main~1')
+  const fresh = await (await page.request.get(`${base}/api/projects/${project.id}/worktrees/status`)).json()
+  const mergedBranches = fresh.branches.filter((entry) => entry.merged && !entry.remoteOnly).map((entry) => entry.name)
+  assert.ok(mergedBranches.includes('chore/old-merged'), `branches fusionnées : ${mergedBranches}`)
+  const total = 1 + mergedBranches.length
 
-  // Les arbres habités ont leur groupe ; les autres sont « Sans session », fusionnés
-  // d'abord, introuvable en dernier.
-  const region = (name) => page.getByRole('region', { name: new RegExp(`^${name.replace(/[/.]/g, '\\$&')}`) })
-  const offline = region('feat/offline-cache')
-  await offline.getByRole('link', { name: /Add offline caching for forecasts/ }).waitFor()
-  await offline.getByText(/\d+ modifiés?$/).first().waitFor()
-  const idle = region('Sans session')
-  await idle.waitFor()
-  const idleNames = await idle.locator('li span.font-mono').allInnerTexts()
-  assert.deepEqual(idleNames.slice(0, 2).sort(), ['docs/readme', 'fix/squashed-typo'], `ordre : ${idleNames}`)
-  assert.equal(idleNames.at(-1), 'feat/gone', `ordre : ${idleNames}`)
-  await idle.getByText('dossier absent du disque', { exact: true }).waitFor()
-  await idle.getByRole('button', { name: 'Oublier', exact: true }).waitFor()
-  await idle.getByRole('button', { name: 'Nettoyer les 2 fusionnés' }).waitFor()
-  await page.screenshot({ path: join(shots, 'activity-worktrees-desktop.png') })
-  assert.deepEqual(errors, [])
-  console.log('OK : Activité groupée par worktree sur grand écran.')
+  await page.goto(`${base}/p/${project.id}/travail?vue=tableau`)
+  const table = page.getByRole('region', { name: 'Les arbres et les branches du projet', exact: true })
+  await table.waitFor()
+  const lineOf = (name) => page.locator('li[data-tree-line]').filter({ has: page.getByRole('button', { name, exact: true }) })
+  await lineOf('feat/offline-cache').waitFor()
+  // Un arbre externe : son nettoyage est montré, éteint.
+  const cleanupToggle = page.getByRole('button', { name: /arbres? (fusionnés?|à nettoyer)/ }).first()
+  if ((await cleanupToggle.getAttribute('aria-expanded')) === 'false') await cleanupToggle.click()
+  await lineOf('docs/readme').getByRole('button', { name: 'Gestes sur docs/readme', exact: true }).click()
+  assert.ok(await page.getByRole('menuitem', { name: 'Nettoyer l’arbre', exact: true }).isDisabled(), 'Un arbre externe ne se nettoie pas d’ici')
+  await page.keyboard.press('Escape')
+  await page.screenshot({ path: join(shots, 'travail-tableau-desktop.png') })
 
-  // Nettoyer un arbre fusionné : la confirmation dit qu'il n'y a rien à perdre, propose
-  // la branche, puis l'arbre et la branche disparaissent.
-  const squashedRow = idle.locator('li').filter({ has: page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }) }).first()
-  await squashedRow.getByRole('button', { name: 'Nettoyer', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Nettoyer fix/squashed-typo' })
-  await dialog.getByText("Rien ici que la base n'ait déjà.", { exact: true }).waitFor()
-  await dialog.getByRole('switch', { name: 'Supprimer la branche fix/squashed-typo' }).waitFor()
+  // « Nettoyer · N » : l'arbre fusionné de Solera et les branches fusionnées, ensemble.
+  await page.getByRole('button', { name: `Nettoyer · ${total}`, exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nettoyer', exact: true })
+  await dialog.getByText('Worktrees fusionnés · 1', { exact: true }).waitFor()
+  await dialog.getByText(`Branches fusionnées · ${mergedBranches.length}`, { exact: true }).waitFor()
+  await dialog.getByText('Tout est déjà dans main : rien ne se perd.', { exact: true }).waitFor()
+  const confirm = dialog.getByRole('button', { name: new RegExp(`^Supprimer 1 arbre et ${mergedBranches.length} branches?$`) })
+  await confirm.waitFor()
+  // La place se dit « jusqu’à » : node_modules partage ses fichiers avec le store de pnpm (#166).
+  await dialog.getByText(/^Libère jusqu’à .+\.$/).waitFor()
   await dialog.screenshot({ path: join(shots, 'cleanup-dialog.png') })
-  await dialog.getByRole('button', { name: 'Nettoyer', exact: true }).click()
+  // Décocher une section la retire du bouton ; « Rien de coché » quand il ne reste rien.
+  await dialog.getByRole('checkbox', { name: /^Branches fusionnées/ }).uncheck()
+  await dialog.getByRole('button', { name: 'Supprimer 1 arbre', exact: true }).waitFor()
+  await dialog.getByRole('checkbox', { name: /^Worktrees fusionnés/ }).uncheck()
+  await dialog.getByRole('button', { name: 'Rien de coché', exact: true }).waitFor()
+  await dialog.getByRole('checkbox', { name: /^Worktrees fusionnés/ }).check()
+  await dialog.getByRole('checkbox', { name: /^Branches fusionnées/ }).check()
+  await confirm.click()
   await dialog.waitFor({ state: 'hidden' })
-  await page.locator('span.font-mono', { hasText: 'fix/squashed-typo' }).waitFor({ state: 'detached' })
-  assert.ok(!existsSync(squashed), 'Le dossier est retiré')
-  assert.equal(git(repoRoot, 'branch', '--list', 'fix/squashed-typo'), '', 'La branche est supprimée')
-  console.log('OK : nettoyage en un geste.')
+  // L'arbre part ; les branches, le serveur les garde tant qu'un agent travaille dans le
+  // dépôt (la démo en a un à la racine), et le retour le dit avec son titre (T-13.3).
+  const notice = page.locator('[role="status"] p')
+  await notice.waitFor()
+  const said = await notice.innerText()
+  assert.match(said, /^1 arbre supprimé, jusqu’à .+ libérés\. Un agent travaille dans ce répertoire \([^{}]+\)\./, said)
+  await lineOf('fix/solera-merged').waitFor({ state: 'detached' })
+  assert.ok(!existsSync(created.path), 'Le dossier est retiré')
+  assert.equal(git(repoRoot, 'branch', '--list', 'fix/solera-merged'), '', 'Sa branche est supprimée')
+  assert.notEqual(git(repoRoot, 'branch', '--list', 'chore/old-merged'), '', 'La branche refusée reste')
+  assert.ok(existsSync(docs), 'Un arbre externe reste')
+  await page.getByRole('button', { name: `Nettoyer · ${mergedBranches.length}`, exact: true }).waitFor()
+  assert.deepEqual(errors, [])
+  console.log('OK : « Nettoyer · N », un dialogue pour les arbres et les branches.')
 
-  // « Nettoyer les N fusionnés » : le reste des fusionnés part d'un seul geste.
-  await idle.getByRole('button', { name: 'Nettoyer le fusionné' }).click()
-  const batch = page.getByRole('dialog', { name: 'Nettoyer le fusionné' })
-  await batch.getByText('docs/readme', { exact: true }).waitFor()
-  await batch.getByRole('button', { name: 'Nettoyer', exact: true }).click()
-  await batch.waitFor({ state: 'hidden' })
-  await page.locator('span.font-mono', { hasText: 'docs/readme' }).waitFor({ state: 'detached' })
-  assert.ok(!existsSync(docs), 'Le dossier fusionné est retiré')
-  console.log('OK : nettoyage des fusionnés en un geste.')
-
-  // Un arbre habité et non commité se nettoie depuis son en-tête : la confirmation dit
-  // ce qui serait perdu, et la session qui y vit, archivée d'office. La démo n'a pas de
-  // session de la racine qui y ait écrit : le plan en reçoit deux, dont une au travail,
-  // qui figure alors aussi parmi celles que le nettoyage attend.
+  // Un arbre habité et non commité, par son menu : le plan dit la perte et la session
+  // archivée. La session de la démo y attend une réponse, ce qui retient l'arbre : le
+  // plan est d'abord rendu sans elle. Puis il reçoit deux sessions de la racine qui y
+  // ont écrit, dont une au travail, qui retient l'arbre à son tour.
+  let busyPlan = false
   const planRoute = '**/api/projects/*/worktrees/cleanup?*'
   await page.route(planRoute, async (route) => {
     const response = await route.fetch()
     const plan = await response.json()
-    plan.restarted = [
-      { id: 'root-1', title: 'Plan the release', running: false },
-      { id: 'root-2', title: 'Orchestrate the agents', running: true },
-    ]
-    plan.busy = [...plan.busy, { id: 'root-2', title: 'Orchestrate the agents' }]
+    plan.busy = []
+    if (busyPlan) {
+      plan.restarted = [
+        { id: 'root-1', title: 'Plan the release', running: false },
+        { id: 'root-2', title: 'Orchestrate the agents', running: true },
+      ]
+      plan.busy = [{ id: 'root-2', title: 'Orchestrate the agents' }]
+    }
     await route.fulfill({ response, json: plan })
   })
-  await offline.getByRole('button', { name: 'Nettoyer feat/offline-cache' }).click()
-  const dirtyDialog = page.getByRole('dialog', { name: 'Nettoyer feat/offline-cache' })
-  await dirtyDialog.getByText(/fichiers? modifiés?/).first().waitFor()
-  const archive = dirtyDialog.getByRole('switch', { name: /^Archiver 1 session qui vit dans l'arbre$/ })
-  await archive.waitFor()
-  assert.ok(await archive.isDisabled(), 'Archiver n’est pas un choix')
-  await dirtyDialog.getByRole('switch', { name: /Passer la carte #\d+ en Terminé/ }).waitFor()
-  await dirtyDialog.getByText(/^2 sessions hors de l'arbre y ont écrit : elles continuent/).waitFor()
-  await dirtyDialog.getByText('Plan the release, Orchestrate the agents (au travail)', { exact: true }).waitFor()
-  assert.ok(await dirtyDialog.getByRole('button', { name: 'Nettoyer', exact: true }).isDisabled(), 'Une session liée au travail retient le nettoyage')
-  await dirtyDialog.screenshot({ path: join(shots, 'cleanup-dialog-dirty.png') })
-  await dirtyDialog.getByRole('button', { name: 'Annuler', exact: true }).click()
-  await dirtyDialog.waitFor({ state: 'hidden' })
+  const offline = lineOf('feat/offline-cache')
+  await offline.getByRole('button', { name: 'Gestes sur feat/offline-cache', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nettoyer l’arbre', exact: true }).click()
+  await dialog.getByText('Worktrees · 1', { exact: true }).waitFor()
+  await dialog.getByText('feat/offline-cache : du travail non commité serait perdu.', { exact: true }).waitFor()
+  await dialog.getByText(/^Sa session est archivée : /).waitFor()
+  await dialog.getByRole('checkbox', { name: /^Passer en Terminé : #\d+/ }).waitFor()
+  await dialog.getByRole('button', { name: /^Supprimer 1 arbre/ }).waitFor()
+  await dialog.screenshot({ path: join(shots, 'cleanup-dialog-dirty.png') })
+  await dialog.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+
+  busyPlan = true
+  await offline.getByRole('button', { name: 'Gestes sur feat/offline-cache', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Nettoyer l’arbre', exact: true }).click()
+  await dialog.getByText('feat/offline-cache : Orchestrate the agents y travaille, l’arbre reste jusqu’à la fin de son tour.', { exact: true }).waitFor()
+  assert.ok(await dialog.getByRole('button', { name: 'En attente de la session', exact: true }).isDisabled(), 'Une session au travail retient le nettoyage')
+  await dialog.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
   await page.unroute(planRoute)
   assert.deepEqual(errors, [])
-  console.log('OK : confirmation sur un arbre non commité.')
+  console.log('OK : le plan réel d’un arbre non commité, et l’arbre retenu par une session au travail.')
 
-  // Téléphone : la vue ne déborde pas.
+  // Téléphone : le tableau devient des cartes, rien ne déborde.
   const phone = await session({ width: 390, height: 844 }, true)
-  await phone.page.goto(`${base}/p/${project.id}/activity?groupe=worktree`)
-  await phone.page.getByRole('region', { name: /^Sans session/ }).waitFor()
+  await phone.page.goto(`${base}/p/${project.id}/travail?vue=tableau`)
+  await phone.page.getByRole('region', { name: 'Les arbres et les branches du projet', exact: true }).waitFor()
   await delay(600)
   assert.ok(await phone.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Pas de défilement horizontal au téléphone')
-  await phone.page.screenshot({ path: join(shots, 'activity-worktrees-phone.png') })
+  await phone.page.screenshot({ path: join(shots, 'travail-tableau-phone.png') })
   assert.deepEqual(phone.errors, [])
-  console.log('OK : Activité par worktree au téléphone.')
+  console.log('OK : Tableau au téléphone.')
   console.log(`Captures : ${shots}`)
 } finally {
   await browser?.close()
