@@ -2,14 +2,15 @@ import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { sectionsOf } from '../../lib/actions-tab'
 import type { Section } from '../../lib/automations'
 import { ActionRow, ActionSection } from './ActionRow'
-import type { TileHandlers } from './ActionTile'
+import type { ActionHandlers } from './useActionGestures'
 import { AGENT, FAIL_STREAK, SERVICE_SCHEDULED, STATES, SeededWorktrees } from './automation-fixtures'
 
 const ignore = () => {}
-const HANDLERS: TileHandlers = {
+const HANDLERS: ActionHandlers = {
   onOpen: ignore,
   onEdit: ignore,
   onLaunch: ignore,
+  onLaunchUnchecked: ignore,
   onToggle: ignore,
   onService: ignore,
   onTerminal: ignore,

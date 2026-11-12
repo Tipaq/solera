@@ -1,18 +1,39 @@
 import { useState } from 'react'
 import { ConfirmDialog } from '@solera/ui'
+import type { EditorSeed } from '../../lib/action-editor'
 import { useRunAction } from '../../lib/actions'
-import type { ActionPanel } from '../../lib/action-panel'
+import { detailPanel, type ActionPanel } from '../../lib/action-panel'
 import { actionOf, duplicateDraft, type Automation } from '../../lib/automations'
 import { useAutomationMutations } from '../../lib/automations-query'
 import { useTranslate } from '../../lib/i18n'
+import { useRunSchedule } from '../../lib/schedules'
 import { useServedIndex } from '../../lib/served-query'
-import { switchTargets, unlessElsewhere } from '../../lib/served'
-import type { TileServing } from './ActionTile'
+import { switchTargets, unlessElsewhere, type ServedTree } from '../../lib/served'
 import { useTargetName } from './served/ServeMenu'
 import { switchToTree, useLaunchHere, useServiceSwitch } from './served/SwitchServiceDialog'
 
 /** Ce qu'un service accepte en plus de démarrer : arrêter, redémarrer, suivre son journal (Q1). */
 export type ServiceOp = 'stop' | 'restart' | 'logs'
+
+/** « Servir… » d'un service en marche : les arbres où le basculer. */
+export interface ActionServing {
+  targets: ServedTree[]
+  onSwitch: (tree: ServedTree) => void
+}
+
+/** Ce qu'une tuile ou une ligne de l'onglet sait faire d'une action. */
+export interface ActionHandlers {
+  onOpen: (item: Automation, review?: boolean) => void
+  onEdit: (seed: EditorSeed) => void
+  onLaunch: (item: Automation, worktreeId: string | null) => void
+  /** « Lancer sans vérifier » : une tâche d'agent dont le script de vérification est validé. */
+  onLaunchUnchecked: (item: Automation) => void
+  onToggle: (item: Automation, on: boolean) => void
+  onService: (item: Automation, op: ServiceOp) => void
+  onTerminal: (item: Automation, terminalId: string) => void
+  onDuplicate: (item: Automation) => void
+  onDelete: (item: Automation) => void
+}
 
 /**
  * Les gestes d'une action posés hors du tiroir, sur une tuile du Lanceur ou une ligne de
@@ -23,13 +44,15 @@ export type ServiceOp = 'stop' | 'restart' | 'logs'
  * Une commande lancée ouvre son passage dans le tiroir (`onPanel`, mode `run`). Un service
  * qui tourne déjà ailleurs ouvre le dialogue de bascule au lieu de se taire (SRV-4).
  *
- * L'hôte rend `dialogs` (la bascule, la confirmation de suppression) hors des menus qui
- * les ont ouverts, et `error` en tête de sa vue.
+ * Les gestes sont rendus en `handlers`, prêts pour `ActionTile` et `ActionRow`. L'hôte rend
+ * `dialogs` (la bascule, la confirmation de suppression) hors des menus qui les ont
+ * ouverts, et `error` en tête de sa vue.
  */
 export function useActionGestures(projectId: string, onPanel: (panel: ActionPanel) => void) {
   const t = useTranslate()
   const mutations = useAutomationMutations(projectId)
   const run = useRunAction()
+  const runTask = useRunSchedule()
   const switching = useServiceSwitch()
   const served = useServedIndex(projectId)
   const nameOf = useTargetName()
@@ -70,7 +93,7 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
   }
 
   /** « Servir… » (SRV-5) : les arbres où basculer un service en marche, et la demande. */
-  const serving = (item: Automation): TileServing | null => {
+  const serving = (item: Automation): ActionServing | null => {
     const action = actionOf(item)
     const row = served.byAutomation.get(item.id) ?? null
     if (!action || !row?.switchable) return null
@@ -93,16 +116,27 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
       .finally(() => setBusy(false))
   }
 
+  const handlers: ActionHandlers = {
+    onOpen: (item, review) => onPanel(detailPanel(item.id, review)),
+    onEdit: (seed) => onPanel({ mode: 'edit', seed, back: null }),
+    onLaunch: launch,
+    onLaunchUnchecked: (item) => {
+      if (item.source.kind !== 'task') return
+      setError(null)
+      runTask.mutate({ id: item.source.task.id, skipCheck: true }, { onError: fail })
+    },
+    onToggle: (item, on) => (on ? launch(item) : service(item, 'stop')),
+    onService: service,
+    onTerminal: (item, terminalId) => onPanel({ mode: 'run', terminalId, back: item.id }),
+    onDuplicate: (item) => onPanel({ mode: 'edit', seed: { draft: duplicateDraft(item, t) }, back: null }),
+    onDelete: setDeleting,
+  }
+
   return {
+    handlers,
     error: error ?? unlessElsewhere(run.error)?.message ?? null,
-    launch,
-    toggle: (item: Automation, on: boolean) => (on ? launch(item) : service(item, 'stop')),
-    service,
     serving,
     servedOf: (item: Automation) => served.byAutomation.get(item.id) ?? null,
-    /** « Dupliquer » : l'éditeur sur une copie, pour une nouvelle action. */
-    duplicate: (item: Automation) => onPanel({ mode: 'edit', seed: { draft: duplicateDraft(item, t) }, back: null }),
-    askDelete: setDeleting,
     dialogs: (
       <>
         {switching.dialog}
@@ -121,5 +155,3 @@ export function useActionGestures(projectId: string, onPanel: (panel: ActionPane
     ),
   }
 }
-
-export type ActionGestures = ReturnType<typeof useActionGestures>

@@ -168,6 +168,21 @@ try {
   // Le premier passage qui a quelque chose à dire est déplié d'office.
   await skipped.getByText('Rien de neuf').waitFor()
 
+  // « Lancer sans vérifier », dans le ⋯ de la tuile : le passage part sans le script.
+  // La requête est interceptée, pour ne pas lancer un tour d'agent de plus.
+  await closeDetail()
+  let unchecked = null
+  await page.route(`**/api/schedules/${task.id}/run`, async (route) => {
+    unchecked = route.request().postDataJSON()
+    await route.fulfill({ json: task.runs[0] })
+  })
+  await card.getByRole('button', { name: 'Plus pour « Veille avec vérification »', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Lancer sans vérifier', exact: true }).click()
+  for (let i = 0; i < 50 && !unchecked; i++) await delay(100)
+  assert.deepEqual(unchecked, { skipCheck: true })
+  await page.unroute(`**/api/schedules/${task.id}/run`)
+  await openDetail()
+
   // --- Le script trouve quelque chose : le tour part avec sa sortie -----------------
   await detail.getByRole('button', { name: 'Modifier', exact: true }).click()
   const editor = page.getByRole('dialog', { name: 'Modifier « Veille avec vérification »', exact: true })

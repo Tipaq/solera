@@ -3,7 +3,7 @@ import type { ActionsStatus } from '../../lib/actions-tab'
 import { useTranslate } from '../../lib/i18n'
 
 const ITEM =
-  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded px-1.5 text-xs whitespace-nowrap transition-colors hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent'
+  'inline-flex h-8 pointer-coarse:h-11 shrink-0 items-center gap-1.5 rounded px-1.5 text-xs whitespace-nowrap transition-colors hover:bg-surface-high focus-visible:outline-2 focus-visible:outline-accent'
 
 /**
  * Ce que disait le ⚡, dans la barre de l'onglet Actions (AO-4) : « ● N en marche » en

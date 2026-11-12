@@ -4436,6 +4436,7 @@ export const fr: Catalog = {
   "launcher.menu.edit": "Modifier",
   "launcher.menu.schedule": "Planifier",
   "launcher.menu.editSchedule": "Modifier la planification",
+  "launcher.menu.runUnchecked": "Lancer sans vérifier",
   "launcher.menu.restart": "Redémarrer",
   "launcher.menu.logs": "Suivre le journal",
   "launcher.menu.duplicate": "Dupliquer",

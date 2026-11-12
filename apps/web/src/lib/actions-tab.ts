@@ -128,8 +128,8 @@ export function panelFromAddress(address: PanelAddress): ActionPanel | null {
 
 /**
  * L'adresse d'un tiroir, dans les deux sens : le détail écrit `?action=`, et le garde
- * quand on le modifie ou qu'on suit son passage ; fermer retire les deux. Une création ou
- * un choix garde le `?nouvelle=` qui l'a ouvert, sans en écrire un.
+ * quand on le modifie, le planifie ou suit son passage ; fermer retire les deux. Une
+ * création ou un choix garde le `?nouvelle=` qui l'a ouvert, sans en écrire un.
  */
 export function panelAddress(panel: ActionPanel | null, nouvelle: string | null): PanelAddress {
   if (panel === null) return { action: null, nouvelle: null }
@@ -138,8 +138,11 @@ export function panelAddress(panel: ActionPanel | null, nouvelle: string | null)
       return { action: panel.id, nouvelle: null }
     case 'run':
       return { action: panel.back, nouvelle: null }
-    case 'edit':
-      return panel.back ? { action: panel.back, nouvelle: null } : { action: null, nouvelle }
+    case 'edit': {
+      // L'édition d'une action qui existe la nomme ; une création garde ce qui l'a ouverte.
+      const named = panel.back ?? panel.seed.from?.id ?? null
+      return named ? { action: named, nouvelle: null } : { action: null, nouvelle }
+    }
     case 'pick':
       return { action: null, nouvelle }
   }

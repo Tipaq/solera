@@ -1,15 +1,17 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { Server, SquareTerminal } from 'lucide-react'
 import { servedIndex } from '../../lib/served'
-import { ActionTile, type TileHandlers } from './ActionTile'
+import { ActionTile } from './ActionTile'
+import type { ActionHandlers } from './useActionGestures'
 import { LauncherGroup } from './LauncherGroup'
 import { AGENT, AGENT_RUNNING, FAILED, FAIL_STREAK, IN_TERMINAL, NEVER, PROPOSED, SERVICE_OFF, SERVICE_ON, SERVICE_SCHEDULED, SUCCEEDED, SeededWorktrees } from './automation-fixtures'
 
 const ignore = () => {}
-const HANDLERS: TileHandlers = {
+const HANDLERS: ActionHandlers = {
   onOpen: ignore,
   onEdit: ignore,
   onLaunch: ignore,
+  onLaunchUnchecked: ignore,
   onToggle: ignore,
   onService: ignore,
   onTerminal: ignore,

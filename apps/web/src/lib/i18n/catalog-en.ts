@@ -4442,6 +4442,7 @@ export const en = {
   'launcher.menu.edit': "Edit",
   'launcher.menu.schedule': "Schedule",
   'launcher.menu.editSchedule': "Edit schedule",
+  'launcher.menu.runUnchecked': "Run without the check",
   'launcher.menu.restart': "Restart",
   'launcher.menu.logs': "Follow the log",
   'launcher.menu.duplicate': "Duplicate",

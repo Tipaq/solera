@@ -1,33 +1,14 @@
 import { AlarmClock, MoreHorizontal } from 'lucide-react'
 import { IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
-import type { EditorSeed } from '../../lib/action-editor'
 import { actionState, cadenceText, isService, natureOf, type Automation } from '../../lib/automations'
 import { locale, useTranslate } from '../../lib/i18n'
-import type { ServedTree, ServedVersion } from '../../lib/served'
+import type { ServedVersion } from '../../lib/served'
 import { ActionGesture, quietGestureClass } from './ActionGestures'
 import { STATE_TEXT, StateIcon } from './ActionMarks'
 import { TILE_BOX } from './LauncherGroup'
 import { ServedLine } from './served/ServedLine'
 import { ServeIcon, ServeMenu } from './served/ServeMenu'
-import type { ServiceOp } from './useActionGestures'
-
-/** « Servir… » d'un service en marche : ce qu'il sert, et où le basculer. */
-export interface TileServing<T extends ServedTree = ServedTree> {
-  targets: T[]
-  onSwitch: (tree: T) => void
-}
-
-/** Ce qu'une tuile sait faire ; l'hôte tient les requêtes (`useActionGestures`). */
-export interface TileHandlers {
-  onOpen: (item: Automation, review?: boolean) => void
-  onEdit: (seed: EditorSeed) => void
-  onLaunch: (item: Automation, worktreeId: string | null) => void
-  onToggle: (item: Automation, on: boolean) => void
-  onService: (item: Automation, op: ServiceOp) => void
-  onTerminal: (item: Automation, terminalId: string) => void
-  onDuplicate: (item: Automation) => void
-  onDelete: (item: Automation) => void
-}
+import type { ActionHandlers, ActionServing } from './useActionGestures'
 
 /**
  * La tuile d'une action dans le Lanceur (LAN-4 à LAN-8) : toutes de la même taille, et
@@ -45,8 +26,8 @@ export function ActionTile({
   item: Automation
   /** Ce que sert le service en marche ; null sinon. */
   served: ServedVersion | null
-  serving: TileServing | null
-  handlers: TileHandlers
+  serving: ActionServing | null
+  handlers: ActionHandlers
 }) {
   const t = useTranslate()
   const state = actionState(item, Date.now(), t)
@@ -123,9 +104,9 @@ export function ActionTile({
 /**
  * ⋯ : les gestes rares, hors de la tuile (LAN-8). Une action à relire ne se modifie ni
  * ne se planifie avant sa relecture ; un service en marche se redémarre et montre son
- * journal (Q1).
+ * journal (Q1) ; une tâche d'agent dont le script est validé se lance sans lui.
  */
-function TileMenu({ item, handlers }: { item: Automation; handlers: TileHandlers }) {
+function TileMenu({ item, handlers }: { item: Automation; handlers: ActionHandlers }) {
   const t = useTranslate()
   const serviceOn = isService(item) && item.live?.kind === 'service'
   return (
@@ -145,6 +126,9 @@ function TileMenu({ item, handlers }: { item: Automation; handlers: TileHandlers
           </MenuItem>
         </>
       )}
+      {runsUnchecked(item) ? (
+        <MenuItem onSelect={() => handlers.onLaunchUnchecked(item)}>{t('launcher.menu.runUnchecked')}</MenuItem>
+      ) : null}
       {serviceOn ? (
         <>
           <MenuItem onSelect={() => handlers.onService(item, 'restart')}>{t('launcher.menu.restart')}</MenuItem>
@@ -157,3 +141,7 @@ function TileMenu({ item, handlers }: { item: Automation; handlers: TileHandlers
     </Menu>
   )
 }
+
+/** Une tâche d'agent au script de vérification validé : « Lancer sans vérifier » a un sens. */
+const runsUnchecked = (item: Automation): boolean =>
+  item.source.kind === 'task' && item.source.task.check?.approved === true && item.review === null

@@ -146,6 +146,8 @@ test('panelAddress : l’adresse suit le tiroir dans les deux sens (AO-7)', () =
   assert.deepEqual(panelAddress({ mode: 'edit', seed: {}, back: null }, 'service'), { action: null, nouvelle: 'service' })
   assert.deepEqual(panelAddress({ mode: 'edit', seed: {}, back: null }, null), { action: null, nouvelle: null })
   assert.deepEqual(panelAddress({ mode: 'pick' }, 'planifier'), { action: null, nouvelle: 'planifier' })
+  // Planifier une action choisie, ou la modifier depuis la tuile : c'est elle que l'adresse nomme.
+  assert.deepEqual(panelAddress({ mode: 'edit', seed: { from: LINT, schedule: true }, back: null }, 'planifier'), { action: 'lint', nouvelle: null })
 })
 
 test('withAddress : pose ou retire les deux paramètres, garde le reste (?vue=)', () => {

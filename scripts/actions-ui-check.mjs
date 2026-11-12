@@ -24,6 +24,8 @@ let browser
 let serviceUnit = null
 /** Les instances par worktree de l'essai (AC-06), arrêtées à la fin de même. */
 const instanceUnits = []
+/** Le service allumé depuis l'onglet Actions, arrêté à la fin de même. */
+const tabUnits = []
 
 async function freePort() {
   const socket = createServer().listen(0, '127.0.0.1')
@@ -648,7 +650,8 @@ async function checkProjectTab(base, env, api) {
     await tile('Statique').getByRole('button', { name: 'Relire « Statique »', exact: true }).waitFor()
     // Des tuiles de taille égale, une colonne au téléphone ; rien ne déborde de la page.
     const boxes = await page.locator('[data-action-tile]').evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()))
-    assert.equal(boxes.length, phone ? 3 : 4)
+    // À 390, « À supprimer » n'est plus, et « Statique servi » s'est ajouté là où systemd le permet.
+    assert.equal(boxes.length, phone && !linuxServices ? 3 : 4)
     assert.ok(boxes.every((box) => Math.abs(box.height - 152) < 1), `tuiles de 9,5 rem : ${boxes.map((box) => box.height)}`)
     assert.ok(boxes.every((box) => Math.abs(box.width - boxes[0].width) < 1), 'tuiles de même largeur')
     if (phone) assert.ok(boxes.every((box) => Math.abs(box.x - boxes[0].x) < 1), 'une colonne au téléphone')
@@ -677,8 +680,17 @@ async function checkProjectTab(base, env, api) {
     await page.getByRole('searchbox', { name: 'Chercher une action' }).fill('hello-from')
     await tile('Sauvegarde').waitFor({ state: 'detached' })
     assert.equal(await page.locator('[data-action-tile]').count(), 1)
+    // Rien ne correspond : le Lanceur garde ses groupes et leurs tuiles d'ajout (LAN-1).
+    await page.getByRole('searchbox', { name: 'Chercher une action' }).fill('rien-de-tel')
+    await page.locator('[data-action-tile]').first().waitFor({ state: 'detached' })
+    await page.getByRole('button', { name: 'Nouvelle commande', exact: true }).waitFor()
     await page.getByRole('searchbox', { name: 'Chercher une action' }).fill('')
     await tile('Sauvegarde').waitFor()
+
+    // « Lancer ▾ » : le chevron propose la racine du projet, puis ses arbres.
+    await tile('Bonjour').getByRole('button', { name: 'Lancer « Bonjour » dans…', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'La racine du projet', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
 
     // Le libellé ouvre le détail, l'adresse le dit ; Échap le ferme et l'adresse l'oublie.
     await tile('Bonjour').getByRole('button', { name: /^Bonjour/ }).click()
@@ -758,14 +770,45 @@ async function checkProjectTab(base, env, api) {
     // L'Agenda ; la vue choisie se retient pour le projet.
     await page.getByRole('button', { name: 'Affichage : Liste' }).click()
     await page.getByRole('radio', { name: 'Agenda' }).click()
+    // En Agenda, « Affichage ▾ » règle aussi la période (AO-5).
+    await page.getByRole('radiogroup', { name: 'Période' }).getByRole('radio', { name: 'Jour', exact: true }).click()
     await page.keyboard.press('Escape')
-    await page.getByText(phone ? 'Sauvegarde' : 'Sauvegarde', { exact: false }).first().waitFor()
+    await page.getByRole('radio', { name: 'Jour', exact: true }).and(page.locator('[aria-checked="true"]')).first().waitFor()
+    await page.getByRole('button', { name: 'Affichage : Agenda' }).click()
+    await page.getByRole('radiogroup', { name: 'Période' }).getByRole('radio', { name: 'Semaine', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await page.locator(':text("Sauvegarde"):visible').first().waitFor()
     await page.screenshot({ path: join(shots, `tab-agenda-${width}.png`) })
     await page.goto(tab)
     await page.getByRole('button', { name: 'Affichage : Agenda' }).waitFor()
     await page.getByRole('button', { name: 'Affichage : Agenda' }).click()
     await page.getByRole('radio', { name: 'Lanceur' }).click()
     await page.keyboard.press('Escape')
+
+    // Un service, allumé et éteint depuis l'onglet (LAN-7, AO-4, LST-3), pour de vrai.
+    if (!phone && linuxServices) {
+      const port = await freePort()
+      const served = await create({ label: 'Statique servi', kind: 'service', command: `python3 -m http.server --bind 127.0.0.1 ${port}`, url: 'http://127.0.0.1:{port}/' })
+      tabUnits.push(`solera-app-action-${served.id.slice(0, 8)}.service`)
+      await tile('Statique servi').getByRole('switch', { name: 'Démarrer « Statique servi »' }).click()
+      await tile('Statique servi').getByText(/^En marche ·/).waitFor({ timeout: 20000 })
+      await tile('Statique servi').getByRole('link', { name: /^Ouvrir/ }).waitFor()
+      await page.getByRole('button', { name: '1 en marche', exact: true }).click()
+      await chips.getByText('En cours').waitFor()
+      assert.equal(await page.locator('[data-action-tile]').count(), 1)
+      await page.screenshot({ path: join(shots, `tab-service-${width}.png`) })
+      await chips.getByRole('button', { name: 'Retirer ce filtre' }).click()
+      await page.getByRole('button', { name: 'Affichage : Lanceur' }).click()
+      await page.getByRole('radio', { name: 'Liste' }).click()
+      await page.keyboard.press('Escape')
+      const live = page.locator('section', { has: page.getByRole('heading', { name: 'En cours', exact: true }) })
+      await live.getByRole('button', { name: 'Arrêter « Statique servi »', exact: true }).click()
+      await live.waitFor({ state: 'detached', timeout: 20000 })
+      await page.getByRole('button', { name: 'Affichage : Liste' }).click()
+      await page.getByRole('radio', { name: 'Lanceur' }).click()
+      await page.keyboard.press('Escape')
+      await tile('Statique servi').getByRole('switch', { name: 'Démarrer « Statique servi »' }).waitFor()
+    }
 
     // ⋯ Supprimer, confirmé.
     if (!phone) {
@@ -1200,7 +1243,7 @@ try {
   console.log(`actions-ui-check: ok — captures dans ${shots}`)
 } finally {
   await browser?.close()
-  for (const unit of linuxServices ? [serviceUnit, ...instanceUnits].filter(Boolean) : []) {
+  for (const unit of linuxServices ? [serviceUnit, ...instanceUnits, ...tabUnits].filter(Boolean) : []) {
     try { execFileSync('systemctl', ['--user', 'stop', unit], { stdio: 'ignore' }) } catch { /* déjà retirée */ }
   }
   for (const child of processes) child.kill()

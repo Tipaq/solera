@@ -11,7 +11,7 @@ import { useServerTimeZone } from '../../lib/schedules'
 import { WebLink } from '../WebLink'
 import { LaunchButton } from './ActionGestures'
 import { KindChip, NatureIcon } from './ActionMarks'
-import type { TileHandlers } from './ActionTile'
+import type { ActionHandlers } from './useActionGestures'
 import { ServedLine } from './served/ServedLine'
 
 /** Un lien vers ce qui tourne : « Ouvrir ↗ », « Session ↗ ». */
@@ -65,7 +65,7 @@ export function ActionRow({
   item: Automation
   section: Section
   served: ServedVersion | null
-  handlers: TileHandlers
+  handlers: ActionHandlers
 }) {
   const t = useTranslate()
   const live = liveText(item, Date.now(), t)
@@ -97,7 +97,7 @@ export function ActionRow({
   )
 }
 
-function RowGestures({ item, section, handlers }: { item: Automation; section: Section; handlers: TileHandlers }) {
+function RowGestures({ item, section, handlers }: { item: Automation; section: Section; handlers: ActionHandlers }) {
   const t = useTranslate()
   switch (section) {
     case 'live':
@@ -124,7 +124,7 @@ function RowGestures({ item, section, handlers }: { item: Automation; section: S
 }
 
 /** Ce qui tourne : « Ouvrir ↗ » et « Arrêter » d'un service, « Terminal » d'une commande, « Session ↗ » d'un agent. */
-function LiveGestures({ item, handlers }: { item: Automation; handlers: TileHandlers }) {
+function LiveGestures({ item, handlers }: { item: Automation; handlers: ActionHandlers }) {
   const t = useTranslate()
   const { live } = item
   if (live?.kind === 'service') {
