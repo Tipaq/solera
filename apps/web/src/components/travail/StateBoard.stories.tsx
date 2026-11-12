@@ -59,11 +59,11 @@ const TREE_OF: Record<string, TreeRow> = { c1: TREES.travail, c2: TREES.graphe, 
 
 const INBOX: InboxItem[] = [
   {
-    kind: 'session', key: 's-a', conversationId: 's-a', title: 'Socle commun de la page projet', project: null, agent: 'claude', tone: 'awaiting',
+    kind: 'session', key: 's-a', conversationId: 's-a', title: 'Socle commun de la page projet', project: null, projectId: 'p1', agent: 'claude', tone: 'awaiting',
     since: NOW - 12 * MINUTE, milestone: { number: 157, title: 'Socle commun', to: '/p/p1/timeline/157' }, cardNumber: 163,
     threadPath: '/p/p1/c/s-a', request: null, canDecide: true,
   },
-  { kind: 'light', key: 'c-158', tone: 'review-card', title: 'Comptes d’onglet à trois tons', project: null, number: 158, to: '/p/p1/board?carte=158', external: false, since: NOW - 3 * HOUR },
+  { kind: 'light', key: 'c-158', tone: 'review-card', title: 'Comptes d’onglet à trois tons', project: null, projectId: 'p1', number: 158, to: '/p/p1/board?carte=158', external: false, since: NOW - 3 * HOUR },
 ]
 
 function Board({ inbox = INBOX, rows = ROWS }: { inbox?: InboxItem[]; rows?: ActivityRow[] }) {

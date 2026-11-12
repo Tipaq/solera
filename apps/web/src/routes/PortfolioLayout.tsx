@@ -1,4 +1,4 @@
-import { Flag, FolderKanban, Plus, SquareKanban, Target } from 'lucide-react'
+import { Flag, FolderKanban, Layers, Plus, SquareKanban, Target } from 'lucide-react'
 import { useMemo } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Button } from '@solera/ui'
@@ -7,6 +7,7 @@ import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { useAllCards } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
 import { openLeafCount } from '../lib/place'
+import { usePortfolioAskingCount } from '../lib/portfolio'
 import { useProjects } from '../lib/projects'
 import { openSettings } from '../lib/settings-dialog'
 
@@ -20,10 +21,10 @@ import { openSettings } from '../lib/settings-dialog'
  * gris pour un inventaire (Tableau). Pas d'onglet Réglages de projet : au bout, ceux de
  * l'instance, qui s'ouvrent en fenêtre.
  *
- * Travail et Actions n'ont pas encore leur vue du portefeuille (#238, #241) : leurs
- * onglets sont masqués jusque-là, plutôt que de mener hors de la coque. Le compte ambre
- * de Travail (`usePortfolioAskingCount`) revient avec eux ; d'ici là, « Ce qui t'attend »
- * de l'Aperçu dit la même chose. Tableau et Jalons ont leur vue (#239, #240).
+ * Travail porte le compte ambre de ce qui te demande quelque chose, dans tous les
+ * projets. Actions n'a pas encore sa vue du portefeuille (#241) : son onglet est masqué
+ * jusque-là, plutôt que de mener hors de la coque. Tableau et Jalons ont leur vue (#239,
+ * #240).
  *
  * La fiche d'une carte s'ouvre sur place, par-dessus la vue (`?fiche=<projet>:<N>`) :
  * son hôte est posé ici, une fois pour toutes les vues.
@@ -36,9 +37,18 @@ export function PortfolioLayout() {
   const visible = useMemo(() => (projects ?? []).filter((project) => !project.archivedAt), [projects])
   const { cards } = useAllCards(visible)
   const open = openLeafCount(cards)
+  const asking = usePortfolioAskingCount()
 
   const tabs: PlaceTab[] = [
     { to: '/projects', end: true, label: t('project.view.overview'), icon: <Target size={15} /> },
+    {
+      to: '/projects/travail',
+      label: t('project.view.travail'),
+      icon: <Layers size={15} />,
+      count: asking,
+      tone: 'caution',
+      countTitle: t(asking === 1 ? 'place.count.asking.one' : 'place.count.asking.many', { count: asking }),
+    },
     {
       to: '/projects/board',
       label: t('project.board.title'),
