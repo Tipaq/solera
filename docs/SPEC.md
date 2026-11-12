@@ -928,13 +928,36 @@ c'est un mode de déploiement alternatif, pas un réglage par conversation.
 
 ```
 /login
-/                       redirection vers le dernier projet, ou l'accueil
-/p/:projectId           liste des conversations du projet
-/p/:projectId/c/:convId vue conversation (Chat | Terminal | Diff)
-/settings               profil, thème, densité
-/settings/projects      gestion des projets
-/settings/users         admin uniquement
+/bienvenue                    la visite de première ouverture
+/                             l'accueil
+/p/:projectId                 un projet : Aperçu
+/p/:projectId/travail         Travail (sessions, arbres, vue « Par moment »)
+/p/:projectId/board           Tableau (Kanban, Liste, Par geste)
+/p/:projectId/timeline        Jalons (horizon, Gantt, cap)
+/p/:projectId/timeline/:n     la page d'un jalon
+/p/:projectId/actions         Actions (commandes, services, planifiées du projet)
+/p/:projectId/settings        Réglages du projet, dans la coque
+/p/:projectId/c/:convId       une conversation, et son panneau
+/c/:convId                    un fil libre, hors projet
+/projects                     le portefeuille : Aperçu, puis /travail, /board,
+                              /timeline, /actions — les vues d'un projet, sur tous
+/projects/new                 créer un projet
+/sessions                     toutes les sessions
+/schedules                    Planifiées, toutes portées
+/vault, /services, /skills/:id
 ```
+
+Les cinq vues d'un projet (et du portefeuille) partagent une coque, `PlaceShell` : la
+bande, puis la rangée *Aperçu · Travail · Tableau · Jalons · Actions*, et *Réglages* au
+bout. Sa grammaire est celle du gabarit *Lieu* du design system (`docs/GabaritLieu.mdx`) ;
+le cahier des charges et la recette de cette page sont dans
+`docs/audits/2026-11-page-projet-v2/RECETTE.md`.
+
+Les réglages de l'instance et du compte sont une fenêtre, pas une page : `/settings` et
+`/settings/:section` l'ouvrent puis rendent la main à l'accueil. Les anciennes adresses
+d'un projet — `/activity`, `/journal`, `/schedules` — et du portefeuille —
+`/projects/activity`, `/work`, `/journal` — mènent à la vue qui les a absorbées, requête
+comprise.
 
 ### 12.2 Structure d'écran
 
@@ -2083,14 +2106,21 @@ solera/
         auth/
     web/
       src/
-        routes/
+        routes/          une page par adresse (§12.1) ; milestones/ pour les jalons
         components/
-          chat/
+          places/        la coque des lieux : PlaceShell, bande, rangée
+          shell/         tiroir commun, détail, hôte du panneau
+          toolbar/       la barre d'outils sur une ligne des vues
+          overview/ travail/ board/ milestones/ automations/ portfolio/
+                         les vues d'un projet et du portefeuille
+          cards/         la fiche d'une carte sur place (?fiche=)
+          panel/         le panneau d'une conversation : Agent, Actions, Git…
+          sidebar/ chat/ settings-page/ project-settings/
           tools/         registre de renderers
-          terminal/
-        theme/
-        lib/             client WS, store, IndexedDB
+        styles/
+        lib/             modèles des vues, requêtes, client WS, i18n
       public/
+    catalog/             Storybook des composants d'application
   packages/
     protocol/            schémas Zod partagés + types Codex générés
     db/                  schéma Drizzle + migrations
