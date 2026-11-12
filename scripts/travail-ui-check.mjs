@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { checkTravailGraph } from './checks/travail-graph.mjs'
+import { assertMilestoneRows, installMilestoneAsks } from './checks/milestone-inbox.mjs'
 import { checkTravailTable } from './checks/travail-table.mjs'
 
 /*
@@ -290,6 +291,17 @@ try {
   const chip = page.getByTitle(`Filtrer le fil sur ${branch}`, { exact: true }).first()
   await chip.waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 't1-travail-par-moment.png') })
+
+  // ─── Les demandes des jalons (#255) : la liste de Travail les a aussi ──────
+  // Les gestes sont tenus sur l'Aperçu (`places-ui-check`) : ici, les lignes et leur place.
+  const asks = await installMilestoneAsks({ page, base, project: nimbus })
+  await page.reload()
+  const { inbox: travailInbox } = await assertMilestoneRows({ page, fakes: asks })
+  await travailInbox.screenshot({ animations: 'disabled', path: join(shots, 't11-travail-demandes-des-jalons.png') })
+  await asks.uninstall()
+  assert.deepEqual(asks.sent, { answers: [], drafts: [], merges: [] })
+  await page.reload()
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
 
   // ─── Affichage ▾ : la vue dans l'adresse, retenue pour le projet ────────────
   await toolbar.getByRole('button', { name: 'Affichage : Par moment', exact: true }).click()

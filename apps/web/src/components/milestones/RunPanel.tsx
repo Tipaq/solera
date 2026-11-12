@@ -98,7 +98,7 @@ function FinalPr({ entry, merge }: { entry: MilestoneEntry; merge: ReturnType<ty
           : withCode(t, 'milestone.run.prText', { number: pr.number, branch, base }, pr.base ? ['branch', 'base'] : ['branch'])}
       </p>
       {closed ? null : (
-        <Button icon={<GitMerge size={14} />} disabled={merge.isPending} onClick={() => merge.mutate()}>
+        <Button icon={<GitMerge size={14} />} disabled={merge.isPending} onClick={() => merge.mutate(entry.card.id)}>
           {runMergeLabel(pr, t)}
         </Button>
       )}

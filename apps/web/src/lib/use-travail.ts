@@ -9,6 +9,7 @@ import { useJournal } from './journal'
 import { useActiveMilestones } from './milestones'
 import { cardMilestones } from './travail-model'
 import { useInbox } from './use-inbox'
+import { useMilestoneInbox } from './use-milestone-inbox'
 
 /** Au-delà, l'historique ne s'allonge plus : un an de `git log` suffit à tout fil. */
 const MAX_JOURNAL_DAYS = 365
@@ -29,7 +30,7 @@ export function useTravail(projectId: string, project: ProjectDto, minDays = 0) 
   const conversations = useMemo(() => (allConversations ?? []).filter((entry) => entry.projectId === projectId), [allConversations, projectId])
   const code = useCodeData(projectId, project)
   const branches = useBranchInfos(projectId, project, code)
-  const inbox = useInbox({ projectId })
+  const inbox = useInbox({ projectId }, useMilestoneInbox(projectId))
 
   // « Plus ancien » élargit la fenêtre ; la lecture précédente reste affichée pendant
   // que la suivante arrive, pour que le fil ne se vide pas sous les yeux.

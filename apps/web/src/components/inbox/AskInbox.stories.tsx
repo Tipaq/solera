@@ -114,6 +114,7 @@ const MILESTONES: InboxItem[] = [
       { id: '1', text: 'Le phare montre-t-il le jalon courant ou le prochain à livrer ?' },
       { id: '2', text: 'Une carte sans échéance hérite-t-elle de celle du jalon ?' },
     ],
+    error: null,
     onAnswer: () => {},
   },
   {
@@ -125,6 +126,7 @@ const MILESTONES: InboxItem[] = [
       { key: 'b', title: 'Onglet Actions', after: ['a'] },
       { key: 'c', title: 'Planifiées', after: ['a', 'b'] },
     ],
+    error: null,
     onValidate: () => {},
   },
   {
@@ -133,6 +135,7 @@ const MILESTONES: InboxItem[] = [
     milestone: milestone(157, 'Socle commun'),
     branch: 'jalon/157-socle-commun',
     base: 'main',
+    error: null,
     onMerge: () => {},
   },
 ]
@@ -183,6 +186,17 @@ export const Jalons: Story = {
   name: 'Affinage, découpage, PR de jalon',
   args: { items: MILESTONES },
   render: (args) => <Opened {...args} openKey="d-200" />,
+}
+
+/** La forge a refusé la fusion : la raison remplace l'indice, et se relit dépliée. */
+export const FusionRefusee: Story = {
+  name: 'PR de jalon refusée',
+  args: {
+    items: MILESTONES.map((item) =>
+      item.kind === 'merge' ? { ...item, error: 'la PR a des conflits avec main' } : item,
+    ),
+  },
+  render: (args) => <Opened {...args} openKey="m-157" />,
 }
 
 /** Sans en-tête, pour une tuile qui porte déjà son titre. */

@@ -231,7 +231,7 @@ function describe(
         title: t(item.questions.length > 1 ? 'inbox.refine.title.many' : 'inbox.refine.title.one', {
           count: item.questions.length,
         }),
-        hint: item.questions[0]?.text ?? '',
+        hint: item.error ? t('inbox.refine.failed', { error: item.error }) : (item.questions[0]?.text ?? ''),
         gesture: t('inbox.gesture.reply'),
         since: null,
       }
@@ -239,7 +239,9 @@ function describe(
       return {
         icon: <ListTree size={14} aria-hidden className="shrink-0 text-accent" />,
         title: t('inbox.draft.title', { count: item.cards.length }),
-        hint: item.cards.map((card) => card.title).join(t('inbox.summary.joiner')),
+        hint: item.error
+          ? t('inbox.draft.failed', { error: item.error })
+          : item.cards.map((card) => card.title).join(t('inbox.summary.joiner')),
         gesture: t('inbox.gesture.examine'),
         since: null,
       }
@@ -247,7 +249,7 @@ function describe(
       return {
         icon: <GitMerge size={14} aria-hidden className="shrink-0 text-positive" />,
         title: t('inbox.merge.title'),
-        hint: t('inbox.merge.hint', { branch: item.branch, base: item.base }),
+        hint: item.error ? t('inbox.merge.failed', { error: item.error }) : t('inbox.merge.hint', { branch: item.branch, base: item.base }),
         gesture: t('inbox.gesture.merge'),
         since: null,
       }
@@ -338,26 +340,30 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
     }
     case 'refine':
       return (
-        <ul className="flex flex-col gap-3">
-          {item.questions.map((question, index) => (
-            <li key={question.id} className="flex flex-col gap-1.5">
-              <p className="text-sm text-ink">{question.text}</p>
-              <ReplyField
-                label={question.text}
-                autoFocus={index === 0}
-                onSend={(text) => {
-                  item.onAnswer(question.id, text)
-                  // La dernière question répondue referme la ligne ; avant, on enchaîne.
-                  if (item.questions.length === 1) onDone()
-                }}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          <Refusal error={item.error} message="inbox.refine.failed" />
+          <ul className="flex flex-col gap-3">
+            {item.questions.map((question, index) => (
+              <li key={question.id} className="flex flex-col gap-1.5">
+                <p className="text-sm text-ink">{question.text}</p>
+                <ReplyField
+                  label={question.text}
+                  autoFocus={index === 0}
+                  onSend={(text) => {
+                    item.onAnswer(question.id, text)
+                    // La dernière question répondue referme la ligne ; avant, on enchaîne.
+                    if (item.questions.length === 1) onDone()
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )
     case 'draft':
       return (
         <>
+          <Refusal error={item.error} message="inbox.draft.failed" />
           <ol className="flex flex-col gap-1 text-sm">
             {item.cards.map((card, index) => (
               <li key={card.key} className="flex min-w-0 items-baseline gap-2">
@@ -397,6 +403,7 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
             {t('inbox.merge.bodyBefore')} <code className="text-code">{item.branch}</code>
             {t('inbox.merge.bodyAfter')}
           </p>
+          <Refusal error={item.error} message="inbox.merge.failed" />
           <div>
             <Button
               size="sm"
@@ -412,6 +419,17 @@ function Reply({ item, onDone }: { item: HeavyInboxItem; onDone: () => void }) {
         </>
       )
   }
+}
+
+/** Le refus du dernier geste, dans la ligne dépliée : le serveur dit pourquoi. */
+function Refusal({ error, message }: { error: string | null; message: 'inbox.refine.failed' | 'inbox.draft.failed' | 'inbox.merge.failed' }) {
+  const t = useTranslate()
+  if (!error) return null
+  return (
+    <p role="alert" className="text-sm text-critical">
+      {t(message, { error })}
+    </p>
+  )
 }
 
 /** Un champ d'une ligne qui s'agrandit, Entrée pour envoyer, Maj+Entrée pour aller à la ligne (INB-11). */

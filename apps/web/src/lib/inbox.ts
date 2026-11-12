@@ -53,6 +53,8 @@ export type InboxItem =
        * dernière répondue referme la ligne.
        */
       questions: { id: string; text: string }[]
+      /** Le refus du dernier envoi : les questions reviennent, avec sa raison. */
+      error: string | null
       onAnswer: (id: string, text: string) => void
     }
   | {
@@ -60,6 +62,8 @@ export type InboxItem =
       key: string
       milestone: InboxMilestone
       cards: { key: string; title: string; after: string[] }[]
+      /** Le refus de la dernière validation, `null` sinon. */
+      error: string | null
       onValidate: () => void
     }
   | {
@@ -69,6 +73,8 @@ export type InboxItem =
       /** La branche du jalon, et celle où elle se fusionne : la branche par défaut. */
       branch: string
       base: string
+      /** Le refus de la dernière fusion tentée, `null` sinon. */
+      error: string | null
       onMerge: () => void
     }
   | {
@@ -89,6 +95,19 @@ export type SessionInboxItem = Extract<InboxItem, { kind: 'session' }>
 export type HeavyInboxItem = Exclude<InboxItem, { kind: 'light' }>
 export type LightInboxItem = Extract<InboxItem, { kind: 'light' }>
 
+/**
+ * Des demandes venues d'un autre domaine (les jalons, `milestoneInbox`), et les clés des
+ * lignes qu'elles remplacent : une demande ne paraît qu'à un seul endroit.
+ */
+export interface InboxExtra {
+  items: HeavyInboxItem[]
+  replaces: readonly string[]
+}
+
+/** La clé de la ligne d'une session, et celle d'une PR prête : ce qu'une demande remplace. */
+export const sessionItemKey = (conversationId: string) => `s-${conversationId}`
+export const pullRequestItemKey = (projectId: string, number: number) => `pr-${projectId}-${number}`
+
 export interface InboxInput {
   /** Les sessions de la portée, déjà filtrées par l'appelant. */
   live: LiveConversation[]
@@ -100,8 +119,8 @@ export interface InboxInput {
   pullRequests?: { projectId: string; pullRequest: ProjectPullRequestDto }[]
   /** Préfixer chaque ligne de son projet : hors d'un projet, la liste les mêle. */
   prefixProject: boolean
-  /** Les demandes du domaine Jalons (`refine`, `draft`, `merge`). */
-  extra?: HeavyInboxItem[]
+  /** Les demandes du domaine Jalons (`refine`, `draft`, `merge`), et ce qu'elles remplacent. */
+  extra?: InboxExtra
 }
 
 /**
@@ -114,16 +133,18 @@ export interface InboxInput {
  */
 export function buildInbox(input: InboxInput): InboxItem[] {
   const projectName = (id: string | null) => (input.prefixProject && id ? (input.projects.get(id)?.name ?? null) : null)
+  const replaced = new Set(input.extra?.replaces)
 
   const sessions = input.live.flatMap((entry): SessionInboxItem[] => {
     const { conversation } = entry
     const request = input.requests.get(conversation.id) ?? null
     const state = threadState({ status: entry.status, busy: entry.running, unread: false })
     if (!request && state !== 'broken' && state !== 'awaiting') return []
+    if (replaced.has(sessionItemKey(conversation.id))) return []
     const projectId = conversation.projectId
     return [{
       kind: 'session',
-      key: `s-${conversation.id}`,
+      key: sessionItemKey(conversation.id),
       conversationId: conversation.id,
       title: conversation.title,
       project: projectName(projectId),
@@ -162,10 +183,10 @@ export function buildInbox(input: InboxInput): InboxItem[] {
     }))
 
   const pullRequests = (input.pullRequests ?? [])
-    .filter(({ pullRequest }) => pullRequest.state === 'ready')
+    .filter(({ projectId, pullRequest }) => pullRequest.state === 'ready' && !replaced.has(pullRequestItemKey(projectId, pullRequest.number)))
     .map(({ projectId, pullRequest }): LightInboxItem => ({
       kind: 'light',
-      key: `pr-${projectId}-${pullRequest.number}`,
+      key: pullRequestItemKey(projectId, pullRequest.number),
       tone: 'review-pr',
       title: pullRequest.title,
       project: projectName(projectId),
@@ -179,7 +200,7 @@ export function buildInbox(input: InboxInput): InboxItem[] {
     (a.since ?? Number.POSITIVE_INFINITY) - (b.since ?? Number.POSITIVE_INFINITY)
   return [
     ...sessions.sort(bySince),
-    ...(input.extra ?? []),
+    ...(input.extra?.items ?? []),
     ...[...cards, ...pullRequests].sort(bySince),
   ]
 }

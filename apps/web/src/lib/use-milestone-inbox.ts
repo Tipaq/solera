@@ -1,0 +1,94 @@
+import { useMemo, useState } from 'react'
+import type { CardDraft } from '@solera/protocol'
+import { useAllConversations } from './conversations'
+import { useTranslate } from './i18n'
+import type { InboxExtra } from './inbox'
+import { milestoneInbox } from './milestone-inbox'
+import { milestoneAsks } from './milestone-model'
+import { useAnswerRefinement, useMilestones, useRefinementDrafts, useValidateRefinementDraft } from './milestones'
+import { useMergeBranchPullRequest } from './pull-requests'
+import { collectAnswer, draftUnderMilestone } from './refinement'
+
+const NO_INBOX: InboxExtra = { items: [], replaces: [] }
+
+/**
+ * Les demandes des jalons d'un projet pour « Ce qui t'attend » (#255), à passer en
+ * `extra` à `useInbox` : les questions d'affinage, le brouillon à valider, la PR finale,
+ * avec les gestes de la page du jalon (#195, #198).
+ *
+ * Les requêtes sont celles de la page Jalons et du phare : React Query les partage.
+ * Seul le brouillon se lit en plus, et seulement pour un jalon qui en attend un.
+ */
+export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
+  const t = useTranslate()
+  const { entries, statusOf } = useMilestones(projectId)
+  const { data: conversations } = useAllConversations()
+  const asks = useMemo(() => entries.flatMap(milestoneAsks), [entries])
+  const draftIds = useMemo(() => asks.flatMap((ask) => (ask.kind === 'draft' ? [ask.milestone.id] : [])), [asks])
+  const proposals = useRefinementDrafts(draftIds)
+
+  // Une demande du CLI se répond en une fois : les réponses se gardent jusqu'à la dernière.
+  const [answers, setAnswers] = useState<Record<string, Record<string, string[]>>>({})
+  const forget = (requestId: string) =>
+    setAnswers(({ [requestId]: _dropped, ...rest }) => rest)
+  const answer = useAnswerRefinement(projectId ?? '')
+  const validate = useValidateRefinementDraft(projectId ?? '')
+  const merge = useMergeBranchPullRequest(projectId ?? '')
+  // Le refus du dernier geste de chaque sorte, et le jalon qui l'a reçu.
+  const failed = {
+    refine: answer.isError ? { cardId: answer.variables?.cardId, message: answer.error.message } : null,
+    draft: validate.isError ? { cardId: validate.variables?.cardId, message: validate.error.message } : null,
+    merge: merge.isError ? { cardId: merge.variables, message: merge.error.message } : null,
+  }
+  const failures = JSON.stringify(failed)
+
+  return useMemo(() => {
+    if (!projectId || asks.length === 0) return NO_INBOX
+    const owners = new Set((conversations ?? []).flatMap((entry) => (entry.isOwner ? [entry.id] : [])))
+    // Le statut vivant de la session d'affinage, celui que lit la page du jalon.
+    const stopped = new Set(
+      entries.flatMap(({ card: { refinement } }) => {
+        const status = refinement ? statusOf({ id: refinement.conversationId, status: refinement.status }) : null
+        return refinement && (status === 'error' || status === 'interrupted') ? [refinement.conversationId] : []
+      }),
+    )
+    const drafts = new Map<string, CardDraft>()
+    for (const ask of asks) {
+      const proposal = ask.kind === 'draft' ? proposals.get(ask.milestone.id) : null
+      // Le brouillon lu doit être celui de la demande : un redépôt le remplace.
+      if (ask.kind === 'draft' && proposal?.requestId === ask.requestId) drafts.set(ask.milestone.id, proposal.draft)
+    }
+    return milestoneInbox({
+      projectId,
+      asks,
+      drafts,
+      answers,
+      owns: (id) => owners.has(id),
+      stopped: (id) => stopped.has(id),
+      defaultBase: t('milestone.run.defaultBase'),
+      errorOf: (kind, cardId) => (failed[kind]?.cardId === cardId ? failed[kind].message : null),
+      gestures: {
+        answer: (ask, id, text) => {
+          const next = collectAnswer(answers[ask.requestId] ?? {}, ask.questions, id, text)
+          setAnswers((current) => ({ ...current, [ask.requestId]: next.answers }))
+          if (!next.complete) return
+          // Refusée, la réponse rend ses questions à la ligne.
+          answer.mutate(
+            { cardId: ask.milestone.id, conversationId: ask.conversationId, requestId: ask.requestId, answers: next.answers },
+            { onError: () => forget(ask.requestId) },
+          )
+        },
+        validate: (ask, draft) =>
+          validate.mutate({
+            cardId: ask.milestone.id,
+            conversationId: ask.conversationId,
+            requestId: ask.requestId,
+            draft: draftUnderMilestone(draft, ask.milestone),
+          }),
+        merge: (ask) => merge.mutate(ask.milestone.id),
+      },
+    })
+    // Les `mutate` de React Query sont stables : seuls leurs refus comptent (`failures`).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, entries, statusOf, asks, conversations, proposals, answers, t, failures])
+}

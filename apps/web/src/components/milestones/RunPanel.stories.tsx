@@ -114,7 +114,7 @@ function Panel({ entry }: { entry: MilestoneEntry }) {
 }
 
 function Merging({ entry }: { entry: MilestoneEntry }) {
-  const merge = useMergeBranchPullRequest(PROJECT_ID, entry.card.id)
+  const merge = useMergeBranchPullRequest(PROJECT_ID)
   return (
     <div className="w-[340px]">
       <RunPanel projectId={PROJECT_ID} entry={entry} merge={merge} />

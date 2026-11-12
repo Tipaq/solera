@@ -231,13 +231,13 @@ function QuestionLines({
   const t = useTranslate()
   const [answering, setAnswering] = useState<string | null>(null)
   const [answers, setAnswers] = useState<Record<string, string[]>>({})
-  const answer = useAnswerRefinement(projectId, cardId)
+  const answer = useAnswerRefinement(projectId)
 
   const send = (id: string, text: string) => {
     const next = collectAnswer(answers, questions.items, id, text)
     setAnswers(next.answers)
     setAnswering(null)
-    if (next.complete) answer.mutate({ conversationId: questions.conversationId, requestId: questions.requestId, answers: next.answers })
+    if (next.complete) answer.mutate({ cardId, conversationId: questions.conversationId, requestId: questions.requestId, answers: next.answers })
   }
 
   return (
@@ -324,7 +324,7 @@ function EditableDraft({
   canDecide: boolean
 }) {
   const [draft, setDraft] = useState<CardDraft>(proposal.draft)
-  const validate = useValidateRefinementDraft(projectId, milestone.id)
+  const validate = useValidateRefinementDraft(projectId)
   return (
     <DraftEditor
       draft={draft}
@@ -334,7 +334,7 @@ function EditableDraft({
       error={validate.isError ? validate.error.message : null}
       readOnly={!canDecide}
       onValidate={() =>
-        validate.mutate({ conversationId: proposal.conversationId, requestId: proposal.requestId, draft: draftUnderMilestone(draft, milestone) })
+        validate.mutate({ cardId: milestone.id, conversationId: proposal.conversationId, requestId: proposal.requestId, draft: draftUnderMilestone(draft, milestone) })
       }
     />
   )
