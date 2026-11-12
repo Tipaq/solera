@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import { toAttachmentDto, type AttachmentStore } from '../../attachments/store.js'
 import { randomUUID } from 'node:crypto'
-import { and, asc, count, desc, eq, inArray, max, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, max, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/sqlite-core'
 import type { FastifyInstance } from 'fastify'
 import {
@@ -47,6 +47,7 @@ import { addCardBlock, removeCardBlock } from '../../cards/blocks.js'
 import { addCardRelation, removeCardRelation } from '../../cards/relations.js'
 import { promoteSubtask } from '../../cards/promote.js'
 import { recordCardMove } from '../../cards/moves.js'
+import { readRefinements } from '../../cards/refinement.js'
 import { queueIssueRefusal, toCardIssueDto } from '../../issues/links.js'
 import {
   assertMilestoneChoice,
@@ -328,6 +329,8 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         .map((row) => [row.id, row.displayName]),
     )
 
+    const refinements = readRefinements(ctx.db, ids)
+
     return rows.map((row) => ({
       id: row.id,
       projectId,
@@ -345,6 +348,7 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
         row.branchPrNumber !== null && row.branchPrUrl !== null
           ? { number: row.branchPrNumber, url: row.branchPrUrl, mergedAt: row.branchPrMergedAt }
           : null,
+      refinement: refinements.get(row.id) ?? null,
       acceptedAt: row.acceptedAt,
       toClarifySince: row.toClarifySince,
       createdBy: row.createdBy,
@@ -947,24 +951,48 @@ export function assertCardAccepted(ctx: AppContext, cardId: string): void {
 
 /**
  * La carte d'une conversation, pour la puce qui ramène au board depuis le fil, et son
- * jalon, la parente de cette carte (#163).
+ * jalon : la parente de cette carte (#163), ou pour une session d'affinage la carte
+ * qu'elle découpe (#184), qui n'est pas sa carte.
  */
-export function readConversationLinks(ctx: AppContext, cardId: string | null): ConversationLinks {
-  if (!cardId) return NO_LINKS
-  const row = ctx.db
-    .select(CONVERSATION_LINKS)
+export function readConversationLinks(
+  ctx: AppContext,
+  conversation: { cardId: string | null; splitCardId: string | null },
+): ConversationLinks {
+  const { cardId, splitCardId } = conversation
+  if (cardId) {
+    const row = ctx.db
+      .select(CONVERSATION_LINKS)
+      .from(cards)
+      .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
+      .where(eq(cards.id, cardId))
+      .get()
+    return row ? { card: row.card, milestone: row.milestone } : NO_LINKS
+  }
+  if (!splitCardId) return NO_LINKS
+  const milestone = ctx.db
+    .select({ id: cards.id, number: cards.number, title: cards.title })
     .from(cards)
-    .leftJoin(milestoneCards, eq(milestoneCards.id, cards.parentId))
-    .where(eq(cards.id, cardId))
+    .where(and(eq(cards.id, splitCardId), eq(cards.milestone, true)))
     .get()
-  return row ? { card: row.card, milestone: row.milestone } : NO_LINKS
+  return { card: null, milestone: milestone ?? null }
 }
 
 /**
  * La parente d'une carte, jointe une seconde fois : le jalon d'une conversation. Les
- * routes de liste la joignent après la carte, `readConversationLinks` pour un fil.
+ * routes de liste la joignent après la carte par `MILESTONE_OF_CONVERSATION`,
+ * `readConversationLinks` pour un fil.
  */
 export const milestoneCards = alias(cards, 'milestone')
+
+/**
+ * La condition de jointure du jalon d'une conversation, après `cards` sur sa carte : la
+ * parente de sa carte, ou pour une session sans carte le jalon que sa session
+ * d'affinage découpe. Un découpage parti d'une carte qui n'est pas un jalon n'en a pas.
+ */
+export const MILESTONE_OF_CONVERSATION = or(
+  eq(milestoneCards.id, cards.parentId),
+  and(isNull(conversations.cardId), eq(milestoneCards.id, conversations.splitCardId), eq(milestoneCards.milestone, true)),
+)!
 
 /** Les colonnes de `ConversationLinks`, pour une requête qui joint `cards` puis `milestoneCards`. */
 export const CONVERSATION_LINKS = {

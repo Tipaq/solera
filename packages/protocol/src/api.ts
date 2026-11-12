@@ -12,6 +12,7 @@ import { projectInstructionsModeSchema, type InstructionsMode } from './instruct
 import { configLayerPatchSchema, type ConfigLayer, type ConfigOverrides } from './config-layers.js'
 import { MAX_SKILLS_PER_MESSAGE } from './skills.js'
 import { confinedServicesSchema, executionEnvironmentSchema, type ExecutionEnvironment } from './environments.js'
+import { splitModeSchema } from './refinement.js'
 
 export const conversationStatusSchema = z.enum([
   'idle',
@@ -165,8 +166,10 @@ export const updateProjectBodySchema = z
     /**
      * Un changement du niveau du projet, champ par champ (#120) : ce que l'écran des
      * réglages du projet envoie. `defaultConfig` reste lu pour les clients d'avant.
+     * Une liste quand le brouillon des réglages en porte plusieurs, une par portée au
+     * plus (le commun, puis chaque CLI) : ils s'appliquent dans l'ordre.
      */
-    configLayer: configLayerPatchSchema,
+    configLayer: z.union([configLayerPatchSchema, z.array(configLayerPatchSchema).max(5)]),
     /** Chemin absolu d'un dossier qui porte un `.storybook/` ; `null` délie le DS. */
     designSystemPath: z.string().min(1).nullable(),
     archived: z.boolean(),
@@ -341,6 +344,11 @@ export const createConversationBodySchema = z.object({
    */
   purpose: z.literal('split').nullable().default(null),
   splitCardId: z.string().uuid().nullable().default(null),
+  /**
+   * Le mode d'une session d'affinage (#184). Absent d'un découpage : `questions`. Refusé
+   * hors découpage.
+   */
+  splitMode: splitModeSchema.nullable().default(null),
   title: z.string().min(1).max(200).optional(),
   /**
    * L'environnement d'exécution de la session, figé à sa création. Absent : celui du
@@ -371,6 +379,7 @@ export const createFreeConversationBodySchema = createConversationBodySchema.omi
   cardId: true,
   purpose: true,
   splitCardId: true,
+  splitMode: true,
   environment: true,
 })
 
@@ -1199,7 +1208,7 @@ export interface PushPayload {
    * la langue de l'appareil : le serveur ne connaît pas celle de l'interface. `title`
    * reste le repli, pour une sorte que le service worker en cache ne connaît pas encore.
    */
-  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'test'
+  kind?: 'permission' | 'question' | 'elicitation' | 'plan' | 'turnCompleted' | 'decision' | 'scheduleFailed' | 'test'
   /**
    * Le nombre de décisions en attente, pour la pastille de l'icône de l'application
    * installée : le service worker la pose à la réception, application fermée comprise.

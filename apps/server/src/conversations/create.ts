@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { eq } from 'drizzle-orm'
 import { conversationHandoffs, conversations, type ConversationRow, type Db } from '@solera/db'
-import { HOST_CONFINED_ENVIRONMENT, HOST_ENVIRONMENT, resolveAgentConfig, unattendedConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment, type SchedulePlace } from '@solera/protocol'
+import { HOST_CONFINED_ENVIRONMENT, HOST_ENVIRONMENT, resolveAgentConfig, unattendedConfig, type AgentConfig, type AgentKind, type ExecutionEnvironment, type SchedulePlace, type SplitMode } from '@solera/protocol'
 import { environmentColumns } from '../environments/environments.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import type { OutgoingAttachment } from '../agents/types.js'
@@ -39,6 +39,8 @@ export interface CreateConversationInput {
   /** Découper en cartes (#70), et la carte d'où le découpage part. Absents ailleurs. */
   purpose?: 'split' | null
   splitCardId?: string | null
+  /** Le mode d'une session d'affinage (#184) ; `questions` pour un découpage qui n'en dit rien. */
+  splitMode?: SplitMode | null
   title?: string
   /**
    * L'environnement d'exécution, figé à la création. Absent : celui du projet par
@@ -124,6 +126,7 @@ export async function createConversation(
     cardId: input.cardId,
     purpose: input.purpose ?? null,
     splitCardId: input.splitCardId ?? null,
+    splitMode: input.purpose === 'split' ? (input.splitMode ?? 'questions') : null,
     userId: input.userId,
     title: input.title ?? provisionalTitle(input.titleSource ?? input.firstMessage?.text),
     titleSetByUser: input.title !== undefined,

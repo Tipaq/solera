@@ -21,7 +21,6 @@ const host = { environment: hostEnvironment, conversationId: null }
 
 async function harness(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'solera-terminals-interrupt-'))
-  t.after(() => rm(dir, { recursive: true, force: true }))
   const { db, sqlite } = openDatabase(join(dir, 'test.sqlite'))
   runMigrations(db, fileURLToPath(new URL('../../../packages/db/migrations', import.meta.url)))
   t.after(() => sqlite.close())
@@ -45,7 +44,12 @@ async function harness(t: TestContext) {
     managers.push(created)
     return created
   }
-  t.after(async () => { for (const created of managers) await created.shutdown() })
+  // Le dossier ne part qu'une fois les shells sortis : les hooks passent dans l'ordre
+  // où on les pose, et un shell qui finit réécrirait data/terminals pendant l'effacement (#250).
+  t.after(async () => {
+    for (const created of managers) await created.shutdown()
+    await rm(dir, { recursive: true, force: true })
+  })
   const terminals = manager()
 
   const app = Fastify()

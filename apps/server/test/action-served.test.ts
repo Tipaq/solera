@@ -75,7 +75,6 @@ function fakeUnits() {
  */
 async function harness(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), 'solera-served-'))
-  t.after(() => rmSync(dir, { recursive: true, force: true }))
   const root = join(dir, 'repo')
   const tree = join(dir, 'vue')
   mkdirSync(root)
@@ -102,7 +101,12 @@ async function harness(t: TestContext) {
     limits: { ptyIdleTimeoutMin: 5 },
   } as unknown as Config
   const terminals = new TerminalManager(config)
-  t.after(() => terminals.shutdown())
+  // Le dossier ne part qu'une fois les shells sortis : les hooks passent dans l'ordre
+  // où on les pose, et un shell qui finit réécrirait data/terminals pendant l'effacement (#250).
+  t.after(async () => {
+    await terminals.shutdown()
+    rmSync(dir, { recursive: true, force: true })
+  })
   const systemd = fakeUnits()
   const runner = new ActionRunner(db, config, terminals, new Environments(db), systemd.impl)
   const sessions = { workingDirectory: () => root } as unknown as SessionManager
