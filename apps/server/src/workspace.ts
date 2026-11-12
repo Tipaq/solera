@@ -81,6 +81,33 @@ export function projectWorkspace(db: Db, projectId: string, userId: string): str
 }
 
 /**
+ * Dossier d'un worktree dont ce compte voit le projet : la portée « worktree » du
+ * panneau (S5, carte #169), pour un arbre qui n'a pas de session par laquelle l'ouvrir.
+ *
+ * Un arbre d'un projet invisible est introuvable, comme le projet. Un arbre retiré, ou
+ * dont le dossier est parti par git, est refusé comme le cwd d'un fil (voir
+ * `resolveConversationCwd`), et marqué au passage.
+ */
+export function worktreeWorkspace(db: Db, worktreeId: string, userId: string): string {
+  const row = db
+    .select({ worktree: worktrees, ownerId: projects.ownerId, visibility: projects.visibility })
+    .from(worktrees)
+    .innerJoin(projects, eq(projects.id, worktrees.projectId))
+    .where(eq(worktrees.id, worktreeId))
+    .get()
+  if (!row || (row.ownerId !== userId && row.visibility !== 'shared')) {
+    throw notFound('worktree_not_found', 'Worktree not found.')
+  }
+  const { worktree } = row
+  if (worktree.removedAt) throw workingDirectoryMissing(worktree.path)
+  if (directoryGone(worktree.path)) {
+    markWorktreeGone(db, worktree.id)
+    throw workingDirectoryMissing(worktree.path)
+  }
+  return worktree.path
+}
+
+/**
  * Dossier visé par le brouillon d'une conversation : le worktree s'il en désigne un,
  * le workspace du projet sinon.
  *
