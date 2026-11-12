@@ -90,8 +90,12 @@ import {
   Menu,
   MenuItem,
   MenuSeparator,
+  PanelNotice,
+  PanelToolbar,
   cx,
+  panelGestureClass,
 } from '@solera/ui'
+import { IconTool } from '../toolbar/OneLineToolbar'
 
 /**
  * Couleur et lettre par état git, dans le vocabulaire de `git status`.
@@ -177,6 +181,7 @@ export function FileTree({
   label,
   onOpenFile,
   onCollapse,
+  banner,
 }: {
   scope: string
   /** Le dossier du workspace, écrit en tête de colonne : projet, et worktree s'il y en a un. */
@@ -185,6 +190,8 @@ export function FileTree({
   onOpenFile: () => void
   /** Replie la colonne. Posé ici depuis que le panneau n'a plus d'en-tête à le porter. */
   onCollapse: () => void
+  /** Une bande posée sous la ligne d'outils, comme les retours. */
+  banner?: ReactNode
 }) {
   const t = useTranslate()
   const queryClient = useQueryClient()
@@ -399,6 +406,8 @@ export function FileTree({
     if (target) setExpanded(scope, target, true)
     setDraft({ mode: 'create', parent: target, kind })
   }
+  const newFileLabel = target ? t('filetree.header.newFileIn', { folder: target }) : t('filetree.root.newFile')
+  const newFolderLabel = target ? t('filetree.header.newFolderIn', { folder: target }) : t('filetree.root.newFolder')
 
   return (
     // Toute la colonne accepte les fichiers : viser une ligne de 28 pixels à la souris
@@ -409,7 +418,7 @@ export function FileTree({
         // Colonne pleine hauteur : c'est ce qui permet aux envois de se poser en pied
         // plutôt qu'à la suite des fichiers, et au dépôt d'être accepté partout, y
         // compris sous la dernière ligne.
-        'relative flex min-h-full flex-col',
+        'relative flex min-h-0 flex-1 flex-col',
         dragDepth > 0 && 'outline-2 -outline-offset-2 outline-dashed outline-accent',
       )}
       onDragEnter={(event) => {
@@ -463,24 +472,35 @@ export function FileTree({
         sur le dossier désigné. Le champ de filtre a quitté cet endroit le 2026-10-11 —
         chercher est devenu une vue du panneau, qui a ses propres résultats et son propre
         défilement, au lieu de replier l'arbre sous les yeux de qui le lisait.
+
+        C'est la ligne d'outils du cadre commun, fixe en tête : seule la liste défile,
+        sous elle et sous les bandes de retour. Le nom du dossier tient lieu de titre, et
+        son menu porte ce que la colonne n'a pas la place de montrer en outils.
       */}
-      <div className="flex items-center gap-0.5 px-2 pb-1">
+      <PanelToolbar>
         {/* Le dossier racine n'a pas de ligne à survoler : son menu est son nom. */}
         <Menu
           align="start"
           trigger={
             <TooltipButton
               type="button"
-              aria-label={t('filetree.root.menu')}
+              aria-label={t('filetree.root.menu.named', { folder: label })}
               title={label}
-              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-1 text-left text-ink-soft hover:bg-surface-high hover:text-ink"
+              className={cx(panelGestureClass, '-ml-2 min-w-0 flex-1 px-2 text-sm font-medium text-ink')}
             >
-              <FolderGit2 size={13} className="shrink-0" />
-              <span className="min-w-0 truncate text-xs font-semibold tracking-wide uppercase">{label}</span>
+              <FolderGit2 size={14} className="shrink-0 text-ink-faint" />
+              <span className="min-w-0 truncate">{label}</span>
               {operations.isPending ? <Loader size={11} className="shrink-0 animate-spin text-ink-faint" /> : null}
             </TooltipButton>
           }
         >
+          {/* Les créations y sont toujours : leurs boutons se replient sous 13 rem de contenu. */}
+          <MenuItem icon={<FilePlus2 size={14} />} onSelect={() => startDraft('file')}>
+            {newFileLabel}
+          </MenuItem>
+          <MenuItem icon={<FolderPlus size={14} />} onSelect={() => startDraft('directory')}>
+            {newFolderLabel}
+          </MenuItem>
           {/* Le glisser-déposer n'existe pas au doigt : sans cette entrée, envoyer un
               fichier n'aurait aucune voie sur un téléphone. Elle vise le dossier
               désigné, comme les deux boutons de création. */}
@@ -493,76 +513,62 @@ export function FileTree({
           >
             {target ? t('filetree.header.uploadIn', { folder: target }) : t('filetree.root.upload')}
           </MenuItem>
-          {/* Dans le menu plutôt qu'en bouton : la colonne est étroite, et un cinquième
-              bouton y rognerait le nom du dossier jusqu'à l'illisible. */}
+          <MenuSeparator />
+          {/* Les niveaux dépliés sont veillés côté serveur et se relisent seuls : ce
+              geste rattrape ce qu'aucune veille ne signale — un fichier apparu dans un
+              dossier replié, ou un répertoire remplacé sous les pieds de la veille. Un
+              geste de secours : il cède sa place de bouton aux créations. */}
+          <MenuItem icon={<RefreshCw size={14} />} onSelect={refresh}>
+            {t('panel.tree.refresh')}
+          </MenuItem>
+          {/* Dans le menu plutôt qu'en bouton : la colonne est étroite, et un bouton de
+              plus y rognerait le nom du dossier jusqu'à l'illisible. */}
           <MenuItem icon={<ChevronsDownUp size={14} />} onSelect={() => collapseAll(scope)}>
             {t('filetree.header.collapse')}
           </MenuItem>
         </Menu>
         {/* Les créations visent le dossier de l'entrée désignée, la racine à défaut :
             l'infobulle le nomme, puisque la cible change sans que le bouton bouge. */}
-        <RootAction
-          label={target ? t('filetree.header.newFileIn', { folder: target }) : t('filetree.root.newFile')}
-          icon={<FilePlus2 size={14} />}
-          onClick={() => startDraft('file')}
-        />
-        <RootAction
-          label={
-            target ? t('filetree.header.newFolderIn', { folder: target }) : t('filetree.root.newFolder')
-          }
-          icon={<FolderPlus size={14} />}
-          onClick={() => startDraft('directory')}
-        />
-        {/* Les niveaux dépliés sont veillés côté serveur et se relisent seuls : ce
-            bouton rattrape ce qu'aucune veille ne signale — un fichier apparu dans un
-            dossier replié, ou un répertoire remplacé sous les pieds de la veille. */}
-        <RootAction label={t('panel.tree.refresh')} icon={<RefreshCw size={14} />} onClick={refresh} />
-        <RootAction label={t('panel.tree.hide')} icon={<PanelLeftClose size={14} />} onClick={onCollapse} />
-      </div>
+        <span className="hidden shrink-0 gap-1.5 @min-[13rem]:flex">
+          <IconTool label={newFileLabel} onClick={() => startDraft('file')}><FilePlus2 size={14} /></IconTool>
+          <IconTool label={newFolderLabel} onClick={() => startDraft('directory')}><FolderPlus size={14} /></IconTool>
+        </span>
+        <IconTool label={t('panel.tree.hide')} onClick={onCollapse}><PanelLeftClose size={14} /></IconTool>
+      </PanelToolbar>
+
+      {banner}
 
       <SelectionBar actions={actions} />
 
+      {/* Les retours, en bandes sous la ligne d'outils : au même endroit que ceux des
+          autres onglets. */}
       {error ? (
-        <p className="mx-2 mb-1 rounded border border-critical/40 bg-critical/12 px-2 py-1 text-xs text-critical">
+        <PanelNotice tone="critical">
           {error instanceof Error ? error.message : t('filetree.error.generic')}
-        </p>
+        </PanelNotice>
       ) : null}
 
       {notice ? (
-        <p
-          role={notice.tone === 'critical' ? 'alert' : 'status'}
-          className={cx(
-            'mx-2 mb-1 flex items-start gap-1.5 rounded border px-2 py-1 text-xs',
-            notice.tone === 'critical'
-              ? 'border-critical/40 bg-critical/12 text-critical'
-              : 'border-line bg-sunken text-ink-soft',
-          )}
-        >
-          <span className="min-w-0 flex-1">{notice.text}</span>
-          <button
-            type="button"
-            onClick={() => setNotice(null)}
-            aria-label={t('uploads.dismiss')}
-            className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100"
-          >
-            <X size={11} />
-          </button>
-        </p>
+        <PanelNotice tone={notice.tone === 'critical' ? 'critical' : 'neutral'} onClose={() => setNotice(null)}>
+          {notice.text}
+        </PanelNotice>
       ) : null}
 
-      <div
-        ref={list}
-        className="flex-1 pb-4"
-        onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
-        // Un clic dans le vide sous les lignes désélectionne, comme sur un bureau.
-        onClick={(event) => {
-          if (event.target === event.currentTarget) clearSelection(scope)
-        }}
-      >
-        <Level path="" depth={0} expanded actions={actions} />
-      </div>
+      <div data-tree-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div
+          ref={list}
+          className="flex-1 pb-4"
+          onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
+          // Un clic dans le vide sous les lignes désélectionne, comme sur un bureau.
+          onClick={(event) => {
+            if (event.target === event.currentTarget) clearSelection(scope)
+          }}
+        >
+          <Level path="" depth={0} expanded actions={actions} />
+        </div>
 
-      <UploadQueue scope={scope} />
+        <UploadQueue scope={scope} />
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -821,25 +827,24 @@ function SelectionBar({ actions }: { actions: Actions }) {
     <div
       role="toolbar"
       aria-label={t('filetree.selection.aria')}
-      className="mx-2 mb-1.5 flex items-center gap-px rounded-md border border-accent/40 bg-accent-wash pr-0.5 pl-2"
+      // Une bande du cadre plutôt qu'une carte bordée : elle se pose sous la ligne
+      // d'outils, à la hauteur d'une ligne, et le lavis dit qu'une sélection est active.
+      className="flex h-11 shrink-0 items-center gap-px border-b border-line bg-accent-wash pr-1 pl-3 md:h-9 pointer-coarse:h-11"
     >
       <span className="min-w-0 flex-1 truncate text-xs font-medium whitespace-nowrap text-ink">
         {t(count > 1 ? 'filetree.selection.count.other' : 'filetree.selection.count.one', { count })}
       </span>
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.cut')}
         icon={<Scissors size={13} />}
         onClick={() => actions.onClipboard('cut', targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.copy')}
         icon={<Copy size={13} />}
         onClick={() => actions.onClipboard('copy', targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.downloadZip')}
         icon={<Download size={13} />}
         onClick={() => {
@@ -850,14 +855,12 @@ function SelectionBar({ actions }: { actions: Actions }) {
           else downloadArchive(scope, picked.map(([path]) => path))
         }}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.selection.delete', { count })}
         icon={<Trash2 size={13} />}
         onClick={() => actions.onDelete(targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.selection.clear')}
         icon={<X size={13} />}
         onClick={() => clearSelection(scope)}
@@ -946,18 +949,8 @@ function statusOf(upload: UploadItem): string {
   })
 }
 
-function RootAction({
-  label,
-  icon,
-  onClick,
-  compact = false,
-}: {
-  label: string
-  icon: React.ReactNode
-  onClick: () => void
-  /** Plus serré à la souris : la barre de sélection loge aussi le compte. */
-  compact?: boolean
-}) {
+/** Un geste de la barre de sélection : plus serré à la souris, la bande loge aussi le compte. */
+function SelectionAction({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <TooltipButton
       type="button"
@@ -965,9 +958,8 @@ function RootAction({
       aria-label={label}
       title={label}
       className={cx(
-        'flex size-11 shrink-0 pointer-coarse:size-11 items-center justify-center rounded',
+        'flex size-11 shrink-0 pointer-coarse:size-11 items-center justify-center rounded md:size-6',
         'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
-        compact ? 'md:size-6' : 'md:size-7',
       )}
     >
       {icon}

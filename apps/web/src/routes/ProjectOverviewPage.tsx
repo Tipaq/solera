@@ -3,6 +3,7 @@ import { EmptyState } from '@solera/ui'
 import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { AskInbox } from '../components/inbox/AskInbox'
 import { CodeInProgress } from '../components/overview/CodeInProgress'
+import { MilestoneBeacon } from '../components/overview/MilestoneBeacon'
 import { OverviewActions } from '../components/overview/OverviewActions'
 import { RecentEvents } from '../components/overview/RecentEvents'
 import { useTranslate } from '../lib/i18n'
@@ -39,7 +40,7 @@ export function ProjectOverviewPage() {
     <div className="h-full overflow-y-auto p-4 md:p-6">
       <div className="flex flex-col gap-10">
         <AskInbox items={inbox} />
-        {/* La place du phare des jalons (#174). */}
+        <MilestoneBeacon projectId={projectId} inbox={inbox} />
         <div className="grid gap-10 xl:grid-cols-[minmax(0,1fr)_24rem]">
           {/* Une case à lui, même vide le temps qu'il charge : la pile reste à droite. */}
           <div className="min-w-0">
@@ -51,7 +52,8 @@ export function ProjectOverviewPage() {
           </div>
         </div>
       </div>
-      {/* La fiche d'une carte, qu'ouvre « #n titre » d'une branche. */}
+      {/* La fiche d'une carte sur place (`?fiche=N`) : une carte du phare qui t'attend,
+          ou « #n titre » d'une branche du code en cours. */}
       <CardSheetHost projectId={projectId} />
     </div>
   )
