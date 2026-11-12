@@ -101,6 +101,10 @@ export function PlaceThreads({ conversations, projects, onNavigate }: {
         <p className="px-2.5 py-2 text-sm text-ink-faint">{t('shell.conversations.empty')}</p>
       ) : null}
 
+      {/* Le budget a tout coupé : une liste vide reste, marquée coupée, sans quoi la mesure
+          ne verrait plus de sessions et ne remonterait jamais de 0 (#262). */}
+      {groups.length === 0 && cut ? <ul data-session-list data-cut /> : null}
+
       {/* Ce qui déborde a sa page : toutes les sessions, filtrables et cherchables. Le
           total ne se dit que s'il y a une coupe. */}
       <AllSessionsLine

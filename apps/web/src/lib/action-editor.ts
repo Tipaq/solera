@@ -17,6 +17,7 @@ import {
 } from '@solera/protocol'
 import {
   draftOf,
+  scheduleTargetOf,
   natureWord,
   type Automation,
   type AutomationDraft,
@@ -25,6 +26,7 @@ import {
   type What,
 } from './automations'
 import type { MessageKey } from './i18n'
+import type { ScheduleTarget } from './schedules'
 
 /**
  * L'éditeur unifié d'une action (`actions.md` §1.E) : ce qu'il tient, ce qu'il reproche à
@@ -48,10 +50,12 @@ export interface EditorSeed {
   preset?: { what: What; kind?: CommandKind }
   /** « En faire une action » ou une suggestion du dépôt : ce qu'on sait déjà, pré-rempli. */
   prefill?: { label?: string; command?: string; url?: string; description?: string; subdir?: string }
+  /**
+   * Hors d'un projet (la page Planifiées) : la portée proposée d'office, que le champ
+   * Portée laisse changer (PLF-10). Absente, c'est l'hôte qui donne le projet.
+   */
+  target?: ScheduleTarget
 }
-
-/** « + Tâche » d'une page de tâches planifiées : un agent, « Planifiée » cochée (PLF-1). */
-export const NEW_AGENT_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
 export interface EditorState {
   what: What
@@ -93,6 +97,8 @@ export interface EditorState {
    * tant que sa règle est incomplète ; ignorée pour une tâche, qui finit seule.
    */
   stopCadence: ScheduleCadence | null
+  /** La portée choisie hors d'un projet ; null quand l'hôte donne le projet. */
+  target: ScheduleTarget | null
 }
 
 const BLANK: EditorState = {
@@ -121,6 +127,7 @@ const BLANK: EditorState = {
   scheduled: false,
   cadence: null,
   stopCadence: null,
+  target: null,
 }
 
 /** L'état d'un brouillon : celui d'une action existante, ou d'un duplicata. */
@@ -166,7 +173,9 @@ function stateOfDraft(draft: AutomationDraft): EditorState {
 
 export function editorStateOf(seed: EditorSeed): EditorState {
   if (seed.from) {
-    const state = { ...stateOfDraft(draftOf(seed.from)), checkEdited: false }
+    // Une tâche hors projet se relit dans sa portée, qui ne change pas : l'essai du script y joue.
+    const target = seed.from.projectId === null ? scheduleTargetOf(seed.from) : null
+    const state = { ...stateOfDraft(draftOf(seed.from)), checkEdited: false, target }
     return seed.schedule ? { ...state, scheduled: true } : state
   }
   let state = seed.draft ? stateOfDraft(seed.draft) : BLANK
@@ -182,8 +191,12 @@ export function editorStateOf(seed: EditorSeed): EditorState {
       description: description ?? state.description,
     }
   }
+  if (seed.target) state = { ...state, target: seed.target }
   return seed.schedule ? { ...state, scheduled: true } : state
 }
+
+/** Hors d'un projet : la portée choisie ne vise aucun dépôt (le vault, l'instance, rien). */
+export const outsideProject = (state: EditorState): boolean => state.target !== null && state.target.scope !== 'project'
 
 /* ------------------------------------------------------------------ les problèmes */
 
@@ -199,6 +212,7 @@ export type EditorField =
   | 'when'
   | 'cadence'
   | 'stopCadence'
+  | 'scope'
 
 /** Tous les champs, pour « Enregistrer » qui les marque touchés d'un coup (EDI-20). */
 export const ALL_FIELDS: readonly EditorField[] = [
@@ -213,6 +227,7 @@ export const ALL_FIELDS: readonly EditorField[] = [
   'when',
   'cadence',
   'stopCadence',
+  'scope',
 ]
 
 /** Une commande qui tourne en continu : elle seule a un lien et un placement. */
@@ -237,6 +252,8 @@ export function problemsOf(state: EditorState): Partial<Record<EditorField, Mess
   else if (label.length > labelMax(state)) problems.label = 'actionEditor.error.labelMax'
 
   if (state.what === 'command') {
+    // Une commande appartient à un projet : elle n'existe pas dans le vault ni sur l'instance.
+    if (outsideProject(state)) problems.scope = 'actionEditor.error.scope'
     if (!state.command.trim()) problems.command = 'actionEditor.error.command'
     const subdir = state.subdir.trim()
     if (subdir.startsWith('/')) problems.subdir = 'actionEditor.error.subdirAbsolute'
@@ -297,6 +314,8 @@ export function draftFrom(state: EditorState, config: AgentConfig | null): Autom
     }
   }
   const script = state.checkScript?.trim() ? state.checkScript : null
+  // Hors projet, ni worktree neuf ni confinement : ni dépôt où ouvrir l'un, ni environnement pour l'autre.
+  const outside = outsideProject(state)
   return {
     what: 'agent',
     body: {
@@ -306,9 +325,9 @@ export function draftFrom(state: EditorState, config: AgentConfig | null): Autom
       prompt: state.prompt.trim(),
       cadence,
       onDemand: state.onDemand,
-      worktreeMode: state.worktreeMode,
+      worktreeMode: outside ? 'root' : state.worktreeMode,
       overlapPolicy: state.overlapPolicy,
-      confined: state.confined,
+      confined: outside ? null : state.confined,
       maxDurationMinutes: Number(state.maxDuration),
       ...(state.checkEdited ? { checkScript: script } : {}),
       ...(script ? { checkTimeoutSeconds: Number(state.checkTimeout) } : {}),

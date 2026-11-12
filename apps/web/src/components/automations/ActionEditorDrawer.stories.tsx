@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import { Button } from '@solera/ui'
-import { NEW_AGENT_TASK, type EditorSeed } from '../../lib/action-editor'
+import type { EditorSeed } from '../../lib/action-editor'
 import { useTranslate } from '../../lib/i18n'
 import { ActionEditorDrawer } from './ActionEditorDrawer'
 import { PROJECT_ID, SERVICE_ON, SeededWorktrees } from './automation-fixtures'
@@ -40,6 +40,6 @@ type Story = StoryObj<typeof meta>
 
 export const NouvelleCommande: Story = { name: 'Nouvelle commande' }
 
-export const Planifier: Story = { name: '« + Tâche » : un agent planifié', args: { seed: NEW_AGENT_TASK } }
+export const Planifier: Story = { name: '« + Tâche » : un agent planifié', args: { seed: { preset: { what: 'agent' }, schedule: true } } }
 
 export const Modifier: Story = { name: 'Modifier un service', args: { seed: { from: SERVICE_ON } } }

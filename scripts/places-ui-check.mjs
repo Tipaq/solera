@@ -792,22 +792,20 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
 
   // ─── La page Planifiées ───────────────────────────────────────────────────
-  await page.goto(`${base}/schedules`)
-  for (const header of ['Tâche', 'Cible', 'Fréquence', 'Prochaine', 'Dernier']) {
-    await page.getByRole('columnheader', { name: header, exact: true }).waitFor()
-  }
-  const rows = page.getByRole('row')
-  assert.equal(await rows.count(), schedules.length + 1, 'Une ligne par tâche, plus l’en-tête')
-  const toggles = page.getByRole('switch')
-  assert.equal(await toggles.count(), schedules.length)
-  // L'interrupteur agit tout de suite, sans formulaire à valider.
-  const first = schedules.find((entry) => entry.enabled)
+  // Une tuile par tâche, au gabarit du Lanceur (AC-20) ; la pause part de son ⋯, sans formulaire.
+  await page.goto(`${base}/schedules?vue=lanceur`)
+  const tiles = page.locator('[data-planned-tile]')
+  await tiles.first().waitFor()
+  assert.equal(await tiles.count(), schedules.filter((entry) => entry.cadence || !entry.projectId).length, 'Une tuile par tâche')
+  const first = schedules.find((entry) => entry.enabled && entry.cadence)
   if (first) {
-    await page.getByRole('switch', { name: `Activer « ${first.name} »`, exact: true }).click()
+    await page.getByRole('button', { name: `Plus pour « ${first.name} »`, exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Mettre en pause', exact: true }).click()
     await page.waitForFunction(
       (id) => fetch(`/api/schedules`).then((r) => r.json()).then((list) => list.find((e) => e.id === id)?.enabled === false),
       first.id,
     )
+    await page.locator(`[data-planned-tile="t-${first.id}"]`).getByRole('button', { name: `Reprendre « ${first.name} »`, exact: true }).waitFor()
   }
   await page.screenshot({ animations: 'disabled', path: join(shots, 'page-planifiees.png') })
 
@@ -851,7 +849,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque, Aperçu et Travail du portefeuille (anciennes vues, filtres, Tableau, Nettoyer, état vide), board global, les Jalons du portefeuille, le journal, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque, Aperçu et Travail du portefeuille (anciennes vues, filtres, Tableau, Nettoyer, état vide), board global, les Jalons du portefeuille, le journal, page des Planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

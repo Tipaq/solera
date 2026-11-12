@@ -2,11 +2,13 @@ import { AlarmClock } from 'lucide-react'
 import { Suspense, lazy, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@solera/ui'
 import { editorKey, panelBack, panelItem, panelLabel, pickable, type ActionPanel } from '../../lib/action-panel'
-import { actionOf, natureOf, type Automation } from '../../lib/automations'
+import { actionOf, natureOf, scheduleTargetOf, type Automation } from '../../lib/automations'
 import { commandRunOf } from '../../lib/command-runs'
 import { useDetailSurface } from '../../lib/detail-surface'
+import type { EditorSeed } from '../../lib/action-editor'
 import { useEscapeLayer } from '../../lib/escape-layers'
 import { useTranslate } from '../../lib/i18n'
+import { useProjects } from '../../lib/projects'
 import { useTerminals } from '../../lib/terminals'
 import { CommandRunDetail } from '../panel/CommandRuns'
 import { Drawer } from '../shell/Drawer'
@@ -43,6 +45,10 @@ export function panelShows(panel: ActionPanel | null, items: readonly Automation
  *
  * Les mises en page suivent la largeur du conteneur (`@container/action`), pas celle de
  * l'écran (TIRA-4).
+ *
+ * `projectId` null : la page Planifiées, qui mêle les projets. Chaque action s'ouvre dans
+ * le sien ; une création porte sa portée (`seed.target`), qu'un duplicata reprend de
+ * l'action d'où il vient.
  */
 export function ActionDrawer({
   projectId,
@@ -52,8 +58,9 @@ export function ActionDrawer({
   onClose,
   conversationId,
   backLabel,
+  launchWhere,
 }: {
-  projectId: string
+  projectId: string | null
   items: readonly Automation[]
   panel: ActionPanel | null
   onPanel: (panel: ActionPanel) => void
@@ -62,6 +69,8 @@ export function ActionDrawer({
   conversationId?: string
   /** En pile, le nom de l'onglet où l'on revient : « ‹ Actions ». */
   backLabel?: string
+  /** La page Planifiées : où part un lancement à la main de cette action (PLF-9). */
+  launchWhere?: (item: Automation) => string
 }) {
   const t = useTranslate()
   const surface = useDetailSurface()
@@ -87,6 +96,7 @@ export function ActionDrawer({
         items={items}
         projectId={projectId}
         conversationId={conversationId}
+        launchWhere={launchWhere}
         onPanel={onPanel}
         onBack={back}
         onClose={onClose}
@@ -126,6 +136,7 @@ function Mode({
   items,
   projectId,
   conversationId,
+  launchWhere,
   onPanel,
   onBack,
   onClose,
@@ -133,20 +144,24 @@ function Mode({
   panel: ActionPanel
   item: Automation | null
   items: readonly Automation[]
-  projectId: string
+  projectId: string | null
   conversationId?: string
+  launchWhere?: (item: Automation) => string
   onPanel: (panel: ActionPanel) => void
   onBack: () => void
   onClose: () => void
 }) {
+  // Hors d'un projet, le détail et le passage s'ouvrent dans celui de l'action.
+  const home = projectId ?? item?.projectId ?? ''
   switch (panel.mode) {
     case 'detail':
       return item ? (
         <ActionDetail
           key={item.id}
           item={item}
-          projectId={projectId}
+          projectId={home}
           conversationId={conversationId}
+          launchWhere={launchWhere?.(item)}
           focusReview={panel.review}
           onPanel={onPanel}
           onClose={onClose}
@@ -158,7 +173,7 @@ function Mode({
           <ActionEditor
             key={editorKey(panel.seed)}
             projectId={projectId}
-            seed={panel.seed}
+            seed={projectId === null ? scopedSeed(panel.seed, panel.back, items) : panel.seed}
             conversationId={conversationId}
             onClose={onClose}
             onBack={panel.back ? onBack : undefined}
@@ -166,17 +181,40 @@ function Mode({
         </Suspense>
       )
     case 'pick':
-      return <Pick items={items} onPanel={onPanel} onClose={onClose} />
+      return <Pick items={items} named={projectId === null} onPanel={onPanel} onClose={onClose} />
     case 'run':
       return item ? (
-        <RunPane item={item} terminalId={panel.terminalId} projectId={projectId} conversationId={conversationId} onPanel={onPanel} onBack={onBack} />
+        <RunPane item={item} terminalId={panel.terminalId} projectId={home} conversationId={conversationId} onPanel={onPanel} onBack={onBack} />
       ) : null
   }
 }
 
+/**
+ * Hors d'un projet, une création sans portée — « Dupliquer » du détail — prend celle de
+ * l'action d'où elle vient. Modifier garde la sienne, qui ne change pas.
+ */
+function scopedSeed(seed: EditorSeed, back: string | null, items: readonly Automation[]): EditorSeed {
+  if (seed.from || seed.target) return seed
+  const origin = back ? items.find((entry) => entry.id === back) : undefined
+  return origin ? { ...seed, target: scheduleTargetOf(origin) } : seed
+}
+
 /** « Planifier une action existante » : celles qui ne le sont pas encore, puis l'éditeur sur Quand (TIRA-7). */
-function Pick({ items, onPanel, onClose }: { items: readonly Automation[]; onPanel: (panel: ActionPanel) => void; onClose: () => void }) {
+function Pick({
+  items,
+  named,
+  onPanel,
+  onClose,
+}: {
+  items: readonly Automation[]
+  /** La page Planifiées, qui mêle les projets : chaque ligne nomme le sien. */
+  named: boolean
+  onPanel: (panel: ActionPanel) => void
+  onClose: () => void
+}) {
   const t = useTranslate()
+  const { data: projects } = useProjects()
+  const projectName = (id: string | null) => (named && id ? (projects?.find((entry) => entry.id === id)?.name ?? null) : null)
   const choices = pickable(items)
   return (
     <>
@@ -201,6 +239,7 @@ function Pick({ items, onPanel, onClose }: { items: readonly Automation[]; onPan
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate text-sm text-ink">{choice.label}</span>
                       <span className="truncate font-mono text-meta text-ink-faint">{choice.what === 'agent' ? choice.prompt : `$ ${choice.command}`}</span>
+                      {projectName(choice.projectId) ? <span className="truncate text-meta text-ink-soft">{projectName(choice.projectId)}</span> : null}
                     </span>
                     <span className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-soft">
                       <AlarmClock size={13} aria-hidden /> {t('actionDrawer.pick.schedule')}

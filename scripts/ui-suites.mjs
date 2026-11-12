@@ -33,6 +33,7 @@ const BATCHES = [
   ],
   [
     'milestones', // 108
+    'sessions', // ~90 estimées (185 en local)
     'claude-login', // 35
     'claude-accounts', // 26
     'windows-feedback', // 21
@@ -46,6 +47,7 @@ const BATCHES = [
     'api-mcp', // 15
     'card-draft', // 12
     'brief-field', // 12
+    'planned', // ~25, à mesurer
   ],
   [
     'git', // 70
@@ -80,7 +82,6 @@ const BATCHES = [
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
-  sessions: 'boucle de rendu de la sidebar à 1280×800 (#262)',
   onboarding: 'page.goto bloque par intermittence (#263)',
   'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
   'draft-account': 'sonde les vrais codex et claude (#264)',

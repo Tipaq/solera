@@ -11,7 +11,7 @@ import {
 import { Badge, Banner, Button, Field, IconButton } from '@solera/ui'
 import { Suspense, lazy } from 'react'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { useApproveScheduleCheck, useTestScheduleCheck } from '../../lib/schedules'
+import { useApproveScheduleCheck, useTestScheduleCheck, useTestScopedScheduleCheck, type ScheduleTarget } from '../../lib/schedules'
 
 /**
  * L'éditeur du script, chargé à part.
@@ -33,6 +33,7 @@ const ScriptEditor = lazy(() => import('./ScriptEditor').then((m) => ({ default:
  */
 export function CheckSection({
   projectId,
+  target,
   taskId,
   script,
   timeout,
@@ -40,6 +41,8 @@ export function CheckSection({
   onTimeoutChange,
 }: {
   projectId: string
+  /** Hors d'un projet (page Planifiées) : l'essai joue là où la portée tourne. */
+  target?: ScheduleTarget | null
   /** La tâche modifiée, pour essayer sur une copie de son état ; absente à la création. */
   taskId?: string
   /** Null : pas de vérification. */
@@ -49,7 +52,12 @@ export function CheckSection({
   onTimeoutChange: (timeout: string) => void
 }) {
   const t = useTranslate()
-  const test = useTestScheduleCheck(projectId)
+  const local = useTestScheduleCheck(projectId)
+  const scoped = useTestScopedScheduleCheck()
+  const outside = target && target.scope !== 'project' ? target : null
+  const test = outside ? scoped : local
+  const play = (input: { script: string; timeoutSeconds: number; taskId?: string }) =>
+    outside ? scoped.mutate({ target: outside, ...input }) : local.mutate(input)
   const seconds = Number(timeout)
   const timeoutValid =
     Number.isInteger(seconds) && seconds >= MIN_CHECK_TIMEOUT_SECONDS && seconds <= MAX_CHECK_TIMEOUT_SECONDS
@@ -95,7 +103,7 @@ export function CheckSection({
               size="sm"
               icon={<FlaskConical size={14} />}
               disabled={!script.trim() || !timeoutValid || test.isPending}
-              onClick={() => test.mutate({ script, timeoutSeconds: seconds, taskId })}
+              onClick={() => play({ script, timeoutSeconds: seconds, taskId })}
             >
               {t(test.isPending ? 'schedule.check.testing' : 'schedule.check.test')}
             </Button>
