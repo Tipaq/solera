@@ -12,9 +12,6 @@ import { launchBrowser } from './checks/browser.mjs'
 // Vrais composants, vraie API et vrai CLI Claude, dans une base temporaire : la tâche
 // créée ici tire pour de bon, à la minute. Compter deux tours très courts de quota.
 // Les captures vont dans SCHEDULE_SHOTS, ou dans un dossier temporaire annoncé à la fin.
-//
-// La première partie — la page globale Planifiées (AC-20) — ne lance aucun agent :
-// `SCHEDULE_UI_ONLY=planned` s'arrête après elle, sans CLI ni quota.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -118,117 +115,6 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   await mkdir(shots, { recursive: true })
-
-  // --- La page globale Planifiées (AC-20, PLF-1 à PLF-10) --------------------------
-  await page.goto(`${base}/schedules`)
-  const seeded = page.locator('[data-planned-tile]', { has: page.getByText('CLI release watch', { exact: true }) })
-  await seeded.waitFor()
-  // Le Lanceur d'office, rangé par échéance ; la tuile porte la pastille de son projet.
-  await seeded.getByText('Nimbus', { exact: true }).waitFor()
-  await page.locator('[data-planned-summary]').getByText(/^1 tâche · 1 portée$/).waitFor()
-  await seeded.getByRole('button', { name: /^Lancer « CLI release watch » maintenant, à la racine de Nimbus$/ }).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-launcher-desktop.png') })
-
-  // « + Tâche ▾ » › Tâche d'agent : l'éditeur arrive planifié d'office, avec sa portée.
-  await page.getByRole('button', { name: 'Nouvelle tâche', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Nouvelle tâche', exact: true }).getByRole('button', { name: /^Tâche d’agent/ }).click()
-  const plannedEditor = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
-  assert.equal(await plannedEditor.getByRole('checkbox', { name: /^Planifiée/ }).getAttribute('aria-checked'), 'true')
-  const scopeField = plannedEditor.locator('[data-scope-field]').getByRole('combobox')
-  await scopeField.click()
-  // Un administrateur voit l'instance ; sans vault configuré, le Savoir est fermé, et dit pourquoi.
-  await page.getByRole('option', { name: /^Instance/ }).waitFor()
-  const vaultOption = page.getByRole('option', { name: /^Savoir/ })
-  assert.equal(await vaultOption.getAttribute('aria-disabled'), 'true')
-  await vaultOption.getByText(/^Aucun vault n’est configuré/).waitFor()
-  await page.getByRole('option', { name: /^Sans projet/ }).click()
-  await plannedEditor.getByText('Un lancement part hors projet.', { exact: true }).waitFor()
-  // Hors projet, ni worktree neuf ni confinement : « Où il tourne » disparaît.
-  assert.equal(await plannedEditor.getByText('Où il tourne', { exact: true }).count(), 0)
-  await plannedEditor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Veille sans projet')
-  await plannedEditor.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Résume les notes de la semaine.')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-editor-desktop.png') })
-  await plannedEditor.getByRole('button', { name: 'Enregistrer', exact: true }).click()
-  await plannedEditor.waitFor({ state: 'hidden' })
-  const looseTask = (await api('/api/schedules')).find((task) => task.name === 'Veille sans projet')
-  assert.equal(looseTask.scope, 'none')
-  assert.equal(looseTask.projectId, null)
-  assert.ok(looseTask.cadence, 'Créée depuis les Planifiées, la tâche a une cadence')
-  assert.equal(looseTask.worktreeMode, 'root')
-  const looseTile = page.locator('[data-planned-tile]', { has: page.getByText('Veille sans projet', { exact: true }) })
-  await looseTile.getByText('Sans projet', { exact: true }).waitFor()
-  await looseTile.getByText(/^Prochain dans .* · jamais lancée$/).waitFor()
-
-  // Une commande planifiée ne vit que dans un projet : le reste lui est fermé.
-  await page.getByRole('button', { name: 'Nouvelle tâche', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Nouvelle tâche', exact: true }).getByRole('button', { name: /^Commande planifiée/ }).click()
-  await plannedEditor.getByRole('radio', { name: /^Une commande/ }).waitFor()
-  assert.equal(await plannedEditor.getByRole('radio', { name: /^Une commande/ }).getAttribute('aria-checked'), 'true')
-  await plannedEditor.locator('[data-scope-field]').getByRole('combobox').click()
-  assert.equal(await page.getByRole('option', { name: /^Sans projet/ }).getAttribute('aria-disabled'), 'true')
-  await page.getByRole('option', { name: /^Sans projet/ }).getByText('Une commande tourne dans un projet.', { exact: true }).waitFor()
-  await page.keyboard.press('Escape')
-  await plannedEditor.getByRole('button', { name: 'Annuler', exact: true }).click()
-  await plannedEditor.waitFor({ state: 'hidden' })
-
-  // Filtrer par portée : une puce, et le compte de chaque portée dans le menu.
-  await page.getByRole('button', { name: 'Filtrer', exact: true }).click()
-  const filterPopover = page.getByRole('dialog', { name: 'Filtrer', exact: true })
-  await filterPopover.getByRole('checkbox', { name: /Sans projet/ }).click()
-  await page.keyboard.press('Escape')
-  await page.locator('[data-toolbar-chips]').getByText('Sans projet', { exact: true }).waitFor()
-  await seeded.waitFor({ state: 'detached' })
-  await looseTile.waitFor()
-  await page.locator('[data-toolbar-chips]').getByRole('button', { name: 'Retirer ce filtre', exact: true }).click()
-  await seeded.waitFor()
-
-  // Le tiroir unifié : le nom ouvre le détail de la tâche, dans sa portée.
-  await looseTile.getByRole('button', { name: /^Veille sans projet/ }).click()
-  const looseDetail = page.getByRole('dialog', { name: 'Veille sans projet', exact: true })
-  await looseDetail.getByText('Claude Code reçoit ce prompt, dans une session neuve :').waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-detail-desktop.png') })
-  await looseDetail.getByRole('button', { name: 'Fermer', exact: true }).click()
-  await looseDetail.waitFor({ state: 'hidden' })
-
-  // Affichage › Liste : la santé, quatre chiffres, puis par état ou par portée.
-  const display = async () => page.getByRole('button', { name: /^Affichage/ }).click()
-  await display()
-  await page.getByRole('dialog', { name: 'Affichage', exact: true }).getByRole('radio', { name: /^Liste/ }).click()
-  await page.keyboard.press('Escape')
-  await page.locator('[data-planned-health]').getByText('Réussite sur 30 j', { exact: true }).waitFor()
-  await page.locator('[data-health-section="healthy"]').getByText('Veille sans projet', { exact: true }).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-list-desktop.png') })
-  await display()
-  await page.getByRole('dialog', { name: 'Affichage', exact: true }).getByRole('radio', { name: 'Par portée', exact: true }).click()
-  await page.keyboard.press('Escape')
-  await page.locator('[data-health-section="none"]').waitFor()
-  // Affichage › Agenda : les passages à venir.
-  await display()
-  await page.getByRole('dialog', { name: 'Affichage', exact: true }).getByRole('radio', { name: /^Agenda/ }).click()
-  await page.keyboard.press('Escape')
-  await page.waitForURL(/vue=agenda/)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-agenda-desktop.png') })
-  await display()
-  await page.getByRole('dialog', { name: 'Affichage', exact: true }).getByRole('radio', { name: /^Lanceur/ }).click()
-  await page.keyboard.press('Escape')
-
-  // Au téléphone : rien ne déborde.
-  await page.setViewportSize({ width: 390, height: 844 })
-  await looseTile.waitFor()
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'planned-launcher-mobile.png') })
-  await page.setViewportSize({ width: 1440, height: 900 })
-
-  // Supprimée depuis sa tuile : la suite repart d'une page où seule la tâche semée reste.
-  await looseTile.getByRole('button', { name: 'Plus pour « Veille sans projet »', exact: true }).click()
-  await page.getByRole('menuitem', { name: 'Supprimer', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Supprimer « Veille sans projet » ?' }).getByRole('button', { name: 'Supprimer', exact: true }).click()
-  await looseTile.waitFor({ state: 'detached' })
-  assert.deepEqual(errors, [])
-  if (process.env.SCHEDULE_UI_ONLY === 'planned') {
-    console.log(`schedule-ui-check (Planifiées): ok (captures dans ${shots})`)
-    process.exit(0)
-  }
 
   // --- Création par l'éditeur unifié ---------------------------------------------
   // L'ancienne adresse des Planifiées du projet mène à son onglet Actions.

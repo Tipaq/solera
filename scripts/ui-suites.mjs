@@ -46,6 +46,7 @@ const BATCHES = [
     'api-mcp', // 15
     'card-draft', // 12
     'brief-field', // 12
+    'planned', // ~25, à mesurer
   ],
   [
     'git', // 70
