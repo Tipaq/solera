@@ -134,7 +134,7 @@ try {
   await dialog.getByRole('textbox', { name: 'Expression cron', exact: true }).fill('* * * * *')
   await dialog.getByRole('button', { name: /^Options/ }).click()
   await dialog.getByRole('spinbutton', { name: 'Durée maximale (min)', exact: true }).fill('3')
-  await dialog.locator('[data-editor-summary]').getByText(/^Agent · Claude · à la demande \+ /).waitFor()
+  await dialog.locator('[data-editor-summary]').getByText(/^Agent · Claude Code · à la demande \+ /).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'form-desktop.png') })
   await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).click()
   await dialog.waitFor({ state: 'hidden' })

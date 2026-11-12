@@ -330,11 +330,13 @@ export function ActionEditor({
                     ]}
                   />
                   {environments ? (
-                    <AutonomousConfinementSelect
-                      value={state.confined}
-                      inherited={environments.autonomousConfined}
-                      onChange={(confined) => set({ confined })}
-                    />
+                    <div className="mt-2">
+                      <AutonomousConfinementSelect
+                        value={state.confined}
+                        inherited={environments.autonomousConfined}
+                        onChange={(confined) => set({ confined })}
+                      />
+                    </div>
                   ) : null}
                 </FieldRow>
                 <AgentOptions
@@ -780,7 +782,6 @@ function PlacementField({
   return (
     <ChoiceCards<EditorPlacement>
       label={t('actionEditor.field.placement')}
-      size="sm"
       value={value}
       onChange={(next) => {
         onChange(next)
