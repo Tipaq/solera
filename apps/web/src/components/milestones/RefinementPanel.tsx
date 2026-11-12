@@ -1,14 +1,14 @@
 import { ArrowUpRight, Bot, CornerDownLeft, Loader, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { CardDraft, CardRefinementDetailDto, RefinementState } from '@solera/protocol'
+import type { CardDraft, CardDto, CardRefinementDetailDto, RefinementState } from '@solera/protocol'
 import { Button, cx } from '@solera/ui'
 import { useLiveStatus } from '../../lib/conversation-status'
 import { useAllConversations } from '../../lib/conversations'
 import { useTranslate } from '../../lib/i18n'
 import type { MilestoneEntry } from '../../lib/milestone-model'
 import { useAnswerRefinement, useCardRefinement, useValidateRefinementDraft } from '../../lib/milestones'
-import { collectAnswer, refineHref, refinePanelState } from '../../lib/refinement'
+import { activityTool, collectAnswer, draftUnderMilestone, refineHref, refinePanelState } from '../../lib/refinement'
 import { toolSummary } from '../../lib/tool-summary'
 import { DraftEditor } from './DraftEditor'
 
@@ -114,7 +114,7 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
           {state === 'waiting' && !questions && !draft ? (
             <li className="flex min-h-9 items-center gap-2 px-3 py-1.5 text-sm text-ink-soft">
               <Bot size={15} aria-hidden className="shrink-0 text-caution" />
-              {t('milestone.refine.waitingThere')}
+              {t(session?.change ? 'milestone.refine.changeWaiting' : 'milestone.refine.waitingThere')}
             </li>
           ) : null}
         </ul>
@@ -125,7 +125,7 @@ export function RefinementPanel({ projectId, entry }: { projectId: string; entry
           // Un brouillon redéposé remplace le précédent, corrections comprises.
           key={draft.requestId}
           projectId={projectId}
-          cardId={card.id}
+          milestone={card}
           proposal={draft}
           blocked={questions !== null}
           canDecide={canDecide}
@@ -156,20 +156,7 @@ function openQuestions(detail: CardRefinementDetailDto | undefined, entry: Miles
 function ActivityLine({ detail }: { detail: CardRefinementDetailDto | undefined }) {
   const t = useTranslate()
   const activity = detail?.activity ?? null
-  const summary = activity
-    ? toolSummary({
-        kind: 'tool',
-        id: activity.toolCallId,
-        ts: activity.startedAt,
-        name: activity.toolName,
-        input: activity.input,
-        output: null,
-        outputBytes: null,
-        status: 'running',
-        durationMs: null,
-        parentToolCallId: null,
-      })
-    : null
+  const summary = activity ? toolSummary(activityTool(activity)) : null
   const text = summary?.text ?? (activity ? t('activity.toolRunning', { name: activity.toolName }) : t('milestone.refine.working'))
   return (
     <li className="flex min-h-9 items-center gap-2 px-3 text-xs text-ink-faint italic">
@@ -275,22 +262,22 @@ function AnswerField({ label, initial, onSend }: { label: string; initial: strin
   )
 }
 
-/** Le brouillon de l'agent, corrigé ici puis validé : les cartes naissent enfants du jalon. */
+/** Le brouillon de l'agent, corrigé ici puis validé : ses cartes naissent enfants du jalon, quoi qu'il ait écrit. */
 function EditableDraft({
   projectId,
-  cardId,
+  milestone,
   proposal,
   blocked,
   canDecide,
 }: {
   projectId: string
-  cardId: string
+  milestone: Pick<CardDto, 'id' | 'number' | 'title'>
   proposal: NonNullable<CardRefinementDetailDto['draft']>
   blocked: boolean
   canDecide: boolean
 }) {
   const [draft, setDraft] = useState<CardDraft>(proposal.draft)
-  const validate = useValidateRefinementDraft(projectId, cardId)
+  const validate = useValidateRefinementDraft(projectId, milestone.id)
   return (
     <DraftEditor
       draft={draft}
@@ -299,7 +286,9 @@ function EditableDraft({
       busy={validate.isPending}
       error={validate.isError ? validate.error.message : null}
       readOnly={!canDecide}
-      onValidate={() => validate.mutate({ conversationId: proposal.conversationId, requestId: proposal.requestId, draft })}
+      onValidate={() =>
+        validate.mutate({ conversationId: proposal.conversationId, requestId: proposal.requestId, draft: draftUnderMilestone(draft, milestone) })
+      }
     />
   )
 }

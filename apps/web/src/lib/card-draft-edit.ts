@@ -57,14 +57,28 @@ export function moveDraftCard(draft: CardDraft, key: string, delta: -1 | 1): Car
   return { ...draft, cards }
 }
 
-/** Allume ou éteint « `key` après `afterKey` » ; seulement vers une carte du dessus. */
+/**
+ * Allume ou éteint « `key` après `afterKey` ». Un lien s'allume seulement vers une carte du
+ * dessus ; il s'éteint toujours, même celui que l'agent aurait posé vers le dessous.
+ */
 export function toggleDraftAfter(draft: CardDraft, key: string, afterKey: string): CardDraft {
   const index = draft.cards.findIndex((card) => card.key === key)
   const before = draft.cards.findIndex((card) => card.key === afterKey)
-  if (index < 0 || before < 0 || before >= index) return draft
-  const card = draft.cards[index]!
-  const after = card.after.includes(afterKey) ? card.after.filter((other) => other !== afterKey) : [...card.after, afterKey]
-  return withCard(draft, key, { after })
+  const card = draft.cards[index]
+  if (!card || before < 0) return draft
+  if (card.after.includes(afterKey)) return withCard(draft, key, { after: card.after.filter((other) => other !== afterKey) })
+  return before < index ? withCard(draft, key, { after: [...card.after, afterKey] }) : draft
+}
+
+/**
+ * Les cartes du dessous qu'une carte attend : `propose_cards` ne range pas ses cartes dans
+ * l'ordre de leurs liens. La page les montre allumées après les pastilles du dessus, pour
+ * qu'aucun lien ne parte sans s'être vu.
+ */
+export function draftLinksBelow(draft: CardDraft, key: string): string[] {
+  const index = draft.cards.findIndex((card) => card.key === key)
+  const below = new Set(draft.cards.slice(index + 1).map((card) => card.key))
+  return draft.cards[index]?.after.filter((other) => below.has(other)) ?? []
 }
 
 /** Une carte de plus peut-elle entrer dans le brouillon ? */

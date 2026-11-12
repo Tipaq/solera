@@ -6,6 +6,7 @@ import {
   addDraftCard,
   canAddDraftCard,
   draftLetter,
+  draftLinksBelow,
   moveDraftCard,
   removeDraftCard,
   renameDraftCard,
@@ -59,7 +60,8 @@ export function DraftEditor({
       <ol className="flex flex-col divide-y divide-line rounded-lg border border-line">
         {draft.cards.map((card, index) => {
           const letter = draftLetter(index)
-          const above = draft.cards.slice(0, index)
+          // Les cartes du dessus, puis celles du dessous que l'agent lui a fait attendre.
+          const linkable = [...draft.cards.slice(0, index), ...draftLinksBelow(draft, card.key).flatMap((key) => draft.cards.filter((other) => other.key === key))]
           const waitsOnNothing = card.after.length === 0 && card.blockedBy.length === 0
           return (
             <li key={card.key} className="flex flex-col gap-1.5 px-3 py-2">
@@ -116,8 +118,8 @@ export function DraftEditor({
               {/* Ce qu'elle attend : une pastille par carte du dessus, allumée si elle l'attend,
                   et les cartes existantes que l'agent a nommées. */}
               <div className="ml-8 flex flex-wrap items-center gap-1 text-xs text-ink-faint">
-                {index > 0 || card.blockedBy.length > 0 ? <span>{t('milestone.draft.after')}</span> : null}
-                {above.map((other) => {
+                {linkable.length > 0 || card.blockedBy.length > 0 ? <span>{t('milestone.draft.after')}</span> : null}
+                {linkable.map((other) => {
                   const on = card.after.includes(other.key)
                   return (
                     <button
@@ -192,8 +194,10 @@ export function DraftEditor({
               {t('milestone.draft.failed', { error })}
             </span>
           ) : null}
-          {problems.some((problem) => problem.code === 'cycle') ? (
-            <span className="text-xs text-critical">{t('cardDraft.problem.cycle')}</span>
+          {problems.length > 0 ? (
+            <span className="text-xs text-critical">
+              {t(problems.some((problem) => problem.code === 'cycle') ? 'cardDraft.problem.cycle' : 'milestone.draft.invalid')}
+            </span>
           ) : null}
           {blocked ? <span className="text-xs text-caution">{t('milestone.draft.answerFirst')}</span> : null}
           <Button size="sm" icon={<Check size={14} />} disabled={blocked || busy || problems.length > 0} onClick={onValidate}>

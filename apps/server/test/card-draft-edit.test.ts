@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { MAX_DRAFT_CARDS, cardDraftProblems, type CardDraft, type CardDraftCard } from '@solera/protocol'
 
-const { addDraftCard, draftLetter, moveDraftCard, removeDraftCard, renameDraftCard, toggleDraftAfter } = await import(
+const { addDraftCard, draftLetter, draftLinksBelow, moveDraftCard, removeDraftCard, renameDraftCard, toggleDraftAfter } = await import(
   '../../web/src/lib/card-draft-edit.js'
 )
 
@@ -112,6 +112,14 @@ test('une carte ne peut attendre ni elle-même, ni une carte du dessous', () => 
   assert.equal(toggleDraftAfter(before, 'b', 'b'), before)
   assert.equal(toggleDraftAfter(before, 'a', 'c'), before)
   assert.equal(toggleDraftAfter(before, 'b', 'inconnue'), before)
+})
+
+test('un lien de l’agent vers une carte du dessous se lit, et s’éteint', () => {
+  // `propose_cards` ne range pas ses cartes dans l'ordre de leurs liens : A peut attendre C.
+  const agent: CardDraft = { parent: null, cards: [card('a', 'A', ['c']), card('b', 'B'), card('c', 'C')] }
+  assert.deepEqual(draftLinksBelow(agent, 'a'), ['c'])
+  assert.deepEqual(draftLinksBelow(agent, 'b'), [])
+  assert.deepEqual(afterOf(toggleDraftAfter(agent, 'a', 'c'), 'a'), [])
 })
 
 /* ------------------------------------------------------------------ ajouter */

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { CardRefinementDto } from '@solera/protocol'
 
-const { collectAnswer, refineHref, refinePanelState } = await import('../../web/src/lib/refinement.js')
+const { activityTool, collectAnswer, draftUnderMilestone, refineHref, refinePanelState } = await import('../../web/src/lib/refinement.js')
 
 /**
  * Le résumé d'affinage sur la page d'un jalon (#195, spec jalons AFF-1..6) : où mène son
@@ -82,4 +82,20 @@ test('une réponse à une question qui n’est plus ouverte est écartée', () =
   // La demande a changé entre-temps : ce qu'on gardait pour l'ancienne ne part pas.
   const stale = { ancienne: ['Oui'] }
   assert.deepEqual(collectAnswer(stale, [{ id: 'cible' }], 'cible', 'La page'), { answers: { cible: ['La page'] }, complete: true })
+})
+
+/* ------------------------------------------------------------------ le brouillon, l'activité */
+
+test('le brouillon validé sur la page d’un jalon range ses cartes sous ce jalon', () => {
+  const draft = { parent: null, cards: [{ key: 'a', title: 'A', description: '', subtasks: [], after: [], blockedBy: [], related: [] }] }
+  assert.deepEqual(draftUnderMilestone(draft, idea).parent, { kind: 'existing', card: { cardId: 'card-320', number: 320, title: 'Mode hors ligne' } })
+  assert.deepEqual(draftUnderMilestone(draft, idea).cards, draft.cards)
+})
+
+test('l’outil en cours se lit comme un appel du fil', () => {
+  const tool = activityTool({ toolCallId: 't1', toolName: 'Read', startedAt: 5, nested: false, input: { file_path: 'a.md' } })
+  assert.equal(tool.kind, 'tool')
+  assert.equal(tool.name, 'Read')
+  assert.equal(tool.status, 'running')
+  assert.deepEqual(tool.input, { file_path: 'a.md' })
 })

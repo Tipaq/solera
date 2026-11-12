@@ -11,7 +11,6 @@ import type {
 } from '@solera/protocol'
 import { horizonOf } from '../../lib/milestone-model'
 import { fixtureCard, PROJECT_ID } from '../board/card-fixtures'
-import { DraftEditor } from './DraftEditor'
 import { RefinementPanel } from './RefinementPanel'
 
 const NOW = Date.now()
@@ -144,13 +143,4 @@ export const AuRepos: Story = {
     const refinement = session()
     return <Seeded detail={detailOf({ session: refinement })}><RefinementPanel {...args} entry={entryOf(refinement)} /></Seeded>
   },
-}
-
-/** Le brouillon seul, comme la page le monte : en lecture pour qui ne possède pas la session. */
-export const BrouillonEnLecture: Story = {
-  render: () => (
-    <div className="w-[min(46rem,100%)]">
-      <DraftEditor draft={DRAFT} onChange={() => undefined} blocked={false} onValidate={() => undefined} busy={false} error={null} readOnly />
-    </div>
-  ),
 }

@@ -1,8 +1,11 @@
+import type { ToolItem } from '@solera/protocol/chat-state'
 import {
   refinementState,
+  type CardDraft,
   type CardDto,
   type CardRefinementDto,
   type ConversationStatus,
+  type RefinementActivityDto,
   type RefinementState,
   type SplitMode,
 } from '@solera/protocol'
@@ -94,4 +97,28 @@ export function collectAnswer(
     if (kept?.length) next[question.id] = kept
   }
   return { answers: next, complete: questions.every((question) => (next[question.id]?.length ?? 0) > 0) }
+}
+
+/**
+ * Le brouillon tel qu'il part de la page d'un jalon : ses cartes naissent enfants de ce
+ * jalon (AFF-6), quelle que soit la parente que l'agent a écrite.
+ */
+export function draftUnderMilestone(draft: CardDraft, milestone: Pick<CardDto, 'id' | 'number' | 'title'>): CardDraft {
+  return { ...draft, parent: { kind: 'existing', card: { cardId: milestone.id, number: milestone.number, title: milestone.title } } }
+}
+
+/** L'outil en cours de la session d'affinage, sous la forme d'un appel du fil : `toolSummary` le résume. */
+export function activityTool(activity: RefinementActivityDto): ToolItem {
+  return {
+    kind: 'tool',
+    id: activity.toolCallId,
+    ts: activity.startedAt,
+    name: activity.toolName,
+    input: activity.input,
+    output: null,
+    outputBytes: null,
+    status: 'running',
+    durationMs: null,
+    parentToolCallId: null,
+  }
 }
