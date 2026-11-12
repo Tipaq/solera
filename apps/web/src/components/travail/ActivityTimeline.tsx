@@ -26,13 +26,26 @@ const EVENT_DOT: Record<JournalKind, string> = {
   audit: 'bg-ink-faint',
 }
 
-const BAR_TONE: Record<BarTone, string> = {
-  running: 'bg-accent/25 text-accent',
-  awaiting: 'bg-caution/25 text-caution',
-  done: 'bg-surface-high text-ink-faint',
+/** Le fond d'une barre, que la légende reprend, et l'encre de son icône. */
+const BAR_FILL: Record<BarTone, string> = {
+  running: 'bg-accent/25',
+  awaiting: 'bg-caution/25',
+  done: 'bg-surface-high',
 }
+const BAR_INK: Record<BarTone, string> = {
+  running: 'text-accent',
+  awaiting: 'text-caution',
+  done: 'text-ink-faint',
+}
+const COMMIT_MARK = 'size-2 rotate-45 bg-ink-soft'
 
-/** L'étiquette d'une rangée : `w-48`, `w-56` à partir de `md` ; au téléphone, l'axe a besoin de la place. */
+/**
+ * Les deux lignes de barres dans une rangée de 40 px (`h-10`) : des barres de 16 px
+ * (`h-4`), la première à 4 px du haut, la seconde 2 px sous elle.
+ */
+const BAR_TOP = [4, 22] as const
+
+/** L'étiquette d'une rangée : `w-48`, `w-56` à partir de `md` ; `w-32` au téléphone, où l'axe a besoin de la place. */
 const LABEL = 'w-32 shrink-0 sm:w-48 md:w-56'
 const pct = (fraction: number) => `${fraction * 100}%`
 /** La largeur d'une barre courte : son icône d'agent. */
@@ -108,13 +121,14 @@ export function ActivityTimeline({
                     title={t('travail.timeline.bar', { title: bar.title, state: t(`travail.timeline.tone.${bar.tone}`) })}
                     className={cx(
                       'absolute flex h-4 items-center overflow-hidden rounded px-1 hover:ring-1 hover:ring-accent focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
-                      BAR_TONE[bar.tone],
+                      BAR_FILL[bar.tone],
+                      BAR_INK[bar.tone],
                     )}
                     // Une barre a toujours la place de son icône, sans passer « maintenant ».
                     style={{
                       left: `min(${x(bar.start)}, calc(100% - ${BAR_MIN}))`,
                       width: `max(${BAR_MIN}, calc(${x(bar.end)} - ${x(bar.start)}))`,
-                      top: 4 + bar.lane * 18,
+                      top: BAR_TOP[bar.lane],
                     }}
                   >
                     <AgentIcon agent={bar.agent} size={10} decorative />
@@ -153,7 +167,7 @@ export function ActivityTimeline({
                   <span
                     key={commit.hash}
                     title={t('travail.timeline.event', { title: commit.title, age: elapsed(commit.at) })}
-                    className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 bg-ink-soft"
+                    className={cx('absolute top-1/2 -translate-x-1/2 -translate-y-1/2', COMMIT_MARK)}
                     style={{ left: x(commit.at) }}
                   />
                 ))}
@@ -169,12 +183,14 @@ export function ActivityTimeline({
       </ol>
 
       <p className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-3 text-micro text-ink-faint">
-        <Legend swatch="h-2 w-4 rounded bg-accent/25">{t('travail.timeline.legend.running')}</Legend>
-        <Legend swatch="h-2 w-4 rounded bg-caution/25">{t('travail.timeline.legend.awaiting')}</Legend>
-        <Legend swatch="h-2 w-4 rounded bg-surface-high">{t('travail.timeline.legend.done')}</Legend>
-        <Legend swatch="size-2 rounded-full bg-positive">{t('travail.timeline.legend.cardClosed')}</Legend>
-        <Legend swatch="size-2 rounded-full bg-ink-soft">{t('travail.timeline.legend.branch')}</Legend>
-        <Legend swatch="size-2 rotate-45 bg-ink-soft">{t('travail.timeline.legend.commit')}</Legend>
+        {(['running', 'awaiting', 'done'] as const).map((tone) => (
+          <Legend key={tone} swatch={cx('h-2 w-4 rounded', BAR_FILL[tone])}>
+            {t(`travail.timeline.legend.${tone}`)}
+          </Legend>
+        ))}
+        <Legend swatch={cx('size-2 rounded-full', EVENT_DOT.cardClosed)}>{t('travail.timeline.legend.cardClosed')}</Legend>
+        <Legend swatch={cx('size-2 rounded-full', EVENT_DOT.branch)}>{t('travail.timeline.legend.branch')}</Legend>
+        <Legend swatch={COMMIT_MARK}>{t('travail.timeline.legend.commit')}</Legend>
       </p>
     </div>
   )
