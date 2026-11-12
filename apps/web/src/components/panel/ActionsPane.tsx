@@ -1,9 +1,14 @@
 import { memo, useRef, useState } from 'react'
+import type { ProjectActionDto } from '@solera/protocol'
 import { Loader, Plus, Zap } from 'lucide-react'
 import { useActions } from '../../lib/actions'
+import { newActionPanel, type ActionPanel } from '../../lib/action-panel'
+import { actionAutomationId, fromAction } from '../../lib/automations'
+import { useAutomations } from '../../lib/automations-query'
 import { useEscapeLayer } from '../../lib/escape-layers'
 import { useTranslate } from '../../lib/i18n'
-import { ActionList, useActionDialogs } from '../actions/ActionList'
+import { ActionList, useActionDialogs, type ActionHandlers } from '../actions/ActionList'
+import { ActionDrawer, panelShows } from '../automations/ActionDrawer'
 import { Banner, Button, EmptyState, PanelNotice } from '@solera/ui'
 import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRuns'
 
@@ -12,13 +17,26 @@ import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRun
  * liste complète, et l'endroit où l'on en crée. Le lanceur de l'en-tête montre la même
  * liste sans quitter ce qu'on regarde.
  *
- * Le détail d'une commande s'ouvre **en pile**, à la place de la liste ; Échap y remonte.
+ * Le détail d'une commande lancée, celui d'une action, son édition et sa relecture
+ * s'ouvrent **en pile**, à la place de la liste (`ActionDrawer`) ; Échap y remonte.
  */
 export const ActionsPane = memo(function ActionsPane({ projectId, conversationId }: { projectId: string; conversationId?: string }) {
   const t = useTranslate()
   const { data, error, isPending } = useActions()
-  const { handlers, create, dialogs, failure } = useActionDialogs(projectId, conversationId)
+  const dialogs = useActionDialogs(projectId, conversationId)
+  const { dialogs: hosted, failure } = dialogs
   const actions = (data ?? []).filter((action) => action.projectId === projectId)
+  const { items } = useAutomations({ projectId })
+  const [panel, setPanel] = useState<ActionPanel | null>(null)
+  const detail = (action: ProjectActionDto, review = false): ActionPanel => ({ mode: 'detail', id: actionAutomationId(action.id), ...(review ? { review } : {}) })
+  const handlers: ActionHandlers = {
+    ...dialogs.handlers,
+    onOpen: (action) => setPanel(detail(action)),
+    onReview: (action) => setPanel(detail(action, true)),
+    onEdit: (action) =>
+      setPanel({ mode: 'edit', seed: { from: items.find((item) => item.id === actionAutomationId(action.id)) ?? fromAction(action) }, back: null }),
+  }
+  const create = () => setPanel(newActionPanel('any'))
   const runs = useCommandRuns(projectId, conversationId)
   const [openRun, setOpenRun] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
@@ -26,6 +44,22 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
   // Un terminal fermé ailleurs ramène à la liste.
   const shown = runs.find((run) => run.terminalId === openRun) ?? null
   useEscapeLayer(shown !== null, () => setOpenRun(null), pane)
+
+  if (panelShows(panel, items)) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ActionDrawer
+          projectId={projectId}
+          items={items}
+          panel={panel}
+          onPanel={setPanel}
+          onClose={() => setPanel(null)}
+          conversationId={conversationId}
+        />
+        {hosted}
+      </div>
+    )
+  }
 
   if (shown) {
     return (
@@ -98,7 +132,7 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
         </footer>
       ) : null}
 
-      {dialogs}
+      {hosted}
     </div>
   )
 })

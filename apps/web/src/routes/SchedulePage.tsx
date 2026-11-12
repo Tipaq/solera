@@ -5,12 +5,14 @@ import { conversationPath } from '../lib/conversation-route'
 import type { ScheduledRunDto, ScheduledTaskDto } from '@solera/protocol'
 import { AgentIcon } from '../components/AgentIcon'
 import { CheckApprovalDialog } from '../components/schedule/CheckSection'
-import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer'
+import { ActionDrawer } from '../components/automations/ActionDrawer'
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
-import { NEW_AGENT_TASK, type EditorSeed } from '../lib/action-editor'
+import { NEW_AGENT_TASK } from '../lib/action-editor'
+import type { ActionPanel } from '../lib/action-panel'
 import { fromTask } from '../lib/automations'
+import { useAutomations } from '../lib/automations-query'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
 import { NEW_PARAM } from '../lib/place'
@@ -57,12 +59,13 @@ export function SchedulePage() {
   )
 
   /**
-   * `null` : fermé ; `'new'` : création ; sinon la tâche en cours de modification.
+   * Le tiroir d'une tâche : son détail, son édition, ou la création.
    *
    * La création est en plus commandée par l'adresse (`?nouvelle=1`), pour qu'un lien
    * d'ailleurs puisse l'ouvrir.
    */
-  const [editing, setEditing] = useState<ScheduledTaskDto | 'new' | null>(null)
+  const { items } = useAutomations({ projectId: projectId ?? '' })
+  const [opened, setPanel] = useState<ActionPanel | null>(null)
   const [params, setParams] = useSearchParams()
   const creating = params.get(NEW_PARAM) === '1'
   const closeCreating = () => {
@@ -71,11 +74,8 @@ export function SchedulePage() {
       return current
     }, { replace: true })
   }
-  const open = creating ? 'new' : editing
-  const seed = useMemo<EditorSeed | null>(
-    () => (open === null ? null : open === 'new' ? NEW_AGENT_TASK : { from: fromTask(open) }),
-    [open],
-  )
+  const newTask: ActionPanel = { mode: 'edit', seed: NEW_AGENT_TASK, back: null }
+  const panel = creating ? newTask : opened
 
   return (
     /* Plus de bande propre : le nom du projet est dans la bande de la coque. *+ Tâche*
@@ -85,7 +85,7 @@ export function SchedulePage() {
       <div className="flex flex-col gap-4">
         <div className="flex items-start gap-3">
           <p className="max-w-prose flex-1 text-sm text-ink-soft">{t('schedule.description')}</p>
-          <Button size="sm" icon={<Plus size={15} />} onClick={() => setEditing('new')}>
+          <Button size="sm" icon={<Plus size={15} />} onClick={() => setPanel(newTask)}>
             {t('project.action.newTask')}
           </Button>
         </div>
@@ -101,18 +101,28 @@ export function SchedulePage() {
         ) : (
           <ul className="flex flex-col gap-3">
             {tasks.map((task) => (
-              <TaskCard key={task.id} task={task} onEdit={() => setEditing(task)} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onOpen={() => setPanel({ mode: 'detail', id: fromTask(task).id })}
+                onEdit={() => setPanel({ mode: 'edit', seed: { from: fromTask(task) }, back: null })}
+              />
             ))}
           </ul>
         )}
       </div>
 
       {project ? (
-        <ActionEditorDrawer
+        <ActionDrawer
           projectId={project.id}
-          seed={seed}
+          items={items}
+          panel={panel}
+          onPanel={(next) => {
+            if (creating) closeCreating()
+            setPanel(next)
+          }}
           onClose={() => {
-            setEditing(null)
+            setPanel(null)
             if (creating) closeCreating()
           }}
         />
@@ -121,7 +131,7 @@ export function SchedulePage() {
   )
 }
 
-function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void }) {
+function TaskCard({ task, onOpen, onEdit }: { task: ScheduledTaskDto; onOpen: () => void; onEdit: () => void }) {
   const t = useTranslate()
   const update = useUpdateSchedule()
   const run = useRunSchedule()
@@ -137,7 +147,11 @@ function TaskCard({ task, onEdit }: { task: ScheduledTaskDto; onEdit: () => void
     <li className="flex min-w-0" data-schedule={task.name}><Card className="flex min-w-0 flex-1 flex-col"><CardBody className="flex min-w-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <AgentIcon agent={task.agent} size={16} />
-        <h2 className="min-w-0 flex-1 font-medium break-words">{task.name}</h2>
+        <h2 className="min-w-0 flex-1 font-medium break-words">
+          <button type="button" onClick={onOpen} className="text-left hover:underline focus-visible:outline-2 focus-visible:outline-accent">
+            {task.name}
+          </button>
+        </h2>
         <Badge tone={STATE_TONES[state]}>{t(SCHEDULE_STATE_LABELS[state])}</Badge>
       </div>
 

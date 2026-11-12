@@ -47,6 +47,8 @@ const NEW_ACTION: EditorSeed = { preset: { what: 'command' } }
  * Partagée par l'onglet du panneau et le lanceur de l'en-tête.
  */
 export interface ActionHandlers {
+  /** Le détail de l'action ; sans, son nom n'est pas un geste. */
+  onOpen?: (action: ProjectActionDto) => void
   onReview: (action: ProjectActionDto) => void
   onEdit: (action: ProjectActionDto) => void
   onDelete: (action: ProjectActionDto) => void
@@ -106,6 +108,7 @@ export function ActionList({
             served={served.byAutomation.get(actionAutomationId(action.id)) ?? null}
             targets={served.trees}
             onSwitch={handlers.onSwitch}
+            onOpen={handlers.onOpen ? () => handlers.onOpen!(action) : undefined}
             onPrimary={() => primary(action)}
             onRun={(op) => run.mutate({ action, op, conversationId })}
             onEdit={() => handlers.onEdit(action)}
@@ -221,6 +224,7 @@ function ActionRow({
   served,
   targets,
   onSwitch,
+  onOpen,
   onPrimary,
   onRun,
   onEdit,
@@ -234,6 +238,7 @@ function ActionRow({
   /** Les arbres du projet, d'où tirer ceux où le basculer. */
   targets: ServedData['trees']
   onSwitch: (request: SwitchRequest) => void
+  onOpen?: () => void
   onPrimary: () => void
   onRun: (op: RunOp) => void
   onEdit: () => void
@@ -259,7 +264,13 @@ function ActionRow({
 
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{action.label}</span>
+              {onOpen ? (
+                <button type="button" onClick={onOpen} className="text-left font-medium hover:underline focus-visible:outline-2 focus-visible:outline-accent">
+                  {action.label}
+                </button>
+              ) : (
+                <span className="font-medium">{action.label}</span>
+              )}
               {action.status === 'proposed' ? <Badge tone="caution">{t('actions.badge.proposed')}</Badge> : null}
               {isService && view.live ? <Badge tone="positive">{t('actions.badge.running')}</Badge> : null}
               {view.failed ? <Badge tone="critical">{t('actions.badge.failed')}</Badge> : null}

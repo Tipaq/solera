@@ -120,7 +120,7 @@ try {
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByText('Aucune tâche planifiée dans ce projet').waitFor()
   await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
   // « + Tâche » arrive sur un agent, « Planifiée » cochée.
   assert.equal(await dialog.getByRole('radio', { name: /^Un agent/ }).getAttribute('aria-checked'), 'true')
   assert.equal(await dialog.getByRole('checkbox', { name: /^Planifiée/ }).getAttribute('aria-checked'), 'true')
@@ -150,6 +150,16 @@ try {
   assert.equal(created.maxDurationMinutes, 3)
   assert.equal(created.onDemand, true)
   assert.equal(created.worktreeMode, 'root')
+
+  // Son nom ouvre son détail dans le tiroir commun : ce que l'agent reçoit, quand il passe.
+  await card.getByRole('button', { name: 'Veille de test', exact: true }).click()
+  const detail = page.getByRole('dialog', { name: 'Veille de test', exact: true })
+  await detail.getByText('Claude Code reçoit ce prompt, dans une session neuve :').waitFor()
+  await detail.getByText('Prochain passage :', { exact: false }).waitFor()
+  await detail.getByRole('button', { name: 'Mettre en pause', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'detail-desktop.png') })
+  await detail.getByRole('button', { name: 'Fermer', exact: true }).click()
+  await detail.waitFor({ state: 'hidden' })
 
   // --- Le tir part tout seul, à l'heure ------------------------------------------
   const fired = await until('le tir planifié part', (task) => task.runs.some((entry) => entry.conversationId), 100_000)
@@ -227,7 +237,7 @@ try {
   await page.goto(`${base}/p/${project.id}/schedules`)
 
   await card.getByRole('button', { name: 'Modifier', exact: true }).click()
-  const editor = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  const editor = page.getByRole('dialog', { name: 'Modifier « Veille de test »', exact: true })
   assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Veille de test')
   // La nature d'une action existante est figée : seule sa carte reste.
   assert.equal(await editor.getByRole('radio', { name: /^Une commande/ }).count(), 0)

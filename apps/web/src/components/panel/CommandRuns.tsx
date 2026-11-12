@@ -204,12 +204,15 @@ export function CommandRunDetail({
   conversationId,
   run,
   onBack,
+  backLabel,
   onRelaunched,
 }: {
   projectId: string
   conversationId?: string
   run: CommandRun
   onBack?: () => void
+  /** Où `‹` ramène : l'onglet Actions par défaut, le détail de l'action quand on en vient. */
+  backLabel?: string
   onRelaunched: (terminalId: string) => void
 }) {
   const t = useTranslate()
@@ -260,7 +263,7 @@ export function CommandRunDetail({
     <div data-command-run className="flex min-h-0 min-w-0 flex-1 flex-col">
       {onBack ? (
         <StackHeader
-          back={t('panel.tab.actions')}
+          back={backLabel ?? t('panel.tab.actions')}
           onBack={onBack}
           title={
             <span className="flex min-w-0 items-center gap-2">
