@@ -17,7 +17,7 @@ const ALL_COLUMNS: readonly CardColumn[] = [...OPEN_COLUMNS, 'done', 'abandoned'
 export const TINT_COUNT = 6
 
 /** Les fermées montrées dans Fait en « Les 5 récentes ». */
-const DONE_SHOWN = 5
+export const DONE_SHOWN = 5
 /** Les fermées montrées dans la cellule Fait d'un couloir, avant « N de plus ». */
 export const LANE_DONE_SHOWN = 2
 

@@ -13,6 +13,7 @@ const {
   portfolioMatches,
   portfolioPasses,
   projectCounts,
+  readLanes,
 } = await import('../../web/src/lib/portfolio-board.js')
 const { TINT_COUNT } = await import('../../web/src/lib/board-model.js')
 const { portfolioSheet, withPortfolioSheet } = await import('../../web/src/lib/card-sheet.js')
@@ -221,6 +222,23 @@ test('par jalon, sans carte libre : pas de couloir « Sans jalon »', () => {
   adopt(milestone, kid)
   const { entries, milestones } = model([milestone, kid])
   assert.deepEqual(lanesOf(entries, { mode: 'milestone', projects, milestones }).map((lane) => lane.key), ['alpha-1'])
+})
+
+test('une recherche qui ne trouve que du fait garde son couloir : on voit ce qu’on cherchait', () => {
+  const { entries, milestones } = model([card(alpha, 1, { column: 'done' }), card(beta, 1)])
+  const done = entries.filter((entry) => entry.project.id === 'alpha')
+  assert.deepEqual(lanesOf(done, { mode: 'project', projects, milestones }), [], 'au repos, un projet fini se tait')
+  assert.deepEqual(
+    lanesOf(done, { mode: 'project', projects, milestones, narrowed: true }).map((lane) => lane.key),
+    ['alpha'],
+  )
+  assert.deepEqual(lanesOf([], { mode: 'project', projects, milestones, narrowed: true }), [], 'un couloir vide ne se montre jamais')
+})
+
+test('les couloirs retenus : une valeur qui n’a plus cours reprend « Par projet »', () => {
+  assert.equal(readLanes(JSON.stringify('milestone')), 'milestone')
+  assert.equal(readLanes(JSON.stringify('none')), 'none')
+  for (const raw of [null, '', '{', JSON.stringify('lanes'), JSON.stringify(3)]) assert.equal(readLanes(raw), 'project', String(raw))
 })
 
 /* ------------------------------------------------------------------ Fait, Liste */

@@ -2,6 +2,7 @@ import type { CardDto, ProjectDto } from '@solera/protocol'
 import {
   DEFAULT_DISPLAY,
   DEFAULT_LIST_SORT,
+  DONE_SHOWN,
   TINT_COUNT,
   boardModel,
   columnSlice,
@@ -103,6 +104,16 @@ export function portfolioActive(filters: PortfolioFilters): number {
 export const LANE_MODES = ['none', 'project', 'milestone'] as const
 export type LaneMode = (typeof LANE_MODES)[number]
 
+/** Les couloirs retenus ; une valeur qui n'a plus cours reprend « Par projet », le défaut. */
+export function readLanes(raw: string | null): LaneMode {
+  try {
+    const value: unknown = JSON.parse(raw ?? 'null')
+    return LANE_MODES.includes(value as LaneMode) ? (value as LaneMode) : 'project'
+  } catch {
+    return 'project'
+  }
+}
+
 export interface PortfolioLane {
   key: string
   /** Le projet du couloir : le sien en couloirs par projet, celui du jalon par jalon. */
@@ -113,12 +124,18 @@ export interface PortfolioLane {
 
 /**
  * Les couloirs (PF-24) : aucun, un par projet ou un par jalon puis « Sans jalon » à la
- * fin. Un couloir ne se montre que s'il a du travail ouvert : un projet qui n'a plus
- * que du fait n'occupe pas une bande pour ça.
+ * fin. Au repos, un couloir ne se montre que s'il a du travail ouvert : un projet qui
+ * n'a plus que du fait n'occupe pas une bande pour ça. Une recherche ou un filtre posé
+ * (`narrowed`) montre tout ce qu'il trouve, fait compris.
  */
 export function lanesOf(
   entries: readonly PortfolioEntry[],
-  { mode, projects, milestones }: { mode: LaneMode; projects: readonly ProjectDto[]; milestones: readonly PortfolioMilestone[] },
+  {
+    mode,
+    projects,
+    milestones,
+    narrowed = false,
+  }: { mode: LaneMode; projects: readonly ProjectDto[]; milestones: readonly PortfolioMilestone[]; narrowed?: boolean },
 ): PortfolioLane[] {
   if (mode === 'none') return [{ key: 'all', project: null, milestone: null, entries: [...entries] }]
   const lanes: PortfolioLane[] =
@@ -138,13 +155,10 @@ export function lanesOf(
           })),
           { key: 'none', project: null, milestone: null, entries: entries.filter((entry) => entry.milestone === null) },
         ]
-  return lanes.filter((lane) => lane.entries.some((entry) => isOpen(entry.card)))
+  return lanes.filter((lane) => (narrowed ? lane.entries.length > 0 : lane.entries.some((entry) => isOpen(entry.card))))
 }
 
 /* ------------------------------------------------------------------ Fait, Liste */
-
-/** Les faites montrées d'un couloir avant « Tout voir (N) ». */
-const DONE_SHOWN = 5
 
 /** Les faites d'un couloir, les plus récentes d'abord : cinq, ou toutes une fois dépliées. */
 export function doneCut(entries: readonly PortfolioEntry[], all: boolean): { shown: PortfolioEntry[]; total: number } {
@@ -152,8 +166,8 @@ export function doneCut(entries: readonly PortfolioEntry[], all: boolean): { sho
 }
 
 /** Une colonne ouverte du Kanban, triée comme au Tableau d'un projet : ce qui t'attend d'abord. */
-export function openColumn(entries: readonly PortfolioEntry[], column: CardDto['column']): PortfolioEntry[] {
-  return columnSlice(entries, column, DEFAULT_DISPLAY).shown
+export function openColumn(entries: readonly PortfolioEntry[], column: CardDto['column']): { shown: PortfolioEntry[]; total: number } {
+  return columnSlice(entries, column, DEFAULT_DISPLAY)
 }
 
 /** Les lignes de la Liste (PF-25) : sans les faites, dans l'ordre « État » de la Liste d'un projet. */

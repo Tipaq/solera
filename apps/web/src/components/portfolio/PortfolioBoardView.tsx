@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { CardColumn } from '@solera/protocol'
 import { Button, cx } from '@solera/ui'
 import { doneCut, listRows, openColumn, type LaneMode, type PortfolioEntry, type PortfolioLane } from '../../lib/portfolio-board'
+import { isOpen } from '../../lib/card-state'
 import { useTranslate } from '../../lib/i18n'
 import { StillTile } from '../board/BoardTile'
 import { columnLabel } from '../board/columns'
@@ -46,7 +47,7 @@ export function PortfolioBoardView({
               onOpen={onOpen}
             />
           ) : (
-            <LaneList lane={lane} onOpen={onOpen} />
+            <LaneList lane={lane} mode={mode} onOpen={onOpen} />
           )}
         </section>
       ))}
@@ -64,7 +65,7 @@ function LaneHeader({ lane, mode }: { lane: PortfolioLane; mode: LaneMode }) {
   const t = useTranslate()
   if (mode === 'none') return null
   if (mode === 'project' && lane.project) {
-    return <ProjectGroupHeader project={lane.project} count={lane.entries.filter((entry) => entry.card.column !== 'done').length} />
+    return <ProjectGroupHeader project={lane.project} count={lane.entries.filter((entry) => isOpen(entry.card)).length} />
   }
   const { milestone } = lane
   if (!milestone) return <h2 className="py-1 text-sm font-medium text-ink-soft">{t('board.lane.none')}</h2>
@@ -101,8 +102,7 @@ function LaneKanban({
     <div className="overflow-x-auto">
       <div className="grid w-max grid-cols-[repeat(3,16rem)_14rem] gap-3 md:w-auto md:grid-cols-[repeat(3,minmax(14rem,1fr))_minmax(12rem,0.8fr)]">
         {COLUMNS.map((column) => {
-          const total = lane.entries.filter((entry) => entry.card.column === column).length
-          const shown = column === 'done' ? doneCut(lane.entries, allDone).shown : openColumn(lane.entries, column)
+          const { shown, total } = column === 'done' ? doneCut(lane.entries, allDone) : openColumn(lane.entries, column)
           return (
             <div key={column} data-column={column} className="flex min-w-0 flex-col gap-2 rounded-xl bg-surface/40 p-2">
               <div className="flex items-center gap-2 px-1 text-xs font-medium text-ink-soft">
@@ -129,7 +129,7 @@ function LaneKanban({
 }
 
 /** La Liste d'un couloir, sans les faites : état, projet, carte, jalon. */
-function LaneList({ lane, onOpen }: { lane: PortfolioLane; onOpen: (entry: PortfolioEntry) => void }) {
+function LaneList({ lane, mode, onOpen }: { lane: PortfolioLane; mode: LaneMode; onOpen: (entry: PortfolioEntry) => void }) {
   const t = useTranslate()
   const rows = listRows(lane.entries)
   if (rows.length === 0) return null
@@ -146,12 +146,16 @@ function LaneList({ lane, onOpen }: { lane: PortfolioLane; onOpen: (entry: Portf
             <span className={cx('truncate text-xs', entry.waiting ? 'font-medium text-caution' : 'text-ink-faint')}>
               {entry.waiting ? t('board.tile.waiting') : columnLabel(entry.card.column)}
             </span>
-            {/* Au téléphone, le couloir dit déjà le projet ; la ligne garde sa place au titre. */}
             <span className="hidden min-w-0 sm:block">
               <ProjectPip project={entry.project} plain />
             </span>
-            <span className="min-w-0 truncate text-sm">
-              <span className="text-xs tabular-nums text-ink-faint">#{entry.card.number}</span> {entry.card.title}
+            {/* Au téléphone, la pastille passe sous le titre, qui garde la ligne ; en couloirs
+                par projet, l'en-tête la dit déjà. */}
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="truncate text-sm">
+                <span className="text-xs tabular-nums text-ink-faint">#{entry.card.number}</span> {entry.card.title}
+              </span>
+              {mode !== 'project' ? <ProjectPip project={entry.project} plain className="sm:hidden" /> : null}
             </span>
             <span className="hidden truncate text-xs text-ink-faint sm:block" title={entry.milestone?.card.title}>
               {entry.milestone ? t('portfolio.board.milestone', { number: entry.milestone.card.number }) : '—'}

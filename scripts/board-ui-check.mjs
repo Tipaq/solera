@@ -618,6 +618,10 @@ async function portfolioBoard(page, context, base, everyProject, shots) {
   const search = page.getByRole('searchbox')
   await search.fill(second.name)
   await page.waitForFunction((id) => [...document.querySelectorAll('[data-lane]')].every((node) => node.getAttribute('data-lane') === id), second.id)
+  // Une carte faite qu'on cherche se trouve, même dans un couloir qui n'a plus rien d'ouvert.
+  const finished = leaves.find((entry) => entry.column === 'done')
+  await search.fill(finished.title)
+  await board.locator(`[data-lane="${finished.owner.id}"] [data-column="done"] [data-card-tile="${finished.number}"]`).waitFor()
   await search.fill('')
 
   // Couloirs : sans couloir, chaque tuile porte la pastille de son projet ; par jalon, « Sans jalon » ferme la marche.

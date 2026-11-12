@@ -12,16 +12,16 @@ import { useTranslate } from '../lib/i18n'
 import { useLiveCardStatuses } from '../lib/milestones'
 import { NEW_PARAM } from '../lib/place'
 import {
-  LANE_MODES,
   NO_PORTFOLIO_FILTERS,
   lanesOf,
+  listRows,
   portfolioActive,
   portfolioBoardModel,
   portfolioHref,
   portfolioMatches,
   portfolioPasses,
   projectCounts,
-  type LaneMode,
+  readLanes,
   type PortfolioFilters,
 } from '../lib/portfolio-board'
 import { useProjects } from '../lib/projects'
@@ -29,16 +29,6 @@ import { useStoredPref, useView } from '../lib/use-view'
 import { viewStorageKey } from '../lib/view-pref'
 
 const VIEW_KEYS: readonly PortfolioView[] = ['kanban', 'liste']
-
-/** Les couloirs retenus ; une valeur qui n'a plus cours reprend « Par projet ». */
-const readLanes = (raw: string | null): LaneMode => {
-  try {
-    const value: unknown = JSON.parse(raw ?? 'null')
-    return LANE_MODES.includes(value as LaneMode) ? (value as LaneMode) : 'project'
-  } catch {
-    return 'project'
-  }
-}
 
 /**
  * Le Tableau du portefeuille (#239, `coque.md` PF-22 à PF-27) : les feuilles de tous les
@@ -70,7 +60,8 @@ export function PortfolioTableauPage() {
     () => entries.filter((entry) => portfolioMatches(entry, query) && portfolioPasses(entry, filters)),
     [entries, query, filters],
   )
-  const lanes = useMemo(() => lanesOf(shown, { mode, projects, milestones }), [shown, mode, projects, milestones])
+  const narrowed = Boolean(query.trim()) || portfolioActive(filters) > 0
+  const lanes = useMemo(() => lanesOf(shown, { mode, projects, milestones, narrowed }), [shown, mode, projects, milestones, narrowed])
 
   if (projectsPending || (isPending && cards.length === 0)) return null
 
@@ -78,8 +69,8 @@ export function PortfolioTableauPage() {
     { key: 'kanban', label: t('board.view.kanban'), icon: <Columns3 size={16} /> },
     { key: 'liste', label: t('board.view.list'), icon: <List size={16} /> },
   ]
-  const narrowed = Boolean(query.trim()) || portfolioActive(filters) > 0
-  const empty = shown.length === 0 || (view === 'liste' && lanes.every((lane) => lane.entries.every((entry) => entry.card.column === 'done')))
+  // La Liste n'a pas les faites : une page qui n'aurait qu'elles serait vide.
+  const empty = lanes.every((lane) => (view === 'liste' ? listRows(lane.entries) : lane.entries).length === 0)
   const create = (projectId: string) => navigate(`/p/${projectId}/board?${NEW_PARAM}=1`)
 
   return (
