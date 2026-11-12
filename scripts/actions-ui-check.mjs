@@ -621,7 +621,7 @@ try {
     for (const port of ports) assert.equal(await fetch(`http://127.0.0.1:${port}/`).then((response) => response.status), 200)
     // Le panneau de la conversation : ses instances listées, chacune avec son lien.
     const perTreeRow = panel.locator('li', { hasText: 'Statique par arbre' })
-    for (const port of ports) await perTreeRow.getByRole('link', { name: `:${port}` }).waitFor({ timeout: 20000 })
+    for (const port of ports) await perTreeRow.getByRole('link', { name: `:${port}`, exact: true }).waitFor({ timeout: 20000 })
     await perTreeRow.getByRole('button', { name: 'Arrêter : Statique par arbre' }).waitFor()
     await perTreeRow.scrollIntoViewIfNeeded()
     await page.screenshot({ path: join(shots, 'per-worktree-panel.png') })
