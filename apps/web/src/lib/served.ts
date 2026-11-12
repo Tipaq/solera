@@ -1,4 +1,4 @@
-import type { WorktreeState } from '@solera/protocol'
+import { resolveActionUrl, type ProjectActionDto, type ProjectActionServiceState, type WorktreeState } from '@solera/protocol'
 import type { Automation, Translate } from './automations'
 
 /**
@@ -88,7 +88,23 @@ const measured = (tree: TreeRef | null): Partial<ServedTree> => (tree ?? {}) as 
 export function servedOf<T extends TreeRef>(item: Automation, trees: readonly T[]): ServedVersion<T> | null {
   if (item.live?.kind !== 'service' || item.source.kind !== 'action') return null
   const { action } = item.source
-  const version = action.service?.served
+  if (!action.service) return null
+  return versionOf(item, action, action.service, item.live.ports, item.live.href, trees)
+}
+
+/**
+ * Ce que sert une unité en marche, son arbre retrouvé parmi ceux de la page ; null tant
+ * que le serveur ne l'a pas lu.
+ */
+function versionOf<T extends TreeRef>(
+  item: Automation,
+  action: ProjectActionDto,
+  state: ProjectActionServiceState,
+  ports: number[],
+  href: string | null,
+  trees: readonly T[],
+): ServedVersion<T> | null {
+  const version = state.served
   if (!version) return null
   const tree =
     (version.worktreeId
@@ -103,9 +119,9 @@ export function servedOf<T extends TreeRef>(item: Automation, trees: readonly T[
     automationId: item.id,
     actionId: action.id,
     label: item.label,
-    ports: item.live.ports,
-    href: item.live.href,
-    cwd: action.service?.cwd ?? null,
+    ports,
+    href,
+    cwd: state.cwd ?? null,
     tree,
     root: version.root,
     branch: version.branch ?? known.branch ?? null,
@@ -118,15 +134,74 @@ export function servedOf<T extends TreeRef>(item: Automation, trees: readonly T[
   }
 }
 
-/** Les services en marche, par action et par arbre servi. */
+/** Une instance d'un service « une par worktree » (AC-06) : ce qu'elle sert, ou son échec. */
+export interface ServedInstance<T extends TreeRef = TreeRef> {
+  unit: string
+  running: boolean
+  failed: boolean
+  /** Le dossier de l'unité ; il dit d'où vient une instance en échec, qui ne sert plus rien. */
+  cwd: string | null
+  /** Null quand elle ne tourne pas. */
+  served: ServedVersion<T> | null
+}
+
+const RUNNING = ['active', 'activating', 'reloading']
+
+/**
+ * Les instances d'un service « une par worktree », chacune avec son port et son lien,
+ * pour le détail (SRV-6) ; vide pour un autre placement.
+ */
+export function servedInstances<T extends TreeRef>(item: Automation, trees: readonly T[]): ServedInstance<T>[] {
+  if (item.source.kind !== 'action') return []
+  const { action } = item.source
+  if (action.placement !== 'per-worktree') return []
+  return (action.instances ?? []).map((state) => {
+    const running = RUNNING.includes(state.state)
+    return {
+      unit: state.unit,
+      running,
+      failed: state.state === 'failed',
+      cwd: state.cwd,
+      served: running ? versionOf(item, action, state, state.ports, resolveActionUrl(action.url, state.ports), trees) : null,
+    }
+  })
+}
+
+/** L'arbre le plus profond qui contient un dossier ; null hors des arbres connus. */
+function treeOfPath<T extends TreeRef>(path: string, trees: readonly T[]): T | null {
+  let found: T | null = null
+  for (const tree of trees) {
+    const inside = path === tree.path || path.startsWith(tree.path.endsWith('/') ? tree.path : `${tree.path}/`)
+    if (inside && (!found || tree.path.length > found.path.length)) found = tree
+  }
+  return found
+}
+
+/**
+ * Une instance par worktree, vue depuis un arbre : l'action prend l'état de l'instance de
+ * cet arbre, arrêtée s'il n'en a pas, pour que « Lancer » ou « Arrêter » vise la sienne.
+ * Un autre placement est rendu tel quel.
+ */
+export function actionInTree<T extends TreeRef>(action: ProjectActionDto, trees: readonly T[], here: T | null): ProjectActionDto {
+  if (action.placement !== 'per-worktree' || !action.service || !here) return action
+  const mine = (action.instances ?? []).find((state) => state.cwd !== null && treeOfPath(state.cwd, trees)?.key === here.key)
+  return {
+    ...action,
+    service: mine ?? { unit: action.service.unit, state: 'inactive', cwd: null, ports: [], startedAt: null, served: null },
+  }
+}
+
+/** Les services en marche, par action et par arbre servi : chaque instance marque le sien. */
 export function servedIndex<T extends TreeRef>(items: readonly Automation[], trees: readonly T[]): ServedIndex<T> {
   const byAutomation = new Map<string, ServedVersion<T>>()
   const byTree = new Map<string, ServedVersion<T>[]>()
   for (const item of items) {
-    const served = servedOf(item, trees)
-    if (!served) continue
-    byAutomation.set(item.id, served)
-    if (served.tree) byTree.set(served.tree.key, [...(byTree.get(served.tree.key) ?? []), served])
+    const instances = servedInstances(item, trees).flatMap((instance) => (instance.served ? [instance.served] : []))
+    const versions = instances.length ? instances : [servedOf(item, trees)].filter((entry) => entry !== null)
+    if (versions[0]) byAutomation.set(item.id, versions[0])
+    for (const served of versions) {
+      if (served.tree) byTree.set(served.tree.key, [...(byTree.get(served.tree.key) ?? []), served])
+    }
   }
   return { byAutomation, byTree }
 }

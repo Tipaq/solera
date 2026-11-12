@@ -22,6 +22,8 @@ const processes = []
 let browser
 /** Unité du service d'essai : arrêtée à la fin même si la suite échoue avant de la supprimer. */
 let serviceUnit = null
+/** Les instances par worktree de l'essai (AC-06), arrêtées à la fin de même. */
+const instanceUnits = []
 
 async function freePort() {
   const socket = createServer().listen(0, '127.0.0.1')
@@ -218,7 +220,7 @@ async function checkEditor(page, base, project, conversation, api, context) {
   assert.equal(planned.onDemand, false)
   assert.equal(planned.schedule?.cadence.kind, 'cron')
 
-  // --- Un service : lien {port}, placement, et pas de planification (AC-06).
+  // --- Un service : lien {port}, placement, et son cas limite planifié (AC-06).
   await open()
   await editor.getByRole('radio', { name: /^Service/ }).click()
   await editor.getByRole('textbox', { name: 'Commande', exact: true }).fill('python3 -m http.server 0')
@@ -229,11 +231,25 @@ async function checkEditor(page, base, project, conversation, api, context) {
   await editor.getByText('Une adresse http(s), avec {port} si tu veux.').waitFor()
   await editor.getByRole('textbox', { name: 'Lien du service', exact: true }).fill('http://localhost:{port}/')
   await editor.getByText('quand il écoute sur :5173, le lien sera http://localhost:5173/').waitFor()
-  await editor.getByRole('radio', { name: /^Toujours la racine du projet/ }).click()
   await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Aperçu statique')
+  // Une instance par worktree (cas limite) : chaque arbre a son port, que le lien doit dire.
+  const perTree = editor.getByRole('radio', { name: /^Une instance par worktree/ })
+  assert.match(await perTree.textContent(), /cas limite/)
+  await perTree.click()
+  await editor.getByText(/^Coût : un processus et un port par arbre ouvert/).waitFor()
+  await editor.getByRole('textbox', { name: 'Lien du service', exact: true }).fill('http://localhost:5173/')
+  await editor.getByRole('button', { name: /^Enregistrer — À compléter : Chaque instance a son port : le lien doit contenir \{port\}\./ }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-service-per-worktree.png') })
+  await editor.getByRole('textbox', { name: 'Lien du service', exact: true }).fill('http://localhost:{port}/')
+  await editor.getByRole('radio', { name: /^Toujours la racine du projet/ }).click()
+  // Planifié (cas limite) : « Démarrer », puis l'encart « Arrêter », 19 h en semaine d'office.
   await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
-  await editor.locator('[data-service-schedule]').waitFor()
-  await editor.getByRole('button', { name: /^Enregistrer — À compléter : Un service ne se planifie pas encore/ }).waitFor()
+  const stopWindow = editor.locator('[data-service-schedule]')
+  await stopWindow.getByText('Cas limite : un service planifié').waitFor()
+  await stopWindow.getByText('Arrêter', { exact: true }).waitFor()
+  await editor.getByText('Démarrer', { exact: true }).waitFor()
+  await editor.locator('[data-service-schedule]').scrollIntoViewIfNeeded()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-service-scheduled.png') })
   await editor.getByRole('checkbox', { name: /^Planifiée/ }).click()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'editor-service.png') })
   await save.click()
@@ -312,7 +328,8 @@ async function checkServed(base) {
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
       createRoot(document.getElementById('check')).render(
         h(QueryClientProvider, { client }, h(MemoryRouter, null, h(TooltipProvider, null,
-          part('tile', stories.Tuile), part('block', stories.Bloc), part('pinned', stories.BlocFixe), part('placement', stories.Placement)))),
+          part('tile', stories.Tuile), part('block', stories.Bloc), part('pinned', stories.BlocFixe), part('placement', stories.Placement),
+          part('instances', stories.ParArbre)))),
       )
     }, modules)
 
@@ -356,15 +373,28 @@ async function checkServed(base) {
     await pinned.getByText('Il sert toujours la racine du projet : son placement le fixe.').waitFor()
     assert.equal(await pinned.getByRole('button', { name: 'Servir une autre branche…' }).count(), 0)
 
-    // « Où tourne-t-il » : la première conseillée et choisie, la quatrième grisée.
+    // « Où tourne-t-il » : la première conseillée et choisie, la quatrième un cas limite.
     const placement = page.locator('[data-part="placement"]')
     const follow = placement.getByRole('radio', { name: /^Une seule instance, qu’on bascule/ })
     assert.equal(await follow.getAttribute('aria-checked'), 'true')
     assert.match(await follow.textContent(), /conseillé/)
-    assert.equal(await placement.getByRole('radio', { name: /^Une instance par worktree/ }).isDisabled(), true)
+    const perTree = placement.getByRole('radio', { name: /^Une instance par worktree/ })
+    assert.equal(await perTree.isDisabled(), false)
+    assert.match(await perTree.textContent(), /cas limite/)
     await placement.getByRole('radio', { name: /^Toujours une branche/ }).click()
     await placement.getByText('La racine est sur cette branche : il y tournera.').waitFor()
     await page.screenshot({ path: join(shots, `served-placement-${width}.png`), clip: await placement.boundingBox() })
+
+    // Une instance par worktree : chacune son arbre, son port et son lien ; l'échec dit d'où.
+    const instances = page.locator('[data-part="instances"]')
+    const list = instances.getByRole('list', { name: 'Ses instances, une par arbre' })
+    assert.equal(await list.getByRole('listitem').count(), 3)
+    assert.equal(await list.getByRole('link', { name: ':41873' }).getAttribute('href'), 'http://127.0.0.1:41873')
+    assert.equal(await list.getByRole('link', { name: ':41207' }).getAttribute('href'), 'http://127.0.0.1:41207')
+    await list.getByRole('link', { name: 'Racine du projet' }).waitFor()
+    await list.getByText('en échec').waitFor()
+    await list.getByText('/srv/nimbus/.worktrees/w2', { exact: true }).waitFor()
+    await page.screenshot({ path: join(shots, `served-instances-${width}.png`), clip: await instances.boundingBox() })
     assert.deepEqual(errors, [])
     await context.close()
   }
@@ -563,6 +593,48 @@ try {
     assert.equal((await api('/api/actions')).find((entry) => entry.id === service.id).service.served.root, true)
     await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
     await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
+
+    // Une instance par worktree (AC-06), pour de vrai : la racine et feat/offline-cache ont
+    // chacune leur unité, sur le port libre que `PORT` leur donne, sans refus ni bascule.
+    console.log('actions-ui-check : une instance par worktree')
+    const perTreeCreated = await context.request.post(`${base}/api/projects/${project.id}/actions`, {
+      data: {
+        label: 'Statique par arbre', kind: 'service', placement: 'per-worktree',
+        command: 'python3 -m http.server --bind 127.0.0.1 "$PORT"', url: 'http://127.0.0.1:{port}/',
+      },
+    })
+    assert.equal(perTreeCreated.status(), 201, await perTreeCreated.text())
+    const perTree = await perTreeCreated.json()
+    instanceUnits.push(`solera-app-action-${perTree.id.slice(0, 8)}-root.service`, `solera-app-action-${perTree.id.slice(0, 8)}-${offline.id.slice(0, 8)}.service`)
+    const atRoot = await context.request.post(`${base}/api/actions/${perTree.id}/run`, { data: {} })
+    assert.equal(atRoot.status(), 201, await atRoot.text())
+    const inTree = await context.request.post(`${base}/api/actions/${perTree.id}/run`, { data: { conversationId: conversation.id } })
+    assert.equal(inTree.status(), 201, await inTree.text())
+    let both = []
+    for (let i = 0; i < 100 && both.filter((entry) => entry.ports.length > 0).length < 2; i++) {
+      both = (await api('/api/actions')).find((entry) => entry.id === perTree.id).instances
+      await delay(200)
+    }
+    assert.deepEqual(both.map((entry) => entry.unit).sort(), [...instanceUnits].sort())
+    const ports = both.map((entry) => entry.ports[0])
+    assert.notEqual(ports[0], ports[1])
+    for (const port of ports) assert.equal(await fetch(`http://127.0.0.1:${port}/`).then((response) => response.status), 200)
+    // Le panneau de la conversation : ses instances listées, chacune avec son lien.
+    const perTreeRow = panel.locator('li', { hasText: 'Statique par arbre' })
+    for (const port of ports) await perTreeRow.getByRole('link', { name: `:${port}` }).waitFor({ timeout: 20000 })
+    await perTreeRow.getByRole('button', { name: 'Arrêter : Statique par arbre' }).waitFor()
+    await perTreeRow.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: join(shots, 'per-worktree-panel.png') })
+    // Arrêter depuis la conversation n'arrête que l'instance de son arbre.
+    await perTreeRow.getByRole('button', { name: 'Arrêter : Statique par arbre' }).click()
+    for (let i = 0; i < 100; i++) {
+      both = (await api('/api/actions')).find((entry) => entry.id === perTree.id).instances
+      if (both.length === 1) break
+      await delay(200)
+    }
+    assert.deepEqual(both.map((entry) => entry.served?.root), [true])
+    const removedPerTree = await context.request.delete(`${base}/api/actions/${perTree.id}`)
+    assert.equal(removedPerTree.status(), 204)
   } else {
     // Sans systemd utilisateur, le service retombe dans un terminal.
     await page.locator('.xterm-rows', { hasText: 'python3 -m http.server' }).waitFor({ timeout: 10000 })
@@ -683,8 +755,8 @@ try {
   console.log(`actions-ui-check: ok — captures dans ${shots}`)
 } finally {
   await browser?.close()
-  if (serviceUnit && linuxServices) {
-    try { execFileSync('systemctl', ['--user', 'stop', serviceUnit], { stdio: 'ignore' }) } catch { /* déjà retirée */ }
+  for (const unit of linuxServices ? [serviceUnit, ...instanceUnits].filter(Boolean) : []) {
+    try { execFileSync('systemctl', ['--user', 'stop', unit], { stdio: 'ignore' }) } catch { /* déjà retirée */ }
   }
   for (const child of processes) child.kill()
   // Le serveur écrit encore la relecture de ses terminaux en s'arrêtant : effacer avant

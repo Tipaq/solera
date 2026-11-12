@@ -106,6 +106,9 @@ const MAX_EFFORT_SEGMENTS = 4
 /** `{port}` se montre tel quel dans les textes qui le citent. */
 const PORT_TOKEN = { port: '{port}' }
 
+/** L'arrêt proposé d'un service planifié : 19 h en semaine (EDI-18). */
+const DEFAULT_STOP: ScheduleCadence = { kind: 'cron', expression: '0 19 * * 1-5' }
+
 /** En deçà, dans le panneau, l'éditeur se lit mal : on propose d'agrandir (PACT-9). */
 const NARROW_PX = 360
 
@@ -114,7 +117,7 @@ function problemText(key: MessageKey, state: EditorState, t: (key: MessageKey, p
   if (key === 'actionEditor.error.labelMax') return t(key, { max: labelMax(state) })
   if (key === 'actionEditor.error.duration') return t(key, { min: MIN_SCHEDULE_DURATION_MINUTES, max: MAX_SCHEDULE_DURATION_MINUTES })
   if (key === 'actionEditor.error.checkTimeout') return t(key, { min: MIN_CHECK_TIMEOUT_SECONDS, max: MAX_CHECK_TIMEOUT_SECONDS })
-  if (key === 'actionEditor.error.url') return t(key, PORT_TOKEN)
+  if (key === 'actionEditor.error.url' || key === 'actionEditor.error.urlNeedsPort') return t(key, PORT_TOKEN)
   return t(key)
 }
 
@@ -438,19 +441,12 @@ export function ActionEditor({
               {problems.when ? <ErrorLine text={t(problems.when)} /> : null}
 
               {state.scheduled ? (
-                isService ? (
-                  <div className="flex flex-col gap-1.5 rounded-md bg-caution/10 px-3.5 py-3" data-service-schedule>
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-caution">
-                      <TriangleAlert size={12} aria-hidden /> {t('actionEditor.when.serviceLimit')}
-                    </span>
-                    <span className="text-xs text-ink-soft">{t('actionEditor.when.serviceLimitHint')}</span>
-                    {problems.serviceSchedule ? <ErrorLine text={t(problems.serviceSchedule)} /> : null}
-                  </div>
-                ) : (
+                <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
                     <ScheduleBuilder
                       key={from?.id ?? 'new'}
                       initial={state.cadence}
+                      label={isService ? t('actionEditor.when.start') : undefined}
                       onChange={(cadence: ScheduleCadence | null, words: string | null) => {
                         set({ cadence })
                         setSentence(words)
@@ -458,7 +454,23 @@ export function ActionEditor({
                     />
                     {shown('cadence') ? <ErrorLine text={shown('cadence')} /> : null}
                   </div>
-                )
+                  {/* Un service tourne jusqu'à ce qu'on l'arrête : planifié, il lui faut une heure d'arrêt (EDI-18). */}
+                  {isService ? (
+                    <div className="flex flex-col gap-3 rounded-md bg-caution/10 px-3.5 py-3" data-service-schedule>
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-caution">
+                        <TriangleAlert size={12} aria-hidden /> {t('actionEditor.when.serviceLimit')}
+                      </span>
+                      <span className="text-xs text-ink-soft">{t('actionEditor.when.serviceLimitHint')}</span>
+                      <ScheduleBuilder
+                        key={`${from?.id ?? 'new'}-stop`}
+                        initial={state.stopCadence ?? DEFAULT_STOP}
+                        label={t('actionEditor.when.stop')}
+                        onChange={(stopCadence: ScheduleCadence | null) => set({ stopCadence })}
+                      />
+                      {shown('stopCadence') ? <ErrorLine text={shown('stopCadence')} /> : null}
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </Step>
           </div>

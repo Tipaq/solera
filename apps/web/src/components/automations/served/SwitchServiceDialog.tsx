@@ -31,11 +31,16 @@ export interface SwitchRequest {
  * nommé comme « Basculer sur » le nomme.
  */
 export function useLaunchHere(trees: readonly ServedTree[], conversationId?: string): SwitchTo {
-  const { data: conversation } = useConversation(conversationId)
   const nameOf = useTargetName()
-  const worktreeId = conversation?.worktreeId ?? null
-  const tree = trees.find((entry) => (worktreeId ? entry.id === worktreeId : entry.root))
+  const tree = useHereTree(trees, conversationId)
   return { name: tree ? nameOf(tree) : null, ...(conversationId ? { conversationId } : {}) }
+}
+
+/** L'arbre d'où l'on lance : celui de la conversation, la racine hors conversation. */
+export function useHereTree<T extends ServedTree>(trees: readonly T[], conversationId?: string): T | null {
+  const { data: conversation } = useConversation(conversationId)
+  const worktreeId = conversation?.worktreeId ?? null
+  return trees.find((entry) => (worktreeId ? entry.id === worktreeId : entry.root)) ?? null
 }
 
 /** Vers un arbre choisi dans « Basculer sur » : son worktree, ou la racine. */

@@ -4,7 +4,7 @@ import type { ActionPlacement, ActionServedVersion } from '@solera/protocol'
 import type { Automation } from '../../web/src/lib/automations.js'
 import type { ServedTree } from '../../web/src/lib/served.js'
 
-const { runningElsewhereOf, servedByTree, servedIndex, servedName, shortBranch, switchTargets, unlessElsewhere } = await import('../../web/src/lib/served.js')
+const { runningElsewhereOf, servedByTree, servedIndex, servedInstances, servedName, shortBranch, switchTargets, unlessElsewhere } = await import('../../web/src/lib/served.js')
 
 const served = (over: Partial<ActionServedVersion>): ActionServedVersion => ({
   path: null, worktreeId: null, root: false, branch: null, head: null, ahead: null, behind: null, dirtyFiles: null, ...over,
@@ -139,4 +139,70 @@ test("le nom de ce qui est servi : la racine dit sa branche, une longue branche 
   assert.equal(shortBranch('feat/905-une-branche-vraiment-trop-longue'), 'feat/905-une-branche-vraime…')
   assert.equal(shortBranch('feat/905-une-branche-vraime…').length, 28)
   assert.equal(shortBranch('feat/court'), 'feat/court')
+})
+
+/** Une action « une instance par worktree » et ses instances, telles que le serveur les donne. */
+const perTree = (id: string, instances: { unit: string; state: string; cwd: string | null; ports: number[]; served: ActionServedVersion | null }[]) =>
+  ({
+    id: `a-${id}`,
+    label: `Service ${id}`,
+    live: { kind: 'service', ports: instances[0]?.ports ?? [], since: null, href: null },
+    source: {
+      kind: 'action',
+      action: {
+        id,
+        placement: 'per-worktree',
+        url: 'http://h:{port}/',
+        service: { ...instances[0], startedAt: null },
+        instances: instances.map((instance) => ({ ...instance, startedAt: null })),
+      },
+    },
+  }) as unknown as Automation
+
+test('une instance par worktree : chaque arbre servi porte sa marque et son port', () => {
+  const item = perTree('dev', [
+    { unit: 'u-a', state: 'active', cwd: '/w/a', ports: [41001], served: served({ worktreeId: 'a', path: '/w/a', branch: 'feat/a' }) },
+    { unit: 'u-root', state: 'active', cwd: '/p', ports: [41000], served: served({ root: true, path: '/p', branch: 'main' }) },
+    { unit: 'u-shell', state: 'failed', cwd: '/w/shell', ports: [], served: null },
+  ])
+  const marks = servedByTree([item], trees)
+  assert.deepEqual(marks.get('/w/a'), [{ automationId: 'a-dev', label: 'Service dev', port: 41001 }])
+  assert.deepEqual(marks.get('root'), [{ automationId: 'a-dev', label: 'Service dev', port: 41000 }])
+  assert.equal(marks.has('/w/shell'), false)
+  // Rien ne se bascule : chaque arbre a la sienne.
+  assert.equal(servedIndex([item], trees).byAutomation.get('a-dev')?.switchable, false)
+})
+
+test('une instance par worktree : le détail les liste toutes, chacune avec son lien, les échecs compris', () => {
+  const item = perTree('dev', [
+    { unit: 'u-a', state: 'active', cwd: '/w/a', ports: [41001, 1024], served: served({ worktreeId: 'a', path: '/w/a', branch: 'feat/a' }) },
+    { unit: 'u-shell', state: 'failed', cwd: '/w/shell', ports: [], served: null },
+  ])
+  const list = servedInstances(item, trees)
+  assert.deepEqual(
+    list.map((entry) => ({ unit: entry.unit, running: entry.running, failed: entry.failed, href: entry.served?.href ?? null, tree: entry.served?.tree?.key ?? null, cwd: entry.cwd })),
+    [
+      { unit: 'u-a', running: true, failed: false, href: 'http://h:41001/', tree: '/w/a', cwd: '/w/a' },
+      { unit: 'u-shell', running: false, failed: true, href: null, tree: null, cwd: '/w/shell' },
+    ],
+  )
+  // Un autre placement n'a pas d'instances à lister.
+  assert.deepEqual(servedInstances(service('one', [5173], served({ root: true })), trees), [])
+})
+
+test('une instance par worktree : vue depuis un arbre, l’action prend l’état de son instance, arrêtée sans elle', async () => {
+  const { actionInTree } = await import('../../web/src/lib/served.js')
+  const instance = (unit: string, state: string, cwd: string) => ({ unit, state, cwd, ports: [], startedAt: null, served: null })
+  const action = {
+    id: 'dev',
+    placement: 'per-worktree',
+    service: instance('u-a', 'active', '/w/a/web'),
+    instances: [instance('u-a', 'active', '/w/a/web'), instance('u-root', 'failed', '/p')],
+  } as never
+  assert.equal(actionInTree(action, trees, trees[1]!).service?.unit, 'u-a')
+  assert.equal(actionInTree(action, trees, trees[0]!).service?.state, 'failed')
+  assert.equal(actionInTree(action, trees, trees[2]!).service?.state, 'inactive')
+  // Un autre placement reste tel quel.
+  const single = { ...(action as object), placement: 'follow' } as never
+  assert.equal(actionInTree(single, trees, trees[2]!), single)
 })

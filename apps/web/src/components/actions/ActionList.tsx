@@ -27,12 +27,13 @@ import { actionAutomationId, fromAction } from '../../lib/automations'
 import { useTranslate } from '../../lib/i18n'
 import { ActionEditorDrawer } from '../automations/ActionEditorDrawer'
 import { showTerminal } from '../../lib/panel'
-import { switchTargets, unlessElsewhere } from '../../lib/served'
+import { actionInTree, servedInstances, switchTargets, unlessElsewhere, type ServedInstance } from '../../lib/served'
 import { useServedIndex, type ServedData, type ServedRow } from '../../lib/served-query'
 import { Badge, Banner, Button, Card, ConfirmDialog, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
 import { ServedLine } from '../automations/served/ServedLine'
+import { ServiceInstances } from '../automations/served/ServiceInstances'
 import { ServeItems, useTargetName } from '../automations/served/ServeMenu'
-import { switchToTree, useLaunchHere, useServiceSwitch, type SwitchRequest } from '../automations/served/SwitchServiceDialog'
+import { switchToTree, useHereTree, useLaunchHere, useServiceSwitch, type SwitchRequest } from '../automations/served/SwitchServiceDialog'
 
 /** « + Action » : une commande, à la demande. */
 const NEW_ACTION: EditorSeed = { preset: { what: 'command' } }
@@ -73,6 +74,7 @@ export function ActionList({
 }) {
   const run = useRunAction()
   const served = useServedIndex(projectId)
+  const here = useHereTree(served.trees, conversationId)
   // Le refus d'un service qui tourne ailleurs n'est pas une erreur : il ouvre le dialogue.
   const failure = unlessElsewhere(run.error)
 
@@ -97,21 +99,27 @@ export function ActionList({
       ) : null}
 
       <ul className={cx('flex flex-col', compact ? '' : 'gap-2 p-3')}>
-        {actions.map((action) => (
-          <ActionRow
-            key={action.id}
-            action={action}
-            busy={run.isPending && run.variables?.action.id === action.id}
-            compact={compact}
-            served={served.byAutomation.get(actionAutomationId(action.id)) ?? null}
-            targets={served.trees}
-            onSwitch={handlers.onSwitch}
-            onPrimary={() => primary(action)}
-            onRun={(op) => run.mutate({ action, op, conversationId })}
-            onEdit={() => handlers.onEdit(action)}
-            onDelete={() => handlers.onDelete(action)}
-          />
-        ))}
+        {actions.map((listed) => {
+          // Une instance par worktree : le geste vise celle de cet arbre-ci.
+          const action = actionInTree(listed, served.trees, here)
+          return (
+            <ActionRow
+              key={action.id}
+              projectId={projectId}
+              action={action}
+              busy={run.isPending && run.variables?.action.id === action.id}
+              compact={compact}
+              served={served.byAutomation.get(actionAutomationId(action.id)) ?? null}
+              instances={servedInstances(fromAction(listed), served.trees)}
+              targets={served.trees}
+              onSwitch={handlers.onSwitch}
+              onPrimary={() => primary(action)}
+              onRun={(op) => run.mutate({ action, op, conversationId })}
+              onEdit={() => handlers.onEdit(action)}
+              onDelete={() => handlers.onDelete(action)}
+            />
+          )
+        })}
       </ul>
     </>
   )
@@ -215,10 +223,12 @@ const PRIMARY = {
  * badges, commande, état, puis le geste du moment en bouton nommé et le reste au menu.
  */
 function ActionRow({
+  projectId,
   action,
   busy,
   compact,
   served,
+  instances,
   targets,
   onSwitch,
   onPrimary,
@@ -226,11 +236,14 @@ function ActionRow({
   onEdit,
   onDelete,
 }: {
+  projectId: string
   action: ProjectActionDto
   busy: boolean
   compact: boolean
   /** Ce qu'il sert, s'il tourne. */
   served: ServedRow | null
+  /** Une instance par worktree : toutes les siennes, à la place de ce qu'il sert. */
+  instances: ServedInstance<ServedData['trees'][number]>[]
   /** Les arbres du projet, d'où tirer ceux où le basculer. */
   targets: ServedData['trees']
   onSwitch: (request: SwitchRequest) => void
@@ -282,7 +295,11 @@ function ActionRow({
               </a>
             ) : null}
             <p className="text-xs text-ink-faint">{describeActionState(action, t)}</p>
-            {served ? <ServedLine served={served} className="max-w-full" /> : null}
+            {instances.length ? (
+              <ServiceInstances projectId={projectId} instances={instances} className="mt-1" />
+            ) : served ? (
+              <ServedLine served={served} className="max-w-full" />
+            ) : null}
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
