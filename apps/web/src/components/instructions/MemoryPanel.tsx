@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { MAX_MEMORY_FILE_CHARS, MEMORY_INDEX_FILE, type ProjectMemoryDto } from '@solera/protocol'
 import { Badge, Banner, Button, cx } from '@solera/ui'
 import { ApiRequestError } from '../../lib/api'
-import { relativeDate } from '../../lib/dates'
+import { relativeDate, shortAge } from '../../lib/dates'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 import { useDeleteMemoryFile, useProjectMemory, useWriteMemoryFile } from '../../lib/memory'
 import {
@@ -102,10 +102,14 @@ export function MemoryNotes({ data, writes }: { data: ProjectMemoryDto; writes: 
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs leading-relaxed text-ink-faint">{t('memory.intro')}</p>
+      <p className="text-xs leading-relaxed text-ink-faint">
+        {t('memory.intro')
+          .split(MEMORY_INDEX_FILE)
+          .flatMap((part, index) => (index === 0 ? [part] : [<span key={index} className="font-mono">{MEMORY_INDEX_FILE}</span>, part]))}
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <ToolbarSearch value={query} onChange={setQuery} placeholder={t('memory.search')} />
+        <ToolbarSearch value={query} onChange={setQuery} placeholder={t('memory.search')} width="min-w-48 flex-1 md:max-w-64" />
         <div role="group" aria-label={t('memory.type.label')} className="flex flex-wrap gap-1">
           {FILTERS.map((key) =>
             key !== 'all' && counts[key] === 0 ? null : (
@@ -115,7 +119,7 @@ export function MemoryNotes({ data, writes }: { data: ProjectMemoryDto; writes: 
                 aria-pressed={filter === key}
                 onClick={() => setFilter(key)}
                 className={cx(
-                  'h-11 rounded-md px-2.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent md:h-8',
+                  'h-8 rounded-md px-2.5 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11',
                   filter === key ? 'bg-surface-high text-ink' : 'text-ink-faint hover:text-ink',
                 )}
               >
@@ -205,9 +209,14 @@ function IndexLine({ state, canEdit, busy, onRepair }: { state: MemoryState; can
       ) : null}
       {broken ? (
         canEdit ? (
-          <Button size="sm" variant="ghost" icon={<Wrench size={12} />} disabled={busy} onClick={onRepair} className="text-accent">
-            {t('memory.index.repair')}
-          </Button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRepair}
+            className="inline-flex items-center gap-1 text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50 pointer-coarse:min-h-11"
+          >
+            <Wrench size={12} aria-hidden /> {t('memory.index.repair')}
+          </button>
         ) : null
       ) : (
         <span className="inline-flex items-center gap-1 text-positive">
@@ -255,14 +264,15 @@ function NoteLine({
         className="flex min-h-11 w-full min-w-0 items-center gap-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-accent"
       >
         <ChevronRight size={13} aria-hidden className={cx('shrink-0 text-ink-faint transition-transform', open && 'rotate-90')} />
-        <span className="min-w-0 shrink truncate font-mono text-sm text-ink">{note.slug}</span>
+        <span className="min-w-12 shrink truncate font-mono text-sm text-ink">{note.slug}</span>
         <span className="shrink-0">
           <Badge tone={TYPE_TONE[note.type]}>{t(`memory.type.${note.type}`)}</Badge>
         </span>
         <span className="hidden min-w-0 flex-1 truncate text-xs text-ink-faint sm:inline">{note.description}</span>
         <span className="flex-1 sm:hidden" />
         {!indexed ? <span className="shrink-0 text-xs text-caution">{t('memory.outOfIndex')}</span> : null}
-        <span className="shrink-0 text-xs text-ink-faint tabular-nums">{relativeDate(note.updatedAt)}</span>
+        <span className="hidden shrink-0 text-xs text-ink-faint tabular-nums sm:inline">{relativeDate(note.updatedAt)}</span>
+        <span className="shrink-0 text-xs text-ink-faint tabular-nums sm:hidden">{shortAge(note.updatedAt)}</span>
       </button>
       {open ? (
         <div className="flex flex-col gap-3 pb-4 pl-6">
@@ -399,7 +409,7 @@ function NoteEditor({
             spellCheck={false}
             autoComplete="off"
             className={cx(
-              'h-11 w-64 max-w-full rounded-md border bg-sunken px-2 font-mono text-xs text-ink outline-none md:h-8',
+              'h-8 w-64 max-w-full rounded-md border bg-sunken px-2 font-mono text-xs text-ink outline-none pointer-coarse:h-11',
               problem ? 'border-critical' : 'border-line hover:border-line-strong focus:border-accent',
             )}
           />

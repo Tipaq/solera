@@ -71,20 +71,19 @@ function LinkedValue({
   }
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex min-h-9 flex-wrap items-center gap-x-2 gap-y-1">
-        {value ? (
-          <span className="min-w-0 font-mono text-sm break-all text-ink">{value}</span>
-        ) : (
-          <span className="text-sm text-ink-faint">{empty}</span>
-        )}
-        <span className="ml-auto" />
+      {value ? (
+        <span className="min-w-0 font-mono text-sm break-all text-ink">{value}</span>
+      ) : (
+        <span className="text-sm text-ink-faint">{empty}</span>
+      )}
+      {status}
+      {error ? <Banner>{error}</Banner> : null}
+      <div className="-ml-3 flex flex-wrap items-center">
         <Button size="sm" variant="ghost" icon={<Pencil size={13} />} onClick={onEdit}>
           {value ? editLabel : linkLabel}
         </Button>
         {extra}
       </div>
-      {status}
-      {error ? <Banner>{error}</Banner> : null}
     </div>
   )
 }

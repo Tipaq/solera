@@ -19,7 +19,10 @@ import { launchBrowser } from './checks/browser.mjs'
  * par `/`, choisit au clavier et amène le réglage à l'écran ; que le menu suit la
  * lecture et qu'un clic y fixe l'élément choisi ; que la Zone de danger retire
  * vraiment le projet ; que les consignes changent de mode, écrivent `AGENTS.md` dans le
- * dépôt et disent ce que chaque CLI en lit ; qu'un projet partagé se lit sans se régler ; et qu'au téléphone
+ * dépôt et disent ce que chaque CLI en lit ; que la mémoire montre l'état de son index,
+ * le répare, modifie, supprime (en gardant ou non la ligne d'index) et crée des notes ;
+ * que les skills mènent à leur éditeur ; que les Intégrations se branchent et se
+ * délient sur place ; qu'un projet partagé se lit sans se régler ; et qu'au téléphone
  * un sélecteur remplace le menu. Les captures vont par bloc, en 1280 et 390 px.
  */
 
@@ -398,6 +401,126 @@ try {
   await page.keyboard.press('Escape')
   page.off('request', onInstructions)
 
+  // ─── Mémoire : l'index, les filtres, une note ouverte, réparer, modifier, supprimer, créer ─
+  const api = (path) => `${base}/api/projects/${nimbus.id}${path}`
+  const putNote = async (file, content) => assert.ok((await context.request.put(api(`/memory/${file}`), { data: { content } })).ok())
+  const memoryFiles = async () => Object.fromEntries((await (await context.request.get(api('/memory'))).json()).files.map((file) => [file.file, file.content]))
+  const noteOf = (name, type, description, body) => `---\nname: ${name}\ndescription: ${description}\nmetadata:\n  type: ${type}\n---\n\n${body}\n`
+  await putNote('MEMORY.md', '- [Port du dev](port-du-dev.md) — le dev écoute sur 7417\n- [Pas de jq](pas-de-jq.md) — la CI n’a pas jq\n- [Ancienne](ancienne.md) — supprimée depuis\n')
+  await putNote('pas-de-jq.md', noteOf('Pas de jq', 'feedback', 'la CI n’a pas jq', 'Lire le JSON avec `node -e`, jamais `jq`.'))
+  await putNote('hors.md', noteOf('Hors index', 'user', 'une note que l’index oublie', 'Réponses courtes.'))
+  await putNote('port-du-dev.md', noteOf('Port du dev', 'project', 'le dev écoute sur 7417', 'Le dev tourne sur **7417**. Voir [[pas-de-jq]] et [[inconnue]].'))
+  await page.goto(`${base}/p/${nimbus.id}/settings`)
+  const memory = row('memory')
+  const noteButton = (slug) => memory.getByRole('button', { name: new RegExp(`^${slug}`) })
+  const noteItem = (slug) => memory.getByRole('listitem').filter({ has: page.getByRole('button', { name: new RegExp(`^${slug}`) }) })
+  const indexLine = memory.getByRole('group', { name: 'MEMORY.md' })
+  await indexLine.getByText('2 notes indexées', { exact: true }).waitFor()
+  await indexLine.getByText('1 absente de l\'index', { exact: true }).waitFor()
+  await indexLine.getByText('1 ligne sans note', { exact: true }).waitFor()
+  await noteButton('hors').getByText('hors index', { exact: true }).waitFor()
+  await page.evaluate(() => document.fonts.ready)
+  await memory.scrollIntoViewIfNeeded()
+  await shot(memory, '1280-memoire')
+  // Le filtre par type, puis la recherche dans les corps.
+  await memory.getByRole('button', { name: 'Retour 1' }).click()
+  assert.equal(await memory.getByRole('listitem').count(), 1)
+  await noteButton('pas-de-jq').waitFor()
+  await memory.getByRole('button', { name: 'Toutes 3' }).click()
+  await memory.getByRole('searchbox', { name: 'Chercher dans les notes' }).fill('7417')
+  assert.equal(await memory.getByRole('listitem').count(), 1)
+  await memory.getByRole('searchbox', { name: 'Chercher dans les notes' }).fill('introuvable')
+  await memory.getByText('Aucune note ne correspond.', { exact: true }).waitFor()
+  await memory.getByRole('searchbox', { name: 'Chercher dans les notes' }).fill('')
+  // Une note ouverte : son corps, ses liens ; un lien vers une note existante l'ouvre.
+  await noteButton('port-du-dev').click()
+  await memory.getByText('inconnue · à écrire', { exact: true }).waitFor()
+  await shot(noteItem('port-du-dev'), '1280-memoire-note')
+  await memory.getByRole('button', { name: 'pas-de-jq', exact: true }).click()
+  await until(() => noteButton('pas-de-jq').getAttribute('aria-expanded'), (value) => value === 'true', 'le lien ouvre la note liée')
+  // Réparer l'index : l'orpheline part, la note oubliée entre.
+  await indexLine.getByRole('button', { name: 'Réparer l\'index' }).click()
+  await indexLine.getByText('à jour', { exact: true }).waitFor()
+  const repaired = (await memoryFiles())['MEMORY.md']
+  assert.ok(!repaired.includes('ancienne.md') && repaired.includes('- [Hors index](hors.md) — une note que l’index oublie'), repaired)
+  // Modifier une note.
+  await memory.getByRole('button', { name: 'Modifier', exact: true }).click()
+  const edited = noteOf('Pas de jq', 'feedback', 'la CI n’a pas jq', 'Lire le JSON avec `node -e`.')
+  await memory.getByRole('textbox', { name: 'Contenu de pas-de-jq.md' }).fill(edited)
+  await memory.getByRole('button', { name: 'Enregistrer', exact: true }).click()
+  await until(memoryFiles, (files) => files['pas-de-jq.md'] === edited, 'la note réécrite')
+  // Supprimer en gardant sa ligne : elle devient orpheline. Puis en la retirant.
+  await noteButton('hors').click()
+  await memory.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  const confirmDelete = memory.getByRole('alertdialog', { name: 'Supprimer hors.md ?' })
+  await shot(noteItem('hors'), '1280-memoire-supprimer')
+  await confirmDelete.getByRole('checkbox', { name: 'retirer aussi sa ligne de MEMORY.md' }).uncheck()
+  await confirmDelete.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await indexLine.getByText('1 ligne sans note', { exact: true }).waitFor()
+  assert.ok(!('hors.md' in (await memoryFiles())) && (await memoryFiles())['MEMORY.md'].includes('(hors.md)'), 'la ligne gardée')
+  await noteButton('pas-de-jq').click()
+  await memory.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await memory.getByRole('alertdialog').getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await noteButton('pas-de-jq').waitFor({ state: 'detached' })
+  assert.ok(!(await memoryFiles())['MEMORY.md'].includes('(pas-de-jq.md)'), 'la ligne retirée avec la note')
+  // Nouvelle note : un nom refusé, puis créée et indexée.
+  await memory.getByRole('button', { name: 'Nouvelle note' }).click()
+  const fileName = memory.getByRole('textbox', { name: 'Nom du fichier de la note' })
+  await fileName.fill('dossier/note.md')
+  await memory.getByText('un nom de fichier .md, sans dossier', { exact: true }).waitFor()
+  assert.ok(await memory.getByRole('button', { name: 'Créer', exact: true }).isDisabled())
+  await fileName.fill('port-du-dev.md')
+  await memory.getByText('une note porte déjà ce nom', { exact: true }).waitFor()
+  await fileName.fill('nouvelle.md')
+  await shot(memory.getByRole('button', { name: 'Créer', exact: true }).locator('xpath=../..'), '1280-memoire-nouvelle')
+  await memory.getByRole('button', { name: 'Créer', exact: true }).click()
+  await until(memoryFiles, (files) => files['nouvelle.md']?.startsWith('---\nname: nouvelle-note\n') && files['MEMORY.md'].includes('(nouvelle.md)'), 'la note créée et indexée')
+  await until(() => noteButton('nouvelle').getAttribute('aria-expanded'), (value) => value === 'true', 'la note créée est ouverte')
+  assert.equal(await bar.count(), 0, 'La mémoire ne passe pas par la barre')
+
+  // ─── Skills : à plat, l'éditeur au bout d'une ligne, le menu d'ajout ────────
+  const skill = await context.request.post(`${base}/api/skill-library`, { data: { scope: 'project', projectId: nimbus.id, name: 'deployer-la-preprod', description: 'Pousse la branche sur la préprod.' } })
+  assert.ok(skill.ok(), await skill.text())
+  const skillId = (await skill.json()).id
+  await page.reload()
+  const skills = row('skills')
+  await skills.getByRole('button', { name: /^deployer-la-preprod/ }).click()
+  assert.equal(await skills.getByRole('link', { name: 'Ouvrir dans l’éditeur' }).getAttribute('href'), `/skills/${skillId}`)
+  await skills.getByText(/^\+ \d+ skills? de l’instance, livrés? ici aussi\./).waitFor()
+  await skills.scrollIntoViewIfNeeded()
+  await shot(skills, '1280-skills')
+  await skills.getByRole('button', { name: 'Ajouter un skill' }).click()
+  await page.getByRole('menuitem', { name: 'Depuis cette machine…' }).waitFor()
+  await page.keyboard.press('Escape')
+
+  // ─── Intégrations : se brancher et se délier, sur place ─────────────────────
+  const issues = row('issues')
+  await issues.getByText('Aucun dépôt relié', { exact: true }).waitFor()
+  await issues.getByRole('button', { name: 'Brancher' }).click()
+  await issues.getByRole('textbox', { name: 'Dépôt' }).fill('tipaq/nimbus')
+  await issues.getByRole('button', { name: 'Brancher' }).click()
+  await issues.getByText('tipaq/nimbus', { exact: true }).waitFor()
+  assert.equal((await (await context.request.get(api('/issue-source'))).json()).repository, 'tipaq/nimbus')
+  await issues.getByRole('button', { name: 'Lire maintenant' }).waitFor()
+  await page.locator('#reglages-integrations-0').scrollIntoViewIfNeeded()
+  await shot(page.locator('#reglages-integrations-0'), '1280-forge')
+  await issues.getByRole('button', { name: 'Débrancher' }).click()
+  await issues.getByText('Aucun dépôt relié', { exact: true }).waitFor()
+  const design = row('design')
+  const storybook = join(data, 'nimbus-ds')
+  await mkdir(join(storybook, '.storybook'), { recursive: true })
+  await design.getByText('Aucun Storybook lié', { exact: true }).waitFor()
+  await design.getByRole('button', { name: 'Lier' }).click()
+  await design.getByRole('textbox', { name: 'Dossier du design system' }).fill(storybook)
+  await design.getByRole('button', { name: 'Lier' }).click()
+  await design.getByText(storybook, { exact: true }).waitFor()
+  assert.equal((await reread()).designSystemPath, storybook)
+  await shot(page.locator('#reglages-integrations-1'), '1280-design')
+  await design.getByRole('button', { name: 'Délier' }).click()
+  await design.getByText('Aucun Storybook lié', { exact: true }).waitFor()
+  assert.equal((await reread()).designSystemPath, null)
+  assert.equal(await bar.count(), 0, 'Les intégrations ne passent pas par la barre')
+
   // ─── Zone de danger : retirer un projet, pour de vrai ─────────────────────
   await page.goto(`${base}/p/${docs.id}/settings`)
   await row('remove').getByRole('button', { name: 'Retirer le projet' }).click()
@@ -431,6 +554,13 @@ try {
   await guestInstructions.getByText('Texte tenu par Solera', { exact: true }).waitFor()
   assert.ok(await guestInstructions.getByRole('radio', { name: /^Dans le dépôt/ }).isDisabled())
   assert.ok(await guestInstructions.getByRole('button', { name: 'Modifier', exact: true }).isDisabled())
+  // La mémoire et les skills se lisent, sans geste d'écriture.
+  const guestMemory = guestPage.locator('#reglage-memory')
+  await guestMemory.getByRole('button', { name: /^nouvelle/ }).waitFor()
+  assert.equal(await guestMemory.getByRole('button', { name: 'Nouvelle note' }).count(), 0)
+  await guestMemory.getByRole('button', { name: /^nouvelle/ }).click()
+  assert.equal(await guestMemory.getByRole('button', { name: 'Modifier', exact: true }).count(), 0)
+  assert.equal(await guestPage.locator('#reglage-skills').getByRole('button', { name: 'Ajouter un skill' }).count(), 0)
   assert.ok(await guestPage.locator('#reglage-color').getByRole('radio').first().isDisabled())
   await shot(guestPage.locator('[data-place-content]'), '1280-partage')
   await guest.close()
@@ -453,6 +583,11 @@ try {
     await shot(page.locator(`#${anchor}`), `390-${name}`)
   }
   await shotInstructions('390-consignes-solera', ['mode', 'fichiers', 'lecteurs', 'texte'])
+  await shot(row('memory'), '390-memoire')
+  await shot(row('skills'), '390-skills')
+  for (const [anchor, name] of [['reglages-integrations-0', 'forge'], ['reglages-integrations-1', 'design']]) {
+    await shot(page.locator(`#${anchor}`), `390-${name}`)
+  }
   await goTo.selectOption({ label: 'Général › Exécution' })
   await until(() => page.locator('#reglages-general-2').evaluate((element) => element.getBoundingClientRect().top), (top) => top < 300, 'le sélecteur amène au groupe')
   await page.getByRole('button', { name: 'Rechercher un réglage', exact: true }).last().click()
@@ -466,7 +601,7 @@ try {
   await shot(page, '390-brouillon')
 
   assert.deepEqual(errors, [])
-  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, agents à plat, consignes, recherche, lecture suivie, Zone de danger, partage, téléphone.')
+  console.log('OK : réglages du projet — menu, brouillon et PATCH unique, agents à plat, consignes, mémoire, skills, intégrations, recherche, lecture suivie, Zone de danger, partage, téléphone.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

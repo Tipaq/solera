@@ -32,9 +32,18 @@ const add = (
   </Button>
 )
 
+/** La liste dans la largeur d'un bloc des Réglages. */
+function Demo(props: Parameters<typeof ProjectSkillList>[0]) {
+  return (
+    <div className="max-w-[60rem]">
+      <ProjectSkillList {...props} />
+    </div>
+  )
+}
+
 const meta = {
   title: "Composants d'application/Réglages › Skills",
-  component: ProjectSkillList,
+  component: Demo,
   args: { own: SKILLS, instanceCount: 12, libraryOff: false, add },
   parameters: {
     docs: {
@@ -44,8 +53,7 @@ const meta = {
       },
     },
   },
-  decorators: [(Story) => <div className="max-w-[60rem]"><Story /></div>],
-} satisfies Meta<typeof ProjectSkillList>
+} satisfies Meta<typeof Demo>
 
 export default meta
 type Story = StoryObj<typeof meta>
