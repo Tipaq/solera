@@ -9,7 +9,7 @@ import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer
 import { Badge, Banner, Button, Card, CardBody, ConfirmDialog, EmptyState, IconButton, cx } from '@solera/ui'
 import { cronToHuman } from '../lib/cron'
 import { relativeDate } from '../lib/dates'
-import type { EditorSeed } from '../lib/action-editor'
+import { NEW_AGENT_TASK, type EditorSeed } from '../lib/action-editor'
 import { fromTask } from '../lib/automations'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
@@ -37,8 +37,6 @@ const STATE_TONES: Record<ScheduleState, 'neutral' | 'accent' | 'caution' | 'cri
   waiting: 'positive',
 }
 
-/** « + Tâche » : un agent, planifié. */
-const NEW_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
 /**
  * Les tâches planifiées d'un projet : ce que le daemon rejoue tout seul, et ce que
@@ -75,7 +73,7 @@ export function SchedulePage() {
   }
   const open = creating ? 'new' : editing
   const seed = useMemo<EditorSeed | null>(
-    () => (open === null ? null : open === 'new' ? NEW_TASK : { from: fromTask(open) }),
+    () => (open === null ? null : open === 'new' ? NEW_AGENT_TASK : { from: fromTask(open) }),
     [open],
   )
 

@@ -1,6 +1,7 @@
 import {
   AlarmClock,
   Bot,
+  Check,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -35,6 +36,7 @@ import {
   ChoiceCards,
   Field,
   Popover,
+  SegmentedControl,
   Select,
   TerminalOutput,
   Tooltip,
@@ -45,6 +47,7 @@ import {
   draftFrom,
   editorStateOf,
   headerWhen,
+  isService as isServiceState,
   labelMax,
   linkIsLocalOnly,
   problemsOf,
@@ -93,6 +96,15 @@ const INPUT =
   'w-full rounded-md border border-line bg-canvas px-2.5 py-2 text-sm text-ink outline-none transition-colors placeholder:italic placeholder:text-ink-faint/55 hover:border-line-strong focus:border-accent'
 const INPUT_BAD = 'border-critical/60 focus:border-critical'
 
+/** Le port qu'un exemple de lien résout : celui d'un serveur Vite. */
+const EXAMPLE_PORT = 5173
+
+/** Au-delà, les niveaux d'effort ne tiennent plus en segments dans une demi-largeur. */
+const MAX_EFFORT_SEGMENTS = 4
+
+/** `{port}` se montre tel quel dans les textes qui le citent. */
+const PORT_TOKEN = { port: '{port}' }
+
 /** En deçà, dans le panneau, l'éditeur se lit mal : on propose d'agrandir (PACT-9). */
 const NARROW_PX = 360
 
@@ -101,7 +113,7 @@ function problemText(key: MessageKey, state: EditorState, t: (key: MessageKey, p
   if (key === 'actionEditor.error.labelMax') return t(key, { max: labelMax(state) })
   if (key === 'actionEditor.error.duration') return t(key, { min: MIN_SCHEDULE_DURATION_MINUTES, max: MAX_SCHEDULE_DURATION_MINUTES })
   if (key === 'actionEditor.error.checkTimeout') return t(key, { min: MIN_CHECK_TIMEOUT_SECONDS, max: MAX_CHECK_TIMEOUT_SECONDS })
-  if (key === 'actionEditor.error.url') return t(key, { port: '{port}' })
+  if (key === 'actionEditor.error.url') return t(key, PORT_TOKEN)
   return t(key)
 }
 
@@ -148,7 +160,7 @@ export function ActionEditor({
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const isService = state.what === 'command' && state.kind === 'service'
+  const isService = isServiceState(state)
   const problems = problemsOf(state)
   const blocking = Object.values(problems).map((key) => problemText(key, state, t))
   const shown = (field: EditorField) => {
@@ -253,7 +265,7 @@ export function ActionEditor({
                 <FieldRow
                   label={t('actionEditor.field.folder')}
                   error={shown('subdir')}
-                  hint={t('actionEditor.field.folderHint', { path: `<worktree>${state.subdir.trim() ? `/${state.subdir.trim()}` : ''}` })}
+                  hint={t('actionEditor.field.folderHint', { path: `${t('actionEditor.field.worktree')}${state.subdir.trim() ? `/${state.subdir.trim()}` : ''}` })}
                 >
                   <FolderPicker projectId={projectId} value={state.subdir} onChange={(subdir) => { set({ subdir }); touch('subdir') }} />
                 </FieldRow>
@@ -273,7 +285,7 @@ export function ActionEditor({
 
                 {isService ? <LinkField value={state.url} error={shown('url')} onChange={(url) => set({ url })} onBlur={() => touch('url')} /> : null}
 
-                <TryCommand projectId={projectId} conversationId={conversationId} state={state} />
+                <TryCommand projectId={projectId} conversationId={conversationId} state={state} subdirOk={!problems.subdir} />
               </>
             ) : (
               <>
@@ -301,7 +313,18 @@ export function ActionEditor({
                     .filter((group) => group.key === 'model' || group.key === 'effort')
                     .map((group) => (
                       <FieldRow key={group.key} label={t(group.key === 'model' ? 'actionEditor.field.model' : 'actionEditor.field.effort')}>
-                        <Select placeholder={group.label} value={group.value} options={group.options} onChange={group.onChange} />
+                        {/* L'effort en segments tant qu'ils tiennent ; au-delà, une liste. */}
+                        {group.key === 'effort' && group.options.length <= MAX_EFFORT_SEGMENTS ? (
+                          <SegmentedControl
+                            label={group.label}
+                            className="flex"
+                            value={group.value}
+                            onChange={group.onChange}
+                            segments={group.options.map((option) => ({ value: option.value, label: option.label }))}
+                          />
+                        ) : (
+                          <Select placeholder={group.label} value={group.value} options={group.options} onChange={group.onChange} />
+                        )}
                       </FieldRow>
                     ))}
                 </div>
@@ -602,10 +625,9 @@ function CommandField({ value, error, onChange, onBlur }: { value: string; error
 function LinkField({ value, error, onChange, onBlur }: { value: string; error?: string; onChange: (value: string) => void; onBlur: () => void }) {
   const t = useTranslate()
   const trimmed = value.trim()
-  const example = 5173
   const hint = trimmed
-    ? t('actionEditor.field.linkResolved', { port: example, url: resolveActionUrl(trimmed, [example]) ?? '' })
-    : t('actionEditor.field.linkHint', { port: '{port}' })
+    ? t('actionEditor.field.linkResolved', { port: EXAMPLE_PORT, url: resolveActionUrl(trimmed, [EXAMPLE_PORT]) ?? '' })
+    : t('actionEditor.field.linkHint', PORT_TOKEN)
   const host = trimmed.match(/^https?:\/\/([^/:?#]+|\[[^\]]+\])/i)?.[1] ?? 'localhost'
   return (
     <FieldRow label={t('actionEditor.field.link')} optional error={error} hint={hint}>
@@ -617,7 +639,7 @@ function LinkField({ value, error, onChange, onBlur }: { value: string; error?: 
         spellCheck={false}
         onChange={(event) => onChange(event.target.value)}
         onBlur={onBlur}
-        placeholder={t('actionEditor.field.linkPlaceholder', { port: '{port}' })}
+        placeholder={t('actionEditor.field.linkPlaceholder', PORT_TOKEN)}
         className={cx(INPUT, 'font-mono', error && INPUT_BAD)}
       />
       {linkIsLocalOnly(value, location.hostname) ? (
@@ -651,7 +673,7 @@ function FolderPicker({ projectId, value, onChange }: { projectId: string; value
       trigger={
         <button
           type="button"
-          aria-label={`${t('actionEditor.field.folder')} : ${value || t('actionEditor.field.folderRoot')}`}
+          aria-label={t('actionEditor.field.folderCurrent', { path: value || t('actionEditor.field.folderRoot') })}
           className="inline-flex h-[38px] w-full min-w-0 items-center gap-2 rounded-md border border-line bg-canvas px-2.5 text-left text-sm text-ink transition-colors hover:border-line-strong"
         >
           <Folder size={14} className="shrink-0 text-ink-faint" aria-hidden />
@@ -751,6 +773,7 @@ function FolderRow({
       >
         {expanded ? <FolderOpen size={13} className="shrink-0 text-ink-faint" aria-hidden /> : <Folder size={13} className="shrink-0 text-ink-faint" aria-hidden />}
         <span className={cx('min-w-0 truncate', path ? 'font-mono text-xs' : '')}>{name}</span>
+        {selected ? <Check size={13} className="ml-auto shrink-0" aria-hidden /> : null}
       </button>
     </span>
   )
@@ -805,11 +828,11 @@ function PlacementField({
             />
             {branchError ? (
               <ErrorLine text={branchError} />
-            ) : branch ? (
+            ) : branch && current ? (
               <span className="text-xs text-ink-faint">
                 {current === branch
                   ? t('actionEditor.placement.branchOnRoot')
-                  : t('actionEditor.placement.branchElsewhere', { current: current ?? '—', branch })}
+                  : t('actionEditor.placement.branchElsewhere', { current, branch })}
               </span>
             ) : null}
           </div>
@@ -823,14 +846,24 @@ function PlacementField({
  * « Essayer » (EDI-10) : un terminal d'essai, sans rien enregistrer ; sa sortie se lit
  * dessous. Toute modification de la commande l'efface.
  */
-function TryCommand({ projectId, conversationId, state }: { projectId: string; conversationId?: string; state: EditorState }) {
+function TryCommand({
+  projectId,
+  conversationId,
+  state,
+  subdirOk,
+}: {
+  projectId: string
+  conversationId?: string
+  state: EditorState
+  /** Un dossier refusé ne s'essaie pas : le serveur le refuserait aussi. */
+  subdirOk: boolean
+}) {
   const t = useTranslate()
   const attempt = useTryAction(projectId)
   const [tried, setTried] = useState<{ terminalId: string; command: string; subdir: string } | null>(null)
   const output = useTerminalOutput(projectId, tried?.terminalId ?? null)
   const stale = tried !== null && (tried.command !== state.command || tried.subdir !== state.subdir)
   const command = state.command.trim()
-  const subdirOk = !problemsOf(state).subdir
   return (
     <div className="flex flex-col gap-2" data-try>
       <span className="flex flex-wrap items-center gap-2">
@@ -953,7 +986,7 @@ function ButtonPreview({ state }: { state: EditorState }) {
         <span className="flex min-w-0 flex-1 flex-col">
           <span className={cx('truncate text-sm', label ? 'text-ink' : 'text-ink-faint/60 italic')}>{label || t('actionEditor.preview.labelPlaceholder')}</span>
           <span className="truncate text-xs text-ink-faint">
-            {description || t(state.what === 'command' && state.kind === 'service' ? 'actionEditor.preview.stopped' : 'actionEditor.preview.neverRun')}
+            {description || t(isServiceState(state) ? 'actionEditor.preview.stopped' : 'actionEditor.preview.neverRun')}
           </span>
         </span>
         <span className="inline-flex h-7 items-center gap-1 rounded-md border border-line px-2 text-xs text-ink-soft">
@@ -970,15 +1003,36 @@ function ButtonPreview({ state }: { state: EditorState }) {
  */
 function SaveButton({ missing, busy, onSave }: { missing: string | null; busy: boolean; onSave: () => void }) {
   const t = useTranslate()
+  if (!missing) {
+    return (
+      <Button size="sm" disabled={busy} onClick={onSave}>
+        {t('actionEditor.footer.save')}
+      </Button>
+    )
+  }
+  // Grisé, le vrai bouton se tait : c'est son enveloppe qu'on atteint et qu'on annonce,
+  // un bouton désactivé ne recevant ni le clic ni le focus.
   const button = (
-    <Button size="sm" disabled={missing !== null || busy} onClick={onSave} className={missing ? 'pointer-events-none' : undefined}>
+    <Button size="sm" disabled tabIndex={-1} aria-hidden className="pointer-events-none">
       {t('actionEditor.footer.save')}
     </Button>
   )
-  if (!missing) return button
   return (
     <Tooltip label={missing}>
-      <span tabIndex={0} onClick={onSave} aria-label={`${t('actionEditor.footer.save')} — ${missing}`} className="inline-flex rounded-md" data-save-blocked>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-disabled
+        onClick={onSave}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onSave()
+        }}
+        aria-label={t('actionEditor.footer.saveBlocked', { problems: missing })}
+        className="inline-flex rounded-md"
+        data-save-blocked
+      >
         {button}
       </span>
     </Tooltip>

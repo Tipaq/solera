@@ -50,6 +50,9 @@ export interface EditorSeed {
   prefill?: { label?: string; command?: string; url?: string; description?: string }
 }
 
+/** « + Tâche » d'une page de tâches planifiées : un agent, « Planifiée » cochée (PLF-1). */
+export const NEW_AGENT_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
+
 /** Ce que le placement d'un service peut valoir dans l'éditeur : `per-worktree` attend AC-06. */
 export type EditorPlacement = Exclude<ActionPlacement, 'per-worktree'>
 
@@ -207,7 +210,8 @@ export const ALL_FIELDS: readonly EditorField[] = [
   'serviceSchedule',
 ]
 
-const isService = (state: EditorState) => state.what === 'command' && state.kind === 'service'
+/** Une commande qui tourne en continu : elle seule a un lien et un placement. */
+export const isService = (state: EditorState): boolean => state.what === 'command' && state.kind === 'service'
 
 const inRange = (text: string, min: number, max: number) => {
   const value = Number(text)

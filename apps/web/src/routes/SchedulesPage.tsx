@@ -6,7 +6,7 @@ import { HeaderBand } from '../components/HeaderBand'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { ActionEditorDrawer } from '../components/automations/ActionEditorDrawer'
 import { Banner, Button, EmptyState, Menu, MenuItem, Switch, cx } from '@solera/ui'
-import type { EditorSeed } from '../lib/action-editor'
+import { NEW_AGENT_TASK } from '../lib/action-editor'
 import { cronToHuman } from '../lib/cron'
 import { locale, useTranslate } from '../lib/i18n'
 import { useProjects } from '../lib/projects'
@@ -21,8 +21,6 @@ import {
 } from '../lib/schedules'
 
 
-/** « + Tâche » dans un projet : un agent, planifié. */
-const NEW_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
 /**
  * Toutes les tâches planifiées, tous projets confondus.
@@ -124,7 +122,7 @@ export function SchedulesPage() {
       </div>
 
       {editorProject ? (
-        <ActionEditorDrawer projectId={editorProject} seed={creatingIn ? NEW_TASK : null} onClose={() => setCreatingIn(null)} />
+        <ActionEditorDrawer projectId={editorProject} seed={creatingIn ? NEW_AGENT_TASK : null} onClose={() => setCreatingIn(null)} />
       ) : null}
     </div>
   )

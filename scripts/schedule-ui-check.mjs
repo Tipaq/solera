@@ -125,7 +125,7 @@ try {
   await label.focus()
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).focus()
   await dialog.getByRole('alert').getByText('Un libellé court : c’est le texte du bouton.').waitFor()
-  assert.equal(await dialog.getByRole('button', { name: 'Enregistrer', exact: true }).isDisabled(), true)
+  await dialog.getByRole('button', { name: /^Enregistrer — à compléter : / }).waitFor()
   await label.fill('Veille de test')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   // Chaque minute, pour qu'un tir parte pendant la suite : une règle personnalisée.
