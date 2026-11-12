@@ -321,9 +321,9 @@ un `/tmp` presque plein donne une page Vite blanche, en `ERR_INSUFFICIENT_RESOUR
 une étape au hasard. Une suite qui monte un composant seul prend ses fournisseurs (React
 Query, routeur, `@solera/ui`) par `viteDependency()` (`scripts/checks/vite-deps.mjs`).
 
-Une suite nouvelle se range dans `scripts/ui-suites.mjs`, dans un lot du job `ui` de la
-CI ou hors CI avec sa raison : sinon la CI échoue. Hors CI, une douzaine de suites ont
-cassé sans que personne ne le voie (#258).
+Une suite nouvelle se range dans `scripts/ui-suites.mjs`, dans un des lots que la CI
+lance en parallèle (job `ui-batch`), ou hors CI avec sa raison : sinon la CI échoue.
+Hors CI, une douzaine de suites ont cassé sans que personne ne le voie (#258).
 
 ## Ce qui reste à faire avant de montrer Solera à quiconque
 

@@ -133,8 +133,8 @@ try {
     await delay(100)
   }
   assert.equal(settings.agentDefaults.codex.account, second.id)
-  assert.ok((await context.request.delete(`${base}/api/codex-accounts/${second.id}`)).ok())
   assert.equal(settings.agentDefaults.claude.account, null)
+  assert.ok((await context.request.delete(`${base}/api/codex-accounts/${second.id}`)).ok())
 
   // Déconnexion : le compte redevient en attente et disparaît du sélecteur.
   await page.goto(`${base}/settings/comptes-codex`)

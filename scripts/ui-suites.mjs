@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Lance un lot des suites d'interface `scripts/*-ui-check.mjs`, pour le job `ui` de la CI.
+ * Lance un lot des suites d'interface `scripts/*-ui-check.mjs`, pour la matrice `ui-batch`
+ * de la CI (le job `ui` ne fait que réunir le verdict des lots).
  *
  *   node scripts/ui-suites.mjs 2/3   lance le deuxième des trois lots
  *
@@ -13,71 +14,69 @@ import { fileURLToPath } from 'node:url'
  * n'est rangée nulle part fait échouer tous les lots : hors CI, une suite pourrit en
  * silence, et c'est arrivé à une douzaine d'entre elles (carte #258).
  *
- * Les lots sont équilibrés à la main sur les durées mesurées (en secondes, à côté de
- * chaque nom) ; le résumé de fin les redonne pour les rééquilibrer.
+ * Les lots sont équilibrés à la main sur les durées mesurées en CI (en secondes, à côté
+ * de chaque nom) ; le résumé de fin les redonne pour les rééquilibrer.
  */
 
 const root = join(fileURLToPath(import.meta.url), '../..')
 
 const BATCHES = [
   [
-    'frontend', // 140
-    'project-settings', // 125
-    'travail', // 45
-    'settings', // 40
-    'board', // 30
-    'shell', // 12
-    'skills', // 8
-    'viewport', // 7
+    'frontend', // 131
+    'travail', // 77
+    'project-settings', // 51
+    'board', // 50
+    'settings', // 37
+    'shell', // 15
+    'skills', // 11
+    'viewport', // 10
   ],
   [
-    'schedule', // 95
-    'milestones', // 70
+    'milestones', // 108
     'claude-login', // 35
-    'windows-feedback', // 22
-    'schedule-check', // 18
-    'services', // 15
-    'claude-accounts', // 14
-    'card-draft', // 13
+    'claude-accounts', // 26
+    'windows-feedback', // 21
+    'explorer', // 18
+    'grok-accounts', // 17
+    'services', // 16
+    'panel-project', // 16
+    'decisions', // 16
+    'worktree-status', // 16
+    'palette', // 16
+    'api-mcp', // 15
+    'card-draft', // 12
     'brief-field', // 12
-    'grok-accounts', // 12
-    'panel-project', // 11
-    'decisions', // 11
-    'explorer', // 10
-    'worktree-status', // 10
-    'api-mcp', // 9
-    'palette', // 9
   ],
   [
-    'git', // 65, le double sur une machine chargée
-    'places', // 55
-    'composer', // 30
-    'sidebar', // 28
+    'git', // 70
+    'places', // 56
+    'sidebar', // 34
+    'composer', // 26
     'terminals', // 26
-    'desktop-updates', // 14
     'vault', // 14
-    'schedule-builder', // 9
-    'session-references', // 9
-    'checkpoints', // 8
-    'activity', // 7
+    'desktop-updates', // 12
+    'schedule-builder', // 10
+    'checkpoints', // 10
+    'web', // 9
+    'activity', // 8
+    'worktree-gone', // 8
+    'session-references', // 7
     'tool-styles', // 7
-    'web', // 7
-    'agenda', // 6
-    'api-projects', // 6
+    'api-projects', // 7
+    'tooltips', // 7
     'toolbar', // 6
-    'tooltips', // 6
-    'worktree-gone', // 6
+    'fil-images', // 6
+    'skill-updates', // 6
+    'agenda', // 5
     'codex', // 5
-    'fil-images', // 5
-    'image-viewer', // 5
-    'skill-updates', // 5
+    'session-works', // 5
+    'image-viewer', // 4
     'grok', // 4
     'opencode', // 4
-    'session-works', // 4
   ],
 ]
 
-/** Hors CI, et pourquoi. Une suite n'y reste que le temps de sa carte. */
+/** Hors CI, et pourquoi : la carte qui doit l'y ramener, ou le job qui l'éprouve ailleurs. */
 const OUTSIDE = {
   desktop: "l'app empaquetée, éprouvée par le job desktop sur main",
   actions: 'instable, lignes en double (#259)',
@@ -85,6 +84,8 @@ const OUTSIDE = {
   onboarding: 'page.goto bloque par intermittence (#263)',
   'codex-accounts': 'lance le vrai codex, qui joint OpenAI (#264)',
   'draft-account': 'sonde les vrais codex et claude (#264)',
+  schedule: 'un vrai tour du CLI Claude du poste (#267)',
+  'schedule-check': 'un vrai tour du CLI Claude du poste (#267)',
 }
 
 const onDisk = readdirSync(join(root, 'scripts'))
@@ -103,7 +104,7 @@ if (problems.length) {
 
 const match = /^(\d+)\/(\d+)$/.exec(process.argv[2] ?? '')
 if (!match || Number(match[2]) !== BATCHES.length || Number(match[1]) < 1 || Number(match[1]) > BATCHES.length) {
-  console.error(`Usage : node scripts/ui-suites.mjs <lot>/${BATCHES.length}, avec autant de lots dans la matrice du job ui.`)
+  console.error(`Usage : node scripts/ui-suites.mjs <lot>/${BATCHES.length}, autant de lots que la matrice ui-batch de la CI.`)
   process.exit(1)
 }
 
