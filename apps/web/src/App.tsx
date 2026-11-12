@@ -92,8 +92,8 @@ const NewProjectPage = lazy(() => import('./routes/NewProjectPage').then((m) => 
 const PortfolioBoardPage = lazy(() =>
   import('./routes/PortfolioBoardPage').then((m) => ({ default: m.PortfolioBoardPage })),
 )
-const PortfolioTimelinePage = lazy(() =>
-  import('./routes/PortfolioTimelinePage').then((m) => ({ default: m.PortfolioTimelinePage })),
+const PortfolioMilestonesPage = lazy(() =>
+  import('./routes/PortfolioMilestonesPage').then((m) => ({ default: m.PortfolioMilestonesPage })),
 )
 const PortfolioTravailPage = lazy(() =>
   import('./routes/PortfolioTravailPage').then((m) => ({ default: m.PortfolioTravailPage })),
@@ -260,7 +260,7 @@ export function App() {
           <Route path="/projects" element={<PortfolioLayout />}>
             <Route index element={<PortfolioOverviewPage />} />
             <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
-            <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
+            <Route path="timeline" element={<Deferred><PortfolioMilestonesPage /></Deferred>} />
             <Route path="travail" element={<Deferred><PortfolioTravailPage /></Deferred>} />
             {/* Les anciennes vues mènent à Travail, qui les a reprises : l'Activité et le
                 Travail d'avant #117 à sa vue retenue, le Journal à Par moment. */}

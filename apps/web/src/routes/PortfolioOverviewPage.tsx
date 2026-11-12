@@ -12,7 +12,7 @@ import { codeSessionOf, usePortfolioCode } from '../lib/code-data'
 import { useTranslate } from '../lib/i18n'
 import { useJournal } from '../lib/journal'
 import { activeTrees, EVENTS_SHOWN, projectSummaries, recentEvents } from '../lib/portfolio-overview'
-import { useAllActiveMilestones } from '../lib/milestones'
+import { usePortfolioActiveMilestones } from '../lib/milestones'
 import { usePortfolioLive } from '../lib/portfolio'
 import { useInbox } from '../lib/use-inbox'
 
@@ -33,7 +33,8 @@ export function PortfolioOverviewPage() {
   const t = useTranslate()
   const { projects: visible, live, isPending } = usePortfolioLive()
   const byId = useMemo(() => new Map(visible.map((project) => [project.id, project])), [visible])
-  const runs = useAllActiveMilestones(useMemo(() => visible.map((project) => project.id), [visible]))
+  const runsByProject = usePortfolioActiveMilestones()
+  const runs = useMemo(() => [...runsByProject.values()].flat(), [runsByProject])
   const inbox = useInbox({ portfolio: true })
   const { cards } = useAllCards(visible)
   const code = usePortfolioCode(visible, live)

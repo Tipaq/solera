@@ -179,6 +179,15 @@ export interface MilestoneRunDto {
   endedAt: number | null
 }
 
+/**
+ * Les jalons lancés de tous les projets visibles et non archivés, par projet (#240) :
+ * les Jalons et l'Aperçu du portefeuille les lisent d'une requête. Un projet sans jalon
+ * lancé n'y figure pas.
+ */
+export interface PortfolioMilestoneRunsDto {
+  projects: Record<string, MilestoneRunDto[]>
+}
+
 export const startMilestoneBodySchema = z.object({
   mode: milestoneRunModeSchema.default('auto'),
   concurrency: z.number().int().min(1).max(MAX_MILESTONE_CONCURRENCY).default(DEFAULT_MILESTONE_CONCURRENCY),

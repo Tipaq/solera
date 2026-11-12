@@ -1,6 +1,7 @@
 import { cx } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 import type { Maturity } from '../../lib/milestone-model'
+import { MATURITY_DOT } from './tones'
 
 /** Le texte d'une maturité : une couleur par étape, et sobre. */
 const MATURITY_TEXT: Record<Maturity, string> = {
@@ -10,15 +11,6 @@ const MATURITY_TEXT: Record<Maturity, string> = {
   ready: 'text-positive',
   launched: 'text-accent',
   delivered: 'text-positive',
-}
-
-const MATURITY_DOT: Record<Maturity, string> = {
-  idea: 'bg-line-strong',
-  refine: 'bg-caution',
-  split: 'bg-ink-faint',
-  ready: 'bg-positive',
-  launched: 'bg-accent',
-  delivered: 'bg-positive',
 }
 
 /**

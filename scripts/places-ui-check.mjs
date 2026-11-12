@@ -760,12 +760,37 @@ try {
   }
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
 
-  // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
-  // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
+  /*
+    Les Jalons du portefeuille (#240, PF-28 à PF-31) : les jalons de tous les projets sur
+    le modèle de maturité. **Horizon** : une bande par projet, une tuile par jalon qui
+    mène à sa page ; **Gantt** : un axe commun, une bande par projet, la barre d'un jalon
+    cliquable. Le filtre Projet de la barre commune retire les bandes des autres.
+  */
   await page.goto(`${base}/projects/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  await page.getByText('aucun jalon', { exact: true }).first().waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-chronologie.png') })
+  const nimbusBand = page.getByRole('region', { name: nimbus.name, exact: true })
+  const tile = nimbusBand.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`)
+  await tile.waitFor()
+  assert.match(await tile.textContent(), new RegExp(`#${milestone.number}`), 'La tuile porte le numéro du jalon')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-horizon.png') })
+  const milestoneProjects = await page.locator('[data-place-content] section[aria-label]').evaluateAll((sections) =>
+    sections.map((section) => section.getAttribute('aria-label')),
+  )
+  const other = projects.find((entry) => entry.id !== nimbus.id && milestoneProjects.includes(entry.name))
+  await page.getByRole('button', { name: /^Filtrer/ }).click()
+  await page.getByRole('dialog', { name: 'Filtrer' }).getByRole('checkbox', { name: new RegExp(nimbus.name) }).click()
+  await page.keyboard.press('Escape')
+  await nimbusBand.waitFor()
+  if (other) await page.getByRole('region', { name: other.name, exact: true }).waitFor({ state: 'detached' })
+  // Le Gantt commun : la barre du jalon mène à sa page dans son projet.
+  await page.getByRole('button', { name: /^Affichage : / }).click()
+  await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Gantt', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const bar = page.locator(`[data-milestone-bar="${milestone.number}"]`)
+  await bar.waitFor()
+  await page.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-gantt.png') })
+  await bar.click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
 
   // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
   // une, et il se partage par lien comme les deux autres. L'ancien nom du paramètre,
@@ -865,7 +890,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
 
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque, Aperçu et Travail du portefeuille (anciennes vues, filtres, Tableau, Nettoyer, état vide), board global, les deux chronologies, le journal, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque, Aperçu et Travail du portefeuille (anciennes vues, filtres, Tableau, Nettoyer, état vide), board global, les Jalons du portefeuille, le journal, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
