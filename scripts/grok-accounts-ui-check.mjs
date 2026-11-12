@@ -64,7 +64,7 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
-    // Le home Grok de « l'utilisateur », que les comptes reprennent par liens, et une
+    // Le home Grok de « l'utilisateur », dont les comptes recopient la configuration, et une
     // confirmation de code d'appareil assez lente pour que l'écran montre l'attente.
     GROK_HOME: userGrokHome,
     FIXTURE_LOGIN_DELAY: '60000',
@@ -88,17 +88,20 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // L'ancienne adresse ouvre la modale des réglages sur la section, qui a son entrée
-  // dans la navigation de la modale.
+  // L'ancienne adresse ouvre la modale des réglages sur la section Agents, à l'onglet de
+  // Grok : les pages de comptes y sont fondues, un onglet par CLI (#120).
   await page.goto(`${base}/settings/comptes-grok`)
-  await page.getByRole('dialog').getByText('Comptes Grok').first().waitFor()
+  await page.getByRole('dialog').getByRole('tab', { name: /Grok/, selected: true }).waitFor()
 
   // Créer un compte : il naît non connecté, avec les deux voies de connexion.
   await page.getByText('Aucun compte Grok').waitFor()
   await page.getByRole('button', { name: 'Connecter un compte' }).first().click()
   await page.getByLabel('Nom').fill('Perso')
   await page.getByRole('button', { name: 'Créer le compte' }).click()
-  await page.getByText('Non connecté').waitFor()
+  // L'état se lit sur la ligne du compte : la carte « Connexion » du CLI, au-dessus dans
+  // l'onglet, porte aussi un « Connecté » ou un « Non connecté », le sien.
+  const row = page.getByRole('dialog').getByText('Perso', { exact: true }).locator('..')
+  await row.getByText('Non connecté', { exact: true }).waitFor()
   const listed = await (await context.request.get(`${base}/api/grok-accounts`)).json()
   assert.equal(listed.accounts[0].status, 'pending')
   const id = listed.accounts[0].id
@@ -107,25 +110,40 @@ try {
   // Clé API : Grok l'écrit dans le home du compte ; elle ne revient jamais au navigateur.
   await page.getByRole('button', { name: 'Utiliser une clé API' }).click()
   await page.getByLabel('Clé API xAI').fill('xai-test-bogus-key')
-  await page.getByRole('button', { name: 'Se connecter', exact: true }).click()
-  // Dans la modale : la coque porte aussi un « Connecté », celui du serveur.
-  await page.getByRole('dialog').getByText('Connecté', { exact: true }).waitFor({ timeout: 30000 })
+  // Le bouton du formulaire : la carte « Connexion » du CLI a aussi son « Se connecter ».
+  await page.locator('form', { has: page.getByLabel('Clé API xAI') }).getByRole('button', { name: 'Se connecter', exact: true }).click()
+  await row.getByText('Connecté', { exact: true }).waitFor({ timeout: 30000 })
   await page.getByText('Clé API xAI', { exact: true }).waitFor()
   assert.ok(!(await page.content()).includes('xai-test-bogus-key'), 'La clé ne revient jamais au navigateur')
   assert.ok((await readFile(join(accountHome, 'auth.json'), 'utf8')).length > 0, 'auth.json est dans le home du compte')
-  assert.ok((await lstat(join(accountHome, 'sessions'))).isSymbolicLink(), 'les sessions sont celles du home de l’utilisateur')
+  // Un home sans lien vers celui de l'utilisateur (#139) : sa configuration y est recopiée,
+  // ses sessions n'y passent qu'une à une, quand un compte en reprend une.
+  assert.ok((await lstat(join(accountHome, 'config.toml'))).isFile(), 'config.toml recopié, pas lié, dans le home du compte')
+  assert.equal((await lstat(join(accountHome, 'sessions')).catch(() => null))?.isSymbolicLink() ?? false, false, 'les sessions ne sont pas liées au home de l’utilisateur')
   await page.screenshot({ path: '/var/tmp/solera-grok-accounts-desktop.png' })
 
-  // Le sélecteur de compte dans les défauts de Grok.
+  // Le sélecteur de compte dans les défauts de Grok. Il part sur le premier compte connecté
+  // (#147) : avec un seul, rien ne s'écrirait. Un second, connecté par l'API, pour que le
+  // choix ait à se garder ; il est retiré ensuite.
+  const second = await (await context.request.post(`${base}/api/grok-accounts`, { data: { label: 'Travail' } })).json()
+  const secondLogin = await context.request.post(`${base}/api/grok-accounts/${second.id}/login`, { data: { type: 'apiKey', apiKey: 'xai-test-other-key' } })
+  assert.ok(secondLogin.ok(), await secondLogin.text())
   await page.goto(`${base}/settings/cli`)
-  await page.getByRole('radio', { name: /Grok Build/ }).click()
+  await page.getByRole('tab', { name: 'Grok' }).click()
   const account = page.getByRole('combobox', { name: 'Compte' })
   await account.waitFor()
+  assert.equal(await account.textContent(), 'Perso', 'le premier compte connecté est choisi d’office')
   await account.click()
-  await page.getByRole('option', { name: 'Perso' }).click()
-  await delay(500)
-  const settings = await (await context.request.get(`${base}/api/me/settings`)).json()
-  assert.equal(settings.agentDefaults.grok.account, id)
+  assert.equal(await page.getByRole('option', { name: /Connexion du terminal/ }).count(), 0, 'pas de connexion du terminal (#147)')
+  await page.getByRole('option', { name: 'Travail' }).click()
+  let settings
+  for (let tries = 0; tries < 50; tries++) {
+    settings = await (await context.request.get(`${base}/api/me/settings`)).json()
+    if (settings.agentDefaults.grok.account === second.id) break
+    await delay(100)
+  }
+  assert.equal(settings.agentDefaults.grok.account, second.id)
+  assert.ok((await context.request.delete(`${base}/api/grok-accounts/${second.id}`)).ok())
 
   // La jauge du compte, lue par `_x.ai/billing` dans son home.
   const usage = await (await context.request.get(`${base}/api/agents/grok/usage?account=${id}`)).json()
@@ -135,14 +153,16 @@ try {
   // Déconnexion : le compte redevient en attente, sa connexion est retirée.
   await page.goto(`${base}/settings/comptes-grok`)
   await page.getByRole('button', { name: 'Déconnecter ce compte' }).click()
-  await page.getByText('Non connecté').waitFor({ timeout: 30000 })
+  await row.getByText('Non connecté', { exact: true }).waitFor({ timeout: 30000 })
   assert.equal((await (await context.request.get(`${base}/api/grok-accounts`)).json()).accounts[0].status, 'pending')
   assert.equal(await readFile(join(accountHome, 'auth.json'), 'utf8').catch(() => null), null, 'auth.json retiré')
 
   // Code d'appareil : l'écran montre l'URL et le code écrits par `grok login`, on annule.
   await page.getByRole('button', { name: "Se connecter par code d'appareil" }).click()
   await page.getByText('Ouvrir la page de connexion').waitFor({ timeout: 30000 })
-  assert.equal(await page.getByRole('dialog').locator('code').first().textContent(), 'W68V-VRXD')
+  // Le code à côté du lien : la carte d'installation du CLI montre aussi son chemin en <code>.
+  const deviceCode = page.getByRole('dialog').locator('div', { has: page.getByRole('link', { name: 'Ouvrir la page de connexion' }) }).last().locator('code')
+  assert.equal(await deviceCode.textContent(), 'W68V-VRXD')
   const status = await (await context.request.get(`${base}/api/grok-accounts/${id}/login`)).json()
   assert.equal(status.state, 'pending')
   assert.equal(status.verificationUrl, 'https://accounts.x.ai/oauth2/device?user_code=W68V-VRXD')

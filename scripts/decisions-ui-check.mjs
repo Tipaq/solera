@@ -107,7 +107,12 @@ try {
   browser = await launchBrowser()
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
-    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    if (window !== window.top || location.origin !== origin) return
+    localStorage.setItem('solera.locale', 'fr')
+    // « Ajuster à la hauteur », le défaut depuis #234, replie l'Activité sur son en-tête
+    // quand moins de 5 sessions tiendraient sous elle — c'est le cas avec la démo. Une
+    // limite fixe la garde dépliée : ses lignes sont ce que la suite vérifie.
+    localStorage.setItem('solera.display.sessionLimit', '10')
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())

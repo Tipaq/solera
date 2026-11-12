@@ -74,6 +74,9 @@ try {
     SOLERA_CONFIG: config,
     SOLERA_DATA_DIR: join(data, 'data'),
     SOLERA_WEB_ROOT: join(data, 'web'),
+    // Le serveur commite et rebase depuis l'interface : sans identité, git refuse sur une
+    // machine qui n'en a pas de globale, comme le runner de la CI.
+    GIT_AUTHOR_NAME: 'Suite', GIT_AUTHOR_EMAIL: 'suite@example.com', GIT_COMMITTER_NAME: 'Suite', GIT_COMMITTER_EMAIL: 'suite@example.com',
   }
   const server = run(['--import', 'tsx', 'src/main.ts'], serverDir, env)
   const vite = run([join(webDir, 'node_modules/vite/bin/vite.js'), '--host', '127.0.0.1', '--port', String(webPort), '--strictPort'], webDir, env)
@@ -602,12 +605,11 @@ try {
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
-  /* La rangée : Aperçu, Travail, Tableau, Jalons. Actions attend sa vue du portefeuille
-     (#241) : masqué d'ici là, plutôt que de mener hors de la coque. */
+  // La rangée : Aperçu, Travail, Tableau, Jalons, Actions.
   assert.deepEqual(
     await portfolio.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname)),
-    ['/projects', '/projects/travail', '/projects/board', '/projects/timeline'],
-    'Aperçu · Travail · Tableau · Jalons',
+    ['/projects', '/projects/travail', '/projects/board', '/projects/timeline', '/projects/actions'],
+    'Aperçu · Travail · Tableau · Jalons · Actions',
   )
   // La bande : un seul geste, « + Projet », et plus de « + Conversation ».
   const portfolioBand = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Projets', exact: true }) })
