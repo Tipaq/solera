@@ -16,7 +16,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  CalendarClock,
   ChevronRight,
   ChevronsUpDown,
   Focus,
@@ -24,13 +23,10 @@ import {
   ListTree,
   MessagesSquare,
   MoreHorizontal,
-  Palette,
   Pencil,
   Plus,
-  SlidersHorizontal,
-  SquareKanban,
+  Settings,
   SquareTerminal,
-  Target,
   Users,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -41,7 +37,7 @@ import { currentProjectFocus, setProjectFocus, useProjectFocus } from '../../lib
 import { useTranslate } from '../../lib/i18n'
 import { NO_PROJECT } from '../../lib/sessions-view'
 import { cutToBudget } from '../../lib/sidebar-budget'
-import { PROJECT_COLORS } from '../../lib/project-colors'
+import { PROJECT_TABS } from '../../lib/project-tabs'
 import { useUpdateProject } from '../../lib/projects'
 import { useLiveConversations } from '../../lib/activity'
 import { useHasUnread } from '../../lib/reads'
@@ -59,10 +55,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  MenuLabel,
   MenuSeparator,
-  MenuSwatch,
-  MenuSwatchRow,
   Tooltip,
   TooltipButton,
 } from '@solera/ui'
@@ -597,7 +590,7 @@ function ProjectSessions({ conversations, projectId, onNavigate }: {
 
 /**
  * Les entrées du `⋯` d'un projet que l'on possède, les mêmes dans l'arbre et sur la ligne
- * du mode projet : ses vues, ses réglages, le renommer, sa couleur.
+ * du mode projet : ses onglets, toutes ses sessions, ses réglages, le renommer.
  */
 function ProjectMenuEntries({ project, onNavigate, onRename }: {
   project: ProjectDto
@@ -606,43 +599,27 @@ function ProjectMenuEntries({ project, onNavigate, onRename }: {
 }) {
   const t = useTranslate()
   const navigate = useNavigate()
-  const updateProject = useUpdateProject()
   const go = (path: string) => { onNavigate(); navigate(path) }
   return (
     <>
-      {/* Les vues en second rang, et seulement ici : la colonne n'a pas de rangée
-          d'onglets sous les yeux, donc le menu est le seul endroit d'où l'on va droit
-          au board sans passer par l'Aperçu. */}
-      <MenuItem icon={<Target size={14} />} onSelect={() => go(`/p/${project.id}`)}>
-        {t('project.view.overview')}
-      </MenuItem>
-      <MenuItem icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
-        {t('shell.project.board')}
-      </MenuItem>
-      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/actions`)}>
-        {t('place.schedules.title')}
-      </MenuItem>
-      <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
-        {t('shell.project.settings')}
+      {/* Les onglets dans l'ordre de la rangée, et seulement ici : la colonne n'a pas la
+          rangée sous les yeux, donc le menu est le seul chemin direct vers un onglet
+          sans passer par l'Aperçu. Plus de couleur : elle vit dans Réglages › Général. */}
+      {PROJECT_TABS.map((tab) => (
+        <MenuItem key={tab.key} icon={<tab.icon size={14} />} onSelect={() => go(`/p/${project.id}${tab.path}`)}>
+          {t(tab.label)}
+        </MenuItem>
+      ))}
+      <MenuItem icon={<MessagesSquare size={14} />} onSelect={() => go(`/sessions?projet=${project.id}`)}>
+        {t('shell.sessions.all.project')}
       </MenuItem>
       <MenuSeparator />
+      <MenuItem icon={<Settings size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
+        {t('shell.project.settings')}
+      </MenuItem>
       <MenuItem icon={<Pencil size={14} />} onSelect={onRename}>
         {t('shell.rename')}
       </MenuItem>
-      <MenuLabel>
-        <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
-      </MenuLabel>
-      <MenuSwatchRow>
-        {PROJECT_COLORS.map((entry) => (
-          <MenuSwatch
-            key={entry.value ?? 'default'}
-            color={entry.value}
-            label={t(entry.label)}
-            selected={project.color === entry.value}
-            onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-          />
-        ))}
-      </MenuSwatchRow>
     </>
   )
 }

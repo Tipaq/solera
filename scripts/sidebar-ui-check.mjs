@@ -422,6 +422,45 @@ try {
     'Au survol, les points d’état cèdent la place au lieu de se pousser',
   )
 
+  /*
+    SID-13 : le `⋯` d'un projet mène droit à chacun de ses onglets, dans l'ordre de la
+    rangée, puis à toutes ses sessions ; un séparateur, puis Réglages et Renommer. Plus
+    de pastilles de couleur : elle vit dans Réglages › Général. Le clic droit ouvre le
+    même menu.
+  */
+  const projectMenuEntries = [
+    'Aperçu', 'Travail', 'Tableau', 'Jalons', 'Actions', 'Toutes les sessions du projet',
+    'Réglages du projet', 'Renommer',
+  ]
+  await projectRow.click({ button: 'right' })
+  const treeMenu = page.getByRole('menu')
+  await treeMenu.waitFor()
+  assert.deepEqual(
+    await treeMenu.getByRole('menuitem').allTextContents(),
+    ['N’afficher que ce projet', ...projectMenuEntries],
+  )
+  assert.deepEqual(
+    await treeMenu.locator(':scope > [role="menuitem"], :scope > [role="separator"]').evaluateAll(
+      (nodes) => nodes.map((node) => node.getAttribute('role') === 'separator' ? '—' : node.textContent),
+    ),
+    ['N’afficher que ce projet', '—', ...projectMenuEntries.slice(0, 6), '—', ...projectMenuEntries.slice(6)],
+    'un séparateur avant les onglets, un autre avant Réglages',
+  )
+  assert.equal(await treeMenu.getByText('Couleur').count(), 0, 'plus de couleur : ni intitulé, ni pastilles (des entrées sans texte)')
+  await page.screenshot({ path: join(shots, 'menu-projet.png') })
+  await treeMenu.getByRole('menuitem', { name: 'Jalons', exact: true }).click()
+  await page.waitForURL(`**/p/${project.id}/timeline`)
+  await projectRow.hover()
+  await projectLine.getByRole('button', { name: /^Actions/ }).click()
+  await page.getByRole('menuitem', { name: 'Travail', exact: true }).click()
+  await page.waitForURL(`**/p/${project.id}/travail`)
+  await projectRow.hover()
+  await projectLine.getByRole('button', { name: /^Actions/ }).click()
+  await page.getByRole('menuitem', { name: 'Toutes les sessions du projet', exact: true }).click()
+  await page.waitForURL(`**/sessions?projet=${project.id}`)
+  await places.getByRole('button', { name: /^Projets/ }).click()
+  await projectRow.hover()
+
   await projectRow.click()
   await page.waitForURL(`**/p/${project.id}`)
   assert.equal(await page.locator('textarea').count(), 0, 'un projet ne s’ouvre pas sur un fil vide')
@@ -778,7 +817,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, Fils vers /sessions, lignes de fin, Ajuster à la hauteur et repli de l’Activité, 10 / 20 / 50, tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu ⋯ d’un projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, Fils vers /sessions, lignes de fin, Ajuster à la hauteur et repli de l’Activité, 10 / 20 / 50, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

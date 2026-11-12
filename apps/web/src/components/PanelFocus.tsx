@@ -23,6 +23,19 @@ function updateModalBackground() {
   }
 }
 
+/**
+ * Le dernier bord du piège de Radix (`getTabbableEdges`), avec ses critères à l'identique :
+ * ailleurs, Tab depuis l'élément choisi ne serait pas reconnu comme le bord, et sortirait.
+ */
+function lastTabbable(container: HTMLElement) {
+  const candidates = [...container.querySelectorAll<HTMLElement>('*')].filter((element) =>
+    !(element as HTMLElement & { disabled?: boolean }).disabled
+    && !element.hidden
+    && !(element instanceof HTMLInputElement && element.type === 'hidden')
+    && element.tabIndex >= 0)
+  return candidates.findLast((element) => element.checkVisibility({ checkVisibilityCSS: true }))
+}
+
 /** Même contenu en panneau libre ou plein écran, sans remonter l'éditeur au redimensionnement. */
 export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protectEditor = false, children }: {
   open: boolean
@@ -89,6 +102,19 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protec
     >
       {cloneElement(children, { onKeyDown: (event) => {
         children.props.onKeyDown?.(event)
+        // Le piège de Radix ne boucle que depuis ses bords : focalisé sur lui-même (à
+        // l'ouverture, ou par un clic dans son blanc), le conteneur laisserait Maj+Tab
+        // sortir du dialogue vers un arrière-plan inerte (#254).
+        const shiftTab = event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+        if (open && modal && shiftTab && event.target === container.current) {
+          // Sans élément tabulable, Radix retient lui-même la touche sur le conteneur.
+          const last = lastTabbable(container.current)
+          if (!last) return
+          event.preventDefault()
+          last.focus({ preventScroll: true })
+          if (last instanceof HTMLInputElement) last.select()
+          return
+        }
         if (!open || event.key !== 'Escape' || event.defaultPrevented) return
         const target = event.target
         if (!(target instanceof HTMLElement) || !container.current?.contains(target)) return

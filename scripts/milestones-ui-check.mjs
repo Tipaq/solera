@@ -16,6 +16,13 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // (ordre du tableau, prochaine action, lien) ; « + Jalon » et une carte cochée « C'est un
 // jalon » arrivent comme idées sous Plus tard.
 //
+// Étape « composer » (#193, CMP-1..16, BAR-7) : le tiroir « Nouveau jalon » de la page —
+// titre tiré du texte, gestes et leurs désactivations, pied (étape d'arrivée, phrase de
+// l'agent, repéré, aperçu au survol), brouillon gardé à la fermeture, échéance, Réf. et
+// Inclure, lien et fichier ; la création réelle (carte drapeautée et datée, relation,
+// enfant, pièce jointe), `Ctrl+Entrée` vers le brouillon d'affinage pré-rempli, l'idée
+// notée, et une pièce qui ne suit pas. Aucune session ne part : l'API est simulée.
+//
 // Étape « page » (#194, JAL-1..8, VAG-1..10) : l'en-tête, la prochaine action et son geste,
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
@@ -29,6 +36,11 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // (environnements filtrés, cartes, lancer une carte), en autonome (confiné d'office,
 // concurrence remontée aux vagues, quota, vérifications, lancer), livré, rien à lancer.
 // Les lancements ne partent que vers l'API simulée : aucune session ne s'ouvre.
+// Puis le suivi d'un jalon lancé (#198, RUN-1..12) : titre et durée, bascule de mode,
+// places, branche, confinement, statut de chaque carte (ce qui t'attend en ambre, sa raison
+// en infobulle), « Lancer » à la main, ajout de carte, pause, reprise, arrêt confirmé ; la
+// PR finale ouverte (« Fusionner dans main », « Ouvrir la PR », l'erreur de forge lue) ou
+// fermée sans fusion. Aucune vraie PR n'est fusionnée.
 //
 // Étape « à régler et ajout » (#196, RGL-1..6, ADD-1..4, AFF-7, JAL-3) : préciser une
 // carte (à sa session, sinon dans sa description), l'accepter, rompre un cycle ; le
@@ -123,7 +135,7 @@ function milestones() {
   parent(330, 'Accès distant fiable', [first, second, card(333, 'Sonde réseau', 'todo'), card(334, 'Journal des coupures', 'todo')])
   // Lancé, la PR du jalon ouverte.
   parent(340, 'Comptes nommés', [card(341, 'Alias', 'done'), card(342, 'Migration', 'done')], {
-    branch: 'jalon/340-comptes-nommes', branchPr: { number: 77, url: 'https://github.com/tipaq/solera/pull/77', mergedAt: null },
+    branch: 'jalon/340-comptes-nommes', branchPr: { number: 77, url: 'https://github.com/tipaq/solera/pull/77', base: 'main', mergedAt: null, closedAt: null },
   })
   // Un cycle.
   const loopA = card(351, 'Fil unique', 'todo')
@@ -438,7 +450,7 @@ async function horizonStep(width) {
   console.log(width, 'BAR-7 : « + Jalon » note une idée, qui arrive sous Plus tard')
   await page.getByRole('button', { name: 'Jalon', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Nouveau jalon' })
-  await dialog.getByRole('textbox').first().fill('Tableau de bord des coûts')
+  await dialog.getByRole('textbox', { name: 'Le jalon, en une phrase ou en brief' }).fill('Tableau de bord des coûts')
   await dialog.getByRole('button', { name: 'Noter l’idée' }).click()
   await dialog.waitFor({ state: 'detached' })
   assert.equal(writes.at(-1).milestone, true)
@@ -463,6 +475,238 @@ async function horizonStep(width) {
     const columns = await page.getByRole('list', { name: 'Jalons par étape' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
     assert.equal(columns, 3)
   }
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
+const COMPOSER_BRIEF = `# Mode hors-ligne complet
+
+## Objectif
+Pouvoir relire et répondre aux sessions sans réseau.
+## Étapes
+- Cache local des fils, voir #931
+- File d'envoi des réponses, avec #960
+- Resynchronisation au retour du réseau
+## Hors champ
+- Lancer une session hors ligne`
+
+async function composerStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  let cards = horizonBoard()
+  let next = 970
+  const writes = []
+  /** Les chemins qui échouent une fois, pour la pièce qui ne suit pas. */
+  const failing = new Set()
+  /** Une création lente, pour fermer pendant l'envoi. */
+  let slow = false
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const method = request.method()
+    if (failing.delete(`${method} ${path}`)) return route.fulfill({ status: 409, json: { error: { code: 'refused', message: 'Lien refusé' } } })
+    if (path === '/api/projects') return route.fulfill({ json: [projectOf(null)] })
+    if (path === `/api/projects/${PROJECT}/cards` && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'create', ...body })
+      if (slow) await delay(800)
+      const created = card(next++, body.title, 'todo', { description: body.description, dueAt: body.dueAt, milestone: body.milestone, position: 970, createdAt: Date.now() })
+      cards = [...cards, created]
+      return route.fulfill({ json: created })
+    }
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [RUN] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', name: 'Tim', email: 'tim@example.com' } })
+    const relation = /^\/api\/cards\/([^/]+)\/relations$/.exec(path)
+    if (relation && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'relation', id: relation[1], relation: body.kind, targetId: body.targetId })
+      return route.fulfill({ json: cards.find((entry) => entry.id === relation[1]) })
+    }
+    const attachment = /^\/api\/cards\/([^/]+)\/attachments$/.exec(path)
+    if (attachment && method === 'POST') {
+      const name = /filename="([^"]+)"/.exec(request.postDataBuffer()?.toString('latin1') ?? '')?.[1]
+      writes.push({ kind: 'attachment', id: attachment[1], name })
+      return route.fulfill({ json: { id: 'att-1', name, size: 1, mimeType: 'application/pdf', createdAt: Date.now() } })
+    }
+    const patch = /^\/api\/cards\/([^/]+)$/.exec(path)
+    if (patch && method === 'PATCH') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'patch', id: patch[1], ...body })
+      const target = cards.find((entry) => entry.id === patch[1])
+      Object.assign(target, body)
+      return route.fulfill({ json: target })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+
+  const where = () => page.evaluate(() => window.where)
+  const drawer = page.getByRole('dialog', { name: 'Nouveau jalon' })
+  const field = drawer.getByRole('textbox', { name: 'Le jalon, en une phrase ou en brief' })
+  const title = drawer.getByRole('textbox', { name: 'Titre du jalon' })
+  const footer = drawer.locator('footer')
+  const gesture = (name) => footer.getByRole('button', { name, exact: true })
+  const shot = (locator, name) => locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-composer-${name}-${width}.png` })
+  const open = async () => {
+    await page.getByRole('button', { name: 'Jalon', exact: true }).click()
+    await field.waitFor()
+  }
+
+  console.log(width, 'CMP-1, CMP-2 : le tiroir large, son en-tête, vide')
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await open()
+  assert.equal(await field.evaluate((element) => element === document.activeElement), true, 'le champ prend le focus')
+  assert.equal(await title.getAttribute('placeholder'), 'Sans titre')
+  assert.equal(await drawer.getByText('Une phrase suffit, ou colle ton brief : l’agent s’adapte.').isVisible(), true)
+  if (!phone) assert.ok((await drawer.boundingBox()).width > 700, 'tiroir large')
+
+  console.log(width, 'CMP-8 : texte vide, les trois gestes retenus, et pourquoi')
+  for (const name of ['Noter l’idée', 'Affiner avec un agent', 'Découper directement']) assert.equal(await gesture(name).isDisabled(), true, name)
+  assert.equal(await footer.getByText('Écris une phrase, ou colle ton brief.').isVisible(), true, 'CMP-10 : vide')
+  assert.equal(await footer.getByText('À affiner', { exact: true }).isVisible(), true, 'CMP-6 : entre en À affiner')
+  if (!phone) {
+    await gesture('Noter l’idée').locator('xpath=..').hover()
+    await page.getByRole('tooltip').filter({ hasText: 'Écris d’abord le jalon.' }).first().waitFor()
+    await page.mouse.move(0, 0, { steps: 4 })
+  }
+  await shot(drawer, 'vide')
+
+  console.log(width, 'CMP-2, CMP-7 : une phrase — titre tiré du texte, Affiner en geste principal')
+  await field.fill('Un mode hors-ligne pour relire les sessions dans le train')
+  assert.equal(await title.getAttribute('placeholder'), 'Un mode hors-ligne pour relire les sessions dans le train')
+  assert.equal(await drawer.getByText('Titre tiré de ton texte, modifiable.').isVisible(), true)
+  assert.equal(await gesture('Affiner avec un agent').isEnabled(), true)
+  assert.equal(await gesture('Noter l’idée').isEnabled(), true)
+  assert.equal(await gesture('Découper directement').isDisabled(), true, 'une phrase ne suffit pas à découper')
+  assert.equal(await footer.getByText('l’agent lira le projet, puis te posera d’abord quelques questions.').isVisible(), true, 'CMP-10 : phrase')
+  if (!phone) {
+    assert.equal(await gesture('Affiner avec un agent').getByText('Ctrl').isVisible(), true, 'le raccourci sur le geste principal')
+    await gesture('Découper directement').locator('xpath=..').hover()
+    await page.getByRole('tooltip').filter({ hasText: 'Il faut au moins deux étapes, ou un objectif et un peu de matière.' }).first().waitFor()
+    await page.mouse.move(0, 0, { steps: 4 })
+  }
+
+  console.log(width, 'CMP-9 : survoler ou focaliser un geste montre son étape et sa phrase')
+  await gesture('Noter l’idée').focus()
+  await footer.getByText('Idée', { exact: true }).waitFor()
+  await page.waitForFunction(() => !document.querySelector('[role=tooltip]'))
+  assert.equal(await footer.getByText('Aucune session ne part : tu l’affineras plus tard.').isVisible(), true)
+  await shot(footer, 'apercu-noter')
+  await gesture('Affiner avec un agent').focus()
+  await footer.getByText('À affiner', { exact: true }).waitFor()
+
+  console.log(width, 'CMP-16 : fermé sans envoi, le brouillon reste')
+  await page.keyboard.press('Escape')
+  await drawer.waitFor({ state: 'detached' })
+  await open()
+  assert.equal(await field.inputValue(), 'Un mode hors-ligne pour relire les sessions dans le train')
+
+  console.log(width, 'CMP-7, CMP-10 : un brief qui suffit — Découper en geste principal, repéré')
+  await field.fill(COMPOSER_BRIEF)
+  assert.equal(await title.getAttribute('placeholder'), 'Mode hors-ligne complet')
+  assert.equal(await gesture('Découper directement').isEnabled(), true)
+  if (!phone) assert.equal(await gesture('Découper directement').getByText('Ctrl').isVisible(), true)
+  assert.equal(await footer.getByText('l’agent proposera directement un découpage.').isVisible(), true)
+  const spotted = footer.getByText('Repéré').locator('xpath=..')
+  assert.match(await spotted.textContent(), /objectif.*3 étapes.*1 hors champ.*2 cartes/)
+
+  console.log(width, 'CMP-5 : l’échéance')
+  await drawer.getByLabel('Échéance', { exact: true }).fill('2026-12-12')
+  await drawer.getByText('12 déc. 2026').waitFor()
+
+  console.log(width, 'CMP-12 : Réf. par défaut, Inclure fait de la carte une carte du jalon')
+  const joined = drawer.getByRole('region', { name: 'Pièces jointes' })
+  const include960 = joined.getByRole('radiogroup', { name: /#960/ })
+  assert.equal(await joined.getByRole('radiogroup', { name: /#931/ }).getByRole('radio', { name: 'Réf.' }).getAttribute('aria-checked'), 'true')
+  await include960.getByRole('radio', { name: 'Inclure' }).click()
+  assert.equal(await include960.getByRole('radio', { name: 'Inclure' }).getAttribute('aria-checked'), 'true')
+
+  console.log(width, 'CMP-4 : un lien et un fichier')
+  await drawer.getByRole('button', { name: 'Joindre un lien' }).click()
+  const linkInput = drawer.getByRole('textbox', { name: 'Adresse du lien' })
+  await linkInput.fill('https://github.com/Tipaq/solera/pull/212')
+  await linkInput.press('Enter')
+  await joined.getByText('PR #212').waitFor()
+  await drawer.locator('input[type=file]').setInputFiles([{ name: 'maquette.pdf', mimeType: 'application/pdf', buffer: Buffer.alloc(2048) }])
+  await joined.getByText('maquette.pdf').waitFor()
+  await shot(drawer, 'brief')
+  await shot(joined, 'joint')
+
+  console.log(width, 'CMP-11, CMP-14, CMP-15 : Ctrl+Entrée découpe — carte drapeautée et datée, relation, enfant, fichier, brouillon pré-rempli')
+  await field.focus()
+  await page.keyboard.press('Control+Enter')
+  await page.getByText('ailleurs').waitFor()
+  const created = writes.find((entry) => entry.kind === 'create')
+  assert.equal(created.title, 'Mode hors-ligne complet')
+  assert.equal(created.milestone, true)
+  assert.equal(created.dueAt, new Date(2026, 11, 12).getTime(), 'minuit local du jour')
+  assert.ok(!created.description.startsWith('# '), 'le titre quitte la description')
+  assert.match(created.description, /^## Objectif/)
+  assert.match(created.description, /\*\*Liens\*\*\n- https:\/\/github\.com\/Tipaq\/solera\/pull\/212$/)
+  assert.deepEqual(writes.filter((entry) => entry.kind !== 'create'), [
+    { kind: 'relation', id: 'card-970', relation: 'related', targetId: 'card-931' },
+    { kind: 'patch', id: 'card-960', parentId: 'card-970' },
+    { kind: 'attachment', id: 'card-970', name: 'maquette.pdf' },
+  ])
+  const draft = new URL(await where(), origin)
+  assert.equal(draft.pathname, `/p/${PROJECT}/c/new`)
+  assert.equal(draft.searchParams.get('split'), 'card-970')
+  assert.equal(draft.searchParams.get('mode'), 'direct')
+  const prompt = draft.searchParams.get('prompt')
+  assert.ok(prompt.startsWith('/affiner-un-jalon #970 --decouper\n\n# Mode hors-ligne complet'), prompt)
+  assert.match(prompt, /Cartes jointes : #931 \(référence\), #960 \(à inclure dans le jalon\)/)
+  assert.match(prompt, /Liens :\n- https:\/\/github\.com\/Tipaq\/solera\/pull\/212$/)
+
+  console.log(width, 'CMP-13, CMP-16 : envoyé, le brouillon part ; pas de fermeture pendant l’envoi ; Noter l’idée reste sur l’horizon et le dit')
+  writes.length = 0
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await open()
+  assert.equal(await field.inputValue(), '', 'le brouillon envoyé ne revient pas')
+  assert.equal(await joined.count(), 0)
+  await field.fill('Tableau de bord des coûts')
+  await title.fill('Coûts par projet')
+  slow = true
+  await gesture('Noter l’idée').click()
+  await page.waitForFunction(() => [...document.querySelectorAll('footer button')].some((button) => button.textContent === 'Noter l’idée' && button.disabled))
+  await page.keyboard.press('Escape')
+  await delay(200)
+  assert.equal(await drawer.isVisible(), true, 'on ne ferme pas pendant l’envoi : la suite se perdrait')
+  await drawer.waitFor({ state: 'detached' })
+  slow = false
+  const noted = page.getByRole('status').filter({ hasText: 'Idée notée : #971, dans « Plus tard ». Tu l’affineras quand tu voudras.' })
+  await noted.waitFor()
+  assert.deepEqual(writes, [{ kind: 'create', title: 'Coûts par projet', description: 'Tableau de bord des coûts', dueAt: null, milestone: true }])
+  assert.match(await where(), /\/timeline/, 'on reste sur l’horizon')
+  await page.getByRole('region', { name: 'Plus tard', exact: true }).getByText('Coûts par projet').waitFor()
+  await shot(noted, 'notee')
+  await noted.getByRole('button', { name: 'Fermer' }).click()
+  await noted.waitFor({ state: 'detached' })
+
+  console.log(width, 'CMP-15 : une pièce qui ne suit pas — la carte existe, le message le dit et mène à la session')
+  failing.add('POST /api/cards/card-972/relations')
+  await open()
+  await field.fill('Relire le module de paiement, voir #931')
+  await gesture('Affiner avec un agent').click()
+  await drawer.waitFor({ state: 'detached' })
+  const partial = page.getByRole('status').filter({ hasText: '#972 est créé, mais une pièce n’a pas suivi : Lien refusé' })
+  await partial.waitFor()
+  await shot(partial, 'partielle')
+  await partial.getByRole('link', { name: 'Ouvrir la session d’affinage' }).click()
+  await page.getByText('ailleurs').waitFor()
+  const session = new URL(await where(), origin)
+  assert.equal(session.searchParams.get('split'), 'card-972')
+  assert.equal(session.searchParams.get('mode'), null, 'Affiner : questions d’abord')
+  assert.ok(session.searchParams.get('prompt').startsWith('/affiner-un-jalon #972\n\nRelire le module de paiement'))
 
   assert.deepEqual(errors, [])
   await context.close()
@@ -946,7 +1190,7 @@ async function launchStep(width) {
   cards.find((entry) => entry.number === 333).conversations = [cardSession('s-333', 'Sonde', 'running', DAY)]
   const done = [card(371, 'Alias', 'done'), card(372, 'Migration', 'done')]
   const delivered = card(370, 'Comptes nommés', 'done', {
-    milestone: true, branch: 'jalon/370-comptes-nommes', branchPr: { number: 78, url: 'https://github.com/tipaq/solera/pull/78', mergedAt: now - DAY },
+    milestone: true, branch: 'jalon/370-comptes-nommes', branchPr: { number: 78, url: 'https://github.com/tipaq/solera/pull/78', base: 'main', mergedAt: now - DAY, closedAt: null },
   })
   for (const kid of done) kid.parent = link(delivered)
   delivered.children = done.map(link)
@@ -1295,6 +1539,240 @@ async function settleStep(width) {
   await context.close()
 }
 
+/** Le suivi d'un jalon lancé (#198, RUN-1..12) et sa PR finale, à une largeur. */
+async function runStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 1400 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  // Un jalon en route : chaque statut du pilotage, une session qui t'attend, une en file.
+  const kids = [
+    card(401, 'Adresse de secours', 'done'),
+    card(402, 'Sonde réseau', 'in_progress', { conversations: [cardSession('s-402', 'Sonde', 'running', DAY)] }),
+    card(403, 'Doc mobile', 'review', { conversations: [cardSession('s-403', 'Doc', 'idle', DAY)] }),
+    card(404, 'Journal des coupures', 'in_progress', { conversations: [cardSession('s-404', 'Journal', 'awaiting_input', DAY)] }),
+    card(405, 'Reprise après coupure', 'todo'),
+    card(406, 'Alerte longue', 'todo'),
+  ]
+  kids[5].blockedBy = [link(kids[3])]
+  const parent = card(400, 'Accès distant fiable', 'in_progress', { milestone: true, branch: 'jalon/400-acces-distant-fiable' })
+  for (const kid of kids) kid.parent = link(parent)
+  parent.children = kids.map(link)
+  // La PR finale : ouverte (410), fermée sans fusion (420).
+  const prCard = (number, closedAt) => {
+    const done = [card(number + 1, 'Alias', 'done')]
+    const milestone = card(number, 'Comptes nommés', 'done', {
+      milestone: true, branch: `jalon/${number}-comptes-nommes`,
+      branchPr: { number: 77, url: 'https://github.com/tipaq/solera/pull/77', base: 'main', mergedAt: null, closedAt },
+    })
+    done[0].parent = link(milestone)
+    milestone.children = done.map(link)
+    return [milestone, ...done]
+  }
+  const cards = [parent, ...kids, ...prCard(410, null), ...prCard(420, now - DAY)]
+  const pilot = (kid, status, extra = {}) => ({
+    cardId: kid.id, number: kid.number, title: kid.title, layer: 0, status, blockReason: null, blockedBy: [], conversationId: null,
+    conversationTitle: null, conversationStatus: null, worktreeName: null, agent: null, model: null, error: null, ...extra,
+  })
+  const run = {
+    id: 'run-400', cardId: 'card-400', cardNumber: 400, cardTitle: parent.title, state: 'running', mode: 'auto', concurrency: 3,
+    confined: null, agent: 'claude', model: 'claude-opus-5-5', branch: 'jalon/400-acces-distant-fiable', busy: 2,
+    cards: [
+      pilot(kids[0], 'done'), pilot(kids[1], 'working'), pilot(kids[2], 'reviewing'),
+      pilot(kids[3], 'blocked', { blockReason: 'escalated' }), pilot(kids[4], 'queued'), pilot(kids[5], 'waiting'),
+    ],
+    createdAt: now - 2 * 3_600_000 - 5 * 60_000, endedAt: null,
+  }
+  const writes = []
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const method = request.method()
+    if (path === `/api/projects/${PROJECT}/cards` && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'card', ...body })
+      const added = card(407, body.title, 'todo', { parent: link(parent), createdAt: Date.now() })
+      cards.push(added)
+      parent.children = [...parent.children, link(added)]
+      return route.fulfill({ json: added })
+    }
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: run.state === 'stopped' ? [] : [run] })
+    if (path === `/api/projects/${PROJECT}/environments`) return route.fulfill({ json: ENVIRONMENTS })
+    if (path === '/api/cards/card-400/milestone' && method === 'PATCH') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'run', ...body })
+      if (body.confined === true && phone) {
+        // Au téléphone, le serveur refuse : l'erreur se lit dans le suivi.
+        return route.fulfill({ status: 409, json: { error: { code: 'environment_unavailable', message: 'Confinement indisponible' } } })
+      }
+      Object.assign(run, body)
+      return route.fulfill({ json: run })
+    }
+    if (path === '/api/cards/card-400/milestone/cards/card-405/launch') {
+      writes.push({ kind: 'launch', body: request.postDataJSON() })
+      return route.fulfill({ json: run })
+    }
+    if (path === '/api/cards/card-410/branch-pr/merge') {
+      writes.push({ kind: 'merge' })
+      // Aucune vraie PR : la forge simulée refuse, et son message se lit.
+      return route.fulfill({ status: 502, json: { error: { code: 'forge_failed', message: 'The forge refused', params: { error: 'Base branch was modified' } } } })
+    }
+    if (/^\/api\/cards\/[^/]+\/milestone$/.test(path)) return route.fulfill({ json: null })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (/^\/api\/cards\/[^/]+\/notes$/.test(path)) return route.fulfill({ json: [] })
+    return route.fulfill({ status: 404, json: {} })
+  })
+  const slot = page.locator('#lancer')
+  const panel = slot.getByRole('region', { name: 'Suivi du jalon' })
+  const band = page.getByRole('region', { name: 'Prochaine action' })
+  const list = panel.getByRole('list', { name: 'Cartes du jalon' })
+  const row = (number) => list.getByRole('listitem').filter({ has: page.getByRole('link', { name: new RegExp(`^#${number} `) }) })
+  const mode = panel.getByRole('radiogroup', { name: 'Mode du pilotage' })
+  const shot = async (name, locator = slot) => {
+    await page.evaluate(() => { document.documentElement.dataset.theme = 'light' })
+    await locator.scrollIntoViewIfNeeded()
+    await locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-suivi-${name}-${width}.png` })
+  }
+  const lastWrite = async (count) => {
+    for (let i = 0; i < 50 && writes.length < count; i++) await delay(100)
+    assert.equal(writes.length, count, 'Un geste, un appel')
+    return writes.at(-1)
+  }
+
+  console.log(width, 'lancé en autonome : le titre, la durée, le mode, les places, la branche')
+  await mount(page, `/p/${PROJECT}/timeline/400`, 'page')
+  await panel.waitFor()
+  assert.equal(await page.getByRole('heading', { name: 'Lancer' }).count(), 0, 'Le suivi remplace le panneau Lancer')
+  assert.equal(await panel.getByRole('heading', { name: 'Lancé en autonome' }).isVisible(), true)
+  assert.equal(await panel.getByText(/^depuis 2\s?h$/).isVisible(), true)
+  assert.equal(await mode.getByRole('radio', { name: 'Autonome' }).getAttribute('aria-checked'), 'true')
+  assert.equal(await panel.getByRole('button', { name: /^2\/3 places occupées/ }).isVisible(), true)
+  assert.equal(await panel.locator('code', { hasText: 'jalon/400-acces-distant-fiable' }).isVisible(), true)
+  const confined = panel.getByRole('checkbox', { name: 'Sessions confinées, sans demandes d’autorisation (pour les prochaines)' })
+  assert.equal(await confined.isChecked(), false, 'Le réglage du projet : non confiné')
+  assert.equal(await panel.getByText('Seuls les blocages te reviennent : ils s’affichent dans Affinage et dans « Ce qui t’attend ».').isVisible(), true)
+
+  console.log(width, 'les cartes : chaque statut, ce qui t’attend en ambre et pourquoi')
+  assert.deepEqual(
+    await list.getByRole('listitem').evaluateAll((items) => items.map((item) => item.lastElementChild.textContent)),
+    ['fusionnée', 'au travail', 'en revue', 't’attend', 'en file', 'attend ses bloqueurs'],
+  )
+  assert.equal(await row(404).evaluate((element) => element.className.includes('bg-caution')), true, 'Le repère ambre')
+  assert.equal(await row(402).locator('.animate-pulse').count(), 1, 'Au travail : la pastille pulse')
+  assert.equal(await row(405).getByRole('button', { name: /^Lancer/ }).count(), 0, 'En autonome, le serveur lance')
+  assert.equal(await row(402).getByRole('link').first().getAttribute('href'), `/p/${PROJECT}/c/s-402`, 'Une carte mène à sa session')
+  assert.equal(await row(402).getByRole('button', { name: 'Détail de la carte #402' }).isVisible(), true)
+  const reason = 'Sa revue a atteint son plafond de tours : tu tranches.'
+  if (phone) {
+    assert.equal(await row(404).getByText(reason).isVisible(), true, 'Au doigt, la raison sous la carte')
+  } else {
+    assert.equal(await row(404).getByText(reason).isVisible(), false, 'À la souris, en infobulle')
+    await row(404).getByText('t’attend').hover()
+    await page.getByRole('tooltip').filter({ hasText: reason }).first().waitFor()
+    await page.mouse.move(2, 2)
+    await page.keyboard.press('Escape')
+    await page.getByRole('tooltip').waitFor({ state: 'detached' })
+  }
+  await shot('autonome')
+
+  console.log(width, 'les places en cours de route')
+  await panel.getByRole('button', { name: /^2\/3 places occupées/ }).click()
+  await page.getByRole('menuitemradio', { name: '4' }).click()
+  assert.deepEqual(await lastWrite(1), { kind: 'run', concurrency: 4 })
+  await panel.getByRole('button', { name: /^2\/4 places occupées/ }).waitFor()
+  await page.getByRole('region', { name: 'Vagues' }).getByText('· 4 à la fois').waitFor()
+
+  console.log(width, 'à la main : la ligne manuelle, « Lancer » sur la carte en file')
+  await mode.getByRole('radio', { name: 'À la main' }).click()
+  assert.deepEqual(await lastWrite(2), { kind: 'run', mode: 'manual' })
+  await panel.getByRole('heading', { name: 'Lancé à la main' }).waitFor()
+  assert.equal(await panel.getByText('Tu lances les cartes ; les sessions avancent seules').isVisible(), true)
+  await row(405).getByRole('button', { name: 'Lancer #405' }).click()
+  assert.deepEqual(await lastWrite(3), { kind: 'launch', body: { confined: null } }, 'Le pilotage vivant garde son confinement')
+  assert.equal(await row(406).getByRole('button', { name: /^Lancer/ }).count(), 0, 'Elle attend ses bloqueurs')
+  await shot('main')
+
+  console.log(width, 'le confinement des prochaines sessions')
+  // Cochée quand le serveur l'a pris en compte, pas avant : le geste peut être refusé.
+  await confined.click()
+  assert.deepEqual(await lastWrite(4), { kind: 'run', confined: true })
+  if (phone) {
+    await panel.getByRole('alert').waitFor()
+    assert.match(await panel.getByRole('alert').innerText(), /^Le geste a échoué : /)
+    await confined.waitFor()
+    assert.equal(await confined.isChecked(), false, 'Refusé : rien ne change')
+  } else {
+    await page.waitForFunction(() => document.querySelector('#lancer input[type=checkbox]')?.checked)
+  }
+
+  console.log(width, 'ajouter une carte : elle entre au jalon, « +1 depuis le lancement »')
+  const add = panel.getByRole('button', { name: 'Ajouter', exact: true })
+  assert.equal(await add.isDisabled(), true, 'Rien à ajouter')
+  await panel.getByRole('textbox', { name: 'Ajouter une carte au jalon' }).fill('Test au téléphone')
+  await add.click()
+  assert.deepEqual(await lastWrite(5), { kind: 'card', title: 'Test au téléphone', parentId: 'card-400' })
+  await row(407).waitFor()
+  assert.equal(await row(407).getByRole('button', { name: 'Lancer #407' }).isVisible(), true, 'Pas encore adoptée : en file, et à la main on la lance')
+  assert.equal(await panel.getByText('+1 depuis le lancement').isVisible(), true)
+  assert.equal(await panel.getByRole('textbox', { name: 'Ajouter une carte au jalon' }).inputValue(), '')
+
+  console.log(width, 'pause, reprise')
+  await panel.getByRole('button', { name: 'Pause' }).click()
+  assert.deepEqual(await lastWrite(6), { kind: 'run', state: 'paused' })
+  await panel.getByRole('heading', { name: 'En pause' }).waitFor()
+  await shot('pause')
+  await panel.getByRole('button', { name: 'Reprendre' }).click()
+  assert.deepEqual(await lastWrite(7), { kind: 'run', state: 'running' })
+  await panel.getByRole('heading', { name: 'Lancé à la main' }).waitFor()
+
+  console.log(width, 'arrêter : confirmé d’abord, puis le panneau Lancer revient')
+  await panel.getByRole('button', { name: 'Arrêter' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Arrêter le jalon ?' })
+  await dialog.waitFor()
+  assert.equal(writes.length, 7, 'Rien ne part avant la confirmation')
+  // Le libellé vient de `UiLabelsProvider`, que cette page réduite ne pose pas.
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.equal(writes.length, 7)
+  await panel.getByRole('button', { name: 'Arrêter' }).click()
+  await dialog.getByRole('button', { name: 'Arrêter' }).click()
+  assert.deepEqual(await lastWrite(8), { kind: 'run', state: 'stopped' })
+  await slot.getByRole('heading', { name: 'Lancer' }).waitFor()
+
+  console.log(width, 'PR finale ouverte : « Fusionner dans main », « Ouvrir la PR », l’erreur de forge')
+  await mount(page, `/p/${PROJECT}/timeline/410`, 'page')
+  const pr = slot.getByRole('complementary', { name: 'PR du jalon ouverte' })
+  await pr.waitFor()
+  assert.equal(await pr.getByText(/Toutes les cartes sont fusionnées dans jalon\/410-comptes-nommes\. Solera a ouvert la PR #77 vers main/).isVisible(), true)
+  assert.equal(await pr.getByRole('link', { name: 'Ouvrir la PR' }).getAttribute('href'), 'https://github.com/tipaq/solera/pull/77')
+  await shot('pr')
+  await pr.getByRole('button', { name: 'Fusionner dans main' }).click()
+  await pr.getByRole('alert').waitFor()
+  assert.equal(await pr.getByRole('alert').innerText(), 'La PR du jalon n’a pas été fusionnée : La forge a refusé : Base branch was modified')
+  assert.deepEqual(await lastWrite(9), { kind: 'merge' })
+
+  console.log(width, 'PR fermée sans fusion : plus de fusion proposée, la PR à rouvrir')
+  await mount(page, `/p/${PROJECT}/timeline/420`, 'page')
+  const closed = slot.getByRole('complementary', { name: 'PR du jalon fermée' })
+  await closed.waitFor()
+  assert.equal(await closed.getByRole('button', { name: /^Fusionner/ }).count(), 0)
+  assert.equal(await closed.getByRole('link', { name: 'Ouvrir la PR' }).isVisible(), true)
+  assert.equal(await band.getByText('La PR #77 du jalon a été fermée sans fusion : rouvre-la sur la forge pour le livrer.').isVisible(), true)
+  assert.equal(await page.locator('header').getByText('Lancé', { exact: true }).isVisible(), true)
+  await shot('pr-fermee')
+
+  assert.equal(writes.length, 9, 'Aucun autre appel')
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
 try {
   for (let i = 0; i < 150; i++) {
     if (await fetch(origin).then((r) => r.ok).catch(() => false)) break
@@ -1303,10 +1781,12 @@ try {
   }
   browser = await launchBrowser()
   for (const width of [1280, 390]) await horizonStep(width)
+  for (const width of [1280, 390]) await composerStep(width)
   for (const width of [1280, 390]) await pageStep(width)
   for (const width of [1280, 390]) await refineStep(width)
   for (const width of [1280, 390]) await settleStep(width)
   for (const width of [1280, 390]) await launchStep(width)
+  for (const width of [1280, 390]) await runStep(width)
   for (const width of [1280, 390]) {
     const phone = width < 700
     const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
@@ -1467,10 +1947,12 @@ try {
     await context.close()
   }
   console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
+  console.log('OK : composer — tiroir large, titre tiré du texte, gestes retenus et pourquoi, pied (étape, phrase, repéré, aperçu au survol), brouillon gardé, échéance, Réf./Inclure, lien, fichier, pas de fermeture pendant l’envoi, Ctrl+Entrée (carte drapeautée et datée, relation, enfant, fichier, brouillon d’affinage pré-rempli), idée notée, pièce qui ne suit pas ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
   console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')
   console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
+  console.log('OK : suivi — titre et durée, mode, places en cours, branche, confinement (refus lu), statuts (ambre et raison), lancer à la main, ajout de carte, pause, reprise, arrêt confirmé ; PR finale ouverte (fusion, lien, erreur de forge) et fermée ; ordinateur et téléphone.')
   console.log('OK : fiche — ℹ sans la session, ?fiche= partageable, en-tête, réponse sur place, sessions, sous-tâches, description, notes, pied, liens qui changent de fiche, case « C’est un jalon » (d’office, grisée, cochable) ; ordinateur et téléphone.')
 } finally {
   await browser?.close()

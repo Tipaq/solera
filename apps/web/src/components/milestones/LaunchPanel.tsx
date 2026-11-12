@@ -1,6 +1,6 @@
 import { Check, CircleAlert, GitMerge, Hand, Laptop, Play } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   MAX_MILESTONE_CONCURRENCY,
   environmentKey,
@@ -10,8 +10,8 @@ import {
 import { Banner, Button, ChoiceCards, Tooltip, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { CardInfoButton } from '../cards/CardInfoButton'
+import { MilestoneCardLink } from './MilestoneCardLink'
 import { STATE_DOT } from '../gantt/tones'
-import { cardDestinationHref } from '../../lib/card-destination'
 import { awaitsMe, cardState, isOpen, loadedStatus, type StatusOf } from '../../lib/card-state'
 import { pluralOf } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
@@ -158,7 +158,7 @@ function Launcher({
               return (
                 <li key={card.id} className={cx('flex min-w-0 items-center gap-2 px-2.5 py-2 text-sm', asking && 'bg-caution/10')}>
                   <span aria-hidden className={cx('size-2 shrink-0 rounded-full', asking ? 'bg-caution' : STATE_DOT[cardState(card)])} />
-                  <CardLink projectId={projectId} card={card} statusOf={statusOf} />
+                  <MilestoneCardLink projectId={projectId} card={card} statusOf={statusOf} />
                   <CardInfoButton card={card} />
                   {row.kind === 'live' ? (
                     <span className="flex shrink-0 gap-1">
@@ -257,15 +257,6 @@ function Launcher({
         </p>
       ) : null}
     </section>
-  )
-}
-
-function CardLink({ projectId, card, statusOf }: { projectId: string; card: MilestoneEntry['card']; statusOf: StatusOf }) {
-  const [search] = useSearchParams()
-  return (
-    <Link to={cardDestinationHref(projectId, card, { statusOf, search })} className="min-w-0 flex-1 truncate text-ink hover:text-accent">
-      <span className="text-xs text-ink-faint tabular-nums">#{card.number}</span> {card.title}
-    </Link>
   )
 }
 

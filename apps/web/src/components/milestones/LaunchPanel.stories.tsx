@@ -126,7 +126,7 @@ export const Livre: Story = {
       entry={entryOf(
         milestone(940, 'Comptes nommés', [fixtureCard(941, 'Alias', 'done'), fixtureCard(942, 'Migration', 'done')], {
           column: 'done',
-          branchPr: { number: 78, url: 'https://github.com/tipaq/solera/pull/78', mergedAt: Date.now() },
+          branchPr: { number: 78, url: 'https://github.com/tipaq/solera/pull/78', base: 'main', mergedAt: Date.now(), closedAt: null },
         }),
       )}
     />
