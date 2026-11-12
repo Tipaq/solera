@@ -1,12 +1,12 @@
-import { TooltipButton } from '@solera/ui'
-import { Loader, Plus, SquareTerminal as TerminalIcon, X } from 'lucide-react'
+import { PanelNotice, cx } from '@solera/ui'
+import { Loader } from 'lucide-react'
 import { memo, useEffect, useState } from 'react'
 import { MAX_TERMINALS_PER_PROJECT, type TerminalDto } from '@solera/protocol'
 import { useTranslate } from '../../lib/i18n'
 import { clearFocusedTerminal, useFocusedTerminal } from '../../lib/panel'
 import { useProjects } from '../../lib/projects'
 import { useCloseTerminal, useOpenTerminal, useTerminals } from '../../lib/terminals'
-import { Banner, Button, cx } from '@solera/ui'
+import { TerminalsEmpty, TerminalsLine } from './TerminalsLine'
 import { TerminalView } from './TerminalView'
 
 /**
@@ -24,10 +24,13 @@ export const TerminalsPane = memo(function TerminalsPane({
   projectId,
   /** Présente en vue conversation : le nouveau terminal s'ouvre dans son répertoire. */
   conversationId,
+  inWorktree = false,
   visible,
 }: {
   projectId: string
   conversationId?: string
+  /** Le fil a son worktree : l'état vide le dit, c'est là que le shell s'ouvrira. */
+  inWorktree?: boolean
   visible: boolean
 }) {
   const { data: terminals, error, isPending } = useTerminals(projectId, visible)
@@ -61,122 +64,61 @@ export const TerminalsPane = memo(function TerminalsPane({
   const full = (terminals?.length ?? 0) >= MAX_TERMINALS_PER_PROJECT
   // Une relance repart là où le shell tournait, et dans l'environnement de la session
   // qui l'avait ouvert : c'est elle qui le porte, pas la session affichée.
+  // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir changer
+  // donne l'impression que rien ne s'est passé.
   const openNew = (relaunched?: TerminalDto) =>
     open.mutate(relaunched ? { cwd: relaunched.cwd, ...(relaunched.conversationId ? { conversationId: relaunched.conversationId } : {}) } : { conversationId }, {
       onSuccess: (created) => setActive(created.id),
     })
 
-  /** Où tourne ce shell : le workspace, ou le nom du dossier de worktree. */
-  const dirLabel = (terminal: TerminalDto) =>
-    terminal.cwd === workspacePath
-      ? t('terminal.dir.workspace')
-      : (terminal.cwd.split('/').pop() ?? terminal.cwd)
-
   const activeTerminal = terminals?.find((terminal) => terminal.id === active)
+  const failure = error ?? open.error ?? close.error
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      <div className="flex shrink-0 items-center gap-px overflow-x-auto border-b border-line">
-        {(terminals ?? []).map((terminal) => (
-          <div
-            key={terminal.id}
-            className={cx(
-              'group/term flex h-8 shrink-0 items-center gap-1 border-r border-line pr-1 pl-2.5',
-              terminal.id === active ? 'bg-surface text-ink' : 'bg-sunken text-ink-faint',
-            )}
-          >
+      <TerminalsLine
+        terminals={terminals ?? []}
+        active={active}
+        workspacePath={workspacePath}
+        opening={open.isPending}
+        onSelect={setActive}
+        onClose={(id) => close.mutate(id)}
+        onNew={() => openNew()}
+      />
+
+      {failure ? (
+        <PanelNotice tone="critical">
+          {failure instanceof Error ? failure.message : t('terminal.unavailable')}
+        </PanelNotice>
+      ) : null}
+
+      {/* Le shell a été emporté par un redémarrage du daemon : l'écran en dessous est
+          son dernier état, et la relance rouvre un shell neuf au même endroit. */}
+      {activeTerminal?.interrupted ? (
+        <PanelNotice tone="caution">
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {t('terminal.interrupted')}
             <button
               type="button"
-              onClick={() => setActive(terminal.id)}
-              title={terminal.cwd}
-              className="flex items-baseline gap-1.5 text-xs"
+              disabled={full || open.isPending}
+              onClick={() => openNew(activeTerminal)}
+              className="font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"
             >
-              {terminal.title}
-              <span className="text-micro text-ink-faint">{dirLabel(terminal)}</span>
+              {t('terminal.relaunch')}
             </button>
-            {/* Vivant ou terminé : sans ce repère, un onglet dont le shell est mort
-                ressemble à un onglet inactif. */}
-            <span
-              aria-label={terminal.alive ? t('terminal.tab.shellAlive') : t('terminal.tab.shellDone')}
-              className={cx(
-                'size-1.5 shrink-0 rounded-full',
-                // Une commande d'action sortie en erreur se signale sans ouvrir l'onglet.
-                terminal.alive ? 'bg-positive' : terminal.exitCode ? 'bg-critical' : 'bg-ink-faint/50',
-              )}
-            />
-            <TooltipButton
-              type="button"
-              onClick={() => close.mutate(terminal.id)}
-              aria-label={t('terminal.tab.close', { title: terminal.title })}
-              className="rounded p-0.5 text-ink-faint opacity-0 hover:text-ink group-hover/term:opacity-100"
-            >
-              <X size={14} />
-            </TooltipButton>
-          </div>
-        ))}
-
-        <TooltipButton
-          type="button"
-          // Le nouveau terminal devient l'actif : cliquer sur « + » sans rien voir
-          // changer donne l'impression que rien ne s'est passé.
-          onClick={() => openNew()}
-          disabled={full || open.isPending}
-          aria-label={t('terminal.new')}
-          title={full ? t('terminal.max', { max: MAX_TERMINALS_PER_PROJECT }) : t('terminal.new')}
-          className="flex size-8 shrink-0 items-center justify-center text-ink-faint hover:text-ink disabled:opacity-40"
-        >
-          {open.isPending ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
-        </TooltipButton>
-      </div>
-
-      {error || open.error || close.error ? (
-        <div className="p-2">
-          <Banner>
-            {(error ?? open.error ?? close.error) instanceof Error
-              ? (error ?? open.error ?? close.error)?.message
-              : t('terminal.unavailable')}
-          </Banner>
-        </div>
+          </span>
+        </PanelNotice>
       ) : null}
 
       {isPending ? (
-        <p className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-ink-faint">
+        <p className="flex items-center gap-1.5 px-3 py-2 text-xs text-ink-faint">
           <Loader size={11} className="animate-spin" />
           {t('terminal.loading')}
         </p>
       ) : null}
 
       {terminals?.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-          <span className="grid size-12 place-items-center rounded-xl border border-line bg-surface-high text-ink-faint">
-            <TerminalIcon size={22} />
-          </span>
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium text-ink">{t('terminal.empty.title')}</p>
-            <p className="max-w-[22rem] text-xs text-ink-faint">
-              {t('terminal.empty.description')}
-            </p>
-          </div>
-          <Button size="sm" disabled={open.isPending} onClick={() => openNew()}>
-            {open.isPending ? <Loader size={14} className="animate-spin" /> : <Plus size={14} />}
-            {t('terminal.new')}
-          </Button>
-        </div>
-      ) : null}
-
-      {/* Le shell a été emporté par un redémarrage du daemon : l'écran en dessous est
-          son dernier état, et la relance rouvre un shell neuf au même endroit. */}
-      {activeTerminal?.interrupted ? (
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-surface-high px-2.5 py-1.5">
-          <p className="text-meta text-ink-faint">{t('terminal.interrupted')}</p>
-          <Button
-            size="sm"
-            disabled={full || open.isPending}
-            onClick={() => openNew(activeTerminal)}
-          >
-            {t('terminal.relaunch')}
-          </Button>
-        </div>
+        <TerminalsEmpty inWorktree={inWorktree} opening={open.isPending} onNew={() => openNew()} />
       ) : null}
 
       {(terminals ?? []).map((terminal) => (

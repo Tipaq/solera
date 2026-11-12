@@ -2300,6 +2300,7 @@ export const en = {
   // Terminal
   'terminal.tab.shellAlive': 'Shell running',
   'terminal.tab.shellDone': 'Shell finished',
+  'terminal.tab.shellFailed': 'Exited with an error (code {code})',
   'terminal.tab.close': 'Close {title}',
   'terminal.new': 'New terminal',
   'terminal.max': 'Maximum {max} terminals per project',
@@ -2307,7 +2308,8 @@ export const en = {
   'terminal.shortcuts': 'Select to copy · Ctrl+V or right-click to paste · Ctrl+C interrupt',
   'terminal.loading': 'Loading terminals...',
   'terminal.empty.title': 'No terminal open',
-  'terminal.empty.description': "A shell in the current working directory: the session's, worktree included, or the project workspace. It keeps running with the panel closed.",
+  'terminal.empty.inWorktree': 'It opens in this conversation’s worktree.',
+  'terminal.empty.atRoot': 'It opens at the project root.',
   'terminal.dir.workspace': 'workspace',
   'terminal.interrupted': 'Shell interrupted by a server restart. Its last screen is shown.',
   'terminal.relaunch': 'Relaunch here',
