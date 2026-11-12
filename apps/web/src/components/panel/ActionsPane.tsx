@@ -5,6 +5,8 @@ import { useEscapeLayer } from '../../lib/escape-layers'
 import { useTranslate } from '../../lib/i18n'
 import { ActionList, useActionDialogs } from '../actions/ActionList'
 import { Banner, Button, EmptyState, PanelNotice } from '@solera/ui'
+import { useSessionWorks } from '../../lib/session-works-query'
+import { SessionWorksSection } from '../automations/session-works/SessionWorksSection'
 import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRuns'
 
 /**
@@ -17,9 +19,10 @@ import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRun
 export const ActionsPane = memo(function ActionsPane({ projectId, conversationId }: { projectId: string; conversationId?: string }) {
   const t = useTranslate()
   const { data, error, isPending } = useActions()
-  const { handlers, create, dialogs, failure } = useActionDialogs(projectId, conversationId)
+  const { handlers, create, createFrom, dialogs, failure } = useActionDialogs(projectId, conversationId)
   const actions = (data ?? []).filter((action) => action.projectId === projectId)
   const runs = useCommandRuns(projectId, conversationId)
+  const { works } = useSessionWorks(projectId, { conversationId })
   const [openRun, setOpenRun] = useState<string | null>(null)
   const [runError, setRunError] = useState<string | null>(null)
   const pane = useRef<HTMLDivElement>(null)
@@ -42,8 +45,19 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
     )
   }
 
+  // En tête : ce qui tourne — les commandes lancées ici, puis les processus des sessions (PACT-2).
   const runsGroup = (
-    <CommandRunsGroup projectId={projectId} runs={runs} onOpen={(run) => setOpenRun(run.terminalId)} onError={setRunError} />
+    <>
+      <CommandRunsGroup projectId={projectId} runs={runs} onOpen={(run) => setOpenRun(run.terminalId)} onError={setRunError} />
+      <SessionWorksSection
+        projectId={projectId}
+        works={works}
+        variant="compact"
+        currentConversationId={conversationId}
+        onMakeAction={createFrom}
+        onError={setRunError}
+      />
+    </>
   )
 
   return (
