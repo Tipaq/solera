@@ -110,6 +110,15 @@ export async function checkDownloads({ page, context, base, project, hero, data 
     const path = `ui-downloads/${name}`
     await openFile(path)
     await expectDownload(name, () => panel.getByRole('button', { name: `Télécharger ${path}`, exact: true }).click())
+    // La visionneuse PDF de Chromium prend le focus en finissant de charger, même sous
+    // un dialogue modal et même dans une iframe inerte. Si ce moment tombe pendant la
+    // saisie dans « Ouvrir un fichier », le texte part dans l'iframe et l'option
+    // n'apparaît jamais. Aucun signal ne dit que le vol est passé (il suit l'événement
+    // `load` d'une centaine de ms) : on retire donc l'iframe avant d'écrire (carte #248).
+    if (name === 'document.pdf') {
+      await panel.getByRole('button', { name: `Fermer ${path}`, exact: true }).click()
+      await panel.locator('iframe[data-editor-file]').waitFor({ state: 'detached' })
+    }
   }
   for (const width of [320, 390]) {
     await page.setViewportSize({ width, height: 844 })
