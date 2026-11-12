@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 import { checkTravailGraph } from './checks/travail-graph.mjs'
+import { checkTravailTable } from './checks/travail-table.mjs'
 
 /*
  * L'onglet Travail d'un projet (carte #175, `projet.md` T-1 à T-5, T-14), qui remplace
@@ -21,7 +22,9 @@ import { checkTravailGraph } from './checks/travail-graph.mjs'
  * « Par moment » (Maintenant, En cours, Ce qui t'attend, la ligne de base, les jours),
  * l'index et la puce d'arbre qui filtrent, la recherche, le téléphone sans
  * débordement, la vue « Graphe » avec le tiroir d'un commit (#178,
- * `checks/travail-graph.mjs`), et les vues « Par état » et « Frise » (#179). Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * `checks/travail-graph.mjs`), la vue « Tableau » avec les gestes d'un arbre et d'une
+ * branche (#177, `checks/travail-table.mjs`), et les vues « Par état » et « Frise » (#179).
+ * Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
  * Les PR sont simulées au niveau de la page (le projet de démo n'a pas de forge), le
  * pilotage d'un jalon aussi (#116) : la suite tient son bandeau en tête du fil, la vue
@@ -525,6 +528,9 @@ try {
   const runningTree = trees.worktrees.find((entry) => entry.id === running.worktreeId)
   await checkTravailGraph({ page, base, project: nimbus, running, runningTree, runningBranch, shots })
 
+  // ─── La vue Tableau et les gestes d'un arbre et d'une branche (#177) ───────
+  await checkTravailTable({ page, base, project: nimbus, runningBranch, readyBranch: withPr ? branchOf(withPr) : null, shots })
+
   // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
@@ -599,14 +605,17 @@ try {
     ],
   }
   let pauses = 0
-  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [milestoneRun] }))
+  // L'état du pilotage simulé suit la pause : le panneau relit le jalon après le geste.
+  let runState = milestoneRun.state
+  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [{ ...milestoneRun, state: runState }] }))
   await page.route(`**/api/cards/${parent.id}/milestone`, async (route) => {
     if (route.request().method() === 'PATCH') {
       assert.deepEqual(route.request().postDataJSON(), { state: 'paused' })
       pauses += 1
-      return route.fulfill({ json: { ...milestoneRun, state: 'paused' } })
+      runState = 'paused'
+      return route.fulfill({ json: { ...milestoneRun, state: runState } })
     }
-    return route.fulfill({ json: milestoneRun })
+    return route.fulfill({ json: { ...milestoneRun, state: runState } })
   })
 
   // C1 : le bandeau ouvre « Maintenant », au-dessus des sessions du fil.
@@ -637,17 +646,11 @@ try {
   await page.goto(`${base}/p/${nimbus.id}/timeline/${running.card.number}`)
   await page.getByText(`#${running.card.number} n’est pas un jalon`).waitFor()
 
-  // C3 : la ligne du jalon dans la frise, qui mène à sa vue.
-  await page.goto(`${base}/p/${nimbus.id}/timeline`)
-  const launchedHead = page.getByRole('button', { name: new RegExp(`#${parent.number} .*lancé`) })
-  await launchedHead.waitFor()
-  await launchedHead.getByText(/^1 session · /).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'c3-le-jalon-dans-la-frise.png') })
-  await launchedHead.click()
-  await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
+  // C3, la ligne du jalon dans l'ancienne frise des jalons, est partie avec elle : l'onglet
+  // Jalons (#190) a son horizon et son Gantt, que `milestones-ui-check.mjs` tient.
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, Par état, Frise, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, Par état, Frise, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, Tableau et gestes, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

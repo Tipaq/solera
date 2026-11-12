@@ -21,17 +21,20 @@ export function MoreLink({ to, children }: { to: string; children: ReactNode }) 
  * dit plus, puis des lignes. Pas de cadre : c'est l'écart entre les blocs qui sépare, et
  * la seule surface teintée de la page est le phare des jalons (`projet.md` A-1.3).
  *
- * `caps` : l'intitulé en capitales (« ACTIONS », A-5.1).
+ * `caps` : l'intitulé en capitales (« ACTIONS », A-5.1). `count` : le compte à côté de
+ * l'intitulé, quand le bloc n'en montre qu'une partie (« Code en cours 14 », PF-11).
  */
 export function OverviewSection({
   title,
   more,
   caps = false,
+  count,
   children,
 }: {
   title: string
   more?: ReactNode
   caps?: boolean
+  count?: number
   children: ReactNode
 }) {
   const id = useId()
@@ -41,6 +44,7 @@ export function OverviewSection({
         <h2 id={id} className={cx('text-xs font-medium text-ink-faint', caps && 'tracking-wide uppercase')}>
           {title}
         </h2>
+        {count !== undefined ? <span className="text-xs text-ink-faint tabular-nums">{count}</span> : null}
         {more ? <span className="ml-auto">{more}</span> : null}
       </div>
       {children}

@@ -60,3 +60,20 @@ export const useCardDraft = createDraftStore<CardDraft>('solera.cardDraft', (val
 export const useCardNoteDraft = createDraftStore<CardNoteDraft>('solera.cardNoteDraft', (value): value is CardNoteDraft =>
   typeof value === 'object' && value !== null && 'body' in value && typeof value.body === 'string',
 )
+
+/**
+ * Le tiroir « Nouveau jalon » d'un projet (#193) : son texte, son titre retouché et son
+ * échéance survivent à la fermeture, comme le brouillon d'une carte. Les pièces jointes,
+ * elles, tombent : un fichier ne se garde pas dans le stockage de l'onglet.
+ */
+export interface MilestoneDraft {
+  title: string
+  text: string
+  /** L'échéance du champ, `AAAA-MM-JJ`, vide sans échéance. */
+  due: string
+}
+
+export const useMilestoneDraft = createDraftStore<MilestoneDraft>('solera.milestoneDraft', (value): value is MilestoneDraft =>
+  typeof value === 'object' && value !== null && 'title' in value && 'text' in value && 'due' in value &&
+  typeof value.title === 'string' && typeof value.text === 'string' && typeof value.due === 'string',
+)

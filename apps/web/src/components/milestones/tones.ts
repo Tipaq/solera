@@ -11,6 +11,16 @@ export const MATURITY_TONE: Record<Maturity, string> = {
   delivered: 'bg-positive/25 text-positive',
 }
 
+/** Le point d'une maturité, devant son mot ou son nom. */
+export const MATURITY_DOT: Record<Maturity, string> = {
+  idea: 'bg-line-strong',
+  refine: 'bg-caution',
+  split: 'bg-ink-faint',
+  ready: 'bg-positive',
+  launched: 'bg-accent',
+  delivered: 'bg-positive',
+}
+
 /** Un nœud du graphe des vagues : cadre et fond, à la teinte de l'état. */
 export const STATE_NODE: Record<CardState, string> = {
   todo: 'border-line-strong bg-surface',
@@ -19,4 +29,14 @@ export const STATE_NODE: Record<CardState, string> = {
   review: 'border-positive/60 bg-positive/8',
   done: 'border-positive/40 bg-positive/5',
   abandoned: 'border-dashed border-line opacity-50',
+}
+
+/** La jauge d'un jalon dans le Gantt (GNT-8) : son remplissage, par état de ses cartes. */
+export const STATE_MIX: Record<CardState, string> = {
+  done: 'bg-positive/70',
+  review: 'bg-positive/35',
+  running: 'bg-accent/60',
+  blocked: 'bg-caution/60',
+  todo: 'bg-ink-faint/25',
+  abandoned: 'bg-transparent',
 }

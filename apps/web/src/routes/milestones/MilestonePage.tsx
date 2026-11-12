@@ -1,43 +1,43 @@
-import { ArrowLeft, Flag } from 'lucide-react'
+import { ArrowLeft, Flag, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DEFAULT_MILESTONE_CONCURRENCY } from '@solera/protocol'
+import type { CardDto } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
-import { CardMilestone } from '../../components/board/CardMilestone'
 import { CardInfoButton } from '../../components/cards/CardInfoButton'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
+import { AddToMilestoneDrawer } from '../../components/milestones/AddToMilestoneDrawer'
+import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
+import { RefinementPanel } from '../../components/milestones/RefinementPanel'
+import { RunPanel } from '../../components/milestones/RunPanel'
+import { SettleList } from '../../components/milestones/SettleList'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
 import { withSheet } from '../../lib/card-sheet'
 import type { StatusOf } from '../../lib/card-state'
 import { formatDay, relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
-import {
-  gestureOf,
-  maturityReasons,
-  nextAction,
-  nextActionText,
-  reasonText,
-  refinePending,
-  type MilestoneEntry,
-} from '../../lib/milestone-model'
+import { gestureOf, nextAction, nextActionText, refinePending, type MilestoneEntry } from '../../lib/milestone-model'
+import { launchStage } from '../../lib/milestone-launch'
 import { useMilestones } from '../../lib/milestones'
 import { useMergeBranchPullRequest } from '../../lib/pull-requests'
+import { refineHref } from '../../lib/refinement'
 
 /**
  * **La page d'un jalon** (spec jalons JAL-1..8), sous l'onglet Jalons : où il en est et
  * pourquoi, ce qu'il attend de toi, et ses cartes en vagues. Une idée a la sienne aussi :
  * c'est d'ici qu'on l'affine.
  *
- * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler. En
- * attendant le résumé d'affinage (#195) et le panneau Lancer (#197), ils portent ce que
- * `main` savait déjà faire : les raisons et la session d'affinage, le lancement et le
- * suivi du pilotage (`CardMilestone`).
+ * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
+ * `#affinage` porte la session d'affinage résumée (#195) et « À régler avant de partir »
+ * (#196), `#lancer` le panneau Lancer (#197) puis, une fois lancé, son suivi et sa PR
+ * finale (#198).
  */
 export function MilestonePage() {
   const { projectId, number } = useParams()
   const t = useTranslate()
-  const { entries, statusOf, isPending } = useMilestones(projectId)
+  const { entries, cards, statusOf, isPending } = useMilestones(projectId)
   const entry = entries.find((candidate) => String(candidate.card.number) === number) ?? null
 
   if (isPending) return null
@@ -60,14 +60,27 @@ export function MilestonePage() {
       </>
     )
   }
-  return <MilestoneView projectId={projectId} entry={entry} statusOf={statusOf} />
+  return <MilestoneView projectId={projectId} entry={entry} cards={cards} statusOf={statusOf} />
 }
 
-function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entry: MilestoneEntry; statusOf: StatusOf }) {
+function MilestoneView({
+  projectId,
+  entry,
+  cards,
+  statusOf,
+}: {
+  projectId: string
+  entry: MilestoneEntry
+  cards: readonly CardDto[]
+  statusOf: StatusOf
+}) {
   const t = useTranslate()
   const navigate = useNavigate()
   const [, setParams] = useSearchParams()
   const merge = useMergeBranchPullRequest(projectId, entry.card.id)
+  const [adding, setAdding] = useState(false)
+  // Choisie dans Lancer, montrée par les vagues (VAG-1) ; celle du pilotage, une fois lancé.
+  const [concurrency, setConcurrency] = useState(DEFAULT_MILESTONE_CONCURRENCY)
   const { card } = entry
 
   const action = nextActionText(nextAction(entry), t)
@@ -76,14 +89,14 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     ? () => {
         switch (gesture.kind) {
           case 'refine':
-            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte.
-            return navigate(
-              card.refinement ? `/p/${projectId}/c/${card.refinement.conversationId}` : `/p/${projectId}/c/new?split=${card.id}`,
-            )
+            // La session d'affinage déjà ouverte, sinon un découpage neuf de cette carte (AFF-2).
+            return navigate(refineHref(projectId, card, 'questions'))
           case 'scroll':
             return document.getElementById(gesture.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           case 'merge':
             return merge.mutate()
+          case 'link':
+            return window.open(gesture.url, '_blank', 'noreferrer')
           case 'sheet':
             return setParams((current) => withSheet(current, gesture.number))
         }
@@ -91,8 +104,9 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
     : null
   const pending = refinePending(entry)
   const refine = (
-    <div id="affinage" className="min-w-0 scroll-mt-4 xl:col-start-1">
-      <RefineSlot projectId={projectId} entry={entry} pending={pending} />
+    <div id="affinage" className="flex min-w-0 scroll-mt-4 flex-col gap-5 xl:col-start-1">
+      <RefinementPanel projectId={projectId} entry={entry} />
+      <SettleList projectId={projectId} entry={entry} />
     </div>
   )
 
@@ -122,6 +136,13 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
           {entry.addedSinceLaunch.length ? (
             <Badge tone="caution">{t('milestone.page.sinceLaunch', { count: entry.addedSinceLaunch.length })}</Badge>
           ) : null}
+          {entry.maturity === 'delivered' ? null : (
+            <span className="ml-auto">
+              <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setAdding(true)}>
+                {t('milestone.page.addTo')}
+              </Button>
+            </span>
+          )}
         </header>
 
         <section
@@ -153,24 +174,37 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
         <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           {pending ? refine : null}
           <div className="min-w-0 xl:col-start-1">
-            <Waves projectId={projectId} entry={entry} statusOf={statusOf} />
+            <Waves projectId={projectId} entry={entry} statusOf={statusOf} concurrency={entry.run?.concurrency ?? concurrency} />
           </div>
           <div id="lancer" className="min-w-0 scroll-mt-4 xl:sticky xl:top-0 xl:col-start-2 xl:row-span-3 xl:row-start-1">
-            <LaunchSlot projectId={projectId} entry={entry} />
+            {launchStage(entry) === 'launched' ? (
+              <RunPanel projectId={projectId} entry={entry} merge={merge} statusOf={statusOf} />
+            ) : (
+              <LaunchPanel projectId={projectId} entry={entry} concurrency={concurrency} onConcurrency={setConcurrency} statusOf={statusOf} />
+            )}
           </div>
           {pending ? null : refine}
         </div>
       </div>
       <CardSheetHost projectId={projectId} />
+      <AddToMilestoneDrawer open={adding} onClose={() => setAdding(false)} projectId={projectId} milestone={card} cards={cards} />
     </div>
   )
 }
 
 /** Le graphe, surmonté de ce qu'il dit : ce qui part ensemble, et combien à la fois (VAG-1, VAG-2). */
-function Waves({ projectId, entry, statusOf }: { projectId: string; entry: MilestoneEntry; statusOf: StatusOf }) {
+function Waves({
+  projectId,
+  entry,
+  statusOf,
+  concurrency,
+}: {
+  projectId: string
+  entry: MilestoneEntry
+  statusOf: StatusOf
+  concurrency: number
+}) {
   const t = useTranslate()
-  // Le panneau Lancer (#197) fera choisir la concurrence ; d'ici là, celle du pilotage.
-  const concurrency = entry.run?.concurrency ?? DEFAULT_MILESTONE_CONCURRENCY
   const empty = entry.children.every((child) => child.column === 'abandoned')
   return (
     <section aria-label={t('milestone.waves.title')} className="flex min-w-0 flex-col gap-2">
@@ -191,55 +225,6 @@ function Waves({ projectId, entry, statusOf }: { projectId: string; entry: Miles
           />
         </div>
       )}
-    </section>
-  )
-}
-
-/**
- * L'emplacement de l'affinage, en attendant son résumé (#195) et « À régler avant de
- * partir » (#196) : pourquoi le jalon attend, et sa session d'affinage.
- */
-function RefineSlot({ projectId, entry, pending }: { projectId: string; entry: MilestoneEntry; pending: boolean }) {
-  const t = useTranslate()
-  const session = entry.card.refinement
-  if (!pending && !session) return null
-  return (
-    <section aria-label={t('milestone.page.refine')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
-      <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold text-ink">{t('milestone.page.refine')}</h3>
-        {session ? (
-          <Link to={`/p/${projectId}/c/${session.conversationId}`} className="ml-auto text-xs text-accent hover:underline">
-            {t('milestone.page.refineOpen')}
-          </Link>
-        ) : null}
-      </div>
-      {pending ? (
-        <ul className="flex flex-col gap-1 text-sm text-ink-soft">
-          {maturityReasons(entry).map((reason) => (
-            <li key={reason.kind}>{reasonText(reason, t)}</li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  )
-}
-
-/**
- * L'emplacement de Lancer, en attendant son panneau (#197) et le suivi (#198) : le
- * lancement et le pilotage tels que la fiche du board les offre. Rien pour une idée sans
- * cartes, ni pour un jalon livré qu'aucun pilotage ne suit plus.
- */
-function LaunchSlot({ projectId, entry }: { projectId: string; entry: MilestoneEntry }) {
-  const t = useTranslate()
-  const [, setParams] = useSearchParams()
-  if (entry.children.length === 0 || (entry.maturity === 'delivered' && entry.run === null)) return null
-  return (
-    <section aria-label={t('milestone.page.launch')} className="rounded-xl border border-line p-3.5">
-      <CardMilestone
-        card={entry.card}
-        projectId={projectId}
-        onSelectCard={(number) => setParams((current) => withSheet(current, number))}
-      />
     </section>
   )
 }

@@ -17,7 +17,6 @@ type PluralPrefix =
   | 'projectActivity.idle.trees'
   | 'projectActivity.idle.merged'
   | 'projectActivity.idle.missing'
-  | 'projectActivity.idle.cleanMerged'
   | 'projectActivity.branches'
 
 export function plural(prefix: PluralPrefix, count: number): string {
@@ -39,7 +38,8 @@ export function WorktreeCleanupDialog({
   onClose,
 }: {
   projectId: string
-  tree: WorktreeStatusDto
+  /** Le plan se relit par le chemin ; le nom fait le titre. */
+  tree: Pick<WorktreeStatusDto, 'path' | 'name'>
   base: string | null
   onClose: () => void
 }) {

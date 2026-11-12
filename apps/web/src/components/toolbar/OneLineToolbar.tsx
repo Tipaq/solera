@@ -1,6 +1,6 @@
 import { Search, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { IconButton, cx } from '@solera/ui'
+import { IconButton, TooltipButton, cx, panelGestureClass } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /**
@@ -58,12 +58,15 @@ export function ToolbarSearch({
   onChange,
   placeholder,
   label,
+  widthClass,
 }: {
   value: string
   onChange: (next: string) => void
   placeholder?: string
   /** Le nom accessible, quand il diffère de l'indication. */
   label?: string
+  /** Les classes de largeur posées par l'hôte, à la place de l'élargissement au focus de la barre. */
+  widthClass?: string
 }) {
   const t = useTranslate()
   const hint = placeholder ?? t('toolbar.search')
@@ -72,9 +75,10 @@ export function ToolbarSearch({
       className={cx(
         'group shrink transition-[width,background-color,border-color]',
         toolbarFieldClass(),
-        value
-          ? 'w-56'
-          : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56',
+        widthClass ??
+          (value
+            ? 'w-56'
+            : 'w-36 focus-within:w-56 max-sm:group-has-[[data-filter-chip]]/toolbar:w-11 max-sm:group-has-[[data-filter-chip]]/toolbar:focus-within:w-56'),
       )}
     >
       <Search size={16} className="shrink-0" />
@@ -112,6 +116,23 @@ export const toolbarFieldClass = (invalid = false) =>
  * 44 px de large au doigt comme de haut (*Gabarit tactile*).
  */
 export const iconToolClass = 'justify-center min-w-11 md:min-w-9 pointer-coarse:min-w-11'
+
+/**
+ * Un outil fait d'une icône dans la ligne d'outils d'un onglet du panneau : la hauteur
+ * de `Button size="sm"`, carré à la souris, 44 px au doigt, son nom en infobulle.
+ */
+export function IconTool({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <TooltipButton
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className={cx(panelGestureClass, 'shrink-0', iconToolClass)}
+    >
+      {children}
+    </TooltipButton>
+  )
+}
 
 /**
  * Le bouton d'un menu de la barre (« Filtrer », « Affichage ») : icône, libellé, compte.

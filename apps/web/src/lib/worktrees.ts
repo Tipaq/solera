@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   BranchCleanupResultDto,
   CompareDto,
@@ -130,16 +130,36 @@ export function useCompare(projectId: string | undefined, base: string | null, h
   })
 }
 
+export const cleanupPlanKey = (projectId: string, path: string | null) => ['worktree-cleanup', projectId, path]
+
+const cleanupPlanQuery = (projectId: string, path: string | null) => ({
+  queryKey: cleanupPlanKey(projectId, path),
+  queryFn: () =>
+    api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
+  enabled: path !== null,
+  // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
+  staleTime: 0,
+  gcTime: 0,
+})
+
 /** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
 export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
-  return useQuery({
-    queryKey: ['worktree-cleanup', projectId, path],
-    queryFn: () =>
-      api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
-    enabled: path !== null,
-    // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
-    staleTime: 0,
-    gcTime: 0,
+  return useQuery(cleanupPlanQuery(projectId, path))
+}
+
+/**
+ * Les plans de plusieurs arbres, pour le dialogue « Nettoyer » de Travail : la fonction
+ * rend celui d'un chemin, `undefined` tant qu'il se lit, `null` s'il n'a pas pu l'être.
+ */
+export function useWorktreeCleanupPlans(projectId: string, paths: string[]): (path: string) => WorktreeCleanupPlanDto | null | undefined {
+  return useQueries({
+    // Un plan qui échoue le dit tout de suite : le dialogue n'attend pas trois essais.
+    queries: paths.map((path) => ({ ...cleanupPlanQuery(projectId, path), retry: false })),
+    combine: (results) => {
+      // Par le chemin demandé : celui que le serveur rend peut être normalisé.
+      const byPath = new Map(results.map((result, index) => [paths[index]!, result.data ?? (result.isError ? null : undefined)] as const))
+      return (path: string) => byPath.get(path)
+    },
   })
 }
 

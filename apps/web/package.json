@@ -46,7 +46,7 @@
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-tooltip": "^1.3.0",
     "@solera/protocol": "workspace:*",
-    "@solera/ui": "github:Tipaq/solera-ds#d3f078236afb59431a0a1a0b983de31eba60e811",
+    "@solera/ui": "github:Tipaq/solera-ds#fe1ef3c921869074d61254c1d4c4f4bfea956fc1",
     "@tanstack/react-query": "^5.64.2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

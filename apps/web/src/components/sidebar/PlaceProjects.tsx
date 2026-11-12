@@ -16,8 +16,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  Archive,
-  CalendarClock,
   ChevronRight,
   ChevronsUpDown,
   Focus,
@@ -25,13 +23,10 @@ import {
   ListTree,
   MessagesSquare,
   MoreHorizontal,
-  Palette,
   Pencil,
   Plus,
-  SlidersHorizontal,
-  SquareKanban,
+  Settings,
   SquareTerminal,
-  Target,
   Users,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -40,7 +35,9 @@ import type { ConversationDto, ProjectDto } from '@solera/protocol'
 import { useOpenConversationId } from '../../lib/conversation-route'
 import { currentProjectFocus, setProjectFocus, useProjectFocus } from '../../lib/display-settings'
 import { useTranslate } from '../../lib/i18n'
-import { PROJECT_COLORS } from '../../lib/project-colors'
+import { NO_PROJECT } from '../../lib/sessions-view'
+import { cutToBudget } from '../../lib/sidebar-budget'
+import { PROJECT_TABS } from '../../lib/project-tabs'
 import { useUpdateProject } from '../../lib/projects'
 import { useLiveConversations } from '../../lib/activity'
 import { useHasUnread } from '../../lib/reads'
@@ -48,7 +45,9 @@ import { mostUrgent, threadState } from '../../lib/signals'
 import { useUpdateCollapsedProjects, useUserSettings } from '../../lib/user-settings'
 import { ProjectAvatar } from '../ProjectAvatar'
 import { StateDot } from '../chat/Signals'
+import { AllSessionsLine } from './AllSessionsLine'
 import { ConversationLine } from './ConversationLine'
+import { useSessionBudget } from './fit-budget'
 import { RenameInput } from './RenameInput'
 import { openRowMenu } from './row-menu'
 import {
@@ -56,16 +55,10 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  MenuLabel,
   MenuSeparator,
-  MenuSwatch,
-  MenuSwatchRow,
   Tooltip,
   TooltipButton,
 } from '@solera/ui'
-
-/** Au-delà, le reste est compté sur une ligne : « 26 autres sessions… ». */
-const SESSIONS_SHOWN = 10
 
 /**
  * Neutralise le clic qui suit immédiatement un glisser-déposer.
@@ -250,13 +243,6 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
   const t = useTranslate()
   const [open, setOpen] = useState(true)
   const openConversationId = useOpenConversationId()
-  // Même règle que dans un projet : le groupe liste tout ce qui n'est pas rangé, y
-  // compris ce qui travaille.
-  const sessions = useMemo(
-    () => conversations.filter((entry) => !entry.archivedAt),
-    [conversations],
-  )
-  const archived = useMemo(() => conversations.filter((entry) => entry.archivedAt), [conversations])
   const hasUnread = useHasUnread(conversations, openConversationId)
 
   return (
@@ -305,23 +291,8 @@ function FreeThreadsGroup({ conversations, onNavigate }: {
 
       {open ? (
         <div className="mb-1 ml-3 border-l border-line pl-1.5">
-          {sessions.length === 0 ? (
-            <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
-          ) : (
-            <ul>
-              {sessions.map((conversation) => (
-                <ConversationLine
-                  key={conversation.id}
-                  conversation={conversation}
-                  onNavigate={onNavigate}
-                  // Un fil libre n'a pas d'ordre à défendre : rien ne le réordonne.
-                />
-              ))}
-            </ul>
-          )}
-          {archived.length > 0 ? (
-            <ArchivedSection conversations={archived} onNavigate={onNavigate} />
-          ) : null}
+          {/* Même liste que sous un projet : même budget, même ligne de fin. */}
+          <ProjectSessions conversations={conversations} projectId={null} onNavigate={onNavigate} />
         </div>
       ) : null}
     </li>
@@ -543,7 +514,7 @@ function ProjectGroup({
           {/* Plus aucun sous-lien de vue, et plus d'en-tête « Sessions » : les onglets
               portent les vues, et sous un projet déplié il n'y a que des sessions, ce que
               le filet de couleur dit déjà. */}
-          <ProjectSessions conversations={conversations} onNavigate={onNavigate} />
+          <ProjectSessions conversations={conversations} projectId={project.id} onNavigate={onNavigate} />
         </div>
       ) : null}
     </li>
@@ -554,8 +525,10 @@ function ProjectGroup({
  * Les sessions d'un projet, ou des fils libres : ce qu'un groupe de l'arbre montre une
  * fois déplié, et ce que montre le mode projet sous sa ligne.
  */
-function ProjectSessions({ conversations, onNavigate }: {
+function ProjectSessions({ conversations, projectId, onNavigate }: {
   conversations: ConversationDto[]
+  /** `null` : les fils libres. */
+  projectId: string | null
   onNavigate: () => void
 }) {
   const t = useTranslate()
@@ -579,14 +552,10 @@ function ProjectSessions({ conversations, onNavigate }: {
     () => conversations.filter((entry) => !entry.archivedAt && !entry.scheduleId),
     [conversations],
   )
-  const archived = useMemo(
-    () => conversations.filter((entry) => entry.archivedAt && !entry.scheduleId),
-    [conversations],
-  )
-  const [showAll, setShowAll] = useState(false)
-  const visible = showAll
-    ? sessions
-    : sessions.filter((entry, index) => index < SESSIONS_SHOWN || entry.id === openConversationId)
+  // Le total que compte la ligne de fin, archivées comprises : c'est ce que montre la page.
+  const total = useMemo(() => conversations.filter((entry) => !entry.scheduleId).length, [conversations])
+  // Le réglage « Sessions dans la sidebar » : ajusté à la hauteur, ou 10 / 20 / 50.
+  const visible = cutToBudget(sessions, useSessionBudget(), openConversationId)
 
   return (
     <>
@@ -598,30 +567,22 @@ function ProjectSessions({ conversations, onNavigate }: {
       {sessions.length === 0 ? (
         <p className="px-2.5 py-1 text-xs text-ink-faint">{t('shell.conversations.empty')}</p>
       ) : (
-        <ul>
+        <ul data-session-list data-cut={visible.length < sessions.length}>
           {visible.map((conversation) => (
             <ConversationLine key={conversation.id} conversation={conversation} onNavigate={onNavigate} />
           ))}
         </ul>
       )}
 
-      {/* « 26 autres sessions… » plutôt que « Voir les 26 sessions » : le reste est
-          compté, et le libellé ne promet pas une page qui n'existe pas. */}
-      {sessions.length > visible.length || showAll ? (
-        <button
-          type="button"
-          onClick={() => setShowAll((value) => !value)}
-          className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
-        >
-          <span className="flex w-4 shrink-0 justify-center"><MessagesSquare size={14} /></span>
-          {showAll
-            ? t('shell.sessions.less')
-            : t('shell.sessions.more', { count: sessions.length - visible.length })}
-        </button>
-      ) : null}
-
-      {archived.length > 0 ? (
-        <ArchivedSection conversations={archived} onNavigate={onNavigate} />
+      {/* Une seule ligne de fin : « N autres sessions… » et la section des archivées
+          disaient la même chose que la page des sessions, qui montre aussi les archivées. */}
+      {total > visible.length ? (
+        <AllSessionsLine
+          to={`/sessions?projet=${projectId ?? NO_PROJECT}`}
+          label={t(projectId === null ? 'shell.sessions.all.loose' : 'shell.sessions.all.project')}
+          count={total}
+          onNavigate={onNavigate}
+        />
       ) : null}
     </>
   )
@@ -629,7 +590,7 @@ function ProjectSessions({ conversations, onNavigate }: {
 
 /**
  * Les entrées du `⋯` d'un projet que l'on possède, les mêmes dans l'arbre et sur la ligne
- * du mode projet : ses vues, ses réglages, le renommer, sa couleur.
+ * du mode projet : ses onglets, toutes ses sessions, ses réglages, le renommer.
  */
 function ProjectMenuEntries({ project, onNavigate, onRename }: {
   project: ProjectDto
@@ -638,43 +599,27 @@ function ProjectMenuEntries({ project, onNavigate, onRename }: {
 }) {
   const t = useTranslate()
   const navigate = useNavigate()
-  const updateProject = useUpdateProject()
   const go = (path: string) => { onNavigate(); navigate(path) }
   return (
     <>
-      {/* Les vues en second rang, et seulement ici : la colonne n'a pas de rangée
-          d'onglets sous les yeux, donc le menu est le seul endroit d'où l'on va droit
-          au board sans passer par l'Aperçu. */}
-      <MenuItem icon={<Target size={14} />} onSelect={() => go(`/p/${project.id}`)}>
-        {t('project.view.overview')}
-      </MenuItem>
-      <MenuItem icon={<SquareKanban size={14} />} onSelect={() => go(`/p/${project.id}/board`)}>
-        {t('shell.project.board')}
-      </MenuItem>
-      <MenuItem icon={<CalendarClock size={14} />} onSelect={() => go(`/p/${project.id}/actions`)}>
-        {t('place.schedules.title')}
-      </MenuItem>
-      <MenuItem icon={<SlidersHorizontal size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
-        {t('shell.project.settings')}
+      {/* Les onglets dans l'ordre de la rangée, et seulement ici : la colonne n'a pas la
+          rangée sous les yeux, donc le menu est le seul chemin direct vers un onglet
+          sans passer par l'Aperçu. Plus de couleur : elle vit dans Réglages › Général. */}
+      {PROJECT_TABS.map((tab) => (
+        <MenuItem key={tab.key} icon={<tab.icon size={14} />} onSelect={() => go(`/p/${project.id}${tab.path}`)}>
+          {t(tab.label)}
+        </MenuItem>
+      ))}
+      <MenuItem icon={<MessagesSquare size={14} />} onSelect={() => go(`/sessions?projet=${project.id}`)}>
+        {t('shell.sessions.all.project')}
       </MenuItem>
       <MenuSeparator />
+      <MenuItem icon={<Settings size={14} />} onSelect={() => go(`/p/${project.id}/settings`)}>
+        {t('shell.project.settings')}
+      </MenuItem>
       <MenuItem icon={<Pencil size={14} />} onSelect={onRename}>
         {t('shell.rename')}
       </MenuItem>
-      <MenuLabel>
-        <span className="flex items-center gap-1.5"><Palette size={11} /> {t('shell.color')}</span>
-      </MenuLabel>
-      <MenuSwatchRow>
-        {PROJECT_COLORS.map((entry) => (
-          <MenuSwatch
-            key={entry.value ?? 'default'}
-            color={entry.value}
-            label={t(entry.label)}
-            selected={project.color === entry.value}
-            onSelect={() => updateProject.mutate({ id: project.id, color: entry.value })}
-          />
-        ))}
-      </MenuSwatchRow>
     </>
   )
 }
@@ -839,7 +784,7 @@ function FocusedProject({ project, projects, conversations, onNavigate }: {
         ) : null}
       </div>
 
-      <ProjectSessions conversations={mine} onNavigate={onNavigate} />
+      <ProjectSessions conversations={mine} projectId={projectId} onNavigate={onNavigate} />
     </div>
   )
 }
@@ -862,44 +807,5 @@ function FocusChoice({ label, icon, current, conversations, onSelect }: {
         {fresh ? <span title={t('shell.project.unread')}><StateDot state="unread" labelled={false} /></span> : null}
       </span>
     </MenuItem>
-  )
-}
-
-/**
- * Repliée et en fin de liste : ce qui est rangé doit rester atteignable sans revenir
- * peser sur ce qu'on a sous les yeux. Hors de tout contexte de glissement, les archivées
- * n'ayant pas d'ordre à défendre.
- */
-function ArchivedSection({ conversations, onNavigate }: {
-  conversations: ConversationDto[]
-  onNavigate: () => void
-}) {
-  const t = useTranslate()
-  const [open, setOpen] = useState(false)
-
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs text-ink-faint transition-colors hover:bg-surface-high hover:text-ink-soft md:h-8 pointer-coarse:h-11"
-      >
-        <span className="flex w-4 shrink-0 justify-center"><Archive size={14} /></span>
-        <span className="flex-1">{t('shell.conversations.archived', { count: String(conversations.length) })}</span>
-        <ChevronRight size={11} className={cx('shrink-0 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open ? (
-        <ul>
-          {conversations.map((conversation) => (
-            <ConversationLine
-              key={conversation.id}
-              conversation={conversation}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </div>
   )
 }
