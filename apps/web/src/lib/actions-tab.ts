@@ -15,6 +15,7 @@ import {
   type What,
   type WhenFilter,
 } from './automations'
+import type { MessageKey } from './i18n'
 import { NEW_PARAM } from './place'
 import type { SessionWork } from './session-works'
 
@@ -46,6 +47,17 @@ export function actionsStatus(items: readonly Automation[], works: readonly Sess
   }
 }
 
+/**
+ * Le compte de l'onglet Actions, d'un projet comme du portefeuille (ACT-2) : ambre « N à
+ * relire » d'abord, car une action à relire t'attend ; sinon vert « N en marche ». Rien
+ * quand rien ne tourne ni n'attend. Le titre se dit avec `{ count }`.
+ */
+export function actionsTabBadge(status: ActionsStatus): { count: number; tone: 'caution' | 'running'; countTitle: MessageKey } | null {
+  if (status.toReview > 0) return { count: status.toReview, tone: 'caution', countTitle: 'actionsTab.status.review' }
+  if (status.running > 0) return { count: status.running, tone: 'running', countTitle: 'actionsTab.status.running' }
+  return null
+}
+
 /** Le compte de chaque entrée de « Filtrer ▾ », sur toutes les actions et non les filtrées. */
 export interface FilterTally {
   what: Record<What, number>
@@ -66,11 +78,9 @@ export function filterTally(items: readonly Automation[]): FilterTally {
   }
 }
 
-type FilterValue<G extends keyof AutomationFilters> = AutomationFilters[G][number]
-
 /** Coche ou décoche une entrée d'un groupe ; les autres groupes ne bougent pas. */
-export function toggleFilter<G extends keyof AutomationFilters>(filters: AutomationFilters, group: G, value: FilterValue<G>): AutomationFilters {
-  const list = filters[group] as FilterValue<G>[]
+export function toggleFilter<F extends { [K in keyof F]: readonly string[] }, G extends keyof F>(filters: F, group: G, value: F[G][number]): F {
+  const list = filters[group]
   const next = list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value]
   return { ...filters, [group]: next }
 }

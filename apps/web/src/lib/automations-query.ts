@@ -10,9 +10,11 @@ import {
   useRunAction,
   useUpdateAction,
 } from './actions'
+import { actionsStatus, type ActionsStatus } from './actions-tab'
 import { api } from './api'
 import { automationsOf, type Automation, type AutomationDraft, type AutomationScope, type UnifiedRun } from './automations'
 import { useAllConversations } from './conversations'
+import { useProjects } from './projects'
 import {
   useApproveScheduleCheck,
   useCreateSchedule,
@@ -21,6 +23,7 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from './schedules'
+import { useAllSessionWorks, useSessionWorks } from './session-works-query'
 
 export interface AutomationsData {
   items: Automation[]
@@ -47,6 +50,30 @@ export function useAutomations(scope: AutomationScope): AutomationsData {
       costOf: (run) => (run.conversationId ? (costs.get(run.conversationId) ?? null) : null),
     }
   }, [actions, tasks, conversations, actionsPending, tasksPending, key])
+}
+
+/**
+ * Ce que compte l'onglet Actions (ACT-1) : ce qui tourne — actions en marche, processus
+ * et travaux de fond des sessions — et ce qui attend une relecture. `null` : tous les
+ * projets visibles, pour l'onglet du portefeuille.
+ */
+export function useActionsStatus(projectId: string | null): ActionsStatus {
+  const { items } = useAutomations(projectId ? { projectId } : { all: true })
+  const works = useSessionWorks(projectId ?? undefined)
+  const { data: projects } = useProjects()
+  const visible = useMemo(
+    () => (projectId ? [] : (projects ?? []).filter((project) => !project.archivedAt).map((project) => project.id)),
+    [projectId, projects],
+  )
+  const everywhere = useAllSessionWorks(visible)
+  return useMemo(() => {
+    if (projectId) return actionsStatus(items, works)
+    const shown = new Set(visible)
+    return actionsStatus(
+      items.filter((item) => item.projectId !== null && shown.has(item.projectId)),
+      [...everywhere.values()].flat(),
+    )
+  }, [projectId, items, works, visible, everywhere])
 }
 
 /** Où lancer : le worktree d'une conversation, sinon la racine du projet. */

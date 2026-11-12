@@ -1,13 +1,12 @@
-import { Bot, CalendarDays, LayoutGrid, List, Server, SquareTerminal } from 'lucide-react'
+import { CalendarDays, LayoutGrid, List } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { Banner } from '@solera/ui'
 import { ActionDrawer } from '../components/automations/ActionDrawer'
 import { ActionRow, ActionSection } from '../components/automations/ActionRow'
-import { ActionTile } from '../components/automations/ActionTile'
 import { ActionsAgenda } from '../components/automations/ActionsAgenda'
 import { ActionsStatusMeta } from '../components/automations/ActionsStatusMeta'
-import { LauncherGroup } from '../components/automations/LauncherGroup'
+import { LauncherView } from '../components/automations/LauncherView'
 import { NewActionMenu } from '../components/automations/NewActionMenu'
 import { SessionWorksSection } from '../components/automations/session-works/SessionWorksSection'
 import { useActionGestures, type ActionHandlers } from '../components/automations/useActionGestures'
@@ -21,7 +20,6 @@ import {
   ACTION_PARAM,
   actionsStatus,
   filterTally,
-  launcherGroupsOf,
   panelAddress,
   panelFromAddress,
   sectionsOf,
@@ -38,7 +36,6 @@ import {
   matchesQuery,
   type Automation,
   type AutomationFilters,
-  type LauncherGroup as Group,
   type Section,
   type StateFilter,
   type What,
@@ -62,12 +59,6 @@ const STATE_LABEL: Record<StateFilter, MessageKey> = {
   review: 'actionsTab.filter.state.review',
   failing: 'actionsTab.filter.state.failing',
 }
-
-const GROUPS: { key: Group; icon: ReactNode; title: MessageKey; add: MessageKey; kind: 'service' | 'command' | 'agent' }[] = [
-  { key: 'services', icon: <Server size={14} />, title: 'actionsTab.group.services', add: 'actionsTab.group.addService', kind: 'service' },
-  { key: 'commands', icon: <SquareTerminal size={14} />, title: 'actionsTab.group.commands', add: 'actionsTab.group.addCommand', kind: 'command' },
-  { key: 'agents', icon: <Bot size={14} />, title: 'actionsTab.group.agents', add: 'actionsTab.group.addAgent', kind: 'agent' },
-]
 
 const SECTION_TEXT: Record<Section, { title: MessageKey; hint: MessageKey }> = {
   live: { title: 'actionsTab.section.live', hint: 'actionsTab.section.liveHint' },
@@ -209,7 +200,7 @@ function ActionsTab({ projectId }: { projectId: string }) {
           {view === 'lanceur' ? (
             <>
               {worksSection('tiles')}
-              <Launcher items={shown} handlers={handlers} gestures={gestures} onNew={(kind) => setPanel(newActionPanel(kind))} />
+              <LauncherView items={shown} handlers={handlers} servedOf={gestures.servedOf} serving={gestures.serving} onNew={(kind) => setPanel(newActionPanel(kind))} />
             </>
           ) : view === 'agenda' ? (
             <ActionsAgenda items={shown} scope={agendaScope} onScope={setAgendaScope} onOpen={(item) => handlers.onOpen(item)} />
@@ -231,39 +222,6 @@ function ActionsTab({ projectId }: { projectId: string }) {
 }
 
 type Gestures = ReturnType<typeof useActionGestures>
-
-/** Le Lanceur (LAN-1) : Services, Commandes, Agents, chacun avec sa tuile d'ajout, même vide. */
-function Launcher({
-  items,
-  handlers,
-  gestures,
-  onNew,
-}: {
-  items: Automation[]
-  handlers: ActionHandlers
-  gestures: Gestures
-  onNew: (kind: 'service' | 'command' | 'agent') => void
-}) {
-  const t = useTranslate()
-  const groups = launcherGroupsOf(items)
-  return (
-    <>
-      {GROUPS.map((group) => (
-        <LauncherGroup
-          key={group.key}
-          icon={group.icon}
-          title={t(group.title)}
-          count={groups[group.key].length}
-          add={{ label: t(group.add), onClick: () => onNew(group.kind) }}
-        >
-          {groups[group.key].map((item) => (
-            <ActionTile key={item.id} item={item} served={gestures.servedOf(item)} serving={gestures.serving(item)} handlers={handlers} />
-          ))}
-        </LauncherGroup>
-      ))}
-    </>
-  )
-}
 
 /** La Liste (LST-1) : En cours, Lancés par les sessions, À relire, Planifiées, À la demande. */
 function ListView({ items, handlers, gestures, works }: { items: Automation[]; handlers: ActionHandlers; gestures: Gestures; works: ReactNode }) {

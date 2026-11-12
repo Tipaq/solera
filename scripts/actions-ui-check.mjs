@@ -828,6 +828,203 @@ async function checkProjectTab(base, env, api) {
   await request.close()
 }
 
+/**
+ * L'onglet Actions du portefeuille (#241, PF-32 à PF-37) : les actions de deux projets,
+ * rangées par projet ; les filtres Projet, Quoi, Quand et la recherche sur le nom du
+ * projet ; ce qui tourne sur l'instance ; la Liste et l'Agenda ; et chaque geste qui
+ * ouvre quelque chose mène à l'onglet Actions du projet.
+ */
+async function checkPortfolioTab(base, env, api) {
+  const projects = await api('/api/projects')
+  const atlas = projects.find((entry) => entry.name === 'Atlas API')
+  const nimbus = projects.find((entry) => entry.name === 'Nimbus')
+  const conversation = (await api(`/api/projects/${nimbus.id}/conversations`))[0]
+  const request = await browser.newContext()
+  await request.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
+  const create = async (project, data) => {
+    const response = await request.request.post(`${base}/api/projects/${project.id}/actions`, { data })
+    assert.equal(response.status(), 201, await response.text())
+    return response.json()
+  }
+  const lint = await create(atlas, { label: 'Pf Lint', kind: 'task', command: 'echo pf-lint' })
+  const nightly = await create(atlas, {
+    label: 'Pf Nuit', kind: 'task', command: 'echo pf-nuit',
+    schedule: { cadence: { kind: 'cron', expression: '0 3 * * *' }, maxDurationMinutes: 30 },
+  })
+  const waiting = await create(nimbus, { label: 'Pf Attente', kind: 'task', command: 'echo pf-attente; sleep 120' })
+  const proposed = await mcp(env, conversation.id, nimbus.id, 'register_action', { label: 'Pf Proposée', kind: 'task', command: 'echo pf-proposee' })
+  assert.ok(!proposed.isError, proposed.content[0].text)
+  // Une commande qui tourne dans un terminal : elle « tourne maintenant ».
+  const launched = await request.request.post(`${base}/api/actions/${waiting.id}/run`, { data: {} })
+  assert.ok(launched.ok(), await launched.text())
+  const tab = `${base}/projects/actions`
+  const idOf = (action) => `a-${action.id}`
+
+  for (const width of [1280, 390]) {
+    const phone = width < 500
+    const context = await browser.newContext({
+      viewport: { width, height: phone ? 844 : 900 }, isMobile: phone, hasTouch: phone, locale: 'fr-FR', serviceWorkers: 'block',
+    })
+    await context.addInitScript((origin) => {
+      if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    }, new URL(base).origin)
+    await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
+    const page = await context.newPage()
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    const url = () => new URL(page.url())
+    const tile = (label) => page.locator('[data-action-tile]', { has: page.getByText(label, { exact: true }) })
+    const launcher = (project) => page.locator(`[data-portfolio-launcher="${project.id}"]`)
+    const chips = page.locator('[data-filter-chip]')
+    const shot = (name) => page.screenshot({ path: join(shots, `portfolio-${name}-${width}.png`) })
+
+    // L'onglet est dans la rangée du portefeuille, avec le compte d'un projet : ambre, « à relire » d'abord.
+    await page.goto(`${base}/projects`)
+    const row = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
+    const actionsTab = row.getByRole('link', { name: /^Actions/ })
+    await actionsTab.locator('[title$="à relire"]').waitFor()
+    assert.match(await actionsTab.locator('[title$="à relire"]').getAttribute('title'), /^\d+ à relire$/)
+    await actionsTab.click()
+    await page.waitForURL(tab)
+
+    // Le Lanceur par défaut : un groupe par projet, ses trois groupes de nature.
+    await tile('Pf Lint').waitFor()
+    await launcher(atlas).getByRole('link', { name: 'Atlas API', exact: true }).waitFor()
+    await launcher(nimbus).getByRole('link', { name: 'Nimbus', exact: true }).waitFor()
+    for (const group of ['Services', 'Commandes', 'Agents']) await launcher(atlas).getByRole('heading', { name: group, exact: true }).waitFor()
+    assert.equal(await launcher(atlas).locator('[data-action-tile]', { hasText: 'Pf Attente' }).count(), 0, 'chaque projet ses tuiles')
+    await launcher(nimbus).getByRole('button', { name: 'Relire « Pf Proposée »', exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    // La méta : un bilan neutre, à partir de lg.
+    if (!phone) assert.match(await page.locator('[data-toolbar]').getByText(/^\d+ actions$/).textContent(), /^\d+ actions$/)
+
+    // Tourne maintenant, tous projets : la commande lancée, son projet, et la page Services.
+    const runningNow = page.locator('[data-portfolio-running]')
+    await runningNow.getByRole('heading', { name: 'Tourne maintenant, tous projets' }).waitFor()
+    assert.equal(await runningNow.getByRole('link', { name: /^Page Services/ }).getAttribute('href'), '/services')
+    const pill = runningNow.getByRole('button', { name: /Pf Attente/ })
+    await pill.getByText('Nimbus').waitFor()
+    await page.screenshot({ path: join(shots, `portfolio-launcher-${width}.png`) })
+    await runningNow.screenshot({ path: join(shots, `portfolio-running-${width}.png`) })
+    await launcher(atlas).screenshot({ path: join(shots, `portfolio-launcher-group-${width}.png`) })
+    // Elle mène à son détail, dans l'onglet Actions du projet.
+    await pill.click()
+    await page.waitForURL((next) => next.pathname === `/p/${nimbus.id}/actions`)
+    assert.equal(url().searchParams.get('action'), idOf(waiting))
+    await page.getByRole('dialog', { name: 'Pf Attente', exact: true }).waitFor()
+    await page.goBack()
+    await tile('Pf Lint').waitFor()
+
+    // Filtrer ▾ : le projet d'abord, avec son compte ; puis Quoi, Quand.
+    await page.getByRole('button', { name: /^Filtrer/ }).click()
+    const filters = page.getByRole('dialog', { name: 'Filtrer' })
+    for (const heading of ['Projet', 'Quoi', 'Quand']) await filters.getByText(heading, { exact: true }).waitFor()
+    await filters.getByRole('checkbox', { name: /Atlas API/ }).click()
+    if (!phone) await filters.screenshot({ path: join(shots, `portfolio-filter-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await chips.getByText('Atlas API').waitFor()
+    await launcher(nimbus).waitFor({ state: 'detached' })
+    await tile('Pf Nuit').waitFor()
+    await page.getByRole('button', { name: /^Filtrer/ }).click()
+    await filters.getByRole('checkbox', { name: 'Planifiées' }).click()
+    await page.keyboard.press('Escape')
+    await chips.getByText('Planifiées').waitFor()
+    await tile('Pf Lint').waitFor({ state: 'detached' })
+    await tile('Pf Nuit').waitFor()
+    // « Effacer tous les filtres » vide le projet et les filtres de la page.
+    await page.getByRole('button', { name: /^Filtrer/ }).click()
+    await filters.getByRole('button', { name: 'Effacer tous les filtres' }).click()
+    await page.keyboard.press('Escape')
+    await launcher(nimbus).waitFor()
+    assert.equal(await chips.count(), 0)
+    // Quoi : les agents seuls n'ont rien de ces projets d'essai.
+    await page.getByRole('button', { name: /^Filtrer/ }).click()
+    await filters.getByRole('checkbox', { name: 'Agents' }).click()
+    await page.keyboard.press('Escape')
+    await tile('Pf Lint').waitFor({ state: 'detached' })
+    await chips.getByRole('button', { name: 'Retirer ce filtre' }).click()
+    await tile('Pf Lint').waitFor()
+
+    // La recherche lit aussi le nom du projet.
+    const search = page.getByRole('searchbox', { name: 'Chercher une action' })
+    await search.fill('atlas')
+    await launcher(nimbus).waitFor({ state: 'detached' })
+    await tile('Pf Lint').waitFor()
+    await search.fill('pf-attente')
+    await launcher(atlas).waitFor({ state: 'detached' })
+    await tile('Pf Attente').waitFor()
+    await search.fill('rien-de-tel')
+    await page.getByRole('status').getByText('Aucune action ne correspond à ces filtres.').waitFor()
+    await search.fill('')
+
+    // Une tuile d'ajout ouvre l'éditeur dans les Actions du projet, pré-réglé.
+    await launcher(atlas).getByRole('button', { name: 'Nouveau service', exact: true }).click()
+    await page.waitForURL((next) => next.pathname === `/p/${atlas.id}/actions`)
+    assert.equal(url().searchParams.get('nouvelle'), 'service')
+    await page.getByRole('dialog', { name: 'Nouvelle action' }).waitFor()
+    await page.goBack()
+    await tile('Pf Lint').waitFor()
+    // Le libellé d'une tuile ouvre son détail, chez son projet.
+    await tile('Pf Lint').getByRole('button', { name: /^Pf Lint/ }).click()
+    await page.waitForURL((next) => next.searchParams.get('action') === idOf(lint))
+    assert.equal(url().pathname, `/p/${atlas.id}/actions`)
+    await page.getByRole('dialog', { name: 'Pf Lint', exact: true }).waitFor()
+    await page.goBack()
+    await tile('Pf Lint').waitFor()
+
+    // « + Action » : dans quel projet ? Puis sa création, chez lui.
+    await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+    await page.getByRole('menu').getByText('Dans quel projet ?').waitFor()
+    await page.getByRole('menuitem', { name: 'Nimbus' }).click()
+    await page.waitForURL((next) => next.pathname === `/p/${nimbus.id}/actions`)
+    assert.equal(url().searchParams.get('nouvelle'), '1')
+    await page.goBack()
+    await tile('Pf Lint').waitFor()
+
+    // La Liste : projet, libellé et commande, nature, état ; un clic, son détail.
+    await page.getByRole('button', { name: 'Affichage : Lanceur' }).click()
+    await page.getByRole('radio', { name: 'Liste' }).click()
+    await page.keyboard.press('Escape')
+    const line = (action) => page.locator(`[data-portfolio-action="${idOf(action)}"]`)
+    await line(nightly).getByText('$ echo pf-nuit').waitFor()
+    await line(nightly).getByText('planifiée', { exact: true }).waitFor()
+    await line(lint).getByText('à la demande', { exact: true }).waitFor()
+    await line(nightly).getByText('Atlas API').waitFor()
+    if (!phone) await line(lint).getByText('Commande', { exact: true }).waitFor()
+    await page.locator('[data-portfolio-action]', { hasText: 'Pf Proposée' }).getByText('à relire', { exact: true }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await shot('list')
+    await page.locator('[data-portfolio-actions-list]').screenshot({ path: join(shots, `portfolio-list-rows-${width}.png`) })
+    await line(nightly).click()
+    await page.waitForURL((next) => next.searchParams.get('action') === idOf(nightly))
+    await page.getByRole('dialog', { name: 'Pf Nuit', exact: true }).waitFor()
+    await page.goBack()
+
+    // L'Agenda commun : sans « Tourne maintenant », la planifiée à 03:00.
+    await page.getByRole('button', { name: 'Affichage : Liste' }).click()
+    await page.getByRole('radio', { name: 'Agenda' }).click()
+    await page.keyboard.press('Escape')
+    await page.locator('[data-portfolio-actions-list]').waitFor({ state: 'detached' })
+    await runningNow.waitFor({ state: 'detached' })
+    await page.locator(':text("Pf Nuit"):visible').first().waitFor()
+    await shot('agenda')
+    // La vue se retient.
+    await page.reload()
+    await page.getByRole('button', { name: 'Affichage : Agenda' }).waitFor()
+    await page.getByRole('button', { name: 'Affichage : Agenda' }).click()
+    await page.getByRole('radio', { name: 'Lanceur' }).click()
+    await page.keyboard.press('Escape')
+
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+  await request.request.post(`${base}/api/actions/${waiting.id}/run`, { data: { op: 'stop' } }).catch(() => {})
+  for (const action of await api('/api/actions')) {
+    if (action.label.startsWith('Pf ')) await request.request.delete(`${base}/api/actions/${action.id}`)
+  }
+  await request.close()
+}
+
 const linuxServices = process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
@@ -874,6 +1071,8 @@ try {
 
   console.log('actions-ui-check : onglet Actions du projet')
   await checkProjectTab(base, env, api)
+  console.log('actions-ui-check : onglet Actions du portefeuille')
+  await checkPortfolioTab(base, env, api)
 
   // Une tâche créée depuis l'API, donc validée d'office.
   const created = await context.request.post(`${base}/api/projects/${project.id}/actions`, {

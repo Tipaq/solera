@@ -602,12 +602,11 @@ try {
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
-  /* La rangée : Aperçu, Travail, Tableau, Jalons. Actions attend sa vue du portefeuille
-     (#241) : masqué d'ici là, plutôt que de mener hors de la coque. */
+  // La rangée : Aperçu, Travail, Tableau, Jalons, Actions.
   assert.deepEqual(
     await portfolio.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname)),
-    ['/projects', '/projects/travail', '/projects/board', '/projects/timeline'],
-    'Aperçu · Travail · Tableau · Jalons',
+    ['/projects', '/projects/travail', '/projects/board', '/projects/timeline', '/projects/actions'],
+    'Aperçu · Travail · Tableau · Jalons · Actions',
   )
   // La bande : un seul geste, « + Projet », et plus de « + Conversation ».
   const portfolioBand = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Projets', exact: true }) })
