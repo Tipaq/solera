@@ -73,11 +73,11 @@ const PortfolioActivityPage = lazy(() =>
 )
 
 /**
- * La vue d'un jalon lancé (#116), chargée à part : on n'y vient que par le bandeau de
- * l'Activité ou la frise des Jalons.
+ * La page d'un jalon (#194), chargée à part : on y vient de l'onglet Jalons, du bandeau
+ * de l'Activité ou d'une fiche de carte.
  */
-const ProjectMilestonePage = lazy(() =>
-  import('./routes/ProjectMilestonePage').then((m) => ({ default: m.ProjectMilestonePage })),
+const MilestonePage = lazy(() =>
+  import('./routes/milestones/MilestonePage').then((m) => ({ default: m.MilestonePage })),
 )
 
 /**
@@ -291,7 +291,7 @@ export function App() {
             {/* Alias provisoire : les Planifiées du projet, jusqu'à la vue Actions (jalon 4). */}
             <Route path="actions" element={<Deferred><SchedulePage /></Deferred>} />
             <Route path="timeline" element={<Deferred><MilestonesPage /></Deferred>} />
-            <Route path="timeline/:number" element={<Suspense fallback={null}><ProjectMilestonePage /></Suspense>} />
+            <Route path="timeline/:number" element={<Suspense fallback={null}><MilestonePage /></Suspense>} />
             <Route path="settings" element={<Deferred><ProjectSettingsPage /></Deferred>} />
             {/* Les anciennes adresses : elles ont circulé, elles mènent à la vue qui les a
                 absorbées, requête comprise. */}

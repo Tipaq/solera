@@ -1,4 +1,4 @@
-import { Activity, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
+import { Activity, FolderGit2, GitBranch, GitFork, Plus, Rows3 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ProjectDto, WorktreeStatusDto } from '@solera/protocol'
@@ -16,6 +16,7 @@ import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { CleanMergedDialog } from '../components/travail/CleanMergedDialog'
 import { CouloirsView, PROJECT_KEY } from '../components/travail/CouloirsView'
+import { ProjectGitGraph } from '../components/travail/ProjectGitGraph'
 import { TravailIndex } from '../components/travail/TravailIndex'
 import { TravailNoticeHost } from '../components/travail/TravailNotice'
 import { TreeDrawer } from '../components/travail/TreeDrawer'
@@ -64,12 +65,13 @@ import { useWorktreeStatuses } from '../lib/worktrees'
 const TARGET_PARAM = 'arbre'
 
 /**
- * Les vues livrées, dans l'ordre de leurs tuiles. Les quatre autres de `TRAVAIL_VIEWS`
- * (Tableau, Graphe, Par état, Frise) arrivent avec leurs cartes (#177 à #179).
+ * Les vues livrées, dans l'ordre de leurs tuiles. Les trois autres de `TRAVAIL_VIEWS`
+ * (Tableau, Par état, Frise) arrivent avec leurs cartes (#177, #179).
  */
 const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
   couloirs: <Rows3 size={16} />,
   fil: <Activity size={16} />,
+  graphe: <GitFork size={16} />,
 }
 /** Les vues où l'index des arbres a un sens : il fait défiler les couloirs, il filtre le fil. */
 const WITH_INDEX: TravailView[] = ['couloirs', 'fil']
@@ -126,7 +128,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const [params, setParams] = useSearchParams()
   const hasGit = Boolean(project.git)
 
-  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil'] as const) : (['fil'] as const)).map((key) => ({
+  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil', 'graphe'] as const) : (['fil'] as const)).map((key) => ({
     key,
     label: t(`travail.view.${key}`),
     icon: VIEW_ICONS[key]!,
@@ -203,7 +205,8 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const shown = layout
     ? layout.trees.length + layout.branches.length + Number(layout.project !== null) + Number(layout.cleanup !== null) + Number(layout.merged !== null)
     : live.length + entries.length
-  const nothing = active > 0 && shown === 0 && inbox.length === 0
+  // Le graphe dit lui-même qu'il n'a aucun commit dans la période.
+  const nothing = view !== 'graphe' && active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
 
@@ -435,6 +438,29 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
             <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
               {base}
               <NoMatch onClear={clearAll} />
+            </div>
+          ) : view === 'graphe' ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <ProjectGitGraph
+                projectId={projectId}
+                trees={code.trees}
+                branches={branches}
+                targetKey={target ? targetKey : null}
+                from={from}
+                showMerged={forceCleanup}
+                served={served}
+                onSelect={setTarget}
+                onOpenTree={setOpenTreeKey}
+                sources={{
+                  conversations: travail.conversations,
+                  live: travail.rows.map((row) => row.entry),
+                  scopes: travail.scopes,
+                  cards: travail.cards,
+                  inbox: travail.inbox,
+                }}
+              />
             </div>
           ) : view === 'fil' ? (
             <ActivityRail

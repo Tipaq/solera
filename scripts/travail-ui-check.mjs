@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
+import { checkTravailGraph } from './checks/travail-graph.mjs'
 
 /*
  * L'onglet Travail d'un projet (carte #175, `projet.md` T-1 à T-5, T-14), qui remplace
@@ -18,8 +19,9 @@ import { launchBrowser } from './checks/browser.mjs'
  * « Par moment »), la barre sur une ligne (bilan neutre, Filtrer ▾ et ses puces, retenus
  * pour le projet, « Rien ne correspond »), la vue dans l'adresse et retenue, le fil
  * « Par moment » (Maintenant, En cours, Ce qui t'attend, la ligne de base, les jours),
- * l'index et la puce d'arbre qui filtrent, la recherche, et le téléphone sans
- * débordement. Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * l'index et la puce d'arbre qui filtrent, la recherche, le téléphone sans
+ * débordement, et la vue « Graphe » avec le tiroir d'un commit (#178,
+ * `checks/travail-graph.mjs`). Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
  * Les PR sont simulées au niveau de la page (le projet de démo n'a pas de forge), le
  * pilotage d'un jalon aussi (#116) : la suite tient son bandeau en tête du fil, la vue
@@ -454,6 +456,10 @@ try {
   await chips.filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
   await chips.first().waitFor({ state: 'detached' })
 
+  // ─── La vue Graphe et le tiroir d'un commit (#178) ─────────────────────────
+  const runningTree = trees.worktrees.find((entry) => entry.id === running.worktreeId)
+  await checkTravailGraph({ page, base, project: nimbus, running, runningTree, runningBranch, shots })
+
   // ─── Au téléphone : une ligne, rien ne déborde, l'index se replie ───────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
@@ -538,16 +544,16 @@ try {
   assert.ok((await banner.boundingBox()).y < (await runningRow.boundingBox()).y, 'Le bandeau vient avant les sessions au travail')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'c1-jalon-en-tete-du-fil.png') })
 
-  // C2 : la vue du jalon, par vagues, avec la file en pied.
+  // C2 : la page du jalon (#194) — lancé, ses cartes en vagues, le pilotage à côté.
   await banner.getByRole('link', { name: 'Voir le jalon' }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
-  await page.getByRole('region', { name: 'Vague 1 · sans dépendance' }).waitFor()
-  await page.getByRole('region', { name: 'Vague 2' }).getByText(`#${second.number}`).waitFor()
-  if (rest.length > 0) await page.getByRole('region', { name: 'Vague 3' }).getByText(`après #${second.number}`).first().waitFor()
-  await page.getByText(new RegExp(`^File : #${second.number} — la prochaine place libre part sur #${second.number}`)).waitFor()
-  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).getAttribute('aria-current'), 'page', 'La vue vit sous l’onglet Jalons')
+  await page.getByRole('region', { name: 'Prochaine action' }).waitFor()
+  await page.getByRole('heading', { name: `#${parent.number} ${parent.title}` }).waitFor()
+  const waves = page.getByRole('region', { name: 'Vagues' })
+  for (const card of [first, second]) await waves.getByRole('link', { name: new RegExp(`#${card.number} `) }).waitFor()
+  assert.equal(await row.getByRole('link', { name: /^Jalons/ }).getAttribute('aria-current'), 'page', 'La page vit sous l’onglet Jalons')
   await page.screenshot({ animations: 'disabled', path: join(shots, 'c2-la-vue-du-jalon.png') })
-  await page.getByRole('button', { name: 'Mettre en pause' }).click()
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
   await page.getByRole('button', { name: 'Reprendre' }).waitFor()
   assert.equal(pauses, 1)
   // Une carte sans enfant n'est pas un jalon : la vue ne promet pas de la lancer.
@@ -564,7 +570,7 @@ try {
   await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

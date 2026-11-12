@@ -44,6 +44,14 @@ export interface CardRefinementDto {
 export type CardFilingChangeDto = Extract<SoleraEvent, { type: 'card_filing.requested' }>['cards'][number]
 
 /**
+ * L'outil en cours d'une session d'affinage, avec ses arguments lus au journal : la page
+ * du jalon en fait sa ligne de « dernière activité », comme le fil la sienne.
+ */
+export interface RefinementActivityDto extends TaskActivityDto {
+  input: unknown
+}
+
+/**
  * L'affinage d'une carte lu hors du fil (`GET /api/cards/:id/refinement`) : ce que la
  * page du jalon résume sans ouvrir la session. Brouillon et changement sont les charges
  * du journal, celles que les blocs du fil affichent et que leurs routes de décision
@@ -52,7 +60,7 @@ export type CardFilingChangeDto = Extract<SoleraEvent, { type: 'card_filing.requ
 export interface CardRefinementDetailDto {
   session: CardRefinementDto | null
   /** L'outil en cours de la session, quand elle travaille. */
-  activity: TaskActivityDto | null
+  activity: RefinementActivityDto | null
   /** La demande du CLI qui tient le tour : ses questions, d'ordinaire. */
   prompt: TaskPendingDto | null
   draft: { requestId: string; conversationId: string; draft: CardDraft } | null

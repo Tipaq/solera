@@ -193,6 +193,10 @@ export function DraftConversationPage() {
   const pickedCard = detached ? undefined : cards?.find((entry) => entry.id === requestedCard)
   const card = splitting ? undefined : pickedCard
   const splitCard = splitting ? pickedCard : undefined
+  // La session d'affinage d'un jalon (#184, #195) : `?mode=direct` découpe sans questions
+  // d'abord, `?prompt=` pré-remplit son premier message (l'appel du skill et le brief).
+  const splitMode = splitting && params.get('mode') === 'direct' ? 'direct' : null
+  const prompt = params.get('prompt') ?? ''
   /**
    * Le composer lit son texte initial une seule fois, au montage. Le rendre avant que
    * la carte soit connue le figerait sans sa mention, et la poser après n'y changerait
@@ -294,7 +298,7 @@ export function DraftConversationPage() {
       config: effective,
       worktreeId: effectiveWorktreeId,
       cardId: card?.id ?? null,
-      ...(splitting ? { purpose: 'split' as const, splitCardId: splitCard?.id ?? null } : {}),
+      ...(splitting ? { purpose: 'split' as const, splitCardId: splitCard?.id ?? null, splitMode } : {}),
       ...(chosenEnvironment ? { environment: chosenEnvironment } : {}),
       // Le titre de la carte plutôt que l'extrait du message : la conversation traite
       // un travail nommé, et le CLI n'a plus à en proposer un.
@@ -307,7 +311,7 @@ export function DraftConversationPage() {
     navigate(projectId ? `/p/${projectId}/c/${created.id}` : `/c/${created.id}`, {
       replace: true,
     })
-  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, chosenEnvironment, t, navigate, projectId])
+  }, [createAsync, agent, effective, effectiveWorktreeId, card, splitting, splitCard, splitMode, chosenEnvironment, t, navigate, projectId])
 
   return (
     // `relative` : c'est ce conteneur qui ancre le panneau latéral, posé en absolu.
@@ -481,7 +485,7 @@ export function DraftConversationPage() {
               }
               // Une phrase et pas le seul numéro : « #5 » tout seul a déjà été lu comme le
               // cinquième élément d'une liste par un CLI qui ne connaissait pas la carte.
-              initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : ''}
+              initialText={card ? `${t('draft.card.prompt', { number: card.number })} ` : prompt}
               config={effective}
               // Rien n'est encore lancé : aucun CLI n'a d'inventaire MCP ni de compétences à
               // rapporter ; ils arriveront au premier tour. Les commandes en `/`, elles, se
