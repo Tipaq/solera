@@ -79,7 +79,7 @@ async function mount(page, surface) {
       // Un panneau ancré, comme le panneau git d'un lieu : sous le calque des tiroirs.
       const anchored = tools
         ? h(PanelFocus, { open: true, modal: false, onClose: () => setTools(false) },
-            h('aside', { 'aria-label': 'Outils', className: 'absolute inset-y-0 right-0 z-20 w-96 border-l border-line bg-canvas p-3' }, 'Panneau git'))
+            h('aside', { 'aria-label': 'Outils', className: 'absolute inset-y-0 right-0 z-20 border-l border-line bg-canvas p-3', style: { width: 'min(24rem, 50%)' } }, 'Panneau git'))
         : null
       return h('div', { className: 'flex h-dvh flex-col' },
         h('nav', { className: 'h-12 shrink-0 border-b border-line', 'aria-label': 'Rangée' }),
@@ -153,6 +153,27 @@ try {
     assert.ok(await isFocused(drawer), 'Le focus entre dans le tiroir')
     assert.equal(await drawer.getAttribute('aria-modal'), phone ? 'true' : null, 'Modal au téléphone seulement')
     await page.screenshot({ path: `/tmp/shell-drawer-${width}.png` })
+
+    if (phone) {
+      // Le tiroir prend le focus sur lui-même, ou sur un clic dans son blanc : Maj+Tab
+      // depuis le conteneur boucle sur son dernier élément, Tab sur le premier (#254).
+      const dialogOfFocus = () => page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label') ?? null)
+      const lastOf = () => drawer.evaluate((element) => document.activeElement === element.querySelector('input'))
+      console.log(width, 'Maj+Tab depuis le conteneur reste dans le tiroir')
+      assert.equal(await drawer.evaluate((element) => element === document.activeElement), true, 'Le conteneur a le focus')
+      await page.keyboard.press('Shift+Tab')
+      assert.equal(await dialogOfFocus(), 'Carte #161', 'Maj+Tab depuis le conteneur reste dans le tiroir')
+      assert.equal(await lastOf(), true, 'Maj+Tab depuis le conteneur va au dernier élément')
+      await page.keyboard.press('Tab')
+      assert.equal(await dialogOfFocus(), 'Carte #161', 'Tab depuis le dernier élément boucle')
+      await drawer.getByRole('heading', { name: 'Tiroir commun' }).click()
+      await page.keyboard.press('Shift+Tab')
+      assert.equal(await lastOf(), true, 'Maj+Tab après un clic dans le blanc du tiroir')
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.press('Shift+Tab')
+        assert.equal(await dialogOfFocus(), 'Carte #161', 'Maj+Tab répété reste dans le tiroir')
+      }
+    }
 
     console.log(width, '✕ ferme et rend le focus au déclencheur')
     await drawer.getByRole('button', { name: 'Fermer', exact: true }).click()

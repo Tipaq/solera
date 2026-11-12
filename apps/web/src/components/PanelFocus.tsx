@@ -23,6 +23,19 @@ function updateModalBackground() {
   }
 }
 
+/**
+ * Le dernier élément que Tab atteint dans `container`, selon les mêmes critères que le
+ * piège de Radix : tabulable, actif, visible, hors d'un sous-arbre inerte.
+ */
+function lastTabbable(container: HTMLElement) {
+  const candidates = [...container.querySelectorAll<HTMLElement>('*')].filter((element) =>
+    element.tabIndex >= 0
+    && !element.matches(':disabled, input[type="hidden"]')
+    && !element.closest('[inert]')
+    && element.checkVisibility({ visibilityProperty: true }))
+  return candidates.at(-1)
+}
+
 /** Même contenu en panneau libre ou plein écran, sans remonter l'éditeur au redimensionnement. */
 export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protectEditor = false, children }: {
   open: boolean
@@ -89,6 +102,17 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protec
     >
       {cloneElement(children, { onKeyDown: (event) => {
         children.props.onKeyDown?.(event)
+        // Le piège de Radix ne boucle que depuis ses bords : focalisé sur lui-même (à
+        // l'ouverture, ou par un clic dans son blanc), le conteneur laisserait Maj+Tab
+        // sortir du dialogue vers un arrière-plan inerte (#254).
+        if (open && modal && event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && event.target === container.current) {
+          const last = lastTabbable(container.current)
+          if (last) {
+            event.preventDefault()
+            last.focus()
+          }
+          return
+        }
         if (!open || event.key !== 'Escape' || event.defaultPrevented) return
         const target = event.target
         if (!(target instanceof HTMLElement) || !container.current?.contains(target)) return

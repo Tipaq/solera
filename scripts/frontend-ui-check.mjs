@@ -267,10 +267,10 @@ try {
   const sheet = page.getByRole('dialog', { name: 'Carte #1', exact: true })
   await sheet.waitFor()
   await page.waitForFunction(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label') === 'Carte #1')
-  // Tab et non Maj+Tab d'abord : le tiroir prend le focus sur lui-même, et un Maj+Tab
-  // depuis ce conteneur sort du piège (#254).
+  // Maj+Tab d'abord : le tiroir prend le focus sur lui-même, et ce conteneur doit
+  // boucler sur son dernier élément plutôt que laisser sortir le focus (#254).
   for (let i = 0; i < 12; i++) {
-    await page.keyboard.press('Tab')
+    await page.keyboard.press(i === 0 ? 'Shift+Tab' : 'Tab')
     assert.equal(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label')), 'Carte #1')
   }
   // Arrêté sur un bouton-icône, le parcours ouvre son aide : le premier Échap la ferme.
