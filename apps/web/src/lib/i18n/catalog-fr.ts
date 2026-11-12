@@ -1439,7 +1439,7 @@ export const fr: Catalog = {
   'about.confirm.body': "Le service sera indisponible quelques secondes pendant le redémarrage. Les conversations en cours d'exécution seront interrompues et reprendront au prochain message.",
 
   // Arborescence de fichiers
-  'filetree.root.menu': 'Actions du dossier racine',
+  'filetree.root.menu.named': '{folder} — actions du dossier racine',
   'filetree.root.newFile': 'Nouveau fichier à la racine',
   'filetree.root.newFolder': 'Nouveau dossier à la racine',
   'filetree.root.upload': 'Téléverser des fichiers à la racine',

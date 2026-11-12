@@ -70,7 +70,8 @@ export const FilesPane = memo(function FilesPane({ scope, label }: {
         <div
           ref={column}
           className={cx(
-            'min-h-0 shrink-0 overflow-auto border-r border-line',
+            // L'arborescence défile elle-même, sous sa ligne d'outils restée fixe.
+            'flex min-h-0 shrink-0 flex-col border-r border-line',
             // Colonne à côté de l'éditeur quand la place existe, sinon calque au-dessus.
             // `bg-surface` seulement dans ce second cas : une colonne opaque posée sur
             // le panneau y dessinerait un rectangle plus clair sans raison.

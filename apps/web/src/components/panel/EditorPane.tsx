@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Archive, Code2, Download, Eye, Link2, Loader, MoreHorizontal, PanelLeft, Save, Search, Trash2, Undo2, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
   VIEWABLE_DOCUMENT_TYPES,
@@ -31,7 +31,7 @@ import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/mark
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
 import { Banner, Button, Menu, MenuItem, MenuSeparator, PanelToolbar, cx, panelGestureClass } from '@solera/ui'
-import { iconToolClass } from '../toolbar/OneLineToolbar'
+import { IconTool, iconToolClass } from '../toolbar/OneLineToolbar'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { ImageView } from './ImageView'
 import { MediaView } from './MediaView'
@@ -100,8 +100,9 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
       {paths.length === 0 ? (
         <>
           {treeOpen ? null : (
+            // `px-1.5` : le bouton se pose où il est dans la rangée des onglets.
             <PanelToolbar className="px-1.5">
-              <Gesture label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></Gesture>
+              <IconTool label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></IconTool>
             </PanelToolbar>
           )}
           <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p>
@@ -112,7 +113,7 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
       <div className="flex h-12 shrink-0 items-stretch border-b border-line">
         {treeOpen ? null : (
           <span className="flex shrink-0 items-center px-1.5">
-            <Gesture label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></Gesture>
+            <IconTool label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></IconTool>
           </span>
         )}
         <div ref={tabList} data-file-tabs className="flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto">
@@ -134,16 +135,16 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
         </div>
 
         <span className="flex shrink-0 items-center gap-0.5 border-l border-line px-1.5">
-        {active ? <Gesture
+        {active ? <IconTool
           label={t(drafts.includes(active) ? 'editor.download.saved' : 'editor.download', { path: active })}
           onClick={() => downloadFile(scope, active)}
-        ><Download size={14} /></Gesture> : null}
+        ><Download size={14} /></IconTool> : null}
         <Menu
           trigger={
             <TooltipButton
               type="button"
               aria-label={t('editor.tabs.actions')}
-              className={gestureClass}
+              className={cx(panelGestureClass, 'shrink-0', iconToolClass)}
             >
               <MoreHorizontal size={14} />
             </TooltipButton>
@@ -415,7 +416,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         </div>
         {dirty ? <p>{t(persisted ? 'editor.drafts.kept' : 'editor.drafts.memory')}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-1">
-          {isMarkdown && view === 'preview' ? null : <Gesture label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></Gesture>}
+          {isMarkdown && view === 'preview' ? null : <IconTool label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconTool>}
           {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={14} /> : <Eye size={14} />}
             onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}>
             {t(view === 'preview' ? 'editor.markdown.source' : 'editor.markdown.preview')}
@@ -426,16 +427,5 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         </div>
       </div>
     </div>
-  )
-}
-
-/** Un outil fait d'une icône, à la hauteur de `Button size="sm"` comme ceux du cadre. */
-const gestureClass = cx(panelGestureClass, 'shrink-0', iconToolClass)
-
-function Gesture({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
-  return (
-    <TooltipButton type="button" onClick={onClick} aria-label={label} title={label} className={gestureClass}>
-      {children}
-    </TooltipButton>
   )
 }

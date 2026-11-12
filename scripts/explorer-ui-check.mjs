@@ -140,7 +140,7 @@ try {
   await page.keyboard.press('Escape')
   // La barre reste en tête quand l'arbre défile.
   await page.setViewportSize({ width: 1440, height: 420 })
-  const column = treeBar.locator('xpath=../..')
+  const column = panel.locator('[data-tree-scroll]')
   await column.evaluate((node) => { node.scrollTop = node.scrollHeight })
   assert.ok(await column.evaluate((node) => node.scrollTop > 0), 'Tree column did not scroll')
   assert.equal(Math.round((await box(treeBar)).y), Math.round(treeBox.y), 'Tree toolbar scrolled away')

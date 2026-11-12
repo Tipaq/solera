@@ -1443,7 +1443,7 @@ export const en = {
   'about.confirm.body': 'The service will be unavailable for a few seconds during the restart. Running conversations will be interrupted and will resume with the next message.',
 
   // Arborescence de fichiers
-  'filetree.root.menu': 'Root folder actions',
+  'filetree.root.menu.named': '{folder} — root folder actions',
   'filetree.root.newFile': 'New file at root',
   'filetree.root.newFolder': 'New folder at root',
   'filetree.root.upload': 'Upload files to root',

@@ -95,7 +95,7 @@ import {
   cx,
   panelGestureClass,
 } from '@solera/ui'
-import { iconToolClass } from '../toolbar/OneLineToolbar'
+import { IconTool } from '../toolbar/OneLineToolbar'
 
 /**
  * Couleur et lettre par état git, dans le vocabulaire de `git status`.
@@ -418,7 +418,7 @@ export function FileTree({
         // Colonne pleine hauteur : c'est ce qui permet aux envois de se poser en pied
         // plutôt qu'à la suite des fichiers, et au dépôt d'être accepté partout, y
         // compris sous la dernière ligne.
-        'relative flex min-h-full flex-col',
+        'relative flex min-h-0 flex-1 flex-col',
         dragDepth > 0 && 'outline-2 -outline-offset-2 outline-dashed outline-accent',
       )}
       onDragEnter={(event) => {
@@ -473,18 +473,18 @@ export function FileTree({
         chercher est devenu une vue du panneau, qui a ses propres résultats et son propre
         défilement, au lieu de replier l'arbre sous les yeux de qui le lisait.
 
-        C'est la ligne d'outils du cadre commun, collée en tête : la colonne défile sous
-        elle. Le nom du dossier tient lieu de titre, et son menu porte tout ce que la
-        colonne n'a pas la place de montrer en boutons de 36 px.
+        C'est la ligne d'outils du cadre commun, fixe en tête : seule la liste défile,
+        sous elle et sous les bandes de retour. Le nom du dossier tient lieu de titre, et
+        son menu porte ce que la colonne n'a pas la place de montrer en outils.
       */}
-      <PanelToolbar className="sticky top-0 z-10 bg-surface">
+      <PanelToolbar>
         {/* Le dossier racine n'a pas de ligne à survoler : son menu est son nom. */}
         <Menu
           align="start"
           trigger={
             <TooltipButton
               type="button"
-              aria-label={t('filetree.root.menu')}
+              aria-label={t('filetree.root.menu.named', { folder: label })}
               title={label}
               className={cx(panelGestureClass, '-ml-2 min-w-0 flex-1 px-2 text-sm font-medium text-ink')}
             >
@@ -530,10 +530,10 @@ export function FileTree({
         {/* Les créations visent le dossier de l'entrée désignée, la racine à défaut :
             l'infobulle le nomme, puisque la cible change sans que le bouton bouge. */}
         <span className="hidden shrink-0 gap-1.5 @min-[13rem]:flex">
-          <RootAction label={newFileLabel} icon={<FilePlus2 size={14} />} onClick={() => startDraft('file')} />
-          <RootAction label={newFolderLabel} icon={<FolderPlus size={14} />} onClick={() => startDraft('directory')} />
+          <IconTool label={newFileLabel} onClick={() => startDraft('file')}><FilePlus2 size={14} /></IconTool>
+          <IconTool label={newFolderLabel} onClick={() => startDraft('directory')}><FolderPlus size={14} /></IconTool>
         </span>
-        <RootAction label={t('panel.tree.hide')} icon={<PanelLeftClose size={14} />} onClick={onCollapse} />
+        <IconTool label={t('panel.tree.hide')} onClick={onCollapse}><PanelLeftClose size={14} /></IconTool>
       </PanelToolbar>
 
       {banner}
@@ -554,19 +554,21 @@ export function FileTree({
         </PanelNotice>
       ) : null}
 
-      <div
-        ref={list}
-        className="flex-1 pb-4"
-        onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
-        // Un clic dans le vide sous les lignes désélectionne, comme sur un bureau.
-        onClick={(event) => {
-          if (event.target === event.currentTarget) clearSelection(scope)
-        }}
-      >
-        <Level path="" depth={0} expanded actions={actions} />
-      </div>
+      <div data-tree-scroll className="flex min-h-0 flex-1 flex-col overflow-auto">
+        <div
+          ref={list}
+          className="flex-1 pb-4"
+          onKeyDown={(event) => handleTreeKey(event, actions, typeahead.current)}
+          // Un clic dans le vide sous les lignes désélectionne, comme sur un bureau.
+          onClick={(event) => {
+            if (event.target === event.currentTarget) clearSelection(scope)
+          }}
+        >
+          <Level path="" depth={0} expanded actions={actions} />
+        </div>
 
-      <UploadQueue scope={scope} />
+        <UploadQueue scope={scope} />
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}
@@ -832,20 +834,17 @@ function SelectionBar({ actions }: { actions: Actions }) {
       <span className="min-w-0 flex-1 truncate text-xs font-medium whitespace-nowrap text-ink">
         {t(count > 1 ? 'filetree.selection.count.other' : 'filetree.selection.count.one', { count })}
       </span>
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.cut')}
         icon={<Scissors size={13} />}
         onClick={() => actions.onClipboard('cut', targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.copy')}
         icon={<Copy size={13} />}
         onClick={() => actions.onClipboard('copy', targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.entry.downloadZip')}
         icon={<Download size={13} />}
         onClick={() => {
@@ -856,14 +855,12 @@ function SelectionBar({ actions }: { actions: Actions }) {
           else downloadArchive(scope, picked.map(([path]) => path))
         }}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.selection.delete', { count })}
         icon={<Trash2 size={13} />}
         onClick={() => actions.onDelete(targets())}
       />
-      <RootAction
-        compact
+      <SelectionAction
         label={t('filetree.selection.clear')}
         icon={<X size={13} />}
         onClick={() => clearSelection(scope)}
@@ -952,35 +949,18 @@ function statusOf(upload: UploadItem): string {
   })
 }
 
-function RootAction({
-  label,
-  icon,
-  onClick,
-  compact = false,
-}: {
-  label: string
-  icon: React.ReactNode
-  onClick: () => void
-  /**
-   * Plus serré à la souris : la barre de sélection loge aussi le compte. Sinon, un outil
-   * de la ligne d'outils, à la hauteur de `Button size="sm"`.
-   */
-  compact?: boolean
-}) {
+/** Un geste de la barre de sélection : plus serré à la souris, la bande loge aussi le compte. */
+function SelectionAction({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <TooltipButton
       type="button"
       onClick={onClick}
       aria-label={label}
       title={label}
-      className={
-        compact
-          ? cx(
-              'flex size-11 shrink-0 pointer-coarse:size-11 items-center justify-center rounded md:size-7',
-              'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
-            )
-          : cx(panelGestureClass, 'shrink-0', iconToolClass)
-      }
+      className={cx(
+        'flex size-11 shrink-0 pointer-coarse:size-11 items-center justify-center rounded md:size-6',
+        'text-ink-faint transition-colors hover:bg-surface-high hover:text-ink',
+      )}
     >
       {icon}
     </TooltipButton>
