@@ -19,6 +19,11 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // envoyées ensemble à la dernière), son brouillon corrigé (renommer, monter, lier,
 // retirer, ajouter) puis validé, et le geste qui ouvre un affinage pré-rempli.
 //
+// Étape « à régler et ajout » (#196, RGL-1..6, ADD-1..4, AFF-7, JAL-3) : préciser une
+// carte (à sa session, sinon dans sa description), l'accepter, rompre un cycle ; le
+// tiroir « Ajouter au jalon » (à la session d'affinage, sinon un brouillon pré-rempli) ;
+// l'ajout proposé, en sous-tâches ou en cartes, accepté ou laissé.
+//
 // Étape « fiche » (#199, FCH-1..9, FLG-1) : `ℹ` n'ouvre pas la session, `?fiche=` se
 // partage, les sections, les liens qui changent de fiche, la réponse sur place, la case
 // « C'est un jalon » (d'office, grisée, cochable).
@@ -274,7 +279,9 @@ async function pageStep(width) {
   console.log(width, 'l’affinage qui attend passe avant les vagues')
   const refineTop = (await page.locator('#affinage').boundingBox()).y
   assert.ok(refineTop < (await waves.boundingBox()).y, 'L’affinage en attente vient en tête')
-  assert.equal(await page.locator('#affinage').getByText('1 carte est à préciser : #303.').isVisible(), true)
+  const settle = page.locator('#affinage').getByRole('region', { name: 'À régler avant de partir' })
+  assert.equal(await settle.getByText('1 point en attente').isVisible(), true)
+  assert.equal(await settle.getByText('#303 Infobulle flottante').isVisible(), true)
 
   console.log(width, 'vagues : trois colonnes, ouvertes d’abord, l’abandonnée exclue')
   await waves.getByText('ce qui part ensemble, de gauche à droite · 3 à la fois').waitFor()
@@ -602,6 +609,216 @@ async function refineStep(width) {
   await context.close()
 }
 
+/* ------------------------------------------------------------------ étape « à régler et ajout » */
+
+/** Les jalons de l'étape : ce qui reste à régler, et ce qu'un ajout devient. */
+function settleBoard() {
+  const all = []
+  const parent = (number, title, kids, extra = {}) => {
+    const milestone = card(number, title, 'todo', { milestone: true, ...extra })
+    for (const kid of kids) kid.parent = link(milestone)
+    milestone.children = kids.map(link)
+    all.push(milestone, ...kids)
+    return milestone
+  }
+  // À régler : à préciser avec ou sans session, pas acceptée, un cycle.
+  const asked = card(401, 'Cache des fils', 'todo', { toClarifySince: now - DAY, conversations: [cardSession('c-401', 'Cache', 'idle', DAY)] })
+  const bare = card(402, 'File d’envoi', 'todo', { toClarifySince: now - 2 * DAY, description: 'Envoyer plus tard.' })
+  const outside = card(403, 'Issue importée', 'todo', { acceptedAt: null })
+  const loopA = card(404, 'Synchro', 'todo')
+  const loopB = card(405, 'Conflits', 'todo')
+  loopA.blockedBy.push(link(loopB)); loopB.blocks.push(link(loopA))
+  loopB.blockedBy.push(link(loopA)); loopA.blocks.push(link(loopB))
+  parent(400, 'Hors ligne', [asked, bare, outside, loopA, loopB])
+  // Un ajout rangé en sous-tâches, l'une déjà dans la carte.
+  parent(410, 'Pièces jointes', [card(411, 'Téléversement', 'todo', { description: '## Sous-tâches\n- [ ] Lire hors ligne' }), card(412, 'Aperçu', 'todo')], {
+    refinement: { conversationId: 'split-410', title: 'Affiner', status: 'idle', mode: 'questions', createdAt: now - DAY, draft: null, change: { requestId: 'c1', count: 1 } },
+  })
+  // Un ajout en nouvelles cartes.
+  parent(420, 'Export', [card(421, 'Format CSV', 'todo')], {
+    refinement: { conversationId: 'split-420', title: 'Affiner', status: 'idle', mode: 'questions', createdAt: now - DAY, draft: { requestId: 'd2', count: 2 }, change: null },
+  })
+  // Découpé, sans session d'affinage.
+  parent(430, 'Notes', [card(431, 'Éditeur', 'todo')])
+  // Livré : plus rien à ajouter.
+  parent(440, 'Thèmes', [card(441, 'Sombre', 'done')], { column: 'done' })
+  return all
+}
+
+async function settleStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let cards = settleBoard()
+  let change410 = {
+    requestId: 'c1', conversationId: 'split-410',
+    changes: [{ cardId: 'card-411', number: 411, title: 'Téléversement', fromColumn: 'todo', reason: 'Elle téléverse déjà.', addSubtasks: ['Lire hors ligne', 'Reprendre un envoi coupé'] }],
+  }
+  let draft420 = {
+    requestId: 'd2', conversationId: 'split-420',
+    draft: {
+      parent: { kind: 'existing', card: { cardId: 'card-420', number: 420, title: 'Export' } },
+      cards: [
+        { key: 'a', title: 'Format JSON', description: '', subtasks: [], after: [], blockedBy: [{ cardId: 'card-421', number: 421, title: 'Format CSV' }], related: [] },
+        { key: 'b', title: 'Export planifié', description: '', subtasks: [], after: [], blockedBy: [], related: [] },
+      ],
+    },
+  }
+  const writes = []
+  const patchCard = (id, patch) => { cards = cards.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)) }
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const method = request.method()
+    const path = new URL(request.url()).pathname
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [] })
+    if (/^\/api\/cards\/[^/]+\/milestone$/.test(path)) return route.fulfill({ json: null })
+    if (path === '/api/conversations') {
+      return route.fulfill({ json: ['split-410', 'split-420'].map((id) => conversation({ id, title: id, status: 'idle', archivedAt: null, createdAt: now - DAY }, { card: null })) })
+    }
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', username: 'tim', displayName: 'Tim', isAdmin: true } })
+    const detail = /^\/api\/cards\/card-(\d+)\/refinement$/.exec(path)
+    if (detail) {
+      const milestone = cards.find((entry) => entry.number === Number(detail[1]))
+      return route.fulfill({ json: { session: milestone.refinement, activity: null, prompt: null, draft: milestone.number === 420 ? draft420 : null, change: milestone.number === 410 ? change410 : null } })
+    }
+    if (method === 'POST' && /^\/api\/conversations\/[^/]+\/messages$/.test(path)) {
+      writes.push({ kind: 'message', path, text: request.postDataJSON().text })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'PATCH' && path === '/api/cards/card-402') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'patch', ...body })
+      patchCard('card-402', { description: body.description, toClarifySince: body.toClarify === false ? null : now })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/cards/card-403/accept') {
+      writes.push({ kind: 'accept' })
+      patchCard('card-403', { acceptedAt: now })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'DELETE' && path === '/api/cards/card-404/blocks/card-405') {
+      writes.push({ kind: 'unblock' })
+      patchCard('card-404', { blocks: [] })
+      patchCard('card-405', { blockedBy: [] })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/conversations/split-410/card-filings/c1') {
+      writes.push({ kind: 'filing', ...request.postDataJSON() })
+      change410 = null
+      patchCard('card-410', { refinement: { ...cards.find((entry) => entry.id === 'card-410').refinement, change: null } })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/conversations/split-420/card-drafts/d2') {
+      writes.push({ kind: 'draft', ...request.postDataJSON() })
+      draft420 = null
+      patchCard('card-420', { refinement: { ...cards.find((entry) => entry.id === 'card-420').refinement, draft: null } })
+      return route.fulfill({ json: {} })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+  const where = () => page.evaluate(() => window.where)
+  const settle = page.getByRole('region', { name: 'À régler avant de partir' })
+  const panel = page.getByRole('region', { name: 'Session d’affinage' })
+  const drawer = page.getByRole('dialog', { name: 'Ajouter au jalon' })
+
+  console.log(width, 'à régler : une liste, ses points comptés, sans recopier de demande')
+  await mount(page, `/p/${PROJECT}/timeline/400`, 'page')
+  await settle.getByText('4 points en attente').waitFor()
+  assert.equal(await settle.getByText('#401 Cache des fils').isVisible(), true)
+  assert.equal(await settle.getByText(/^à préciser depuis /).first().isVisible(), true)
+  assert.equal(await settle.getByText('pas encore acceptée').isVisible(), true)
+  assert.equal(await settle.getByText('Cycle de blocages : aucune de ces cartes ne peut partir.').isVisible(), true)
+  assert.equal(await settle.getByText('#405 bloque #404').isVisible(), true)
+  await settle.screenshot({ path: `/tmp/milestones-regler-${width}.png` })
+
+  console.log(width, 'préciser une carte qui a sa session : la précision lui part')
+  const askField = settle.getByRole('textbox', { name: 'La précision attendue · #401 Cache des fils' })
+  assert.equal(await settle.getByRole('button', { name: 'Préciser' }).first().isDisabled(), true, 'Grisé tant que c’est vide')
+  await askField.fill('Les sept derniers jours')
+  await askField.press('Enter')
+  await settle.getByText('Envoyée à la session : « Les sept derniers jours »').waitFor()
+  assert.deepEqual(writes.at(-1), { kind: 'message', path: '/api/conversations/c-401/messages', text: 'Les sept derniers jours' })
+
+  console.log(width, 'sans session : dans sa description, datée et signée, et l’état levé')
+  await settle.getByRole('textbox', { name: 'La précision attendue · #402 File d’envoi' }).fill('Au retour du réseau')
+  await settle.getByRole('button', { name: 'Préciser' }).last().click()
+  await settle.getByText('#402 File d’envoi').waitFor({ state: 'detached' })
+  const patch = writes.at(-1)
+  assert.equal(patch.toClarify, false)
+  assert.match(patch.description, /^Envoyer plus tard\.\n\n## Précisions\n\n\*\*\d{4}-\d{2}-\d{2} · Tim\*\*\n\nAu retour du réseau$/)
+
+  console.log(width, 'accepter une carte, rompre le cycle : la liste se vide puis disparaît')
+  await settle.getByRole('button', { name: 'Accepter' }).click()
+  await settle.getByText('#403 Issue importée').waitFor({ state: 'detached' })
+  await settle.getByText('#404 bloque #405').waitFor()
+  await settle.getByRole('button', { name: 'retirer ce lien' }).last().click()
+  await settle.getByText('Cycle de blocages', { exact: false }).waitFor({ state: 'detached' })
+  assert.deepEqual(writes.slice(-2).map((write) => write.kind), ['accept', 'unblock'])
+  assert.equal(await settle.getByText('1 point en attente').isVisible(), true, 'Reste #401, que sa session lèvera')
+
+  console.log(width, 'l’ajout proposé en sous-tâches : « Ranger dans #N », celle qu’elle a déjà')
+  await mount(page, `/p/${PROJECT}/timeline/410`, 'page')
+  await panel.getByText('Ranger dans #411, en sous-tâches').waitFor()
+  assert.equal(await panel.getByText('déjà dans la carte').isVisible(), true)
+  assert.equal(await panel.getByText('Un ajout au jalon attend ta décision dans la session.').count(), 0, 'Il se décide ici')
+  assert.equal(await settle.count(), 0, 'Rien à régler : pas de liste')
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-ajout-soustache-${width}.png` })
+  await panel.getByRole('button', { name: 'Ajouter la sous-tâche' }).click()
+  await panel.getByText('Ranger dans #411, en sous-tâches').waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'filing', decision: 'accepted' })
+
+  console.log(width, '« Ajouter au jalon » : le tiroir, et l’ajout part à la session d’affinage')
+  await page.getByRole('button', { name: 'Ajouter au jalon' }).click()
+  await drawer.waitFor()
+  assert.equal(await drawer.getByRole('heading', { name: '#410 Pièces jointes' }).isVisible(), true)
+  const propose = drawer.getByRole('button', { name: 'Proposer à l’agent' })
+  assert.equal(await propose.isDisabled(), true)
+  assert.equal(await drawer.getByText('Écris une phrase, ou colle ton brief.').isVisible(), true)
+  const field = drawer.getByRole('textbox', { name: 'Ce que tu ajoutes au jalon' })
+  await field.fill('Reprendre un envoi coupé (#412)')
+  await drawer.getByText('L’agent le range dans une carte existante, ou propose de nouvelles cartes.').waitFor()
+  await drawer.screenshot({ path: `/tmp/milestones-ajouter-${width}.png` })
+  await field.press('Control+Enter')
+  await drawer.waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'message', path: '/api/conversations/split-410/messages', text: 'Ajout au jalon : Reprendre un envoi coupé (#412)' })
+
+  console.log(width, 'l’ajout proposé en cartes : la liste, après quoi chacune part ; le laisser')
+  await mount(page, `/p/${PROJECT}/timeline/420`, 'page')
+  await panel.getByText('2 nouvelles cartes dans le jalon').waitFor()
+  assert.equal(await panel.getByText('après #421').isVisible(), true)
+  assert.equal(await panel.getByText('peut partir tout de suite').isVisible(), true)
+  assert.equal(await panel.getByText('Découpage proposé').count(), 0, 'Pas de second découpage à valider')
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-ajout-cartes-${width}.png` })
+  await panel.getByRole('button', { name: 'Laisser tel quel' }).click()
+  await panel.getByText('2 nouvelles cartes dans le jalon').waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'draft', decision: 'refused' })
+
+  console.log(width, 'sans session d’affinage : l’ajout ouvre un brouillon de découpage pré-rempli')
+  await mount(page, `/p/${PROJECT}/timeline/430`, 'page')
+  await page.getByRole('button', { name: 'Ajouter au jalon' }).click()
+  await drawer.getByRole('textbox', { name: 'Ce que tu ajoutes au jalon' }).fill('Un export Markdown')
+  await drawer.getByRole('button', { name: 'Proposer à l’agent' }).click()
+  await page.waitForFunction(() => window.where.includes('/c/new'))
+  const opened = new URL(await where(), origin)
+  assert.equal(opened.searchParams.get('split'), 'card-430')
+  assert.equal(opened.searchParams.get('prompt'), '/affiner-un-jalon #430\n\nAjout au jalon : Un export Markdown')
+
+  console.log(width, 'livré : plus de « Ajouter au jalon »')
+  await mount(page, `/p/${PROJECT}/timeline/440`, 'page')
+  await page.getByRole('heading', { name: '#440 Thèmes' }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Ajouter au jalon' }).count(), 0)
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
 try {
   for (let i = 0; i < 150; i++) {
     if (await fetch(origin).then((r) => r.ok).catch(() => false)) break
@@ -611,6 +828,7 @@ try {
   browser = await launchBrowser()
   for (const width of [1280, 390]) await pageStep(width)
   for (const width of [1280, 390]) await refineStep(width)
+  for (const width of [1280, 390]) await settleStep(width)
   for (const width of [1280, 390]) {
     const phone = width < 700
     const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
@@ -772,6 +990,7 @@ try {
   }
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
+  console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')
   console.log('OK : fiche — ℹ sans la session, ?fiche= partageable, en-tête, réponse sur place, sessions, sous-tâches, description, notes, pied, liens qui changent de fiche, case « C’est un jalon » (d’office, grisée, cochable) ; ordinateur et téléphone.')
 } finally {
   await browser?.close()

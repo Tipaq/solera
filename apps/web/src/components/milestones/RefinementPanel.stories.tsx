@@ -55,10 +55,11 @@ function entryOf(refinement: CardRefinementDto | null, withChildren = false) {
   return horizonOf({ cards: [milestone, ...kids], runs: [], requests: new Map() })[0]!
 }
 
-function Seeded({ detail, children }: { detail: CardRefinementDetailDto | null; children: ReactNode }) {
+function Seeded({ detail, cards, children }: { detail: CardRefinementDetailDto | null; cards?: CardDto[]; children: ReactNode }) {
   const client = useQueryClient()
   useState(() => {
     if (detail) client.setQueryData(['card-refinement', 'card-182'], detail)
+    if (cards) client.setQueryData(['cards', PROJECT_ID], cards)
     client.setQueryData(['conversations', 'all'], [{ id: SESSION, projectId: PROJECT_ID, isOwner: true } as unknown as ConversationDto])
     return null
   })
@@ -76,7 +77,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "La session d'affinage d'un jalon, résumée sur sa page (#195, spec jalons AFF-1..6) : son état (**t'attend**, **travaille**, **terminée**, **pas encore lancée**) et son mode, ce qu'elle fait, ses questions répondues sur place — gardées une à une, envoyées ensemble à la dernière —, et son brouillon de découpage corrigé puis validé (`DraftEditor`). « Ouvrir la session » reste le geste principal : le fil complet vit dans la session.",
+          "La session d'affinage d'un jalon, résumée sur sa page (#195, spec jalons AFF-1..6) : son état (**t'attend**, **travaille**, **terminée**, **pas encore lancée**) et son mode, ce qu'elle fait, ses questions répondues sur place — gardées une à une, envoyées ensemble à la dernière —, et son brouillon de découpage corrigé puis validé (`DraftEditor`), et l'ajout au jalon qu'elle propose de ranger (#196, AFF-7 : `AdditionProposal`). « Ouvrir la session » reste le geste principal : le fil complet vit dans la session.",
       },
     },
   },
@@ -142,5 +143,40 @@ export const AuRepos: Story = {
   render: (args) => {
     const refinement = session()
     return <Seeded detail={detailOf({ session: refinement })}><RefinementPanel {...args} entry={entryOf(refinement)} /></Seeded>
+  },
+}
+
+/** Un ajout rangé en sous-tâches d'une carte du jalon ; l'une y est déjà, le clic la sautera. */
+export const AjoutEnSousTaches: Story = {
+  render: (args) => {
+    const refinement = session({ change: { requestId: 'c1', count: 1 } })
+    const entry = entryOf(refinement, true)
+    const target = entry.children[1]!
+    target.description = '## Sous-tâches\n- [ ] Barres par jour'
+    const detail = detailOf({
+      session: refinement,
+      change: {
+        requestId: 'c1', conversationId: SESSION,
+        changes: [{ cardId: target.id, number: target.number, title: target.title, fromColumn: 'todo', reason: 'Elle dessine déjà les barres.', addSubtasks: ['Barres par jour', 'Pièces jointes hors ligne'] }],
+      },
+    })
+    return <Seeded detail={detail} cards={[entry.card, ...entry.children]}><RefinementPanel {...args} entry={entry} /></Seeded>
+  },
+}
+
+/** Un ajout en nouvelles cartes dans un jalon déjà découpé. */
+export const AjoutEnCartes: Story = {
+  render: (args) => {
+    const refinement = session({ draft: { requestId: 'd2', count: 2 } })
+    const entry = entryOf(refinement, true)
+    const draft: CardDraft = {
+      parent: DRAFT.parent,
+      cards: [
+        { key: 'a', title: 'Pièces jointes hors ligne', description: '', subtasks: [], after: [], blockedBy: [{ cardId: 'card-192', number: 192, title: 'Barres de cartes' }], related: [] },
+        { key: 'b', title: 'Vignettes en cache', description: '', subtasks: [], after: [], blockedBy: [], related: [] },
+      ],
+    }
+    const detail = detailOf({ session: refinement, draft: { requestId: 'd2', conversationId: SESSION, draft } })
+    return <Seeded detail={detail} cards={[entry.card, ...entry.children]}><RefinementPanel {...args} entry={entry} /></Seeded>
   },
 }
