@@ -4,7 +4,7 @@ import { PROJECT_ID, fixtureCard } from './card-fixtures'
 
 /*
  * Un Tableau de démonstration pour les stories de la tuile et du Kanban : trois jalons,
- * des cartes sans jalon, et chaque drapeau qu'une tuile sait montrer.
+ * des cartes sans jalon, chaque drapeau qu'une tuile sait montrer, et une carte bloquée.
  */
 
 const DAY = 24 * 60 * 60 * 1000
@@ -53,6 +53,9 @@ export const BOARD_CARDS: CardDto[] = [
   card(203, 'Renommer « Board » en « Tableau » dans l’aide', 'done'),
   card(204, 'Idée : un tableau par personne', 'abandoned'),
   card(205, 'Idée de jalon : mode hors ligne', 'todo', { milestone: true }),
+  card(206, 'Montrer les vues du Tableau dans l’aide', 'todo', {
+    blockedBy: [{ id: 'card-180', number: 180, title: 'Tableau : barre une ligne, Kanban réel, couloirs par jalon', column: 'in_progress' }],
+  }),
 ]
 
 export const BOARD = boardModel(BOARD_CARDS)

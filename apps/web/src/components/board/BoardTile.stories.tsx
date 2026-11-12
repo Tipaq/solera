@@ -1,6 +1,6 @@
 import type { Decorator, Meta, StoryObj } from '@storybook/react-vite'
 import { DndContext } from '@dnd-kit/core'
-import { BoardTile } from './BoardTile'
+import { BoardTile, StillTile } from './BoardTile'
 import { boardEntry } from './board-fixtures'
 
 const inColumn: Decorator = (Story) => (
@@ -49,3 +49,6 @@ export const Done: Story = { args: { entry: boardEntry(175) } }
 
 /** Dans un couloir, le jalon est dit par l'en-tête. */
 export const InLane: Story = { args: { entry: boardEntry(138), showMilestone: false } }
+
+/** Par geste : la même tuile, qui ne se saisit pas (`StillTile`). */
+export const Still: Story = { render: (args) => <StillTile entry={args.entry} onOpen={args.onOpen} /> }

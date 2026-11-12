@@ -40,6 +40,7 @@ import {
   agentKindSchema,
   appendSubtasks,
   CARD_CLOSED_COLUMNS,
+  changesBesidesSubtasks,
   cardColumnSchema,
   formatSessionMessage,
   parseAgentConfig,
@@ -76,7 +77,7 @@ import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
-import { acceptCardFiling, acceptDraft, acceptFiling, changesBesidesSubtasks, type AcceptDeps } from './request-accept.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'

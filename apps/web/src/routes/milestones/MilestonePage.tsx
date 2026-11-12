@@ -1,29 +1,24 @@
-import { ArrowLeft, Flag } from 'lucide-react'
+import { ArrowLeft, Flag, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { DEFAULT_MILESTONE_CONCURRENCY } from '@solera/protocol'
+import type { CardDto } from '@solera/protocol'
 import { Badge, Button, EmptyState, cx } from '@solera/ui'
 import { CardMilestone } from '../../components/board/CardMilestone'
 import { CardInfoButton } from '../../components/cards/CardInfoButton'
 import { CardSheetHost } from '../../components/cards/CardSheetHost'
+import { AddToMilestoneDrawer } from '../../components/milestones/AddToMilestoneDrawer'
 import { LaunchPanel } from '../../components/milestones/LaunchPanel'
 import { MaturityPill } from '../../components/milestones/MaturityPill'
 import { ExplainedSteps } from '../../components/milestones/MaturitySteps'
 import { RefinementPanel } from '../../components/milestones/RefinementPanel'
+import { SettleList } from '../../components/milestones/SettleList'
 import { WaveGraph } from '../../components/milestones/WaveGraph'
 import { withSheet } from '../../lib/card-sheet'
 import type { StatusOf } from '../../lib/card-state'
 import { formatDay, relativeDate } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
-import {
-  gestureOf,
-  maturityReasons,
-  nextAction,
-  nextActionText,
-  reasonText,
-  refinePending,
-  type MilestoneEntry,
-} from '../../lib/milestone-model'
+import { gestureOf, nextAction, nextActionText, refinePending, type MilestoneEntry } from '../../lib/milestone-model'
 import { launchStage } from '../../lib/milestone-launch'
 import { useMilestones } from '../../lib/milestones'
 import { useMergeBranchPullRequest } from '../../lib/pull-requests'
@@ -35,15 +30,15 @@ import { refineHref } from '../../lib/refinement'
  * c'est d'ici qu'on l'affine.
  *
  * Deux emplacements, `#affinage` et `#lancer`, que la prochaine action fait défiler.
- * `#affinage` porte la session d'affinage résumée (#195), `#lancer` le panneau Lancer
- * (#197). En attendant « À régler avant de partir » (#196) et le suivi d'un jalon lancé
- * (#198), ils portent aussi ce que `main` savait déjà faire : les raisons à régler, le
- * suivi du pilotage (`CardMilestone`).
+ * `#affinage` porte la session d'affinage résumée (#195) et « À régler avant de partir »
+ * (#196), `#lancer` le panneau Lancer (#197). En attendant le suivi d'un jalon lancé
+ * (#198), il porte aussi ce que `main` savait déjà faire : le suivi du pilotage
+ * (`CardMilestone`).
  */
 export function MilestonePage() {
   const { projectId, number } = useParams()
   const t = useTranslate()
-  const { entries, statusOf, isPending } = useMilestones(projectId)
+  const { entries, cards, statusOf, isPending } = useMilestones(projectId)
   const entry = entries.find((candidate) => String(candidate.card.number) === number) ?? null
 
   if (isPending) return null
@@ -66,14 +61,25 @@ export function MilestonePage() {
       </>
     )
   }
-  return <MilestoneView projectId={projectId} entry={entry} statusOf={statusOf} />
+  return <MilestoneView projectId={projectId} entry={entry} cards={cards} statusOf={statusOf} />
 }
 
-function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entry: MilestoneEntry; statusOf: StatusOf }) {
+function MilestoneView({
+  projectId,
+  entry,
+  cards,
+  statusOf,
+}: {
+  projectId: string
+  entry: MilestoneEntry
+  cards: readonly CardDto[]
+  statusOf: StatusOf
+}) {
   const t = useTranslate()
   const navigate = useNavigate()
   const [, setParams] = useSearchParams()
   const merge = useMergeBranchPullRequest(projectId, entry.card.id)
+  const [adding, setAdding] = useState(false)
   // Choisie dans Lancer, montrée par les vagues (VAG-1) ; celle du pilotage, une fois lancé.
   const [concurrency, setConcurrency] = useState(DEFAULT_MILESTONE_CONCURRENCY)
   const { card } = entry
@@ -99,7 +105,7 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
   const refine = (
     <div id="affinage" className="flex min-w-0 scroll-mt-4 flex-col gap-5 xl:col-start-1">
       <RefinementPanel projectId={projectId} entry={entry} />
-      <SettleSlot entry={entry} />
+      <SettleList projectId={projectId} entry={entry} />
     </div>
   )
 
@@ -129,6 +135,13 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
           {entry.addedSinceLaunch.length ? (
             <Badge tone="caution">{t('milestone.page.sinceLaunch', { count: entry.addedSinceLaunch.length })}</Badge>
           ) : null}
+          {entry.maturity === 'delivered' ? null : (
+            <span className="ml-auto">
+              <Button size="sm" variant="secondary" icon={<Plus size={14} />} onClick={() => setAdding(true)}>
+                {t('milestone.page.addTo')}
+              </Button>
+            </span>
+          )}
         </header>
 
         <section
@@ -173,6 +186,7 @@ function MilestoneView({ projectId, entry, statusOf }: { projectId: string; entr
         </div>
       </div>
       <CardSheetHost projectId={projectId} />
+      <AddToMilestoneDrawer open={adding} onClose={() => setAdding(false)} projectId={projectId} milestone={card} cards={cards} />
     </div>
   )
 }
@@ -210,27 +224,6 @@ function Waves({
           />
         </div>
       )}
-    </section>
-  )
-}
-
-/**
- * L'emplacement de « À régler avant de partir », en attendant son bloc (#196) : ce qui
- * retient un jalon découpé — cartes à préciser, pas acceptées, cycle —, en raisons. Les
- * questions et le brouillon sont dans la session d'affinage, au-dessus.
- */
-function SettleSlot({ entry }: { entry: MilestoneEntry }) {
-  const t = useTranslate()
-  const reasons = entry.maturity === 'split' ? maturityReasons(entry) : []
-  if (reasons.length === 0) return null
-  return (
-    <section aria-label={t('milestone.settle.title')} className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
-      <h3 className="text-sm font-semibold text-ink">{t('milestone.settle.title')}</h3>
-      <ul className="flex flex-col gap-1 text-sm text-ink-soft">
-        {reasons.map((reason) => (
-          <li key={reason.kind}>{reasonText(reason, t)}</li>
-        ))}
-      </ul>
     </section>
   )
 }

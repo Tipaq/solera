@@ -593,6 +593,24 @@ export function appendCardPrecision(text: string, entry: { day: string; author: 
 }
 
 /**
+ * Une ligne de `request_card_change` change-t-elle autre chose que les sous-tâches
+ * (#185) ? Au dépôt, une ligne sans aucun changement est refusée ; au clic, une ligne dont
+ * les sous-tâches sont toutes déjà là n'a plus rien à faire si elle ne portait que ça ; et
+ * la page d'un jalon ne montre en ajout proposé (#196) que les lignes qui n'ajoutent que
+ * des sous-tâches. Un futur champ de ligne doit y entrer.
+ */
+export function changesBesidesSubtasks(line: {
+  toColumn?: unknown
+  close?: unknown
+  parent?: unknown
+  dueAt?: unknown
+  blocks?: unknown
+  unblocks?: unknown
+}): boolean {
+  return Boolean(line.toColumn || line.close || line.parent || line.dueAt || line.blocks || line.unblocks)
+}
+
+/**
  * Ajoute des sous-tâches non cochées : sous la dernière qui existe, avec sa puce et son
  * retrait, ou dans une section `CARD_SUBTASKS_HEADING` s'il n'y en a aucune.
  *
