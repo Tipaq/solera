@@ -19,7 +19,7 @@ import { fileIconUrl } from '../../lib/file-icons'
 import { useTranslate } from '../../lib/i18n'
 import { useDebounced } from '../../lib/search'
 import { useFileSearch } from '../../lib/tree'
-import { toolbarFieldClass } from '../toolbar/OneLineToolbar'
+import { iconToolClass, toolbarFieldClass } from '../toolbar/OneLineToolbar'
 import { FilterMenu, MenuCheck, MenuHeading } from '../toolbar/ToolbarMenus'
 import {
   EMPTY_CRITERIA,
@@ -50,6 +50,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
   const [replacing, setReplacing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [done, setDone] = useState<{ files: number; matches: number } | null>(null)
+  const [replaceError, setReplaceError] = useState<string | null>(null)
   /**
    * La ligne de remplacement est repliée par défaut, comme dans VS Code : c'est le
    * geste rare, et le seul de cette vue qui écrit dans des fichiers qu'on n'a pas
@@ -93,6 +94,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
   const apply = async () => {
     setReplacing(true)
+    setReplaceError(null)
     try {
       setDone(await replaceAll(scope, effective, replacement))
       // Fermée seulement après l'écriture : la refermer d'abord ferait croire que le
@@ -100,6 +102,9 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
       // boîte où s'afficher. `ConfirmDialog` ne se ferme pas tout seul, exprès.
       setConfirming(false)
       await content.refetch()
+    } catch (error) {
+      // La boîte reste ouverte : c'est là que l'échec se lit, à côté du geste qui l'a causé.
+      setReplaceError(error instanceof Error ? error.message : t('panel.search.replace.error'))
     } finally {
       setReplacing(false)
     }
@@ -128,7 +133,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
         <FilterMenu
           compact
           active={activeFilters}
-          onClearAll={() => set({ caseSensitive: false, wholeWord: false, regex: false, include: '', exclude: '' })}
+          onClearAll={() => set({ ...EMPTY_CRITERIA, query: criteria.query })}
         >
           <MenuHeading>{t('panel.search.filter.match')}</MenuHeading>
           <MenuCheck checked={criteria.caseSensitive} onChange={(next) => set({ caseSensitive: next })}>
@@ -153,7 +158,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
           aria-label={t(replaceOpen ? 'panel.search.replace.hide' : 'panel.search.replace.show')}
           aria-expanded={replaceOpen}
           onClick={() => setReplaceOpen((value) => !value)}
-          className={panelToolClass(replaceOpen)}
+          className={cx(panelToolClass(replaceOpen), iconToolClass)}
         >
           <Replace size={14} />
         </TooltipButton>
@@ -232,7 +237,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
             {nameEntries.length > 0 ? (
               <>
-                <PanelGroup title={t('panel.search.section.names')} />
+                <PanelGroup title={t('panel.search.section.names')} count={nameEntries.length} />
                 <ul data-search-results>
                   {nameEntries.map((entry) => (
                     <li key={entry.path}>
@@ -255,7 +260,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
 
             {files.length > 0 ? (
               <>
-                <PanelGroup title={t('panel.search.section.content')} />
+                <PanelGroup title={t('panel.search.section.content')} count={files.length} />
                 <ul data-search-content>
                   {files.map((file) => (
                     <li key={file.path}>
@@ -273,7 +278,10 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
           il se confirme, et la confirmation dit combien de fichiers vont changer. */}
       <ConfirmDialog
         open={confirming}
-        onOpenChange={setConfirming}
+        onOpenChange={(open) => {
+          setConfirming(open)
+          if (!open) setReplaceError(null)
+        }}
         title={t('panel.search.replace.confirm.title')}
         confirmLabel={t('panel.search.replace.all')}
         tone="critical"
@@ -287,6 +295,7 @@ export const SearchPane = memo(function SearchPane({ scope, onOpenFile }: {
           {criteria.query} → {replacement || '∅'}
         </p>
         <p>{t('panel.search.replace.confirm.note')}</p>
+        {replaceError ? <p role="alert" className="text-critical">{replaceError}</p> : null}
       </ConfirmDialog>
     </div>
   )
@@ -364,7 +373,7 @@ function FileMatches({ file, scope, onOpen }: {
                   revealLine(scope, file.path, match.line)
                   onOpen(file.path)
                 }}
-                className="flex w-full items-baseline gap-2 py-0.5 pr-2 pl-7 text-left font-mono text-meta hover:bg-surface-high"
+                className="flex w-full items-baseline gap-2 py-0.5 pr-2 pl-7 text-left font-mono text-meta hover:bg-surface-high pointer-coarse:py-3"
               >
                 <span className="w-10 shrink-0 text-right text-ink-faint tabular-nums">{match.line}</span>
                 <span className="min-w-0 flex-1 truncate text-ink-soft">

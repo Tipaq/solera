@@ -108,13 +108,19 @@ export const toolbarFieldClass = (invalid = false) =>
   )
 
 /**
+ * Ce qu'on ajoute à un outil fait d'une seule icône : carré de 36 px à la souris, et
+ * 44 px de large au doigt comme de haut (*Gabarit tactile*).
+ */
+export const iconToolClass = 'justify-center min-w-11 md:min-w-9 pointer-coarse:min-w-11'
+
+/**
  * Le bouton d'un menu de la barre (« Filtrer », « Affichage ») : icône, libellé, compte.
  * La hauteur de `Button size="sm"` (« + Carte »), 36 px à la souris et 44 au doigt, pour
  * que la ligne reste alignée. Actif quand un filtre est posé.
  */
 export const toolbarButtonClass = (active: boolean) =>
   cx(
-    'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 pointer-coarse:h-11',
+    'inline-flex h-11 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs transition-colors md:h-9 pointer-coarse:h-11 focus-visible:outline-2 focus-visible:outline-accent',
     active ? 'border-line-strong bg-surface-high text-ink' : 'border-line text-ink-soft hover:border-line-strong hover:text-ink',
   )
 

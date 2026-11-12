@@ -88,7 +88,9 @@ export async function checkSearch({ page, base, project }) {
   // Les lignes du cadre : 36 px à la souris, et les titres au format des groupes.
   const nameRow = await names.getByRole('button').first().boundingBox()
   assert.equal(Math.round(nameRow.height), 36, 'Une ligne de résultat fait 36 px')
-  assert.equal(await panel.getByRole('heading', { name: 'Contenu', exact: true }).count(), 1)
+  // Chaque groupe porte son compte : quatre fichiers au contenu, un nom de fichier.
+  assert.equal(await panel.getByRole('heading', { name: /^Contenu\s*4$/ }).count(), 1)
+  assert.equal(await panel.getByRole('heading', { name: /^Noms de fichier\s*1$/ }).count(), 1)
 
   // Le filtre d'exclusion écarte un dossier entier, sans le traverser. Un motif posé
   // compte parmi les filtres actifs, sur le bouton.

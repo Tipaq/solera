@@ -16,7 +16,7 @@ import {
   useWebPage,
   useWebPane,
 } from '../../lib/web-pane'
-import { toolbarFieldClass } from '../toolbar/OneLineToolbar'
+import { iconToolClass, toolbarFieldClass } from '../toolbar/OneLineToolbar'
 import { ImageLightbox } from './ImageView'
 
 const MODE_LABELS = { reader: 'web.mode.reader', live: 'web.mode.live' } as const satisfies Record<string, MessageKey>
@@ -145,7 +145,7 @@ export const WebPane = memo(function WebPane({ scope, ports: portsFrom = null }:
           rel="noopener noreferrer"
           title={t('web.external')}
           aria-label={t('web.external')}
-          className={cx(panelGestureClass, 'shrink-0')}
+          className={cx(panelGestureClass, 'shrink-0', iconToolClass)}
         >
           <ExternalLink size={14} />
         </a>
@@ -268,7 +268,7 @@ function Gesture({ label, disabled, onClick, children }: {
       disabled={disabled}
       title={label}
       aria-label={label}
-      className={cx(panelGestureClass, 'shrink-0')}
+      className={cx(panelGestureClass, 'shrink-0', iconToolClass)}
     >
       {children}
     </button>

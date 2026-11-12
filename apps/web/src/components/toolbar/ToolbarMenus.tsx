@@ -49,7 +49,7 @@ export function FilterMenu({ active, onClearAll, compact = false, children }: {
           type="button"
           className={toolbarButtonClass(active > 0)}
           title={activeLabel}
-          aria-label={compact ? (activeLabel ? `${label} — ${activeLabel}` : label) : undefined}
+          aria-label={compact ? (activeLabel ? t('toolbar.filter.labelled', { label, active: activeLabel }) : label) : undefined}
         >
           <Filter size={13} />
           {compact ? <span className="hidden @min-[22rem]:inline">{label}</span> : label}
