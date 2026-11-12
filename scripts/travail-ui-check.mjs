@@ -21,9 +21,10 @@ import { checkTravailTable } from './checks/travail-table.mjs'
  * pour le projet, « Rien ne correspond »), la vue dans l'adresse et retenue, le fil
  * « Par moment » (Maintenant, En cours, Ce qui t'attend, la ligne de base, les jours),
  * l'index et la puce d'arbre qui filtrent, la recherche, le téléphone sans
- * débordement, et la vue « Graphe » avec le tiroir d'un commit (#178,
- * `checks/travail-graph.mjs`), et la vue « Tableau » avec les gestes d'un arbre et d'une
- * branche (#177, `checks/travail-table.mjs`). Elle écrit ses captures dans `portage/`, à côté du dessin.
+ * débordement, la vue « Graphe » avec le tiroir d'un commit (#178,
+ * `checks/travail-graph.mjs`), la vue « Tableau » avec les gestes d'un arbre et d'une
+ * branche (#177, `checks/travail-table.mjs`), et les vues « Par état » et « Frise » (#179).
+ * Elle écrit ses captures dans `portage/`, à côté du dessin.
  *
  * Les PR sont simulées au niveau de la page (le projet de démo n'a pas de forge), le
  * pilotage d'un jalon aussi (#116) : la suite tient son bandeau en tête du fil, la vue
@@ -376,6 +377,72 @@ try {
   }
   await search.fill('')
 
+  // ─── Par état (#179) : quatre colonnes, la réponse sur place ────────────────
+  const escaped = (text) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=etat`)
+  const column = (name) => page.getByRole('region', { name, exact: true })
+  const workingCard = column('Travaille').getByRole('link', { name: new RegExp(escaped(running.title)) })
+  await workingCard.waitFor()
+  // Ce qui t'attend vit dans sa colonne, et n'est pas redit au-dessus.
+  await column('T’attend').getByText(awaiting.title).first().waitFor()
+  assert.equal(await page.getByRole('region', { name: 'Ce qui t’attend', exact: true }).count(), 1)
+  // La session finie dont la branche a une PR ouverte attend une relecture.
+  if (withPr) await column('À relire').getByRole('link', { name: new RegExp(escaped(withPr.title)) }).waitFor()
+  // Chaque colonne compte ses cartes, ou dit son vide.
+  for (const [name, empty] of [['Travaille', 'Aucune session au travail.'], ['À relire', 'Rien à relire.'], ['Terminées récemment', 'Rien ces trois derniers jours.']]) {
+    const count = Number(await column(name).locator('header span.tabular-nums').innerText())
+    if (count === 0) await column(name).getByText(empty, { exact: true }).waitFor()
+    else assert.equal(await column(name).locator(':scope > div > a').count(), count, `${name} compte ses cartes`)
+  }
+  // Quatre colonnes côte à côte, sur une même ligne.
+  const tops = await Promise.all(['T’attend', 'Travaille', 'À relire', 'Terminées récemment'].map(async (name) => (await column(name).boundingBox()).y))
+  assert.equal(new Set(tops.map(Math.round)).size, 1, 'Quatre colonnes sur une ligne')
+  // La puce d'arbre d'une carte filtre sur l'arbre, sans ouvrir la session.
+  const cardChip = workingCard.getByTitle(`Filtrer le fil sur ${branch}`, { exact: true })
+  await cardChip.click()
+  await page.waitForURL((url) => url.searchParams.get('arbre') === tree.path && url.searchParams.get('vue') === 'etat')
+  await workingCard.locator('[aria-pressed="true"]').waitFor({ timeout: 5000 })
+  await cardChip.click()
+  await page.waitForURL((url) => !url.searchParams.has('arbre'))
+  // Une carte mène à sa session.
+  assert.equal(await workingCard.getAttribute('href'), `/p/${nimbus.id}/c/${running.id}`)
+  await toolbar.locator('[data-filter-chip]').first().waitFor({ state: 'detached' })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't11-travail-par-etat.png') })
+
+  // ─── Frise (#179) : un arbre par rangée sur la semaine ──────────────────────
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=frise`)
+  const axis = page.locator('.sticky', { hasText: 'maintenant' })
+  await axis.waitFor()
+  const dates = await axis.locator('span.tabular-nums').allInnerTexts()
+  assert.ok(dates.length >= 1 && dates.length <= 14, 'De une à quatorze dates sur l’axe')
+  assert.ok(dates.every((text) => /^\d{1,2} [a-zéû]+\.?$/.test(text)), `Des dates localisées : ${dates.join(', ')}`)
+  // La rangée de l'arbre qui tourne : sa barre accent, qui mène à la session.
+  const treeLabel = page.getByRole('button', { name: short, exact: true })
+  await treeLabel.waitFor()
+  const runningBar = page.getByRole('link', { name: `${running.title} · tourne`, exact: true })
+  await runningBar.waitFor()
+  assert.equal(await runningBar.getAttribute('href'), `/p/${nimbus.id}/c/${running.id}`)
+  // La session qui t'attend : une barre ambre jusqu'à maintenant.
+  if (awaiting.worktreeId) await page.getByRole('link', { name: `${awaiting.title} · t’attend`, exact: true }).waitFor()
+  for (const legend of ['session qui tourne', 't’attend', 'terminée', 'carte fermée', 'branche, PR, fusion', 'commit']) {
+    await page.getByText(legend, { exact: true }).last().waitFor()
+  }
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't12-travail-frise.png') })
+  // Un clic sur l'étiquette choisit l'arbre : sa rangée seule, surlignée ; un second le relâche.
+  await treeLabel.click()
+  await page.waitForURL((url) => url.searchParams.get('arbre') === tree.path)
+  await page.locator('ol > li button[aria-pressed="true"]').waitFor({ timeout: 5000 })
+  assert.equal(await page.locator('ol > li').count(), 1, 'L’arbre choisi, seul')
+  await treeLabel.click()
+  await page.waitForURL((url) => !url.searchParams.has('arbre'))
+  // La période de « Filtrer » fait la fenêtre : trente jours, quatorze dates au plus.
+  await filterButton.click()
+  await filterPanel.getByRole('radio', { name: '30 j', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await runningBar.waitFor()
+  assert.ok((await axis.locator('span.tabular-nums').count()) <= 14)
+  await toolbar.locator('[data-filter-chip]').filter({ hasText: '30 jours' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+
   // ─── Sombre ───────────────────────────────────────────────────────────────
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 't4-travail-par-moment-sombre.png') })
@@ -383,7 +450,6 @@ try {
 
   // ─── Par arbre (#176) : un couloir par arbre, l'index qui fait défiler ─────
   await page.goto(`${base}/p/${nimbus.id}/travail?vue=couloirs`)
-  const escaped = (text) => text.replace(/[/.*+?^${}()|[\]\\]/g, '\\$&')
   const lane = page.getByRole('region', { name: branch, exact: true })
   await lane.waitFor()
   // Un couloir par worktree, et celui de la racine.
@@ -484,6 +550,18 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 't9-tiroir-au-telephone.png') })
   await page.keyboard.press('Escape')
+  // Par état : les colonnes défilent de côté, dans leur bande ; la page ne déborde pas.
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=etat`)
+  await page.getByRole('region', { name: 'Travaille', exact: true }).waitFor()
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Par état ne déborde pas à 390 px')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't13-par-etat-au-telephone.png') })
+  // La Frise : trois dates au plus sur l'axe.
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=frise`)
+  const phoneAxis = page.locator('.sticky', { hasText: 'maintenant' })
+  await phoneAxis.waitFor()
+  assert.ok((await phoneAxis.locator('span.tabular-nums:visible').count()) <= 3, 'Trois dates au plus au téléphone')
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'La Frise ne déborde pas à 390 px')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 't14-frise-au-telephone.png') })
 
   // ─── Jalons, au portefeuille aussi ─────────────────────────────────────────
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -527,14 +605,17 @@ try {
     ],
   }
   let pauses = 0
-  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [milestoneRun] }))
+  // L'état du pilotage simulé suit la pause : le panneau relit le jalon après le geste.
+  let runState = milestoneRun.state
+  await page.route('**/api/projects/*/milestones/active', (route) => route.fulfill({ json: [{ ...milestoneRun, state: runState }] }))
   await page.route(`**/api/cards/${parent.id}/milestone`, async (route) => {
     if (route.request().method() === 'PATCH') {
       assert.deepEqual(route.request().postDataJSON(), { state: 'paused' })
       pauses += 1
-      return route.fulfill({ json: { ...milestoneRun, state: 'paused' } })
+      runState = 'paused'
+      return route.fulfill({ json: { ...milestoneRun, state: runState } })
     }
-    return route.fulfill({ json: milestoneRun })
+    return route.fulfill({ json: { ...milestoneRun, state: runState } })
   })
 
   // C1 : le bandeau ouvre « Maintenant », au-dessus des sessions du fil.
@@ -565,17 +646,11 @@ try {
   await page.goto(`${base}/p/${nimbus.id}/timeline/${running.card.number}`)
   await page.getByText(`#${running.card.number} n’est pas un jalon`).waitFor()
 
-  // C3 : la ligne du jalon dans la frise, qui mène à sa vue.
-  await page.goto(`${base}/p/${nimbus.id}/timeline`)
-  const launchedHead = page.getByRole('button', { name: new RegExp(`#${parent.number} .*lancé`) })
-  await launchedHead.waitFor()
-  await launchedHead.getByText(/^1 session · /).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'c3-le-jalon-dans-la-frise.png') })
-  await launchedHead.click()
-  await page.waitForURL(`**/p/${nimbus.id}/timeline/${parent.number}`)
+  // C3, la ligne du jalon dans l'ancienne frise des jalons, est partie avec elle : l'onglet
+  // Jalons (#190) a son horizon et son Gantt, que `milestones-ui-check.mjs` tient.
 
   assert.deepEqual(errors, [])
-  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, Tableau et gestes, jalon lancé ; captures dans ' + shots)
+  console.log('OK : rangée, compteur de demandes, ce qui t’attend, Travail (redirections, barre, Par moment, Par état, Frise, ?vue=, filtres et puces retenus, rien ne correspond, index, puce d’arbre, recherche, téléphone), Par arbre (couloirs, index qui défile, tiroir, regroupement, à nettoyer, téléphone), Graphe et tiroir d’un commit, Tableau et gestes, jalon lancé ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
