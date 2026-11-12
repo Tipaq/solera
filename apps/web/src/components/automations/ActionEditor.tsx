@@ -466,7 +466,7 @@ function Step({ number, title, hint, children }: { number: number; title: string
         <h3 className="text-base font-semibold text-ink">{title}</h3>
         {hint ? <span className="text-xs text-ink-faint">{hint}</span> : null}
       </header>
-      <div className="flex flex-col gap-5 @min-[30rem]/action:pl-[34px]">{children}</div>
+      <div className="flex flex-col gap-5 pl-[34px]">{children}</div>
     </section>
   )
 }

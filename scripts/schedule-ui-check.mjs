@@ -184,7 +184,7 @@ try {
   const done = await until('le tir se termine', (task) => task.runs.every((entry) => entry.status !== 'running'), 150_000)
   assert.equal(done.runs.find((entry) => entry.id === run1.id).status, 'succeeded', JSON.stringify(done.runs))
   await card.getByRole('button', { name: /Historique des tirs/ }).click()
-  await card.getByText('terminé', { exact: true }).first().waitFor({ timeout: 30_000 })
+  await card.getByText('réussi', { exact: true }).first().waitFor({ timeout: 30_000 })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'schedule-desktop.png') })
 
   // Puisque la colonne ne les porte plus, l'historique est la **seule** route vers le
