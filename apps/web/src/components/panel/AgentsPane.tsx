@@ -302,11 +302,25 @@ function SessionFileLine({ file, agents, onOpenFile }: { file: SessionFile; agen
   return <FileLine path={file.path} meta={by.join(', ')} delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />} onOpenFile={onOpenFile} />
 }
 
-/** Un bloc d'un détail en pile, nommé pour les lecteurs d'écran par son titre. */
-function Block({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+/**
+ * Un bloc d'un détail en pile, nommé pour les lecteurs d'écran par son titre. `meta` suit
+ * le titre en bas de casse : « Son fil · 14 outils ».
+ */
+function Block({ title, count, meta, children }: { title: string; count?: number; meta?: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="flex flex-col pt-1.5">
-      <PanelGroup title={title} count={count} />
+      <PanelGroup
+        title={
+          meta ? (
+            <>
+              {title} <span className="ml-1 tracking-normal tabular-nums normal-case">{meta}</span>
+            </>
+          ) : (
+            title
+          )
+        }
+        count={count}
+      />
       {children}
     </section>
   )
@@ -433,7 +447,7 @@ function SubAgentDetail({ conversationId, agent, onOpenFile }: { conversationId:
           )}
         </Block>
 
-        <Block title={t('panel.agent.block.thread')} count={agent.toolCount > 0 ? agent.toolCount : undefined}>
+        <Block title={t('panel.agent.block.thread')} meta={agent.toolCount > 0 ? toolCount(agent.toolCount, t) : undefined}>
           <div className="flex min-w-0 flex-col gap-3 px-3">
             {rows.length === 0 ? (
               <p className="text-xs text-ink-faint">{t(running ? 'panel.agent.thread.starting' : 'panel.agent.thread.silent')}</p>

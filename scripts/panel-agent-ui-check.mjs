@@ -217,7 +217,7 @@ try {
       assert.match(await files.nth(2).textContent(), /agent-files\.ts.*Relire les specs.*\+3.*−0/)
       await shot(footer.locator('xpath=..'), 'pied')
       // Le nom ouvre le fichier, l'icône mène au diff dans Git.
-      await click(files.nth(1).getByRole('button', { name: /AgentsPane\.tsx/ }))
+      await click(files.nth(1).getByRole('button', { name: /^AgentsPane\.tsx/ }))
       assert.deepEqual(await page.evaluate(() => window.opened), [`${ROOT}/components/panel/AgentsPane.tsx`])
       if (!phone) await files.nth(1).hover()
       await click(files.nth(1).getByRole('button', { name: 'Diff de AgentsPane.tsx dans Git' }))
@@ -238,18 +238,18 @@ try {
       const filesBlock = pane.getByRole('region', { name: 'Fichiers modifiés' })
       assert.match(await filesBlock.textContent(), /Fichiers modifiés\s*1\s*AgentsPane\.tsx\s*\+4 −2/)
       await shot(filesBlock, 'sous-agent-fichiers')
-      // Le résultat : trois lignes, « Tout lire » / « Replier ».
+      // Le résultat : trois lignes, « Tout lire » / « Replier » ; son fil, rendu par ChatThread.
       const result = pane.getByRole('region', { name: 'Résultat' })
       const text = result.locator('p').first()
       assert.match(await text.getAttribute('class'), /line-clamp-3/)
       await shot(result, 'sous-agent-resultat')
+      const thread = pane.getByRole('region', { name: 'Son fil' })
+      await thread.getByText('Rien d’autre à signaler.', { exact: false }).waitFor()
+      assert.match(await thread.getByRole('heading').textContent(), /Son fil\s+2 outils/)
+      await shot(pane, 'sous-agent')
       await click(result.getByRole('button', { name: 'Tout lire' }))
       assert.doesNotMatch(await text.getAttribute('class'), /line-clamp-3/)
       await result.getByRole('button', { name: 'Replier' }).waitFor()
-      // Son fil, rendu par ChatThread.
-      const thread = pane.getByRole('region', { name: 'Son fil' })
-      await thread.getByText('Rien d’autre à signaler.', { exact: false }).waitFor()
-      await shot(pane, 'sous-agent')
 
       // Copier le résultat : le presse-papiers le reçoit.
       await click(pane.getByRole('button', { name: 'Copier le résultat' }))
