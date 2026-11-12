@@ -236,7 +236,7 @@ function refineBriefing(
     // L'ajout au jalon (#185) : sans le rangement de carte, `request_card_change` n'est
     // pas listé, et l'ajout ne peut que devenir des cartes.
     cardFiling
-      ? "Un message « Ajout au jalon : … » se range en sous-tâches de la carte du jalon qui en parle déjà (`request_card_change` avec `add_subtasks`), sinon en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche)."
+      ? "Un message « Ajout au jalon : … » se range en sous-tâches d'une carte existante qui en parle déjà (`request_card_change` avec `add_subtasks`), sinon en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche)."
       : "Un message « Ajout au jalon : … » se range en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche).",
   ]
     .filter((line) => line !== null)

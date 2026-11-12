@@ -41,7 +41,6 @@ import {
   appendSubtasks,
   CARD_CLOSED_COLUMNS,
   cardColumnSchema,
-  parseSubtasks,
   formatSessionMessage,
   parseAgentConfig,
   scheduleCadenceSchema,
@@ -77,7 +76,7 @@ import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
-import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, changesBesidesSubtasks, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -98,6 +97,7 @@ import {
   DESCRIPTION_MAX,
   editOwnSubtasks,
   labelList,
+  subtaskLabels,
   promoteOwnSubtask,
   linkOwnConversation,
   parseDueDay,
@@ -2105,7 +2105,7 @@ export class AgentRequests {
       // engage le travail d'une personne.
       const add = labelList(change.add_subtasks, 'add_subtasks')
       if (add.length > 0) {
-        const existing = new Set(parseSubtasks(card.description).map((subtask) => subtask.label))
+        const existing = subtaskLabels(card.description)
         const known = add.find((label) => existing.has(label))
         if (known) throw new Refusal(`« ${known} » est déjà une sous-tâche de #${number}. Retire-la de \`add_subtasks\`.`)
         const twice = add.find((label, index) => add.indexOf(label) !== index)
@@ -2124,7 +2124,7 @@ export class AgentRequests {
         line.addSubtasks = add
       }
 
-      if (!line.toColumn && !line.close && !line.parent && !line.dueAt && !line.blocks && !line.unblocks && !line.addSubtasks) {
+      if (!changesBesidesSubtasks(line) && !line.addSubtasks) {
         throw new Refusal(
           `Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\`, \`unblocks\` ou \`add_subtasks\`.`,
         )

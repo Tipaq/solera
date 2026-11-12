@@ -78,7 +78,7 @@ veut lancer, il le fera depuis la page du jalon.
 
 Un message « Ajout au jalon : … » prolonge un jalon déjà découpé. Lis-le comme au 1,
 puis range-le **là où il tient** :
-- une carte du jalon en parle déjà : ses **sous-tâches**, par `request_card_change` sur
+- une carte existante en parle déjà : ses **sous-tâches**, par `request_card_change` sur
   cette carte avec `add_subtasks`, la raison disant pourquoi elle ;
 - sinon, des **nouvelles cartes** : `propose_cards` avec `parent: N`, `blocked_by` la
   carte la plus proche.

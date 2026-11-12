@@ -12,16 +12,16 @@ import {
   type AgentRequestRow,
   type Db,
 } from '@solera/db'
-import { appendSubtasks, parseSubtasks, type CardCloseOutcome, type CardColumn, type CardDraft } from '@solera/protocol'
+import { appendSubtasks, type CardCloseOutcome, type CardColumn, type CardDraft } from '@solera/protocol'
 import { addCardBlock, removeCardBlock } from '../cards/blocks.js'
 import { isCloseTarget, type CardClosure } from '../cards/close.js'
 import { syncCardReferences } from '../cards/create.js'
-import { DESCRIPTION_MAX } from './card-gestures.js'
 import { createDraftCards, type DraftCreation } from '../cards/drafts.js'
 import { recordCardMove } from '../cards/moves.js'
 import { resolveParent, writeCardParent } from '../cards/tree.js'
 import type { Config } from '../config.js'
 import type { EventLog } from '../events/event-log.js'
+import { DESCRIPTION_MAX, subtaskLabels, subtasksAddedNote } from './card-gestures.js'
 import {
   describeCardFilingOutcome,
   describeDraftOutcome,
@@ -132,6 +132,15 @@ export interface ProposedCardChange {
   addSubtasks?: string[]
 }
 
+/**
+ * La ligne change-t-elle autre chose que les sous-tâches ? Au dépôt, une ligne sans aucun
+ * changement est refusée ; au clic, une ligne dont les sous-tâches sont toutes déjà là n'a
+ * plus rien à faire si elle ne portait que ça.
+ */
+export function changesBesidesSubtasks(line: Omit<ProposedCardChange, 'cardId' | 'number' | 'fromColumn'>): boolean {
+  return Boolean(line.toColumn || line.close || line.parent || line.dueAt || line.blocks || line.unblocks)
+}
+
 export type CardFilingAcceptance =
   | { ok: true; applied: number[] }
   | { ok: false; reason: StaleReason | 'cards_gone' }
@@ -231,15 +240,13 @@ export async function acceptCardFiling(
       }
       // Des sous-tâches qu'une personne a ajoutées entre-temps ne se doublent pas, et
       // l'ajout se fait sur la description relue : elle a pu changer depuis le dépôt,
-      // et l'écraser défairait son texte. Plus rien à ajouter, la ligne n'a rien d'autre
-      // à faire si elle ne portait que ça.
+      // et l'écraser défairait son texte.
       let description: string | undefined
       let added: string[] = []
       if (proposed.addSubtasks) {
-        const existing = new Set(parseSubtasks(card.description).map((subtask) => subtask.label))
+        const existing = subtaskLabels(card.description)
         const add = proposed.addSubtasks.filter((label) => !existing.has(label))
-        const alone = !proposed.toColumn && !proposed.close && !proposed.parent && !proposed.dueAt && !proposed.blocks && !proposed.unblocks
-        if (add.length === 0 && alone) return null
+        if (add.length === 0 && !changesBesidesSubtasks(proposed)) return null
         if (add.length > 0) {
           description = appendSubtasks(card.description, add)
           if (description.length > DESCRIPTION_MAX) return null
@@ -270,12 +277,12 @@ export async function acceptCardFiling(
       if (parentId !== undefined) writeCardParent(tx, card, parentId, by)
       if (description !== undefined) {
         tx.update(cards).set({ description, updatedAt: now }).where(eq(cards.id, card.id)).run()
-        // La note que laisse `edit_subtasks`, au nom de la personne qui a accordé et
-        // rattachée au fil qui a proposé : c'est l'historique de la description.
+        // La note de `edit_subtasks`, au nom de la personne qui a accordé et rattachée au
+        // fil qui a proposé : c'est l'historique de la description.
         tx.insert(cardNotes)
           .values({
             id: randomUUID(), cardId: card.id, conversationId, userId,
-            body: `Sous-tâches ajoutées : ${added.map((label) => `« ${label} »`).join(', ')}.`,
+            body: subtasksAddedNote(added),
             createdAt: now,
           })
           .run()

@@ -84,6 +84,16 @@ function noteFrom(db: Db | Tx, cardId: string, conversationId: string, body: str
   db.insert(cardNotes).values({ id: randomUUID(), cardId, conversationId, userId: null, body, createdAt: at }).run()
 }
 
+/** La note qu'un ajout de sous-tâches laisse sur la carte, par un agent ou par un clic. */
+export function subtasksAddedNote(labels: readonly string[]): string {
+  return `Sous-tâches ajoutées : ${labels.map((label) => `« ${label} »`).join(', ')}.`
+}
+
+/** Les libellés des sous-tâches qu'une description porte déjà. */
+export function subtaskLabels(description: string): Set<string> {
+  return new Set(parseSubtasks(description).map((subtask) => subtask.label))
+}
+
 /** Des libellés de sous-tâches, nettoyés et bornés ; les vides sont retirés. */
 export function labelList(value: unknown, field: string): string[] {
   if (value === undefined) return []
@@ -276,7 +286,7 @@ export function editOwnSubtasks(
 
   // Cocher se voit dans la barre d'avancement de la carte, et une note par case
   // noierait le fil ; ajouter change le travail décrit, et se dit.
-  const note = add.length > 0 ? `Sous-tâches ajoutées : ${add.map((label) => `« ${label} »`).join(', ')}.` : null
+  const note = add.length > 0 ? subtasksAddedNote(add) : null
   rewriteDescription(db, card, description, note, requester.id)
   syncCardReferences(db, card, description)
   const parts = [...changed, ...(add.length > 0 ? [`${add.length} ajoutée(s)`] : [])]
