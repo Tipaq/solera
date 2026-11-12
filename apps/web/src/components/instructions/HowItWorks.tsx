@@ -33,14 +33,3 @@ export const INSTRUCTIONS_HELP: MessageKey[] = [
   'instructions.how.timing',
   'instructions.how.vsMemory',
 ]
-
-export const MEMORY_HELP: MessageKey[] = [
-  'memory.how.what',
-  'memory.how.claude',
-  'memory.how.codex',
-  'memory.how.opencode',
-  'memory.how.grok',
-  'memory.how.scope',
-  'memory.how.import',
-  'memory.how.edit',
-]

@@ -4,7 +4,7 @@ import { PROJECT_CAP_MAX, type ConfinedServices, type ProjectDto, type ProjectVi
 import { Banner, Button, EmptyState, SaveBar, SegmentedControl, Select, Switch } from '@solera/ui'
 import { AutonomousConfinementSelect, EnvironmentSelect } from '../components/Environment'
 import { InstructionsPanel } from '../components/instructions/InstructionsPanel'
-import { ProjectMemory } from '../components/instructions/ProjectMemory'
+import { MemoryPanel } from '../components/instructions/MemoryPanel'
 import { PathField } from '../components/PathField'
 import {
   CapField,
@@ -13,7 +13,7 @@ import {
   RemoveProject,
   SettingInput,
 } from '../components/project-settings/GeneralControls'
-import { ProjectDesignSystem, ProjectIssueSource } from '../components/project-settings/Integrations'
+import { DesignSystemControl, IssueSourceControl, PrototypeCandidates } from '../components/project-settings/Integrations'
 import { useAgentSettingItems } from '../components/project-settings/AgentSettingRows'
 import { ProjectDevcontainer } from '../components/project-settings/ProjectDevcontainer'
 import { SettingsPage, type SettingsCategory } from '../components/settings-page/SettingsPage'
@@ -35,6 +35,7 @@ import {
 import {
   useProjectDevcontainer,
   useProjectEnvironments,
+  useProjectPrototypes,
   useProjects,
   useUpdateProject,
 } from '../lib/projects'
@@ -46,9 +47,8 @@ const NOTICE_MS = 3200
  * Les réglages d'un projet (page projet v2, PP-21) : une page à menu gauche, un
  * brouillon unique et sa barre d'enregistrement.
  *
- * Général, les réglages d'agent, les consignes et la Zone de danger sont faits ici ; la
- * mémoire, les skills et les Intégrations posent encore les blocs de l'ancienne page,
- * que #245 refait en rangées.
+ * Ce que les agents savent (consignes, mémoire, skills) et les Intégrations écrivent
+ * tout de suite, avec leurs propres boutons : ils restent hors du brouillon.
  */
 export function ProjectSettingsPage() {
   const { projectId } = useParams()
@@ -126,6 +126,8 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
   const { draft, set, isChanged, environments, devcontainer } = model
   const owner = project.isOwner
   const agentRows = useAgentSettingItems(project, model.agentLayer)
+  const { data: prototypes } = useProjectPrototypes(project.id, owner && Boolean(project.designSystemPath))
+  const candidates = project.designSystemPath ? (prototypes?.candidates ?? []) : []
 
   const categories: SettingsCategory[] = [
     { key: 'general', label: t('projectSettings.category.general') },
@@ -257,9 +259,7 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
     },
   ]
 
-  /* Ce que les agents savent : les consignes (#244), puis la mémoire, les skills et les
-     Intégrations, blocs de l'ancienne page en attendant leurs rangées (#245). Un projet
-     partagé ne montre des Agents que ce que les agents savent. */
+  /* Un projet partagé ne montre des Agents que ce que les agents savent. */
   const knowledge = t('projectSettings.group.knowledge')
   const agents: SettingItem[] = [
     {
@@ -269,31 +269,42 @@ function ProjectSettings({ project }: { project: ProjectDto }) {
       render: () => <InstructionsPanel projectId={project.id} />,
     },
     {
-      id: 'memory', category: 'agents', group: knowledge, kind: 'bare',
-      label: t('projectSettings.item.memory.label'), keywords: keywords('projectSettings.item.memory.keywords'),
-      render: () => <ProjectMemory projectId={project.id} />,
+      id: 'memory', category: 'agents', group: knowledge, kind: 'block',
+      label: t('projectSettings.item.memory.label'), help: t('projectSettings.item.memory.help'),
+      keywords: keywords('projectSettings.item.memory.keywords'),
+      render: () => <MemoryPanel projectId={project.id} />,
     },
     {
-      id: 'skills', category: 'agents', group: knowledge, kind: 'bare',
-      label: t('projectSettings.item.skills.label'), keywords: keywords('projectSettings.item.skills.keywords'),
+      id: 'skills', category: 'agents', group: knowledge, kind: 'block',
+      label: t('projectSettings.item.skills.label'), help: t('projectSettings.item.skills.help'),
+      keywords: keywords('projectSettings.item.skills.keywords'),
       render: () => <ProjectSkills projectId={project.id} isOwner={owner} />,
     },
     ...agentRows,
   ]
+  const design = t('projectSettings.group.design')
   const integrations: SettingItem[] = owner
     ? [
         {
-          id: 'issues', category: 'integrations', group: t('projectSettings.group.forge'), kind: 'bare',
-          label: t('project.issues.title'), help: t('project.issues.description'),
+          id: 'issues', category: 'integrations', group: t('projectSettings.group.forge'), kind: 'row',
+          label: t('projectSettings.item.issues.label'), help: t('projectSettings.item.issues.help'),
           keywords: keywords('projectSettings.item.issues.keywords'),
-          render: () => <ProjectIssueSource projectId={project.id} />,
+          render: () => <IssueSourceControl projectId={project.id} />,
         },
         {
-          id: 'design', category: 'integrations', group: t('projectSettings.group.design'), kind: 'bare',
-          label: t('project.designSystem.title'), help: t('project.designSystem.description'),
+          id: 'design', category: 'integrations', group: design, kind: 'row',
+          label: t('project.designSystem.title'), help: t('projectSettings.item.design.help'),
           keywords: keywords('projectSettings.item.design.keywords'),
-          render: () => <ProjectDesignSystem projectId={project.id} initialPath={project.designSystemPath} />,
+          render: () => <DesignSystemControl projectId={project.id} path={project.designSystemPath} />,
         },
+        ...(candidates.length > 0
+          ? [{
+              id: 'candidates', category: 'integrations', group: design, kind: 'row',
+              label: t('projectSettings.item.candidates.label'), help: t('project.designSystem.candidates.hint'),
+              keywords: keywords('projectSettings.item.candidates.keywords'),
+              render: () => <PrototypeCandidates candidates={candidates} />,
+            } satisfies SettingItem]
+          : []),
       ]
     : []
   const danger: SettingItem[] = owner
