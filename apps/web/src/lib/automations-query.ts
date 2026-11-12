@@ -53,9 +53,11 @@ export function useAutomations(scope: AutomationScope): AutomationsData {
 }
 
 /**
- * Ce que compte l'onglet Actions (ACT-1) : ce qui tourne — actions en marche, processus
- * et travaux de fond des sessions — et ce qui attend une relecture. `null` : tous les
- * projets visibles, pour l'onglet du portefeuille.
+ * Ce qui tourne et ce qui attend dans un projet (ACT-1), pour le compte de son onglet
+ * Actions et le point du bouton du panneau. Aucune requête de plus : les mêmes listes que
+ * l'onglet, et les processus partagent celle de la page Services. `null` : tous les
+ * projets visibles, pour l'onglet du portefeuille, qui lit en plus les travaux de fond
+ * de chacun.
  */
 export function useActionsStatus(projectId: string | null): ActionsStatus {
   const { items } = useAutomations(projectId ? { projectId } : { all: true })

@@ -5,6 +5,8 @@ import { Button, EmptyState } from '@solera/ui'
 import { ProjectAvatar } from '../components/ProjectAvatar'
 import { PlaceShell, type PlaceTab } from '../components/places/PlaceShell'
 import { askingCount, useLiveConversations } from '../lib/activity'
+import { actionsTabBadge } from '../lib/actions-tab'
+import { useActionsStatus } from '../lib/automations-query'
 import { useSessionRequests } from '../lib/session-requests'
 import { useCards } from '../lib/cards'
 import { useAllConversations } from '../lib/conversations'
@@ -41,6 +43,7 @@ export function ProjectLayout() {
   )
   const live = useLiveConversations(mine)
   const requests = useSessionRequests(projectId, live)
+  const actions = actionsTabBadge(useActionsStatus(projectId ?? null))
 
   const project = projects?.find((entry) => entry.id === projectId)
 
@@ -49,8 +52,8 @@ export function ProjectLayout() {
 
   /* Ce qui te demande quelque chose, erreurs comprises, et pas le nombre de sessions :
      le compte de Travail est une demande, d'où l'ambre. Celui du Tableau est un
-     inventaire, gris. Jalons n'en a pas ; celui d'Actions (vert « en marche », ambre
-     « à relire ») arrive avec sa vue. */
+     inventaire, gris. Jalons n'en a pas ; celui d'Actions dit ce qui attend, sinon ce
+     qui tourne (ACT-2). */
   const asking = askingCount(live, requests)
   const open = openLeafCount(cards)
   const badges: Partial<Record<ProjectTabKey, Pick<PlaceTab, 'count' | 'tone' | 'countTitle'>>> = {
@@ -63,6 +66,9 @@ export function ProjectLayout() {
       count: open,
       countTitle: t(open === 1 ? 'place.count.openCards.one' : 'place.count.openCards.many', { count: open }),
     },
+    ...(actions
+      ? { actions: { count: actions.count, tone: actions.tone, countTitle: t(actions.countTitle, { count: actions.count }) } }
+      : {}),
   }
   const tabs: PlaceTab[] = PROJECT_TABS.map((tab) => ({
     to: `/p/${projectId}${tab.path}`,

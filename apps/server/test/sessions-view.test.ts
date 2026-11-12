@@ -17,6 +17,7 @@ const {
   selectedRows,
   sessionRows,
   sessionState,
+  sessionsHref,
   sortSessions,
   writeSessionQuery,
 } = await import('../../web/src/lib/sessions-view.js')
@@ -181,6 +182,15 @@ test("ce qui s'écrit se relit à l'identique", () => {
     }),
   })
   assert.deepEqual(readSessionQuery(writeSessionQuery(new URLSearchParams(), original)), original)
+})
+
+test("le lien vers la page : nu, sur un projet, ou sur une recherche que la page relit telle quelle", () => {
+  assert.equal(sessionsHref(), '/sessions')
+  assert.equal(sessionsHref({ project: 'p1' }), '/sessions?projet=p1')
+  const href = sessionsHref({ search: 'radar & cache' })
+  const read = readSessionQuery(new URLSearchParams(href.slice(href.indexOf('?'))))
+  assert.equal(read.search, 'radar & cache')
+  assert.equal(activeFilterCount(read.filters), 0)
 })
 
 // ─── SES-5/6 : recherche et filtres ──────────────────────────────────────────

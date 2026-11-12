@@ -54,9 +54,10 @@ export function actionsStatus(items: readonly Automation[], works: readonly Sess
 }
 
 /**
- * Le compte de l'onglet Actions, d'un projet comme du portefeuille (ACT-2) : ambre « N à
- * relire » d'abord, car une action à relire t'attend ; sinon vert « N en marche ». Rien
- * quand rien ne tourne ni n'attend. Le titre se dit avec `{ count }`.
+ * Le compte de l'onglet Actions, dans la rangée d'un lieu — un projet, le portefeuille —
+ * comme dans le panneau (ACT-2) : ambre « N à relire » d'abord, parce qu'une action à
+ * relire attend Tim ; sinon vert « N en marche », ce qui tourne se contentant d'être là ;
+ * rien quand rien ne bouge. `countTitle` se traduit avec `{ count }`.
  */
 export function actionsTabBadge(status: ActionsStatus): { count: number; tone: 'caution' | 'running'; countTitle: MessageKey } | null {
   if (status.toReview > 0) return { count: status.toReview, tone: 'caution', countTitle: 'actionsTab.status.review' }

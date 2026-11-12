@@ -8,7 +8,6 @@ import {
   GitBranch,
   SquareKanban,
   Loader,
-  PanelRight,
   Terminal,
 } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -83,7 +82,7 @@ import {
 import { buildTurns } from '../lib/turns'
 import { useChatStream } from '../lib/use-chat-stream'
 import { useGitHead, useWorktrees } from '../lib/worktrees'
-import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { PanelToggle, ProjectPanelToggle } from '../components/panel/PanelToggle'
 
 /** Le passage de relais, chargé à son ouverture (#128) : hors du paquet d'entrée. */
 const HandoffDialog = lazy(() =>
@@ -1110,21 +1109,15 @@ export function ConversationPage() {
             labelClassName="@max-[44rem]/thread:hidden"
           />
 
-          {/* Les boutons du projet, joués dans le worktree de ce fil. Un fil libre n'a
-              pas de dossier où les lancer. */}
-          {conversation.projectId ? (
-            <ActionsLauncher projectId={conversation.projectId} conversationId={conversationId} />
-          ) : null}
           {/* Tout à droite, contre le bord : c'est le panneau qu'il ouvre, et il doit
               se trouver du côté où celui-ci apparaît. Le panneau appartient à la
               conversation, il lit le répertoire de travail de ce fil, worktree
-              compris, pas celui du projet. */}
-          <IconButton
-            label={panel.open ? t('conversation.panel.close') : t('conversation.panel.open')}
-            onClick={() => setPanelOpen(!panel.open)}
-          >
-            <PanelRight size={16} className={cx(panel.open && 'text-accent')} />
-          </IconButton>
+              compris, pas celui du projet. Son point dit ce que le ⚡ retiré disait. */}
+          {conversation.projectId ? (
+            <ProjectPanelToggle projectId={conversation.projectId} open={panel.open} />
+          ) : (
+            <PanelToggle open={panel.open} status={null} />
+          )}
         </HeaderBand>
 
         <Dialog.Root open={metaOpen} onOpenChange={setMetaOpen}>

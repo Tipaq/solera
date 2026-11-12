@@ -658,6 +658,15 @@ async function checkProjectTab(base, env, api) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.screenshot({ path: join(shots, `tab-launcher-${width}.png`) })
 
+    // Le compte de l'onglet dans la rangée (ACT-2) : ce qui attend passe avant ce qui
+    // tourne, en ambre.
+    const actionsCount = page.getByRole('navigation', { name: 'Vues du projet', exact: true })
+      .getByRole('link', { name: /^Actions/ }).locator('span[title]')
+    if (!phone) {
+      assert.equal(await actionsCount.getAttribute('title'), '1 à relire')
+      assert.match(await actionsCount.getAttribute('class'), /text-caution/)
+    }
+
     // La méta et Filtrer ▾ : un filtre pose sa puce, la puce l'efface.
     const chips = page.locator('[data-filter-chip]')
     if (!phone) {
@@ -793,6 +802,8 @@ async function checkProjectTab(base, env, api) {
       await tile('Statique servi').getByRole('switch', { name: 'Démarrer « Statique servi »' }).click()
       await tile('Statique servi').getByText(/^En marche ·/).waitFor({ timeout: 20000 })
       await tile('Statique servi').getByRole('link', { name: /^Ouvrir/ }).waitFor()
+      await page.getByRole('button', { name: '1 en marche', exact: true }).waitFor()
+      assert.equal(await actionsCount.getAttribute('title'), '1 à relire', 'l’ambre reste devant le vert')
       await page.getByRole('button', { name: '1 en marche', exact: true }).click()
       await chips.getByText('En cours').waitFor()
       assert.equal(await page.locator('[data-action-tile]').count(), 1)
@@ -1106,7 +1117,13 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
   const actionsTab = page.locator('button[aria-pressed][aria-label^="Actions"]')
-  await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
+  // Le ⚡ est retiré (ACT-5) : le bouton du panneau dit ce qu'il disait, par un point (ACT-3).
+  const panelToggle = page.getByRole('button', { name: /^(Ouvrir|Fermer) le panneau/ }).first()
+  await page.locator('[data-panel-dot="caution"]').waitFor()
+  assert.equal(await panelToggle.getAttribute('aria-label'), 'Ouvrir le panneau — 1 à relire')
+  assert.equal(await page.locator('header').getByRole('button', { name: /^Actions/ }).count(), 0, 'plus de ⚡ dans l’en-tête')
+  await panelToggle.click()
+  await page.getByRole('button', { name: 'Actions, 1 à relire', exact: true }).waitFor()
   await actionsTab.click()
   // La liste des actions, pas le groupe des commandes lancées ici qui la précède.
   const panel = page.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first()
@@ -1182,13 +1199,13 @@ try {
     await page.keyboard.press('Escape')
     await stack.waitFor({ state: 'detached' })
 
-    // Le lanceur de l'en-tête compte le service en marche et montre la même liste.
-    const launcher = page.getByRole('button', { name: 'Actions, 1 en marche' })
-    await launcher.click()
-    const popover = page.getByRole('dialog', { name: 'Actions' })
-    await popover.getByRole('button', { name: 'Arrêter : Serveur statique' }).waitFor()
-    await page.screenshot({ path: join(shots, 'actions-launcher.png') })
-    await page.keyboard.press('Escape')
+    // Plus rien à relire : l'onglet du panneau et le point passent au vert, ce qui tourne.
+    const runningTab = page.getByRole('button', { name: 'Actions, 1 en marche', exact: true })
+    await runningTab.waitFor()
+    await page.locator('[data-panel-dot="running"]').waitFor()
+    assert.match(await runningTab.locator('span.rounded-full').getAttribute('class'), /text-positive/)
+    assert.equal(await panelToggle.getAttribute('aria-label'), 'Fermer le panneau — 1 en marche')
+    await page.screenshot({ path: join(shots, 'actions-panel-running.png') })
 
     // La palette suit l'état : un service en marche s'arrête, il ne se relance pas. À
     // l'ouverture, elle propose déjà les actions du projet sous les yeux.
@@ -1409,10 +1426,9 @@ try {
   const mobile = await phone.newPage()
   mobile.on('pageerror', (error) => errors.push(error.message))
   await mobile.goto(`${base}/p/${project.id}/c/${conversation.id}`)
-  await mobile.getByRole('button', { name: 'Actions', exact: true }).click()
-  await mobile.getByRole('dialog', { name: 'Actions' }).getByText('Dire bonjour').waitFor()
-  await mobile.screenshot({ path: join(shots, 'actions-phone-launcher.png') })
-  await mobile.keyboard.press('Escape')
+  await mobile.getByRole('button', { name: /^Ouvrir le panneau/ }).first().waitFor()
+  assert.equal(await mobile.locator('header').getByRole('button', { name: /^Actions/ }).count(), 0, 'plus de ⚡ au téléphone')
+  await mobile.screenshot({ path: join(shots, 'actions-phone-header.png') })
   await mobile.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
   await mobile.locator('button[aria-pressed][aria-label^="Actions"]').click()
   await mobile.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first().waitFor()
