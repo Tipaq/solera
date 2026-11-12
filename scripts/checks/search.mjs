@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -34,8 +34,7 @@ export async function checkSearch({ page, base, project }) {
   await writeFile(join(dir, 'delta.txt'), `${TOKEN}X accolé\n`)
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   await panel.getByRole('button', { name: 'Recherche', exact: true }).click()
 

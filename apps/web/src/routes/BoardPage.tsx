@@ -1,610 +1,316 @@
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
-  pointerWithin,
-  rectIntersection,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type CollisionDetection,
-  type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
-import { PanelRight, Plus, X } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { CARD_CLOSED_COLUMNS, CARD_COLUMNS, boardOrderSchema, type BoardOrder, type CardColumn, type CardDto } from '@solera/protocol'
-import { NewCardDialog } from '../components/board/NewCardDialog'
+import { agentKindSchema, type AgentKind, type CardColumn, type CardDto } from '@solera/protocol'
+import { Button, EmptyState } from '@solera/ui'
+import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { CardPanel } from '../components/board/CardPanel'
+import { KanbanView } from '../components/board/KanbanView'
+import { NewCardDialog } from '../components/board/NewCardDialog'
+import { columnLabel } from '../components/board/columns'
+import { tintDot } from '../components/board/tints'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { PanelHost } from '../components/shell/PanelHost'
-import { CardTile } from '../components/board/CardTile'
-import { COLUMN_DOTS, columnLabel } from '../components/board/columns'
-import { Button, EmptyState, IconButton, cx } from '@solera/ui'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment } from '../components/toolbar/ToolbarMenus'
+import { useBoardData } from '../lib/board-data'
+import {
+  BOARD_SORTS,
+  NO_FILTERS,
+  activeFilters,
+  matches,
+  passes,
+  readDisplay,
+  shortTitle,
+  type BoardFilters,
+} from '../lib/board-model'
+import { withSheet } from '../lib/card-sheet'
+import { isOpen } from '../lib/card-state'
 import { CardRefContext } from '../lib/card-refs'
-import { descendantIds, useCards, useCreateCard, useReorderCards, type CardColumnOrder } from '../lib/cards'
-import { NEW_PARAM } from '../lib/place'
+import { useMoveCard } from '../lib/cards'
 import { useTranslate } from '../lib/i18n'
-import { PANEL_TRANSITION_MS, setPanelOpen, usePanelOpen } from '../lib/panel'
+import { PANEL_TRANSITION_MS } from '../lib/panel'
+import { NEW_PARAM } from '../lib/place'
 import { useProjects } from '../lib/projects'
-import { useBoardOrder } from '../lib/user-settings'
-import { useMediaQuery } from '../lib/viewport'
-import { ActionsLauncher } from '../components/actions/ActionsLauncher'
+import { useStoredPref } from '../lib/use-view'
+import { viewStorageKey } from '../lib/view-pref'
 
-/** Le filtre par parente, en clair dans l'adresse comme `carte`. */
-const PARENT_PARAM = 'parente'
-
-/** Même seuil que la coque : au-delà, la sidebar et les colonnes tiennent côte à côte. */
-const WIDE = '(min-width: 768px)'
-
-/** Ordre des cartes par colonne, la forme sur laquelle le glissement travaille. */
-type Layout = Map<CardColumn, string[]>
-
-/** Le tri d'une colonne selon l'ordre choisi ; le numéro départage les ex aequo. */
-const ORDERINGS: Record<BoardOrder, (a: CardDto, b: CardDto) => number> = {
-  manual: (a, b) => a.position - b.position,
-  recent: (a, b) => b.columnSince - a.columnSince || b.number - a.number,
-  oldest: (a, b) => a.columnSince - b.columnSince || a.number - b.number,
-}
+/** L'éditeur complet d'une carte, ouvert par les liens d'ailleurs (palette, journal, fiche). */
+const EDITOR_PARAM = 'carte'
 
 /**
- * Les cartes par colonne, feuilles seulement : une carte qui a des enfants les
- * regroupe, sa colonne se déduit d'eux, et la montrer à côté d'eux compterait deux fois
- * le même travail. On la retrouve par le filtre, et sur la tuile de chaque enfant.
- *
- * Les cartes non acceptées passent en tête de « à faire » : elles attendent un tri, et
- * c'est la première chose à faire en ouvrant le board.
- */
-function layoutOf(cards: CardDto[], order: BoardOrder): Layout {
-  const grouped: Layout = new Map(CARD_COLUMNS.map((column) => [column, []]))
-  const sorted = [...cards]
-    .filter((card) => card.children.length === 0)
-    .sort((a, b) => Number(a.acceptedAt !== null) - Number(b.acceptedAt !== null) || ORDERINGS[order](a, b))
-  for (const card of sorted) {
-    grouped.get(card.column)?.push(card.id)
-  }
-  return grouped
-}
-
-/**
- * Un clic dans le vide du board, qui referme le tiroir d'une carte. Pas sur une carte,
- * qui bascule le tiroir sur elle, ni sur un contrôle, qui a sa propre action.
+ * Un clic dans le vide du tableau, qui referme l'éditeur d'une carte. Pas sur une tuile,
+ * qui ouvre sa fiche, ni sur un contrôle, qui a sa propre action.
  */
 function isEmptyBoardClick(target: EventTarget): boolean {
   return target instanceof Element && !target.closest('button, a, input, textarea, select, label, [data-card-tile], [role="menu"]')
 }
 
-function columnOf(layout: Layout, cardId: string): CardColumn | undefined {
-  for (const [column, ids] of layout) {
-    if (ids.includes(cardId)) return column
-  }
-  return undefined
-}
-
 /**
- * Ce que le pointeur survole, avec un repli sur le recouvrement des rectangles.
- *
- * `pointerWithin` seul est le plus juste quand le pointeur est sur une cible, et ne
- * rend rien du tout quand il passe entre deux colonnes : le geste paraît alors mort
- * dans les gouttières. Le repli garde une cible dans ces creux.
+ * Le Tableau d'un projet (#180, spec page projet v2 B-1 à B-4, B-7, B-8) : la barre sur
+ * une ligne, puis le Kanban de ses feuilles. Un clic sur une tuile ouvre sa fiche sur
+ * place (`?fiche=`) ; l'éditeur complet (`?carte=`) reste celui des liens qui y mènent
+ * d'ailleurs, et de la carte qu'on vient de créer.
  */
-const collisionDetection: CollisionDetection = (args) => {
-  const under = pointerWithin(args)
-  return under.length > 0 ? under : rectIntersection(args)
-}
-
-/** La colonne visée par un survol : soit une carte, soit le fond d'une colonne. */
-function targetColumn(layout: Layout, overId: string): CardColumn | undefined {
-  if (CARD_COLUMNS.includes(overId as CardColumn)) return overId as CardColumn
-  return columnOf(layout, overId)
-}
-
-function matchesCard(card: CardDto, query: string): boolean {
-  if (query.startsWith('#')) return String(card.number).startsWith(query.slice(1))
-  return `${card.number} ${card.title} ${card.description}`.toLocaleLowerCase().includes(query)
-}
-
 export function BoardPage() {
   const { projectId } = useParams()
   const [params, setParams] = useSearchParams()
   const t = useTranslate()
-  const wide = useMediaQuery(WIDE)
-  const panelOpen = usePanelOpen()
 
   const { data: projects } = useProjects()
-  const { data: cards, isPending, isError, refetch } = useCards(projectId)
-  const reorder = useReorderCards(projectId ?? '')
-  const [order, setOrder] = useBoardOrder(projectId)
-
+  const { cards, all, milestones, isPending, isError, refetch } = useBoardData(projectId)
+  const move = useMoveCard()
 
   const [query, setQuery] = useState('')
-  const search = query.trim().toLocaleLowerCase()
-  /**
-   * Le filtre par parente, dans l'adresse pour qu'un lien le garde : le kanban ne
-   * montre alors que ses descendantes, à toute profondeur.
-   */
-  const parentNumber = Number(params.get(PARENT_PARAM)) || null
-  const parentCard = parentNumber === null ? null : ((cards ?? []).find((card) => card.number === parentNumber) ?? null)
-  const under = useMemo(() => (parentCard ? descendantIds(cards ?? [], parentCard.id) : null), [cards, parentCard])
-  const parents = useMemo(() => (cards ?? []).filter((card) => card.children.length > 0).sort((a, b) => a.number - b.number), [cards])
-  const narrowed = Boolean(search) || under !== null
-  const matches = (card: CardDto) => matchesCard(card, search) && (under === null || under.has(card.id))
-  const setParentFilter = (number: number | null) => {
-    const next = new URLSearchParams(params)
-    if (number === null) next.delete(PARENT_PARAM)
-    else next.set(PARENT_PARAM, String(number))
-    setParams(next, { replace: true })
-  }
-  const [visibleColumn, setVisibleColumn] = useState<CardColumn>('todo')
-  /** Au téléphone, une seule colonne se voit : la recherche y mène si la sienne n'a rien. */
-  const onSearch = (value: string) => {
-    setQuery(value)
-    if (!wide && value.trim()) {
-      const matching = (cards ?? []).filter((card) => matchesCard(card, value.trim().toLocaleLowerCase()))
-      if (!matching.some((card) => card.column === visibleColumn) && matching[0]) setVisibleColumn(matching[0].column)
-    }
-  }
-  /**
-   * Visibles d'emblée : le board dit où en est le projet, et masquer ce qui est fini
-   * en cache la moitié. Le repli reste offert pour retrouver de la place quand le
-   * cimetière devient long.
-   */
-  const [showClosed, setShowClosed] = useState(true)
-  /**
-   * Disposition pendant le geste, nulle au repos.
-   *
-   * Le glissement doit se voir avant d'être lâché : sans cet état, une carte tirée vers
-   * une autre colonne y reste invisible jusqu'au relâchement, et on tire à l'aveugle.
-   */
-  const [dragging, setDragging] = useState<{ id: string; layout: Layout } | null>(null)
-  const sensors = useSensors(
-    // Un seuil de déplacement, pour qu'un clic sur une carte reste un clic.
-    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    // Un appui long, sinon le glissement volerait le défilement de la colonne.
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
+  /* Les filtres sont un état de la page, non retenus (B-1.6) ; ils tiennent au projet. */
+  const [filterState, setFilterState] = useState<{ projectId?: string; filters: BoardFilters }>({ projectId, filters: NO_FILTERS })
+  const filters = filterState.projectId === projectId ? filterState.filters : NO_FILTERS
+  const setFilters = (next: BoardFilters) => setFilterState({ projectId, filters: next })
+  const set = (patch: Partial<BoardFilters>) => setFilters({ ...filters, ...patch })
+  const [display, setDisplay] = useStoredPref(viewStorageKey('tableau.affichage', projectId ?? null), readDisplay)
 
-  const byId = useMemo(
-    () => new Map((cards ?? []).map((card) => [card.id, card])),
-    [cards],
-  )
-  const settled = useMemo(() => layoutOf(cards ?? [], order), [cards, order])
-  const layout = dragging?.layout ?? settled
+  const visible = useMemo(() => cards.filter((entry) => matches(entry, query) && passes(entry, filters)), [cards, query, filters])
 
   const project = projects?.find((entry) => entry.id === projectId)
-  const held = dragging ? (byId.get(dragging.id) ?? null) : null
 
-  const openNumber = Number(params.get('carte'))
-  const openCard = (cards ?? []).find((card) => card.number === openNumber) ?? null
-  /**
-   * Le tiroir reste monté le temps de sortir de l'écran, comme le panneau d'outils
-   * d'une conversation : le démonter à la fermeture le ferait disparaître d'un coup,
-   * sans que l'animation ait pu se jouer.
-   */
-  const [lingering, setLingering] = useState<CardDto | null>(openCard)
+  /* L'éditeur complet reste monté le temps de sortir de l'écran. */
+  const editorNumber = Number(params.get(EDITOR_PARAM))
+  const editorCard: CardDto | null = all.find((card) => card.number === editorNumber) ?? null
+  const [lingering, setLingering] = useState<CardDto | null>(editorCard)
   useEffect(() => {
-    if (openCard) {
-      setLingering(openCard)
+    if (editorCard) {
+      setLingering(editorCard)
       return
     }
     const timer = setTimeout(() => setLingering(null), PANEL_TRANSITION_MS)
     return () => clearTimeout(timer)
-  }, [openCard])
+  }, [editorCard])
 
-  /**
-   * La création d'une carte est ouverte par l'adresse, pas par un état local.
-   *
-   * *+ Carte*, au bout de la barre, écrit `?nouvelle=1` comme le ferait un lien d'ailleurs
-   * (la palette, un favori) : un seul chemin vers ce dialogue. Le `+` d'une colonne,
-   * lui, vise une colonne précise et garde son état local — il ne demande pas la même
-   * chose.
-   */
+  const writeParams = (edit: (next: URLSearchParams) => void) => {
+    const next = new URLSearchParams(params)
+    edit(next)
+    setParams(next, { replace: true })
+  }
+  const showEditor = (number: number | null) =>
+    writeParams((next) => (number === null ? next.delete(EDITOR_PARAM) : next.set(EDITOR_PARAM, String(number))))
+  const openSheet = (number: number) => setParams((current) => withSheet(current, number))
+  /* « + Carte » écrit `?nouvelle=1`, comme un lien d'ailleurs : un seul chemin vers le dialogue. */
   const creating = params.get(NEW_PARAM) === '1'
-  const setCreating = (open: boolean) => {
-    const next = new URLSearchParams(params)
-    if (open) next.set(NEW_PARAM, '1')
-    else next.delete(NEW_PARAM)
-    setParams(next, { replace: true })
-  }
-
-  const showCard = (number: number | null) => {
-    const next = new URLSearchParams(params)
-    if (number === null) next.delete('carte')
-    else next.set('carte', String(number))
-    setParams(next, { replace: true })
-  }
-
-  const onDragStart = (event: DragStartEvent) => {
-    setDragging({ id: String(event.active.id), layout: settled })
-  }
-
-  /**
-   * Traversée d'une colonne à l'autre, jouée pendant le geste.
-   *
-   * Seul le changement de colonne se traite ici : réordonner dans la même colonne à
-   * chaque survol ferait vibrer la liste sous le curseur, alors que le lâcher suffit.
-   */
-  const onDragOver = (event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over || !dragging) return
-
-    const cardId = String(active.id)
-    const from = columnOf(dragging.layout, cardId)
-    const to = targetColumn(dragging.layout, String(over.id))
-    if (!from || !to || from === to) return
-
-    const next: Layout = new Map(dragging.layout)
-    next.set(
-      from,
-      (next.get(from) ?? []).filter((id) => id !== cardId),
-    )
-    const target = [...(next.get(to) ?? [])]
-    const at = target.indexOf(String(over.id))
-    target.splice(at === -1 ? target.length : at, 0, cardId)
-    next.set(to, target)
-    setDragging({ id: cardId, layout: next })
-  }
-
-  const onDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    const snapshot = dragging
-    setDragging(null)
-    if (!snapshot || !over) return
-
-    const cardId = String(active.id)
-    const column = columnOf(snapshot.layout, cardId)
-    if (!column) return
-
-    const ids = snapshot.layout.get(column) ?? []
-    const from = ids.indexOf(cardId)
-    const to = CARD_COLUMNS.includes(String(over.id) as CardColumn)
-      ? ids.length - 1
-      : ids.indexOf(String(over.id))
-    // Trié par arrivée, l'ordre d'une colonne ne se choisit pas : seul le passage d'une
-    // colonne à l'autre compte, et réordonner sur place réécrirait l'ordre manuel en
-    // douce, qu'on retrouverait chamboulé en y revenant.
-    const ordered = from === -1 || to === -1 || from === to || order !== 'manual' ? ids : arrayMove(ids, from, to)
-
-    // Seules les colonnes dont le contenu a changé sont réécrites, et chacune en
-    // entier : le serveur refuse une colonne partielle, qui laisserait les cartes
-    // omises intercalées au hasard parmi les nouvelles.
-    const changed: CardColumnOrder[] = []
-    for (const [key, before] of settled) {
-      const after = key === column ? ordered : (snapshot.layout.get(key) ?? [])
-      if (before.length !== after.length || before.some((id, index) => id !== after[index])) {
-        changed.push({ column: key, ids: after })
-      }
-    }
-    if (changed.length > 0) reorder.mutate(changed)
-  }
+  const setCreating = (open: boolean) => writeParams((next) => (open ? next.set(NEW_PARAM, '1') : next.delete(NEW_PARAM)))
 
   if (!projectId) return null
   if (isPending) return <p className="p-6 text-sm text-ink-faint">{t('board.loading')}</p>
-  if (isError) return <div role="alert" className="p-6"><p>{t('board.loadError')}</p><Button onClick={() => void refetch()}>{t('agent.install.retry')}</Button></div>
+  if (isError)
+    return (
+      <div role="alert" className="p-6">
+        <p>{t('board.loadError')}</p>
+        <Button onClick={refetch}>{t('agent.install.retry')}</Button>
+      </div>
+    )
   if (!project) return <EmptyState title={t('project.notFound')} />
 
-  const open = CARD_COLUMNS.filter((column) => !CARD_CLOSED_COLUMNS.includes(column))
-  const hasClosed = CARD_CLOSED_COLUMNS.some((column) => (layout.get(column) ?? []).length > 0)
-  const shown = wide ? [...open, ...(showClosed || search ? CARD_CLOSED_COLUMNS.filter((column) => column !== 'abandoned' || (layout.get(column)?.length ?? 0) > 0) : [])] : [visibleColumn]
+  const openMilestones = milestones.filter((milestone) => milestone.done < milestone.leaves.length)
+  const loose = cards.filter((entry) => entry.milestone === null && isOpen(entry.card)).length
+  const agents = agentKindSchema.options.filter((agent) => cards.some((entry) => entry.card.conversations.some((session) => session.agent === agent)))
+  const toggleIn = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((item) => item !== value) : [...list, value])
+  const agentName = (agent: AgentKind) => AGENT_LABELS[agent]
 
-  return (
-    /* `h-full` et non `flex-1` : le conteneur de la coque défile, donc il n'impose
-       aucune hauteur à ses enfants, et les colonnes s'arrêtaient à leur contenu au
-       lieu de descendre jusqu'en bas.
-
-       Plus de bande ni d'en-tête propre : le nom du projet est dans la bande de
-       `ProjectLayout`, le compte des cartes dans son onglet. Le board commence donc à
-       sa ligne de filtres. */
-    <div className="relative flex h-full min-h-0 flex-col overflow-clip">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {/* La barre sur une ligne : chercher et filtrer à gauche, l'affichage et
-            « + Carte » à droite. Le ⚡ et le panneau restent jusqu'à la refonte du
-            Tableau ; le ⚡ se tait au téléphone, où l'onglet Actions le remplace. */}
-        <OneLineToolbar
-          search={<ToolbarSearch value={query} onChange={onSearch} placeholder={t('board.search.short')} label={t('board.search')} />}
-          filter={parents.length > 0 ? (
-            <FilterMenu active={parentCard ? 1 : 0} onClearAll={() => setParentFilter(null)}>
-              <MenuHeading>{t('board.filter.parent')}</MenuHeading>
-              <div role="radiogroup" aria-label={t('board.filter.parent')}>
-                {parents.map((parent) => (
-                  <MenuCheck
-                    key={parent.id}
-                    exclusive
-                    checked={parent.id === parentCard?.id}
-                    onChange={() => setParentFilter(parent.number)}
-                    aside={parent.children.length}
-                  >
-                    <span className="flex min-w-0 items-center gap-1.5" title={parent.title}>
-                      <span className="shrink-0 text-meta tabular-nums text-ink-faint">#{parent.number}</span>
-                      <span className="min-w-0 truncate">{parent.title}</span>
-                    </span>
-                  </MenuCheck>
-                ))}
-              </div>
-            </FilterMenu>
-          ) : null}
-          chips={parentCard ? (
-            <FilterChip title={parentCard.title} onClear={() => setParentFilter(null)}>
-              #{parentCard.number} {parentCard.title}
-            </FilterChip>
-          ) : null}
-          extra={
-            <>
-              {reorder.isError ? <p role="alert" className="truncate text-xs text-critical">{t('board.moveError')}</p> : null}
-              <span className="hidden md:contents">
-                <ActionsLauncher projectId={projectId} size="sm" />
-              </span>
-              <IconButton
-                label={panelOpen ? t('conversation.panel.close') : t('conversation.panel.open')}
-                size="sm"
-                onClick={() => setPanelOpen(!panelOpen)}
-              >
-                <PanelRight size={16} className={cx(panelOpen && 'text-accent')} />
-              </IconButton>
-            </>
-          }
-          display={
-            <DisplayMenu>
-              <MenuHeading>{t('toolbar.sort')}</MenuHeading>
-              <MenuSegment
-                label={t('board.order.label')}
-                segments={boardOrderSchema.options.map((value) => ({ value, label: t(`board.order.short.${value}`) }))}
-                value={order}
-                onChange={setOrder}
-              />
-              <p className="px-3 pt-1.5 text-xs text-ink-faint">
-                {t(search ? 'board.searchHint' : order === 'manual' ? 'board.hint' : 'board.hint.arrival')}
-              </p>
-              {wide && hasClosed ? (
-                <>
-                  <MenuHeading>{t('toolbar.show')}</MenuHeading>
-                  <MenuCheck checked={showClosed} onChange={setShowClosed}>{t('board.display.closed')}</MenuCheck>
-                </>
-              ) : null}
-            </DisplayMenu>
-          }
-          action={
-            /* L'action de la vue, sortie de la rangée d'onglets : elle crée dans ce
-               board, elle se pose donc au bout de sa barre. Au téléphone, son icône
-               seule : le bouton du panneau prend la place, et la recherche doit garder
-               de quoi s'écrire. */
-            <Button size="sm" icon={<Plus size={15} />} aria-label={t('project.action.newCard')} onClick={() => setCreating(true)}>
-              <span className="hidden sm:inline">{t('project.action.newCard')}</span>
-            </Button>
-          }
-        />
-        {narrowed && !(cards ?? []).some((card) => card.children.length === 0 && matches(card)) ? <p role="status" className="px-4 pt-4 text-sm text-ink-faint md:px-6">{t('board.noResults')}</p> : null}
-        {!wide ? (
-          <nav className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5">
-            {CARD_COLUMNS.map((column) => {
-              const count = (layout.get(column) ?? []).filter((id) => { const card = byId.get(id); return card && matches(card) }).length
-              // Les colonnes de sortie ne se proposent au doigt que si elles ont
-              // quelque chose : trois onglets utiles valent mieux que cinq.
-              if (count === 0 && CARD_CLOSED_COLUMNS.includes(column)) return null
-              return (
-                <button
-                  key={column}
-                  type="button"
-                  onClick={() => setVisibleColumn(column)}
-                  aria-pressed={column === visibleColumn}
-                  className={cx(
-                    'flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    column === visibleColumn
-                      ? 'bg-accent-wash text-accent'
-                      : 'text-ink-faint hover:text-ink',
-                  )}
-                >
-                  {columnLabel(column)}
-                  <span className="text-meta opacity-70">{count}</span>
-                </button>
-              )
-            })}
-          </nav>
-        ) : null}
-
-        <DndContext
-          sensors={sensors}
-          // Ni `closestCenter` ni `closestCorners` : une colonne est une grande cible et
-          // une carte une petite, et comparer leurs centres fait gagner la colonne
-          // alors que le pointeur est posé sur une carte.
-          collisionDetection={collisionDetection}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDragEnd={onDragEnd}
-          onDragCancel={() => setDragging(null)}
+  /* Les puces des filtres posés, sur la même ligne (B-1.3). */
+  const chips = [
+    ...filters.milestones.map((id) => {
+      const milestone = milestones.find((entry) => entry.card.id === id)
+      return (
+        <FilterChip
+          key={`m-${id}`}
+          title={milestone ? t('board.tile.milestone', { number: milestone.card.number, title: milestone.card.title }) : undefined}
+          onClear={() => set({ milestones: filters.milestones.filter((item) => item !== id) })}
         >
-          <div
-            className="flex min-h-0 flex-1 gap-4 overflow-x-auto p-4 md:p-6"
-            // Le tiroir se referme d'un clic à côté, comme une fenêtre qu'on quitte. Le
-            // clavier a déjà Échap ; au téléphone, le tiroir couvre tout l'écran.
-            onClick={(event) => {
-              if (openCard && isEmptyBoardClick(event.target)) showCard(null)
-            }}
-          >
-            {shown.map((column) => (
-              <BoardColumn
-                key={column}
-                column={column}
-                cards={(layout.get(column) ?? [])
-                  .map((id) => byId.get(id))
-                  .filter((card): card is CardDto => card !== undefined && matches(card))}
-                filtered={narrowed}
-                parentId={parentCard?.id}
-                projectId={projectId}
-                openNumber={openCard?.number ?? null}
-                showArrival={order !== 'manual'}
-                onOpenCard={(card) => showCard(card.number)}
-              />
-            ))}
-          </div>
+          {milestone ? (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden style={tintDot(milestone.tint)} className="size-1.5 shrink-0 rounded-full" />#{milestone.card.number} {shortTitle(milestone.card.title, 18)}
+            </span>
+          ) : (
+            t('board.filter.noMilestone')
+          )}
+        </FilterChip>
+      )
+    }),
+    filters.waiting ? <FilterChip key="waiting" onClear={() => set({ waiting: false })}>{t('board.tile.waiting')}</FilterChip> : null,
+    filters.clarify ? <FilterChip key="clarify" onClear={() => set({ clarify: false })}>{t('board.card.toClarify')}</FilterChip> : null,
+    filters.accept ? <FilterChip key="accept" onClear={() => set({ accept: false })}>{t('board.tile.accept')}</FilterChip> : null,
+    filters.due ? (
+      <FilterChip key="due" onClear={() => set({ due: null })}>
+        {t(filters.due === 'late' ? 'board.chip.late' : 'board.chip.week')}
+      </FilterChip>
+    ) : null,
+    ...filters.agents.map((agent) => (
+      <FilterChip key={`a-${agent}`} onClear={() => set({ agents: filters.agents.filter((item) => item !== agent) })}>
+        {agentName(agent)}
+      </FilterChip>
+    )),
+    filters.column ? (
+      <FilterChip key="column" onClear={() => set({ column: null })}>
+        {t('board.chip.column', { column: columnLabel(filters.column) })}
+      </FilterChip>
+    ) : null,
+  ].filter(Boolean)
 
-          {/* La carte suit le pointeur au lieu de se déformer sur place : sans calque,
-              le geste ne rend pas ce qu'on tient, seulement un trou à l'origine. */}
-          <DragOverlay dropAnimation={null}>
-            {held ? <CardTile card={held} overlay /> : null}
-          </DragOverlay>
-        </DndContext>
-      </div>
-
-      <NewCardDialog projectId={projectId} open={creating} onClose={() => setCreating(false)} onCreated={(card) => {
-        setQuery('')
-        setVisibleColumn(card.column)
-        // Un seul écrit : `setCreating(false)` puis `showCard` partent du même
-        // `params` et le second effacerait le premier.
-        const next = new URLSearchParams(params)
-        next.delete(NEW_PARAM)
-        next.set('carte', String(card.number))
-        setParams(next, { replace: true })
-      }} />
-      {lingering ? (
-        <CardRefContext.Provider value={projectId}>
-        <CardPanel
-          key={lingering.id}
-          card={lingering}
-          projectId={projectId}
-          open={openCard !== null}
-          onClose={() => showCard(null)}
-          onSelectCard={showCard}
-        />
-        </CardRefContext.Provider>
+  const filterMenu = (
+    <FilterMenu active={activeFilters(filters)} onClearAll={() => setFilters(NO_FILTERS)}>
+      {openMilestones.length > 0 || loose > 0 ? <MenuHeading>{t('board.filter.milestone')}</MenuHeading> : null}
+      {openMilestones.map((milestone) => (
+        <MenuCheck
+          key={milestone.card.id}
+          checked={filters.milestones.includes(milestone.card.id)}
+          onChange={() => set({ milestones: toggleIn(filters.milestones, milestone.card.id) })}
+          aside={`${milestone.done}/${milestone.leaves.length}`}
+        >
+          <span className="flex min-w-0 items-center gap-1.5" title={milestone.card.title}>
+            <span aria-hidden style={tintDot(milestone.tint)} className="size-2 shrink-0 rounded-full" />
+            <span className="shrink-0 text-xs tabular-nums text-ink-faint">#{milestone.card.number}</span>
+            <span className="truncate">{shortTitle(milestone.card.title, 30)}</span>
+          </span>
+        </MenuCheck>
+      ))}
+      {loose > 0 ? (
+        <MenuCheck checked={filters.milestones.includes('none')} onChange={() => set({ milestones: toggleIn(filters.milestones, 'none') })} aside={loose}>
+          {t('board.filter.noMilestone')}
+        </MenuCheck>
       ) : null}
 
-      <PanelHost projectId={projectId} />
-    </div>
+      <MenuHeading>{t('board.filter.state')}</MenuHeading>
+      <MenuCheck checked={filters.waiting} onChange={(waiting) => set({ waiting })}>{t('board.filter.waiting')}</MenuCheck>
+      <MenuCheck checked={filters.clarify} onChange={(clarify) => set({ clarify })}>{t('board.filter.clarify')}</MenuCheck>
+      <MenuCheck checked={filters.accept} onChange={(accept) => set({ accept })}>{t('board.filter.accept')}</MenuCheck>
+
+      <MenuHeading>{t('board.filter.due')}</MenuHeading>
+      <MenuCheck checked={filters.due === 'late'} onChange={(on) => set({ due: on ? 'late' : null })}>{t('board.filter.late')}</MenuCheck>
+      <MenuCheck checked={filters.due === 'week'} onChange={(on) => set({ due: on ? 'week' : null })}>{t('board.filter.week')}</MenuCheck>
+
+      {agents.length > 0 ? (
+        <>
+          <MenuHeading>{t('board.filter.agent')}</MenuHeading>
+          {agents.map((agent) => (
+            <MenuCheck key={agent} checked={filters.agents.includes(agent)} onChange={() => set({ agents: toggleIn(filters.agents, agent) })}>
+              <span className="inline-flex items-center gap-1.5">
+                <AgentIcon agent={agent} size={13} decorative /> {agentName(agent)}
+              </span>
+            </MenuCheck>
+          ))}
+        </>
+      ) : null}
+    </FilterMenu>
   )
-}
 
-function BoardColumn({
-  column,
-  cards,
-  projectId,
-  openNumber,
-  onOpenCard,
-  filtered,
-  showArrival,
-  parentId,
-}: {
-  column: CardColumn
-  filtered: boolean
-  /** La parente du filtre : une carte créée sous ce filtre lui est rattachée. */
-  parentId?: string
-  /** Trié par arrivée : chaque tuile dit depuis quand elle est dans la colonne. */
-  showArrival: boolean
-  cards: CardDto[]
-  projectId: string
-  openNumber: number | null
-  onOpenCard: (card: CardDto) => void
-}) {
-  const t = useTranslate()
-  const createCard = useCreateCard(projectId)
-  const [title, setTitle] = useState('')
-  const [adding, setAdding] = useState(false)
-  // La colonne est elle-même une cible : sans elle, une colonne vide n'aurait aucune
-  // carte à survoler et ne pourrait plus rien recevoir.
-  const { setNodeRef, isOver } = useDroppable({ id: column, disabled: filtered })
+  /* « Affichage ▾ » : le Kanban seul pour l'instant ; Liste et Par geste viennent avec #181. */
+  const displayMenu = (
+    <DisplayMenu>
+      <MenuHeading>{t('board.display.grouping')}</MenuHeading>
+      <MenuSegment
+        label={t('board.display.grouping')}
+        segments={[
+          { value: 'none', label: t('board.display.grouping.none') },
+          { value: 'lanes', label: t('board.display.grouping.lanes') },
+        ]}
+        value={display.lanes ? 'lanes' : 'none'}
+        onChange={(next) => setDisplay({ ...display, lanes: next === 'lanes' })}
+      />
+      <MenuHeading>{columnLabel('done')}</MenuHeading>
+      <MenuSegment
+        label={columnLabel('done')}
+        segments={[
+          { value: 'recent', label: t('board.display.done.recent') },
+          { value: 'all', label: t('board.display.done.all') },
+          { value: 'hidden', label: t('board.display.done.hidden') },
+        ]}
+        value={display.done}
+        onChange={(done) => setDisplay({ ...display, done })}
+      />
+      <MenuCheck checked={display.abandoned} onChange={(abandoned) => setDisplay({ ...display, abandoned })}>
+        {t('board.display.abandoned')}
+      </MenuCheck>
+      {/* Quatre tris ne tiennent pas dans un segment : un choix unique en liste. */}
+      <MenuHeading>{t('board.display.sort')}</MenuHeading>
+      <div role="radiogroup" aria-label={t('board.display.sort')}>
+        {BOARD_SORTS.map((sort) => (
+          <MenuCheck key={sort} exclusive checked={display.sort === sort} onChange={() => setDisplay({ ...display, sort })}>
+            {t(`board.sort.${sort}`)}
+          </MenuCheck>
+        ))}
+      </div>
+    </DisplayMenu>
+  )
 
-  const submit = () => {
-    const value = title.trim()
-    if (!value || createCard.isPending) return
-    createCard.mutate({ title: value, column, parentId }, { onSuccess: (card) => { setTitle(''); setAdding(false); onOpenCard(card) } })
-  }
+  const narrowed = Boolean(query.trim()) || activeFilters(filters) > 0
 
   return (
-    <section
-      className="flex h-full max-h-full w-full shrink-0 flex-col rounded-xl border border-line/60 bg-sunken/60 md:w-72 md:min-w-64 md:flex-1"
-      aria-label={columnLabel(column)}
-    >
-      <header className="flex shrink-0 items-center gap-2.5 px-3.5 pt-3 pb-2.5">
-        <span className={cx('size-2 shrink-0 rounded-full', COLUMN_DOTS[column])} />
-        <h2 className="text-sm font-semibold text-ink-soft">
-          {columnLabel(column)}
-        </h2>
-        <span className="rounded-md bg-surface-high px-1.5 py-0.5 text-xs text-ink-faint">{cards.length}</span>
-        <div className="flex-1" />
-        <IconButton label={t('board.card.new')} size="sm" onClick={() => setAdding(true)}>
-          <Plus size={14} />
-        </IconButton>
-      </header>
-
+    <div className="relative flex h-full min-h-0 flex-col overflow-clip">
+      <OneLineToolbar
+        search={<ToolbarSearch value={query} onChange={setQuery} placeholder={t('board.search.short')} label={t('board.search')} />}
+        filter={filterMenu}
+        chips={chips}
+        extra={move.isError ? <p role="alert" className="truncate text-xs text-critical">{t('board.move.error')}</p> : null}
+        display={displayMenu}
+        action={
+          <Button size="sm" icon={<Plus size={15} />} aria-label={t('project.action.newCard')} onClick={() => setCreating(true)}>
+            <span className="hidden sm:inline">{t('project.action.newCard')}</span>
+          </Button>
+        }
+      />
+      {narrowed && visible.length === 0 ? (
+        <p role="status" className="px-4 pt-4 text-sm text-ink-faint md:px-6">
+          {t('board.noResults')}
+        </p>
+      ) : null}
       <div
-        ref={setNodeRef}
-        className={cx(
-          // Une hauteur minimale même vide : une bande de deux pixels n'est pas une
-          // cible qu'on peut viser au pointeur.
-          'flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto rounded-md px-2 pb-2 transition-colors',
-          isOver && 'bg-accent-wash/40',
-        )}
+        className="min-h-0 flex-1"
+        // L'éditeur se referme d'un clic à côté, comme une fenêtre qu'on quitte.
+        onClick={(event) => {
+          if (editorCard && isEmptyBoardClick(event.target)) showEditor(null)
+        }}
       >
-        {adding ? (
-          <div className="surface flex flex-col gap-2 rounded-lg border border-line-strong p-2">
-            <textarea
-              value={title}
-              autoFocus
-              rows={2}
-              maxLength={200}
-              aria-label={t('board.card.title')}
-              placeholder={t('board.card.new.placeholder')}
-              onChange={(event) => setTitle(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault()
-                  submit()
-                }
-                if (event.key === 'Escape') setAdding(false)
-              }}
-              className="w-full resize-none bg-transparent text-sm text-ink outline-none placeholder:text-ink-faint"
-            />
-            <div className="flex items-center gap-1.5">
-              <Button size="sm" disabled={!title.trim() || createCard.isPending} onClick={submit}>
-                {t('board.card.add')}
-              </Button>
-              <IconButton
-                label={t('board.card.cancel')}
-                size="sm"
-                onClick={() => {
-                  setAdding(false)
-                  setTitle('')
-                }}
-              >
-                <X size={14} />
-              </IconButton>
-            </div>
-          </div>
-        ) : null}
-
-        {createCard.isError ? <p role="alert" className="px-2 text-xs text-critical">{t('board.card.saveError')}</p> : null}
-        <SortableContext
-          items={cards.map((card) => card.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {cards.map((card) => (
-            <CardTile
-              key={card.id}
-              card={card}
-              disabled={filtered}
-              selected={card.number === openNumber}
-              showArrival={showArrival}
-              onOpen={() => onOpenCard(card)}
-            />
-          ))}
-        </SortableContext>
-
-        {cards.length === 0 && !adding ? (
-          <button type="button" onClick={() => setAdding(true)} className="mx-1 flex min-h-24 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line p-4 text-xs text-ink-faint hover:border-line-strong hover:text-ink"><Plus size={22} />{t('board.card.new')}</button>
-        ) : null}
+        <KanbanView
+          entries={visible}
+          milestones={milestones}
+          display={display}
+          projectId={projectId}
+          onOpen={openSheet}
+          onMove={(entry, column: CardColumn) => move.mutate({ id: entry.card.id, projectId, column })}
+          // En attendant la Liste (#181), « Tout voir » déplie Fait sur place.
+          onSeeAllDone={() => setDisplay({ ...display, done: 'all' })}
+        />
       </div>
-    </section>
+
+      <NewCardDialog
+        projectId={projectId}
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(card) => {
+          setQuery('')
+          // Un seul écrit : fermer le dialogue puis ouvrir l'éditeur partent du même `params`.
+          writeParams((next) => {
+            next.delete(NEW_PARAM)
+            next.set(EDITOR_PARAM, String(card.number))
+          })
+        }}
+      />
+      {lingering ? (
+        <CardRefContext.Provider value={projectId}>
+          <CardPanel
+            key={lingering.id}
+            card={lingering}
+            projectId={projectId}
+            open={editorCard !== null}
+            onClose={() => showEditor(null)}
+            onSelectCard={showEditor}
+          />
+        </CardRefContext.Provider>
+      ) : null}
+      <CardSheetHost projectId={projectId} />
+      {/* Le panneau à portée projet, sans bouton : la palette l'appelle pour ouvrir un
+          fichier ou lancer une action hors d'une conversation, tant que Travail n'en
+          monte pas. */}
+      <PanelHost projectId={projectId} />
+    </div>
   )
 }
