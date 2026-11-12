@@ -14,9 +14,9 @@ import { launchBrowser } from './checks/browser.mjs'
 // Le découpage en cartes (#70) de bout en bout, avec les vrais composants et la vraie
 // API, dans une base temporaire : l'entrée du board ouvre le brouillon de conversation
 // en mode « découper », une session de découpage dépose un brouillon par la même file
-// que le serveur MCP, le bloc apparaît dans le fil et dans « À décider », on le corrige
-// (renommer, retirer une carte, retirer un lien), et « Créer » pose les cartes sur le
-// board. Aucun CLI ne tourne : le message rendu à la session reste en file.
+// que le serveur MCP, le bloc apparaît dans le fil et dans l'Activité de la colonne, on
+// le corrige (renommer, retirer une carte, retirer un lien), et « Créer » pose les cartes
+// sur le board. Aucun CLI ne tourne : le message rendu à la session reste en file.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -140,7 +140,13 @@ try {
   await page.goto(`${base}/p/${project.id}/c/${session}`)
   const block = page.getByRole('region', { name: 'Brouillon de cartes', exact: true })
   await block.getByText('Brouillon : 4 carte(s) à créer').waitFor({ timeout: 15000 })
-  await page.getByRole('region', { name: 'À décider' }).getByText('4 cartes à créer').waitFor()
+  // « À décider » a laissé sa place à l'Activité de la colonne (#160, #163). À cette
+  // hauteur elle se replie en son en-tête : la demande se lit dans la modale qu'il ouvre.
+  await page.getByRole('group', { name: 'Suivi des conversations', exact: true }).getByRole('button', { name: /^Activité/ }).click()
+  const activity = page.getByRole('dialog')
+  await activity.getByText('4 cartes à créer', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await activity.waitFor({ state: 'hidden' })
   await block.scrollIntoViewIfNeeded()
   await block.screenshot({ animations: 'disabled', path: join(shots, 'card-draft-pending.png') })
 
