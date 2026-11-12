@@ -3118,7 +3118,7 @@ export const fr: Catalog = {
   'milestone.run.manual': 'À la main',
   'milestone.run.auto': 'Autonome',
   'milestone.run.places': '{busy}/{count} places occupées',
-  'milestone.run.placesAria': 'Places : combien de sessions à la fois',
+  'milestone.run.placesAria': '{busy}/{count} places occupées : choisir combien de sessions à la fois',
   'milestone.run.manualLine': 'Tu lances les cartes ; les sessions avancent seules',
   'milestone.run.branch': 'branche {branch}',
   'milestone.run.confined': 'Sessions confinées, sans demandes d’autorisation (pour les prochaines)',

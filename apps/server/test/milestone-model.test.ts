@@ -268,9 +268,18 @@ test('MAT-2 : une PR de jalon fermée sans fusion le garde Lancé, sans proposer
   const entry = only(milestone(1, [card(2, { column: 'done' })], { branch: 'jalon/1', branchPr: pr }))
   assert.equal(entry.maturity, 'launched', 'sa branche n’est pas dans main : pas livré')
   assert.deepEqual(nextAction(entry), { kind: 'prClosed', pr })
-  assert.deepEqual(gestureOf(entry), { kind: 'scroll', target: 'lancer' }, 'le suivi dit quoi faire de la PR fermée')
+  assert.deepEqual(gestureOf(entry), { kind: 'link', url: 'https://forge/pr/7' }, '« Voir la PR » l’ouvre sur la forge')
   assert.deepEqual(maturityReasons(entry), [{ kind: 'merged', done: 1, total: 1 }, { kind: 'prClosed' }])
   assert.deepEqual(milestoneAsks(entry), [], 'rien à fusionner : la forge refuserait')
+})
+
+test('MAT-2 : une carte entrée au jalon après l’ouverture de sa PR : on suit le pilotage, rien à fusionner encore', () => {
+  const pr = { number: 7, url: 'u', base: 'main', mergedAt: null, closedAt: null }
+  const entry = only(milestone(1, [card(2, { column: 'done' }), card(3)], { branch: 'jalon/1', branchPr: pr }), { runs: [run('c-1')] })
+  assert.equal(entry.maturity, 'launched')
+  assert.equal(nextAction(entry).kind, 'follow', 'fusionner maintenant livrerait sans la carte ajoutée')
+  assert.deepEqual(milestoneAsks(entry), [])
+  assert.deepEqual(maturityReasons(entry), [{ kind: 'merged', done: 1, total: 2 }])
 })
 
 test('MAT-2 : Livré quand aucune carte n’est ouverte', () => {
@@ -450,8 +459,8 @@ test('MAT-7 : les raisons concrètes de chaque étape', () => {
     { kind: 'merged', done: 1, total: 2 },
     { kind: 'paused' },
     { kind: 'blocked', cards: [2] },
-    { kind: 'prOpen' },
   ])
+  assert.deepEqual(maturityReasons(only(launched)).at(-1), { kind: 'prOpen' }, 'le pilotage fini, la PR attend sa fusion')
   assert.deepEqual(maturityReasons(only(milestone(1, [card(2, { column: 'done' })]))), [{ kind: 'delivered', count: 1 }])
 })
 

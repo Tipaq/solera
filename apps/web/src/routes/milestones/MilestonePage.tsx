@@ -95,6 +95,8 @@ function MilestoneView({
             return document.getElementById(gesture.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
           case 'merge':
             return merge.mutate()
+          case 'link':
+            return window.open(gesture.url, '_blank', 'noreferrer')
           case 'sheet':
             return setParams((current) => withSheet(current, gesture.number))
         }

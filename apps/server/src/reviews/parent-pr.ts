@@ -273,6 +273,8 @@ function recordBranchPrMerged(ctx: AppContext, card: CardRow, pr: PullRequest, a
  */
 function recordBranchPrState(ctx: AppContext, card: CardRow, pr: PullRequest, at: number): void {
   const closed = pr.state === 'CLOSED'
+  // Relue chaque minute, une PR ouverte n'a rien à écrire la plupart du temps.
+  if (closed === (card.branchPrClosedAt !== null) && card.branchPrBase === pr.base) return
   const { changes } = ctx.db
     .update(cards)
     .set({ branchPrClosedAt: closed ? at : null, branchPrBase: pr.base })

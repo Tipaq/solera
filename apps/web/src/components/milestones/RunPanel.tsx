@@ -8,10 +8,9 @@ import { loadedStatus, type StatusOf } from '../../lib/card-state'
 import { useCreateCard } from '../../lib/cards'
 import { elapsed } from '../../lib/dates'
 import { useTranslate, type MessageKey, type MessageParams } from '../../lib/i18n'
-import type { MilestoneEntry } from '../../lib/milestone-model'
+import { prStage, type MilestoneEntry } from '../../lib/milestone-model'
 import {
   canConfine,
-  prStage,
   runConfined,
   runMergeLabel,
   runRowsOf,
@@ -44,8 +43,9 @@ export function RunPanel({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      {/* Les deux ne vont ensemble que si une carte entre au jalon après l'ouverture de sa PR. */}
-      {entry.pr ? <FinalPr entry={entry} merge={merge} /> : null}
+      {/* Une carte entrée au jalon après l'ouverture de sa PR relance le pilotage : la PR
+          attend qu'il ait fini (`prStage`). */}
+      {prStage(entry) ? <FinalPr entry={entry} merge={merge} /> : null}
       {entry.run ? <Run projectId={projectId} entry={entry} run={entry.run} statusOf={statusOf} /> : null}
     </div>
   )
@@ -60,9 +60,10 @@ function FinalPr({ entry, merge }: { entry: MilestoneEntry; merge: ReturnType<ty
   const branch = entry.card.branch ?? ''
   const closed = prStage(entry) === 'closed'
   const base = pr.base ?? t('milestone.run.defaultBase')
+  const title = t(closed ? 'milestone.run.prClosed' : 'milestone.run.prOpen')
   return (
     <aside
-      aria-label={t(closed ? 'milestone.run.prClosed' : 'milestone.run.prOpen')}
+      aria-label={title}
       className={cx(
         'flex flex-col gap-3 rounded-xl border p-4',
         closed ? 'border-caution/50 bg-caution/5' : 'border-positive/50 bg-positive/5',
@@ -75,7 +76,7 @@ function FinalPr({ entry, merge }: { entry: MilestoneEntry; merge: ReturnType<ty
           ) : (
             <GitPullRequest size={15} aria-hidden className="shrink-0 text-positive" />
           )}
-          {t(closed ? 'milestone.run.prClosed' : 'milestone.run.prOpen')}
+          {title}
         </h3>
         {/* Relire avant de fusionner (spec §2.6-4) : la PR sur la forge. */}
         <a
@@ -171,7 +172,8 @@ function Run({
       <SegmentedControl<MilestoneRunMode>
         label={t('milestone.run.modeAria')}
         value={run.mode}
-        onChange={(mode) => update.mutate({ mode })}
+        // Pas de disabled sur le segment du DS : un second clic pendant l'envoi est ignoré.
+        onChange={(mode) => (update.isPending ? undefined : update.mutate({ mode }))}
         className="self-start"
         segments={[
           { value: 'manual', label: t('milestone.run.manual') },
@@ -193,7 +195,7 @@ function Run({
         <label className="flex cursor-pointer items-start gap-2 text-xs text-ink-soft pointer-coarse:min-h-11 pointer-coarse:items-center">
           <input
             type="checkbox"
-            className="mt-px size-4 shrink-0 accent-[var(--color-accent)] pointer-coarse:mt-0"
+            className="mt-px size-4 shrink-0 accent-accent pointer-coarse:mt-0"
             checked={confined === true}
             disabled={confined === null || update.isPending}
             onChange={(event) => update.mutate({ confined: event.target.checked })}
@@ -203,7 +205,9 @@ function Run({
       ) : null}
 
       <ul aria-label={t('milestone.run.cards')} className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border border-line bg-canvas">
-        {rows.map((row) => (
+        {rows.map((row) => {
+          const reason = whyOf(row, t)
+          return (
           <li
             key={row.card.id}
             className={cx('flex min-w-0 items-center gap-2 px-2.5 py-1.5 text-sm', row.status === 'blocked' && 'bg-caution/10')}
@@ -212,7 +216,7 @@ function Run({
             <div className="flex min-w-0 flex-1 flex-col">
               <MilestoneCardLink projectId={projectId} card={row.card} statusOf={statusOf} />
               {/* Au doigt, pas d'infobulle : la raison s'écrit sous la carte. */}
-              {why(row, t) ? <span className="hidden text-xs text-ink-faint pointer-coarse:block">{why(row, t)}</span> : null}
+              {reason ? <span className="hidden text-xs text-ink-faint pointer-coarse:block">{reason}</span> : null}
             </div>
             <CardInfoButton card={row.card} />
             {row.launch ? (
@@ -228,10 +232,11 @@ function Run({
                 {t('milestone.launch.launchCard')}
               </Button>
             ) : (
-              <StatusLabel row={row} />
+              <StatusLabel row={row} reason={reason} />
             )}
           </li>
-        ))}
+          )
+        })}
       </ul>
 
       <form className="flex flex-col gap-1" onSubmit={add}>
@@ -301,7 +306,7 @@ function Places({ run, disabled, onChange }: { run: MilestoneRunDto; disabled: b
         <button
           type="button"
           disabled={disabled}
-          aria-label={`${t('milestone.run.places', { busy: run.busy, count: run.concurrency })} — ${t('milestone.run.placesAria')}`}
+          aria-label={t('milestone.run.placesAria', { busy: run.busy, count: run.concurrency })}
           className={cx(
             '-mx-1 inline-flex items-center gap-0.5 rounded px-1 tabular-nums hover:bg-surface-high hover:text-ink',
             'focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-45 pointer-coarse:min-h-11',
@@ -323,17 +328,18 @@ function Places({ run, disabled, onChange }: { run: MilestoneRunDto; disabled: b
   )
 }
 
+type Translate = ReturnType<typeof useTranslate>
+
 /** Pourquoi une carte t'attend, ou pourquoi son lancement a échoué. */
-function why(row: RunRow, t: (key: MessageKey, params?: MessageParams) => string): string | null {
+function whyOf(row: RunRow, t: Translate): string | null {
   if (row.status === 'blocked' && row.blockReason) return t(`milestone.block.${row.blockReason}`)
   return row.status === 'failed' ? row.error : null
 }
 
 /** Le statut d'une carte ; ce qui t'attend, et pourquoi, en infobulle (spec §2.9). */
-function StatusLabel({ row }: { row: RunRow }) {
+function StatusLabel({ row, reason }: { row: RunRow; reason: string | null }) {
   const t = useTranslate()
   const label = t(`milestone.run.status.${row.status}`)
-  const reason = why(row, t)
   const text = (
     <span
       tabIndex={reason ? 0 : undefined}
@@ -354,7 +360,7 @@ function StatusLabel({ row }: { row: RunRow }) {
  * place le temps de couper la phrase.
  */
 function withCode(
-  t: (key: MessageKey, params?: MessageParams) => string,
+  t: Translate,
   key: MessageKey,
   params: MessageParams,
   coded: readonly string[],

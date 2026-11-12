@@ -3122,7 +3122,7 @@ export const en = {
   'milestone.run.manual': 'By hand',
   'milestone.run.auto': 'Autonomous',
   'milestone.run.places': '{busy}/{count} slots in use',
-  'milestone.run.placesAria': 'Slots: how many sessions at once',
+  'milestone.run.placesAria': '{busy}/{count} slots in use: choose how many sessions at once',
   'milestone.run.manualLine': 'You launch the cards; the sessions move on their own',
   'milestone.run.branch': 'branch {branch}',
   'milestone.run.confined': 'Confined sessions, no permission prompts (for the next ones)',

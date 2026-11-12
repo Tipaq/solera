@@ -9,8 +9,8 @@ import type {
   ProjectEnvironmentsDto,
 } from '@solera/protocol'
 
-const { horizonOf } = await import('../../web/src/lib/milestone-model.js')
-const { canConfine, prStage, runConfined, runMergeLabel, runRowsOf, runTitle } = await import('../../web/src/lib/milestone-run.js')
+const { horizonOf, prStage } = await import('../../web/src/lib/milestone-model.js')
+const { canConfine, runConfined, runMergeLabel, runRowsOf, runTitle } = await import('../../web/src/lib/milestone-run.js')
 
 /*
  * Le suivi d'un jalon lancé (#198, spec jalons RUN-1..12) : ce que dit chaque ligne, quand
@@ -236,6 +236,11 @@ test('RUN-9 : la PR finale, ouverte ou fermée sans fusion ; rien sans PR', () =
   assert.equal(prStage(only(milestone(1, done, { branch: 'jalon/1', branchPr: pr }))), 'open')
   assert.equal(prStage(only(milestone(1, done, { branch: 'jalon/1', branchPr: { ...pr, closedAt: NOW } }))), 'closed')
   assert.equal(prStage(only(milestone(1, [card(2)]), [run('c-1')])), null)
+  assert.equal(
+    prStage(only(milestone(1, [...done, card(3)], { branch: 'jalon/1', branchPr: pr }), [run('c-1')])),
+    null,
+    'une carte ajoutée tourne encore : la PR attend la fin du pilotage',
+  )
 })
 
 test('RUN-12 : « Fusionner dans {base} », la base relevée sur la forge, sinon la branche par défaut', () => {

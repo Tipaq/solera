@@ -100,12 +100,6 @@ export function canConfine(environments: ProjectEnvironmentsDto): boolean {
   return launchEnvironments(environments).some((choice) => choice.confined)
 }
 
-/** La PR finale du jalon (RUN-9) : à fusionner, fermée sans fusion, ou pas encore là. */
-export function prStage(entry: Pick<MilestoneEntry, 'pr'>): 'open' | 'closed' | null {
-  if (!entry.pr) return null
-  return entry.pr.closedAt === null ? 'open' : 'closed'
-}
-
 type Translate = (key: MessageKey, params?: MessageParams) => string
 
 /** « Fusionner dans {base} » (RUN-12) ; la branche par défaut tant que la base n'est pas relevée. */
