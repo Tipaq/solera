@@ -1,4 +1,5 @@
 import type { CardConversationDto, CardDto, CardNoteDto, ConversationStatus } from '@solera/protocol'
+import type { StatusOf } from './card-state'
 
 /*
  * La fiche d'une carte **sur place** (#199, spec jalons FCH) : ce que les vues hors du
@@ -31,7 +32,7 @@ export function sheetSessions(card: Pick<CardDto, 'conversations'>): CardConvers
 }
 
 /** L'état d'une session : celui du socket quand on l'a, celui du chargement sinon. */
-export type StatusOf = (session: CardConversationDto) => ConversationStatus
+export type { StatusOf }
 
 /** La session qui attend une réponse, à laquelle la fiche répond sur place. */
 export function waitingSession(sessions: CardConversationDto[], statusOf: StatusOf): CardConversationDto | undefined {
