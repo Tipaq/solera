@@ -2949,6 +2949,7 @@ export const fr: Catalog = {
   'milestone.addition.into.one': 'Ranger dans #{number}, en sous-tâche',
   'milestone.addition.into.other': 'Ranger dans #{number}, en sous-tâches',
   'milestone.addition.present': 'déjà dans la carte',
+  'milestone.addition.quote': '« {label} »',
   'milestone.addition.nothingNew': 'La carte les porte déjà : rien à ajouter.',
   'milestone.addition.cards.one': '{count} nouvelle carte dans le jalon',
   'milestone.addition.cards.other': '{count} nouvelles cartes dans le jalon',

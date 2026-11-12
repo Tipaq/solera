@@ -38,7 +38,8 @@ export function AdditionProposal({
             </span>
             {target.subtasks.map((subtask) => (
               <span key={subtask.label} className="text-ink-soft">
-                « {subtask.label} »{subtask.present ? <span className="text-xs text-ink-faint"> · {t('milestone.addition.present')}</span> : null}
+                {t('milestone.addition.quote', { label: subtask.label })}
+                {subtask.present ? <span className="text-xs text-ink-faint"> · {t('milestone.addition.present')}</span> : null}
               </span>
             ))}
           </div>

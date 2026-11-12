@@ -4,9 +4,9 @@ import { IconButton } from '@solera/ui'
 import { useTranslate } from '../../lib/i18n'
 
 /*
- * Le cadre des tiroirs d'écriture (« Nouveau jalon », « Ajouter au jalon ») : un en-tête
- * qui dit la nature en petit et le titre en grand, et un pied collant — ce qui va se
- * passer à gauche, les gestes à droite.
+ * Le cadre des tiroirs d'écriture (« Ajouter au jalon », et « Nouveau jalon » à venir,
+ * #193) : un en-tête qui dit la nature en petit et le titre en grand, et un pied
+ * collant — ce qui va se passer à gauche, les gestes à droite.
  */
 
 /** L'en-tête : la nature en petit, le titre (passé en enfant) en grand, ✕ à droite. */

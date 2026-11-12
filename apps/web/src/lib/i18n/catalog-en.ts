@@ -2953,6 +2953,7 @@ export const en = {
   'milestone.addition.into.one': 'File into #{number}, as a subtask',
   'milestone.addition.into.other': 'File into #{number}, as subtasks',
   'milestone.addition.present': 'already on the card',
+  'milestone.addition.quote': '“{label}”',
   'milestone.addition.nothingNew': 'The card already has them: nothing to add.',
   'milestone.addition.cards.one': '{count} new card in the milestone',
   'milestone.addition.cards.other': '{count} new cards in the milestone',

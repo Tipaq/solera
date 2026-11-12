@@ -1,7 +1,7 @@
 import { CircleAlert } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { CardDto } from '@solera/protocol'
-import { Button } from '@solera/ui'
+import { Button, Field } from '@solera/ui'
 import { pluralOf } from '../../lib/code-model'
 import { elapsed } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
@@ -163,23 +163,21 @@ function Answerable({
             if (text.trim() && !busy) onSubmit(text.trim())
           }}
         >
-          <input
-            value={text}
-            aria-label={`${placeholder} · ${title}`}
-            placeholder={placeholder}
-            onChange={(event) => setText(event.target.value)}
-            className="min-w-0 flex-1 rounded-lg border border-line bg-canvas px-2.5 py-1.5 text-sm text-ink outline-none placeholder:text-ink-faint focus:border-accent"
-          />
-          <Button size="sm" variant="secondary" type="submit" disabled={!text.trim() || busy}>
+          <div className="min-w-0 flex-1">
+            <Field
+              value={text}
+              label={`${placeholder} · ${title}`}
+              hideLabel
+              placeholder={placeholder}
+              error={error ?? undefined}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </div>
+          <Button size="sm" variant="secondary" type="submit" className="self-start" disabled={!text.trim() || busy}>
             {cta}
           </Button>
         </form>
       )}
-      {error ? (
-        <p role="alert" className="pl-6 text-xs text-critical">
-          {error}
-        </p>
-      ) : null}
     </li>
   )
 }

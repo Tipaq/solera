@@ -150,14 +150,15 @@ export function useAddToMilestone(projectId: string, milestone: Pick<CardDto, 'i
   return useMutation({
     mutationFn: async ({ text, links, files }: { text: string; links: string[]; files: File[] }): Promise<{ open: string | null }> => {
       const session = milestone.refinement
+      // Un à un : plusieurs vidéos ne saturent pas la mémoire du serveur.
+      const ids: string[] = []
+      for (const file of files) {
+        ids.push((await uploadAttachment(file, session ? undefined : `/api/cards/${milestone.id}/attachments`)).id)
+      }
       if (session) {
-        const ids: string[] = []
-        for (const file of files) ids.push((await uploadAttachment(file)).id)
         await sendMessage(session.conversationId, additionPrompt({ number: milestone.number, text, links, session: true }), ids)
         return { open: null }
       }
-      // Un à un : plusieurs vidéos ne saturent pas la mémoire du serveur.
-      for (const file of files) await uploadAttachment(file, `/api/cards/${milestone.id}/attachments`)
       const prompt = additionPrompt({ number: milestone.number, text, links, files: files.map((file) => file.name), session: false })
       return { open: additionHref(projectId, milestone.id, prompt) }
     },
