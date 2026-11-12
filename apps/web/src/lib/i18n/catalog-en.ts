@@ -4536,6 +4536,7 @@ export const en = {
   'place.projects.title': "Projects",
   // The portfolio: the Projects page and its cross-project views, settled 2026-10-15.
   'portfolio.views': "Portfolio views",
+  'portfolio.toolbar.project': "Project",
   'portfolio.action.newProject': "Project",
   'portfolio.action.newProjectLabel': "New project",
   'portfolio.overview.projects': "Projects",

@@ -4530,6 +4530,7 @@ export const fr: Catalog = {
   'place.projects.title': "Projets",
   // Le portefeuille : la page Projets et ses vues transversales, arrêtées le 2026-10-15.
   'portfolio.views': "Vues du portefeuille",
+  'portfolio.toolbar.project': "Projet",
   'portfolio.action.newProject': "Projet",
   'portfolio.action.newProjectLabel': "Nouveau projet",
   'portfolio.overview.projects': "Projets",
