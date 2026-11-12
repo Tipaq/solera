@@ -25,7 +25,7 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
   const { data: conversations } = useAllConversations()
   const asks = useMemo(() => entries.flatMap(milestoneAsks), [entries])
   const draftIds = useMemo(() => asks.flatMap((ask) => (ask.kind === 'draft' ? [ask.milestone.id] : [])), [asks])
-  const details = useRefinementDrafts(draftIds)
+  const proposals = useRefinementDrafts(draftIds)
 
   // Une demande du CLI se répond en une fois : les réponses se gardent jusqu'à la dernière.
   const [answers, setAnswers] = useState<Record<string, Record<string, string[]>>>({})
@@ -41,9 +41,9 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
     const owners = new Set((conversations ?? []).flatMap((entry) => (entry.isOwner ? [entry.id] : [])))
     const drafts = new Map<string, CardDraft>()
     for (const ask of asks) {
-      const detail = ask.kind === 'draft' ? details.get(ask.milestone.id) : null
+      const proposal = ask.kind === 'draft' ? proposals.get(ask.milestone.id) : null
       // Le brouillon lu doit être celui de la demande : un redépôt le remplace.
-      if (ask.kind === 'draft' && detail?.requestId === ask.requestId) drafts.set(ask.milestone.id, detail.draft)
+      if (ask.kind === 'draft' && proposal?.requestId === ask.requestId) drafts.set(ask.milestone.id, proposal.draft)
     }
     return milestoneInbox({
       projectId,
@@ -76,5 +76,5 @@ export function useMilestoneInbox(projectId: string | undefined): InboxExtra {
     })
     // Les `mutate` de React Query sont stables : seul l'état de la fusion compte.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, asks, conversations, details, answers, t, mergeError?.cardId, mergeError?.message])
+  }, [projectId, asks, conversations, proposals, answers, t, mergeError?.cardId, mergeError?.message])
 }

@@ -67,10 +67,10 @@ export function milestoneInbox(input: MilestoneInboxInput): InboxExtra {
       }
       case 'draft': {
         if (!input.owns(ask.conversationId)) break
-        replaces.push(sessionItemKey(ask.conversationId))
         const draft = input.drafts.get(ask.milestone.id)
-        // Pas encore lu, il ferait une ligne vide : elle paraît avec ses cartes.
+        // Pas encore lu, il ferait une ligne vide : la session garde la sienne jusque-là.
         if (!draft || asking.has(ask.milestone.id)) break
+        replaces.push(sessionItemKey(ask.conversationId))
         items.push({
           kind: 'draft',
           key: ask.key,

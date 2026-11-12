@@ -109,10 +109,10 @@ test('INB-9 : le découpage proposé, ses cartes lues au brouillon ; « Valider 
   assert.deepEqual(calls, [['validate', ask, proposal]])
 })
 
-test('INB-9 : le brouillon pas encore lu ne fait pas de ligne vide ; la session reste cachée', () => {
+test('INB-9 : le brouillon pas encore lu ne fait pas de ligne vide ; la session garde la sienne d’ici là', () => {
   const { items, replaces } = build([draft()])
   assert.deepEqual(items, [])
-  assert.deepEqual(replaces, ['s-split-1'])
+  assert.deepEqual(replaces, [], 'la demande ne disparaît pas de la liste le temps de la lecture')
 })
 
 test('INB-9 : un brouillon ne se valide pas tant que ses questions sont ouvertes (AFF-6)', () => {
