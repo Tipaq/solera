@@ -1,10 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { CardDto, CardLinkDto, MilestoneRunDto } from '@solera/protocol'
-import { horizonOf, MATURITIES, type MilestoneEntry } from '../../lib/milestone-model'
+import { useTranslate } from '../../lib/i18n'
+import { horizonOf, MATURITIES, nextAction, nextActionText, type MilestoneEntry } from '../../lib/milestone-model'
 import { fixtureCard } from '../board/card-fixtures'
 import { MaturityPill } from './MaturityPill'
+import { ExplainedSteps, MaturitySteps } from './MaturitySteps'
 import { MaturityTag } from './MaturityTag'
-import { MaturitySteps } from './MaturitySteps'
 
 const link = ({ id, number, title, column }: CardDto): CardLinkDto => ({ id, number, title, column })
 
@@ -52,7 +53,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Où en est un jalon entre l'idée et la livraison (#188, spec jalons MAT-1, MAT-8, MAT-9) : **Idée → À affiner → À régler → Prêt → Lancé → Livré**. Rien ne la stocke : `horizonOf` (`lib/milestone-model`) la déduit des cartes, du pilotage, de la PR du jalon et de la session d'affinage.\n\n`MaturityPill` dit l'étape ; avec son jalon, l'infobulle en donne la raison principale. `MaturitySteps` montre le chemin parcouru en six traits.",
+          "Où en est un jalon entre l'idée et la livraison (#188, spec jalons MAT-1, MAT-8, MAT-9) : **Idée → À affiner → À régler → Prêt → Lancé → Livré**. Rien ne la stocke : `horizonOf` (`lib/milestone-model`) la déduit des cartes, du pilotage, de la PR du jalon et de la session d'affinage.\n\n`MaturityPill` dit l'étape ; avec son jalon, l'infobulle en donne la raison principale. `MaturitySteps` montre le chemin parcouru en six traits ; `ExplainedSteps`, sur la page d'un jalon, ouvre chaque étape sur sa fiche : pourquoi il est ici et comment passer à la suivante, ou quand il y était, quand il y sera.",
       },
     },
   },
@@ -104,6 +105,27 @@ export const Traits: Story = {
       ))}
     </div>
   ),
+}
+
+function Explained() {
+  const t = useTranslate()
+  return (
+    <ul className="flex max-w-2xl flex-col gap-6">
+      {entries().map((entry) => (
+        <li key={entry.card.id} className="flex flex-col gap-2">
+          <span className="text-sm text-ink">
+            #{entry.card.number} {entry.card.title}
+          </span>
+          <ExplainedSteps entry={entry} action={nextActionText(nextAction(entry), t)} onAct={() => undefined} />
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Les étapes expliquées de la page d'un jalon : cliquer une étape ouvre sa fiche. */
+export const Expliquees: Story = {
+  render: () => <Explained />,
 }
 
 /** L'étape en texte, précédée de son point : là où une pastille serait trop lourde (le phare de l'Aperçu). */

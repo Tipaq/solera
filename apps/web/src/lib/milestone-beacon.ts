@@ -1,6 +1,6 @@
 import { DEFAULT_MILESTONE_CONCURRENCY, type AgentKind, type CardDto } from '@solera/protocol'
 import { cardState, isOpen, liveSessions, loadedStatus, type CardState, type StatusOf } from './card-state'
-import type { Maturity, MilestoneEntry } from './milestone-model'
+import { wavesOf, type Maturity, type MilestoneEntry } from './milestone-model'
 
 /*
  * Le phare des jalons de l'Aperçu (#174, `projet.md` A-3) : le jalon courant en grand,
@@ -115,39 +115,4 @@ export function beaconSessions(
     }
   }
   return sessions
-}
-
-/* ------------------------------------------------------------------ provisoire */
-
-/*
- * Copie de `layersOf` / `wavesOf` de la page d'un jalon (#194), en cours dans sa propre
- * branche : à remplacer par leur import de `milestone-model` dès qu'elle est dans main.
- */
-
-function layersOf<T extends Pick<CardDto, 'id' | 'blockedBy'>>(cards: readonly T[]): Map<string, number> {
-  const byId = new Map(cards.map((card) => [card.id, card]))
-  const layers = new Map<string, number>()
-  const visiting = new Set<string>()
-  const visit = (card: T): number => {
-    const known = layers.get(card.id)
-    if (known !== undefined) return known
-    if (visiting.has(card.id)) return 0
-    visiting.add(card.id)
-    const blockers = card.blockedBy.flatMap((blocker) => byId.get(blocker.id) ?? [])
-    const layer = blockers.length === 0 ? 0 : 1 + Math.max(...blockers.map(visit))
-    visiting.delete(card.id)
-    layers.set(card.id, layer)
-    return layer
-  }
-  for (const card of cards) visit(card)
-  const rank = new Map([...new Set(layers.values())].sort((a, b) => a - b).map((layer, index) => [layer, index]))
-  return new Map([...layers].map(([id, layer]) => [id, rank.get(layer)!]))
-}
-
-function wavesOf(cards: readonly CardDto[]): CardDto[][] {
-  const shown = cards.filter((card) => card.column !== 'abandoned')
-  const layers = layersOf(shown)
-  const waves: CardDto[][] = []
-  for (const card of shown) (waves[layers.get(card.id)!] ??= []).push(card)
-  return waves.map((wave) => wave.sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)) || a.number - b.number))
 }
