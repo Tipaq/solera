@@ -361,22 +361,16 @@ try {
   await page.unroute('**/api/actions')
 
   /*
-    La chronologie : les jalons en lignes, les cartes en barres. Ce qu'une relecture ne
-    verrait pas et que la suite tient — le **pied de vue compte ce qui n'a ni jalon ni
-    date**, sans quoi la vue mentirait par omission, et une carte-jalon n'est pas sa
-    propre barre.
+    Les Jalons (#190) : le jalon du jeu d'essai est sur l'horizon, rangé à son étape, et
+    son nom mène à sa page. Le détail se vérifie dans `milestones-ui-check.mjs`.
   */
   await row.getByRole('link', { name: /^Jalons/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  const unplaced = cards.filter(
-    (entry) => entry.parent === null && entry.dueAt === null
-      && entry.column !== 'done' && entry.column !== 'abandoned',
-  )
-  if (unplaced.length > 0) {
-    await page.getByText(new RegExp(`${unplaced.length} cartes sans jalon ni date`)).waitFor()
-  }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'chronologie-projet.png') })
+  const milestoneLink = page.getByRole('link', { name: new RegExp(milestone.title) }).first()
+  await milestoneLink.waitFor()
+  assert.equal(await milestoneLink.getAttribute('href'), `/p/${nimbus.id}/timeline/${milestone.number}`)
+  await page.getByRole('list', { name: 'Jalons par étape', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'jalons-projet.png') })
 
   const schedules = await (await context.request.get(`${base}/api/schedules`)).json()
 
