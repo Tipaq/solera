@@ -33,7 +33,7 @@ const BATCHES = [
   ],
   [
     'milestones', // 108
-    'sessions', // ~90, estimée : 185 en local, où places en prend 114
+    'sessions', // ~90 estimées (185 en local)
     'claude-login', // 35
     'claude-accounts', // 26
     'windows-feedback', // 21

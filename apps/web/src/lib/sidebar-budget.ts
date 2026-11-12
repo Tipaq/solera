@@ -95,7 +95,10 @@ export interface FitMemory {
   fullActivity: number
   /** La hauteur de colonne où l'Activité vient de se redéplier. */
   reopenedAt: number | null
-  /** La hauteur de colonne où, redépliée, elle a dû se replier aussitôt. */
+  /**
+   * La hauteur de colonne où, redépliée, elle a dû se replier aussitôt. Oubliée dès que
+   * la colonne mesure autrement : une autre hauteur, d'autres sessions.
+   */
   stuckAt: number | null
 }
 
@@ -121,20 +124,24 @@ export interface FitReading extends FitMeasure {
  *
  * Les bornes valent pour une colonne donnée. Un budget déjà essayé qui ne donne plus le
  * même débord, ou un budget hors des bornes, dit qu'elle a changé (redimensionnée, des
- * sessions en plus) : la recherche repart de cette mesure seule.
+ * sessions en plus) : la recherche repart de cette mesure seule, et `changed` le dit.
  */
-function fitSearch(memory: FitMemory, measure: FitMeasure): Pick<FitMemory, 'fits' | 'overflows'> & { budget: number } {
+function fitSearch(
+  memory: FitMemory,
+  measure: FitMeasure,
+): Pick<FitMemory, 'fits' | 'overflows'> & { budget: number; changed: boolean } {
   const { budget, overflow } = measure
-  if (measure.lists === 0 || measure.rowHeight <= 0) return { budget, fits: null, overflows: null }
+  if (measure.lists === 0 || measure.rowHeight <= 0) return { budget, fits: null, overflows: null, changed: false }
   const { fits, overflows } = memory
   const known = [fits, overflows].find((probe) => probe?.budget === budget)
   const inside = (!fits || budget >= fits.budget) && (!overflows || budget <= overflows.budget)
-  const fresh = inside && (!known || known.overflow === overflow) ? { fits, overflows } : { fits: null, overflows: null }
+  const changed = !inside || (!!known && known.overflow !== overflow)
+  const kept = changed ? { fits: null, overflows: null } : { fits, overflows }
   const probe = { budget, overflow }
-  const bounds = overflow > 0 ? { ...fresh, overflows: probe } : { ...fresh, fits: probe }
+  const bounds = overflow > 0 ? { ...kept, overflows: probe } : { ...kept, fits: probe }
   const low = bounds.fits?.budget ?? 0
   const high = bounds.overflows ? bounds.overflows.budget - 1 : Infinity
-  return { ...bounds, budget: Math.max(0, Math.min(Math.max(fitStep(measure), low), high)) }
+  return { ...bounds, changed, budget: Math.max(0, Math.min(Math.max(fitStep(measure), low), high)) }
 }
 
 /**
@@ -146,11 +153,11 @@ function fitSearch(memory: FitMemory, measure: FitMeasure): Pick<FitMemory, 'fit
  * colonne : la recherche du budget repart de zéro. Et si, redépliée, elle doit se
  * replier aussitôt — `activityFold` estime en crans ce que coûte la place rendue, et des
  * sessions qui attendent n'en libèrent aucune —, elle reste repliée tant que la colonne
- * garde cette hauteur.
+ * mesure pareil.
  */
 export function fitNext(memory: FitMemory, reading: FitReading): { budget: number; collapsed: boolean; memory: FitMemory } {
-  const { budget, fits, overflows } = fitSearch(memory, reading)
-  const searched = { ...memory, fits, overflows }
+  const { budget, fits, overflows, changed } = fitSearch(memory, reading)
+  const searched = { ...memory, fits, overflows, stuckAt: changed ? null : memory.stuckAt }
   if (budget !== reading.budget || reading.activity === null) {
     return { budget, collapsed: reading.collapsed, memory: searched }
   }
@@ -158,7 +165,7 @@ export function fitNext(memory: FitMemory, reading: FitReading): { budget: numbe
   const fullActivity = reading.collapsed ? memory.fullActivity : reading.activity
   const gain = reading.collapsed ? fullActivity - reading.activity : 0
   let collapsed = activityFold({ ...reading, gain })
-  let { reopenedAt, stuckAt } = memory
+  let { reopenedAt, stuckAt } = searched
   if (reading.collapsed && !collapsed) {
     if (stuckAt === reading.column) collapsed = true
     else reopenedAt = reading.column

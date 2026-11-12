@@ -229,6 +229,20 @@ test('fitNext : l’Activité redépliée qui doit se replier aussitôt reste re
   assert.equal(taller.collapsed, false)
 })
 
+test('fitNext : l’Activité coincée réessaie quand les sessions changent, à hauteur égale', () => {
+  const stuck = settleColumn(threadsColumn({ height: 480, buckets: Array(20).fill(1), kept: 8 }))
+  assert.equal(stuck.collapsed, true)
+  assert.equal(stuck.memory.stuckAt, 480)
+  // Les huit ont eu leur réponse : sessions ordinaires de la même tranche, elles se
+  // coupent, et la colonne perd un en-tête au budget où elle s'était arrêtée.
+  const answered = threadsColumn({ height: 480, buckets: Array(28).fill(1) })
+  const settled = settleColumn(answered, stuck)
+  assert.ok(settled.passes < Infinity)
+  assert.equal(settled.collapsed, false)
+  assert.equal(settled.budget, 7)
+  assert.ok(answered(settled.budget, false).overflow <= 0)
+})
+
 test('fitNext : converge à toute hauteur, sur le plus grand budget qui tient', () => {
   const shapes = [
     yesterdayOpens.buckets,

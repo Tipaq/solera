@@ -20,9 +20,8 @@ export function useSessionBudget(): number {
  *
  * La colonne dit ce qui déborde (ou ce qui reste) et `fitNext` en tire le budget suivant,
  * borné par ceux déjà essayés ; chaque rendu remesure, quelques passes suffisent et la
- * recherche finit toujours (#262). Un `ResizeObserver` sur la colonne
- * et sur son contenu relance la mesure à chaque redimensionnement ou changement de
- * contenu. Les lignes comptées sont celles des listes marquées `data-session-list`, et
+ * recherche finit toujours (#262). Un `ResizeObserver` sur la colonne et sur son contenu
+ * relance la mesure à chaque redimensionnement ou changement de contenu. Les lignes comptées sont celles des listes marquées `data-session-list`, et
  * leur hauteur se lit sur la première (36 px, 44 au doigt). L'Activité se reconnaît à
  * `data-sidebar-activity`.
  */
