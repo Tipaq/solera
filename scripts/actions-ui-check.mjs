@@ -180,7 +180,8 @@ async function checkPieces(base) {
  * serveur, sous son champ.
  */
 async function checkEditor(page, base, project, conversation, api, context) {
-  const editor = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  // Dans le panneau d'une conversation, l'éditeur s'ouvre en pile, à la place de la liste.
+  const editor = page.locator('[data-action-stack]')
   const open = async () => {
     await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
     await editor.getByRole('heading', { name: 'Nouvelle action' }).waitFor()
@@ -284,6 +285,197 @@ async function checkEditor(page, base, project, conversation, api, context) {
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click()
   await editor.waitFor({ state: 'hidden' })
   void context
+}
+
+/**
+ * Le tiroir unifié d'une action (`ActionDrawer`), monté seul sur les fixtures de ses
+ * stories : dans le tiroir commun et en pile dans le panneau. La relecture montre ce qui
+ * a changé ; « Modifier » bascule le même tiroir et Annuler y revient ; en pile, Échap
+ * remonte d'un niveau ; Supprimer se confirme sur place, et Échap annule la confirmation.
+ */
+async function checkDrawer(base) {
+  const modules = {
+    query: await viteDependency(base, '@tanstack/react-query', '/src/lib/conversation-config.ts'),
+    router: await viteDependency(base, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(base, '@solera/ui', '/src/components/ImageThumbnail.tsx'),
+  }
+  for (const width of [1280, 390]) {
+    const touch = width < 700
+    const context = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, locale: 'fr-FR', serviceWorkers: 'block' })
+    const errors = []
+    const mount = async (story) => {
+      const page = await context.newPage()
+      page.setDefaultTimeout(10000)
+      page.on('pageerror', (error) => errors.push(error.message))
+      await page.route(`${base}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body class="bg-canvas"><div id="check"></div></body></html>' }))
+      await page.route(`${base}/api/**`, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }))
+      await page.goto(base)
+      await page.evaluate(async ({ modules, story }) => {
+        const refresh = (await import('/@react-refresh')).default
+        refresh.injectIntoGlobalHook(window)
+        window.$RefreshReg$ = () => {}
+        window.$RefreshSig$ = () => (type) => type
+        window.__vite_plugin_react_preamble_installed__ = true
+        localStorage.setItem('solera.locale', 'fr')
+        await (await import('/src/lib/i18n/index.ts')).initLocale()
+        document.documentElement.dataset.theme = 'dark'
+        await import('/src/styles/index.css')
+        const React = (await import('/node_modules/.vite/deps/react.js')).default
+        const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+        const { QueryClient, QueryClientProvider } = await import(modules.query)
+        const { MemoryRouter } = await import(modules.router)
+        const { TooltipProvider } = await import(modules.ui)
+        const stories = await import('/src/components/automations/ActionDrawer.stories.tsx')
+        const h = React.createElement
+        const args = { ...stories.default.args, ...(stories[story].args ?? {}) }
+        const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        createRoot(document.getElementById('check')).render(
+          h(QueryClientProvider, { client }, h(MemoryRouter, null, h(TooltipProvider, null, h(stories.default.component, args)))),
+        )
+      }, { modules, story })
+      return page
+    }
+
+    // Dans le tiroir commun : l'état, la frise, l'extrait du dernier échec déplié d'office.
+    let page = await mount('Planifiee')
+    let drawer = page.getByRole('dialog', { name: 'Tests de bout en bout', exact: true })
+    await drawer.getByText('Dernier passage échoué il y a 21 h (code 1).').waitFor()
+    await drawer.getByRole('img', { name: 'Les 16 derniers passages' }).waitFor()
+    await drawer.getByLabel('Sortie du passage').getByText('1 failed', { exact: false }).waitFor()
+    await drawer.getByText('Prochain passage :', { exact: false }).waitFor()
+    assert.equal(await drawer.getByText(/^puis /).count(), 2)
+    await page.screenshot({ path: join(shots, `drawer-detail-${width}.png`) })
+    // « Modifier » bascule le même tiroir, Annuler revient au détail.
+    await drawer.getByRole('button', { name: 'Modifier', exact: true }).click()
+    const editing = page.getByRole('dialog', { name: 'Modifier « Tests de bout en bout »', exact: true })
+    assert.equal(await editing.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Tests de bout en bout')
+    await editing.getByRole('button', { name: 'Annuler', exact: true }).click()
+    await drawer.getByText('Dernier passage échoué', { exact: false }).waitFor()
+    // Dupliquer : une nouvelle action, « (copie) ».
+    await drawer.getByRole('button', { name: 'Dupliquer', exact: true }).click()
+    const copy = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
+    assert.equal(await copy.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Tests de bout en bout (copie)')
+    await copy.getByRole('button', { name: 'Annuler', exact: true }).click()
+    // Supprimer se confirme sur place ; Échap annule la confirmation, pas le tiroir.
+    await drawer.getByRole('button', { name: 'Supprimer', exact: true }).click()
+    await drawer.getByText('Supprimer « Tests de bout en bout » ?').waitFor()
+    await page.keyboard.press('Escape')
+    await drawer.getByRole('button', { name: 'Dupliquer', exact: true }).waitFor()
+    assert.equal(await drawer.getByText('Supprimer « Tests de bout en bout » ?').count(), 0)
+    await drawer.getByRole('button', { name: 'Fermer', exact: true }).click()
+    await drawer.waitFor({ state: 'detached' })
+    await page.close()
+
+    // La relecture d'une commande modifiée : ce qui a changé, champ par champ.
+    page = await mount('Relecture')
+    drawer = page.getByRole('dialog', { name: 'Déployer la préprod', exact: true })
+    const review = drawer.getByRole('region', { name: 'Relecture' })
+    const changes = review.getByRole('group', { name: 'Ce qui a changé depuis la dernière validation' })
+    await changes.locator('del').first().waitFor()
+    assert.deepEqual(await changes.locator('del').allTextContents(), ['- pnpm build && ./scripts/deploy.sh --env staging', '- dossier : (aucun)'])
+    assert.deepEqual(await changes.locator('ins').allTextContents(), ['+ pnpm build && ./scripts/deploy.sh --env staging --force', '+ dossier : apps/web'])
+    await review.getByRole('button', { name: 'Valider', exact: true }).waitFor()
+    await review.getByRole('button', { name: 'Refuser', exact: true }).waitFor()
+    await review.screenshot({ path: join(shots, `drawer-review-${width}.png`) })
+    await page.close()
+
+    // « Planifier une action existante » : ni le déjà planifié, ni ce qui attend une relecture.
+    page = await mount('Choisir')
+    drawer = page.getByRole('dialog', { name: 'Planifier une action existante', exact: true })
+    await drawer.getByText('Pas encore planifiées · 3').waitFor()
+    await drawer.getByRole('button', { name: 'Planifier « Sauvegarde »', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Modifier « Sauvegarde »', exact: true }).getByRole('checkbox', { name: /^Planifiée/ }).waitFor()
+    await page.close()
+
+    // En pile dans le panneau : « ‹ Actions » au lieu du ✕, Échap remonte d'un niveau.
+    page = await mount('Panneau')
+    const stack = page.locator('[data-action-stack]')
+    await stack.getByText('Dernier passage échoué', { exact: false }).waitFor()
+    assert.equal(await stack.getByRole('button', { name: 'Fermer', exact: true }).count(), 0)
+    await stack.getByRole('button', { name: 'Actions', exact: true }).waitFor()
+    await page.screenshot({ path: join(shots, `drawer-panel-${width}.png`) })
+    await stack.getByRole('button', { name: 'Modifier', exact: true }).click()
+    await stack.getByRole('textbox', { name: 'Libellé', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await stack.getByText('Dernier passage échoué', { exact: false }).waitFor()
+    await page.keyboard.press('Escape')
+    await stack.waitFor({ state: 'detached' })
+    await page.close()
+
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+}
+
+/**
+ * Le détail d'une action, ouvert en pile dans le panneau, sur la vraie API : ses passages
+ * (code, extrait de la sortie), la pause d'une commande planifiée enregistrée et lue tout
+ * de suite, Dupliquer, Échap qui remonte d'un niveau, et Supprimer confirmé sur place.
+ */
+async function checkDetail(page, base, project, api, context) {
+  const actionsTab = page.locator('button[aria-pressed][aria-label^="Actions"]')
+  const stack = page.locator('[data-action-stack]')
+  const list = page.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first()
+  await actionsTab.click()
+
+  // Les passages de « Dire bonjour » : le code, et la fin de sa sortie dépliée d'office.
+  await list.getByRole('button', { name: 'Dire bonjour', exact: true }).click()
+  await stack.getByText(/^Dernier passage échoué il y a .* \(code 2\)\.$/).waitFor()
+  await stack.locator('[data-run]').first().getByText('code 2').waitFor()
+  await stack.getByLabel('Sortie du passage').getByText('hello-from-action', { exact: false }).waitFor({ timeout: 15000 })
+  // Un agent l'a modifiée depuis (la relecture refusée plus haut) : l'origine le dit.
+  await stack.getByText('Proposée par un agent dans', { exact: false }).waitFor()
+  // Depuis une conversation, « Lancer » part droit dans son arbre : pas de chevron.
+  await stack.getByRole('button', { name: 'Lancer « Dire bonjour »', exact: true }).first().waitFor()
+  assert.equal(await stack.getByRole('button', { name: 'Lancer « Dire bonjour » dans…', exact: true }).count(), 0)
+  await page.screenshot({ path: join(shots, 'detail-runs-1280.png') })
+  await page.keyboard.press('Escape')
+  await stack.waitFor({ state: 'detached' })
+
+  // Une commande planifiée : la pause s'enregistre, et se lit tout de suite.
+  const created = await context.request.post(`${base}/api/projects/${project.id}/actions`, {
+    data: { label: 'Nettoyer', kind: 'task', command: 'echo nettoyage', schedule: { cadence: { kind: 'cron', expression: '0 3 * * *' }, maxDurationMinutes: 10 } },
+  })
+  assert.equal(created.status(), 201, await created.text())
+  const nightly = await created.json()
+  const scheduleOf = async () => (await api('/api/actions')).find((entry) => entry.id === nightly.id)?.schedule
+  const until = async (check) => {
+    for (let i = 0; i < 50 && !(await check()); i++) await delay(100)
+    assert.ok(await check())
+  }
+  // La liste se relit toutes les dix secondes.
+  await list.getByRole('button', { name: 'Nettoyer', exact: true }).click({ timeout: 15000 })
+  await stack.getByText('Prochain passage :', { exact: false }).waitFor()
+  await stack.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
+  await stack.getByText(/\(en pause\)$/).first().waitFor()
+  await stack.getByText('— en pause', { exact: false }).waitFor()
+  assert.equal(await stack.getByText('Prochain passage :', { exact: false }).count(), 0)
+  await until(async () => (await scheduleOf())?.enabled === false)
+  await page.screenshot({ path: join(shots, 'detail-paused-1280.png') })
+  await stack.getByRole('button', { name: 'Reprendre', exact: true }).click()
+  await stack.getByText('Prochain passage :', { exact: false }).waitFor()
+  await until(async () => (await scheduleOf())?.enabled === true)
+
+  // Dupliquer ouvre l'éditeur sur une copie ; Annuler revient au détail.
+  await stack.getByRole('button', { name: 'Dupliquer', exact: true }).click()
+  assert.equal(await stack.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Nettoyer (copie)')
+  await stack.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await stack.getByRole('heading', { name: 'Nettoyer', exact: true }).waitFor()
+  // Échap remonte d'un niveau : de l'édition au détail d'où l'on vient.
+  await stack.getByRole('button', { name: 'Modifier', exact: true }).click()
+  await stack.getByRole('textbox', { name: 'Libellé', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await stack.getByRole('button', { name: 'Mettre en pause', exact: true }).waitFor()
+
+  // Supprimer se confirme sur place ; Échap annule la confirmation seule.
+  await stack.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await stack.getByText('Supprimer « Nettoyer » ?').waitFor()
+  await page.keyboard.press('Escape')
+  await stack.getByRole('button', { name: 'Dupliquer', exact: true }).waitFor()
+  await stack.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await stack.getByRole('button', { name: 'Supprimer', exact: true }).click()
+  await stack.waitFor({ state: 'detached' })
+  await until(async () => (await api('/api/actions')).every((entry) => entry.id !== nightly.id))
 }
 
 /**
@@ -426,6 +618,8 @@ try {
   await checkPieces(base)
   console.log('actions-ui-check : ce qu\'il sert')
   await checkServed(base)
+  console.log('actions-ui-check : tiroir d\'une action')
+  await checkDrawer(base)
 
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
@@ -490,12 +684,42 @@ try {
   await actionsTab.click()
   await panel.getByText(/Sortie en code 2/).waitFor({ timeout: 15000 })
 
-  // Le service proposé : relu (commande en clair), validé, lancé d'un geste.
+  // Le service proposé : relu dans son détail, en pile dans le panneau (commande en
+  // clair), validé sans être lancé (Q3), puis lancé d'un geste.
   await page.getByRole('button', { name: 'Relire : Serveur statique' }).first().click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByText(`python3 -m http.server --bind 127.0.0.1 ${httpPort}`).waitFor()
+  const stack = page.locator('[data-action-stack]')
+  const review = stack.getByRole('region', { name: 'Relecture' })
+  await review.getByText(`$ python3 -m http.server --bind 127.0.0.1 ${httpPort}`).waitFor()
+  await stack.getByText('Proposée par un agent dans', { exact: false }).waitFor()
   await page.screenshot({ path: join(shots, 'actions-review.png') })
-  await dialog.getByRole('button', { name: 'Valider et lancer' }).click()
+  await review.getByRole('button', { name: 'Valider', exact: true }).click()
+  await stack.waitFor({ state: 'detached' })
+  assert.equal((await api('/api/actions')).find((entry) => entry.id === service.id).status, 'approved')
+  assert.equal((await api('/api/actions')).find((entry) => entry.id === service.id).service?.state ?? 'inactive', 'inactive', 'valider ne lance pas')
+
+  // Refuser une action neuve la supprime.
+  const proposedAgain = await mcp(env, conversation.id, project.id, 'register_action', { label: 'Tout effacer', kind: 'task', command: 'rm -rf ./build' })
+  assert.ok(!proposedAgain.isError, proposedAgain.content[0].text)
+  await page.getByRole('button', { name: 'Relire : Tout effacer' }).first().click({ timeout: 15000 })
+  await review.getByText('$ rm -rf ./build').waitFor()
+  await review.getByRole('button', { name: 'Refuser', exact: true }).click()
+  await stack.waitFor({ state: 'detached' })
+  assert.equal((await api('/api/actions')).some((entry) => entry.label === 'Tout effacer'), false)
+
+  // Refuser une commande validée qu'un agent a modifiée rétablit ce qui avait été validé.
+  const modified = await mcp(env, conversation.id, project.id, 'register_action', { id: task.id, label: 'Dire bonjour', kind: 'task', command: 'echo autre-chose' })
+  assert.ok(!modified.isError, modified.content[0].text)
+  await page.getByRole('button', { name: 'Relire : Dire bonjour' }).first().click({ timeout: 15000 })
+  const changes = review.getByRole('group', { name: 'Ce qui a changé depuis la dernière validation' })
+  assert.deepEqual(await changes.locator('del').allTextContents(), ['- echo hello-from-action; exit 2'])
+  assert.deepEqual(await changes.locator('ins').allTextContents(), ['+ echo autre-chose'])
+  await review.getByRole('button', { name: 'Refuser', exact: true }).click()
+  await stack.waitFor({ state: 'detached' })
+  const restored = (await api('/api/actions')).find((entry) => entry.id === task.id)
+  assert.equal(restored.command, 'echo hello-from-action; exit 2')
+  assert.equal(restored.status, 'approved')
+
+  await page.getByRole('button', { name: 'Lancer : Serveur statique' }).first().click()
 
   if (linuxServices) {
     await panel.getByText(`Écoute sur :${httpPort}`).waitFor({ timeout: 20000 })
@@ -504,6 +728,21 @@ try {
     const served = await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status)
     assert.equal(served, 200)
     await page.screenshot({ path: join(shots, 'actions-service-running.png') })
+    // Son détail dit ce qu'il sert, et l'arrête d'un geste.
+    await panel.getByRole('button', { name: 'Serveur statique', exact: true }).click()
+    await stack.getByText('Ce qu’il sert').waitFor()
+    await stack.getByRole('button', { name: 'Arrêter', exact: true }).first().waitFor()
+    await stack.getByRole('link', { name: 'Ouvrir' }).first().waitFor()
+    await page.screenshot({ path: join(shots, 'actions-detail-service.png') })
+    // Son journal et sa relance, sous ⋯ (Q1) ; Échap ferme le menu, puis remonte à la liste.
+    await stack.getByRole('button', { name: 'Plus', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Redémarrer' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Journal' }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByRole('menuitem', { name: 'Journal' }).waitFor({ state: 'detached' })
+    await stack.getByText('Ce qu’il sert').waitFor()
+    await page.keyboard.press('Escape')
+    await stack.waitFor({ state: 'detached' })
 
     // Le lanceur de l'en-tête compte le service en marche et montre la même liste.
     const launcher = page.getByRole('button', { name: 'Actions, 1 en marche' })
@@ -738,6 +977,10 @@ try {
   await mobile.locator('[data-command-runs] li', { hasText: 'Tests du panier' }).getByRole('button', { name: /^Tests du panier/ }).click()
   await mobile.locator('[data-command-run]').getByText('Tests en échec · 1').waitFor()
   await mobile.screenshot({ path: join(shots, 'runs-detail-390.png') })
+
+  // Le détail d'une action, en pile dans le panneau.
+  console.log('actions-ui-check : détail d\'une action')
+  await checkDetail(page, base, project, api, context)
 
   // L'éditeur unifié : une commande planifiée, un service et un agent, créés pour de vrai.
   await checkEditor(page, base, project, conversation, api, context)

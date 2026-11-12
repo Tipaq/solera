@@ -40,6 +40,22 @@ function statusOf(terminal: TerminalDto): CommandRunStatus {
   return actionRunStatusOf(terminal.exitCode)
 }
 
+/** Un terminal d'action, lu comme une commande lancée ; `action` null quand elle a été supprimée. */
+export function commandRunOf(terminal: TerminalDto, action: ProjectActionDto | null): CommandRun {
+  return {
+    terminalId: terminal.id,
+    action,
+    label: action?.label ?? terminal.title,
+    command: action?.command ?? terminal.title,
+    status: statusOf(terminal),
+    exitCode: terminal.exitCode,
+    startedAt: terminal.createdAt,
+    finishedAt: terminal.finishedAt,
+    cwd: terminal.cwd,
+    root: actionRoot(terminal.cwd, action?.subdir ?? null),
+  }
+}
+
 /** Ce qui tourne d'abord, puis le plus récent. */
 export function commandRunsOf(
   terminals: readonly TerminalDto[],
@@ -49,21 +65,7 @@ export function commandRunsOf(
   const byId = new Map(actions.map((action) => [action.id, action]))
   return terminals
     .filter((terminal) => terminal.actionId !== null && terminal.conversationId === (conversationId ?? null))
-    .map((terminal): CommandRun => {
-      const action = byId.get(terminal.actionId!) ?? null
-      return {
-        terminalId: terminal.id,
-        action,
-        label: action?.label ?? terminal.title,
-        command: action?.command ?? terminal.title,
-        status: statusOf(terminal),
-        exitCode: terminal.exitCode,
-        startedAt: terminal.createdAt,
-        finishedAt: terminal.finishedAt,
-        cwd: terminal.cwd,
-        root: actionRoot(terminal.cwd, action?.subdir ?? null),
-      }
-    })
+    .map((terminal) => commandRunOf(terminal, byId.get(terminal.actionId!) ?? null))
     .sort((a, b) => Number(b.status === 'running') - Number(a.status === 'running') || b.startedAt - a.startedAt)
 }
 

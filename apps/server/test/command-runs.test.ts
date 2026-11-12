@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { ProjectActionDto, TerminalDto } from '@solera/protocol'
 import type { MessageKey, MessageParams } from '../../web/src/lib/i18n/index.js'
 
-const { commandRunsOf, runDuration, runMeta, runSentence } = await import('../../web/src/lib/command-runs.js')
+const { commandRunOf, commandRunsOf, runDuration, runMeta, runSentence } = await import('../../web/src/lib/command-runs.js')
 const { summarize } = await import('../../web/src/lib/command-output.js')
 const { fr } = await import('../../web/src/lib/i18n/catalog-fr.js')
 const { en } = await import('../../web/src/lib/i18n/catalog-en.js')
@@ -55,6 +55,14 @@ test('commandRunsOf : les terminaux d’action de cette conversation, en cours d
   assert.equal(runs[0]!.command, 'pnpm test')
   // Hors conversation : ceux de la racine.
   assert.deepEqual(commandRunsOf([terminal({ id: 'root', conversationId: null }), terminal({ id: 'here' })], [action()]).map((run) => run.terminalId), ['root'])
+})
+
+test('commandRunOf : un terminal d’action, d’où qu’il soit parti (le détail d’une action le montre)', () => {
+  const run = commandRunOf(terminal({ id: 'elsewhere', conversationId: 'c2', alive: true, exitCode: null, finishedAt: null }), action())
+  assert.equal(run.terminalId, 'elsewhere')
+  assert.equal(run.status, 'running')
+  assert.equal(run.label, 'Tests')
+  assert.deepEqual(commandRunsOf([terminal({})], [action()], 'c1')[0], commandRunOf(terminal({}), action()))
 })
 
 test('commandRunsOf : le statut, et 128 + n se lit « arrêtée », pas « échouée »', () => {

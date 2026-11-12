@@ -202,7 +202,8 @@ try {
   await serviceLine.hover()
   await serviceLine.getByRole('button', { name: 'Plus pour « Script node »' }).click()
   await panelPage.getByRole('menuitem', { name: 'En faire une action', exact: true }).click()
-  const editor = panelPage.getByRole('dialog')
+  // L'éditeur s'ouvre en pile dans le panneau, à la place de la liste ; Échap y remonte.
+  const editor = panelPage.locator('[data-action-stack]')
   assert.match(await editor.getByLabel('Commande', { exact: true }).inputValue(), /service-fixture\.cjs/)
   assert.equal(await editor.getByLabel('Lien du service', { exact: true }).inputValue(), 'http://localhost:{port}')
   await panelPage.keyboard.press('Escape')

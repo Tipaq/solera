@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import type { ProjectActionDto, ScheduledRunDto, ScheduledTaskDto, WorktreeDto } from '@solera/protocol'
+import type { ActionRunDetailDto, ProjectActionDto, ScheduledRunDto, ScheduledTaskDto, WorktreeDto } from '@solera/protocol'
+import { ACTIONS_KEY } from '../../lib/actions'
 import { fromAction, fromTask, type Automation, type TaskInput } from '../../lib/automations'
 import { worktreesKey } from '../../lib/worktrees'
 
@@ -103,6 +104,52 @@ export const AGENT = task('t-review', { name: 'Revue des dépendances', runs: [a
 export const AGENT_RUNNING = task('t-triage', {
   name: 'Tri des tickets', agent: 'codex', cadence: null, runs: [agentRun('running', 4 * MIN)],
 })
+
+/** Une commande validée, qu'un agent a modifiée depuis : la relecture montre l'écart. */
+export const PROPOSED_CHANGE = action('a-deploy', {
+  label: 'Déployer la préprod', command: 'pnpm build && ./scripts/deploy.sh --env staging --force', subdir: 'apps/web', status: 'proposed',
+  agentConversationId: 'c-ci', agentConversationTitle: 'Pipeline de préprod',
+  approved: { kind: 'task', command: 'pnpm build && ./scripts/deploy.sh --env staging', subdir: null, url: null, cadence: null },
+})
+
+const nightlyRun = (index: number): ActionRunDetailDto => {
+  const failed = index === 0 || index === 4
+  return {
+    id: `n${index}`, actionId: 'a-nightly', trigger: 'schedule', conversationId: null, terminalId: null, cwd: '/srv/nimbus',
+    status: failed ? 'failed' : 'succeeded', exitCode: failed ? 1 : 0,
+    startedAt: NOW - (index + 1) * 24 * HOUR + 3 * HOUR, finishedAt: NOW - (index + 1) * 24 * HOUR + 3 * HOUR + 42_000,
+    excerpt: failed
+      ? '> nimbus@1.4.0 test:e2e\n> playwright test\n\nRunning 38 tests using 4 workers\n  ✘ factures › export CSV (12.4s)\n\n  1 failed\n  37 passed (41.8s)'
+      : '> playwright test\n\n  38 passed (39.2s)',
+  }
+}
+
+/** Les passages d'une commande planifiée, avec l'extrait de leur sortie (`useActionRuns`). */
+export const NIGHTLY_RUNS: ActionRunDetailDto[] = Array.from({ length: 16 }, (_, index) => nightlyRun(index))
+
+/** Une commande planifiée chaque nuit, et à la demande : quinze passages, le dernier en échec. */
+export const NIGHTLY = action('a-nightly', {
+  label: 'Tests de bout en bout', command: 'pnpm test:e2e', description: 'La suite Playwright complète, sur la base de démo.',
+  schedule: { cadence: { kind: 'cron', expression: '0 3 * * *' }, enabled: true, nextRunAt: NOW + 6 * HOUR, lastRunAt: NOW - 21 * HOUR, maxDurationMinutes: 30, stopCadence: null, nextStopAt: null },
+  runs: NIGHTLY_RUNS.map(({ excerpt: _excerpt, ...run }) => run),
+})
+
+/** Une tâche d'agent dont un agent a écrit le script de vérification. */
+export const AGENT_CHECK = task('t-digest', {
+  name: 'Résumé des PR de la nuit', agent: 'claude', prompt: 'Résume les PR ouvertes depuis hier et poste le résumé dans la carte du jalon.',
+  check: { script: 'gh pr list --search "updated:>=$(date -d yesterday +%F)" --json number | grep -q number', timeoutSeconds: 30, approved: false, proposedBy: 'c-ci' },
+  runs: [agentRun('succeeded', 26 * HOUR), agentRun('skipped', 50 * HOUR)],
+})
+
+/** Les passages détaillés dans le cache de React Query : le détail les lit sans requête. */
+export function SeededRuns({ children }: { children: ReactNode }) {
+  const client = useQueryClient()
+  useState(() => {
+    client.setQueryData([...ACTIONS_KEY, 'a-nightly', 'runs'], NIGHTLY_RUNS)
+    return null
+  })
+  return <>{children}</>
+}
 
 /** Les états, dans l'ordre où les stories les montrent. */
 export const STATES: Automation[] = [SERVICE_ON, SERVICE_OFF, SUCCEEDED, FAILED, FAIL_STREAK, NEVER, IN_TERMINAL, PROPOSED, AGENT, AGENT_RUNNING]

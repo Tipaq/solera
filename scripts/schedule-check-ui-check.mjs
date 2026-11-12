@@ -124,7 +124,7 @@ try {
   // --- Création, avec un script qui ne trouve rien ---------------------------------
   await page.goto(`${base}/p/${project.id}/schedules`)
   await page.getByRole('button', { name: 'Tâche', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Éditer une action', exact: true })
+  const dialog = page.getByRole('dialog', { name: 'Nouvelle action', exact: true })
   await dialog.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Veille avec vérification')
   await dialog.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK », sans utiliser aucun outil.')
   await dialog.getByRole('button', { name: 'Ajouter une vérification', exact: true }).click()
