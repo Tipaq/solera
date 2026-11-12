@@ -1,4 +1,11 @@
-import type { SplitMode } from '@solera/protocol'
+import {
+  refinementState,
+  type CardDto,
+  type CardRefinementDto,
+  type ConversationStatus,
+  type RefinementState,
+  type SplitMode,
+} from '@solera/protocol'
 
 /**
  * Le premier message d'une session d'affinage (#184) : il invoque le skill
@@ -31,4 +38,60 @@ export function refinePrompt({
   }
   if (links.length > 0) parts.push(`Liens :\n${links.map((link) => `- ${link}`).join('\n')}`)
   return parts.join('\n\n')
+}
+
+/**
+ * Où mène « Affiner » (#195, AFF-2) : la session d'affinage de la carte si elle en a une,
+ * sinon un brouillon de découpage rattaché au jalon, son premier message pré-rempli du
+ * titre et de la description. `mode` ne s'écrit que s'il change du défaut du serveur.
+ */
+export function refineHref(
+  projectId: string,
+  card: Pick<CardDto, 'id' | 'number' | 'title' | 'description' | 'refinement'>,
+  mode: SplitMode,
+): string {
+  if (card.refinement) return `/p/${projectId}/c/${card.refinement.conversationId}`
+  const params = new URLSearchParams({ split: card.id })
+  if (mode === 'direct') params.set('mode', mode)
+  const brief = [card.title.trim(), card.description.trim()].filter(Boolean).join('\n\n')
+  params.set('prompt', refinePrompt({ number: card.number, mode, brief }))
+  return `/p/${projectId}/c/new?${params.toString()}`
+}
+
+/**
+ * L'état que montre le résumé d'affinage (AFF-1) : celui de la carte (`refinementState`),
+ * à deux écarts près. Une question qu'on lit ici l'emporte : une question asynchrone de
+ * Codex laisse la session tourner, et la carte la dit au travail ; la page, elle, la
+ * montre. Et un jalon qui a ses cartes sans session d'affinage est découpé : il n'y a
+ * plus rien à lancer ici, « Ajouter au jalon » relance l'agent.
+ */
+export function refinePanelState(
+  refinement: CardRefinementDto | null,
+  hasChildren: boolean,
+  liveStatus: ConversationStatus | undefined,
+  hasQuestions: boolean,
+): RefinementState {
+  const state = refinementState(refinement, hasChildren, liveStatus)
+  if (state === 'none') return hasChildren ? 'done' : 'none'
+  return hasQuestions ? 'waiting' : state
+}
+
+/**
+ * Garde la réponse à une question d'une demande (AFF-5) : une demande du CLI se répond
+ * en une fois, donc chaque champ garde la sienne et l'envoi part quand toutes en ont une.
+ * Une réponse vide ne compte pas ; celles des questions qui ne sont plus ouvertes tombent.
+ */
+export function collectAnswer(
+  answers: Readonly<Record<string, string[]>>,
+  questions: readonly { id: string }[],
+  id: string,
+  text: string,
+): { answers: Record<string, string[]>; complete: boolean } {
+  const value = text.trim()
+  const next: Record<string, string[]> = {}
+  for (const question of questions) {
+    const kept = question.id === id && value ? [value] : answers[question.id]
+    if (kept?.length) next[question.id] = kept
+  }
+  return { answers: next, complete: questions.every((question) => (next[question.id]?.length ?? 0) > 0) }
 }
