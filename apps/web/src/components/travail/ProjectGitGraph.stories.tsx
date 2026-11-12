@@ -5,6 +5,7 @@ import type { CommitDetailDto, CommitTurnDto, ConversationDto, GraphDto, GraphNo
 import type { LiveConversation } from '../../lib/activity'
 import { verdictOf, type BranchInfo, type TreeFields, type TreeRow, type TreeScope } from '../../lib/code-model'
 import { knownBranches } from '../../lib/graph-model'
+import type { ServedMark } from '../../lib/served'
 import { graphSearch, GRAPH_PAGE } from '../panel/git/queries'
 import { DrawerLayer } from '../shell/Drawer'
 import { projectScope } from '../../lib/workspace-scope'
@@ -101,6 +102,9 @@ const live = (entry: ConversationDto, status: LiveConversation['status']): LiveC
 })
 const SCOPES = new Map<string, TreeScope>([['feat/178-travail-graphe', { sessionIds: new Set(['s1', 's2']), cardNumbers: new Set([178]) }]])
 
+/** Un serveur de dev sert l'arbre de la carte : « ⚡ :5173 ». */
+const SERVED = new Map<string, ServedMark[]>([['feat/178-travail-graphe', [{ automationId: 'a-dev', label: 'Serveur de dev', port: 5173 }]]])
+
 const SOURCES: CommitSessionSources = {
   conversations: CONVERSATIONS,
   live: [live(CONVERSATIONS[0]!, 'awaiting_input'), live(CONVERSATIONS[1]!, 'idle')],
@@ -142,6 +146,7 @@ function Graph({ targetKey = null, showMerged = false }: { targetKey?: string | 
           targetKey={target}
           from={null}
           showMerged={showMerged}
+          served={SERVED}
           onSelect={setTarget}
           onOpenTree={setTarget}
           sources={SOURCES}

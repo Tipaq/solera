@@ -3,6 +3,7 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Banner, cx } from '@solera/ui'
 import { PrTag } from '../code/PrTag'
+import { ServiceMark } from '../code/ServiceMark'
 import { SessionStack } from '../code/SessionStack'
 import { BranchDot, VerdictDot, verdictLabel } from '../code/VerdictDot'
 import { GitActionsProvider } from '../panel/git/actions'
@@ -16,6 +17,7 @@ import { withSheet } from '../../lib/card-sheet'
 import type { BranchInfo, CodeCard, TreeRow } from '../../lib/code-model'
 import { isDimmed, knownBranches, knownKey, knownName, knownOfNode, withoutMergedRefs, type GraphKnown } from '../../lib/graph-model'
 import { useTranslate } from '../../lib/i18n'
+import type { ServedMark } from '../../lib/served'
 import { projectScope } from '../../lib/workspace-scope'
 import { CommitSessions, type CommitSessionSources } from './CommitSessions'
 
@@ -42,6 +44,7 @@ export function ProjectGitGraph({
   targetKey,
   from,
   showMerged,
+  served,
   onSelect,
   onOpenTree,
   sources,
@@ -55,6 +58,8 @@ export function ProjectGitGraph({
   from: number | null
   /** Faux par défaut : les branches fusionnées perdent leurs étiquettes. */
   showMerged: boolean
+  /** Les services en marche qui servent chaque arbre, par clé d'arbre. */
+  served: Map<string, ServedMark[]>
   /** Choisit une branche sans arbre comme filtre, ou retire le filtre. */
   onSelect: (key: string | null) => void
   onOpenTree: (key: string) => void
@@ -148,7 +153,7 @@ export function ProjectGitGraph({
                   <span className="truncate text-xs text-ink-faint">{t('travail.graph.working')}</span>
                 ) : first ? (
                   <>
-                    <Annotation projectId={projectId} entry={first} active={target !== null && knownName(first) === target} onOpenTree={onOpenTree} onSelect={onSelect} />
+                    <Annotation projectId={projectId} entry={first} served={served} active={target !== null && knownName(first) === target} onOpenTree={onOpenTree} onSelect={onSelect} />
                     {entries.length > 1 ? (
                       <span className="shrink-0 text-micro text-ink-faint" title={entries.slice(1).map(knownName).join(', ')}>
                         {t('travail.graph.others', { count: entries.length - 1 })}
@@ -209,11 +214,12 @@ const PILL = 'inline-flex shrink-0 items-center gap-1.5 rounded-md border px-1.5
 /**
  * Ce que Solera sait d'une branche du graphe, sur la rangée de sa tête (T-7.2). Un arbre :
  * la pastille de son verdict (ambre s'il t'attend), qui ouvre son tiroir, ses sessions
- * vivantes, la carte et le jalon, la PR. Une branche sans arbre : une pastille pointillée
- * qui la choisit comme filtre, ou retire le filtre, la carte, la PR.
+ * vivantes, la carte et le jalon, la PR, le service qui le sert. Une branche sans arbre :
+ * une pastille pointillée qui la choisit comme filtre, ou retire le filtre, la carte, la PR.
  */
-function Annotation({ projectId, entry, active, onOpenTree, onSelect }: {
+function Annotation({ projectId, entry, served, active, onOpenTree, onSelect }: {
   projectId: string
+  served: Map<string, ServedMark[]>
   entry: GraphKnown
   active: boolean
   onOpenTree: (key: string) => void
@@ -237,6 +243,7 @@ function Annotation({ projectId, entry, active, onOpenTree, onSelect }: {
         <SessionStack projectId={projectId} sessions={tree.sessions} />
         <CardMark card={tree.card} />
         {tree.pr ? <PrTag pr={tree.pr} /> : null}
+        <ServiceMark projectId={projectId} marks={served.get(tree.key)} />
       </>
     )
   }

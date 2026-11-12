@@ -28,12 +28,18 @@ export async function checkTravailGraph({ page, base, project, running, runningT
   const pill = head.getByRole('button', { name: 'En cours', exact: true })
   await pill.waitFor()
   assert.equal(await pill.getAttribute('title'), 'Ouvrir l’arbre')
+  // La pastille ouvre le tiroir de l'arbre (#176).
+  await pill.click()
+  const treeDrawer = page.getByRole('dialog', { name: `Arbre ${runningBranch}`, exact: true })
+  await treeDrawer.waitFor()
+  await page.keyboard.press('Escape')
+  await treeDrawer.waitFor({ state: 'detached' })
   await head.getByRole('link', { name: /#18 CI en cours/ }).waitFor()
   // Le nœud « en cours » de la racine, s'il y a du non commité.
   if ((await graph.locator('[data-hash]').first().getAttribute('data-hash')) === null) {
     await graph.getByText('racine du projet · non commité', { exact: true }).waitFor()
   }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't6-travail-graphe.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'g1-travail-graphe.png') })
 
   // T-7.4 : la branche fusionnée perd son étiquette, pas ses commits…
   await rowOf('Cover city search').waitFor()
@@ -53,7 +59,7 @@ export async function checkTravailGraph({ page, base, project, running, runningT
   await head.waitFor()
   assert.equal(await head.getAttribute('data-dimmed'), null, 'La tête de l’arbre choisi reste nette')
   assert.equal(await rowOf('Bootstrap Nimbus weather app').getAttribute('data-dimmed'), 'true', 'La base s’estompe')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't7-travail-graphe-arbre-choisi.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'g2-travail-graphe-arbre-choisi.png') })
   await page.goto(`${base}/p/${project.id}/travail?vue=graphe`)
   await head.waitFor()
 
@@ -80,24 +86,26 @@ export async function checkTravailGraph({ page, base, project, running, runningT
   // Le détail du panneau, dessous : le message et ses fichiers.
   await drawer.getByText('Cache the last forecast per city').first().waitFor()
   await drawer.getByText(/forecast-cache\.ts/).first().waitFor()
-  // T-7.8 : la puce de l'arbre ferme le tiroir du commit.
-  await drawer.getByRole('button', { name: new RegExp(runningBranch.replace(/[/.]/g, '\\$&')) }).waitFor()
   await page.waitForTimeout(300)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't8-tiroir-d-un-commit.png') })
-  await page.keyboard.press('Escape')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'g3-tiroir-d-un-commit.png') })
+  // T-7.8 : la puce de l'arbre ferme le tiroir du commit et ouvre celui de l'arbre.
+  await drawer.getByRole('button', { name: runningBranch, exact: true }).click()
   await drawer.waitFor({ state: 'detached' })
+  await treeDrawer.waitFor()
+  await page.keyboard.press('Escape')
+  await treeDrawer.waitFor({ state: 'detached' })
 
   // Au téléphone : la colonne se replie, rien ne déborde.
   await page.setViewportSize({ width: 390, height: 844 })
   await head.waitFor()
   assert.equal(await graph.getByText('Dans Solera', { exact: true }).isVisible(), false, 'La colonne « Dans Solera » se replie au téléphone')
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't9-travail-graphe-telephone.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'g4-travail-graphe-telephone.png') })
   await head.locator('[data-hash] button[aria-pressed]').click()
   await drawer.waitFor()
   await writer.waitFor()
   await page.waitForTimeout(300)
-  await page.screenshot({ animations: 'disabled', path: join(shots, 't10-tiroir-d-un-commit-telephone.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'g5-tiroir-d-un-commit-telephone.png') })
   await page.keyboard.press('Escape')
   await page.setViewportSize({ width: 1440, height: 900 })
 }
