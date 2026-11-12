@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useDeferredValue, useMemo, useState, type ReactNode } from 'react'
 import { ChevronRight, CircleCheck, CircleX, FileCode2, Loader, RotateCcw, Square, SquareTerminal, X } from 'lucide-react'
 import {
   IconButton,
@@ -18,6 +18,7 @@ import { relativeDate } from '../../lib/dates'
 import { openTab } from '../../lib/editor-tabs'
 import { revealLine } from '../../lib/editor-reveal'
 import { useTranslate } from '../../lib/i18n'
+import { useNow } from '../../lib/now'
 import { setPanelTab, showTerminal } from '../../lib/panel'
 import { useTerminalOutput } from '../../lib/terminal-output'
 import { useCloseTerminal, useInterruptTerminal, useTerminals, useTerminalsUpsert } from '../../lib/terminals'
@@ -52,17 +53,6 @@ export function useCommandRuns(projectId: string, conversationId?: string): Comm
   return useMemo(() => commandRunsOf(terminals ?? [], actions ?? [], conversationId), [terminals, actions, conversationId])
 }
 
-/** Un « maintenant » qui avance chaque seconde, tant que quelque chose tourne. */
-function useNow(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!active) return
-    setNow(Date.now())
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [active])
-  return now
-}
 
 /** Le résumé d'une sortie, calculé hors du chemin de la frappe. */
 function useSummary(command: string, text: string | null, enabled: boolean): OutputSummary | null {

@@ -1,35 +1,63 @@
-import { TooltipButton } from '@solera/ui'
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
-import { ArrowLeft, Bot, Radio, Square, SquareTerminal, Waves } from 'lucide-react'
-import { memo, useMemo, useState, type ReactNode } from 'react'
+import {
+  PanelEmpty,
+  PanelGroup,
+  PanelNotice,
+  PanelStatusIcon,
+  StackHeader,
+  cx,
+  panelGestureClass,
+  panelRowClass,
+  type StatusTone,
+} from '@solera/ui'
+import { Bot, ChevronRight, Copy, CornerUpLeft, FileDiff, Square, Wand2 } from 'lucide-react'
+import { memo, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  agentGroups,
+  agentMeta,
+  filesOf,
+  resultOf,
+  sessionFiles,
+  toolCount,
+  workPort,
+  workSeed,
+  type SessionFile,
+} from '../../lib/agent-files'
+import { formatDuration } from '../../lib/automations'
 import type { BackgroundWork } from '../../lib/background'
-import { stopBackgroundTask } from '../../lib/conversations'
-import { useTranslate, type MessageKey } from '../../lib/i18n'
-import { clearSubAgent, showSubAgent } from '../../lib/panel'
+import type { EditTurn } from '../../lib/chat-fold'
+import { copyText } from '../../lib/clipboard'
+import { interruptConversation, stopBackgroundTask } from '../../lib/conversations'
+import { useEscapeLayer } from '../../lib/escape-layers'
+import { useTranslate } from '../../lib/i18n'
+import { useNow } from '../../lib/now'
+import { clearSubAgent, requestActionEdit, setPanelOpen, setPanelTab, showSubAgent } from '../../lib/panel'
+import { familyOf, familyWord } from '../../lib/session-works'
 import { subAgentLabel, type SubAgent } from '../../lib/subagents'
 import { formatTokens } from '../../lib/tokens'
 import { buildRows } from '../../lib/tool-rows'
-import type { EditTurn } from '../../lib/chat-fold'
-import { AgentWritings } from './AgentWritings'
+import { useMediaQuery } from '../../lib/viewport'
+import { FamilyIcon, PortLink } from '../automations/session-works/parts'
 import { ChatThread } from '../chat/ChatThread'
-import { SubAgentRow } from '../chat/SubAgentRow'
-import { EmptyState, cx } from '@solera/ui'
 
 /**
- * Tout ce que l'agent fait faire : ses sous-agents, ses travaux de fond, ses écritures.
+ * L'onglet **Agent** du panneau (PAG-1 à PAG-7) : qu'est-ce qui tourne sous ce fil ?
  *
- * Les trois répondent à la même question — qu'est-ce qui tourne, ou a tourné, sous ce
- * fil — et c'est pourquoi l'onglet *Historique* a été dissous ici le 2026-10-11 : il
- * n'avait sa propre place que parce que personne n'avait remarqué qu'il la partageait.
+ * Pas de ligne d'outils ni de vues : **En cours** (sous-agents qui travaillent et travaux
+ * de fond, mêlés), puis les terminés repliés en une ligne. Une ligne par élément, une
+ * seule hauteur, au plus un geste au survol ; un clic ouvre le détail **en pile**
+ * (« ‹ Agent ») — le fil d'un sous-agent, ou ce qu'on sait d'un travail de fond.
  *
- * Le fil d'un sous-agent est rendu par le même composant que le fil principal. Un
- * sous-agent est une conversation comme une autre, avec ses messages, sa réflexion et
- * ses appels : lui donner un rendu à part obligerait à tenir deux vues en accord pour
- * un seul contenu.
+ * Les écritures sortent de la liste : le pied « Modifié par la session » les nomme avec
+ * qui les a faites, et le détail d'un sous-agent montre les siennes. Le diff tour par tour
+ * reste dans Git › tour.
+ *
+ * La couleur ne sert qu'aux points d'état : accent qui bat = travaille, vert = terminé,
+ * rouge = arrêté.
  */
 export const AgentsPane = memo(function AgentsPane({
   conversationId,
-  scope,
+  title,
   agent,
   agents,
   background,
@@ -38,256 +66,499 @@ export const AgentsPane = memo(function AgentsPane({
   onOpenFile,
 }: {
   conversationId: string
-  /** Répertoire de travail du fil, pour les reprises à la main de ses écritures. */
-  scope: string
+  /** Le titre de la conversation, que reprend la description d'une action qui en vient. */
+  title?: string
   /** CLI de la conversation : c'est lui qui dit si un travail de fond s'arrête. */
   agent: AgentKind
   agents: SubAgent[]
   /** Travaux poursuivis hors du tour, sans fil à ouvrir : le CLI n'en transmet rien. */
   background: BackgroundWork[]
-  /** Les tours qui ont écrit, regroupés par fichier dans « Ses écritures ». */
+  /** Les tours qui ont écrit, pour le pied « Modifié par la session ». */
   editTurns: EditTurn[]
   selectedId: string | null
   onOpenFile: (path: string) => void
 }) {
   const t = useTranslate()
-  const selected = agents.find((agent) => agent.id === selectedId) ?? null
+  const pane = useRef<HTMLDivElement>(null)
+  const [openWork, setOpenWork] = useState<string | null>(null)
+  const [showDone, setShowDone] = useState(false)
+  const [showFiles, setShowFiles] = useState(false)
+  const selected = agents.find((entry) => entry.id === selectedId) ?? null
+  // Un travail fini ou arrêté disparaît de la liste de niveau : son détail se referme.
+  const work = selected ? null : (background.find((entry) => entry.id === openWork) ?? null)
+  const { running, done } = useMemo(() => agentGroups(agents, background), [agents, background])
+  const written = useMemo(() => sessionFiles(editTurns, agents), [editTurns, agents])
+  const now = useNow(running.some((entry) => entry.kind === 'agent'))
+  useEscapeLayer(selected !== null, clearSubAgent, pane)
+  useEscapeLayer(work !== null, () => setOpenWork(null), pane)
 
   if (selected) {
     return (
-      <SubAgentThread conversationId={conversationId} agent={selected} onBack={clearSubAgent} />
+      <div ref={pane} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <SubAgentDetail key={selected.id} conversationId={conversationId} agent={selected} onOpenFile={onOpenFile} />
+      </div>
     )
   }
-
-  if (agents.length === 0 && background.length === 0 && editTurns.length === 0) {
+  if (work) {
     return (
-      /* Centré comme celui des terminaux : deux vues voisines du même panneau n'ont
-         aucune raison de poser leur message vide à deux endroits différents. */
-      <div className="flex min-h-0 flex-1 items-center justify-center p-4">
-        <EmptyState
-          icon={<Bot size={22} />}
-          title={t('subagent.pane.empty.title')}
-          description={t('subagent.pane.empty.description')}
+      <div ref={pane} className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <WorkDetail
+          key={work.id}
+          conversationId={conversationId}
+          conversationTitle={title || t('panel.agent.thisSession')}
+          canStop={AGENT_CAPABILITIES[agent].stopBackgroundTask}
+          work={work}
+          onBack={() => setOpenWork(null)}
         />
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-safe">
-      {agents.length > 0 ? (
-        <section className="p-2 pb-1">
-          <h3 className="px-0.5 pb-1 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-            {t('subagent.pane.title', { count: agents.length })}
-          </h3>
-          <div className="flex flex-col gap-1">
-            {agents.map((agent) => (
-              <div key={agent.id} className={cx(agent.parentId && 'pl-3')}>
-                <SubAgentRow agent={agent} onSelect={() => showSubAgent(agent.id)} />
-              </div>
-            ))}
+    <div ref={pane} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+        {running.length === 0 ? (
+          <PanelEmpty>{t('panel.agent.empty')}</PanelEmpty>
+        ) : (
+          <section aria-label={t('panel.agent.group.running')}>
+            <PanelGroup title={t('panel.agent.group.running')} />
+            <ul>
+              {running.map((entry) =>
+                entry.kind === 'agent' ? (
+                  <AgentLine key={entry.key} agent={entry.agent} now={now} />
+                ) : (
+                  <WorkLine key={entry.key} work={entry.work} onOpen={() => setOpenWork(entry.work.id)} />
+                ),
+              )}
+            </ul>
+          </section>
+        )}
+
+        {done.length > 0 ? (
+          <div className="mt-1.5">
+            <button
+              type="button"
+              aria-expanded={showDone}
+              onClick={() => setShowDone((value) => !value)}
+              className={cx(panelRowClass, 'gap-1.5 text-xs text-ink-faint hover:text-ink')}
+            >
+              {t(done.length > 1 ? 'panel.agent.done.other' : 'panel.agent.done.one', { count: done.length })}
+              <ChevronRight size={13} aria-hidden className={cx('transition-transform', showDone && 'rotate-90')} />
+            </button>
+            {showDone ? (
+              <ul>
+                {done.map((entry) => (
+                  <AgentLine key={entry.id} agent={entry} now={now} />
+                ))}
+              </ul>
+            ) : null}
           </div>
-        </section>
+        ) : null}
+      </div>
+
+      {written.length > 0 ? (
+        <div className="flex max-h-[45%] shrink-0 flex-col border-t border-line pb-safe">
+          <button
+            type="button"
+            aria-expanded={showFiles}
+            onClick={() => setShowFiles((value) => !value)}
+            className={cx(panelRowClass, 'shrink-0 gap-1.5 text-xs text-ink-faint hover:text-ink')}
+          >
+            <ChevronRight size={13} aria-hidden className={cx('transition-transform', showFiles && 'rotate-90')} />
+            {t(written.length > 1 ? 'panel.agent.files.title.other' : 'panel.agent.files.title.one', { count: written.length })}
+          </button>
+          {showFiles ? (
+            <ul className="min-h-0 overflow-y-auto pb-1.5">
+              {written.map((file) => (
+                <SessionFileLine key={file.path} file={file} agents={agents} onOpenFile={onOpenFile} />
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
-
-      <BackgroundList conversationId={conversationId} agent={agent} tasks={background} />
-
-      <AgentWritings
-        conversationId={conversationId}
-        scope={scope}
-        turns={editTurns}
-        onOpenFile={onOpenFile}
-      />
     </div>
   )
 })
 
-type BackgroundFamily = 'workflow' | 'shell' | 'subagent' | 'monitor'
-
-/**
- * Les noms sous lesquels le CLI annonce chaque famille de travaux.
- *
- * Deux orthographes par famille parce que le CLI les mélange : le SDK documente des
- * libellés lisibles (`shell`, `subagent`), et la version 2.1 émet ses discriminants
- * bruts (`local_bash`, `local_agent`). Le préfixe `local_` est retiré avant la
- * recherche, ce qui rattrape les deux d'un coup.
- */
-const KIND_ALIASES: Record<string, BackgroundFamily | undefined> = {
-  workflow: 'workflow',
-  bash: 'shell',
-  shell: 'shell',
-  agent: 'subagent',
-  subagent: 'subagent',
-  mcp_task: 'monitor',
-  monitor: 'monitor',
+function agentTone(agent: SubAgent): StatusTone {
+  if (agent.status === 'running') return 'accent'
+  return agent.status === 'done' ? 'positive' : 'critical'
 }
 
-const KIND_ICONS: Record<BackgroundFamily, ReactNode> = {
-  workflow: <Waves size={14} />,
-  shell: <SquareTerminal size={14} />,
-  subagent: <Bot size={14} />,
-  monitor: <Radio size={14} />,
+function AgentIconDot({ agent }: { agent: SubAgent }) {
+  return <PanelStatusIcon icon={<Bot size={14} aria-hidden />} dot={agentTone(agent)} pulse={agent.status === 'running'} />
 }
 
-const KIND_LABELS: Record<BackgroundFamily, MessageKey> = {
-  workflow: 'panel.background.kind.workflow',
-  shell: 'panel.background.kind.shell',
-  subagent: 'panel.background.kind.subagent',
-  monitor: 'panel.background.kind.monitor',
-}
-
-/**
- * Les travaux de fond, au-dessus des sous-agents et non mêlés à eux.
- *
- * Ils n'ont pas de fil à ouvrir : le CLI en donne l'activité du moment, jamais ce
- * qu'ils écrivent. Une ligne sans clic est donc honnête, là où une ligne cliquable
- * promettrait un détail qui n'existe pas.
- */
-function BackgroundList({
-  conversationId,
-  agent,
-  tasks,
-}: {
-  conversationId: string
-  agent: AgentKind
-  tasks: BackgroundWork[]
-}) {
+function AgentLine({ agent, now }: { agent: SubAgent; now: number }) {
   const t = useTranslate()
-  const canStop = AGENT_CAPABILITIES[agent].stopBackgroundTask
-  /**
-   * L'arrêt n'est pas confirmé par la réponse : la tâche disparaît au prochain
-   * `background.updated`. Entre les deux, le bouton reste marqué, sans quoi il
-   * inviterait à recliquer sur un arrêt déjà demandé.
-   */
-  const [stopping, setStopping] = useState<ReadonlySet<string>>(new Set())
-  if (tasks.length === 0) return null
+  return (
+    <li>
+      <button type="button" onClick={() => showSubAgent(agent.id)} className={panelRowClass}>
+        <AgentIconDot agent={agent} />
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{subAgentLabel(agent)}</span>
+        <span className="shrink-0 text-xs tabular-nums text-ink-faint">{agentMeta(agent, now, t)}</span>
+      </button>
+    </li>
+  )
+}
 
-  const stop = async (taskId: string) => {
-    setStopping((prev) => new Set(prev).add(taskId))
-    try {
-      await stopBackgroundTask(conversationId, taskId)
-    } catch {
-      // Refus du serveur (session arrêtée entre-temps, tâche déjà close) : le bouton
-      // redevient cliquable, et la liste, elle, dit toujours vrai via le journal.
-      setStopping((prev) => {
-        const next = new Set(prev)
-        next.delete(taskId)
-        return next
-      })
+function WorkLine({ work, onOpen }: { work: BackgroundWork; onOpen: () => void }) {
+  const t = useTranslate()
+  const family = familyOf(work.kind)
+  const port = workPort(work)
+  const open = (event: KeyboardEvent) => {
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onOpen()
     }
   }
-
   return (
-    <section className="flex flex-col gap-1 p-2 pt-1 pb-1">
-      <h3 className="px-0.5 text-micro font-semibold tracking-wide text-ink-faint uppercase">
-        {t('panel.background.title', { count: tasks.length })}
-      </h3>
-      {tasks.map((task) => {
-        // Un type inconnu s'affiche tel qu'il est venu plutôt que d'être rangé de
-        // force dans une famille : le CLI en ajoute au fil des versions.
-        const family = KIND_ALIASES[task.kind.replace(/^local_/, '')]
-        return (
-          <div
-            key={task.id}
-            className="flex items-center gap-2 rounded-md border border-line bg-surface-high px-2 py-1.5"
-          >
-            <span className="shrink-0 text-accent">
-              {family ? KIND_ICONS[family] : <Waves size={14} />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs text-ink">{task.description}</span>
-              <span className="block truncate text-meta text-ink-faint">
-                {/* La famille dit quelle sorte de travail tourne, l'activité ce qu'il
-                    fait à l'instant : les deux tiennent sur la ligne. */}
-                {task.activity
-                  ? `${family ? t(KIND_LABELS[family]) : task.kind} · ${task.activity}`
-                  : family
-                    ? t(KIND_LABELS[family])
-                    : task.kind}
-              </span>
-            </span>
+    <li>
+      {/* Une ligne qui porte un lien : un `div` à rôle de bouton, pour ne pas imbriquer
+          un lien dans un bouton. */}
+      <div role="button" tabIndex={0} onClick={onOpen} onKeyDown={open} className={cx(panelRowClass, 'cursor-pointer')}>
+        <PanelStatusIcon icon={<FamilyIcon family={family} size={14} />} dot="accent" pulse />
+        <span className="min-w-0 flex-1 truncate text-sm text-ink">{work.description || work.kind}</span>
+        {port !== null ? (
+          <span onClick={(event) => event.stopPropagation()} className="hidden shrink-0 group-hover:inline-flex group-focus-within:inline-flex pointer-coarse:inline-flex">
+            <PortLink
+              port={port}
+              label={t('panel.agent.open', { port })}
+              className="inline-flex items-center gap-0.5 text-xs text-ink-soft underline-offset-2 hover:text-ink hover:underline"
+            />
+          </span>
+        ) : null}
+        <span
+          className={cx(
+            'shrink-0 text-xs tabular-nums text-ink-faint',
+            port !== null && 'group-hover:hidden group-focus-within:hidden pointer-coarse:hidden',
+          )}
+        >
+          {work.toolUses > 0 ? toolCount(work.toolUses, t) : familyWord(family, t)}
+        </span>
+      </div>
+    </li>
+  )
+}
 
-            {task.toolUses > 0 ? (
-              <span className="shrink-0 text-meta tabular-nums text-ink-faint">
-                {t(task.toolUses > 1 ? 'panel.background.tools.many' : 'panel.background.tools.one', {
-                  count: task.toolUses,
-                })}
-              </span>
-            ) : null}
+/** Le +/− d'un fichier, ou le nombre de passes quand les entrées ne le disent pas. */
+function Delta({ added, removed, passes }: { added: number | null; removed: number | null; passes: number }) {
+  const t = useTranslate()
+  if (added === null || removed === null) {
+    return (
+      <span className="shrink-0 text-xs tabular-nums text-ink-faint">
+        {t(passes > 1 ? 'panel.agent.files.passes.other' : 'panel.agent.files.passes.one', { count: passes })}
+      </span>
+    )
+  }
+  return (
+    <span className="shrink-0 text-xs tabular-nums">
+      <span className="text-positive">+{added}</span> <span className="text-critical">−{removed}</span>
+    </span>
+  )
+}
 
-            {canStop ? (
-              <TooltipButton
-                type="button"
-                onClick={() => void stop(task.id)}
-                disabled={stopping.has(task.id)}
-                title={t('panel.background.stop')}
-                aria-label={t('panel.background.stop')}
-                className="shrink-0 rounded p-1 text-ink-faint transition-colors hover:bg-surface hover:text-critical disabled:cursor-default disabled:opacity-40"
-              >
-                <Square size={11} fill="currentColor" />
-              </TooltipButton>
-            ) : null}
-          </div>
-        )
-      })}
+function fileName(path: string) {
+  return path.split('/').pop() || path
+}
+
+/**
+ * Une ligne de fichier : le nom ouvre le fichier, l'icône de diff mène à Git. Deux gestes,
+ * donc deux boutons, plutôt qu'une ligne qui ferait l'un ou l'autre selon l'endroit.
+ */
+function FileLine({ path, meta, delta, onOpenFile }: { path: string; meta?: string; delta: ReactNode; onOpenFile: (path: string) => void }) {
+  const t = useTranslate()
+  const name = fileName(path)
+  return (
+    <li className="group flex h-11 items-center gap-2 px-3 md:h-9 pointer-coarse:h-11">
+      <button type="button" onClick={() => onOpenFile(path)} title={path} className="flex min-w-0 flex-1 items-baseline gap-2 text-left">
+        <span className="min-w-0 truncate text-sm text-ink underline-offset-2 hover:underline">{name}</span>
+        {meta ? <span className="min-w-0 truncate text-xs text-ink-faint">{meta}</span> : null}
+      </button>
+      {delta}
+      <button
+        type="button"
+        onClick={() => setPanelTab('git')}
+        aria-label={t('panel.agent.files.diff', { name })}
+        title={t('panel.agent.files.diffTitle')}
+        className="grid size-8 shrink-0 place-items-center rounded-md text-ink-faint opacity-0 group-hover:opacity-100 hover:bg-surface-high hover:text-ink focus-visible:opacity-100 pointer-coarse:opacity-100"
+      >
+        <FileDiff size={13} aria-hidden />
+      </button>
+    </li>
+  )
+}
+
+function SessionFileLine({ file, agents, onOpenFile }: { file: SessionFile; agents: SubAgent[]; onOpenFile: (path: string) => void }) {
+  const t = useTranslate()
+  const by = [
+    ...(file.byMain ? [t('panel.agent.files.main')] : []),
+    ...file.agents.flatMap((id) => {
+      const writer = agents.find((entry) => entry.id === id)
+      return writer ? [subAgentLabel(writer)] : []
+    }),
+  ]
+  return <FileLine path={file.path} meta={by.join(', ')} delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />} onOpenFile={onOpenFile} />
+}
+
+/** Un bloc d'un détail en pile, nommé pour les lecteurs d'écran par son titre. */
+function Block({ title, count, children }: { title: string; count?: number; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="flex flex-col pt-1.5">
+      <PanelGroup title={title} count={count} />
+      {children}
     </section>
   )
 }
 
-function SubAgentThread({
+/** Fait défiler le fil principal jusqu'à un appel d'outil et le fait clignoter, s'il est rendu. */
+function revealToolCall(id: string): boolean {
+  const node = document.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(id)}"]`)
+  if (!node) return false
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  node.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
+  node.animate?.([{ boxShadow: '0 0 0 2px var(--sg-accent)' }, { boxShadow: '0 0 0 2px transparent' }], { duration: 1500, easing: 'ease-out' })
+  return true
+}
+
+type Notice = { tone: 'neutral' | 'critical'; text: string }
+
+/** Le détail d'un sous-agent, dans le panneau même : ce qu'il a écrit, ce qu'il a rendu, son fil. */
+function SubAgentDetail({ conversationId, agent, onOpenFile }: { conversationId: string; agent: SubAgent; onOpenFile: (path: string) => void }) {
+  const t = useTranslate()
+  const running = agent.status === 'running'
+  const now = useNow(running)
+  const wide = useMediaQuery('(min-width: 48rem)')
+  const rows = useMemo(() => buildRows(agent.items, agent.id, running), [agent.items, agent.id, running])
+  const files = useMemo(() => filesOf(agent), [agent])
+  const result = useMemo(() => resultOf(agent), [agent])
+  const [showResult, setShowResult] = useState(false)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [interrupting, setInterrupting] = useState(false)
+
+  const state = running
+    ? t('panel.agent.detail.running', { duration: formatDuration(Math.max(0, now - agent.startedAt), t) })
+    : agent.status === 'done'
+      ? agent.durationMs
+        ? t('panel.agent.detail.doneIn', { duration: formatDuration(agent.durationMs, t) })
+        : t('panel.agent.detail.done')
+      : t(agent.status === 'failed' ? 'panel.agent.state.failed' : 'panel.agent.state.stopped')
+  const meta = [
+    agent.type,
+    state,
+    agent.toolCount > 0 ? toolCount(agent.toolCount, t) : null,
+    // Les tokens d'un sous-agent n'apparaissent nulle part ailleurs : ils ne comptent pas
+    // dans l'usage du tour, que seul l'agent principal alimente.
+    agent.totalTokens > 0 ? t('panel.agent.tokens', { count: formatTokens(agent.totalTokens) }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  const copy = async () => {
+    if (!result) return
+    const ok = await copyText(result)
+    setNotice({ tone: ok ? 'neutral' : 'critical', text: t(ok ? 'panel.agent.copied' : 'panel.agent.copyFailed') })
+  }
+  const reveal = () => {
+    if (!revealToolCall(agent.id)) {
+      setNotice({ tone: 'neutral', text: t('panel.agent.revealMissing') })
+      return
+    }
+    // En feuille, le panneau couvre le fil : il s'écarte pour qu'on voie l'appel.
+    if (!wide) setPanelOpen(false)
+  }
+  // Le CLI n'arrête pas un sous-agent seul : un appel bloquant ne se coupe qu'avec son tour.
+  // Interrompre la session est le seul geste réel, et il arrête tout.
+  const interrupt = () => {
+    setInterrupting(true)
+    interruptConversation(conversationId).catch((error: Error) => {
+      setInterrupting(false)
+      setNotice({ tone: 'critical', text: error.message })
+    })
+  }
+
+  return (
+    <>
+      <StackHeader
+        back={t('panel.tab.agents')}
+        onBack={clearSubAgent}
+        title={
+          <span className="flex min-w-0 items-center gap-2">
+            <AgentIconDot agent={agent} />
+            <span className="truncate">{subAgentLabel(agent)}</span>
+          </span>
+        }
+        meta={meta}
+      />
+      {notice ? (
+        <PanelNotice tone={notice.tone} onClose={() => setNotice(null)}>
+          {notice.text}
+        </PanelNotice>
+      ) : null}
+
+      <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+        <Block title={t('panel.agent.block.files')} count={files.length > 0 ? files.length : undefined}>
+          {files.length === 0 ? (
+            <p className="px-3 text-xs text-ink-faint">{t(running ? 'panel.agent.files.noneYet' : 'panel.agent.files.none')}</p>
+          ) : (
+            <ul>
+              {files.map((file) => (
+                <FileLine
+                  key={file.path}
+                  path={file.path}
+                  delta={<Delta added={file.added} removed={file.removed} passes={file.passes} />}
+                  onOpenFile={onOpenFile}
+                />
+              ))}
+            </ul>
+          )}
+        </Block>
+
+        <Block title={t('panel.agent.block.result')}>
+          {result ? (
+            <div className="px-3">
+              <p className={cx('text-sm whitespace-pre-wrap text-ink-soft', !showResult && 'line-clamp-3')}>{result}</p>
+              <button
+                type="button"
+                aria-expanded={showResult}
+                onClick={() => setShowResult((value) => !value)}
+                className="mt-1 min-h-9 text-xs text-ink-faint hover:text-ink pointer-coarse:min-h-11"
+              >
+                {t(showResult ? 'panel.agent.result.fold' : 'panel.agent.result.readAll')}
+              </button>
+            </div>
+          ) : (
+            <p className="px-3 text-xs text-ink-faint">{t(running ? 'panel.agent.result.noneYet' : 'panel.agent.result.none')}</p>
+          )}
+        </Block>
+
+        <Block title={t('panel.agent.block.thread')} count={agent.toolCount > 0 ? agent.toolCount : undefined}>
+          <div className="flex min-w-0 flex-col gap-3 px-3">
+            {rows.length === 0 ? (
+              <p className="text-xs text-ink-faint">{t(running ? 'panel.agent.thread.starting' : 'panel.agent.thread.silent')}</p>
+            ) : (
+              <ChatThread rows={rows} conversationId={conversationId} />
+            )}
+          </div>
+        </Block>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-1 border-t border-line px-2 py-1.5 pb-safe">
+        <button type="button" onClick={() => void copy()} disabled={!result} className={panelGestureClass}>
+          <Copy size={12} aria-hidden /> {t('panel.agent.copy')}
+        </button>
+        <button type="button" onClick={reveal} className={panelGestureClass}>
+          <CornerUpLeft size={12} aria-hidden /> {t('panel.agent.reveal')}
+        </button>
+        <span className="flex-1" />
+        {running ? (
+          <button
+            type="button"
+            onClick={interrupt}
+            disabled={interrupting}
+            title={t('panel.agent.interruptHint')}
+            className={cx(panelGestureClass, 'hover:text-critical')}
+          >
+            <Square size={11} fill="currentColor" aria-hidden /> {t('panel.agent.interrupt')}
+          </button>
+        ) : null}
+      </div>
+    </>
+  )
+}
+
+/** Un travail de fond : ce qu'on en sait, et ses gestes. Sa sortie ne remonte pas. */
+function WorkDetail({
   conversationId,
-  agent,
+  conversationTitle,
+  canStop,
+  work,
   onBack,
 }: {
   conversationId: string
-  agent: SubAgent
+  conversationTitle: string
+  canStop: boolean
+  work: BackgroundWork
   onBack: () => void
 }) {
   const t = useTranslate()
-  const running = agent.status === 'running'
-  const rows = useMemo(() => buildRows(agent.items, agent.id, running), [agent.items, agent.id, running])
+  const family = familyOf(work.kind)
+  const port = workPort(work)
+  const label = work.description || work.kind
+  const [notice, setNotice] = useState<string | null>(null)
+  /**
+   * L'arrêt n'est pas confirmé par la réponse : le travail disparaît au prochain
+   * `background.updated`, et son détail avec lui. Entre les deux, le bouton reste
+   * désactivé, sans quoi il inviterait à redemander un arrêt déjà demandé.
+   */
+  const [stopping, setStopping] = useState(false)
+
+  const stop = () => {
+    setStopping(true)
+    stopBackgroundTask(conversationId, work.id).catch((error: Error) => {
+      setStopping(false)
+      setNotice(error.message)
+    })
+  }
+  const facts: [string, string][] = [
+    [t('panel.agent.work.nature'), familyWord(family, t)],
+    [t('panel.agent.work.now'), work.activity ?? t('panel.agent.work.nothing')],
+    ...(work.command ? [[t('panel.agent.work.command'), work.command] as [string, string]] : []),
+    ...(work.toolUses > 0 ? [[t('panel.agent.work.tools'), String(work.toolUses)] as [string, string]] : []),
+    ...(work.totalTokens > 0 ? [[t('panel.agent.work.tokens'), formatTokens(work.totalTokens)] as [string, string]] : []),
+    ...(port !== null ? [[t('panel.agent.work.port'), `:${port}`] as [string, string]] : []),
+  ]
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-line px-2 py-1.5">
-        <TooltipButton
-          type="button"
-          onClick={onBack}
-          aria-label={t('subagent.pane.back')}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-faint hover:text-ink"
-        >
-          <ArrowLeft size={14} />
-        </TooltipButton>
-        <Bot size={14} className={cx('shrink-0', agent.status === 'running' ? 'text-accent' : 'text-ink-faint')} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-xs font-medium text-ink">{subAgentLabel(agent)}</span>
-          <span className="block truncate text-meta text-ink-faint">
-            {agent.activity ? `${agent.type} · ${agent.activity}` : agent.type}
+    <>
+      <StackHeader
+        back={t('panel.tab.agents')}
+        onBack={onBack}
+        title={
+          <span className="flex min-w-0 items-center gap-2">
+            <PanelStatusIcon icon={<FamilyIcon family={family} size={14} />} dot="accent" pulse />
+            <span className="truncate">{label}</span>
           </span>
-        </span>
-
-        {/* Les tokens d'un sous-agent n'apparaissent nulle part ailleurs : ils ne
-            comptent pas dans l'usage du tour, que seul l'agent principal alimente. */}
-        {agent.totalTokens > 0 ? (
-          <span className="shrink-0 text-meta tabular-nums text-ink-faint">
-            {t('subagent.tokens', { count: formatTokens(agent.totalTokens) })}
-          </span>
+        }
+        meta={t('panel.agent.work.meta')}
+      />
+      {notice ? (
+        <PanelNotice tone="critical" onClose={() => setNotice(null)}>
+          {notice}
+        </PanelNotice>
+      ) : null}
+      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
+        <dl>
+          {facts.map(([term, value]) => (
+            <div key={term} className="flex h-11 items-center gap-3 px-3 text-sm md:h-9 pointer-coarse:h-11">
+              <dt className="w-24 shrink-0 text-xs text-ink-faint">{term}</dt>
+              <dd className="min-w-0 flex-1 truncate text-ink" title={value}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="px-3 pt-2 text-xs text-ink-faint">{t('panel.agent.work.noOutput')}</p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-line px-2 py-1.5 pb-safe">
+        {/* Le CLI qui ne sait pas arrêter un travail de fond n'a pas de bouton : un geste
+            qui ne ferait rien mentirait. */}
+        {canStop ? (
+          <button type="button" onClick={stop} disabled={stopping} className={cx(panelGestureClass, 'hover:text-critical')}>
+            <Square size={11} fill="currentColor" aria-hidden /> {t('panel.agent.work.stop')}
+          </button>
         ) : null}
+        <span className="flex-1" />
+        {port !== null ? <PortLink port={port} label={t('panel.agent.open', { port })} className={panelGestureClass} /> : null}
+        <button
+          type="button"
+          onClick={() => requestActionEdit(workSeed(work, conversationTitle, t))}
+          className={cx(panelGestureClass, 'border border-line text-ink hover:border-line-strong')}
+        >
+          <Wand2 size={12} aria-hidden /> {t('panel.agent.work.makeAction')}
+        </button>
       </div>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-        {rows.length === 0 ? (
-          <p className="text-xs text-ink-faint">
-            {/* Le CLI transmet le travail du sous-agent au fil de l'eau : entre le
-                lancement et son premier mot, il n'y a rien à montrer. */}
-            {agent.status === 'running'
-              ? t('subagent.pane.starting')
-              : t('subagent.pane.silent')}
-          </p>
-        ) : (
-          <ChatThread rows={rows} conversationId={conversationId} />
-        )}
-      </div>
-    </div>
+    </>
   )
 }

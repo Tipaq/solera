@@ -457,7 +457,7 @@ export const SidePanel = memo(function SidePanel({
       {tab === 'agents' && conversationId && agent ? (
         <AgentsPane
           conversationId={conversationId}
-          scope={scope}
+          title={session?.title}
           agent={agent}
           agents={subAgents}
           background={background}
