@@ -269,6 +269,7 @@ try {
   await page.waitForFunction(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label') === 'Carte #1')
   // Maj+Tab d'abord : le tiroir prend le focus sur lui-même, et ce conteneur doit
   // boucler sur son dernier élément plutôt que laisser sortir le focus (#254).
+  assert.equal(await sheet.evaluate((element) => element === document.activeElement), true, 'La fiche prend le focus sur son conteneur')
   for (let i = 0; i < 12; i++) {
     await page.keyboard.press(i === 0 ? 'Shift+Tab' : 'Tab')
     assert.equal(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label')), 'Carte #1')

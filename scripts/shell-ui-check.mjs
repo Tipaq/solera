@@ -158,17 +158,18 @@ try {
       // Le tiroir prend le focus sur lui-même, ou sur un clic dans son blanc : Maj+Tab
       // depuis le conteneur boucle sur son dernier élément, Tab sur le premier (#254).
       const dialogOfFocus = () => page.evaluate(() => document.activeElement?.closest('[role="dialog"]')?.getAttribute('aria-label') ?? null)
-      const lastOf = () => drawer.evaluate((element) => document.activeElement === element.querySelector('input'))
+      const focusOn = (locator) => locator.evaluate((element) => element === document.activeElement)
+      const last = drawer.getByRole('textbox', { name: 'Mention' })
       console.log(width, 'Maj+Tab depuis le conteneur reste dans le tiroir')
-      assert.equal(await drawer.evaluate((element) => element === document.activeElement), true, 'Le conteneur a le focus')
+      assert.equal(await focusOn(drawer), true, 'Le conteneur a le focus')
       await page.keyboard.press('Shift+Tab')
       assert.equal(await dialogOfFocus(), 'Carte #161', 'Maj+Tab depuis le conteneur reste dans le tiroir')
-      assert.equal(await lastOf(), true, 'Maj+Tab depuis le conteneur va au dernier élément')
+      assert.equal(await focusOn(last), true, 'Maj+Tab depuis le conteneur va au dernier élément')
       await page.keyboard.press('Tab')
-      assert.equal(await dialogOfFocus(), 'Carte #161', 'Tab depuis le dernier élément boucle')
+      assert.equal(await focusOn(drawer.getByRole('button', { name: 'Fermer', exact: true })), true, 'Tab depuis le dernier élément boucle sur le premier')
       await drawer.getByRole('heading', { name: 'Tiroir commun' }).click()
       await page.keyboard.press('Shift+Tab')
-      assert.equal(await lastOf(), true, 'Maj+Tab après un clic dans le blanc du tiroir')
+      assert.equal(await focusOn(last), true, 'Maj+Tab après un clic dans le blanc du tiroir')
       for (let i = 0; i < 6; i++) {
         await page.keyboard.press('Shift+Tab')
         assert.equal(await dialogOfFocus(), 'Carte #161', 'Maj+Tab répété reste dans le tiroir')

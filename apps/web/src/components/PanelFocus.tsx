@@ -24,16 +24,16 @@ function updateModalBackground() {
 }
 
 /**
- * Le dernier élément que Tab atteint dans `container`, selon les mêmes critères que le
- * piège de Radix : tabulable, actif, visible, hors d'un sous-arbre inerte.
+ * Le dernier bord du piège de Radix (`getTabbableEdges`), avec ses critères à l'identique :
+ * ailleurs, Tab depuis l'élément choisi ne serait pas reconnu comme le bord, et sortirait.
  */
 function lastTabbable(container: HTMLElement) {
   const candidates = [...container.querySelectorAll<HTMLElement>('*')].filter((element) =>
-    element.tabIndex >= 0
-    && !element.matches(':disabled, input[type="hidden"]')
-    && !element.closest('[inert]')
-    && element.checkVisibility({ visibilityProperty: true }))
-  return candidates.at(-1)
+    !(element as HTMLElement & { disabled?: boolean }).disabled
+    && !element.hidden
+    && !(element instanceof HTMLInputElement && element.type === 'hidden')
+    && element.tabIndex >= 0)
+  return candidates.findLast((element) => element.checkVisibility({ checkVisibilityCSS: true }))
 }
 
 /** Même contenu en panneau libre ou plein écran, sans remonter l'éditeur au redimensionnement. */
@@ -105,12 +105,14 @@ export function PanelFocus({ open, modal, onClose, fallbackFocus, opener, protec
         // Le piège de Radix ne boucle que depuis ses bords : focalisé sur lui-même (à
         // l'ouverture, ou par un clic dans son blanc), le conteneur laisserait Maj+Tab
         // sortir du dialogue vers un arrière-plan inerte (#254).
-        if (open && modal && event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && event.target === container.current) {
+        const shiftTab = event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey
+        if (open && modal && shiftTab && event.target === container.current) {
+          // Sans élément tabulable, Radix retient lui-même la touche sur le conteneur.
           const last = lastTabbable(container.current)
-          if (last) {
-            event.preventDefault()
-            last.focus()
-          }
+          if (!last) return
+          event.preventDefault()
+          last.focus({ preventScroll: true })
+          if (last instanceof HTMLInputElement) last.select()
           return
         }
         if (!open || event.key !== 'Escape' || event.defaultPrevented) return
