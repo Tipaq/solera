@@ -127,12 +127,12 @@ export const SidePanel = memo(function SidePanel({
   const t = useTranslate()
   // Un fil libre n'a pas de dossier : les cinq vues de répertoire n'ont pas d'objet.
   const hasWorkspace = projectId !== null
-  const onWorktree = !conversationId && worktree !== undefined
-  const scope = conversationId ?? (onWorktree ? worktreeScope(worktree.id) : projectScope(projectId ?? ''))
+  const worktreeView = !conversationId && worktree !== undefined
+  const scope = conversationId ?? (worktreeView ? worktreeScope(worktree.id) : projectScope(projectId ?? ''))
   const { data: projects } = useProjects()
   const projectName = projects?.find((project) => project.id === projectId)?.name
   const workspaceLabel = hasWorkspace
-    ? [projectName, (onWorktree ? worktree.name : workspaceName) ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
+    ? [projectName, (worktreeView ? worktree.name : workspaceName) ?? t('terminal.dir.workspace')].filter(Boolean).join(' · ')
     : t('panel.noWorkspace')
   const chosenTab = usePanelTab()
   // La vue *Web* n'existe que tant qu'une page y est ouverte. Elle ne dépend d'aucun
@@ -154,12 +154,12 @@ export const SidePanel = memo(function SidePanel({
   // l'inverse : seul *Agent* existe, et c'est lui qu'on retrouve en revenant.
   const sessionTab = chosenTab === 'agents' || chosenTab === 'project'
   // Sur un arbre, les vues qui s'ouvriraient à la racine retombent sur Git.
-  const rootTab = onWorktree && (chosenTab === 'terminals' || chosenTab === 'actions')
+  const rootOnlyTab = worktreeView && (chosenTab === 'terminals' || chosenTab === 'actions')
   const tab: PanelTab = chosenTab === 'web'
     ? hasWeb ? 'web' : hasWorkspace ? 'files' : 'agents'
     : !hasWorkspace
       ? 'agents'
-      : rootTab
+      : rootOnlyTab
         ? 'git'
         : conversationId || !sessionTab
           ? chosenTab
@@ -366,7 +366,7 @@ export const SidePanel = memo(function SidePanel({
         closable={!modal && !docked}
         tab={tab}
         hasWorkspace={hasWorkspace}
-        rootViews={!onWorktree}
+        showRootViews={!worktreeView}
         hasConversation={Boolean(conversationId)}
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
@@ -532,7 +532,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, rootViews, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
+function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, actionsBadge }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -541,7 +541,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, rootViews, hasConversation
   /** Faux sur un fil libre : les cinq vues de répertoire n'ont rien à montrer. */
   hasWorkspace: boolean
   /** Faux sur un arbre sans session : Terminaux et Actions s'ouvriraient à la racine. */
-  rootViews: boolean
+  showRootViews: boolean
   hasConversation: boolean
   /** Une page est ouverte dans la vue *Web* : son onglet n'existe qu'alors. */
   hasWeb: boolean
@@ -562,7 +562,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, rootViews, hasConversation
             active={tab === 'search'} onSelect={() => setPanelTab('search')} />
           <Tab icon={<GitCompare size={15} />} label={t('panel.tab.git')} keepLabel={!band}
             active={tab === 'git'} onSelect={() => setPanelTab('git')} />
-          {rootViews ? (
+          {showRootViews ? (
             <>
               <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
                 active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />

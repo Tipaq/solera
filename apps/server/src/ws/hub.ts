@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { WebSocket } from 'ws'
+import type { Db } from '@solera/db'
 import {
   CATCHUP_THRESHOLD,
   HEARTBEAT_INTERVAL_MS,
@@ -9,7 +10,6 @@ import {
 import type { EventLog } from '../events/event-log.js'
 import type { Notifications } from '../notifications/dispatcher.js'
 import type { SessionManager, StatusBroadcast } from '../sessions/session-manager.js'
-import type { Db } from '@solera/db'
 import type { AppContext } from '../http/context.js'
 import { canReadConversation } from '../conversations/scope.js'
 import { readConversationState } from '../conversations/state.js'

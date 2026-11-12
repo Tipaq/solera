@@ -115,9 +115,12 @@ export function useBranches(projectId: string | undefined) {
  * Ce qu'une branche apporte depuis la base (S6) : le tiroir « Diff avec la base ».
  * Désactivée tant qu'une des deux références manque.
  */
+export const compareKey = (projectId: string | undefined, base: string | null, head: string | null) =>
+  ['compare', projectId, base, head]
+
 export function useCompare(projectId: string | undefined, base: string | null, head: string | null) {
   return useQuery({
-    queryKey: ['compare', projectId, base, head],
+    queryKey: compareKey(projectId, base, head),
     queryFn: () =>
       api.get<CompareDto>(
         `/api/projects/${projectId}/compare?base=${encodeURIComponent(base ?? '')}&head=${encodeURIComponent(head ?? '')}`,

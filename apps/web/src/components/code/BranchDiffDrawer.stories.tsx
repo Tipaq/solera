@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import type { CompareDto } from '@solera/protocol'
 import { Button } from '@solera/ui'
+import { compareKey } from '../../lib/worktrees'
 import { DrawerLayer } from '../shell/Drawer'
 import { BranchDiffDrawer } from './BranchDiffDrawer'
 
@@ -55,7 +56,7 @@ const EMPTY: CompareDto = { files: [], patch: '', truncated: false, ahead: 0, be
 /** Le tiroir sur une zone de lieu, la réponse du serveur déjà en cache. */
 function Place({ branch, data }: { branch: string; data: CompareDto }) {
   const client = useQueryClient()
-  useState(() => client.setQueryData(['compare', PROJECT, BASE, branch], data))
+  useState(() => client.setQueryData(compareKey(PROJECT, BASE, branch), data))
   const [open, setOpen] = useState(true)
   return (
     <div className="flex h-[36rem] flex-col border border-line">

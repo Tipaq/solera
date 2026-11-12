@@ -599,6 +599,12 @@ function parseNumstat(numstat: string): DiffFile[] {
     .filter((file) => file.path.length > 0)
 }
 
+/** Les fichiers d'un `--numstat` et leur patch, borné à `MAX_DIFF_BYTES`. */
+function workingDiff(numstat: string, patch: string): WorkingDiff {
+  const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
+  return { files: parseNumstat(numstat), patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch, truncated }
+}
+
 /**
  * Ce qu'une branche apporte depuis qu'elle a quitté la base (`base...head`), et son
  * avance et son retard sur elle : le diff « avec la base » (S6).
@@ -628,14 +634,7 @@ export async function readRangeDiff(
       git(cwd, ['rev-list', '--left-right', '--count', range]),
     ])
     const [behind, ahead] = counts.trim().split(/\s+/).map(Number)
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-      ahead: ahead ?? 0,
-      behind: behind ?? 0,
-    }
+    return { ...workingDiff(numstat, patch), ahead: ahead ?? 0, behind: behind ?? 0 }
   } catch (err) {
     throw new GitError(gitMessage(err))
   }
@@ -654,12 +653,7 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
       git(cwd, ['show', '--format=', '--patch', ...PATCH_FLAGS, '-m', '--first-parent', hash]),
     ])
 
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
+    return workingDiff(numstat, patch)
   } catch (err) {
     throw new GitError(gitMessage(err))
   }

@@ -20,12 +20,17 @@ import { worktreeStatusKey } from './worktrees'
 
 type TreeTarget = Pick<TreeFields, 'id' | 'root' | 'name' | 'branch' | 'sessions' | 'anySessionId'>
 
+/** La session vivante d'un arbre : celle qui attend, sinon la première. */
+export function liveSessionId(tree: Pick<TreeFields, 'sessions'>): string | null {
+  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? null
+}
+
 /**
- * La session que visent les gestes d'un arbre : celle qui attend, sinon la première
- * vivante, sinon la plus récente.
+ * La session où s'ouvre le diff d'un arbre (T-13.1) : la vivante, sinon la plus récente.
+ * Rouvrir une session close ne relance rien.
  */
 export function treeSessionId(tree: Pick<TreeFields, 'sessions' | 'anySessionId'>): string | null {
-  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? tree.anySessionId
+  return liveSessionId(tree) ?? tree.anySessionId
 }
 
 /**
@@ -38,7 +43,7 @@ export function canDiffTree(tree: TreeTarget): boolean {
 
 /** Faux pour la racine (on ne rebase pas la base sur elle-même), et comme `canDiffTree`. */
 export function canRebaseTree(tree: TreeTarget): boolean {
-  return !tree.root && (tree.id !== null || treeSessionId(tree) !== null)
+  return !tree.root && (tree.id !== null || liveSessionId(tree) !== null)
 }
 
 /** Le geste « Diff » : l'onglet Git du panneau, dans la session de l'arbre ou sur lui. */
@@ -64,15 +69,17 @@ export function useTreeDiff(projectId: string): (tree: TreeTarget) => void {
 export type TreeRebaseOutcome = { kind: 'asked'; sessionId: string } | { kind: 'rebased' }
 
 /**
- * Le geste « Rebaser » sur la base du projet. Un échec de git (conflit, arbre sale,
- * agent au travail) revient en erreur, avec le message du serveur.
+ * Le geste « Rebaser » sur la base du projet. Seule une session **vivante** reçoit la
+ * demande : écrire à une session close relancerait un agent pour un geste que git fait
+ * seul. Un échec de git (conflit, arbre sale, agent au travail) revient en erreur, avec
+ * le message du serveur ; le retour à l'écran (toast, T-13.3) est à l'appelant.
  */
 export function useRebaseTree(projectId: string) {
   const t = useTranslate()
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ tree, base }: { tree: TreeTarget; base: string }): Promise<TreeRebaseOutcome> => {
-      const sessionId = treeSessionId(tree)
+      const sessionId = liveSessionId(tree)
       if (sessionId) {
         await sendMessage(sessionId, t('code.gesture.rebaseRequest', { branch: tree.branch ?? tree.name, base }))
         return { kind: 'asked', sessionId }

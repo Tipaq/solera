@@ -56,8 +56,8 @@ export function BranchDiffDrawer({
   )
 }
 
-/** Le corps du tiroir, à part pour le catalogue : il ne lit rien lui-même. */
-export function BranchDiffBody({
+/** Le corps du tiroir : chargement, erreur, ou les fichiers et leur patch. */
+function BranchDiffBody({
   data,
   base,
   pending,
