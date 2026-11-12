@@ -10,6 +10,7 @@ import {
   useRunAction,
   useUpdateAction,
 } from './actions'
+import { actionsStatus, type ActionsStatus } from './actions-tab'
 import { api } from './api'
 import { automationsOf, type Automation, type AutomationDraft, type AutomationScope, type UnifiedRun } from './automations'
 import { useAllConversations } from './conversations'
@@ -21,6 +22,7 @@ import {
   useSchedules,
   useUpdateSchedule,
 } from './schedules'
+import { useSessionWorks } from './session-works-query'
 
 export interface AutomationsData {
   items: Automation[]
@@ -47,6 +49,17 @@ export function useAutomations(scope: AutomationScope): AutomationsData {
       costOf: (run) => (run.conversationId ? (costs.get(run.conversationId) ?? null) : null),
     }
   }, [actions, tasks, conversations, actionsPending, tasksPending, key])
+}
+
+/**
+ * Ce qui tourne et ce qui attend dans un projet (ACT-1), pour le compte de son onglet
+ * Actions et le point du bouton du panneau. Aucune requête de plus : les mêmes listes que
+ * l'onglet, et les processus partagent celle de la page Services.
+ */
+export function useActionsStatus(projectId: string | null): ActionsStatus {
+  const { items } = useAutomations(projectId ? { projectId } : { all: true })
+  const works = useSessionWorks(projectId ?? undefined)
+  return useMemo(() => actionsStatus(items, works), [items, works])
 }
 
 /** Où lancer : le worktree d'une conversation, sinon la racine du projet. */

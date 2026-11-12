@@ -17,8 +17,8 @@ import { CommandRunDetail, CommandRunsGroup, useCommandRuns } from './CommandRun
 
 /**
  * L'onglet Actions du panneau : les commandes lancées ici en tête (`CommandRuns`), la
- * liste complète, et l'endroit où l'on en crée. Le lanceur de l'en-tête montre la même
- * liste sans quitter ce qu'on regarde.
+ * liste complète, et l'endroit où l'on en crée. Le point du bouton du panneau dit, de
+ * l'en-tête, ce qui y tourne et ce qui y attend.
  *
  * Le détail d'une commande lancée, celui d'une action, son édition et sa relecture
  * s'ouvrent **en pile**, à la place de la liste (`ActionDrawer`) ; Échap y remonte.

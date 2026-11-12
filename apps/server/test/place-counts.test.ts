@@ -29,3 +29,19 @@ test("une ancienne adresse garde sa requête en rejoignant la nouvelle vue", () 
     '/p/a/travail?vue=fil&source=git',
   )
 })
+
+test("le compte d'Actions : ce qui attend d'abord, sinon ce qui tourne, sinon rien", async () => {
+  const { actionsTabBadge } = await import('../../web/src/lib/actions-tab.js')
+  assert.equal(actionsTabBadge({ running: 0, toReview: 0 }), null)
+  assert.deepEqual(actionsTabBadge({ running: 3, toReview: 0 }), {
+    count: 3,
+    tone: 'running',
+    countTitle: 'actionsTab.status.running',
+  })
+  // Une action à relire attend Tim ; un service qui tourne se contente d'être là.
+  assert.deepEqual(actionsTabBadge({ running: 3, toReview: 2 }), {
+    count: 2,
+    tone: 'caution',
+    countTitle: 'actionsTab.status.review',
+  })
+})

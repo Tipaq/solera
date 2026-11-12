@@ -15,6 +15,7 @@ import {
   type What,
   type WhenFilter,
 } from './automations'
+import type { MessageKey } from './i18n'
 import { NEW_PARAM } from './place'
 import type { SessionWork } from './session-works'
 
@@ -44,6 +45,18 @@ export function actionsStatus(items: readonly Automation[], works: readonly Sess
     running: items.filter((item) => item.live !== null).length + works.length,
     toReview: items.filter((item) => item.review !== null).length,
   }
+}
+
+/**
+ * Le compte de l'onglet Actions, dans la rangée d'un lieu comme dans le panneau (ACT-2) :
+ * ambre « N à relire » d'abord, parce qu'une action à relire attend Tim ; sinon vert
+ * « N en marche », ce qui tourne se contentant d'être là ; rien quand rien ne bouge.
+ * `countTitle` se traduit avec `{ count }`.
+ */
+export function actionsTabBadge(status: ActionsStatus): { count: number; tone: 'caution' | 'running'; countTitle: MessageKey } | null {
+  if (status.toReview > 0) return { count: status.toReview, tone: 'caution', countTitle: 'actionsTab.status.review' }
+  if (status.running > 0) return { count: status.running, tone: 'running', countTitle: 'actionsTab.status.running' }
+  return null
 }
 
 /** Le compte de chaque entrée de « Filtrer ▾ », sur toutes les actions et non les filtrées. */
