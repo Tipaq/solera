@@ -1,4 +1,4 @@
-import { Activity, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
+import { Activity, FolderGit2, GitBranch, GitFork, Plus, Rows3 } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
@@ -8,11 +8,13 @@ import { ActivityRail, type RailModel } from '../components/activity/ActivityRai
 import { BaseLine } from '../components/code/BaseLine'
 import { TreeChip } from '../components/code/TreeChip'
 import { VerdictDot } from '../components/code/VerdictDot'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { AskInbox } from '../components/inbox/AskInbox'
 import { journalDestination } from '../components/journal/JournalView'
 import { WorktreeGroups } from '../components/project/WorktreeGroups'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { ProjectGitGraph } from '../components/travail/ProjectGitGraph'
 import { TravailIndex } from '../components/travail/TravailIndex'
 import { isActiveFilter, matchesActivity, parseActivityFilter } from '../lib/activity-groups'
 import type { ActivityRow } from '../lib/activity-rows'
@@ -54,8 +56,8 @@ import { useWorktreeStatuses } from '../lib/worktrees'
 const TARGET_PARAM = 'arbre'
 
 /**
- * Les vues livrées, dans l'ordre de leurs tuiles. Les quatre autres de `TRAVAIL_VIEWS`
- * (Tableau, Graphe, Par état, Frise) arrivent avec leurs cartes (#177 à #179).
+ * Les vues livrées, dans l'ordre de leurs tuiles. Les trois autres de `TRAVAIL_VIEWS`
+ * (Tableau, Par état, Frise) arrivent avec leurs cartes (#177, #179).
  *
  * « Par arbre » montre, en attendant ses couloirs (#176), le regroupement par worktree
  * de l'ancienne Activité, qui porte le nettoyage des arbres.
@@ -63,6 +65,7 @@ const TARGET_PARAM = 'arbre'
 const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
   couloirs: <Rows3 size={16} />,
   fil: <Activity size={16} />,
+  graphe: <GitFork size={16} />,
 }
 /** Les vues où l'index des arbres a un sens. Les couloirs le prendront avec #176. */
 const WITH_INDEX: TravailView[] = ['fil']
@@ -109,7 +112,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const [params, setParams] = useSearchParams()
   const hasGit = Boolean(project.git)
 
-  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil'] as const) : (['fil'] as const)).map((key) => ({
+  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil', 'graphe'] as const) : (['fil'] as const)).map((key) => ({
     key,
     label: t(`travail.view.${key}`),
     icon: VIEW_ICONS[key]!,
@@ -171,7 +174,8 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   // vivant et l'historique.
   const treeRows = view === 'couloirs' ? travail.rows.filter(keepsRow) : []
   const shown = view === 'couloirs' ? treeRows.length : live.length + entries.length
-  const nothing = active > 0 && shown === 0 && inbox.length === 0
+  // Le graphe dit lui-même qu'il n'a aucun commit dans la période.
+  const nothing = view !== 'graphe' && active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
 
@@ -347,6 +351,29 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               {base}
               <NoMatch onClear={clearAll} />
             </div>
+          ) : view === 'graphe' ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <ProjectGitGraph
+                projectId={projectId}
+                trees={code.trees}
+                branches={branches}
+                targetKey={target ? targetKey : null}
+                from={from}
+                showMerged={forceCleanup}
+                onSelect={setTarget}
+                // Le tiroir d'un arbre arrive avec « Par arbre » (#176) ; d'ici là, l'arbre se choisit.
+                onOpenTree={setTarget}
+                sources={{
+                  conversations: travail.conversations,
+                  live: travail.rows.map((row) => row.entry),
+                  scopes: travail.scopes,
+                  cards: travail.cards,
+                  inbox: travail.inbox,
+                }}
+              />
+            </div>
           ) : view === 'fil' ? (
             <ActivityRail
               model={rail}
@@ -359,6 +386,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
           )}
         </div>
       </div>
+      <CardSheetHost projectId={projectId} />
     </div>
   )
 }
