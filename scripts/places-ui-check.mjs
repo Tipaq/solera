@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
 /*
- * Les pages de lieu : l'Aperçu d'un projet, Projets, Planifiées, et les deux Journaux.
+ * Les pages de lieu : l'Aperçu d'un projet, celui du portefeuille, Planifiées, et le Journal.
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : l'ordre des blocs de
  * l'Aperçu (« Ce qui t'attend », puis le phare des jalons, puis la pile Actions et
@@ -593,18 +593,63 @@ try {
     `/p/${docs.id}/actions`,
   )
 
-  // ─── Le portefeuille : Projets, Board global, Activité ─────────────────────
+  // ─── Le portefeuille : coque et Aperçu (#237) ───────────────────────────────
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
-  for (const project of projects) {
-    await page.getByRole('link', { name: new RegExp(project.name) }).first().waitFor()
-  }
-  assert.ok(
-    (await page.getByText(nimbus.git ? nimbus.git.branch : 'main').count()) > 0,
-    'Chaque ligne porte la branche du dépôt',
+  /* La rangée : Aperçu, Tableau, Jalons. Travail et Actions attendent leur vue du
+     portefeuille (#238, #241) : masqués d'ici là, plutôt que de mener hors de la coque. */
+  assert.deepEqual(
+    await portfolio.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname)),
+    ['/projects', '/projects/board', '/projects/timeline'],
+    'Aperçu · Tableau · Jalons',
   )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'page-projets.png') })
+  // La bande : un seul geste, « + Projet », et plus de « + Conversation ».
+  const portfolioBand = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Projets', exact: true }) })
+  await portfolioBand.getByRole('button', { name: 'Nouveau projet', exact: true }).waitFor()
+  assert.equal(await portfolioBand.getByRole('button').count(), 1, 'La bande du portefeuille ne porte que « + Projet »')
+  // Réglages au bout : ceux de l'instance, en fenêtre.
+  await portfolio.getByRole('button', { name: 'Réglages de l’instance', exact: true }).click()
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  // L'Aperçu, dans son ordre : ce qui t'attend, les projets, puis le code et les événements.
+  const portfolioOverview = page.locator('[data-place-content]')
+  const projectsRegion = page.getByRole('region', { name: 'Projets', exact: true })
+  await projectsRegion.waitFor()
+  for (const project of projects) {
+    await projectsRegion.locator(`a[href="/p/${project.id}"]`).waitFor()
+  }
+  const codeRegion = page.getByRole('region', { name: 'Code en cours', exact: true })
+  const eventsRegion = page.getByRole('region', { name: 'Derniers événements', exact: true })
+  await Promise.all([codeRegion.waitFor(), eventsRegion.waitFor()])
+  assert.equal(await portfolioOverview.getByRole('searchbox').count(), 0, "Pas de barre d'outils sur l'Aperçu du portefeuille")
+  const order = await portfolioOverview.evaluate((root) =>
+    [...root.querySelectorAll('section[aria-labelledby]')].map((section) => section.querySelector('h2')?.textContent),
+  )
+  assert.deepEqual(
+    order.filter((title) => ['Projets', 'Code en cours', 'Derniers événements'].includes(title)),
+    ['Projets', 'Code en cours', 'Derniers événements'],
+  )
+  // Chaque arbre du code en cours ouvre l'arbre dans Travail de son projet.
+  const treeLinks = await codeRegion.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  if (treeLinks.length === 0) await codeRegion.getByText('Rien ne tourne.', { exact: true }).waitFor()
+  for (const href of treeLinks) assert.match(href, /^\/p\/[^/]+\/travail\?arbre=/)
+  // Les événements de tous les projets, huit au plus, chacun avec son projet.
+  const portfolioEvents = eventsRegion.locator('li')
+  assert.ok((await portfolioEvents.count()) > 0 && (await portfolioEvents.count()) <= 8, 'Huit derniers événements au plus')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-apercu.png') })
+  // Une carte mène à son projet.
+  await projectsRegion.locator(`a[href="/p/${nimbus.id}"]`).click()
+  await page.waitForURL(`**/p/${nimbus.id}`)
+
+  // Les anciennes vues du portefeuille mènent à l'Aperçu.
+  for (const old of ['activity', 'work', 'journal']) {
+    await page.goto(`${base}/projects/${old}`)
+    await page.waitForURL(/\/projects$/)
+  }
+  await portfolio.waitFor()
 
   /*
     Le board global : les cartes de **tous** les projets dans quatre colonnes, chacune
@@ -612,8 +657,6 @@ try {
     relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
     projets atterrissent bien dans la même colonne.
   */
-  // La même coque qu'un projet : Réglages au bout, qui ouvre ceux de l'instance.
-  await portfolio.getByRole('button', { name: 'Réglages de l’instance', exact: true }).waitFor()
   await portfolio.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL('**/projects/board')
   const todo = page.getByRole('region', { name: 'À faire', exact: true })
@@ -642,24 +685,6 @@ try {
     )
   }
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
-
-  // L'Activité du portefeuille (#117) : la liste d'un projet, une colonne Projet en
-  // plus, et Travail qui s'y fond. L'ancienne adresse y mène.
-  await page.goto(`${base}/projects/work`)
-  await page.waitForURL(/\/projects\/activity$/)
-  const review = page.locator('section[aria-labelledby="portfolio-activity-review"]')
-  await review.waitFor()
-  // La carte en *À vérifier* du jeu d'essai, par sa session ou par une ligne de carte.
-  await review.getByText('#4', { exact: true }).waitFor()
-  await page.getByText(nimbus.name, { exact: true }).first().waitFor()
-  assert.equal(await page.getByRole('heading', { name: /^À faire/ }).count(), 0, "L'Activité groupe par demande, pas par colonne")
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite.png') })
-  // Grouper par projet : un en-tête par projet, et plus de groupe d'état.
-  await page.getByRole('radio', { name: 'Projet' }).click()
-  await page.waitForURL(/groupe=project/)
-  await page.locator(`section[aria-labelledby="portfolio-activity-project-${nimbus.id}"]`).waitFor()
-  assert.equal(await review.count(), 0, 'Grouper par projet retire les groupes d’état')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite-par-projet.png') })
 
   // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
   // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
@@ -707,12 +732,6 @@ try {
   await page.getByText(/docs\/audits\/.*offline-cache/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
 
-  // Le même journal au portefeuille, où chaque ligne porte la pastille de son projet.
-  await page.goto(`${base}/projects/journal`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
-  await page.getByText('feat/city-search', { exact: true }).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-journal.png') })
-
   // ─── La page Planifiées ───────────────────────────────────────────────────
   await page.goto(`${base}/schedules`)
   for (const header of ['Tâche', 'Cible', 'Fréquence', 'Prochaine', 'Dernier']) {
@@ -740,6 +759,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-mobile.png') })
   await page.goto(`${base}/projects`)
+  await page.getByRole('region', { name: 'Derniers événements', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
   // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
@@ -760,8 +780,18 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 
+  // Sans projet, l'Aperçu du portefeuille propose d'en créer un. En dernier : la suite
+  // archive tous les projets pour y arriver.
+  for (const project of projects) {
+    assert.ok((await context.request.patch(`${base}/api/projects/${project.id}`, { data: { archived: true } })).ok())
+  }
+  await page.goto(`${base}/projects`)
+  await page.getByText('Aucun projet', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('link', { name: 'Créer un projet' }).getAttribute('href'), '/projects/new')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
+
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, lignes de projets, board global, Activité, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque et Aperçu du portefeuille (anciennes vues, état vide), board global, les deux chronologies, le journal, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

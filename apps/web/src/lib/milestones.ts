@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appendCardPrecision,
   type AgentConfig,
@@ -66,6 +66,25 @@ export function useActiveMilestones(projectId: string | undefined) {
     enabled: Boolean(projectId),
     refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS),
   })
+}
+
+/**
+ * Les jalons lancés de plusieurs projets (le portefeuille), sous la clé de
+ * `useActiveMilestones` : le cache est celui de la page de chaque projet.
+ */
+export function useAllActiveMilestones(projectIds: readonly string[]): MilestoneRunDto[] {
+  const queries = useQueries({
+    queries: projectIds.map((projectId) => ({
+      queryKey: activeKey(projectId),
+      queryFn: () => api.get<MilestoneRunDto[]>(`/api/projects/${projectId}/milestones/active`),
+      refetchInterval: (query: { state: { data?: MilestoneRunDto[] } }) =>
+        (query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS,
+    })),
+  })
+  // Recomposé à chaque rendu : on mémorise sur les horodatages de réponse.
+  const stamps = queries.map((query) => query.dataUpdatedAt).join(',')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => queries.flatMap((query) => query.data ?? []), [stamps])
 }
 
 /**
