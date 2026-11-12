@@ -155,6 +155,9 @@ export function liveServices(items: readonly Automation[]): Automation[] {
 
 /* ------------------------------------------------------------------ les couloirs */
 
+/** Un passage sauté n'a pas tourné : il se montre, mais ne dispute la place à personne. */
+const ran = (shot: Shot) => shot.status !== 'skipped'
+
 const visualEnd = (shot: Shot) => Math.max(shot.end, shot.start + VISUAL_SPAN)
 
 /**
@@ -162,7 +165,8 @@ const visualEnd = (shot: Shot) => Math.max(shot.end, shot.start + VISUAL_SPAN)
  * chacun prend le premier couloir libre, et une grappe partage sa largeur entre ses
  * couloirs. Un bloc fait au moins une demi-heure de haut, donc deux passages courts
  * trop proches se décalent aussi. Mais ne **chevauche** que celui qui recouvre, dans le
- * temps, un passage d'une autre action : une action ne tourne jamais deux fois.
+ * temps, un passage d'une autre action : une action ne tourne jamais deux fois, et un
+ * passage sauté n'a pas tourné.
  */
 export function layoutDay(shots: readonly Shot[]): Placed[] {
   const out: Placed[] = []
@@ -172,7 +176,9 @@ export function layoutDay(shots: readonly Shot[]): Placed[] {
   const flush = () => {
     const lanes = Math.max(1, ...cluster.map((shot) => shot.lane + 1))
     for (const shot of cluster) {
-      const overlaps = cluster.some((other) => other.item.id !== shot.item.id && other.start < shot.end && shot.start < other.end)
+      const overlaps =
+        ran(shot) &&
+        cluster.some((other) => ran(other) && other.item.id !== shot.item.id && other.start < shot.end && shot.start < other.end)
       out.push({ ...shot, lanes, overlaps })
     }
     cluster = []

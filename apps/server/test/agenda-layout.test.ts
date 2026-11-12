@@ -198,6 +198,13 @@ test('layoutDay : deux blocs courts trop proches pour tenir l’un sous l’autr
   assert.ok(placed.every((entry) => !entry.overlaps))
 })
 
+test('layoutDay : un passage sauté n’a pas tourné, il ne chevauche rien', () => {
+  const skipped: Shot = { ...shot('a', 'triage', paris(11, 3), 20), status: 'skipped' }
+  const placed = layoutDay([skipped, shot('b', 'backup', paris(11, 3, 10), 30)])
+  assert.deepEqual(placed.map((entry) => entry.lane), [0, 1])
+  assert.ok(placed.every((entry) => !entry.overlaps))
+})
+
 test('clashCount compte les grappes où deux actions différentes se chevauchent', () => {
   const day = periodOf(NOW, 'day', PARIS)
   const columns = columnsOf(day, [

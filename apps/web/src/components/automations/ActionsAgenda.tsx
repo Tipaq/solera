@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, MoreHorizontal, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { SegmentedControl, TooltipButton, cx } from '@solera/ui'
+import { Button, IconButton, SegmentedControl, TooltipButton, cx } from '@solera/ui'
 import {
   FOLD_PX,
   MIN_BLOCK,
@@ -21,14 +21,15 @@ import {
 import {
   RUN_VERDICTS,
   formatDateTime,
+  launcherGroupOf,
   liveText,
   natureOf,
   natureWord,
   type Automation,
-  type Nature,
+  type LauncherGroup,
   type VerdictTone,
 } from '../../lib/automations'
-import { useLocale, useTranslate } from '../../lib/i18n'
+import { useLocale, useTranslate, type MessageKey } from '../../lib/i18n'
 import { pluralKey } from '../../lib/schedule-rule'
 import { useServerTimeZone } from '../../lib/schedules'
 import { NatureIcon } from './ActionMarks'
@@ -88,7 +89,7 @@ export function ActionsAgenda({
   const days = useMemo(() => periodOf(anchor, scope, timeZone), [anchor, scope, timeZone])
   const from = days[0]!.start
   const to = days[days.length - 1]!.end
-  const planned = items.some((item) => item.schedule)
+  const anySchedule = items.some((item) => item.schedule)
   const columns = useMemo(() => columnsOf(days, shotsOf(items, from, to, now, timeZone)), [days, items, from, to, now, timeZone])
   const rows = useMemo(() => rowsOf(shownHours(columns, now, unfolded, timeZone)), [columns, now, unfolded, timeZone])
   const clashes = clashCount(columns)
@@ -108,30 +109,16 @@ export function ActionsAgenda({
     <div className="@container/agenda flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-2 text-base font-semibold text-ink first-letter:uppercase">{title}</h2>
-        <span className="inline-flex items-center rounded-md border border-line">
-          <TooltipButton
-            type="button"
-            aria-label={t('agenda.previous')}
-            onClick={() => setAnchor(shiftAnchor(anchor, scope, -1, timeZone))}
-            className="grid size-8 place-items-center text-ink-faint hover:text-ink pointer-coarse:size-11"
-          >
+        <span className="inline-flex items-center gap-0.5">
+          <IconButton size="sm" label={t('agenda.previous')} onClick={() => setAnchor(shiftAnchor(anchor, scope, -1, timeZone))}>
             <ChevronLeft size={16} aria-hidden />
-          </TooltipButton>
-          <button
-            type="button"
-            onClick={() => setAnchor(now)}
-            className="h-8 border-x border-line px-2.5 text-xs text-ink-soft hover:text-ink pointer-coarse:h-11"
-          >
+          </IconButton>
+          <Button variant="secondary" size="sm" onClick={() => setAnchor(now)}>
             {t('agenda.today')}
-          </button>
-          <TooltipButton
-            type="button"
-            aria-label={t('agenda.next')}
-            onClick={() => setAnchor(shiftAnchor(anchor, scope, 1, timeZone))}
-            className="grid size-8 place-items-center text-ink-faint hover:text-ink pointer-coarse:size-11"
-          >
+          </Button>
+          <IconButton size="sm" label={t('agenda.next')} onClick={() => setAnchor(shiftAnchor(anchor, scope, 1, timeZone))}>
             <ChevronRight size={16} aria-hidden />
-          </TooltipButton>
+          </IconButton>
         </span>
         <SegmentedControl
           label={t('agenda.scope.label')}
@@ -151,7 +138,7 @@ export function ActionsAgenda({
         <Legend />
       </div>
 
-      {planned ? null : <p className="text-sm text-ink-faint">{t('agenda.empty')}</p>}
+      {anySchedule ? null : <p className="text-sm text-ink-faint">{t('agenda.empty')}</p>}
 
       {/* Au large : la grille, toujours, même vide. */}
       <div className="hidden overflow-hidden rounded-lg border border-line @min-[44rem]/agenda:block">
@@ -196,7 +183,7 @@ export function ActionsAgenda({
           })}
         </div>
 
-        <div className="max-h-[36rem] overflow-y-auto">
+        <div className="max-h-144 overflow-y-auto">
           <div className="relative grid" style={{ ...template, height: rows.height }}>
             <div className="relative">
               {rows.list.map((row) =>
@@ -206,7 +193,7 @@ export function ActionsAgenda({
                     className="absolute right-2 -translate-y-1/2 text-meta tabular-nums text-ink-faint"
                     style={{ top: row.top }}
                   >
-                    {row.hour === 0 ? '' : `${String(row.hour).padStart(2, '0')}:00`}
+                    {row.hour === 0 ? '' : hourLabel(row.hour, locale)}
                   </span>
                 ) : (
                   <TooltipButton
@@ -223,7 +210,7 @@ export function ActionsAgenda({
               )}
             </div>
             {columns.map((column) => (
-              <div key={column.start} className={cx('relative border-l border-line', isToday(column) && 'bg-accent/[0.03]')}>
+              <div key={column.start} className={cx('relative border-l border-line', isToday(column) && 'bg-accent/3')}>
                 {rows.list.map((row) =>
                   row.kind === 'hour' ? (
                     <span key={`h${row.hour}`} className="absolute inset-x-0 border-t border-line/50" style={{ top: row.top }} />
@@ -242,7 +229,7 @@ export function ActionsAgenda({
                     className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-accent"
                     style={{ top: yOf(now, column, rows, timeZone) }}
                   >
-                    <span className="absolute -top-[5px] -left-[5px] size-2 rounded-full bg-accent" />
+                    <span className="absolute -top-1 -left-1 size-2 rounded-full bg-accent" />
                   </span>
                 ) : null}
                 {column.shots.map((shot) => (
@@ -253,13 +240,11 @@ export function ActionsAgenda({
           </div>
         </div>
         {unfolded ? (
-          <button
-            type="button"
-            onClick={() => setUnfolded(false)}
-            className="w-full border-t border-line py-1.5 text-xs text-ink-faint hover:text-ink"
-          >
-            {t('agenda.fold')}
-          </button>
+          <div className="border-t border-line p-1">
+            <Button variant="ghost" size="sm" className="w-full" onClick={() => setUnfolded(false)}>
+              {t('agenda.fold')}
+            </Button>
+          </div>
         ) : null}
       </div>
 
@@ -313,15 +298,14 @@ function useClock(fixed: number | undefined): number {
 const timeOf = (ts: number, locale: string, timeZone: string) =>
   new Date(ts).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone })
 
-type Tint = 'agent' | 'command' | 'service'
+/** L'étiquette d'une ligne d'heure, au format des heures des blocs. */
+const hourLabel = (hour: number, locale: string) => timeOf(Date.UTC(2026, 0, 1, hour), locale, 'UTC')
 
-const tintOf = (nature: Nature): Tint => (nature.what === 'agent' ? 'agent' : nature.kind === 'service' ? 'service' : 'command')
-
-/** La couleur d'un bloc : sa nature. */
-const TINT: Record<Tint, string> = {
-  agent: 'bg-accent/12 border-accent/35',
-  command: 'bg-surface-high border-line-strong',
-  service: 'bg-positive/10 border-positive/35',
+/** La couleur d'un bloc : sa nature, et le mot qui la dit dans la légende. */
+const TINT: Record<LauncherGroup, { fill: string; legend: MessageKey }> = {
+  agents: { fill: 'bg-accent/12 border-accent/35', legend: 'agenda.legend.agent' },
+  commands: { fill: 'bg-surface-high border-line-strong', legend: 'agenda.legend.command' },
+  services: { fill: 'bg-positive/10 border-positive/35', legend: 'agenda.legend.service' },
 }
 
 /** Le liseré gauche d'un passage fini : son verdict. */
@@ -369,10 +353,10 @@ function Block({
       data-overlaps={shot.overlaps || undefined}
       className={cx(
         'absolute flex min-w-0 overflow-hidden rounded-md border text-left text-meta leading-tight text-ink transition-[filter] hover:brightness-110',
-        "before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:content-['']",
-        TINT[tintOf(nature)],
+        "before:absolute before:inset-y-0 before:left-0 before:w-0.75 before:content-['']",
+        TINT[launcherGroupOf(shot.item)].fill,
         verdict ? EDGE[verdict.tone] : 'border-dashed bg-canvas/70 before:bg-transparent',
-        verdict?.live && 'before:motion-safe:animate-pulse',
+        shot.status === 'running' && 'before:motion-safe:animate-pulse',
         shot.overlaps && 'ring-1 ring-caution/70',
         height >= 36 ? 'flex-col gap-0.5 py-1 pr-1.5 pl-2' : 'items-center gap-1 pr-1.5 pl-2',
       )}
@@ -393,13 +377,13 @@ function Legend() {
   const swatch = 'h-2.5 w-3.5 rounded-sm border'
   return (
     <span className="ml-auto flex flex-wrap items-center gap-3 text-meta text-ink-faint">
-      <span className="flex items-center gap-1"><span className={cx(swatch, TINT.agent)} />{t('agenda.legend.agent')}</span>
-      <span className="flex items-center gap-1"><span className={cx(swatch, TINT.command)} />{t('agenda.legend.command')}</span>
-      <span className="flex items-center gap-1"><span className={cx(swatch, TINT.service)} />{t('agenda.legend.service')}</span>
+      {(['agents', 'commands', 'services'] as const).map((group) => (
+        <span key={group} className="flex items-center gap-1"><span className={cx(swatch, TINT[group].fill)} />{t(TINT[group].legend)}</span>
+      ))}
       <span className="flex items-center gap-1"><span className={cx(swatch, 'border-dashed border-line-strong')} />{t('agenda.legend.planned')}</span>
       <span className="flex items-center gap-1">
-        <span className="h-2.5 w-[3px] rounded-sm bg-positive" />
-        <span className="h-2.5 w-[3px] rounded-sm bg-critical" />
+        <span className="h-2.5 w-0.75 rounded-sm bg-positive" />
+        <span className="h-2.5 w-0.75 rounded-sm bg-critical" />
         {t('agenda.legend.verdict')}
       </span>
     </span>
