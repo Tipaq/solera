@@ -60,6 +60,14 @@ export function useBranchInfos(projectId: string | undefined, project: ProjectDt
   )
 }
 
+/** Le code d'un projet du portefeuille : sa base, ses arbres jugés, ses branches sans arbre. */
+export interface PortfolioCodeGroup {
+  project: ProjectDto
+  base: string | null
+  trees: TreeRow[]
+  branches: BranchInfo[]
+}
+
 /**
  * Les arbres de tous les projets donnés, jugés comme dans un projet : deux requêtes pour
  * tous (état des worktrees, PR), les cartes de chacun et les sessions vivantes.
@@ -68,7 +76,7 @@ export function useBranchInfos(projectId: string | undefined, project: ProjectDt
 export function usePortfolioCode(
   projects: ProjectDto[],
   live: LiveConversation[],
-): { groups: { project: ProjectDto; trees: TreeRow[] }[]; pending: boolean } {
+): { groups: PortfolioCodeGroup[]; pending: boolean } {
   const { data: statuses, isPending } = usePortfolioWorktreeStatuses()
   const { data: pullRequests } = usePortfolioPullRequests()
   const { cards } = useAllCards(projects)
@@ -76,17 +84,19 @@ export function usePortfolioCode(
   return useMemo(() => {
     const sessions = live.map(codeSessionOf)
     const now = Date.now()
-    const groups = projects.flatMap((project) => {
+    const groups = projects.flatMap((project): PortfolioCodeGroup[] => {
       if (!project.git) return []
-      const { trees } = codeDataOf({
+      const mine = cards.filter((card) => card.projectId === project.id)
+      const prs = pullRequests?.projects[project.id]
+      const { base, trees, branches } = codeDataOf({
         project,
         statuses: statuses?.projects[project.id],
-        pullRequests: pullRequests?.projects[project.id],
-        cards: cards.filter((card) => card.projectId === project.id),
+        pullRequests: prs,
+        cards: mine,
         sessions: sessions.filter((session) => session.projectId === project.id),
         now,
       })
-      return [{ project, trees }]
+      return [{ project, base, trees, branches: branchInfosOf({ branches, pullRequests: prs, cards: mine }) }]
     })
     return { groups, pending: isPending }
   }, [projects, live, statuses, pullRequests, cards, isPending])
