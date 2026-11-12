@@ -442,6 +442,7 @@ export const SidePanel = memo(function SidePanel({
             <TerminalsPane
               projectId={projectId}
               conversationId={conversationId}
+              inWorktree={conversationId !== undefined && workspaceName !== undefined}
               visible={tab === 'terminals'}
             />
           </div>

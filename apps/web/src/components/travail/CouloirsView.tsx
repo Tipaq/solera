@@ -4,12 +4,13 @@ import type { JournalEntryDto } from '@solera/protocol'
 import { Button, cx } from '@solera/ui'
 import { verdictLabel } from '../code/VerdictDot'
 import type { ActivityRow } from '../../lib/activity-rows'
-import { formatBytes, pluralOf, type TreeRow } from '../../lib/code-model'
+import { formatBytes, pluralOf } from '../../lib/code-model'
 import { useLocale, useTranslate } from '../../lib/i18n'
 import type { ServedMark } from '../../lib/served'
 import { laneAnchor, type LaneData, type LaneGroupLabel, type LaneItem, type LaneLayout } from '../../lib/travail-lanes'
 import { BranchLane, MergedBranches } from './BranchLane'
 import { Lane, ProjectLane, type LaneRail } from './Lane'
+import { useTravailActions } from './TravailActions'
 
 type Layout = LaneLayout<ActivityRow, JournalEntryDto>
 type Item = LaneItem<ActivityRow, JournalEntryDto>
@@ -35,8 +36,6 @@ export function CouloirsView({
   served,
   flash,
   onOpen,
-  onCleanTree,
-  onCleanTrees,
 }: {
   projectId: string
   layout: Layout
@@ -44,8 +43,6 @@ export function CouloirsView({
   served: Map<string, ServedMark[]>
   flash: string | null
   onOpen: (key: string) => void
-  onCleanTree: (tree: TreeRow) => void
-  onCleanTrees: (trees: TreeRow[]) => void
 }) {
   const t = useTranslate()
   const lane = (data: LaneData<ActivityRow, JournalEntryDto>, dim = false) => (
@@ -59,7 +56,6 @@ export function CouloirsView({
       highlight={flash === data.tree.key}
       dim={dim}
       onOpen={onOpen}
-      onClean={onCleanTree}
     />
   )
   const render = (item: Item) =>
@@ -92,16 +88,20 @@ export function CouloirsView({
 
       {layout.project ? <ProjectLane entries={layout.project} rail={rail} anchorId={laneAnchor(PROJECT_KEY)} highlight={flash === PROJECT_KEY} /> : null}
 
-      {layout.cleanup ? <CleanupSection cleanup={layout.cleanup} render={(data) => lane(data, true)} onClean={onCleanTrees} /> : null}
+      {layout.cleanup ? (
+        <CleanupSection cleanup={layout.cleanup}>
+          <div className="flex flex-col gap-2.5">{layout.cleanup.lanes.map((data) => lane(data, true))}</div>
+        </CleanupSection>
+      ) : null}
 
-      {layout.merged ? <MergedBranches projectId={projectId} branches={layout.merged.branches} open={layout.merged.open} anchorId={laneAnchor(MERGED_KEY)} /> : null}
+      {layout.merged ? <MergedBranches branches={layout.merged.branches} open={layout.merged.open} anchorId={laneAnchor(MERGED_KEY)} /> : null}
     </div>
   )
 }
 
 type Translate = ReturnType<typeof useTranslate>
 
-function groupTitle(t: Translate, label: LaneGroupLabel): string {
+export function groupTitle(t: Translate, label: LaneGroupLabel): string {
   switch (label.kind) {
     case 'milestone':
       return t('travail.group.milestone', { number: label.number, title: label.title })
@@ -114,7 +114,7 @@ function groupTitle(t: Translate, label: LaneGroupLabel): string {
   }
 }
 
-function GroupHeading({ label, count, icon, upper = false }: { label: string; count: number; icon?: ReactNode; upper?: boolean }) {
+export function GroupHeading({ label, count, icon, upper = false }: { label: string; count: number; icon?: ReactNode; upper?: boolean }) {
   return (
     <h3 className="flex items-center gap-2 px-1 text-xs font-medium tracking-wide text-ink-faint uppercase">
       {icon}
@@ -129,16 +129,16 @@ function GroupHeading({ label, count, icon, upper = false }: { label: string; co
  * perdre » qui déplie leurs couloirs atténués, et « Nettoyer », qui les retire tous.
  * Déplié d'office quand un filtre d'état les réclame.
  */
-function CleanupSection({
+export function CleanupSection({
   cleanup,
-  render,
-  onClean,
+  children,
 }: {
   cleanup: NonNullable<Layout['cleanup']>
-  render: (lane: LaneData<ActivityRow, JournalEntryDto>) => ReactNode
-  onClean: (trees: TreeRow[]) => void
+  /** Ses arbres, en couloirs ou en lignes : montrés une fois la section dépliée. */
+  children: ReactNode
 }) {
   const t = useTranslate()
+  const page = useTravailActions()
   const locale = useLocale()
   const [open, setOpen] = useState(false)
   const shown = open || cleanup.open
@@ -164,12 +164,12 @@ function CleanupSection({
           </span>
         </button>
         {cleanable.length > 0 ? (
-          <Button size="sm" variant="secondary" icon={<Trash2 size={13} />} onClick={() => onClean(cleanable)} className="ml-auto shrink-0">
+          <Button size="sm" variant="secondary" icon={<Trash2 size={13} />} onClick={() => page.clean({ trees: cleanable, branches: [] })} className="ml-auto shrink-0">
             {t('travail.cleanup.action')}
           </Button>
         ) : null}
       </div>
-      {shown ? <div className="flex flex-col gap-2.5">{cleanup.lanes.map(render)}</div> : null}
+      {shown ? children : null}
     </section>
   )
 }

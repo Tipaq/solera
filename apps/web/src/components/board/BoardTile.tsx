@@ -26,7 +26,7 @@ export function BoardMilestoneTag({ milestone, className }: { milestone: BoardMi
 }
 
 /** La barre fine des sous-tâches, et leur compte. */
-function SubtaskBar({ done, total }: { done: number; total: number }) {
+export function SubtaskBar({ done, total }: { done: number; total: number }) {
   const t = useTranslate()
   if (total === 0) return null
   return (
@@ -40,7 +40,7 @@ function SubtaskBar({ done, total }: { done: number; total: number }) {
 }
 
 /** Les agents qui tournent sur la carte, trois au plus ; l'anneau ambre dit celui qui t'attend. */
-function LiveAgents({ entry }: { entry: BoardCard }) {
+export function LiveAgents({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   if (entry.live.length === 0) return null
   return (
@@ -66,7 +66,7 @@ function LiveAgents({ entry }: { entry: BoardCard }) {
 }
 
 /** Les drapeaux qui changent ce qu'on fait d'une carte. */
-function CardFlags({ entry }: { entry: BoardCard }) {
+export function CardFlags({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   const { card } = entry
   return (
@@ -87,7 +87,7 @@ function CardFlags({ entry }: { entry: BoardCard }) {
 }
 
 /** L'échéance, relative ; rouge quand elle est passée. */
-function DueLabel({ entry }: { entry: BoardCard }) {
+export function DueLabel({ entry }: { entry: BoardCard }) {
   const t = useTranslate()
   if (entry.card.dueAt === null) return null
   return (
@@ -157,6 +157,15 @@ export function BoardTile({
       className={cx(tileClass(entry), 'hover:border-line-strong', isDragging && 'opacity-40')}
     >
       <TileBody entry={entry} showMilestone={showMilestone} />
+    </button>
+  )
+}
+
+/** Une tuile qui ne se saisit pas : Par geste range par geste, pas par colonne. */
+export function StillTile({ entry, onOpen }: { entry: BoardCard; onOpen?: () => void }) {
+  return (
+    <button type="button" data-card-tile={entry.card.number} onClick={onOpen} className={cx(tileClass(entry), 'hover:border-line-strong')}>
+      <TileBody entry={entry} showMilestone />
     </button>
   )
 }
