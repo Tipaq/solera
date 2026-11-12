@@ -10,7 +10,8 @@ import { Badge, Button, cx } from '@solera/ui'
 
 /**
  * Un changement de cartes qu'un agent propose, et que l'utilisateur accorde : leur
- * colonne, et depuis #66 leur parente, leur échéance et leurs liens « bloque ».
+ * colonne, et depuis #66 leur parente, leur échéance et leurs liens « bloque » ; depuis
+ * #185, les sous-tâches qu'un ajout au jalon leur donne.
  *
  * Elle montre **la raison écrite pour chaque carte**, et c'est ce qui distingue cette
  * demande de celle d'un rangement de conversation : le prix d'un déplacement de
@@ -130,6 +131,16 @@ export function CardFilingPrompt({
                     <span className="mt-0.5 block text-ink">
                       {t('cardFiling.change.unblocks', { cards: card.unblocks.map((other) => `#${other.number}`).join(', ') })}
                     </span>
+                  ) : null}
+                  {card.addSubtasks ? (
+                    <div className="mt-0.5 text-ink">
+                      {t('cardFiling.change.subtasks', { count: String(card.addSubtasks.length) })}
+                      <ul className="list-disc pl-4 text-ink-soft">
+                        {card.addSubtasks.map((label) => (
+                          <li key={label}>{label}</li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
                   {card.close ? <ClosePlanLines close={card.close} /> : null}
                   <span className="mt-0.5 block text-ink-soft">{card.reason}</span>

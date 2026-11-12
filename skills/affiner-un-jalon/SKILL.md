@@ -1,6 +1,6 @@
 ---
 name: affiner-un-jalon
-description: "Affine un jalon du board jusqu'à un découpage en cartes : lit le jalon et le projet, pose les questions qui manquent, puis propose les cartes par propose_cards. Use when the message starts with /affiner-un-jalon #N (optionally --decouper), or when the user asks to refine or split a milestone."
+description: "Affine un jalon du board jusqu'à un découpage en cartes : lit le jalon et le projet, pose les questions qui manquent, puis propose les cartes par propose_cards. Use when the message starts with /affiner-un-jalon #N (optionally --decouper), when the user asks to refine or split a milestone, or when a message starts with « Ajout au jalon »."
 ---
 
 # Affiner un jalon
@@ -73,3 +73,14 @@ S'il corrige le découpage dans le fil, redépose un brouillon **entier**.
 Quand le message de validation arrive avec les numéros, réponds en une ligne et arrête-
 toi. Ne lance pas le jalon et n'ouvre pas de sessions : ranger n'est pas exécuter. S'il
 veut lancer, il le fera depuis la page du jalon.
+
+## Un ajout au jalon
+
+Un message « Ajout au jalon : … » prolonge un jalon déjà découpé. Lis-le comme au 1,
+puis range-le **là où il tient** :
+- une carte existante en parle déjà : ses **sous-tâches**, par `request_card_change` sur
+  cette carte avec `add_subtasks`, la raison disant pourquoi elle ;
+- sinon, des **nouvelles cartes** : `propose_cards` avec `parent: N`, `blocked_by` la
+  carte la plus proche.
+
+**Fini quand** la proposition attend son clic.
