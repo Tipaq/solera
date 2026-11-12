@@ -1,10 +1,11 @@
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { CardColumn } from '@solera/protocol'
-import { cx } from '@solera/ui'
+import { Button, cx } from '@solera/ui'
 import {
   DEFAULT_LIST_SORT,
   listGroups,
+  listDoneCut,
   nextListSort,
   type BoardCard,
   type BoardDisplay,
@@ -28,6 +29,8 @@ export interface ListViewProps {
   column: CardColumn | null
   onOpen: (number: number) => void
   onMove: (entry: BoardCard, column: CardColumn) => void
+  /** « Tout voir » des faites que « Les 5 récentes » laisse de côté. */
+  onSeeAllDone: () => void
 }
 
 /** Les colonnes que rangent les touches 1 à 4. */
@@ -41,7 +44,7 @@ const GRID = 'grid grid-cols-[4.5rem_minmax(0,1fr)_7rem_5.5rem_5rem_6.5rem_4.5re
  * en-têtes, pilotée au clavier. ↑↓ ou j/k déplacent la sélection, Entrée ouvre la fiche,
  * 1 à 4 rangent la carte pour de bon (à faire, en cours, à relire, fait).
  */
-export function ListView({ entries, milestones, display, column, onOpen, onMove }: ListViewProps) {
+export function ListView({ entries, milestones, display, column, onOpen, onMove, onSeeAllDone }: ListViewProps) {
   const t = useTranslate()
   const [sort, setSort] = useState<ListSort>(DEFAULT_LIST_SORT)
   const [folded, setFolded] = useState<ReadonlySet<string>>(() => new Set())
@@ -50,6 +53,7 @@ export function ListView({ entries, milestones, display, column, onOpen, onMove 
 
   const groups = listGroups(entries, milestones, display, column, sort)
   const rows = groups.flatMap((group) => (folded.has(group.key) ? [] : group.entries))
+  const doneTotal = listDoneCut(entries, display, column)
 
   useEffect(() => {
     if (cursor === null) return
@@ -57,7 +61,9 @@ export function ListView({ entries, milestones, display, column, onOpen, onMove 
   }, [cursor])
 
   const onKey = (event: KeyboardEvent) => {
-    if (event.target !== event.currentTarget || event.ctrlKey || event.metaKey || event.altKey) return
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    // Un en-tête de tri ou de groupe garde la main sur la liste, sauf pour Entrée qui l'active.
+    const onControl = event.target !== event.currentTarget
     const index = rows.findIndex((entry) => entry.card.id === cursor)
     const at = (next: number) => {
       const entry = rows[Math.max(0, Math.min(rows.length - 1, next))]
@@ -70,7 +76,7 @@ export function ListView({ entries, milestones, display, column, onOpen, onMove 
     } else if (event.key === 'ArrowUp' || event.key === 'k') {
       event.preventDefault()
       at(index - 1)
-    } else if (event.key === 'Enter' && current) {
+    } else if (event.key === 'Enter' && current && !onControl) {
       event.preventDefault()
       onOpen(current.card.number)
     } else if (current && /^[1-4]$/.test(event.key)) {
@@ -157,6 +163,13 @@ export function ListView({ entries, milestones, display, column, onOpen, onMove 
           )
         })}
         {groups.length === 0 ? <p className="py-10 text-center text-sm text-ink-faint">{t('board.list.empty')}</p> : null}
+        {doneTotal !== null ? (
+          <div className="mt-3">
+            <Button variant="ghost" size="sm" onClick={onSeeAllDone}>
+              {t('board.column.seeAll', { count: doneTotal })}
+            </Button>
+          </div>
+        ) : null}
         <p className="mt-6 text-xs text-ink-faint">{t('board.list.help')}</p>
       </div>
     </div>

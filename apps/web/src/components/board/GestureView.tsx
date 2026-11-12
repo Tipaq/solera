@@ -31,7 +31,7 @@ export function GestureView({ entries, projectId, statusOf, onOpen }: GestureVie
   const launch = (entry: BoardCard) => (
     <Link
       to={cardDestinationHref(projectId, entry.card, { statusOf, search })}
-      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-accent hover:bg-accent-wash/50"
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-accent hover:bg-accent-wash/50 focus-visible:ring-2 focus-visible:ring-accent pointer-coarse:min-h-11 pointer-coarse:px-3"
     >
       <Play size={11} aria-hidden /> {t('board.gesture.launch')}
     </Link>

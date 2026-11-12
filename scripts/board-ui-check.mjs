@@ -448,6 +448,9 @@ try {
   assert.deepEqual(ascending, [...ascending].sort((a, b) => a.localeCompare(b)))
   await list.getByRole('button', { name: 'Titre', exact: true }).click()
   assert.deepEqual(await looseTitles(), [...ascending].reverse())
+  // Le focus resté sur l'en-tête n'éteint pas le clavier de la liste.
+  await page.keyboard.press('j')
+  assert.equal(await selectedRow(), (await rowNumbers())[0])
 
   // « Tout voir (N) » de Terminé (B-4.4) : le filtre « colonne : Terminé », en Liste.
   const spare = (await listCards())
@@ -456,6 +459,9 @@ try {
   for (const entry of spare) await context.request.patch(`${base}/api/cards/${entry.id}`, { data: { column: 'done' } })
   const doneCount = (await listCards()).filter((entry) => entry.column === 'done' && entry.children.length === 0).length
   assert.ok(doneCount > 5, `plus de cinq faites : ${doneCount}`)
+  // En Liste aussi, « Les 5 récentes » le dit et mène à toute la colonne.
+  await page.reload()
+  await list.getByRole('button', { name: `Tout voir (${doneCount})`, exact: true }).waitFor()
   await chooseView('Kanban')
   await page.reload()
   await page.getByRole('button', { name: `Tout voir (${doneCount})`, exact: true }).click()

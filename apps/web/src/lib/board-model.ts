@@ -5,8 +5,8 @@ import { isIdea } from './milestone-model'
 /*
  * Le modèle du Tableau (#180, #181, spec page projet v2 B-1, B-2, B-4 à B-6) : quelles
  * cartes sont des tuiles, à quel jalon chacune appartient, ce qu'elle demande, et comment
- * la barre les filtre, les trie et les range en Kanban, en Liste ou par geste. Pur, sans React ni réseau : `useBoardData` lui
- * passe les cartes et le statut vivant des sessions.
+ * la barre les filtre, les trie et les range en Kanban, en Liste ou par geste. Pur, sans
+ * React ni réseau : `useBoardData` lui passe les cartes et le statut vivant des sessions.
  */
 
 /** Les colonnes montrées d'office ; Fait et Abandonné se règlent dans « Affichage ». */
@@ -242,8 +242,8 @@ export interface LaneGroup {
   entries: BoardCard[]
 }
 
-/** Les couloirs (B-4.7) : un par jalon qui a des feuilles ouvertes, puis « Sans jalon ». */
-export function laneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
+/** Un groupe par jalon, dans l'ordre des jalons, puis « Sans jalon » ; vides compris. */
+function milestoneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
   return [
     ...milestones.map((milestone) => ({
       key: milestone.card.id,
@@ -251,7 +251,12 @@ export function laneGroups(entries: readonly BoardCard[], milestones: readonly B
       entries: entries.filter((entry) => entry.milestone?.card.id === milestone.card.id),
     })),
     { key: 'none', milestone: null, entries: entries.filter((entry) => entry.milestone === null) },
-  ].filter((group) => group.entries.some((entry) => isOpen(entry.card)))
+  ]
+}
+
+/** Les couloirs (B-4.7) : un par jalon qui a des feuilles ouvertes, puis « Sans jalon ». */
+export function laneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
+  return milestoneGroups(entries, milestones).filter((group) => group.entries.some((entry) => isOpen(entry.card)))
 }
 
 /* ------------------------------------------------------------------ Liste (B-5) */
@@ -311,6 +316,16 @@ function listEntries(entries: readonly BoardCard[], display: BoardDisplay, colum
 }
 
 /**
+ * Le nombre de faites quand « Les 5 récentes » en laisse hors de la Liste, pour un
+ * « Tout voir (N) » comme au pied de la colonne du Kanban ; `null` quand elle les montre toutes.
+ */
+export function listDoneCut(entries: readonly BoardCard[], display: BoardDisplay, column: CardColumn | null): number | null {
+  if (column !== null || display.done !== 'recent') return null
+  const { shown, total } = columnSlice(entries, 'done', display)
+  return total > shown.length ? total : null
+}
+
+/**
  * Les groupes de la Liste (B-5.2) : un par jalon qui a des lignes, dans l'ordre des
  * jalons, puis « Sans jalon » ; chacun trié par l'en-tête choisi.
  */
@@ -321,16 +336,8 @@ export function listGroups(
   column: CardColumn | null,
   sort: ListSort,
 ): LaneGroup[] {
-  const shown = listEntries(entries, display, column)
   const compare = listCompare(sort)
-  return [
-    ...milestones.map((milestone) => ({
-      key: milestone.card.id,
-      milestone,
-      entries: shown.filter((entry) => entry.milestone?.card.id === milestone.card.id),
-    })),
-    { key: 'none', milestone: null, entries: shown.filter((entry) => entry.milestone === null) },
-  ]
+  return milestoneGroups(listEntries(entries, display, column), milestones)
     .filter((group) => group.entries.length > 0)
     .map((group) => ({ ...group, entries: group.entries.sort(compare) }))
 }
@@ -340,6 +347,11 @@ export function listGroups(
 /** Les cartes qui bloquent celle-ci et ne sont pas closes. */
 export function openBlockers(card: Pick<CardDto, 'blockedBy'>): CardLinkDto[] {
   return card.blockedBy.filter((blocker) => isOpen(blocker))
+}
+
+/** Une carte ouverte qui demande un geste de toi : une réponse, une relecture, l'accepter, la préciser. */
+function asksYou({ card, waiting }: BoardCard): boolean {
+  return isOpen(card) && (waiting || card.column === 'review' || card.acceptedAt === null || card.toClarifySince !== null)
 }
 
 export interface GestureSections {
@@ -360,18 +372,15 @@ export interface GestureSections {
  * n'y paraît qu'une fois, et « À toi » prime sur la colonne.
  */
 export function gestureSections(entries: readonly BoardCard[], now = Date.now()): GestureSections {
-  const forYou = entries.filter(
-    (entry) =>
-      isOpen(entry.card) &&
-      (entry.waiting || entry.card.column === 'review' || entry.card.acceptedAt === null || entry.card.toClarifySince !== null),
-  )
+  const forYou = entries.filter(asksYou)
   const rest = entries.filter((entry) => !forYou.includes(entry))
   const todo = rest.filter((entry) => entry.card.column === 'todo')
+  const blocked = todo.filter((entry) => openBlockers(entry.card).length > 0)
   return {
     forYou: sortEntries(forYou, 'waiting'),
     agents: sortEntries(rest.filter((entry) => entry.card.column === 'in_progress'), 'waiting'),
-    ready: sortEntries(todo.filter((entry) => openBlockers(entry.card).length === 0), 'waiting'),
-    blocked: sortEntries(todo.filter((entry) => openBlockers(entry.card).length > 0), 'waiting'),
+    ready: sortEntries(todo.filter((entry) => !blocked.includes(entry)), 'waiting'),
+    blocked: sortEntries(blocked, 'waiting'),
     doneWeek: entries.filter((entry) => entry.card.column === 'done' && now - entry.card.columnSince < WEEK).sort(byArrival),
   }
 }

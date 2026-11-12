@@ -54,9 +54,9 @@ const VIEW_KEYS: readonly BoardView[] = ['kanban', 'liste', 'geste']
 
 /**
  * Le Tableau d'un projet (#180, #181, spec page projet v2 B-1 à B-8) : la barre sur une
- * ligne, puis ses feuilles en Kanban, en Liste ou par geste. Un clic sur une tuile ouvre sa fiche sur
- * place (`?fiche=`) ; l'éditeur complet (`?carte=`) reste celui des liens qui y mènent
- * d'ailleurs, et de la carte qu'on vient de créer.
+ * ligne, puis ses feuilles en Kanban, en Liste ou par geste. Un clic sur une tuile ouvre
+ * sa fiche sur place (`?fiche=`) ; l'éditeur complet (`?carte=`) reste celui des liens qui
+ * y mènent d'ailleurs, et de la carte qu'on vient de créer.
  */
 export function BoardPage() {
   const { projectId } = useParams()
@@ -313,6 +313,7 @@ export function BoardPage() {
             column={filters.column}
             onOpen={openSheet}
             onMove={moveCard}
+            onSeeAllDone={() => set({ column: 'done' })}
           />
         ) : view === 'geste' ? (
           <GestureView entries={visible} projectId={projectId} statusOf={statusOf} onOpen={openSheet} />

@@ -12,6 +12,7 @@ const {
   columnSlice,
   gestureSections,
   laneGroups,
+  listDoneCut,
   listGroups,
   nextListSort,
   openBlockers,
@@ -306,6 +307,16 @@ test('liste : les closes selon l’affichage, le filtre « colonne : Fait » les
   // « Tout voir » de Fait : la colonne filtrée montre toutes ses cartes, même masquées.
   const onlyDone = model([...done]).cards
   assert.equal(listGroups(onlyDone, [], { ...DEFAULT_DISPLAY, done: 'hidden' }, 'done', DEFAULT_LIST_SORT)[0]!.entries.length, 7)
+})
+
+test('liste : « Tout voir (N) » quand « Les 5 récentes » laisse des faites de côté', () => {
+  const done = Array.from({ length: 7 }, (_, index) => card(index + 1, { column: 'done', columnSince: NOW - index * DAY }))
+  const cards = model([...done, card(20)]).cards
+  assert.equal(listDoneCut(cards, DEFAULT_DISPLAY, null), 7)
+  assert.equal(listDoneCut(cards, { ...DEFAULT_DISPLAY, done: 'all' }, null), null)
+  assert.equal(listDoneCut(cards, { ...DEFAULT_DISPLAY, done: 'hidden' }, null), null)
+  assert.equal(listDoneCut(cards, DEFAULT_DISPLAY, 'done'), null)
+  assert.equal(listDoneCut(model([...done.slice(0, 5)]).cards, DEFAULT_DISPLAY, null), null)
 })
 
 test('liste : tri par état, titre, échéance et vu, le second clic inverse', () => {

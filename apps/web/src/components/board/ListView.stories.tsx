@@ -29,6 +29,7 @@ const meta = {
     column: null,
     onOpen: () => {},
     onMove: () => {},
+    onSeeAllDone: () => {},
   },
 } satisfies Meta<typeof ListView>
 
