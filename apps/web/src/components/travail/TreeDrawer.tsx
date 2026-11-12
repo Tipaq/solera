@@ -2,20 +2,22 @@ import { ArrowDown, ArrowUp } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { JournalEntryDto } from '@solera/protocol'
-import { Button, cx } from '@solera/ui'
+import { Badge, Button, cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
 import { CardRef } from '../code/CardRef'
-import { PrTag } from '../code/PrTag'
 import { ServiceMark } from '../code/ServiceMark'
 import { VerdictDot, verdictLabel, verdictReason } from '../code/VerdictDot'
 import { Detail } from '../shell/Detail'
-import { formatBytes, pluralOf, type TreeRow } from '../../lib/code-model'
+import { PR_TONE, formatBytes, pluralOf, type SessionTone, type TreeRow } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useLocale, useTranslate } from '../../lib/i18n'
 import { JOURNAL_KIND_LABELS } from '../../lib/journal'
 import type { ServedMark } from '../../lib/served'
 import type { LaneRail } from './Lane'
 import { useTreeActions } from './useTreeActions'
+
+/** La teinte de l'état d'une session vivante. */
+const SESSION_TEXT: Record<SessionTone, string> = { running: 'text-ink-soft', awaiting: 'text-caution', broken: 'text-critical' }
 
 /** Sessions et événements montrés dans le tiroir, chacun. */
 const DRAWER_ROWS = 8
@@ -65,7 +67,7 @@ export function TreeDrawer({
       onClose={onClose}
       label={t('travail.drawer.label', { branch: name })}
       back={t('project.view.travail')}
-      title={<span className="font-mono text-[15px]">{name}</span>}
+      title={<span className="font-mono">{name}</span>}
       subtitle={
         tree ? (
           <span className="inline-flex items-center gap-1.5">
@@ -111,7 +113,7 @@ function TreeBody({
 
       <div className="flex flex-wrap gap-1.5">
         {actions.map((action) => (
-          <Button key={action.key} size="sm" variant="secondary" icon={action.icon} onClick={action.run} className={action.tone === 'critical' ? 'text-critical' : undefined}>
+          <Button key={action.key} size="sm" variant={action.tone === 'critical' ? 'danger' : 'secondary'} icon={action.icon} onClick={action.run}>
             {action.label}
           </Button>
         ))}
@@ -130,7 +132,7 @@ function TreeBody({
             </Link>
           </Fact>
         ) : null}
-        <Fact label={t('travail.drawer.pr')}>{tree.pr ? <PrTag pr={tree.pr} /> : <span className="text-ink-faint">{t('travail.drawer.noPr')}</span>}</Fact>
+        <Fact label={t('travail.drawer.pr')}>{tree.pr ? <PrFact pr={tree.pr} /> : <span className="text-ink-faint">{t('travail.drawer.noPr')}</span>}</Fact>
         {tree.root ? null : (
           <Fact label={t('travail.drawer.base')}>
             <span className="inline-flex items-center gap-3 tabular-nums text-ink-soft">
@@ -178,7 +180,7 @@ function TreeBody({
                         <AgentIcon agent={session.agent} size={13} decorative />
                         <span className="min-w-0 flex-1 truncate">{session.title}</span>
                         {alive ? (
-                          <span className={cx('shrink-0 text-xs', alive.tone === 'running' ? 'text-ink-soft' : alive.tone === 'awaiting' ? 'text-caution' : 'text-critical')}>
+                          <span className={cx('shrink-0 text-xs', SESSION_TEXT[alive.tone])}>
                             {t(`code.session.${alive.tone}`)}
                           </span>
                         ) : (
@@ -234,5 +236,21 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-ink-faint">{label}</dt>
       <dd className="flex min-w-0 items-center">{children}</dd>
     </>
+  )
+}
+
+/** La PR d'un arbre : « #n » et le badge de son état, un lien vers la forge quand on en a l'adresse. */
+function PrFact({ pr }: { pr: NonNullable<TreeRow['pr']> }) {
+  const t = useTranslate()
+  const body = (
+    <>
+      <span className="tabular-nums">#{pr.number}</span> <Badge tone={PR_TONE[pr.state]}>{t(`code.pr.${pr.state}`)}</Badge>
+    </>
+  )
+  if (!pr.url) return <span className="inline-flex items-center gap-1.5">{body}</span>
+  return (
+    <a href={pr.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-accent">
+      {body}
+    </a>
   )
 }

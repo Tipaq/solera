@@ -393,7 +393,7 @@ try {
   await index.getByRole('button', { name: /^Tous/ }).waitFor()
   await index.getByText('en haut', { exact: true }).waitFor()
   await index.getByRole('button', { name: new RegExp(`^${escaped(short)}`) }).click()
-  await page.waitForFunction((name) => document.querySelector(`section[aria-label="${name}"]`)?.className.includes('ring-accent'), branch)
+  await page.waitForFunction((name) => document.querySelector(`section[aria-label="${name}"]`)?.hasAttribute('data-highlight'), branch)
   assert.equal(new URL(page.url()).searchParams.has('arbre'), false, 'En Par arbre, l’index ne filtre pas')
   // Le couloir est à l'écran (il monte en haut quand la page est assez longue).
   await page.waitForFunction((name) => {

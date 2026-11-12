@@ -14,12 +14,15 @@ export function ServiceMark({ projectId, marks, className }: { projectId: string
   if (!marks?.length) return null
   return (
     <>
-      {marks.map((mark) => (
+      {marks.map((mark) => {
+        const title = mark.port === null ? t('code.served.title', { label: mark.label }) : t('code.served.titlePort', { label: mark.label, port: mark.port })
+        return (
         <Link
           key={mark.automationId}
           to={actionsTabPath(projectId, mark.automationId)}
           onClick={(event) => event.stopPropagation()}
-          title={mark.port === null ? t('code.served.title', { label: mark.label }) : t('code.served.titlePort', { label: mark.label, port: mark.port })}
+          title={title}
+          aria-label={title}
           className={cx(
             'relative z-[1] inline-flex shrink-0 items-center gap-0.5 rounded-md border border-positive/40 px-1.5 py-px text-micro text-positive tabular-nums transition-colors hover:bg-positive/10',
             className,
@@ -27,7 +30,8 @@ export function ServiceMark({ projectId, marks, className }: { projectId: string
         >
           <Zap size={10} aria-hidden /> {mark.port === null ? mark.label : `:${mark.port}`}
         </Link>
-      ))}
+        )
+      })}
     </>
   )
 }

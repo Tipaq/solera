@@ -6,7 +6,7 @@ import { useTranslate } from '../../lib/i18n'
 
 /** Un geste sur un arbre : un bouton du tiroir, une entrée du menu `⋯` d'un couloir. */
 export interface TreeAction {
-  key: 'session' | 'diff' | 'pr' | 'rebase' | 'clean'
+  key: 'session' | 'pr' | 'clean'
   label: string
   icon: ReactNode
   run: () => void

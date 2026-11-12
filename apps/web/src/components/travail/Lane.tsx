@@ -22,6 +22,14 @@ import { useTreeActions } from './useTreeActions'
 /** Ce qu'un couloir lit du fil pour dessiner une ligne d'historique. */
 export type LaneRail = Pick<RailModel, 'isMilestone' | 'agentOf' | 'entryHref'>
 
+/**
+ * Le cadre d'un couloir, d'arbre, de branche ou « Projet » : un anneau d'accent quand
+ * l'index vient d'y mener, sinon celui que le couloir choisit (ambre s'il t'attend).
+ */
+export function laneFrame(highlight: boolean, ring = 'ring-line'): string {
+  return cx('flex scroll-mt-4 flex-col overflow-hidden rounded-xl ring-1 transition-shadow', highlight ? 'ring-2 ring-accent' : ring)
+}
+
 /** Ce qui se pose au-dessus du lien étiré d'un en-tête : il reste un geste à part. */
 const ABOVE = 'relative z-[1]'
 
@@ -69,11 +77,8 @@ export function Lane({
       id={anchorId}
       aria-label={name}
       data-lane={tree.key}
-      className={cx(
-        'flex scroll-mt-4 flex-col overflow-hidden rounded-xl ring-1 transition-shadow',
-        highlight ? 'ring-2 ring-accent' : tree.verdict === 'waiting' ? 'ring-caution/50' : 'ring-line',
-        dim && 'opacity-80',
-      )}
+      data-highlight={highlight || undefined}
+      className={cx(laneFrame(highlight, tree.verdict === 'waiting' ? 'ring-caution/50' : 'ring-line'), dim && 'opacity-80')}
     >
       <header className={cx('relative flex min-w-0 items-start gap-2.5 px-3 py-2 transition-colors hover:bg-surface-high/70', tree.root ? 'bg-surface/60' : 'bg-surface/30')}>
         <VerdictDot verdict={tree.verdict} className="mt-1.5" />
@@ -167,7 +172,8 @@ export function ProjectLane({ entries, rail, anchorId, highlight = false }: { en
     <section
       id={anchorId}
       aria-label={t('travail.index.project')}
-      className={cx('flex scroll-mt-4 flex-col overflow-hidden rounded-xl ring-1 transition-shadow', highlight ? 'ring-2 ring-accent' : 'ring-line')}
+      data-highlight={highlight || undefined}
+      className={laneFrame(highlight)}
     >
       <header className="flex items-center gap-2.5 bg-surface/30 px-3 py-2">
         <Layers size={13} aria-hidden className="shrink-0 text-ink-faint" />

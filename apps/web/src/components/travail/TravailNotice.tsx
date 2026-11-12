@@ -37,7 +37,7 @@ export function TravailNoticeHost({ children }: { children: ReactNode }) {
   return (
     <NoticeContext.Provider value={say}>
       {children}
-      <div role="status" aria-live="polite" className="pointer-events-none fixed top-28 left-1/2 z-[60] -translate-x-1/2 px-4">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed top-28 left-1/2 z-40 -translate-x-1/2 px-4">
         {notice ? (
           <p
             key={notice.at}

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
-import type { AgentKind, ConversationDto, JournalEntryDto, JournalKind } from '@solera/protocol'
+import type { AgentKind, ConversationDto, JournalEntryDto, JournalKind, WorktreeStatusDto } from '@solera/protocol'
 import { DrawerLayer } from '../shell/Drawer'
 import type { LiveConversation } from '../../lib/activity'
 import type { ActivityRow } from '../../lib/activity-rows'
@@ -8,6 +8,7 @@ import { scopeOf, verdictOf, type BranchInfo, type TreeFields, type TreeRow } fr
 import type { ServedMark } from '../../lib/served'
 import { DEFAULT_DISPLAY, type TravailDisplay } from '../../lib/travail-model'
 import { laneLayout, lanesOf } from '../../lib/travail-lanes'
+import { CleanMergedDialog } from './CleanMergedDialog'
 import { CouloirsView } from './CouloirsView'
 import type { LaneRail } from './Lane'
 import { TravailNoticeHost } from './TravailNotice'
@@ -102,8 +103,8 @@ const RAIL: LaneRail = {
 }
 const SERVED = new Map<string, ServedMark[]>([['feat/178-graphe', [{ automationId: 'a-dev', label: 'Serveur de dev', port: 5173 }]]])
 
-function View({ display = DEFAULT_DISPLAY, forced = false }: { display?: TravailDisplay; forced?: boolean }) {
-  const [open, setOpen] = useState<string | null>(null)
+function View({ display = DEFAULT_DISPLAY, forced = false, opened = null }: { display?: TravailDisplay; forced?: boolean; opened?: string | null }) {
+  const [open, setOpen] = useState<string | null>(opened)
   const layout = laneLayout({ lanes: lanesOf({ trees: TREES, live: LIVE, entries: ENTRIES, scopes: SCOPES, now: NOW }), branches: BRANCHES, display, forced, targeted: false, now: NOW })
   const tree = TREES.find((entry) => entry.key === open) ?? null
   return (
@@ -152,3 +153,21 @@ export const ParJalon: Story = { name: 'Regroupés par jalon', render: () => <Vi
 
 /** Un filtre « À nettoyer » : les sections repliées s'ouvrent d'office. */
 export const ANettoyer: Story = { name: 'À nettoyer déplié', render: () => <View forced /> }
+
+/** Le tiroir d'un arbre (T-11), ouvert : son verdict, ses gestes, ses faits, ses sessions et son historique. */
+export const Tiroir: Story = { name: 'Tiroir d’un arbre', render: () => <View opened="feat/175-travail" /> }
+
+/** « Nettoyer » d'« À nettoyer », en attendant le dialogue unique de Travail (T-12). */
+export const NettoyerLesFusionnes: Story = {
+  name: 'Nettoyer les fusionnés',
+  render: () => (
+    <CleanMergedDialog
+      projectId="p1"
+      trees={[
+        { path: '/wt/feat/160-coque', name: 'feat/160-coque' },
+        { path: '/wt/feat/158-reglages', name: 'feat/158-reglages' },
+      ] as unknown as WorktreeStatusDto[]}
+      onClose={() => {}}
+    />
+  ),
+}

@@ -1,19 +1,18 @@
 import { ArrowUpRight, ChevronRight, Cloud, FolderPlus, GitBranch, GitCommitHorizontal, MessageSquarePlus, Trash2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Badge, ConfirmDialog, cx } from '@solera/ui'
+import { Badge, Button, ConfirmDialog, cx } from '@solera/ui'
 import { CardRef } from '../code/CardRef'
 import { BranchDot } from '../code/VerdictDot'
 import { PR_TONE, pluralOf, type BranchInfo } from '../../lib/code-model'
 import { shortAge } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { useCleanBranches, useCreateWorktree } from '../../lib/worktrees'
+import { laneFrame } from './Lane'
 import { errorText, useTravailNotice } from './TravailNotice'
 
 /** Le dépôt distant d'une branche qui n'existe que là-bas. */
 const REMOTE = 'origin'
-
-const GESTURE = 'inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50'
 
 /** Le nom montré d'une branche : `origin/` devant une distante. */
 export function branchLabel(branch: BranchInfo): string {
@@ -66,29 +65,21 @@ export function useDeleteBranches(projectId: string) {
 /**
  * Le couloir d'une branche sans arbre (`projet.md` T-4.5) : son genre, son avance, son
  * dernier commit, sa PR et sa carte ; ses trois derniers commits ; ses gestes en ligne.
+ * Une branche fusionnée n'a pas de couloir : elle vit dans `MergedBranches`, qui la
+ * supprime.
  */
 export function BranchLane({ projectId, branch, anchorId, highlight = false }: { projectId: string; branch: BranchInfo; anchorId: string; highlight?: boolean }) {
   const t = useTranslate()
   const { open, busy } = useOpenBranch(projectId, branch)
-  const remove = useDeleteBranches(projectId)
-  const [confirming, setConfirming] = useState(false)
   const label = branchLabel(branch)
-
-  const gestures: { key: string; label: string; icon: ReactNode; run: () => void; disabled?: boolean; tone?: 'critical' }[] = [
-    { key: 'tree', label: t('travail.branchLane.openTree'), icon: <FolderPlus size={13} />, run: () => void open('stay'), disabled: busy },
-    { key: 'session', label: t('travail.branchLane.launch'), icon: <MessageSquarePlus size={13} />, run: () => void open('session'), disabled: busy },
-  ]
-  if (branch.merged && !branch.remoteOnly) gestures.push({ key: 'delete', label: t('travail.branchLane.delete'), icon: <Trash2 size={13} />, run: () => setConfirming(true), disabled: remove.busy, tone: 'critical' })
 
   return (
     <section
       id={anchorId}
       aria-label={label}
       data-lane={branch.key}
-      className={cx(
-        'flex scroll-mt-4 flex-col overflow-hidden rounded-xl ring-1 transition-shadow',
-        highlight ? 'ring-2 ring-accent' : branch.kind === 'pr' ? 'ring-accent/30' : 'ring-line',
-      )}
+      data-highlight={highlight || undefined}
+      className={laneFrame(highlight, branch.kind === 'pr' ? 'ring-accent/30' : 'ring-line')}
     >
       <header className="flex min-w-0 items-start gap-2.5 bg-surface/30 px-3 py-2">
         <BranchDot kind={branch.kind} className="mt-1.5" />
@@ -100,7 +91,7 @@ export function BranchLane({ projectId, branch, anchorId, highlight = false }: {
             <span className="text-xs text-ink-faint">{t('travail.branchLane.noTree')}</span>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-faint">
-            {branch.ahead !== null && !branch.merged ? (
+            {branch.ahead !== null ? (
               <span className="tabular-nums" title={t(`code.drift.ahead.${pluralOf(branch.ahead)}`, { count: branch.ahead })}>
                 ↑{branch.ahead} ↓{branch.behind ?? 0}
               </span>
@@ -108,9 +99,7 @@ export function BranchLane({ projectId, branch, anchorId, highlight = false }: {
             {branch.lastCommitAt !== null ? <span className="tabular-nums">{t('travail.branchLane.lastCommit', { age: shortAge(branch.lastCommitAt) })}</span> : null}
             {branch.pr ? (
               <a href={branch.pr.url} target="_blank" rel="noreferrer" className="inline-flex rounded focus-visible:outline-2 focus-visible:outline-accent">
-                <Badge tone={PR_TONE[branch.pr.state]}>
-                  PR #{branch.pr.number} · {t(`code.pr.${branch.pr.state}`)}
-                </Badge>
+                <Badge tone={PR_TONE[branch.pr.state]}>{t('travail.index.pr', { number: branch.pr.number, state: t(`code.pr.${branch.pr.state}`) })}</Badge>
               </a>
             ) : null}
             {branch.card ? <CardRef projectId={projectId} card={branch.card} /> : null}
@@ -131,36 +120,21 @@ export function BranchLane({ projectId, branch, anchorId, highlight = false }: {
             ))}
           </ol>
         ) : null}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {gestures.map((gesture) => (
-            <button
-              key={gesture.key}
-              type="button"
-              onClick={gesture.run}
-              disabled={gesture.disabled}
-              className={cx(GESTURE, gesture.tone === 'critical' ? 'text-critical hover:bg-critical/10' : 'text-ink-soft hover:bg-surface-high hover:text-ink')}
-            >
-              {gesture.icon}
-              {gesture.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="ghost" icon={<FolderPlus size={13} />} onClick={() => void open('stay')} disabled={busy}>
+            {t('travail.branchLane.openTree')}
+          </Button>
+          <Button size="sm" variant="ghost" icon={<MessageSquarePlus size={13} />} onClick={() => void open('session')} disabled={busy}>
+            {t('travail.branchLane.launch')}
+          </Button>
           {branch.pr ? (
-            <a href={branch.pr.url} target="_blank" rel="noreferrer" className={cx(GESTURE, 'text-ink-soft hover:bg-surface-high hover:text-ink')}>
+            <a href={branch.pr.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1 rounded-md px-3 text-sm text-ink-soft hover:bg-surface-high hover:text-ink focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11">
               {t('travail.gesture.pr', { number: branch.pr.number })}
-              <ArrowUpRight size={11} aria-hidden />
+              <ArrowUpRight size={12} aria-hidden />
             </a>
           ) : null}
         </div>
       </div>
-      <DeleteBranchesDialog
-        names={confirming ? [branch.name] : null}
-        busy={remove.busy}
-        onClose={() => setConfirming(false)}
-        onConfirm={(names) => {
-          setConfirming(false)
-          void remove.run(names)
-        }}
-      />
     </section>
   )
 }
@@ -202,6 +176,8 @@ export function MergedBranches({ projectId, branches, open: forced, anchorId }: 
   const remove = useDeleteBranches(projectId)
   const shown = open || forced
   const count = branches.length
+  // Seules les branches locales se suppriment ; une distante fusionnée reste à la forge.
+  const local = branches.filter((branch) => !branch.remoteOnly).map((branch) => branch.name)
 
   return (
     <section id={anchorId} aria-label={t(`travail.mergedBranches.toggle.${pluralOf(count)}`, { count })} className="flex scroll-mt-4 flex-col gap-2">
@@ -217,14 +193,11 @@ export function MergedBranches({ projectId, branches, open: forced, anchorId }: 
           <span className="font-medium">{t(`travail.mergedBranches.toggle.${pluralOf(count)}`, { count })}</span>
           <span className="text-xs text-ink-faint">{t('travail.mergedBranches.hint')}</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setConfirming(true)}
-          disabled={remove.busy}
-          className={cx(GESTURE, 'ml-auto text-ink-soft hover:bg-surface-high hover:text-ink')}
-        >
-          <Trash2 size={13} aria-hidden /> {t('travail.branchLane.delete')}
-        </button>
+        {local.length > 0 ? (
+          <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => setConfirming(true)} disabled={remove.busy} className="ml-auto">
+            {t('travail.branchLane.delete')}
+          </Button>
+        ) : null}
       </div>
       {shown ? (
         <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
@@ -232,14 +205,14 @@ export function MergedBranches({ projectId, branches, open: forced, anchorId }: 
             <li key={branch.key} className="flex min-h-9 min-w-0 items-center gap-2.5 px-3 text-sm">
               <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-positive" />
               <span className="min-w-0 flex-1 truncate font-mono text-sm">{branchLabel(branch)}</span>
-              {branch.pr ? <span className="shrink-0 text-xs text-ink-faint">PR #{branch.pr.number}</span> : null}
+              {branch.pr ? <span className="shrink-0 text-xs text-ink-faint">{t('travail.gesture.pr', { number: branch.pr.number })}</span> : null}
               <span className="w-16 shrink-0 text-right text-xs tabular-nums text-ink-faint">{branch.lastCommitAt !== null ? shortAge(branch.lastCommitAt) : ''}</span>
             </li>
           ))}
         </ul>
       ) : null}
       <DeleteBranchesDialog
-        names={confirming ? branches.filter((branch) => !branch.remoteOnly).map((branch) => branch.name) : null}
+        names={confirming ? local : null}
         busy={remove.busy}
         onClose={() => setConfirming(false)}
         onConfirm={(names) => {

@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type { WorktreeStatusDto } from '@solera/protocol'
 import { Banner, ConfirmDialog } from '@solera/ui'
-import { ApiRequestError } from '../../lib/api'
 import { useTranslate } from '../../lib/i18n'
 import { useCleanWorktree } from '../../lib/worktrees'
 import { plural } from '../WorktreeCleanupDialog'
+import { errorText } from './TravailNotice'
 
 /**
  * « Nettoyer les N fusionnés » : un seul geste pour tous les arbres fusionnés sans
@@ -36,7 +36,7 @@ export function CleanMergedDialog({
       try {
         await clean.mutateAsync({ path: tree.path, deleteBranch: true, stopServices: true })
       } catch (err) {
-        failed.push(`${tree.name} : ${err instanceof ApiRequestError ? err.message : String(err)}`)
+        failed.push(t('travail.cleanup.failed', { name: tree.name, error: errorText(err) }))
       }
     }
     setRunning(false)
@@ -58,7 +58,7 @@ export function CleanMergedDialog({
       <p>{t('projectActivity.idle.cleanMergedIntro')}</p>
       <ul className="flex flex-col gap-0.5">
         {trees.map((tree) => (
-          <li key={tree.path} className="truncate font-mono text-[0.8125rem] text-ink-soft" title={tree.path}>
+          <li key={tree.path} className="truncate font-mono text-code text-ink-soft" title={tree.path}>
             {tree.name}
           </li>
         ))}

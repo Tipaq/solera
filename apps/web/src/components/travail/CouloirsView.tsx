@@ -1,9 +1,8 @@
 import { ChevronRight, GitBranch, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { JournalEntryDto } from '@solera/protocol'
-import { cx } from '@solera/ui'
+import { Button, cx } from '@solera/ui'
 import { verdictLabel } from '../code/VerdictDot'
-import { toolbarButtonClass } from '../toolbar/OneLineToolbar'
 import type { ActivityRow } from '../../lib/activity-rows'
 import { formatBytes, pluralOf, type TreeRow } from '../../lib/code-model'
 import { useLocale, useTranslate } from '../../lib/i18n'
@@ -146,7 +145,9 @@ function CleanupSection({
   const { count, bytes } = cleanup.summary
   // Les introuvables se retirent un à un, par leur tiroir : le lot ne prend que ce qui se nettoie sans rien perdre.
   const cleanable = cleanup.lanes.map((lane) => lane.tree).filter((tree) => tree.verdict === 'clean' && tree.id !== null)
-  const toggle = t(`travail.cleanup.toggle.${pluralOf(count)}`, { count })
+  // Un dossier disparu n'est pas « fusionné » : la section le dit à nettoyer, sans promettre que rien ne se perd.
+  const settled = cleanup.lanes.every((lane) => lane.tree.verdict === 'clean')
+  const toggle = t(`travail.cleanup.${settled ? 'toggle' : 'toggleMixed'}.${pluralOf(count)}`, { count })
   return (
     <section id={laneAnchor(CLEANUP_KEY)} aria-label={toggle} className="flex scroll-mt-4 flex-col gap-2">
       <div className="flex items-center gap-2 border-t border-line pt-3">
@@ -159,14 +160,13 @@ function CleanupSection({
           <ChevronRight size={14} aria-hidden className={cx('shrink-0 transition-transform', shown && 'rotate-90')} />
           <span className="font-medium">{toggle}</span>
           <span className="truncate text-xs tabular-nums text-ink-faint">
-            {bytes !== null ? `${formatBytes(bytes, locale)} · ` : ''}
-            {t('travail.cleanup.nothingLost')}
+            {[bytes !== null ? formatBytes(bytes, locale) : null, settled ? t('travail.cleanup.nothingLost') : null].filter(Boolean).join(' · ')}
           </span>
         </button>
         {cleanable.length > 0 ? (
-          <button type="button" onClick={() => onClean(cleanable)} className={cx(toolbarButtonClass(false), 'ml-auto shrink-0')}>
-            <Trash2 size={13} aria-hidden /> {t('travail.cleanup.action')}
-          </button>
+          <Button size="sm" variant="secondary" icon={<Trash2 size={13} />} onClick={() => onClean(cleanable)} className="ml-auto shrink-0">
+            {t('travail.cleanup.action')}
+          </Button>
         ) : null}
       </div>
       {shown ? <div className="flex flex-col gap-2.5">{cleanup.lanes.map(render)}</div> : null}
