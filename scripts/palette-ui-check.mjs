@@ -18,6 +18,8 @@ const data = await mkdtemp(join(tmpdir(), 'solera-palette-check-'))
 const shots = process.env.SHOTS
 const processes = []
 let browser
+// Plus de trois titres de la démo le contiennent : la palette n'en montre que trois.
+const SESSIONS_TERM = 'the'
 
 async function freePort() {
   const socket = createServer().listen(0, '127.0.0.1')
@@ -168,6 +170,38 @@ try {
   await row(/forecast-debugging/).click()
   await page.waitForURL(/\/skills\//)
 
+  // Les sessions : toutes, et celles du projet sous les yeux, sur la page Sessions.
+  await open(`/p/${nimbus.id}/c/${hero.id}`)
+  await search('>sessions')
+  await row('Toutes les sessions').waitFor()
+  await row('Sessions de Nimbus').click()
+  await page.waitForURL((url) => url.pathname === '/sessions' && url.searchParams.get('projet') === nimbus.id)
+  // Hors d'un projet, il n'y a que toutes.
+  await open()
+  await search('>sessions')
+  await row('Toutes les sessions').click()
+  await page.waitForURL((url) => url.pathname === '/sessions' && url.search === '')
+
+  // Peu de sessions trouvées : la palette les montre toutes, sans renvoi. Plus qu'elle n'en
+  // montre : une dernière ligne mène à la page Sessions, la recherche posée.
+  await open(`/p/${nimbus.id}/c/${hero.id}`)
+  const allResults = row(/^Voir les \d+ résultats dans Sessions$/)
+  await search(hero.title)
+  assert.equal(await allResults.count(), 0)
+  await search(SESSIONS_TERM)
+  await allResults.click()
+  await page.waitForURL((url) => url.pathname === '/sessions' && url.searchParams.get('q') === SESSIONS_TERM)
+
+  // Les gestes d'un projet mènent aux vues de la rangée : planifier ouvre le choix dans Actions.
+  await open(`/p/${nimbus.id}/c/${hero.id}`)
+  await search('>planifier')
+  await row(/Planifier une tâche/).click()
+  await page.waitForURL((url) => url.pathname === `/p/${nimbus.id}/actions` && url.searchParams.get('nouvelle') === 'planifier')
+  await open()
+  await search('>tableau')
+  await row('Ouvrir le tableau').click()
+  await page.waitForURL((url) => url.pathname === `/p/${nimbus.id}/board`)
+
   // Au téléphone : plein écran, rien ne déborde.
   await page.setViewportSize({ width: 390, height: 844 })
   await open(`/p/${nimbus.id}/c/${hero.id}`)
@@ -180,7 +214,7 @@ try {
   await palette.waitFor({ state: 'detached' })
 
   assert.deepEqual(errors, [])
-  console.log(`OK : toutes les familles d'une saisie, MCP, réglages, flou, fichiers de tous les projets, ouverture dans le bon panneau, skill, téléphone${shots ? ` ; captures dans ${shots}` : ''}`)
+  console.log(`OK : toutes les familles d'une saisie, MCP, réglages, flou, fichiers de tous les projets, ouverture dans le bon panneau, skill, sessions, gestes de projet, téléphone${shots ? ` ; captures dans ${shots}` : ''}`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

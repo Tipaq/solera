@@ -4993,9 +4993,12 @@ export const fr: Catalog = {
   'palette.action.newConversation': 'Nouvelle conversation',
   'palette.action.newProject': 'Nouveau projet',
   'palette.action.schedule': 'Planifier une tâche…',
-  'palette.action.board': 'Ouvrir le board',
+  'palette.action.board': 'Ouvrir le tableau',
   'palette.action.panel': 'Ouvrir le panneau du projet',
   'palette.action.settings': 'Ouvrir les réglages',
+  'palette.sessions.all': 'Toutes les sessions',
+  'palette.sessions.project': 'Sessions de {name}',
+  'palette.sessions.results': 'Voir les {count} résultats dans Sessions',
   // La colonne de gauche : les lieux, l'activité, le menu du compte.
   'shell.places.label': 'Lieux',
   'shell.place.threads': 'Fils',

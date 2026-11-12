@@ -161,6 +161,17 @@ export function writeSessionQuery(params: URLSearchParams, query: SessionQuery):
   return next
 }
 
+/** Le lien qui ouvre la page sur un projet ou une recherche, comme la palette le pose. */
+export function sessionsHref(seed: { project?: string; search?: string } = {}): string {
+  const query = writeSessionQuery(new URLSearchParams(), {
+    search: seed.search ?? '',
+    scope: 'actives',
+    sort: 'recent',
+    filters: { ...NO_FILTERS, projects: new Set(seed.project ? [seed.project] : []) },
+  }).toString()
+  return query ? `/sessions?${query}` : '/sessions'
+}
+
 /** Le nombre de filtres posés, un par puce. */
 export function activeFilterCount(filters: SessionFilters): number {
   return filters.projects.size + filters.states.size + filters.agents.size + (filters.period === 'all' ? 0 : 1) + (filters.pinned ? 1 : 0)

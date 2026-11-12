@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Loader,
   MessageSquare,
+  MessagesSquare,
   PanelRight,
   Play,
   Plug,
@@ -35,6 +36,7 @@ import { describeTransport, useMcpServers } from '../lib/mcp'
 import { fileFields, rankByFields, usePaletteCatalog, usePaletteFiles } from '../lib/palette'
 import { splitExcerpt, useMessageSearch } from '../lib/search'
 import { useSchedules } from '../lib/schedules'
+import { sessionsHref } from '../lib/sessions-view'
 import { useCurrentUser } from '../lib/session'
 import { openSettings } from '../lib/settings-dialog'
 import { openTab } from '../lib/editor-tabs'
@@ -230,16 +232,29 @@ export function CommandPalette({
         label: t('palette.action.newProject'),
         run: () => go('/projects/new'),
       },
+      {
+        key: 'cmd-all-sessions',
+        icon: <MessagesSquare size={14} />,
+        label: t('palette.sessions.all'),
+        run: () => go(sessionsHref()),
+      },
     ]
 
     // Une tâche se planifie dans un projet : sans projet sous les yeux, le geste n'a
     // pas de destination et proposer une page vide serait un cul-de-sac.
     if (projectId) {
       entries.push({
+        key: 'cmd-project-sessions',
+        icon: <MessagesSquare size={14} />,
+        label: t('palette.sessions.project', { name: projectNames.get(projectId) ?? '' }),
+        run: () => go(sessionsHref({ project: projectId })),
+      })
+      entries.push({
         key: 'cmd-schedule',
         icon: <CalendarPlus size={14} />,
         label: t('palette.action.schedule'),
-        run: () => go(`/p/${projectId}/actions`),
+        // L'onglet Actions s'ouvre sur le choix de ce qu'on planifie.
+        run: () => go(`/p/${projectId}/actions?nouvelle=planifier`),
       })
       entries.push({
         key: 'cmd-board',
@@ -273,7 +288,7 @@ export function CommandPalette({
     })
 
     return entries
-  }, [close, go, onBoard, projectId, t])
+  }, [close, go, onBoard, projectId, projectNames, t])
 
   /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
@@ -337,6 +352,27 @@ export function CommandPalette({
       items: items.slice(0, expanded === id ? EXPANDED : PER_FAMILY),
       total: items.length,
     })
+
+    /**
+     * Quand la recherche trouve plus de sessions que la palette n'en montre, une
+     * dernière ligne mène à la page Sessions, la recherche déjà posée : la palette
+     * n'est pas une page de résultats, celle-là l'est.
+     */
+    const withSessionsPage = (group: Group): Group =>
+      group.total > group.items.length
+        ? {
+            ...group,
+            items: [
+              ...group.items,
+              {
+                key: 'c-all-results',
+                icon: <MessagesSquare size={14} />,
+                label: t('palette.sessions.results', { count: group.total }),
+                run: () => go(sessionsHref({ search: term })),
+              },
+            ],
+          }
+        : group
 
     /** Une phrase se cherche par morceaux et initiales, pas en lettres éparses. */
     const sentence = (text: string): FuzzyField => ({ text, weight: 1, mode: 'words' })
@@ -586,13 +622,15 @@ export function CommandPalette({
 
     return [
       limit('notes', []),
-      limit(
-        'conversations',
-        conversationItems(
-          rankByFields(conversations ?? [], term, (conversation) => [
-            sentence(conversation.title),
-            ...context(groupName(conversation)),
-          ]),
+      withSessionsPage(
+        limit(
+          'conversations',
+          conversationItems(
+            rankByFields(conversations ?? [], term, (conversation) => [
+              sentence(conversation.title),
+              ...context(groupName(conversation)),
+            ]),
+          ),
         ),
       ),
       limit('messages', messageItems),
