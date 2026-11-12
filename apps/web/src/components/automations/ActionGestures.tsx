@@ -1,4 +1,5 @@
 import { ArrowUpRight, ChevronDown, Play, ShieldQuestion, SquareTerminal } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Menu, MenuItem, MenuLabel, Switch, cx } from '@solera/ui'
 import { launchTrees, picksTree, primaryGestureOf, type Automation } from '../../lib/automations'
@@ -161,9 +162,9 @@ export function ReviewButton({ label, onReview, size = 'tile' }: { label: string
 
 /**
  * Le geste principal d'une action, toujours au même endroit (LAN-7) : « Relire », sinon
- * l'interrupteur d'un service (et « Ouvrir ↗ » à droite quand il tourne et qu'on sait
- * où), « Terminal » d'une commande qui tourne, « Session ↗ » d'un passage d'agent, sinon
- * « Lancer ▾ ».
+ * l'interrupteur d'un service (puis `serve`, « Servir… », quand il tourne, et « Ouvrir ↗ »
+ * à droite quand on sait où), « Terminal » d'une commande qui tourne, « Session ↗ » d'un
+ * passage d'agent, sinon « Lancer ▾ ».
  */
 export function ActionGesture({
   item,
@@ -173,10 +174,13 @@ export function ActionGesture({
   onToggleService,
   onTerminal,
   onLaunch,
+  serve,
 }: {
   item: Automation
   size?: GestureSize
   here?: LaunchHere | null
+  /** « Servir… » d'un service en marche (`ServeMenu`), posé après l'interrupteur. */
+  serve?: ReactNode
   onReview: () => void
   onToggleService: (on: boolean) => void
   onTerminal: () => void
@@ -192,6 +196,7 @@ export function ActionGesture({
       return (
         <>
           <ServiceSwitch on={on} label={item.label} onToggle={onToggleService} withText={size === 'tile'} />
+          {on ? serve : null}
           {live?.kind === 'service' && live.href ? (
             <WebLink href={live.href} className={cx(quietGestureClass(size), 'ml-auto')}>
               {t('launcher.gesture.open')} <ArrowUpRight size={12} aria-hidden />

@@ -53,9 +53,6 @@ export interface EditorSeed {
 /** « + Tâche » d'une page de tâches planifiées : un agent, « Planifiée » cochée (PLF-1). */
 export const NEW_AGENT_TASK: EditorSeed = { preset: { what: 'agent' }, schedule: true }
 
-/** Ce que le placement d'un service peut valoir dans l'éditeur : `per-worktree` attend AC-06. */
-export type EditorPlacement = Exclude<ActionPlacement, 'per-worktree'>
-
 export interface EditorState {
   what: What
   kind: CommandKind
@@ -65,7 +62,7 @@ export interface EditorState {
   command: string
   subdir: string
   url: string
-  placement: EditorPlacement
+  placement: ActionPlacement
   pinnedBranch: string
   /* Agent */
   agent: AgentKind
@@ -133,7 +130,7 @@ function stateOfDraft(draft: AutomationDraft): EditorState {
       command: body.command,
       subdir: body.subdir ?? '',
       url: body.url ?? '',
-      placement: body.placement === 'per-worktree' || !body.placement ? 'follow' : body.placement,
+      placement: body.placement ?? 'follow',
       pinnedBranch: body.pinnedBranch ?? '',
       onDemand: body.onDemand ?? true,
       scheduled: Boolean(body.schedule),

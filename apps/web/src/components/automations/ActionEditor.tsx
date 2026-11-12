@@ -53,7 +53,6 @@ import {
   problemsOf,
   summaryOf,
   type EditorField,
-  type EditorPlacement,
   type EditorSeed,
   type EditorState,
 } from '../../lib/action-editor'
@@ -69,6 +68,7 @@ import { useTreeLevel } from '../../lib/tree'
 import { inheritedConfigFor, useUserSettings } from '../../lib/user-settings'
 import { projectScope } from '../../lib/workspace-scope'
 import { useBranches } from '../../lib/worktrees'
+import { PlacementField } from './served/PlacementField'
 import { AGENT_LABELS, AgentIcon } from '../AgentIcon'
 import { AutonomousConfinementSelect } from '../Environment'
 import { useAgentSettings } from '../chat/agent-settings'
@@ -162,6 +162,7 @@ export function ActionEditor({
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const isService = isServiceState(state)
+  const { data: repo } = useBranches(isService ? projectId : undefined)
   const problems = problemsOf(state)
   const blocking = Object.values(problems).map((key) => problemText(key, state, t))
   const shown = (field: EditorField) => {
@@ -272,14 +273,19 @@ export function ActionEditor({
                 </FieldRow>
 
                 {isService ? (
-                  <FieldRow label={t('actionEditor.field.placement')} hint={t('actionEditor.placement.perWorktreeLater')}>
+                  <FieldRow label={t('served.placement.label')} error={shown('branch')}>
                     <PlacementField
-                      projectId={projectId}
                       value={state.placement}
+                      onChange={(placement) => {
+                        set({ placement })
+                        // La branche de la racine d'office : c'est celle où il tournera tout de suite.
+                        if (placement === 'branch' && !state.pinnedBranch && repo?.current) set({ pinnedBranch: repo.current })
+                      }}
                       branch={state.pinnedBranch}
-                      branchError={shown('branch')}
-                      onChange={(placement) => set({ placement })}
                       onBranch={(pinnedBranch) => { set({ pinnedBranch }); touch('branch') }}
+                      branches={repo?.branches ?? []}
+                      rootBranch={repo?.current ?? null}
+                      url={state.url}
                     />
                   </FieldRow>
                 ) : null}
@@ -777,69 +783,6 @@ function FolderRow({
         {selected ? <Check size={13} className="ml-auto shrink-0" aria-hidden /> : null}
       </button>
     </span>
-  )
-}
-
-/**
- * « Où tourne-t-il » (SRV-6) : une seule instance qu'on bascule (conseillé), toujours la
- * racine, toujours une branche. « Une instance par worktree » attend AC-06.
- */
-function PlacementField({
-  projectId,
-  value,
-  branch,
-  branchError,
-  onChange,
-  onBranch,
-}: {
-  projectId: string
-  value: EditorPlacement
-  branch: string
-  branchError?: string
-  onChange: (next: EditorPlacement) => void
-  onBranch: (next: string) => void
-}) {
-  const t = useTranslate()
-  const { data } = useBranches(value === 'branch' ? projectId : undefined)
-  const branches = data?.branches ?? []
-  const current = data?.current ?? null
-  return (
-    <ChoiceCards<EditorPlacement>
-      label={t('actionEditor.field.placement')}
-      value={value}
-      onChange={(next) => {
-        onChange(next)
-        // La branche de la racine d'office : c'est celle où il tournera tout de suite.
-        if (next === 'branch' && !branch && current) onBranch(current)
-      }}
-      options={[
-        { value: 'follow', label: t('actionEditor.placement.follow'), hint: t('actionEditor.placement.followHint'), badge: t('actionEditor.placement.recommended') },
-        { value: 'root', label: t('actionEditor.placement.root'), hint: t('actionEditor.placement.rootHint') },
-        { value: 'branch', label: t('actionEditor.placement.branch'), hint: t('actionEditor.placement.branchHint') },
-      ]}
-      selectedExtra={(selected) =>
-        selected === 'branch' ? (
-          <div className="flex flex-col gap-1.5">
-            <Select
-              className="max-w-xs"
-              placeholder={t('actionEditor.placement.branchPick')}
-              value={branch}
-              onChange={onBranch}
-              options={(branches.includes(branch) || !branch ? branches : [branch, ...branches]).map((name) => ({ value: name, label: name }))}
-            />
-            {branchError ? (
-              <ErrorLine text={branchError} />
-            ) : branch && current ? (
-              <span className="text-xs text-ink-faint">
-                {current === branch
-                  ? t('actionEditor.placement.branchOnRoot')
-                  : t('actionEditor.placement.branchElsewhere', { current, branch })}
-              </span>
-            ) : null}
-          </div>
-        ) : null
-      }
-    />
   )
 }
 

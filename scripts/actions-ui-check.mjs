@@ -270,6 +270,106 @@ async function checkEditor(page, base, project, conversation, api, context) {
   void context
 }
 
+/**
+ * « Ce qu'il sert » (`components/automations/served/`), monté seul sur les fixtures de ses
+ * stories : la ligne d'une tuile, « Servir… » et son dialogue, le bloc du détail, « Où
+ * tourne-t-il ». Au doigt, « Servir… » fait 44 px comme les autres gestes de la tuile.
+ */
+async function checkServed(base) {
+  const modules = {
+    query: await viteDependency(base, '@tanstack/react-query', '/src/lib/conversation-config.ts'),
+    router: await viteDependency(base, 'react-router-dom', '/src/components/chat/MessageBubble.tsx'),
+    ui: await viteDependency(base, '@solera/ui', '/src/components/ImageThumbnail.tsx'),
+  }
+  for (const width of [1280, 390]) {
+    const touch = width < 700
+    const context = await browser.newContext({ viewport: { width, height: 1400 }, hasTouch: touch, isMobile: touch, locale: 'fr-FR', serviceWorkers: 'block' })
+    const page = await context.newPage()
+    page.setDefaultTimeout(10000)
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.route(`${base}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body class="bg-canvas"><div id="check" style="padding:16px"></div></body></html>' }))
+    await page.route(`${base}/api/**`, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }))
+    await page.goto(base)
+    await page.evaluate(async (modules) => {
+      const refresh = (await import('/@react-refresh')).default
+      refresh.injectIntoGlobalHook(window)
+      window.$RefreshReg$ = () => {}
+      window.$RefreshSig$ = () => (type) => type
+      window.__vite_plugin_react_preamble_installed__ = true
+      localStorage.setItem('solera.locale', 'fr')
+      await (await import('/src/lib/i18n/index.ts')).initLocale()
+      document.documentElement.dataset.theme = 'dark'
+      await import('/src/styles/index.css')
+      const React = (await import('/node_modules/.vite/deps/react.js')).default
+      const { createRoot } = (await import('/node_modules/.vite/deps/react-dom_client.js')).default
+      const { QueryClient, QueryClientProvider } = await import(modules.query)
+      const { MemoryRouter } = await import(modules.router)
+      const { TooltipProvider } = await import(modules.ui)
+      const stories = await import('/src/components/automations/served/Served.stories.tsx')
+      const h = React.createElement
+      const part = (name, story) => h('section', { 'data-part': name, style: { marginBottom: '20px' } }, story.render())
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      createRoot(document.getElementById('check')).render(
+        h(QueryClientProvider, { client }, h(MemoryRouter, null, h(TooltipProvider, null,
+          part('tile', stories.Tuile), part('block', stories.Bloc), part('pinned', stories.BlocFixe), part('placement', stories.Placement)))),
+      )
+    }, modules)
+
+    // La tuile : la branche abrégée, le commit, le retard, les non commités.
+    const tile = page.locator('[data-part="tile"]')
+    const line = tile.locator('span[title="/srv/nimbus/.worktrees/w1/apps/api"]')
+    await line.waitFor()
+    const said = await line.textContent()
+    assert.match(said, /^sert\s*feat\/905-vue-horizon-et-ses…@ e4f5a6b3/)
+    // ↓ et ● se disent aussi en toutes lettres, l'infobulle n'existant pas au doigt.
+    assert.match(said, /3 commits en retard sur la base●22 fichiers non commités, servis tels quels$/)
+    assert.equal(await line.locator('[title="Fichiers non commités : c’est l’arbre de travail qui est servi"]').count(), 1)
+    const serve = tile.getByRole('button', { name: 'Servir une autre branche avec « API »', exact: true })
+    assert.equal(Math.round((await serve.boundingBox()).height), touch ? 44 : 36)
+    await page.screenshot({ path: join(shots, `served-tile-${width}.png`), clip: await tile.boundingBox() })
+    // « Servir… » : la racine et les worktrees, sans l'arbre servi ni le fusionné.
+    await serve.click()
+    assert.deepEqual(await page.getByRole('menuitem').allTextContents(), ['la racine (main)', 'fix/connexion-lente'])
+    await page.screenshot({ path: join(shots, `served-menu-${width}.png`) })
+    await page.getByRole('menuitem', { name: 'fix/connexion-lente' }).click()
+    const dialog = page.getByRole('dialog', { name: '« API » sert déjà feat/905-vue-horizon-et-ses-jalons' })
+    await dialog.waitFor()
+    assert.match(await dialog.textContent(), /Il tourne depuis feat\/905-vue-horizon-et-ses-jalons sur :8080\. Le basculer sur fix\/connexion-lente le redémarre : ce que tu as ouvert dans le navigateur se recharge\./)
+    assert.equal(await dialog.getByRole('link', { name: 'Ouvrir plutôt celui qui tourne' }).getAttribute('href'), 'http://127.0.0.1:8080')
+    await dialog.getByRole('button', { name: 'Basculer sur fix/connexion-lente' }).waitFor()
+    await page.screenshot({ path: join(shots, `served-dialog-${width}.png`) })
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+
+    // Le bloc du détail : l'arbre mène à Travail, les non commités sont servis tels quels.
+    const block = page.locator('[data-part="block"]')
+    assert.equal(await block.getByRole('link', { name: 'w1' }).getAttribute('href'), '/p/p-nimbus/travail?arbre=%2Fsrv%2Fnimbus%2F.worktrees%2Fw1')
+    await block.getByText('2 fichiers — servis tels quels (HMR)').waitFor()
+    await block.getByText('4 en avance').waitFor()
+    await block.getByText('3 en retard').waitFor()
+    await block.getByText('#905 Vue horizon · Jalon #900').waitFor()
+    await block.getByRole('button', { name: 'Servir une autre branche…' }).waitFor()
+    await page.screenshot({ path: join(shots, `served-block-${width}.png`), clip: await block.boundingBox() })
+    // Fixé à la racine, il ne se bascule pas, et le bloc le dit.
+    const pinned = page.locator('[data-part="pinned"]')
+    await pinned.getByText('Il sert toujours la racine du projet : son placement le fixe.').waitFor()
+    assert.equal(await pinned.getByRole('button', { name: 'Servir une autre branche…' }).count(), 0)
+
+    // « Où tourne-t-il » : la première conseillée et choisie, la quatrième grisée.
+    const placement = page.locator('[data-part="placement"]')
+    const follow = placement.getByRole('radio', { name: /^Une seule instance, qu’on bascule/ })
+    assert.equal(await follow.getAttribute('aria-checked'), 'true')
+    assert.match(await follow.textContent(), /conseillé/)
+    assert.equal(await placement.getByRole('radio', { name: /^Une instance par worktree/ }).isDisabled(), true)
+    await placement.getByRole('radio', { name: /^Toujours une branche/ }).click()
+    await placement.getByText('La racine est sur cette branche : il y tournera.').waitFor()
+    await page.screenshot({ path: join(shots, `served-placement-${width}.png`), clip: await placement.boundingBox() })
+    assert.deepEqual(errors, [])
+    await context.close()
+  }
+}
+
 const linuxServices = process.platform === 'linux' &&
   (() => { try { execFileSync('systemctl', ['--user', 'show-environment'], { stdio: 'ignore' }); return true } catch { return false } })()
 
@@ -294,6 +394,8 @@ try {
   browser = await launchBrowser()
   console.log('actions-ui-check : pièces')
   await checkPieces(base)
+  console.log('actions-ui-check : ce qu\'il sert')
+  await checkServed(base)
 
   const seed = run(['--import', 'tsx', 'src/cli/demo-seed.ts'], serverDir, env)
   const [seedCode] = await once(seed, 'exit')
@@ -406,6 +508,61 @@ try {
     await actionsTab.click()
     await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
     await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
+
+    // Ce qu'il sert, et la bascule réelle d'un arbre à l'autre. Démarré à la racine, il le
+    // dit. Lancé depuis la conversation, dont le worktree est feat/offline-cache, alors que
+    // la liste le croit encore arrêté (relue toutes les dix secondes), le serveur refuse en
+    // 409 au lieu de se taire, et le refus ouvre le dialogue : « Basculer » le redémarre
+    // dans le worktree. « Basculer sur » le ramène ensuite à la racine.
+    console.log('actions-ui-check : bascule d\'un service')
+    const started = await context.request.post(`${base}/api/actions/${service.id}/run`, { data: {} })
+    assert.ok(started.ok(), await started.text())
+    const offline = (await api(`/api/projects/${project.id}/worktrees`)).find((entry) => entry.git?.branch === 'feat/offline-cache')
+    assert.ok(offline, 'Nimbus a le worktree feat/offline-cache')
+    assert.equal(conversation.worktreeId, offline.id, 'la conversation de démo vit dans feat/offline-cache')
+    let stale = true
+    const actionsList = `${base}/api/actions`
+    await page.route(actionsList, async (route) => {
+      const response = await route.fetch()
+      const list = await response.json()
+      for (const entry of stale ? list : []) {
+        if (entry.id === service.id) entry.service = { ...entry.service, state: 'inactive', cwd: null, ports: [], startedAt: null, served: null }
+      }
+      await route.fulfill({ response, json: list })
+    })
+    await page.reload()
+    // Le panneau peut rester ouvert d'un chargement à l'autre.
+    await actionsTab.or(page.getByRole('button', { name: 'Ouvrir le panneau' }).first()).first().waitFor()
+    if (!(await actionsTab.isVisible())) await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
+    await actionsTab.click()
+    const row = panel.locator('li', { hasText: 'Serveur statique' })
+    await row.getByRole('button', { name: 'Lancer : Serveur statique' }).click()
+    const refused = page.getByRole('dialog', { name: '« Serveur statique » sert déjà la racine (main)' })
+    await refused.getByText(`Il tourne depuis la racine (main) sur :${httpPort}.`, { exact: false }).waitFor()
+    await refused.getByRole('link', { name: 'Ouvrir plutôt celui qui tourne' }).waitFor()
+    assert.equal(await page.getByText('tourne déjà depuis').count(), 0, 'le refus ne s\'affiche pas en plus en bandeau')
+    await page.screenshot({ path: join(shots, 'served-switch-dialog.png') })
+    stale = false
+    await refused.getByRole('button', { name: 'Basculer sur feat/offline-cache' }).click()
+    await refused.waitFor({ state: 'detached', timeout: 20000 })
+    await page.unroute(actionsList)
+    await row.getByText('feat/offline-cache').waitFor({ timeout: 20000 })
+    const moved = (await api('/api/actions')).find((entry) => entry.id === service.id)
+    assert.equal(moved.service.served.worktreeId, offline.id)
+    assert.equal(moved.service.cwd, offline.path)
+    assert.equal(await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status), 200)
+    await page.screenshot({ path: join(shots, 'served-switched.png') })
+
+    // « Basculer sur » depuis le menu de la ligne : retour à la racine.
+    await row.getByRole('button', { name: 'Plus' }).click()
+    await page.getByRole('menuitem', { name: 'la racine (main)' }).click()
+    const back = page.getByRole('dialog', { name: '« Serveur statique » sert déjà feat/offline-cache' })
+    await back.getByRole('button', { name: 'Basculer sur la racine (main)' }).click()
+    await back.waitFor({ state: 'detached', timeout: 20000 })
+    await row.getByText('la racine (main)').waitFor({ timeout: 20000 })
+    assert.equal((await api('/api/actions')).find((entry) => entry.id === service.id).service.served.root, true)
+    await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
+    await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
   } else {
     // Sans systemd utilisateur, le service retombe dans un terminal.
     await page.locator('.xterm-rows', { hasText: 'python3 -m http.server' }).waitFor({ timeout: 10000 })
@@ -457,8 +614,9 @@ try {
   await actionsTab.click()
   await suiteRow.getByRole('button', { name: /^Tests du panier/ }).click()
   await rerunFailed.click()
-  // L'en-tête dit ce qui a tourné, arguments de relance compris.
-  await detail.getByText("$ node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'", { exact: true }).waitFor({ timeout: 20000 })
+  // L'en-tête dit ce qui a tourné, arguments de relance compris. La sortie commence par
+  // la même ligne quand le shell la répète : on lit l'en-tête, pas la sortie.
+  await detail.locator('code').getByText("$ node --test check/cart.test.mjs '--test-name-pattern=additionne les lignes'", { exact: true }).waitFor({ timeout: 20000 })
   await detail.getByText(/Échec \(code 1\)/).waitFor({ timeout: 20000 })
   assert.equal(await detail.getByText('Tests en échec · 1').count(), 1)
   // Échap remonte à la liste.

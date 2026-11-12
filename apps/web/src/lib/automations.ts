@@ -119,6 +119,9 @@ export type TaskInput = Omit<ScheduledTaskDto, 'cadence'> & { cadence: ScheduleC
 
 const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
+/** L'identifiant d'une action dans l'onglet Actions : les deux tables ont leurs ids. */
+export const actionAutomationId = (actionId: string): string => `a-${actionId}`
+
 /**
  * `detailed` : les passages avec leur extrait (`useActionRuns`), pour le détail d'une
  * action. La liste des actions ne les porte pas : sans eux, l'extrait vaut null.
@@ -162,7 +165,7 @@ export function fromAction(input: ProjectActionDto, detailed?: readonly ActionRu
 
   const streak = failStreakOf(runs)
   return {
-    id: `a-${action.id}`,
+    id: actionAutomationId(action.id),
     projectId: action.projectId,
     label: action.label,
     description: action.description,
