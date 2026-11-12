@@ -5002,6 +5002,9 @@ export const en = {
   'palette.action.board': 'Open the board',
   'palette.action.panel': 'Open the project panel',
   'palette.action.settings': 'Open settings',
+  'palette.sessions.all': 'All sessions',
+  'palette.sessions.project': '{name} sessions',
+  'palette.sessions.results': 'See the {count} results in Sessions',
   // The left column: places, activity, account menu.
   'shell.places.label': 'Places',
   'shell.place.threads': 'Threads',
