@@ -142,7 +142,48 @@ export function usePanelPresence(): { mounted: boolean; open: boolean } {
 export function setPanelOpen(next: boolean): void {
   if (next === open) return
   open = next
+  // Ouvert sans geste qui désigne un arbre, le panneau montre le dossier de sa page.
+  if (next) worktree = null
   if (scope !== null) openByScope.set(scope, next)
+  for (const listener of listeners) listener()
+}
+
+/**
+ * L'arbre que le panneau d'une vue de lieu montre à la place du dossier du projet : un
+ * arbre **sans session**, désigné par le geste « Diff » de Travail ou de l'Aperçu
+ * (carte #169). Un arbre qui a une session s'ouvre dans elle, par
+ * `openPanelOnArrival`.
+ *
+ * Il ne survit ni à la fermeture du panneau ni au départ de la page : un panneau rouvert
+ * autrement, ou ailleurs, montre de nouveau le dossier de sa page.
+ */
+export interface PanelWorktree {
+  id: string
+  /** Le nom de l'arbre, pour dire au panneau ce qu'il parcourt. */
+  name: string
+}
+
+let worktree: PanelWorktree | null = null
+
+export function usePanelWorktree(): PanelWorktree | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => worktree,
+    () => null,
+  )
+}
+
+/**
+ * Ouvre l'onglet Git du panneau sur un arbre sans session, ou sur le dossier du projet
+ * (`null`) : le geste « Diff » de la racine.
+ */
+export function openGitPanel(target: PanelWorktree | null): void {
+  tab = 'git'
+  subAgentId = null
+  checkpointKey = null
+  setPanelOpen(true)
+  // Après l'ouverture, qui oublie l'arbre d'un panneau ouvert sans geste.
+  worktree = target
   for (const listener of listeners) listener()
 }
 
@@ -158,7 +199,9 @@ export function setPanelScope(next: string): void {
   if (scope !== null) openByScope.set(scope, open)
   scope = next
   const restored = openByScope.get(next) ?? false
-  if (restored === open) return
+  const leftWorktree = worktree !== null
+  worktree = null
+  if (restored === open && !leftWorktree) return
   open = restored
   for (const listener of listeners) listener()
 }

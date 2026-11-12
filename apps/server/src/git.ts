@@ -599,6 +599,47 @@ function parseNumstat(numstat: string): DiffFile[] {
     .filter((file) => file.path.length > 0)
 }
 
+/** Les fichiers d'un `--numstat` et leur patch, borné à `MAX_DIFF_BYTES`. */
+function workingDiff(numstat: string, patch: string): WorkingDiff {
+  const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
+  return { files: parseNumstat(numstat), patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch, truncated }
+}
+
+/**
+ * Ce qu'une branche apporte depuis qu'elle a quitté la base (`base...head`), et son
+ * avance et son retard sur elle : le diff « avec la base » (S6).
+ *
+ * Les deux références sont d'abord résolues en commits, `--end-of-options` devant : un
+ * nom inconnu répond `null` plutôt qu'un message de git, et rien ne passe pour une
+ * option. Le diff part ensuite sur les hashes.
+ */
+export async function readRangeDiff(
+  cwd: string,
+  base: string,
+  head: string,
+): Promise<(WorkingDiff & { ahead: number; behind: number }) | null> {
+  const resolve = (ref: string) =>
+    git(cwd, ['rev-parse', '--verify', '--quiet', '--end-of-options', `${ref}^{commit}`]).then(
+      (out) => out.trim(),
+      () => null,
+    )
+  const [from, to] = await Promise.all([resolve(base), resolve(head)])
+  if (!from || !to) return null
+
+  try {
+    const range = `${from}...${to}`
+    const [numstat, patch, counts] = await Promise.all([
+      git(cwd, ['diff', '--numstat', '--no-relative', range]),
+      git(cwd, ['diff', '--patch', ...PATCH_FLAGS, range]),
+      git(cwd, ['rev-list', '--left-right', '--count', range]),
+    ])
+    const [behind, ahead] = counts.trim().split(/\s+/).map(Number)
+    return { ...workingDiff(numstat, patch), ahead: ahead ?? 0, behind: behind ?? 0 }
+  } catch (err) {
+    throw new GitError(gitMessage(err))
+  }
+}
+
 /**
  * Ce qu'un commit a changé, contre son premier parent.
  *
@@ -612,12 +653,7 @@ export async function readCommitDiff(cwd: string, hash: string): Promise<Working
       git(cwd, ['show', '--format=', '--patch', ...PATCH_FLAGS, '-m', '--first-parent', hash]),
     ])
 
-    const truncated = Buffer.byteLength(patch) > MAX_DIFF_BYTES
-    return {
-      files: parseNumstat(numstat),
-      patch: truncated ? patch.slice(0, MAX_DIFF_BYTES) : patch,
-      truncated,
-    }
+    return workingDiff(numstat, patch)
   } catch (err) {
     throw new GitError(gitMessage(err))
   }
