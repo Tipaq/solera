@@ -47,3 +47,11 @@ test('état d’une carte : ses sessions vivantes, archivées exclues', () => {
   assert.equal(awaitsMe(card('todo', { conversations })), true)
   assert.equal(awaitsMe(card('todo', { conversations: [session('awaiting_input', 1), session('running')] })), false)
 })
+
+test('état d’une carte : le statut vivant du socket l’emporte sur celui du chargement', () => {
+  const conversations = [session('running'), session('idle')]
+  const live = (entry: { id: string; status: CardConversationDto['status'] }) => (entry.id === 's-running' ? 'awaiting_input' : entry.status)
+  assert.equal(awaitsMe(card('todo', { conversations })), false)
+  assert.equal(awaitsMe(card('todo', { conversations }), live), true)
+  assert.deepEqual(liveSessions(card('todo', { conversations }), () => 'idle'), [])
+})

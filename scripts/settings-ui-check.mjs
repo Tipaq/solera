@@ -150,21 +150,26 @@ try {
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const project = projects.find((entry) => entry.isOwner)
   assert.ok(project, 'un projet dont alex est propriétaire')
+  // Les réglages d'agent du projet sont des rangées de sa page de réglages (PP-22), qui
+  // se changent dans le brouillon et partent par « Enregistrer ».
   await page.goto(`${base}/p/${project.id}/settings`)
-  await page.getByRole('heading', { name: 'Réglages des agents pour ce projet' }).waitFor()
-  const projectRequests = card("Ce que l’agent demande à Solera")
-  // La ligne elle-même : le plus petit bloc qui porte le choix.
-  const filing = projectRequests.locator('div').filter({ has: page.getByRole('radiogroup', { name: 'Rangement de carte' }) }).last()
-  await filing.getByText('Hérité du compte', { exact: true }).waitFor()
-  await filing.getByRole('radio', { name: 'Interdit' }).click()
-  await filing.getByText('Modifié ici', { exact: true }).waitFor()
+  const filing = page.locator('#reglage-agent-requests-cardFiling')
+  const save = page.locator('[aria-live="polite"]').getByRole('button', { name: 'Enregistrer', exact: true })
+  await filing.getByText('hérité du compte', { exact: true }).waitFor()
+  await filing.getByRole('combobox', { name: 'Rangement de carte' }).click()
+  await page.getByRole('option', { name: /^Interdit/ }).click()
+  await filing.getByRole('button', { name: 'modifié ici' }).waitFor()
+  await save.click()
   const project1 = async () => (await (await context.request.get(`${base}/api/projects`)).json()).find((entry) => entry.id === project.id)
   await until(project1, (current) => current.configLayer.shared.cardFiling === 'deny', 'rangement de carte au projet')
   // Ce qu'il ne change pas reste celui du compte : les décisions réglées plus haut.
-  assert.equal(await projectRequests.getByRole('radiogroup', { name: 'Décisions' }).getByRole('radio', { name: 'Demande mon accord' }).getAttribute('aria-checked'), 'true')
-  await shot(projectRequests, '04-demandes-projet')
-  await filing.getByRole('button', { name: 'Revenir au réglage du compte' }).click()
-  await filing.getByText('Hérité du compte', { exact: true }).waitFor()
+  const projectDecisions = page.locator('#reglage-agent-requests-decisions')
+  assert.ok((await projectDecisions.getByRole('combobox', { name: 'Décisions' }).textContent()).includes('Demande mon accord'))
+  await projectDecisions.getByText('hérité du compte', { exact: true }).waitFor()
+  await shot(page.locator('#reglages-agents-1'), '04-demandes-projet')
+  await filing.getByRole('button', { name: 'modifié ici' }).click()
+  await filing.getByText('hérité du compte', { exact: true }).waitFor()
+  await save.click()
   await until(project1, (current) => !('cardFiling' in current.configLayer.shared), 'retour à l’héritage')
 
   // Au téléphone : la section tient dans la largeur.

@@ -38,6 +38,8 @@ import {
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   agentKindSchema,
+  appendSubtasks,
+  CARD_CLOSED_COLUMNS,
   cardColumnSchema,
   formatSessionMessage,
   parseAgentConfig,
@@ -74,7 +76,7 @@ import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
-import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, changesBesidesSubtasks, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -92,7 +94,10 @@ import {
   cardByNumber,
   cardNumbers,
   createCardFor,
+  DESCRIPTION_MAX,
   editOwnSubtasks,
+  labelList,
+  subtaskLabels,
   promoteOwnSubtask,
   linkOwnConversation,
   parseDueDay,
@@ -231,6 +236,7 @@ function describeCardChange(line: Extract<SoleraEvent, { type: 'card_filing.requ
     line.dueAt ? `échéance ${day(line.dueAt.to)}` : null,
     line.blocks ? `bloque ${line.blocks.map((card) => `#${card.number}`).join(', ')}` : null,
     line.unblocks ? `ne bloque plus ${line.unblocks.map((card) => `#${card.number}`).join(', ')}` : null,
+    line.addSubtasks ? `ajouter ${line.addSubtasks.length} sous-tâche${line.addSubtasks.length > 1 ? 's' : ''}` : null,
   ]
     .filter((part) => part !== null)
     .join(', ')
@@ -2094,8 +2100,34 @@ export class AgentRequests {
       if (blocks.length > 0) line.blocks = blocks.map(ref)
       if (unblocks.length > 0) line.unblocks = unblocks.map(ref)
 
-      if (!line.toColumn && !line.close && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
-        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
+      // L'ajout au jalon rangé dans une carte qui existe (#185). Une proposition et non
+      // `edit_subtasks` : la carte est celle d'une autre session, et sa description
+      // engage le travail d'une personne.
+      const add = labelList(change.add_subtasks, 'add_subtasks')
+      if (add.length > 0) {
+        const existing = subtaskLabels(card.description)
+        const known = add.find((label) => existing.has(label))
+        if (known) throw new Refusal(`« ${known} » est déjà une sous-tâche de #${number}. Retire-la de \`add_subtasks\`.`)
+        const twice = add.find((label, index) => add.indexOf(label) !== index)
+        if (twice) throw new Refusal(`« ${twice} » apparaît deux fois dans \`add_subtasks\` de #${number}.`)
+        // Un pas de plus sur un travail déclaré fini ne se fera pas : rouvrir la carte
+        // est le choix d'une personne, et il se propose dans la même ligne.
+        const reopened = line.toColumn !== undefined && !CARD_CLOSED_COLUMNS.includes(line.toColumn)
+        if (CARD_CLOSED_COLUMNS.includes(card.column) && !reopened) {
+          throw new Refusal(
+            `#${number} est en « ${COLUMN_WORDS[card.column]} » : propose de la rouvrir avec \`column\` dans la même ligne, ou range l'ajout dans une autre carte.`,
+          )
+        }
+        if (appendSubtasks(card.description, add).length > DESCRIPTION_MAX) {
+          throw new Refusal(`La description de #${number} dépasserait 20 000 caractères. Propose plutôt une nouvelle carte avec propose_cards.`)
+        }
+        line.addSubtasks = add
+      }
+
+      if (!changesBesidesSubtasks(line) && !line.addSubtasks) {
+        throw new Refusal(
+          `Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\`, \`unblocks\` ou \`add_subtasks\`.`,
+        )
       }
       proposed.push(line)
     }

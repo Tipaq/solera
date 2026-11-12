@@ -91,7 +91,9 @@ export function placeOfPath(pathname: string): Place | null {
   if (pathname.startsWith('/vault')) return 'knowledge'
   if (pathname.startsWith('/schedules')) return 'planned'
   if (pathname.startsWith('/p/') || pathname.startsWith('/projects')) return 'projects'
-  if (pathname.startsWith('/c/')) return 'threads'
+  // `/sessions` est la page de *Fils* : toutes les conversations, là où la colonne
+  // s'arrête aux plus récentes.
+  if (pathname.startsWith('/c/') || pathname === '/sessions') return 'threads'
   return null
 }
 

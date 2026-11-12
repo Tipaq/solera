@@ -1,13 +1,24 @@
+import { useMemo, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   AgentConfig,
+  CardDto,
+  CardRefinementDetailDto,
+  ConversationStatus,
   LaunchMilestoneCardBody,
   MilestonePlanDto,
   MilestoneRunDto,
   MilestoneRunMode,
   UpdateMilestoneRunBody,
 } from '@solera/protocol'
+import { useLiveConversations } from './activity'
 import { api } from './api'
+import type { StatusOf } from './card-state'
+import { useCards } from './cards'
+import { liveStatus, subscribeStatus } from './conversation-status'
+import { useAllConversations } from './conversations'
+import { horizonOf, type MilestoneEntry } from './milestone-model'
+import { useSessionRequests } from './session-requests'
 
 /**
  * Lancer un jalon (#72) : l'aperçu, le pilotage et sa conduite. Le serveur pilote ; ces
@@ -49,6 +60,23 @@ export function useActiveMilestones(projectId: string | undefined) {
     queryFn: () => api.get<MilestoneRunDto[]>(`/api/projects/${projectId}/milestones/active`),
     enabled: Boolean(projectId),
     refetchInterval: (query) => ((query.state.data?.length ?? 0) > 0 ? LIVE_REFETCH_MS : IDLE_REFETCH_MS),
+  })
+}
+
+/**
+ * L'affinage d'une carte lu hors du fil (#184) : la session, sa question ouverte, son
+ * brouillon et son changement en attente. Relu au rythme d'un jalon qui tourne tant que
+ * la session travaille ou attend : sa question ou son brouillon peut arriver à tout moment.
+ */
+export function useCardRefinement(cardId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['card-refinement', cardId],
+    queryFn: () => api.get<CardRefinementDetailDto>(`/api/cards/${cardId}/refinement`),
+    enabled,
+    refetchInterval: (query) => {
+      const status = query.state.data?.session?.status
+      return status === 'running' || status === 'awaiting_input' ? LIVE_REFETCH_MS : false
+    },
   })
 }
 
@@ -111,3 +139,70 @@ export function useLaunchMilestoneCard(projectId: string, cardId: string) {
     },
   })
 }
+
+/**
+ * Le statut vivant des sessions de ces cartes, affinage compris : celui du socket quand
+ * il en a poussé un, celui du chargement sinon. `CardConversationDto.status` est une
+ * photo, que la liste des cartes ne relit qu'au bout de son `staleTime`.
+ *
+ * L'instantané est une chaîne : elle ne change, et ne fait rerendre, que quand l'une de
+ * ces sessions-là change d'état — pas à chaque relevé de volume du socket.
+ */
+export function useLiveCardStatuses(cards: readonly Pick<CardDto, 'conversations' | 'refinement'>[] | undefined): StatusOf {
+  const ids = useMemo(
+    () =>
+      (cards ?? []).flatMap((card) => [
+        ...card.conversations.map((session) => session.id),
+        ...(card.refinement ? [card.refinement.conversationId] : []),
+      ]),
+    [cards],
+  )
+  const signature = useSyncExternalStore(
+    subscribeStatus,
+    () => ids.flatMap((id) => {
+      const status = liveStatus(id)
+      return status ? [`${id}=${status}`] : []
+    }).join(','),
+    () => '',
+  )
+  return useMemo(() => {
+    const live = new Map(
+      signature ? signature.split(',').map((pair) => pair.split('=') as [string, ConversationStatus]) : [],
+    )
+    return (session) => live.get(session.id) ?? session.status
+  }, [signature])
+}
+
+/**
+ * Les jalons d'un projet, analysés (#188) : ses cartes, ses pilotages actifs, les
+ * demandes ouvertes de ses sessions et leurs statuts vivants, passés à `horizonOf`.
+ * `statusOf` sert aux vues qui montrent aussi les cartes (repère ambre, destination).
+ */
+export function useMilestones(projectId: string | undefined): {
+  entries: MilestoneEntry[]
+  cards: CardDto[]
+  statusOf: StatusOf
+  isPending: boolean
+} {
+  const { data: cards, isPending } = useCards(projectId)
+  const { data: runs } = useActiveMilestones(projectId)
+  const { data: conversations } = useAllConversations()
+  const mine = useMemo(
+    () => (conversations ?? []).filter((entry) => entry.projectId === projectId),
+    [conversations, projectId],
+  )
+  const requests = useSessionRequests(projectId, useLiveConversations(mine))
+  const statusOf = useLiveCardStatuses(cards)
+
+  return useMemo(() => {
+    const list = cards ?? NO_CARDS
+    return {
+      entries: horizonOf({ cards: list, runs: runs ?? [], requests, statusOf }),
+      cards: list,
+      statusOf,
+      isPending,
+    }
+  }, [cards, runs, requests, statusOf, isPending])
+}
+
+const NO_CARDS: CardDto[] = []

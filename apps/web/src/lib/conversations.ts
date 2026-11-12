@@ -10,6 +10,7 @@ import type {
   JournalPageDto,
   ProjectBackgroundDto,
   SoleraEvent,
+  SplitMode,
 } from '@solera/protocol'
 import { api } from './api'
 import { uuidv4 } from './uuid'
@@ -170,6 +171,8 @@ export function useCreateConversation(projectId: string | null) {
       /** Découper en cartes (#70), et la carte d'où le découpage part. */
       purpose?: 'split' | null
       splitCardId?: string | null
+      /** Le mode d'une session d'affinage de jalon (#184) ; absent, `questions`. */
+      splitMode?: SplitMode | null
       /** Absent : l'environnement par défaut du projet. Figé à la création. */
       environment?: ExecutionEnvironment
       /** Envoyé avec la création : sans message, aucune conversation n'est écrite. */

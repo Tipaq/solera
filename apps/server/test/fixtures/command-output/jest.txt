@@ -1,0 +1,74 @@
+Determining test suites to run...[999D[K
+[K[1A
+ RUNS  ...
+[K[1A[K[1A
+ RUNS  ...
+[K[1A[K[1A
+ RUNS  ...
+[K[1A[K[1A
+ RUNS  ...
+[K[1A[K[1AFAIL src/sum.test.js
+
+ RUNS  ...
+[K[1A[K[1A  panier
+
+ RUNS  ...
+[K[1A[K[1A    ✕ additionne les lignes (3 ms)
+
+ RUNS  ...
+[K[1A[K[1A    ✕ applique la remise (2 ms)
+
+ RUNS  ...
+[K[1A[K[1A    ✓ passe
+
+ RUNS  ...
+[K[1A[K[1A
+
+ RUNS  ...
+[K[1A[K[1A  ● panier › additionne les lignes
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 3
+    Received: 2
+
+    [0m [90m 1 |[39m describe([32m'panier'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 2 |[39m   test([32m'additionne les lignes'[39m[33m,[39m () [33m=>[39m { expect([35m1[39m [33m+[39m [35m1[39m)[33m.[39mtoBe([35m3[39m) })
+     [90m   |[39m                                                       [31m[1m^[22m[39m
+     [90m 3 |[39m   test([32m'applique la remise'[39m[33m,[39m () [33m=>[39m { expect([[35m1[39m[33m,[39m [35m2[39m])[33m.[39mtoEqual([[35m1[39m[33m,[39m [35m2[39m[33m,[39m [35m3[39m]) })
+     [90m 4 |[39m   test([32m'passe'[39m[33m,[39m () [33m=>[39m { expect([35m1[39m)[33m.[39mtoBe([35m1[39m) })
+     [90m 5 |[39m })[0m
+
+      at Object.toBe (src/sum.test.js:2:55)
+
+  ● panier › applique la remise
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+        1,
+        2,
+    -   3,
+      ]
+
+    [0m [90m 1 |[39m describe([32m'panier'[39m[33m,[39m () [33m=>[39m {
+     [90m 2 |[39m   test([32m'additionne les lignes'[39m[33m,[39m () [33m=>[39m { expect([35m1[39m [33m+[39m [35m1[39m)[33m.[39mtoBe([35m3[39m) })
+    [31m[1m>[22m[39m[90m 3 |[39m   test([32m'applique la remise'[39m[33m,[39m () [33m=>[39m { expect([[35m1[39m[33m,[39m [35m2[39m])[33m.[39mtoEqual([[35m1[39m[33m,[39m [35m2[39m[33m,[39m [35m3[39m]) })
+     [90m   |[39m                                                     [31m[1m^[22m[39m
+     [90m 4 |[39m   test([32m'passe'[39m[33m,[39m () [33m=>[39m { expect([35m1[39m)[33m.[39mtoBe([35m1[39m) })
+     [90m 5 |[39m })
+     [90m 6 |[39m[0m
+
+      at Object.toEqual (src/sum.test.js:3:53)
+
+
+ RUNS  ...
+[K[1A[K[1A[999D[KTest Suites: 1 failed, 1 total
+Tests:       2 failed, 1 passed, 3 total
+Snapshots:   0 total
+Time:        0.365 s
+Ran all test suites matching /src\/sum.test.js/i.
+⠙[1G[0K

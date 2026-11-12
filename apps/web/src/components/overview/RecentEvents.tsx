@@ -38,7 +38,7 @@ export function RecentEventsView({ projectId, entries, days }: { projectId: stri
   return (
     <OverviewSection
       title={t('project.overview.events.title')}
-      more={<MoreLink to={`/p/${projectId}/travail?vue=moment`}>{t('project.overview.events.more')}</MoreLink>}
+      more={<MoreLink to={`/p/${projectId}/travail?vue=fil`}>{t('project.overview.events.more')}</MoreLink>}
     >
       {entries.length === 0 ? (
         <p className="text-sm text-ink-faint">{t('project.overview.events.empty', { count: days })}</p>

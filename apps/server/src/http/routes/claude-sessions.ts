@@ -167,6 +167,7 @@ export function registerClaudeSessionRoutes(
       cardId: null,
       purpose: null,
       splitCardId: null,
+      splitMode: null,
       userId: user.id,
       title: importTitle(info, prepared.firstPrompt),
       titleSetByUser: false,
