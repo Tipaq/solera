@@ -83,7 +83,7 @@ export const ActionsPane = memo(function ActionsPane({ projectId, conversationId
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           {runsGroup}
-          <ActionList actions={actions} conversationId={conversationId} handlers={handlers} />
+          <ActionList projectId={projectId} actions={actions} conversationId={conversationId} handlers={handlers} />
         </div>
       )}
 

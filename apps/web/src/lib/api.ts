@@ -7,13 +7,15 @@ import { translate, translateError } from './i18n'
  * Le message est déjà traduit à la construction, et c'est le seul endroit où ça se joue :
  * tous les appels passent par `request`, donc les composants qui affichent `err.message`
  * n'ont rien à savoir de l'i18n. Le `code` reste exposé pour ceux qui distinguent un cas
- * précis plutôt que d'afficher la phrase.
+ * précis plutôt que d'afficher la phrase, et ses `params` pour ceux qui en tirent plus
+ * qu'une phrase (le service qui tourne ailleurs, et où).
  */
 export class ApiRequestError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly params: Record<string, string | number> = {},
   ) {
     super(message)
     this.name = 'ApiRequestError'
@@ -49,6 +51,7 @@ async function request<T>(method: string, path: string, body?: unknown, signal?:
       error
         ? translateError(error.code, error.message, error.params)
         : translate('error.http', { status: response.status }),
+      error?.params,
     )
   }
 
