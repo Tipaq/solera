@@ -107,6 +107,8 @@ export function useDeleteAction() {
 /**
  * Lancer, piloter un service ou suivre son journal. Ce qui ouvre un terminal le met
  * devant : cliquer un bouton sans voir sa sortie donnerait l'impression qu'il n'a rien fait.
+ * Sauf `reveal: false`, quand celui qui relance montre déjà la sortie (le détail d'une
+ * commande lancée ici).
  *
  * Où : le worktree de `conversationId`, sinon `worktreeId` (« Lancer dans… » hors
  * conversation), sinon la racine, que le placement d'un service peut remplacer. `args`
@@ -132,6 +134,7 @@ export function useRunAction() {
       worktreeId?: string
       args?: string[]
       switch?: boolean
+      reveal?: boolean
     }) =>
       api.post<ProjectActionRunResult>(
         op === 'run' ? `/api/actions/${action.id}/run` : `/api/actions/${action.id}/service/${op}`,
@@ -141,9 +144,9 @@ export function useRunAction() {
           ...(op === 'run' && switching ? { switch: true } : {}),
         },
       ),
-    onSuccess: (result, { action }) => {
+    onSuccess: (result, { action, reveal = true }) => {
       invalidate(action.projectId)
-      if (result.terminal) showTerminal(result.terminal.id)
+      if (result.terminal && reveal) showTerminal(result.terminal.id)
     },
   })
 }

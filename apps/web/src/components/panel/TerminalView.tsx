@@ -5,6 +5,7 @@ import type { TerminalClientMessage, TerminalServerMessage } from '@solera/proto
 import { cx } from '@solera/ui'
 import '@xterm/xterm/css/xterm.css'
 import { translate, useTranslate } from '../../lib/i18n'
+import { useTerminalsReload } from '../../lib/terminals'
 
 /**
  * Un terminal, relié à son pty par la socket dédiée.
@@ -93,6 +94,10 @@ export function TerminalView({
    */
   const shown = useRef(visible)
   shown.current = visible
+  /** La liste dit encore « vivant » tant qu'on ne la relit pas : l'`exit` la recharge. */
+  const reloadList = useTerminalsReload(projectId)
+  const reload = useRef(reloadList)
+  reload.current = reloadList
   const [status, setStatus] = useState<'connecting' | 'ready' | 'exited' | 'error'>('connecting')
   const [message, setMessage] = useState<string | null>(null)
 
@@ -141,6 +146,7 @@ export function TerminalView({
       } else if (payload.t === 'output') {
         terminal.write(payload.data)
       } else if (payload.t === 'exit') {
+        reload.current()
         setStatus('exited')
         setMessage(translate('terminal.shell.exited', { code: payload.code }))
       } else {
