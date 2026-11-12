@@ -27,7 +27,7 @@ import { PanelFocus } from '../PanelFocus'
 import type { SubAgent } from '../../lib/subagents'
 import { useRefreshTree } from '../../lib/tree'
 import { useProjectEnvironments, useProjects } from '../../lib/projects'
-import { actionsTabBadge, type ActionsStatus } from '../../lib/actions-tab'
+import { actionsTabBadge } from '../../lib/actions-tab'
 import { useActionsStatus } from '../../lib/automations-query'
 import { useCards } from '../../lib/cards'
 import { toReviewCount } from '../../lib/project-pane'
@@ -169,8 +169,6 @@ export const SidePanel = memo(function SidePanel({
   // board qui réclame quelqu'un, et le reste se lit en ouvrant l'onglet.
   const { data: cards } = useCards(conversationId && projectId ? projectId : undefined)
   const reviewCount = toReviewCount(cards)
-  // Le compte d'*Actions* est celui de l'onglet du projet : ce qui attend, sinon ce qui tourne.
-  const actionsStatus = useActionsStatus(projectId ?? null)
   const selectedSubAgent = useSelectedSubAgent()
   /**
    * Le premier rendu se fait volontairement hors écran, l'entrée n'étant lancée qu'au
@@ -369,7 +367,7 @@ export const SidePanel = memo(function SidePanel({
         hasWeb={hasWeb}
         agentBadge={subAgents.filter((entry) => entry.status === 'running').length + background.length}
         projectBadge={reviewCount}
-        actionsStatus={projectId ? actionsStatus : null}
+        projectId={projectId}
       />
 
       {/* Monté même quand un autre onglet est devant : revenir aux fichiers ne doit
@@ -531,7 +529,7 @@ export const SidePanel = memo(function SidePanel({
  * *Agent* et *Projet*. Sur un fil libre il ne reste qu'*Agent* — sans board, *Projet*
  * n'a rien à montrer — et le trait n'a donc rien à séparer.
  */
-function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, actionsStatus }: {
+function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversation, hasWeb, agentBadge, projectBadge, projectId }: {
   /** Vrai quand cette rangée *est* le segment de bande du panneau, à sa hauteur. */
   band: boolean
   /** Le panneau recouvre le bouton du fil : il porte alors sa propre fermeture. */
@@ -547,11 +545,9 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
   agentBadge: number
   /** Cartes du projet en attente de relecture. */
   projectBadge: number
-  /** Ce qui attend une relecture et ce qui tourne dans le projet ; null sur un fil libre. */
-  actionsStatus: ActionsStatus | null
+  projectId: string | null
 }) {
   const t = useTranslate()
-  const actions = actionsStatus ? actionsTabBadge(actionsStatus) : null
   const views = (
     <>
       {hasWorkspace ? (
@@ -566,9 +562,7 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
             <>
               <Tab icon={<SquareTerminal size={15} />} label={t('panel.tab.terminals')} keepLabel={!band}
                 active={tab === 'terminals'} onSelect={() => setPanelTab('terminals')} />
-              <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
-                badge={actions?.count} badgeTone={actions?.tone} active={tab === 'actions'} onSelect={() => setPanelTab('actions')}
-                badgeLabel={actions ? (label, count) => t('panel.tab.actions.badge', { label, status: t(actions.countTitle, { count }) }) : undefined} />
+              {projectId ? <ActionsTab projectId={projectId} band={band} active={tab === 'actions'} /> : null}
             </>
           ) : null}
         </>
@@ -616,6 +610,20 @@ function ViewBar({ band, closable, tab, hasWorkspace, showRootViews, hasConversa
       <div className={inner}>{views}</div>
       {close}
     </div>
+  )
+}
+
+/**
+ * L'onglet *Actions* : son compte est celui de l'onglet du projet, ce qui attend d'abord,
+ * sinon ce qui tourne. À part pour ne lire l'état des actions que là où il y a un projet.
+ */
+function ActionsTab({ projectId, band, active }: { projectId: string; band: boolean; active: boolean }) {
+  const t = useTranslate()
+  const badge = actionsTabBadge(useActionsStatus(projectId))
+  return (
+    <Tab icon={<Zap size={15} />} label={t('panel.tab.actions')} keepLabel={!band}
+      badge={badge?.count} badgeTone={badge?.tone} active={active} onSelect={() => setPanelTab('actions')}
+      badgeLabel={badge ? (label, count) => t('panel.tab.actions.badge', { label, status: t(badge.countTitle, { count }) }) : undefined} />
   )
 }
 
