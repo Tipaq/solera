@@ -1,5 +1,6 @@
 import type { CardBranchPrDto, CardDto, MilestoneRunDto } from '@solera/protocol'
-import { awaitsMe, isOpen, loadedStatus, type StatusOf } from './card-state'
+import { isOpen, loadedStatus, type StatusOf } from './card-state'
+import { pluralOf } from './code-model'
 import type { MessageKey, MessageParams } from './i18n'
 import { requestSummary, type SessionRequest } from './session-request-summary'
 
@@ -81,8 +82,12 @@ export interface MilestoneEntry {
   questions: { conversationId: string; requestId: string; items: { id: string; text: string }[] } | null
   /** Le brouillon de découpage qui attend sa validation. */
   draft: { conversationId: string; requestId: string; count: number } | null
-  /** La session d'affinage travaille ou attend, au statut vivant. */
-  refining: boolean
+  /**
+   * La session d'affinage, au statut vivant : `working` elle travaille, `waiting` elle
+   * attend une réponse (une question qu'on sait lire est dans `questions`), `null` au repos
+   * ou absente.
+   */
+  refining: 'working' | 'waiting' | null
   toClarify: CardDto[]
   notAccepted: CardDto[]
   cycle: CardDto[]
@@ -122,7 +127,8 @@ export function horizonOf({ cards, runs, requests, statusOf = loadedStatus }: Mi
     runs.filter((run) => run.state === 'running' || run.state === 'paused').map((run) => [run.cardId, run]),
   )
   return cards
-    .filter((card) => isMilestone(card) && card.column !== 'abandoned')
+    // Une idée close n'attend plus rien ; un jalon clos par ses enfants, lui, est livré.
+    .filter((card) => isMilestone(card) && card.column !== 'abandoned' && (isOpen(card) || card.children.length > 0))
     .sort((a, b) => (a.dueAt ?? Infinity) - (b.dueAt ?? Infinity) || byNumber(a, b))
     .map((card) =>
       analyseMilestone(card, (children.get(card.id) ?? []).sort(byNumber), active.get(card.id) ?? null, requests, statusOf),
@@ -151,7 +157,7 @@ export function analyseMilestone(
   const draft =
     refinement?.draft ? { conversationId: refinement.conversationId, requestId: refinement.draft.requestId, count: refinement.draft.count } : null
   const refinementStatus = refinement ? statusOf({ id: refinement.conversationId, status: refinement.status }) : null
-  const refining = refinementStatus === 'running' || refinementStatus === 'awaiting_input'
+  const refining = refinementStatus === 'running' ? 'working' : refinementStatus === 'awaiting_input' ? 'waiting' : null
 
   const pr = card.branchPr && card.branchPr.mergedAt === null ? card.branchPr : null
   const toClarify = open.filter((entry) => entry.toClarifySince !== null)
@@ -160,16 +166,16 @@ export function analyseMilestone(
   const startable = open.filter((entry) => !entry.blockedBy.some(isOpen))
   const launchedAt = run?.createdAt ?? null
   const addedSinceLaunch = launchedAt === null ? [] : children.filter((entry) => entry.createdAt > launchedAt)
-  const awaiting = open.flatMap((entry): AwaitingCard[] => {
-    if (!awaitsMe(entry, statusOf)) return []
-    const session = entry.conversations.find((conversation) => !conversation.archivedAt && statusOf(conversation) === 'awaiting_input')!
-    return [{ card: entry, conversationId: session.id, request: requests.get(session.id) ?? null }]
+  const awaiting = open.flatMap((child): AwaitingCard[] => {
+    // Le même prédicat qu'`awaitsMe`, dont on garde ici la session.
+    const session = child.conversations.find((conversation) => !conversation.archivedAt && statusOf(conversation) === 'awaiting_input')
+    return session ? [{ card: child, conversationId: session.id, request: requests.get(session.id) ?? null }] : []
   })
 
   const asking = questions !== null || draft !== null
   let maturity: Maturity
   if (run || pr) maturity = 'launched'
-  else if (children.length === 0) maturity = asking || refining ? 'refine' : 'idea'
+  else if (children.length === 0) maturity = asking || refining !== null ? 'refine' : 'idea'
   else if (open.length === 0) maturity = 'delivered'
   else if (asking) maturity = 'refine'
   else if (toClarify.length || notAccepted.length || cycle.length || startable.length === 0) maturity = 'split'
@@ -200,14 +206,16 @@ export function analyseMilestone(
 
 /**
  * Ce que l'étape appelle (MAT-6), en données : `nextActionText` en fait des phrases.
- * `refining` (l'affinage travaille, rien n'attend encore) n'est pas dans le prototype,
- * qui n'avait pas de session vivante sans question.
+ * `refining` (l'affinage travaille, rien n'attend encore) et `openRefine` (il attend,
+ * mais pas une question qu'on sache lire ici : une permission) ne sont pas dans le
+ * prototype, qui n'avait pas de session vivante sans question.
  */
 export type NextAction =
   | { kind: 'refine' }
   | { kind: 'validateDraft'; count: number }
   | { kind: 'answer'; count: number }
   | { kind: 'refining' }
+  | { kind: 'openRefine' }
   | { kind: 'settle'; toClarify: number[]; notAccepted: number[]; cycle: number[] }
   | { kind: 'undoCycle'; cycle: number[] }
   | { kind: 'reviewDeps' }
@@ -226,7 +234,7 @@ export function nextAction(entry: MilestoneEntry): NextAction {
     case 'refine':
       if (entry.draft) return { kind: 'validateDraft', count: entry.draft.count }
       if (entry.questions) return { kind: 'answer', count: entry.questions.items.length }
-      return { kind: 'refining' }
+      return entry.refining === 'waiting' ? { kind: 'openRefine' } : { kind: 'refining' }
     case 'split': {
       const toClarify = numbers(entry.toClarify)
       const notAccepted = numbers(entry.notAccepted)
@@ -262,6 +270,7 @@ export type MaturityReason =
   | { kind: 'questions'; count: number }
   | { kind: 'draft'; count: number }
   | { kind: 'refining' }
+  | { kind: 'refineWaiting' }
   | { kind: 'toClarify'; cards: number[] }
   | { kind: 'notAccepted'; cards: number[] }
   | { kind: 'cycle'; cards: number[] }
@@ -281,7 +290,8 @@ export function maturityReasons(entry: MilestoneEntry): MaturityReason[] {
       const reasons: MaturityReason[] = []
       if (entry.questions) reasons.push({ kind: 'questions', count: entry.questions.items.length })
       if (entry.draft) reasons.push({ kind: 'draft', count: entry.draft.count })
-      return reasons.length ? reasons : [{ kind: 'refining' }]
+      if (reasons.length) return reasons
+      return [entry.refining === 'waiting' ? { kind: 'refineWaiting' } : { kind: 'refining' }]
     }
     case 'split': {
       const reasons: MaturityReason[] = []
@@ -349,7 +359,6 @@ export const ENTRY_STAGE: Record<'note' | 'refine' | 'split', Maturity> = {
 type Translate = (key: MessageKey, params?: MessageParams) => string
 
 const listed = (cards: readonly number[]) => cards.map((number) => `#${number}`).join(', ')
-const one = (count: number) => (count === 1 ? 'one' : 'other')
 
 /** La prochaine action en un libellé de bouton et une ligne de détail. */
 export function nextActionText(action: NextAction, t: Translate): { label: string; detail: string } {
@@ -357,16 +366,17 @@ export function nextActionText(action: NextAction, t: Translate): { label: strin
   switch (action.kind) {
     case 'refine':
     case 'refining':
+    case 'openRefine':
     case 'reviewDeps':
       return { label, detail: t(`milestones.next.${action.kind}.detail`) }
     case 'validateDraft':
     case 'answer':
     case 'launch':
     case 'review':
-      return { label, detail: t(`milestones.next.${action.kind}.detail.${one(action.count)}`, { count: action.count }) }
+      return { label, detail: t(`milestones.next.${action.kind}.detail.${pluralOf(action.count)}`, { count: action.count }) }
     case 'settle': {
       const parts = [
-        action.toClarify.length ? t(`milestones.next.settle.toClarify.${one(action.toClarify.length)}`, { count: action.toClarify.length }) : null,
+        action.toClarify.length ? t(`milestones.next.settle.toClarify.${pluralOf(action.toClarify.length)}`, { count: action.toClarify.length }) : null,
         action.notAccepted.length ? t('milestones.next.settle.notAccepted', { count: action.notAccepted.length }) : null,
         action.cycle.length ? t('milestones.next.settle.cycle', { cards: listed(action.cycle) }) : null,
       ]
@@ -397,6 +407,7 @@ export function reasonText(reason: MaturityReason, t: Translate): string {
   switch (reason.kind) {
     case 'noCards':
     case 'refining':
+    case 'refineWaiting':
     case 'noStartable':
     case 'paused':
     case 'prOpen':
@@ -405,11 +416,11 @@ export function reasonText(reason: MaturityReason, t: Translate): string {
     case 'draft':
     case 'startable':
     case 'delivered':
-      return t(`milestones.maturity.reason.${reason.kind}.${one(reason.count)}`, { count: reason.count })
+      return t(`milestones.maturity.reason.${reason.kind}.${pluralOf(reason.count)}`, { count: reason.count })
     case 'toClarify':
     case 'notAccepted':
     case 'blocked':
-      return t(`milestones.maturity.reason.${reason.kind}.${one(reason.cards.length)}`, {
+      return t(`milestones.maturity.reason.${reason.kind}.${pluralOf(reason.cards.length)}`, {
         count: reason.cards.length,
         cards: listed(reason.cards),
       })
@@ -422,9 +433,10 @@ export function reasonText(reason: MaturityReason, t: Translate): string {
 
 /** L'infobulle d'une pastille (MAT-8) : l'étape et sa raison principale. */
 export function maturityTooltip(entry: MilestoneEntry, t: Translate): string {
+  // `maturityReasons` en rend toujours au moins une.
   const [reason] = maturityReasons(entry)
   return t('milestones.maturity.tooltip', {
     step: t(`milestones.maturity.label.${entry.maturity}`),
-    reason: reason ? reasonText(reason, t) : t(`milestones.maturity.rule.${entry.maturity}.when`),
+    reason: reasonText(reason!, t),
   })
 }

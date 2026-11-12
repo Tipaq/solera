@@ -31,7 +31,6 @@ export function sheetSessions(card: Pick<CardDto, 'conversations'>): CardConvers
   return card.conversations.filter((entry) => entry.archivedAt === null).sort((a, b) => b.createdAt - a.createdAt)
 }
 
-/** L'état d'une session : celui du socket quand on l'a, celui du chargement sinon. */
 export type { StatusOf }
 
 /** La session qui attend une réponse, à laquelle la fiche répond sur place. */

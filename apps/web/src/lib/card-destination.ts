@@ -8,6 +8,9 @@ import { leadSession, sheetSessions, withSheet } from './card-sheet'
  * pas par sa fiche du board.
  */
 
+/** Ce qu'il faut d'une carte pour savoir où mène son clic. */
+type Destined = Pick<CardDto, 'id' | 'number' | 'conversations' | 'refinement'>
+
 export type CardDestination =
   /** Une session attend : la fiche sur place, où l'on répond sans quitter la page. */
   | { kind: 'sheet'; number: number }
@@ -21,7 +24,7 @@ export type CardDestination =
  * jalon ouvre sa session d'affinage, et une carte un brouillon rattaché.
  */
 export function cardDestination(
-  card: Pick<CardDto, 'id' | 'number' | 'conversations' | 'refinement'>,
+  card: Destined,
   statusOf: StatusOf = loadedStatus,
 ): CardDestination {
   if (awaitsMe(card, statusOf)) return { kind: 'sheet', number: card.number }
@@ -47,9 +50,9 @@ export function destinationHref(projectId: string, destination: CardDestination,
 }
 
 /** Les deux d'un coup, pour un lien. */
-export function cardHref(
+export function cardDestinationHref(
   projectId: string,
-  card: Pick<CardDto, 'id' | 'number' | 'conversations' | 'refinement'>,
+  card: Destined,
   { statusOf, search }: { statusOf?: StatusOf; search?: URLSearchParams } = {},
 ): string {
   return destinationHref(projectId, cardDestination(card, statusOf), search)

@@ -17,7 +17,7 @@ const {
   nextActionText,
   reasonText,
 } = await import('../../web/src/lib/milestone-model.js')
-const { cardDestination, cardHref } = await import('../../web/src/lib/card-destination.js')
+const { cardDestination, cardDestinationHref } = await import('../../web/src/lib/card-destination.js')
 
 /* ------------------------------------------------------------------ fixtures */
 
@@ -146,6 +146,7 @@ test('horizon : les jalons et les idées du projet, sans les cartes ordinaires n
     card(3, { milestone: true }),
     card(4),
     card(5, { milestone: true, column: 'abandoned' }),
+    card(8, { milestone: true, column: 'done' }),
     ...milestone(6, [card(7, { column: 'abandoned' })], { column: 'abandoned' }),
   ])
   assert.deepEqual(entries.map((entry) => entry.card.number), [1, 3])
@@ -324,6 +325,12 @@ test('MAT-6 : la prochaine action de chaque étape', () => {
 
   const working = only([card(1, { milestone: true, refinement: refinement({ status: 'running' }) })])
   assert.deepEqual(nextAction(working), { kind: 'refining' })
+
+  // Elle attend, mais pas une question lisible ici (une permission) : on va lui répondre dans son fil.
+  const waiting = only([card(1, { milestone: true, refinement: refinement({ status: 'awaiting_input' }) })])
+  assert.equal(waiting.refining, 'waiting')
+  assert.deepEqual(nextAction(waiting), { kind: 'openRefine' })
+  assert.deepEqual(maturityReasons(waiting), [{ kind: 'refineWaiting' }])
 
   const ready = card(2)
   assert.deepEqual(nextAction(only(milestone(1, [ready, card(3)]))), { kind: 'launch', count: 2 })
@@ -505,10 +512,10 @@ test('FCH-10 : sans session, un brouillon rattaché à la carte ; un jalon sans 
 })
 
 test('FCH-10 : l’adresse, la fiche gardant les autres paramètres de la page', () => {
-  assert.equal(cardHref('p', card(4)), '/p/p/c/new?card=c-4')
-  assert.equal(cardHref('p', card(4, { conversations: [session('a', 'idle')] })), '/p/p/c/a')
+  assert.equal(cardDestinationHref('p', card(4)), '/p/p/c/new?card=c-4')
+  assert.equal(cardDestinationHref('p', card(4, { conversations: [session('a', 'idle')] })), '/p/p/c/a')
   assert.equal(
-    cardHref('p', card(4, { conversations: [session('a', 'awaiting_input')] }), { search: new URLSearchParams('vue=gantt') }),
+    cardDestinationHref('p', card(4, { conversations: [session('a', 'awaiting_input')] }), { search: new URLSearchParams('vue=gantt') }),
     '?vue=gantt&fiche=4',
   )
 })
