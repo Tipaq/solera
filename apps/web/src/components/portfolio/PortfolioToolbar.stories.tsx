@@ -80,7 +80,7 @@ function Demo({ initial = [] }: { initial?: string[] }) {
 }
 
 const meta = {
-  title: "Composants d'application/Portefeuille/Barre d'outils",
+  title: "Composants d'application/Portefeuille · Barre d'outils",
   component: Demo,
   parameters: {
     docs: {

@@ -597,12 +597,12 @@ try {
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
-  /* La rangée : Aperçu, Tableau, Jalons. Travail et Actions attendent leur vue du
-     portefeuille (#238, #241) : masqués d'ici là, plutôt que de mener hors de la coque. */
+  /* La rangée : Aperçu, Travail, Tableau, Jalons. Actions attend sa vue du portefeuille
+     (#241) : masqué d'ici là, plutôt que de mener hors de la coque. */
   assert.deepEqual(
     await portfolio.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname)),
-    ['/projects', '/projects/board', '/projects/timeline'],
-    'Aperçu · Tableau · Jalons',
+    ['/projects', '/projects/travail', '/projects/board', '/projects/timeline'],
+    'Aperçu · Travail · Tableau · Jalons',
   )
   // La bande : un seul geste, « + Projet », et plus de « + Conversation ».
   const portfolioBand = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Projets', exact: true }) })
@@ -632,10 +632,12 @@ try {
     order.filter((title) => ['Projets', 'Code en cours', 'Derniers événements'].includes(title)),
     ['Projets', 'Code en cours', 'Derniers événements'],
   )
+  // « Tout le travail » mène à Travail du portefeuille.
+  assert.equal(await codeRegion.getByRole('link', { name: /^Tout le travail/ }).getAttribute('href'), '/projects/travail')
   // Chaque arbre du code en cours ouvre l'arbre dans Travail de son projet.
   const treeLinks = await codeRegion.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))
   if (treeLinks.length === 0) await codeRegion.getByText('Rien ne tourne.', { exact: true }).waitFor()
-  for (const href of treeLinks) assert.match(href, /^\/p\/[^/]+\/travail\?arbre=/)
+  for (const href of treeLinks.filter((link) => link !== '/projects/travail')) assert.match(href, /^\/p\/[^/]+\/travail\?arbre=/)
   // Les événements de tous les projets, huit au plus, chacun avec son projet.
   const portfolioEvents = eventsRegion.locator('li')
   assert.ok((await portfolioEvents.count()) > 0 && (await portfolioEvents.count()) <= 8, 'Huit derniers événements au plus')
@@ -644,11 +646,83 @@ try {
   await projectsRegion.locator(`a[href="/p/${nimbus.id}"]`).click()
   await page.waitForURL(`**/p/${nimbus.id}`)
 
-  // Les anciennes vues du portefeuille mènent à l'Aperçu.
-  for (const old of ['activity', 'work', 'journal']) {
+  // ─── Le portefeuille : Travail (#238) ───────────────────────────────────────
+  // Les anciennes vues mènent à Travail, qui les a reprises ; le Journal à Par moment.
+  for (const old of ['activity', 'work']) {
     await page.goto(`${base}/projects/${old}`)
-    await page.waitForURL(/\/projects$/)
+    await page.waitForURL(/\/projects\/travail(\?vue=projet)?$/)
   }
+  await page.goto(`${base}/projects/journal`)
+  await page.waitForURL(/\/projects\/travail\?vue=moment$/)
+  const work = page.locator('[data-place-content]')
+  await work.locator('[data-work-day]').first().or(work.getByText('Rien sur la période.', { exact: true })).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail-moment.png') })
+
+  /* Par projet : un groupe par projet qui a des arbres, chacun ouvrant l'arbre dans Travail
+     de son projet. Un arbre fusionné de Nimbus est servi comme tel (la forge n'existe pas
+     ici) : il se replie sous son projet, et « Nettoyer · N » apparaît dans la barre. */
+  const radarPath = statuses.worktrees.find((tree) => tree.branch === 'feat/radar-prefetch').path
+  await page.route('**/api/worktrees/status', async (route) => {
+    const json = await (await route.fetch()).json()
+    for (const tree of json.projects[nimbus.id]?.worktrees ?? []) {
+      if (tree.path === radarPath) Object.assign(tree, { state: 'merged', unmergedCommits: false, ahead: 0 })
+    }
+    await route.fulfill({ json })
+  })
+  await page.goto(`${base}/projects/travail?vue=projet`)
+  const nimbusGroup = work.locator(`[data-work-group="${nimbus.id}"]`)
+  await nimbusGroup.waitFor()
+  await nimbusGroup.locator(`a[href="/p/${nimbus.id}"]`).first().waitFor()
+  const workLinks = await work.locator('[data-work-tree] a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  assert.ok(workLinks.length > 0, 'Travail du portefeuille montre des arbres')
+  for (const href of workLinks) assert.match(href, /^\/p\/[^/]+\/travail\?arbre=/)
+  const folded = nimbusGroup.locator('[data-work-folded]')
+  await folded.getByText(/^1 arbre fusionné/).waitFor()
+  assert.equal(await nimbusGroup.locator(`a[href="/p/${nimbus.id}/travail?arbre=${encodeURIComponent(radarPath)}"]`).count(), 0, 'Le fusionné est replié')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail.png') })
+
+  // « Nettoyer » ouvre le dialogue de Travail sur le projet, avec son plan réel ; on regarde sans nettoyer.
+  const workToolbar = page.locator('[data-toolbar]')
+  await workToolbar.getByRole('button', { name: /^Nettoyer · \d+$/ }).click()
+  const portfolioClean = page.locator('[data-clean-dialog]')
+  await portfolioClean.getByText('feat/radar-prefetch', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await portfolioClean.waitFor({ state: 'detached' })
+
+  // « Montrer les fusionnés » le déplie dans son groupe.
+  await workToolbar.getByRole('button', { name: /^Affichage/ }).click()
+  await page.getByRole('checkbox', { name: 'Arbres fusionnés et à nettoyer' }).click()
+  await page.keyboard.press('Escape')
+  await nimbusGroup.locator(`a[href="/p/${nimbus.id}/travail?arbre=${encodeURIComponent(radarPath)}"]`).waitFor()
+  assert.equal(await folded.count(), 0, 'Plus de repli')
+  await workToolbar.getByRole('button', { name: /^Affichage/ }).click()
+  await page.getByRole('checkbox', { name: 'Arbres fusionnés et à nettoyer' }).click()
+  await page.keyboard.press('Escape')
+  await folded.waitFor()
+
+  // Filtrer ▾ › Projet : seul Nimbus reste, sa puce porte son nom.
+  await workToolbar.getByRole('button', { name: /^Filtrer/ }).click()
+  await page.getByRole('checkbox', { name: /Nimbus/ }).click()
+  await page.keyboard.press('Escape')
+  await workToolbar.locator('[data-filter-chip]').filter({ hasText: 'Nimbus' }).waitFor()
+  await page.waitForFunction((id) => [...document.querySelectorAll('[data-work-group]')].every((group) => group.dataset.workGroup === id), nimbus.id)
+
+  // Tableau : une seule table, la colonne Projet, chaque ligne avec sa pastille.
+  await workToolbar.getByRole('button', { name: /^Affichage/ }).click()
+  await page.getByRole('radio', { name: 'Tableau', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForURL(/vue=tableau/)
+  const table = page.getByRole('region', { name: 'Tableau', exact: true })
+  await table.getByText('Projet', { exact: true }).waitFor()
+  assert.equal(await table.locator('[data-work-tree]').count(), await table.locator('[data-work-tree]').filter({ hasText: 'Nimbus' }).count(), 'Chaque ligne nomme son projet')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-travail-tableau.png') })
+  await workToolbar.locator('[data-filter-chip]').filter({ hasText: 'Nimbus' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+
+  // Un clic sur un arbre l'ouvre dans Travail de son projet.
+  await table.locator(`[data-work-tree^="${nimbus.id}:"] a`).first().click()
+  await page.waitForURL(new RegExp(`/p/${nimbus.id}/travail\\?arbre=`))
+  await page.unroute('**/api/worktrees/status')
+  await page.goto(`${base}/projects`)
   await portfolio.waitFor()
 
   /*

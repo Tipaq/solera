@@ -95,6 +95,9 @@ const PortfolioBoardPage = lazy(() =>
 const PortfolioTimelinePage = lazy(() =>
   import('./routes/PortfolioTimelinePage').then((m) => ({ default: m.PortfolioTimelinePage })),
 )
+const PortfolioTravailPage = lazy(() =>
+  import('./routes/PortfolioTravailPage').then((m) => ({ default: m.PortfolioTravailPage })),
+)
 const SchedulesPage = lazy(() => import('./routes/SchedulesPage').then((m) => ({ default: m.SchedulesPage })))
 const SessionsPage = lazy(() => import('./routes/SessionsPage').then((m) => ({ default: m.SessionsPage })))
 const ServicesPage = lazy(() => import('./routes/ServicesPage').then((m) => ({ default: m.ServicesPage })))
@@ -258,12 +261,13 @@ export function App() {
             <Route index element={<PortfolioOverviewPage />} />
             <Route path="board" element={<Deferred><PortfolioBoardPage /></Deferred>} />
             <Route path="timeline" element={<Deferred><PortfolioTimelinePage /></Deferred>} />
-            {/* Les anciennes vues (Activité, Travail d'avant #117, Journal) mènent à l'Aperçu,
-                qui porte « Ce qui t'attend » et les derniers événements, jusqu'à ce que
-                Travail du portefeuille (#238) les reprenne. */}
-            {['activity', 'work', 'journal'].map((path) => (
-              <Route key={path} path={path} element={<Navigate to="/projects" replace />} />
+            <Route path="travail" element={<Deferred><PortfolioTravailPage /></Deferred>} />
+            {/* Les anciennes vues mènent à Travail, qui les a reprises : l'Activité et le
+                Travail d'avant #117 à sa vue retenue, le Journal à Par moment. */}
+            {['activity', 'work'].map((path) => (
+              <Route key={path} path={path} element={<Navigate to="/projects/travail" replace />} />
             ))}
+            <Route path="journal" element={<Navigate to="/projects/travail?vue=moment" replace />} />
           </Route>
           <Route path="/schedules" element={<Deferred><SchedulesPage /></Deferred>} />
           <Route path="/sessions" element={<Deferred><SessionsPage /></Deferred>} />
