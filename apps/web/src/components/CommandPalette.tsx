@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Loader,
   MessageSquare,
+  PanelRight,
   Play,
   Plug,
   Plus,
@@ -16,7 +17,6 @@ import {
   Settings,
   ShieldQuestion,
   Square,
-  Split,
   SquareKanban,
   SquareTerminal,
   X,
@@ -151,7 +151,8 @@ export function CommandPalette({
    * conversation et le board. Le brouillon n'en a pas, et un panneau « ouvert » qu'il
    * ne monte pas resterait sans bouton pour le refermer.
    */
-  const panelHere = conversationId !== null || route?.[2] === 'board'
+  const onBoard = route?.[2] === 'board'
+  const panelHere = conversationId !== null || onBoard
 
   // Un fichier se cherche dès la première lettre derrière `/` : le préfixe dit déjà ce
   // qu'on veut, et un nom de fichier se tape court.
@@ -246,12 +247,18 @@ export function CommandPalette({
         label: t('palette.action.board'),
         run: () => go(`/p/${projectId}/board`),
       })
-      // Découper un chantier en cartes (#70) : dicter en vrac, valider un brouillon.
+    }
+    // Le panneau du Tableau n'a plus de bouton (#180) : on l'appelle d'ici, comme le
+    // ferait un fichier ouvert.
+    if (onBoard) {
       entries.push({
-        key: 'cmd-split',
-        icon: <Split size={14} />,
-        label: t('split.action'),
-        run: () => go(`/p/${projectId}/c/new?split=new`),
+        key: 'cmd-panel',
+        icon: <PanelRight size={14} />,
+        label: t('palette.action.panel'),
+        run: () => {
+          close()
+          setPanelOpen(true)
+        },
       })
     }
 
@@ -266,7 +273,7 @@ export function CommandPalette({
     })
 
     return entries
-  }, [close, go, projectId, t])
+  }, [close, go, onBoard, projectId, t])
 
   /**
    * Ouvrir un fichier dans le panneau de son projet. Celui d'un autre projet, ou vu
@@ -380,7 +387,8 @@ export function CommandPalette({
           run: () => runProjectAction(action, op),
         }))
       })
-    const visibleActions = (projectActions ?? []).filter((action) => projectNames.has(action.projectId))
+    // Une commande qui ne part qu'à sa cadence n'a pas de bouton, ici non plus.
+    const visibleActions = (projectActions ?? []).filter((action) => action.onDemand && projectNames.has(action.projectId))
 
     const projectItems = (source = projects ?? []): Item[] =>
       source.map((project) => ({

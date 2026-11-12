@@ -12,6 +12,7 @@ import {
   agentRequests,
   cardBlocks,
   cardMoves,
+  cardNotes,
   cards,
   events,
   conversations,
@@ -366,4 +367,113 @@ test('au dépôt : une ligne sans changement, une boucle de parentes ou un lien 
   const detach = await propose([{ card: below.number, parent: 0, reason: 'Elle vit seule.' }])
   assert.equal(detach.row.isError, false, detach.row.result ?? '')
   assert.match(detach.row.result ?? '', /détachée de sa parente/)
+})
+
+// --- add_subtasks (#185) ----------------------------------------------------------------
+
+/** La description d'une carte, telle que la base la porte. */
+function descriptionOf(db: ReturnType<typeof openDatabase>['db'], id: string) {
+  return db.select({ description: cards.description }).from(cards).where(eq(cards.id, id)).get()?.description
+}
+
+test('add_subtasks : déposées sans rien écrire, ajoutées en fin de liste au clic, au nom de la personne', async (t) => {
+  const { db, card, propose, decide, moves } = await harness(t)
+  const target = card('La page du jalon', 'in_progress')
+  db.update(cards).set({ description: 'Le besoin.\n\n- [x] L’en-tête\n- [ ] La bande' }).where(eq(cards.id, target.id)).run()
+
+  const { id, row } = await propose([
+    { card: target.number, add_subtasks: ['  Le bouton   « Ajouter »  ', 'Le tiroir'], reason: 'L’ajout parle de l’en-tête du jalon.' },
+  ])
+  assert.equal(row.isError, false, row.result ?? '')
+  assert.match(row.result ?? '', /ajouter 2 sous-tâches/)
+  // Rien n'est écrit avant le clic.
+  assert.equal(descriptionOf(db, target.id), 'Le besoin.\n\n- [x] L’en-tête\n- [ ] La bande')
+
+  // L'événement porte les libellés nettoyés : c'est ce que le bloc du fil montre.
+  const requested = db.select().from(events).where(eq(events.type, 'card_filing.requested')).all().at(-1)!
+  const line = (JSON.parse(requested.payload) as { cards: { addSubtasks?: string[] }[] }).cards[0]!
+  assert.deepEqual(line.addSubtasks, ['Le bouton « Ajouter »', 'Le tiroir'])
+
+  assert.equal((await decide(id, 'accepted')).statusCode, 200)
+  assert.equal(
+    descriptionOf(db, target.id),
+    'Le besoin.\n\n- [x] L’en-tête\n- [ ] La bande\n- [ ] Le bouton « Ajouter »\n- [ ] Le tiroir',
+  )
+  // Aucune colonne demandée : aucun mouvement, mais la carte est dite appliquée.
+  assert.deepEqual(moves(), [])
+  assert.deepEqual(resolved(db).applied, [target.number])
+
+  // Une note le dit sur la carte, au nom de qui a cliqué, et rattachée au fil qui l'a proposé.
+  const notes = db.select().from(cardNotes).where(eq(cardNotes.cardId, target.id)).all()
+  assert.equal(notes.length, 1)
+  assert.equal(notes[0]!.userId, 'owner')
+  assert.equal(notes[0]!.conversationId, 'session')
+  assert.match(notes[0]!.body, /« Le bouton « Ajouter » », « Le tiroir »/)
+})
+
+test('add_subtasks : refusé « Laisser tel quel », la description ne bouge pas', async (t) => {
+  const { db, card, propose, decide } = await harness(t)
+  const target = card('Une carte', 'todo')
+  const { id } = await propose([{ card: target.number, add_subtasks: ['Un pas'], reason: 'Il en parle.' }])
+  assert.equal((await decide(id, 'refused')).statusCode, 200)
+  assert.equal(descriptionOf(db, target.id), '')
+  assert.equal(resolved(db).decision, 'refused')
+})
+
+test('add_subtasks : bornes et doublons refusés au dépôt', async (t) => {
+  const { db, card, propose } = await harness(t)
+  const target = card('Une carte', 'todo')
+  db.update(cards).set({ description: '- [ ] Déjà là' }).where(eq(cards.id, target.id)).run()
+
+  const notList = await propose([{ card: target.number, add_subtasks: 'Un pas', reason: 'r' }])
+  assert.match(notList.row.result ?? '', /`add_subtasks` est une liste de libellés/)
+
+  const many = await propose([{ card: target.number, add_subtasks: Array.from({ length: 31 }, (_, i) => `Pas ${i}`), reason: 'r' }])
+  assert.match(many.row.result ?? '', /30 au plus/)
+
+  const long = await propose([{ card: target.number, add_subtasks: ['x'.repeat(301)], reason: 'r' }])
+  assert.match(long.row.result ?? '', /300 caractères au plus/)
+
+  const blank = await propose([{ card: target.number, add_subtasks: ['   '], reason: 'r' }])
+  assert.match(blank.row.result ?? '', /Rien à changer pour #1/)
+
+  const known = await propose([{ card: target.number, add_subtasks: ['Déjà là'], reason: 'r' }])
+  assert.match(known.row.result ?? '', /« Déjà là » est déjà une sous-tâche de #1/)
+
+  const twice = await propose([{ card: target.number, add_subtasks: ['Neuf', 'Neuf'], reason: 'r' }])
+  assert.match(twice.row.result ?? '', /« Neuf » apparaît deux fois/)
+
+  const closed = card('Close', 'done')
+  const onClosed = await propose([{ card: closed.number, add_subtasks: ['Neuf'], reason: 'r' }])
+  assert.match(onClosed.row.result ?? '', /#2 est en « terminé »/)
+  // Rouverte dans la même demande, elle peut en recevoir.
+  const reopened = await propose([{ card: closed.number, column: 'todo', add_subtasks: ['Neuf'], reason: 'r' }])
+  assert.equal(reopened.row.isError, false, reopened.row.result ?? '')
+})
+
+test('add_subtasks : au clic, une sous-tâche ajoutée entre-temps n’est pas doublée ; plus rien à ajouter, la carte sort du lot', async (t) => {
+  const { db, card, propose, decide } = await harness(t)
+  const partly = card('En partie ajoutée à la main', 'todo')
+  const fully = card('Ajoutée à la main', 'todo')
+  const { id } = await propose([
+    { card: partly.number, add_subtasks: ['Un', 'Deux'], reason: 'r' },
+    { card: fully.number, add_subtasks: ['Trois'], reason: 'r' },
+  ])
+  db.update(cards).set({ description: 'Texte\n\n- [ ] Un' }).where(eq(cards.id, partly.id)).run()
+  db.update(cards).set({ description: '- [x] Trois' }).where(eq(cards.id, fully.id)).run()
+
+  assert.equal((await decide(id, 'accepted')).statusCode, 200)
+  // Ajoutée sous ce que la personne a écrit entre-temps, et non sur le texte du dépôt.
+  assert.equal(descriptionOf(db, partly.id), 'Texte\n\n- [ ] Un\n- [ ] Deux')
+  assert.equal(descriptionOf(db, fully.id), '- [x] Trois')
+  assert.deepEqual(resolved(db).applied, [partly.number])
+})
+
+test('add_subtasks : avec une colonne, les deux s’appliquent ensemble', async (t) => {
+  const { db, card, propose, decide, columnOf } = await harness(t)
+  const target = card('Terminée trop tôt', 'done')
+  const { id } = await propose([{ card: target.number, column: 'todo', add_subtasks: ['Le reste'], reason: 'Il manque un pas.' }])
+  assert.equal((await decide(id, 'accepted')).statusCode, 200)
+  assert.equal(columnOf(target.id), 'todo')
+  assert.match(descriptionOf(db, target.id) ?? '', /- \[ \] Le reste/)
 })

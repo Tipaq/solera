@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm'
 import { cardIssues, cardReviews, cards, conversations, projectImages, projects, worktrees, type Db } from '@solera/db'
-import { sessionReference } from '@solera/protocol'
+import { sessionReference, type SplitMode } from '@solera/protocol'
 import { parentBranchOf } from '../cards/parent-branch.js'
 
 /**
@@ -178,15 +178,20 @@ function cardBriefing(db: Db, input: OverviewInput): string | null {
 function splitBriefing(db: Db, input: OverviewInput): string | null {
   if (!input.soleraMcp) return null
   const row = db
-    .select({ purpose: conversations.purpose, splitCardId: conversations.splitCardId })
+    .select({ purpose: conversations.purpose, splitCardId: conversations.splitCardId, splitMode: conversations.splitMode })
     .from(conversations)
     .where(eq(conversations.id, input.conversationId))
     .get()
   if (row?.purpose !== 'split') return null
 
   const start = row.splitCardId
-    ? db.select({ number: cards.number, title: cards.title }).from(cards).where(eq(cards.id, row.splitCardId)).get()
+    ? db
+        .select({ number: cards.number, title: cards.title, milestone: cards.milestone })
+        .from(cards)
+        .where(eq(cards.id, row.splitCardId))
+        .get()
     : undefined
+  if (start?.milestone) return refineBriefing(db, input.projectId, start, row.splitMode ?? 'questions', input.cardFiling)
   return [
     `Cette conversation sert à **découper un chantier en cartes**, pas à écrire du code : l'utilisateur dicte en vrac — des idées, des bugs, une fonctionnalité — et tu en fais un brouillon qu'il validera.${
       start
@@ -199,6 +204,43 @@ function splitBriefing(db: Db, input: OverviewInput): string | null {
     "4. Écris comme ce projet écrit ses cartes : lis-en deux ou trois récentes du même genre et reprends leur forme — leurs sections, leur ton, ce qu'elles disent de ce qui est tranché et de ce qui reste ouvert.",
     "L'utilisateur corrige le brouillon dans le bloc, ou te le dit dans le fil : dans ce cas, redépose-le **entier** avec `propose_cards`, il remplace le précédent. Ne crée pas les cartes toi-même avec `create_card` : c'est son clic « Créer » qui les crée, et tu en recevras les numéros.",
   ].join('\n')
+}
+
+/**
+ * L'affinage d'un jalon (#184) : le découpage d'une carte drapeautée, ouvert depuis sa
+ * page. La méthode est celle du skill `affiner-un-jalon`, que le premier message invoque ;
+ * cette consigne en redit l'essentiel à chaque démarrage, parce qu'une reprise ne relit
+ * pas le premier message et qu'un CLI peut ne pas avoir le skill sous la main.
+ *
+ * Deux écarts avec le découpage ordinaire, et c'est pour eux que la page du jalon existe :
+ * les questions passent par l'outil de question du CLI, pour devenir des demandes que la
+ * page montre et auxquelles on répond sur place, au lieu d'un texte qui finit le tour ;
+ * et la parente du brouillon est toujours le jalon.
+ */
+function refineBriefing(
+  db: Db,
+  projectId: string,
+  milestone: { number: number; title: string },
+  mode: SplitMode,
+  cardFiling: boolean,
+): string {
+  const cap = db.select({ cap: projects.cap }).from(projects).where(eq(projects.id, projectId)).get()?.cap
+  return [
+    `Cette conversation **affine le jalon #${milestone.number} « ${milestone.title} »** jusqu'à un découpage en cartes, sans écrire de code : suis le skill \`affiner-un-jalon\`. La page du jalon suit son état, ses questions et son brouillon.`,
+    cap ? `Cap du projet, la direction que le découpage doit servir : « ${cap} »` : null,
+    mode === 'direct'
+      ? "Mode **découpage direct** : l'utilisateur a demandé de découper sur son brief. Ne pose une question que sur un point vraiment ouvert, une seule."
+      : "Mode **questions d'abord** : pose ce qui te manque avant de découper.",
+    "Tes questions passent par l'outil de question de ton CLI, **toutes à la fois** et 4 au plus, chacune avec ta proposition par défaut, puis attends les réponses : c'est ce qui les montre sur la page du jalon, où l'on y répond. Ne les écris pas dans ta réponse.",
+    `Dépose le découpage avec \`propose_cards\` et \`parent: ${milestone.number}\`, jamais \`create_card\` : c'est le clic de l'utilisateur qui crée. Une correction se redépose entière.`,
+    // L'ajout au jalon (#185) : sans le rangement de carte, `request_card_change` n'est
+    // pas listé, et l'ajout ne peut que devenir des cartes.
+    cardFiling
+      ? "Un message « Ajout au jalon : … » se range en sous-tâches d'une carte existante qui en parle déjà (`request_card_change` avec `add_subtasks`), sinon en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche)."
+      : "Un message « Ajout au jalon : … » se range en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche).",
+  ]
+    .filter((line) => line !== null)
+    .join('\n')
 }
 
 /**

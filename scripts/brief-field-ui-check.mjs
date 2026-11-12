@@ -119,6 +119,10 @@ try {
     page.on('console', (message) => { if (message.type() === 'error' && !/WebSocket|\[vite\]/.test(message.text())) errors.push(message.text()) })
     await page.route(`${origin}/`, (route) => route.fulfill({ contentType: 'text/html', body: '<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
     await page.route(`${origin}/api/**`, (route) => route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }))
+    // Des frames lentes, comme sur une CI chargée : une frappe qui arrive avant la frame
+    // suivante ne doit rien changer (le curseur se replaçait dans un rAF, et la suite
+    // échouait par intermittence sur la liste `#`).
+    await page.addInitScript(() => { window.requestAnimationFrame = (callback) => setTimeout(() => callback(performance.now()), 80) })
     await mount(page)
 
     const drawer = page.getByRole('dialog', { name: 'Nouveau jalon' })

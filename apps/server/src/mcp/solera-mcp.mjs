@@ -806,7 +806,7 @@ const ALL_TOOLS = [
   {
     name: 'register_action',
     description:
-      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une action créée, ou dont tu changes la commande, la nature ou le dossier, attend que l'utilisateur la valide avant son premier lancement d'un clic. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
+      `Crée ou modifie une action du projet : un bouton que l'utilisateur lance d'un clic depuis Solera, dans le worktree de la conversation où il clique. Sert quand l'utilisateur le demande (« ajoute un bouton pour lancer le serveur »), ou de ta propre initiative quand tu mets en place une commande qu'il relancera souvent : serveur de dev, suite de tests, script de debug, seed de base. Pas pour une commande d'un seul usage. Deux natures : \`service\` pour ce qui tourne en continu (porté par une unité systemd solera-app-*, visible dans la page Services, qui survit à cette session) ; \`task\` pour ce qui se termine (joué dans un terminal du panneau, avec son code de sortie). Rien n'est écrit dans le dépôt. Une \`task\` peut aussi être planifiée (\`schedule\`) : elle part seule à sa cadence, sans terminal, à la racine du projet (plus son \`subdir\`), et sa sortie finit dans ses passages ; avec \`on_demand: false\`, elle n'a plus de bouton. Une action créée, ou dont tu changes la commande, la nature, le dossier ou la cadence, attend que l'utilisateur la valide avant son premier lancement, d'un clic comme à sa cadence. Avec \`id\`, modifie l'action existante (seuls les champs donnés changent).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -823,6 +823,21 @@ const ALL_TOOLS = [
           type: 'string',
           description:
             "Pour un `service` : l'adresse où l'ouvrir, affichée en lien quand il tourne. `{port}` y est remplacé par le port sur lequel il écoute (ex. `http://mon-hote:{port}`). Elle doit être joignable depuis le navigateur de l'utilisateur : pas `localhost` si Solera tourne sur une autre machine que la sienne ; reprends l'adresse que donnent tes consignes s'il y en a une.",
+        },
+        schedule: {
+          type: 'object',
+          description: `Pour une \`task\` seulement : la planifier. Exactement une cadence, comme schedule_task : \`every_minutes\` (${MIN_AGENT_SCHEDULE_MINUTES} au moins), \`cron\` (cinq champs, heure du serveur) ou \`at\` (date ISO 8601). En plus, au besoin : \`max_duration_minutes\` (coupée au-delà, ${DEFAULT_SCHEDULE_DURATION_MINUTES} par défaut) et \`enabled\` (false met en pause ; seul, en modification, garde la cadence). \`null\` retire la planification.`,
+          properties: {
+            every_minutes: { type: 'integer' },
+            cron: { type: 'string' },
+            at: { type: 'string' },
+            max_duration_minutes: { type: 'integer' },
+            enabled: { type: 'boolean' },
+          },
+        },
+        on_demand: {
+          type: 'boolean',
+          description: "Faux : la commande ne part qu'à sa cadence, sans bouton ni run_action. Vrai par défaut ; une commande non planifiée l'est toujours.",
         },
       },
     },
@@ -1245,13 +1260,13 @@ const ALL_TOOLS = [
   {
     name: 'request_card_change',
     description:
-      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
+      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance, leurs liens « bloque », ou de leur ajouter des sous-tâches. **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
     inputSchema: {
       type: 'object',
       properties: {
         changes: {
           type: 'array',
-          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks.`,
+          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks, add_subtasks.`,
           items: {
             type: 'object',
             properties: {
@@ -1286,6 +1301,11 @@ const ALL_TOOLS = [
                 type: 'array',
                 items: { type: 'integer' },
                 description: "Cartes qu'elle cessera de bloquer.",
+              },
+              add_subtasks: {
+                type: 'array',
+                items: { type: 'string' },
+                description: `Sous-tâches à ajouter à la carte, une ligne chacune, ${MAX_SUBTASKS} au plus et 300 caractères chacune. Ajoutées sous ses sous-tâches existantes ; une qu'elle porte déjà est refusée.`,
               },
               reason: {
                 type: 'string',
@@ -2268,7 +2288,8 @@ function listActions() {
   return db
     .prepare(
       `SELECT id, label, description, kind, command, subdir, url,
-              approved_at AS approvedAt
+              approved_at AS approvedAt, on_demand AS onDemand, cadence,
+              schedule_enabled AS scheduleEnabled, next_run_at AS nextRunAt
        FROM project_actions
        WHERE project_id = ?
        ORDER BY created_at`,
@@ -2286,9 +2307,32 @@ function renderActions(actions) {
       const where = action.subdir ? ` — dans \`${action.subdir}\`` : ''
       const about = action.description ? `\n  ${action.description}` : ''
       const link = action.url ? `\n  ouvre ${action.url}` : ''
-      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
+      const when = action.cadence ? `\n  ${describeActionSchedule(action)}` : ''
+      return `- « ${action.label} » (${action.kind}, ${status}, id \`${action.id}\`)${where}${about}${link}${when}\n  \`${action.command.replace(/\n/g, ' ⏎ ')}\``
     })
     .join('\n')
+}
+
+/** La cadence d'une commande planifiée, dite comme `schedule_task` la dit. */
+function describeActionSchedule(action) {
+  let cadence
+  try {
+    cadence = JSON.parse(action.cadence)
+  } catch {
+    return 'planifiée (cadence illisible)'
+  }
+  const rule =
+    cadence.kind === 'interval'
+      ? `toutes les ${cadence.minutes} minutes`
+      : cadence.kind === 'cron'
+        ? `motif cron \`${cadence.expression}\``
+        : `une seule fois, le ${new Date(cadence.at).toLocaleString('fr-FR')}`
+  const next = action.scheduleEnabled
+    ? action.nextRunAt
+      ? `, prochain tir ${new Date(action.nextRunAt).toLocaleString('fr-FR')}`
+      : ''
+    : ', en pause'
+  return `planifiée : ${rule}${next}${action.onDemand ? '' : ', sans bouton (à sa cadence seulement)'}`
 }
 
 function readCard(number) {

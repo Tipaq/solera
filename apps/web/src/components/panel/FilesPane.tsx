@@ -70,7 +70,8 @@ export const FilesPane = memo(function FilesPane({ scope, label }: {
         <div
           ref={column}
           className={cx(
-            'min-h-0 shrink-0 overflow-auto border-r border-line py-1',
+            // L'arborescence défile elle-même, sous sa ligne d'outils restée fixe.
+            'flex min-h-0 shrink-0 flex-col border-r border-line',
             // Colonne à côté de l'éditeur quand la place existe, sinon calque au-dessus.
             // `bg-surface` seulement dans ce second cas : une colonne opaque posée sur
             // le panneau y dessinerait un rectangle plus clair sans raison.
@@ -81,12 +82,19 @@ export const FilesPane = memo(function FilesPane({ scope, label }: {
             '@max-[35rem]:w-full @max-[35rem]:bg-surface @max-[35rem]:shadow-card',
           )}
         >
-          {drafts.length > 0 ? <div className="px-2 py-1 @min-[35rem]:hidden">
-            <Button size="sm" variant="secondary" className="w-full" onClick={() => setPanelTree(false, false)}>
-              {t('editor.drafts.recover', { count: drafts.length })}
-            </Button>
-          </div> : null}
-          <FileTree scope={scope} label={label} onOpenFile={closeIfOverlaid} onCollapse={() => setPanelTree(false)} />
+          <FileTree
+            scope={scope}
+            label={label}
+            onOpenFile={closeIfOverlaid}
+            onCollapse={() => setPanelTree(false)}
+            // Par-dessus l'éditeur, ses brouillons ne se voient plus : une bande sous la
+            // ligne d'outils y ramène.
+            banner={drafts.length > 0 ? <div className="border-b border-line px-3 py-1.5 @min-[35rem]:hidden">
+              <Button size="sm" variant="secondary" className="w-full" onClick={() => setPanelTree(false, false)}>
+                {t('editor.drafts.recover', { count: drafts.length })}
+              </Button>
+            </div> : null}
+          />
         </div>
       ) : null}
 

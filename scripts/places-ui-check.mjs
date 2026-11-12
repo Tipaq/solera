@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -12,10 +12,12 @@ import { launchBrowser } from './checks/browser.mjs'
 /*
  * Les pages de lieu : l'Aperçu d'un projet, Projets, Planifiées, et les deux Journaux.
  *
- * Ce que la suite vérifie et qu'une relecture ne verrait pas : que le bandeau du haut
- * dit ce qui réclame et **omet ce qui est à zéro**, que le board de l'Aperçu est bien
- * celui de l'application — mêmes colonnes, mêmes tuiles — et que les
- * réglages du projet sont toujours joignables, dans la coque.
+ * Ce que la suite vérifie et qu'une relecture ne verrait pas : l'ordre des blocs de
+ * l'Aperçu (« Ce qui t'attend », puis le phare des jalons, puis la pile Actions et
+ * Derniers événements dans la colonne de droite) et leurs renvois vers les onglets
+ * Actions, Travail et Jalons, que le board global est bien celui de l'application —
+ * mêmes colonnes, mêmes tuiles — et que les réglages du projet sont toujours
+ * joignables, dans la coque.
  *
  * La vue d'un projet est logée dans une coque (`PlaceShell`, page projet v2) : la bande
  * porte l'avatar, le nom et « + Conversation », la rangée porte les cinq vues puis
@@ -91,6 +93,22 @@ try {
   const nimbus = projects.find((entry) => entry.name === 'Nimbus')
   const docs = projects.find((entry) => entry.name === 'Docs')
   assert.ok(nimbus && docs)
+  /*
+    Pour le « Code en cours » de l'Aperçu (plus bas), avant toute lecture de l'état des
+    arbres, que le serveur garde 30 s : un commit sur main, pour que les arbres prennent
+    du retard, et un arbre vide créé au shell. Le dépôt est celui du jeu d'essai, dans le
+    dossier temporaire de la suite.
+  */
+  const gitIn = (cwd, ...args) => execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: {
+      ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_AUTHOR_NAME: 'Suite', GIT_AUTHOR_EMAIL: 'suite@example.com', GIT_COMMITTER_NAME: 'Suite', GIT_COMMITTER_EMAIL: 'suite@example.com',
+    },
+  })
+  gitIn(nimbus.workspacePath, 'commit', '--allow-empty', '-q', '-m', 'Bump main for the overview suite')
+  gitIn(nimbus.workspacePath, 'worktree', 'add', '-q', '-b', 'feat/deja-fini', join(data, 'shell-tree'), 'main')
 
   const page = await context.newPage()
   const errors = []
@@ -201,7 +219,7 @@ try {
 
   // Les anciennes adresses mènent à la vue qui les a absorbées, requête comprise.
   await page.goto(`${base}/p/${nimbus.id}/activity?groupe=worktree`)
-  await page.waitForURL(`**/p/${nimbus.id}/travail?groupe=worktree`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
   await row.getByRole('link', { name: /^Travail/ }).and(page.locator('[aria-current="page"]')).waitFor()
   await page.goto(`${base}/p/${nimbus.id}/schedules`)
   await page.waitForURL(`**/p/${nimbus.id}/actions`)
@@ -211,8 +229,8 @@ try {
   await page.getByRole('dialog').waitFor()
   await page.keyboard.press('Escape')
   await page.goto(`${base}/p/${nimbus.id}/journal`)
-  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
 
   // Au doigt : même gouttière, Réglages en icône seule, la rangée défile.
   await page.setViewportSize({ width: 390, height: 844 })
@@ -237,53 +255,88 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
 
   // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
-  await page.goto(`${base}/p/${nimbus.id}`)
-  await row.waitFor()
-
   /*
-    Le résumé du board a **quitté** l'Aperçu le 2026-10-16 : il redisait le board au
-    rabais, et l'onglet est à portée d'œil. À sa place, le jalon courant et les échéances
-    proches — ce que l'audit demandait, et qui n'était pas possible avant que la carte
-    #36 ne pose l'échéance et le jalon.
+    La mise en page `combo` (`projet.md` A-1) : « Ce qui t'attend » en tête, puis le
+    phare des jalons, puis une grille — à gauche le « Code en cours », à droite
+    la pile « Actions » puis « Derniers événements ».
+
+    Le jeu d'essai n'a pas d'action, et un service ne tournerait pas sans systemd : la
+    liste des actions est servie ici, de la forme de `/api/actions`. Un service en
+    marche, une commande dans un terminal, une proposition d'agent, un service au repos.
   */
-  assert.equal(
-    await page.getByRole('region', { name: 'À faire', exact: true }).count(),
-    0,
-    "L'Aperçu ne redit plus le board : l'onglet est à côté",
-  )
   const cards = await (await context.request.get(`${base}/api/projects/${nimbus.id}/cards`)).json()
   const milestone = cards.find((entry) => entry.title.startsWith('v1.2'))
   assert.ok(milestone, 'Le jeu d’essai porte une carte-jalon')
-  await page.getByText('Jalon courant', { exact: true }).waitFor()
-  await page.getByRole('link', { name: milestone.title, exact: true }).waitFor()
+  const now = Date.now()
+  const fakeAction = (over) => ({
+    projectId: nimbus.id, description: null, subdir: null, url: null, status: 'approved',
+    agentConversationId: null, agentConversationTitle: null, createdAt: now - 864e5, updatedAt: now - 864e5,
+    service: null, lastRun: null, runs: [], approved: null, kind: 'task', command: 'true', ...over,
+  })
+  const fakeActions = [
+    fakeAction({ id: 'dev', label: 'Serveur de dev', kind: 'service', url: 'http://localhost:{port}',
+      service: { unit: 'solera-app-dev', state: 'active', cwd: null, ports: [5173], startedAt: now - 26 * 60_000 } }),
+    fakeAction({ id: 'tests', label: 'Tests unitaires', lastRun: { terminalId: 'term-tests', alive: true, exitCode: null, startedAt: now - 2 * 60_000 } }),
+    fakeAction({ id: 'e2e', label: 'Suite UI du tableau', status: 'proposed', agentConversationId: 'x', agentConversationTitle: 'Revue de la PR #117' }),
+    fakeAction({ id: 'storybook', label: 'Storybook', kind: 'service', service: { unit: 'u', state: 'inactive', cwd: null, ports: [], startedAt: null } }),
+  ]
+  await page.route('**/api/actions', (route) => route.fulfill({ json: fakeActions }))
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await row.waitFor()
 
-  // Les échéances proches, la plus urgente d'abord, et **une seule ligne teintée** :
-  // celle qui est en retard. Si tout était coloré, plus rien ne ressortirait.
-  const due = page.getByText('Échéances proches', { exact: true })
-  await due.waitFor()
-  const late = cards.find((entry) => entry.dueAt !== null && entry.dueAt < Date.now() && entry.column !== 'done')
-  await page.getByRole('link', { name: new RegExp(`#${late.number}\\b`) }).first().waitFor()
-  // Une carte-jalon n'y figure pas : sa date est celle du jalon, que la tuile d'à côté
-  // porte déjà, et l'écrire deux fois sur la même ligne d'écran est le défaut qu'on évite.
-  assert.equal(
-    await page.getByRole('link', { name: new RegExp(`#${milestone.number}\\s`) }).count(),
-    0,
-    'La carte-jalon ne se compte pas aussi dans les échéances',
+  const inbox = page.getByRole('region', { name: 'Ce qui t’attend', exact: true })
+  const actions = page.getByRole('region', { name: 'Actions', exact: true })
+  const events = page.getByRole('region', { name: 'Derniers événements', exact: true })
+  await Promise.all([inbox.waitFor(), actions.waitFor(), events.waitFor()])
+  // L'ordre des blocs, dans le document (A-1.2).
+  assert.ok(
+    await page.evaluate(() => {
+      const [ask, act, evt] = ['Ce qui t’attend', 'Actions', 'Derniers événements']
+        .map((name) => [...document.querySelectorAll('section')].find((section) => section.getAttribute('aria-label') === name
+          || document.getElementById(section.getAttribute('aria-labelledby') ?? '')?.textContent === name))
+      const before = (a, b) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      return before(ask, act) && before(act, evt)
+    }),
+    'Ce qui t’attend, puis Actions, puis Derniers événements',
   )
+  // En grand écran, la pile est à droite (colonne de 24 rem), Actions au-dessus.
+  const [inboxBox, actionsBlock, eventsBox] = await Promise.all([inbox.boundingBox(), actions.boundingBox(), events.boundingBox()])
+  assert.ok(actionsBlock.x > inboxBox.x + inboxBox.width / 2, 'Actions est dans la colonne de droite')
+  assert.ok(Math.abs(actionsBlock.x - eventsBox.x) <= 1 && eventsBox.y > actionsBlock.y, 'Derniers événements sous Actions')
+  assert.ok(Math.abs(actionsBlock.width - 384) <= 1, `La colonne de droite fait 24 rem : ${actionsBlock.width}`)
+  assert.ok(actionsBlock.y > inboxBox.y + inboxBox.height, 'La grille vient après « Ce qui t’attend »')
 
-  /*
-    La **troisième colonne**, le Journal en miniature. Elle n'est arrivée qu'à la fusion
-    du 2026-10-16 : la vue de la carte #31 en promettait deux sur trois en commentaire,
-    la route serveur étant sur une autre branche. Rien dans git ne marquait ce manque —
-    les deux branches se fusionnent proprement à cet endroit — d'où cette assertion.
-  */
-  const digest = page.locator('section').filter({ has: page.getByText('Journal', { exact: true }) })
-    .filter({ has: page.getByRole('link', { name: /tout voir/i }) })
-  await digest.first().waitFor()
-  await digest.first().getByRole('link', { name: /tout voir/i }).waitFor()
+  // Actions : ce qui tourne ou attend seulement, et des renvois vers l'onglet (A-5).
+  const lineOf = (label) => actions.getByRole('listitem').filter({ hasText: label })
+  const open = lineOf('Serveur de dev').getByRole('link', { name: /^Ouvrir/ })
+  assert.equal(await open.getAttribute('href'), 'http://localhost:5173')
+  assert.equal(await open.getAttribute('target'), '_blank')
+  await lineOf('Serveur de dev').getByText(/^service · :5173 · depuis 2\d min$/).waitFor()
+  await lineOf('Tests unitaires').getByText(/^tâche en cours dans un terminal · \d min$/).waitFor()
+  await lineOf('Tests unitaires').getByRole('button', { name: 'Panneau', exact: true }).waitFor()
+  await lineOf('Suite UI du tableau').getByText('à relire — proposée dans « Revue de la PR #117 »', { exact: true }).waitFor()
+  assert.equal(
+    await lineOf('Suite UI du tableau').getByRole('link', { name: 'Relire', exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/actions?action=a-e2e`,
+    '« Relire » ouvre le détail de l’action dans l’onglet Actions',
+  )
+  assert.equal(await lineOf('Storybook').count(), 0, 'Un service au repos n’a pas de ligne')
+  assert.equal(
+    // Storybook, et les tâches planifiées du jeu d'essai : une action est Quoi × Quand.
+    await actions.getByRole('link', { name: /^\d+ autres? au repos$/ }).getAttribute('href'),
+    `/p/${nimbus.id}/actions`,
+  )
+  assert.equal(await page.getByText(/⚡/).count(), 0, 'Plus aucun renvoi au lanceur ⚡')
+
+  // Derniers événements : cinq lignes au plus, et le lien vers Travail › Par moment (A-6).
+  assert.equal(
+    await events.getByRole('link', { name: 'Par moment', exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/travail?vue=fil`,
+  )
+  const eventRows = await events.getByRole('listitem').count()
+  assert.ok(eventRows > 0 && eventRows <= 5, `Cinq événements au plus : ${eventRows}`)
   /* Elle écrit « NOTE » et **jamais** « DÉCISION », comme le Journal : `card_notes.body`
-     est un champ libre et la carte #32 a refusé de le typer le 2026-10-15. La maquette
-     F1 intitulait pourtant cette colonne « Dernières décisions ». */
+     est un champ libre et la carte #32 a refusé de le typer le 2026-10-15. */
   for (const absent of ['Décision', 'Décisions', 'Dernières décisions']) {
     assert.equal(
       await page.getByText(absent, { exact: true }).count(),
@@ -292,47 +345,253 @@ try {
     )
   }
 
-  // Ce qui réclame est dans « Ce qui t'attend » depuis #163 (les tuiles d'attente et de
-  // relecture en sont sorties), et le bandeau ne porte rien d'autre.
-  const inbox = page.getByRole('region', { name: 'Ce qui t’attend', exact: true })
-  await inbox.waitFor()
-  await inbox.getByText(/à relire/).first().waitFor()
+  // Ce qui a quitté l'Aperçu : les tuiles, « En ce moment », le jalon courant, les
+  // échéances, la miniature du Journal et les planifiées (PP-11).
+  for (const gone of ['Jalon courant', 'Échéances proches', 'En ce moment', 'Planification', 'tout voir']) {
+    assert.equal(await page.getByText(gone, { exact: true }).count(), 0, `L’Aperçu n’a plus « ${gone} »`)
+  }
   assert.equal(
-    await page.getByText(/cartes$/).count(),
+    await page.getByRole('region', { name: 'À faire', exact: true }).count(),
     0,
-    'Le bandeau ne porte aucun inventaire',
+    "L'Aperçu ne redit pas le board : l'onglet est à côté",
   )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
+
+  // Ce qui réclame est dans « Ce qui t'attend » depuis #163, et rien d'autre ne compte.
+  await inbox.getByText(/à relire/).first().waitFor()
+  assert.equal(await page.getByText(/cartes$/).count(), 0, 'L’Aperçu ne porte aucun inventaire')
 
   /*
-    La chronologie : les jalons en lignes, les cartes en barres. Ce qu'une relecture ne
-    verrait pas et que la suite tient — le **pied de vue compte ce qui n'a ni jalon ni
-    date**, sans quoi la vue mentirait par omission, et une carte-jalon n'est pas sa
-    propre barre.
+    Le phare des jalons (A-3), entre « Ce qui t'attend » et la grille : le jalon courant
+    en grand, la file à sa droite. Dans le jeu d'essai, v1.2 a trois enfants ouverts et
+    v1.1 est livrée ; il n'y a pas d'autre jalon, donc les deux files sont vides — la
+    suite en pose deux plus bas.
+  */
+  const beacon = page.getByRole('region', { name: 'Jalons', exact: true })
+  await beacon.waitFor()
+  const beaconBox = await beacon.boundingBox()
+  assert.ok(beaconBox.y > inboxBox.y + inboxBox.height && beaconBox.y + beaconBox.height < actionsBlock.y, 'Le phare est entre « Ce qui t’attend » et la grille')
+  await beacon.getByText('Jalon en cours', { exact: true }).waitFor()
+  assert.equal(
+    await beacon.getByRole('link', { name: milestone.title, exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline/${milestone.number}`,
+    'Le titre du jalon mène à sa page',
+  )
+  await beacon.getByRole('img', { name: /^\d+ cartes faites sur 3$/ }).waitFor()
+  await beacon.getByText(`#${milestone.number} · échéance dans 9 jours`, { exact: true }).waitFor()
+  await beacon.getByText(/^1 vague · 3 cartes à la fois au plus$|^\d vagues · 3 cartes à la fois au plus$/).waitFor()
+  await beacon.getByText(/^Vague 1 ?· \d\/\d/).first().waitFor()
+  // Une pastille par enfant non abandonnée, nommée au survol, qui mène à sa carte.
+  assert.equal(await beacon.getByRole('link', { name: /^#\d+ .+ — / }).count(), 3, 'Une pastille par carte du jalon')
+  for (const queue of ['Ensuite · 0', 'Plus tard · 0']) {
+    await beacon.getByRole('heading', { name: queue, exact: true }).waitFor()
+  }
+  assert.equal(await beacon.getByText('Rien pour l’instant.', { exact: true }).count(), 2)
+  assert.equal(
+    await beacon.getByRole('link', { name: 'Tous les jalons · 1 livré', exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline`,
+  )
+  /* Le geste suivant : le repère « N t'attend » quand une demande du jalon est dans la
+     liste — il la déplie là-haut sans la redire (A-3.8) —, sinon un bouton vers le jalon. */
+  const mark = beacon.getByRole('button', { name: /^\d+ t’attend(ent)?$/ })
+  if (await mark.count()) {
+    await beacon.getByText('Le jalon reprend dès ta réponse.', { exact: true }).waitFor()
+    await mark.click()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).waitFor()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).click()
+  } else {
+    await beacon.getByRole('button', { name: /./ }).first().click()
+    await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
+    await page.goBack()
+    await beacon.waitFor()
+  }
+  /* La file : un jalon prêt part dans « Ensuite », une idée dans « Plus tard » (A-3.9).
+     Posés ici et retirés après le téléphone, pour ne rien changer aux vues suivantes. */
+  const createCard = async (data) => (await context.request.post(`${base}/api/projects/${nimbus.id}/cards`, { data })).json()
+  const readyMilestone = await createCard({ title: 'Accès distant fiable', milestone: true })
+  const readyChild = await createCard({ title: 'Adresse de secours', parentId: readyMilestone.id })
+  const idea = await createCard({ title: 'Mode hors ligne complet', milestone: true })
+  await page.reload()
+  await beacon.getByRole('heading', { name: 'Ensuite · 1', exact: true }).waitFor()
+  await beacon.getByRole('heading', { name: 'Plus tard · 1', exact: true }).waitFor()
+  const queued = (title) => beacon.getByRole('link').filter({ hasText: title })
+  assert.equal(await queued('Accès distant fiable').getAttribute('href'), `/p/${nimbus.id}/timeline/${readyMilestone.number}`)
+  await queued('Accès distant fiable').getByText('Prêt', { exact: true }).waitFor()
+  await queued('Mode hors ligne complet').getByText('Idée', { exact: true }).waitFor()
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare.png') })
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
+  await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions.png') })
+  await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements.png') })
+
+  // Au téléphone, une seule colonne : la pile passe sous la place du code (A-7).
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForTimeout(300)
+  const [narrowInbox, narrowActions, narrowEvents] = await Promise.all([inbox.boundingBox(), actions.boundingBox(), events.boundingBox()])
+  assert.ok(
+    Math.abs(narrowActions.x - narrowInbox.x) <= 1 && Math.abs(narrowEvents.x - narrowInbox.x) <= 1,
+    'Au téléphone, les blocs sont empilés sur la gouttière',
+  )
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
+  const narrowBeacon = await beacon.boundingBox()
+  assert.ok(Math.abs(narrowBeacon.x - narrowInbox.x) <= 1, 'Au téléphone, le phare est sur la gouttière')
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare-mobile.png') })
+  for (const card of [readyChild, readyMilestone, idea]) {
+    assert.ok((await context.request.delete(`${base}/api/cards/${card.id}`)).ok())
+  }
+  // La liste des cartes en cache les porte encore : la page la relit.
+  await page.reload()
+  await beacon.waitFor()
+  await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions-mobile.png') })
+  await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.unroute('**/api/actions')
+
+  // ─── Code en cours : le graphe des branches et ses gestes (A-4) ──────────
+  /*
+    Le dépôt de Nimbus est celui du jeu d'essai, dans le dossier temporaire de la suite :
+    les gestes y agissent pour de vrai (rebase, nettoyage), jamais sur un dépôt réel. Il
+    a reçu un commit sur main et un arbre vide créé au shell : sans session, celui-ci est
+    compté à nettoyer, pas montré. La forge n'existe pas ici : une PR prête est servie
+    pour une branche, et sa fusion interceptée.
+  */
+  const statuses = await (await context.request.get(`${base}/api/projects/${nimbus.id}/worktrees/status`)).json()
+  const quietTree = statuses.worktrees.find((tree) => tree.branch === 'feat/radar-prefetch')
+  assert.ok(quietTree && quietTree.behind > 0, `feat/radar-prefetch a pris du retard : ${JSON.stringify(quietTree)}`)
+  const prUrl = 'https://github.com/o/nimbus/pull/42'
+  await page.route(`**/api/projects/${nimbus.id}/pull-requests`, (route) => route.fulfill({
+    json: {
+      available: true, fetchedAt: Date.now(),
+      pullRequests: [{ number: 42, url: prUrl, title: 'Radar prefetch', branch: 'feat/radar-prefetch', base: 'main', state: 'ready', checks: { passed: 3, pending: 0, failed: [] }, review: null, updatedAt: Date.now() }],
+    },
+  }))
+  const merged = []
+  await page.route('**/api/projects/*/pull-requests/*/merge', (route) => {
+    merged.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ json: { number: 42, url: prUrl, branch: 'feat/radar-prefetch', base: 'main' } })
+  })
+
+  await page.goto(`${base}/p/${nimbus.id}`)
+  const code = page.getByRole('region', { name: 'Code en cours', exact: true })
+  await code.waitFor()
+  const lineButtons = code.locator('[data-line] button[aria-expanded]')
+  await code.locator('[data-line]').filter({ hasText: 'feat/radar-prefetch' }).waitFor()
+  const lineNames = await lineButtons.allInnerTexts()
+  // A-4.5 et A-4.6 : la racine en tête ; l'arbre vide et sans session n'est que compté.
+  assert.equal(lineNames[0], nimbus.git.branch, `La racine en tête : ${lineNames}`)
+  assert.ok(lineNames.includes('feat/offline-cache') && lineNames.includes('feat/radar-prefetch'), `Les arbres vivants : ${lineNames}`)
+  assert.ok(!lineNames.includes('feat/deja-fini'), 'Un arbre vide sans session est compté, pas montré')
+  // A-4.2, A-4.4 : lignes de 56 px, colonnes fixes, en grand écran dans la moitié gauche.
+  const lineOfCode = (branch) => code.locator('[data-line]').filter({ has: page.getByRole('button', { name: branch, exact: true }) })
+  const radar = lineOfCode('feat/radar-prefetch')
+  assert.equal(Math.round((await radar.boundingBox()).height), 56)
+  assert.ok((await code.boundingBox()).x + (await code.boundingBox()).width < (await actions.boundingBox()).x, 'Le code est à gauche de la pile')
+  await radar.getByText('prête à fusionner', { exact: true }).waitFor()
+  await radar.getByText(/^#42$/).waitFor()
+  await radar.getByText(new RegExp(`↓${quietTree.behind}`)).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code.png') })
+
+  // A-4.7 : un clic n'importe où sur la ligne la déplie ; une ligne à la fois.
+  const radarToggle = radar.getByRole('button', { name: 'feat/radar-prefetch', exact: true })
+  const radarBox = await radar.boundingBox()
+  await page.mouse.click(radarBox.x + radarBox.width * 0.6, radarBox.y + 8)
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'true', 'Un clic sur la ligne la déplie')
+  const radarGestures = page.locator(`[id="${await radarToggle.getAttribute('aria-controls')}"]`)
+  for (const label of ['Voir le diff', 'Fusionner la PR #42', `Rebaser sur main (↓${quietTree.behind})`, 'Nettoyer l’arbre']) {
+    await radarGestures.getByRole('button', { name: new RegExp(`^${label.replace(/[()]/g, '\\$&')}`) }).waitFor()
+  }
+  await radarGestures.getByText(/PR #42 · prête/).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-gestes.png') })
+  const offlineToggle = lineOfCode('feat/offline-cache').getByRole('button', { name: 'feat/offline-cache', exact: true })
+  await offlineToggle.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'true', 'Entrée déplie une ligne')
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'false', 'Une seule ligne dépliée à la fois')
+  await page.keyboard.press(' ')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'false', 'Espace la replie')
+
+  // Fusionner la PR : une confirmation, puis la vraie route de fusion.
+  await radarToggle.click()
+  await radarGestures.getByRole('button', { name: 'Fusionner la PR #42' }).click()
+  const mergeDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await mergeDialog.getByText('Fusionner la PR #42 ?').waitFor()
+  await mergeDialog.getByRole('button', { name: 'Fusionner', exact: true }).click()
+  await code.getByText('PR #42 fusionnée.').waitFor()
+  assert.deepEqual(merged, [`/api/projects/${nimbus.id}/pull-requests/42/merge`])
+  await page.unroute('**/api/projects/*/pull-requests/*/merge')
+
+  // Nettoyer : le dialogue avec le plan réel ; on ne nettoie pas, on regarde.
+  await radarGestures.getByRole('button', { name: 'Nettoyer l’arbre' }).click()
+  const cleanDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await cleanDialog.getByText(/feat\/radar-prefetch/).first().waitFor()
+  await cleanDialog.getByText(/Supprimer la branche|branche/).first().waitFor()
+  await page.keyboard.press('Escape')
+  await cleanDialog.waitFor({ state: 'detached' })
+
+  // Rebaser : sans session vivante, l'arbre est rebasé sur place, dans le dépôt d'essai.
+  if ((await radarToggle.getAttribute('aria-expanded')) !== 'true') await radarToggle.click()
+  await radarGestures.getByRole('button', { name: /^Rebaser sur main/ }).click()
+  await code.getByText(/feat\/radar-prefetch rebasée sur main\.|Rebase demandé à sa session\./).waitFor()
+  await code.getByText('feat/radar-prefetch rebasée sur main.', { exact: true }).waitFor()
+  // Dans le dépôt lui-même : le cache de l'état des arbres n'a pas à être cru sur parole.
+  assert.equal(String(gitIn(nimbus.workspacePath, 'rev-list', '--count', 'feat/radar-prefetch..main')).trim(), '0', 'Le rebase a été fait pour de vrai')
+
+  // « + 1 arbre fusionné à nettoyer » mène à Travail, Par arbre, filtré « À nettoyer ».
+  const settledLink = code.getByRole('link', { name: /^\+ \d+ arbres? fusionnés? à nettoyer$/ })
+  assert.match(await settledLink.getAttribute('href'), new RegExp(`/p/${nimbus.id}/travail\\?vue=couloirs&etat=cleanup$`))
+  await settledLink.click()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).waitFor()
+  await page.unroute(`**/api/projects/${nimbus.id}/pull-requests`)
+  // Le filtre imposé est retenu comme un autre : on le retire pour la suite.
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+
+  // Voir le diff : la racine ouvre le panneau git sur place, ou dans sa session.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await code.waitFor()
+  const rootToggle = lineButtons.first()
+  await rootToggle.click()
+  const rootGestures = page.locator(`[id="${await rootToggle.getAttribute('aria-controls')}"]`)
+  assert.equal(await rootGestures.getByRole('button', { name: /^Rebaser/ }).count(), 0, 'On ne rebase pas la racine')
+  assert.equal(await rootGestures.getByRole('button', { name: /Nettoyer/ }).count(), 0, 'On ne nettoie pas la racine')
+  await rootGestures.getByRole('button', { name: /^Voir le diff/ }).click()
+  await page.getByRole('tab', { name: 'Git', selected: true }).or(page.getByRole('button', { name: 'Git', pressed: true })).first().waitFor()
+
+  // Au téléphone : le graphe, le texte et le `⋯` ; la dérive passe au pied d'une ligne dépliée.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await code.waitFor()
+  await page.waitForTimeout(300)
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Le graphe ne déborde pas à 390 px')
+  assert.equal(
+    await lineOfCode('feat/offline-cache').evaluate((line) => [...line.children].filter((cell) => cell.getBoundingClientRect().width > 0).length),
+    3,
+    'Au téléphone, trois cases : le graphe, le texte, le ⋯',
+  )
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  /*
+    Les Jalons (#190) : le jalon du jeu d'essai est sur l'horizon, rangé à son étape, et
+    son nom mène à sa page. Le détail se vérifie dans `milestones-ui-check.mjs`.
   */
   await row.getByRole('link', { name: /^Jalons/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  const unplaced = cards.filter(
-    (entry) => entry.parent === null && entry.dueAt === null
-      && entry.column !== 'done' && entry.column !== 'abandoned',
-  )
-  if (unplaced.length > 0) {
-    await page.getByText(new RegExp(`${unplaced.length} cartes sans jalon ni date`)).waitFor()
-  }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'chronologie-projet.png') })
+  const milestoneLink = page.getByRole('link', { name: new RegExp(milestone.title) }).first()
+  await milestoneLink.waitFor()
+  assert.equal(await milestoneLink.getAttribute('href'), `/p/${nimbus.id}/timeline/${milestone.number}`)
+  await page.getByRole('list', { name: 'Jalons par étape', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'jalons-projet.png') })
 
-  await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByRole('navigation', { name: 'Vues du projet', exact: true }).waitFor()
-
-  // La planification du projet suit en lignes.
   const schedules = await (await context.request.get(`${base}/api/schedules`)).json()
-  const task = schedules.find((entry) => entry.projectId === nimbus.id)
-  if (task) await page.getByRole('link', { name: new RegExp(task.name) }).first().waitFor()
 
-  // Un projet calme ne montre pas un bandeau vide, il le dit.
+  // Un projet calme ne montre pas un bandeau vide, il le dit ; ses actions aussi.
   await page.goto(`${base}/p/${docs.id}`)
   await page.getByText('Rien ne t’attend.', { exact: true }).waitFor()
+  const calm = page.getByRole('region', { name: 'Actions', exact: true })
+  await calm.getByText(/^(Aucune action dans ce projet\.|Rien ne tourne\.)$/).waitFor()
+  assert.equal(
+    await calm.getByRole('link', { name: 'L’onglet Actions', exact: true }).getAttribute('href'),
+    `/p/${docs.id}/actions`,
+  )
 
   // ─── Le portefeuille : Projets, Board global, Activité ─────────────────────
   await page.goto(`${base}/projects`)
@@ -433,16 +692,8 @@ try {
     dans git, un audit versé sur le disque — et rien dans le code ne garantit qu'elles
     arrivent bien jusqu'à la page.
   */
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  const filters = page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true })
-  await filters.waitFor()
-  // Les filtres sont des pilules, **pas** une seconde rangée d'onglets : il n'y a
-  // qu'une navigation dans la page, celle des vues.
-  assert.equal(
-    await page.getByRole('navigation').filter({ hasText: 'Tout' }).count(),
-    0,
-    'Les filtres du journal ne sont pas une seconde rangée d’onglets',
-  )
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   // Pas de ligne « Décision » : `card_notes.body` est libre, la carte #32 a refusé le type.
   for (const absent of ['Décision', 'Décisions']) {
     assert.equal(
@@ -454,17 +705,7 @@ try {
   // Les deux sources hors base sont là, donc la route a bien lu git et le disque.
   await page.getByText('feat/city-search', { exact: true }).waitFor()
   await page.getByText(/docs\/audits\/.*offline-cache/).waitFor()
-  await page.getByText(/^Aujourd.hui$/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
-
-  // Une pilule filtre vraiment : *Dépôt* ne garde que la fusion et l'audit.
-  await filters.getByRole('radio', { name: 'Dépôt', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('li').length > 0)
-  assert.equal(
-    await page.getByText('Session', { exact: true }).count(),
-    0,
-    'Le filtre « Dépôt » ne garde que ce qui se lit dans le dossier du projet',
-  )
 
   // Le même journal au portefeuille, où chaque ligne porte la pastille de son projet.
   await page.goto(`${base}/projects/journal`)
@@ -495,27 +736,27 @@ try {
   // ─── Au doigt ─────────────────────────────────────────────────────────────
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByText('Jalon courant', { exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Derniers événements', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-mobile.png') })
   await page.goto(`${base}/projects`)
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
   // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-mobile.png') })
 
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${base}/p/${nimbus.id}`)
-  await page.getByText('Jalon courant', { exact: true }).waitFor()
+  await page.getByRole('region', { name: 'Derniers événements', exact: true }).waitFor()
   // Le thème se pose après la navigation : `goto` recharge le document et emporterait
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 

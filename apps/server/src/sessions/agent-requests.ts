@@ -38,6 +38,8 @@ import {
   createProjectActionBodySchema,
   updateProjectActionBodySchema,
   agentKindSchema,
+  appendSubtasks,
+  CARD_CLOSED_COLUMNS,
   cardColumnSchema,
   formatSessionMessage,
   parseAgentConfig,
@@ -50,6 +52,7 @@ import {
   type CardColumn,
   type SoleraEvent,
   type WorktreeState,
+  type ActionSchedulePatch,
   type ProjectActionRunResult,
   allowsRequest,
   type AgentRequestPolicy,
@@ -59,6 +62,7 @@ import {
   createAction,
   deleteAction,
   loadAction,
+  readActionCadence,
   updateAction,
   type ActionRunner,
 } from '../actions/actions.js'
@@ -72,7 +76,7 @@ import { resolveParent, setToClarify } from '../cards/tree.js'
 import { createConversation } from '../conversations/create.js'
 import { EnvironmentUnavailableError } from '../environments/provider.js'
 import { inheritedConfig } from '../conversations/config-inheritance.js'
-import { acceptCardFiling, acceptDraft, acceptFiling, type AcceptDeps } from './request-accept.js'
+import { acceptCardFiling, acceptDraft, acceptFiling, changesBesidesSubtasks, type AcceptDeps } from './request-accept.js'
 import { adoptSessionTitle } from '../conversations/title.js'
 import { moveConversation, planSessionCarry } from '../conversations/move.js'
 import { conversationVisibleTo, inProject } from '../conversations/scope.js'
@@ -90,7 +94,10 @@ import {
   cardByNumber,
   cardNumbers,
   createCardFor,
+  DESCRIPTION_MAX,
   editOwnSubtasks,
+  labelList,
+  subtaskLabels,
   promoteOwnSubtask,
   linkOwnConversation,
   parseDueDay,
@@ -229,6 +236,7 @@ function describeCardChange(line: Extract<SoleraEvent, { type: 'card_filing.requ
     line.dueAt ? `échéance ${day(line.dueAt.to)}` : null,
     line.blocks ? `bloque ${line.blocks.map((card) => `#${card.number}`).join(', ')}` : null,
     line.unblocks ? `ne bloque plus ${line.unblocks.map((card) => `#${card.number}`).join(', ')}` : null,
+    line.addSubtasks ? `ajouter ${line.addSubtasks.length} sous-tâche${line.addSubtasks.length > 1 ? 's' : ''}` : null,
   ]
     .filter((part) => part !== null)
     .join(', ')
@@ -2092,8 +2100,34 @@ export class AgentRequests {
       if (blocks.length > 0) line.blocks = blocks.map(ref)
       if (unblocks.length > 0) line.unblocks = unblocks.map(ref)
 
-      if (!line.toColumn && !line.close && !line.parent && !line.dueAt && !line.blocks && !line.unblocks) {
-        throw new Refusal(`Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\` ou \`unblocks\`.`)
+      // L'ajout au jalon rangé dans une carte qui existe (#185). Une proposition et non
+      // `edit_subtasks` : la carte est celle d'une autre session, et sa description
+      // engage le travail d'une personne.
+      const add = labelList(change.add_subtasks, 'add_subtasks')
+      if (add.length > 0) {
+        const existing = subtaskLabels(card.description)
+        const known = add.find((label) => existing.has(label))
+        if (known) throw new Refusal(`« ${known} » est déjà une sous-tâche de #${number}. Retire-la de \`add_subtasks\`.`)
+        const twice = add.find((label, index) => add.indexOf(label) !== index)
+        if (twice) throw new Refusal(`« ${twice} » apparaît deux fois dans \`add_subtasks\` de #${number}.`)
+        // Un pas de plus sur un travail déclaré fini ne se fera pas : rouvrir la carte
+        // est le choix d'une personne, et il se propose dans la même ligne.
+        const reopened = line.toColumn !== undefined && !CARD_CLOSED_COLUMNS.includes(line.toColumn)
+        if (CARD_CLOSED_COLUMNS.includes(card.column) && !reopened) {
+          throw new Refusal(
+            `#${number} est en « ${COLUMN_WORDS[card.column]} » : propose de la rouvrir avec \`column\` dans la même ligne, ou range l'ajout dans une autre carte.`,
+          )
+        }
+        if (appendSubtasks(card.description, add).length > DESCRIPTION_MAX) {
+          throw new Refusal(`La description de #${number} dépasserait 20 000 caractères. Propose plutôt une nouvelle carte avec propose_cards.`)
+        }
+        line.addSubtasks = add
+      }
+
+      if (!changesBesidesSubtasks(line) && !line.addSubtasks) {
+        throw new Refusal(
+          `Rien à changer pour #${number} : donne \`column\`, \`close\`, \`parent\`, \`due\`, \`blocks\`, \`unblocks\` ou \`add_subtasks\`.`,
+        )
       }
       proposed.push(line)
     }
@@ -2351,26 +2385,46 @@ export class AgentRequests {
   /**
    * Créée ou modifiée en `proposed` : l'utilisateur relit la commande avant que son
    * premier clic la lance. Renommer ou redécrire un bouton relu ne change pas son statut.
+   *
+   * Une cadence se relit comme une commande : planifiée, elle partirait sans clic. Les
+   * bornes d'une cadence d'agent sont celles de `schedule_task`.
    */
   private registerAction(requester: ConversationRow, project: ProjectRow, payload: Record<string, unknown>): string {
-    const fields = Object.fromEntries(
+    const updating = payload.id !== undefined && payload.id !== null && payload.id !== ''
+    const fields: Record<string, unknown> = Object.fromEntries(
       ['label', 'description', 'kind', 'command', 'subdir', 'url']
         .filter((key) => payload[key] !== undefined && payload[key] !== null)
         .map((key) => [key, payload[key]]),
     )
-    if (payload.id !== undefined && payload.id !== null && payload.id !== '') {
+    if (payload.schedule !== undefined && payload.schedule !== null) {
+      // Les mêmes refus que schedule_task : une commande planifiée tourne hors de la
+      // session, et un tir qui en planifie d'autres se multiplierait.
+      if (this.confined(requester)) {
+        throw new Refusal('Refusé : cette session est confinée, et une commande planifiée tournerait hors de son confinement. Propose-la à l’utilisateur.')
+      }
+      if (requester.scheduleId) {
+        throw new Refusal("Refusé : cette session est elle-même un tir planifié. Ouvre plutôt une carte avec create_card.")
+      }
+    }
+    if (payload.schedule !== undefined) fields.schedule = parseActionSchedule(payload.schedule, !updating)
+    if (payload.on_demand !== undefined && payload.on_demand !== null) fields.onDemand = payload.on_demand
+    const when = (row: { cadence: string | null; onDemand: boolean; scheduleEnabled: boolean; nextRunAt: number | null }) =>
+      row.cadence === null
+        ? ''
+        : ` Planifiée (${describeCadence(readActionCadence(row.cadence)!)})${row.scheduleEnabled ? `, prochain tir ${row.nextRunAt ? new Date(row.nextRunAt).toLocaleString('fr-FR') : 'aucun'} (heure du serveur)` : ', en pause'}${row.onDemand ? '' : ', sans bouton'} : chaque tir part sans clic, sans terminal, à la racine du projet (et dans son sous-dossier).`
+    if (updating) {
       const row = this.projectAction(requester, payload.id)
       const parsed = updateProjectActionBodySchema.safeParse(fields)
       if (!parsed.success) throw new Refusal(describeZod(parsed.error))
       const next = updateAction(this.ctx.db, row, parsed.data, requester.id)
       return next.approvedAt
-        ? `Action « ${next.label} » mise à jour ; elle reste validée.`
-        : `Action « ${next.label} » mise à jour. Sa commande a changé : l'utilisateur doit la valider avant de la lancer d'un clic.`
+        ? `Action « ${next.label} » mise à jour ; elle reste validée.${when(next)}`
+        : `Action « ${next.label} » mise à jour. Ce qu'elle exécute a changé : l'utilisateur doit la valider avant qu'elle parte d'un clic ou à sa cadence.${when(next)}`
     }
     const parsed = createProjectActionBodySchema.safeParse(fields)
     if (!parsed.success) throw new Refusal(describeZod(parsed.error))
     const row = createAction(this.ctx.db, project.id, parsed.data, requester.id)
-    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.`
+    return `Action « ${row.label} » (${row.kind}, id ${row.id}) proposée. Elle apparaît dans l'onglet Actions du panneau ; l'utilisateur la valide avant son premier lancement.${when(row)}`
   }
 
   private async removeAction(requester: ConversationRow, payload: Record<string, unknown>): Promise<string> {
@@ -2398,6 +2452,9 @@ export class AgentRequests {
       throw new Refusal("`args` n'est pas accepté : run_action lance la commande de l'action telle quelle. Pour une variante, exécute-la dans ton shell.")
     }
     const row = this.projectAction(requester, payload.id)
+    if (!row.onDemand) {
+      throw new Refusal(`« ${row.label} » est une commande planifiée, pas à la demande : elle ne part qu'à sa cadence. Pour la jouer maintenant, exécute sa commande dans ton shell.`)
+    }
     const result = await this.actions.run(row, resolveConversationCwd(this.ctx.db, requester) ?? project.workspacePath, requester.id, {
       trigger: 'agent',
     })
@@ -2497,6 +2554,44 @@ function parseAgentCadence(payload: Record<string, unknown>): ScheduleCadence | 
     }
   }
   return cadence
+}
+
+/**
+ * Le `schedule` de `register_action` : une cadence comme celle de `schedule_task`, une
+ * durée maximale, une pause. Null retire la planification. En modification, une pause
+ * seule (`enabled`) garde la cadence.
+ */
+function parseActionSchedule(raw: unknown, requireCadence: boolean): ActionSchedulePatch | null {
+  if (raw === null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Refusal('`schedule` est un objet : `every_minutes`, `cron` ou `at`, et au besoin `max_duration_minutes` et `enabled`. Null retire la planification.')
+  }
+  const given = raw as Record<string, unknown>
+  const schedule: ActionSchedulePatch = {}
+  // Sans cadence, une tâche d'agent ne part qu'à la demande ; une commande planifiée en
+  // a besoin d'une, sauf pour une pause seule en modification.
+  const cadence = parseAgentCadence(given)
+  if (cadence) schedule.cadence = cadence
+  else if (requireCadence) {
+    throw new Refusal('`schedule` demande une cadence : `every_minutes`, `cron` ou `at`.')
+  }
+  const maxDuration = given.max_duration_minutes
+  if (maxDuration !== undefined && maxDuration !== null) {
+    if (
+      typeof maxDuration !== 'number' ||
+      !Number.isInteger(maxDuration) ||
+      maxDuration < MIN_SCHEDULE_DURATION_MINUTES ||
+      maxDuration > MAX_SCHEDULE_DURATION_MINUTES
+    ) {
+      throw new Refusal(`\`max_duration_minutes\` est un entier entre ${MIN_SCHEDULE_DURATION_MINUTES} et ${MAX_SCHEDULE_DURATION_MINUTES}.`)
+    }
+    schedule.maxDurationMinutes = maxDuration
+  }
+  if (given.enabled !== undefined && given.enabled !== null) {
+    if (typeof given.enabled !== 'boolean') throw new Refusal('`schedule.enabled` vaut true ou false.')
+    schedule.enabled = given.enabled
+  }
+  return schedule
 }
 
 function describeCadence(cadence: ScheduleCadence): string {

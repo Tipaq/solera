@@ -34,7 +34,7 @@ import { Refusal } from './refusal.js'
 
 /** Bornes d'accord avec `packages/protocol/src/cards.ts` et la route du board. */
 const TITLE_MAX = 200
-const DESCRIPTION_MAX = 20_000
+export const DESCRIPTION_MAX = 20_000
 /** Un ajout est un paragraphe, pas un rapport : au-delà, une note ou un fichier. */
 export const MAX_PRECISION_CHARS = 4000
 /** Une sous-tâche est un petit pas ; au-delà de quelques dizaines, c'est des cartes. */
@@ -84,7 +84,18 @@ function noteFrom(db: Db | Tx, cardId: string, conversationId: string, body: str
   db.insert(cardNotes).values({ id: randomUUID(), cardId, conversationId, userId: null, body, createdAt: at }).run()
 }
 
-function labelList(value: unknown, field: string): string[] {
+/** La note qu'un ajout de sous-tâches laisse sur la carte, par un agent ou par un clic. */
+export function subtasksAddedNote(labels: readonly string[]): string {
+  return `Sous-tâches ajoutées : ${labels.map((label) => `« ${label} »`).join(', ')}.`
+}
+
+/** Les libellés des sous-tâches qu'une description porte déjà. */
+export function subtaskLabels(description: string): Set<string> {
+  return new Set(parseSubtasks(description).map((subtask) => subtask.label))
+}
+
+/** Des libellés de sous-tâches, nettoyés et bornés ; les vides sont retirés. */
+export function labelList(value: unknown, field: string): string[] {
   if (value === undefined) return []
   if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
     throw new Refusal(`Le paramètre \`${field}\` est une liste de libellés.`)
@@ -275,7 +286,7 @@ export function editOwnSubtasks(
 
   // Cocher se voit dans la barre d'avancement de la carte, et une note par case
   // noierait le fil ; ajouter change le travail décrit, et se dit.
-  const note = add.length > 0 ? `Sous-tâches ajoutées : ${add.map((label) => `« ${label} »`).join(', ')}.` : null
+  const note = add.length > 0 ? subtasksAddedNote(add) : null
   rewriteDescription(db, card, description, note, requester.id)
   syncCardReferences(db, card, description)
   const parts = [...changed, ...(add.length > 0 ? [`${add.length} ajoutée(s)`] : [])]

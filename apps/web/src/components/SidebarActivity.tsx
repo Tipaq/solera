@@ -121,7 +121,9 @@ export function SidebarActivity({
 
   return (
     <>
-      <div ref={setBlock} className="shrink-0 border-b border-line px-2 py-1.5" role="group" aria-label={t('shell.activity.label')}>
+      {/* `data-sidebar-activity` : la colonne la mesure pour décider de la replier en une
+          ligne quand les sessions manquent de place (« Ajuster à la hauteur »). */}
+      <div ref={setBlock} data-sidebar-activity className="shrink-0 border-b border-line px-2 py-1.5" role="group" aria-label={t('shell.activity.label')}>
         {/* L'en-tête porte les compteurs et le « ↗ » vers la modale. Un seul bouton :
             trois cibles voisines pour une seule destination ne font qu'un piège au doigt. */}
         <button

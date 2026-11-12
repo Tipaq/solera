@@ -1,0 +1,19 @@
+[?25l
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90m/home/alex/nimbus[39m
+
+[?2026h
+[1m[33m ❯ [39m[22msrc/ok.test.ts[2m [queued][22m
+
+[2m Test Files [22m[1m[32m0 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m[1m[32m0 passed[39m[22m[90m (0)[39m
+[2m   Start at [22m00:17:23
+[2m   Duration [22m100ms
+[?2026l[K [32m✓[39m src/ok.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 1[2mms[22m[39m
+   [32m✓[39m marche[32m 1[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m   Start at [22m 00:17:23
+[2m   Duration [22m 172ms[2m (transform 30ms, setup 0ms, collect 23ms, tests 1ms, environment 0ms, prepare 45ms)[22m
+
+[?25h⠙[1G[0K

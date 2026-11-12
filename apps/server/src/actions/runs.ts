@@ -23,17 +23,20 @@ export interface RunStart {
   projectId: string
   trigger: ActionRunTrigger
   conversationId: string | null
-  terminalId: string
+  /** Null pour un tir planifié, joué sans terminal. */
+  terminalId: string | null
   cwd: string
+  /** L'instant du lancement ; celui du balayage pour un tir planifié. */
+  startedAt?: number
 }
 
 /** Le plus récent d'abord ; deux lancements de la même milliseconde, dans l'ordre d'écriture. */
 const newestFirst = [desc(actionRuns.startedAt), sql`${actionRuns}.rowid desc`]
 
-export function startRun(db: Db, start: RunStart): string {
+export function startRun(db: Db, { startedAt = Date.now(), ...start }: RunStart): string {
   const id = randomUUID()
   db.insert(actionRuns)
-    .values({ id, ...start, status: 'running', exitCode: null, startedAt: Date.now(), finishedAt: null, excerpt: null })
+    .values({ id, ...start, status: 'running', exitCode: null, startedAt, finishedAt: null, excerpt: null })
     .run()
   // Une action lancée cent fois par jour ne doit pas faire grossir la base sans fin.
   const kept = db
@@ -61,8 +64,29 @@ export function finishRun(db: Db, runId: string, end: { exitCode: number; finish
 }
 
 /**
+ * La fin d'un tir planifié : son code de sortie, ou l'échec sans code de celui qu'on a
+ * coupé à sa durée maximale, ou qui n'a pas pu partir.
+ */
+export function finishDetachedRun(
+  db: Db,
+  runId: string,
+  end: { exitCode: number | null; finishedAt: number; output: string },
+): void {
+  db.update(actionRuns)
+    .set({
+      status: end.exitCode === null ? 'failed' : actionRunStatusOf(end.exitCode),
+      exitCode: end.exitCode,
+      finishedAt: end.finishedAt,
+      excerpt: runExcerpt(end.output),
+    })
+    .where(and(eq(actionRuns.id, runId), eq(actionRuns.status, 'running')))
+    .run()
+}
+
+/**
  * Au démarrage : un passage encore « en cours » dont le terminal ne tourne plus a été
- * emporté par l'arrêt du daemon. Sans date de fin, comme son terminal interrompu.
+ * emporté par l'arrêt du daemon. Sans date de fin, comme son terminal interrompu. Un
+ * tir planifié, sans terminal, a perdu avec le daemon celui qui lisait sa sortie.
  */
 export function closeOrphanRuns(db: Db, liveTerminalIds: string[]): void {
   db.update(actionRuns)
