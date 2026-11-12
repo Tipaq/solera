@@ -22,7 +22,7 @@ import { openSettings } from '../lib/settings-dialog'
  * Travail et Actions n'ont pas encore leur vue du portefeuille (#238, #241) : leurs
  * onglets sont masqués jusque-là, plutôt que de mener hors de la coque. Le compte ambre
  * de Travail (`usePortfolioAskingCount`) revient avec eux ; d'ici là, « Ce qui t'attend »
- * de l'Aperçu dit la même chose. Tableau et Jalons mènent aux vues actuelles.
+ * de l'Aperçu dit la même chose. Tableau mène à la vue actuelle ; Jalons a la sienne (#240).
  */
 export function PortfolioLayout() {
   const navigate = useNavigate()
