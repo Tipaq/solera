@@ -12,7 +12,7 @@ import {
   type AgentRequestRow,
   type Db,
 } from '@solera/db'
-import { appendSubtasks, type CardCloseOutcome, type CardColumn, type CardDraft } from '@solera/protocol'
+import { appendSubtasks, changesBesidesSubtasks, type CardCloseOutcome, type CardColumn, type CardDraft } from '@solera/protocol'
 import { addCardBlock, removeCardBlock } from '../cards/blocks.js'
 import { isCloseTarget, type CardClosure } from '../cards/close.js'
 import { syncCardReferences } from '../cards/create.js'
@@ -130,15 +130,6 @@ export interface ProposedCardChange {
   blocks?: { cardId: string }[]
   unblocks?: { cardId: string }[]
   addSubtasks?: string[]
-}
-
-/**
- * La ligne change-t-elle autre chose que les sous-tâches ? Au dépôt, une ligne sans aucun
- * changement est refusée ; au clic, une ligne dont les sous-tâches sont toutes déjà là n'a
- * plus rien à faire si elle ne portait que ça.
- */
-export function changesBesidesSubtasks(line: Omit<ProposedCardChange, 'cardId' | 'number' | 'fromColumn'>): boolean {
-  return Boolean(line.toColumn || line.close || line.parent || line.dueAt || line.blocks || line.unblocks)
 }
 
 export type CardFilingAcceptance =

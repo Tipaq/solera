@@ -1,10 +1,13 @@
-import { Search } from 'lucide-react'
 import { useMemo } from 'react'
 import type { ConversationDto, ProjectDto } from '@solera/protocol'
+import { useOpenConversationId } from '../../lib/conversation-route'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
+import { cutToBudget } from '../../lib/sidebar-budget'
+import { AllSessionsLine } from './AllSessionsLine'
 import { ConversationLine } from './ConversationLine'
+import { useSessionBudget } from './fit-budget'
 
-/** Au-delà, c'est la palette qui cherche : la colonne liste le récent, pas le tout. */
+/** Au plus, quel que soit le réglage : la colonne liste le récent, `/sessions` le tout. */
 const SHOWN = 40
 
 const DAY = 86_400_000
@@ -35,16 +38,19 @@ function startOfToday(): number {
  * Pas de groupes par projet — ce serait redire le lieu *Projets* juste à côté, et un
  * fil aurait deux domiciles. Ici il n'en a qu'un : sa date.
  */
-export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: {
+export function PlaceThreads({ conversations, projects, onNavigate }: {
   conversations: ConversationDto[]
   projects: ProjectDto[]
   onNavigate: () => void
-  onSearch: () => void
 }) {
   const t = useTranslate()
+  // Le réglage « Sessions dans la sidebar » coupe l'historique ; l'ouverte et celles qui
+  // t'attendent restent.
+  const budget = Math.min(SHOWN, useSessionBudget())
+  const openId = useOpenConversationId()
   const groups = useMemo(() => {
     const midnight = startOfToday()
-    const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, SHOWN)
+    const sorted = cutToBudget([...conversations].sort((a, b) => b.updatedAt - a.updatedAt), budget, openId)
     /*
       Les épinglées sortent des tranches et prennent la tête, comme la section *Pinned*
       de ChatGPT et les *Favoris* de Claude : une conversation qu'on épingle doit se
@@ -64,16 +70,20 @@ export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: 
     })
     return [{ key: 'shell.threads.pinned' as MessageKey, entries: pinned }, ...buckets]
       .filter((group) => group.entries.length > 0)
-  }, [conversations])
+  }, [conversations, budget, openId])
+  const shown = groups.reduce((sum, group) => sum + group.entries.length, 0)
+  const cut = shown < conversations.length
 
   return (
     <div className="px-2 pb-4">
-      {groups.map((group) => (
+      {groups.map((group, index) => (
         <section key={group.key}>
           <h2 className="px-2.5 pt-2 pb-1 text-meta font-semibold uppercase tracking-wider text-ink-faint">
             {t(group.key)}
           </h2>
-          <ul>
+          {/* Une seule coupe pour toutes les tranches, portée par la dernière : la mesure
+              partage la place entre les listes coupées, et l'historique n'en est qu'une. */}
+          <ul data-session-list data-cut={cut && index === groups.length - 1}>
             {group.entries.map((conversation) => (
               <ConversationLine
                 key={conversation.id}
@@ -91,16 +101,13 @@ export function PlaceThreads({ conversations, projects, onNavigate, onSearch }: 
         <p className="px-2.5 py-2 text-sm text-ink-faint">{t('shell.conversations.empty')}</p>
       ) : null}
 
-      {/* Ce qui déborde ne se compte pas ici : la recherche le retrouve mieux qu'une
-          liste de plus. */}
-      <button
-        type="button"
-        onClick={onSearch}
-        className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-sm text-ink-faint transition-colors hover:bg-surface-high hover:text-ink md:h-8 pointer-coarse:h-11"
-      >
-        <span className="flex w-4 shrink-0 justify-center"><Search size={14} /></span>
-        {t('shell.threads.all')}
-      </button>
+      {/* Ce qui déborde a sa page : toutes les sessions, filtrables et cherchables. Le
+          total ne se dit que s'il y a une coupe. */}
+      <AllSessionsLine
+        to="/sessions"
+        label={cut ? t('shell.sessions.all.count', { count: conversations.length }) : t('shell.sessions.all')}
+        onNavigate={onNavigate}
+      />
     </div>
   )
 }

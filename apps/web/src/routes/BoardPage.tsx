@@ -1,18 +1,20 @@
-import { Plus } from 'lucide-react'
+import { Columns3, Hand, List, Plus } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { agentKindSchema, type CardColumn, type CardDto } from '@solera/protocol'
 import { Button, EmptyState } from '@solera/ui'
 import { AGENT_LABELS, AgentIcon } from '../components/AgentIcon'
 import { CardPanel } from '../components/board/CardPanel'
+import { GestureView } from '../components/board/GestureView'
 import { KanbanView } from '../components/board/KanbanView'
+import { ListView } from '../components/board/ListView'
 import { NewCardDialog } from '../components/board/NewCardDialog'
 import { columnLabel } from '../components/board/columns'
 import { tintDot } from '../components/board/tints'
 import { CardSheetHost } from '../components/cards/CardSheetHost'
 import { PanelHost } from '../components/shell/PanelHost'
 import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
-import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment } from '../components/toolbar/ToolbarMenus'
+import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
 import { useBoardData } from '../lib/board-data'
 import {
   BOARD_SORTS,
@@ -22,6 +24,7 @@ import {
   passes,
   readDisplay,
   shortTitle,
+  type BoardCard,
   type BoardFilters,
 } from '../lib/board-model'
 import { withSheet } from '../lib/card-sheet'
@@ -32,7 +35,7 @@ import { useTranslate } from '../lib/i18n'
 import { PANEL_TRANSITION_MS } from '../lib/panel'
 import { NEW_PARAM } from '../lib/place'
 import { useProjects } from '../lib/projects'
-import { useStoredPref } from '../lib/use-view'
+import { useStoredPref, useView } from '../lib/use-view'
 import { viewStorageKey } from '../lib/view-pref'
 
 /** L'éditeur complet d'une carte, ouvert par les liens d'ailleurs (palette, journal, fiche). */
@@ -46,11 +49,14 @@ function isEmptyBoardClick(target: EventTarget): boolean {
   return target instanceof Element && !target.closest('button, a, input, textarea, select, label, [data-card-tile], [role="menu"]')
 }
 
+type BoardView = 'kanban' | 'liste' | 'geste'
+const VIEW_KEYS: readonly BoardView[] = ['kanban', 'liste', 'geste']
+
 /**
- * Le Tableau d'un projet (#180, spec page projet v2 B-1 à B-4, B-7, B-8) : la barre sur
- * une ligne, puis le Kanban de ses feuilles. Un clic sur une tuile ouvre sa fiche sur
- * place (`?fiche=`) ; l'éditeur complet (`?carte=`) reste celui des liens qui y mènent
- * d'ailleurs, et de la carte qu'on vient de créer.
+ * Le Tableau d'un projet (#180, #181, spec page projet v2 B-1 à B-8) : la barre sur une
+ * ligne, puis ses feuilles en Kanban, en Liste ou par geste. Un clic sur une tuile ouvre
+ * sa fiche sur place (`?fiche=`) ; l'éditeur complet (`?carte=`) reste celui des liens qui
+ * y mènent d'ailleurs, et de la carte qu'on vient de créer.
  */
 export function BoardPage() {
   const { projectId } = useParams()
@@ -58,7 +64,7 @@ export function BoardPage() {
   const t = useTranslate()
 
   const { data: projects } = useProjects()
-  const { cards, all, milestones, isPending, isError, refetch } = useBoardData(projectId)
+  const { cards, all, milestones, statusOf, isPending, isError, refetch } = useBoardData(projectId)
   const move = useMoveCard()
 
   const [query, setQuery] = useState('')
@@ -67,15 +73,14 @@ export function BoardPage() {
   const filters = filterState.projectId === projectId ? filterState.filters : NO_FILTERS
   const setFilters = (next: BoardFilters) => setFilterState({ projectId, filters: next })
   const set = (patch: Partial<BoardFilters>) => setFilters({ ...filters, ...patch })
-  const [stored, setStored] = useStoredPref(viewStorageKey('tableau.affichage', projectId ?? null), readDisplay)
-  /* « Tout voir » de Terminé est une lecture du moment, pas un réglage : il déplie la
-     colonne sans toucher à l'affichage retenu. Un réglage choisi ensuite l'emporte. */
-  const [allDone, setAllDone] = useState(false)
-  const display = allDone ? { ...stored, done: 'all' as const } : stored
-  const setDisplay = (next: typeof stored) => {
-    setAllDone(false)
-    setStored(next)
-  }
+  const [display, setDisplay] = useStoredPref(viewStorageKey('tableau.affichage', projectId ?? null), readDisplay)
+  /* La vue dans `?vue=`, et la dernière choisie retenue par projet (B-1.6). */
+  const [view, setView] = useView<BoardView>('tableau', projectId, VIEW_KEYS)
+  const views: ViewOption<BoardView>[] = [
+    { key: 'kanban', label: t('board.view.kanban'), icon: <Columns3 size={16} /> },
+    { key: 'liste', label: t('board.view.list'), icon: <List size={16} /> },
+    { key: 'geste', label: t('board.view.gesture'), icon: <Hand size={16} /> },
+  ]
 
   const visible = useMemo(() => cards.filter((entry) => matches(entry, query) && passes(entry, filters)), [cards, query, filters])
 
@@ -218,46 +223,60 @@ export function BoardPage() {
     </FilterMenu>
   )
 
-  /* « Affichage ▾ » : le Kanban seul pour l'instant ; Liste et Par geste viennent avec #181. */
+  /* « Affichage ▾ » (B-1.4) : les vues en tuiles, puis les réglages de la vue choisie. */
   const displayMenu = (
-    <DisplayMenu>
-      <MenuHeading>{t('board.display.grouping')}</MenuHeading>
-      <MenuSegment
-        label={t('board.display.grouping')}
-        segments={[
-          { value: 'none', label: t('board.display.grouping.none') },
-          { value: 'lanes', label: t('board.display.grouping.lanes') },
-        ]}
-        value={display.lanes ? 'lanes' : 'none'}
-        onChange={(next) => setDisplay({ ...display, lanes: next === 'lanes' })}
-      />
-      <MenuHeading>{columnLabel('done')}</MenuHeading>
-      <MenuSegment
-        label={columnLabel('done')}
-        segments={[
-          { value: 'recent', label: t('board.display.done.recent') },
-          { value: 'all', label: t('board.display.done.all') },
-          { value: 'hidden', label: t('board.display.done.hidden') },
-        ]}
-        value={display.done}
-        onChange={(done) => setDisplay({ ...display, done })}
-      />
-      <MenuCheck checked={display.abandoned} onChange={(abandoned) => setDisplay({ ...display, abandoned })}>
-        {t('board.display.abandoned')}
-      </MenuCheck>
-      {/* Quatre tris ne tiennent pas dans un segment : un choix unique en liste. */}
-      <MenuHeading>{t('board.display.sort')}</MenuHeading>
-      <div role="radiogroup" aria-label={t('board.display.sort')}>
-        {BOARD_SORTS.map((sort) => (
-          <MenuCheck key={sort} exclusive checked={display.sort === sort} onChange={() => setDisplay({ ...display, sort })}>
-            {t(`board.sort.${sort}`)}
+    <DisplayMenu views={views} value={view} onChange={setView}>
+      {view === 'kanban' ? (
+        <>
+          <MenuHeading>{t('board.display.grouping')}</MenuHeading>
+          <MenuSegment
+            label={t('board.display.grouping')}
+            segments={[
+              { value: 'none', label: t('board.display.grouping.none') },
+              { value: 'lanes', label: t('board.display.grouping.lanes') },
+            ]}
+            value={display.lanes ? 'lanes' : 'none'}
+            onChange={(next) => setDisplay({ ...display, lanes: next === 'lanes' })}
+          />
+        </>
+      ) : null}
+      {view === 'geste' ? null : (
+        <>
+          <MenuHeading>{columnLabel('done')}</MenuHeading>
+          <MenuSegment
+            label={columnLabel('done')}
+            segments={[
+              { value: 'recent', label: t('board.display.done.recent') },
+              { value: 'all', label: t('board.display.done.all') },
+              { value: 'hidden', label: t('board.display.done.hidden') },
+            ]}
+            value={display.done}
+            onChange={(done) => setDisplay({ ...display, done })}
+          />
+          <MenuCheck checked={display.abandoned} onChange={(abandoned) => setDisplay({ ...display, abandoned })}>
+            {t('board.display.abandoned')}
           </MenuCheck>
-        ))}
-      </div>
+        </>
+      )}
+      {view === 'kanban' ? (
+        <>
+          {/* Quatre tris ne tiennent pas dans un segment : un choix unique en liste. */}
+          <MenuHeading>{t('board.display.sort')}</MenuHeading>
+          <div role="radiogroup" aria-label={t('board.display.sort')}>
+            {BOARD_SORTS.map((sort) => (
+              <MenuCheck key={sort} exclusive checked={display.sort === sort} onChange={() => setDisplay({ ...display, sort })}>
+                {t(`board.sort.${sort}`)}
+              </MenuCheck>
+            ))}
+          </div>
+        </>
+      ) : null}
+      {view === 'liste' ? <p className="px-3 pt-2 text-xs text-ink-faint">{t('board.display.listHint')}</p> : null}
     </DisplayMenu>
   )
 
   const narrowed = Boolean(query.trim()) || activeFilters(filters) > 0
+  const moveCard = (entry: BoardCard, column: CardColumn) => move.mutate({ id: entry.card.id, projectId, column })
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-clip">
@@ -273,7 +292,8 @@ export function BoardPage() {
           </Button>
         }
       />
-      {narrowed && visible.length === 0 ? (
+      {/* La Liste dit elle-même qu'aucune ligne ne correspond. */}
+      {narrowed && visible.length === 0 && view !== 'liste' ? (
         <p role="status" className="px-4 pt-4 text-sm text-ink-faint md:px-6">
           {t('board.noResults')}
         </p>
@@ -285,16 +305,33 @@ export function BoardPage() {
           if (editorCard && isEmptyBoardClick(event.target)) showEditor(null)
         }}
       >
-        <KanbanView
-          entries={visible}
-          milestones={milestones}
-          display={display}
-          projectId={projectId}
-          onOpen={openSheet}
-          onMove={(entry, column: CardColumn) => move.mutate({ id: entry.card.id, projectId, column })}
-          // En attendant la Liste (#181), « Tout voir » déplie Fait sur place.
-          onSeeAllDone={() => setAllDone(true)}
-        />
+        {view === 'liste' ? (
+          <ListView
+            entries={visible}
+            milestones={milestones}
+            display={display}
+            column={filters.column}
+            onOpen={openSheet}
+            onMove={moveCard}
+            onSeeAllDone={() => set({ column: 'done' })}
+          />
+        ) : view === 'geste' ? (
+          <GestureView entries={visible} projectId={projectId} statusOf={statusOf} onOpen={openSheet} />
+        ) : (
+          <KanbanView
+            entries={visible}
+            milestones={milestones}
+            display={display}
+            projectId={projectId}
+            onOpen={openSheet}
+            onMove={moveCard}
+            // « Tout voir » de Fait : la colonne filtrée, en Liste (B-4.4).
+            onSeeAllDone={() => {
+              set({ column: 'done' })
+              setView('liste')
+            }}
+          />
+        )}
       </div>
 
       <NewCardDialog
