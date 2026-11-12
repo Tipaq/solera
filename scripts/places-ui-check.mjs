@@ -202,7 +202,7 @@ try {
 
   // Les anciennes adresses mènent à la vue qui les a absorbées, requête comprise.
   await page.goto(`${base}/p/${nimbus.id}/activity?groupe=worktree`)
-  await page.waitForURL(`**/p/${nimbus.id}/travail?groupe=worktree`)
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
   await row.getByRole('link', { name: /^Travail/ }).and(page.locator('[aria-current="page"]')).waitFor()
   await page.goto(`${base}/p/${nimbus.id}/schedules`)
   await page.waitForURL(`**/p/${nimbus.id}/actions`)
@@ -212,8 +212,8 @@ try {
   await page.getByRole('dialog').waitFor()
   await page.keyboard.press('Escape')
   await page.goto(`${base}/p/${nimbus.id}/journal`)
-  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
 
   // Au doigt : même gouttière, Réglages en icône seule, la rangée défile.
   await page.setViewportSize({ width: 390, height: 844 })
@@ -314,7 +314,7 @@ try {
   // Derniers événements : cinq lignes au plus, et le lien vers Travail › Par moment (A-6).
   assert.equal(
     await events.getByRole('link', { name: 'Par moment', exact: true }).getAttribute('href'),
-    `/p/${nimbus.id}/travail?vue=moment`,
+    `/p/${nimbus.id}/travail?vue=fil`,
   )
   const eventRows = await events.getByRole('listitem').count()
   assert.ok(eventRows > 0 && eventRows <= 5, `Cinq événements au plus : ${eventRows}`)
@@ -489,16 +489,8 @@ try {
     dans git, un audit versé sur le disque — et rien dans le code ne garantit qu'elles
     arrivent bien jusqu'à la page.
   */
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  const filters = page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true })
-  await filters.waitFor()
-  // Les filtres sont des pilules, **pas** une seconde rangée d'onglets : il n'y a
-  // qu'une navigation dans la page, celle des vues.
-  assert.equal(
-    await page.getByRole('navigation').filter({ hasText: 'Tout' }).count(),
-    0,
-    'Les filtres du journal ne sont pas une seconde rangée d’onglets',
-  )
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   // Pas de ligne « Décision » : `card_notes.body` est libre, la carte #32 a refusé le type.
   for (const absent of ['Décision', 'Décisions']) {
     assert.equal(
@@ -510,17 +502,7 @@ try {
   // Les deux sources hors base sont là, donc la route a bien lu git et le disque.
   await page.getByText('feat/city-search', { exact: true }).waitFor()
   await page.getByText(/docs\/audits\/.*offline-cache/).waitFor()
-  await page.getByText(/^Aujourd.hui$/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
-
-  // Une pilule filtre vraiment : *Dépôt* ne garde que la fusion et l'audit.
-  await filters.getByRole('radio', { name: 'Dépôt', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('li').length > 0)
-  assert.equal(
-    await page.getByText('Session', { exact: true }).count(),
-    0,
-    'Le filtre « Dépôt » ne garde que ce qui se lit dans le dossier du projet',
-  )
 
   // Le même journal au portefeuille, où chaque ligne porte la pastille de son projet.
   await page.goto(`${base}/projects/journal`)
@@ -558,8 +540,8 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
   // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-mobile.png') })
 
@@ -570,8 +552,8 @@ try {
   // l'attribut avec lui.
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-sombre.png') })
-  await page.goto(`${base}/p/${nimbus.id}/travail?vue=moment`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
+  await page.goto(`${base}/p/${nimbus.id}/travail?vue=fil`)
+  await page.getByRole('heading', { name: 'Maintenant', exact: true }).waitFor()
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 

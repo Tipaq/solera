@@ -21,27 +21,38 @@ export interface ViewOption<K extends string> {
 /**
  * « Filtrer ▾ » : le popover des filtres d'une page, ses groupes en `MenuHeading` et
  * `MenuCheck`. Le bouton compte les filtres posés ; le pied les efface tous.
+ *
+ * `compact` le range au bout d'une ligne d'outils du panneau : le libellé ne paraît
+ * qu'à partir de 22 rem de ligne (son conteneur), le popover s'aligne sur la fin, et
+ * le nom accessible garde le libellé quand il se tait.
  */
-export function FilterMenu({ active, onClearAll, children }: { active: number; onClearAll?: () => void; children: ReactNode }) {
+export function FilterMenu({ active, onClearAll, compact = false, children }: {
+  active: number
+  onClearAll?: () => void
+  compact?: boolean
+  children: ReactNode
+}) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const label = t('toolbar.filter')
+  const activeLabel = active > 0 ? t(active === 1 ? 'toolbar.filter.active.one' : 'toolbar.filter.active.many', { count: active }) : undefined
   return (
     <Popover
       open={open}
       onOpenChange={setOpen}
       label={label}
       side="bottom"
-      align="start"
-      className="w-80"
+      align={compact ? 'end' : 'start'}
+      className={compact ? 'w-72' : 'w-80'}
       trigger={
         <TooltipButton
           type="button"
           className={toolbarButtonClass(active > 0)}
-          title={active > 0 ? t(active === 1 ? 'toolbar.filter.active.one' : 'toolbar.filter.active.many', { count: active }) : undefined}
+          title={activeLabel}
+          aria-label={compact ? (activeLabel ? t('toolbar.filter.labelled', { label, active: activeLabel }) : label) : undefined}
         >
           <Filter size={13} />
-          {label}
+          {compact ? <span className="hidden @min-[22rem]:inline">{label}</span> : label}
           {active > 0 ? <span className="rounded bg-accent px-1 text-micro font-semibold tabular-nums text-accent-ink">{active}</span> : null}
         </TooltipButton>
       }
@@ -111,7 +122,8 @@ export function ViewTiles<K extends string>({ options, value, onChange }: { opti
       role="radiogroup"
       aria-label={t('toolbar.display.views')}
       className="grid gap-1.5 px-3 pt-3 pb-2"
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+      // Trois par rangée au plus : six vues tiennent en deux rangées lisibles.
+      style={{ gridTemplateColumns: `repeat(${Math.min(options.length, 3)}, minmax(0, 1fr))` }}
     >
       {options.map((option) => {
         const active = option.key === value

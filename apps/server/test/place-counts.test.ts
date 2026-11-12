@@ -22,10 +22,10 @@ test("le compte du Tableau ne garde que les feuilles ouvertes", () => {
 test("une ancienne adresse garde sa requête en rejoignant la nouvelle vue", () => {
   assert.equal(movedView('/p/a/travail', ''), '/p/a/travail')
   assert.equal(movedView('/p/a/travail', '?groupe=worktree'), '/p/a/travail?groupe=worktree')
-  assert.equal(movedView('/p/a/travail', '', { vue: 'moment' }), '/p/a/travail?vue=moment')
+  assert.equal(movedView('/p/a/travail', '', { vue: 'fil' }), '/p/a/travail?vue=fil')
   // Le paramètre imposé l'emporte sur celui de l'ancienne adresse, les autres restent.
   assert.equal(
-    movedView('/p/a/travail', '?vue=liste&source=git', { vue: 'moment' }),
-    '/p/a/travail?vue=moment&source=git',
+    movedView('/p/a/travail', '?vue=liste&source=git', { vue: 'fil' }),
+    '/p/a/travail?vue=fil&source=git',
   )
 })

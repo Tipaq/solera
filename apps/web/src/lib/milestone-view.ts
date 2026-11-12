@@ -83,45 +83,6 @@ export function milestoneOrder(cards: MilestoneRunCardDto[]): MilestoneRunCardDt
   return [...cards].sort((a, b) => waveRank(a.layer) - waveRank(b.layer) || a.number - b.number)
 }
 
-/** Une colonne de la vue du jalon : les cartes d'un même étage du graphe des « bloque ». */
-export interface MilestoneWave {
-  /** 0 pour la première vague ; null pour les cartes prises dans un cycle. */
-  layer: number | null
-  cards: MilestoneRunCardDto[]
-}
-
-/**
- * Les vagues, dans l'ordre : une carte part quand la vague de gauche qui la bloque est
- * fusionnée. Les cartes d'un cycle (étage -1) ferment la marche dans une colonne à part,
- * plutôt que d'être tues.
- */
-export function milestoneWaves(cards: MilestoneRunCardDto[]): MilestoneWave[] {
-  const byLayer = new Map<number, MilestoneRunCardDto[]>()
-  for (const card of cards) {
-    const bucket = byLayer.get(card.layer)
-    if (bucket) bucket.push(card)
-    else byLayer.set(card.layer, [card])
-  }
-  return [...byLayer.entries()]
-    .sort(([a], [b]) => waveRank(a) - waveRank(b))
-    .map(([layer, members]) => ({
-      layer: layer < 0 ? null : layer,
-      cards: [...members].sort((a, b) => a.number - b.number),
-    }))
-}
-
-/**
- * La file : ce qui partira aux prochaines places libres, dans l'ordre du pilotage (la
- * vague, puis le numéro). La tête dit aussi combien de cartes l'attendent : c'est ce
- * qu'on gagne à lui faire de la place.
- */
-export function milestoneQueue(cards: MilestoneRunCardDto[]): { queue: MilestoneRunCardDto[]; unblocks: number } {
-  const queue = milestoneOrder(cards).filter((card) => card.status === 'queued')
-  const head = queue[0]
-  const unblocks = head ? cards.filter((card) => card.blockedBy.some((blocker) => blocker.number === head.number)).length : 0
-  return { queue, unblocks }
-}
-
 /** Les cartes d'un jalon, par identifiant : la frise et l'Activité y cherchent les leurs. */
 export function milestoneCardIndex(runs: MilestoneRunDto[] | undefined): Map<string, { run: MilestoneRunDto; card: MilestoneRunCardDto }> {
   const index = new Map<string, { run: MilestoneRunDto; card: MilestoneRunCardDto }>()
