@@ -1,6 +1,6 @@
 import { TooltipButton } from '@solera/ui'
 import { Archive, Code2, Download, Eye, Link2, Loader, MoreHorizontal, PanelLeft, Save, Search, Trash2, Undo2, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   OPENABLE_MODEL_EXTENSIONS,
   VIEWABLE_DOCUMENT_TYPES,
@@ -30,7 +30,8 @@ import { useTranslate } from '../../lib/i18n'
 import { isMarkdownPath, setMarkdownView, useMarkdownView } from '../../lib/markdown-view'
 import { Markdown } from '../chat/Markdown'
 import { FileLinkContext } from '../../lib/file-links'
-import { Banner, Button, IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
+import { Banner, Button, Menu, MenuItem, MenuSeparator, PanelToolbar, cx, panelGestureClass } from '@solera/ui'
+import { iconToolClass } from '../toolbar/OneLineToolbar'
 import { CodeEditor, type CodeEditorHandle } from './CodeEditor'
 import { ImageView } from './ImageView'
 import { MediaView } from './MediaView'
@@ -99,22 +100,22 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
       {paths.length === 0 ? (
         <>
           {treeOpen ? null : (
-            <div className="flex shrink-0 items-center gap-1 border-b border-line px-1">
-              <IconButton size="sm" label={t('panel.tree.show')} onClick={onShowTree}>
-                <PanelLeft size={14} />
-              </IconButton>
-            </div>
+            <PanelToolbar className="px-1.5">
+              <Gesture label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></Gesture>
+            </PanelToolbar>
           )}
           <p className="px-4 py-8 text-center text-sm text-ink-faint">{t('editor.empty')}</p>
         </>
       ) : <>
-      <div className="flex shrink-0 items-center border-b border-line">
+      {/* La hauteur de la ligne d'outils du cadre : son filet prolonge celui de
+          l'arborescence posée à côté. Les onglets en prennent toute la hauteur. */}
+      <div className="flex h-12 shrink-0 items-stretch border-b border-line">
         {treeOpen ? null : (
-          <IconButton size="sm" label={t('panel.tree.show')} onClick={onShowTree}>
-            <PanelLeft size={14} />
-          </IconButton>
+          <span className="flex shrink-0 items-center px-1.5">
+            <Gesture label={t('panel.tree.show')} onClick={onShowTree}><PanelLeft size={14} /></Gesture>
+          </span>
         )}
-        <div ref={tabList} data-file-tabs className="flex min-w-0 flex-1 items-center gap-px overflow-x-auto">
+        <div ref={tabList} data-file-tabs className="flex min-w-0 flex-1 items-stretch gap-px overflow-x-auto">
           {paths.map((path, index) => (
             <Tab
               key={path}
@@ -132,17 +133,17 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
           ))}
         </div>
 
-        {active ? <IconButton
-          size="sm"
+        <span className="flex shrink-0 items-center gap-0.5 border-l border-line px-1.5">
+        {active ? <Gesture
           label={t(drafts.includes(active) ? 'editor.download.saved' : 'editor.download', { path: active })}
           onClick={() => downloadFile(scope, active)}
-        ><Download size={14} /></IconButton> : null}
+        ><Download size={14} /></Gesture> : null}
         <Menu
           trigger={
             <TooltipButton
               type="button"
               aria-label={t('editor.tabs.actions')}
-              className="flex size-11 shrink-0 items-center justify-center border-l border-line text-ink-faint hover:text-ink md:size-8 pointer-coarse:size-11"
+              className={gestureClass}
             >
               <MoreHorizontal size={14} />
             </TooltipButton>
@@ -186,6 +187,7 @@ function UserEditorPane({ userId, scope, treeOpen, onShowTree }: {
             {t('editor.tabs.copyPath')}
           </MenuItem>
         </Menu>
+        </span>
       </div>
 
       {/* Un seul CodeMirror monté ; les documents et brouillons vivent hors du panneau. */}
@@ -259,7 +261,7 @@ function Tab({
         if (event.button === 1) onClose()
       }}
       className={cx(
-        'group/tab flex h-11 shrink-0 items-center gap-1.5 border-r border-line pr-1 pl-2 md:h-8 pointer-coarse:h-11',
+        'group/tab flex shrink-0 items-center gap-1.5 border-r border-line pr-1 pl-2',
         active ? 'bg-surface text-ink' : 'bg-sunken text-ink-faint',
         dropping && 'border-l-2 border-l-accent',
       )}
@@ -401,7 +403,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         </div>
       )}
 
-      <div className="flex shrink-0 flex-col gap-1 border-t border-line px-2.5 py-1.5 text-xs text-ink-faint">
+      <div className="flex shrink-0 flex-col gap-1 border-t border-line px-3 py-1.5 text-xs text-ink-faint">
         <div className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate" title={path}>{path}</span>
           {isMarkdown && view === 'preview' ? null : <button type="button" className="shrink-0 rounded px-1 py-1 hover:text-ink" aria-label={t('editor.position', position)} title={t('editor.goToLine')} onClick={() => editor.current?.goToLine()}>
@@ -413,7 +415,7 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         </div>
         {dirty ? <p>{t(persisted ? 'editor.drafts.kept' : 'editor.drafts.memory')}</p> : null}
         <div className="flex flex-wrap items-center justify-end gap-1">
-          {isMarkdown && view === 'preview' ? null : <IconButton size="sm" label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></IconButton>}
+          {isMarkdown && view === 'preview' ? null : <Gesture label={t('editor.find')} onClick={() => editor.current?.find()}><Search size={14} /></Gesture>}
           {isMarkdown ? <Button size="sm" variant="ghost" icon={view === 'preview' ? <Code2 size={14} /> : <Eye size={14} />}
             onClick={() => setMarkdownView(view === 'preview' ? 'source' : 'preview')}>
             {t(view === 'preview' ? 'editor.markdown.source' : 'editor.markdown.preview')}
@@ -424,5 +426,16 @@ function FileView({ userId, scope, path }: { userId: string; scope: string; path
         </div>
       </div>
     </div>
+  )
+}
+
+/** Un outil fait d'une icône, à la hauteur de `Button size="sm"` comme ceux du cadre. */
+const gestureClass = cx(panelGestureClass, 'shrink-0', iconToolClass)
+
+function Gesture({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <TooltipButton type="button" onClick={onClick} aria-label={label} title={label} className={gestureClass}>
+      {children}
+    </TooltipButton>
   )
 }

@@ -116,6 +116,42 @@ try {
   await row('a.txt').click()
   assert.deepEqual(await selected(), ['aa-explorer/a.txt'])
 
+  // Le cadre commun : la barre de l'arbre et la rangée des onglets font la ligne d'outils
+  // de 48 px, leurs filets se suivent, et leurs outils ont la hauteur de `Button sm`.
+  const rootMenu = panel.getByRole('button', { name: 'Actions du dossier racine' })
+  const treeBar = rootMenu.locator('xpath=..')
+  const tabRow = panel.locator('[data-file-tabs]').locator('xpath=..')
+  const box = (locator) => locator.boundingBox()
+  const [treeBox, tabBox] = await Promise.all([box(treeBar), box(tabRow)])
+  assert.equal(Math.round(treeBox.height), 48, 'Tree toolbar is not 48 px')
+  assert.equal(Math.round(tabBox.height), 48, 'Tab row is not 48 px')
+  assert.equal(Math.round(treeBox.y + treeBox.height), Math.round(tabBox.y + tabBox.height), 'Tree and tab rules are not aligned')
+  for (const name of [/^Nouveau fichier/, /^Nouveau dossier/, /^Masquer l'arborescence$/]) {
+    assert.equal(Math.round((await box(treeBar.getByRole('button', { name }))).height), 36, `${name} is not 36 px`)
+  }
+  for (const name of [/^Télécharger/, 'Actions des onglets']) {
+    assert.equal(Math.round((await box(tabRow.getByRole('button', { name }))).height), 36, `${name} is not 36 px`)
+  }
+  // Rafraîchir est passé dans le menu de la racine, avec les créations.
+  await rootMenu.click()
+  for (const name of [/^Rafraîchir l'arborescence$/, /^Nouveau fichier/, /^Nouveau dossier/]) {
+    await page.getByRole('menuitem', { name }).waitFor()
+  }
+  await page.keyboard.press('Escape')
+  // La barre reste en tête quand l'arbre défile.
+  await page.setViewportSize({ width: 1440, height: 420 })
+  const column = treeBar.locator('xpath=../..')
+  await column.evaluate((node) => { node.scrollTop = node.scrollHeight })
+  assert.ok(await column.evaluate((node) => node.scrollTop > 0), 'Tree column did not scroll')
+  assert.equal(Math.round((await box(treeBar)).y), Math.round(treeBox.y), 'Tree toolbar scrolled away')
+  await column.evaluate((node) => { node.scrollTop = 0 })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // Colonne au plus étroit : les créations se replient dans le menu, rien ne déborde.
+  await page.evaluate(() => document.documentElement.style.setProperty('--tree-width', '150px'))
+  await treeBar.getByRole('button', { name: /^Nouveau fichier/ }).waitFor({ state: 'hidden' })
+  assert.ok(await treeBar.evaluate((node) => node.scrollWidth <= node.clientWidth), 'Tree toolbar overflows at 150 px')
+  await page.evaluate(() => document.documentElement.style.setProperty('--tree-width', '240px'))
+
   // Maj-clic étend depuis le dernier clic, Ctrl-clic coche ou décoche. Les dossiers
   // passent avant les fichiers : `inner` est en tête.
   await row('d.md').click({ modifiers: ['Shift'] })
@@ -218,6 +254,10 @@ try {
   await mobile.goto(`${base}/p/${project.id}/c/${conversation.id}`)
   const mobilePanel = await openFiles(mobile)
   const mobileRow = (path) => mobilePanel.locator(`[data-tree-path="aa-explorer/${path}"]`)
+  const mobileBar = mobilePanel.getByRole('button', { name: 'Actions du dossier racine' }).locator('xpath=..')
+  assert.equal(Math.round((await mobileBar.boundingBox()).height), 48, 'Tree toolbar is not 48 px on a phone')
+  const hide = await mobileBar.getByRole('button', { name: "Masquer l'arborescence", exact: true }).boundingBox()
+  assert.deepEqual([Math.round(hide.width), Math.round(hide.height)], [44, 44], 'Tree tools are not 44 px on a phone')
   await mobilePanel.locator('[data-tree-path="aa-explorer"]').tap()
   await mobilePanel.getByRole('button', { name: 'Actions de b.txt' }).tap()
   await mobile.getByRole('menuitem', { name: 'Sélectionner' }).tap()
