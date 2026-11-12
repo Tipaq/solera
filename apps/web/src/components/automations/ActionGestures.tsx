@@ -126,6 +126,7 @@ export function ServiceSwitch({
   onToggle,
   withText = true,
   disabled = false,
+  name: named,
 }: {
   on: boolean
   /** Le libellé de l'action, pour le nom accessible. */
@@ -133,9 +134,11 @@ export function ServiceSwitch({
   onToggle: (on: boolean) => void
   withText?: boolean
   disabled?: boolean
+  /** Le nom accessible, quand il dit aussi où il démarrera. */
+  name?: string
 }) {
   const t = useTranslate()
-  const name = t(on ? 'launcher.switch.stop' : 'launcher.switch.start', { label })
+  const name = named ?? t(on ? 'launcher.switch.stop' : 'launcher.switch.start', { label })
   return (
     <Switch
       checked={on}

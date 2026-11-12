@@ -183,6 +183,8 @@ export const SidePanel = memo(function SidePanel({
   const wasRunning = useRef(turnRunning)
   const wide = useMediaQuery('(min-width: 48rem)')
   const modal = !wide || fullscreen
+  // Stable : l'onglet Actions, mémoïsé, le reçoit pour proposer de s'agrandir quand il édite à l'étroit.
+  const expand = useCallback(() => setFullscreen(true), [])
   const treeOpen = usePanelTree()
   const { active: openFile } = useEditorTabs(scope)
 
@@ -448,7 +450,7 @@ export const SidePanel = memo(function SidePanel({
       {/* Monté seulement quand on le regarde : la liste vient du cache des actions, et
           les terminaux qu'elle ouvre vivent dans leur propre vue. */}
       {tab === 'actions' && projectId ? (
-        <ActionsPane projectId={projectId} conversationId={conversationId} />
+        <ActionsPane projectId={projectId} conversationId={conversationId} onExpand={modal ? undefined : expand} />
       ) : null}
 
       {/* Monté seulement quand on le regarde, contrairement aux autres : il ne tient

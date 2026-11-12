@@ -48,8 +48,8 @@ export interface EditorSeed {
   schedule?: boolean
   /** « + Nouveau service / commande / agent » : la nature choisie d'avance. */
   preset?: { what: What; kind?: CommandKind }
-  /** « En faire une action » : ce qu'une session a lancé, pré-rempli. */
-  prefill?: { label?: string; command?: string; url?: string; description?: string }
+  /** « En faire une action » ou une suggestion du dépôt : ce qu'on sait déjà, pré-rempli. */
+  prefill?: { label?: string; command?: string; url?: string; description?: string; subdir?: string }
   /**
    * Hors d'un projet (la page Planifiées) : la portée proposée d'office, que le champ
    * Portée laisse changer (PLF-10). Absente, c'est l'hôte qui donne le projet.
@@ -181,11 +181,12 @@ export function editorStateOf(seed: EditorSeed): EditorState {
   let state = seed.draft ? stateOfDraft(seed.draft) : BLANK
   if (seed.preset) state = { ...state, what: seed.preset.what, kind: seed.preset.kind ?? state.kind }
   if (seed.prefill) {
-    const { label, command, url, description } = seed.prefill
+    const { label, command, url, description, subdir } = seed.prefill
     state = {
       ...state,
       label: label ?? state.label,
       command: command ?? state.command,
+      subdir: subdir ?? state.subdir,
       url: url ?? state.url,
       description: description ?? state.description,
     }

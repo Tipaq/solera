@@ -184,8 +184,10 @@ async function checkPieces(base) {
 async function checkEditor(page, base, project, conversation, api, context) {
   // Dans le panneau d'une conversation, l'éditeur s'ouvre en pile, à la place de la liste.
   const editor = page.locator('[data-action-stack]')
-  const open = async () => {
-    await page.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+  // « + Nouvelle ▾ » : la nature d'abord.
+  const open = async (kind = 'Nouvelle commande') => {
+    await page.locator('[data-panel-actions]').getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+    await page.getByRole('button', { name: new RegExp(`^${kind}`) }).click()
     await editor.getByRole('heading', { name: 'Nouvelle action' }).waitFor()
   }
   const save = editor.getByRole('button', { name: 'Enregistrer', exact: true })
@@ -224,7 +226,7 @@ async function checkEditor(page, base, project, conversation, api, context) {
   assert.equal(planned.schedule?.cadence.kind, 'cron')
 
   // --- Un service : lien {port}, placement, et son cas limite planifié (AC-06).
-  await open()
+  await open('Nouveau service')
   await editor.getByRole('radio', { name: /^Service/ }).click()
   await editor.getByRole('textbox', { name: 'Commande', exact: true }).fill('python3 -m http.server 0')
   // Une erreur s'affiche quand on quitte le champ, pas avant.
@@ -264,7 +266,7 @@ async function checkEditor(page, base, project, conversation, api, context) {
   assert.equal(service.status, 'approved')
 
   // --- Un agent, à la demande seulement : une tâche sans cadence.
-  await open()
+  await open('Nouvelle tâche d’agent')
   await editor.getByRole('radio', { name: /^Un agent/ }).click()
   await editor.getByRole('textbox', { name: 'Libellé', exact: true }).fill('Revue (éditeur)')
   await editor.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Réponds seulement « OK ».')
@@ -278,15 +280,123 @@ async function checkEditor(page, base, project, conversation, api, context) {
   assert.equal(task.onDemand, true)
   assert.equal(task.worktreeMode, 'new')
 
-  // --- Modifier : l'éditeur relit l'action, sa nature est figée.
-  await page.locator('li', { hasText: 'Aperçu statique' }).getByRole('button', { name: 'Plus' }).click()
-  await page.getByRole('menuitem', { name: 'Modifier' }).click()
+  // --- Modifier, depuis son détail : l'éditeur relit l'action, sa nature est figée.
+  await line(page, 'Aperçu statique').getByText('Aperçu statique', { exact: true }).click()
+  await editor.getByRole('button', { name: 'Modifier', exact: true }).first().click()
   assert.equal(await editor.getByRole('textbox', { name: 'Libellé', exact: true }).inputValue(), 'Aperçu statique')
   assert.equal(await editor.getByRole('radio', { name: /^Un agent/ }).count(), 0)
   assert.equal(await editor.getByRole('radio', { name: /^Toujours la racine du projet/ }).getAttribute('aria-checked'), 'true')
   await editor.getByRole('button', { name: 'Annuler', exact: true }).click()
+  await editor.getByRole('heading', { name: 'Aperçu statique', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
   await editor.waitFor({ state: 'hidden' })
   void context
+}
+
+/** Une action dans l'onglet Actions du panneau : sa ligne, par son libellé exact. */
+function line(page, label) {
+  return page.locator('[data-action-line]').filter({ has: page.getByText(label, { exact: true }) })
+}
+
+/**
+ * La ligne d'outils de l'onglet Actions du panneau (PACT-1) : le titre et son compte,
+ * « N à relire » qui passe en Liste et descend au groupe, la recherche absente sous neuf
+ * actions, Affichage en icône (choisir ferme le menu), « + Nouvelle ▾ », ↗ vers l'onglet
+ * du projet. On revient au Lanceur.
+ */
+async function checkPaneToolbar(page, project) {
+  const pane = page.locator('[data-panel-actions]')
+  const views = pane.locator('[data-panel-actions-view]')
+  assert.equal(await pane.getByRole('searchbox').count(), 0, 'pas de recherche sous neuf actions')
+  await pane.getByRole('button', { name: '1 à relire', exact: true }).click()
+  await views.and(page.locator('[data-panel-actions-view="liste"]')).waitFor()
+  const review = pane.locator('#pane-actions-review')
+  await review.getByRole('heading', { name: /^À relire/ }).waitFor()
+  await review.evaluate((node) => new Promise((resolve) => setTimeout(resolve, 400, node)))
+  const box = await review.boundingBox()
+  assert.ok(box && box.y < 900, 'la Liste est descendue jusqu’au groupe à relire')
+  await page.screenshot({ path: join(shots, 'pane-list-1280.png') })
+
+  const display = pane.getByRole('button', { name: 'Affichage : Liste', exact: true })
+  await display.click()
+  await page.getByRole('radio', { name: 'Agenda' }).click()
+  await page.getByRole('radio', { name: 'Agenda' }).waitFor({ state: 'detached' })
+  await views.and(page.locator('[data-panel-actions-view="agenda"]')).waitFor()
+  await pane.getByRole('button', { name: 'Affichage : Agenda', exact: true }).click()
+  await page.getByRole('radio', { name: 'Lanceur' }).click()
+  await views.and(page.locator('[data-panel-actions-view="lanceur"]')).waitFor()
+
+  await pane.getByRole('button', { name: 'Nouvelle action', exact: true }).waitFor()
+  assert.equal(await pane.getByRole('link', { name: 'Ouvrir dans l’onglet Actions du projet', exact: true }).getAttribute('href'), `/p/${project.id}/actions`)
+  // Une ligne d'outils de 48 px, qui ne déborde pas.
+  const toolbar = pane.locator('.h-12').first()
+  assert.equal(Math.round((await toolbar.boundingBox()).height), 48)
+  assert.equal(await toolbar.evaluate((node) => node.scrollWidth <= node.clientWidth + 1), true, 'la ligne d’outils tient')
+}
+
+/**
+ * Un projet sans action (PACT-6) : une ligne, et les suggestions du dépôt — trois au plus
+ * — qui ouvrent l'éditeur pré-rempli, en pile.
+ */
+async function checkPaneEmpty(context, base, api) {
+  // Un projet de la démo sans action ni tâche planifiée, et qui a une conversation.
+  const actions = await api('/api/actions')
+  const tasks = await api('/api/schedules')
+  let target = null
+  for (const project of await api('/api/projects')) {
+    if (actions.some((entry) => entry.projectId === project.id) || tasks.some((entry) => entry.projectId === project.id)) continue
+    const conversation = (await api(`/api/projects/${project.id}/conversations`))[0]
+    if (conversation) target = { project, conversation }
+    if (target) break
+  }
+  assert.ok(target, 'la démo a un projet sans action, avec une conversation')
+  const page = await context.newPage()
+  await page.goto(`${base}/p/${target.project.id}/c/${target.conversation.id}`)
+  await page.getByRole('button', { name: /^Ouvrir le panneau/ }).first().click()
+  await page.locator('button[aria-pressed][aria-label^="Actions"]').click()
+  const empty = page.locator('[data-actions-empty]')
+  await empty.getByText('Aucune action enregistrée.', { exact: true }).waitFor()
+  const chips = empty.getByRole('button', { name: /^Créer « / })
+  const count = await chips.count()
+  assert.ok(count <= 3, 'trois suggestions au plus')
+  await page.screenshot({ path: join(shots, 'pane-empty-1280.png') })
+  if (count > 0) {
+    const name = await chips.first().getAttribute('aria-label')
+    const command = /: (.*)$/.exec(name)[1]
+    await chips.first().click()
+    const editor = page.locator('[data-action-stack]')
+    assert.equal(await editor.getByRole('textbox', { name: 'Commande', exact: true }).inputValue(), command)
+    await page.keyboard.press('Escape')
+    await editor.waitFor({ state: 'detached' })
+  }
+  await page.close()
+}
+
+/**
+ * Un panneau étroit (PACT-9) : en édition, « Le panneau est étroit pour éditer. » et
+ * « Agrandir le panneau », qui le passe en plein écran ; en plein écran, plus rien à proposer.
+ */
+async function checkPaneNarrow(context, base, project, conversation) {
+  const page = await context.newPage()
+  await page.addInitScript(() => {
+    localStorage.setItem('solera.sheetWidth', '330')
+    localStorage.setItem('solera.panelDockedWidth', '330')
+  })
+  await page.goto(`${base}/p/${project.id}/c/${conversation.id}`)
+  await page.getByRole('button', { name: /^Ouvrir le panneau/ }).first().click()
+  await page.locator('button[aria-pressed][aria-label^="Actions"]').click()
+  const pane = page.locator('[data-panel-actions]')
+  assert.ok((await pane.boundingBox()).width < 360, 'le panneau est étroit')
+  await page.screenshot({ path: join(shots, 'pane-narrow-1280.png') })
+  await pane.getByRole('button', { name: 'Nouvelle action', exact: true }).click()
+  await page.getByRole('button', { name: /^Nouvelle commande/ }).click()
+  await pane.getByText('Le panneau est étroit pour éditer.').waitFor()
+  await page.screenshot({ path: join(shots, 'pane-narrow-edit-1280.png') })
+  await pane.getByRole('button', { name: 'Agrandir le panneau', exact: true }).click()
+  await page.locator('[data-fullscreen]').waitFor()
+  await page.locator('[data-action-stack]').getByRole('heading', { name: 'Nouvelle action' }).waitFor()
+  assert.equal(await page.getByText('Le panneau est étroit pour éditer.').count(), 0)
+  await page.close()
 }
 
 /**
@@ -417,11 +527,10 @@ async function checkDrawer(base) {
 async function checkDetail(page, base, project, api, context) {
   const actionsTab = page.locator('button[aria-pressed][aria-label^="Actions"]')
   const stack = page.locator('[data-action-stack]')
-  const list = page.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first()
   await actionsTab.click()
 
   // Les passages de « Dire bonjour » : le code, et la fin de sa sortie dépliée d'office.
-  await list.getByRole('button', { name: 'Dire bonjour', exact: true }).click()
+  await line(page, 'Dire bonjour').getByText('Dire bonjour', { exact: true }).click()
   await stack.getByText(/^Dernier passage échoué il y a .* \(code 2\)\.$/).waitFor()
   await stack.locator('[data-run]').first().getByText('code 2').waitFor()
   await stack.getByLabel('Sortie du passage').getByText('hello-from-action', { exact: false }).waitFor({ timeout: 15000 })
@@ -446,7 +555,7 @@ async function checkDetail(page, base, project, api, context) {
     assert.ok(await check())
   }
   // La liste se relit toutes les dix secondes.
-  await list.getByRole('button', { name: 'Nettoyer', exact: true }).click({ timeout: 15000 })
+  await line(page, 'Nettoyer').getByText('Nettoyer', { exact: true }).click({ timeout: 15000 })
   await stack.getByText('Prochain passage :', { exact: false }).waitFor()
   await stack.getByRole('button', { name: 'Mettre en pause', exact: true }).click()
   await stack.getByText(/\(en pause\)$/).first().waitFor()
@@ -1085,6 +1194,9 @@ try {
   console.log('actions-ui-check : onglet Actions du portefeuille')
   await checkPortfolioTab(base, env, api)
 
+  console.log('actions-ui-check : panneau sans action')
+  await checkPaneEmpty(context, base, api)
+
   // Une tâche créée depuis l'API, donc validée d'office.
   const created = await context.request.post(`${base}/api/projects/${project.id}/actions`, {
     data: { label: 'Dire bonjour', kind: 'task', command: 'echo hello-from-action; exit 2', description: 'Un essai qui échoue exprès' },
@@ -1125,24 +1237,32 @@ try {
   await panelToggle.click()
   await page.getByRole('button', { name: 'Actions, 1 à relire', exact: true }).waitFor()
   await actionsTab.click()
-  // La liste des actions, pas le groupe des commandes lancées ici qui la précède.
-  const panel = page.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first()
-  await panel.getByText('À relire').waitFor()
+  // Le Lanceur du panneau (PACT-2, PACT-3) : une ligne de 36 px par action, rangée par nature.
+  const panel = page.locator('[data-panel-actions]')
+  await line(page, 'Serveur statique').getByText(/^À relire — /).waitFor()
+  await panel.getByRole('heading', { name: /^Services/ }).waitFor()
+  await panel.getByRole('heading', { name: /^Commandes/ }).waitFor()
+  assert.equal(Math.round(await line(page, 'Dire bonjour').evaluate((node) => node.getBoundingClientRect().height)), 36, 'une ligne fait 36 px')
+  await checkPaneToolbar(page, project)
   await page.screenshot({ path: join(shots, 'actions-desktop.png') })
 
-  // La tâche : le disque la lance, son terminal passe devant avec la sortie et le code.
-  await page.getByRole('button', { name: 'Lancer : Dire bonjour' }).first().click()
-  await page.locator('.xterm-rows', { hasText: 'hello-from-action' }).waitFor({ timeout: 10000 })
-  await page.locator('.xterm-rows', { hasText: '[exit 2]' }).waitFor({ timeout: 10000 })
-  assert.equal(await page.getByText('Connexion au terminal impossible.').count(), 0)
-  await page.screenshot({ path: join(shots, 'actions-task-terminal.png') })
-  await actionsTab.click()
-  await panel.getByText(/Sortie en code 2/).waitFor({ timeout: 15000 })
+  // La tâche : ▷ la lance dans le worktree de la conversation, sans menu ; son passage
+  // s'ouvre en pile, avec la sortie et le code.
+  const stack = page.locator('[data-action-stack]')
+  await line(page, 'Dire bonjour').getByRole('button', { name: 'Lancer « Dire bonjour » dans le worktree de cette conversation', exact: true }).click()
+  await stack.locator('[data-command-run]').getByText('hello-from-action', { exact: false }).first().waitFor({ timeout: 15000 })
+  await stack.locator('[data-command-run]').getByText(/Échec \(code 2\)/).first().waitFor({ timeout: 15000 })
+  await page.screenshot({ path: join(shots, 'actions-task-run.png') })
+  // Échap remonte d'un niveau : du passage au détail de l'action, puis à la liste.
+  await page.keyboard.press('Escape')
+  await stack.getByRole('heading', { name: 'Dire bonjour', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await stack.waitFor({ state: 'detached' })
+  await line(page, 'Dire bonjour').getByText(/^Échec \(code 2\)/).waitFor({ timeout: 15000 })
 
   // Le service proposé : relu dans son détail, en pile dans le panneau (commande en
   // clair), validé sans être lancé (Q3), puis lancé d'un geste.
-  await page.getByRole('button', { name: 'Relire : Serveur statique' }).first().click()
-  const stack = page.locator('[data-action-stack]')
+  await line(page, 'Serveur statique').getByRole('button', { name: 'Relire « Serveur statique »', exact: true }).click()
   const review = stack.getByRole('region', { name: 'Relecture' })
   await review.getByText(`$ python3 -m http.server --bind 127.0.0.1 ${httpPort}`).waitFor()
   await stack.getByText('Proposée par un agent dans', { exact: false }).waitFor()
@@ -1155,7 +1275,7 @@ try {
   // Refuser une action neuve la supprime.
   const proposedAgain = await mcp(env, conversation.id, project.id, 'register_action', { label: 'Tout effacer', kind: 'task', command: 'rm -rf ./build' })
   assert.ok(!proposedAgain.isError, proposedAgain.content[0].text)
-  await page.getByRole('button', { name: 'Relire : Tout effacer' }).first().click({ timeout: 15000 })
+  await line(page, 'Tout effacer').getByRole('button', { name: 'Relire « Tout effacer »', exact: true }).click({ timeout: 15000 })
   await review.getByText('$ rm -rf ./build').waitFor()
   await review.getByRole('button', { name: 'Refuser', exact: true }).click()
   await stack.waitFor({ state: 'detached' })
@@ -1164,7 +1284,7 @@ try {
   // Refuser une commande validée qu'un agent a modifiée rétablit ce qui avait été validé.
   const modified = await mcp(env, conversation.id, project.id, 'register_action', { id: task.id, label: 'Dire bonjour', kind: 'task', command: 'echo autre-chose' })
   assert.ok(!modified.isError, modified.content[0].text)
-  await page.getByRole('button', { name: 'Relire : Dire bonjour' }).first().click({ timeout: 15000 })
+  await line(page, 'Dire bonjour').getByRole('button', { name: 'Relire « Dire bonjour »', exact: true }).click({ timeout: 15000 })
   const changes = review.getByRole('group', { name: 'Ce qui a changé depuis la dernière validation' })
   assert.deepEqual(await changes.locator('del').allTextContents(), ['- echo hello-from-action; exit 2'])
   assert.deepEqual(await changes.locator('ins').allTextContents(), ['+ echo autre-chose'])
@@ -1174,17 +1294,18 @@ try {
   assert.equal(restored.command, 'echo hello-from-action; exit 2')
   assert.equal(restored.status, 'approved')
 
-  await page.getByRole('button', { name: 'Lancer : Serveur statique' }).first().click()
+  const serviceLine = line(page, 'Serveur statique')
+  await serviceLine.getByRole('switch', { name: 'Démarrer « Serveur statique » dans le worktree de cette conversation', exact: true }).click()
 
   if (linuxServices) {
-    await panel.getByText(`Écoute sur :${httpPort}`).waitFor({ timeout: 20000 })
-    const open = panel.getByRole('link', { name: `127.0.0.1:${httpPort}/` })
+    await serviceLine.getByText(new RegExp(`^En marche · :${httpPort}`)).waitFor({ timeout: 20000 })
+    const open = serviceLine.getByRole('link', { name: 'Ouvrir « Serveur statique »' })
     assert.equal(await open.getAttribute('href'), `http://127.0.0.1:${httpPort}/`)
     const served = await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status)
     assert.equal(served, 200)
     await page.screenshot({ path: join(shots, 'actions-service-running.png') })
     // Son détail dit ce qu'il sert, et l'arrête d'un geste.
-    await panel.getByRole('button', { name: 'Serveur statique', exact: true }).click()
+    await serviceLine.getByText('Serveur statique', { exact: true }).click()
     await stack.getByText('Ce qu’il sert').waitFor()
     await stack.getByRole('button', { name: 'Arrêter', exact: true }).first().waitFor()
     await stack.getByRole('link', { name: 'Ouvrir' }).first().waitFor()
@@ -1218,20 +1339,22 @@ try {
     assert.equal(await paletteRow(/Lancer : Serveur statique/).count(), 0)
     await page.screenshot({ path: join(shots, 'actions-palette.png') })
     await paletteRow(/Arrêter : Serveur statique/).click()
-    await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
+    await serviceLine.getByText('Arrêté', { exact: true }).waitFor({ timeout: 20000 })
 
     // Arrêté, le service se relance depuis la recherche de la palette, et le journal
-    // s'ouvre du menu.
+    // s'ouvre du menu de son détail.
     await page.keyboard.press('Control+k')
     await palette.getByRole('textbox').fill('serveur statique')
     await paletteRow(/Lancer : Serveur statique/).click()
-    await panel.getByText(`Écoute sur :${httpPort}`).waitFor({ timeout: 20000 })
-    await panel.locator('li', { hasText: 'Serveur statique' }).getByRole('button', { name: 'Plus' }).click()
-    await page.getByRole('menuitem', { name: 'Suivre le journal' }).click()
+    await serviceLine.getByText(new RegExp(`^En marche · :${httpPort}`)).waitFor({ timeout: 20000 })
+    await serviceLine.getByText('Serveur statique', { exact: true }).click()
+    await stack.getByRole('button', { name: 'Plus', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Journal' }).click()
     await page.getByText('Serveur statique · logs').waitFor()
     await actionsTab.click()
-    await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
-    await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
+    if (await stack.count()) await page.keyboard.press('Escape')
+    await serviceLine.getByRole('switch', { name: 'Arrêter « Serveur statique »', exact: true }).click()
+    await serviceLine.getByText('Arrêté', { exact: true }).waitFor({ timeout: 20000 })
 
     // Ce qu'il sert, et la bascule réelle d'un arbre à l'autre. Démarré à la racine, il le
     // dit. Lancé depuis la conversation, dont le worktree est feat/offline-cache, alors que
@@ -1265,8 +1388,7 @@ try {
     await actionsTab.or(page.getByRole('button', { name: 'Ouvrir le panneau' }).first()).first().waitFor()
     if (!(await actionsTab.isVisible())) await page.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
     await actionsTab.click()
-    const row = panel.locator('li', { hasText: 'Serveur statique' })
-    await row.getByRole('button', { name: 'Lancer : Serveur statique' }).click()
+    await serviceLine.getByRole('switch', { name: 'Démarrer « Serveur statique » dans le worktree de cette conversation', exact: true }).click()
     const refused = page.getByRole('dialog', { name: '« Serveur statique » sert déjà la racine (main)' })
     await refused.getByText(`Il tourne depuis la racine (main) sur :${httpPort}.`, { exact: false }).waitFor()
     await refused.getByRole('link', { name: 'Ouvrir plutôt celui qui tourne' }).waitFor()
@@ -1276,23 +1398,28 @@ try {
     await refused.getByRole('button', { name: 'Basculer sur feat/offline-cache' }).click()
     await refused.waitFor({ state: 'detached', timeout: 20000 })
     await page.unroute(actionsList)
-    await row.getByText('feat/offline-cache').waitFor({ timeout: 20000 })
+    // Ce qu'il sert se lit dans son détail.
+    await serviceLine.getByText('Serveur statique', { exact: true }).click()
+    await stack.getByText('Ce qu’il sert').waitFor()
+    await stack.getByText('feat/offline-cache').first().waitFor({ timeout: 20000 })
     const moved = (await api('/api/actions')).find((entry) => entry.id === service.id)
     assert.equal(moved.service.served.worktreeId, offline.id)
     assert.equal(moved.service.cwd, offline.path)
     assert.equal(await fetch(`http://127.0.0.1:${httpPort}/`).then((response) => response.status), 200)
     await page.screenshot({ path: join(shots, 'served-switched.png') })
 
-    // « Basculer sur » depuis le menu de la ligne : retour à la racine.
-    await row.getByRole('button', { name: 'Plus' }).click()
+    // « Servir une autre branche… » depuis son détail : retour à la racine.
+    await stack.getByRole('button', { name: 'Servir une autre branche…', exact: true }).click()
     await page.getByRole('menuitem', { name: 'la racine (main)' }).click()
     const back = page.getByRole('dialog', { name: '« Serveur statique » sert déjà feat/offline-cache' })
     await back.getByRole('button', { name: 'Basculer sur la racine (main)' }).click()
     await back.waitFor({ state: 'detached', timeout: 20000 })
-    await row.getByText('la racine (main)').waitFor({ timeout: 20000 })
+    await stack.getByText('Racine du projet', { exact: true }).first().waitFor({ timeout: 20000 })
     assert.equal((await api('/api/actions')).find((entry) => entry.id === service.id).service.served.root, true)
-    await page.getByRole('button', { name: 'Arrêter : Serveur statique' }).first().click()
-    await panel.getByText('Arrêté').waitFor({ timeout: 20000 })
+    await page.keyboard.press('Escape')
+    await stack.waitFor({ state: 'detached' })
+    await serviceLine.getByRole('switch', { name: 'Arrêter « Serveur statique »', exact: true }).click()
+    await serviceLine.getByText('Arrêté', { exact: true }).waitFor({ timeout: 20000 })
 
     // Une instance par worktree (AC-06), pour de vrai : la racine et feat/offline-cache ont
     // chacune leur unité, sur le port libre que `PORT` leur donne, sans refus ni bascule.
@@ -1319,14 +1446,15 @@ try {
     const ports = both.map((entry) => entry.ports[0])
     assert.notEqual(ports[0], ports[1])
     for (const port of ports) assert.equal(await fetch(`http://127.0.0.1:${port}/`).then((response) => response.status), 200)
-    // Le panneau de la conversation : ses instances listées, chacune avec son lien.
-    const perTreeRow = panel.locator('li', { hasText: 'Statique par arbre' })
-    for (const port of ports) await perTreeRow.getByRole('link', { name: `:${port}`, exact: true }).waitFor({ timeout: 20000 })
-    await perTreeRow.getByRole('button', { name: 'Arrêter : Statique par arbre' }).waitFor()
-    await perTreeRow.scrollIntoViewIfNeeded()
+    // Le détail, en pile dans le panneau de la conversation : ses instances, chacune avec son lien.
+    const perTreeRow = line(page, 'Statique par arbre')
+    await perTreeRow.getByText('Statique par arbre', { exact: true }).click({ timeout: 20000 })
+    for (const port of ports) await stack.getByRole('link', { name: `:${port}`, exact: true }).waitFor({ timeout: 20000 })
     await page.screenshot({ path: join(shots, 'per-worktree-panel.png') })
+    await page.keyboard.press('Escape')
+    await stack.waitFor({ state: 'detached' })
     // Arrêter depuis la conversation n'arrête que l'instance de son arbre.
-    await perTreeRow.getByRole('button', { name: 'Arrêter : Statique par arbre' }).click()
+    await perTreeRow.getByRole('switch', { name: 'Arrêter « Statique par arbre »', exact: true }).click({ timeout: 20000 })
     for (let i = 0; i < 100; i++) {
       both = (await api('/api/actions')).find((entry) => entry.id === perTree.id).instances
       if (both.length === 1) break
@@ -1431,7 +1559,8 @@ try {
   await mobile.screenshot({ path: join(shots, 'actions-phone-header.png') })
   await mobile.getByRole('button', { name: 'Ouvrir le panneau' }).first().click()
   await mobile.locator('button[aria-pressed][aria-label^="Actions"]').click()
-  await mobile.locator(':not([data-command-runs]) > ul', { hasText: 'Dire bonjour' }).first().waitFor()
+  await line(mobile, 'Dire bonjour').waitFor()
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'rien ne déborde à 390 px')
   await mobile.locator('[data-command-runs]').getByText('Tests du panier').waitFor()
   await mobile.screenshot({ path: join(shots, 'actions-phone.png') })
   await mobile.locator('[data-command-runs] li', { hasText: 'Tests du panier' }).getByRole('button', { name: /^Tests du panier/ }).click()
@@ -1444,6 +1573,9 @@ try {
 
   // L'éditeur unifié : une commande planifiée, un service et un agent, créés pour de vrai.
   await checkEditor(page, base, project, conversation, api, context)
+
+  console.log('actions-ui-check : panneau étroit')
+  await checkPaneNarrow(context, base, project, conversation)
 
   // Supprimer le service arrête et retire son unité.
   for (const action of await api('/api/actions')) {

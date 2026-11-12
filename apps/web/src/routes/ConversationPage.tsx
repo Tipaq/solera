@@ -62,6 +62,7 @@ import { FileLinkContext } from '../lib/file-links'
 import { useTranslate } from '../lib/i18n'
 import { DetailSurfaceContext } from '../lib/detail-surface'
 import { clearSubAgent, setPanelOpen, setPanelTab, showCheckpoint, usePanelLayout, usePanelPresence } from '../lib/panel'
+import { signalTab } from '../lib/actions-pane'
 import { useProjects } from '../lib/projects'
 import { useTrackRead } from '../lib/reads'
 import { useCurrentUser } from '../lib/session'
@@ -1478,7 +1479,12 @@ export function ConversationPage() {
                 {activity ? <TurnActivity label={activity} /> : <span />}
                 <SignalRow
                   signals={signals}
-                  onSelect={() => setPanelOpen(true)}
+                  // Chaque signal ouvre l'onglet qui le tient : les sous-agents dans Agent, les
+                  // travaux de fond dans Actions, avec les processus des sessions (PACT-10).
+                  onSelect={(kind) => {
+                    setPanelTab(signalTab(kind))
+                    setPanelOpen(true)
+                  }}
                   className="justify-end"
                 />
               </div>
