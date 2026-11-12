@@ -1,7 +1,7 @@
 import { GitPullRequest, Play, Trash2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { TreeRow } from '../../lib/code-model'
+import { treeSessionId, type TreeRow } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
 
 /** Un geste sur un arbre : un bouton du tiroir, une entrée du menu `⋯` d'un couloir. */
@@ -16,7 +16,7 @@ export interface TreeAction {
 
 /** La session à rouvrir : celle qui t'attend, sinon la première vivante, sinon la plus récente. */
 export function sessionToOpen(tree: TreeRow): string | null {
-  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? tree.anySessionId
+  return treeSessionId(tree)
 }
 
 /**

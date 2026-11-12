@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { PullRequestBadgeState } from '@solera/protocol'
 import { liveTrees, orderLines, verdictOf, type TreeFields, type TreeRow, type TreeSession } from '../../lib/code-model'
+import { CodeInProgressView } from '../overview/CodeInProgress'
 import { CodeGraph } from './CodeGraph'
 
 const HOUR = 3_600_000
@@ -90,4 +91,11 @@ export const RacineSeule: Story = {
 /** Pas de dépôt git, ou rien en cours (A-4.1). */
 export const Vide: Story = {
   args: { projectId: 'p1', lines: [], settled: 0, base: null },
+}
+
+/** Le bloc de l'Aperçu (`CodeInProgress`) : son intitulé, et le tri et le compte faits par lui. */
+export const BlocDeLAperçu: Story = {
+  name: 'Bloc de l’Aperçu',
+  args: { projectId: 'p1', lines: [], settled: 0, base: 'main' },
+  render: () => <CodeInProgressView projectId="p1" trees={TREES} base="main" />,
 }

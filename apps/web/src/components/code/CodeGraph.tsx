@@ -4,12 +4,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Button, ConfirmDialog, cx } from '@solera/ui'
 import { lineGestures, statusOfLine, type LineGesture, type LineStatus, type TreeRow } from '../../lib/code-model'
 import { elapsed } from '../../lib/dates'
-import { translateError, useTranslate } from '../../lib/i18n'
-import { ApiRequestError } from '../../lib/api'
+import { useTranslate } from '../../lib/i18n'
 import { useMergePullRequest } from '../../lib/pull-requests'
 import { useRebaseTree, useTreeDiff } from '../../lib/tree-gestures'
 import { travailStateHref } from '../../lib/travail-model'
 import { WorktreeCleanupDialog } from '../WorktreeCleanupDialog'
+import { errorText } from '../travail/TravailNotice'
 import { CardRef } from './CardRef'
 import { Drift } from './Drift'
 import { PrTag } from './PrTag'
@@ -39,12 +39,6 @@ const STATUS_TONE: Record<LineStatus, { fill: string; text: string; pulse?: bool
   toClean: { fill: 'fill-line-strong', text: 'text-ink-faint' },
   default: { fill: 'fill-line-strong', text: 'text-ink-faint' },
   idle: { fill: 'fill-line-strong', text: 'text-ink-faint' },
-}
-
-/** Une erreur d'API dans la langue de l'interface, ou son message brut. */
-function errorText(error: unknown): string {
-  if (error instanceof ApiRequestError) return translateError(error.code, error.message)
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -184,6 +178,7 @@ function Branch({
 }) {
   const t = useTranslate()
   const gesturesId = useId()
+  const statusId = useId()
   const status = statusOfLine(line)
   const tone = STATUS_TONE[status]
   const name = line.branch ?? line.name
@@ -219,6 +214,7 @@ function Branch({
               type="button"
               aria-expanded={open}
               aria-controls={open ? gesturesId : undefined}
+              aria-describedby={statusId}
               title={t('code.line.gestures', { branch: name })}
               onClick={onToggle}
               className={cx(
@@ -229,7 +225,9 @@ function Branch({
             >
               {name}
             </button>
-            <span className={cx('shrink-0 text-xs', tone.text)}>{t(`code.status.${status}`)}</span>
+            <span id={statusId} className={cx('shrink-0 text-xs', tone.text)}>
+              {t(`code.status.${status}`)}
+            </span>
           </span>
           {/* À quoi sert l'arbre : sa carte, et le jalon de la carte. */}
           {line.card ? (

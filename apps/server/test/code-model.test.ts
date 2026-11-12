@@ -218,6 +218,8 @@ test('gestes : répondre à la session qui attend, ouvrir sinon, lancer ici sans
   const first = (over: Partial<TreeFields>) => lineGestures(row(over))[0]
   assert.deepEqual(first({ sessions: [session('running'), session('awaiting')] }), { kind: 'session', sessionId: 's-awaiting', reply: true })
   assert.deepEqual(first({ sessions: [session('broken')] }), { kind: 'session', sessionId: 's-broken', reply: false })
+  // Celle qui attend passe avant celle en erreur, quel que soit leur ordre.
+  assert.deepEqual(first({ sessions: [session('broken'), session('awaiting')] }), { kind: 'session', sessionId: 's-awaiting', reply: true })
   assert.deepEqual(first({ sessions: [session('running')] }), { kind: 'session', sessionId: 's-running', reply: false })
   // Une session close se rouvre : rien ne tourne, mais l'arbre a son fil.
   assert.deepEqual(first({ anySessionId: 'old' }), { kind: 'session', sessionId: 'old', reply: false })

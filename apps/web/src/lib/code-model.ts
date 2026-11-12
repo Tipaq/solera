@@ -238,9 +238,10 @@ export function orderLines(trees: TreeRow[]): TreeRow[] {
 
 type GestureTarget = Pick<TreeFields, 'id' | 'root' | 'sessions' | 'anySessionId'>
 
-/** La session vivante d'un arbre : celle qui attend, sinon la première. */
+/** La session vivante d'un arbre : celle qui attend, sinon celle en erreur, sinon la première. */
 export function liveSessionId(tree: Pick<TreeFields, 'sessions'>): string | null {
-  return tree.sessions.find((session) => session.tone !== 'running')?.id ?? tree.sessions[0]?.id ?? null
+  const withTone = (tone: SessionTone) => tree.sessions.find((session) => session.tone === tone)?.id
+  return withTone('awaiting') ?? withTone('broken') ?? tree.sessions[0]?.id ?? null
 }
 
 /**
