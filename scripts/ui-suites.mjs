@@ -75,6 +75,7 @@ const BATCHES = [
     'image-viewer', // 4
     'grok', // 4
     'opencode', // 4
+    'panel-agent', // ~15, à mesurer
   ],
 ]
 
