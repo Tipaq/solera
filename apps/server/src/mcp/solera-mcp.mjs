@@ -1260,13 +1260,13 @@ const ALL_TOOLS = [
   {
     name: 'request_card_change',
     description:
-      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance ou leurs liens « bloque ». **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
+      "Propose de changer une ou plusieurs cartes du board : leur colonne, leur parente, leur échéance, leurs liens « bloque », ou de leur ajouter des sous-tâches. **Ne change rien** : dépose une demande qui apparaît dans cette conversation et attend un clic du propriétaire du projet — c'est lui qui range son board, jamais toi. Sert pour ce que tu ne fais pas seul : passer une carte en terminé ou abandonné (une PR fusionnée et publiée, un chantier qu'une décision a rendu sans objet), toucher à la carte d'une autre session, ou changer l'échéance, la parente ou les blocages d'une carte qui existe déjà. Un ajout au jalon qui tient dans une carte existante s'y range en sous-tâches avec `add_subtasks`. Toutes les colonnes sont permises. Quand le travail d'une carte est fini et opérationnel — sa PR fusionnée et le résultat vérifié —, propose de la **clore** avec `close: true` : le clic la range en terminé, archive toutes ses conversations, la tienne comprise, retire ses worktrees et supprime ses branches fusionnées, sans rien forcer là où du travail n'est pas poussé. Dis dans la raison ce que tu as vérifié. Une carte dont la PR n'est pas fusionnée est refusée. Une carte parente se clôt une fois sa PR vers la branche par défaut fusionnée ; si des enfants restent ouvertes, la clôture les abandonne et la demande les nomme : ne le propose que si l'on t'a dit qu'elles ne se feront pas. Une raison écrite est obligatoire par carte. Une seule demande en attente à la fois, et un seul clic accorde la liste entière : groupe ce qui se décide ensemble plutôt que de déposer carte par carte. L'issue t'arrive en message à ton prochain tour, sans te relancer.",
     inputSchema: {
       type: 'object',
       properties: {
         changes: {
           type: 'array',
-          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks.`,
+          description: `Les changements proposés, de 1 à ${MAX_CARD_CHANGES} cartes. Chacun porte au moins un de column, close, parent, due, blocks, unblocks, add_subtasks.`,
           items: {
             type: 'object',
             properties: {
@@ -1301,6 +1301,11 @@ const ALL_TOOLS = [
                 type: 'array',
                 items: { type: 'integer' },
                 description: "Cartes qu'elle cessera de bloquer.",
+              },
+              add_subtasks: {
+                type: 'array',
+                items: { type: 'string' },
+                description: `Sous-tâches à ajouter à la carte, une ligne chacune, ${MAX_SUBTASKS} au plus et 300 caractères chacune. Ajoutées sous ses sous-tâches existantes ; une qu'elle porte déjà est refusée.`,
               },
               reason: {
                 type: 'string',

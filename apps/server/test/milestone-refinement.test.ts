@@ -128,8 +128,8 @@ async function harness(t: TestContext, as: 'owner' | 'stranger' = 'owner') {
     assert.equal(response.statusCode, 200, response.body)
     return response.json()
   }
-  const briefing = (conversationId: string) =>
-    projectOverview(db, { projectId: 'project', conversationId, soleraMcp: true, cardFiling: true }) ?? ''
+  const briefing = (conversationId: string, cardFiling = true) =>
+    projectOverview(db, { projectId: 'project', conversationId, soleraMcp: true, cardFiling }) ?? ''
 
   return { app, db, log, sent, card, session, request, createSession, cardOf, detail, briefing }
 }
@@ -219,6 +219,22 @@ test('la consigne d’une session d’affinage de jalon cite le skill, le cap, l
   const splits = h.briefing('splits')
   assert.match(splits, /découpage direct/)
   assert.doesNotMatch(splits, /questions d'abord/)
+})
+
+test('un ajout au jalon se range en sous-tâches d’une carte existante, ou en nouvelles cartes (#185)', async (t) => {
+  const h = await harness(t)
+  h.card('milestone', 7, { milestone: true })
+  h.session('refine', 'milestone')
+
+  const granted = h.briefing('refine')
+  assert.match(granted, /Ajout au jalon/)
+  assert.match(granted, /`request_card_change` avec `add_subtasks`/)
+  assert.match(granted, /`propose_cards`, `blocked_by`/)
+
+  // Sans le rangement de carte, l'outil n'est pas listé : la consigne ne le cite pas.
+  const denied = h.briefing('refine', false)
+  assert.match(denied, /Ajout au jalon/)
+  assert.doesNotMatch(denied, /add_subtasks/)
 })
 
 test('sans cap, la consigne d’affinage ne parle pas de cap ; un découpage hors jalon garde la consigne ordinaire', async (t) => {
@@ -336,8 +352,12 @@ test('le changement de cartes en attente se lit hors du fil, avec ses lignes', a
   h.card('milestone', 7, { milestone: true })
   h.card('child', 8, { parentId: 'milestone' })
   h.session('refine', 'milestone')
-  const requestId = h.request('refine', 'request_card_change', { changes: [{ card: 8, reason: 'Ranger' }] })
-  const line = { cardId: 'child', number: 8, title: 'Carte 8', fromColumn: 'todo' as const, toColumn: 'in_progress' as const, reason: 'Ranger' }
+  const requestId = h.request('refine', 'request_card_change', { changes: [{ card: 8, reason: 'Ranger', add_subtasks: ['Le tiroir'] }] })
+  // L'ajout au jalon rangé en sous-tâche (#185) se lit comme le reste de la ligne.
+  const line = {
+    cardId: 'child', number: 8, title: 'Carte 8', fromColumn: 'todo' as const, toColumn: 'in_progress' as const,
+    addSubtasks: ['Le tiroir'], reason: 'Ranger',
+  }
   h.log.append('refine', { type: 'card_filing.requested', requestId, cards: [line] })
 
   const detail = await h.detail('milestone')

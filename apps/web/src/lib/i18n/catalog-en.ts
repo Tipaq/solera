@@ -2757,6 +2757,7 @@ export const en = {
   'cardFiling.change.none': 'none',
   'cardFiling.change.blocks': 'Will block {cards}',
   'cardFiling.change.unblocks': 'Will no longer block {cards}',
+  'cardFiling.change.subtasks': 'Add {count} subtask(s):',
   'cardFiling.notApplied': 'Not applied: the card changed since the proposal.',
   'cardFiling.title.close.pending': 'An agent proposes to close a card',
   'cardFiling.title.close.past': 'Proposed card closure',
