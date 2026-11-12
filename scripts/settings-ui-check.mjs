@@ -146,6 +146,40 @@ try {
   }
   await shot(dialog.locator('nav, header + div').first(), '00-liste')
 
+  /*
+    SID-12 : « Sessions dans la sidebar », en tête de *La colonne*. Quatre boutons, un seul
+    pressé ; le choix est une préférence d'écran, gardée dans le stockage local et non
+    au compte, et « Ajuster à la hauteur », le défaut, n'y laisse rien.
+  */
+  await page.goto(`${base}/settings/affichage`)
+  const limitCard = page.locator('div')
+    .filter({ has: page.getByRole('heading', { name: 'Sessions dans la sidebar', exact: true }) })
+    .filter({ has: page.getByRole('button', { name: 'Ajuster à la hauteur' }) })
+    .last()
+  await limitCard.waitFor()
+  assert.deepEqual(
+    await limitCard.getByRole('button').allTextContents(),
+    ['Ajuster à la hauteur', '10', '20', '50'],
+  )
+  const pressed = async () => limitCard.locator('button[aria-pressed="true"]').allTextContents()
+  assert.deepEqual(await pressed(), ['Ajuster à la hauteur'], 'ajuster par défaut')
+  const stored = () => page.evaluate(() => localStorage.getItem('solera.display.sessionLimit'))
+  await limitCard.getByRole('button', { name: '20', exact: true }).click()
+  assert.deepEqual(await pressed(), ['20'])
+  assert.equal(await stored(), '20')
+  await page.goto(`${base}/settings/affichage`)
+  await limitCard.waitFor()
+  assert.deepEqual(await pressed(), ['20'], 'le choix tient au rechargement')
+  // Elle passe avant les lieux : c'est elle qui ouvre la partie « La colonne ».
+  const above = await page.evaluate(() => {
+    const headings = [...document.querySelectorAll('h2, h3')].map((node) => node.textContent)
+    return headings.indexOf('Sessions dans la sidebar') < headings.indexOf('Les lieux')
+  })
+  assert.ok(above, 'la carte en tête de la section')
+  await shot(limitCard, '05-sessions-sidebar')
+  await limitCard.getByRole('button', { name: 'Ajuster à la hauteur' }).click()
+  assert.equal(await stored(), null, 'le défaut ne laisse rien dans le stockage')
+
   // Le projet : hérité du compte, modifié ici, puis rendu à l'héritage (Q33).
   const projects = await (await context.request.get(`${base}/api/projects`)).json()
   const project = projects.find((entry) => entry.isOwner)
@@ -179,7 +213,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Permissions débordent au téléphone')
 
   assert.deepEqual(errors, [])
-  console.log(`OK : trois groupes, trois états au compte, anciennes adresses, héritage au projet, téléphone. Captures dans ${shots}.`)
+  console.log(`OK : trois groupes, trois états au compte, anciennes adresses, Sessions dans la sidebar, héritage au projet, téléphone. Captures dans ${shots}.`)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {
