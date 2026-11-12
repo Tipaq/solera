@@ -350,17 +350,25 @@ test('targetOf, targetValue, targetFromValue : aller et retour', () => {
 })
 
 test('editorTargets : les projets, puis Savoir, Instance (administrateurs), Sans projet', () => {
-  const values = (admin: boolean) => editorTargets(PROJECTS, { admin, what: 'agent' }).map((option) => option.value)
+  const values = (admin: boolean) => editorTargets(PROJECTS, { admin, what: 'agent', vault: true }).map((option) => option.value)
   assert.deepEqual(values(true), [`project:${ATLAS.id}`, `project:${NIMBUS.id}`, 'vault', 'instance', 'none'])
   assert.deepEqual(values(false), [`project:${ATLAS.id}`, `project:${NIMBUS.id}`, 'vault', 'none'])
-  // Une commande tourne dans un projet : le reste est grisé.
-  const commandTargets = editorTargets(PROJECTS, { admin: true, what: 'command' })
-  assert.deepEqual(commandTargets.filter((option) => option.disabled).map((option) => option.value), ['vault', 'instance', 'none'])
+  assert.ok(editorTargets(PROJECTS, { admin: true, what: 'agent', vault: true }).every((option) => option.closed === null))
+  // Une commande tourne dans un projet : le reste lui est fermé.
+  const commandTargets = editorTargets(PROJECTS, { admin: true, what: 'command', vault: true })
+  assert.deepEqual(
+    commandTargets.filter((option) => option.closed).map((option) => [option.value, option.closed]),
+    [['vault', 'commandOnly'], ['instance', 'commandOnly'], ['none', 'commandOnly']],
+  )
+  // Sans vault configuré, le Savoir n'a pas de dossier où tourner.
+  const noVault = editorTargets(PROJECTS, { admin: true, what: 'agent', vault: false })
+  assert.equal(noVault.find((option) => option.value === 'vault')!.closed, 'noVault')
 })
 
-test('defaultTarget : le premier projet par nom, sinon le Savoir', () => {
-  assert.deepEqual(defaultTarget(PROJECTS), { scope: 'project', projectId: ATLAS.id })
-  assert.deepEqual(defaultTarget([]), { scope: 'vault' })
+test('defaultTarget : le premier projet par nom, sinon le Savoir, sinon sans projet', () => {
+  assert.deepEqual(defaultTarget(PROJECTS, { vault: true }), { scope: 'project', projectId: ATLAS.id })
+  assert.deepEqual(defaultTarget([], { vault: true }), { scope: 'vault' })
+  assert.deepEqual(defaultTarget([], { vault: false }), { scope: 'none' })
 })
 
 test('fitTarget : une commande ramenée au premier projet, un agent garde sa portée', () => {

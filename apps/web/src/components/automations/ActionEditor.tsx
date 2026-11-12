@@ -65,6 +65,7 @@ import { setPanelExpanded } from '../../lib/panel'
 import { editorTargets, fitTarget, launchWhere, projectOfTarget, targetFromValue, targetValue, type PlannedScope, type ScopeProject } from '../../lib/planned'
 import type { ScheduleTarget } from '../../lib/schedules'
 import { useCurrentUser } from '../../lib/session'
+import { useVaultState } from '../../lib/vault'
 import { useProjectEnvironments, useProjects } from '../../lib/projects'
 import { screenText } from '../../lib/command-output'
 import { useTerminalOutput } from '../../lib/terminal-output'
@@ -629,14 +630,15 @@ function ScopeField({
 }) {
   const t = useTranslate()
   const { data: user } = useCurrentUser()
-  const options = editorTargets(projects, { admin: user?.isAdmin === true, what }).map((option) => {
+  const { data: vault } = useVaultState()
+  const options = editorTargets(projects, { admin: user?.isAdmin === true, what, vault: vault?.configured === true }).map((option) => {
     const scope = scopeOfTarget(option.target, projects)
     return {
       value: option.value,
       label: scope.kind === 'project' ? (scope.project?.name ?? t('planned.scope.unknown')) : t(`planned.scope.${scope.kind}`),
       icon: <ScopeMark scope={scope} />,
-      hint: option.disabled ? t('planned.scopeField.commandOnly') : undefined,
-      disabled: option.disabled,
+      hint: option.closed ? t(`planned.scopeField.${option.closed}`) : undefined,
+      disabled: option.closed !== null,
     }
   })
   return (

@@ -304,28 +304,42 @@ export function targetFromValue(value: string): ScheduleTarget | null {
   return value === 'vault' || value === 'instance' || value === 'none' ? { scope: value } : null
 }
 
+/** Pourquoi une portée est fermée : une commande vit dans un projet ; sans vault, pas de Savoir. */
+export type ClosedTarget = 'commandOnly' | 'noVault'
+
 export interface TargetOption {
   value: string
   target: ScheduleTarget
-  /** Une commande tourne dans un projet : le reste lui est fermé. */
-  disabled: boolean
+  closed: ClosedTarget | null
 }
 
 const byName = (a: ScopeProject, b: ScopeProject) => a.name.localeCompare(b.name)
 
-/** Les portées que propose l'éditeur : les projets par nom, Savoir, Instance (administrateurs), Sans projet. */
-export function editorTargets(projects: readonly ScopeProject[], { admin, what }: { admin: boolean; what: What }): TargetOption[] {
+/**
+ * Les portées que propose l'éditeur : les projets par nom, Savoir, Instance
+ * (administrateurs), Sans projet. `vault` : un dossier de vault est configuré.
+ */
+export function editorTargets(
+  projects: readonly ScopeProject[],
+  { admin, what, vault }: { admin: boolean; what: What; vault: boolean },
+): TargetOption[] {
   const outside: ScheduleTarget[] = [{ scope: 'vault' }, ...(admin ? [{ scope: 'instance' } as const] : []), { scope: 'none' }]
+  const closed = (target: ScheduleTarget): ClosedTarget | null => {
+    if (target.scope === 'project') return null
+    if (what === 'command') return 'commandOnly'
+    return target.scope === 'vault' && !vault ? 'noVault' : null
+  }
   return [
     ...[...projects].sort(byName).map((project) => ({ scope: 'project', projectId: project.id }) as const),
     ...outside,
-  ].map((target) => ({ value: targetValue(target), target, disabled: what === 'command' && target.scope !== 'project' }))
+  ].map((target) => ({ value: targetValue(target), target, closed: closed(target) }))
 }
 
-/** La portée proposée d'office : le premier projet, sinon le Savoir. */
-export function defaultTarget(projects: readonly ScopeProject[]): ScheduleTarget {
+/** La portée proposée d'office : le premier projet, sinon le Savoir s'il existe, sinon sans projet. */
+export function defaultTarget(projects: readonly ScopeProject[], { vault }: { vault: boolean }): ScheduleTarget {
   const [first] = [...projects].sort(byName)
-  return first ? { scope: 'project', projectId: first.id } : { scope: 'vault' }
+  if (first) return { scope: 'project', projectId: first.id }
+  return vault ? { scope: 'vault' } : { scope: 'none' }
 }
 
 /**
@@ -335,7 +349,7 @@ export function defaultTarget(projects: readonly ScopeProject[]): ScheduleTarget
  */
 export function fitTarget(target: ScheduleTarget, what: What, projects: readonly ScopeProject[]): ScheduleTarget {
   if (what !== 'command' || target.scope === 'project' || projects.length === 0) return target
-  return defaultTarget(projects)
+  return defaultTarget(projects, { vault: false })
 }
 
 /** Le projet d'une portée ; null hors projet. */

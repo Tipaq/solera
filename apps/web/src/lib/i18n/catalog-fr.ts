@@ -4575,6 +4575,7 @@ export const fr: Catalog = {
   "planned.delete.description": "Elle disparaît, sa planification avec elle. Les sessions de ses passages restent, archivées.",
   "planned.scopeField.label": "Portée",
   "planned.scopeField.commandOnly": "Une commande tourne dans un projet.",
+  "planned.scopeField.noVault": "Aucun vault n’est configuré : règle-le dans Réglages › Savoir.",
   "planned.scopeField.hint": "Un lancement part {where}.",
   "actionEditor.error.scope": "Une commande tourne dans un projet : choisis-en un.",
   "actionDrawer.close": "Fermer",

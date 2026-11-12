@@ -91,6 +91,12 @@ test('editorStateOf : une nouvelle action est une commande, tâche, à la demand
   assert.equal(state.target, null)
 })
 
+test('editorStateOf : une tâche hors projet se modifie dans sa portée, sans la changer', () => {
+  const state = editorStateOf({ from: fromTask(task({ projectId: null, scope: 'vault' })) })
+  assert.deepEqual(state.target, { scope: 'vault' })
+  assert.equal(editorStateOf({ from: fromTask(task()) }).target, null)
+})
+
 test('editorStateOf : target, la portée choisie d’office hors d’un projet (PLF-10)', () => {
   const state = editorStateOf({ preset: { what: 'agent' }, schedule: true, target: { scope: 'vault' } })
   assert.deepEqual(state.target, { scope: 'vault' })

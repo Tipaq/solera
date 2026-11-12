@@ -4581,6 +4581,7 @@ export const en = {
   'planned.delete.description': "It goes away, its schedule with it. The sessions of its runs stay, archived.",
   'planned.scopeField.label': "Scope",
   'planned.scopeField.commandOnly': "A command runs inside a project.",
+  'planned.scopeField.noVault': "No vault is set up: configure one in Settings › Knowledge.",
   'planned.scopeField.hint': "A run starts {where}.",
   'actionEditor.error.scope': "A command runs inside a project: pick one.",
   'actionDrawer.close': "Close",

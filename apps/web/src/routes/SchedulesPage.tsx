@@ -45,6 +45,7 @@ import {
 import { useProjects } from '../lib/projects'
 import type { ScheduleTarget } from '../lib/schedules'
 import { useStoredPref, useView } from '../lib/use-view'
+import { useVaultState } from '../lib/vault'
 
 const VIEWS = ['lanceur', 'agenda', 'liste'] as const
 type View = (typeof VIEWS)[number]
@@ -92,6 +93,7 @@ export function SchedulesPage() {
   const t = useTranslate()
   const data = useAutomations({ all: true })
   const { data: projects } = useProjects()
+  const { data: vault } = useVaultState()
   const [view, setView] = useView<View>('planifiees', null, VIEWS)
   const [grouping, setGrouping] = useStoredPref<Grouping>('solera.planned.group', readGrouping)
   const [agendaScope, setAgendaScope] = useState<AgendaScope>('week')
@@ -109,7 +111,7 @@ export function SchedulesPage() {
   const active = plannedFilterCount(filters)
 
   /** Une création d'ici est planifiée d'office (PLF-1), dans la portée donnée ou la première. */
-  const create = (seed: EditorSeed, target: ScheduleTarget = defaultTarget(open)) =>
+  const create = (seed: EditorSeed, target: ScheduleTarget = defaultTarget(open, { vault: vault?.configured === true })) =>
     setPanel({ mode: 'edit', seed: { ...seed, schedule: true, target }, back: null })
   const onNew = (kind: NewActionEntry['kind']) => {
     if (kind === 'schedule') setPanel({ mode: 'pick' })
@@ -246,13 +248,13 @@ export function SchedulesPage() {
               }
             />
           ) : view === 'agenda' ? (
-            <ActionsAgenda items={shown} scope={agendaScope} onScope={setAgendaScope} onOpen={(item) => gestures.handlers.onOpen(item as PlannedItem)} />
+            <ActionsAgenda items={shown} scope={agendaScope} onScope={setAgendaScope} onOpen={(item) => gestures.handlers.onOpen(item)} />
           ) : shown.length === 0 && !data.isPending ? (
             <p className="rounded-xl border border-dashed border-line px-4 py-8 text-center text-sm text-ink-faint">{t('planned.noMatch')}</p>
           ) : view === 'lanceur' ? (
             <Launcher items={shown} scopes={scopes} grouping={grouping} now={now} handlers={gestures.handlers} onAdd={(target) => create({}, target)} />
           ) : (
-            <PlannedHealth items={shown} group={grouping} costOf={data.costOf} onOpen={(item) => gestures.handlers.onOpen(item)} />
+            <PlannedHealth items={shown} group={grouping} costOf={data.costOf} onOpen={gestures.handlers.onOpen} />
           )}
         </div>
       </div>

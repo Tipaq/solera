@@ -1,7 +1,7 @@
 import { AlarmClock, ArrowUpRight, MoreHorizontal, Play } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { IconButton, Menu, MenuItem, MenuSeparator, cx } from '@solera/ui'
-import { cadenceWords, natureOf } from '../../lib/automations'
+import { cadenceWords, natureOf, type Automation } from '../../lib/automations'
 import { conversationPath } from '../../lib/conversation-route'
 import { locale, useTranslate } from '../../lib/i18n'
 import { launchWhere, plannedGestureOf, plannedState, type PlannedItem } from '../../lib/planned'
@@ -12,7 +12,7 @@ import { ScopePip } from './ScopeMarks'
 
 /** Ce qu'une tuile ou une ligne de la page Planifiées sait faire d'une tâche. */
 export interface PlannedHandlers {
-  onOpen: (item: PlannedItem, review?: boolean) => void
+  onOpen: (item: Automation, review?: boolean) => void
   onEdit: (item: PlannedItem) => void
   onLaunch: (item: PlannedItem) => void
   onPause: (item: PlannedItem, paused: boolean) => void
