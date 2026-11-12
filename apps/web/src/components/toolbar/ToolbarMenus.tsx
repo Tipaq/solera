@@ -103,7 +103,7 @@ export function DisplayMenu<K extends string>(
       label={label}
       side="bottom"
       align="end"
-      className="w-80"
+      className={props.compact ? 'w-64' : 'w-80'}
       trigger={
         <TooltipButton
           type="button"

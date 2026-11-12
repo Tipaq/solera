@@ -153,7 +153,7 @@ export const ActionsPane = memo(function ActionsPane({
   } else if (panelShows(panel, data.items)) {
     body = (
       <>
-        {onExpand && paneOffersExpand(panel, width, true) ? (
+        {onExpand && paneOffersExpand(panel, width, onExpand !== undefined) ? (
           <PanelNotice>
             <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               {t('panel.actions.narrow')}
@@ -182,6 +182,7 @@ export const ActionsPane = memo(function ActionsPane({
           meta={data.items.length}
           lead={
             <ActionsStatusMeta
+              compact
               status={actionsStatus(data.items, works)}
               onRunning={() => showInList(RUNNING_ANCHOR)}
               onReview={() => showInList(REVIEW_ANCHOR)}
@@ -209,13 +210,13 @@ export const ActionsPane = memo(function ActionsPane({
               <p className="px-3 pt-1 text-xs text-ink-faint">{t(view === 'lanceur' ? 'actionsTab.display.lanceurHint' : 'panel.actions.hint.list')}</p>
             )}
           </DisplayMenu>
-          <NewActionMenu button={t('panel.actions.new')} onPick={(kind) => setPanel(newActionPanel(kind))} />
+          <NewActionMenu inPanel onPick={(kind) => setPanel(newActionPanel(kind))} />
           <Link to={`/p/${projectId}/actions`} aria-label={t('panel.actions.openTab')} title={t('panel.actions.openTab')} className={panelToolClass()}>
             <ArrowUpRight size={14} aria-hidden />
           </Link>
         </PanelToolbar>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <div data-panel-actions-view={view} className="min-h-0 flex-1 overflow-y-auto pb-2">
           {data.isPending ? (
             <p className="flex items-center gap-1.5 px-3 py-3 text-xs text-ink-faint">
               <Loader size={12} className="animate-spin" />
@@ -242,7 +243,8 @@ export const ActionsPane = memo(function ActionsPane({
   }
 
   return (
-    <div ref={root} className="flex min-h-0 min-w-0 flex-1 flex-col">
+    // Les repères servent aux suites : l'onglet, et la vue qu'il montre.
+    <div ref={root} data-panel-actions className="flex min-h-0 min-w-0 flex-1 flex-col">
       {gestures.error ? <PanelNotice tone="critical">{gestures.error}</PanelNotice> : null}
       {runError ? (
         <PanelNotice tone="critical" onClose={() => setRunError(null)}>

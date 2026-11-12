@@ -1,6 +1,6 @@
 import { AlarmClock, Bot, ChevronDown, Plus, Server, SquareTerminal } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { Button, Popover } from '@solera/ui'
+import { Button, Popover, panelToolClass } from '@solera/ui'
 import type { NewActionKind } from '../../lib/action-panel'
 import { useTranslate, type MessageKey } from '../../lib/i18n'
 
@@ -16,10 +16,10 @@ const ENTRIES: { kind: Exclude<NewActionKind, 'any'>; icon: ReactNode; title: Me
  * d'agent — ou planifier une action qui existe déjà. Chaque entrée dit en une ligne ce
  * qu'elle crée.
  *
- * `button` remplace le mot du bouton : « Nouvelle » dans le panneau, où « Actions » est
- * déjà le titre de la ligne.
+ * Dans la ligne d'outils du panneau (`inPanel`) : un outil bordé comme ses voisins, et
+ * « Nouvelle », « Actions » étant déjà le titre de la ligne.
  */
-export function NewActionMenu({ onPick, button }: { onPick: (kind: NewActionKind) => void; button?: string }) {
+export function NewActionMenu({ onPick, inPanel = false }: { onPick: (kind: NewActionKind) => void; inPanel?: boolean }) {
   const t = useTranslate()
   const [open, setOpen] = useState(false)
   const pick = (kind: NewActionKind) => {
@@ -35,9 +35,15 @@ export function NewActionMenu({ onPick, button }: { onPick: (kind: NewActionKind
       align="end"
       className="w-72 p-1"
       trigger={
-        <Button size="sm" icon={<Plus size={14} />} aria-label={t('actionsTab.new.label')}>
-          {button ?? t('actionsTab.new.button')} <ChevronDown size={13} className="-mr-1" aria-hidden />
-        </Button>
+        inPanel ? (
+          <button type="button" aria-label={t('actionsTab.new.label')} className={panelToolClass()}>
+            <Plus size={14} aria-hidden /> {t('panel.actions.new')} <ChevronDown size={13} className="-mr-1 text-ink-faint" aria-hidden />
+          </button>
+        ) : (
+          <Button size="sm" icon={<Plus size={14} />} aria-label={t('actionsTab.new.label')}>
+            {t('actionsTab.new.button')} <ChevronDown size={13} className="-mr-1" aria-hidden />
+          </Button>
+        )
       }
     >
       {ENTRIES.map((entry) => (
