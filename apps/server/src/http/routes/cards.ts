@@ -346,7 +346,13 @@ export function registerCardRoutes(app: FastifyInstance, ctx: AppContext, store:
       branch: row.branch,
       branchPr:
         row.branchPrNumber !== null && row.branchPrUrl !== null
-          ? { number: row.branchPrNumber, url: row.branchPrUrl, mergedAt: row.branchPrMergedAt }
+          ? {
+              number: row.branchPrNumber,
+              url: row.branchPrUrl,
+              base: row.branchPrBase,
+              mergedAt: row.branchPrMergedAt,
+              closedAt: row.branchPrClosedAt,
+            }
           : null,
       refinement: refinements.get(row.id) ?? null,
       acceptedAt: row.acceptedAt,

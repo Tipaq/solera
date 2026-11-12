@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
@@ -10,13 +10,14 @@ import { fileURLToPath } from 'node:url'
 import { launchBrowser } from './checks/browser.mjs'
 
 /*
- * Les pages de lieu : l'Aperçu d'un projet, Projets, Planifiées, et les deux Journaux.
+ * Les pages de lieu : l'Aperçu d'un projet, celui du portefeuille, Planifiées, et le Journal.
  *
  * Ce que la suite vérifie et qu'une relecture ne verrait pas : l'ordre des blocs de
- * l'Aperçu (« Ce qui t'attend », puis la pile Actions et Derniers événements dans la
- * colonne de droite) et leurs renvois vers les onglets Actions et Travail, que le board
- * global est bien celui de l'application — mêmes colonnes, mêmes tuiles — et que les
- * réglages du projet sont toujours joignables, dans la coque.
+ * l'Aperçu (« Ce qui t'attend », puis le phare des jalons, puis la pile Actions et
+ * Derniers événements dans la colonne de droite) et leurs renvois vers les onglets
+ * Actions, Travail et Jalons, que le board global est bien celui de l'application —
+ * mêmes colonnes, mêmes tuiles — et que les réglages du projet sont toujours
+ * joignables, dans la coque.
  *
  * La vue d'un projet est logée dans une coque (`PlaceShell`, page projet v2) : la bande
  * porte l'avatar, le nom et « + Conversation », la rangée porte les cinq vues puis
@@ -92,6 +93,22 @@ try {
   const nimbus = projects.find((entry) => entry.name === 'Nimbus')
   const docs = projects.find((entry) => entry.name === 'Docs')
   assert.ok(nimbus && docs)
+  /*
+    Pour le « Code en cours » de l'Aperçu (plus bas), avant toute lecture de l'état des
+    arbres, que le serveur garde 30 s : un commit sur main, pour que les arbres prennent
+    du retard, et un arbre vide créé au shell. Le dépôt est celui du jeu d'essai, dans le
+    dossier temporaire de la suite.
+  */
+  const gitIn = (cwd, ...args) => execFileSync('git', args, {
+    cwd,
+    stdio: 'pipe',
+    env: {
+      ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null',
+      GIT_AUTHOR_NAME: 'Suite', GIT_AUTHOR_EMAIL: 'suite@example.com', GIT_COMMITTER_NAME: 'Suite', GIT_COMMITTER_EMAIL: 'suite@example.com',
+    },
+  })
+  gitIn(nimbus.workspacePath, 'commit', '--allow-empty', '-q', '-m', 'Bump main for the overview suite')
+  gitIn(nimbus.workspacePath, 'worktree', 'add', '-q', '-b', 'feat/deja-fini', join(data, 'shell-tree'), 'main')
 
   const page = await context.newPage()
   const errors = []
@@ -239,8 +256,8 @@ try {
 
   // ─── L'Aperçu d'un projet ─────────────────────────────────────────────────
   /*
-    La mise en page `combo` (`projet.md` A-1) : « Ce qui t'attend » en tête, puis la
-    place du phare, puis une grille — à gauche la place du « Code en cours », à droite
+    La mise en page `combo` (`projet.md` A-1) : « Ce qui t'attend » en tête, puis le
+    phare des jalons, puis une grille — à gauche le « Code en cours », à droite
     la pile « Actions » puis « Derniers événements ».
 
     Le jeu d'essai n'a pas d'action, et un service ne tournerait pas sans systemd : la
@@ -342,6 +359,65 @@ try {
   // Ce qui réclame est dans « Ce qui t'attend » depuis #163, et rien d'autre ne compte.
   await inbox.getByText(/à relire/).first().waitFor()
   assert.equal(await page.getByText(/cartes$/).count(), 0, 'L’Aperçu ne porte aucun inventaire')
+
+  /*
+    Le phare des jalons (A-3), entre « Ce qui t'attend » et la grille : le jalon courant
+    en grand, la file à sa droite. Dans le jeu d'essai, v1.2 a trois enfants ouverts et
+    v1.1 est livrée ; il n'y a pas d'autre jalon, donc les deux files sont vides — la
+    suite en pose deux plus bas.
+  */
+  const beacon = page.getByRole('region', { name: 'Jalons', exact: true })
+  await beacon.waitFor()
+  const beaconBox = await beacon.boundingBox()
+  assert.ok(beaconBox.y > inboxBox.y + inboxBox.height && beaconBox.y + beaconBox.height < actionsBlock.y, 'Le phare est entre « Ce qui t’attend » et la grille')
+  await beacon.getByText('Jalon en cours', { exact: true }).waitFor()
+  assert.equal(
+    await beacon.getByRole('link', { name: milestone.title, exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline/${milestone.number}`,
+    'Le titre du jalon mène à sa page',
+  )
+  await beacon.getByRole('img', { name: /^\d+ cartes faites sur 3$/ }).waitFor()
+  await beacon.getByText(`#${milestone.number} · échéance dans 9 jours`, { exact: true }).waitFor()
+  await beacon.getByText(/^1 vague · 3 cartes à la fois au plus$|^\d vagues · 3 cartes à la fois au plus$/).waitFor()
+  await beacon.getByText(/^Vague 1 ?· \d\/\d/).first().waitFor()
+  // Une pastille par enfant non abandonnée, nommée au survol, qui mène à sa carte.
+  assert.equal(await beacon.getByRole('link', { name: /^#\d+ .+ — / }).count(), 3, 'Une pastille par carte du jalon')
+  for (const queue of ['Ensuite · 0', 'Plus tard · 0']) {
+    await beacon.getByRole('heading', { name: queue, exact: true }).waitFor()
+  }
+  assert.equal(await beacon.getByText('Rien pour l’instant.', { exact: true }).count(), 2)
+  assert.equal(
+    await beacon.getByRole('link', { name: 'Tous les jalons · 1 livré', exact: true }).getAttribute('href'),
+    `/p/${nimbus.id}/timeline`,
+  )
+  /* Le geste suivant : le repère « N t'attend » quand une demande du jalon est dans la
+     liste — il la déplie là-haut sans la redire (A-3.8) —, sinon un bouton vers le jalon. */
+  const mark = beacon.getByRole('button', { name: /^\d+ t’attend(ent)?$/ })
+  if (await mark.count()) {
+    await beacon.getByText('Le jalon reprend dès ta réponse.', { exact: true }).waitFor()
+    await mark.click()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).waitFor()
+    await inbox.getByRole('button', { name: 'Fermer', exact: true }).click()
+  } else {
+    await beacon.getByRole('button', { name: /./ }).first().click()
+    await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
+    await page.goBack()
+    await beacon.waitFor()
+  }
+  /* La file : un jalon prêt part dans « Ensuite », une idée dans « Plus tard » (A-3.9).
+     Posés ici et retirés après le téléphone, pour ne rien changer aux vues suivantes. */
+  const createCard = async (data) => (await context.request.post(`${base}/api/projects/${nimbus.id}/cards`, { data })).json()
+  const readyMilestone = await createCard({ title: 'Accès distant fiable', milestone: true })
+  const readyChild = await createCard({ title: 'Adresse de secours', parentId: readyMilestone.id })
+  const idea = await createCard({ title: 'Mode hors ligne complet', milestone: true })
+  await page.reload()
+  await beacon.getByRole('heading', { name: 'Ensuite · 1', exact: true }).waitFor()
+  await beacon.getByRole('heading', { name: 'Plus tard · 1', exact: true }).waitFor()
+  const queued = (title) => beacon.getByRole('link').filter({ hasText: title })
+  assert.equal(await queued('Accès distant fiable').getAttribute('href'), `/p/${nimbus.id}/timeline/${readyMilestone.number}`)
+  await queued('Accès distant fiable').getByText('Prêt', { exact: true }).waitFor()
+  await queued('Mode hors ligne complet').getByText('Idée', { exact: true }).waitFor()
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare.png') })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-projet.png') })
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions.png') })
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements.png') })
@@ -355,28 +431,155 @@ try {
     'Au téléphone, les blocs sont empilés sur la gouttière',
   )
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Rien ne déborde à 390 px')
+  const narrowBeacon = await beacon.boundingBox()
+  assert.ok(Math.abs(narrowBeacon.x - narrowInbox.x) <= 1, 'Au téléphone, le phare est sur la gouttière')
+  await beacon.screenshot({ animations: 'disabled', path: join(shots, 'apercu-phare-mobile.png') })
+  for (const card of [readyChild, readyMilestone, idea]) {
+    assert.ok((await context.request.delete(`${base}/api/cards/${card.id}`)).ok())
+  }
+  // La liste des cartes en cache les porte encore : la page la relit.
+  await page.reload()
+  await beacon.waitFor()
   await actions.screenshot({ animations: 'disabled', path: join(shots, 'apercu-actions-mobile.png') })
   await events.screenshot({ animations: 'disabled', path: join(shots, 'apercu-evenements-mobile.png') })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.unroute('**/api/actions')
 
+  // ─── Code en cours : le graphe des branches et ses gestes (A-4) ──────────
   /*
-    La chronologie : les jalons en lignes, les cartes en barres. Ce qu'une relecture ne
-    verrait pas et que la suite tient — le **pied de vue compte ce qui n'a ni jalon ni
-    date**, sans quoi la vue mentirait par omission, et une carte-jalon n'est pas sa
-    propre barre.
+    Le dépôt de Nimbus est celui du jeu d'essai, dans le dossier temporaire de la suite :
+    les gestes y agissent pour de vrai (rebase, nettoyage), jamais sur un dépôt réel. Il
+    a reçu un commit sur main et un arbre vide créé au shell : sans session, celui-ci est
+    compté à nettoyer, pas montré. La forge n'existe pas ici : une PR prête est servie
+    pour une branche, et sa fusion interceptée.
+  */
+  const statuses = await (await context.request.get(`${base}/api/projects/${nimbus.id}/worktrees/status`)).json()
+  const quietTree = statuses.worktrees.find((tree) => tree.branch === 'feat/radar-prefetch')
+  assert.ok(quietTree && quietTree.behind > 0, `feat/radar-prefetch a pris du retard : ${JSON.stringify(quietTree)}`)
+  const prUrl = 'https://github.com/o/nimbus/pull/42'
+  await page.route(`**/api/projects/${nimbus.id}/pull-requests`, (route) => route.fulfill({
+    json: {
+      available: true, fetchedAt: Date.now(),
+      pullRequests: [{ number: 42, url: prUrl, title: 'Radar prefetch', branch: 'feat/radar-prefetch', base: 'main', state: 'ready', checks: { passed: 3, pending: 0, failed: [] }, review: null, updatedAt: Date.now() }],
+    },
+  }))
+  const merged = []
+  await page.route('**/api/projects/*/pull-requests/*/merge', (route) => {
+    merged.push(new URL(route.request().url()).pathname)
+    return route.fulfill({ json: { number: 42, url: prUrl, branch: 'feat/radar-prefetch', base: 'main' } })
+  })
+
+  await page.goto(`${base}/p/${nimbus.id}`)
+  const code = page.getByRole('region', { name: 'Code en cours', exact: true })
+  await code.waitFor()
+  const lineButtons = code.locator('[data-line] button[aria-expanded]')
+  await code.locator('[data-line]').filter({ hasText: 'feat/radar-prefetch' }).waitFor()
+  const lineNames = await lineButtons.allInnerTexts()
+  // A-4.5 et A-4.6 : la racine en tête ; l'arbre vide et sans session n'est que compté.
+  assert.equal(lineNames[0], nimbus.git.branch, `La racine en tête : ${lineNames}`)
+  assert.ok(lineNames.includes('feat/offline-cache') && lineNames.includes('feat/radar-prefetch'), `Les arbres vivants : ${lineNames}`)
+  assert.ok(!lineNames.includes('feat/deja-fini'), 'Un arbre vide sans session est compté, pas montré')
+  // A-4.2, A-4.4 : lignes de 56 px, colonnes fixes, en grand écran dans la moitié gauche.
+  const lineOfCode = (branch) => code.locator('[data-line]').filter({ has: page.getByRole('button', { name: branch, exact: true }) })
+  const radar = lineOfCode('feat/radar-prefetch')
+  assert.equal(Math.round((await radar.boundingBox()).height), 56)
+  assert.ok((await code.boundingBox()).x + (await code.boundingBox()).width < (await actions.boundingBox()).x, 'Le code est à gauche de la pile')
+  await radar.getByText('prête à fusionner', { exact: true }).waitFor()
+  await radar.getByText(/^#42$/).waitFor()
+  await radar.getByText(new RegExp(`↓${quietTree.behind}`)).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code.png') })
+
+  // A-4.7 : un clic n'importe où sur la ligne la déplie ; une ligne à la fois.
+  const radarToggle = radar.getByRole('button', { name: 'feat/radar-prefetch', exact: true })
+  const radarBox = await radar.boundingBox()
+  await page.mouse.click(radarBox.x + radarBox.width * 0.6, radarBox.y + 8)
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'true', 'Un clic sur la ligne la déplie')
+  const radarGestures = page.locator(`[id="${await radarToggle.getAttribute('aria-controls')}"]`)
+  for (const label of ['Voir le diff', 'Fusionner la PR #42', `Rebaser sur main (↓${quietTree.behind})`, 'Nettoyer l’arbre']) {
+    await radarGestures.getByRole('button', { name: new RegExp(`^${label.replace(/[()]/g, '\\$&')}`) }).waitFor()
+  }
+  await radarGestures.getByText(/PR #42 · prête/).waitFor()
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-gestes.png') })
+  const offlineToggle = lineOfCode('feat/offline-cache').getByRole('button', { name: 'feat/offline-cache', exact: true })
+  await offlineToggle.focus()
+  await page.keyboard.press('Enter')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'true', 'Entrée déplie une ligne')
+  assert.equal(await radarToggle.getAttribute('aria-expanded'), 'false', 'Une seule ligne dépliée à la fois')
+  await page.keyboard.press(' ')
+  assert.equal(await offlineToggle.getAttribute('aria-expanded'), 'false', 'Espace la replie')
+
+  // Fusionner la PR : une confirmation, puis la vraie route de fusion.
+  await radarToggle.click()
+  await radarGestures.getByRole('button', { name: 'Fusionner la PR #42' }).click()
+  const mergeDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await mergeDialog.getByText('Fusionner la PR #42 ?').waitFor()
+  await mergeDialog.getByRole('button', { name: 'Fusionner', exact: true }).click()
+  await code.getByText('PR #42 fusionnée.').waitFor()
+  assert.deepEqual(merged, [`/api/projects/${nimbus.id}/pull-requests/42/merge`])
+  await page.unroute('**/api/projects/*/pull-requests/*/merge')
+
+  // Nettoyer : le dialogue avec le plan réel ; on ne nettoie pas, on regarde.
+  await radarGestures.getByRole('button', { name: 'Nettoyer l’arbre' }).click()
+  const cleanDialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+  await cleanDialog.getByText(/feat\/radar-prefetch/).first().waitFor()
+  await cleanDialog.getByText(/Supprimer la branche|branche/).first().waitFor()
+  await page.keyboard.press('Escape')
+  await cleanDialog.waitFor({ state: 'detached' })
+
+  // Rebaser : sans session vivante, l'arbre est rebasé sur place, dans le dépôt d'essai.
+  if ((await radarToggle.getAttribute('aria-expanded')) !== 'true') await radarToggle.click()
+  await radarGestures.getByRole('button', { name: /^Rebaser sur main/ }).click()
+  await code.getByText(/feat\/radar-prefetch rebasée sur main\.|Rebase demandé à sa session\./).waitFor()
+  await code.getByText('feat/radar-prefetch rebasée sur main.', { exact: true }).waitFor()
+  // Dans le dépôt lui-même : le cache de l'état des arbres n'a pas à être cru sur parole.
+  assert.equal(String(gitIn(nimbus.workspacePath, 'rev-list', '--count', 'feat/radar-prefetch..main')).trim(), '0', 'Le rebase a été fait pour de vrai')
+
+  // « + 1 arbre fusionné à nettoyer » mène à Travail, Par arbre, filtré « À nettoyer ».
+  const settledLink = code.getByRole('link', { name: /^\+ \d+ arbres? fusionnés? à nettoyer$/ })
+  assert.match(await settledLink.getAttribute('href'), new RegExp(`/p/${nimbus.id}/travail\\?vue=couloirs&etat=cleanup$`))
+  await settledLink.click()
+  await page.waitForURL(`**/p/${nimbus.id}/travail?vue=couloirs`)
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).waitFor()
+  await page.unroute(`**/api/projects/${nimbus.id}/pull-requests`)
+  // Le filtre imposé est retenu comme un autre : on le retire pour la suite.
+  await page.locator('[data-filter-chip]').filter({ hasText: 'À nettoyer' }).getByRole('button', { name: 'Retirer ce filtre' }).click()
+
+  // Voir le diff : la racine ouvre le panneau git sur place, ou dans sa session.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await code.waitFor()
+  const rootToggle = lineButtons.first()
+  await rootToggle.click()
+  const rootGestures = page.locator(`[id="${await rootToggle.getAttribute('aria-controls')}"]`)
+  assert.equal(await rootGestures.getByRole('button', { name: /^Rebaser/ }).count(), 0, 'On ne rebase pas la racine')
+  assert.equal(await rootGestures.getByRole('button', { name: /Nettoyer/ }).count(), 0, 'On ne nettoie pas la racine')
+  await rootGestures.getByRole('button', { name: /^Voir le diff/ }).click()
+  await page.getByRole('tab', { name: 'Git', selected: true }).or(page.getByRole('button', { name: 'Git', pressed: true })).first().waitFor()
+
+  // Au téléphone : le graphe, le texte et le `⋯` ; la dérive passe au pied d'une ligne dépliée.
+  await page.goto(`${base}/p/${nimbus.id}`)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await code.waitFor()
+  await page.waitForTimeout(300)
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Le graphe ne déborde pas à 390 px')
+  assert.equal(
+    await lineOfCode('feat/offline-cache').evaluate((line) => [...line.children].filter((cell) => cell.getBoundingClientRect().width > 0).length),
+    3,
+    'Au téléphone, trois cases : le graphe, le texte, le ⋯',
+  )
+  await code.screenshot({ animations: 'disabled', path: join(shots, 'apercu-code-mobile.png') })
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  /*
+    Les Jalons (#190) : le jalon du jeu d'essai est sur l'horizon, rangé à son étape, et
+    son nom mène à sa page. Le détail se vérifie dans `milestones-ui-check.mjs`.
   */
   await row.getByRole('link', { name: /^Jalons/ }).click()
   await page.waitForURL(`**/p/${nimbus.id}/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  const unplaced = cards.filter(
-    (entry) => entry.parent === null && entry.dueAt === null
-      && entry.column !== 'done' && entry.column !== 'abandoned',
-  )
-  if (unplaced.length > 0) {
-    await page.getByText(new RegExp(`${unplaced.length} cartes sans jalon ni date`)).waitFor()
-  }
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'chronologie-projet.png') })
+  const milestoneLink = page.getByRole('link', { name: new RegExp(milestone.title) }).first()
+  await milestoneLink.waitFor()
+  assert.equal(await milestoneLink.getAttribute('href'), `/p/${nimbus.id}/timeline/${milestone.number}`)
+  await page.getByRole('list', { name: 'Jalons par étape', exact: true }).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'jalons-projet.png') })
 
   const schedules = await (await context.request.get(`${base}/api/schedules`)).json()
 
@@ -390,18 +593,63 @@ try {
     `/p/${docs.id}/actions`,
   )
 
-  // ─── Le portefeuille : Projets, Board global, Activité ─────────────────────
+  // ─── Le portefeuille : coque et Aperçu (#237) ───────────────────────────────
   await page.goto(`${base}/projects`)
   const portfolio = page.getByRole('navigation', { name: 'Vues du portefeuille', exact: true })
   await portfolio.waitFor()
-  for (const project of projects) {
-    await page.getByRole('link', { name: new RegExp(project.name) }).first().waitFor()
-  }
-  assert.ok(
-    (await page.getByText(nimbus.git ? nimbus.git.branch : 'main').count()) > 0,
-    'Chaque ligne porte la branche du dépôt',
+  /* La rangée : Aperçu, Tableau, Jalons. Travail et Actions attendent leur vue du
+     portefeuille (#238, #241) : masqués d'ici là, plutôt que de mener hors de la coque. */
+  assert.deepEqual(
+    await portfolio.getByRole('link').evaluateAll((links) => links.map((link) => new URL(link.href).pathname)),
+    ['/projects', '/projects/board', '/projects/timeline'],
+    'Aperçu · Tableau · Jalons',
   )
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'page-projets.png') })
+  // La bande : un seul geste, « + Projet », et plus de « + Conversation ».
+  const portfolioBand = page.locator('header').filter({ has: page.getByRole('heading', { name: 'Projets', exact: true }) })
+  await portfolioBand.getByRole('button', { name: 'Nouveau projet', exact: true }).waitFor()
+  assert.equal(await portfolioBand.getByRole('button').count(), 1, 'La bande du portefeuille ne porte que « + Projet »')
+  // Réglages au bout : ceux de l'instance, en fenêtre.
+  await portfolio.getByRole('button', { name: 'Réglages de l’instance', exact: true }).click()
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  // L'Aperçu, dans son ordre : ce qui t'attend, les projets, puis le code et les événements.
+  const portfolioOverview = page.locator('[data-place-content]')
+  const projectsRegion = page.getByRole('region', { name: 'Projets', exact: true })
+  await projectsRegion.waitFor()
+  for (const project of projects) {
+    await projectsRegion.locator(`a[href="/p/${project.id}"]`).waitFor()
+  }
+  const codeRegion = page.getByRole('region', { name: 'Code en cours', exact: true })
+  const eventsRegion = page.getByRole('region', { name: 'Derniers événements', exact: true })
+  await Promise.all([codeRegion.waitFor(), eventsRegion.waitFor()])
+  assert.equal(await portfolioOverview.getByRole('searchbox').count(), 0, "Pas de barre d'outils sur l'Aperçu du portefeuille")
+  const order = await portfolioOverview.evaluate((root) =>
+    [...root.querySelectorAll('section[aria-labelledby]')].map((section) => section.querySelector('h2')?.textContent),
+  )
+  assert.deepEqual(
+    order.filter((title) => ['Projets', 'Code en cours', 'Derniers événements'].includes(title)),
+    ['Projets', 'Code en cours', 'Derniers événements'],
+  )
+  // Chaque arbre du code en cours ouvre l'arbre dans Travail de son projet.
+  const treeLinks = await codeRegion.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  if (treeLinks.length === 0) await codeRegion.getByText('Rien ne tourne.', { exact: true }).waitFor()
+  for (const href of treeLinks) assert.match(href, /^\/p\/[^/]+\/travail\?arbre=/)
+  // Les événements de tous les projets, huit au plus, chacun avec son projet.
+  const portfolioEvents = eventsRegion.locator('li')
+  assert.ok((await portfolioEvents.count()) > 0 && (await portfolioEvents.count()) <= 8, 'Huit derniers événements au plus')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-apercu.png') })
+  // Une carte mène à son projet.
+  await projectsRegion.locator(`a[href="/p/${nimbus.id}"]`).click()
+  await page.waitForURL(`**/p/${nimbus.id}`)
+
+  // Les anciennes vues du portefeuille mènent à l'Aperçu.
+  for (const old of ['activity', 'work', 'journal']) {
+    await page.goto(`${base}/projects/${old}`)
+    await page.waitForURL(/\/projects$/)
+  }
+  await portfolio.waitFor()
 
   /*
     Le board global : les cartes de **tous** les projets dans quatre colonnes, chacune
@@ -409,8 +657,6 @@ try {
     relecture ne verrait pas — rien dans le code ne garantit que les cartes de deux
     projets atterrissent bien dans la même colonne.
   */
-  // La même coque qu'un projet : Réglages au bout, qui ouvre ceux de l'instance.
-  await portfolio.getByRole('button', { name: 'Réglages de l’instance', exact: true }).waitFor()
   await portfolio.getByRole('link', { name: /^Tableau/ }).click()
   await page.waitForURL('**/projects/board')
   const todo = page.getByRole('region', { name: 'À faire', exact: true })
@@ -440,30 +686,37 @@ try {
   }
   await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-board.png') })
 
-  // L'Activité du portefeuille (#117) : la liste d'un projet, une colonne Projet en
-  // plus, et Travail qui s'y fond. L'ancienne adresse y mène.
-  await page.goto(`${base}/projects/work`)
-  await page.waitForURL(/\/projects\/activity$/)
-  const review = page.locator('section[aria-labelledby="portfolio-activity-review"]')
-  await review.waitFor()
-  // La carte en *À vérifier* du jeu d'essai, par sa session ou par une ligne de carte.
-  await review.getByText('#4', { exact: true }).waitFor()
-  await page.getByText(nimbus.name, { exact: true }).first().waitFor()
-  assert.equal(await page.getByRole('heading', { name: /^À faire/ }).count(), 0, "L'Activité groupe par demande, pas par colonne")
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite.png') })
-  // Grouper par projet : un en-tête par projet, et plus de groupe d'état.
-  await page.getByRole('radio', { name: 'Projet' }).click()
-  await page.waitForURL(/groupe=project/)
-  await page.locator(`section[aria-labelledby="portfolio-activity-project-${nimbus.id}"]`).waitFor()
-  assert.equal(await review.count(), 0, 'Grouper par projet retire les groupes d’état')
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-activite-par-projet.png') })
-
-  // La chronologie du portefeuille : les projets en lignes, leurs jalons en barres. Un
-  // projet sans jalon le dit, plutôt que de laisser sa ligne muette.
+  /*
+    Les Jalons du portefeuille (#240, PF-28 à PF-31) : les jalons de tous les projets sur
+    le modèle de maturité. **Horizon** : une bande par projet, une tuile par jalon qui
+    mène à sa page ; **Gantt** : un axe commun, une bande par projet, la barre d'un jalon
+    cliquable. Le filtre Projet de la barre commune retire les bandes des autres.
+  */
   await page.goto(`${base}/projects/timeline`)
-  await page.getByRole('button', { name: new RegExp(milestone.title) }).first().waitFor()
-  await page.getByText('aucun jalon', { exact: true }).first().waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-chronologie.png') })
+  const nimbusBand = page.getByRole('region', { name: nimbus.name, exact: true })
+  const tile = nimbusBand.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`)
+  await tile.waitFor()
+  assert.match(await tile.textContent(), new RegExp(`#${milestone.number}`), 'La tuile porte le numéro du jalon')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-horizon.png') })
+  const milestoneProjects = await page.locator('[data-place-content] section[aria-label]').evaluateAll((sections) =>
+    sections.map((section) => section.getAttribute('aria-label')),
+  )
+  const other = projects.find((entry) => entry.id !== nimbus.id && milestoneProjects.includes(entry.name))
+  await page.getByRole('button', { name: /^Filtrer/ }).click()
+  await page.getByRole('dialog', { name: 'Filtrer' }).getByRole('checkbox', { name: new RegExp(nimbus.name) }).click()
+  await page.keyboard.press('Escape')
+  await nimbusBand.waitFor()
+  if (other) await page.getByRole('region', { name: other.name, exact: true }).waitFor({ state: 'detached' })
+  // Le Gantt commun : la barre du jalon mène à sa page dans son projet.
+  await page.getByRole('button', { name: /^Affichage : / }).click()
+  await page.getByRole('dialog', { name: 'Affichage' }).getByRole('radio', { name: 'Gantt', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const bar = page.locator(`[data-milestone-bar="${milestone.number}"]`)
+  await bar.waitFor()
+  await page.locator(`a[href="/p/${nimbus.id}/timeline/${milestone.number}"]`).waitFor()
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-jalons-gantt.png') })
+  await bar.click()
+  await page.waitForURL(`**/p/${nimbus.id}/timeline/${milestone.number}`)
 
   // Le filtre *Jalon* du board global : il liste des **cartes**, puisqu'un jalon en est
   // une, et il se partage par lien comme les deux autres. L'ancien nom du paramètre,
@@ -504,12 +757,6 @@ try {
   await page.getByText(/docs\/audits\/.*offline-cache/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projet-journal.png') })
 
-  // Le même journal au portefeuille, où chaque ligne porte la pastille de son projet.
-  await page.goto(`${base}/projects/journal`)
-  await page.getByRole('radiogroup', { name: 'Filtrer le journal', exact: true }).waitFor()
-  await page.getByText('feat/city-search', { exact: true }).waitFor()
-  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-journal.png') })
-
   // ─── La page Planifiées ───────────────────────────────────────────────────
   await page.goto(`${base}/schedules`)
   for (const header of ['Tâche', 'Cible', 'Fréquence', 'Prochaine', 'Dernier']) {
@@ -537,6 +784,7 @@ try {
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'apercu-mobile.png') })
   await page.goto(`${base}/projects`)
+  await page.getByRole('region', { name: 'Derniers événements', exact: true }).waitFor()
   await page.waitForTimeout(300)
   await page.screenshot({ animations: 'disabled', path: join(shots, 'projets-mobile.png') })
   // Au doigt la provenance disparaît, et c'est voulu : l'heure et le titre tiennent.
@@ -557,8 +805,18 @@ try {
   await page.evaluate(() => { document.documentElement.dataset.theme = 'dark' })
   await page.screenshot({ animations: 'disabled', path: join(shots, 'journal-sombre.png') })
 
+  // Sans projet, l'Aperçu du portefeuille propose d'en créer un. En dernier : la suite
+  // archive tous les projets pour y arriver.
+  for (const project of projects) {
+    assert.ok((await context.request.patch(`${base}/api/projects/${project.id}`, { data: { archived: true } })).ok())
+  }
+  await page.goto(`${base}/projects`)
+  await page.getByText('Aucun projet', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('link', { name: 'Créer un projet' }).getAttribute('href'), '/projects/new')
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'portefeuille-vide.png') })
+
   assert.deepEqual(errors, [])
-  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, lignes de projets, board global, Activité, les deux chronologies et les deux journaux, table des planifiées, mobile ; captures dans ' + shots)
+  console.log('OK : coque v2 (rangée, Réglages au bout, comptes, gouttière, anciennes adresses), bandeau sans inventaire, coque et Aperçu du portefeuille (anciennes vues, état vide), board global, les Jalons du portefeuille, le journal, table des planifiées, mobile ; captures dans ' + shots)
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

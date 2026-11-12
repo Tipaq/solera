@@ -12,9 +12,11 @@ import {
 } from '../../lib/code-model'
 import { useTranslate } from '../../lib/i18n'
 import { BaseLine } from './BaseLine'
+import { CardRef } from './CardRef'
 import { Drift } from './Drift'
 import { MilestoneChip, MilestoneTag } from './MilestoneChip'
 import { PrTag } from './PrTag'
+import { ServiceMark } from './ServiceMark'
 import { SessionStack } from './SessionStack'
 import { TreeChip } from './TreeChip'
 import { TreeFacts } from './TreeFacts'
@@ -233,6 +235,27 @@ export const JalonDuFil: Story = {
   render: () => (
     <div className="w-72">
       <MilestoneTag milestone={{ number: 164, title: 'Page projet v2 · 2 — Aperçu, Travail, Tableau' }} to="/p/p1/timeline/164" />
+    </div>
+  ),
+}
+
+/** La carte d'un arbre : « #n titre » ouvre sa fiche ; déduite du nom de la branche, elle le dit au survol. */
+export const Carte: Story = {
+  name: 'CardRef',
+  render: () => (
+    <div className="flex w-96 flex-col gap-2">
+      <CardRef projectId="p1" card={{ id: 'k175', number: 175, title: 'Travail : onglet, barre, Par moment', milestone: { id: 'k164', number: 164, title: 'Page projet v2 · 2' }, source: 'session' }} />
+      <CardRef projectId="p1" card={{ id: 'k181', number: 181, title: 'Tableau : vues Liste et Par geste', milestone: null, source: 'name' }} />
+    </div>
+  ),
+}
+
+/** « ⚡ :5173 » : le service qui sert un arbre, vers son détail dans Actions. */
+export const Service: Story = {
+  name: 'ServiceMark',
+  render: () => (
+    <div className="flex items-center gap-2">
+      <ServiceMark projectId="p1" marks={[{ automationId: 'a-dev', label: 'Serveur de dev', port: 5173 }, { automationId: 'a-worker', label: 'Worker', port: null }]} />
     </div>
   ),
 }

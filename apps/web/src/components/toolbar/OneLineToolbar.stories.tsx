@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { Columns3, Hand, List, Plus } from 'lucide-react'
+import { Columns3, Hand, List, Plus, Replace, Search } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@solera/ui'
+import { Button, PanelToolbar, panelToolClass } from '@solera/ui'
 import { toggled } from '../../lib/filters'
 import { useView } from '../../lib/use-view'
-import { FilterChip, OneLineToolbar, ToolbarSearch } from './OneLineToolbar'
+import { FilterChip, OneLineToolbar, ToolbarSearch, toolbarFieldClass } from './OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from './ToolbarMenus'
 
 type View = 'kanban' | 'liste' | 'geste'
@@ -116,3 +116,37 @@ export const AuRepos: Story = {}
 /** Des filtres posés : le compte de « Filtrer », les puces, leur défilement. */
 export const FiltresActifs: Story = { args: { initial: ['157', '200', 'waiting', 'clarify'] } }
 
+
+/**
+ * Dans une ligne d'outils du panneau (l'onglet Recherche) : le champ au format de la
+ * recherche tient lieu de titre, « Filtrer ▾ » est `compact` — son libellé ne paraît
+ * qu'à partir de 22 rem de ligne, et son popover s'aligne sur la fin.
+ */
+export const DansLePanneau: Story = {
+  render: () => <PanelLine />,
+}
+
+function PanelLine() {
+  const [checked, setChecked] = useState(true)
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {['w-[30rem]', 'w-[20rem]'].map((width) => (
+        <div key={width} className={`flex flex-col border-l border-line bg-canvas ${width}`}>
+          <PanelToolbar>
+            <label className={`${toolbarFieldClass()} flex-1`}>
+              <Search size={16} className="shrink-0" />
+              <input aria-label="Chercher" placeholder="Chercher…" className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-soft" />
+            </label>
+            <FilterMenu compact active={checked ? 1 : 0} onClearAll={() => setChecked(false)}>
+              <MenuHeading>Correspondance</MenuHeading>
+              <MenuCheck checked={checked} onChange={setChecked}>Mot entier</MenuCheck>
+            </FilterMenu>
+            <button type="button" aria-label="Afficher le remplacement" className={panelToolClass()}>
+              <Replace size={14} />
+            </button>
+          </PanelToolbar>
+        </div>
+      ))}
+    </div>
+  )
+}

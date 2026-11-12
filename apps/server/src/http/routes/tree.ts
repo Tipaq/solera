@@ -60,7 +60,7 @@ const SEVERITY: Record<Exclude<FileState, 'ignored'>, number> = {
  * déplier pour trouver ce qui a changé.
  */
 export function registerTreeRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Trois portées, conversation, projet et worktree : voir `workspace-scopes.ts`.
   for (const { base, cwdOf } of workspaceScopes) {
     app.get(`${base}/tree`, async (request): Promise<TreeListingDto> => {
       const user = requireUser(request)

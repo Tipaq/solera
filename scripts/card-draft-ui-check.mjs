@@ -14,9 +14,9 @@ import { launchBrowser } from './checks/browser.mjs'
 // Le découpage en cartes (#70) de bout en bout, avec les vrais composants et la vraie
 // API, dans une base temporaire : l'entrée du board ouvre le brouillon de conversation
 // en mode « découper », une session de découpage dépose un brouillon par la même file
-// que le serveur MCP, le bloc apparaît dans le fil et dans « À décider », on le corrige
-// (renommer, retirer une carte, retirer un lien), et « Créer » pose les cartes sur le
-// board. Aucun CLI ne tourne : le message rendu à la session reste en file.
+// que le serveur MCP, le bloc apparaît dans le fil et dans l'Activité de la colonne, on
+// le corrige (renommer, retirer une carte, retirer un lien), et « Créer » pose les cartes
+// sur le board. Aucun CLI ne tourne : le message rendu à la session reste en file.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const serverDir = join(root, 'apps/server')
 const webDir = join(root, 'apps/web')
@@ -90,13 +90,22 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
 
-  // Le brouillon en mode « découper » : à la racine, sans arbre. Son entrée a quitté la
-  // rangée du board (#160) ; la palette et la fiche d'une carte y mènent encore.
+  // Le brouillon en mode « découper » : à la racine, sans arbre. Ses entrées ont quitté la
+  // rangée du board (#160), puis la palette et la fiche d'une carte (#180) : le découpage
+  // passe par « idée : » et la page d'un jalon, l'adresse reste.
   await page.goto(`${base}/p/${project.id}/c/new?split=new`)
   await page.getByText('Découper en cartes', { exact: true }).first().waitFor()
   assert.equal(new URL(page.url()).searchParams.get('split'), 'new')
   await page.getByText(/Dicte en vrac/).waitFor()
   await page.screenshot({ animations: 'disabled', path: join(shots, 'split-draft-page.png') })
+
+  // L'affinage d'un jalon (#195) : la page du jalon ouvre ce brouillon sur la carte, son
+  // premier message pré-rempli par `?prompt=` (l'appel du skill, puis le brief).
+  const milestoneCard = db.prepare('SELECT id, number FROM cards WHERE project_id = ? ORDER BY number LIMIT 1').get(project.id)
+  const brief = `/affiner-un-jalon #${milestoneCard.number} --decouper\n\nLe brief du jalon, pré-rempli.`
+  await page.goto(`${base}/p/${project.id}/c/new?split=${milestoneCard.id}&mode=direct&prompt=${encodeURIComponent(brief)}`)
+  // Aucun CLI n'est activé : le composer est grisé, mais son texte est là.
+  await page.waitForFunction((text) => [...document.querySelectorAll('textarea')].some((field) => field.value === text), brief)
 
   // La session de découpage, créée par la route (sans premier message, aucun CLI ne
   // tourne), puis son brouillon, déposé par la même file que le serveur MCP.
@@ -131,7 +140,16 @@ try {
   await page.goto(`${base}/p/${project.id}/c/${session}`)
   const block = page.getByRole('region', { name: 'Brouillon de cartes', exact: true })
   await block.getByText('Brouillon : 4 carte(s) à créer').waitFor({ timeout: 15000 })
-  await page.getByRole('region', { name: 'À décider' }).getByText('4 cartes à créer').waitFor()
+  // « À décider » a laissé sa place à l'Activité de la colonne (#121). À cette hauteur
+  // elle se replie en son en-tête (#234), dont le badge signale l'attente sans un clic ;
+  // la demande se lit dans la modale qu'il ouvre.
+  const header = page.getByRole('group', { name: 'Suivi des conversations', exact: true }).getByRole('button', { name: /^Activité/ })
+  await header.getByText(/^\d+ pour toi$/).waitFor({ state: 'attached' })
+  await header.click()
+  const overview = page.getByRole('dialog', { name: 'Activité globale', exact: true })
+  await overview.getByText('4 cartes à créer', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await overview.waitFor({ state: 'hidden' })
   await block.scrollIntoViewIfNeeded()
   await block.screenshot({ animations: 'disabled', path: join(shots, 'card-draft-pending.png') })
 

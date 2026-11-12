@@ -20,6 +20,20 @@ export const VERDICT_DOT: Record<TreeVerdict, string> = {
   missing: 'border border-critical',
 }
 
+/** La teinte de la raison d'un arbre : rouge quand le nettoyer perdrait du travail. */
+export const REASON_TONE: Record<TreeVerdict, string> = {
+  root: 'text-ink-faint',
+  waiting: 'text-caution',
+  active: 'text-ink-faint',
+  review: 'text-ink-faint',
+  'merged-dirty': 'text-critical',
+  stale: 'text-ink-faint',
+  wip: 'text-ink-faint',
+  empty: 'text-ink-faint',
+  clean: 'text-positive',
+  missing: 'text-critical',
+}
+
 /** Le genre d'une branche sans arbre (T-10.3). La distante prend le bleu ciel du thème. */
 export const BRANCH_DOT: Record<BranchKind, string> = {
   pr: 'bg-accent',

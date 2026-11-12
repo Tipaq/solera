@@ -2,7 +2,7 @@ import { useRef } from 'react'
 import type { CardDto } from '@solera/protocol'
 import { cx } from '@solera/ui'
 import { AgentIcon } from '../AgentIcon'
-import { awaitsMe, cardState, isLate, lateDays, liveSessions } from '../../lib/card-state'
+import { awaitsMe, cardState, isLate, lateDays, liveSessions, loadedStatus, type StatusOf } from '../../lib/card-state'
 import { formatDay } from '../../lib/dates'
 import { useTranslate } from '../../lib/i18n'
 import { FloatingTip } from './FloatingTip'
@@ -55,6 +55,7 @@ export function CardBar({
   hovered = false,
   dimmed = false,
   onHover,
+  statusOf = loadedStatus,
 }: {
   card: CardDto
   scale: Scale
@@ -68,6 +69,8 @@ export function CardBar({
   /** Hors de la chaîne survolée : la barre s'efface à 30 %. */
   dimmed?: boolean
   onHover?: (id: string | null) => void
+  /** Le statut vivant des sessions (`useLiveCardStatuses`) ; celui du chargement sinon. */
+  statusOf?: StatusOf
 }) {
   const t = useTranslate()
   const anchor = useRef<HTMLDivElement>(null)
@@ -77,8 +80,8 @@ export function CardBar({
   const width = Math.max(scale.x(end) - left, BAR_MIN_W)
   const late = isLate(card, now)
   const overdue = late && card.dueAt !== null ? Math.max(scale.x(now) - scale.x(card.dueAt), OVERDUE_MIN_W) : 0
-  const live = liveSessions(card)
-  const asking = awaitsMe(card)
+  const live = liveSessions(card, statusOf)
+  const asking = awaitsMe(card, statusOf)
   const label = `#${card.number} ${card.title}`
   // Mesuré comme il s'affiche dans la barre : le numéro et le titre séparés par `gap-1`.
   const labelWidth = textWidth(`#${card.number}`) + NUMBER_GAP + textWidth(card.title)
@@ -90,9 +93,9 @@ export function CardBar({
   return (
     <div
       ref={anchor}
-      // Survolée, au-dessus des barres voisines et de leurs titres, mais sous la liste
-      // collée à gauche (z-10) : à z-30, elle passait par-dessus en défilant.
-      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30', hovered && 'z-[3]')}
+      // Pas de z-index : chaque barre tient dans sa ligne, rien ne la chevauche, et une valeur
+      // à part sortait de l'échelle des couches du DS (Couches.mdx).
+      className={cx('absolute transition-opacity duration-150', dimmed && 'opacity-30')}
       style={{ left, top, height, width }}
       onMouseEnter={() => onHover?.(card.id)}
       onMouseLeave={() => onHover?.(null)}
@@ -149,7 +152,7 @@ export function CardBar({
       ) : null}
       {hovered ? (
         <FloatingTip anchor={anchor}>
-          <CardTip card={card} now={now} />
+          <CardTip card={card} now={now} statusOf={statusOf} />
         </FloatingTip>
       ) : null}
     </div>
@@ -157,12 +160,12 @@ export function CardBar({
 }
 
 /** L'infobulle d'une carte : titre, état, création, échéance, sessions vivantes. */
-function CardTip({ card, now }: { card: CardDto; now: number }) {
+function CardTip({ card, now, statusOf }: { card: CardDto; now: number; statusOf: StatusOf }) {
   const t = useTranslate()
   const state = cardState(card)
   const lateBy = lateDays(card, now)
   const late = lateBy > 0
-  const live = liveSessions(card)
+  const live = liveSessions(card, statusOf)
   return (
     <div className="surface w-64 rounded-lg border border-line p-2.5 text-xs shadow-pop">
       <p className="flex items-start gap-1.5 text-sm leading-snug font-medium text-ink">
@@ -192,7 +195,7 @@ function CardTip({ card, now }: { card: CardDto; now: number }) {
               {live.map((session) => (
                 <span key={session.id} className="flex min-w-0 items-center gap-1.5">
                   <AgentIcon agent={session.agent} size={12} />
-                  {session.status === 'awaiting_input' ? (
+                  {statusOf(session) === 'awaiting_input' ? (
                     <span className="text-caution">{t('gantt.tip.awaiting')}</span>
                   ) : (
                     <span className="text-accent">{t('gantt.tip.running')}</span>

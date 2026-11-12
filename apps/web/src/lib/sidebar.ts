@@ -91,7 +91,9 @@ export function placeOfPath(pathname: string): Place | null {
   if (pathname.startsWith('/vault')) return 'knowledge'
   if (pathname.startsWith('/schedules')) return 'planned'
   if (pathname.startsWith('/p/') || pathname.startsWith('/projects')) return 'projects'
-  if (pathname.startsWith('/c/')) return 'threads'
+  // `/sessions` est la page de *Fils* : toutes les conversations, là où la colonne
+  // s'arrête aux plus récentes.
+  if (pathname.startsWith('/c/') || pathname === '/sessions') return 'threads'
   return null
 }
 
@@ -108,8 +110,8 @@ export function placeOfPath(pathname: string): Place | null {
  *
  * L'exception reste possible, et ne survit pas à la navigation suivante :
  *
- * - `override` est posé en cliquant un lieu. Il sert surtout à *Fils*, le seul lieu
- *   sans page : sans lui, le clic serait défait dans la foulée par la dérivation.
+ * - `override` est posé en cliquant un lieu : sans lui, le clic serait défait dans la
+ *   foulée par la dérivation, tant que l'adresse n'a pas changé.
  * - Il est effacé au premier changement d'adresse — autrement dit dès qu'on ouvre autre
  *   chose. Ce qu'on regarde commande à nouveau.
  */

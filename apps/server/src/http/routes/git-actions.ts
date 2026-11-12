@@ -82,7 +82,7 @@ function lockOf(db: Db, cwd: string): GitLockDto | null {
   return busy ? { threadId: busy.id, title: busy.title } : null
 }
 
-/** Le co-auteur à proposer : l'agent du fil consulté, et rien en portée projet. */
+/** Le co-auteur à proposer : l'agent du fil consulté, et rien en portée projet ou worktree. */
 function coAuthorOf(db: Db, base: string, id: string): string | null {
   if (!base.startsWith('/api/conversations')) return null
   const row = db

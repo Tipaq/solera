@@ -201,13 +201,19 @@ export function inboxMilestoneNumber(item: InboxItem): number | null {
   return item.milestone?.number ?? null
 }
 
+/** Ce qui attend dans un jalon : combien de demandes, et la clé de la première à déplier. */
+export interface MilestoneWaiting {
+  count: number
+  key: string
+}
+
 /**
  * Ce qui attend dans chaque jalon, et la première demande à ouvrir : le repère
  * « ● N t'attend » d'un jalon, qui déplie cette ligne (`openInboxItem`) plutôt que de
  * redire la demande.
  */
-export function waitingByMilestone(items: InboxItem[]): Map<number, { count: number; key: string }> {
-  const waiting = new Map<number, { count: number; key: string }>()
+export function waitingByMilestone(items: InboxItem[]): Map<number, MilestoneWaiting> {
+  const waiting = new Map<number, MilestoneWaiting>()
   for (const item of items) {
     const number = inboxMilestoneNumber(item)
     if (number === null) continue

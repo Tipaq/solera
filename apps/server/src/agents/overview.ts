@@ -191,7 +191,7 @@ function splitBriefing(db: Db, input: OverviewInput): string | null {
         .where(eq(cards.id, row.splitCardId))
         .get()
     : undefined
-  if (start?.milestone) return refineBriefing(db, input.projectId, start, row.splitMode ?? 'questions')
+  if (start?.milestone) return refineBriefing(db, input.projectId, start, row.splitMode ?? 'questions', input.cardFiling)
   return [
     `Cette conversation sert à **découper un chantier en cartes**, pas à écrire du code : l'utilisateur dicte en vrac — des idées, des bugs, une fonctionnalité — et tu en fais un brouillon qu'il validera.${
       start
@@ -222,6 +222,7 @@ function refineBriefing(
   projectId: string,
   milestone: { number: number; title: string },
   mode: SplitMode,
+  cardFiling: boolean,
 ): string {
   const cap = db.select({ cap: projects.cap }).from(projects).where(eq(projects.id, projectId)).get()?.cap
   return [
@@ -232,6 +233,11 @@ function refineBriefing(
       : "Mode **questions d'abord** : pose ce qui te manque avant de découper.",
     "Tes questions passent par l'outil de question de ton CLI, **toutes à la fois** et 4 au plus, chacune avec ta proposition par défaut, puis attends les réponses : c'est ce qui les montre sur la page du jalon, où l'on y répond. Ne les écris pas dans ta réponse.",
     `Dépose le découpage avec \`propose_cards\` et \`parent: ${milestone.number}\`, jamais \`create_card\` : c'est le clic de l'utilisateur qui crée. Une correction se redépose entière.`,
+    // L'ajout au jalon (#185) : sans le rangement de carte, `request_card_change` n'est
+    // pas listé, et l'ajout ne peut que devenir des cartes.
+    cardFiling
+      ? "Un message « Ajout au jalon : … » se range en sous-tâches d'une carte existante qui en parle déjà (`request_card_change` avec `add_subtasks`), sinon en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche)."
+      : "Un message « Ajout au jalon : … » se range en nouvelles cartes (`propose_cards`, `blocked_by` la carte la plus proche).",
   ]
     .filter((line) => line !== null)
     .join('\n')

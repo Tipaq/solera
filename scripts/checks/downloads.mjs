@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process'
 import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { promisify } from 'node:util'
-import { closePanelButton } from './panel.mjs'
+import { closePanelButton, openProjectPanel } from './panel.mjs'
 
 /** Vrais téléchargements du navigateur, uniquement dans la démo temporaire. */
 export async function checkDownloads({ page, context, base, project, hero, data }) {
@@ -65,8 +65,7 @@ export async function checkDownloads({ page, context, base, project, hero, data 
   console.log('OK : téléchargement API, gros binaire, noms Unicode, fichier vide, worktree, authentification et bornage des chemins/liens.')
 
   await page.setViewportSize({ width: 1440, height: 900 })
-  await page.goto(`${base}/p/${project.id}/board`)
-  await page.getByRole('button', { name: 'Ouvrir le panneau', exact: true }).click()
+  await openProjectPanel(page, base, project)
   const panel = page.locator('[data-panel="workspace"]')
   // Plein écran et ouverture rapide n'ont plus de bouton : la géométrie se règle à la
   // poignée, et l'ouverture rapide à son raccourci. Le panneau n'a plus d'en-tête où

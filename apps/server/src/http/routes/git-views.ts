@@ -1,11 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import {
   commitHashSchema,
+  compareQuerySchema,
   filePathQuerySchema,
   graphQuerySchema,
   type BlameDto,
   type CommitDetailDto,
   type CommitTurnDto,
+  type CompareDto,
   type ConflictsDto,
   type FileHistoryDto,
   type GitHeadDto,
@@ -16,7 +18,7 @@ import {
   type RefsDto,
   type ThreadRefDto,
 } from '@solera/protocol'
-import { readCommitDiff, readGitHead } from '../../git.js'
+import { readCommitDiff, readGitHead, readRangeDiff } from '../../git.js'
 import { readConflicts } from '../../git-conflicts.js'
 import {
   agentOf,
@@ -191,7 +193,7 @@ const isFiltered = (query: GraphQuery): boolean =>
  * ici serait une écriture sans ces trois-là.
  */
 export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): void {
-  // Deux portées, conversation et projet : voir `workspace-scopes.ts`.
+  // Trois portées, conversation, projet et worktree : voir `workspace-scopes.ts`.
   for (const { base, cwdOf, projectIdOf } of workspaceScopes) {
     /**
      * Le graphe du dépôt : la destination *Graphe*, et la destination *Recherche*.
@@ -529,6 +531,27 @@ export function registerGitViewRoutes(app: FastifyInstance, ctx: AppContext): vo
         throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
       }
     })
-
   }
+
+  /**
+   * Le diff d'une branche avec la base (S6) : le tiroir « Diff avec la base » d'une
+   * branche sans arbre. Par projet seulement : une branche se lit dans le dépôt, sans
+   * dossier à elle, et l'arbre d'une branche sortie a déjà son panneau.
+   */
+  app.get('/api/projects/:id/compare', async (request): Promise<CompareDto> => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const cwd = projectWorkspace(ctx.db, id, user.id)
+    const parsed = compareQuerySchema.safeParse(request.query)
+    if (!parsed.success) throw badRequest('bad_ref', parsed.error.issues[0]?.message ?? 'Invalid reference.')
+
+    let diff
+    try {
+      diff = await readRangeDiff(cwd, parsed.data.base, parsed.data.head)
+    } catch (err) {
+      throw badRequest('git_failed', err instanceof Error ? err.message : String(err))
+    }
+    if (!diff) throw badRequest('bad_ref', 'This reference does not exist.')
+    return diff
+  })
 }

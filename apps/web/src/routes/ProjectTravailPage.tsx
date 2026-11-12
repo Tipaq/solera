@@ -1,5 +1,5 @@
-import { Activity, FolderGit2, GitBranch, Plus, Rows3 } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { Activity, FolderGit2, GitBranch, GitFork, Plus, Rows3, Table2, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { ProjectDto } from '@solera/protocol'
 import { Button, EmptyState, Menu, MenuItem, MenuLabel, MenuSeparator, cx } from '@solera/ui'
@@ -10,23 +10,36 @@ import { TreeChip } from '../components/code/TreeChip'
 import { VerdictDot } from '../components/code/VerdictDot'
 import { AskInbox } from '../components/inbox/AskInbox'
 import { journalDestination } from '../components/journal/JournalView'
-import { WorktreeGroups } from '../components/project/WorktreeGroups'
-import { FilterChip, OneLineToolbar, ToolbarSearch } from '../components/toolbar/OneLineToolbar'
+import { CardSheetHost } from '../components/cards/CardSheetHost'
+import { PanelHost } from '../components/shell/PanelHost'
+import { FilterChip, OneLineToolbar, ToolbarSearch, toolbarButtonClass } from '../components/toolbar/OneLineToolbar'
 import { DisplayMenu, FilterMenu, MenuCheck, MenuHeading, MenuSegment, type ViewOption } from '../components/toolbar/ToolbarMenus'
+import { CouloirsView, PROJECT_KEY } from '../components/travail/CouloirsView'
+import { ProjectGitGraph } from '../components/travail/ProjectGitGraph'
+import { TableView } from '../components/travail/TableView'
+import { TravailActionsHost, useTravailActions } from '../components/travail/TravailActions'
 import { TravailIndex } from '../components/travail/TravailIndex'
+import { TravailNoticeHost } from '../components/travail/TravailNotice'
+import { TreeDrawer } from '../components/travail/TreeDrawer'
 import { isActiveFilter, matchesActivity, parseActivityFilter } from '../lib/activity-groups'
 import type { ActivityRow } from '../lib/activity-rows'
-import { formatBytes, isCleanable, pluralOf, shortBranch, type TreeRow } from '../lib/code-model'
+import { formatBytes, isCleanable, pluralOf, shortBranch, type BranchInfo, type TreeRow } from '../lib/code-model'
 import { locale, useTranslate, type MessageKey } from '../lib/i18n'
 import type { InboxItem } from '../lib/inbox'
+import { useAutomations } from '../lib/automations-query'
 import { useJournalDays } from '../lib/journal'
 import { useProjects } from '../lib/projects'
+import { servedByTree } from '../lib/served'
+import { cleanOffer } from '../lib/travail-clean'
+import { laneAnchor, laneLayout, lanesOf, spiedKey } from '../lib/travail-lanes'
 import {
   NO_FILTERS,
   PERIODS,
   STATE_KEYS,
+  STATE_PARAM,
   WHAT_KEYS,
   agentOptions,
+  arrivalFilters,
   branchPasses,
   entryMatches,
   entryPasses,
@@ -41,31 +54,41 @@ import {
   targetOf,
   treePasses,
   treeSummary,
+  type Grouping,
   type Period,
+  type Sorting,
   type TravailFilters,
   type TravailView,
 } from '../lib/travail-model'
 import { useStoredPref, useView } from '../lib/use-view'
-import { useTravail, type Travail } from '../lib/use-travail'
+import { useTravail } from '../lib/use-travail'
 import { viewStorageKey } from '../lib/view-pref'
-import { useWorktreeStatuses } from '../lib/worktrees'
 
 /** L'arbre ou la branche choisis, portés par l'adresse pour qu'un rechargement les garde. */
 const TARGET_PARAM = 'arbre'
 
 /**
- * Les vues livrées, dans l'ordre de leurs tuiles. Les quatre autres de `TRAVAIL_VIEWS`
- * (Tableau, Graphe, Par état, Frise) arrivent avec leurs cartes (#177 à #179).
- *
- * « Par arbre » montre, en attendant ses couloirs (#176), le regroupement par worktree
- * de l'ancienne Activité, qui porte le nettoyage des arbres.
+ * Les vues livrées, dans l'ordre de leurs tuiles. Les deux autres de `TRAVAIL_VIEWS`
+ * (Par état, Frise) arrivent avec leur carte (#179).
  */
 const VIEW_ICONS: Partial<Record<TravailView, ReactNode>> = {
   couloirs: <Rows3 size={16} />,
   fil: <Activity size={16} />,
+  tableau: <Table2 size={16} />,
+  graphe: <GitFork size={16} />,
 }
-/** Les vues où l'index des arbres a un sens. Les couloirs le prendront avec #176. */
-const WITH_INDEX: TravailView[] = ['fil']
+/** Les vues où l'index des arbres a un sens : il fait défiler les couloirs, il filtre le fil. */
+const WITH_INDEX: TravailView[] = ['couloirs', 'fil']
+/** Les vues qu'on regroupe et qu'on trie, et où « À nettoyer » et les fusionnées se montrent. */
+const WITH_GROUPS: TravailView[] = ['couloirs', 'tableau']
+
+/** La ligne de lecture du scroll-spy, sous le haut de la zone qui défile. */
+const SPY_LINE = 96
+/** Le temps de l'anneau d'accent autour du couloir où l'index vient de mener. */
+const FLASH_MS = 1_600
+
+const GROUPS: Grouping[] = ['none', 'milestone', 'state']
+const SORTS: Sorting[] = ['waiting', 'recent', 'size']
 
 const WHAT_LABEL: Record<(typeof WHAT_KEYS)[number], MessageKey> = {
   trees: 'travail.what.trees',
@@ -109,7 +132,7 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   const [params, setParams] = useSearchParams()
   const hasGit = Boolean(project.git)
 
-  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil'] as const) : (['fil'] as const)).map((key) => ({
+  const views: ViewOption<TravailView>[] = (hasGit ? (['couloirs', 'fil', 'tableau', 'graphe'] as const) : (['fil'] as const)).map((key) => ({
     key,
     label: t(`travail.view.${key}`),
     icon: VIEW_ICONS[key]!,
@@ -135,6 +158,22 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
       { replace: true },
     )
   const toggleTarget = (key: string) => setTarget(key === targetKey ? null : key)
+  // Une arrivée filtrée (`?etat=`, depuis l'Aperçu) remplace les filtres retenus, puis
+  // quitte l'adresse : ensuite, ce sont des filtres comme les autres.
+  const arrival = params.get(STATE_PARAM)
+  useEffect(() => {
+    if (arrival === null) return
+    const imposed = arrivalFilters(arrival)
+    if (imposed) setFilters(imposed)
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        next.delete(STATE_PARAM)
+        return next
+      },
+      { replace: true },
+    )
+  }, [arrival, setFilters, setParams])
   const set = (patch: Partial<TravailFilters>) => setFilters({ ...filters, ...patch })
   const clearAll = () => {
     setFilters(NO_FILTERS)
@@ -167,11 +206,28 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
 
   const active = filterCount(filters, target !== null)
   const narrowed = active > 0 || isActiveFilter(search)
-  // « Par arbre » montre toutes les sessions, terminées comprises ; « Par moment », le
-  // vivant et l'historique.
-  const treeRows = view === 'couloirs' ? travail.rows.filter(keepsRow) : []
-  const shown = view === 'couloirs' ? treeRows.length : live.length + entries.length
-  const nothing = active > 0 && shown === 0 && inbox.length === 0
+  // Un filtre d'état réclame ce qui est à nettoyer ou fusionné : on le montre, déplié.
+  const forceCleanup = filters.states.includes('cleanup') || filters.states.includes('merged')
+
+  // « Par arbre » : un couloir par arbre et par branche que les filtres gardent, qui
+  // porte le vivant et l'historique de l'arbre. Le Tableau en fait des lignes, sans le
+  // couloir « Projet ».
+  const layout =
+    WITH_GROUPS.includes(view)
+      ? laneLayout({
+          lanes: lanesOf({ trees: code.trees.filter((tree) => treePasses(tree, filters, target)), live, entries, scopes: travail.scopes, now }),
+          branches: branches.filter((branch) => branchPasses(branch, filters, target, now)),
+          display: view === 'couloirs' ? display : { ...display, showProject: false },
+          forced: forceCleanup,
+          targeted: target !== null,
+          now,
+        })
+      : null
+  const shown = layout
+    ? layout.trees.length + layout.branches.length + Number(layout.project !== null) + Number(layout.cleanup !== null) + Number(layout.merged !== null)
+    : live.length + entries.length
+  // Le graphe dit lui-même qu'il n'a aucun commit dans la période.
+  const nothing = view !== 'graphe' && active > 0 && shown === 0 && inbox.length === 0
 
   /* ---------------------------------------------------------------- la barre */
 
@@ -279,8 +335,39 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
     <DisplayMenu views={views} value={view} onChange={setView}>
       {WITH_INDEX.includes(view) && hasGit ? (
         <MenuCheck checked={display.index} onChange={(next) => setDisplay({ ...display, index: next })}>
-          {t('travail.display.index')} <span className="text-xs text-ink-faint">{t('travail.display.indexFilter')}</span>
+          {t('travail.display.index')}{' '}
+          <span className="text-xs text-ink-faint">{t(view === 'fil' ? 'travail.display.indexFilter' : 'travail.display.indexScroll')}</span>
         </MenuCheck>
+      ) : null}
+      {WITH_GROUPS.includes(view) && hasGit ? (
+        <>
+          <MenuHeading>{t('travail.display.group')}</MenuHeading>
+          <MenuSegment<Grouping>
+            label={t('travail.display.group')}
+            segments={GROUPS.map((value) => ({ value, label: t(`travail.display.group.${value}`) }))}
+            value={display.group}
+            onChange={(next) => setDisplay({ ...display, group: next })}
+          />
+          <MenuHeading>{t('travail.display.sort')}</MenuHeading>
+          <MenuSegment<Sorting>
+            label={t('travail.display.sort')}
+            segments={SORTS.map((value) => ({ value, label: t(`travail.display.sort.${value}`) }))}
+            value={display.sort}
+            onChange={(next) => setDisplay({ ...display, sort: next })}
+          />
+          <MenuHeading>{t('travail.display.show')}</MenuHeading>
+          <MenuCheck checked={display.showCleanup} onChange={(next) => setDisplay({ ...display, showCleanup: next })}>
+            {t('travail.display.showCleanup')}
+          </MenuCheck>
+          <MenuCheck checked={display.showMerged} onChange={(next) => setDisplay({ ...display, showMerged: next })}>
+            {t('travail.display.showMerged')}
+          </MenuCheck>
+          {view === 'couloirs' ? (
+            <MenuCheck checked={display.showProject} onChange={(next) => setDisplay({ ...display, showProject: next })}>
+              {t('travail.display.showProject')}
+            </MenuCheck>
+          ) : null}
+        </>
       ) : null}
     </DisplayMenu>
   )
@@ -302,7 +389,6 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   /* ---------------------------------------------------------------- le rendu */
 
   const index = hasGit && display.index && WITH_INDEX.includes(view)
-  const forceCleanup = filters.states.includes('cleanup') || filters.states.includes('merged')
   const indexed = indexTrees(code.trees.filter((tree) => treePasses(tree, filters, null)), forceCleanup)
   const indexedBranches = branches.filter((branch) => branch.kind !== 'merged' && branchPasses(branch, filters, null, now))
   const base = hasGit && !target ? <BaseLine code={code} /> : null
@@ -325,27 +411,72 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
   }
   const chipOf = (tree: TreeRow | null) => (tree ? <TreeChip tree={tree} active={tree.key === targetKey} onSelect={toggleTarget} /> : null)
 
+  /* ---------------------------------------------------------------- « Par arbre » */
+
+  const { items: automations } = useAutomations({ projectId })
+  const served = useMemo(() => servedByTree(automations, code.trees), [automations, code.trees])
+  const scroller = useRef<HTMLDivElement>(null)
+  const scroll = useLaneScroll(scroller, layout ? [...layout.index.trees.map((tree) => tree.key), ...layout.index.branches.map((branch) => branch.key), ...(layout.index.project ? [PROJECT_KEY] : [])] : null)
+  const [openTreeKey, setOpenTreeKey] = useState<string | null>(null)
+  const openTree = code.trees.find((tree) => tree.key === openTreeKey) ?? null
+  const laneRail = { isMilestone: rail.isMilestone, agentOf: rail.agentOf, entryHref: rail.entryHref }
+  const drawerScope = openTree ? travail.scopes.get(openTree.key) : undefined
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <TravailNoticeHost>
+    <TravailActionsHost projectId={projectId} base={code.base} onRemoved={(keys) => (openTreeKey && keys.includes(openTreeKey) ? setOpenTreeKey(null) : undefined)}>
+    <div className="relative flex h-full min-h-0 flex-col overflow-clip">
       <OneLineToolbar
         search={<ToolbarSearch value={query} onChange={setQuery} placeholder={t('travail.search.placeholder')} />}
         filter={filterMenu}
         chips={chips}
-        extra={summaryText}
+        extra={
+          <span className="flex items-center gap-1">
+            {summaryText}
+            {hasGit ? <CleanButton trees={code.trees} branches={branches} /> : null}
+          </span>
+        }
         display={displayMenu}
         action={<NewSession projectId={projectId} trees={code.trees} />}
       />
       <div className={cx('min-h-0 flex-1', index && 'lg:grid lg:grid-cols-[17rem_minmax(0,1fr)]')}>
         {index ? (
           <aside className="hidden min-h-0 overflow-y-auto border-r border-line lg:block">
-            <TravailIndex trees={indexed} branches={indexedBranches} current={targetKey} onChoose={setTarget} mode="filter" />
+            {layout ? (
+              <TravailIndex trees={layout.index.trees} branches={layout.index.branches} project={layout.index.project} current={scroll.current} onChoose={scroll.go} mode="scroll" />
+            ) : (
+              <TravailIndex trees={indexed} branches={indexedBranches} current={targetKey} onChoose={setTarget} mode="filter" />
+            )}
           </aside>
         ) : null}
-        <div className="h-full min-h-0 overflow-y-auto">
+        <div ref={scroller} onScroll={scroll.onScroll} className="h-full min-h-0 overflow-y-auto">
           {nothing ? (
             <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
               {base}
               <NoMatch onClear={clearAll} />
+            </div>
+          ) : view === 'graphe' ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <ProjectGitGraph
+                projectId={projectId}
+                trees={code.trees}
+                branches={branches}
+                targetKey={target ? targetKey : null}
+                from={from}
+                showMerged={forceCleanup}
+                served={served}
+                onSelect={setTarget}
+                onOpenTree={setOpenTreeKey}
+                sources={{
+                  conversations: travail.conversations,
+                  live: travail.rows.map((row) => row.entry),
+                  scopes: travail.scopes,
+                  cards: travail.cards,
+                  inbox: travail.inbox,
+                }}
+              />
             </div>
           ) : view === 'fil' ? (
             <ActivityRail
@@ -354,13 +485,99 @@ function TravailPage({ projectId, project }: { projectId: string; project: Proje
               entryAside={(entry) => chipOf(travail.treeOfEntry(entry))}
               rowAside={(row) => chipOf(travail.treeOfRow(row))}
             />
-          ) : (
-            <TreesInterim travail={travail} projectId={projectId} project={project} base={base} inbox={inbox} rows={treeRows} search={search} />
-          )}
+          ) : view === 'tableau' && layout ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <TableView projectId={projectId} layout={layout} onOpen={setOpenTreeKey} />
+            </div>
+          ) : layout ? (
+            <div className="flex flex-col gap-5 px-4 pt-4 pb-28 md:px-6">
+              {base}
+              {inbox.length > 0 ? <AskInbox items={inbox} /> : null}
+              <CouloirsView
+                projectId={projectId}
+                layout={layout}
+                rail={laneRail}
+                served={served}
+                flash={scroll.flash}
+                onOpen={setOpenTreeKey}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
+      <TreeDrawer
+        projectId={projectId}
+        tree={openTree}
+        sessions={drawerScope ? travail.conversations.filter((entry) => drawerScope.sessionIds.has(entry.id)) : []}
+        entries={openTree ? travail.history.filter((entry) => travail.treeOfEntry(entry)?.key === openTree.key) : []}
+        journalDays={travail.journal.days}
+        rail={laneRail}
+        served={openTree ? served.get(openTree.key) : undefined}
+        onClose={() => setOpenTreeKey(null)}
+      />
+      <CardSheetHost projectId={projectId} />
+      <PanelHost projectId={projectId} />
     </div>
+    </TravailActionsHost>
+    </TravailNoticeHost>
   )
+}
+
+/**
+ * L'index qui fait défiler (`projet.md` T-3.5) : un clic mène au couloir et l'entoure
+ * d'accent un instant ; « Tous » remonte. En défilant, la ligne du couloir qu'on lit
+ * s'éclaire (scroll-spy).
+ */
+function useLaneScroll(scroller: RefObject<HTMLDivElement | null>, keys: string[] | null) {
+  const [spied, setSpied] = useState<string | null>(null)
+  const [flash, setFlash] = useState<string | null>(null)
+  const frame = useRef(0)
+  const timer = useRef<number | undefined>(undefined)
+  const keyList = keys?.join('\n') ?? null
+
+  const spy = useCallback(() => {
+    const box = scroller.current
+    if (!box || keyList === null) return
+    const top = box.getBoundingClientRect().top
+    const tops = keyList
+      .split('\n')
+      .flatMap((key) => {
+        const element = document.getElementById(laneAnchor(key))
+        return element ? [{ key, top: element.getBoundingClientRect().top - top }] : []
+      })
+      .sort((a, b) => a.top - b.top)
+    // Tout en haut, rien n'est encore lu : « Tous ».
+    setSpied(box.scrollTop < 8 ? null : spiedKey(tops, SPY_LINE))
+  }, [scroller, keyList])
+
+  useEffect(() => {
+    spy()
+  }, [spy])
+  useEffect(() => () => {
+    cancelAnimationFrame(frame.current)
+    window.clearTimeout(timer.current)
+  }, [])
+
+  return {
+    current: flash ?? spied,
+    flash,
+    onScroll: () => {
+      cancelAnimationFrame(frame.current)
+      frame.current = requestAnimationFrame(spy)
+    },
+    go: (key: string | null) => {
+      if (key === null) {
+        scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })
+        return
+      }
+      document.getElementById(laneAnchor(key))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setFlash(key)
+      window.clearTimeout(timer.current)
+      timer.current = window.setTimeout(() => setFlash(null), FLASH_MS)
+    },
+  }
 }
 
 /** La recherche sur une demande : son titre, sa carte ; `s:attend` la garde. */
@@ -385,56 +602,23 @@ function NoMatch({ onClear }: { onClear: () => void }) {
 }
 
 /**
- * « Par arbre », en attendant ses couloirs (#176) : les sessions rangées sous leur arbre,
- * avec le nettoyage des arbres fusionnés, comme l'Activité groupée par worktree.
+ * « Nettoyer · N » (T-1.5) : neutre, il ne se signale que par son compte — les arbres
+ * fusionnés sans rien à perdre et les branches fusionnées, ensemble. Il ouvre le
+ * dialogue unique (T-12) ; sans rien à nettoyer, il n'est pas là.
  */
-function TreesInterim({
-  travail,
-  projectId,
-  project,
-  base,
-  inbox,
-  rows,
-  search,
-}: {
-  travail: Travail
-  projectId: string
-  project: ProjectDto
-  base: ReactNode
-  inbox: InboxItem[]
-  /** Les sessions que la recherche et les filtres gardent, terminées comprises. */
-  rows: ActivityRow[]
-  search: ReturnType<typeof parseActivityFilter>
-}) {
-  const { data: status } = useWorktreeStatuses(project.git ? projectId : undefined)
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+function CleanButton({ trees, branches }: { trees: TreeRow[]; branches: BranchInfo[] }) {
+  const t = useTranslate()
+  const page = useTravailActions()
+  const offer = cleanOffer(trees, branches)
+  if (offer.count === 0) return null
+  const label = t('travail.clean.button', { count: offer.count })
   return (
-    <div className="flex flex-col gap-5 pt-4 pb-28">
-      {base ? <div className="px-4 md:px-6">{base}</div> : null}
-      {inbox.length > 0 ? (
-        <div className="px-4 md:px-6">
-          <AskInbox items={inbox} />
-        </div>
-      ) : null}
-      <WorktreeGroups
-        projectId={projectId}
-        rows={rows}
-        status={status}
-        rootGit={project.git}
-        conversations={travail.conversations}
-        filtering={isActiveFilter(search)}
-        words={search.words}
-        expanded={expanded}
-        onToggle={(id) =>
-          setExpanded((current) => {
-            const next = new Set(current)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
-            return next
-          })
-        }
-      />
-    </div>
+    <button type="button" onClick={() => page.clean(offer)} title={t('travail.clean.hint')} aria-label={label} className={toolbarButtonClass(false)}>
+      <Trash2 size={13} aria-hidden />
+      {/* Au téléphone, la barre n'a la place que du compte. */}
+      <span aria-hidden className="tabular-nums sm:hidden">{offer.count}</span>
+      <span aria-hidden className="hidden tabular-nums sm:inline">{label}</span>
+    </button>
   )
 }
 

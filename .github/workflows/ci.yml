@@ -60,6 +60,7 @@ jobs:
       - run: node scripts/claude-login-ui-check.mjs
       - run: pnpm test:windows-feedback-ui
       - run: pnpm test:brief-field-ui
+      - run: pnpm test:card-draft-ui
 
   macos:
     # L'installation macOS de bout en bout, que rien ne permet d'essayer depuis Linux :

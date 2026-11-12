@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type {
   BranchCleanupResultDto,
+  CompareDto,
   GitHeadDto,
   PortfolioWorktreeStatusDto,
   WorktreeCleanupPlanDto,
@@ -13,7 +14,7 @@ import { projectScope } from './workspace-scope'
 
 export const worktreesKey = (projectId: string) => ['worktrees', projectId]
 
-const statusKey = (projectId: string) => ['worktree-status', projectId]
+export const worktreeStatusKey = (projectId: string) => ['worktree-status', projectId]
 
 /**
  * L'avancement des chantiers d'un projet : chaque arbre jugé contre la branche par
@@ -27,7 +28,7 @@ const statusKey = (projectId: string) => ['worktree-status', projectId]
  */
 export function useWorktreeStatuses(projectId: string | undefined) {
   return useQuery({
-    queryKey: statusKey(projectId ?? ''),
+    queryKey: worktreeStatusKey(projectId ?? ''),
     queryFn: () => api.get<WorktreeStatusListDto>(`/api/projects/${projectId}/worktrees/status`),
     enabled: Boolean(projectId),
     staleTime: 15_000,
@@ -77,7 +78,7 @@ export function useCreateWorktree(projectId: string) {
       api.post<WorktreeDto>(`/api/projects/${projectId}/worktrees`, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreesKey(projectId) })
-      void queryClient.invalidateQueries({ queryKey: statusKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: worktreeStatusKey(projectId) })
     },
   })
 }
@@ -110,16 +111,55 @@ export function useBranches(projectId: string | undefined) {
   })
 }
 
+/**
+ * Ce qu'une branche apporte depuis la base (S6) : le tiroir « Diff avec la base ».
+ * Désactivée tant qu'une des deux références manque.
+ */
+export const compareKey = (projectId: string | undefined, base: string | null, head: string | null) =>
+  ['compare', projectId, base, head]
+
+export function useCompare(projectId: string | undefined, base: string | null, head: string | null) {
+  return useQuery({
+    queryKey: compareKey(projectId, base, head),
+    queryFn: () =>
+      api.get<CompareDto>(
+        `/api/projects/${projectId}/compare?base=${encodeURIComponent(base ?? '')}&head=${encodeURIComponent(head ?? '')}`,
+      ),
+    enabled: Boolean(projectId && base && head),
+    staleTime: 30_000,
+  })
+}
+
+export const cleanupPlanKey = (projectId: string, path: string | null) => ['worktree-cleanup', projectId, path]
+
+const cleanupPlanQuery = (projectId: string, path: string | null) => ({
+  queryKey: cleanupPlanKey(projectId, path),
+  queryFn: () =>
+    api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
+  enabled: path !== null,
+  // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
+  staleTime: 0,
+  gcTime: 0,
+})
+
 /** Ce que le nettoyage ferait d'un arbre, lu à l'ouverture de la confirmation. */
 export function useWorktreeCleanupPlan(projectId: string, path: string | null) {
-  return useQuery({
-    queryKey: ['worktree-cleanup', projectId, path],
-    queryFn: () =>
-      api.get<WorktreeCleanupPlanDto>(`/api/projects/${projectId}/worktrees/cleanup?path=${encodeURIComponent(path ?? '')}`),
-    enabled: path !== null,
-    // Relu à chaque ouverture : ce qui tourne dans l'arbre change d'une minute à l'autre.
-    staleTime: 0,
-    gcTime: 0,
+  return useQuery(cleanupPlanQuery(projectId, path))
+}
+
+/**
+ * Les plans de plusieurs arbres, pour le dialogue « Nettoyer » de Travail : la fonction
+ * rend celui d'un chemin, `undefined` tant qu'il se lit, `null` s'il n'a pas pu l'être.
+ */
+export function useWorktreeCleanupPlans(projectId: string, paths: string[]): (path: string) => WorktreeCleanupPlanDto | null | undefined {
+  return useQueries({
+    // Un plan qui échoue le dit tout de suite : le dialogue n'attend pas trois essais.
+    queries: paths.map((path) => ({ ...cleanupPlanQuery(projectId, path), retry: false })),
+    combine: (results) => {
+      // Par le chemin demandé : celui que le serveur rend peut être normalisé.
+      const byPath = new Map(results.map((result, index) => [paths[index]!, result.data ?? (result.isError ? null : undefined)] as const))
+      return (path: string) => byPath.get(path)
+    },
   })
 }
 
@@ -130,7 +170,7 @@ export function useCleanWorktree(projectId: string) {
       api.post<WorktreeCleanupResultDto>(`/api/projects/${projectId}/worktrees/cleanup`, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: worktreesKey(projectId) })
-      void queryClient.invalidateQueries({ queryKey: statusKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: worktreeStatusKey(projectId) })
       void queryClient.invalidateQueries({ queryKey: ['conversations'] })
       void queryClient.invalidateQueries({ queryKey: ['branches'] })
       void queryClient.invalidateQueries({ queryKey: ['services'] })
@@ -149,7 +189,7 @@ export function useCleanBranches(projectId: string) {
     mutationFn: (names: string[]) =>
       api.post<BranchCleanupResultDto>(`/api/projects/${projectId}/branches/cleanup`, { names }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: statusKey(projectId) })
+      void queryClient.invalidateQueries({ queryKey: worktreeStatusKey(projectId) })
       void queryClient.invalidateQueries({ queryKey: ['worktree-status'], exact: true })
       void queryClient.invalidateQueries({ queryKey: ['branches', projectId] })
       // Le bandeau « Annuler » de l'onglet Git du projet.
