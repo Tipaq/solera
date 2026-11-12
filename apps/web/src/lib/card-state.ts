@@ -32,9 +32,14 @@ function midnight(at: number): number {
  * sur le board. 0 quand elle ne l'est pas.
  */
 export function lateDays(card: Pick<CardDto, 'column' | 'dueAt'>, now = Date.now()): number {
-  if (!isOpen(card) || card.dueAt === null) return 0
+  return isOpen(card) ? calendarLateDays(card.dueAt, now) : 0
+}
+
+/** Les jours écoulés depuis une échéance, au calendrier, sans regarder qui la porte. */
+export function calendarLateDays(dueAt: number | null, now = Date.now()): number {
+  if (dueAt === null) return 0
   // Arrondi : un jour de changement d'heure dure 23 h ou 25 h.
-  return Math.max(0, Math.round((midnight(now) - midnight(card.dueAt)) / 86_400_000))
+  return Math.max(0, Math.round((midnight(now) - midnight(dueAt)) / 86_400_000))
 }
 
 export function isLate(card: Pick<CardDto, 'column' | 'dueAt'>, now = Date.now()): boolean {

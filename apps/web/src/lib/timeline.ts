@@ -94,36 +94,6 @@ export function spanOf(from: number, to: number, start: number, end: number): Sp
 }
 
 /**
- * Les deux bouts d'une carte sur l'axe.
- *
- * Une carte n'a **qu'une** date, son échéance : il n'y a pas de date de début, et on ne
- * va pas en inventer une. Le début est donc sa création, qui est un fait, et la barre
- * dit « depuis quand ce travail existe, et pour quand il est promis ».
- *
- * Sans échéance, la barre court jusqu'à aujourd'hui et se dessine en pointillé : elle ne
- * promet rien, elle constate. C'est la lecture que la maquette F4 demande.
- */
-export function cardSpan(card: CardDto, at = Date.now()): {
-  start: number
-  end: number
-  /** Sans échéance : la barre ne promet rien. */
-  loose: boolean
-  /** Échéance dépassée, et la carte est encore ouverte. */
-  late: boolean
-} {
-  const open = card.column !== 'done' && card.column !== 'abandoned'
-  if (card.dueAt === null) {
-    return { start: card.createdAt, end: Math.max(card.createdAt, at), loose: true, late: false }
-  }
-  return {
-    start: Math.min(card.createdAt, card.dueAt),
-    end: card.dueAt,
-    loose: false,
-    late: open && card.dueAt < at,
-  }
-}
-
-/**
  * Les bouts d'un jalon : du plus ancien de ses travaux à sa propre échéance.
  *
  * Le portefeuille montre des jalons et non des cartes (F10), et un jalon qui n'aurait
@@ -162,20 +132,4 @@ export function ticksOf(from: number, to: number): number[] {
     if (at >= from) ticks.push(at)
   }
   return ticks
-}
-
-/**
- * Les cartes qu'aucune chronologie ne peut montrer : ni jalon, ni échéance.
- *
- * Comptées en pied de vue plutôt que tues. Une chronologie qui les omet en silence ment
- * par omission — on y lit « voilà le travail », alors qu'on n'en voit qu'une part.
- */
-export function unplacedOf(cards: CardDto[]): CardDto[] {
-  return cards.filter(
-    (card) =>
-      card.parent === null &&
-      card.dueAt === null &&
-      card.column !== 'done' &&
-      card.column !== 'abandoned',
-  )
 }

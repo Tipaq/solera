@@ -1,12 +1,12 @@
-import { parseSubtasks, type AgentKind, type CardColumn, type CardConversationDto, type CardDto } from '@solera/protocol'
+import { parseSubtasks, type AgentKind, type CardColumn, type CardConversationDto, type CardDto, type CardLinkDto } from '@solera/protocol'
 import { awaitsMe, isLate, isOpen, liveSessions, loadedStatus, type StatusOf } from './card-state'
 import { isIdea } from './milestone-model'
 
 /*
- * Le modèle du Tableau (#180, spec page projet v2 B-1, B-2, B-4) : quelles cartes sont
- * des tuiles, à quel jalon chacune appartient, ce qu'elle demande, et comment la barre
- * les filtre, les trie et les range. Pur, sans React ni réseau : `useBoardData` lui
- * passe les cartes et le statut vivant des sessions.
+ * Le modèle du Tableau (#180, #181, spec page projet v2 B-1, B-2, B-4 à B-6) : quelles
+ * cartes sont des tuiles, à quel jalon chacune appartient, ce qu'elle demande, et comment
+ * la barre les filtre, les trie et les range en Kanban, en Liste ou par geste. Pur, sans
+ * React ni réseau : `useBoardData` lui passe les cartes et le statut vivant des sessions.
  */
 
 /** Les colonnes montrées d'office ; Fait et Abandonné se règlent dans « Affichage ». */
@@ -242,8 +242,8 @@ export interface LaneGroup {
   entries: BoardCard[]
 }
 
-/** Les couloirs (B-4.7) : un par jalon qui a des feuilles ouvertes, puis « Sans jalon ». */
-export function laneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
+/** Un groupe par jalon, dans l'ordre des jalons, puis « Sans jalon » ; vides compris. */
+function milestoneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
   return [
     ...milestones.map((milestone) => ({
       key: milestone.card.id,
@@ -251,7 +251,138 @@ export function laneGroups(entries: readonly BoardCard[], milestones: readonly B
       entries: entries.filter((entry) => entry.milestone?.card.id === milestone.card.id),
     })),
     { key: 'none', milestone: null, entries: entries.filter((entry) => entry.milestone === null) },
-  ].filter((group) => group.entries.some((entry) => isOpen(entry.card)))
+  ]
+}
+
+/** Les couloirs (B-4.7) : un par jalon qui a des feuilles ouvertes, puis « Sans jalon ». */
+export function laneGroups(entries: readonly BoardCard[], milestones: readonly BoardMilestone[]): LaneGroup[] {
+  return milestoneGroups(entries, milestones).filter((group) => group.entries.some((entry) => isOpen(entry.card)))
+}
+
+/* ------------------------------------------------------------------ Liste (B-5) */
+
+export const LIST_SORT_KEYS = ['state', 'title', 'due', 'seen'] as const
+export type ListSortKey = (typeof LIST_SORT_KEYS)[number]
+/** Le tri de la Liste, réglé par ses en-têtes ; un état de la page, comme les filtres. */
+export interface ListSort {
+  key: ListSortKey
+  desc: boolean
+}
+
+export const DEFAULT_LIST_SORT: ListSort = { key: 'state', desc: false }
+
+/** Un clic sur l'en-tête du tri courant l'inverse ; un autre en-tête repart dans l'ordre. */
+export function nextListSort(current: ListSort, key: ListSortKey): ListSort {
+  return { key, desc: current.key === key ? !current.desc : false }
+}
+
+/** L'ordre des colonnes en tri « État » : ce qui demande un geste d'abord. */
+const COLUMN_RANK: Record<CardColumn, number> = { review: 0, in_progress: 1, todo: 2, done: 3, abandoned: 4 }
+
+const LIST_COMPARE: Record<ListSortKey, (a: BoardCard, b: BoardCard) => number> = {
+  state: (a, b) =>
+    Number(b.waiting) - Number(a.waiting) ||
+    COLUMN_RANK[a.card.column] - COLUMN_RANK[b.card.column] ||
+    b.card.columnSince - a.card.columnSince,
+  title: (a, b) => a.card.title.localeCompare(b.card.title),
+  due: (a, b) => (a.card.dueAt ?? 0) - (b.card.dueAt ?? 0),
+  // « Vu » : la dernière touchée d'abord.
+  seen: (a, b) => b.card.updatedAt - a.card.updatedAt,
+}
+
+function listCompare({ key, desc }: ListSort): (a: BoardCard, b: BoardCard) => number {
+  const sign = desc ? -1 : 1
+  return (a, b) => {
+    // Sans échéance en dernier, dans un sens comme dans l'autre.
+    if (key === 'due' && (a.card.dueAt === null) !== (b.card.dueAt === null)) return a.card.dueAt === null ? 1 : -1
+    return sign * LIST_COMPARE[key](a, b)
+  }
+}
+
+/**
+ * Les lignes de la Liste qui se montrent (B-5.5) : les ouvertes, puis Fait selon
+ * l'affichage (ses cinq dernières arrivées en « Les 5 récentes »), Abandonné s'il est
+ * montré. Le filtre « colonne », posé par « Tout voir », montre toute sa colonne.
+ */
+function listEntries(entries: readonly BoardCard[], display: BoardDisplay, column: CardColumn | null): BoardCard[] {
+  if (column !== null) return entries.filter((entry) => entry.card.column === column)
+  const done = columnSlice(entries, 'done', display).shown
+  return entries.filter(
+    (entry) =>
+      isOpen(entry.card) ||
+      (entry.card.column === 'done' && display.done !== 'hidden' && done.includes(entry)) ||
+      (entry.card.column === 'abandoned' && display.abandoned),
+  )
+}
+
+/**
+ * Le nombre de faites quand « Les 5 récentes » en laisse hors de la Liste, pour un
+ * « Tout voir (N) » comme au pied de la colonne du Kanban ; `null` quand elle les montre toutes.
+ */
+export function listDoneCut(entries: readonly BoardCard[], display: BoardDisplay, column: CardColumn | null): number | null {
+  if (column !== null || display.done !== 'recent') return null
+  const { shown, total } = columnSlice(entries, 'done', display)
+  return total > shown.length ? total : null
+}
+
+/**
+ * Les groupes de la Liste (B-5.2) : un par jalon qui a des lignes, dans l'ordre des
+ * jalons, puis « Sans jalon » ; chacun trié par l'en-tête choisi.
+ */
+export function listGroups(
+  entries: readonly BoardCard[],
+  milestones: readonly BoardMilestone[],
+  display: BoardDisplay,
+  column: CardColumn | null,
+  sort: ListSort,
+): LaneGroup[] {
+  const compare = listCompare(sort)
+  return milestoneGroups(listEntries(entries, display, column), milestones)
+    .filter((group) => group.entries.length > 0)
+    .map((group) => ({ ...group, entries: group.entries.sort(compare) }))
+}
+
+/* ------------------------------------------------------------------ Par geste (B-6) */
+
+/** Les cartes qui bloquent celle-ci et ne sont pas closes. */
+export function openBlockers(card: Pick<CardDto, 'blockedBy'>): CardLinkDto[] {
+  return card.blockedBy.filter((blocker) => isOpen(blocker))
+}
+
+/** Une carte ouverte qui demande un geste de toi : une réponse, une relecture, l'accepter, la préciser. */
+function asksYou({ card, waiting }: BoardCard): boolean {
+  return isOpen(card) && (waiting || card.column === 'review' || card.acceptedAt === null || card.toClarifySince !== null)
+}
+
+export interface GestureSections {
+  /** T'attend, à relire, à accepter ou à préciser. */
+  forYou: BoardCard[]
+  /** En cours : les agents y travaillent. */
+  agents: BoardCard[]
+  /** À faire, que rien ne bloque. */
+  ready: BoardCard[]
+  /** À faire, derrière une carte ouverte. */
+  blocked: BoardCard[]
+  /** Arrivées en Fait ces sept derniers jours, les plus récentes d'abord. */
+  doneWeek: BoardCard[]
+}
+
+/**
+ * Par geste (B-6) : les cartes rangées par ce qu'elles attendent de quelqu'un. Une carte
+ * n'y paraît qu'une fois, et « À toi » prime sur la colonne.
+ */
+export function gestureSections(entries: readonly BoardCard[], now = Date.now()): GestureSections {
+  const forYou = entries.filter(asksYou)
+  const rest = entries.filter((entry) => !forYou.includes(entry))
+  const todo = rest.filter((entry) => entry.card.column === 'todo')
+  const blocked = todo.filter((entry) => openBlockers(entry.card).length > 0)
+  return {
+    forYou: sortEntries(forYou, 'waiting'),
+    agents: sortEntries(rest.filter((entry) => entry.card.column === 'in_progress'), 'waiting'),
+    ready: sortEntries(todo.filter((entry) => !blocked.includes(entry)), 'waiting'),
+    blocked: sortEntries(blocked, 'waiting'),
+    doneWeek: entries.filter((entry) => entry.card.column === 'done' && now - entry.card.columnSince < WEEK).sort(byArrival),
+  }
 }
 
 /**

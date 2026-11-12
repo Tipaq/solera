@@ -103,7 +103,12 @@ try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'fr-FR', serviceWorkers: 'block' })
   await context.addInitScript((origin) => {
     // La visionneuse PDF du navigateur n'expose pas le stockage de l'application.
-    if (window === window.top && location.origin === origin) localStorage.setItem('solera.locale', 'fr')
+    if (window === window.top && location.origin === origin) {
+      localStorage.setItem('solera.locale', 'fr')
+      // Un nombre fixe : la colonne déborde à coup sûr, et ce qu'on y cherche ne dépend
+      // pas de la hauteur. « Ajuster à la hauteur » a son propre contexte, plus bas.
+      localStorage.setItem('solera.display.sessionLimit', '20')
+    }
   }, new URL(base).origin)
   const login = await context.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })
   assert.ok(login.ok())
@@ -116,9 +121,9 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   const shots = join(root, 'docs/audits/2026-09-19-sidebar')
   await mkdir(shots, { recursive: true })
-  // Une longue liste pour vérifier le défilement et le « N autres sessions… », sans
+  // Une longue liste pour vérifier le défilement, le budget et la ligne de fin, sans
   // toucher à la base réelle.
-  await page.route('**/api/conversations', async (route) => {
+  const longList = async (route) => {
     const response = await route.fetch()
     const entries = await response.json()
     // `idle` et lues : une session active ne figure pas dans le groupe de son projet,
@@ -127,7 +132,12 @@ try {
     // qui doit lui donner un domicile dans la colonne.
     const free = { ...hero, id: 'fixture-libre', projectId: null, title: 'Fil sans projet', status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }
     await route.fulfill({ json: [...entries, free, ...Array.from({ length: 30 }, (_, i) => ({ ...hero, id: `fixture-${i}`, title: `Session de travail ${i + 1}`, status: 'idle', lastReadSeq: hero.lastNotableSeq, archivedAt: null }))] })
-  })
+  }
+  await page.route('**/api/conversations', longList)
+  const allConversations = async () => (await (await context.request.get(`${base}/api/conversations`)).json())
+  // Le total que la ligne de fin du projet annonce : archivées comprises, tirs exclus, et
+  // les trente de la liste longue.
+  const projectTotal = (await allConversations()).filter((entry) => entry.projectId === project.id && !entry.scheduleId).length + 30
 
   await page.goto(`${base}/p/${project.id}/c/${hero.id}`)
   const places = page.getByRole('navigation', { name: 'Lieux' })
@@ -249,11 +259,10 @@ try {
 
   /*
     SID-1 : un seul bloc qui défile — lieux, Activité, projets et sessions ensemble. Le
-    haut (bande, Rechercher, Nouvelle conversation) et le compte restent fixes. Tout se
-    déplie pour que la colonne déborde à coup sûr.
+    haut (bande, Rechercher, Nouvelle conversation) et le compte restent fixes. À vingt
+    sessions par liste, la colonne déborde à coup sûr.
   */
-  await column.getByRole('button', { name: /autres sessions…$/ }).click()
-  await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
+  assert.ok(await scroller.evaluate((node) => node.scrollHeight > node.clientHeight), 'la colonne déborde')
   assert.equal(await scroller.locator('nav[aria-label="Lieux"]').count(), 1, 'les lieux sont dans le bloc qui défile')
   assert.equal(await scroller.getByRole('group', { name: 'Suivi des conversations' }).count(), 1, 'l’Activité aussi')
   const account = column.getByRole('button', { name: 'Alex' })
@@ -261,7 +270,6 @@ try {
     (await searchBlock.boundingBox()).y,
     (await account.boundingBox()).y,
   ]
-  // Le clic sur « autres sessions… » a pu faire défiler la colonne : repartir du haut.
   await scroller.evaluate((node) => { node.scrollTop = 0 })
   const fixedBefore = await fixed()
   const placesBefore = (await places.boundingBox()).y
@@ -276,12 +284,25 @@ try {
   assert.deepEqual(await fixed(), fixedBefore, 'le haut et le compte restent en place')
   await page.screenshot({ path: join(shots, 'defilement-unique.png') })
   await scroller.evaluate((node) => { node.scrollTop = 0 })
-  await column.getByRole('button', { name: 'Réduire la liste' }).click()
 
-  // Lieu *Fils* : l'historique daté. Une tranche au moins porte des lignes.
-  await places.getByRole('button', { name: /^Fils/ }).click()
+  /*
+    SID-11 : *Fils* est une destination — sa ligne mène à `/sessions`, avec le « ↗ » au
+    survol, et la page allume le lieu. SID-10 : l'historique daté est coupé au budget, et
+    sa ligne de fin mène à la page, avec le total puisqu'il y a une coupe. Plus de
+    « Tout l'historique… » qui ouvrait la palette.
+  */
+  const threadsPlace = places.getByRole('button', { name: /^Fils/ })
+  await threadsPlace.hover()
+  await threadsPlace.locator('xpath=..').locator('svg.lucide-arrow-up-right').waitFor()
+  await threadsPlace.click()
+  await page.waitForURL(/\/sessions$/)
+  assert.equal(await threadsPlace.getAttribute('aria-current'), 'page', '/sessions allume *Fils*')
   await column.getByRole('heading', { name: /Aujourd’hui|Hier|7 derniers jours|Plus ancien/ }).first().waitFor()
-  await column.getByRole('button', { name: 'Tout l’historique…' }).waitFor()
+  const threadTotal = (await allConversations()).filter((entry) => !entry.scheduleId && !entry.archivedAt).length + 31
+  assert.equal(await column.locator('[data-session-list] > li').count(), 20, 'Fils coupé au budget')
+  const allThreads = column.getByRole('link', { name: `Toutes les sessions · ${threadTotal}`, exact: true })
+  assert.equal(await allThreads.getAttribute('href'), '/sessions')
+  assert.equal(await column.getByText('Tout l’historique…').count(), 0)
 
   // Lieu *Projets* : l'arbre, le centre suit, et la conversation ouverte reste ouverte.
   await places.getByRole('button', { name: /^Projets/ }).click()
@@ -298,11 +319,28 @@ try {
     0,
     'Pas d’en-tête « Sessions » : le filet de couleur dit l’appartenance',
   )
-  const more = column.getByRole('button', { name: /autres sessions…$/ })
-  await more.click()
-  await column.getByRole('link', { name: /Session de travail 30/ }).waitFor()
-  await column.getByRole('button', { name: 'Réduire la liste' }).click()
-  assert.equal(await column.getByRole('link', { name: /Session de travail 30/ }).count(), 0)
+  /*
+    SID-6 / SID-9 : vingt sessions sous le projet, puis une seule ligne de fin, « Toutes
+    les sessions du projet · N → », vers la page filtrée sur lui ; N compte les archivées.
+    Plus de « N autres sessions… » qui dépliait sur place, plus de section « Archivées ».
+  */
+  const projectGroup = column.locator(`li:has(a[href="/p/${project.id}"])`)
+  assert.equal(await projectGroup.locator('[data-session-list] > li').count(), 20, 'vingt sessions sous le projet')
+  const allProject = projectGroup.getByRole('link', { name: /^Toutes les sessions du projet/ })
+  assert.equal(await allProject.getAttribute('href'), `/sessions?projet=${project.id}`)
+  assert.equal(await allProject.textContent(), `Toutes les sessions du projet${projectTotal}`)
+  assert.equal(await column.getByText(/autres sessions…$/).count(), 0)
+  assert.equal(await column.getByText(/^Archivées/).count(), 0)
+  // La ligne de fin pose son icône sur la colonne des sessions du groupe.
+  assert.deepEqual(
+    distinct([
+      ...await centersFromLeft(projectGroup.locator('[data-session-list] > li > a > :first-child')),
+      ...await centersFromLeft(allProject.locator(':scope > :first-child')),
+    ]).length,
+    1,
+    'la ligne de fin sur la colonne des sessions',
+  )
+  await allProject.screenshot({ path: join(shots, 'ligne-de-fin-projet.png') })
 
   /*
     Ranger pendant un tour (carte #118). Le serveur refuse, et le refus doit se lire :
@@ -629,6 +667,107 @@ try {
   await page.keyboard.press('Escape')
   await usage.waitFor({ state: 'hidden' })
 
+  /*
+    SID-6 à SID-8 : « Ajuster à la hauteur », le défaut, dans un contexte sans réglage.
+    À 1280×800 la colonne ne défile pas : chaque liste montre ce qui tient, la mesure se
+    stabilise, et l'Activité garde ses lignes. À 1280×600, moins de 5 sessions tiendraient
+    sous elle : elle se réduit à son en-tête, et revient quand la place revient.
+  */
+  const fitContext = await browser.newContext({ viewport: { width: 1280, height: 800 }, locale: 'fr-FR', serviceWorkers: 'block' })
+  // Le mode « un seul projet » : une seule liste, celle du projet. Dans l'arbre, le
+  // budget se partage entre tous les groupes dépliés, et le jeu de démo en a quatre.
+  // Posé une fois par onglet : le test le retire plus loin, pour l'arbre.
+  await fitContext.addInitScript((id) => {
+    localStorage.setItem('solera.locale', 'fr')
+    if (sessionStorage.getItem('seeded')) return
+    sessionStorage.setItem('seeded', '1')
+    localStorage.setItem('solera.display.projectFocus', id)
+  }, project.id)
+  assert.ok((await fitContext.request.post(`${base}/api/auth/login`, { data: { username: 'alex', password: 'solera-demo' } })).ok())
+  const fitPage = await fitContext.newPage()
+  fitPage.on('pageerror', (error) => errors.push(error.message))
+  await fitPage.route('**/api/conversations', longList)
+  await fitPage.goto(`${base}/p/${project.id}/c/${hero.id}`)
+  const fitColumn = fitPage.locator('aside')
+  const fitActivity = fitColumn.getByRole('group', { name: 'Suivi des conversations' })
+  const fitGroup = fitColumn.locator('div:has(> [data-project-focus])')
+  await fitActivity.getByRole('link').first().waitFor()
+  await fitGroup.getByRole('link', { name: /^Toutes les sessions du projet/ }).waitFor()
+  /**
+   * La mesure se pose — cinq relevés identiques de suite, en dix secondes au plus : une
+   * colonne qui oscille n'y arrive jamais — et la colonne ne défile pas.
+   */
+  const settled = async () => {
+    const sample = () => fitPage.evaluate(() => {
+      const node = document.querySelector('[data-sidebar-scroll]')
+      return {
+        sessions: document.querySelectorAll('[data-session-list] > li').length,
+        activity: document.querySelectorAll('[data-sidebar-activity] li').length,
+        scrolls: node.scrollHeight > node.clientHeight,
+      }
+    })
+    let last = ''
+    let same = 0
+    for (let pass = 0; pass < 50 && same < 5; pass += 1) {
+      await delay(200)
+      const current = JSON.stringify(await sample())
+      same = current === last ? same + 1 : 0
+      last = current
+    }
+    assert.equal(same, 5, `la mesure se pose : ${last}`)
+    const state = JSON.parse(last)
+    assert.equal(state.scrolls, false, `la colonne ne défile pas : ${last}`)
+    return state
+  }
+  const tall = await settled()
+  assert.ok(tall.sessions >= 5, `au moins 5 sessions à 800 px : ${JSON.stringify(tall)}`)
+  assert.ok(tall.activity > 0, 'l’Activité garde ses lignes')
+  // La liste est coupée, et sa ligne de fin est là : le calcul ne la coupe jamais.
+  await fitGroup.getByRole('link', { name: /^Toutes les sessions du projet/ }).waitFor()
+  await fitColumn.screenshot({ path: join(shots, 'ajuster-800.png') })
+  await fitPage.setViewportSize({ width: 1280, height: 600 })
+  const short = await settled()
+  assert.equal(short.activity, 0, `l’Activité se réduit à son en-tête : ${JSON.stringify(short)}`)
+  await fitActivity.getByRole('button', { name: /^Activité/ }).waitFor()
+  await fitColumn.screenshot({ path: join(shots, 'ajuster-600.png') })
+  await fitPage.setViewportSize({ width: 1280, height: 800 })
+  assert.deepEqual(await settled(), tall, 'la place revenue, l’Activité se redéplie')
+
+  // Dix, vingt, cinquante : ce nombre par liste, et le bloc qui défile prend le relais.
+  const live = (await allConversations()).filter((entry) => entry.projectId === project.id && !entry.scheduleId && !entry.archivedAt).length + 30
+  for (const [limit, rows] of [['10', 10], ['50', Math.min(50, live)]]) {
+    await fitPage.evaluate((value) => localStorage.setItem('solera.display.sessionLimit', value), limit)
+    await fitPage.reload()
+    await fitGroup.locator('[data-session-list] > li').nth(rows - 1).waitFor()
+    assert.equal(await fitGroup.locator('[data-session-list] > li').count(), rows, `${limit} par liste`)
+    // La ligne de fin ne paraît que si le total dépasse ce qui est montré.
+    assert.equal(await fitGroup.getByRole('link', { name: /^Toutes les sessions du projet/ }).count(), rows < projectTotal ? 1 : 0)
+  }
+  assert.ok(await fitColumn.locator('[data-sidebar-scroll]').evaluate((node) => node.scrollHeight > node.clientHeight), 'à 50, la colonne défile')
+
+  /*
+    Dans l'arbre, en « Ajuster », le budget se partage entre les quatre groupes : les
+    lignes de fin restent, et celle des fils libres mène à la page filtrée sur eux.
+  */
+  await fitPage.evaluate(() => {
+    localStorage.removeItem('solera.display.sessionLimit')
+    localStorage.removeItem('solera.display.projectFocus')
+  })
+  await fitPage.reload()
+  const loose = fitColumn.getByRole('link', { name: /^Toutes les sessions sans projet/ })
+  await loose.waitFor()
+  assert.equal(await loose.getAttribute('href'), '/sessions?projet=none')
+  await settled()
+
+  // Au téléphone, rien ne se mesure : « Ajuster » vaut 10.
+  await fitPage.evaluate((id) => localStorage.setItem('solera.display.projectFocus', id), project.id)
+  await fitPage.setViewportSize({ width: 390, height: 844 })
+  await fitPage.reload()
+  await fitPage.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
+  await fitGroup.getByRole('link', { name: /^Toutes les sessions du projet/ }).waitFor()
+  assert.equal(await fitGroup.locator('[data-session-list] > li').count(), 10, 'au téléphone, 10')
+  await fitContext.close()
+
   // Le tiroir au doigt : rien ne déborde sur la largeur.
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByRole('button', { name: 'Ouvrir la navigation', exact: true }).click()
@@ -639,7 +778,7 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
 
   assert.deepEqual(errors, [])
-  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, tiroir mobile.')
+  console.log('OK : lieux et leur raccourci de création, historique daté, arbre des projets, planifiées, défilement d’un seul bloc, colonne d’icônes et bord droit commun, modale d’activité, mode un seul projet, menu du compte, consommation (vide, servie, lente, en panne, par compte), refus de rangement pendant un tour, Fils vers /sessions, lignes de fin, Ajuster à la hauteur et repli de l’Activité, 10 / 20 / 50, tiroir mobile.')
 } finally {
   await browser?.close()
   await Promise.all(processes.map(async (child) => {

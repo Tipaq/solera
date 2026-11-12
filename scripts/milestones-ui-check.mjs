@@ -10,6 +10,12 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // Les vues des jalons (spec page projet v2, jalons.md §6), une étape par sujet. Composants
 // réels, montés seuls dans une page de lieu réduite ; API simulée, ni daemon ni base.
 //
+// Étape « horizon » (#190, BAR-1..7, CAP-1..3, HOR-1..13) : la vraie page des Jalons —
+// recherche, filtres et leurs comptes, puces, échelle ; le cap écrit, modifié, vidé ; la
+// chaîne, Maintenant (axe, barre, lancement, retard, infobulle), Ensuite et Plus tard
+// (ordre du tableau, prochaine action, lien) ; « + Jalon » et une carte cochée « C'est un
+// jalon » arrivent comme idées sous Plus tard.
+//
 // Étape « page » (#194, JAL-1..8, VAG-1..10) : l'en-tête, la prochaine action et son geste,
 // les étapes expliquées (fiche par étape, téléphone), la mise en page, les vagues (colonnes,
 // arêtes, cycle, chaîne au survol, empilement au téléphone, repère ambre).
@@ -28,6 +34,11 @@ import { viteDependency } from './checks/vite-deps.mjs'
 // en infobulle), « Lancer » à la main, ajout de carte, pause, reprise, arrêt confirmé ; la
 // PR finale ouverte (« Fusionner dans main », « Ouvrir la PR », l'erreur de forge lue) ou
 // fermée sans fusion. Aucune vraie PR n'est fusionnée.
+//
+// Étape « à régler et ajout » (#196, RGL-1..6, ADD-1..4, AFF-7, JAL-3) : préciser une
+// carte (à sa session, sinon dans sa description), l'accepter, rompre un cycle ; le
+// tiroir « Ajouter au jalon » (à la session d'affinage, sinon un brouillon pré-rempli) ;
+// l'ajout proposé, en sous-tâches ou en cartes, accepté ou laissé.
 //
 // Étape « fiche » (#199, FCH-1..9, FLG-1) : `ℹ` n'ouvre pas la session, `?fiche=` se
 // partage, les sections, les liens qui changent de fiche, la réponse sur place, la case
@@ -51,7 +62,7 @@ const link = (card) => ({ id: card.id, number: card.number, title: card.title, c
 const cardSession = (id, title, status, ago, extra = {}) => ({ id, title, agent: 'claude', status, costUsd: 0, worktreeId: null, worktreeName: null, archivedAt: null, createdAt: now - ago, ...extra })
 const card = (number, title, column, extra = {}) => ({
   id: `card-${number}`, projectId: PROJECT, number, title, description: '', column, position: number, dueAt: null, parent: null,
-  milestone: false, children: [], branch: null, branchPr: null, acceptedAt: now - 9 * DAY, toClarifySince: null, createdBy: 'u1',
+  milestone: false, children: [], branch: null, branchPr: null, refinement: null, acceptedAt: now - 9 * DAY, toClarifySince: null, createdBy: 'u1',
   createdByName: 'Tim', createdAt: now - 9 * DAY, updatedAt: now - DAY, columnSince: now - 2 * DAY, conversations: [],
   attachmentCount: 0, noteCount: 0, references: [], referencedBy: [], blocks: [], blockedBy: [], related: [], duplicateOf: null,
   duplicates: [], issue: null, ...extra,
@@ -156,6 +167,311 @@ const NOTES = Array.from({ length: 5 }, (_, index) => ({
   id: `n${index}`, createdAt: now - (index + 1) * 3_600_000, body: `Note numéro ${index + 1}.`,
   author: index % 2 ? { kind: 'user', name: 'Tim' } : { kind: 'agent', agent: 'claude', conversationId: 's-old', conversationTitle: 'Première piste' },
 }))
+
+/* ------------------------------------------------------------------ horizon */
+
+/** Un jalon et ses enfants, liés dans les deux sens comme le serveur les rend. */
+function family(parent, kids) {
+  for (const kid of kids) kid.parent = link(parent)
+  parent.children = kids.map(link)
+  return [parent, ...kids]
+}
+
+/**
+ * Un projet à toutes les étapes : un jalon lancé qui t'attend et a grossi depuis son
+ * lancement, un prêt en retard dont une carte avance, un livré ; deux à régler ou prêts,
+ * deux idées ou à affiner ; une carte libre qu'on cochera « C'est un jalon ».
+ */
+function horizonBoard() {
+  const launched = card(910, 'Page projet v2', 'in_progress', { milestone: true, createdAt: now - 6 * DAY, dueAt: now + 5 * DAY })
+  const late = card(920, 'Accès distant fiable', 'todo', { milestone: true, createdAt: now - 8 * DAY, dueAt: now - 3 * DAY })
+  const delivered = card(940, 'Comptes Claude nommés', 'done', { milestone: true, createdAt: now - 20 * DAY, dueAt: now - 10 * DAY })
+  const ready = card(930, 'Partage en équipe', 'todo', { milestone: true, position: 30 })
+  const split = card(950, 'Fil unique', 'todo', { milestone: true, position: 20 })
+  return [
+    ...family(launched, [
+      card(911, 'Échelle et axe', 'done', { createdAt: now - 12 * DAY }),
+      card(912, 'Barres de cartes', 'in_progress', { conversations: [cardSession('s-912', 'Barres', 'awaiting_input', DAY)] }),
+      card(913, 'Ajoutée en route', 'todo', { createdAt: now - DAY }),
+    ]),
+    ...family(late, [card(921, 'Adresse de secours', 'in_progress', { conversations: [cardSession('s-921', 'Adresse', 'running', DAY)] })]),
+    ...family(delivered, [card(941, 'Alias', 'done'), card(942, 'Migration', 'done')]),
+    ...family(ready, [card(931, 'Invitations', 'todo')]),
+    ...family(split, [card(951, 'Filtres par nature', 'todo', { toClarifySince: now - DAY })]),
+    card(901, 'Mode hors ligne', 'todo', { milestone: true, position: 50 }),
+    card(902, 'Projets partagés', 'todo', {
+      milestone: true, position: 40,
+      refinement: { conversationId: 'split-902', title: 'Affinage', status: 'running', mode: 'questions', createdAt: now - DAY, draft: null, change: null },
+    }),
+    card(960, 'Une idée en l’air', 'todo', { position: 960 }),
+  ]
+}
+
+const RUN = { id: 'run-910', cardId: 'card-910', state: 'running', mode: 'auto', concurrency: 2, confined: false, createdAt: now - 3 * DAY, cards: [] }
+const projectOf = (cap) => ({
+  id: PROJECT, name: 'Solera', image: null, workspacePath: '/tmp/solera', ownerId: 'u1', ownerName: 'Tim', visibility: 'private', color: null,
+  isOwner: true, position: 0, archivedAt: null, createdAt: now - 90 * DAY, conversationCount: 0, configLayer: {}, instructionsMode: null,
+  designSystemPath: null, cap, turnCheckpoints: false, activeTerminals: 0, git: null,
+})
+
+/** La vraie page des Jalons, sous sa route, avec le tiroir commun de la coque. */
+async function mountHorizon(page, entry) {
+  const modules = {
+    react: await viteDependency(origin, 'react', '/src/components/shell/Drawer.tsx'),
+    reactDom: await viteDependency(origin, 'react-dom/client', '/src/main.tsx'),
+    ui: await viteDependency(origin, '@solera/ui', '/src/components/shell/Drawer.tsx'),
+    query: await viteDependency(origin, '@tanstack/react-query', '/src/lib/cards.ts'),
+    router: await viteDependency(origin, 'react-router-dom', '/src/routes/milestones/MilestonesPage.tsx'),
+  }
+  await page.goto(`${origin}/__milestones_check`)
+  await page.evaluate(async ({ modules, entry }) => {
+    const refresh = (await import('/@react-refresh')).default
+    refresh.injectIntoGlobalHook(window)
+    window.$RefreshReg$ = () => {}
+    window.$RefreshSig$ = () => (type) => type
+    window.__vite_plugin_react_preamble_installed__ = true
+    localStorage.setItem('solera.locale', 'fr')
+    await (await import('/src/lib/i18n/index.ts')).initLocale()
+    document.documentElement.dataset.theme = 'dark'
+    await import('/src/styles/index.css')
+    const React = (await import(modules.react)).default
+    const { createRoot } = (await import(modules.reactDom)).default
+    const { TooltipProvider } = await import(modules.ui)
+    const { QueryClient, QueryClientProvider } = await import(modules.query)
+    const { MemoryRouter, Routes, Route, useLocation } = await import(modules.router)
+    const { DrawerLayer } = await import('/src/components/shell/Drawer.tsx')
+    const { DetailSurfaceContext } = await import('/src/lib/detail-surface.ts')
+    const { MilestonesPage } = await import('/src/routes/milestones/MilestonesPage.tsx')
+    const h = React.createElement
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+
+    function Where() {
+      const location = useLocation()
+      window.where = location.pathname + location.search
+      return null
+    }
+
+    createRoot(document.getElementById('check')).render(
+      h(QueryClientProvider, { client },
+        h(MemoryRouter, { initialEntries: [entry] },
+          h(TooltipProvider, null,
+            h(DetailSurfaceContext.Provider, { value: 'drawer' },
+              h(Where),
+              h('div', { className: 'flex h-dvh flex-col' },
+                h('nav', { className: 'h-12 shrink-0 border-b border-line', 'aria-label': 'Rangée' }),
+                h('div', { 'data-place-content': '', className: 'relative flex min-h-0 flex-1 flex-col overflow-clip' },
+                  h(Routes, null,
+                    h(Route, { path: '/p/:projectId/timeline', element: h(MilestonesPage) }),
+                    h(Route, { path: '*', element: h('p', null, 'ailleurs') })),
+                  h(DrawerLayer))))))))
+  }, { modules, entry })
+}
+
+async function horizonStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+
+  let cards = horizonBoard()
+  let cap = null
+  const writes = []
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    const method = request.method()
+    if (path === '/api/projects') return route.fulfill({ json: [projectOf(cap)] })
+    if (path === `/api/projects/${PROJECT}` && method === 'PATCH') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'project', ...body })
+      cap = body.cap
+      return route.fulfill({ json: { ok: true } })
+    }
+    if (path === `/api/projects/${PROJECT}/cards` && method === 'POST') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'create', ...body })
+      const created = card(970, body.title, body.column ?? 'todo', { milestone: Boolean(body.milestone), position: 970, createdAt: Date.now() })
+      cards = [...cards, created]
+      return route.fulfill({ json: created })
+    }
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [RUN] })
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/conversations') return route.fulfill({ json: [] })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', name: 'Tim', email: 'tim@example.com' } })
+    if (/^\/api\/cards\/[^/]+\/notes$/.test(path)) return route.fulfill({ json: [] })
+    const patch = /^\/api\/cards\/([^/]+)$/.exec(path)
+    if (patch && method === 'PATCH') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'patch', id: patch[1], ...body })
+      const target = cards.find((entry) => entry.id === patch[1])
+      Object.assign(target, body)
+      return route.fulfill({ json: target })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+
+  const where = () => page.evaluate(() => window.where)
+  const section = (name) => page.getByRole('region', { name, exact: true })
+  const tiles = (name) => section(name).getByRole('listitem')
+  const numbersIn = async (name) => (await tiles(name).allTextContents()).map((text) => Number(/#(\d+)/.exec(text)?.[1]))
+  const chainCount = async (label) =>
+    Number(await page.getByRole('list', { name: 'Jalons par étape' }).getByRole('listitem').filter({ hasText: label }).locator('span').last().textContent())
+  const shot = (locator, name) => locator.screenshot({ animations: 'disabled', path: `/tmp/milestones-horizon-${name}-${width}.png` })
+
+  console.log(width, 'horizon : les trois temps, dans leur ordre')
+  await mountHorizon(page, `/p/${PROJECT}/timeline`)
+  await section('Maintenant').waitFor()
+  const axis = section('Maintenant')
+  const axisNames = await axis.getByRole('link').evaluateAll((links) => links.map((link) => link.getAttribute('href')))
+  assert.deepEqual(axisNames, [920, 910, 940].map((number) => `/p/${PROJECT}/timeline/${number}`), 'Maintenant : non livrés par création, livré en dernier')
+  assert.deepEqual(await numbersIn('Ensuite'), [950, 930], 'Ensuite : À régler et Prêt, dans l’ordre du tableau')
+  assert.deepEqual(await numbersIn('Plus tard'), [902, 901], 'Plus tard : À affiner et Idée, dans l’ordre du tableau')
+  assert.equal(await page.getByText('Une idée en l’air').count(), 0, 'Une carte sans drapeau n’est pas un jalon')
+
+  console.log(width, 'HOR-1 : la chaîne compte chaque étape')
+  assert.deepEqual(
+    [await chainCount('Idée'), await chainCount('À affiner'), await chainCount('À régler'), await chainCount('Prêt'), await chainCount('Lancé'), await chainCount('Livré')],
+    [1, 1, 1, 2, 1, 1],
+  )
+
+  console.log(width, 'HOR-4..7 : nom, pastille, ajouts, barre, lancement, échéance, retard')
+  const row910 = axis.getByRole('link', { name: /#910/ })
+  assert.equal(await row910.getByText('Lancé', { exact: true }).isVisible(), true)
+  assert.equal(await row910.getByText('+1 depuis le lancement').isVisible(), true)
+  const bar910 = page.locator('[data-milestone-bar="910"]')
+  assert.equal(await bar910.getByText('1/3', { exact: true }).isVisible(), true, 'fait / non abandonnées')
+  assert.equal(await bar910.getByText('1 t’attend').isVisible(), true, 'la carte dont une session attend')
+  assert.equal(await bar910.locator('[data-launch]').count(), 1, 'le trait du lancement')
+  const bar920 = page.locator('[data-milestone-bar="920"]')
+  assert.match(await bar920.locator('[data-due]').getAttribute('class'), /border-critical/, 'losange rouge en retard')
+  assert.match(await page.locator('[data-milestone-bar="940"] [data-due]').getAttribute('class'), /border-positive/, 'losange vert une fois livré')
+  await shot(page.locator('[data-toolbar]'), 'barre')
+  await shot(axis, 'maintenant')
+
+  if (!phone) {
+    console.log(width, 'HOR-8 : survol, les autres pâlissent, infobulle')
+    await bar920.hover()
+    const tip = page.getByRole('tooltip').filter({ hasText: '#920' })
+    await tip.waitFor()
+    assert.equal(await tip.getByText('3 j de retard', { exact: false }).isVisible(), true)
+    assert.equal(await tip.getByText('Prêt — ', { exact: false }).isVisible(), true, 'la maturité et sa raison')
+    assert.match(await page.locator('[data-milestone-bar="910"]').getAttribute('class'), /opacity-40/)
+    await shot(axis, 'maintenant-survol')
+    await page.mouse.move(5, 5)
+  }
+
+  console.log(width, 'HOR-11 : une tuile mène à la page du jalon et dit sa prochaine action')
+  const tile950 = tiles('Ensuite').first()
+  assert.equal(await tile950.getByRole('link').getAttribute('href'), `/p/${PROJECT}/timeline/950`)
+  assert.equal(await tile950.getByText('Préciser', { exact: true }).isVisible(), true)
+  assert.equal(await tile950.getByText('1 carte ouverte').isVisible(), true)
+  assert.equal(await tiles('Plus tard').last().getByText('Pas encore découpé').isVisible(), true)
+  await shot(section('Ensuite'), 'ensuite')
+  await shot(section('Plus tard'), 'plus-tard')
+  await shot(page.getByRole('list', { name: 'Jalons par étape' }), 'chaine')
+
+  console.log(width, 'ℹ d’une tuile ouvre la fiche sur place, sans suivre le lien')
+  await tile950.getByRole('button', { name: 'Détail de la carte #950' }).click()
+  await page.getByRole('dialog', { name: 'Carte #950' }).waitFor()
+  assert.equal(await where(), `/p/${PROJECT}/timeline?fiche=950`)
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'detached' })
+
+  console.log(width, 'BAR-2 : la recherche lit #numéro et titre ; la chaîne suit le filtre')
+  const search = page.getByRole('searchbox', { name: 'Chercher un jalon' })
+  await search.fill('#910')
+  await page.waitForFunction(() => document.querySelectorAll('[data-milestone-bar]').length === 1)
+  assert.equal(await section('Ensuite').getByText('Rien de découpé en attente.').isVisible(), true)
+  assert.equal(await chainCount('Lancé'), 1)
+  assert.equal(await chainCount('Prêt'), 0)
+  await search.fill('hors ligne')
+  assert.deepEqual(await numbersIn('Plus tard'), [901])
+  await search.fill('')
+
+  console.log(width, 'BAR-3, BAR-4 : filtres comptés sur tous les jalons, puces, effacer')
+  await page.getByRole('button', { name: 'Filtrer' }).click()
+  const menu = page.getByRole('dialog', { name: 'Filtrer' })
+  const ready = menu.getByRole('checkbox', { name: /^Prêt/ })
+  assert.equal((await ready.textContent()).trim(), 'Prêt2')
+  await ready.click()
+  await menu.getByRole('checkbox', { name: /^En retard/ }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => document.querySelectorAll('[data-milestone-bar]').length === 1)
+  assert.equal(await page.locator('[data-milestone-bar="920"]').count(), 1, 'prêt et en retard : seul #920')
+  assert.equal(await chainCount('Prêt'), 1)
+  const chips = page.locator('[data-filter-chip]')
+  assert.deepEqual(await chips.allTextContents(), ['Prêt', 'en retard'])
+  await shot(page.locator('[data-toolbar]'), 'barre-filtree')
+  await chips.filter({ hasText: 'en retard' }).getByRole('button').click()
+  assert.deepEqual(await chips.allTextContents(), ['Prêt'])
+  await page.getByRole('button', { name: /^Filtrer/ }).click()
+  await menu.getByRole('button', { name: 'Effacer tous les filtres' }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => document.querySelectorAll('[data-milestone-bar]').length === 3)
+  assert.equal(await chips.count(), 0)
+
+  console.log(width, 'BAR-5 : Affichage règle l’échelle, Mois par défaut')
+  await page.getByRole('button', { name: 'Affichage : Horizon' }).click()
+  const display = page.getByRole('dialog', { name: 'Affichage' })
+  await display.getByRole('radio', { name: 'Horizon', checked: true }).waitFor()
+  assert.equal(await display.getByRole('radio', { name: 'Mois' }).getAttribute('aria-checked'), 'true')
+  const before = await axis.locator('.overflow-x-auto > div').first().evaluate((element) => element.scrollWidth)
+  await display.getByRole('radio', { name: 'Semaine' }).click()
+  await page.keyboard.press('Escape')
+  await page.waitForFunction((before) => document.querySelector('[aria-label="Maintenant"] .overflow-x-auto > div').scrollWidth > before, before)
+
+  console.log(width, 'CAP-1..3 : ajouter, modifier, vider le cap')
+  await page.getByRole('button', { name: 'Ajouter un cap' }).click()
+  const field = page.getByRole('textbox', { name: 'Cap' })
+  assert.equal(await field.evaluate((element) => element === document.activeElement), true, 'focus d’office')
+  await field.fill('  Un cockpit d’agents, au bureau et au téléphone.  ')
+  await page.getByRole('button', { name: 'Enregistrer' }).click()
+  await page.getByText('Un cockpit d’agents, au bureau et au téléphone.', { exact: true }).waitFor()
+  assert.deepEqual(writes.at(-1), { kind: 'project', cap: 'Un cockpit d’agents, au bureau et au téléphone.' })
+  await shot(page.getByText('Un cockpit d’agents, au bureau et au téléphone.', { exact: true }).locator('xpath=ancestor::div[contains(@class, "group")][1]'), 'cap')
+  await page.getByRole('button', { name: 'Modifier le cap' }).click()
+  await page.getByRole('textbox', { name: 'Cap' }).fill('   ')
+  await page.getByRole('button', { name: 'Enregistrer' }).click()
+  await page.getByRole('button', { name: 'Ajouter un cap' }).waitFor()
+  assert.deepEqual(writes.at(-1), { kind: 'project', cap: null })
+
+  console.log(width, 'BAR-7 : « + Jalon » note une idée, qui arrive sous Plus tard')
+  await page.getByRole('button', { name: 'Jalon', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Nouveau jalon' })
+  await dialog.getByRole('textbox').first().fill('Tableau de bord des coûts')
+  await dialog.getByRole('button', { name: 'Noter l’idée' }).click()
+  await dialog.waitFor({ state: 'detached' })
+  assert.equal(writes.at(-1).milestone, true)
+  assert.equal(writes.at(-1).title, 'Tableau de bord des coûts')
+  await section('Plus tard').getByText('Tableau de bord des coûts').waitFor()
+  assert.match(await where(), /vue=horizon/, '« + Jalon » repasse en Horizon')
+
+  console.log(width, 'HOR-12 (#199) : une carte cochée « C’est un jalon » arrive comme idée sous Plus tard')
+  await mountHorizon(page, `/p/${PROJECT}/timeline?fiche=960`)
+  const sheet = page.getByRole('dialog', { name: 'Carte #960' })
+  await sheet.waitFor()
+  await sheet.getByRole('checkbox', { name: 'C’est un jalon' }).check()
+  await section('Plus tard').getByText('Une idée en l’air').waitFor()
+  assert.deepEqual(writes.at(-1), { kind: 'patch', id: 'card-960', milestone: true })
+  const idea = tiles('Plus tard').filter({ hasText: 'Une idée en l’air' })
+  assert.equal(await idea.getByText('Idée', { exact: true }).isVisible(), true)
+
+  if (phone) {
+    console.log(width, 'HOR-13 : une colonne, seul l’axe défile en largeur')
+    await page.keyboard.press('Escape')
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'rien ne déborde')
+    const columns = await page.getByRole('list', { name: 'Jalons par étape' }).evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+    assert.equal(columns, 3)
+  }
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
 
 async function mount(page, entry, view = 'list') {
   // Les fournisseurs viennent des mêmes modules que les composants : voir `viteDependency`.
@@ -284,7 +600,9 @@ async function pageStep(width) {
   console.log(width, 'l’affinage qui attend passe avant les vagues')
   const refineTop = (await page.locator('#affinage').boundingBox()).y
   assert.ok(refineTop < (await waves.boundingBox()).y, 'L’affinage en attente vient en tête')
-  assert.equal(await page.locator('#affinage').getByText('1 carte est à préciser : #303.').isVisible(), true)
+  const settle = page.locator('#affinage').getByRole('region', { name: 'À régler avant de partir' })
+  assert.equal(await settle.getByText('1 point en attente').isVisible(), true)
+  assert.equal(await settle.getByText('#303 Infobulle flottante', { exact: true }).isVisible(), true)
 
   console.log(width, 'vagues : trois colonnes, ouvertes d’abord, l’abandonnée exclue')
   await waves.getByText('ce qui part ensemble, de gauche à droite · 3 à la fois').waitFor()
@@ -772,6 +1090,216 @@ async function launchStep(width) {
   await context.close()
 }
 
+/* ------------------------------------------------------------------ étape « à régler et ajout » */
+
+/** Les jalons de l'étape : ce qui reste à régler, et ce qu'un ajout devient. */
+function settleBoard() {
+  const all = []
+  const parent = (number, title, kids, extra = {}) => {
+    const milestone = card(number, title, 'todo', { milestone: true, ...extra })
+    for (const kid of kids) kid.parent = link(milestone)
+    milestone.children = kids.map(link)
+    all.push(milestone, ...kids)
+    return milestone
+  }
+  // À régler : à préciser avec ou sans session, pas acceptée, un cycle.
+  const asked = card(401, 'Cache des fils', 'todo', { toClarifySince: now - DAY, conversations: [cardSession('c-401', 'Cache', 'idle', DAY)] })
+  const bare = card(402, 'File d’envoi', 'todo', { toClarifySince: now - 2 * DAY, description: 'Envoyer plus tard.' })
+  const outside = card(403, 'Issue importée', 'todo', { acceptedAt: null })
+  const loopA = card(404, 'Synchro', 'todo')
+  const loopB = card(405, 'Conflits', 'todo')
+  loopA.blockedBy.push(link(loopB)); loopB.blocks.push(link(loopA))
+  loopB.blockedBy.push(link(loopA)); loopA.blocks.push(link(loopB))
+  parent(400, 'Hors ligne', [asked, bare, outside, loopA, loopB])
+  // Un ajout rangé en sous-tâches, l'une déjà dans la carte.
+  parent(410, 'Pièces jointes', [card(411, 'Téléversement', 'todo', { description: '## Sous-tâches\n- [ ] Lire hors ligne' }), card(412, 'Aperçu', 'todo')], {
+    refinement: { conversationId: 'split-410', title: 'Affiner', status: 'idle', mode: 'questions', createdAt: now - DAY, draft: null, change: { requestId: 'c1', count: 1 } },
+  })
+  // Un ajout en nouvelles cartes.
+  parent(420, 'Export', [card(421, 'Format CSV', 'todo')], {
+    refinement: { conversationId: 'split-420', title: 'Affiner', status: 'idle', mode: 'questions', createdAt: now - DAY, draft: { requestId: 'd2', count: 2 }, change: null },
+  })
+  // Découpé, sans session d'affinage.
+  parent(430, 'Notes', [card(431, 'Éditeur', 'todo')])
+  // Livré : plus rien à ajouter.
+  parent(440, 'Thèmes', [card(441, 'Sombre', 'done')], { column: 'done' })
+  return all
+}
+
+async function settleStep(width) {
+  const phone = width < 700
+  const context = await browser.newContext({ viewport: { width, height: 860 }, hasTouch: phone, isMobile: phone, locale: 'fr-FR', serviceWorkers: 'block' })
+  const page = await context.newPage()
+  page.setDefaultTimeout(10000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  let cards = settleBoard()
+  let change410 = {
+    requestId: 'c1', conversationId: 'split-410',
+    changes: [{ cardId: 'card-411', number: 411, title: 'Téléversement', fromColumn: 'todo', reason: 'Elle téléverse déjà.', addSubtasks: ['Lire hors ligne', 'Reprendre un envoi coupé'] }],
+  }
+  let draft420 = {
+    requestId: 'd2', conversationId: 'split-420',
+    draft: {
+      parent: { kind: 'existing', card: { cardId: 'card-420', number: 420, title: 'Export' } },
+      cards: [
+        { key: 'a', title: 'Format JSON', description: '', subtasks: [], after: [], blockedBy: [{ cardId: 'card-421', number: 421, title: 'Format CSV' }], related: [] },
+        { key: 'b', title: 'Export planifié', description: '', subtasks: [], after: [], blockedBy: [], related: [] },
+      ],
+    },
+  }
+  const writes = []
+  const patchCard = (id, patch) => { cards = cards.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)) }
+  await page.route('**/__milestones_check', (route) => route.fulfill({ contentType: 'text/html', body: '<html lang="fr"><head><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="check"></div></body></html>' }))
+  await page.route('**/api/**', async (route) => {
+    const request = route.request()
+    const method = request.method()
+    const path = new URL(request.url()).pathname
+    if (path === `/api/projects/${PROJECT}/cards`) return route.fulfill({ json: cards })
+    if (path === `/api/projects/${PROJECT}/milestones/active`) return route.fulfill({ json: [] })
+    if (/^\/api\/cards\/[^/]+\/milestone$/.test(path)) return route.fulfill({ json: null })
+    if (path === '/api/conversations') {
+      return route.fulfill({ json: ['split-410', 'split-420'].map((id) => conversation({ id, title: id, status: 'idle', archivedAt: null, createdAt: now - DAY }, { card: null })) })
+    }
+    if (path === `/api/projects/${PROJECT}/prompts`) return route.fulfill({ json: { prompts: [] } })
+    if (path === '/api/awaiting') return route.fulfill({ json: { requests: [] } })
+    if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', username: 'tim', displayName: 'Tim', isAdmin: true } })
+    const detail = /^\/api\/cards\/card-(\d+)\/refinement$/.exec(path)
+    if (detail) {
+      const milestone = cards.find((entry) => entry.number === Number(detail[1]))
+      return route.fulfill({ json: { session: milestone.refinement, activity: null, prompt: null, draft: milestone.number === 420 ? draft420 : null, change: milestone.number === 410 ? change410 : null } })
+    }
+    if (method === 'POST' && /^\/api\/conversations\/[^/]+\/messages$/.test(path)) {
+      writes.push({ kind: 'message', path, text: request.postDataJSON().text })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'PATCH' && path === '/api/cards/card-402') {
+      const body = request.postDataJSON()
+      writes.push({ kind: 'patch', ...body })
+      patchCard('card-402', { description: body.description, toClarifySince: body.toClarify === false ? null : now })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/cards/card-403/accept') {
+      writes.push({ kind: 'accept' })
+      patchCard('card-403', { acceptedAt: now })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'DELETE' && path === '/api/cards/card-404/blocks/card-405') {
+      writes.push({ kind: 'unblock' })
+      patchCard('card-404', { blocks: [] })
+      patchCard('card-405', { blockedBy: [] })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/conversations/split-410/card-filings/c1') {
+      writes.push({ kind: 'filing', ...request.postDataJSON() })
+      change410 = null
+      patchCard('card-410', { refinement: { ...cards.find((entry) => entry.id === 'card-410').refinement, change: null } })
+      return route.fulfill({ json: {} })
+    }
+    if (method === 'POST' && path === '/api/conversations/split-420/card-drafts/d2') {
+      writes.push({ kind: 'draft', ...request.postDataJSON() })
+      draft420 = null
+      patchCard('card-420', { refinement: { ...cards.find((entry) => entry.id === 'card-420').refinement, draft: null } })
+      return route.fulfill({ json: {} })
+    }
+    return route.fulfill({ status: 404, json: {} })
+  })
+  const where = () => page.evaluate(() => window.where)
+  const settle = page.getByRole('region', { name: 'À régler avant de partir' })
+  const panel = page.getByRole('region', { name: 'Session d’affinage' })
+  const drawer = page.getByRole('dialog', { name: 'Ajouter au jalon' })
+
+  console.log(width, 'à régler : une liste, ses points comptés, sans recopier de demande')
+  await mount(page, `/p/${PROJECT}/timeline/400`, 'page')
+  await settle.getByText('4 points en attente').waitFor()
+  assert.equal(await settle.getByText('#401 Cache des fils', { exact: true }).isVisible(), true)
+  assert.equal(await settle.getByText(/^à préciser depuis /).first().isVisible(), true)
+  assert.equal(await settle.getByText('pas encore acceptée').isVisible(), true)
+  assert.equal(await settle.getByText('Cycle de blocages : aucune de ces cartes ne peut partir.').isVisible(), true)
+  assert.equal(await settle.getByText('#405 bloque #404').isVisible(), true)
+  await settle.screenshot({ path: `/tmp/milestones-regler-${width}.png` })
+
+  console.log(width, 'préciser une carte qui a sa session : la précision lui part')
+  const askField = settle.getByRole('textbox', { name: 'La précision attendue · #401 Cache des fils' })
+  assert.equal(await settle.getByRole('button', { name: 'Préciser' }).first().isDisabled(), true, 'Grisé tant que c’est vide')
+  await askField.fill('Les sept derniers jours')
+  await askField.press('Enter')
+  await settle.getByText('Envoyée à la session : « Les sept derniers jours »').waitFor()
+  assert.deepEqual(writes.at(-1), { kind: 'message', path: '/api/conversations/c-401/messages', text: 'Les sept derniers jours' })
+
+  console.log(width, 'sans session : dans sa description, datée et signée, et l’état levé')
+  await settle.getByRole('textbox', { name: 'La précision attendue · #402 File d’envoi' }).fill('Au retour du réseau')
+  await settle.getByRole('button', { name: 'Préciser' }).last().click()
+  await settle.getByText('#402 File d’envoi', { exact: true }).waitFor({ state: 'detached' })
+  const patch = writes.at(-1)
+  assert.equal(patch.toClarify, false)
+  assert.match(patch.description, /^Envoyer plus tard\.\n\n## Précisions\n\n\*\*\d{4}-\d{2}-\d{2} · Tim\*\*\n\nAu retour du réseau$/)
+
+  console.log(width, 'accepter une carte, rompre le cycle : la liste se vide puis disparaît')
+  await settle.getByRole('button', { name: 'Accepter' }).click()
+  await settle.getByText('#403 Issue importée').waitFor({ state: 'detached' })
+  await settle.getByText('#404 bloque #405').waitFor()
+  await settle.getByRole('button', { name: 'retirer ce lien' }).last().click()
+  await settle.getByText('Cycle de blocages', { exact: false }).waitFor({ state: 'detached' })
+  assert.deepEqual(writes.slice(-2).map((write) => write.kind), ['accept', 'unblock'])
+  assert.equal(await settle.getByText('1 point en attente').isVisible(), true, 'Reste #401, que sa session lèvera')
+
+  console.log(width, 'l’ajout proposé en sous-tâches : « Ranger dans #N », celle qu’elle a déjà')
+  await mount(page, `/p/${PROJECT}/timeline/410`, 'page')
+  await panel.getByText('Ranger dans #411, en sous-tâches').waitFor()
+  assert.equal(await panel.getByText('déjà dans la carte').isVisible(), true)
+  assert.equal(await panel.getByText('Un ajout au jalon attend ta décision dans la session.').count(), 0, 'Il se décide ici')
+  assert.equal(await settle.count(), 0, 'Rien à régler : pas de liste')
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-ajout-soustache-${width}.png` })
+  await panel.getByRole('button', { name: 'Ajouter la sous-tâche' }).click()
+  await panel.getByText('Ranger dans #411, en sous-tâches').waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'filing', decision: 'accepted' })
+
+  console.log(width, '« Ajouter au jalon » : le tiroir, et l’ajout part à la session d’affinage')
+  await page.getByRole('button', { name: 'Ajouter au jalon' }).click()
+  await drawer.waitFor()
+  assert.equal(await drawer.getByRole('heading', { name: '#410 Pièces jointes' }).isVisible(), true)
+  const propose = drawer.getByRole('button', { name: 'Proposer à l’agent' })
+  assert.equal(await propose.isDisabled(), true)
+  assert.equal(await drawer.getByText('Écris une phrase, ou colle ton brief.').isVisible(), true)
+  const field = drawer.getByRole('textbox', { name: 'Ce que tu ajoutes au jalon' })
+  await field.fill('Reprendre un envoi coupé (#412)')
+  await drawer.getByText('L’agent le range dans une carte existante, ou propose de nouvelles cartes.').waitFor()
+  await drawer.screenshot({ path: `/tmp/milestones-ajouter-${width}.png` })
+  await field.press('Control+Enter')
+  await drawer.waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'message', path: '/api/conversations/split-410/messages', text: 'Ajout au jalon : Reprendre un envoi coupé (#412)' })
+
+  console.log(width, 'l’ajout proposé en cartes : la liste, après quoi chacune part ; le laisser')
+  await mount(page, `/p/${PROJECT}/timeline/420`, 'page')
+  await panel.getByText('2 nouvelles cartes dans le jalon').waitFor()
+  assert.equal(await panel.getByText('après #421').isVisible(), true)
+  assert.equal(await panel.getByText('peut partir tout de suite').isVisible(), true)
+  assert.equal(await panel.getByText('Découpage proposé').count(), 0, 'Pas de second découpage à valider')
+  await page.locator('#affinage').screenshot({ path: `/tmp/milestones-ajout-cartes-${width}.png` })
+  await panel.getByRole('button', { name: 'Laisser tel quel' }).click()
+  await panel.getByText('2 nouvelles cartes dans le jalon').waitFor({ state: 'detached' })
+  assert.deepEqual(writes.at(-1), { kind: 'draft', decision: 'refused' })
+
+  console.log(width, 'sans session d’affinage : l’ajout ouvre un brouillon de découpage pré-rempli')
+  await mount(page, `/p/${PROJECT}/timeline/430`, 'page')
+  await page.getByRole('button', { name: 'Ajouter au jalon' }).click()
+  await drawer.getByRole('textbox', { name: 'Ce que tu ajoutes au jalon' }).fill('Un export Markdown')
+  await drawer.getByRole('button', { name: 'Proposer à l’agent' }).click()
+  await page.waitForFunction(() => window.where.includes('/c/new'))
+  const opened = new URL(await where(), origin)
+  assert.equal(opened.searchParams.get('split'), 'card-430')
+  assert.equal(opened.searchParams.get('prompt'), '/affiner-un-jalon #430\n\nAjout au jalon : Un export Markdown')
+
+  console.log(width, 'livré : plus de « Ajouter au jalon »')
+  await mount(page, `/p/${PROJECT}/timeline/440`, 'page')
+  await page.getByRole('heading', { name: '#440 Thèmes' }).waitFor()
+  assert.equal(await page.getByRole('button', { name: 'Ajouter au jalon' }).count(), 0)
+
+  assert.deepEqual(errors, [])
+  await context.close()
+}
+
 /** Le suivi d'un jalon lancé (#198, RUN-1..12) et sa PR finale, à une largeur. */
 async function runStep(width) {
   const phone = width < 700
@@ -1013,8 +1541,10 @@ try {
     await delay(100)
   }
   browser = await launchBrowser()
+  for (const width of [1280, 390]) await horizonStep(width)
   for (const width of [1280, 390]) await pageStep(width)
   for (const width of [1280, 390]) await refineStep(width)
+  for (const width of [1280, 390]) await settleStep(width)
   for (const width of [1280, 390]) await launchStep(width)
   for (const width of [1280, 390]) await runStep(width)
   for (const width of [1280, 390]) {
@@ -1176,8 +1706,10 @@ try {
     assert.deepEqual(errors, [])
     await context.close()
   }
+  console.log('OK : horizon — trois temps et leur ordre, chaîne, axe (barre, lancement, retard, infobulle), tuiles, ℹ, recherche, filtres et puces, échelle, cap, « + Jalon », carte cochée en idée ; ordinateur et téléphone.')
   console.log('OK : page — en-tête, prochaine action et son geste (défiler, affiner, fusionner, fiche), étapes expliquées, affinage en tête quand il attend, vagues (colonnes, arêtes, cycle, chaîne, empilées au téléphone, ambre, ajoutées) ; ordinateur et téléphone.')
   console.log('OK : affinage — quatre états et le mode, outil en cours, question asynchrone de Codex, réponses gardées puis envoyées ensemble, brouillon corrigé (renommer, monter, lier, ajouter, retirer) puis validé, affinage pré-rempli (questions d’abord, découpage direct) ; ordinateur et téléphone.')
+  console.log('OK : à régler et ajout — préciser (à la session, sinon dans la description), accepter, rompre un cycle, liste absente quand vide ; « Ajouter au jalon » (à la session d’affinage, sinon brouillon pré-rempli), absent d’un jalon livré ; ajout proposé en sous-tâches (déjà là signalée) accepté, en cartes laissé ; ordinateur et téléphone.')
   console.log('OK : lancer — à la main (environnements du projet, cartes, lancer une carte, refus lu), autonome (confiné d’office, avertissement, concurrence jusqu’aux vagues, quota, branche, CLI, vérifications échecs d’abord, lancer), livré, rien à lancer ; ordinateur et téléphone.')
   console.log('OK : suivi — titre et durée, mode, places en cours, branche, confinement (refus lu), statuts (ambre et raison), lancer à la main, ajout de carte, pause, reprise, arrêt confirmé ; PR finale ouverte (fusion, lien, erreur de forge) et fermée ; ordinateur et téléphone.')
   console.log('OK : fiche — ℹ sans la session, ?fiche= partageable, en-tête, réponse sur place, sessions, sous-tâches, description, notes, pied, liens qui changent de fiche, case « C’est un jalon » (d’office, grisée, cochable) ; ordinateur et téléphone.')
