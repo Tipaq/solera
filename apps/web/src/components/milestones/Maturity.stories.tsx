@@ -3,6 +3,7 @@ import type { CardDto, CardLinkDto, MilestoneRunDto } from '@solera/protocol'
 import { horizonOf, MATURITIES, type MilestoneEntry } from '../../lib/milestone-model'
 import { fixtureCard } from '../board/card-fixtures'
 import { MaturityPill } from './MaturityPill'
+import { MaturityTag } from './MaturityTag'
 import { MaturitySteps } from './MaturitySteps'
 
 const link = ({ id, number, title, column }: CardDto): CardLinkDto => ({ id, number, title, column })
@@ -100,6 +101,18 @@ export const Traits: Story = {
     <div className="flex max-w-xs flex-col gap-3">
       {MATURITIES.map((maturity) => (
         <MaturitySteps key={maturity} maturity={maturity} />
+      ))}
+    </div>
+  ),
+}
+
+/** L'étape en texte, précédée de son point : là où une pastille serait trop lourde (le phare de l'Aperçu). */
+export const Etiquettes: Story = {
+  name: 'Étiquettes',
+  render: () => (
+    <div className="flex flex-wrap gap-4">
+      {MATURITIES.map((maturity) => (
+        <MaturityTag key={maturity} maturity={maturity} />
       ))}
     </div>
   ),
