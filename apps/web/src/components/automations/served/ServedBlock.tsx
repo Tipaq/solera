@@ -11,7 +11,7 @@ export interface ServedBlockTree extends ServedTree {
 }
 
 /** L'arbre dans Travail, choisi dans l'index (`?arbre=`). */
-const travailTreePath = (projectId: string, key: string) => `/p/${projectId}/travail?arbre=${encodeURIComponent(key)}`
+export const travailTreePath = (projectId: string, key: string) => `/p/${projectId}/travail?arbre=${encodeURIComponent(key)}`
 
 /**
  * « Ce qu'il sert » (SRV-3), dans le détail d'un service en marche : l'arbre (lien vers

@@ -75,8 +75,8 @@ export interface AutomationSchedule {
   enabled: boolean
   nextRunAt: number | null
   /**
-   * Un service planifié : `cadence` le démarre, `stopCadence` l'arrête (AC-06, Q11). Le
-   * serveur ne le donne pas encore : absent, le service tourne jusqu'à ce qu'on l'arrête.
+   * Un service planifié : `cadence` le démarre, `stopCadence` l'arrête (AC-06, Q11).
+   * Absent, le service tourne jusqu'à ce qu'on l'arrête.
    */
   serviceWindow?: { stopCadence: ScheduleCadence } | null
 }
@@ -117,7 +117,8 @@ export type ActionInput = ProjectActionDto & {
 /** Une tâche, avec ce qu'AC-04 lui ajoute : une cadence facultative, « à la demande ». */
 export type TaskInput = Omit<ScheduledTaskDto, 'cadence'> & { cadence: ScheduleCadence | null; onDemand?: boolean }
 
-const SERVICE_RUNNING = ['active', 'activating', 'reloading']
+/** Les `ActiveState` de systemd d'un service en marche. */
+export const SERVICE_RUNNING = ['active', 'activating', 'reloading']
 
 /** L'identifiant d'une action dans l'onglet Actions : les deux tables ont leurs ids. */
 export const actionAutomationId = (actionId: string): string => `a-${actionId}`
@@ -174,7 +175,9 @@ export function fromAction(input: ProjectActionDto, detailed?: readonly ActionRu
     command: action.command,
     subdir: action.subdir,
     onDemand: action.onDemand ?? true,
-    schedule: action.schedule ?? null,
+    schedule: action.schedule?.stopCadence
+      ? { ...action.schedule, serviceWindow: { stopCadence: action.schedule.stopCadence } }
+      : (action.schedule ?? null),
     runs,
     live,
     review:
@@ -670,7 +673,15 @@ export function draftOf(item: Automation): AutomationDraft {
         placement,
         ...(pinnedBranch ? { pinnedBranch } : {}),
         onDemand,
-        ...(schedule ? { schedule: { cadence: schedule.cadence, maxDurationMinutes: schedule.maxDurationMinutes } } : {}),
+        ...(schedule
+          ? {
+              schedule: {
+                cadence: schedule.cadence,
+                maxDurationMinutes: schedule.maxDurationMinutes,
+                ...(schedule.stopCadence ? { stopCadence: schedule.stopCadence } : {}),
+              },
+            }
+          : {}),
       },
     }
   }

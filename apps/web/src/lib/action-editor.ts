@@ -88,6 +88,11 @@ export interface EditorState {
   scheduled: boolean
   /** Celle du `ScheduleBuilder` ; null tant que sa règle est incomplète. */
   cadence: ScheduleCadence | null
+  /**
+   * Un service planifié : son arrêt, celle du second `ScheduleBuilder` (EDI-18). Null
+   * tant que sa règle est incomplète ; ignorée pour une tâche, qui finit seule.
+   */
+  stopCadence: ScheduleCadence | null
 }
 
 const BLANK: EditorState = {
@@ -115,6 +120,7 @@ const BLANK: EditorState = {
   onDemand: true,
   scheduled: false,
   cadence: null,
+  stopCadence: null,
 }
 
 /** L'état d'un brouillon : celui d'une action existante, ou d'un duplicata. */
@@ -135,6 +141,7 @@ function stateOfDraft(draft: AutomationDraft): EditorState {
       onDemand: body.onDemand ?? true,
       scheduled: Boolean(body.schedule),
       cadence: body.schedule?.cadence ?? null,
+      stopCadence: body.schedule?.stopCadence ?? null,
     }
   }
   const body = draft.body
@@ -190,7 +197,7 @@ export type EditorField =
   | 'checkTimeout'
   | 'when'
   | 'cadence'
-  | 'serviceSchedule'
+  | 'stopCadence'
 
 /** Tous les champs, pour « Enregistrer » qui les marque touchés d'un coup (EDI-20). */
 export const ALL_FIELDS: readonly EditorField[] = [
@@ -204,7 +211,7 @@ export const ALL_FIELDS: readonly EditorField[] = [
   'checkTimeout',
   'when',
   'cadence',
-  'serviceSchedule',
+  'stopCadence',
 ]
 
 /** Une commande qui tourne en continu : elle seule a un lien et un placement. */
@@ -234,10 +241,13 @@ export function problemsOf(state: EditorState): Partial<Record<EditorField, Mess
     if (subdir.startsWith('/')) problems.subdir = 'actionEditor.error.subdirAbsolute'
     else if (subdir.split(/[\\/]/).includes('..')) problems.subdir = 'actionEditor.error.subdirParent'
     if (isService(state)) {
+      const url = state.url.trim()
       if (!actionUrlSchema.safeParse(state.url).success) problems.url = 'actionEditor.error.url'
+      // Chaque instance écoute sur son port : le lien doit pouvoir le dire (SRV-6).
+      else if (state.placement === 'per-worktree' && url && !url.includes('{port}')) problems.url = 'actionEditor.error.urlNeedsPort'
       if (state.placement === 'branch' && !state.pinnedBranch.trim()) problems.branch = 'actionEditor.error.branch'
-      // Démarrer et arrêter à heure fixe attend sa fenêtre (AC-06, Q11).
-      if (state.scheduled) problems.serviceSchedule = 'actionEditor.error.serviceSchedule'
+      // Un service planifié s'arrête à heure fixe (EDI-18) : sa seconde règle doit être complète.
+      if (state.scheduled && !state.stopCadence) problems.stopCadence = 'actionEditor.error.stopCadence'
     }
   } else {
     if (!state.prompt.trim()) problems.prompt = 'actionEditor.error.prompt'
@@ -279,8 +289,9 @@ export function draftFrom(state: EditorState, config: AgentConfig | null): Autom
         placement: service ? state.placement : 'follow',
         pinnedBranch: service && state.placement === 'branch' ? state.pinnedBranch.trim() : null,
         onDemand: state.onDemand,
-        // Null retire la planification d'une commande qui en avait une.
-        schedule: cadence ? { cadence } : null,
+        // Null retire la planification d'une commande qui en avait une. Seul un service
+        // s'arrête à sa cadence.
+        schedule: cadence ? { cadence, ...(service && state.stopCadence ? { stopCadence: state.stopCadence } : {}) } : null,
       },
     }
   }

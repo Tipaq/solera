@@ -7,7 +7,7 @@ import type { EditorSeed } from '../../lib/action-editor'
 import { ACTIONS_KEY } from '../../lib/actions'
 import { ActionEditor } from './ActionEditor'
 import { ActionChromeProvider } from './ActionSheet'
-import { AGENT, PROJECT_ID, SERVICE_ON, SeededWorktrees } from './automation-fixtures'
+import { AGENT, PROJECT_ID, SERVICE_ON, SERVICE_SCHEDULED, SeededWorktrees } from './automation-fixtures'
 
 const ignore = () => {}
 
@@ -48,7 +48,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "**L'éditeur unifié** (`actions.md` §1.E) : **1 · Quoi** (une commande — tâche ou service — ou un agent), puis **2 · Quand** (à la demande et/ou planifiée, `ScheduleBuilder`). Un exemple se lit comme un exemple (« ex. … », pâle, penché) ; une erreur s'affiche sous son champ quand on le quitte ; « Enregistrer » reste grisé tant qu'un problème bloque, sa raison en infobulle.\n\nL'état, les erreurs et le brouillon enregistré sont dans `lib/action-editor.ts`, testé seul. En modification, la nature est figée : « Dupliquer » sert à en changer (Q5). Un service ne se planifie pas encore (AC-06) : l'éditeur le dit et refuse d'enregistrer.",
+          "**L'éditeur unifié** (`actions.md` §1.E) : **1 · Quoi** (une commande — tâche ou service — ou un agent), puis **2 · Quand** (à la demande et/ou planifiée, `ScheduleBuilder`). Un exemple se lit comme un exemple (« ex. … », pâle, penché) ; une erreur s'affiche sous son champ quand on le quitte ; « Enregistrer » reste grisé tant qu'un problème bloque, sa raison en infobulle.\n\nL'état, les erreurs et le brouillon enregistré sont dans `lib/action-editor.ts`, testé seul. En modification, la nature est figée : « Dupliquer » sert à en changer (Q5). Un service planifié (cas limite, AC-06) démarre à sa cadence et s'arrête à une seconde, 19 h en semaine d'office.",
       },
     },
   },
@@ -68,6 +68,9 @@ export const NouveauService: Story = {
 export const NouvelAgent: Story = { name: 'Nouvelle tâche d’agent, planifiée', args: { seed: { preset: { what: 'agent' }, schedule: true } } }
 
 export const Modification: Story = { name: 'Modifier un service', args: { seed: { from: SERVICE_ON } } }
+
+/** Le cas limite d'un service planifié : « Démarrer », puis l'encart « Arrêter » (EDI-18). */
+export const ServicePlanifie: Story = { name: 'Service planifié', args: { seed: { from: SERVICE_SCHEDULED, schedule: true } } }
 
 export const ModificationAgent: Story = { name: 'Modifier une tâche d’agent', args: { seed: { from: AGENT } } }
 

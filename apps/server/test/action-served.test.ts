@@ -9,15 +9,15 @@ import Fastify from 'fastify'
 import { eq } from 'drizzle-orm'
 import { openDatabase, projects, runMigrations, users, worktrees } from '@solera/db'
 import type { ProjectActionDto, ProjectActionRunResult } from '@solera/protocol'
-import { ActionRunner, createAction } from '../src/actions/actions.js'
+import { ActionRunner, actionUnit, createAction } from '../src/actions/actions.js'
 import { treeOf } from '../src/actions/served.js'
-import type { ServiceUnits, ServiceUnitState } from '../src/services/apps.js'
 import type { Config } from '../src/config.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { TerminalManager } from '../src/terminals/terminal-manager.js'
 import { registerErrorHandler } from '../src/http/errors.js'
 import { registerActionRoutes } from '../src/http/routes/actions.js'
 import { Environments } from '../src/environments/environments.js'
+import { fakeUnits } from './service-units-support.js'
 
 /**
  * « Ce qu'il sert » (AC-05) : la version qu'un service sert, le refus de rendre en
@@ -44,29 +44,6 @@ function commit(cwd: string, file: string, content: string, message: string): vo
   writeFileSync(join(cwd, file), content)
   git(cwd, 'add', '-A')
   git(cwd, 'commit', '-q', '-m', message)
-}
-
-/** Les unités d'un systemd simulé, et ce qu'on lui a demandé, dans l'ordre. */
-function fakeUnits() {
-  const units = new Map<string, ServiceUnitState>()
-  const calls: string[] = []
-  const impl: ServiceUnits = {
-    available: async () => true,
-    scan: async () => [...units.values()],
-    start: async (launch) => {
-      calls.push(`start ${launch.cwd}`)
-      units.set(launch.unit, { unit: launch.unit, state: 'active', cwd: launch.cwd, ports: [5173], startedAt: 1000 })
-    },
-    stop: async (unit) => {
-      calls.push('stop')
-      units.delete(unit)
-    },
-    control: async (unit, op) => {
-      calls.push(op)
-      if (op === 'stop') units.delete(unit)
-    },
-  }
-  return { units, calls, impl }
 }
 
 /**
@@ -121,10 +98,12 @@ async function harness(t: TestContext) {
 
   const run = (actionId: string, payload: object = {}) =>
     app.inject({ method: 'POST', url: `/api/actions/${actionId}/run`, payload })
+  const control = (actionId: string, op: string, payload: object = {}) =>
+    app.inject({ method: 'POST', url: `/api/actions/${actionId}/service/${op}`, payload })
   const listed = async (actionId: string) =>
     (await app.inject({ method: 'GET', url: '/api/actions' })).json<ProjectActionDto[]>().find((action) => action.id === actionId)!
 
-  return { db, root, tree, systemd, app, run, listed }
+  return { db, root, tree, systemd, app, runner, run, control, listed }
 }
 
 // --- ce qu'il sert --------------------------------------------------------------
@@ -297,18 +276,113 @@ test('le placement s’enregistre et se relit, et une branche fixée ne va qu’
   assert.equal(noBranch.json<{ error: { code: string } }>().error.code, 'action_branch_required')
 })
 
-test('une instance par worktree est refusée tant qu’elle n’existe pas', async (t) => {
+
+// --- une instance par worktree (AC-06) ------------------------------------------
+
+/** Un service qui tourne dans chaque arbre d'où on le lance, chacun sur son port. */
+const perTree = { label: 'Dev', kind: 'service' as const, command: 'pnpm dev --port $PORT', url: 'http://host:{port}/', placement: 'per-worktree' as const }
+
+test('une instance par worktree : chaque arbre a son unité et son port libre, sans refus', async (t) => {
+  const { db, root, tree, systemd, run, listed } = await harness(t)
+  const row = createAction(db, 'project', perTree, null)
+  assert.equal((await run(row.id)).statusCode, 201)
+  const second = await run(row.id, { worktreeId: 'wt' })
+  assert.equal(second.statusCode, 201, second.body)
+
+  assert.deepEqual([...systemd.units.keys()].sort(), [actionUnit(row.id, 'root'), actionUnit(row.id, 'wt')].sort())
+  const [atRoot, atTree] = systemd.launches
+  assert.equal(atRoot!.cwd, root)
+  assert.equal(atTree!.cwd, tree)
+  const ports = systemd.launches.map((launch) => Number(launch.env.PORT))
+  assert.ok(ports.every((port) => Number.isInteger(port) && port > 0), `PORT=${ports}`)
+  assert.notEqual(ports[0], ports[1])
+
+  const action = await listed(row.id)
+  const instances = action.instances.map((instance) => ({ unit: instance.unit, tree: instance.served?.worktreeId ?? 'root', first: instance.ports[0] }))
+  assert.deepEqual(
+    instances.sort((a, b) => a.unit.localeCompare(b.unit)),
+    [
+      { unit: actionUnit(row.id, 'root'), tree: 'root', first: ports[0] },
+      { unit: actionUnit(row.id, 'wt'), tree: 'wt', first: ports[1] },
+    ].sort((a, b) => a.unit.localeCompare(b.unit)),
+  )
+  // La liste montre l'une d'elles en marche.
+  assert.equal(action.service!.state, 'active')
+})
+
+test('une instance par worktree : relancée depuis le même arbre, celle qui tourne est rendue', async (t) => {
+  const { db, systemd, run } = await harness(t)
+  const row = createAction(db, 'project', perTree, null)
+  await run(row.id, { worktreeId: 'wt' })
+  const again = await run(row.id, { worktreeId: 'wt' })
+  assert.equal(again.statusCode, 200)
+  assert.equal(again.json<ProjectActionRunResult>().alreadyRunning, true)
+  assert.equal(systemd.launches.length, 1)
+})
+
+test('une instance par worktree : arrêter depuis un arbre n’arrête que la sienne', async (t) => {
+  const { db, systemd, run, control, listed } = await harness(t)
+  const row = createAction(db, 'project', perTree, null)
+  await run(row.id)
+  await run(row.id, { worktreeId: 'wt' })
+
+  assert.equal((await control(row.id, 'stop', { worktreeId: 'wt' })).statusCode, 200)
+  assert.deepEqual([...systemd.units.keys()], [actionUnit(row.id, 'root')])
+  assert.deepEqual((await listed(row.id)).instances.map((instance) => instance.unit), [actionUnit(row.id, 'root')])
+})
+
+test('une instance par worktree demande {port} dans son lien', async (t) => {
   const { db, app } = await harness(t)
-  const created = await app.inject({
+  const refused = await app.inject({
     method: 'POST',
     url: '/api/projects/project/actions',
-    payload: { label: 'Dev', kind: 'service', command: 'pnpm dev', placement: 'per-worktree' },
+    payload: { ...perTree, url: 'http://host:5173/' },
   })
-  assert.equal(created.statusCode, 400)
-  assert.equal(created.json<{ error: { code: string } }>().error.code, 'action_placement_unsupported')
+  assert.equal(refused.statusCode, 400)
+  assert.equal(refused.json<{ error: { code: string } }>().error.code, 'action_url_needs_port')
 
-  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev' }, null)
+  // Sans lien, rien à résoudre.
+  const bare = await app.inject({ method: 'POST', url: '/api/projects/project/actions', payload: { ...perTree, url: '' } })
+  assert.equal(bare.statusCode, 201, bare.body)
+
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', url: 'http://host:5173/' }, null)
   const patched = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { placement: 'per-worktree' } })
   assert.equal(patched.statusCode, 400)
-  assert.equal(patched.json<{ error: { code: string } }>().error.code, 'action_placement_unsupported')
+  assert.equal(patched.json<{ error: { code: string } }>().error.code, 'action_url_needs_port')
+})
+
+test('quitter « une instance par worktree » arrête toutes ses instances, la supprimer aussi', async (t) => {
+  const { db, app, systemd, run } = await harness(t)
+  const row = createAction(db, 'project', perTree, null)
+  await run(row.id)
+  await run(row.id, { worktreeId: 'wt' })
+
+  const followed = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { placement: 'follow' } })
+  assert.equal(followed.statusCode, 200, followed.body)
+  assert.equal(systemd.units.size, 0)
+
+  const other = createAction(db, 'project', perTree, null)
+  await run(other.id)
+  await run(other.id, { worktreeId: 'wt' })
+  assert.equal((await app.inject({ method: 'DELETE', url: `/api/actions/${other.id}` })).statusCode, 204)
+  assert.equal(systemd.units.size, 0)
+})
+
+test('le balayage arrête l’instance d’un worktree retiré, et garde les autres', async (t) => {
+  const { db, systemd, runner, run } = await harness(t)
+  const row = createAction(db, 'project', perTree, null)
+  await run(row.id)
+  await run(row.id, { worktreeId: 'wt' })
+
+  await runner.retireStrayInstances()
+  assert.equal(systemd.units.size, 2, 'les deux arbres sont là')
+
+  db.update(worktrees).set({ removedAt: Date.now() }).where(eq(worktrees.id, 'wt')).run()
+  await runner.retireStrayInstances()
+  assert.deepEqual([...systemd.units.keys()], [actionUnit(row.id, 'root')])
+})
+
+test('une seule instance garde son unité d’avant : renommer l’action ne la perd pas', () => {
+  assert.equal(actionUnit('0123456789abcdef'), 'solera-app-action-01234567.service')
+  assert.equal(actionUnit('0123456789abcdef', 'root'), 'solera-app-action-01234567-root.service')
 })

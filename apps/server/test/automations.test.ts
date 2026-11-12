@@ -71,6 +71,7 @@ const action = (over: Partial<ActionInput> = {}): ActionInput => ({
   createdAt: NOW - 30 * DAY,
   updatedAt: NOW - 30 * DAY,
   service: null,
+  instances: [],
   lastRun: null,
   runs: [],
   approved: null,
@@ -248,13 +249,17 @@ test('fromAction : cadence et à la demande, quand le serveur les donne', () => 
   assert.deepEqual(item.schedule, { cadence: { kind: 'interval', minutes: 60 }, enabled: false, nextRunAt: null })
 })
 
-test('fromAction : la fenêtre d’un service planifié, quand le serveur la donne', () => {
-  const window = { stopCadence: { kind: 'cron' as const, expression: '0 19 * * 1-5' } }
+test('fromAction : la fenêtre d’un service planifié, lue dans son arrêt', () => {
+  const stopCadence = { kind: 'cron' as const, expression: '0 19 * * 1-5' }
   const item = fromAction(action({
     kind: 'service',
-    schedule: { cadence: { kind: 'cron', expression: '0 8 * * 1-5' }, enabled: true, nextRunAt: null, serviceWindow: window },
+    schedule: {
+      cadence: { kind: 'cron', expression: '0 8 * * 1-5' }, enabled: true, nextRunAt: null, lastRunAt: null,
+      maxDurationMinutes: 30, stopCadence, nextStopAt: null,
+    },
   }))
-  assert.deepEqual(item.schedule?.serviceWindow, window)
+  assert.deepEqual(item.schedule?.serviceWindow, { stopCadence })
+  assert.equal(fromAction(action({ kind: 'service' })).schedule, null)
 })
 
 test('fromAction : proposée → à relire, avec la session ou sa disparition', () => {

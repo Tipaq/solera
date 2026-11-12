@@ -30,6 +30,7 @@ import { TaskScheduler } from '../src/scheduler/task-scheduler.js'
 import { AgentRequests } from '../src/sessions/agent-requests.js'
 import type { SessionManager } from '../src/sessions/session-manager.js'
 import { TerminalManager } from '../src/terminals/terminal-manager.js'
+import { fakeUnits } from './service-units-support.js'
 
 /**
  * Commandes planifiées (AC-03) : le Quand d'une commande. Une commande `task` porte une
@@ -63,7 +64,9 @@ async function harness(t: TestContext) {
   const terminals = new TerminalManager(config)
   t.after(() => terminals.shutdown())
   const environments = new Environments(db)
-  const runner = new ActionRunner(db, config, terminals, environments)
+  // Jamais le vrai systemd : un service planifié démarrerait une unité de la machine.
+  const systemd = fakeUnits()
+  const runner = new ActionRunner(db, config, terminals, environments, systemd.impl)
   const sessions = { workingDirectory: () => dir, environments } as unknown as SessionManager
   const requests = new AgentRequests({ db, config }, sessions, {} as AgentRegistry, {} as EventLog, undefined, undefined, runner)
 
@@ -78,6 +81,7 @@ async function harness(t: TestContext) {
       return answer(command)
     },
     notifications: { dispatch: async (userId, notification) => void notified.push({ userId, notification }) },
+    services: runner,
   })
 
   const app = Fastify()
@@ -117,7 +121,7 @@ async function harness(t: TestContext) {
   const runsOf = (actionId: string) => db.select().from(actionRuns).where(eq(actionRuns.actionId, actionId)).all()
 
   return {
-    db, dir, config, app, mcp, commands, executed, notified, scheduled, sweep, runsOf, environments,
+    db, dir, config, app, mcp, commands, executed, notified, scheduled, sweep, runsOf, environments, systemd,
     answer: (next: typeof answer) => { answer = next },
   }
 }
@@ -135,8 +139,9 @@ test('a command is on demand, scheduled, or both, never neither', () => {
   assert.equal(createProjectActionBodySchema.safeParse({ ...base, schedule: { cadence: HOURLY }, onDemand: false }).success, true)
   assert.equal(createProjectActionBodySchema.safeParse({ ...base, schedule: { cadence: HOURLY } }).success, true)
   assert.equal(createProjectActionBodySchema.safeParse({ ...base, onDemand: false }).success, false)
-  // Un service planifié (démarrer, arrêter à heure fixe) est un autre chantier.
-  assert.equal(createProjectActionBodySchema.safeParse({ ...base, kind: 'service', schedule: { cadence: HOURLY } }).success, false)
+  // Un service planifié démarre à sa cadence, et s'arrête à la sienne (AC-06) ; une tâche finit seule.
+  assert.equal(createProjectActionBodySchema.safeParse({ ...base, kind: 'service', schedule: { cadence: HOURLY, stopCadence: HOURLY } }).success, true)
+  assert.equal(createProjectActionBodySchema.safeParse({ ...base, schedule: { cadence: HOURLY, stopCadence: HOURLY } }).success, false)
   // La pause n'envoie que `enabled`.
   assert.equal(updateProjectActionBodySchema.safeParse({ schedule: { enabled: false } }).success, true)
   assert.equal(updateProjectActionBodySchema.safeParse({ schedule: null }).success, true)
@@ -193,7 +198,7 @@ test('an edit that leaves a command neither on demand nor scheduled is refused',
   assert.equal(both.json<ProjectActionDto>().schedule, null)
 })
 
-test('a schedule that never fires is refused, and a service cannot be scheduled by an edit either', async (t) => {
+test('a schedule that never fires is refused, and a task has no stop cadence', async (t) => {
   const { app, scheduled, db } = await harness(t)
   const past = await app.inject({
     method: 'POST',
@@ -204,10 +209,10 @@ test('a schedule that never fires is refused, and a service cannot be scheduled 
   assert.equal(past.json<{ error: { code: string } }>().error.code, 'schedule_never_fires')
 
   const row = scheduled()
-  const service = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { kind: 'service' } })
-  assert.equal(service.statusCode, 400)
-  assert.equal(service.json<{ error: { code: string } }>().error.code, 'action_schedule_task_only')
-  assert.equal(loadAction(db, row.id).kind, 'task')
+  const stop = await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { schedule: { stopCadence: HOURLY } } })
+  assert.equal(stop.statusCode, 400)
+  assert.equal(stop.json<{ error: { code: string } }>().error.code, 'action_stop_service_only')
+  assert.equal(loadAction(db, row.id).stopCadence, null)
 })
 
 test('a command that is not on demand cannot be clicked, nor run by an agent', async (t) => {
@@ -546,4 +551,111 @@ test('the detail of a scheduled passage reads like any other', async (t) => {
   assert.equal(run!.excerpt, 'ok')
   const listed = (await app.inject({ method: 'GET', url: '/api/actions' })).json<ProjectActionDto[]>()
   assert.equal(listed[0]!.schedule!.lastRunAt, run!.startedAt)
+})
+
+// --- le service planifié (AC-06) ------------------------------------------------
+
+/** Démarre toutes les heures, s'arrête toutes les deux heures et demie : seuls les instants comptent. */
+const WINDOW = { cadence: HOURLY, stopCadence: { kind: 'interval', minutes: 150 } as ScheduleCadence }
+
+test('a scheduled service is written with its stop cadence, both armed, and the list shows them', async (t) => {
+  const { app } = await harness(t)
+  const before = Date.now()
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/projects/project/actions',
+    payload: { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW },
+  })
+  assert.equal(created.statusCode, 201, created.body)
+  const schedule = created.json<ProjectActionDto>().schedule!
+  assert.deepEqual(schedule.stopCadence, WINDOW.stopCadence)
+  assert.ok(schedule.nextRunAt! >= before + 60 * MINUTE)
+  assert.ok(schedule.nextStopAt! >= before + 150 * MINUTE)
+
+  const id = created.json<ProjectActionDto>().id
+  const paused = await app.inject({ method: 'PATCH', url: `/api/actions/${id}`, payload: { schedule: { enabled: false } } })
+  assert.equal(paused.json<ProjectActionDto>().schedule!.nextStopAt, null)
+  const resumed = await app.inject({ method: 'PATCH', url: `/api/actions/${id}`, payload: { schedule: { enabled: true } } })
+  assert.ok(resumed.json<ProjectActionDto>().schedule!.nextStopAt)
+
+  const unscheduled = await app.inject({ method: 'PATCH', url: `/api/actions/${id}`, payload: { schedule: null } })
+  assert.equal(unscheduled.json<ProjectActionDto>().schedule, null)
+})
+
+test('a due service starts its unit at the project root, not a detached command, with a schedule passage', async (t) => {
+  const { db, dir, executed, sweep, runsOf, systemd } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW }, null)
+  const due = loadAction(db, row.id).nextRunAt!
+
+  await sweep(due)
+  assert.deepEqual(executed, [])
+  assert.deepEqual(systemd.calls, [`start ${dir}`])
+  const [run] = runsOf(row.id)
+  assert.equal(run!.trigger, 'schedule')
+  assert.equal(run!.status, 'succeeded')
+  assert.equal(run!.cwd, dir)
+  assert.equal(loadAction(db, row.id).nextRunAt, due + 60 * MINUTE)
+
+  // Toujours en marche au tir suivant : il n'est ni doublé, ni redémarré.
+  await sweep(due + 60 * MINUTE)
+  assert.deepEqual(systemd.calls, [`start ${dir}`])
+})
+
+test('the sweep stops a scheduled service at its stop cadence, then arms the next stop', async (t) => {
+  const { db, sweep, systemd } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW }, null)
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.equal(systemd.units.size, 1)
+
+  const stopAt = loadAction(db, row.id).nextStopAt!
+  await sweep(stopAt - 1)
+  assert.equal(systemd.units.size, 1, 'pas encore')
+  await sweep(stopAt)
+  assert.equal(systemd.units.size, 0)
+  assert.equal(loadAction(db, row.id).nextStopAt, stopAt + 150 * MINUTE)
+})
+
+test('a scheduled service an agent proposed does not start, but its stop still runs', async (t) => {
+  const { db, sweep, systemd, runsOf } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW }, 'agent')
+  // Lancé à la main avant que l'agent ne le réécrive, il tourne encore.
+  await systemd.impl.start({ unit: `solera-app-action-${row.id.slice(0, 8)}.service`, description: 'Dev', cwd: '/srv', shell: '/bin/sh', command: 'x', env: {} })
+
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.equal(runsOf(row.id).length, 0)
+  await sweep(loadAction(db, row.id).nextStopAt!)
+  assert.equal(systemd.units.size, 0)
+})
+
+test('a paused scheduled service neither starts nor stops', async (t) => {
+  const { db, sweep, systemd, app } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW }, null)
+  const { nextRunAt, nextStopAt } = loadAction(db, row.id)
+  await app.inject({ method: 'PATCH', url: `/api/actions/${row.id}`, payload: { schedule: { enabled: false } } })
+  await sweep(Math.max(nextRunAt!, nextStopAt!))
+  assert.deepEqual(systemd.calls, [])
+})
+
+test('a scheduled service in a confined project fails without starting on the host', async (t) => {
+  const { db, sweep, systemd, runsOf } = await harness(t)
+  db.update(projects).set({ autonomousConfined: true }).where(eq(projects.id, 'project')).run()
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', schedule: WINDOW }, null)
+
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.deepEqual(systemd.calls, [])
+  const [run] = runsOf(row.id)
+  assert.equal(run!.status, 'failed')
+  assert.match(run!.excerpt!, /confin/)
+})
+
+test('a scheduled service whose folder is gone fails, said in the passage', async (t) => {
+  const { db, sweep, systemd, runsOf, notified } = await harness(t)
+  const row = createAction(db, 'project', { label: 'Dev', kind: 'service', command: 'pnpm dev', subdir: 'absent', schedule: WINDOW }, null)
+
+  await sweep(loadAction(db, row.id).nextRunAt!)
+  assert.deepEqual(systemd.calls, [])
+  const [run] = runsOf(row.id)
+  assert.equal(run!.status, 'failed')
+  assert.match(run!.excerpt!, /^Service planifié non démarré : le dossier .*absent n’existe pas\.$/)
+  assert.equal(notified.length, 1)
 })

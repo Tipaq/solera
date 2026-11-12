@@ -4,8 +4,8 @@ import { useTranslate } from '../../../lib/i18n'
 
 /**
  * « Où tourne-t-il » (SRV-6), le réglage d'un service : une seule instance qu'on bascule
- * (conseillé), toujours la racine, toujours une branche. La quatrième, une instance par
- * worktree, est annoncée mais pas encore tenue par le serveur (AC-06) : visible, grisée.
+ * (conseillé), toujours la racine, toujours une branche, ou une instance par worktree
+ * (AC-06), dont le coût est dit et dont le lien doit contenir `{port}`.
  */
 export function PlacementField({
   value,
@@ -43,8 +43,7 @@ export function PlacementField({
           value: 'per-worktree',
           label: t('served.placement.perWorktree'),
           hint: t('served.placement.perWorktreeHint'),
-          badge: t('served.placement.soon'),
-          disabled: true,
+          badge: t('served.placement.edgeCase'),
         },
       ]}
       selectedExtra={(choice) =>

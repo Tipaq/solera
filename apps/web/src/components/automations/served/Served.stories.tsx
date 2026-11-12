@@ -2,14 +2,15 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useState } from 'react'
 import type { ActionPlacement } from '@solera/protocol'
 import { useTranslate } from '../../../lib/i18n'
-import { servedIndex, switchTargets } from '../../../lib/served'
+import { servedIndex, servedInstances, switchTargets } from '../../../lib/served'
 import { ActionGesture, quietGestureClass } from '../ActionGestures'
 import { ActionBlock } from '../ActionSheet'
-import { PROJECT_ID, SERVICE_ON, SERVICE_TREE, SeededWorktrees } from '../automation-fixtures'
+import { PROJECT_ID, SERVICE_ON, SERVICE_PER_TREE, SERVICE_TREE, SeededWorktrees } from '../automation-fixtures'
 import { PlacementField } from './PlacementField'
 import { ServedBlock, type ServedBlockTree } from './ServedBlock'
 import { ServedLine } from './ServedLine'
 import { ServeIcon, ServeMenu } from './ServeMenu'
+import { ServiceInstances } from './ServiceInstances'
 import { SwitchServiceDialog, switchToTree, type SwitchRequest } from './SwitchServiceDialog'
 
 const ignore = () => {}
@@ -115,6 +116,17 @@ function PlacementDemo({ initial, url = 'http://127.0.0.1:{port}' }: { initial: 
   )
 }
 
+function InstancesDemo() {
+  const t = useTranslate()
+  return (
+    <div className="w-[34rem] max-w-full rounded-lg border border-line py-3">
+      <ActionBlock title={t('served.instances.label')}>
+        <ServiceInstances projectId={PROJECT_ID} instances={servedInstances(SERVICE_PER_TREE, TREES)} />
+      </ActionBlock>
+    </div>
+  )
+}
+
 const meta = {
   title: "Composants d'application/Actions/Ce qu'il sert",
   component: ServedLine,
@@ -156,8 +168,20 @@ export const Dialogue: Story = {
   ),
 }
 
-/** « Où tourne-t-il » : la première conseillée, la quatrième annoncée. */
+/**
+ * Une instance par worktree : chacune avec son arbre, sa version, son port et son lien ;
+ * celle en échec dit de quel dossier elle venait.
+ */
+export const ParArbre: Story = { name: 'Instances par worktree', render: () => <InstancesDemo /> }
+
+/** « Où tourne-t-il » : la première conseillée, la quatrième marquée « cas limite ». */
 export const Placement: Story = { name: 'Où tourne-t-il', render: () => <PlacementDemo initial="follow" /> }
 
 /** Toujours une branche : la racine y est, ou il faudrait un worktree dédié. */
 export const PlacementBranche: Story = { name: 'Où tourne-t-il, une branche', render: () => <PlacementDemo initial="branch" /> }
+
+/** Une instance par worktree : son coût, et le lien qui doit contenir {port}. */
+export const PlacementParArbre: Story = {
+  name: 'Où tourne-t-il, une instance par worktree',
+  render: () => <PlacementDemo initial="per-worktree" url="http://127.0.0.1:5173" />,
+}
