@@ -154,7 +154,7 @@ test('agentMeta : « 2 min · 14 outils » en cours, la durée finale une fois f
   assert.equal(agentMeta(agent('a', [], { status: 'done', durationMs: 90 * 60_000, toolCount: 0 }), now, t), '1 h 30')
   assert.equal(agentMeta(agent('a', [], { status: 'done', durationMs: null, toolCount: 3 }), now, t), '3 outils')
   assert.equal(agentMeta(agent('a', [], { status: 'interrupted', toolCount: 3 }), now, t), 'arrêté')
-  assert.equal(agentMeta(agent('a', [], { status: 'failed', toolCount: 3 }), now, t), 'échoué')
+  assert.equal(agentMeta(agent('a', [], { status: 'failed', toolCount: 3 }), now, t), 'arrêté')
   assert.equal(agentMeta(agent('a', [], { status: 'running', startedAt: now - 2 * 60_000, toolCount: 14 }), now, tEn), '2 min · 14 tools')
 })
 

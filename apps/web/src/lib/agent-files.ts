@@ -169,10 +169,9 @@ export function toolCount(count: number, t: Translate): string {
   return t(count > 1 ? 'panel.agent.tools.other' : 'panel.agent.tools.one', { count })
 }
 
-/** La méta courte d'une ligne de sous-agent : « 2 min · 14 outils », « arrêté ». */
+/** La méta courte d'une ligne de sous-agent : « 2 min · 14 outils », ou « arrêté » s'il n'a pas abouti. */
 export function agentMeta(agent: SubAgent, now: number, t: Translate): string {
-  if (agent.status === 'interrupted') return t('panel.agent.state.stopped')
-  if (agent.status === 'failed') return t('panel.agent.state.failed')
+  if (agent.status === 'interrupted' || agent.status === 'failed') return t('panel.agent.state.stopped')
   const spent = agent.status === 'running' ? Math.max(0, now - agent.startedAt) : agent.durationMs
   return [spent !== null ? formatDuration(spent, t) : null, agent.toolCount > 0 ? toolCount(agent.toolCount, t) : null]
     .filter(Boolean)
@@ -182,20 +181,7 @@ export function agentMeta(agent: SubAgent, now: number, t: Translate): string {
 /** « En faire une action » depuis un travail de fond (PAG-12) : la graine de l'éditeur. */
 export function workSeed(work: BackgroundWork, conversationTitle: string, t: Translate): EditorSeed {
   return seedFromWork(
-    {
-      id: work.id,
-      conversationId: '',
-      conversationTitle,
-      agent: null,
-      family: familyOf(work.kind),
-      description: work.description || null,
-      command: work.command,
-      startedAt: null,
-      port: workPort(work),
-      cpu: null,
-      memoryBytes: null,
-      stop: null,
-    },
+    { conversationTitle, family: familyOf(work.kind), description: work.description || null, command: work.command, port: workPort(work) },
     t,
   )
 }

@@ -688,7 +688,6 @@ export const en = {
   'panel.agent.tools.one': '{count} tool',
   'panel.agent.tools.other': '{count} tools',
   'panel.agent.state.stopped': 'stopped',
-  'panel.agent.state.failed': 'failed',
   'panel.agent.open': 'Open :{port}',
   'panel.agent.thisSession': 'this session',
   'panel.agent.files.title.one': 'Changed by the session · {count} file',
@@ -3596,8 +3595,6 @@ export const en = {
   'directoryPicker.truncated': 'List truncated: only the first 500 folders are shown.',
   'directoryPicker.gitRepo': 'git repo',
   'directoryPicker.confirm': 'Choose this folder',
-
-  // Panneau des sous-agents
 
   // Aperçu de lecture (design system)
   'readingPreview.question': 'Why did the `.env` file show up without any coloring?',

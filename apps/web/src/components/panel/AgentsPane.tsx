@@ -1,5 +1,6 @@
 import { AGENT_CAPABILITIES, type AgentKind } from '@solera/protocol'
 import {
+  IconButton,
   PanelEmpty,
   PanelGroup,
   PanelNotice,
@@ -277,15 +278,15 @@ function FileLine({ path, meta, delta, onOpenFile }: { path: string; meta?: stri
         {meta ? <span className="min-w-0 truncate text-xs text-ink-faint">{meta}</span> : null}
       </button>
       {delta}
-      <button
-        type="button"
-        onClick={() => setPanelTab('git')}
-        aria-label={t('panel.agent.files.diff', { name })}
+      <IconButton
+        size="sm"
+        label={t('panel.agent.files.diff', { name })}
         title={t('panel.agent.files.diffTitle')}
-        className="grid size-8 shrink-0 place-items-center rounded-md text-ink-faint opacity-0 group-hover:opacity-100 hover:bg-surface-high hover:text-ink focus-visible:opacity-100 pointer-coarse:opacity-100"
+        onClick={() => setPanelTab('git')}
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
       >
         <FileDiff size={13} aria-hidden />
-      </button>
+      </IconButton>
     </li>
   )
 }
@@ -332,7 +333,9 @@ function revealToolCall(id: string): boolean {
   if (!node) return false
   const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   node.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' })
-  node.animate?.([{ boxShadow: '0 0 0 2px var(--sg-accent)' }, { boxShadow: '0 0 0 2px transparent' }], { duration: 1500, easing: 'ease-out' })
+  // L'anneau de `sg-flash-turn`, celui d'un saut vers un tour ; l'API d'animation
+  // échappe à la règle CSS du mouvement réduit, d'où la garde.
+  if (!still) node.animate?.([{ boxShadow: '0 0 0 2px var(--sg-accent)' }, { boxShadow: '0 0 0 2px transparent' }], { duration: 1400, easing: 'ease-out' })
   return true
 }
 
@@ -357,7 +360,7 @@ function SubAgentDetail({ conversationId, agent, onOpenFile }: { conversationId:
       ? agent.durationMs
         ? t('panel.agent.detail.doneIn', { duration: formatDuration(agent.durationMs, t) })
         : t('panel.agent.detail.done')
-      : t(agent.status === 'failed' ? 'panel.agent.state.failed' : 'panel.agent.state.stopped')
+      : t('panel.agent.state.stopped')
   const meta = [
     agent.type,
     state,
@@ -437,7 +440,7 @@ function SubAgentDetail({ conversationId, agent, onOpenFile }: { conversationId:
                 type="button"
                 aria-expanded={showResult}
                 onClick={() => setShowResult((value) => !value)}
-                className="mt-1 min-h-9 text-xs text-ink-faint hover:text-ink pointer-coarse:min-h-11"
+                className={cx(panelGestureClass, '-ml-2.5 text-ink-faint')}
               >
                 {t(showResult ? 'panel.agent.result.fold' : 'panel.agent.result.readAll')}
               </button>

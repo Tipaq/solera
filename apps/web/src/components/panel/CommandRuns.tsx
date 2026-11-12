@@ -53,7 +53,6 @@ export function useCommandRuns(projectId: string, conversationId?: string): Comm
   return useMemo(() => commandRunsOf(terminals ?? [], actions ?? [], conversationId), [terminals, actions, conversationId])
 }
 
-
 /** Le résumé d'une sortie, calculé hors du chemin de la frappe. */
 function useSummary(command: string, text: string | null, enabled: boolean): OutputSummary | null {
   const deferred = useDeferredValue(text)

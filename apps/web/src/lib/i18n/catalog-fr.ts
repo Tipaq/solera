@@ -678,7 +678,6 @@ export const fr: Catalog = {
   'panel.agent.tools.one': '{count} outil',
   'panel.agent.tools.other': '{count} outils',
   'panel.agent.state.stopped': 'arrêté',
-  'panel.agent.state.failed': 'échoué',
   'panel.agent.open': 'Ouvrir :{port}',
   'panel.agent.thisSession': 'cette session',
   'panel.agent.files.title.one': 'Modifié par la session · {count} fichier',
@@ -3591,8 +3590,6 @@ export const fr: Catalog = {
   'directoryPicker.truncated': 'Listing tronqué : seuls les 500 premiers dossiers sont affichés.',
   'directoryPicker.gitRepo': 'dépôt git',
   'directoryPicker.confirm': 'Choisir ce dossier',
-
-  // Panneau des sous-agents
 
   // Aperçu de lecture (design system)
   'readingPreview.question': "Pourquoi le fichier `.env` s'affichait-il sans couleur ?",

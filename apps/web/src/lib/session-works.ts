@@ -152,7 +152,7 @@ export function loadText(work: Pick<SessionWork, 'cpu' | 'memoryBytes'>, t: Tran
 }
 
 /** « En faire une action » : l'éditeur pré-rempli, service si ça écoute sur un port. */
-export function seedFromWork(work: SessionWork, t: Translate): EditorSeed {
+export function seedFromWork(work: Pick<SessionWork, 'command' | 'description' | 'family' | 'port' | 'conversationTitle'>, t: Translate): EditorSeed {
   const service = work.port !== null
   return {
     preset: { what: 'command', kind: service ? 'service' : 'task' },
