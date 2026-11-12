@@ -52,6 +52,13 @@ export const SERVICE_ON = action('a-dev', {
     served: { path: '/srv/nimbus', worktreeId: null, root: true, branch: 'main', head: 'a1b2c3d', ahead: 0, behind: 0, dirtyFiles: 0 },
   },
 })
+/** Un service qui sert un worktree : en retard sur la base, des fichiers non commités. */
+export const SERVICE_TREE = action('a-api', {
+  label: 'API', kind: 'service', command: 'pnpm --filter api dev', subdir: 'apps/api', url: 'http://127.0.0.1:{port}',
+  service: { unit: 'solera-app-action-a-api.service', state: 'active', cwd: '/srv/nimbus/.worktrees/w1/apps/api', ports: [8080], startedAt: NOW - HOUR,
+    served: { path: '/srv/nimbus/.worktrees/w1', worktreeId: 'w1', root: false, branch: 'feat/905-vue-horizon-et-ses-jalons', head: 'e4f5a6b', ahead: 4, behind: 3, dirtyFiles: 2 },
+  },
+})
 export const SERVICE_OFF = action('a-storybook', {
   label: 'Storybook', kind: 'service', command: 'pnpm storybook',
   service: { unit: 'solera-app-action-a-storybook.service', state: 'inactive', cwd: null, ports: [], startedAt: null, served: null },

@@ -9,12 +9,15 @@ import {
   MAX_ACTION_URL_CHARS,
   actionSubdirSchema,
   actionUrlSchema,
+  type ActionPlacement,
   type ProjectActionDto,
   type ProjectActionKind,
 } from '@solera/protocol'
 import { useCreateAction, useUpdateAction } from '../../lib/actions'
 import { useTranslate } from '../../lib/i18n'
+import { useBranches } from '../../lib/worktrees'
 import { Banner, Button, Field, IconButton, cx } from '@solera/ui'
+import { PlacementField } from '../automations/served/PlacementField'
 
 /**
  * Créer ou modifier une action. Enregistrer depuis ici vaut relecture : une action
@@ -42,15 +45,31 @@ export function ActionDialog({
   const [description, setDescription] = useState(action?.description ?? '')
   const [subdir, setSubdir] = useState(action?.subdir ?? '')
   const [url, setUrl] = useState(action?.url ?? '')
+  const [placement, setPlacement] = useState<ActionPlacement>(action?.placement ?? 'follow')
+  // Les branches du dépôt, et celle où la racine se trouve : la seule où il tourne aujourd'hui.
+  const { data: repo } = useBranches(projectId)
+  const rootBranch = repo?.current ?? null
+  const branches = repo?.branches ?? []
+  const [pinnedBranch, setPinnedBranch] = useState(action?.pinnedBranch ?? '')
 
   const subdirValid = actionSubdirSchema.safeParse(subdir).success
   const urlValid = actionUrlSchema.safeParse(url).success
-  const valid = label.trim() !== '' && command.trim() !== '' && subdirValid && (kind !== 'service' || urlValid)
+  const placementValid = kind !== 'service' || placement !== 'branch' || pinnedBranch.trim() !== ''
+  const valid = label.trim() !== '' && command.trim() !== '' && subdirValid && (kind !== 'service' || urlValid) && placementValid
 
   const submit = () => {
     if (!valid) return
-    // Une tâche n'a pas de lien : passer de service à tâche le retire.
-    const body = { label, kind, command, description, subdir, url: kind === 'service' ? url : '' }
+    // Une tâche n'a ni lien ni placement : passer de service à tâche les retire.
+    const body = {
+      label,
+      kind,
+      command,
+      description,
+      subdir,
+      url: kind === 'service' ? url : '',
+      placement: kind === 'service' ? placement : 'follow',
+      pinnedBranch: kind === 'service' && placement === 'branch' ? pinnedBranch.trim() : null,
+    }
     if (action) update.mutate({ id: action.id, ...body }, { onSuccess: onClose })
     else create.mutate(body, { onSuccess: onClose })
   }
@@ -150,6 +169,24 @@ export function ActionDialog({
                   value={url}
                   onChange={(event) => setUrl(event.target.value)}
                 />
+              ) : null}
+
+              {kind === 'service' ? (
+                <fieldset className="flex flex-col gap-1.5">
+                  <legend className="mb-1.5 text-sm font-medium text-ink-soft">{t('served.placement.label')}</legend>
+                  <PlacementField
+                    value={placement}
+                    onChange={(next) => {
+                      setPlacement(next)
+                        if (next === 'branch' && !pinnedBranch && rootBranch) setPinnedBranch(rootBranch)
+                    }}
+                    branch={pinnedBranch}
+                    onBranch={setPinnedBranch}
+                    branches={branches}
+                    rootBranch={rootBranch}
+                    url={url}
+                  />
+                </fieldset>
               ) : null}
 
               <Field

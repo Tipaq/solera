@@ -29,6 +29,12 @@ export function ActionsLauncher({ projectId, conversationId, size = 'md' }: {
     onReview: (action) => { setOpen(false); handlers.onReview(action) },
     onEdit: (action) => { setOpen(false); handlers.onEdit(action) },
     onDelete: (action) => { setOpen(false); handlers.onDelete(action) },
+    onSwitch: (request) => { setOpen(false); handlers.onSwitch(request) },
+    onElsewhere: (action, error) => {
+      const opened = handlers.onElsewhere(action, error)
+      if (opened) setOpen(false)
+      return opened
+    },
   }
   const actions = (data ?? []).filter((action) => action.projectId === projectId)
   const running = actions.filter((action) => action.kind === 'service' && actionView(action).live).length
@@ -94,7 +100,7 @@ export function ActionsLauncher({ projectId, conversationId, size = 'md' }: {
             </div>
           ) : (
             <div className="min-h-0 overflow-y-auto">
-              <ActionList actions={actions} conversationId={conversationId} handlers={closing} compact />
+              <ActionList projectId={projectId} actions={actions} conversationId={conversationId} handlers={closing} compact />
             </div>
           )}
         </div>
