@@ -125,9 +125,14 @@ export function readRefinementDetail(db: Db, log: EventLog, cardId: string): Car
     ? log.requestEntry(session.conversationId, 'card_filing.requested', session.change.requestId)?.event
     : undefined
 
+  // Ses arguments, dont la page tire sa ligne : le dernier `tool.input_updated` l'emporte
+  // sur le `tool.started`, comme dans le fil.
+  const running = session.status === 'running' ? activity : null
+  const tool = running ? log.toolInputs(session.conversationId, [running.toolCallId]).get(running.toolCallId) : undefined
+
   return {
     session,
-    activity: session.status === 'running' ? activity : null,
+    activity: running ? { ...running, toolName: tool?.name ?? running.toolName, input: tool?.input ?? null } : null,
     prompt,
     draft:
       draftEvent?.type === 'card_draft.proposed'
