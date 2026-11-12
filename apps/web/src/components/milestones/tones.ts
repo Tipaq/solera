@@ -11,6 +11,16 @@ export const MATURITY_TONE: Record<Maturity, string> = {
   delivered: 'bg-positive/25 text-positive',
 }
 
+/** Le point d'une maturité, devant son mot ou son nom. */
+export const MATURITY_DOT: Record<Maturity, string> = {
+  idea: 'bg-line-strong',
+  refine: 'bg-caution',
+  split: 'bg-ink-faint',
+  ready: 'bg-positive',
+  launched: 'bg-accent',
+  delivered: 'bg-positive',
+}
+
 /** Un nœud du graphe des vagues : cadre et fond, à la teinte de l'état. */
 export const STATE_NODE: Record<CardState, string> = {
   todo: 'border-line-strong bg-surface',
